@@ -3,6 +3,7 @@ const Voice = invoke('GameServer/Bot/AI/BotChatVoice');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const Identity = invoke('GameServer/Bot/AI/BotServiceIdentity');
+const ChatterItems = require('./BotChatterItems');
 
 const DEATH_WINDOW_MS = 20 * 60000;
 const EVENT_COOLDOWN_MS = 10 * 60000;
@@ -47,12 +48,14 @@ function itemName(itemId, supplied) {
         itemNames = new Map((itemSource || []).map(item => [Number(item.selfId), utils.crushOb(item).name]));
     }
     const name = itemNames.get(Number(itemId)) || supplied;
+    if (ChatterItems.isRoutineSupply(itemId, name)) return '';
     if (!name || /^(?:Material|Item)\s+\d+$/i.test(name) || /[{}_]/.test(name)) return '';
     return String(name).replace(/\s+/g, ' ').trim();
 }
 
 function goalKey(goal) {
     if (goal?.status !== 'active') return '';
+    if (ChatterItems.isRoutineSupply(goal.target?.itemId, goal.target?.itemName)) return '';
     switch (goal.type) {
         case 'upgrade_gear': case 'buy_craft_material': return `${goal.type}:${goal.target?.itemId || goal.target?.itemName || ''}`;
         case 'progress_level': return `${goal.type}:${goal.target?.level || ''}`;

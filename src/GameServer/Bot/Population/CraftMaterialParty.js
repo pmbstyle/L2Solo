@@ -225,8 +225,28 @@ function selectMembers(candidates, { minSize = 2, maxSize = MAX_MEMBERS, levelRa
         && !(state.stats?.partyRequest?.status === 'deferred' && Number(state.stats.partyRequest.deferredUntil) > timestamp));
     const recruits = Composition.selectRecruits(core, supports, { maxSize: Math.min(MAX_MEMBERS, maxSize), levelRange, timestamp });
     const members = [...core, ...recruits];
-    return members.length >= minSize ? members : [];
+    if (members.length < minSize) return [];
+    const spot = invoke('GameServer/Bot/Population/SpotProfiles').findById(spotId);
+    return !spot || canHunt(members, spot) ? members : [];
 }
 
-module.exports = { request, requestOf, isObjective, needs, remaining, supplyPause, selectMembers, agreement, departureRequest, joint, target, campsFor, partySpoiler,
+// A material contract needs a roster that can take its actual pull. A
+// collection of support requests is not proof that the assembled team can
+// fight the leader and all its minions once it becomes visible.
+function canHunt(members, spot, profiles = null, npcIds = null) {
+    const Match = invoke('GameServer/Bot/AI/BotTargetMatchup');
+    const Pull = invoke('GameServer/Bot/AI/BotPullEstimate');
+    const Cold = invoke('GameServer/Bot/Population/ColdCombatProfile');
+    profiles ||= Match.stateProfiles(members[0], { mode: 'party', capacityStates: members, buffed: true });
+    npcIds ||= [...new Set(members.map(member => Number(requestOf(member)?.npcId)).filter(Boolean))];
+    const entries = (spot?.npcEntries || []).filter(entry => !npcIds.length || npcIds.includes(Number(entry.selfId)));
+    if (!entries.length) return true;
+    return entries.every(entry => {
+        const npc = invoke('GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').npcs, entry.selfId);
+        return !npc || Match.soloSurvival(profiles,
+            Pull.pullView(Cold.npcCombatStats(npc), Pull.entryPull(spot, entry.selfId))).eligible;
+    });
+}
+
+module.exports = { request, requestOf, isObjective, needs, remaining, supplyPause, selectMembers, canHunt, agreement, departureRequest, joint, target, campsFor, partySpoiler,
     MAX_SOURCE_CHECKS, MAX_CAMPS, MAX_CORE, MAX_MEMBERS, REVIEW_MS };

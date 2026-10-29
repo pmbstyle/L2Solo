@@ -580,6 +580,7 @@ const BotManager = {
     loadAndSpawnBot(username, botData = {}) {
         const session = new BotSession(username);
         session.populationStaging = botData.prepareOnly === true;
+        session.populationActivating = botData.prepareOnly !== true;
         // The servitor kept away from the player, read before a party or PvP
         // handoff re-captures the staged actor (which has none yet).
         session.coldSummon = botData.coldLifeState?.stats?.coldCombat?.summon || null;
@@ -622,6 +623,7 @@ const BotManager = {
                     session.setActor({
                         ...character, ...utils.crushOb(classInfo)
                     });
+                    await invoke('GameServer/Henna/HennaService').restore(session);
                     // Persona generation is intentionally independent from
                     // spawning. Static shop/craft services represent a fixed
                     // service surface, while every other bot is modelled as a
@@ -707,6 +709,7 @@ const BotManager = {
                         session.backgroundActivity = botData.backgroundActivity || session.plan;
                         session.currentSpot = botData.currentSpot || null;
                         session.coldLifeState = botData.coldLifeState || null;
+                        session.activationEconomyDecision = botData.economyDecision || null;
                         session.populationLocationPolicy = botData.populationLocationPolicy || 'return';
                         if (botData.spawnReady !== false) {
                             this.prepareBotForSpawn(session, botData);
@@ -741,6 +744,9 @@ const BotManager = {
                         await session.actor.enterWorld();
 
                         this.finalizeReadyActivation(session, botData);
+
+                        session.populationActivating = false;
+                        invoke('GameServer/Bot/Population/BotLifeState').notifyNearFacts(session, 'activated');
 
                         // Explicitly send the bot's CharInfo to other players in the world
                         const ServerResponse = invoke('GameServer/Network/Response');

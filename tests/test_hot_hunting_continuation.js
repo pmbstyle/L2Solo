@@ -1,0 +1,222 @@
+'use strict';
+const assert = require('node:assert/strict');
+require('./helpers/databaseIsolation');
+require('../src/Global');
+invoke('GameServer/DataCache').init();
+const Decision = invoke('GameServer/Bot/AI/BotDecisionService');
+const Events = invoke('GameServer/Bot/AI/DecisionEvents');
+const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+const Hunting = invoke('GameServer/Bot/AI/States/HuntingState');
+const Shopping = invoke('GameServer/Bot/AI/States/ShoppingState');
+const Spots = invoke('GameServer/Bot/AI/SpotService');
+const SpotTravel = invoke('GameServer/Bot/AI/BotSpotTravel');
+const World = invoke('GameServer/World/World');
+const town = { locX: 82992, locY: 53171, locZ: -1496 };
+const primary = { id: '25_12', name: 'Original hunt', density: 12,
+    minLevel: 55, maxLevel: 59, avgLevel: 57, center: { locX: 151966, locY: 74719, locZ: -3276 } };
+const alternative = { ...primary, id: '13_0', name: 'Accepted detour',
+    center: { locX: 82000, locY: 3200, locZ: -2880 } };
+const leaf = { activity: 'hunting', spotId: primary.id };
+const restores = [];
+function stub(object, key, value) {
+    const original = object[key]; object[key] = value;
+    restores.push(() => { object[key] = original; });
+}
+let available = [], searchCalls = [], nextId = 972000;
+stub(Spots, 'ensureIndexed', () => [primary, alternative]);
+stub(Spots, 'findBestSpot', (status, options) => {
+    searchCalls.push({ status, options }); return { spot: primary, score: 10 };
+});
+stub(Events, 'held', session => session.heldEconomy);
+stub(World, 'user', { sessions: [] });
+stub(World, 'npc', { spawns: [] });
+stub(World, 'fetchNpcsInRadius', () => available);
+stub(invoke('GameServer/Bot/BotManager'), 'sessions', []);
+stub(invoke('GameServer/Geodata/GeodataEngine'), 'hasLineOfSight', () => true);
+stub(invoke('GameServer/Bot/AI/PartyAwareness'), 'npcThreateningActor', () => null);
+stub(invoke('GameServer/Bot/AI/HotTownRebuff'), 'syncVisit', () => null);
+stub(invoke('GameServer/Bot/AI/HotTownRebuff'), 'needsVisit', () => false);
+stub(invoke('GameServer/Bot/AI/BotBuffs'), 'needsNewbieRefresh', () => false);
+stub(invoke('GameServer/Bot/AI/TownChatter'), 'say', () => {});
+stub(Math, 'random', () => 0.75);
+stub(SpotTravel, 'start', (session, _bot, spot) => {
+    session.spotRelocation = { spotId: spot.id, method: 'soe_gatekeeper' };
+    session.trips.push(spot.id); return true;
+});
+function fixture(location, chosen = leaf, stats = {}) {
+    const loc = { ...location }, id = ++nextId;
+    const bot = { fetchId: () => id, fetchName: () => `HuntContinuation${id}`,
+        fetchLevel: () => 57, fetchClassId: () => 6, fetchRace: () => 0, fetchKarma: () => 0,
+        fetchLocX: () => loc.locX, fetchLocY: () => loc.locY, fetchLocZ: () => loc.locZ,
+        fetchHp: () => 5000, fetchMaxHp: () => 5000, fetchMp: () => 500, fetchMaxMp: () => 500,
+        fetchPAtk: () => 2000, fetchCollectivePAtk: () => 2000, fetchPDef: () => 2000,
+        fetchCollectivePDef: () => 2000, fetchMAtk: () => 200, fetchMaxLoad: () => 100000,
+        fetchIsOnline: () => true, isDead: () => false,
+        state: { fetchDead: () => false, fetchTowards: () => false, fetchHits: () => false,
+            fetchCasts: () => false, fetchSeated: () => false, setCasts() {} },
+        backpack: { fetchItems: () => [], fetchTotalLoad: () => 0, fetchTotalAdena: () => 1000000,
+            fetchTotalWeaponKind: () => 'Weapon.Sword', fetchItemFromSelfId: () => null },
+        automation: { abortAll() {} }, select() {}, unselect() {},
+        moveTo(move) { session.moves.push(move); }
+    };
+    const session = { actor: bot, plan: 'hunting', currentSpot: primary, moves: [], trips: [], attacks: [],
+        coldLifeState: { characterId: id, activity: 'hunting', spotId: primary.id, loc: { ...loc },
+            stats: { classId: 6, decisionSeq: 1, ...stats }, inventory: {} },
+        heldEconomy: { decided: true, network: { activity: chosen }, stock: () => ({ itemId: 0, usePerHour: 0 }) } };
+    bot.session = session;
+    session.botStatus = { available: true, mode: 'hunting', characterId: id, classId: 6, level: 57,
+        loc: { ...loc }, blockers: [], nearby: { attackableNpcs: 0, eligibleAttackableNpcs: 0 } };
+    const ai = { say() {}, getRandomPhrase: () => '', getStatus: s => s.botStatus,
+        executeCombat: (s, _bot, npc) => s.attacks.push(npc.fetchId()),
+        getClosestTown: () => ({ name: 'Oren', x: town.locX, y: town.locY, z: town.locZ }) };
+    return { session, bot, ai, loc, tick: () => Hunting.tick(session, bot, {}, ai) };
+}
+function npcNear(point) {
+    return { fetchId: () => 990101, fetchSelfId: () => 990101, fetchName: () => 'Local mob',
+        fetchLocX: () => point.locX + 100, fetchLocY: () => point.locY, fetchLocZ: () => point.locZ,
+        fetchLevel: () => 57, fetchKind: () => 'Monster', fetchAttackable: () => true, isDead: () => false,
+        fetchHp: () => 500, fetchMaxHp: () => 500, fetchPAtk: () => 100, fetchPDef: () => 100,
+        fetchMDef: () => 100 };
+}
+const tests = [];
+function test(name, work) { tests.push({ name, work }); }
+
+test('an accepted cold detour continues native local combat', () => {
+    const f = fixture(alternative.center, leaf, { standIn: { leaf: primary.id, ground: alternative.id } });
+    f.session.currentSpot = alternative;
+    f.session.coldLifeState.spotId = alternative.id;
+    available = [npcNear(alternative.center)];
+    f.session.botStatus.nearby = { attackableNpcs: 1, eligibleAttackableNpcs: 1 };
+    assert(Sections.occupationPlanned(f.session.coldLifeState, leaf));
+    assert.equal(Decision.suggest(f.session.botStatus, f.session).action, 'search_locally');
+    f.tick();
+    assert.deepEqual(f.session.trips, [], 'an accepted detour must not start a new field trip');
+    assert.deepEqual(f.session.attacks, [990101], 'the early hunting decision must allow the local fight');
+    assert.equal(f.session.currentSpot.id, alternative.id);
+    assert.equal(searchCalls.length, 0, 'an accepted occupation needs no independent spot search');
+});
+
+test('a stale field and stale status coordinates cannot strand the body in town', () => {
+    const f = fixture(town);
+    assert.equal(Spots.findCurrentSpot(town), null, 'the town has no hunting sector in this catalogue');
+    f.session.botStatus.loc = { ...primary.center };
+    assert.equal(Decision.suggest(f.session.botStatus, f.session).spot?.id, primary.id);
+    f.tick();
+    assert.deepEqual(f.session.trips, [primary.id], 'the real actor location requires a return route');
+    assert.equal(searchCalls.length, 0, 'a selected hunt keeps its destination');
+});
+
+test('returning from town resumes the accepted detour rather than the full primary field', () => {
+    const f = fixture(town, leaf, { standIn: { leaf: primary.id, ground: alternative.id } });
+    f.session.currentSpot = alternative;
+    assert.equal(Decision.suggest(f.session.botStatus, f.session).spot?.id, alternative.id);
+    f.tick();
+    assert.deepEqual(f.session.trips, [alternative.id]);
+});
+
+test('an unrelated old detour cannot override a newly selected hunt', () => {
+    const f = fixture(alternative.center, leaf, { standIn: { leaf: 'old_goal', ground: alternative.id } });
+    f.session.currentSpot = alternative;
+    assert.equal(Decision.suggest(f.session.botStatus, f.session).spot?.id, primary.id);
+});
+
+test('a first worker answer is awaited separately from an accepted empty occupation', () => {
+    const f = fixture(town, null);
+    f.session.pendingFarmDepartureAnnouncement = true;
+    f.session.heldEconomy.decided = false;
+    assert.equal(Decision.suggest(f.session.botStatus, f.session).action, 'search_locally');
+    assert.equal(searchCalls.length, 0);
+});
+
+test('a completed shopping visit with an accepted null leaf starts the farming route', async () => {
+    const f = fixture(town, null);
+    f.session.plan = 'shopping';
+    f.session.shoppingLiveShotStopChecked = true;
+    f.session.shoppingTarget = { town: 'Oren' };
+    f.session.dataSendToOthers = () => {};
+    const timers = [], restoreAt = restores.length;
+    try {
+        stub(global, 'setTimeout', fn => { timers.push(fn); return 1; });
+        stub(Events, 'raiseDecision', () => {});
+        stub(invoke('GameServer/Bot/Population/BotLifeState'), 'hotRow', () => ({ phase: 'hot' }));
+        const Shots = invoke('GameServer/Inventory/ShotStock');
+        stub(Shots, 'planForActor', () => ({ selfId: 1835 }));
+        stub(Shots, 'purchaseActorRestock', async () => ({ ok: true, delta: 0, cost: 0 }));
+        const Restock = invoke('GameServer/Bot/Economy/NpcRestockPlan');
+        stub(Restock, 'quoteFor', () => null);
+        stub(Restock, 'purchaseForActor', async () => ({ ok: true, receipts: [] }));
+        const Potions = invoke('GameServer/Bot/AI/HealingPotionStock');
+        stub(Potions, 'purchasePotionFor', () => ({ selfId: 1060 }));
+        stub(Potions, 'localNpcPrice', () => 0);
+        stub(invoke('GameServer/Network/Response'), 'skillStarted', () => Buffer.alloc(0));
+        stub(invoke('GameServer/Bot/AI/BotEventJournal'), 'record', async () => {});
+        Shopping.scheduleRestock(f.session, f.bot, {}, f.ai);
+        assert.equal(timers.length, 2);
+        await timers.shift()(); await timers.shift()();
+        assert.equal(f.session.plan, 'hunting');
+        assert.equal(f.session.pendingFarmDepartureAnnouncement, true);
+        // The worker may accept no new wish after the purchase. The town
+        // continuation must still dispatch real farming travel in HuntingState.
+        f.session.currentSpot = null;
+        f.tick();
+        assert.deepEqual(f.session.trips, [primary.id]);
+        assert.equal(searchCalls.length, 1);
+        assert.deepEqual(searchCalls[0].status.loc, town);
+        assert.equal(f.session.pendingFarmDepartureAnnouncement, undefined, 'departure is consumed once');
+    } finally { while (restores.length > restoreAt) restores.pop()(); }
+});
+
+test('an accepted empty occupation in the field keeps local hunting', () => {
+    const f = fixture(alternative.center, null);
+    f.session.currentSpot = alternative;
+    assert.equal(Decision.suggest(f.session.botStatus, f.session).action, 'search_locally');
+    assert.equal(searchCalls.length, 0, 'an empty NPC scan in the field is not a new route request');
+});
+
+test('an accepted empty occupation can leave town without a remembered field or announcement', () => {
+    const f = fixture(town, null);
+    f.session.currentSpot = null;
+    f.tick();
+    assert.deepEqual(f.session.trips, [primary.id]);
+    assert.equal(searchCalls.length, 1);
+});
+
+test('an unavailable default route is searched once per tick and observes the movement cooldown', () => {
+    const f = fixture(town, null);
+    f.session.currentSpot = null;
+    const original = Spots.findBestSpot;
+    try {
+        Spots.findBestSpot = (status, options) => { searchCalls.push({ status, options }); return null; };
+        f.tick();
+        assert.deepEqual(f.session.trips, []);
+        assert.equal(searchCalls.length, 1, 'the empty NPC scan must reuse the same route verdict');
+        f.session.lastSpotMoveAt = Date.now();
+        searchCalls = [];
+        assert.equal(Decision.suggest(f.session.botStatus, f.session).reason, 'spot_move_cooldown');
+        assert.equal(searchCalls.length, 0);
+    } finally { Spots.findBestSpot = original; }
+});
+
+test('route retries, survival and explicit non-hunting work keep their priority', () => {
+    const f = fixture(town);
+    f.session.spotRetryAfter = { [primary.id]: Date.now() + 60000 };
+    assert.equal(Decision.suggest(f.session.botStatus, f.session).action, 'search_locally');
+    f.session.spotRetryAfter = {};
+    f.session.lastSpotMoveAt = Date.now();
+    assert.equal(Decision.suggest(f.session.botStatus, f.session).action, 'search_locally');
+    assert.equal(Decision.suggest({ ...f.session.botStatus, blockers: ['low_hp'] }, f.session).action, 'rest');
+    f.session.heldEconomy.network.activity = { activity: 'shopping', town: 'Oren' };
+    assert.equal(Decision.suggest(f.session.botStatus, f.session).action, 'continue_occupation');
+});
+
+(async () => {
+    let failed = 0;
+    try {
+        for (const { name, work } of tests) {
+            available = []; searchCalls = [];
+            try { await work(); console.log(`PASS ${name}`); }
+            catch (error) { failed++; console.error(`FAIL ${name}\n${error.stack}`); }
+        }
+    } finally { restores.reverse().forEach(restore => restore()); }
+    if (failed) process.exitCode = 1;
+})().catch(error => { console.error(error); process.exitCode = 1; });

@@ -1,3 +1,5 @@
+const ChatterItems = require('./BotChatterItems');
+
 const PRIORITIES = Object.freeze({
     critical: { dedupeMs: 3000, partyCooldownMs: 0 },
     coordination: { dedupeMs: 12000, partyCooldownMs: 7000 },
@@ -99,7 +101,7 @@ function announce(session, entry = {}) {
     const now = Number(entry.now || Date.now());
     if (!canSend(state, entry, now)) return false;
     const text = chooseText(entry, state);
-    if (!text) return false;
+    if (!text || ChatterItems.mentionsRoutineSupply(text)) return false;
 
     const BotManager = invoke('GameServer/Bot/BotManager');
     const sent = entry.targetSession

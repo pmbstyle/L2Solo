@@ -2,6 +2,7 @@ const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Rules = invoke('GameServer/Skills/C4SkillRules');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const WeaponMask = invoke('GameServer/Skills/WeaponMask');
+const PullEstimate = require('./BotPullEstimate');
 
 const MIN_EFFICIENCY = 0.15;
 const ELEMENTS = ['fire', 'water', 'wind', 'earth', 'holy', 'dark'];
@@ -332,7 +333,8 @@ const npcVerdicts = new WeakMap();
 function optionVerdicts(profiles, options) {
     let byOptions = npcVerdicts.get(profiles);
     if (!byOptions) npcVerdicts.set(profiles, byOptions = new Map());
-    const optionsKey = `${options.soloSafety ? 1 : 0}:${options.maxTargetLevel || 0}`;
+    const pull = options.soloSafety ? Math.max(1, number(options.pull)) : 1;
+    const optionsKey = `${options.soloSafety ? 1 : 0}:${options.maxTargetLevel || 0}:${pull}`;
     let verdicts = byOptions.get(optionsKey);
     if (!verdicts) byOptions.set(optionsKey, verdicts = new Map());
     return verdicts;
@@ -346,7 +348,7 @@ function npcVerdict(verdicts, selfId, options) {
         const target = coldCombatProfile().npcCombatStats(npc);
         const match = evaluate(options.profiles, target);
         const withinRecoveryLevel = !options.maxTargetLevel || Number(npc.template?.level || 0) <= options.maxTargetLevel;
-        const canHunt = options.soloSafety ? soloCanHunt(options.profiles, target,
+        const canHunt = options.soloSafety ? soloCanHunt(options.profiles, PullEstimate.pullView(target, options.pull),
             { maxTargetLevel: options.maxTargetLevel, npcLevel: Number(npc.template?.level || 0) }).eligible
             : match.eligible && withinRecoveryLevel;
         verdict = Object.freeze({ efficiency: match.efficiency, canHunt });
@@ -365,7 +367,7 @@ const spotMatchups = new WeakMap();
 // reads, so a solo fight's pick (ColdCombatProfile.npcForSpot) shares it.
 function speciesVerdict(profiles, selfId, options = {}) {
     return npcVerdict(optionVerdicts(profiles, options), Number(selfId),
-        { profiles, soloSafety: options.soloSafety, maxTargetLevel: options.maxTargetLevel });
+        { profiles, soloSafety: options.soloSafety, maxTargetLevel: options.maxTargetLevel, pull: options.pull });
 }
 
 function spotMatchup(spot, profiles, options = {}) {
@@ -378,7 +380,11 @@ function spotMatchup(spot, profiles, options = {}) {
     if (known) return known;
     const verdictOptions = { profiles, soloSafety: options.soloSafety, maxTargetLevel: options.maxTargetLevel };
     for (const entry of spot.npcEntries || []) {
-        const verdict = npcVerdict(verdicts, Number(entry.selfId), verdictOptions);
+        // A species can be safe alone and lethal with its helpers. Routing
+        // must judge the same pull that the hot hunter and cold fight take.
+        const verdict = options.soloSafety && entry.pull > 1
+            ? speciesVerdict(profiles, entry.selfId, { ...options, pull: entry.pull })
+            : npcVerdict(verdicts, Number(entry.selfId), verdictOptions);
         if (!verdict) continue;
         const weight = Math.max(1, number(entry.count));
         total += weight;

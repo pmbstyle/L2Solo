@@ -1,9 +1,11 @@
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const TradeChat = invoke('GameServer/Bot/Economy/BotTradeChat');
+const ChatterItems = require('../AI/BotChatterItems');
 
 function offerText(store) { return TradeChat.offerText(store); }
 
 function wantedText(state, goal) {
+    if (ChatterItems.isRoutineSupply(goal?.target?.itemId, goal?.target?.itemName)) return '';
     const item = goal?.target?.itemName || `Item ${goal?.target?.itemId || ''}`.trim();
     if (!goal?.target?.itemId) return '';
     return `WTB ${item} — ${state.currentRegion || 'Giran'}.`.slice(0, 120);

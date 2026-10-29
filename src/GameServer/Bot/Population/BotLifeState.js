@@ -116,10 +116,13 @@ function notifyColdSnapshot(state, reason = 'state_changed', options = {}) {
 // queue entry per bot. The far poster's gate above stays for far bots.
 function notifyNearFacts(session, reason) {
     if (!session?.accountId?.startsWith?.('bot_') || session.arenaEphemeral === true) return;
+    // Ownership is persisted before enterWorld finishes. That provisional
+    // body must not look like a changed kit to the occupation planner.
+    if (session.populationActivating === true) return;
     const handle = setImmediate(() => {
         try {
             const actor = session.actor;
-            if (!actor) return;
+            if (!actor || session.populationActivating === true) return;
             const current = cache.get(Number(actor.fetchId()));
             if (current?.phase !== 'hot') return;
             const row = mergeSessionIntoLifeState(session, session.coldLifeState || current, 'hot', reason,

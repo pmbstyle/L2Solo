@@ -96,6 +96,35 @@ try {
     assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500), local,
         'a preferred level behind a wall must not beat a visible weaker monster');
 
+    const easier = candidate(910003, 100, hunter.fetchLevel() - 10);
+    const tooLow = candidate(910004, 100, hunter.fetchLevel() - 16);
+    const recovery = { allowEasierTargets: true };
+    Geo.hasLineOfSight = () => true;
+    World.fetchNpcsInRadius = () => [easier];
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500), null,
+        'ordinary target scans retain their level band');
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), easier,
+        'a stranded solo hunter can fight safe easier mobs instead of wandering forever');
+    assert(session.lastTargetEvaluation.reasons.includes('easier_ground'));
+    World.fetchNpcsInRadius = () => [easier, hidden];
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), hidden,
+        'an ordinary eligible target wins before easier-ground recovery');
+    World.fetchNpcsInRadius = () => [tooLow];
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), null,
+        'recovery does not exceed the existing fifteen-level earning band');
+    World.fetchNpcsInRadius = () => [easier];
+    assert.strictEqual(Hunting.findPreferredMonster({ ...session, partyCompanion: true }, hunter, 2500, recovery), null,
+        'solo recovery cannot change a companion party target policy');
+    assert.strictEqual(Hunting.findPreferredMonster({ ...session, hotBackgroundPartyId: 'hunting-party' }, hunter, 2500, recovery), null,
+        'solo recovery cannot change an autonomous party target policy');
+    const weak = { ...hunter, fetchCollectivePAtk: () => 1, fetchCollectivePDef: () => 1,
+        fetchMaxHp: () => 10 };
+    assert.strictEqual(Hunting.findPreferredMonster({ actor: weak, plan: 'hunting' }, weak, 2500, recovery), null,
+        'lower-level recovery still requires a survivable encounter');
+    Geo.hasLineOfSight = () => false;
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), null,
+        'easier targets still require line of sight');
+
     const crowded = [1, 2, 3, 4, 5].map(n => candidate(920000 + n, n * 100));
     World.fetchNpcsInRadius = () => crowded;
     const checked = [];
@@ -136,6 +165,13 @@ const immuneSpot = { id: 'resist-test', minLevel: 35, maxLevel: 45, avgLevel: 40
         'party hunts retain the resistance gate');
     assert.strictEqual(Cold.npcForSpot(immuneSpot, () => 0, { matchupProfiles: [safeArcher], soloSafety: true }).selfId,
         template.selfId, 'cold solo picks the resisted mob it survives');
+    const packSpot = { ...immuneSpot, npcEntries: [{ selfId: template.selfId, count: 10, pull: 5 }] };
+    assert.strictEqual(Matchup.spotMatchup(packSpot, [safeArcher], { soloSafety: true }).eligible, false,
+        'a route cannot admit a lethal pack using the survival verdict for a single mob');
+    assert(Cold.npcForSpot(packSpot, () => 0, { matchupProfiles: [safeArcher], soloSafety: true }).avoided,
+        'cold target selection must honor the same pack pressure as hot hunting');
+    assert(Matchup.spotMatchup(immuneSpot, [safeArcher], { soloSafety: true }).eligible,
+        'a pack verdict cannot poison a later single-mob spot');
     assert(Cold.npcForSpot(immuneSpot, () => 0, { matchupProfiles: [safeArcher] }).avoided);
     const originalScan = World.fetchNpcsInRadius, originalSight = Geo.hasLineOfSight, originalScore = Scorer.score;
     const checked = [];

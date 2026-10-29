@@ -1,5 +1,6 @@
 const BuyerActivity = invoke('GameServer/Bot/Economy/MarketBuyerActivity');
 const Pricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
+const ChatterItems = require('../AI/BotChatterItems');
 
 const ITEM_COOLDOWN_MS = 20 * 60 * 1000;
 const MIN_AD_LOT_BASE_ADENA = 5000;
@@ -11,6 +12,7 @@ function itemKey(type, line) {
 function valid(shop, line, minLotValue) {
     return [1, 3].includes(Number(shop.storeType))
         && Number(shop.ownerId) > 0 && Number(line.selfId) > 0
+        && !ChatterItems.isRoutineSupply(line.selfId, line.name)
         && Number(line.count) > 0 && Number.isSafeInteger(Number(line.price))
         && Number(line.price) > 0
         && Number(line.price) * Number(line.count) >= minLotValue

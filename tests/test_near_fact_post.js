@@ -46,7 +46,14 @@ async function run() {
     Coordinator.started = true;
     Coordinator.post = (type, payload) => { sent.push({ type, payload }); return `${type}:${sent.length}`; };
 
+    session.populationActivating = true;
     session.actor.backpack.insertItem(9001, SOULSHOT, { amount: 100 });
+    await new Promise(resolve => setImmediate(resolve));
+    await Coordinator.sendSnapshots(false);
+    assert.equal(sent.filter(message => message.type === 'snapshot_page').length, 0,
+        'a provisional activation body cannot trigger a new occupation');
+    session.populationActivating = false;
+    Life.notifyNearFacts(session, 'activated');
     await new Promise(resolve => setImmediate(resolve));
     await Coordinator.sendSnapshots(false);
 

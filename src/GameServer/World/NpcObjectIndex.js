@@ -49,6 +49,10 @@ function find(world, id) {
     return (world?.npc?.spawns || []).find((npc) => npc?.fetchId?.() === id) || null;
 }
 
+function isIndexed(world) {
+    return indexes.has(world?.npc);
+}
+
 function nearTemplate(world, selfId, locX, locY, radius) {
     const index = indexes.get(world?.npc);
     const candidates = index ? index.byTemplate.get(selfId) || [] : world?.npc?.spawns || [];
@@ -57,4 +61,4 @@ function nearTemplate(world, selfId, locX, locY, radius) {
     return null;
 }
 
-module.exports = { reset, add, remove, find, nearTemplate };
+module.exports = { reset, add, remove, find, nearTemplate, isIndexed };

@@ -14,6 +14,7 @@ const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const BotPullEstimate = invoke('GameServer/Bot/AI/BotPullEstimate');
 const Awareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
+const NpcObjectIndex = require('../../World/NpcObjectIndex');
 // The cold party resolver's target rule: one answer for hot and cold parties.
 const PartyTarget = invoke('GameServer/Bot/Population/PartyHuntingTarget');
 
@@ -198,10 +199,17 @@ function searchGround(session, owner, members, party, legal, now, present) {
         && Spots.findCurrentSpot(point)?.id === spot.id;
     // One wider query per idle leader, not per member or combat tick. Empty
     // spawn locations also let the party explore while monsters are respawning.
-    const monsters = World.fetchNpcsInRadius(origin.locX, origin.locY, 4500)
-        .filter(legal).map(n => ({ ...loc(n), npcId: n.fetchSelfId() })).filter(usable)
+    const profiles = TargetMatchup.actorProfiles(members.filter(s => present(s)
+        && Threats.distance(s.actor, bot) <= 1800).map(s => s.actor));
+    const candidates = World.fetchNpcsInRadius(origin.locX, origin.locY, 4500).filter(legal);
+    const unsafe = new Set(candidates.filter(npc => !Parties.raidBossKey(party) && !TargetMatchup.soloSurvival(profiles,
+        BotPullEstimate.pullView(TargetMatchup.targetView(npc), Spots.pullSizeFor(npc))).eligible));
+    const monsters = candidates.filter(npc => !unsafe.has(npc))
+        .map(n => ({ ...loc(n), npcId: n.fetchSelfId() })).filter(usable)
         .sort((a, b) => Number(b.npcId === npcId) - Number(a.npcId === npcId) || distance(a) - distance(b));
-    const points = [...monsters, ...(spot.arrivalPoints || []).filter(usable).sort((a, b) => distance(a) - distance(b))];
+    const points = [...monsters, ...(spot.arrivalPoints || []).filter(usable)
+        .filter(point => ![...unsafe].some(npc => Math.hypot(point.locX - npc.fetchLocX(), point.locY - npc.fetchLocY()) < 700
+            && Math.abs(point.locZ - npc.fetchLocZ()) < 500)).sort((a, b) => distance(a) - distance(b))];
     const recent = session.backgroundSearchHistory || (session.backgroundSearchHistory = new Map());
     for (const [key, at] of recent) if (now - at >= 30000) recent.delete(key);
     let checks = 0;
@@ -231,6 +239,9 @@ function searchGround(session, owner, members, party, legal, now, present) {
 function tick(session, bot, Generics, AI, now = Date.now()) {
     const party = Parties.find(session.hotBackgroundPartyId);
     if (!party) return false;
+    if (session.pendingSupportCast && Number(session.pendingSupportCast.expiresAt || 0) <= now
+        && !bot.state.fetchCasts?.()) Support.cancelSupportCast(session, bot);
+    if (session.hotHuntReview && !Awareness.npcThreateningActor(session)) return true;
     if (session.raidFailurePendingAt) {
         Tactics.stop(session, bot);
         session.currentTargetId = undefined;
@@ -363,6 +374,10 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     const incoming = own || (returnPending ? returnIncoming : near.map(s => Awareness.npcThreateningActor(s)).find(Boolean));
     const legal = (npc) => {
         if (!Threats.alive(npc)) return false;
+        // A despawned minion can remain alive in a held reference after its
+        // leader's replacement. Native attacks resolve by object ID, so that
+        // detached object would leave the whole party attacking nothing.
+        if (NpcObjectIndex.isIndexed(World) && NpcObjectIndex.find(World, npc.fetchId()) !== npc) return false;
         // During an autonomous raid, do not let a nearby field monster replace
         // the clan objective.  Raid bosses use kind `Boss`, while their
         // minions use `Monster`, so ownership is the authoritative filter for
@@ -471,7 +486,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         if (!Revival.partyCombatInProgress(revivalAnchor)) {
             if (Tactics.support(session, bot, { owner, members: near, threats: [] }, Generics, now)) return true;
             if (prepareBuffs(session, owner, near, Generics, now, {
-                partyMusicLast: raidObjective
+                partyMusicLast: true
             })) return true;
         }
         if (now >= Number(owner.nextBackgroundTargetScanAt || 0)) {
@@ -480,8 +495,9 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
             // The near members take only a pull they survive (E72): the target
             // with its helpers, aggressive neighbours and minions; smaller first.
             const profiles = TargetMatchup.actorProfiles(near.map(s => s.actor));
-            const pulls = World.fetchNpcsInRadius(owner.actor.fetchLocX(), owner.actor.fetchLocY(), radius)
-                .filter(allowedHunt).filter(n => Math.abs(n.fetchLocZ() - owner.actor.fetchLocZ()) < 500)
+            const candidates = World.fetchNpcsInRadius(owner.actor.fetchLocX(), owner.actor.fetchLocY(), radius)
+                .filter(allowedHunt).filter(n => Math.abs(n.fetchLocZ() - owner.actor.fetchLocZ()) < 500);
+            const pulls = candidates
                 .map(npc => ({ npc, size: Spots.pullSizeFor(npc) }))
                 // Raid admission already accounts for tanking, healing,
                 // regeneration and supplies. The ordinary no-healing pull
@@ -489,6 +505,12 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
                 // allowedHunt still enforces ownership of this raid only.
                 .filter(({ npc, size }) => raidObjective || TargetMatchup.soloSurvival(profiles,
                     BotPullEstimate.pullView(TargetMatchup.targetView(npc), size)).eligible);
+            const Material = require('../Population/CraftMaterialParty');
+            owner.backgroundUnsafeHunt = candidates.length > 0 && pulls.length === 0
+                && Material.isObjective(party.stats?.objective)
+                && !Material.canHunt(members.map(s => s.coldLifeState), partySpot(party),
+                    TargetMatchup.actorProfiles(members.map(s => s.actor)),
+                    [party.stats.objective.npcId, ...(party.stats.agreement?.materialNeeds || []).map(need => need.npcId)]);
             pulls.sort((a, b) => Number(b.npc.fetchSelfId() === npcId) - Number(a.npc.fetchSelfId() === npcId)
                 || Math.round(a.size) - Math.round(b.size)
                 || Threats.distance(owner.actor, a.npc) - Threats.distance(owner.actor, b.npc));
@@ -528,6 +550,24 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
             bot.unselect?.();
         }
         session.currentTargetId = undefined;
+        if (owner.backgroundUnsafeHunt) {
+            // Do not let exploration chase the same packs the combat scan
+            // just rejected. Gather the complete roster before releasing an
+            // incapable material contract through the native membership owner.
+            if (session === owner) {
+                Tactics.stop(session, bot);
+                session.backgroundSearchDestination = null;
+                if (members.length === party.memberIds.length
+                    && members.every(s => Threats.distance(s.actor, bot) <= 700)
+                    && require('../Population/CraftMaterialParty').isObjective(party.stats?.objective)
+                    && now >= Number(session.nextUnsafeHuntReviewAt || 0)) {
+                    session.nextUnsafeHuntReviewAt = now + 5000;
+                    invoke('GameServer/Bot/Population/HotPartyLifecycle').releaseUnsafeHunt(party.partyId);
+                }
+            }
+            session.lastDecision = { action: 'party_unsafe_ground', reason: 'unsafe_pull', partyId: party.partyId, at: now };
+            return true;
+        }
         if (owner.backgroundTargetScanPending) {
             session.lastDecision = { action: 'party_search_visibility', partyId: party.partyId, at: now };
             return true;

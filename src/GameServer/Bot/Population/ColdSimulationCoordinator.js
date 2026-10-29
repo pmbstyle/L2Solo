@@ -2072,9 +2072,20 @@ class ColdSimulationCoordinator {
 
     async fenceBot(characterId, timeoutMs = 500) {
         const id = Number(characterId);
-        this.economyDecisions.forget(id);
+        // Return the last accepted cold advice with the ownership handoff.
+        // A commit already in flight may publish a newer card while fencing;
+        // take it only after those writes settle, against the resulting row.
+        // Advice carries no permission to execute a native transaction.
+        const takeDecision = () => {
+            const state = LifeState.cachedState(id);
+            return state?.phase === 'cold' ? this.economyDecisions.decided(state) : null;
+        };
         EconomyContext.forget(id);
-        if (!this.worker || !this.ready) return { ok: true, reason: 'worker_not_ready' };
+        if (!this.worker || !this.ready) {
+            const economyDecision = takeDecision();
+            this.economyDecisions.forget(id);
+            return { ok: true, reason: 'worker_not_ready', economyDecision };
+        }
         const worker = this.worker, epoch = this.workerEpoch;
         this.fencedBots.add(id);
         DiagnosticConfig.developerDiagnostics && (this.counters.fences += 1);
@@ -2088,7 +2099,10 @@ class ColdSimulationCoordinator {
         // still precedes handoff. Keep those exact promises across both waits.
         captureCommitAcks();
         const msgId = this.post('fence', { characterId: id, deadlineAt: Date.now() + timeoutMs });
-        if (!msgId) return { ok: false, reason: 'fence_send_failed' };
+        if (!msgId) {
+            this.economyDecisions.forget(id);
+            return { ok: false, reason: 'fence_send_failed' };
+        }
         let timer = null;
         const response = new Promise((resolve, reject) => {
             timer = setTimeout(() => reject(new Error('cold_worker_fence_timeout')), Math.max(50, Number(timeoutMs) || 500));
@@ -2105,13 +2119,14 @@ class ColdSimulationCoordinator {
             if (command) await Promise.race([command.catch(() => null), wait(timeoutMs)]);
             await this.queue.flushCharacter(id);
             await Promise.all(commitAcks);
-            return { ok: true, reason: 'fenced', ...fenced };
+            return { ok: true, reason: 'fenced', ...fenced, economyDecision: takeDecision() };
         } catch (error) {
             DiagnosticConfig.developerDiagnostics && (this.counters.fenceTimeouts += 1);
             this.waiters.delete(msgId);
             return { ok: false, reason: error.message };
         } finally {
             clearTimeout(timer);
+            this.economyDecisions.forget(id);
         }
     }
 

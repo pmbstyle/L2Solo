@@ -28,7 +28,10 @@ try {
     const shield=skill(1040,3,'shield',{pDefMul:1.15});
     const weaker=skill(1040,1,'shield',{pDefMul:1.08});
     const empower=skill(1059,1,'empower',{mAtkMul:1.2});
-    const leader=member(2000100,0), buffer=member(2000101,17,[shield,empower]), mage=member(2000102,25,[weaker]);
+    const song=skill(267,1,'song_of_warding',{mDefMul:1.3});
+    song.fetchTargetKind=()=> 'party'; song.fetchDistance=()=> -1;
+    song.fetchSemantic=()=>({effectType:'buff',target:'party',effect:'song_of_warding',stats:{mDefMul:1.3},radius:1000,durationMs:120000});
+    const leader=member(2000100,21,[song]), buffer=member(2000101,17,[shield,empower]), mage=member(2000102,25,[weaker]);
     const group=[leader,buffer,mage];
     patch(Parties,'find',()=>({partyId:'buffs',status:'hot',leaderId:2000100,memberIds:group.map(s=>s.actor.fetchId()),stats:{}}));
     patch(World,'user',{sessions:[],revision:0});group.forEach(s=>World.insertUser(s));patch(World,'fetchNpcsInRadius',()=>[]);
@@ -46,7 +49,9 @@ try {
     const AI={executeCombat(){}};
     const tick=s=>Hot.tick(s,s.actor,Generics,AI);
     const land=()=>{const {s,a,k,target}=casts.at(-1), sem=k.fetchSemantic();
-        Store.apply(target,{key:sem.effect,id:k.fetchSelfId(),level:k.fetchLevel(),type:'buff',stats:sem.stats,durationMs:1200000});
+        const recipients=k.fetchTargetKind()==='party'?group.map(s=>s.actor):[target];
+        recipients.forEach(actor=>Store.apply(actor,{key:sem.effect,id:k.fetchSelfId(),level:k.fetchLevel(),type:'buff',stats:sem.stats,
+            durationMs:sem.durationMs||1200000}));
         a.state.setCasts(false);Planner.finishSupportCast(s,a,k);
         assert.strictEqual(s.lastSupportOutcome.outcome,'landed');};
     tick(leader);assert.strictEqual(leader.lastDecision.action,'party_wait_buffs');
@@ -54,9 +59,13 @@ try {
     tick(buffer);tick(mage);tick(leader);assert.strictEqual(casts.length,1,'cast and group aura ownership prevent duplicate/overwriting actions');
     land();
     for(let i=0;i<10;i++){const before=casts.length;group.forEach(tick);if(casts.length===before)break;land();}
-    assert.strictEqual(casts.length,5,'three shields and Empower for the two casters only');
+    assert.strictEqual(casts.length,6,'three shields, Empower for the two casters and one native party song');
+    assert.strictEqual(casts.findIndex(c=>c.k===song),5,'ordinary field parties finish long buffs before short-lived music');
     assert(!Store.list(leader.actor).some(e=>e.key==='empower'),'physical member must not receive a caster buff');
     const completed=casts.length;group.forEach(tick);assert.strictEqual(casts.length,completed,'fresh effects do not trigger rebuff');
+    buffer.pendingSupportCast={providerId:buffer.actor.fetchId(),targetId:leader.actor.fetchId(),skillId:1040,expiresAt:Date.now()-1};
+    tick(buffer);
+    assert.strictEqual(buffer.pendingSupportCast,undefined,'an expired native approach cannot block later party recovery');
     let testNow=Date.now()+6000;
     patch(Date,'now',()=>testNow);
     Store.remove(leader.actor,'shield');

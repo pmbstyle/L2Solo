@@ -415,6 +415,18 @@ function isSchedulableKind(kind) {
     return kind !== 'inactive' && kind !== 'event_driven' && kind !== 'party_member';
 }
 
+function occupationRound(state, plan, timestamp) {
+    const activity = plan?.activityPick?.activity;
+    if (state?.activity !== 'hunting' || state.stats?.pvpEncounter
+        || !['shopping', 'selling', 'crafting', 'improving'].includes(activity)) return null;
+    const pending = state.stats?.pveEncounter;
+    if (pending && require('./ColdPveEncounter').read(pending, pending.key, timestamp)) return null;
+    // The chosen occupation owns this round. Fighting before posting its
+    // execution can spend the kit and replace a purchase with recovery.
+    return { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+        nextResolveAt: timestamp + 30000, debug: { activity, reason: 'selected_occupation' } };
+}
+
 // A caller that already read this state's kind in the same call passes it;
 // otherwise the kind is read only when the cheap meeting test passes.
 function playerWaitingTransition(state, kind = null, facts = NO_FACTS) {
@@ -1450,7 +1462,7 @@ class ColdSimulationKernel {
             const spot = this.spotOf(current.state);
             const result = hallVisit
                 ? { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 30000 }
-                : await this.resolveSolo({
+                : occupationRound(resolveState, lifecyclePlan, timestamp) || await this.resolveSolo({
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 state: resolveState,
                 spot,
@@ -2091,7 +2103,7 @@ class ColdSimulationKernel {
             if (!this.resolverSourceCurrent(source)) return;
             const resolveState = lifecyclePlan?.plannedState || active.state;
             const spot = resolveState.activity === 'traveling' ? null : lifecyclePlan?.spot || this.spotOf(active.state);
-            const result = await this.resolveSolo({
+            const result = occupationRound(resolveState, lifecyclePlan, timestamp) || await this.resolveSolo({
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 state: resolveState,
                 spot,

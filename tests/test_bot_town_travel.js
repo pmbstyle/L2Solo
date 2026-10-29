@@ -141,12 +141,22 @@ try {
 
     const closeBot = botAt({ locX: 0, locY: 0, locZ: 0 });
     const closeSession = session(closeBot);
+    closeSession.spotRelocation = { method: 'walk', spotId: 'old_hunt' };
     const closeResult = BotTownTravel.request(closeSession, closeBot, {
         getClosestTown: () => ({ name: 'Close Town', x: 1000, y: 0, z: -100 }),
         say() {}
     });
     assert.strictEqual(closeResult, 'walk', 'nearby town trip should stay on foot');
     assert.strictEqual(closeBot.moves.length, 1, 'nearby town trip should issue movement');
+    assert.strictEqual(closeSession.spotRelocation, undefined, 'the selected town errand releases the old farming route');
+    assert.strictEqual(closeSession.lastSpotRelocation.reason, 'town_trip');
+
+    const arrivingBot = botAt({ locX: 0, locY: 0, locZ: 0 });
+    const arrivingSession = session(arrivingBot);
+    arrivingSession.spotRelocation = { method: 'clan_hall', spotId: 'old_hunt', arrivalPending: true };
+    assert.strictEqual(BotTownTravel.request(arrivingSession, arrivingBot, farAi, 'Restock.'), 'deferred');
+    assert.strictEqual(arrivingBot.moves.length, 0, 'an already submitted teleport settles before the town errand');
+    assert.strictEqual(arrivingSession.spotRelocation.arrivalPending, true);
 
     const fightingBot = botAt({ locX: 0, locY: 0, locZ: 0 });
     const fightingSession = session(fightingBot);

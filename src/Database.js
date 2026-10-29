@@ -5662,11 +5662,11 @@ const Database = {
                     || characterIds.some(id => one('SELECT clanId FROM characters WHERE id=?', [id])?.clanId !== warOperation.clanId)) return { ok: false, reason: 'war_changed' };
             }
             if (!['cold', 'hot'].includes(expectedPhase)) return { ok: false, reason: 'invalid_membership_phase' };
-            if (expectedPhase === 'hot') {
+            if (expectedPhase === 'hot' && !review) {
                 const declared = JSON.parse(party.memberIdsJson || '[]').map(Number);
                 const existing = one('SELECT status, memberIdsJson, revision FROM bot_background_parties WHERE partyId = ?', [party.partyId]);
                 const previousIds = existing ? JSON.parse(existing.memberIdsJson || '[]').map(Number) : [];
-                if (review || party.status !== 'hot' || declared.length < 2 || declared.length > 9
+                if (party.status !== 'hot' || declared.length < 2 || declared.length > 9
                     || declared.length !== characterIds.length || !declared.includes(Number(party.leaderId))
                     || new Set(declared).size !== declared.length || declared.some(id => !characterIds.includes(id))
                     || batch.some(e => e.row.partyId !== party.partyId || (e.expectedPartyId && e.expectedPartyId !== party.partyId))
@@ -5678,13 +5678,19 @@ const Database = {
             }
             if (review) {
                 const existing = one('SELECT status, memberIdsJson, revision, statsJson FROM bot_background_parties WHERE partyId = ?', [party.partyId]);
+                if (expectedPhase === 'hot' && (typeof canCommitHot !== 'function' || !canCommitHot()
+                    || party.status !== 'dissolved' || JSON.parse(party.memberIdsJson || '[]').length
+                    || !jsonObject(existing?.statsJson).objective?.materialParty
+                    || jsonObject(existing?.statsJson).warOperation || jsonObject(existing?.statsJson).raidAdmission))
+                    return { ok: false, reason: 'hot_party_context_changed' };
                 // Capacity reclamation must also respect a military order
                 // attached after its cached candidate was selected.
                 if (preserveClanOperations && jsonObject(existing?.statsJson).warOperation)
                     return { ok: false, reason: 'clan_war_in_progress' };
                 const ids = existing ? JSON.parse(existing.memberIdsJson || '[]').map(Number) : [];
                 const retained = JSON.parse(party.memberIdsJson || '[]').map(Number);
-                if (existing?.status !== 'active' || Number(existing.revision) !== Number(expectedPartyRevision)
+                if (existing?.status !== (expectedPhase === 'hot' ? 'hot' : 'active')
+                    || Number(existing.revision) !== Number(expectedPartyRevision)
                     || ids.length !== characterIds.length || ids.some(id => !characterIds.includes(id))
                     || retained.some(id => !characterIds.includes(id))
                     || batch.some(entry => entry.expectedPartyId !== party.partyId
