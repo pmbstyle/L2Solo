@@ -5,6 +5,12 @@ const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
 const Karma = invoke('GameServer/Karma');
 
 const MOVE_TO_SPOT_COOLDOWN = 15000;
+const EMPTY_HUNT_SCANS = 3;
+
+function occupationKey(leaf) {
+    return JSON.stringify([leaf.activity, leaf.rootKey, leaf.kind, leaf.itemId, leaf.npcId,
+        leaf.town, leaf.spotId, leaf.recipeId, leaf.sourceType]);
+}
 
 function now() {
     return Date.now();
@@ -21,6 +27,7 @@ function physicalLocation(status, session) {
 }
 
 const BotDecisionService = {
+    occupationKey,
     suggest(status, session) {
         if (!status || !status.available) {
             return {
@@ -85,6 +92,30 @@ const BotDecisionService = {
             const economy = DecisionEvents.held(session);
             const leaf = economy?.network.activity;
             if (leaf?.activity && leaf.activity !== 'hunting') {
+                // A deferred errand keeps its wish, but cannot pin a hunter
+                // forever to ground where the expanded live scan found no
+                // fight. Choose recovery ground using the actual body/kit.
+                if (session.deferredOccupation === occupationKey(leaf) && Number(session.noTargetTicks || 0) >= EMPTY_HUNT_SCANS
+                    && session.huntingTargetScan && !session.huntTargetScanPending
+                    && canMoveToSpot(session)) {
+                    session.lastSpotMoveAt = now();
+                    const loc = physicalLocation(status, session);
+                    const recoveryStatus = { ...status, loc, spot: SpotService.findCurrentSpot(loc) };
+                    const recoveryOptions = {
+                        spotRetryAfter: session.spotRetryAfter,
+                        walkOnly: Karma.closesTowns(session.actor?.fetchKarma?.()),
+                        allowEasierSpots: true,
+                        equipment: session.actor?.backpack?.fetchItems?.(),
+                        matchupProfiles: session.actor ? invoke('GameServer/Bot/AI/BotTargetMatchup').actorProfiles([session.actor]) : undefined
+                    };
+                    let candidate = SpotService.findBestSpot(recoveryStatus, recoveryOptions);
+                    if (!candidate?.spot) {
+                        candidate = SpotService.findBestSpot(recoveryStatus, { ...recoveryOptions,
+                            minLevelGap: 1 - status.level, allowEasierSpots: false });
+                    }
+                    if (candidate?.spot) return { action: 'move_to_spot', reason: 'deferred_occupation_hunt',
+                        spot: candidate.spot, deferredOccupation: session.deferredOccupation };
+                }
                 return { action: 'continue_occupation', reason: 'selected_occupation', activity: leaf.activity };
             }
             const loc = physicalLocation(status, session);

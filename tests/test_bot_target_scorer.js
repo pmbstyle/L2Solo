@@ -150,4 +150,26 @@ const badCandidate = {
 assert(badCandidate.evaluation.score < 0, 'fixture should represent a harmful target choice');
 assert.deepStrictEqual(BotTargetScorer.rank([badCandidate]), [], 'negative-utility targets should not be selected');
 
+const holyHealer = {
+    attackable: true, botLevel: 70, npcLevel: 60, minLevelGap: -15, solo: true, botRole: 'healer',
+    botPAtk: 208, botMAtk: 426, botPDef: 448, botMaxHp: 1464,
+    npcPAtk: 400, npcPDef: 500, npcMDef: 300, npcMaxHp: 2500,
+    targetMatchup: { eligible: true, efficiency: 1, penalty: 0, survivalRatio: 2 }
+};
+assert(BotTargetScorer.powerRatio(holyHealer) < BotTargetScorer.MIN_SOLO_POWER_RATIO);
+assert.equal(BotTargetScorer.score(holyHealer).eligible, true,
+    'a complete holy-spell survival estimate must outrank the physical-only shortcut');
+assert.equal(BotTargetScorer.score({ ...holyHealer, npcLevel: 52 }).reason, 'level_too_low');
+assert.equal(BotTargetScorer.score({ ...holyHealer, npcLevel: 52, allowTrivialTargets: true }).eligible, true,
+    'a deferred earning hunt may recover on proven-safe deeper-blue undead');
+assert.equal(BotTargetScorer.score({ ...holyHealer, npcLevel: 52, allowTrivialTargets: true,
+    targetMatchup: { ...holyHealer.targetMatchup, survivalRatio: null }
+}).reason, 'level_too_low', 'recovery cannot relax the level band without a complete survival estimate');
+assert.equal(BotTargetScorer.score({ ...holyHealer,
+    targetMatchup: { ...holyHealer.targetMatchup, eligible: false, reason: 'insufficient_survival_margin', survivalRatio: 0.5 }
+}).eligible, false, 'unsafe fights remain rejected');
+assert.equal(BotTargetScorer.score({ ...holyHealer,
+    targetMatchup: { ...holyHealer.targetMatchup, survivalRatio: null }
+}).reason, 'overmatched_stats', 'partial projections must retain the coarse safety gate');
+
 console.log('Bot target scorer checks passed');

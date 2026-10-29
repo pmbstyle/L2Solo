@@ -31,13 +31,9 @@ function updateEnvironment(session, actor, { immediateNpcInfo = false, forceRefr
         });
 
         const sourceIsBot = isBotSession(session);
-        // Bot observers do not consume visibility packets and do not need an
-        // event-driven AI wakeup just because another actor crossed their
-        // radius. Their regular LOD tick, plus the explicit player
-        // interaction paths (select, damage, chat), is sufficient. Avoiding
-        // the bot-to-bot fan-out is important when hundreds of hot actors
-        // share one field: a single movement must not enqueue a wakeup for
-        // the whole local population.
+        // Bot movement only refreshes real clients. A real player entering
+        // visibility also wakes dormant preload AI, whose next ordinary tick
+        // may still be 30 seconds away. Already active bots keep their cadence.
         const visibleUsers = sourceIsBot && typeof World.fetchVisibleRealPlayers === 'function'
             ? World.fetchVisibleRealPlayers(session, actor)
             : World.fetchVisibleUsers(session, actor);
@@ -49,6 +45,9 @@ function updateEnvironment(session, actor, { immediateNpcInfo = false, forceRefr
             // observer, and do not build the source snapshot for a bot source.
             // Real clients still receive the complete visibility refresh.
             if (!sourceIsBot) {
+                if (userIsBot && user.aiActive && user.hotActorLod?.tier === 'preload') {
+                    invoke('GameServer/Bot/BotAI').wakeup(user);
+                }
                 session.dataSendToMe(ServerResponse.charInfo(user.actor));
                 session.dataSendToMe(ServerResponse.relationChanged(user.actor));
 

@@ -10,6 +10,7 @@ const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const DangerMoment = invoke('GameServer/Bot/AI/DangerMoment');
+const EscapePolicy = invoke('GameServer/Bot/AI/BotEscapePolicy');
 const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 
 const REST_FOLLOW_WAKE_DISTANCE = 600;
@@ -228,7 +229,8 @@ module.exports = {
                 // (drink, fight back or flee); without one, the author's rule.
                 const moment = DangerMoment.take(session, bot, threat, { near: threatScan.near });
                 if (moment === 'drank') return;
-                if (moment ? moment === 'flee' : needsRecovery(session, bot)) {
+                if ((moment ? moment === 'flee' : needsRecovery(session, bot))
+                    && EscapePolicy.canRetreatFrom(session, bot, threat, threatScan.near)) {
                     retreatFromThreat(session, bot, threat);
                     return;
                 }

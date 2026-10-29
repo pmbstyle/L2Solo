@@ -215,6 +215,7 @@ class Session {
 
     dataSendToMe(data) {
         if (data?.__relationActor && this.actor) data = invoke('GameServer/Network/Response').relationChanged(data.__relationActor, this.actor);
+        if (data?.__movingActor) invoke('GameServer/World/CharacterVisibility').beforeSend(this, data);
         NpcVisibility.trackNpcPacket(this, data);
         this.recordOutboundPacket(data);
         const packet = this.packData(data);
@@ -224,6 +225,7 @@ class Session {
         }
         GroundItemVisibility.trackPacket(this, data);
         NpcVisibility.sendNpcMotionAfterInfo(this, data);
+        if (data?.__characterActor || data?.[0] === 0x12) invoke('GameServer/World/CharacterVisibility').afterSend(this, data);
     }
 
     dataSendToOthers(data, creature) {
@@ -237,6 +239,7 @@ class Session {
             ? World.fetchVisibleRealPlayers(this, creature)
             : World.fetchVisibleUsers(this, creature);
         visibleUsers.forEach((user) => {
+            if (data?.__movingActor) invoke('GameServer/World/CharacterVisibility').beforeSend(user, data);
             NpcVisibility.trackNpcPacket(user, data);
             if (user.recordOutboundPacket) {
                 user.recordOutboundPacket(data);
@@ -247,6 +250,7 @@ class Session {
             }
             GroundItemVisibility.trackPacket(user, data);
             NpcVisibility.sendNpcMotionAfterInfo(user, data);
+            if (data?.__characterActor || data?.[0] === 0x12) invoke('GameServer/World/CharacterVisibility').afterSend(user, data);
         });
     }
 

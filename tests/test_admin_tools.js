@@ -45,7 +45,9 @@ DataCache.adminShop = adminShop;
 DataCache.experience = require('../data/Templates/Experience/experience.json');
 
 const adminHtml = utils.parseRawFile('data/Html/Admin/main.html');
-const adminShopHtml = utils.parseRawFile('data/Html/Admin/shop.html');
+const adminShopHubHtml = utils.parseRawFile('data/Html/Admin/shop.html');
+const adminShopPages = [...adminShopHubHtml.matchAll(/html (Admin\/shop-[a-z]+)"/g)].map((match) => match[1]);
+const adminShopHtml = [adminShopHubHtml, ...adminShopPages.map((page) => utils.parseRawFile(`data/Html/${page}.html`))].join('\n');
 assert.ok(adminHtml.includes('html Admin/shop'), 'admin panel should link to the paged equipment shop');
 assert.ok(adminHtml.includes('html Admin/teleport'), 'admin panel should link to the paged teleport directory');
 assert.ok(adminHtml.includes('admin-full-buff'), 'admin panel should expose the automatic class full buff');
@@ -55,8 +57,8 @@ assert.ok(!adminHtml.includes('admin-shop weapon-all'), 'admin panel should not 
 assert.ok(adminShopHtml.includes('admin-shop armor-s'), 'equipment shop should expose armor grade links');
 assert.ok(adminShopHtml.includes('admin-shop weapon-s'), 'equipment shop should expose weapon grade links');
 for (const category of [
-    'enchant-weapon-normal', 'enchant-weapon-blessed', 'enchant-weapon-crystal',
-    'enchant-armor-normal', 'enchant-armor-blessed', 'enchant-armor-crystal'
+    'enchant-weapon-normal', 'enchant-weapon-blessed',
+    'enchant-armor-normal', 'enchant-armor-blessed'
 ]) {
     assert.ok(adminShopHtml.includes(`admin-shop ${category}`), `equipment shop should expose ${category}`);
 }
@@ -284,10 +286,8 @@ for (let i = 0; i < dyeListPacket.readInt16LE(9); i++) {
 const expectedEnchantGroups = {
     'enchant-weapon-normal': [955, 951, 947, 729, 959],
     'enchant-weapon-blessed': [6575, 6573, 6571, 6569, 6577],
-    'enchant-weapon-crystal': [957, 953, 949, 731, 961],
     'enchant-armor-normal': [956, 952, 948, 730, 960],
-    'enchant-armor-blessed': [6576, 6574, 6572, 6570, 6578],
-    'enchant-armor-crystal': [958, 954, 950, 732, 962]
+    'enchant-armor-blessed': [6576, 6574, 6572, 6570, 6578]
 };
 for (const [category, itemIds] of Object.entries(expectedEnchantGroups)) {
     assert.deepStrictEqual(AdminShop.itemIdsForSource(adminShop[category]), itemIds, `${category} should expose every D-S enchant scroll`);

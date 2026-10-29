@@ -74,7 +74,8 @@ function coldProfiles(profile, state = {}, timestamp = Date.now()) {
         if (skill) profiles.push({ ...invoke('GameServer/Bot/Population/ColdSummonProfile')(profile, Cold.summonDetails(skill)),
             role: 'dps', skills: [], soloDamageReceiver: false });
     }
-    if ((profile.role || Roles.combatRoleFor(profile)) === 'mage') {
+    const role = profile.role || Roles.combatRoleFor(profile);
+    if (role === 'mage' || role === 'healer') {
         profiles[0].soloAttackScores = invoke('GameServer/Bot/Population/ColdClassPolicy')
             .soloAttackScores(profiles[0], { summon: profiles.length > 1 });
     }
@@ -217,8 +218,8 @@ function soloSurvival(profiles, target, minimum = 1.5) {
 function soloChannels(profile, target) {
     const attacks = channels(profile, target);
     if (!profile.soloAttackScores) return attacks;
-    // The executor chooses by native skill priority, not maximum DPS. Do not
-    // admit a fight on a fast spell the bot would never select at full HP.
+    // The executor chooses by native skill priority, not maximum DPS. Healers
+    // may prefer cheap Disrupt Undead over stronger Might of Heaven too.
     let best = null, score = -Infinity;
     for (const attack of attacks) {
         if (!Number.isFinite(attack.soloScore)) continue;
@@ -226,7 +227,10 @@ function soloChannels(profile, target) {
             Math.max(0.01, Math.min(2, attack.modifier))));
         if (current > score) { best = attack; score = current; }
     }
-    return best ? [best] : [];
+    if (best) return [best];
+    // Holy-only healers use their weapon against living targets; a mage
+    // without an available spell does not have that ordinary melee rotation.
+    return (profile.role || Roles.combatRoleFor(profile)) === 'mage' ? [] : attacks.slice(0, 1);
 }
 
 function soloCanHunt(profiles, target, { maxTargetLevel, npcLevel } = {}) {

@@ -58,6 +58,17 @@ assert.strictEqual(
     'Normal visible movement must keep using the regular world broadcast'
 );
 
+const outsideFrom = { locX: -7000, locY: 0 }, outsideTo = { locX: 7000, locY: 0 };
+const centerPlayer = { fetchLocX: () => 0, fetchLocY: () => 0 };
+assert.equal(moveTo.crossesPlayerVisibility(centerPlayer, outsideFrom, outsideTo), true,
+    'an offscreen-to-offscreen segment can cross the player visible area');
+assert.equal(moveTo.shouldUseLowLodWarp({ startDistance: 7000, destinationDistance: 7000,
+    isCompanion: false, plan: 'hunting', crossesVisibility: true }), false,
+    'a visible crossing must never be silently warped');
+assert.equal(moveTo.shouldPreannounceVisibleMove(7000, 7000, true), true,
+    'a crossing needs a character snapshot even when both endpoints are offscreen');
+assert.equal(moveTo.crossesPlayerVisibility({ fetchLocX: () => 0, fetchLocY: () => 7000 }, outsideFrom, outsideTo), false);
+
 const packets = [];
 const actor = {
     state: {
@@ -285,6 +296,167 @@ try {
     assert(delayedBot.fetchLocX() < beforeReplacement - 100, 'the replacement must advance along the new direction');
     delayedBot.automation.abortAll(delayedBot);
     assert.strictEqual(delayedSession.moveTimer, null, 'cancellation must clear the owned interpolation timer');
+
+    const advanceClock = (ms, moveTarget = () => {}) => {
+        for (let elapsed = 0; elapsed < ms; elapsed += 100) {
+            clock += 100;
+            moveTarget();
+            for (const [timer, entry] of [...pending]) {
+                if (entry.at <= clock && pending.delete(timer)) entry.callback();
+            }
+        }
+    };
+    // The owner pulls a mob while its summon runs out to attack. C4 follows
+    // the live mob; reaching its old position would force a second approach.
+    const summoner = makeActor(800), servitor = makeActor(801), pulledMob = makeActor(802);
+    servitor.fetchIsSummon = () => true;
+    pulledMob.setLocXYZ({ locX: 900, locY: 0, locZ: 0 });
+    const summonPackets = [];
+    const summonSession = { actor: summoner, accountId: 'bot_summoner',
+        dataSendToMeAndOthers(packet) { summonPackets.push(packet); } };
+    let firstSwing = null;
+    servitor.automation.scheduleAction(summonSession, servitor, pulledMob, 40, () => {
+        firstSwing = { at: clock, distance: Math.abs(servitor.fetchLocX() - pulledMob.fetchLocX()) };
+    }, { collisionAware: true, action: 'attack' });
+    const pullStarted = clock;
+    advanceClock(3500, () => pulledMob.setLocXYZ({
+        locX: Math.max(0, 900 - (clock - pullStarted) * 0.15), locY: 0, locZ: 0
+    }));
+    assert(firstSwing, 'a summon must attack when it meets a mob running towards its owner');
+    assert(firstSwing.at - pullStarted < 3500, 'the first swing must not wait for arrival at the mob\'s old position');
+    assert(firstSwing.distance <= 40, 'the first swing must use the mob\'s current melee range');
+    assert.strictEqual(summonPackets.length, 1, 'following a moving mob must keep one continuous MoveToPawn');
+    const firstSwingX = servitor.fetchLocX();
+    advanceClock(4000);
+    assert.strictEqual(servitor.fetchLocX(), firstSwingX, 'the original arrival deadline must not snap the summon to the old mob position');
+    servitor.automation.abortAll(servitor);
+
+    // A moving owner can outlive the first arrival estimate and turn away.
+    // Both servitors and item pets must keep following at their actual speed.
+    for (const flag of ['fetchIsSummon', 'fetchIsPet']) {
+        const owner = makeActor(810), follower = makeActor(811);
+        follower[flag] = () => true;
+        owner.setLocXYZ({ locX: 300, locY: 0, locZ: 0 });
+        const ownerTimer = { ownerMovement: true };
+        const followPackets = [];
+        const followSession = { actor: owner, accountId: 'bot_moving_owner', moveTimer: ownerTimer,
+            dataSendToMeAndOthers(packet) { followPackets.push(packet); } };
+        let arrived = false;
+        follower.automation.scheduleAction(followSession, follower, owner, 80, () => { arrived = true; });
+        advanceClock(3000, () => {
+            owner.setLocXYZ({ locX: owner.fetchLocX() + 20, locY: owner.fetchLocY() + 10, locZ: 0 });
+            const previous = [follower.fetchLocX(), follower.fetchLocY()];
+            // Save the previous position before the interpolator advances.
+            follower.previousPosition = previous;
+        });
+        assert.strictEqual(arrived, false, `${flag}: a fleeing owner must not finish a stale arrival`);
+        assert(follower.fetchLocX() > 350, `${flag}: following must continue beyond the owner's old stopping point`);
+        assert(follower.fetchLocY() > 50, `${flag}: server movement must follow the owner's turn`);
+        const lastStep = Math.hypot(follower.fetchLocX() - follower.previousPosition[0],
+            follower.fetchLocY() - follower.previousPosition[1]);
+        assert(lastStep <= 16, `${flag}: retargeting must preserve the 150-unit movement speed`);
+        advanceClock(6000);
+        assert.strictEqual(arrived, true, `${flag}: the follower must catch its owner after the owner stops`);
+        const stopPosition = [follower.fetchLocX(), follower.fetchLocY()];
+        assert(Math.hypot(owner.fetchLocX() - stopPosition[0], owner.fetchLocY() - stopPosition[1]) <= 80,
+            `${flag}: follow completion must use the owner's current position`);
+        assert.strictEqual(followPackets.length, 1, `${flag}: following must not spam movement restarts`);
+        assert.strictEqual(followSession.moveTimer, ownerTimer, `${flag}: following must preserve the owner's movement timer`);
+        follower.automation.abortAll(follower);
+        advanceClock(1000);
+        assert.deepStrictEqual([follower.fetchLocX(), follower.fetchLocY()], stopPosition,
+            `${flag}: stopped following must not fire stale movement`);
+    }
+
+    // The client and the server must agree through walking, a mid-leg speed
+    // change and arrival on terrain whose height differs from the requested Z.
+    const walker = makeActor(830);
+    let walking = true, liveRunSpeed = 150;
+    walker.state.fetchWalkin = () => walking;
+    walker.fetchCollectiveWalkSpd = () => 75;
+    walker.fetchCollectiveRunSpd = () => liveRunSpeed;
+    const walkingPackets = [];
+    const walkingSession = { actor: walker, accountId: 'bot_walking',
+        dataSendToMeAndOthers(p) { walkingPackets.push(p); } };
+    walker.session = walkingSession;
+    RuntimeWorld.user = { sessions: [walkingSession, nearbyPlayer] };
+    GeodataEngine.getHeight = () => 64;
+    moveTo(walkingSession, walker, { from: { locX: 0, locY: 0, locZ: 0 },
+        to: { locX: 900, locY: 0, locZ: 0 } });
+    assert.equal(walkingPackets.find(p => p[0] === 1).readInt32LE(13), 64,
+        'announce the terrain height rather than the caller stale Z');
+    const traffic = invoke('GameServer/Bot/AI/TownTraffic');
+    const originalTrafficUpdate = traffic.update, originalSteer = traffic.steer;
+    const trafficSpeeds = [];
+    walkingSession.activeMoveGoal.town = 'Dion';
+    try {
+        traffic.update = (id, point, to, speed) => { if (id === 830) trafficSpeeds.push(speed);
+            else originalTrafficUpdate(id, point, to, speed); };
+        traffic.steer = () => null;
+        advanceClock(2000);
+        assert.equal(walker.fetchLocX(), 150, 'a walking body must use its walk speed');
+        walking = false;
+        liveRunSpeed = 300;
+        advanceClock(1000);
+        assert.equal(walker.fetchLocX(), 450, 'a speed change must affect the current server leg');
+        advanceClock(2000);
+        assert.equal(walker.fetchLocX(), 900);
+        assert.equal(walker.fetchLocZ(), 64, 'arrival must not snap the actor back under the terrain');
+        assert.equal(walkingSession.activeMoveSegment, null, 'arrival retires its visible leg');
+        assert(trafficSpeeds.includes(75) && trafficSpeeds.includes(300),
+            'town collision forecasts must observe the same changing speed as movement');
+    } finally {
+        traffic.update = originalTrafficUpdate;
+        traffic.steer = originalSteer;
+    }
+    GeodataEngine.getHeight = saved.height;
+
+    // A player may leave while a bot is still on a route that originally
+    // approached him. Later legs must not recreate that bot across the map.
+    const leavingObserverPosition = { x: 0, y: 0 };
+    const observedPackets = [];
+    const leavingObserver = { accountId: 'leaving_observer', actor: {
+        fetchIsOnline: () => true, fetchLocX: () => leavingObserverPosition.x,
+        fetchLocY: () => leavingObserverPosition.y },
+        dataSendToMe(p) { observedPackets.push(p); } };
+    const crossingBot = makeActor(840);
+    crossingBot.setLocXYZ({ locX: -7000, locY: 0, locZ: 0 });
+    const crossingSession = { actor: crossingBot, accountId: 'bot_crossing', dataSendToMeAndOthers() {} };
+    crossingBot.session = crossingSession;
+    const movementResponse = invoke('GameServer/Network/Response');
+    const originalInfo = movementResponse.charInfo, previousPath = GeodataEngine.findPath;
+    try {
+        movementResponse.charInfo = () => Buffer.from([3]);
+        GeodataEngine.getHeight = (x, y, z) => z;
+        GeodataEngine.findPath = () => [{ locX: -7000, locY: 0, locZ: 0 },
+            { locX: -6500, locY: 0, locZ: 0 }, { locX: 7000, locY: 0, locZ: 0 }];
+        RuntimeWorld.user = { sessions: [crossingSession, leavingObserver] };
+        moveTo(crossingSession, crossingBot, { from: { locX: -7000, locY: 0, locZ: 0 },
+            to: { locX: 7000, locY: 0, locZ: 0 } });
+        const sentBeforeLeaving = observedPackets.length;
+        leavingObserverPosition.y = 20000;
+        advanceClock(4000);
+        assert.equal(observedPackets.length, sentBeforeLeaving,
+            'a former approaching observer must receive no later route legs after leaving visibility');
+    } finally {
+        crossingBot.automation.abortAll(crossingBot);
+        movementResponse.charInfo = originalInfo;
+        GeodataEngine.findPath = previousPath;
+        GeodataEngine.getHeight = saved.height;
+    }
+
+    const cancelledPet = makeActor(820), distantOwner = makeActor(821);
+    cancelledPet.fetchIsSummon = () => true;
+    distantOwner.setLocXYZ({ locX: 900, locY: 0, locZ: 0 });
+    let cancelledArrival = false;
+    cancelledPet.automation.scheduleAction(summonSession, cancelledPet, distantOwner, 80,
+        () => { cancelledArrival = true; });
+    advanceClock(1000);
+    cancelledPet.automation.abortAll(cancelledPet);
+    const cancelledX = cancelledPet.fetchLocX();
+    advanceClock(10000);
+    assert.strictEqual(cancelledArrival, false, 'cancelling a live-pawn follow must cancel its arrival callback');
+    assert.strictEqual(cancelledPet.fetchLocX(), cancelledX, 'cancelling a live-pawn follow must retain its current position');
 } finally {
     Date.now = saved.now;
     global.setTimeout = saved.timeout;

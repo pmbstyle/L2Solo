@@ -160,6 +160,48 @@ assert.strictEqual(raidSession.currentTargetId, undefined, 'raid retreat must cl
 assert.strictEqual(raidCounterattacks, 0, 'self-defense must never retaliate against a raid entity');
 assert.strictEqual(raidBot.moves.length, 1, 'raid retreat must immediately open distance from the boss');
 
+// No held economic decision: the low-HP fallback must respect speed too,
+// both when attacked while hunting and when woken from recovery.
+const cornered = actor(2000041);
+cornered.fetchHp = () => 20;
+cornered.fetchCollectiveRunSpd = () => 124;
+const fastMob = { ...threatNpc, fetchId: () => 1141,
+    fetchCollectiveRunSpd: () => 191, fetchDestId: () => cornered.fetchId() };
+const corneredSession = { accountId: 'bot_cornered', actor: cornered, plan: 'hunting',
+    incomingThreatId: fastMob.fetchId(), incomingThreatAt: Date.now(), dataSendToOthers() {} };
+World.user = { sessions: [corneredSession] };
+World.npc = { spawns: [fastMob] };
+World.fetchNpcsInRadius = () => [fastMob];
+let counterattacks = 0;
+const selfDefense = { say() {}, executeCombat() { counterattacks++; } };
+for (let tick = 0; tick < 3; tick++) {
+    tickHunting(corneredSession, cornered, {}, selfDefense);
+    assert.strictEqual(corneredSession.plan, 'hunting', 'low HP must not restart an impossible escape');
+}
+assert.strictEqual(counterattacks, 3);
+assert.strictEqual(cornered.moves.length, 0);
+corneredSession.plan = 'resting';
+corneredSession.recoveryLocked = true;
+invoke('GameServer/Bot/AI/States/RestingState').tick(corneredSession, cornered, {}, selfDefense);
+assert.strictEqual(corneredSession.plan, 'hunting', 'a recovering bot also defends against a faster pursuer');
+assert.strictEqual(counterattacks, 4);
+
+// A blocked escape with favorable speeds must not alternate hunting/fleeing.
+const blockedSession = { ...corneredSession, plan: 'fleeing', fleeStart: Date.now() - 9000,
+    lastRetreatPlan: { threatId: fastMob.fetchId() } };
+cornered.fetchCollectiveRunSpd = () => 250;
+blockedSession.retreatProgress = { threatId: fastMob.fetchId(), fleeStart: blockedSession.fleeStart,
+    at: Date.now() - 9000, distance: 120 };
+cornered.automation = { abortAll() {} };
+invoke('GameServer/Bot/AI/States/FleeingState').tick(blockedSession, cornered, {}, selfDefense);
+assert.strictEqual(blockedSession.plan, 'hunting');
+assert.strictEqual(blockedSession.lastDecision.reason, 'retreat_no_progress');
+for (let tick = 0; tick < 3; tick++) {
+    tickHunting(blockedSession, cornered, {}, selfDefense);
+    assert.strictEqual(blockedSession.plan, 'hunting', 'failed progress stays remembered while the mob pursues');
+}
+assert.strictEqual(cornered.moves.length, 0, 'a failed escape cannot issue another retreat movement');
+
 const woundedBot = actor(2000011);
 woundedBot.fetchHp = () => 20;
 const woundedSession = {

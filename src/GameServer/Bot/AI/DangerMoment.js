@@ -6,6 +6,7 @@ const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const ColdRest = invoke('GameServer/Bot/Population/ColdRest');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
+const EscapePolicy = invoke('GameServer/Bot/AI/BotEscapePolicy');
 
 // E70, §13.6 "it got dangerous": drink a potion, run to heal, sit or keep
 // fighting, each priced in the bot's hours. First choices, calibrated later
@@ -13,7 +14,7 @@ const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
 // the survival margin 1.5 the target choice admits reads as a 0.15% lose
 // chance, 1.2 as 5%, an even race (margin 1) as 50%.
 const LOSE_SLOPE = 16;
-// Mobs chase without a leash: a runner still takes about half the hits.
+// Only a viable escape receives this discount; faster pursuers rule it out.
 const FLEE_EXPOSURE = 0.5;
 // One roll moves the bot's sense of the death price by up to +-50%.
 const ROLL_SPREAD = 0.5;
@@ -34,7 +35,7 @@ function loseChance(survivalRatio) {
 // caution, resilience, frustration) and the decision's roll.
 // null leaves the caller's own rule in place, also when the price of money is
 // unknown: a free potion would be drunk whenever the last one wears off.
-function decide({ hp, maxHp, survivalRatio, attacked = true, potion = null, restHours = 0, fightHours = 0,
+function decide({ hp, maxHp, survivalRatio, attacked = true, canEscape = true, potion = null, restHours = 0, fightHours = 0,
     deathHours, moneyPrice, riskWeight, roll = 0.5 } = {}) {
     if (!Number.isFinite(survivalRatio) || !(maxHp > 0) || !(hp > 0)
         || !(deathHours >= 0) || !Number.isFinite(moneyPrice) || moneyPrice < 0 || !(riskWeight >= 0)) return null;
@@ -47,8 +48,8 @@ function decide({ hp, maxHp, survivalRatio, attacked = true, potion = null, rest
             + loseChance(survivalRatio * (hp + heal) / hp) * risk;
     }
     const leave = Math.max(0, restHours) + Math.max(0, fightHours);
-    if (attacked) hours.flee = lose * FLEE_EXPOSURE * risk + leave;
-    else hours.sit = leave;
+    if (attacked && canEscape) hours.flee = lose * FLEE_EXPOSURE * risk + leave;
+    if (!attacked) hours.sit = leave;
     let action = 'fight';
     for (const option of Object.keys(hours)) if (hours[option] < hours[action]) action = option;
     return { action, loseChance: lose, hours };
@@ -114,6 +115,7 @@ function forActor(session, actor, target, options = {}) {
     const restHours = ColdRest.estimateRestMs({ level: actor.fetchLevel?.(), stats: { classId: actor.fetchClassId?.() } },
         { hp, maxHp, mp, maxMp }) / 3600000;
     const moment = decide({ hp, maxHp, survivalRatio: survival.survivalRatio, attacked: options.attacked !== false,
+        canEscape: EscapePolicy.assess(session, actor, attackers).possible,
         potion: heldPotion, restHours, fightHours: damageRate > 0 ? enemy.maxHp / damageRate / 3600 : 0, deathHours: economy.deathHours, moneyPrice, riskWeight: economy.riskWeight,
         roll: TendencyRoll.roll('danger', actor.fetchId?.(), targetId) });
     session.dangerMoment = moment ? { targetId, action: moment.action } : undefined;

@@ -24,6 +24,10 @@ assert.strictEqual(DangerMoment.decide({ ...live, hp: 95, survivalRatio: 1.425 }
     'one hit taken is no reason to drink');
 assert.strictEqual(DangerMoment.decide({ ...base, potion: null }).action, 'flee',
     'without a potion a bot losing the race runs');
+assert.strictEqual(DangerMoment.decide({ ...base, potion: null, canEscape: false }).action, 'fight',
+    'an impossible escape cannot receive a risk discount over defending');
+assert.strictEqual(DangerMoment.decide({ ...base, canEscape: false }).action, 'drink',
+    'a bot that cannot escape can still drink a potion');
 assert.strictEqual(DangerMoment.decide({ ...base, attacked: false, potion: null }).action, 'sit',
     'with nobody hitting it a wounded bot sits instead of running');
 assert.notStrictEqual(DangerMoment.decide({ ...base, attacked: false }).action, 'flee',
@@ -87,6 +91,28 @@ assert.strictEqual(DangerMoment.forActor(noPrice, actor, mob, { attackers: [mob]
 noPrice.heldEconomy.statsPacket.money = [12000, 1 / 10000];
 assert.strictEqual(DangerMoment.forActor(noPrice, actor, mob, { attackers: [mob] }).action, 'drink',
     'the price of money read from the stats packet (money[1]) as EconomyContext holds it');
+
+// Top0r: effective speed 124 against mobs running at 176/191. A slower
+// primary target must not hide the faster add; buffs/slows change the race.
+actor.fetchCollectiveRunSpd = () => 124;
+actor.fetchRunSpd = () => 300;
+mob.fetchCollectiveRunSpd = () => 176;
+mob.fetchRunSpd = () => 100;
+assert.strictEqual(DangerMoment.forActor(session, actor, mob, { attackers: [mob], potion: null }).action, 'fight',
+    'effective speeds rule out running from a faster mob');
+mob.fetchCollectiveRunSpd = () => 124;
+assert.strictEqual(DangerMoment.forActor(session, actor, mob, { attackers: [mob], potion: null }).action, 'fight',
+    'equal speeds cannot open a gap either');
+mob.fetchCollectiveRunSpd = () => 80;
+assert.strictEqual(DangerMoment.forActor(session, actor, mob, { attackers: [mob], potion: null }).action, 'flee',
+    'a slowed pursuer makes escape an option again');
+const fastAdd = { ...mob, fetchId: () => 7004, fetchCollectiveRunSpd: () => 191 };
+assert.strictEqual(DangerMoment.forActor(session, actor, mob, { attackers: [mob, fastAdd], potion: null }).action, 'fight',
+    'escape must beat every attacker, including faster adds');
+delete actor.fetchCollectiveRunSpd;
+delete actor.fetchRunSpd;
+delete mob.fetchCollectiveRunSpd;
+delete mob.fetchRunSpd;
 
 // Cost: a full-HP tick does no world scan, no profiles and no bag read;
 // a wounded one reads its attackers from the caller's scan.
