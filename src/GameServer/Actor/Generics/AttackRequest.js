@@ -40,6 +40,9 @@ function attackRequest(session, actor, data) {
 
     if (actor.state.fetchTowards() === 'melee' &&
         Number(attackData.id) === Number(actor.automation.fetchDestId())) {
+        // Lisvus acknowledges an unchanged attack intention; without this
+        // response C4 can keep the clicked Action pending and freeze input.
+        session.dataSendToMe(invoke('GameServer/Network/Response').actionFailed());
         return;
     }
 

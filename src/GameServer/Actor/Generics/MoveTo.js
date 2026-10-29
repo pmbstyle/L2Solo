@@ -355,6 +355,15 @@ function moveTo(session, actor, coords) {
         return;
     }
 
+    if (!previewOnly) {
+        // Record the command before queuing it behind a swing/cast. Older
+        // async target lookups must not replace this newer movement request.
+        actor.moveRequestGeneration = Number(actor.moveRequestGeneration || 0) + 1;
+        // Lisvus replaces the attack intention on movement. Keep bow reuse
+        // timing, but forget a repeat requested before this ground click.
+        if (actor.attack) actor.attack.repeatTarget = null;
+    }
+
     if (!previewOnly && actor.isBlocked()) {
         invoke(path.actor).queueRequest(session, actor, 'move', coords);
         return;
