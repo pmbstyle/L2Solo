@@ -106,6 +106,33 @@ try {
     assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), easier,
         'a stranded solo hunter can fight safe easier mobs instead of wandering forever');
     assert(session.lastTargetEvaluation.reasons.includes('easier_ground'));
+
+    const blue = candidate(910005, 1600, hunter.fetchLevel() - 15);
+    const fartherBlue = candidate(910006, 2200, hunter.fetchLevel() - 15);
+    World.fetchNpcsInRadius = () => [fartherBlue, blue];
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), blue,
+        'safe easier targets with negative scores must still beat an empty search walk');
+    assert(session.lastTargetEvaluation.score < 0, 'the fallback must retain the relative target score');
+    const incomeSession = { ...session, coldLifeState: { characterId: 2000999,
+        stats: { wishFocus: ['power:2402:11'] } } };
+    assert(invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').economicHunt(incomeSession.coldLifeState));
+    assert.strictEqual(Hunting.findPreferredMonster(incomeSession, hunter, 2500), null,
+        'ordinary economic scans retain the positive-utility requirement');
+    assert.strictEqual(Hunting.findPreferredMonster(incomeSession, hunter, 2500, recovery), blue,
+        'recovery also handles easier targets already admitted by the economic level band');
+    World.fetchNpcsInRadius = () => [blue, hidden];
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), hidden,
+        'an ordinary target still outranks negative-score easier recovery');
+    Geo.hasLineOfSight = () => false;
+    World.fetchNpcsInRadius = () => [blue];
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), null,
+        'a negative-score fallback cannot chase a mob through a wall');
+    Geo.hasLineOfSight = () => true;
+    const tiredHunter = { ...hunter, fetchHp: () => 1 };
+    const tiredSession = { actor: tiredHunter, plan: 'hunting' };
+    assert.strictEqual(Hunting.findPreferredMonster(tiredSession, tiredHunter, 2500,
+        { ...recovery, readyOnly: true }), null, 'easier recovery must wait for HP before the next fight');
+    assert.strictEqual(tiredSession.lastEncounterReadiness.ready, false);
     World.fetchNpcsInRadius = () => [easier, hidden];
     assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), hidden,
         'an ordinary eligible target wins before easier-ground recovery');

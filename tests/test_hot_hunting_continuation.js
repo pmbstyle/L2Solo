@@ -96,6 +96,42 @@ test('an accepted cold detour continues native local combat', () => {
     assert.equal(searchCalls.length, 0, 'an accepted occupation needs no independent spot search');
 });
 
+test('a safe blue mob starts the next fight instead of a search walk', () => {
+    const f = fixture(primary.center);
+    available = [{ ...npcNear(primary.center), fetchLevel: () => 42,
+        fetchLocX: () => primary.center.locX + 1800 }];
+    f.tick();
+    assert.deepEqual(f.session.attacks, [990101]);
+    assert.deepEqual(f.session.moves, [], 'a nearby safe target must prevent idle wandering');
+    assert.deepEqual(f.session.trips, [], 'the next fight needs no return to the spot center');
+    assert(f.session.lastTargetEvaluation.score < 0);
+    assert.equal(f.session.noTargetTicks, 0);
+});
+
+test('an expanded search keeps nearby mobs across the spot boundary', () => {
+    const edge = { ...primary.center, locX: 155950 };
+    for (const [distance, height] of [[100, 0], [2400, 1000]]) {
+        const f = fixture(edge);
+        f.session.noTargetTicks = 2;
+        available = [{ ...npcNear(edge), fetchLocX: () => edge.locX + distance,
+            fetchLocZ: () => edge.locZ + height }];
+        assert.equal(Spots.containsLocation(primary, { ...edge, locX: edge.locX + distance }), false);
+        f.tick();
+        assert.deepEqual(f.session.attacks, [990101], 'expanding the search must retain the ordinary local radius');
+        assert.deepEqual(f.session.moves, []);
+    }
+});
+
+test('an expanded search does not chase distant mobs on another spot', () => {
+    const edge = { ...primary.center, locX: 155950 };
+    const f = fixture(edge);
+    f.session.noTargetTicks = 2;
+    available = [{ ...npcNear(edge), fetchLocX: () => edge.locX + 3000 }];
+    f.tick();
+    assert.deepEqual(f.session.attacks, []);
+    assert.equal(f.session.huntingTargetScan.attackableNpcs, 0);
+});
+
 test('a stale field and stale status coordinates cannot strand the body in town', () => {
     const f = fixture(town);
     assert.equal(Spots.findCurrentSpot(town), null, 'the town has no hunting sector in this catalogue');

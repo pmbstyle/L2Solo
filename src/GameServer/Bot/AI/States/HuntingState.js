@@ -52,6 +52,7 @@ const MAX_SPOT_RELOCATION_MS = 120000;
 const FAILED_SPOT_RETRY_MS = 60000;
 const FULL_TARGET_CANDIDATE_LIMIT = 96;
 const VISIBLE_TARGET_CANDIDATE_LIMIT = 32;
+const LOCAL_TARGET_SEARCH_RADIUS = 2500;
 const SHOP_DEPARTURE_RADIUS = 900;
 
 function leaveShop(session, bot, now = Date.now()) {
@@ -211,7 +212,9 @@ function findPreferredMonster(session, bot, radius, options = {}) {
     // multiply the expensive claim scan by every NPC in a dense spawn cell.
     const eligibleNearbyNpcs = allNearbyNpcs
         .filter(npc => !materialNpc || Number(npc.fetchSelfId?.()) === materialNpc)
-        .filter(npc => !options.spotOnly || SpotService.containsLocation(options.spotOnly, botLocation(npc)))
+        .filter(npc => !options.spotOnly || SpotService.containsLocation(options.spotOnly, botLocation(npc))
+            || (options.nearbyRadius > 0
+                && SpotService.distance2d(botLocation(bot), botLocation(npc)) <= options.nearbyRadius))
         .filter((npc) => !options.excludeTargetId || npc.fetchId() !== options.excludeTargetId)
         .filter((npc) => !BotRaidSafety.isProtectedRaidEntity(npc))
         .filter((npc) => !invoke('GameServer/Bot/AI/HotResourceCompetition').blockedTarget(session, npc))
@@ -286,14 +289,17 @@ function findPreferredMonster(session, bot, radius, options = {}) {
 
     let ranked = BotTargetScorer.rank(candidates);
     // Cold routing can recover on easier ground when the current kit cannot
-    // handle level-appropriate mobs. A visible solo body needs the same way
-    // out: retry only safe candidates rejected solely for their low level,
-    // after the ordinary band has no eligible target.
+    // handle level-appropriate mobs. Once all safety gates pass, low-level
+    // penalties are relative preferences: a negative score must not send a
+    // solo body wandering past a safe visible mob. Economic hunts may already
+    // admit the wider level band, so include those candidates in recovery too.
     if (!ranked.length && options.allowEasierTargets && isSoloHunter(session) && !session.hotBackgroundPartyId) {
-        const easier = candidates.filter(candidate => candidate.evaluation.reason === 'level_too_low')
+        const easier = candidates.filter(candidate => candidate.evaluation.reason === 'level_too_low'
+            || candidate.evaluation.eligible && candidate.evaluation.levelGap < BotTargetScorer.MIN_LEVEL_GAP)
             .map(candidate => ({ ...candidate,
                 evaluation: BotTargetScorer.score({ ...candidate.scoreContext, minLevelGap: -15 }) }));
-        ranked = BotTargetScorer.rank(easier);
+        ranked = easier.filter(candidate => candidate.evaluation.eligible && Number.isFinite(candidate.evaluation.score))
+            .sort((first, second) => second.evaluation.score - first.evaluation.score);
         for (const candidate of ranked) candidate.evaluation.reasons.push('easier_ground');
     }
     // Prefer a fight we can finish, but retain a visible unready candidate
@@ -1057,13 +1063,16 @@ module.exports = {
         } else {
             reconcilePhysicalSpot(session, bot);
             const expanded = isSoloHunter(session) && Number(session.noTargetTicks || 0) >= 2 && session.currentSpot;
-            const searchRadius = expanded ? Math.ceil(SPOT_CELL_SIZE * Math.SQRT2) : 2500;
+            const searchRadius = expanded ? Math.ceil(SPOT_CELL_SIZE * Math.SQRT2) : LOCAL_TARGET_SEARCH_RADIUS;
             session.huntingSearchRadius = searchRadius;
             // Prefer unclaimed mobs so solo bots do not form accidental trains.
             const closestMonster = findPreferredMonster(session, bot, searchRadius, {
                 readyOnly: isSoloHunter(session),
                 allowEasierTargets: isSoloHunter(session),
-                spotOnly: expanded ? session.currentSpot : null
+                spotOnly: expanded ? session.currentSpot : null,
+                // Expanding the field scan must retain nearby candidates
+                // across grid borders; only distant targets stay on this spot.
+                nearbyRadius: LOCAL_TARGET_SEARCH_RADIUS
             });
 
             if (closestMonster) {
