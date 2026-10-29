@@ -32,7 +32,8 @@ const Party = invoke('GameServer/Bot/AI/PartyCompanionService');
             fetchDestId: () => target.fetchId(), fetchCollectiveRunSpd: () => 125.32994306319671,
             isDead: () => false, isBlocked: () => false, effects: {},
             backpack: { fetchTotalWeaponKind: () => 'Weapon.Blunt' }, attack: { meleeHit: () => hits.push(now) } };
-        const session = { actor, persistenceMode: 'ephemeral', dataSendToMeAndOthers: p => packets.push(p) };
+        const session = { actor, persistenceMode: 'ephemeral', dataSendToMe: p => packets.push(p),
+            dataSendToMeAndOthers: p => packets.push(p) };
         actor.session = session;
         World.fetchNpc = async () => target;
         const drain = () => new Promise(setImmediate);
@@ -47,6 +48,7 @@ const Party = invoke('GameServer/Bot/AI/PartyCompanionService');
         assert.equal(packets.filter(p => p[0] === 0x60).length, 1, 'position refresh must not restart client movement');
         request(); await drain();
         assert.equal(actor.automation.timer.action.timer, refreshed, 'repeated click must not delay arrival');
+        assert.equal(packets.filter(p => p[0] === 0x25).length, 1, 'the duplicate click must release the pending client action');
         // Repeated/stale reports must not move the deadline back again.
         now += 100;
         Update(session, actor, { locX: 109970, locY: -173929, locZ: -559 });

@@ -204,6 +204,13 @@ class Attack {
                 if (this.queue.name) this.dequeueEvent(session);
             };
 
+            // Losing the old victim must not erase an explicit ground click.
+            // Melee keeps it until swing end; bows can move after release.
+            if (this.queue.name === 'move' && !actor.state.fetchDead() && creature.state.fetchDead()) {
+                releaseBowMovement();
+                return;
+            }
+
             if (this.blockedPvpDefense(session, actor, creature) || this.checkParticipants(actor, creature)) {
                 releaseBowMovement();
                 return;
@@ -253,7 +260,12 @@ class Attack {
             const nextTarget = repeatTarget || creature;
             this.repeatTarget = null;
             if (rangedAttack) this.bowReloading = false;
-            if (this.blockedPvpDefense(session, actor, nextTarget) || this.checkParticipants(actor, nextTarget)) {
+            // A completed bow release may already have handed control to a
+            // newer movement. Do not let the old victim's death abort it.
+            if (rangedAttack && !repeatTarget && !this.queue.name
+                && Number(session.moveRouteGeneration || 0) !== movementGeneration) return;
+            if (this.blockedPvpDefense(session, actor, nextTarget)
+                || this.checkParticipants(actor, nextTarget, { allowDeadTarget: this.queue.name === 'move' })) {
                 return;
             }
 
@@ -273,8 +285,7 @@ class Attack {
             }
 
             if (rangedAttack && (
-                Number(session.moveRouteGeneration || 0) !== movementGeneration
-                || actor.state.inMotion?.()
+                actor.state.inMotion?.()
                 || actor.isBlocked?.()
             )) return;
 

@@ -8,8 +8,10 @@ function canAttackNpc(npc, data = {}) {
 
 function attackExec(session, actor, data) {
     const attackRange = AttackRange.fetchNormalAttackRange(actor, data);
+    const moveGeneration = Number(actor.moveRequestGeneration || 0);
 
     function canStartAttack() {
+        if (session.actor !== actor || Number(actor.moveRequestGeneration || 0) !== moveGeneration) return false;
         if (actor.isDead?.()) return false;
         const restrictions = invoke('GameServer/Effects/EffectRestrictions');
         if (!restrictions.canAttack(actor)) {
