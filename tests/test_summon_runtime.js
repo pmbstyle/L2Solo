@@ -695,6 +695,20 @@ async function checkPhantomActions(session, summon, summonSkillId) {
     assert.strictEqual(summon.controlMode, 'follow', 'servitor should return to follow mode when its target dies');
     assert.strictEqual(summon.followOwner, true, 'servitor should resume following its owner after target death');
 
+    target.state.setDead(false);
+    target.setLocXYZ({ locX: summon.fetchLocX() + 900, locY: summon.fetchLocY(), locZ: summon.fetchLocZ() });
+    SummonControl.attack(controlSession, controlSession.actor, summon);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(summon.automation.moveInterpolation?.followTarget, target,
+        'native summon attack must chase the live target');
+    SummonControl.startFollowOwner(controlSession, controlSession.actor, summon);
+    assert.strictEqual(summon.automation.moveInterpolation, null,
+        'returning to a nearby owner must cancel the previous chase immediately');
+    assert.strictEqual(summon.state.fetchHits(), false, 'returning to follow must release the previous attack state');
+    assert.strictEqual(summon.state.inMotion(), false, 'a nearby owner must not leave stale attack movement running');
+    assert(controlSession.packets.at(-1)[0] === 0x47,
+        'cancelling a chase near the owner must also stop the client movement');
+
     BasicAction(controlSession, controlSession.actor, { actionId: 0x17 });
     assert.strictEqual(summon.controlMode, 'idle', 'servitor cancel action should stop attack mode');
 

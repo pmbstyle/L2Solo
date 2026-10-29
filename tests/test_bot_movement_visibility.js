@@ -285,6 +285,90 @@ try {
     assert(delayedBot.fetchLocX() < beforeReplacement - 100, 'the replacement must advance along the new direction');
     delayedBot.automation.abortAll(delayedBot);
     assert.strictEqual(delayedSession.moveTimer, null, 'cancellation must clear the owned interpolation timer');
+
+    const advanceClock = (ms, moveTarget = () => {}) => {
+        for (let elapsed = 0; elapsed < ms; elapsed += 100) {
+            clock += 100;
+            moveTarget();
+            for (const [timer, entry] of [...pending]) {
+                if (entry.at <= clock && pending.delete(timer)) entry.callback();
+            }
+        }
+    };
+    // The owner pulls a mob while its summon runs out to attack. C4 follows
+    // the live mob; reaching its old position would force a second approach.
+    const summoner = makeActor(800), servitor = makeActor(801), pulledMob = makeActor(802);
+    servitor.fetchIsSummon = () => true;
+    pulledMob.setLocXYZ({ locX: 900, locY: 0, locZ: 0 });
+    const summonPackets = [];
+    const summonSession = { actor: summoner, accountId: 'bot_summoner',
+        dataSendToMeAndOthers(packet) { summonPackets.push(packet); } };
+    let firstSwing = null;
+    servitor.automation.scheduleAction(summonSession, servitor, pulledMob, 40, () => {
+        firstSwing = { at: clock, distance: Math.abs(servitor.fetchLocX() - pulledMob.fetchLocX()) };
+    }, { collisionAware: true, action: 'attack' });
+    const pullStarted = clock;
+    advanceClock(3500, () => pulledMob.setLocXYZ({
+        locX: Math.max(0, 900 - (clock - pullStarted) * 0.15), locY: 0, locZ: 0
+    }));
+    assert(firstSwing, 'a summon must attack when it meets a mob running towards its owner');
+    assert(firstSwing.at - pullStarted < 3500, 'the first swing must not wait for arrival at the mob\'s old position');
+    assert(firstSwing.distance <= 40, 'the first swing must use the mob\'s current melee range');
+    assert.strictEqual(summonPackets.length, 1, 'following a moving mob must keep one continuous MoveToPawn');
+    const firstSwingX = servitor.fetchLocX();
+    advanceClock(4000);
+    assert.strictEqual(servitor.fetchLocX(), firstSwingX, 'the original arrival deadline must not snap the summon to the old mob position');
+    servitor.automation.abortAll(servitor);
+
+    // A moving owner can outlive the first arrival estimate and turn away.
+    // Both servitors and item pets must keep following at their actual speed.
+    for (const flag of ['fetchIsSummon', 'fetchIsPet']) {
+        const owner = makeActor(810), follower = makeActor(811);
+        follower[flag] = () => true;
+        owner.setLocXYZ({ locX: 300, locY: 0, locZ: 0 });
+        const ownerTimer = { ownerMovement: true };
+        const followPackets = [];
+        const followSession = { actor: owner, accountId: 'bot_moving_owner', moveTimer: ownerTimer,
+            dataSendToMeAndOthers(packet) { followPackets.push(packet); } };
+        let arrived = false;
+        follower.automation.scheduleAction(followSession, follower, owner, 80, () => { arrived = true; });
+        advanceClock(3000, () => {
+            owner.setLocXYZ({ locX: owner.fetchLocX() + 20, locY: owner.fetchLocY() + 10, locZ: 0 });
+            const previous = [follower.fetchLocX(), follower.fetchLocY()];
+            // Save the previous position before the interpolator advances.
+            follower.previousPosition = previous;
+        });
+        assert.strictEqual(arrived, false, `${flag}: a fleeing owner must not finish a stale arrival`);
+        assert(follower.fetchLocX() > 350, `${flag}: following must continue beyond the owner's old stopping point`);
+        assert(follower.fetchLocY() > 50, `${flag}: server movement must follow the owner's turn`);
+        const lastStep = Math.hypot(follower.fetchLocX() - follower.previousPosition[0],
+            follower.fetchLocY() - follower.previousPosition[1]);
+        assert(lastStep <= 16, `${flag}: retargeting must preserve the 150-unit movement speed`);
+        advanceClock(6000);
+        assert.strictEqual(arrived, true, `${flag}: the follower must catch its owner after the owner stops`);
+        const stopPosition = [follower.fetchLocX(), follower.fetchLocY()];
+        assert(Math.hypot(owner.fetchLocX() - stopPosition[0], owner.fetchLocY() - stopPosition[1]) <= 80,
+            `${flag}: follow completion must use the owner's current position`);
+        assert.strictEqual(followPackets.length, 1, `${flag}: following must not spam movement restarts`);
+        assert.strictEqual(followSession.moveTimer, ownerTimer, `${flag}: following must preserve the owner's movement timer`);
+        follower.automation.abortAll(follower);
+        advanceClock(1000);
+        assert.deepStrictEqual([follower.fetchLocX(), follower.fetchLocY()], stopPosition,
+            `${flag}: stopped following must not fire stale movement`);
+    }
+
+    const cancelledPet = makeActor(820), distantOwner = makeActor(821);
+    cancelledPet.fetchIsSummon = () => true;
+    distantOwner.setLocXYZ({ locX: 900, locY: 0, locZ: 0 });
+    let cancelledArrival = false;
+    cancelledPet.automation.scheduleAction(summonSession, cancelledPet, distantOwner, 80,
+        () => { cancelledArrival = true; });
+    advanceClock(1000);
+    cancelledPet.automation.abortAll(cancelledPet);
+    const cancelledX = cancelledPet.fetchLocX();
+    advanceClock(10000);
+    assert.strictEqual(cancelledArrival, false, 'cancelling a live-pawn follow must cancel its arrival callback');
+    assert.strictEqual(cancelledPet.fetchLocX(), cancelledX, 'cancelling a live-pawn follow must retain its current position');
 } finally {
     Date.now = saved.now;
     global.setTimeout = saved.timeout;
