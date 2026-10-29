@@ -101,6 +101,8 @@ function clearTacticalState(session) {
     session.lastCombatDecision = undefined;
     session.lastPvpDecision = undefined;
     session.dangerMoment = undefined;
+    session.retreatProgress = undefined;
+    session.retreatFailure = undefined;
     session.spoilAttemptedTargetId = undefined;
     session.sweepAttemptedTargetId = undefined;
 }

@@ -182,6 +182,7 @@ assert.deepStrictEqual(previewSession.townRoutePlan, { marker: 'preserve' }, 'ca
 assert.deepStrictEqual(actualRetreatCommand.to, previewedRetreat.requestedTo, 'the executed command should repeat the selected preview request');
 
 World.npc = { spawns: [] };
+World.fetchNpcsInRadius = () => [];
 const recoveringSession = {
     actor: actor(2000002, 0, 0, { hp: 20 }),
     plan: 'fleeing',
@@ -297,6 +298,113 @@ try {
 }
 assert.strictEqual(replannedFrom, incomingAdd.fetchId(), 'a fresh add should trigger a new escape direction');
 assert.strictEqual(replanningSession.plan, 'fleeing', 'replanning should keep the bot in the escape state');
+
+// Escape is rechecked mid-run, even before the current movement leg ends.
+// A fresh add cannot hide a faster pursuer that is still on the bot.
+const EscapePolicy = invoke('GameServer/Bot/AI/BotEscapePolicy');
+const oldScan = World.fetchNpcsInRadius;
+const oldNow = Date.now;
+try {
+    let now = 100000;
+    Date.now = () => now;
+    function pursuit({ botSpeed = 124, npcSpeed = 191, raid = false } = {}) {
+        let gap = 100, aborted = 0, attacks = 0, replans = 0;
+        const runner = actor(2000040, 0, 0, { hp: 20, moving: true });
+        runner.fetchCollectiveRunSpd = () => botSpeed;
+        runner.select = data => { runner.selected = data.id; };
+        runner.automation = { abortAll() { aborted++; } };
+        const pursuer = { ...hostile(1040, 100, 0), fetchLocX: () => gap,
+            fetchAttackable: () => true, fetchDestId: () => runner.fetchId(),
+            fetchCollectiveRunSpd: () => npcSpeed, fetchIsRaidBoss: () => raid };
+        const s = { actor: runner, plan: 'fleeing', recoveryLocked: true, fleeStart: now,
+            lastRetreatPlan: { threatId: pursuer.fetchId() } };
+        World.npc = { spawns: [pursuer] };
+        World.fetchNpcsInRadius = () => [pursuer];
+        BotRetreatPlanner.retreat = () => { replans++; };
+        const tick = () => FleeingState.tick(s, runner, {}, { executeCombat() { attacks++; } });
+        return { s, runner, pursuer, tick, setGap: value => { gap = value; },
+            counts: () => ({ aborted, attacks, replans }) };
+    }
+
+    for (const speed of [191, 124]) {
+        const p = pursuit({ npcSpeed: speed });
+        p.tick();
+        assert.strictEqual(p.s.plan, 'hunting', 'a faster or equally fast pursuer ends an ordinary escape');
+        assert.deepStrictEqual(p.counts(), { aborted: 1, attacks: 1, replans: 0 });
+        assert.strictEqual(p.runner.selected, p.pursuer.fetchId(), 'the bot turns to face its attacker');
+        assert.strictEqual(p.s.incomingThreatId, p.pursuer.fetchId(), 'self-defense keeps the attacker across ticks');
+        assert.strictEqual(p.s.recoveryLocked, true, 'recovery is still required after the fight');
+        assert.strictEqual(p.s.fleeStart, undefined);
+    }
+
+    const blocked = pursuit({ botSpeed: 200, npcSpeed: 100 });
+    blocked.tick();
+    now += 4000;
+    blocked.setGap(120);
+    blocked.tick();
+    assert.strictEqual(blocked.s.plan, 'fleeing', 'a routed escape gets time to open distance');
+    now += 4000;
+    blocked.tick();
+    assert.strictEqual(blocked.s.plan, 'hunting', 'movement flags cannot keep a non-progressing escape alive');
+    assert.strictEqual(blocked.s.lastDecision.reason, 'retreat_no_progress');
+    assert.strictEqual(EscapePolicy.canRetreatFrom(blocked.s, blocked.runner, blocked.pursuer), false,
+        'the same chase cannot immediately restart a failed escape');
+    blocked.runner.fetchCollectiveRunSpd = () => 230;
+    assert.strictEqual(EscapePolicy.canRetreatFrom(blocked.s, blocked.runner, blocked.pursuer), true,
+        'a speed buff permits a new escape attempt');
+
+    const gaining = pursuit({ botSpeed: 200, npcSpeed: 100 });
+    gaining.tick();
+    for (let step = 1; step <= 4; step++) {
+        now += 8000;
+        gaining.setGap(100 + step * 150);
+        gaining.tick();
+        assert.strictEqual(gaining.s.plan, 'fleeing', 'a useful escape survives the progress checks and watchdog');
+    }
+    gaining.setGap(1500);
+    now += 2000;
+    World.fetchNpcsInRadius = () => [];
+    gaining.runner.state.fetchTowards = () => false;
+    gaining.tick();
+    assert.strictEqual(gaining.s.plan, 'resting', 'a successful escape finishes in recovery');
+    assert.strictEqual(gaining.s.retreatProgress, undefined);
+
+    const slowPrimary = pursuit({ botSpeed: 200, npcSpeed: 100 });
+    const fastPursuer = { ...slowPrimary.pursuer, fetchId: () => 1041, fetchCollectiveRunSpd: () => 250 };
+    World.fetchNpcsInRadius = () => [slowPrimary.pursuer, fastPursuer];
+    slowPrimary.tick();
+    assert.strictEqual(slowPrimary.runner.selected, fastPursuer.fetchId(), 'the faster add prevents an impossible escape');
+
+    const lostBuff = pursuit({ botSpeed: 200, npcSpeed: 150 });
+    lostBuff.tick();
+    assert.strictEqual(lostBuff.s.plan, 'fleeing');
+    lostBuff.runner.fetchCollectiveRunSpd = () => 124;
+    lostBuff.tick();
+    assert.strictEqual(lostBuff.s.plan, 'hunting', 'losing a speed buff interrupts a now-impossible escape mid-leg');
+
+    const alternating = pursuit({ botSpeed: 200, npcSpeed: 100 });
+    const secondPursuer = { ...alternating.pursuer, fetchId: () => 1042 };
+    World.npc.spawns.push(secondPursuer);
+    World.fetchNpcsInRadius = () => [alternating.pursuer, secondPursuer];
+    alternating.tick();
+    for (let step = 1; step <= 4; step++) {
+        now += 2000;
+        alternating.s.lastRetreatPlan = { threatId: step % 2 ? secondPursuer.fetchId() : alternating.pursuer.fetchId() };
+        alternating.tick();
+    }
+    assert.strictEqual(alternating.s.plan, 'hunting', 'alternating pursuers cannot reset the no-progress deadline');
+
+    const raid = pursuit({ raid: true });
+    raid.tick();
+    now += 31000;
+    raid.tick();
+    assert.strictEqual(raid.s.plan, 'fleeing', 'a faster raid boss must not provoke an unauthorized attack');
+    assert.strictEqual(raid.counts().attacks, 0);
+} finally {
+    World.fetchNpcsInRadius = oldScan;
+    BotRetreatPlanner.retreat = originalRetreat;
+    Date.now = oldNow;
+}
 
 // Party defense must remain attached to the leader even when the geometrical
 // away vector points out of camp. Solo escape behavior above stays unchanged.

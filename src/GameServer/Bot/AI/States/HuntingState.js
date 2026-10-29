@@ -22,6 +22,7 @@ const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const BotTownTravel  = invoke('GameServer/Bot/AI/BotTownTravel');
 const BotSpotTravel  = invoke('GameServer/Bot/AI/BotSpotTravel');
 const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
+const EscapePolicy = invoke('GameServer/Bot/AI/BotEscapePolicy');
 const BotEmergencyFinisher = invoke('GameServer/Bot/AI/BotEmergencyFinisher');
 const BotRaidSafety   = invoke('GameServer/Bot/AI/BotRaidSafety');
 const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
@@ -818,7 +819,8 @@ module.exports = {
             const moment = groundSafety.allowed ? DangerMoment.take(session, bot, incomingMonster,
                 { profiles: matchupProfiles, near: threatScan.near }) : null;
             if (moment === 'drank') return;
-            if (!groundSafety.allowed || (moment ? moment === 'flee' : needsEmergencyRetreat(bot))) {
+            if ((!groundSafety.allowed || (moment ? moment === 'flee' : needsEmergencyRetreat(bot)))
+                && EscapePolicy.canRetreatFrom(session, bot, incomingMonster, threatScan.near)) {
                 if (groundSafety.allowed && isSoloHunter(session) &&
                     BotEmergencyFinisher.tryFinish(session, bot, incomingMonster, Generics, BotAI)) return;
                 retreatFromThreat(session, bot, incomingMonster);
@@ -857,7 +859,9 @@ module.exports = {
         const moment = liveEncounterTarget ? DangerMoment.take(session, bot, liveEncounterTarget) : null;
         if (moment === 'drank') return;
         if (liveEncounterTarget && (moment ? moment === 'flee'
-            : !nativeCombatActionInFlight && needsEmergencyRetreat(bot))) {
+            : !nativeCombatActionInFlight && needsEmergencyRetreat(bot))
+            && (BotRaidSafety.isProtectedRaidEntity(liveEncounterTarget)
+                || EscapePolicy.canRetreatFrom(session, bot, liveEncounterTarget))) {
             if (session.spotRelocation) BotSpotTravel.cancel(session, bot, 'low_resources_in_combat');
             if (BotRaidSafety.retreat(session, bot, liveEncounterTarget, { distance: EMERGENCY_RETREAT_DISTANCE })) {
                 return;
