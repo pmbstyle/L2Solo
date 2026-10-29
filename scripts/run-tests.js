@@ -268,6 +268,7 @@ const tests = [
     'tests/test_rooted_combat_requests.js',
     'tests/test_player_rooted_attack_continuity.js',
     'tests/test_skill_request_serialization.js',
+    'tests/test_skill_auto_attack.js',
     'tests/test_giran_arena.js',
     'tests/test_armor_stats.js',
     'tests/test_bot_ai_visibility.js',

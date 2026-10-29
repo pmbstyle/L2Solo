@@ -331,7 +331,9 @@ class Attack {
         // casts longer than its 420 ms gauge threshold. Keep short/static
         // casts at their existing duration, without negative timer delays.
         const launchLead = magicSkill && castTime > 420 ? 400 : 0;
-        const cast = { raidParty, corpseTarget, mpCost, magicSkill, launchLead, castWeapon };
+        const recoveryMs = !actor.fetchKind && skill.fetchSemantic?.()?.nextActionAttack
+            ? this.calculatedSkillCoolTime(actor, skill, magicSkill) : 0;
+        const cast = { raidParty, corpseTarget, mpCost, magicSkill, launchLead, castWeapon, recoveryMs };
         const land = () => this.landRemoteCast(session, actor, creature, skill, cast);
 
         if (launchLead) {
@@ -386,7 +388,7 @@ class Attack {
         }
     }
 
-    landRemoteCast(session, actor, creature, skill, { raidParty, corpseTarget, mpCost, magicSkill, launchLead, castWeapon }) {
+    landRemoteCast(session, actor, creature, skill, { raidParty, corpseTarget, mpCost, magicSkill, launchLead, castWeapon, recoveryMs = 0 }) {
         this.activeCast = null;
         // Once the landing callback owns the turn, no other damage event
         // can interleave before MP and effects resolve. Stop watching the
@@ -444,7 +446,11 @@ class Attack {
         }
         executionTargets.forEach((target) => this.applyRemoteCastEffect(session, actor, target, skill,
             { corpseAreaCast, raidParty, shotState, magicSkill, selfEffectOnly, castWeapon, openingPayment }));
-        this.finishRemoteCast(session, actor, skill, magicSkill);
+        const finish = () => this.finishRemoteCast(session, actor, skill, magicSkill, creature);
+        // Keep the action slot until the C4 recovery ends. Requests arriving
+        // after impact still queue ahead of the automatic weapon attack.
+        if (recoveryMs > 0) this.queueTimer(finish, recoveryMs);
+        else finish();
     }
 
     remoteCastTargets(session, actor, creature, skill) {
@@ -551,19 +557,22 @@ class Attack {
         }
     }
 
-    finishRemoteCast(session, actor, skill, magicSkill) {
+    finishRemoteCast(session, actor, skill, magicSkill, target = null) {
         delete actor.activeSkillChargeCount;
         this.clearLoadedShot(actor, magicSkill);
         actor.state.setCasts(false);
+        invoke('GameServer/Bot/AI/BotSupportPlanner').finishSupportCast(session, actor, skill);
+
+        actor.automation.replenishVitals(actor);
+        this.finishSkillAction(session, actor, skill, target);
+    }
+
+    finishSkillAction(session, actor, skill, target) {
         // Lisvus onMagicFinalizer starts/renews stance after an offensive
         // cast completes, including a resisted spell, rather than at acceptance.
         if (!actor.fetchKind && skill.fetchTargetKind?.() === 'enemy') {
             invoke(path.actor).enterCombatState(session, actor);
         }
-        invoke('GameServer/Bot/AI/BotSupportPlanner').finishSupportCast(session, actor, skill);
-
-        // Start replenish
-        actor.automation.replenishVitals(actor);
 
         if (invoke('GameServer/Bot/AI/PartyCompanionService').startQueuedGroundPickup(session)) {
             return;
@@ -574,6 +583,17 @@ class Attack {
             return;
         }
 
+        // A first skill can start the weapon loop; it need not interrupt an
+        // existing auto-attack. Keep explicit commands and target changes in
+        // control, and leave NPC/summon attack loops to their native AI.
+        if (!skill.fetchSemantic?.()?.nextActionAttack || actor.fetchKind || !target || target === actor
+            || Number(actor.fetchDestId?.()) !== Number(target.fetchId?.())
+            || actor.isDead?.() || target.isDead?.() || target.state?.fetchDead?.()
+            || actor.isBlocked?.() || !invoke('GameServer/Effects/EffectRestrictions').canAttack(actor)) return;
+
+        // The accepted cast already validated this target's attack permission.
+        // meleeHit rechecks participants, PvP defense, weapon range and chase.
+        this.meleeHit(session, target);
     }
 
     captureShotState(actor) {
@@ -858,6 +878,17 @@ class Attack {
         if (skill?.fetchSemantic?.()?.staticHitTime) return Formulas.calcSkillHitTime(hitTime, 1, { staticHitTime: true });
         const speed = magicSkill ? actor.fetchCollectiveCastSpd() : actor.fetchCollectiveAtkSpd();
         return Formulas.calcSkillHitTime(hitTime, speed, { magic: !!magicSkill, spiritshot: !!actor.spiritshotLoaded });
+    }
+
+    calculatedSkillCoolTime(actor, skill, magicSkill) {
+        const semantic = skill.fetchSemantic?.() || {};
+        const base = Math.max(0, Number(semantic.coolTime) || 0);
+        if (!base || semantic.staticHitTime) return base;
+        const speed = magicSkill ? actor.fetchCollectiveCastSpd() : actor.fetchCollectiveAtkSpd();
+        const scaled = Math.floor((base * 333) / speed);
+        // Unlike hitTime, Lisvus does not apply the 500 ms cast minimum to
+        // coolTime. Capture the shot and speed modifiers at cast acceptance.
+        return magicSkill && actor.spiritshotLoaded ? Math.floor(scaled * 0.70) : scaled;
     }
 
     skillUseConditionFailure(session, actor, skill) {
