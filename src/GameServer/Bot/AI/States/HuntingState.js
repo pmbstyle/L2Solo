@@ -247,7 +247,7 @@ function findPreferredMonster(session, bot, radius, options = {}) {
             const targetMatchup = TargetMatchup.evaluate(matchupProfiles, matchupTarget);
             if (isSoloHunter(session) && partyActors.length <= 1) {
                 const canHunt = TargetMatchup.soloCanHunt(matchupProfiles, BotPullEstimate.pullView(matchupTarget, pull));
-                Object.assign(targetMatchup, { eligible: canHunt.eligible, reason: canHunt.reason });
+                Object.assign(targetMatchup, canHunt);
             }
             const scoreContext = {
                 attackable: npc.fetchAttackable(),
@@ -295,10 +295,14 @@ function findPreferredMonster(session, bot, radius, options = {}) {
     // solo body wandering past a safe visible mob. Economic hunts may already
     // admit the wider level band, so include those candidates in recovery too.
     if (!ranked.length && options.allowEasierTargets && isSoloHunter(session) && !session.hotBackgroundPartyId) {
+        // Any deferred errand, including consumable restocking, can leave a
+        // kit unable to handle the -15 band. Keep native reward penalties and
+        // the full solo survival gate when recovering on easier local mobs.
+        const allowTrivialTargets = !!session.deferredOccupation;
         const easier = candidates.filter(candidate => candidate.evaluation.reason === 'level_too_low'
             || candidate.evaluation.eligible && candidate.evaluation.levelGap < BotTargetScorer.MIN_LEVEL_GAP)
             .map(candidate => ({ ...candidate,
-                evaluation: BotTargetScorer.score({ ...candidate.scoreContext, minLevelGap: -15 }) }));
+                evaluation: BotTargetScorer.score({ ...candidate.scoreContext, minLevelGap: -15, allowTrivialTargets }) }));
         ranked = easier.filter(candidate => candidate.evaluation.eligible && Number.isFinite(candidate.evaluation.score))
             .sort((first, second) => second.evaluation.score - first.evaluation.score);
         for (const candidate of ranked) candidate.evaluation.reasons.push('easier_ground');
@@ -498,7 +502,7 @@ function tickSpotRelocation(session, bot) {
     return !!session.spotRelocation;
 }
 
-function beginSpotRelocation(session, bot, spot, BotAI) {
+function beginSpotRelocation(session, bot, spot, BotAI, deferredOccupation = null) {
     if (Number(session.townTravelRetryAt || 0) > Date.now()) return;
     const destination = { ...spot.center };
     session.currentTargetId = undefined;
@@ -517,6 +521,7 @@ function beginSpotRelocation(session, bot, spot, BotAI) {
     const travelDistance = SpotService.distance2d(botLocation(bot), destination);
     if (travelDistance > MAX_WALK_SPOT_DISTANCE && !Karma.closesTowns(bot.fetchKarma?.())) {
         BotSpotTravel.start(session, bot, spot, destination);
+        if (session.spotRelocation && deferredOccupation) session.spotRelocation.deferredOccupation = deferredOccupation;
         return;
     }
 
@@ -530,6 +535,7 @@ function beginSpotRelocation(session, bot, spot, BotAI) {
         startedAt: Date.now(),
         lastCommandAt: 0
     };
+    if (deferredOccupation) session.spotRelocation.deferredOccupation = deferredOccupation;
     issueWalkRelocation(session, bot, session.spotRelocation);
 }
 
@@ -623,6 +629,7 @@ module.exports = {
     limitTargetCandidates,
     claimedTargetIds,
     tick(session, bot, Generics, BotAI) {
+        session.deferredOccupation = null;
         if (session.pendingTownTrip) {
             const trip = startShopping(session, bot, BotAI, session.pendingTownTrip.reason);
             if (trip !== 'deferred') return;
@@ -897,13 +904,15 @@ module.exports = {
                 && (!ground || BotHuntingGroundPolicy.evaluate(ground, { level: bot.fetchLevel() }, {
                     mode: 'solo', equipment: equippedItems(bot)
                 }).allowed)) {
-                if (session.spotRelocation && BotSpotTravel.cancel(session, bot, 'selected_occupation')) {
+                session.deferredOccupation = DecisionService.occupationKey(leaf);
+                if (session.spotRelocation && session.spotRelocation.deferredOccupation !== session.deferredOccupation
+                    && BotSpotTravel.cancel(session, bot, 'selected_occupation')) {
                     bot.automation?.abortAll?.(bot);
                 }
                 // A purchase not worth its own journey (or a craft awaiting
-                // its station) keeps its wish. Earn locally while waiting;
-                // neither freezing the body nor choosing a new field helps
-                // that same occupation. A travel quote refusal is not a
+                // its station) keeps its wish. Earn locally, then recover to
+                // safe ground if the expanded search cannot find a fight.
+                // A quote refusal is not a
                 // failed native transaction and must not reroll every tick.
                 session.lastDecision = { action: 'search_locally', reason: 'occupation_deferred', activity: leaf.activity };
             }
@@ -961,7 +970,7 @@ module.exports = {
             if (decision.action === 'move_to_spot' && decision.spot) {
                 session.lastDecision = { action: decision.action, reason: decision.reason,
                     spotId: decision.spot.id, spotName: decision.spot.name };
-                beginSpotRelocation(session, bot, decision.spot, BotAI);
+                beginSpotRelocation(session, bot, decision.spot, BotAI, decision.deferredOccupation);
                 return;
             }
         }
@@ -1135,7 +1144,7 @@ module.exports = {
                 };
 
                 if (decision.action === 'move_to_spot' && decision.spot) {
-                    beginSpotRelocation(session, bot, decision.spot, BotAI);
+                    beginSpotRelocation(session, bot, decision.spot, BotAI, decision.deferredOccupation);
                     return;
                 }
 

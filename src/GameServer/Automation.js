@@ -621,6 +621,7 @@ class Automation extends SelectedModel {
         if (session) {
             if (session.activeMoveGoal?.town) invoke('GameServer/Bot/AI/TownTraffic').remove(Number(creature.fetchId()));
             session.activeMoveGoal = null;
+            session.activeMoveSegment = null;
             session.moveRouteGeneration = Number(session.moveRouteGeneration || 0) + 1;
             if (session.pendingPathRequest?.cancel) {
                 session.pendingPathRequest.cancel();

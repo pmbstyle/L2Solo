@@ -1,6 +1,6 @@
 const SendPacket = invoke('Packet/Send');
 
-function moveToLocation(actorId, coords) {
+function moveToLocation(actorId, coords, actor = null) {
     const packet = new SendPacket(0x01);
 
     packet
@@ -13,6 +13,7 @@ function moveToLocation(actorId, coords) {
         .writeD(coords.from.locZ);
 
     const buffer = packet.fetchBuffer();
+    if (actor) buffer.__movingActor = actor;
     if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true && process.env.L2NODE_PACKET_TRACE !== '0') buffer.__packetTrace = `actor=${actorId}:from=${coords.from.locX},${coords.from.locY},${coords.from.locZ}:to=${coords.to.locX},${coords.to.locY},${coords.to.locZ}`;
     return buffer;
 }

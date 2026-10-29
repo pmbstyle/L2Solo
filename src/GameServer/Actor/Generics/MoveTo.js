@@ -124,7 +124,13 @@ function beginMoveGoal(session, actor, requestedTo, targetActor = null, routeGua
 }
 
 function clearMoveGoal(session, goal) {
+    if (session?.activeMoveSegment?.goal === goal) session.activeMoveSegment = null;
     if (session && goal && session.activeMoveGoal === goal) session.activeMoveGoal = null;
+}
+
+function movementSpeed(actor) {
+    return Math.max(1, Number(actor.state?.fetchWalkin?.() === true
+        ? actor.fetchCollectiveWalkSpd?.() : actor.fetchCollectiveRunSpd?.()) || 120);
 }
 
 function shouldSkipInitialWaypoint(index, path, distance, dz) {
@@ -157,7 +163,11 @@ function startPathMovement({ session, actor, path, isClose, approachingObservers
         }
 
         const currentLoc = locOf(actor);
-        const nextLoc = path[index];
+        const nextLoc = { ...path[index] };
+        // A direct path can retain the caller's old Z. Use the same geodata
+        // layer for the announced destination, interpolation and arrival;
+        // otherwise each completed leg snaps the body back below the ground.
+        nextLoc.locZ = GeodataEngine.getHeight(nextLoc.locX, nextLoc.locY, nextLoc.locZ);
         // Recheck live party position and new hazards between native legs.
         if (!routeAllowed([currentLoc, nextLoc], false)) {
             rejectRoute();
@@ -184,24 +194,29 @@ function startPathMovement({ session, actor, path, isClose, approachingObservers
             return;
         }
 
+        const speed = movementSpeed(actor);
+        const duration = Math.max(1, (distance / speed) * 1000);
+        const segmentStartedAt = Date.now();
+        const segment = session.activeMoveSegment = { actor, goal: moveGoal, to: nextLoc,
+            speed, updatedAt: segmentStartedAt, travelled: 0 };
         const segmentCoords = { from: currentLoc, to: nextLoc };
-        const movePacket = ServerResponse.moveToLocation(actor.fetchId(), segmentCoords);
+        const movePacket = ServerResponse.moveToLocation(actor.fetchId(), segmentCoords, actor);
         session.dataSendToMeAndOthers(movePacket, actor);
         approachingObservers.forEach((observer) => {
             const observerSession = observer.session;
             if (!observerSession?.actor?.fetchIsOnline?.() || !observerSession.dataSendToMe) return;
             if (distance2d(observerSession.actor, currentLoc) <= CLIENT_VISIBILITY_RADIUS) return;
+            if (!crossesPlayerVisibility(observerSession.actor, currentLoc, nextLoc)) return;
             if (!observer.announced) {
-                observerSession.dataSendToMe(ServerResponse.charInfo(actor));
+                const info = ServerResponse.charInfo(actor);
+                info.__skipMotionReplay = true;
+                observerSession.dataSendToMe(info);
                 observer.announced = true;
             }
             observerSession.dataSendToMe(movePacket);
         });
 
-        const speed = actor.fetchCollectiveRunSpd() || 120;
-        const duration = Math.max(1, (distance / speed) * 1000);
         const tickRate = isClose ? 100 : 250;
-        const segmentStartedAt = Date.now();
         if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) recordMovementTrace(session, {
             event: 'move',
             index,
@@ -217,12 +232,20 @@ function startPathMovement({ session, actor, path, isClose, approachingObservers
 
         const advanceSegment = () => {
             if (!session.moveTimer || (moveGoal && session.activeMoveGoal !== moveGoal)) return;
-            const elapsed = Math.max(0, Date.now() - segmentStartedAt);
-            const ratio = Math.min(1, elapsed / duration);
+            const now = Date.now();
+            const elapsed = Math.max(0, now - segmentStartedAt);
+            // Effects and run/walk changes can alter speed halfway through a
+            // leg. Integrate distance at the body's current speed rather than
+            // retaining the duration from before its latest CharInfo.
+            segment.speed = movementSpeed(actor);
+            segment.travelled += Math.max(0, now - segment.updatedAt) * segment.speed / 1000;
+            segment.updatedAt = now;
+            const ratio = Math.min(1, segment.travelled / distance);
             if (ratio >= 1) {
                 actor.setLocXYZ(nextLoc);
                 invoke('GameServer/Bot/AI/PartyCompanionService').updatePosition(session, actor);
                 session.moveTimer = null;
+                if (session.activeMoveSegment === segment) session.activeMoveSegment = null;
                 if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) recordMovementTrace(session, {
                     event: 'arrive',
                     index,
@@ -241,7 +264,7 @@ function startPathMovement({ session, actor, path, isClose, approachingObservers
                 invoke('GameServer/Bot/AI/PartyCompanionService').updatePosition(session, actor);
                 if (moveGoal?.town) {
                     const point = locOf(actor);
-                    TownTraffic.update(Number(actor.fetchId()), point, nextLoc, speed);
+                    TownTraffic.update(Number(actor.fetchId()), point, nextLoc, segment.speed);
                     const adjustment = TownTraffic.steer(session, actor, point, nextLoc,
                         distanceToClosestPlayer(moveGoal.observers || [], point));
                     if (adjustment?.point) {
@@ -250,6 +273,7 @@ function startPathMovement({ session, actor, path, isClose, approachingObservers
                         return;
                     }
                     if (adjustment?.waitMs) {
+                        if (session.activeMoveSegment === segment) session.activeMoveSegment = null;
                         TownTraffic.update(Number(actor.fetchId()), point);
                         session.dataSendToMeAndOthers(ServerResponse.stopMove(actor.fetchId(), {
                             ...point, head: actor.fetchHead?.() || 0
@@ -258,7 +282,7 @@ function startPathMovement({ session, actor, path, isClose, approachingObservers
                         return;
                     }
                 }
-                const remaining = Math.max(1, duration - elapsed);
+                const remaining = Math.max(1, (distance - segment.travelled) / segment.speed * 1000);
                 session.moveTimer = setTimeout(advanceSegment, Math.min(tickRate, remaining));
             }
         };
@@ -286,15 +310,25 @@ function distance2d(first, second) {
     return Math.sqrt((dx * dx) + (dy * dy));
 }
 
-function shouldUseLowLodWarp({ startDistance, destinationDistance, isCompanion, plan }) {
+function crossesPlayerVisibility(player, from, to) {
+    const dx = to.locX - from.locX, dy = to.locY - from.locY;
+    const lengthSquared = dx * dx + dy * dy;
+    const px = player.fetchLocX() - from.locX, py = player.fetchLocY() - from.locY;
+    const t = lengthSquared > 0 ? Math.max(0, Math.min(1, (px * dx + py * dy) / lengthSquared)) : 0;
+    return Math.hypot(px - t * dx, py - t * dy) <= CLIENT_VISIBILITY_RADIUS;
+}
+
+function shouldUseLowLodWarp({ startDistance, destinationDistance, isCompanion, plan, crossesVisibility = false }) {
     return !isCompanion &&
+        !crossesVisibility &&
         plan !== 'pk_hunting' &&
         startDistance > CLIENT_VISIBILITY_RADIUS &&
         destinationDistance > CLIENT_VISIBILITY_RADIUS;
 }
 
-function shouldPreannounceVisibleMove(startDistance, destinationDistance) {
-    return startDistance > CLIENT_VISIBILITY_RADIUS && destinationDistance <= CLIENT_VISIBILITY_RADIUS;
+function shouldPreannounceVisibleMove(startDistance, destinationDistance, crossesVisibility = false) {
+    return startDistance > CLIENT_VISIBILITY_RADIUS
+        && (destinationDistance <= CLIENT_VISIBILITY_RADIUS || crossesVisibility);
 }
 
 function previewRouteSession(session) {
@@ -379,6 +413,7 @@ function moveTo(session, actor, coords) {
             locY: startY
         });
         const destinationDistanceToPlayer = distanceToClosestPlayer(onlinePlayers, requestedTo);
+        const routeVisibleTo = new Set(onlinePlayers.filter(player => crossesPlayerVisibility(player, coords.from, requestedTo)));
         // Movement packets are normally broadcast from the bot's current
         // coordinates. A player who is just outside that radius would miss
         // the first packet and only discover the bot through a later refresh,
@@ -387,7 +422,8 @@ function moveTo(session, actor, coords) {
         const approachingObservers = onlinePlayerSessions
             .filter((playerSession) => shouldPreannounceVisibleMove(
                 distance2d(playerSession.actor, { locX: startX, locY: startY }),
-                distance2d(playerSession.actor, requestedTo)
+                distance2d(playerSession.actor, requestedTo),
+                routeVisibleTo.has(playerSession.actor)
             ))
             .map((playerSession) => ({ session: playerSession, announced: false }));
 
@@ -405,7 +441,8 @@ function moveTo(session, actor, coords) {
             startDistance: distanceToPlayer,
             destinationDistance: destinationDistanceToPlayer,
             isCompanion,
-            plan: session.plan
+            plan: session.plan,
+            crossesVisibility: routeVisibleTo.size > 0
         })) {
             // Low LOD: instant warp (we do not calculate movements at all)
             const snappedTo = { ...requestedTo };
@@ -758,6 +795,7 @@ module.exports = moveTo;
 module.exports.recordMovementTrace = recordMovementTrace;
 module.exports.shouldUseLowLodWarp = shouldUseLowLodWarp;
 module.exports.shouldPreannounceVisibleMove = shouldPreannounceVisibleMove;
+module.exports.crossesPlayerVisibility = crossesPlayerVisibility;
 module.exports.CLIENT_VISIBILITY_RADIUS = CLIENT_VISIBILITY_RADIUS;
 module.exports.COMPANION_DIRECT_DISTANCE = COMPANION_DIRECT_DISTANCE;
 module.exports.COMPANION_PATH_MAX_NODES = COMPANION_PATH_MAX_NODES;

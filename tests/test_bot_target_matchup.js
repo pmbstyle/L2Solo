@@ -120,6 +120,30 @@ try {
         'ordinary economic scans retain the positive-utility requirement');
     assert.strictEqual(Hunting.findPreferredMonster(incomeSession, hunter, 2500, recovery), blue,
         'recovery also handles easier targets already admitted by the economic level band');
+    const graveTemplate = Data.npcs.find(npc => Number(npc.selfId) === 998);
+    assert(graveTemplate, 'the real cemetery undead fixture must exist');
+    const grave = new Npc(9876600, { ...utils.crushOb(graveTemplate), locX: 200, locY: 0, locZ: 0, head: 0 });
+    const elder = { ...hunter, fetchClassId: () => 30, fetchLevel: () => 70,
+        fetchCollectivePAtk: () => 208.7, fetchCollectiveMAtk: () => 426.4,
+        fetchCollectivePDef: () => 447.6, fetchMaxHp: () => 1463.65,
+        fetchMaxMp: () => 2821, fetchMp: () => 2821,
+        fetchCollectiveAtkSpd: () => 394, fetchCollectiveCastSpd: () => 447,
+        skillset: { skills: [owned({ selfId: 1028, level: 17, power: 82, mp: 65 })] },
+        backpack: { fetchTotalWeaponKind: () => 'Weapon.Etc' } };
+    const elderSession = { actor: elder, plan: 'hunting', deferredOccupation: 'power:148:7',
+        coldLifeState: { stats: { wishFocus: ['power:148:7'] } } };
+    World.fetchNpcsInRadius = () => [grave];
+    assert.equal(Hunting.findPreferredMonster({ ...elderSession, deferredOccupation: null }, elder, 2500, recovery), null,
+        'an ordinary route retains its level floor');
+    assert.equal(Hunting.findPreferredMonster(elderSession, elder, 2500, recovery), grave,
+        'an elder using Might of Heaven must be able to earn on safe cemetery undead while his purchase waits');
+    elder.skillset.skills.push(owned({ selfId: 1031, level: 8, power: 36, mp: 30 }));
+    const mirrorTemplate = Data.npcs.find(npc => Number(npc.selfId) === 636);
+    const mirrorGhost = new Npc(9876601, { ...utils.crushOb(mirrorTemplate), locX: 200, locY: 0, locZ: 0, head: 0 });
+    World.fetchNpcsInRadius = () => [mirrorGhost];
+    assert.equal(Hunting.findPreferredMonster(elderSession, elder, 2500, recovery), mirrorGhost,
+        'the elder with his cheaper Disrupt Undead rotation still needs a safe earning target below the ordinary band');
+
     World.fetchNpcsInRadius = () => [blue, hidden];
     assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), hidden,
         'an ordinary target still outranks negative-score easier recovery');

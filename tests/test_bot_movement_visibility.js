@@ -58,6 +58,17 @@ assert.strictEqual(
     'Normal visible movement must keep using the regular world broadcast'
 );
 
+const outsideFrom = { locX: -7000, locY: 0 }, outsideTo = { locX: 7000, locY: 0 };
+const centerPlayer = { fetchLocX: () => 0, fetchLocY: () => 0 };
+assert.equal(moveTo.crossesPlayerVisibility(centerPlayer, outsideFrom, outsideTo), true,
+    'an offscreen-to-offscreen segment can cross the player visible area');
+assert.equal(moveTo.shouldUseLowLodWarp({ startDistance: 7000, destinationDistance: 7000,
+    isCompanion: false, plan: 'hunting', crossesVisibility: true }), false,
+    'a visible crossing must never be silently warped');
+assert.equal(moveTo.shouldPreannounceVisibleMove(7000, 7000, true), true,
+    'a crossing needs a character snapshot even when both endpoints are offscreen');
+assert.equal(moveTo.crossesPlayerVisibility({ fetchLocX: () => 0, fetchLocY: () => 7000 }, outsideFrom, outsideTo), false);
+
 const packets = [];
 const actor = {
     state: {
@@ -355,6 +366,83 @@ try {
         advanceClock(1000);
         assert.deepStrictEqual([follower.fetchLocX(), follower.fetchLocY()], stopPosition,
             `${flag}: stopped following must not fire stale movement`);
+    }
+
+    // The client and the server must agree through walking, a mid-leg speed
+    // change and arrival on terrain whose height differs from the requested Z.
+    const walker = makeActor(830);
+    let walking = true, liveRunSpeed = 150;
+    walker.state.fetchWalkin = () => walking;
+    walker.fetchCollectiveWalkSpd = () => 75;
+    walker.fetchCollectiveRunSpd = () => liveRunSpeed;
+    const walkingPackets = [];
+    const walkingSession = { actor: walker, accountId: 'bot_walking',
+        dataSendToMeAndOthers(p) { walkingPackets.push(p); } };
+    walker.session = walkingSession;
+    RuntimeWorld.user = { sessions: [walkingSession, nearbyPlayer] };
+    GeodataEngine.getHeight = () => 64;
+    moveTo(walkingSession, walker, { from: { locX: 0, locY: 0, locZ: 0 },
+        to: { locX: 900, locY: 0, locZ: 0 } });
+    assert.equal(walkingPackets.find(p => p[0] === 1).readInt32LE(13), 64,
+        'announce the terrain height rather than the caller stale Z');
+    const traffic = invoke('GameServer/Bot/AI/TownTraffic');
+    const originalTrafficUpdate = traffic.update, originalSteer = traffic.steer;
+    const trafficSpeeds = [];
+    walkingSession.activeMoveGoal.town = 'Dion';
+    try {
+        traffic.update = (id, point, to, speed) => { if (id === 830) trafficSpeeds.push(speed);
+            else originalTrafficUpdate(id, point, to, speed); };
+        traffic.steer = () => null;
+        advanceClock(2000);
+        assert.equal(walker.fetchLocX(), 150, 'a walking body must use its walk speed');
+        walking = false;
+        liveRunSpeed = 300;
+        advanceClock(1000);
+        assert.equal(walker.fetchLocX(), 450, 'a speed change must affect the current server leg');
+        advanceClock(2000);
+        assert.equal(walker.fetchLocX(), 900);
+        assert.equal(walker.fetchLocZ(), 64, 'arrival must not snap the actor back under the terrain');
+        assert.equal(walkingSession.activeMoveSegment, null, 'arrival retires its visible leg');
+        assert(trafficSpeeds.includes(75) && trafficSpeeds.includes(300),
+            'town collision forecasts must observe the same changing speed as movement');
+    } finally {
+        traffic.update = originalTrafficUpdate;
+        traffic.steer = originalSteer;
+    }
+    GeodataEngine.getHeight = saved.height;
+
+    // A player may leave while a bot is still on a route that originally
+    // approached him. Later legs must not recreate that bot across the map.
+    const leavingObserverPosition = { x: 0, y: 0 };
+    const observedPackets = [];
+    const leavingObserver = { accountId: 'leaving_observer', actor: {
+        fetchIsOnline: () => true, fetchLocX: () => leavingObserverPosition.x,
+        fetchLocY: () => leavingObserverPosition.y },
+        dataSendToMe(p) { observedPackets.push(p); } };
+    const crossingBot = makeActor(840);
+    crossingBot.setLocXYZ({ locX: -7000, locY: 0, locZ: 0 });
+    const crossingSession = { actor: crossingBot, accountId: 'bot_crossing', dataSendToMeAndOthers() {} };
+    crossingBot.session = crossingSession;
+    const movementResponse = invoke('GameServer/Network/Response');
+    const originalInfo = movementResponse.charInfo, previousPath = GeodataEngine.findPath;
+    try {
+        movementResponse.charInfo = () => Buffer.from([3]);
+        GeodataEngine.getHeight = (x, y, z) => z;
+        GeodataEngine.findPath = () => [{ locX: -7000, locY: 0, locZ: 0 },
+            { locX: -6500, locY: 0, locZ: 0 }, { locX: 7000, locY: 0, locZ: 0 }];
+        RuntimeWorld.user = { sessions: [crossingSession, leavingObserver] };
+        moveTo(crossingSession, crossingBot, { from: { locX: -7000, locY: 0, locZ: 0 },
+            to: { locX: 7000, locY: 0, locZ: 0 } });
+        const sentBeforeLeaving = observedPackets.length;
+        leavingObserverPosition.y = 20000;
+        advanceClock(4000);
+        assert.equal(observedPackets.length, sentBeforeLeaving,
+            'a former approaching observer must receive no later route legs after leaving visibility');
+    } finally {
+        crossingBot.automation.abortAll(crossingBot);
+        movementResponse.charInfo = originalInfo;
+        GeodataEngine.findPath = previousPath;
+        GeodataEngine.getHeight = saved.height;
     }
 
     const cancelledPet = makeActor(820), distantOwner = makeActor(821);

@@ -53,6 +53,7 @@ class BotSession {
         const packet = this.packData(data);
         recipients.forEach((user) => {
             if (user.socket && typeof user.socket.write === 'function') {
+                if (data?.__movingActor) invoke('GameServer/World/CharacterVisibility').beforeSend(user, data);
                 NpcVisibility.trackNpcPacket(user, data);
                 if (user.recordOutboundPacket) {
                     user.recordOutboundPacket(data);
@@ -64,6 +65,7 @@ class BotSession {
                 }
                 GroundItemVisibility.trackPacket(user, data);
                 NpcVisibility.sendNpcMotionAfterInfo(user, data);
+                if (data?.__characterActor || data?.[0] === 0x12) invoke('GameServer/World/CharacterVisibility').afterSend(user, data);
             }
         });
         HotActorLodPolicy.recordPacketBroadcast(recipients.length, packet.length);
