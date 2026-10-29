@@ -209,6 +209,35 @@ test('an accepted empty occupation in the field keeps local hunting', () => {
     assert.equal(searchCalls.length, 0, 'an empty NPC scan in the field is not a new route request');
 });
 
+test('an unreachable sale route yields to local hunting during its retry', () => {
+    const f = fixture(primary.center, null);
+    const restoreAt = restores.length;
+    try {
+        f.session.plan = 'shopping';
+        f.session.shoppingTarget = { actorId: 12345, name: 'Remote buyer', town: 'Giran',
+            locX: 83510, locY: 148120, locZ: -3400 };
+        f.session.shoppingEquipmentPlanChecked = true;
+        f.session.shoppingWarehouseDone = true;
+        f.session.shoppingLiveBuyerChecked = true;
+        stub(invoke('GameServer/Bot/AI/TownNpcApproach'), 'plan', () => null);
+        stub(invoke('GameServer/Bot/AI/CompanionNavigationRecovery'), 'move', () => ({ status: 'exhausted' }));
+        Shopping.tick(f.session, f.bot, {}, f.ai);
+        assert.equal(f.session.plan, 'hunting');
+        assert.equal(f.session.shoppingTarget, undefined);
+        assert(f.session.townTravelRetryAt > Date.now(), 'a plain sale route must also establish a retry');
+        const travel = invoke('GameServer/Bot/AI/BotTownTravel');
+        assert.equal(travel.request(f.session, f.bot, f.ai, 'Sell loot.'), 'deferred');
+        assert.deepEqual(f.session.moves, [], 'a failed route cannot restart on the next tick');
+        stub(invoke('GameServer/Bot/Economy/ItemDisposition'), 'inventoryCleanupNeed',
+            () => ({ reason: 'npc_only_inventory' }));
+        available = [npcNear(primary.center)];
+        f.tick();
+        assert.equal(f.session.plan, 'hunting', 'forced cleanup must let the bot hunt while its route waits');
+        assert.deepEqual(f.session.attacks, [990101]);
+        assert.deepEqual(f.session.moves, []);
+    } finally { while (restores.length > restoreAt) restores.pop()(); }
+});
+
 test('an accepted empty occupation can leave town without a remembered field or announcement', () => {
     const f = fixture(town, null);
     f.session.currentSpot = null;

@@ -108,9 +108,9 @@ function sellTripDue(session, bot, now = Date.now()) {
     if (partyId) state.partyId = partyId;
     const forced = ItemDisposition.inventoryCleanupNeed(state, { now });
     const activity = DecisionEvents.held(session)?.network.activity;
-    const need = forced || (activity?.activity === 'selling'
-        ? { reason: 'wish_funding', itemIds: activity.items } : null);
     const pause = Number(state.stats?.marketSellRetryAfter || 0);
+    const need = forced || (activity?.activity === 'selling' && pause <= now
+        ? { reason: 'wish_funding', itemIds: activity.items } : null);
     session.sellTripCheck = { items, count: items.length, life, level, partyId, decisionSeq,
         revision: Number(bot.backpack.inventoryRevision || 0),
         pauseEndsAt: pause > now ? pause : 0, need };

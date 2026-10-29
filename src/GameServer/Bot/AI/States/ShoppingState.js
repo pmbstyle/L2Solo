@@ -614,6 +614,10 @@ module.exports = {
                 const companionResume = session.resumeAfterShopping;
                 const returningToCompanion = session.partyCompanion === true && companionResume?.followPlayerSession?.actor?.fetchIsOnline?.();
                 deferEquipmentRetry(session);
+                // A failed sale/restock route needs the same pause as an
+                // equipment errand. Otherwise forced cleanup restarts it on
+                // the next hunting tick, before any local fight can begin.
+                TownTransitPolicy.defer(session, bot, 'shopping_route_unreachable');
                 session.plan = returningToCompanion ? 'following' : 'hunting';
                 // ARCH-NOTE: an unreachable shopping route also ends this town visit.
                 if (session.plan === 'hunting') raiseDecision(session, 'town', { impossible: true });

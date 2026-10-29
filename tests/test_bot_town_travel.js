@@ -109,6 +109,19 @@ try {
         'without a Scroll of Escape a far town trip is walked');
     assert.strictEqual(scrollless.moves.length, 1, 'the scrollless bot walks to town');
 
+    const waitingBot = botAt({ locX: 0, locY: 0, locZ: 0 });
+    const waitingSession = session(waitingBot);
+    waitingSession.townTravelRetryAt = Date.now() + 60000;
+    assert.strictEqual(BotTownTravel.request(waitingSession, waitingBot, farAi, 'Retry sale.'), 'deferred');
+    assert.strictEqual(waitingSession.plan, 'hunting', 'a failed town route leaves local hunting active');
+    assert.strictEqual(waitingSession.townEscape, undefined, 'the retry cannot spend another scroll');
+    assert.strictEqual(waitingBot.backpack.items.get(736).amount, 5);
+    assert.strictEqual(waitingSession.pendingTownTrip?.reason, 'Retry sale.',
+        'the route pause must retain a sale request whose selling pause already started');
+    waitingSession.townTravelRetryAt = Date.now() - 1;
+    assert.strictEqual(BotTownTravel.request(waitingSession, waitingBot, farAi, 'Retry sale.'), 'escape',
+        'town travel resumes once its retry expires');
+
     // E197: a gatekeeper fee the backpack cannot cover is counted per path;
     // an ordinary trip then walks, a supply errand that must read a scroll is
     // refused.

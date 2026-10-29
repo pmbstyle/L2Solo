@@ -172,9 +172,9 @@ function karmaTown() {
 
 function request(session, bot, BotAI, reason, options = {}) {
     if (session.partyCompanion === true && session.followPlayerSession && options.allowCompanion !== true) return 'companion';
-
     const pending = session.pendingTownTrip || {};
     session.pendingTownTrip = { reason: reason || pending.reason || null, requestedAt: pending.requestedAt || Date.now() };
+    if (Number(session.townTravelRetryAt || 0) > Date.now()) return 'deferred';
     if (inCombat(session, bot)) return 'deferred';
     // A physical teleport already submitted must settle first. Otherwise a
     // farm route must release movement before the selected town errand owns it.
