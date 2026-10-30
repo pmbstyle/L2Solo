@@ -2048,6 +2048,8 @@ const BackgroundResolver = {
     needsRest,
     staleShopping,
     estimateRestMs,
+    // The offline hunt model (scripts/hunt-tables/HuntModel) prices a solo gap's heals by it.
+    coldHealBetweenFights,
     applyStandingRegen,
     prepareRaidParty,
     castHuntPartyBuffs,

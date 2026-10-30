@@ -36,7 +36,7 @@ function spotRows() {
 // ------------------------------------------------------------ 1 mobs
 
 const COMBAT_FIELDS = ['level', 'maxHp', 'pAtk', 'pAtkRnd', 'pDef', 'mDef', 'mAtk', 'atkSpd', 'accur', 'evasion', 'critical',
-    'atkRadius', 'hostile', 'undead', 'race', 'revHp', 'vulnerabilities', 'castSpd', 'weaponKind'];
+    'atkRadius', 'hostile', 'undead', 'race', 'revHp', 'vulnerabilities', 'castSpd', 'weaponKind', 'runSpd'];
 
 function compactRewards(groups = []) {
     return groups.map(group => [Number(group.overall) || 0,
