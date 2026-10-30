@@ -295,10 +295,13 @@ function planForKind(kind, rank = 'none') {
 
 // A hot bot's shot: the one its cold state takes (planForState), Blessed
 // Spiritshot by the same choice (choosesBlessed) over the actor's bag, so
-// hot auto shots enable the shot the worker's stock names.
+// hot auto shots enable the shot the worker's stock names. A player keeps
+// its class's shot (the login top-up, EnterWorld -> ensureActorStock).
 function planForActor(actor) {
     const classId = actorClassId(actor), rank = weaponRankFromActor(actor);
     if (!classWantsSpiritshots(classId)) return planForKind('soulshot', rank);
+    // lazy: cycle World loads the inventory stack.
+    if (!invoke('GameServer/World/World').isBotSession(actor?.session)) return planForKind('spiritshot', rank);
     const held = selfId => Math.max(0, Number(actor?.backpack?.fetchItemFromSelfId?.(selfId)?.fetchAmount?.()) || 0);
     return planForKind(choosesBlessed(() => actorRoleState(actor, classId), rank, held) ? 'blessedSpiritshot' : 'spiritshot', rank);
 }
@@ -361,9 +364,15 @@ function autoInputs(actor, held) {
     const spotId = session?.currentSpot?.id || state?.spotId;
     const partyId = session?.hotBackgroundPartyId;
     const role = state?.party?.role || stats?.role, huntAt = stats?.huntClock?.at;
+    // planForActor reads which spiritshots the bag holds (choosesBlessed): a
+    // stack running out switches the plan.
+    const rank = weaponRankFromActor(actor);
+    const holds = kind => Number(actor.backpack?.fetchItemFromSelfId?.(planForKind(kind, rank).selfId)?.fetchAmount?.()) > 0;
+    const shotsHeld = shotKind === 'spiritshot' ? 2 * holds('blessedSpiritshot') + holds('spiritshot') : 0;
     if (held && held.classId === classId && held.level === level && held.weaponId === weaponId
-        && held.beginnerReady === beginnerReady && held.equipmentRevision === equipmentRevision && held.spotId === spotId && held.partyId === partyId && held.role === role && held.huntAt === huntAt) return held;
-    return { classId, level, weaponId, equipmentRevision, beginnerReady, spotId, partyId, role, huntAt };
+        && held.beginnerReady === beginnerReady && held.equipmentRevision === equipmentRevision && held.spotId === spotId && held.partyId === partyId && held.role === role && held.huntAt === huntAt
+        && held.shotsHeld === shotsHeld) return held;
+    return { classId, level, weaponId, equipmentRevision, beginnerReady, spotId, partyId, role, huntAt, shotsHeld };
 }
 function refreshAutoShot(actor) {
     const held = autoUse.get(actor), inputs = autoInputs(actor, held);
