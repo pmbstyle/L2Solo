@@ -77,7 +77,7 @@ for (const [name, state] of [['future Sorcerer', sorcerer], ['player', player], 
 }
 
 // The pet keeps the HP it lost across its owner's turns: a long fight wears
-// it down whole (its full HP, not one gap's worth), it dies once (its
+// it down whole (its full HP and its owner's heals, not one gap's worth), it dies once (its
 // summons on their 6 h reuse raise no other), and then the mob strikes the
 // owner.
 {
@@ -95,7 +95,9 @@ for (const [name, state] of [['future Sorcerer', sorcerer], ['player', player], 
     const worn = resolveFight({ state, spot, pressure: {}, targetNpcId: MOB, rng, timestamp: TS, fightLimitMs: 180000, maxActions: 2000 });
     assert.equal(worn.debug.summonUses, 0);
     assert.equal(worn.debug.summonDeaths, 1, 'the pet dies of the blows summed over the fight');
-    assert(worn.debug.petTaken >= katHp && worn.debug.petTaken < 2 * katHp, `the pet took its own HP (${worn.debug.petTaken} of ${katHp})`);
+    // Its owner heals it below its line (PetHealRule, T135): it holds more than its own HP.
+    assert(worn.debug.petHeals > 0, 'the owner heals its pet in the fight');
+    assert(worn.debug.petTaken >= katHp, `the pet took at least its own HP (${worn.debug.petTaken} of ${katHp})`);
     assert(worn.debug.damageTaken > 0, 'with the pet down the mob strikes its owner');
 }
 

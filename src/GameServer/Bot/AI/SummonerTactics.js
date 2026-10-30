@@ -5,7 +5,7 @@ const EffectStore = invoke('GameServer/Effects/EffectStore');
 const SummonControl = invoke('GameServer/Npc/SummonControl');
 const World = invoke('GameServer/World/World');
 
-const PET_HEAL_IDS = new Set([1127, 1300]);
+const PetHealRule = invoke('GameServer/Bot/AI/PetHealRule');
 const PET_BUFF_IDS = new Set([1139, 1140, 1141, 1144, 1145, 1146, 1299, 1301]);
 
 function skillsFor(actor) {
@@ -126,7 +126,7 @@ function cast(session, actor, summon, skill, Generics) {
     });
     return {
         handled: true,
-        reason: PET_HEAL_IDS.has(Number(skill.fetchSelfId())) ? 'heal_summon' : 'buff_summon',
+        reason: PetHealRule.isPetHeal(skill) ? 'heal_summon' : 'buff_summon',
         skill
     };
 }
@@ -175,8 +175,8 @@ function combatAction(session, actor, target, Generics) {
 
     const summonMaxHp = Number(summon.fetchMaxHp?.() || 0);
     const summonHp = Number(summon.fetchHp?.() || summonMaxHp);
-    const heal = petSkill(actor, (skill) => PET_HEAL_IDS.has(Number(skill.fetchSelfId()))
-        && summonMaxHp > 0 && summonHp / summonMaxHp < 0.7);
+    const heal = petSkill(actor, (skill) => PetHealRule.isPetHeal(skill)
+        && PetHealRule.wantsHeal(summonHp, summonMaxHp));
     if (heal) return cast(session, actor, summon, heal, Generics);
 
     if (target) {
@@ -210,8 +210,20 @@ function combatAction(session, actor, target, Generics) {
     return { handled: true, reason: 'summon_follow', summon };
 }
 
+// Between fights a summoner heals its living pet below its line (PetHealRule),
+// as the cold one does. Returns true when it cast.
+function healPetBetweenFights(session, actor, Generics) {
+    if (!BotRoles.isSummoner(actor)) return false;
+    const summon = SummonControl.activeSummon(actor);
+    if (!summon || summon.isDead?.()) return false;
+    const maxHp = Number(summon.fetchMaxHp?.() || 0);
+    if (!PetHealRule.wantsHeal(Number(summon.fetchHp?.() ?? maxHp), maxHp)) return false;
+    const heal = petSkill(actor, (skill) => PetHealRule.isPetHeal(skill));
+    return heal ? cast(session, actor, summon, heal, Generics).handled : false;
+}
+
 module.exports = {
-    PET_HEAL_IDS,
+    healPetBetweenFights,
     PET_BUFF_IDS,
     isSummonSkill,
     isCorpseSummonSkill,

@@ -893,6 +893,9 @@ module.exports = {
         // Between fights a solo bot heals itself where that beats sitting (T107).
         if (!encounterActionInFlight && !session.currentTargetId && isSoloHunter(session)
             && SoloSelfHeal.tryBetweenFights(session, bot, Generics)) return;
+        // A summoner keeps its pet alive between fights too (PetHealRule).
+        if (!encounterActionInFlight && !session.currentTargetId && isSoloHunter(session)
+            && !bot.state?.fetchCasts?.() && SummonerTactics.healPetBetweenFights(session, bot, Generics)) return;
         if (!encounterActionInFlight && RestPolicy.needsRest(bot, hpRatio, mpRatio)) {
             beginVoluntaryRecovery(session, bot, BotAI);
             return;
