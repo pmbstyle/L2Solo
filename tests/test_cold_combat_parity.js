@@ -222,6 +222,24 @@ for (const [name, actual] of soloObserved) assert.deepStrictEqual(actual, SOLO_G
     assert(!r.summon || r.summon.hp < r.summon.maxHp, 'the pet keeps the HP it lost');
 }
 
+// A continued fight works on its own copy of the saved mob: the self buff the
+// mob casts reaches the save only with its slice (a retried step buffs once).
+{
+    const NpcSkills = invoke('GameServer/Npc/NpcSkills');
+    const buffer = DataCache.npcs.find((npc) => (npc.template?.type === 'L2Monster' || npc.template?.type === undefined)
+        && NpcSkills.combatSkillsFor({ fetchSelfId: () => npc.selfId }).some((skill) => skill.fetchTargetKind?.() === 'self'
+            && skill.fetchSemantic?.()?.effectType === 'buff' && Object.keys(skill.fetchSemantic().stats || {}).length > 0));
+    const spot = spotFor(buffer.selfId);
+    const mob = ColdCombatProfile.npcForSpot(spot, () => 0.5, { preferredNpcId: buffer.selfId });
+    const encounter = PveEncounter.save(null, PveEncounter.key([gladiator], spot, buffer.selfId), { ...mob, maxHp: 1e7 }, 1e7, TS,
+        { botReadyAt: 0, mobReadyAt: 0 });
+    const saved = structuredClone(encounter.mob);
+    const r = withSeed(3, (rng) => resolveFight({ state: { ...gladiator, stats: { ...gladiator.stats, pveEncounter: encounter } },
+        spot, pressure: {}, targetNpcId: buffer.selfId, rng, timestamp: TS, fightLimitMs: 30000, maxActions: 200 }));
+    assert(r.encounter?.mobFight?.buffs?.length > 0, 'the mob buffed itself in the slice');
+    assert.deepStrictEqual(encounter.mob, saved, 'the saved mob is untouched');
+}
+
 // ---------- party fights ----------
 function partyOutcome(members, npcId, seed) {
     const r = withSeed(seed, (rng) => Resolver.resolvePartyFight({ members, spot: spotFor(npcId), targetNpcId: npcId, rng, timestamp: TS }));

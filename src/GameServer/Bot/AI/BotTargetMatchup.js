@@ -31,7 +31,10 @@ function npcTemplate(id) {
 
 // A scan owns this snapshot: do not retain live effects, equipment or learned
 // skills across decisions. Cold callers already own an immutable profile.
+// The numbers the cold fight's profile gives its hits (hit roll, critical,
+// spread, shield: ColdCombatProfile.attackerView, defenderView), live.
 function actorProfile(actor) {
+    const backpack = actor.backpack;
     return {
         classId: actor.fetchClassId?.(), characterId: Roles.botCharacterId(actor), level: actor.fetchLevel?.(),
         role: Roles.combatRoleFor(actor),
@@ -42,7 +45,14 @@ function actorProfile(actor) {
         maxMp: actor.fetchMaxMp?.(), weaponMask: WeaponMask.weaponMaskFor(actor),
         maxHp: actor.fetchMaxHp?.(),
         pDef: actor.fetchCollectivePDef?.() ?? actor.fetchPDef?.(),
-        equipment: { weaponKind: actor.backpack?.fetchTotalWeaponKind?.() },
+        mDef: actor.fetchCollectiveMDef?.() ?? actor.fetchMDef?.(),
+        accur: actor.fetchCollectiveAccur?.() ?? actor.fetchAccur?.(),
+        evasion: actor.fetchCollectiveEvasion?.() ?? actor.fetchEvasion?.(),
+        critical: actor.fetchCollectiveCritical?.() ?? actor.fetchCritical?.(),
+        str: actor.fetchStr?.(), dex: actor.fetchDex?.(),
+        equipment: { weaponKind: backpack?.fetchTotalWeaponKind?.(), pAtkRnd: backpack?.fetchTotalWeaponPAtkRnd?.(),
+            attackReuseDelay: backpack?.fetchEquippedWeapon?.()?.fetchAttackReuseDelay?.(),
+            shieldPDef: backpack?.fetchTotalShieldPDef?.(), shieldRate: backpack?.fetchTotalShieldRate?.() },
         skills: (actor.skillset?.skills || actor.skillset?.fetchSkills?.() || []).map(skill => ({
             selfId: skill.fetchSelfId?.(), level: skill.fetchLevel?.(),
             reuseReady: actor.canUseSkill?.(skill) !== false,
@@ -64,25 +74,36 @@ function actorProfiles(actors) {
     });
 }
 
+// The servitor beside a cold bot's profile at timestamp: its living saved
+// summon with the HP it has left, else the one a summoner casts first (MP and
+// reuse allow it: BackgroundResolver.startColdSummon), which strikes, and
+// lets its owner act again, after the summon's cast (summonCastMs); null
+// without either. coldProfiles builds the gate's pair with it, and a solo
+// fight's readiness reads it anew before each fight (a pet dead or raised
+// since the round's profiles were built).
+function servitorProfile(profile, state = {}, timestamp = Date.now()) {
+    const summon = state.stats?.coldCombat?.summon;
+    if (summon?.active && number(summon.hp, summon.maxHp) > 0 && summon.expiresAt > timestamp) {
+        return { ...summon, role: 'dps', skills: [], soloDamageReceiver: false, servitor: true };
+    }
+    if (!Roles.isSummoner(profile)) return null;
+    const Cold = coldCombatProfile();
+    const skill = Cold.summonSkills(profile).find(s => s.reuseReady !== false
+        && number(s.mp, 0) <= number(state.vitals?.mp, profile.maxMp)
+        && number(state.stats?.coldCombat?.cooldowns?.[s.selfId], 0) <= timestamp);
+    // lazy: worker ColdSummonProfile loads ColdCombatProfile, resolved on first use (coldCombatProfile).
+    return skill ? { ...invoke('GameServer/Bot/Population/ColdSummonProfile')(profile, Cold.summonDetails(skill)),
+        role: 'dps', skills: [], soloDamageReceiver: false, servitor: true, summonCastMs: Cold.actionDelayMs(profile, skill) } : null;
+}
+
 // options.shot: the shot supply the caller's fight already holds
 // (BackgroundResolver: its fighter's), instead of a second read of the stock.
 function coldProfiles(profile, state = {}, timestamp = Date.now(), options = {}) {
     const profiles = [{ ...profile, skills: (profile.skills || []).map(skill => ({
         ...skill, semantic: skill.semantic || Rules.resolveCached(skill)
     })) }];
-    const summon = state.stats?.coldCombat?.summon;
-    if (summon?.active && number(summon.hp, summon.maxHp) > 0 && summon.expiresAt > timestamp) {
-        profiles.push({ ...summon, role: 'dps', skills: [], soloDamageReceiver: false, servitor: true });
-    } else if (Roles.isSummoner(profile)) {
-        const Cold = invoke('GameServer/Bot/Population/ColdCombatProfile');
-        const skill = Cold.summonSkills(profile).find(s => s.reuseReady !== false
-            && number(s.mp, 0) <= number(state.vitals?.mp, profile.maxMp)
-            && number(state.stats?.coldCombat?.cooldowns?.[s.selfId], 0) <= timestamp);
-        // The servitor the fight raises first (BackgroundResolver.startColdSummon):
-        // it strikes, and its owner acts again, after the summon's cast.
-        if (skill) profiles.push({ ...invoke('GameServer/Bot/Population/ColdSummonProfile')(profile, Cold.summonDetails(skill)),
-            role: 'dps', skills: [], soloDamageReceiver: false, servitor: true, summonCastMs: Cold.actionDelayMs(profile, skill) });
-    }
+    const servitor = servitorProfile(profile, state, timestamp);
+    if (servitor) profiles.push(servitor);
     // The shot the fight loads from the bot's stock (ColdCombatProfile.shotSupply).
     if (state.inventory) profiles[0].shot = 'shot' in options ? options.shot : coldCombatProfile().shotSupply(state, timestamp);
     const role = profile.role || Roles.combatRoleFor(profile);
@@ -133,11 +154,19 @@ function targetView(target, stats = DAMAGE_VULN_STATS) {
     }
     const pDef = target.fetchCollectivePDef?.() ?? target.fetchPDef?.();
     const mDef = target.fetchCollectiveMDef?.() ?? target.fetchMDef?.();
-    return { vulnerabilities, pDef, mDef, undead: target.fetchUndead?.() === true,
-        race: String(target.fetchRace?.() ?? target.model?.race ?? '').toLowerCase(), level: target.fetchLevel?.(),
-        maxHp: target.fetchMaxHp?.(),
-        pAtk: target.fetchCollectivePAtk?.() ?? target.fetchPAtk?.(),
-        atkSpd: target.fetchCollectiveAtkSpd?.() ?? target.fetchAtkSpd?.(),
+    // The cold fight's monster (ColdCombatProfile.npcCombatStats of its
+    // template: its skills by selfId, hit roll, critical, reach, run speed,
+    // resists), its live HP and buffed numbers over it.
+    const template = npcTemplate(target.fetchSelfId?.());
+    const cold = template ? coldCombatProfile().npcCombatStats(template) : null;
+    return { ...cold, vulnerabilities: { ...cold?.vulnerabilities, ...vulnerabilities }, pDef, mDef,
+        undead: (target.fetchUndead?.() ?? cold?.undead) === true,
+        race: String(target.fetchRace?.() ?? target.model?.race ?? cold?.race ?? '').toLowerCase(),
+        level: target.fetchLevel?.() ?? cold?.level, maxHp: target.fetchMaxHp?.() ?? cold?.maxHp,
+        pAtk: target.fetchCollectivePAtk?.() ?? target.fetchPAtk?.() ?? cold?.pAtk,
+        mAtk: target.fetchCollectiveMAtk?.() ?? target.fetchMAtk?.() ?? cold?.mAtk,
+        atkSpd: target.fetchCollectiveAtkSpd?.() ?? target.fetchAtkSpd?.() ?? cold?.atkSpd,
+        castSpd: target.fetchCollectiveCastSpd?.() ?? target.fetchCastSpd?.() ?? cold?.castSpd,
         basePDef: target.fetchPDef?.() ?? pDef, baseMDef: target.fetchMDef?.() ?? mDef };
 }
 
@@ -154,8 +183,9 @@ function modifier(target, semantic = {}, magic = false, kind = '', skill = true,
     return vuln * (number(base, 0) > 0 && number(defense, 0) > 0 ? base / defense : 1);
 }
 
-// A cold profile's bonus multiplier of a stat (race, undead), once per profile
-// object (a profile is fixed once built): its passives and effects now.
+// A cold profile's multiplier of a stat (a race or undead bonus, the blow
+// rate), once per profile object (a profile is fixed once built): its
+// passives and effects now.
 const bonuses = new WeakMap();
 function profileBonus(profile) {
     let held = bonuses.get(profile);
@@ -243,7 +273,7 @@ function channels(profile, target) {
             : HitRules.expectedPhysicalSkill(attacker, defender, { power, blow, bow, soulshot: shot?.soulshot === true,
                 skillCritRate: HitRules.physicalSkillCritRate(semantic, profile.str),
                 landChance: blow ? HitRules.blowLandChance(semantic, { dex: profile.dex, front: true,
-                    rateMul: Cold.statMultiplier(profile, 'blowRateMul', Date.now()) }) / 100 : 1 }));
+                    rateMul: bonus('blowRateMul') }) / 100 : 1 }));
         const weight = hitDamage * 1000 / Cold.actionDelayMs(profile, skill, shot?.spiritshot === true);
         result.push({ weight, modifier: modifier(target, semantic, magic, kind, true, bonus), magic, area,
             soloScore: profile.soloAttackScores?.[skill.selfId],
@@ -341,10 +371,10 @@ function soloSurvival(profiles, target, minimum = SOLO_GATE_MARGIN, attacksOf = 
 
 function soloChannels(profile, target, attacksOf = channels) {
     const attacks = attacksOf(profile, target);
-    // T100: a bot that sits for MP and fights with its weapon (an archer)
-    // spends MP only while its bar is near full (BotCombatUtility's price):
-    // its fight is the normal attack.
-    if (!Roles.usesCasterWeaponCombat(profile) && RestPolicy.restsForMana(profile)) {
+    // T100: a bot that sits for MP and fights with its weapon (an archer,
+    // a self-healer: RestPolicy.sitsForMana) spends MP only while its bar is
+    // near full (BotCombatUtility's price): its fight is the normal attack.
+    if (!Roles.usesCasterWeaponCombat(profile) && RestPolicy.sitsForMana(profile)) {
         const normal = attacks.filter(attack => attack.normal);
         if (normal.length) return normal;
     }
@@ -578,5 +608,5 @@ function damageRate(profiles, target = {}) {
         .map(attack => (attack.survivalWeight ?? attack.weight) * attack.modifier)), 0);
 }
 
-module.exports = { MIN_EFFICIENCY, SOLO_GATE_MARGIN, actorProfiles, coldProfiles, profileKey, targetView, skillModifier, channels, damageRate, attackRate, spellRate, incomingRate,
+module.exports = { MIN_EFFICIENCY, SOLO_GATE_MARGIN, actorProfiles, coldProfiles, servitorProfile, profileKey, targetView, skillModifier, channels, damageRate, attackRate, spellRate, incomingRate,
     profileStats, skillStats, evaluate, soloSurvival, soloCanHunt, soloSpotUpperBound, stateProfiles, spotMatchup, speciesPulls };

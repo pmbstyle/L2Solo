@@ -160,7 +160,9 @@ class Attack {
         const attackSpeed = actor.fetchCollectiveAtkSpd();
         const weapon = actor.backpack?.fetchEquippedWeapon?.();
         const timing = Formulas.attackTimes(attackSpeed, { bow: rangedAttack,
-            reuseDelay: weapon?.fetchAttackReuseDelay?.() ?? 1500, reuseMul: EffectStats.multiplier(actor, 'atkReuseMul') });
+            reuseDelay: weapon?.fetchAttackReuseDelay?.() ?? 1500,
+            // Only a bow's cycle reads its reuse (Formulas.attackTimes).
+            reuseMul: rangedAttack ? EffectStats.multiplier(actor, 'atkReuseMul') : 1 });
         const movementGeneration = Number(session.moveRouteGeneration || 0);
         this.repeatTarget = null;
         if (rangedAttack) this.bowReloading = true;
@@ -1084,13 +1086,16 @@ class Attack {
         }
 
         const position = this.targetPosition(actor, creature);
+        // Only a skill with a critical rate reads STR (physicalSkillCritRate).
+        const str = Number(semantic.baseCritRate) > 0
+            ? ((Number(actor?.fetchStr?.()) || 1) + EffectStats.add(actor, 'STR')) * EffectStats.multiplier(actor, 'STRMul') : 1;
         const attacker = CombatantView.view({
             pAtk: actor.fetchCollectivePAtk(),
             pAtkRnd: actor.backpack?.fetchTotalWeaponPAtkRnd?.() ?? 0,
             critDamageMul: EffectStats.multiplier(actor, 'pCritDamageMul')
                 * EffectStats.situationalMultiplier(actor, 'pCritDamageMul', position),
             critDamageAdd: EffectStats.add(actor, 'pCritDamageAdd'),
-            str: ((Number(actor?.fetchStr?.()) || 1) + EffectStats.add(actor, 'STR')) * EffectStats.multiplier(actor, 'STRMul')
+            str
         });
         const power = HitRules.skillPower(semantic, skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.());
         const { damage } = HitRules.physicalSkill(attacker, this.defenderView(creature), {
@@ -1108,11 +1113,14 @@ class Attack {
     }
 
     // The defender's side of a hit (CombatantView): its defences and shield.
+    // Without a shield rate no block succeeds (Formulas.rollShieldUse), so its
+    // P.Def is not read.
     defenderView(creature) {
+        const shieldRate = this.fetchShieldRate(creature);
         return CombatantView.view({
             pDef: creature.fetchCollectivePDef(),
-            shieldPDef: this.fetchShieldPDef(creature),
-            shieldRate: this.fetchShieldRate(creature),
+            shieldPDef: shieldRate > 0 ? this.fetchShieldPDef(creature) : 0,
+            shieldRate,
             dex: creature.fetchDex ? creature.fetchDex() : 0
         });
     }

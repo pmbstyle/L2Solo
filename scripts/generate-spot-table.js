@@ -287,8 +287,7 @@ function buildCatalogue() {
     SpotProfiles.reset();
     const profiles = SpotProfiles.ensure();
     Math.random = random;
-    const manifest = path.join(invoke('GameServer/Geodata/GeodataEngine').getGeodataDir(), '.l2solo-geodata-manifest.json');
-    const geodata = fs.existsSync(manifest) ? JSON.parse(fs.readFileSync(manifest, 'utf8')).profile || null : null;
+    const geodata = invoke('GameServer/Bot/AI/SpotValueTable').geodataProfile();
     if (!geodata) process.stderr.write('no geodata: territory spawns stand at their maxZ hint, the floors differ from the server\'s (npm run geodata)\n');
     return { spots: SpotService.spots, profiles, spawned: world.npc.spawns.length, geodata };
 }
@@ -1041,9 +1040,14 @@ async function main() {
     process.exit(0);
 }
 
-if (require.main === module) main().catch((error) => {
-    process.stderr.write(`${error.stack || error}\n`);
-    process.exit(1);
-});
+// GameTime reads the local clock (isNight): every run, its children too, in
+// one zone (a library caller keeps its own).
+if (require.main === module) {
+    process.env.TZ = 'UTC';
+    main().catch((error) => {
+        process.stderr.write(`${error.stack || error}\n`);
+        process.exit(1);
+    });
+}
 
 module.exports = { hunt, perKill, countNewStacks, runPool, mergeStacks, buildCatalogue, rewardCatalog, loadSimulation, classFor, lineClassFor, botFor };

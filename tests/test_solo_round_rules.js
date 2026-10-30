@@ -81,6 +81,12 @@ try {
     assert.equal(RestPolicy.needsRest(bot(2, 60), 0.9, 0.1), false, 'a Gladiator does not');
     assert.equal(RestPolicy.needsRest(bot(3, 76), 0.9, 0.1), false, 'a Warlord does not');
     assert.equal(RestPolicy.needsRest(paladin, 0.9, 0.1, { party: true }), true, 'a tank sits for MP in a party anyway');
+    // Its next fight's readiness keeps the MP reserve a caster keeps (RestPolicy.sitsForMana).
+    Cold.npcForSpot = () => ({ level: 40, maxHp: 1, pAtk: 1, pAtkRnd: 0, pDef: 1, mDef: 1, accur: 1,
+        evasion: 0, critical: 0, atkSpd: 253 });
+    const drained = round({ ...paladin, vitals: { ...paladin.vitals, mp: Math.floor(paladin.vitals.maxMp * 0.1) } }, field(30));
+    assert.deepEqual([drained.patch.activity, drained.patch.stats.lastReason, drained.debug.wins], ['resting', 'solo_recovery_needed', 0],
+        'a Paladin at 10% MP sits before its next fight');
     const vitals = { hp: paladin.vitals.maxHp, maxHp: paladin.vitals.maxHp, mp: 1, maxMp: paladin.vitals.maxMp };
     assert(Resolver.estimateRestMs(paladin, vitals) > 8000, 'its rest refills the MP');
     // Its heal between fights is priced in that rest: a Paladin at 60% HP and
@@ -94,6 +100,23 @@ try {
     assert.equal(heal(profile.maxMp * 0.15), null, 'with its bar near empty the heal costs more rest than it saves');
 } finally {
     Cold.npcForSpot = originalNpc;
+}
+// The solo buff check reads the plan's own list (BackgroundResolver.buffSkills
+// and PartyBuffLoadout.useful): a dagger Treasure Hunter's Rapid Shot (a bow's
+// buff) is never due, so its round builds no buff fighter.
+{
+    const fs = require('node:fs'), path = require('node:path'), Module = require('node:module');
+    const full = path.join(__dirname, '../src/GameServer/Bot/Population/BackgroundResolver.js');
+    const copy = new Module(full, module);
+    copy.filename = full;
+    copy.paths = Module._nodeModulePaths(path.dirname(full));
+    copy._compile(`${fs.readFileSync(full, 'utf8')}\nmodule.exports.__castSoloBuffs = castSoloBuffs;`, full);
+    const hunter = bot(8, 40);
+    assert(Cold.skillsFor(hunter).some(skill => Number(skill.selfId) === 99), 'it knows Rapid Shot');
+    assert.equal(Cold.fightProfile(hunter, T).equipment.weaponKind, 'Weapon.Knife');
+    assert.equal(copy.exports.__castSoloBuffs(hunter, T, Cold.fightProfile(hunter, T)), null, 'no buff of its is due');
+    const gladiator = bot(2, 40);
+    assert(copy.exports.__castSoloBuffs(gladiator, T, Cold.fightProfile(gladiator, T)).buffCasts > 0, 'a Gladiator\'s are');
 }
 // The walk spans the spot's spawn area, and a bow or a spell strikes from
 // afar: the bot walks only until its next mob is in its reach.

@@ -651,9 +651,20 @@ class Npc extends NpcModel {
     }
 
     fetchAiType() {
-        // Most imported C4 templates do not carry the source AI enum
-        // (NpcCombatChoice.aiTypeFor reads it from skills and attack radius).
-        return NpcCombatChoice.aiTypeFor(super.fetchAiType(), this.fetchCombatSkills(), this.fetchAtkRadius());
+        return this.combatProfile().aiType;
+    }
+
+    // What the combat skill list makes of the monster, once per list and
+    // template: its AI type (most imported C4 templates do not carry the
+    // source AI enum; NpcCombatChoice.aiTypeFor reads it from skills and
+    // attack radius) and whether any skill aims at an enemy.
+    combatProfile() {
+        const skills = this.fetchCombatSkills();
+        const held = this.heldCombatProfile;
+        if (held?.skills === skills && held.model === this.model) return held;
+        return this.heldCombatProfile = { skills, model: this.model,
+            aiType: NpcCombatChoice.aiTypeFor(super.fetchAiType(), skills, this.fetchAtkRadius()),
+            enemySkills: skills.some((skill) => skill.fetchTargetKind?.() === 'enemy') };
     }
 
     fetchSkillCastRange(skill, actor) {
@@ -667,6 +678,8 @@ class Npc extends NpcModel {
     selectCombatSkill(actor, rng = Math.random) {
         if (!this.fetchCombatSkills().length || !EffectRestrictions.canCast(this)) return null;
         const now = Date.now();
+        // A target's impairments and AI type only weigh an enemy skill.
+        const profile = this.combatProfile(), aimed = !!actor && profile.enemySkills;
         const picked = NpcCombatChoice.select({
             skills: this.fetchCombatSkills(),
             usable: (skill) => this.fetchMp() >= skill.fetchConsumedMp() && this.canUseSkill(skill),
@@ -683,9 +696,9 @@ class Npc extends NpcModel {
                 ));
             },
             hasTarget: !!actor,
-            impairments: actor ? EffectStore.impairments(actor) : {},
-            aiType: this.fetchAiType(),
-            targetAiType: actor?.fetchAiType?.() || 'fighter',
+            impairments: aimed ? EffectStore.impairments(actor) : {},
+            aiType: profile.aiType,
+            targetAiType: aimed && actor.fetchAiType?.() || 'fighter',
             debuffReady: now - this.lastDebuffAt >= NpcCombatChoice.DEBUFF_GAP_MS,
             rng
         });

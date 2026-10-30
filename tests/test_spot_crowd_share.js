@@ -22,6 +22,8 @@ const spot = { id: spotId, npcEntries: entries.map(([selfId, count]) => ({ selfI
 Table.useSpots([spot]);
 // The thread's hunters count (SpotOccupancyIndex.huntersOn): n others plus the bot.
 const hunters = n => ({ spotHunters: () => n + 1 });
+const near = (actual, expected, message) => assert(Math.abs(actual - expected) <= 1e-6 * Math.max(1, Math.abs(expected)),
+    `${message}: ${actual} != ${expected}`);
 try {
     const alone = Economics.create(state, hunters(0))(spot, true);
     const production = Table.production(spotId, role, 30, true);
@@ -33,6 +35,33 @@ try {
     assert(Math.abs(crowd.exp / crowd.kills - alone.exp / alone.kills) < 1e-6 * alone.exp / alone.kills, 'exp follows the kills');
     assert(crowd.valueHours < alone.valueHours, 'a crowded spot is worth less');
     assert(crowd.crowdFactor < 1, 'the crowd cuts the row');
+    // A bot whose own hunts gave twice the table's exp (calibration 2) still
+    // keeps at most its share of the production: the crowd is cut once, after
+    // the calibration.
+    const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
+    const Rewards = require('../src/GameServer/Bot/Economy/SpotRewardExpectation');
+    const sampled = Table.rankedSpotIds(role, 30, { shots: 0, potions: 0 }).find(id => id !== spotId);
+    const sampleBase = Table.value(sampled, role, 30, true, { spoilSkillLevel: Rewards.spoilSkillLevel(state) });
+    const now = Date.now();
+    const keen = { ...state, stats: { ...state.stats, huntEfficiency: [{ spotId: sampled, signature: Hunt.signature(state),
+        samples: 3, at: now, exp: 2 * sampleBase.exp, cycleMs: 3600000, kills: sampleBase.kills, adena: 0, loot: 0, costs: 0 }] } };
+    const keenAlone = Economics.create(keen, { timestamp: now, ...hunters(0) })(spot, true);
+    near(keenAlone.kills, Math.min(2 * alone.kills, production), 'alone: the calibrated kills');
+    const keenCrowd = Economics.create(keen, { timestamp: now, ...hunters(3) })(spot, true);
+    near(keenCrowd.kills, Math.min(2 * alone.kills, production / 4), 'four hunters: at most a quarter of the production');
+    // A party search: each routed member takes its own share; a member
+    // indexed on the spot is among the hunters already.
+    const member = (characterId, spotId) => ({ characterId, activity: 'hunting', spotId, level: 30 });
+    const party = Economics.create(state, { ...hunters(0), members: [state, member(91, 'elsewhere'), member(92, 'elsewhere')] })(spot, true);
+    near(party.kills, Math.min(alone.kills, production / 3), 'a party of three away: three hunters');
+    assert(party.kills < alone.kills, 'the party\'s own members crowd the spot');
+    const arrived = Economics.create(state, { ...hunters(1), members: [state, member(91, spotId), member(92, 'elsewhere')] })(spot, true);
+    near(arrived.kills, Math.min(alone.kills, production / 3), 'one member there already: still three');
+    // The route search passes its party (capacityStates) to the same count.
+    const Routes = invoke('GameServer/Bot/AI/LevelingRoutes');
+    const routed = capacityStates => Routes.scoreSpot(spot, state, { timestamp: Date.now(), capacityStates }).efficiencyAdjustment;
+    assert(routed([state, member(91, 'elsewhere'), member(92, 'elsewhere')]) < routed(undefined),
+        'a party\'s route search values the spot at its members\' share');
     // One count of hunters (huntersOn): the bot counted once, whether it
     // stands on the spot or weighs a move there; the fight's count without a
     // state is the bots there, at least one.

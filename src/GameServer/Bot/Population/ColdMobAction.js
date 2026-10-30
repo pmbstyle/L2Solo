@@ -25,8 +25,9 @@ function mobHitModifier(mob, target, at, { magic = false, skill = false, trait =
         stat => Profile.statMultiplier(target.profile, stat, at, Profile.hitSources(target, at)), () => 1);
 }
 
-// The cold monster's fight beside its HP: MP, its skills' reuse, the self
-// buffs it holds, its last debuff, its AI type (NpcCombatChoice).
+// The cold monster's fight beside its HP: MP (and the fight time it was
+// last regenerated to, regenMp), its skills' reuse, the self buffs it holds,
+// its last debuff, its AI type (NpcCombatChoice).
 const mobSkillLists = new Map();
 function coldMobSkills(mob) {
     const id = Number(mob?.selfId) || 0;
@@ -41,7 +42,8 @@ const MOB_IMPAIRMENTS = { hard_control: 'disabled', sleep: 'disabled', root: 'ro
 // damage over time on it (landOnMob); dotBy: the caster of its last tick.
 function coldMobFight(mob, saved = null) {
     const skills = coldMobSkills(mob);
-    return { skills, mp: saved ? Number(saved.mp ?? mob.maxMp) || 0 : Number(mob.maxMp) || 0,
+    return { skills, mp: saved ? Number(saved.mp ?? mob.maxMp) || 0 : Number(mob.maxMp) || 0, mpAt: 0,
+        maxMp: Number(mob.maxMp) || 0, revMp: Number(mob.revMp) || 0,
         heldUntil: Number(saved?.heldFor) || 0, dots: (saved?.dots || []).map((dot) => ({ ...dot })),
         cooldowns: { ...(saved?.cooldowns || {}) }, buffs: new Set(saved?.buffs || []),
         lastDebuffAt: Number.isFinite(saved?.debuffAgo) ? -saved.debuffAgo : -Infinity,
@@ -58,7 +60,16 @@ function freshFight(mob) {
     if (!fight) freshFights.set(mob, fight = coldMobFight(mob));
     return fight;
 }
+// The monster's MP regained up to fight time, as the hot Npc's regen ticks
+// (Automation: its revMp each Formulas.REGEN_TICK_MS, spread over the time).
+function regenMp(fight, time) {
+    if (time > fight.mpAt && fight.mp < fight.maxMp) {
+        fight.mp = Math.min(fight.maxMp, fight.mp + fight.revMp * (time - fight.mpAt) / Formulas.REGEN_TICK_MS);
+    }
+    fight.mpAt = Math.max(fight.mpAt, time);
+}
 function coldMobFightSave(fight, time) {
+    if (fight.skills.length) regenMp(fight, time);
     const dots = (fight.dots || []).map((dot) => ({ ...dot, next: dot.next - time }));
     const heldFor = Math.max(0, (Number(fight.heldUntil) || 0) - time);
     if (!fight.skills.length && !dots.length && !heldFor) return null;
@@ -141,8 +152,8 @@ function landOnMob(mob, fight, skill, caster, time, rng, struck = 1) {
 
 // A self buff's stats on the cold monster, as the hot one gains them
 // (EffectStats); positional stats are not modelled. The monster object is
-// the fight's own (npcForSpot, pullView or the saved encounter), so a buff
-// cast in one slice stays on it in the next.
+// the fight's own (npcForSpot, pullView or a copy of the saved encounter's),
+// so a buff cast in one slice reaches the next only through its save.
 const MOB_BUFF_MULS = { pAtkMul: 'pAtk', pDefMul: 'pDef', mAtkMul: 'mAtk', mDefMul: 'mDef', pAtkSpdMul: 'atkSpd',
     castSpdMul: 'castSpd', mCritRateMul: 'mCritRate' };
 const MOB_BUFF_ADDS = { pEvasionRateAdd: 'evasion', pAccuracyCombatAdd: 'accur', reflectDam: 'reflectDam' };
@@ -230,9 +241,14 @@ function actionMix(mob, target, at = 0, fight = freshFight(mob)) {
         spellSquarePerAction: spellSquare };
 }
 
-// The monster's expected damage per second on a profile (actionMix).
+// The monster's expected damage per second on a profile (actionMix), its
+// holder kept per profile so the hits' stat sources are built once
+// (ColdCombatProfile.hitSources): the gate weighs a profile against many mobs.
+const holders = new WeakMap();
 function incomingPerSecond(mob, profile, at = 0) {
-    return actionMix(mob, { profile }, at).perSecond;
+    let holder = holders.get(profile);
+    if (!holder) holders.set(profile, holder = { profile });
+    return actionMix(mob, holder, at).perSecond;
 }
 
 // A monster that fights in melee only: a short weapon reach and no ranged
@@ -256,6 +272,7 @@ function coldMobAction(mob, fight, target, { time, at, rng, mobHp = mob.maxHp, p
     const attacker = pAtk === null || pAtk === mob.pAtk ? Profile.attackerView(mob) : CombatantView.view({ ...Profile.attackerView(mob), pAtk });
     const defender = Profile.defenderView(profile, at, target);
     const bow = mob.weaponKind === 'Weapon.Bow';
+    if (fight.skills.length) regenMp(fight, time);
     const choice = fight.skills.length ? NpcCombatChoice.select({
         skills: fight.skills,
         usable: (skill) => fight.mp >= skill.fetchConsumedMp() && !(fight.cooldowns[skill.fetchSelfId()] > time),

@@ -11,6 +11,10 @@ on:
   push:
     branches: ['tables/**']
 
+# GameTime reads the local clock (isNight): every job of a run in one zone.
+env:
+  TZ: UTC
+
 jobs:
   plan:
     name: Plan

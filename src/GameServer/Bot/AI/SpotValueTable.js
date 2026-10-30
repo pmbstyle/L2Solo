@@ -71,6 +71,7 @@ function refreshCatalog(rates) {
     const spots = spotSource() || EMPTY_SPOTS;
     const revision = Rewards.revision(rates);
     if (catalogMoved(spots) || revision !== rewardRevision) {
+        if (catalogMoved(spots)) checkCatalog(spots);
         rewardSpots = spots; rewardSpotCount = spots.length;
         rewardRevision = revision;
         dropRows();
@@ -80,6 +81,42 @@ function refreshCatalog(rates) {
 
 function catalogMoved(spots) {
     return spots !== rewardSpots || spots.length !== rewardSpotCount;
+}
+
+// The server's catalogue against the table's, one line per catalogue (a
+// repeated one is not logged again): the hunting spots the table has no row
+// set for (they get no value: a table of another catalogue, other geodata
+// floors) and the geodata the table was measured on against the server's.
+let catalogLine = null;
+function checkCatalog(spots) {
+    if (!spots.length) return;
+    const t = load();
+    let hunting = 0, missing = 0;
+    for (const spot of spots) {
+        if (spot.raidBoss === true) continue;
+        hunting++;
+        if (!t.spotIndex.has(String(spot.id))) missing++;
+    }
+    const tableGeodata = t.header.inputs?.geodata ?? null, serverGeodata = geodataProfile();
+    const line = `${missing}|${hunting}|${tableGeodata}|${serverGeodata}`;
+    if (line === catalogLine) return;
+    catalogLine = line;
+    const log = global.utils?.[missing || tableGeodata !== serverGeodata ? 'infoWarn' : 'infoSuccess'];
+    log?.('SpotTable', '%d of %d catalogue spots missing from the spot table; geodata: table %s, server %s',
+        missing, hunting, tableGeodata, serverGeodata);
+}
+
+// The profile of the geodata pack the server stands on (its manifest's, the
+// pack scripts/geodata-release.json names), or null without one. Read once:
+// the pack changes only with a restart.
+let geodataName;
+function geodataProfile() {
+    if (geodataName !== undefined) return geodataName;
+    try {
+        const directory = invoke('GameServer/Geodata/GeodataEngine').getGeodataDir(); // lazy: optional read once, at the first catalogue check (an offline table reader needs no geodata)
+        geodataName = JSON.parse(fs.readFileSync(path.join(directory, '.l2solo-geodata-manifest.json'), 'utf8')).profile || null;
+    } catch (_) { geodataName = null; }
+    return geodataName;
 }
 
 // The table's computed rows go with the inputs they came from.
@@ -113,14 +150,14 @@ const valueMemo = new Map();
 const valueMemoOrder = [];
 let valueMemoTail = 0;
 function clearValueMemo() { valueMemo.clear(); valueMemoOrder.length = 0; valueMemoTail = 0; }
-// The Map holds a key's slot; the row lives at that slot as 12 numbers in a slab and a flag
+// The Map holds a key's slot; the row lives at that slot as 13 numbers in a slab and a flag
 // byte. A new row drops the key filed at its slot, so a slot holds its key's row while the key
 // lives. L104: at the cap (x10, 24k real rows) the memo held 7.0 MB of the cold worker heap
 // with object rows, 1.0 MB so, plus the slab's 3 MB outside the JS heap (arrayBuffers). The ring fills
 // its slots in order before it wraps, so the slab grows by doubling and a small memo stays small.
-const ROW_NUMBERS = 12;
+const ROW_NUMBERS = 13;
 const NO_ROW = 1, NO_STACKS = 2, NO_REWARDS = 4;
-const ADENA = 4, LOOT = 7, SHOTS = 8, POTIONS = 9;
+const ADENA = 4, LOOT = 7, SHOTS = 8, POTIONS = 9, PRODUCTION = 12;
 let memoNumbers = new Float64Array(0), memoFlags = new Uint8Array(0);
 function growSlab() {
     const rows = Math.min(MAX_VALUE_MEMO, Math.max(1024, memoFlags.length * 2));
@@ -137,6 +174,7 @@ function storeRow(slot, row) {
     n[at] = row.kills; n[at + 1] = row.deaths; n[at + 2] = row.exp; n[at + 3] = row.sp; n[at + ADENA] = row.adena;
     n[at + 5] = row.dropLoot; n[at + 6] = row.spoilLoot; n[at + LOOT] = row.loot; n[at + SHOTS] = row.shots;
     n[at + POTIONS] = row.potions; n[at + 10] = row.stacks ?? 0; n[at + 11] = row.busyShare;
+    n[at + PRODUCTION] = row.production ?? NaN;
     memoFlags[slot] = (row.stacks === null ? NO_STACKS : 0) | (row.rewardSource === 'npc_rewards' ? 0 : NO_REWARDS);
 }
 // A fresh row of computeValue's shape and key order, or null.
@@ -146,7 +184,8 @@ function rowAt(slot) {
     const n = memoNumbers, at = slot * ROW_NUMBERS;
     return { kills: n[at], deaths: n[at + 1], exp: n[at + 2], sp: n[at + 3], adena: n[at + ADENA], dropLoot: n[at + 5],
         spoilLoot: n[at + 6], loot: n[at + LOOT], rewardSource: flags & NO_REWARDS ? 'unavailable' : 'npc_rewards',
-        shots: n[at + SHOTS], potions: n[at + POTIONS], stacks: flags & NO_STACKS ? null : n[at + 10], busyShare: n[at + 11] };
+        shots: n[at + SHOTS], potions: n[at + POTIONS], stacks: flags & NO_STACKS ? null : n[at + 10], busyShare: n[at + 11],
+        production: Number.isNaN(n[at + PRODUCTION]) ? null : n[at + PRODUCTION] };
 }
 let valueMemoTable = null, valueMemoRates = null;
 function refreshValueMemo(t, rates) {
@@ -177,6 +216,17 @@ function filled(values, neutral) {
 
 function roleSlot(t, role) {
     return t.roleIndex.get(typeof role === 'string' ? role : `${role}`);
+}
+
+// A spot's index in the table, by its own id or by the id of a cell piece it
+// took in (SpotIndex.spotById over the server's catalogue: a spotId saved
+// before the cut names the spot that holds its field now), or undefined.
+function spotSlot(t, spotId) {
+    const key = typeof spotId === 'string' ? spotId : `${spotId}`;
+    const own = t.spotIndex.get(key);
+    if (own !== undefined) return own;
+    const named = SpotIndex.spotById(spotSource() || EMPTY_SPOTS, key)?.id;
+    return named === undefined ? undefined : t.spotIndex.get(String(named));
 }
 
 // The table key of a bot. A table by class lines (header roleLines, user
@@ -301,9 +351,11 @@ const DataCache = invoke('GameServer/DataCache');
 
 // What one hour of solo hunting gives: kills, deaths, exp, SP, adena, loot at
 // the NPC buy-back, shots and potions used, and the share of the hour spent in
-// combat and recovery (the bots' own records count only that share). Null
-// when the spot or role is unknown or the bot finds no target it may fight
-// alone there at this level.
+// combat and recovery (the bots' own records count only that share), and the
+// mobs per hour the spawns it may fight give back (production: what a crowd
+// of hunters shares, huntShare; null without production data). Null when the
+// spot or role is unknown or the bot finds no target it may fight alone there
+// at this level. spotId: a spot's own id or a piece's it took in (spotSlot).
 function value(spotId, role, level, shots = true, rewardOptions = {}) {
     const t = load(), rates = ProgressionRates.profile();
     refreshCatalog(rates);
@@ -327,7 +379,7 @@ function memoPart(value, limit) {
     return Number.isInteger(number) && number >= 0 && number < limit && `${number}` === text ? number : -1;
 }
 function memoKey(t, spotId, role, level, shots, skill) {
-    const s = t.spotIndex.get(typeof spotId === 'string' ? spotId : `${spotId}`);
+    const s = spotSlot(t, spotId);
     const r = roleSlot(t, role);
     const l = memoPart(level, MEMO_LEVELS), k = memoPart(skill, MEMO_SKILLS);
     if (s !== undefined && r !== undefined && l >= 0 && k >= 0) {
@@ -362,11 +414,11 @@ function rowMix(t, row) {
     return Array.isArray(mix) && mix.length ? mix : null;
 }
 
-// A row's gate at a bot's level gap (the generator's rowGate, measured at the
+// A row's gate at a bot's level gap (the generator's gapGate, measured at the
 // curve gaps; combat reads it at or above the row's minGap): { cap, mask } at
-// the nearest gap at or below it, mask the bits
-// of the mix species the bot may fight alone there; null when it may fight
-// none; undefined for a table before the gate (the reference's cap and mix).
+// the nearest gap at or below it, mask the bits of the mix species the bot
+// may fight alone there; null when it may fight none; undefined for a table
+// before the gate (the reference's cap and mix).
 function gateAt(t, row, gap) {
     const gate = t.f.gate < 0 ? null : row?.[t.f.gate];
     if (!Array.isArray(gate)) return undefined;
@@ -411,11 +463,10 @@ function killSpot(t, row, spotId, mask = ALL_SPECIES) {
     return held.spot;
 }
 
-// The mobs per hour the spawns a bot may fight at its gap give back (their
-// respawns, the live cap BackgroundResolver.soloShareMobs puts on one
-// hunter, E69): a level curve or another gap's walk never kills more (T106
-// audit: an archer read 173 of a spot's 176). mask as killSpot's; null
-// without production data (an offline spot).
+// The mobs per hour the spawns of the species a bot may fight at its gap
+// give back (their respawns), every spawn of them whole (gapProduction takes
+// the admitted part of it). mask as killSpot's; null without production data
+// (an offline spot).
 const productions = new WeakMap();
 function productionCap(t, row, spotId, mask = ALL_SPECIES) {
     const base = rewardSpot(spotId);
@@ -437,6 +488,18 @@ function productionCap(t, row, spotId, mask = ALL_SPECIES) {
         byMask.set(key, held);
     }
     return held.cap;
+}
+
+// The mobs per hour a bot may take of a spot's spawns at its gap (E69, the
+// one owner of the rule): the production of the species it may fight
+// (productionCap) times the part of it it may fight, as
+// BackgroundResolver.soloShareMobs counts each spawn group's production times
+// its admitted share. gate: gateAt's; its share, the admitted part, is 1
+// where the table does not measure it (a pack species taken in some pulls
+// only counts whole). Null without production data.
+function gapProduction(t, row, spotId, gate) {
+    const spawns = productionCap(t, row, spotId, gate?.mask ?? ALL_SPECIES);
+    return spawns === null ? null : spawns * (gate?.share ?? 1);
 }
 
 // The exp level-gap factor of a row's kills for a bot of level: the
@@ -498,10 +561,11 @@ function combat(t, s, r, level, shots) {
     const curve = t.curves[r][Math.floor(spotLevel / t.bandLevels)];
     const refGap = row[t.f.refGap];
     const measured = row[t.f.kph] * ratio(curve.kph, t.gaps, refGap, gap);
-    const cap = Math.min(rowCap(t, row, spot, gate), productionCap(t, row, spot[0], mask) ?? Infinity);
+    const production = gapProduction(t, row, spot[0], gate);
+    const cap = Math.min(rowCap(t, row, spot, gate), production ?? Infinity);
     const kills = Math.min(walked(t, row, refGap, gate, measured), cap);
     if (!(kills > 0)) return null;
-    return { row, curve, gap, refGap, kills, cap, gate, mask, expRatio: ratio(curve.exp, t.gaps, refGap, gap),
+    return { row, curve, gap, refGap, kills, cap, production, gate, mask, expRatio: ratio(curve.exp, t.gaps, refGap, gap),
         busyRatio: ratio(curve.busy, t.gaps, refGap, gap), gapFactor: killGapFactor(t, row, botLevel, spotLevel, mask) };
 }
 // A curve's value at the bot's gap over its value at the row's reference gap.
@@ -516,11 +580,12 @@ function hourExp(t, rates, c) {
 
 // known: the spot's combat() for these arguments when the caller read it.
 function computeValue(t, rates, spotId, role, level, shots, skill = roleSpoilLevel(role, level), known = undefined) {
-    const s = t.spotIndex.get(String(spotId));
+    const s = spotSlot(t, spotId);
     const r = roleSlot(t, role);
     if (s === undefined || r === undefined) return null;
     const c = known === undefined ? combat(t, s, r, level, shots) : known;
     if (!c) return null;
+    spotId = t.spots[s][0];
     const { row, curve, gap, refGap, kills, expRatio, busyRatio, gapFactor, mask } = c;
     // Combat remains an offline measurement. Money comes from the native
     // reward groups at each defeated NPC's level and the current rates.
@@ -542,7 +607,8 @@ function computeValue(t, rates, spotId, role, level, shots, skill = roleSpoilLev
         potions: kills * row[t.f.potions] * busyRatio,
         stacks: t.f.stacks < 0 || row[t.f.stacks] === null ? null
             : kills * row[t.f.stacks] * lootFactor,
-        busyShare: Math.min(1, kills * busy / 3600)
+        busyShare: Math.min(1, kills * busy / 3600),
+        production: c.production
     };
 }
 
@@ -557,22 +623,31 @@ function computeValue(t, rates, spotId, role, level, shots, skill = roleSpoilLev
 // mean accuracy and evasion. Null where value() has no row or the table has
 // no cycle columns.
 // The mobs per hour the spawns a bot of role and level may fight on a spot
-// give back (productionCap at its gap), or null (no row, no production data):
-// the whole a crowd of hunters shares (SpotEconomics, user 10-29).
+// give back (value()'s production, from the value memo), or null (no row, no
+// production data): the whole a crowd of hunters shares (huntShare).
 function production(spotId, role, level, shots = true) {
-    const t = load();
-    refreshCatalog(ProgressionRates.profile());
-    const s = t.spotIndex.get(String(spotId)), r = roleSlot(t, role);
-    if (s === undefined || r === undefined) return null;
-    const c = combat(t, s, r, level, shots);
-    return c ? productionCap(t, c.row, t.spots[s][0], c.mask) : null;
+    const t = load(), rates = ProgressionRates.profile();
+    refreshCatalog(rates);
+    refreshValueMemo(t, rates);
+    const slot = memoValue(t, rates, spotId, role, level, shots, roleSpoilLevel(role, level));
+    const held = memoFlags[slot] & NO_ROW ? NaN : memoNumbers[slot * ROW_NUMBERS + PRODUCTION];
+    return Number.isNaN(held) ? null : held;
+}
+
+// The share of its row's kills one of `hunters` bots on a spot keeps: the
+// mobs per hour the spawns it may fight give back (production, value()'s)
+// over the hunters, over its kills (an hour's), at most 1; 1 without
+// production data. The one share rule of a spot's value: the live crowd
+// (SpotEconomics) and the full spot of the ranking (fullShare).
+function huntShare(production, hunters, kills) {
+    return production > 0 && kills > 0 && hunters > 0 ? Math.min(1, production / hunters / kills) : 1;
 }
 
 function cycle(spotId, role, level, shots = true, rewardOptions = {}) {
     const t = load(), rates = ProgressionRates.profile();
     refreshCatalog(rates);
     refreshValueMemo(t, rates);
-    const s = t.spotIndex.get(String(spotId)), r = roleSlot(t, role);
+    const s = spotSlot(t, spotId), r = roleSlot(t, role);
     if (s === undefined || r === undefined || t.f.fight < 0) return null;
     const c = combat(t, s, r, level, shots);
     if (!c) return null;
@@ -613,7 +688,7 @@ function lineClasses(role) {
 // The level of a spot in the table (its monsters' average), or null.
 function spotLevel(spotId) {
     const t = load();
-    const s = t.spotIndex.get(String(spotId));
+    const s = spotSlot(t, spotId);
     return s === undefined ? null : t.spots[s][1];
 }
 
@@ -621,7 +696,7 @@ function spotLevel(spotId) {
 // hunts it in the author's combat.
 function referenceLevel(spotId, role, shots = true) {
     const t = load();
-    const s = t.spotIndex.get(String(spotId));
+    const s = spotSlot(t, spotId);
     const r = roleSlot(t, role);
     if (s === undefined || r === undefined) return null;
     const row = t.rows[s][r * t.shotsIndex.size + t.shotsIndex.get(shotKey(shots))];
@@ -771,17 +846,14 @@ function rankIncome(t, rates, role, level, costs, minGap, shots, skill) {
         || String(t.spots[a.index][0]).localeCompare(String(t.spots[b.index][0])));
     return rows.slice(0, 64);
 }
-// The share of its row's kills one bot keeps on a spot full of hunters: the
-// mobs per hour the spawns it may fight give back (productionCap) over the
-// bots the spot has room for (LevelingRoutes.roomForSpot, the room check at
-// arrival), at most 1; 1 without production data. c: the spot's combat()
-// for the bot. The live hunters on a spot crowd a bot's own value
-// (SpotEconomics.create, crowded).
+// The share of its row's kills one bot keeps on a spot full of hunters
+// (huntShare): the bots the spot has room for (LevelingRoutes.roomForSpot,
+// the room check at arrival). c: the spot's combat() for the bot. The live
+// hunters on a spot crowd a bot's own value (SpotEconomics.create, crowded).
 function fullShare(t, s, c, kills) {
-    const production = kills > 0 && productionCap(t, c.row, t.spots[s][0], c.mask);
-    if (!(production > 0)) return 1;
+    if (!(c.production > 0 && kills > 0)) return 1;
     const spot = SpotIndex.spotById(rewardSpots, t.spots[s][0]) || { density: t.spots[s][2] };
-    return Math.min(1, production / (LevelingRoutes ||= invoke('GameServer/Bot/AI/LevelingRoutes')).roomForSpot(spot) / kills); // lazy: cycle LevelingRoutes' chain loads the combat profiles
+    return huntShare(c.production, (LevelingRoutes ||= invoke('GameServer/Bot/AI/LevelingRoutes')).roomForSpot(spot), kills); // lazy: cycle LevelingRoutes' chain loads the combat profiles
 }
 let LevelingRoutes = null;
 
@@ -821,4 +893,4 @@ function useFile(next = DEFAULT_FILE) {
     clearIncomeBases();
 }
 
-module.exports = { value, cycle, production, kitSurface, roleClass, lineClass, roleFor, roleSpoilLevel, spotLevel, referenceLevel, roles, revision, best, rankedIncome, rankedSpotIds, useFile, useSpots, expGapFactor, cacheStats, DEFAULT_FILE };
+module.exports = { value, cycle, production, huntShare, geodataProfile, kitSurface, roleClass, lineClass, roleFor, roleSpoilLevel, spotLevel, referenceLevel, roles, revision, best, rankedIncome, rankedSpotIds, useFile, useSpots, expGapFactor, cacheStats, DEFAULT_FILE };

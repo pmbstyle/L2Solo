@@ -43,9 +43,12 @@ function lootValue(items = []) {
     }
     return value;
 }
+// A consumable's price to a bot: the NPC's price at the rate (else the
+// template's). One price for the table's costs and the bot's own samples.
+const botPrice = id => Math.max(0, Number(StaticMerchantPricing.botBuyPrice(id)) || 0);
 // Prices are independent of the wish network: callers may supply their
-// current quotes, otherwise the NPC's price at the rate (else the template's).
-function consumablePrices(state, price = id => StaticMerchantPricing.botBuyPrice(id)) {
+// current quotes, otherwise the bot's price (botPrice).
+function consumablePrices(state, price = botPrice) {
     const shots = invoke('GameServer/Inventory/ShotStock').planForState(state);
     const potion = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state);
     return { shots: Math.max(0, Number(price(shots.selfId)) || 0), potions: Math.max(0, Number(price(potion.selfId)) || 0) };
@@ -54,13 +57,14 @@ function netIncome(row, costs) {
     return Number(row.adena || 0) + Number(row.loot || 0)
         - Number(row.shots || 0) * costs.shots - Number(row.potions || 0) * costs.potions;
 }
+// What a round's shots and potions cost the bot, at the price the table's
+// rows pay for them (consumablePrices: the plan's shot, each potion its own).
 function consumedCost(state, after) {
     if (!after) return 0;
     const shots = invoke('GameServer/Inventory/ShotStock').planForState(state);
     const ids = [shots.selfId, ...invoke('GameServer/Bot/AI/HealingPotionStock').POTION_IDS];
     return ids.reduce((total, id) => total + Math.max(0,
-        Number(state.inventory?.[id]?.amount || 0) - Number(after[id]?.amount || 0))
-        * Number(ItemTemplateIndex.find(DataCache.items, id)?.template?.price || 0), 0);
+        Number(state.inventory?.[id]?.amount || 0) - Number(after[id]?.amount || 0)) * botPrice(id), 0);
 }
 // One sample of a spot: cycleMs is the round's time on the spot, from its
 // start to the next round (the fights, the rest, the wait between rounds).

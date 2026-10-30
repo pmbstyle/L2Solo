@@ -172,6 +172,49 @@ try {
     fs.rmSync(walkScratch, { recursive: true, force: true });
 }
 
+// A spotId saved before the cut (a cell piece a spot took in, SpotIndex)
+// reads the spot that holds its field now.
+Table.useFile(path.join(__dirname, 'fixtures', 'spot_table.json'));
+Table.useSpots([{ id: 'S', joins: [{ id: 'S_piece', cell: 'S_piece' }] }, { id: 'T' }]);
+try {
+    assert.deepStrictEqual(Table.value('S_piece', 'dps', 24, true), Table.value('S', 'dps', 24, true), 'a piece\'s id reads its spot\'s row');
+    near(Table.production('S_piece', 'dps', 24, true) ?? 0, Table.production('S', 'dps', 24, true) ?? 0, 'and its production');
+    assert.strictEqual(Table.spotLevel('S_piece'), 18, 'and its level');
+    assert.strictEqual(Table.referenceLevel('S_piece', 'dps'), 24, 'and its reference level');
+    assert.strictEqual(Table.value('X_piece', 'dps', 24, true), null, 'an id no spot holds: no row');
+} finally {
+    Table.useSpots([]);
+    Table.useFile();
+}
+
+// The server's catalogue against the table's: one line per catalogue, the
+// hunting spots without a row set and the geodata of each side.
+{
+    const lines = [];
+    const saved = { warn: utils.infoWarn, success: utils.infoSuccess };
+    utils.infoWarn = (prefix, ...params) => lines.push([prefix, ...params]);
+    utils.infoSuccess = (prefix, ...params) => lines.push([prefix, ...params]);
+    try {
+        Table.useFile(path.join(__dirname, 'fixtures', 'spot_table.json'));
+        Table.useSpots([{ id: 'S' }, { id: 'Q' }, { id: 'R', raidBoss: true }]);
+        Table.value('S', 'dps', 24, true);
+        Table.value('S', 'dps', 20, true);
+        Table.production('Q', 'dps', 24, true);
+        const ours = lines.filter(([prefix]) => prefix === 'SpotTable');
+        assert.strictEqual(ours.length, 1, 'one line per catalogue, not per lookup');
+        assert.deepStrictEqual(ours[0].slice(2, 5), [1, 2, null], 'one of two hunting spots missing; the table names no geodata');
+        assert.strictEqual(ours[0][5], Table.geodataProfile(), 'the server\'s geodata');
+        Table.useSpots([{ id: 'S' }]);
+        Table.value('S', 'dps', 24, true);
+        assert.deepStrictEqual(lines.filter(([prefix]) => prefix === 'SpotTable').length, 2, 'a new catalogue: a new line');
+    } finally {
+        utils.infoWarn = saved.warn;
+        utils.infoSuccess = saved.success;
+        Table.useSpots([]);
+        Table.useFile();
+    }
+}
+
 // ---------------------------------------------------------------- the committed table
 const raw = JSON.parse(fs.readFileSync(Table.DEFAULT_FILE, 'utf8'));
 assert.strictEqual(raw.rows.length, raw.spots.length, 'one row set per spot');

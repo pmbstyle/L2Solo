@@ -125,6 +125,17 @@ class SpotOccupancyIndex {
         return count;
     }
 
+    // How many bots are indexed on a spot, one key left out (excludeKey), in
+    // O(1): the set's size, without members()' check of each record against
+    // the location index (the two are written together: LifeStateCache.set and
+    // delete, update and remove here). The hunters' count (huntersOn), read
+    // per spot a search scores.
+    physicalSize(spotId, excludeKey = null) {
+        const members = this.physical.get(spotId);
+        if (!members) return 0;
+        return members.size - (excludeKey !== null && members.has(excludeKey) ? 1 : 0);
+    }
+
     // The spots with at least one bot indexed there (the status line's walk).
     spotIds() { return this.physical.keys(); }
 
@@ -147,8 +158,8 @@ class SpotOccupancyIndex {
 // value.
 function huntersOn(index, spotId, state = null) {
     if (!index || !spotId) return 1;
-    if (!state) return Math.max(1, index.physicalCount(spotId));
-    return index.physicalCount(spotId, { excludeKey: stateKey(state) }) + 1;
+    if (!state) return Math.max(1, index.physicalSize(spotId));
+    return index.physicalSize(spotId, stateKey(state)) + 1;
 }
 
 module.exports = { SpotOccupancyIndex, stateKey, occupiedSpotId, huntersOn };
