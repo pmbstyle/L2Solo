@@ -218,7 +218,7 @@ function actionMix(mob, target, at = 0, fight = freshFight(mob)) {
     const plain = HitRules.expectedMelee(CombatantView.view({ ...attacker, critRate: 0 }), defender, { bow, modifier });
     const crit = HitRules.expectedMelee(CombatantView.view({ ...attacker, critRate: 1000 }), defender, { bow, modifier });
     const spread = 1 + Math.pow(Number(attacker.pAtkRnd) || 0, 2) / 3 / 10000;
-    let left = 1, mean = 0, square = 0, ms = 0, spellDamage = 0;
+    let left = 1, mean = 0, square = 0, ms = 0, spellDamage = 0, spellSquare = 0;
     const pack = Pull.packOf(mob);
     for (const skill of fight.skills) {
         if (skill.fetchTargetKind?.() !== 'enemy' || NpcCombatChoice.category(skill) !== 'damage') continue;
@@ -231,13 +231,14 @@ function actionMix(mob, target, at = 0, fight = freshFight(mob)) {
         const each = pack * (spell ? HitRules.expectedMagicSkill : HitRules.expectedPhysicalSkill)(attacker, defender, context)
             * spellLands(mob, skill, profile);
         mean += share * each; square += share * each * each; ms += share * castMs; left -= share;
-        if (spell) spellDamage += share * each;
+        if (spell) { spellDamage += share * each; spellSquare += share * each * each; }
     }
     mean += left * hitChance * ((1 - critical) * plain + critical * crit);
     square += left * hitChance * ((1 - critical) * plain * plain + critical * crit * crit) * spread;
     ms += left * meleeMs;
     return { perAction: mean, squarePerAction: square, actionMs: ms, perSecond: mean / ms * 1000,
-        actionsPerSecond: 1000 / ms, spellShare: mean > 0 ? spellDamage / mean : 0 };
+        actionsPerSecond: 1000 / ms, spellShare: mean > 0 ? spellDamage / mean : 0, spellPerAction: spellDamage,
+        spellSquarePerAction: spellSquare };
 }
 
 // The monster's expected damage per second on a profile (actionMix), its
