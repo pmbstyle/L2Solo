@@ -2,7 +2,7 @@
 # Spot index check (T128): per class line, level and spot, two thresholds on
 # one number the bot computes from its own stats,
 #   I = HP x offence / (kp / pDef + km / mDef)
-# (offence = pAtk x atkSpd x (1 + crit/1000); kp, km: the spot's physical and
+# (offence = kills per second on the spot by the formula; kp, km: the spot's physical and
 # magic threat, C4 damage ~ attack / defence). "Tolerable": every spot mob is
 # survived in a bad fight (mean + 3 sigma, report.mob_hour's test); "easy":
 # tolerable and the rest after the spot's fights is shorter than the fights:
@@ -39,9 +39,13 @@ def threat(x, rows):
     med = lambda v: sorted(v)[len(v) // 2]
     return med(kp), med(km)
 
-def index(x, w, a, j, kp, km):
-    wr, ar, jr = x['weapons'][w], x['armour'][a], x['jewels'][j]
-    off = wr[2] * wr[4] * (1 + wr[5] / 1000)
+def index(x, w, a, j, kp, km, rows):
+    # offence: kills per second on the spot's mobs by the formula (any class:
+    # physical or magic, HuntModel.damageTerms), the bot computes it itself
+    ar, jr = x['armour'][a], x['jewels'][j]
+    fights = [x['off'][w][m][0] for m, _ in rows]
+    if any(f is None for f in fights): return 0
+    off = sum(c for _, c in rows) / sum(c * max(0.05, x["off"][w][m][0]) for m, c in rows)
     return ar[4] * off / (kp / max(1, ar[2]) + km / max(1, jr[2]) + 1e-9)
 
 def easy_index(x, a, j, kp, km):
@@ -85,7 +89,7 @@ def main():
             if not rows or len(rows) < len(spot[5]): continue
             nspots += 1
             kp, km = threat(x, rows)
-            labelled = [(index(x, *k, kp, km), *exact(x, *k, rows), easy_index(x, k[1], k[2], kp, km)) for k in kits]
+            labelled = [(index(x, *k, kp, km, rows), *exact(x, *k, rows), easy_index(x, k[1], k[2], kp, km)) for k in kits]
             et, _ = best_cut([(i, t) for i, t, _, _ in labelled])
             # easy = tolerable and rest < fight: tolerable's cut, then the defence-vs-regen cut
             ee, _ = best_cut([(i2 if i >= _cut(labelled) else -1, e) for i, _, e, i2 in labelled])
