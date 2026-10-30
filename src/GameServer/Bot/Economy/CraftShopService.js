@@ -1,7 +1,6 @@
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const DataCache = invoke('GameServer/DataCache');
-const Database = invoke('Database');
 const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 const { isServiceCrafter, craftLevelFor, canCraft } = require('./CraftEligibility');
 const ProgressionCap = invoke('GameServer/Progression/ProgressionCap');
@@ -312,7 +311,7 @@ function profileFor(state = {}) {
 function ensureRecipes(characterId, profile) {
     const recipeIds = [...new Set((profile?.entries || []).map((entry) => Number(entry.recipeId)).filter(Number.isSafeInteger))];
     return recipeIds.reduce((chain, recipeId) => (
-        chain.then(() => Database.setCharacterRecipe(characterId, recipeId, 'dwarven'))
+        chain.then(() => invoke('Database').setCharacterRecipe(characterId, recipeId, 'dwarven'))
     ), Promise.resolve()).then(() => {
         invoke('GameServer/Bot/Economy/CraftWorkshopService').recipesChanged(characterId);
         return profile;

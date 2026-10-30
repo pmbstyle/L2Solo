@@ -55,7 +55,7 @@ function eligible(state, { ownLines = [], now = Date.now() } = {}) {
         || state.stats?.craftStationId || /^bot_craft_\d+$/i.test(String(state.accountName || ''))) return false;
     if (!CraftShopService.isServiceCrafter(state) || CraftShopService.craftLevelFor(state) <= 0) return false;
     if (state.stats?.equipmentPlan?.strategy === 'craft'
-        && ['active', 'component_ready', 'ready_to_craft'].includes(state.stats.equipmentPlan.status)) return false;
+        && ['component_ready', 'ready_to_craft'].includes(state.stats.equipmentPlan.status)) return false;
     const previous = state.stats?.wealthCraft;
     if (previous?.outcome === 'waiting_for_buyer') {
         const id = Number(previous.productId);

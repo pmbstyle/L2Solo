@@ -203,13 +203,13 @@ function changeWorkshop(key, row) {
     if (previous) { publicWorkshopKeys.delete(key); publicWorkshopIndex.remove(key); }
     if (row) {
         const value = { characterId: row[0], recipeId, price: row[2], entryPrice: row[2], townName: row[3],
-            loc: { locX: row[4], locY: row[5], locZ: row[6] }, capacityBatches: row[7] };
+            loc: { locX: row[4], locY: row[5], locZ: row[6] }, capacityBatches: row[7], publicStation: row[8] === 1 };
         publicWorkshopKeys.set(key, value); publicWorkshopIndex.put(key, value);
     }
     const productId = Number(invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(recipeId)?.productId || 0);
     if (productId) {
         const digest = workshopDigests.get(productId) || { xor: 0, sum: 0, count: 0 };
-        const scalar = value => [value.characterId, value.recipeId, value.entryPrice, value.townName, value.loc.locX, value.loc.locY, value.loc.locZ, value.capacityBatches];
+        const scalar = value => [value.characterId, value.recipeId, value.entryPrice, value.townName, value.loc.locX, value.loc.locY, value.loc.locZ, value.capacityBatches, value.publicStation ? 1 : 0];
         const change = (values, step) => {
             const hash = invoke('GameServer/Bot/Fnv1a').fnv1a32(JSON.stringify(values));
             digest.xor = (digest.xor ^ hash) >>> 0; digest.sum = (digest.sum + step * hash) >>> 0; digest.count += step;
@@ -271,9 +271,10 @@ const occupationPlanner = new ColdOccupationPlanner({
     },
     create: input => occupationWork(input, (function* () {
         if (input.mode === 'wish') return yield* EconomicTrip.prepare(input.state);
-        if (input.mode === 'showcase') return { economyPlan:
+        if (input.mode === 'showcase' || input.mode === 'craft_market') return { economyPlan:
             yield* invoke('GameServer/Bot/Population/ColdEconomyPlan').prepare(input.state, input.economy, {
-                showcaseOnly: true, now: input.timestamp, board: input.board, tripCost: input.economy.trip,
+                showcaseOnly: input.mode === 'showcase', now: input.timestamp, board: input.board, tripCost: input.economy.trip,
+                buyOrderEscrow: input.buyOrderEscrow,
                 npcOffersFor: OccupationSources.npcOffersFor,
                 findSpot: id => SpotIndex.spotById(planningSpots, id)
             }) };
@@ -302,7 +303,7 @@ const occupationPlanner = new ColdOccupationPlanner({
             yield 'candidate';
             if (economy.intentPending) throw Error('trade_meeting_preparation_pending');
             const intents = invoke('GameServer/Bot/Economy/TradeIntent').project(input.state, economy.network, economy.projection,
-                id => economy.worth(id) ?? economy.price(id), 40);
+                id => economy.worth(id) ?? economy.price(id), 40, economy.board, economy.trip?.details);
             if (!intents) throw Error('trade_meeting_preparation_pending');
             const routePlan = invoke('GameServer/Bot/Population/ColdTrip').meetingTownPlan(input.state, request.point);
             if (!routePlan) throw Error('trade_meeting_route');
@@ -449,10 +450,9 @@ const occupationPlanner = new ColdOccupationPlanner({
             const cursor = Shots.createShot(input.state, input.knownRecipes, prepared.context, options);
             while (!Shots.stepShot(cursor)) yield cursor.stage;
             const value = Shots.resultShot(cursor);
-            // Consumable production is the crafter's primary earning route.
-            // The same positive finite value gate still rejects unprofitable
-            // production; other crafts remain the fallback when shots cannot sell.
-            if (value && cursor.selectedValueHours > 0) selected = value;
+            // Compare both production routes on the same finite value. A
+            // profitable shot must not displace a more valuable material lot.
+            if (value && cursor.selectedValueHours > selectedValue) selected = value;
         }
         const economyPlan = input.economy ? yield* invoke('GameServer/Bot/Population/ColdEconomyPlan').prepare(input.state, input.economy, {
             ...prepared.options, now: input.timestamp, board: input.board, persona: BotPersona.of(input.state),
@@ -580,6 +580,26 @@ function occupationFor(state, timestamp, options = {}, mode = 'occupation') {
         knownShotRecipes: recipes.knownShotRecipes || [], recipeBook: recipes.recipeBook, stock: options.stock || null, economy,
         sourceReady: tables.ready('board') && tables.ready('market'), mode, routeKey, routeRows });
 }
+// A clan craft's selected material can be independent of the current wish.
+// Review only an executable indexed quote, at most once per two minutes for
+// this bot, on its ordinary lifecycle; no population-wide wake or timer.
+function clanMarketReviewDue(state, timestamp) {
+    return require('./CraftMarketReview').clanInputDue(state, kernel.states.get(Number(state.characterId)), timestamp, boardReady());
+}
+async function clanMarketPlan(state, economy, timestamp) {
+    if (!clanMarketReviewDue(state, timestamp)) return null;
+    const record = kernel.states.get(Number(state.characterId));
+    record.clanMarketReviewAt = timestamp;
+    const board = boardReady();
+    if (!board || !invoke('GameServer/Bot/Economy/ReadyTradeChoice').clanCraftPurchase(state, economy, board)) return null;
+    return occupationFor(state, timestamp, { economy }, 'craft_market');
+}
+// Missing B+ project bids must eventually be published even if the current
+// wish never generates a stock/loot edge. Spread first and repeat reviews over
+// fifteen minutes, including projects retained behind a different goal.
+function personalCraftBidReviewDue(state, timestamp) {
+    return require('./CraftMarketReview').personalBidDue(state, kernel.states.get(Number(state.characterId)), timestamp, boardReady());
+}
 // A build's workshop (the crafter's best recipe and its income per hour,
 // occupationFor mode occupation), counted by the caller that asks: only a
 // build reads it, a held card asks none.
@@ -697,7 +717,7 @@ const goalRevision = characterId => tables.ready('goals')
 tables.watch('board', {
     reset: () => { escrowByRecord.clear(); escrowByOwner.clear(); publicWorkshopIndex.clear(); publicWorkshopKeys.clear(); workshopRevisions.clear(); workshopDigests.clear(); workshopScopeDigests.clear(); boardReplacing = true; boardFollower.reset(); OccupationSources.recipeIndex(boardIndex).reset(); kernel?.lookSeen.clear(); },
     put: (key, row) => {
-        if (String(key).startsWith('w:')) { changeWorkshop(key, row.length === 9 ? row.slice(1) : row); return; }
+        if (String(key).startsWith('w:')) { changeWorkshop(key, typeof row[0] === 'string' ? row.slice(1) : row); return; }
         const previous = boardIndex.records.get(Number(key)) || [];
         boardFollower.put(key, row);
         setRecordEscrow(Number(key), Number(recordOf(row).ownerId), escrowOf(row));
@@ -1513,7 +1533,10 @@ function startKernel(config = {}) {
             const karmaPlan = invoke('GameServer/Bot/Population/ColdKarmaPolicy').plan(state, planningSpots, timestamp);
             // A karma step carries no stats packet: it keeps the previous shot demand.
             if (karmaPlan) return karmaPlan;
-            const previousPlan = state.stats?.equipmentPlan || null;
+            const originalPlan = state.stats?.equipmentPlan || null;
+            const previousPlan = GearPlanSelection.uniqueCraftProjects(originalPlan);
+            if (previousPlan !== originalPlan) state = { ...state, stats: { ...state.stats, equipmentPlan: previousPlan } };
+            const craftBidReview = personalCraftBidReviewDue(state, timestamp);
             // Failure counters and recovery deadlines are live native facts,
             // even when the expensive wish calculation still holds.
             const nativeReplan = GearAcquisitionPlanner.replanContextFor(state, previousPlan, timestamp);
@@ -1563,8 +1586,11 @@ function startKernel(config = {}) {
             // A refused card's verdict serves the build below, which reads
             // this state, or a copy of it with a wish-focus plan deferred.
             const prepared = {};
-            let refreshed = solo && nativeHolds && planHolds()
+            let refreshed = previousPlan === originalPlan && solo && nativeHolds && planHolds()
                 ? ColdEconomyDecision.refreshAdvisory(state, record?.wishAdvisory, deps, { prepared, collect: !wishFocus }) : null;
+            // A compact advisory contains no quantitative project needs.
+            // The bounded clan-market review needs the full current graph.
+            if (refreshed && (craftBidReview || clanMarketReviewDue(state, timestamp))) refreshed = null;
             if (refreshed) refreshed = await refreshCraftPacket(state, timestamp, refreshed);
             // Compact advice has no full money queue for clan acquisition.
             // A null intention takes its ordinary native selection there.
@@ -1573,7 +1599,7 @@ function startKernel(config = {}) {
             // Build the renewed proof against the native live history, so a
             // consumed wake/expiry does not invalidate it again on publication.
             const preparationState = wishFocus && !refreshed ? { ...state, stats: { ...state.stats,
-                equipmentPlan: GearPlanSelection.deferredWishPlan(previousPlan, nativeReplan) } } : state;
+                equipmentPlan: GearPlanSelection.deferredWishPlan(previousPlan, nativeReplan, state, timestamp) } } : state;
             // Both reuses (the card's leaf, a null intention) read the card's
             // workshop. A build keeps the held one while its verdict, judged
             // here on the state the build reads and handed to it
@@ -1592,8 +1618,10 @@ function startKernel(config = {}) {
                 // The card holds the plan: the route is read on the input state.
                 const route = routeTrip(state, standingSpot(state), leaf, timestamp);
                 const routedState = beginHuntingTrip(state, route, timestamp) || state;
-                const occupation = routedState.activity === 'hunting' && leaf.activity !== 'hunting'
+                let occupation = routedState.activity === 'hunting' && leaf.activity !== 'hunting'
                     ? await occupationFor(routedState, timestamp, { economy: refreshed.economy }, 'action') : null;
+                if (!occupation?.economyPlan && !refreshed.economyPlan)
+                    occupation = await clanMarketPlan(routedState, refreshed.economy, timestamp);
                 rememberWishAdvisory(kernel.states.get(Number(state.characterId)), refreshed.advisory);
                 // economy: worker-local, the step's one decision; the
                 // projection after the round reads it (never posted).
@@ -1608,7 +1636,7 @@ function startKernel(config = {}) {
             const preparedEconomy = nullReuse ? refreshed.economy
                 : Economy.forState(preparationState, withIncomeRoute(withEventVerdict(deps, prepared), prepared.basics));
             const selectedAcquisition = nullReuse ? {
-                acquisitionPlan: GearPlanSelection.deferredWishPlan(previousPlan, nativeReplan),
+                acquisitionPlan: GearPlanSelection.deferredWishPlan(previousPlan, nativeReplan, state, timestamp),
                 replanContext: nativeReplan, reusablePartyRequest: false,
                 excludedSpotIds: SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp), economy: preparedEconomy
             } : GearPlanSelection
@@ -1617,8 +1645,10 @@ function startKernel(config = {}) {
                     planningOptions: { ...planningNpcCatalog.plannerOptions, buyOrderEscrow: escrowFor(state.characterId) }
                 });
             const { replanContext, reusablePartyRequest, excludedSpotIds, economy } = selectedAcquisition;
-            const acquisitionPlan = invoke('GameServer/Bot/Economy/WishProviders').personalCraftPlan(state, preparedEconomy)
-                || selectedAcquisition.acquisitionPlan;
+            // Selection already incorporates the prepared wish and preserves
+            // the old project's inputs and bids. Replacing its result with a
+            // second bare wish plan drops that retained chain on every switch.
+            const acquisitionPlan = selectedAcquisition.acquisitionPlan;
             const partyRequest = PartyRequestPlanner.partyRequestForPlan(state, acquisitionPlan, timestamp,
                 { spots, economy, memo: kernel.states.get(Number(state.characterId)) });
             // The step took its build result, which clears wishDirty: a moved
@@ -1651,11 +1681,15 @@ function startKernel(config = {}) {
             };
             const route = routeTrip(plannedState, standingSpot(state), economy.network.activity, timestamp);
             const routedState = beginHuntingTrip(plannedState, route, timestamp) || plannedState;
-            const preparedOccupation = routedState.activity === 'shopping'
+            let preparedOccupation = routedState.activity === 'shopping'
                 ? await occupationFor(routedState, timestamp, { economy }, 'showcase')
                 : routedState.activity === 'hunting' && economy.network.activity?.activity
                     && economy.network.activity.activity !== 'hunting'
                     ? await occupationFor(routedState, timestamp, { economy }, 'action') : null;
+            if (!preparedOccupation?.economyPlan && !(nullReuse && refreshed?.economyPlan))
+                preparedOccupation = await clanMarketPlan(routedState, economy, timestamp);
+            if (!preparedOccupation?.economyPlan && craftBidReview && routedState.activity === 'hunting')
+                preparedOccupation = await occupationFor(routedState, timestamp, { economy }, 'craft_market');
             const seen = { ...routedState, stats: { ...routedState.stats, ...statsPacket } };
             const heldDecision = nullReuse ? ColdEconomyDecision.compact({ data: refreshed.decision.data.slice(0),
                 updatedAt: Number(seen.updatedAt || 0), echo: ColdEconomyDecision.stateEcho(seen), flags: 0 }) : null;

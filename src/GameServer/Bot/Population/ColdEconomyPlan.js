@@ -95,7 +95,8 @@ function* prepareNative(state, economy, options) {
         }
     }
     const bidLimits = limits.length ? { bidLimits: limits } : {};
-    const purchase = canAct && !options.showcaseOnly ? Ready.purchase(state, economy, options.board) : null;
+    const purchase = canAct && !options.showcaseOnly
+        ? Ready.purchase(state, economy, options.board) || Ready.clanCraftPurchase(state, economy, options.board) : null;
     const kept = new Map(own.filter(line => line.storeType === SELL)
         .map(line => [`${line.selfId}:${line.enchant || 0}`, line.price]));
     const inventory = { ...state.inventory };
@@ -162,9 +163,10 @@ function* prepareNative(state, economy, options) {
         goal = needs[0];
         const buyState = { ...state, adena: Funding.budget(state, options.buyOrderEscrow || 0) };
         money = BuyAds.goalMoney(state, goal, options.buyOrderEscrow || 0, economy);
-        const lines = BuyAds.linesFor(buyState, goal, { ...options, economy,
+        let lines = BuyAds.linesFor(buyState, goal, { ...options, economy,
             townFor: items => Town.buyAdTown(state, items, own),
             watchList: economy.watchList || [], money });
+        lines = BuyAds.keepRetainedBids(state, own, lines, economy.network?.moneyPrice, options.buyOrderEscrow || 0);
         // The native activity selected the priority. A buy may replace a sale
         // shop; ordinary surplus listings cannot evict a standing buy shop.
         plan.buyShop = ['upgrade_gear', 'buy_craft_material'].includes(goal?.type) ? BoardRules.BUY

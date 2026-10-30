@@ -32,6 +32,34 @@ function purchase(state, economy, board) {
             && row.price === leaf.unitPrice && row.count >= count })[0];
     return line ? encode(SELL, line, count, state) : null;
 }
+// A clan craft's current key input remains a real purchase even while the
+// shared wish engine is pursuing another activity. The meeting owner still
+// rechecks the exact quote, stock, route and funding before settlement.
+function clanCraftPurchase(state, economy, board) {
+    const plan = state.stats?.equipmentPlan, next = Number(plan?.next?.itemId || 0);
+    if (!plan?.clanGoal || plan.strategy !== 'craft' || !next || economy?.intentPending
+        || !economy?.network?.quantityPrepared || !board?.heads || !economy.trip?.details) return null;
+    const TradeIntent = require('./TradeIntent');
+    const key = `power:${Number(plan.target?.selfId)}:${Number(plan.target?.slot)}`;
+    const intents = TradeIntent.retainedProjectIntents(state, economy.network,
+        id => economy.worth?.(id) ?? economy.price?.(id) ?? 0, board, economy.trip.details)
+        .filter(row => row.key === key)
+        .sort((a, b) => Number(b.itemId === next) - Number(a.itemId === next));
+    for (const intent of intents) {
+        const worth = TradeIntent.purchaseWorth(intent, economy.network.moneyPrice);
+        const money = require('./PurchaseFunding').spendable(state, 0, { r: intent.valueRate });
+        const line = board.heads(intent.itemId, SELL, { excludeOwner: state.characterId, maxInspected: MAX_INSPECTED,
+            accept: row => {
+                const route = economy.trip.details(row.town);
+                return row.custodyPolicy === 1 && !row.enchant && personalOfferAllowed(row, state)
+                    && positive(Number(row.price)) && Number(row.price) <= worth && positive(Number(row.count))
+                    && route?.known === true && Number.isFinite(route.fees) && route.fees >= 0
+                    && Number(row.price) * Math.min(intent.amount, Number(row.count)) + route.fees <= money;
+            } })[0];
+        if (line) return encode(SELL, line, Math.min(intent.amount, Number(line.count)), state);
+    }
+    return null;
+}
 function sale(answers, state) {
     for (const answer of answers || []) {
         if (!personalOfferAllowed(answer.line, state)) continue;
@@ -55,4 +83,4 @@ function resolve(tuple, board, ownerId) {
         && line.ownerId !== Number(ownerId) && line.revision === revision && line.price === price
         && line.count >= count && (side === BUY || !line.enchant) ? line : null;
 }
-module.exports = { purchase, sale, resolve, MAX_INSPECTED };
+module.exports = { purchase, clanCraftPurchase, sale, resolve, MAX_INSPECTED };

@@ -267,11 +267,11 @@ function disposition(item, ctx, { town = null, room = 1, stockQuote = false, sta
 }
 
 // A buy ad keeps authored worth with its line; the next ad starts fresh.
-function bid(selfId, ctx, { units = 1, worth, cap, money = ctx.adena, town = null, rollKey }) {
+function bid(selfId, ctx, { units = 1, worth, cap, money = ctx.adena, town = null, rollKey, preferProvidedWorth = false }) {
     if (ctx.canBuy?.({ selfId, enchant: 0 }) === false) return null;
     const belief = PriceBelief.prior(selfId, ctx);
     if (!belief) return null;
-    worth = ctx.economy?.worth(selfId) ?? worth;
+    if (!preferProvidedWorth) worth = ctx.economy?.worth(selfId) ?? worth;
     const meeting = ctx.travelDetails?.(town);
     if (town && !meeting?.known) return null;
     const spendable = Number.isFinite(money) ? Math.max(0, money - (meeting?.known ? meeting.fees : 0)) : money;

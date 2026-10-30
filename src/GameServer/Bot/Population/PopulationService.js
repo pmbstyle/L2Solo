@@ -472,6 +472,20 @@ async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
         // decides whether this is a supply break or ordinary shopping now.
         party = BackgroundPartyState.find(party.partyId) || party;
         if (party.status !== 'active') return { party, reviewed, departed };
+        // A complete personal warehouse stage gets an ordinary, fenced party
+        // absence and rejoin ticket. Never interrupt a raid, clan duty or fight.
+        if (!departed && !party.stats?.pveEncounter && !party.stats?.travel
+            && !members.some(row => row.stats?.pvpEncounter || row.stats?.travel)
+            && PartyMarketBreak.sessionReady(party, member, null, timestamp, Config)) {
+            const current = LifeState.cachedState(member.characterId) || member;
+            if (DecisionSections.partyIdOf(current) === String(party.partyId)
+                && current.phase === 'cold' && Number(current.vitals?.hp) > 0
+                && ['hunting', 'grouped', 'resting', 'party_wait'].includes(current.activity)) {
+                const travel = BotWarehouse.beginCraftReturn({ ...current, activity: 'hunting' }, timestamp, { allowParty: true });
+                const ticket = travel && PartyMarketBreak.warehouseDeparture(party, current, travel, timestamp);
+                if (ticket) departed = await LifeState.leaveParty(ticket, 'craft_warehouse', { ownerHandoff: true });
+            }
+        }
         if (departed || !canTakePartyMarketBreak(party, members, member, timestamp, cleanupNeeded, goalSnapshot?.current)) continue;
 
         // Goal review can overlap the next worker claim. Re-read the reflected
@@ -563,7 +577,9 @@ async function resumePartyMarketBreak(state, timestamp) {
     const token = state.stats.partyMarketReturn;
     const party = BackgroundPartyState.find(token.partyId);
     const war = !!token.warOperationId;
+    const warehouse = token.cleanupReason === 'craft_warehouse';
     const matching = war ? party?.stats?.warOperation?.id === token.warOperationId
+        : warehouse ? String(party?.stats?.objective?.objectiveKey || '') === String(token.objective?.objectiveKey || '')
         : party?.stats?.objective?.clanGoalKey === token.objective.clanGoalKey;
     if (war && (!matching || !['active', 'hot'].includes(party?.status))) {
         const saved = await LifeState.upsertState({ ...state, activity: 'hunting', stats: { ...state.stats,
@@ -571,7 +587,8 @@ async function resumePartyMarketBreak(state, timestamp) {
         return { ok: !!saved, state: saved || state, reason: 'war_supply_operation_ended' };
     }
     const prepared = { ...state, activity: 'party_wait', stats: { ...state.stats,
-        partyMarketReturn: null, clanPartyObjective: war ? null : token.objective, partyRequest: war ? null : token.objective } };
+        partyMarketReturn: null, clanPartyObjective: warehouse ? state.stats.clanPartyObjective : war ? null : token.objective,
+        partyRequest: warehouse ? state.stats.partyRequest : war ? null : token.objective } };
     const maxSize = war ? require('../../Clan/ClanWarConfig').maxMembers : partyLimitsForObjective(party?.stats?.objective).maxSize;
     if (party?.status === 'active' && matching && party.memberIds.length < maxSize) {
         const members = await LifeState.statesForParty(party.partyId);
@@ -589,6 +606,13 @@ async function resumePartyMarketBreak(state, timestamp) {
             reason: result.party ? 'returned_to_clan_party' : 'party_return_retry' };
     }
     if (war) return { ok: false, state, reason: 'party_return_retry' };
+    if (warehouse) {
+        // An ordinary party may fill or dissolve while its member shops. It
+        // has no clan request to wait on, so resume the personal route.
+        const solo = { ...prepared, activity: 'hunting', timing: { ...(prepared.timing || {}), nextResolveAt: timestamp + 30000 } };
+        const saved = await LifeState.upsertState(solo, 'craft_warehouse_party_unavailable');
+        return { ok: !!saved, state: saved || state, reason: 'craft_warehouse_party_unavailable' };
+    }
     // A dissolved or full party must not turn the clan assignment into solo combat.
     const saved = await LifeState.upsertState(prepared, 'clan_party_return_wait');
     return { ok: !!saved, state: saved || state, reason: 'clan_party_return_wait' };
@@ -3242,7 +3266,13 @@ const PopulationService = {
                 : craft.state || plannedState;
             if (!completed && ['materials_changed', 'missing_product', 'missing_station', 'insufficient_adena'].includes(craft.reason))
                 recoveredState = DecisionEvents.rejectedState(recoveredState, plannedState);
-            return LifeState.upsertState(recoveredState, reason).then((saved) => {
+            return LifeState.upsertState(recoveredState, reason).then(async (saved) => {
+                if (saved && craft.reason === 'component_crafted' && saved.activity !== 'crafting'
+                    && invoke('GameServer/Bot/Economy/BotImprovementService').inTown(saved)
+                    && require('../Economy/CraftWarehousePolicy').planFor(saved)) {
+                    const deposit = await BotWarehouse.depositCold(saved);
+                    saved = deposit.state || saved;
+                }
                 const supplemented = craft.supplementedMaterials || [];
                 const supplyEvent = supplemented.length
                     ? LifeEvents.record(state.characterId, 'craft_supplemented', `${state.name} received ${supplemented.map((item) => `${item.amount} ${item.name}`).join(', ')} for crafting`, {
@@ -3357,9 +3387,14 @@ const PopulationService = {
             .then((shotEconomy) => ColdWealthCraftService.tryCraft(shotEconomy.state || updatedState))
             .then(async (wealthCraft) => {
                 const current = wealthCraft.state || updatedState;
-                const released = invoke('GameServer/Bot/Economy/BotImprovementService').inTown(current)
-                    ? await BotWarehouse.releaseCold(current, { inTown: true }) : { state: current };
-                return ColdMarketListingService.resolve(LifeState.cachedState(current.characterId) || released.state || current);
+                const inTown = invoke('GameServer/Bot/Economy/BotImprovementService').inTown(current);
+                const released = inTown ? await BotWarehouse.releaseCold(current, { inTown: true }) : { state: current };
+                const afterRelease = released.state || current;
+                const deposited = inTown && !released.aborted && (afterRelease.stats?.equipmentPlan?.inputPreparation
+                    || require('../Economy/CraftWarehousePolicy').planFor(afterRelease))
+                    && invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(afterRelease)
+                    ? await BotWarehouse.depositCold(afterRelease) : { state: afterRelease };
+                return ColdMarketListingService.resolve(deposited.state || afterRelease);
             });
         return preparation.then((marketLifecycle) => GoalService.currentForMarket(marketLifecycle.state, {
                 spot: SpotProfiles.findById(marketLifecycle.state.stats?.marketReturn?.spotId) || spot
@@ -3374,7 +3409,9 @@ const PopulationService = {
                 return LifeEvents.recordMany(state.characterId, [...planEvents, ...travelEvents, ...result.events, ...craftEvents])
                     .then(() => finalState);
             })
-            .then((finalState) => {
+            .then(async (finalState) => {
+                const trip = !LifeState.hotRow(finalState.characterId) && BotWarehouse.beginCraftReturn(finalState);
+                if (trip) finalState = await LifeState.upsertState(trip, 'craft_warehouse_return') || finalState;
                 // A bot that went hot meanwhile speaks through its own AI.
                 if (finalState.phase !== 'hot') GlobalChat.maybeAnnounce(finalState, result.events);
                 return {

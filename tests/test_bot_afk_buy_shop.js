@@ -219,6 +219,30 @@ async function run() {
     assert.equal(captured.watch.length, 8, 'hot/cold decision cards retain the overflow needs');
     assert.equal(captured.activity.itemId, 79, 'the extended watch does not corrupt activity offsets');
     assert(captured.data.byteLength < Decision.MAX_BYTES);
+    await bot(9112);
+    const Policy = invoke('GameServer/Bot/Economy/BuyAdPolicy');
+    const Pricing = invoke('GameServer/Bot/Economy/MarketPricing');
+    const previousBid = Pricing.bid;
+    const trip = () => 0; trip.details = () => ({ known: true, hours: 0, fees: 0 });
+    const watch = [1864, 1864, 1865, 1866, 1867].map((itemId, at) => ({ itemId, amount: 1, worth: 100,
+        key: at === 0 ? 'power:79:7' : at === 1 ? 'power:80:7' : `resale:${itemId}`,
+        recipeId: 0, valueHours: 1, valueRate: 1 }));
+    let planned;
+    try {
+        Pricing.bid = () => ({ price: 100, count: 1, purchaseCap: 100, pricing: { price: 100 } });
+        planned = Policy.linesFor(Life.snapshot(9112), null, { watchList: watch, board: Afk.boardIndex(),
+            townFor: () => 'Giran', npcOffersFor: () => [], economy: { moneyPrice: .001, hourAdena: 1000,
+                worth: () => 100, trip, persona: { traits: {} }, network: { moneyPrice: .001 } } });
+    } finally { Pricing.bid = previousBid; }
+    assert.deepEqual(planned.map(row => row.selfId), [1864, 1865, 1866, 1867]);
+    const deduplicatedPlan = { ...Plan.buyBatch(planned), buyShop: Afk.BUY };
+    await Market.executePlan(Life.snapshot(9112), deduplicatedPlan, { reviewGoal: false });
+    const once = records(9112).flatMap(record => record.lines.map(line => line.selfId));
+    assert.deepEqual(once.sort((a, b) => a - b), [1864, 1865, 1866, 1867],
+        'the real transaction publishes each physical item once');
+    await Market.executePlan(Life.snapshot(9112), deduplicatedPlan, { reviewGoal: false });
+    assert.deepEqual(records(9112).flatMap(record => record.lines.map(line => line.selfId)).sort((a, b) => a - b), once,
+        'replaying the prepared unique batch does not create duplicate ads');
     await autonomousSale();
     console.log('PASS bot AFK buy shops: priority, escrow, overflow, fill, refund, promotion, full square and atomic replacement');
 }

@@ -69,6 +69,30 @@ assert.equal(stock.activity.amount, 10);
 assert.equal(stock.activity.price, 100, 'funded leaf spends the complete required quantity');
 console.log('wish funding, complete progress hour and acquisition quantity: PASS');
 
+// A craft keeps its full recipe for cost and public demand, but cannot farm
+// ordinary resources ahead of its missing key part or learning scroll.
+const staged = missingKey => ({ actorKey: 'staged-craft', inputKey: `key:${missingKey}`,
+    remembered: false, wallet: 10000, hourAdena: 100, roots: ['gear'], nodes: [
+        { key: 'gear', need: 'power', valueHours: 10, paths: [{ kind: 'craft', activity: 'crafting',
+            costHours: 1, keyInputs: ['part'], requirements: [
+                ...(missingKey ? [{ key: 'part', amount: 12 }] : []), { key: 'ore', amount: 50 }
+            ] }] },
+        { key: 'part', object: 10, paths: [{ kind: 'drop', activity: 'hunting', costHours: 10 }] },
+        { key: 'ore', object: 11, paths: [{ kind: 'drop', activity: 'hunting', costHours: 0.01 }] }
+    ] });
+assert.equal(network.build(staged(true)).activity.object, 10, 'key part precedes a much cheaper raw resource');
+assert.equal(network.build(staged(false)).activity.object, 11, 'raw resources resume after the part is acquired');
+const TradeIntent = require('../src/GameServer/Bot/Economy/TradeIntent');
+const tradePlan = partMissing => ({ quantityPrepared: true, queue: [{ key: 'power:300:14', valueHours: 10, ratio: 1,
+    object: { itemId: 300 }, plan: { kind: 'craft', missingAmount: 1, keyInputs: ['item:10'], requirements: [
+        ...(partMissing ? [{ key: 'item:10', amount: 12, plan: { kind: 'drop', missingAmount: 12 } }] : []),
+        { key: 'item:11', amount: 50, plan: { kind: 'drop', missingAmount: 50 } }
+    ] } }] });
+assert.deepEqual(TradeIntent.project({}, tradePlan(true), null, () => 1, 8).map(row => row.itemId), [10],
+    'standing bids cannot start buying raw resources before the key parts');
+assert.deepEqual(TradeIntent.project({}, tradePlan(false), null, () => 1, 8).map(row => row.itemId), [11],
+    'resource orders appear once the parts are complete');
+
 const overpriced = moneyQueue([{ key: 'luxury', valueHours: .5, price: 1000 }], 50000, 0, .001);
 assert.equal(overpriced.queue[0].funded, false);
 assert.equal(overpriced.gap, null);

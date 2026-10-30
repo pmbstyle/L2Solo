@@ -355,6 +355,17 @@ async function run() {
         'item_fetch', 'item_plan', 'item_transfer', 'item_refresh', 'item_enchant'
     ], 'transfer now includes atomic projection/metadata persistence without a later lifecycle overwrite');
 
+    warehouseRows = [{ id: 73, selfId: 5220, name: 'Metal Hardener', amount: 60 }];
+    withdrawals.length = 0;
+    const pausedOwner = { characterId: 60, phase: 'cold', activity: 'shopping', level: 40,
+        currentRegion: 'Giran', loc: { locX: 83396, locY: 147904, locZ: -3400 }, inventory: {}, timing: {},
+        stats: { classId: 0, equipmentPlan: { status: 'active', strategy: 'direct_drop', target: { selfId: 129, slot: 7 },
+            inputPreparation: { status: 'deferred', strategy: 'none', reason: 'wish_focus', recipeId: 1,
+                target: { selfId: 76, slot: 7 }, materials: [{ selfId: 5220, amount: 60 }], heldInputs: { 5220: 60 } } } } };
+    const protectedStored = await BotWarehouse.releaseCold(pausedOwner, { inTown: true });
+    assert.equal(protectedStored.released, false, 'market demand cannot sell the paused kit from its warehouse');
+    assert.equal(warehouseRows[0].amount, 60);
+
     warehouseRows = [{ id: 72, selfId: 5220, name: 'Metal Hardener', amount: 100 }];
     withdrawals.length = 0;
     const marketRelease = await BotWarehouse.releaseCold({

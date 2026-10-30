@@ -87,6 +87,12 @@ async function run() {
     LifeEvents.record = async () => null;
     assert.strictEqual(Service.eligible(state, 1000000), true,
         'ordinary generated dwarves must not be mistaken for fixed crafting stations');
+    const WealthDecision = require('../src/GameServer/Bot/Economy/WealthCraftDecision');
+    for (const status of ['active', 'component_ready', 'ready_to_craft']) {
+        const gear = { ...state, stats: { ...state.stats, equipmentPlan: { strategy: 'craft', status } } };
+        assert.equal(Service.eligible(gear), status === 'active', 'ready gear stages take precedence over side production');
+        assert.equal(WealthDecision.eligible(gear), status === 'active', 'worker and executor use the same gear-stage gate');
+    }
     const pledge = { id: 980010, ownerId: state.characterId, ownerName: state.name,
         ownerAccount: state.accountName, kind: 'buy_ad', storeType: AfkTrade.BUY,
         status: 'active', town: 'Giran', revision: 1, escrowAdena: 1,

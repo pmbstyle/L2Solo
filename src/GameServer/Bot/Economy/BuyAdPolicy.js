@@ -45,6 +45,39 @@ function retainedLines(state, lines, owned, town) {
     return result;
 }
 
+// Preserve still-needed, funded standing craft lines alongside the newly
+// prepared wishes, rather than discarding the whole new batch. Each carried
+// line keeps its own current project certificate and its accepted price.
+function keepRetainedBids(state, owned, wanted, moneyPrice, escrow = 0) {
+    const plan = state.stats?.equipmentPlan;
+    if (!(Number(moneyPrice) > 0) || !plan || !owned?.length
+        || !(plan.inputPreparation || plan.clanGoal || plan.recipeId
+            && (plan.strategy === 'craft' || plan.status === 'deferred' && plan.reason === 'wish_focus'))) return wanted;
+    const candidates = owned.filter(line => Number(line.storeType) === 3 && Number(line.count) > 0
+        && !Number(line.enchant || 0) && (!wanted.some(row => Number(row.selfId) === Number(line.selfId))
+            || wanted.some(row => Number(row.selfId) === Number(line.selfId) && Number(row.count) < Number(line.count))));
+    if (!candidates.length) return wanted;
+    const needs = require('./TradeIntent').retainedProjectIntents(state, { moneyPrice }, () => 1);
+    const output = wanted.slice(), limit = BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.buy_ad;
+    for (const line of candidates) {
+        const need = needs.filter(row => Number(row.itemId) === Number(line.selfId))
+            .reduce((best, row) => !best || Number(row.amount) > Number(best.amount) ? row : best, null);
+        const count = Math.min(Number(line.count), Number(need?.amount || 0)), price = Number(line.price);
+        if (!need || !Number.isSafeInteger(count) || count <= 0 || !Number.isSafeInteger(price) || price <= 0
+            || !invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(line.selfId)
+            || count * price > PurchaseFunding.spendable(state, escrow, { r: need.valueRate })) continue;
+        const existing = output.findIndex(row => Number(row.selfId) === Number(line.selfId));
+        if (existing >= 0 && Number(output[existing].count) >= count) continue;
+        if (existing < 0 && output.length >= limit) continue;
+        const template = templateFor(Number(line.selfId));
+        const carried = { selfId: Number(line.selfId), name: line.name || template?.template?.name || `Item ${line.selfId}`,
+            count, price, enchant: 0, slot: Number(template?.etc?.slot || 0), stackable: template?.etc?.stackable === true,
+            pricing: line.pricing, intent: { ...need, amount: count, price, valueHours: count * price * Number(moneyPrice) } };
+        if (existing >= 0) output[existing] = carried; else output.push(carried);
+    }
+    return output;
+}
+
 function bidFor(state, goal, { money = Infinity, ...options } = {}) {
     // The selected goal already has a native store executor. It cannot re-enter the
     // public projection through a caller's legacy goal fallback.
@@ -97,6 +130,7 @@ function bidFor(state, goal, { money = Infinity, ...options } = {}) {
     const cap = Math.floor(Math.min(worth, spendable));
     const town = options.town || invoke('GameServer/Bot/Economy/MarketTownPolicy').targetTownForItems(state, [{ selfId }]);
     const chosen = MarketPricing.bid(selfId, ctx, { units: requestedCount, worth, cap,
+        preferProvidedWorth: goal.intent?.retainedProject === true,
         money: spendable, town,
         rollKey: ['bid', Number(state.characterId || 0), selfId, Number(goal.createdAt || goal.id || 0)] });
     if (!chosen) return null;
@@ -133,28 +167,44 @@ function linesFor(state, goal, { money = Infinity, watchList, ...options } = {})
         }
     }
     const owned = options.board?.ownerLines?.(Number(state.characterId)) || [];
-    const candidates = goals.slice(0, limit);
+    // Distinct wishes can need the same physical item, but the native board
+    // allows only one bid per item. Keep their priority and try the next
+    // wish only if an earlier one cannot make a bid; duplicates do not use
+    // another slot or combine unrelated consent certificates.
+    const candidates = [], byItem = new Map();
+    for (const goal of goals) {
+        const id = Number(goal.target?.itemId);
+        if (!(id > 0)) continue;
+        let group = byItem.get(id);
+        if (!group && candidates.length < limit) {
+            group = []; byItem.set(id, group); candidates.push(group);
+        }
+        if (group) group.push(goal);
+    }
     const townFor = options.townFor || (items => invoke('GameServer/Bot/Economy/MarketTownPolicy').targetTownForItems(state, items));
-    let town = townFor(candidates.map(candidate => ({ selfId: Number(candidate.target.itemId) })));
+    let town = townFor(candidates.map(group => ({ selfId: Number(group[0].target.itemId) })));
     // Rejected lines can change the grade/town of a mixed order. Price the
     // final town too, before publication; this loop only removes candidates.
     for (let pass = 0; pass <= limit; pass++) {
         const lines = [];
-        for (const candidate of candidates) {
-            const bid = bidFor({ ...state, adena: wallet }, candidate, { money: candidate.intent?.key ? Infinity : money, ...options, town });
-            if (!bid) continue;
-            const item = ItemTemplateIndex.find(DataCache.items, bid.selfId);
-            lines.push({ selfId: Number(bid.selfId), name: bid.name, count: Number(bid.count), price: Number(bid.price),
-                enchant: 0, slot: Number(item?.etc?.slot || 0), stackable: item?.etc?.stackable === true, pricing: bid.pricing,
-                purchaseCap: bid.purchaseCap,
-                ...(bid.survivalCost ? { survivalCost: bid.survivalCost } : {}),
-                ...(candidate.intent?.key ? { intent: { ...candidate.intent, price: bid.price, amount: bid.count } } : {}) });
-            // Conditional alternatives hold no cash until a native agreement.
+        for (const group of candidates) {
+            for (const candidate of group) {
+                const bid = bidFor({ ...state, adena: wallet }, candidate, { money: candidate.intent?.key ? Infinity : money, ...options, town });
+                if (!bid) continue;
+                const item = ItemTemplateIndex.find(DataCache.items, bid.selfId);
+                lines.push({ selfId: Number(bid.selfId), name: bid.name, count: Number(bid.count), price: Number(bid.price),
+                    enchant: 0, slot: Number(item?.etc?.slot || 0), stackable: item?.etc?.stackable === true, pricing: bid.pricing,
+                    purchaseCap: bid.purchaseCap,
+                    ...(bid.survivalCost ? { survivalCost: bid.survivalCost } : {}),
+                    ...(candidate.intent?.key ? { intent: { ...candidate.intent, price: bid.price, amount: bid.count } } : {}) });
+                // Conditional alternatives hold no cash until a native agreement.
+                break;
+            }
         }
         const retained = retainedLines(state, lines, owned, town);
         if (!retained.length || townFor(retained) === town) return retained;
         const ids = new Set(retained.map(line => line.selfId));
-        for (let at = candidates.length - 1; at >= 0; at--) if (!ids.has(Number(candidates[at].target.itemId))) candidates.splice(at, 1);
+        for (let at = candidates.length - 1; at >= 0; at--) if (!ids.has(Number(candidates[at][0].target.itemId))) candidates.splice(at, 1);
         town = townFor(retained);
     }
     return [];
@@ -165,4 +215,4 @@ function withinCap(price, cap) {
     return !Number.isFinite(cap) || Number(price) <= cap;
 }
 
-module.exports = { survivalCost, goalMoney, bidFor, linesFor, retainedLines, withinCap };
+module.exports = { survivalCost, goalMoney, bidFor, linesFor, retainedLines, keepRetainedBids, withinCap };

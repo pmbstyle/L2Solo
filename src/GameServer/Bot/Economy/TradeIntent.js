@@ -56,8 +56,123 @@ function encode(row) {
 // Every caller passes a quantity-prepared network (EconomyContext.forState
 // builds it with a stock reader). A network without one has no remaining
 // amounts to project: defer the command instead of subtracting stock here.
-function project(state, network, projection, worth, limit = 3) {
-    return network?.quantityPrepared ? preparedProject(network, worth, limit) : null;
+function project(state, network, projection, worth, limit = 3, board = null, routeDetails = null) {
+    if (!network?.quantityPrepared) return null;
+    const regular = preparedProject(network, worth, limit);
+    if (!regular) return null;
+    const retained = retainedProjectIntents(state, network, worth, board, routeDetails);
+    if (!retained.length) return regular;
+    const regularById = new Map(regular.map((row, at) => [Number(row.itemId), at]));
+    const extra = [], extraById = new Map();
+    for (const row of retained) {
+        const id = Number(row.itemId);
+        const regularAt = regularById.get(id);
+        if (regularAt !== undefined) {
+            // One native order carries one real root certificate. Do not
+            // inflate an unrelated root; keep the larger independently
+            // justified need at the existing priority position.
+            if (Number(row.amount) > Number(regular[regularAt].amount)) regular[regularAt] = row;
+            continue;
+        }
+        const extraAt = extraById.get(id);
+        if (extraAt !== undefined) {
+            if (Number(row.amount) > Number(extra[extraAt].amount)) extra[extraAt] = row;
+        } else if (extra.length < limit) {
+            extraById.set(id, extra.length); extra.push(row);
+        }
+    }
+    // Retained projects use spare publication slots, not the survival or
+    // active wishes that the network placed ahead of them.
+    return [...regular, ...extra].slice(0, limit);
+}
+
+// Retained equipment projects may keep standing key-material bids.
+// Its requests are reconstructed from the current recipe and physical stock
+// at every review/meeting, so an old quote cannot outlive the actual need.
+// The marginal money rate spends only after higher-priority funded wishes.
+function retainedProjectIntents(state, network, worth, board = null, routeDetails = null) {
+    const owner = state?.stats?.equipmentPlan;
+    const activePersonal = owner?.strategy === 'craft' && !owner.clanGoal
+        && ['active', 'component_ready', 'ready_to_craft'].includes(owner.status)
+        && ['b', 'a', 's'].includes(invoke('GameServer/Item/ItemTemplateIndex')
+            .find(invoke('GameServer/DataCache').items, Number(owner.target?.selfId))?.etc?.rank)
+        && !invoke('GameServer/Bot/AI/GearAcquisitionPlanner').equipmentTargetFulfilled(state, owner);
+    const includeOwner = !!owner?.recipeId && (owner.status === 'deferred' && owner.reason === 'wish_focus'
+        || !!owner.clanGoal && ['active', 'component_ready', 'ready_to_craft'].includes(owner.status) || activePersonal);
+    if (!owner?.inputPreparation && !includeOwner) return [];
+    const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+    const Warehouse = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
+    if (!Warehouse.ready()) return [];
+    const own = includeOwner ? {} : Disposition.equipmentMaterialAmounts(state, owner), stored = Warehouse.inventory(state);
+    const production = Disposition.productionInputAmounts(state);
+    const clan = invoke('GameServer/Clan/ClanSupplyPolicy').reservedAmounts(state);
+    const freeAmount = invoke('GameServer/Bot/Economy/WealthCraftDecision').freeAmount;
+    const rate = Number(network.moneyPrice);
+    if (!(rate > 0) || !Number.isFinite(rate)) return [];
+    const rows = [], seen = new Set();
+    for (let saved = includeOwner ? owner : owner?.inputPreparation; saved && !seen.has(saved); saved = saved.inputPreparation) {
+        seen.add(saved);
+        if (!saved.recipeId || !saved.target?.selfId || !saved.target?.slot || saved.clanGoal && saved !== owner
+            || saved !== owner && owner?.strategy === 'craft' && Number(saved.target.selfId) === Number(owner?.target?.selfId)
+                && Number(saved.target.slot) === Number(owner?.target?.slot)) continue;
+        const plan = Disposition.equipmentInputPlan(state, saved);
+        if (!['active', 'component_ready', 'ready_to_craft'].includes(plan?.status) || plan.strategy !== 'craft') continue;
+        const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(plan.recipeId);
+        if (!recipe) continue;
+        const inputs = require('../../Clan/ClanCraftingPolicy').recipeForProvider(recipe, plan.craftProviders?.[recipe.recipeId]).materials || [];
+        const part = recipe.materials.find(row => Number(row.selfId) !== Number(recipe.recipeItemId));
+        if (!part) continue;
+        const ids = new Set([Number(part.selfId), Number(recipe.recipeItemId)]);
+        const key = `power:${Number(plan.target.selfId)}:${Number(plan.target.slot)}`;
+        for (const input of inputs) {
+            const id = Number(input.selfId), required = Number(input.amount);
+            if (!ids.has(id) || !Number.isSafeInteger(required) || required < 1) continue;
+            const item = { ...(state.inventory?.[id] || {}), selfId: id };
+            const bag = Math.max(0, Number(item.amount || 0));
+            const held = Number(own[id] || 0) + Number(production[id] || 0) + Number(clan[id] || 0);
+            const priority = Math.max(held, Number(item.equippedCount || (item.equipped ? bag : 0)),
+                Number(item.protectedAmount || 0), Number(item.reservedAmount || 0), Number(item.starterMobLootAmount || 0),
+                Number(state.stats?.clanMaterialDemand?.[id] || 0));
+            const blocked = item.protected || item.acceptedCustomer || item.assignedClan || item.available === false;
+            const bank = blocked ? 0 : Math.max(0, Number(stored[id]?.amount || 0)
+                - Number(stored[id]?.reservedAmount || 0) - Math.max(0, priority - bag));
+            const free = freeAmount(state, item, { [id]: held }) + bank;
+            // Newly purchased pieces can arrive while the project is paused;
+            // count free physical stock even if it postdates heldInputs.
+            const captured = saved.clanGoal ? Math.max(free, Number(saved.materials?.find(row => Number(row.selfId) === id)?.owned || 0)) : free;
+            const amount = Math.max(0, required - captured - Number(state.acceptedIncoming?.[id] || 0));
+            if (!Number.isSafeInteger(amount) || !amount) continue;
+            let estimate = Number(worth(id)) || Number(invoke('GameServer/Bot/Economy/MarketCounters').firstPrice(id));
+            if (board?.list) {
+                const allowed = require('../Population/PartyAdmission').personalOfferAllowed;
+                const offers = board.list(id, 1), money = offers.length && routeDetails
+                    ? Funding.spendable(state, 0, { r: Funding.significant(rate) }) : 0;
+                let quote = null;
+                for (let at = 0; at < Math.min(offers.length, 20); at++) {
+                    const row = offers[at];
+                    if (Number(row.ownerId) === Number(state.characterId) || !(Number(row.count) > 0)
+                        || !(Number(row.price) > 0) || Number(row.enchant || 0) || !allowed(row, state)) continue;
+                    if (routeDetails) {
+                        const route = routeDetails(row.town);
+                        if (row.custodyPolicy !== 1 || route?.known !== true || !Number.isFinite(route.fees) || route.fees < 0
+                            || !Number.isFinite(route.hours) || route.hours < 0
+                            || Number(row.price) * Math.min(amount, Number(row.count)) + route.fees > money) continue;
+                    }
+                    quote = row; break;
+                }
+                const targetValue = Number(worth(plan.target.selfId))
+                    || Number(invoke('GameServer/Bot/Economy/MarketCounters').firstPrice(plan.target.selfId));
+                const ceiling = id === Number(recipe.recipeItemId) ? targetValue : targetValue / required;
+                if (quote && ceiling > 0) estimate = Math.max(estimate, Math.min(Number(quote.price), ceiling));
+            }
+            if (!(estimate > 0) || !Number.isFinite(estimate)) continue;
+            rows.push({ itemId: id, amount, worth: estimate, key, recipeId: Number(recipe.recipeId), retainedProject: true,
+                valueHours: amount * estimate * rate, valueRate: Funding.significant(rate) });
+        }
+        for (const [id, amount] of Object.entries(Disposition.equipmentMaterialAmounts(state, saved)))
+            own[id] = Number(own[id] || 0) + Number(amount || 0);
+    }
+    return rows;
 }
 
 // A bid and its later consent price the same remaining goal. The generic
@@ -105,7 +220,10 @@ function wishRows(wish, worth, alternatives) {
                 ...(quote && integer(quote.amount) && quote.amount > 0 ? { quote } : {}) });
         }
         const path = alternatives && plan.intentionPath || plan, command = path.execution || path;
-        const requirements = command.requirements || [];
+        const all = command.requirements || [];
+        const keys = path.keyInputs || command.keyInputs;
+        const staged = keys?.length ? all.filter(row => keys.includes(row.key)) : [];
+        const requirements = staged.length ? staged : all;
         const share = path.execution ? Math.min(1, Number(command.availableUnits) / plan.missingAmount) : 1;
         const total = requirements.reduce((sum, row) => sum + row.amount, 0);
         for (const row of requirements) visit(row.key, row.plan, value * share * row.amount / Math.max(1, total), path.recipeId || recipeId, depth + 1);
@@ -166,4 +284,4 @@ function meetingPurchase(network, intents, { selfId, count, price, town, enchant
         : { ...intent, amount: leaf.amount, worth: leaf.unitPrice, valueRate,
             valueHours: intent.valueHours * leaf.amount / intent.amount };
 }
-module.exports = { rootTuple, rootKey, encode, decode, project, purchaseWorth, meetingPurchase, npcOwnsPurchase, isNativeSource };
+module.exports = { rootTuple, rootKey, encode, decode, project, retainedProjectIntents, purchaseWorth, meetingPurchase, npcOwnsPurchase, isNativeSource };

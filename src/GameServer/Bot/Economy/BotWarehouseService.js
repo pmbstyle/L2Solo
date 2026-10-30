@@ -7,6 +7,10 @@ const ColdSafeEnchantService = invoke('GameServer/Bot/Economy/ColdSafeEnchantSer
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const depositQueues = new Map();
+const craftStageChecks = new Map();
+const CRAFT_STAGE_CACHE_MS = 30000;
+const CRAFT_VISIT_RETRY_MS = 5 * 60 * 1000;
+const CRAFT_STAGE_CACHE_LIMIT = 1024;
 const { MAX_GEAR_COPIES_PER_TYPE } = require('./WarehouseRules');
 
 function serializeDeposit(characterId, work) {
@@ -149,8 +153,24 @@ function depositActor(actor, state = null, session = null) {
 // The actor's warehouse candidates and the amount of each that may be stored:
 // what the town visit sells to the NPC (npcSale, by selfId) stays in the bag for that sale.
 function storableActorItems(actor, state = null, npcSale = null) {
-    if (state && invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(state)) return [];
     const selling = new Map(npcSale || []);
+    if (state && invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(state)) {
+        const sources = actor?.backpack?.fetchItems?.().slice() || [];
+        const inventory = LifeState.inventorySummaryFromItems(sources);
+        for (const [id, item] of Object.entries(inventory)) inventory[id] = { ...state.inventory?.[id], ...item };
+        const actual = { ...state, inventory };
+        const wanted = new Map(ItemDisposition.warehouseCandidates(actual).map(item => [Number(item.selfId), Number(item.amount)]));
+        const result = [];
+        for (const source of sources) {
+            const item = itemData(source), id = item.selfId;
+            if (item.equipped || !(wanted.get(id) > 0)) continue;
+            const sold = Math.min(item.amount, Number(selling.get(id) || 0));
+            selling.set(id, Number(selling.get(id) || 0) - sold);
+            const storable = Math.min(Number(wanted.get(id)), Math.max(0, item.amount - sold));
+            if (storable > 0) { wanted.set(id, Number(wanted.get(id)) - storable); result.push({ source, item, storable }); }
+        }
+        return result;
+    }
     const rows = [];
     for (const source of ItemDisposition.unreservedActorItems(state, actor?.backpack?.fetchItems?.().slice() || [])) {
         const item = itemData(source);
@@ -199,7 +219,11 @@ async function releaseActorAtWarehouse(actor, state, session, target) {
     if (!hasActorWithdrawalCandidates(actor, state)) return [];
     const id = Number(actor.fetchId()), rows = await Database.fetchWarehouseItems(id);
     const current = invoke('GameServer/Bot/Economy/MarketListingPolicy').actorState(session);
-    const requests = marketRequests(current, rows), released = [];
+    for (const [key, item] of Object.entries(current.inventory)) current.inventory[key] = { ...state?.inventory?.[key], ...item };
+    const policy = require('./CraftWarehousePolicy');
+    const craft = policy.planFor(current) ? policy.stage(current, rows)?.requests || [] : [];
+    const reserved = storedReservations(current, rows, craft);
+    const requests = [...craft, ...marketRequests(current, rows, reserved)], released = [];
     const validate = () => {
         if (session.actor !== actor || actor.isDead?.() || !isAtWarehouseService(actor, target)
             || session.activeTrade || session.trade || session.activeNegotiation || actor.fetchPrivateStoreType?.())
@@ -218,7 +242,7 @@ async function releaseActorAtWarehouse(actor, state, session, target) {
             else actor.backpack.insertItem(moved.inventoryId, row.selfId, { amount: moved.inventoryAmount,
                 enchant: moved.enchant, petData: moved.petData, equipped: false, slot: 0 });
             row.amount -= item.amount; left -= item.amount;
-            released.push({ selfId: row.selfId, amount: item.amount, reason: 'market' });
+            released.push({ selfId: row.selfId, amount: item.amount, reason: request.reason });
         }
     }
     return released;
@@ -247,6 +271,9 @@ async function depositColdUnlocked(state, candidates) {
             if (sources.reduce((sum, source) => sum + Number(source.amount || 0), 0) < Number(candidate.amount || 0)) continue;
             if (excess) overflow.push(excess);
             let deposited = null;
+            const craftDepositTarget = Number(candidate.craftDepositTarget || 0)
+                || (invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(state)
+                    ? Number(state.stats?.equipmentPlan?.inputPreparation?.target?.selfId || 0) : 0);
             for (const source of sources) {
                 if (remaining <= 0) break;
                 const amount = Math.min(remaining, Number(source.amount || 0));
@@ -258,7 +285,7 @@ async function depositColdUnlocked(state, candidates) {
                     amount,
                     stackable: !!candidate.stackable,
                     petData: source.petData
-                }, { coldState: state });
+                }, { coldState: state, craftDepositTarget, craftDepositKind: candidate.craftDepositKind || null });
                 source.amount = Number(source.amount || 0) - amount;
                 remaining -= amount;
                 if (!deposited) { deposited = { selfId: candidate.selfId, name: candidate.name, amount: 0 }; stored.push(deposited); }
@@ -270,7 +297,9 @@ async function depositColdUnlocked(state, candidates) {
                 // Keep the visit's unsaved metadata; only inventory authority
                 // comes from the committed physical projection.
                 state = { ...state, inventory: projected.inventory, adena: projected.adena,
-                    vitals: projected.vitals, simulation: projected.simulation, updatedAt: projected.updatedAt };
+                    vitals: projected.vitals, simulation: projected.simulation, updatedAt: projected.updatedAt,
+                    ...(craftDepositTarget ? { stats: { ...state.stats, craftWarehouseDepositTarget: craftDepositTarget,
+                        ...(candidate.craftDepositKind ? { craftWarehouseDepositKind: candidate.craftDepositKind } : {}) } } : {}) };
             }
             retained.set(Number(candidate.selfId), Number(retained.get(Number(candidate.selfId)) || 0) + amount);
         }
@@ -282,7 +311,9 @@ async function depositColdUnlocked(state, candidates) {
     const depositedState = {
         ...state,
         stats: stored.length
-            ? { ...(state.stats || {}), lastWarehouseDeposit: { items: stored, at: Date.now() } }
+            ? { ...(state.stats || {}), lastWarehouseDeposit: { items: stored, at: Date.now(),
+                ...(state.stats?.equipmentPlan?.inputPreparation?.target?.selfId
+                    ? { projectTarget: Number(state.stats.equipmentPlan.inputPreparation.target.selfId) } : {}) } }
             : { ...(state.stats || {}) }
     };
     // Room to store is not a sale decision. Excess copies stay in the bag
@@ -308,11 +339,70 @@ function templateFor(selfId) {
 }
 
 function craftRequests(state, warehouseItems) {
-    const plan = state?.stats?.equipmentPlan;
+    const plan = ItemDisposition.equipmentInputPlan(state);
     if (!['active', 'component_ready', 'ready_to_craft'].includes(plan?.status) || plan.strategy !== 'craft') return [];
     const Crafting = require('../../Clan/ClanCraftingPolicy');
     return Crafting.warehouseMaterials(plan, state.inventory || {}, warehouseItems || [])
         .map(item => ({ ...item, reason: 'craft' }));
+}
+
+// A no-op review is common while a bot accumulates the remaining materials.
+// Only a changed bag, warehouse or ownership invalidates it immediately.
+function craftBagIdentity(state) {
+    const plan = state.stats?.equipmentPlan || {};
+    const items = Object.values(state.inventory || {}).filter(item => Number(item.selfId) !== 57).map(item => [
+        item.selfId, item.amount, item.equippedCount, item.equipped, item.protected, item.protectedAmount,
+        item.reservedAmount, item.acceptedCustomer, item.assignedClan, item.available, item.starterMobLootAmount
+    ]);
+    return require('node:crypto').createHash('sha256').update(JSON.stringify([items,
+        plan.recipeId, plan.target, plan.status, plan.strategy, plan.outputAmount, plan.craftProviders, plan.componentRecipes,
+        plan.inputPreparation, state.stats?.shotCraft?.preparing, state.stats?.wealthCraft,
+        state.stats?.clanMaterialDemand, invoke('GameServer/Clan/ClanSupplyPolicy').contentIdentity(state)
+    ])).digest('hex');
+}
+
+function returnStage(state, stock, identity, bagIdentity, timestamp) {
+    const id = Number(state.characterId), previous = craftStageChecks.get(id);
+    if (previous && previous.identity === identity && previous.bag === bagIdentity && timestamp - previous.at < CRAFT_STAGE_CACHE_MS)
+        return previous.stage;
+    const stage = require('./CraftWarehousePolicy').stage(state, stock());
+    if (craftStageChecks.size >= CRAFT_STAGE_CACHE_LIMIT && !craftStageChecks.has(id))
+        craftStageChecks.delete(craftStageChecks.keys().next().value);
+    craftStageChecks.set(id, { identity, bag: bagIdentity, at: timestamp, stage });
+    return stage;
+}
+
+// A kit parked during a different objective can require a warehouse visit
+// after it becomes the active objective again. Only that recorded deposit
+// can trigger a trip, once per warehouse contents, after the current fight.
+function beginCraftReturn(state, timestamp = Date.now(), { allowParty = false } = {}) {
+    const plan = ItemDisposition.equipmentInputPlan(state);
+    if (state?.phase !== 'cold' || state.activity !== 'hunting' || !allowParty && (state.party?.partyId || state.partyId)
+        || state.stats?.marketReturn || state.stats?.tradeMeeting || plan?.clanGoal
+        || plan?.strategy !== 'craft' || !['active', 'component_ready', 'ready_to_craft'].includes(plan.status)) return null;
+    const Index = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
+    if (!Index.ready() || !Index.hasItems(state)) return null;
+    const identity = Index.contentIdentity(state), previous = state.stats?.craftWarehouseVisit;
+    const bagIdentity = craftBagIdentity(state);
+    if (!identity || Number(previous?.target) === Number(plan.target.selfId) && previous?.identity === identity
+        && previous?.bagIdentity === bagIdentity && timestamp - Number(previous.at || 0) < CRAFT_VISIT_RETRY_MS) return null;
+    let warehouse;
+    const stock = () => warehouse ||= Object.values(Index.inventory(state));
+    const policy = require('./CraftWarehousePolicy'), stage = returnStage(state, stock, identity, bagIdentity, timestamp);
+    // Older parked plans retain their existing one-time collection path.
+    const legacy = state.stats?.craftWarehouseDepositKind !== 'active'
+        && Number(state.stats?.craftWarehouseDepositTarget) === Number(plan.target?.selfId);
+    const requests = stage ? stage.requests : legacy ? craftRequests(state, stock()) : [];
+    if (!requests.length) return null;
+    const town = invoke('GameServer/World/TownRespawn').getClosestTown(state.loc?.locX, state.loc?.locY, state.loc?.locZ);
+    if (!town) return null;
+    return invoke('GameServer/Bot/Population/ColdTrip').toTown(state, {
+        to: { locX: town.locX, locY: town.locY, locZ: town.locZ }, townName: town.name,
+        regionName: town.name, arrivalActivity: 'shopping', reason: 'craft_warehouse'
+    }, timestamp, {
+        marketReturn: { loc: { ...state.loc }, spotId: state.spotId || null, regionName: state.currentRegion || null },
+        craftWarehouseVisit: { target: Number(plan.target.selfId), identity, bagIdentity, at: timestamp }
+    });
 }
 
 function marketRequests(state, warehouseItems, reserved = new Map(), options = {}) {
@@ -359,7 +449,9 @@ function materialRequests(state, warehouseItems) {
     // ARCH-NOTE: the legacy plan and captured worker materials can describe
     // the same recipe gap. Reserve/withdraw that gap once across both readers.
     const merged = new Map();
-    for (const request of [...craftRequests(state, warehouseItems), ...ColdSafeEnchantService.warehouseRequests(state, warehouseItems)]) {
+    const Policy = require('./CraftWarehousePolicy');
+    const craft = Policy.planFor(state) ? Policy.stage(state, warehouseItems)?.requests || [] : craftRequests(state, warehouseItems);
+    for (const request of [...craft, ...ColdSafeEnchantService.warehouseRequests(state, warehouseItems)]) {
         const key = `${request.selfId}:${request.reason}${request.reason === 'market' ? `:${Number(request.enchant || 0)}` : ''}`;
         const previous = merged.get(key);
         merged.set(key, previous ? { ...previous, amount: Math.max(previous.amount, request.amount) } : request);
@@ -388,13 +480,35 @@ async function releaseColdUnlocked(state, options = {}) {
 
     const planStartedAt = Date.now();
     const materials = materialRequests(state, warehouseItems);
+    const reserved = storedReservations(state, warehouseItems, materials);
+    const selling = marketRequests(state, warehouseItems, reserved, options);
+    recordStage('item_plan', planStartedAt);
+    return releaseRequests(state, warehouseItems, [...materials, ...selling], options);
+}
+
+function storedReservations(state, warehouseItems, materials) {
     const reserved = materials.reduce((amounts, item) => amounts.set(
         item.selfId,
         Number(amounts.get(item.selfId) || 0) + Number(item.amount || 0)
     ), new Map());
-    const selling = marketRequests(state, warehouseItems, reserved, options);
-    recordStage('item_plan', planStartedAt);
-    return releaseRequests(state, warehouseItems, [...materials, ...selling], options);
+    // A not-yet-ready stage stays in custody, including crystals and other
+    // supplements that the clan's material-withdrawal helper omits.
+    const policy = require('./CraftWarehousePolicy'), active = policy.planFor(state);
+    if (active) {
+        const stock = policy.available(state, warehouseItems);
+        const demand = ItemDisposition.equipmentMaterialAmounts({ ...state, inventory: stock.combined }, active.plan);
+        for (const [id, needed] of Object.entries(demand)) {
+            const keep = Math.min(Number(stock.warehouse[id] || 0), Math.max(0, Number(needed) - Number(stock.bag[id] || 0)));
+            reserved.set(Number(id), Math.max(Number(reserved.get(Number(id)) || 0), keep));
+        }
+    }
+    // A paused personal kit owns its stored share too. Active material
+    // withdrawals above take priority when both kits need the same item.
+    for (const [id, held] of Object.entries(ItemDisposition.retainedEquipmentAmounts(state))) {
+        const storedNeed = Math.max(0, Number(held) - Number(state.inventory?.[id]?.amount || 0));
+        reserved.set(Number(id), Number(reserved.get(Number(id)) || 0) + storedNeed);
+    }
+    return reserved;
 }
 
 async function releaseRequests(state, warehouseItems, requested, options = {}) {
@@ -527,6 +641,7 @@ module.exports = {
     itemData,
     retentionAmount,
     craftRequests,
+    beginCraftReturn,
     marketRequests,
     withdrawalRecord,
     releaseCold,

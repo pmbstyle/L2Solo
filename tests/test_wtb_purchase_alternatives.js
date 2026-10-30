@@ -142,6 +142,15 @@ const preparedBid = BuyAds.bidFor({ ...buyer, phase: 'cold', adena: 1000000,
     economy: { ...ctx.economy, trip: completeTrip, hourAdena: ctx.hour, moneyPrice: 1 / ctx.hour }, npcOffersFor: () => []
 });
 assert(preparedBid?.price <= 74000, 'a partial recipe route cannot hide the complete prepared WTB alternatives');
+const retainedBid = BuyAds.bidFor({ ...buyer, phase: 'cold', adena: 1000000,
+    stats: { money: [600000, 1 / 600000, 0, 0, .01, 100000, ITEM] } },
+{ type: 'buy_craft_material', target: { itemId: ITEM, amount: 1 }, intent: {
+    key: 'power:123:11', amount: 1, worth: 34454032, valueHours: 34454032 / ctx.hour,
+    valueRate: .01, retainedProject: true
+} }, { town: 'Dion', board, persona: { traits: {} }, findSpot: () => null, tripCost: partialTrip,
+    economy: { ...ctx.economy, worth: () => 0, trip: completeTrip, hourAdena: ctx.hour, moneyPrice: 1 / ctx.hour }, npcOffersFor: () => [] });
+assert(retainedBid?.price > 0 && retainedBid.price <= 74000,
+    'a retained project uses its current funded value even while the active goal values the input at zero');
 assert.deepEqual(require('../src/GameServer/Bot/Population/ColdEconomyPlan').buyBatch([preparedBid]).buyCaps, [74000],
     'native publication receives the prepared limit without rebuilding routes or pricing');
 assert.equal(Pricing.bid(ITEM, { ...ctx, travelDetails: partialTrip.details }, { units: 1,

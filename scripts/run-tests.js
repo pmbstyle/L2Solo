@@ -39,6 +39,7 @@ const tests = [
     'tests/test_bot_dialogue_grounding.js',
     'tests/test_bot_dialogue_party.js',
     'tests/test_bot_afk_buy_shop.js',
+    'tests/test_duplicate_craft_buy_ads.js',
     'tests/test_native_board.js',
     'tests/test_c4_import_integration.js',
     'tests/test_generated_cold_loadout.js',

@@ -2362,14 +2362,14 @@ function syncPlayerManagedClanUnsafe(clanId) {
 
 // Economic operations must commit their cold projection with the physical
 // inventory. A later failure or restart must not replay pre-purchase balances.
-function syncEconomySnapshotUnsafe(characterId, state, changedIds, mp = null) {
+function syncEconomySnapshotUnsafe(characterId, state, changedIds, mp = null, statsPatch = null) {
     if (!state) return null;
     const row = one('SELECT * FROM bot_life_state WHERE characterId = ?', [Number(characterId)]);
     if (!row || row.phase !== 'cold'
         || (state.simulation && Number(row.simulationRevision) !== Number(state.simulation.revision))) {
         throw new Error('economy_state_changed');
     }
-    return writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp);
+    return writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp, statsPatch);
 }
 
 function nativeHennaSlotsUnsafe(characterId) {
@@ -2575,8 +2575,12 @@ function writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp = nul
     }
     const adena = Number(physical[57]?.amount || 0);
     const { body, mind } = SavedStats.split({ ...statsPatch, hennas: nativeHennaSlotsUnsafe(characterId) });
+    // An equipment plan is a complete ownership record, not a partial JSON
+    // patch: merging a resumed project into the completed goal leaves stale
+    // target fields and even its nested inputPreparation behind.
+    const statsBase = Object.hasOwn(body, 'equipmentPlan') ? "json_remove(statsJson,'$.equipmentPlan')" : 'statsJson';
     write(`UPDATE bot_life_state SET inventorySummary = ?, adena = ?, mp = COALESCE(?, mp),
-        statsJson = json_patch(statsJson,json(?)),
+        statsJson = json_patch(${statsBase},json(?)),
         mindJson = CASE WHEN ? IS NULL THEN mindJson ELSE json_patch(mindJson,json(?)) END,
         simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?`,
     [JSON.stringify(inventory), adena, mp, JSON.stringify(body), ...mindPatchParams(mind), now(), Number(characterId)]);
@@ -7125,7 +7129,7 @@ const Database = {
             .then(result => { invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').changed(characterId); return result; });
     },
 
-    transferInventoryToWarehouse(characterId, item, { coldState = null } = {}) {
+    transferInventoryToWarehouse(characterId, item, { coldState = null, craftDepositTarget = 0, craftDepositKind = null } = {}) {
         if (coldState && Number(coldState.characterId) !== Number(characterId)) return Promise.reject(new Error('economy_state_changed'));
         return withCharacterFlush(characterId, () => inTransaction(() => {
             const source = one('SELECT id, amount, enchant FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);
@@ -7141,7 +7145,9 @@ const Database = {
             const inventoryAmount = Number(source.amount) - Number(item.amount);
             if (inventoryAmount <= 0) write('DELETE FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);
             else write('UPDATE items SET amount = ? WHERE id = ? AND characterId = ?', [inventoryAmount, item.id, characterId]);
-            const coldLifeRow = syncEconomySnapshotUnsafe(characterId, coldState, [item.selfId]);
+            const coldLifeRow = syncEconomySnapshotUnsafe(characterId, coldState, [item.selfId], null,
+                Number(craftDepositTarget) > 0 ? { craftWarehouseDepositTarget: Number(craftDepositTarget),
+                    ...(craftDepositKind ? { craftWarehouseDepositKind: craftDepositKind } : {}) } : null);
             return { warehouseId: Number(warehouseId), warehouseAmount, inventoryAmount, enchant: sourceEnchant,
                 ...(coldLifeRow ? { coldLifeRow } : {}) };
         }, 'warehouse:deposit')).then(result => {
@@ -8442,7 +8448,8 @@ const Database = {
                     || !one('SELECT recipeId FROM character_recipes WHERE characterId=? AND recipeId=?', [crafterId, recipe.recipeId]))
                     throw Error('invalid_live_workshop');
                 const required = new Map();
-                for (const row of recipe.materials) required.set(Number(row.selfId),
+                const inputs = liveWorkshop.publicStation ? require('./GameServer/Crafting/StationRecipe').forStation(recipe) : recipe;
+                for (const row of inputs.materials) required.set(Number(row.selfId),
                     (required.get(Number(row.selfId)) || 0) + Number(row.amount) * batches);
                 const supplied = new Map();
                 if (new Set((materials || []).map(row => Number(row.id))).size !== materials?.length)
@@ -8501,7 +8508,8 @@ const Database = {
                 if (!quote || Number(price) !== quote.price * batches || Number(workshop.fee) !== Number(price)
                     || !Number.isSafeInteger(Number(price)) || Number(price) < 0) throw new Error('workshop price changed');
                 const required = new Map();
-                for (const input of recipe.materials) required.set(Number(input.selfId),
+                const inputs = rules.isStationService({ stats }) ? require('./GameServer/Crafting/StationRecipe').forStation(recipe) : recipe;
+                for (const input of inputs.materials) required.set(Number(input.selfId),
                     Number(required.get(Number(input.selfId)) || 0) + Number(input.amount) * batches);
                 const supplied = new Map();
                 const ids = new Set();
@@ -8516,7 +8524,7 @@ const Database = {
                     || product && (Number(product.selfId) !== Number(recipe.productId)
                         || Number(product.amount) !== Number(recipe.productCount) * batches)) throw new Error('workshop recipe changed');
                 if (step) {
-                    prepareCraftReservationsUnsafe(step, recipe);
+                    prepareCraftReservationsUnsafe(step, inputs);
                     for (const [id, amount] of required) checkEconomyMaterialProtectionUnsafe(customerId, step, id, amount);
                     checkEconomyFundingUnsafe(customerId, step, Number(price), { ...funding, itemId: Number(recipe.productId) });
                     const template = ItemTemplateIndex.find(DataCache.items, Number(recipe.productId));
@@ -11169,6 +11177,24 @@ const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
         const sellerId = line.payer ? meeting.actorA : meeting.actorB;
         const certificate = JSON.parse(meeting.terms).lines[line.ordinal]?.certificate;
         const intent = certificate ? TradeIntent.decode(certificate) : null;
+        // A purchase for a paused kit becomes part of that kit in the same
+        // transaction as its receipt. Other purchases remain free for their
+        // own goal; merely revisiting the plan cannot claim them.
+        if (intent && intent.key.startsWith('power:')) {
+            const life = one('SELECT statsJson FROM bot_life_state WHERE characterId=?', [buyerId]);
+            let saved = jsonObject(life?.statsJson).equipmentPlan?.inputPreparation;
+            let prefix = '$.equipmentPlan.inputPreparation';
+            while (saved && !(saved.reason === 'wish_focus' && intent.key === `power:${Number(saved.target?.selfId)}:${Number(saved.target?.slot)}`
+                && Number(intent.recipeId) === Number(saved.recipeId))) {
+                saved = saved.inputPreparation;
+                prefix += '.inputPreparation';
+            }
+            if (saved && Number(line.enchant || 0) === 0) {
+                const path = `${prefix}.heldInputs.${Number(line.selfId)}`;
+                write("UPDATE bot_life_state SET statsJson=json_set(COALESCE(statsJson,'{}'),?,COALESCE(json_extract(statsJson,?),0)+?) WHERE characterId=?",
+                    [path, path, Number(line.count), buyerId]);
+            }
+        }
         const ad = line.sourceAdId && one('SELECT * FROM afk_trade_shops WHERE id=?', [line.sourceAdId]);
         if (ad?.custodyPolicy === 1) {
             write('UPDATE afk_trade_lines SET count=max(0,count-?),fills=fills+1,updatedAt=? WHERE shopId=? AND selfId=? AND enchant=?',
