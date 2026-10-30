@@ -1,6 +1,6 @@
 'use strict';
 
-const { trait, stageHours, decisionHorizon, resale } = require('./EconomicValuation');
+const { trait, stageHours, decisionHorizon, resale, liveDeathHours } = require('./EconomicValuation');
 const { SELL } = require('../../AfkTrade/BoardIndex');
 const Sources = require('../../Items/ItemAcquisitionCatalog');
 const Diagnostics = require('./EconomyDiagnostics');
@@ -1119,7 +1119,8 @@ function buildProjection(state, ctx, deps) {
         price: 0, paths: [{ activity: 'helping', targetId: friend.targetId, costHours: 1 }] });
     if (enemy) root({ key: `scores:${enemy.targetId}`, need: 'scores', object: { targetId: enemy.targetId },
         valueHours: positive(enemy.hostility ?? enemy.anger) * trait(ctx.persona, 'assertiveness'), price: 0,
-        paths: [{ activity: 'pvp', targetId: enemy.targetId, costHours: 1, riskHours: ctx.deathHours + ctx.karmaHours }] });
+        // A PvP death is a live one (it waits for its respawn).
+        paths: [{ activity: 'pvp', targetId: enemy.targetId, costHours: 1, riskHours: liveDeathHours(ctx.deathHours) + ctx.karmaHours }] });
     // Only known concrete items enter the small resale watch list. The
     // board is queried by item, never by copying every owner's offers.
     const known = new Set([...candidates.map(row => Number(row.item.selfId)), ...rows(state).map(row => Number(row.selfId))]);
