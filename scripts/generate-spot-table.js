@@ -400,7 +400,7 @@ function hunt(spot, role, level, shots, hours, simulation = sim, kit = null, cla
     const random = Math.random;
     Math.random = mulberry(seed ^ 0x9e3779b9);
     const sum = { kills: 0, mobs: 0, busyMs: 0, deaths: 0, exp: 0, sp: 0, adena: 0, loot: 0, shots: 0, potions: 0, stacks: 0,
-        fightMs: 0, restMs: 0, taken: 0, spellTaken: 0, hpLost: 0, mpLost: 0, mix: {}, density: 0, runSpd: 0 };
+        fightMs: 0, walkMs: 0, buffCasts: 0, heals: 0, restMs: 0, taken: 0, spellTaken: 0, hpLost: 0, mpLost: 0, mix: {}, density: 0, runSpd: 0 };
     try {
         const made = newBot(classId, level, shots, simulation, kit, lineClassFor(role));
         const seen = new Set(Object.values(made.bot.inventory).filter(item => item.amount > 0).map(item => Number(item.selfId)));
@@ -433,6 +433,10 @@ function hunt(spot, role, level, shots, hours, simulation = sim, kit = null, cla
                 const restMs = Math.max(0, Number(patch.stats?.restUntil || t) - t);
                 sum.busyMs += Number(debug.combatMs) + restMs;
                 sum.fightMs += Number(debug.combatMs);
+                // Its parts the bots' records do not split: the walk to the mobs, own buffs and heals.
+                sum.walkMs += Number(debug.walkedMs || 0);
+                sum.buffCasts += Number(debug.buffCasts || 0);
+                sum.heals += Number(debug.heals || 0);
                 sum.restMs += restMs;
                 sum.taken += Number(debug.damageTaken || 0);
                 sum.spellTaken += Number(debug.spellTaken || 0);
