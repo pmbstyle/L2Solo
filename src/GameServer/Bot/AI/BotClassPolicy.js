@@ -2,6 +2,7 @@ const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const Progression = invoke('GameServer/ClassProgression');
 const Equipment = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 const tree = require('../../../../data/Skills/Tree/tree.json');
+const Diagnostics = require('../Economy/EconomyDiagnostics');
 
 // Mechanics come from the C4 tree. These small preferences are tunable bot
 // decisions, not claims about an optimal player rotation. No SA assumptions.
@@ -39,9 +40,13 @@ function hotPartyAlone(session) {
 function modeFor(actor, context = {}) {
     if (['solo_pve', 'party_pve', 'solo_pvp', 'party_pvp'].includes(context.mode)) return context.mode;
     const session = context.session || actor?.session;
-    const party = context.party === true || context.mode === 'party' || context.mode === 'duo'
-        || !!actor?.party?.partyId || session?.partyCompanion === true
-        || (!!session?.hotBackgroundPartyId && !hotPartyAlone(session));
+    let party = context.party === true || context.mode === 'party' || context.mode === 'duo'
+        || !!actor?.party?.partyId || session?.partyCompanion === true;
+    if (!party && session?.hotBackgroundPartyId) {
+        party = !hotPartyAlone(session);
+        // class_mode:hot_party_alone: how often a hot party of one fights solo; only while diagnostics count.
+        if (!party && Diagnostics.active()) Diagnostics.count('class_mode', 'hot_party_alone', 'solo');
+    }
     return `${party ? 'party' : 'solo'}_${context.pvp === true ? 'pvp' : 'pve'}`;
 }
 

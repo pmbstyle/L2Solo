@@ -1238,23 +1238,11 @@ class Attack {
     }
 
     isBowAttack(creature) {
-        const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
-        return kind === 'Weapon.Bow';
-    }
-
-    isBluntAttack(creature) {
-        const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
-        return kind === 'Weapon.Blunt' || kind === 'Weapon.BigBlunt';
-    }
-
-    isDaggerAttack(creature) {
-        const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
-        return kind === 'Weapon.Knife';
+        return attackKind(creature) === 'Weapon.Bow';
     }
 
     isPolearmAttack(creature) {
-        const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
-        return kind === 'Weapon.Pole';
+        return attackKind(creature) === 'Weapon.Pole';
     }
 
     fetchNpcWeaponKind(creature) {

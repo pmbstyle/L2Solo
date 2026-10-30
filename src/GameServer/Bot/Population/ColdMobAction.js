@@ -38,7 +38,7 @@ function coldMobSkills(mob) {
 // characterId -> the time this monster's control on that fighter ends.
 const MOB_IMPAIRMENTS = { hard_control: 'disabled', sleep: 'disabled', root: 'rooted', mute: 'silenced' };
 // heldUntil: the time a bot's stun on this monster ends; dots: the bot's
-// damage over time on it (landOnMob).
+// damage over time on it (landOnMob); dotBy: the caster of its last tick.
 function coldMobFight(mob, saved = null) {
     const skills = coldMobSkills(mob);
     return { skills, mp: saved ? Number(saved.mp ?? mob.maxMp) || 0 : Number(mob.maxMp) || 0,
@@ -48,6 +48,15 @@ function coldMobFight(mob, saved = null) {
         held: { disabled: { ...(saved?.held?.disabled || {}) }, rooted: { ...(saved?.held?.rooted || {}) },
             silenced: { ...(saved?.held?.silenced || {}) } },
         aiType: skills.length ? NpcCombatChoice.aiTypeFor(mob.aiType, skills, mob.atkRadius) : 'fighter' };
+}
+// A fresh fight read only for its skills and AI type (actionMix, meleeOnly),
+// once per monster view: the gate weighs a view many times. A self buff
+// (buffColdMob) changes neither.
+const freshFights = new WeakMap();
+function freshFight(mob) {
+    let fight = freshFights.get(mob);
+    if (!fight) freshFights.set(mob, fight = coldMobFight(mob));
+    return fight;
 }
 function coldMobFightSave(fight, time) {
     const dots = (fight.dots || []).map((dot) => ({ ...dot, next: dot.next - time }));
@@ -66,25 +75,33 @@ function coldMobFightSave(fight, time) {
 // holder.dots, per effect key its next tick (fight time), ticks left, damage
 // and interval. The same effect landing again starts over (the hot ticker
 // clears its timer); its first tick comes one interval after it lands.
-function addDot(holder, key, dot, landedAt) {
+// by: the caster's characterId (a bot's DoT on a monster: its kill's last hitter).
+function addDot(holder, key, dot, landedAt, by = null) {
     const count = Math.max(0, Number(dot.count) || 0), damage = Math.max(0, Number(dot.damage) || 0);
     if (!count || !damage) return;
     const intervalMs = Math.max(1, Number(dot.intervalMs) || 3000);
     holder.dots = (holder.dots || []).filter((held) => held.key !== String(key || ''));
-    holder.dots.push({ key: String(key || ''), next: landedAt + intervalMs, left: count, damage, intervalMs });
+    holder.dots.push({ key: String(key || ''), next: landedAt + intervalMs, left: count, damage, intervalMs,
+        ...(by !== null ? { by } : {}) });
 }
-// The damage a holder's dots deal up to time (their ticks at or before it); finished ones leave.
+// The damage a holder's dots deal up to time (their ticks at or before it);
+// finished ones leave. holder.dotBy: the caster of the latest tick.
 function dotDamage(holder, time) {
     if (!holder.dots?.length) return 0;
-    let damage = 0;
+    let damage = 0, ended = false, lastAt = -Infinity;
     for (const dot of holder.dots) {
         while (dot.left > 0 && dot.next <= time) {
             damage += dot.damage;
+            if (dot.next >= lastAt) {
+                lastAt = dot.next;
+                holder.dotBy = dot.by ?? null;
+            }
             dot.left -= 1;
             dot.next += dot.intervalMs;
         }
+        if (dot.left <= 0) ended = true;
     }
-    holder.dots = holder.dots.filter((dot) => dot.left > 0);
+    if (ended) holder.dots = holder.dots.filter((dot) => dot.left > 0);
     return damage;
 }
 
@@ -101,20 +118,24 @@ function controlLandChance(mob, semantic, magic, caster) {
 // drain skill (Stun Shot, Shield Stun, Ice Dagger's bleed; hot
 // C4SkillEffects.execute), rolled by controlLandChance. A stun or a paralysis
 // holds the monster (fight.heldUntil: it acts again only after), a poison or
-// a bleed deals its damage over time (fight.dots, dotDamage). Not modelled: a
+// a bleed deals its damage over time (fight.dots, dotDamage). A pull is one
+// view of its mobs (BotPullEstimate.pullView: its hits x its pack): a stun
+// on one of them leaves the others striking, as hot, so only an effect that
+// strikes the whole pull (struck, its mobs hit) holds it. Not modelled: a
 // sleep (the fighter's next hit wakes it), fear and stat debuffs (the
-// monster's numbers are fixed for the fight). skill: the cold skill record.
-// Returns whether an effect landed.
-function landOnMob(mob, fight, skill, caster, time, rng) {
+// monster's numbers are fixed for the fight). skill: the cold skill record;
+// caster.characterId: the DoT's owner (addDot). Returns whether an effect landed.
+function landOnMob(mob, fight, skill, caster, time, rng, struck = 1) {
     const semantic = C4SkillRules.resolveCached(skill);
     if (!semantic.effect || semantic.effectType !== 'debuff') return false;
     const durationMs = Number(semantic.durationMs ?? skill.buffTime) || 0;
-    const hold = durationMs > 0 && NpcCombatChoice.category({ fetchSemantic: () => semantic }) === 'hard_control';
+    const hold = durationMs > 0 && struck >= Math.max(1, Number(mob.pull) || 1)
+        && NpcCombatChoice.category({ fetchSemantic: () => semantic }) === 'hard_control';
     const dot = HitRules.dotOf(semantic, skill.level, skill.power);
     if (!hold && !dot) return false;
     if (!(controlLandChance(mob, semantic, skill.spell === true, caster) >= rng() * 100)) return false;
     if (hold) fight.heldUntil = Math.max(Number(fight.heldUntil) || 0, time + durationMs);
-    if (dot) addDot(fight, semantic.effect, dot, time);
+    if (dot) addDot(fight, semantic.effect, dot, time, caster.characterId ?? null);
     return true;
 }
 
@@ -174,7 +195,7 @@ function spellLands(mob, skill, profile) {
 // are left out (a control's damage is none, its hold on the fighter is not
 // in the mean): the mean errs high. A skill the fighter's numbers cannot
 // meet (no M.Def for a spell) is left out too.
-function actionMix(mob, target, at = 0, fight = coldMobFight(mob)) {
+function actionMix(mob, target, at = 0, fight = freshFight(mob)) {
     const profile = target.profile;
     const attacker = Profile.attackerView(mob);
     const defender = Profile.defenderView(profile, at, target);
@@ -217,7 +238,7 @@ function incomingPerSecond(mob, profile, at = 0) {
 // spell (its AI type by NpcCombatChoice.aiTypeFor reads both).
 function meleeOnly(mob) {
     if (!(Number(mob?.atkRadius) < 200)) return false;
-    return coldMobFight(mob).aiType === 'fighter';
+    return freshFight(mob).aiType === 'fighter';
 }
 
 // One action of a cold monster on a fighter, as the hot Npc's: a self buff

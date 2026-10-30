@@ -437,6 +437,14 @@ assert.strictEqual(
     12,
     'a hostile NPC in the same spot must still be able to interrupt focused farming'
 );
+// T123: a kill draw weighs the mobs an entry gives per hour (its production:
+// a night spawn only by night), not its spawn count.
+{
+    const entries = [{ selfId: 1, count: 10, production: 1 }, { selfId: 12, count: 10, production: 3 }];
+    assert.strictEqual(ColdCombatProfile.npcForSpot({ ...spot, npcEntries: entries }, () => 0.3).selfId, 12,
+        'a draw past the first quarter takes the entry that gives three of four mobs');
+    assert.deepStrictEqual(ColdCombatProfile.killChances(ColdCombatProfile.killDraw(entries, entries)).map(row => row.chance), [0.25, 0.75]);
+}
 const focusedLoot = BackgroundDropResolver.rollForFight({
     spot: mixedSpot,
     killerLevel: fighter.level,
@@ -529,6 +537,17 @@ assert.strictEqual(strongSoloResult.materialize.adena, 0);
     const swingMs = ColdCombatProfile.normalAttackMs(ColdCombatProfile.fightProfile(strongColdHunter, timestamp));
     assert(dense.debug.wins >= 1 && dense.debug.wins <= Math.ceil(12000 / swingMs) + 1,
         `one-shot kills cost their swing: ${dense.debug.wins} kills of ${swingMs} ms in 12 s`);
+}
+
+// T126: with a walk between mobs a one-shot kill still costs its killing action on top.
+{
+    const sparse = { ...gigantSpot, id: 'sparse_gigant_slave', npcEntries: [{ selfId: 1187, count: 20 }] };
+    const round = BackgroundResolver.resolveSolo({ state: strongColdHunter, spot: sparse, targetNpcId: 1187, elapsedMs: 60000, timestamp,
+        rng: () => 0.1 });
+    const swingMs = ColdCombatProfile.normalAttackMs(ColdCombatProfile.fightProfile(strongColdHunter, timestamp));
+    assert(round.debug.wins >= 1 && round.debug.walkedMs > 0, `the round walks and kills (${round.debug.wins}, ${round.debug.walkedMs} ms)`);
+    assert(round.debug.combatMs >= round.debug.walkedMs + round.debug.wins * swingMs,
+        `each kill costs its walk and its swing: ${round.debug.combatMs} ms for ${round.debug.wins} kills, ${round.debug.walkedMs} ms walked`);
 }
 
 for (const restUntil of [timestamp - 600000, timestamp + 600000]) {

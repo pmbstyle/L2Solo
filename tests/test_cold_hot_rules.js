@@ -1,12 +1,9 @@
 // T124: the hot combat rules the cold fight lacked, each with one owner the
 // hot and the cold side read. Each check gives the hot entry (Attack,
-// C4SkillEffects) and the cold one (BackgroundResolver, ColdMobAction) the
-// same numbers and rolls and compares their outcomes; the solo gate
-// (BotTargetMatchup) reads the fight's modifier.
+// C4SkillEffects) and the cold one (BackgroundResolver's fights,
+// ColdMobAction) the same numbers and rolls and compares their outcomes; the
+// solo gate (BotTargetMatchup) reads the fight's modifier.
 const assert = require('assert');
-const fs = require('fs');
-const path = require('path');
-const Module = require('module');
 require('../src/Global');
 invoke('GameServer/DataCache').init();
 
@@ -21,18 +18,12 @@ const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Matchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const DataCache = invoke('GameServer/DataCache');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
+const HitRules = invoke('GameServer/Combat/HitRules');
+const ItemTemplateIndex = invoke('GameServer/Item/ItemTemplateIndex');
 
-// afterBotHit is module-private: compile a second copy that also exports it (as test_cold_combat_parity).
-function loadWith(file, extra) {
-    const full = path.join(__dirname, '../src', file);
-    const copy = new Module(full, module);
-    copy.filename = full;
-    copy.paths = Module._nodeModulePaths(path.dirname(full));
-    copy._compile(fs.readFileSync(full, 'utf8') + extra, full);
-    return copy.exports;
-}
-const { afterBotHit, coldBotTurn } = loadWith('GameServer/Bot/Population/BackgroundResolver.js',
-    '\nmodule.exports.afterBotHit = afterBotHit;\nmodule.exports.coldBotTurn = coldBotTurn;');
+const HuntCycle = invoke('GameServer/Bot/AI/HuntCycle');
+const PveEncounter = invoke('GameServer/Bot/Population/ColdPveEncounter');
+const TS = 1_791_060_000_000;
 
 const constant = value => () => value;
 const passive = stats => ({ fetchPassive: () => true, fetchSemantic: () => ({ skillType: 'passive', stats }) });
@@ -62,7 +53,28 @@ function coldFighter({ pAtk = 1000, mAtk = 1000, hp = 1000, maxHp = 1000, level 
     vitals: { hp, maxHp, mp: 1000, maxMp: 1000 }, charges: 0, cooldowns: {} };
 }
 function coldMob({ pDef = 500, mDef = 300, maxHp = 5000, level = 40, race = '', undead = false, vulnerabilities = {}, ...rest } = {}) {
-    return { selfId: 0, level, maxHp, pDef, mDef, evasion: 0, race, undead, vulnerabilities, resists: {}, ...rest };
+    return { selfId: 0, level, maxHp, pDef, mDef, evasion: 0, race, undead, vulnerabilities, resists: {},
+        pAtk: 1, mAtk: 1, accur: 1, critical: 0, atkSpd: 253, castSpd: 333, ...rest };
+}
+// A solo fight (BackgroundResolver.resolveFight) of a class's reference bot
+// that has learned only `skills` (their tree levels at its level), against a
+// mob already engaged (its encounter: the mob, mobHp, timers; the mob acts
+// only at mobReadyAt). maxActions 1: the bot's one action. Returns the result
+// and the bot's state and starting vitals.
+function soloFight({ classId, level, skills = [], effects = [], hp = null, mp = null, mob, mobHp = mob.maxHp, timers = {},
+    rng = constant(0.5), maxActions = 1 }) {
+    const state = HuntCycle.referenceState(classId, level);
+    state.stats.coldCombat.skills = ColdCombatProfile.skillSnapshotsFromRecords(ColdCombatProfile.skillRecordsFromTree(classId, level)
+        .filter(record => skills.includes(record.selfId)));
+    assert.strictEqual(state.stats.coldCombat.skills.length, skills.length, `class ${classId} at ${level} knows ${skills}`);
+    state.stats.coldCombat.effects = effects;
+    const profile = ColdCombatProfile.fightProfile(state, TS);
+    state.vitals = { hp: hp ?? profile.maxHp, mp: mp ?? profile.maxMp };
+    const spot = { id: 'rules', avgLevel: level, npcEntries: [], rewards: { adenaMin: 0, adenaMax: 0 } };
+    state.stats.pveEncounter = PveEncounter.save(null, PveEncounter.key([state], spot, 0), mob, mobHp, TS,
+        { botReadyAt: 0, mobReadyAt: 1e9, ...timers });
+    const result = Resolver.resolveFight({ state, spot, pressure: {}, rng, timestamp: TS, maxActions });
+    return { result, state, profile, hp: state.vitals.hp, mobHp: result.won ? 0 : result.encounter.hp };
 }
 
 // 1. One modifier (HitRules.targetModifier): a weapon's weakness, the
@@ -126,13 +138,12 @@ function coldMob({ pDef = 500, mDef = 300, maxHp = 5000, level = 40, race = '', 
     const hot = SkillEffects.execute({ dataSendToMe() {} }, hotActor({ level: 40 }), target, lethal,
         { rng: constant(0), attack: { clearLoadedShot() {}, prepareSkillDamage: () => 200 } });
     assert.strictEqual(hot.forceLethalVitals, true, 'hot: the lethal strike lands');
-    const fighter = coldFighter({ level: 40 });
-    const damage = afterBotHit(fighter, { skill: { selfId: 344, level: 1 }, shot: null, damage: 200, struck: 1 },
-        coldMob({ maxHp: 5000, level: 40 }), ColdMobAction.coldMobFight(coldMob()), 5000, { time: 0, at: 0, rng: constant(0) });
-    assert.strictEqual(damage, 4999, 'cold: the mob is left at 1 HP');
-    const boss = afterBotHit(fighter, { skill: { selfId: 344, level: 1 }, shot: null, damage: 200, struck: 1 },
-        coldMob({ maxHp: 5000, level: 40, boss: true }), ColdMobAction.coldMobFight(coldMob()), 5000, { time: 0, at: 0, rng: constant(0) });
-    assert.strictEqual(boss, 200, 'a raid boss takes no lethal strike');
+    // An Adventurer (93) with Lethal Blow only, the same roll.
+    const cold = soloFight({ classId: 93, level: 76, skills: [344], mob: coldMob({ maxHp: 5000, level: 76 }), rng: constant(0) });
+    assert.strictEqual(cold.result.debug.skillUses, 1, 'the bot strikes with Lethal Blow');
+    assert.strictEqual(cold.mobHp, 1, 'cold: the mob is left at 1 HP');
+    const boss = soloFight({ classId: 93, level: 76, skills: [344], mob: coldMob({ maxHp: 5000, level: 76, boss: true }), rng: constant(0) });
+    assert.ok(boss.mobHp > 1 && boss.mobHp < 5000, 'a raid boss takes no lethal strike, only the hit');
 }
 
 // 5. Drain (Vampiric Claw 1234): the caster heals absorbPart of the damage, hot and cold alike.
@@ -141,37 +152,42 @@ function coldMob({ pDef = 500, mDef = 300, maxHp = 5000, level = 40, race = '', 
     const caster = hotActor({ hp: 100, maxHp: 1000 });
     const hot = SkillEffects.execute({ dataSendToMe() {}, dataSendToMeAndOthers() {} }, caster, hotTarget({ hp: 5000 }), claw,
         { magicSkill: true, rng: constant(0.5), attack: { clearLoadedShot() {}, prepareSkillDamage: () => 300 } });
-    const fighter = coldFighter({ hp: 100, maxHp: 1000 });
-    afterBotHit(fighter, { skill: { selfId: 1234, level: 28, spell: true }, shot: null, damage: 300, struck: 1 },
-        coldMob({ maxHp: 5000 }), ColdMobAction.coldMobFight(coldMob()), 5000, { time: 0, at: 0, rng: constant(0.99) });
-    assert.strictEqual(hot.heal, 120, 'hot: Vampiric Claw heals 40% of its damage');
-    assert.strictEqual(fighter.vitals.hp - 100, hot.heal, 'cold heals the same');
+    const semantic = Rules.resolve({ selfId: 1234, level: 28 });
+    assert.strictEqual(hot.heal, Formulas.calcDrainHeal({ damage: 300, targetHp: 5000, absorbPart: semantic.absorbPart,
+        absorbAbs: semantic.absorbAbs }), 'hot: Vampiric Claw heals its share of the damage');
+    // A Necromancer (13) with Vampiric Claw only: the fight heals the same share of its damage.
+    const cold = soloFight({ classId: 13, level: 40, skills: [1234], hp: 100, mob: coldMob(), rng: constant(0.99) });
+    const damage = 5000 - cold.mobHp, level = cold.state.stats.coldCombat.skills[0].level;
+    const own = Rules.resolve({ selfId: 1234, level });
+    assert.ok(damage > 0, 'the claw hits');
+    // The fight's result rounds the bot's HP.
+    assert.strictEqual(cold.result.hp, Math.round(100 + Formulas.calcDrainHeal({ damage, targetHp: 5000, absorbPart: own.absorbPart,
+        absorbAbs: own.absorbAbs })), 'cold heals the same share');
 }
 
 // 6. Life steal (absorbDam: a weapon SA, Vampiric Rage) on a normal hit, not on a bow's; hot and cold alike.
 {
     const hotGain = Attack.prototype.applyDamageAbsorb.call(Attack.prototype, null, hotActor({ hp: 500, maxHp: 1000, stats: { absorbDam: 9 } }), 400);
-    const fighter = coldFighter({ hp: 500, maxHp: 1000, stats: { absorbDam: 9 } });
-    afterBotHit(fighter, { skill: null, shot: null, damage: 400, struck: 1 }, coldMob(), ColdMobAction.coldMobFight(coldMob()), 5000,
-        { time: 0, at: 0, rng: constant(0.99) });
-    assert.strictEqual(hotGain, 36);
-    assert.strictEqual(fighter.vitals.hp - 500, hotGain, 'cold steals the same life');
-    const archer = coldFighter({ hp: 500, maxHp: 1000, kind: 'Weapon.Bow', stats: { absorbDam: 9 } });
-    afterBotHit(archer, { skill: null, shot: null, damage: 400, struck: 1 }, coldMob(), ColdMobAction.coldMobFight(coldMob()), 5000,
-        { time: 0, at: 0, rng: constant(0.99) });
-    assert.strictEqual(archer.vitals.hp, 500, 'a bow steals none');
+    assert.strictEqual(hotGain, HitRules.absorbedHp(9, 400, 500, 1000));
+    const rage = [{ key: 'test_rage', stats: { absorbDam: 9 } }];
+    // A Human Fighter (0) swings its sword once.
+    const cold = soloFight({ classId: 0, level: 20, effects: rage, hp: 100, mob: coldMob({ level: 20 }) });
+    const damage = 5000 - cold.mobHp;
+    assert.ok(damage > 0, 'the swing lands');
+    assert.strictEqual(cold.result.hp - 100, HitRules.absorbedHp(9, damage, 100, cold.profile.maxHp), 'cold steals the same life');
+    const archer = soloFight({ classId: 9, level: 40, effects: rage, hp: 100, mob: coldMob() });
+    assert.ok(archer.mobHp < 5000, 'the arrow lands');
+    assert.strictEqual(archer.result.hp, 100, 'a bow steals none');
 }
 
 // 7. A monster's reflect (reflectDam: its damage shield) sends a share of each hit back, while it lives.
 {
-    const fighter = coldFighter({ hp: 1000, maxHp: 1000 });
-    afterBotHit(fighter, { skill: null, shot: null, damage: 400, struck: 1 }, coldMob({ reflectDam: 20 }), ColdMobAction.coldMobFight(coldMob()),
-        5000, { time: 0, at: 0, rng: constant(0.99) });
-    assert.strictEqual(fighter.vitals.hp, 1000 - 80, 'the bot takes 20% of its hit back');
-    const killer = coldFighter({ hp: 1000, maxHp: 1000 });
-    afterBotHit(killer, { skill: null, shot: null, damage: 400, struck: 1 }, coldMob({ reflectDam: 20 }), ColdMobAction.coldMobFight(coldMob()),
-        300, { time: 0, at: 0, rng: constant(0.99) });
-    assert.strictEqual(killer.vitals.hp, 1000, 'a killed monster sends nothing back');
+    const cold = soloFight({ classId: 0, level: 20, hp: 500, mob: coldMob({ level: 20, reflectDam: 20 }) });
+    const damage = 5000 - cold.mobHp;
+    assert.strictEqual(cold.hp - cold.result.hp, HitRules.reflectedDamage(20, damage), 'the bot takes 20% of its hit back');
+    const killer = soloFight({ classId: 0, level: 20, hp: 500, mob: coldMob({ level: 20, reflectDam: 20 }), mobHp: 1 });
+    assert.strictEqual(killer.result.won, true);
+    assert.strictEqual(killer.result.hp, killer.hp, 'a killed monster sends nothing back');
 }
 
 // 8. The effect part of a damage+effect skill lands on the cold monster: Stun Shot (101) holds it,
@@ -232,7 +248,7 @@ function coldMob({ pDef = 500, mDef = 300, maxHp = 5000, level = 40, race = '', 
 // 10. T126: a bow shot below its MP does not leave (hot BowResources.consume); the cold archer stands
 // until its regeneration pays the shot, then shoots.
 {
-    const state = invoke('GameServer/Bot/AI/HuntCycle').referenceState(9, 40);
+    const state = HuntCycle.referenceState(9, 40);
     const profile = ColdCombatProfile.fightProfile(state, 0);
     const bowMp = Number(profile.equipment?.bowMp) || 0;
     assert.ok(profile.equipment?.weaponKind === 'Weapon.Bow' && bowMp > 0, 'a Hawkeye shoots a bow that costs MP');
@@ -240,18 +256,54 @@ function coldMob({ pDef = 500, mDef = 300, maxHp = 5000, level = 40, race = '', 
         backpack: { fetchEquippedWeapon: () => ({ fetchConsumedMp: () => bowMp, fetchSelfId: () => 0 }) },
         fetchMp: () => 0, state: { setHits() {} } }, constant(0.99));
     assert.strictEqual(hot, false, 'hot: no shot at 0 MP');
-    const fighter = { state, profile, role: 'archer', vitals: { hp: profile.maxHp, maxHp: profile.maxHp, mp: 0, maxMp: profile.maxMp },
-        cooldowns: {}, readyAt: 0, shot: null, shotActions: 0, skillUses: 0, heals: 0, musicUses: 0, charges: 0, chargeExpiresAt: null,
-        summonUses: 0, summonActions: 0, summonReadyAt: Infinity, potionsUsed: 0, potionHot: null, dots: [], now: 0 };
-    const mob = coldMob({ maxHp: 1e6, level: 40 });
-    const turn = time => coldBotTurn(fighter, { allies: [fighter], mob, mobFight: ColdMobAction.coldMobFight(mob), mobHp: mob.maxHp,
-        at: time, time, rng: constant(0.5) });
-    assert.strictEqual(turn(0), null, 'cold: no shot at 0 MP');
-    assert.ok(fighter.readyAt > 0 && fighter.vitals.mp === bowMp, 'it waits until it has the shot\'s MP');
-    const shot = turn(fighter.readyAt);
-    assert.ok(shot && shot.skill === null && fighter.vitals.mp === 0, 'then it shoots and pays the MP');
+    // The first action waits for the shot's MP and shoots nothing; the second shoots and pays it.
+    const waits = soloFight({ classId: 9, level: 40, mp: 0, mob: coldMob({ maxHp: 1e6 }) });
+    assert.strictEqual(waits.mobHp, 1e6, 'cold: no shot at 0 MP');
+    assert.ok(waits.result.encounter.botReadyAt > 0 && waits.result.mp === bowMp, 'it waits until it has the shot\'s MP');
+    const shoots = soloFight({ classId: 9, level: 40, mp: 0, mob: coldMob({ maxHp: 1e6 }), maxActions: 2 });
+    assert.ok(shoots.mobHp < 1e6 && shoots.result.mp === 0, 'then it shoots and pays the MP');
 }
 
+// 12. A single-target stun holds a lone mob, not a pull: the pull's other mobs
+// strike on (BotPullEstimate.pullView), as hot.
+{
+    const stun = (mob) => soloFight({ classId: 9, level: 40, skills: [101], mob, rng: constant(0) }).result.encounter.mobFight;
+    assert.ok(stun(coldMob({ maxHp: 1e6 }))?.heldFor > 0, 'Stun Shot holds one mob');
+    assert.ok(!stun(coldMob({ maxHp: 1e6, pull: 3 }))?.heldFor, 'Stun Shot on one mob of a pull of three holds none');
+}
+
+// 13. A monster's poison outlives the kill: its ticks land after a won fight, as hot, and may kill.
+{
+    const poison = (damage) => ({ botDots: [{ key: 'poison', next: 1000, left: 3, damage, intervalMs: 3000 }] });
+    const won = soloFight({ classId: 0, level: 20, hp: 500, mob: coldMob({ level: 20 }), mobHp: 1, timers: poison(50) });
+    assert.strictEqual(won.result.won, true);
+    assert.strictEqual(won.result.hp, 500 - 150, 'the poison ticks out after the kill');
+    const dead = soloFight({ classId: 0, level: 20, hp: 500, mob: coldMob({ level: 20 }), mobHp: 1, timers: poison(200) });
+    assert.ok(dead.result.won && dead.result.died && dead.result.hp === 0, 'the poison kills the winner');
+}
+
+// 14. A bot's DoT that kills a party's monster is its caster's last hit: the soul crystal reads it.
+{
+    const ColdSoulCrystal = invoke('GameServer/Bot/Population/ColdSoulCrystal');
+    const catalog = invoke('GameServer/Items/SoulCrystalProgression').catalog.npcs;
+    const npcId = Number(Object.keys(catalog).find(id => catalog[id].absorbType === 'LAST_HIT'
+        && ItemTemplateIndex.find(DataCache.npcs, Number(id))));
+    const mob = ColdCombatProfile.npcCombatStats(ItemTemplateIndex.find(DataCache.npcs, npcId));
+    const member = HuntCycle.referenceState(0, 20);
+    const spot = { id: 'rules_party', avgLevel: mob.level, npcEntries: [{ selfId: npcId, count: 1 }] };
+    const encounter = PveEncounter.save(null, PveEncounter.key([member], spot, npcId), mob, 10, TS, {
+        mobReadyAt: 1e9, readyAt: { [member.characterId]: 5000 },
+        mobFight: { dots: [{ key: 'bleed', next: 3000, left: 1, damage: 100, intervalMs: 3000, by: member.characterId }] } });
+    const outcome = ColdSoulCrystal.outcome, absorbers = [];
+    ColdSoulCrystal.outcome = (fighter) => { absorbers.push(fighter.state.characterId); };
+    try {
+        const fight = Resolver.resolvePartyFight({ members: [member], spot, targetNpcId: npcId, rng: constant(0.5), timestamp: TS, encounter });
+        assert.strictEqual(fight.won, true, 'the bleed kills the monster');
+        assert.deepStrictEqual(absorbers, [member.characterId], 'its caster\'s crystal absorbs');
+    } finally {
+        ColdSoulCrystal.outcome = outcome;
+    }
+}
 
 // 11. The hunt tables' formula meets a real mob's terms (T124): an undead mob by the
 // rotation measured on an undead dummy (undeadMul), a weapon weakness by the gate's modifier.

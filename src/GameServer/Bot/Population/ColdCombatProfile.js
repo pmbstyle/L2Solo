@@ -1127,12 +1127,15 @@ function killDraw(entries, encounterEntries, options = {}) {
     return { preferred, interrupters, interruption, pool: interrupters.length ? interrupters : entries };
 }
 
-// An entry's weight in a kill draw: its spawn count, times its squared
-// matchup efficiency for the hunters (1 without a matchup), times the share of
-// its spawns whose pull a solo hunter survives (BotTargetMatchup.speciesPulls).
+// An entry's weight in a kill draw: the mobs it gives per hour
+// (entry.production: its respawns, a day or night spawn only in its period,
+// SpotService.respawnsPerHour), its spawn count without respawn data, times
+// its squared matchup efficiency for the hunters (1 without a matchup), times
+// the share of its spawns whose pull a solo hunter survives
+// (BotTargetMatchup.speciesPulls).
 function killWeight(entry) {
-    return Math.max(1, number(entry.count, 1)) * Math.min(1, entry.match?.efficiency ?? 1) ** 2
-        * (entry.match?.share ?? 1);
+    const supply = entry.production > 0 ? entry.production : Math.max(1, number(entry.count, 1));
+    return supply * Math.min(1, entry.match?.efficiency ?? 1) ** 2 * (entry.match?.share ?? 1);
 }
 
 // Each entry's chance to be the kill of a draw (killDraw), as the roll
@@ -1308,6 +1311,15 @@ function hitSources(fighter, timestamp) {
     fighter.statSources = fightSources(fighter.profile, timestamp, fighter.statSources || null);
     return fighter.statSources.sources;
 }
+// A fighter's sum of one stat over its held sources (hitSources), kept on
+// that holder while it stands: a stat read per hit (absorbDam) is summed once.
+function hitStatAdd(fighter, stat, timestamp) {
+    const sources = hitSources(fighter, timestamp);
+    const held = fighter.statSources;
+    held.adds ||= {};
+    if (!(stat in held.adds)) held.adds[stat] = add(fighter.profile, stat, timestamp, sources);
+    return held.adds[stat];
+}
 
 // Cold adapters of CombatantView (HitRules, the hot Attack's rules), the
 // cold fight's and the solo gate's (BotTargetMatchup): a fight
@@ -1448,7 +1460,7 @@ module.exports = {
     fightProfile, currentCp, seedSnapshot, oldSeedRepair, candidateProfiles, fightSources, combatView, kitHash, skillsFor, forgetBuild, kitStoreSize,
     isAttackSkill, offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect, normalAttackMs,
     spotSpawns, npcForSpot, killDraw, killChances, npcCombatStats, npcVulnerability, npcTraitResist, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
-    statMultiplier: multiplier, statAdd: add, statSources,
+    statMultiplier: multiplier, statAdd: add, hitStatAdd, statSources,
     // The cold fight's views, hit roll, action times, shots and opening (BackgroundResolver, the solo gate).
     hitSources, attackerView, defenderView, forgetViews, hitSucceeds, expectedHitChance, actionDelayMs, summonAttackMs,
     shotSupply, actionShot, openingMs, attackReach,

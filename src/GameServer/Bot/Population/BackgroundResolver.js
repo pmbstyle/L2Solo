@@ -944,6 +944,25 @@ function applyColdPotionTicks(fighter, time) {
     return healed;
 }
 
+// After a won fight the background time jumps past the tails still running
+// on a survivor: its potion HoT and a monster's damage over time tick on in
+// their order, as hot (the poison outlives the kill and can kill). Returns
+// the DoT damage taken.
+function settleColdTails(fighter) {
+    let taken = 0;
+    while (fighter.vitals.hp > 0 && fighter.dots?.length) {
+        let next = Infinity;
+        for (const dot of fighter.dots) if (dot.left > 0 && dot.next < next) next = dot.next;
+        if (next === Infinity) break;
+        applyColdPotionTicks(fighter, next);
+        const damage = dotDamage(fighter, next);
+        fighter.vitals.hp = Math.max(0, fighter.vitals.hp - damage);
+        taken += damage;
+    }
+    if (fighter.vitals.hp > 0) applyColdPotionTicks(fighter, Number.MAX_SAFE_INTEGER);
+    return taken;
+}
+
 function startColdPotion(fighter, time) {
     if (!fighter || fighter.potionsUsed > 0 || fighter.potionHot) return null;
     const potion = HealingPotionStock.consumeColdPotion(
@@ -1302,7 +1321,7 @@ function afterBotHit(fighter, { skill, shot, damage, struck }, mob, mobFight, mo
             absorbPart: semantic.absorbPart, absorbAbs: semantic.absorbAbs }));
         countHitRule('drain');
     } else if (!skill && profile.equipment?.weaponKind !== 'Weapon.Bow') {
-        const stolen = HitRules.absorbedHp(ColdCombatProfile.statAdd(profile, 'absorbDam', at, hitSources(fighter, at)), hpDamage, vitals.hp, vitals.maxHp);
+        const stolen = HitRules.absorbedHp(ColdCombatProfile.hitStatAdd(fighter, 'absorbDam', at), hpDamage, vitals.hp, vitals.maxHp);
         vitals.hp += stolen;
         if (stolen > 0) countHitRule('life_steal');
     }
@@ -1313,7 +1332,8 @@ function afterBotHit(fighter, { skill, shot, damage, struck }, mob, mobFight, mo
         countHitRule('reflect');
     }
     if (skill && mobFight && landOnMob(mob, mobFight, skill, { level: profile.level, mAtk: profile.mAtk, soulshot: shot?.soulshot === true,
-        spiritshot: shot?.spiritshot === true, blessedSpiritshot: shot?.blessedSpiritshot === true }, time, rng)) countHitRule('effect_landed');
+        spiritshot: shot?.spiritshot === true, blessedSpiritshot: shot?.blessedSpiritshot === true,
+        characterId: fighter.state?.characterId ?? null }, time, rng, struck)) countHitRule('effect_landed');
     return damage;
 }
 
@@ -1500,12 +1520,14 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         }
     }
 
+    const won = mobHp <= 0;
     // Background time jumps past the quiet tail of a completed potion HoT.
-    // Apply that tail only after the damage sequence and only to survivors.
-    if (vitals.hp > 0) applyColdPotionTicks(soloFighter, Number.MAX_SAFE_INTEGER);
+    // Apply that tail only after the damage sequence and only to survivors;
+    // a won fight's DoT tail too (an unfinished one carries its dots on).
+    if (won) taken += settleColdTails(soloFighter);
+    else if (vitals.hp > 0) applyColdPotionTicks(soloFighter, Number.MAX_SAFE_INTEGER);
 
     const died = vitals.hp <= 0;
-    const won = mobHp <= 0;
     if (!won) {
         return {
             won: false,
@@ -1559,10 +1581,11 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         timestamp
     });
 
+    // A DoT that outlived the kill may still kill the winner.
     return {
         won: true,
-        died: false,
-        hp: Math.max(1, Math.round(vitals.hp)),
+        died,
+        hp: died ? 0 : Math.max(1, Math.round(vitals.hp)),
         maxHp: Math.max(1, Math.round(vitals.maxHp)),
         mp: Math.max(0, Math.round(vitals.mp)),
         maxMp: Math.max(1, Math.round(vitals.maxMp)),
@@ -1573,8 +1596,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         cooldowns: soloFighter.cooldowns,
         // The fight's profile, for the heals between fights (resolveSolo); not stored.
         profile: bot,
-        charges: soloFighter.charges,
-        chargeExpiresAt: soloFighter.chargeExpiresAt,
+        charges: died ? 0 : soloFighter.charges,
+        chargeExpiresAt: died ? null : soloFighter.chargeExpiresAt,
         effects: soloFighter.profile.effects,
         inventory: soloFighter.state.inventory,
         soulCrystals: soloFighter.soulCrystals || [],
@@ -1755,7 +1778,12 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             if (fighter.vitals.hp > 0) fighter.vitals.hp = Math.max(0, fighter.vitals.hp - dotDamage(fighter, time));
         }
         mobHp -= dotDamage(mobFight, time);
-        if (mobHp <= 0 || !fighters.some((fighter) => fighter.vitals.hp > 0)) break;
+        if (mobHp <= 0) {
+            // A DoT's kill is its caster's last hit (the soul crystal reads it).
+            lastKiller = fighters.find((fighter) => fighter.vitals.hp > 0 && fighter.state.characterId === mobFight.dotBy) || null;
+            break;
+        }
+        if (!fighters.some((fighter) => fighter.vitals.hp > 0)) break;
         actions += 1;
 
         if (summonActs) {
@@ -1832,8 +1860,10 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
                 remainingHpRatio: mobHp / Math.max(1, mob.maxHp) }) !== 'continue')) break;
     }
 
+    // Survivors' tails (settleColdTails): a won fight's DoTs tick out; an
+    // unfinished one drops its members' (only the monster's effects are saved).
     fighters.filter((fighter) => fighter.vitals.hp > 0)
-        .forEach((fighter) => applyColdPotionTicks(fighter, Number.MAX_SAFE_INTEGER));
+        .forEach((fighter) => mobHp <= 0 ? settleColdTails(fighter) : applyColdPotionTicks(fighter, Number.MAX_SAFE_INTEGER));
 
     const crystalRule = invoke('GameServer/Items/SoulCrystalProgression').catalog.npcs[mob.selfId];
     if (mobHp <= 0 && lastKiller && crystalRule) {
@@ -2307,10 +2337,9 @@ const BackgroundResolver = {
             materialize.items.push(...result.loot);
             combatActions += Number(result.debug?.actions || 0);
             shotActions += Number(result.debug?.shotActions || 0);
-            // A kill costs at least its killing action (T126): with no walk to
-            // the next mob a one-shot kill would cost no time at all.
-            combatMs += walkMs > 0 ? Number(result.debug?.durationMs || 0)
-                : Math.max(Number(result.debug?.durationMs || 0), Number(result.debug?.killMs || 0));
+            // A kill costs at least its killing action (T126), walk or not:
+            // the swing or cast that killed ends after the kill.
+            combatMs += Math.max(Number(result.debug?.durationMs || 0), Number(result.debug?.killMs || 0));
             skillUses += Number(result.debug?.skillUses || 0);
             heals += Number(result.debug?.heals || 0);
             musicUses += Number(result.debug?.musicUses || 0);
