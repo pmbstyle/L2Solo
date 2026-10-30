@@ -9,6 +9,7 @@ const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const ColdKillRewards = invoke('GameServer/Bot/Population/ColdKillRewards');
 const ColdClassPolicy = invoke('GameServer/Bot/Population/ColdClassPolicy');
 const SoloSelfHeal = invoke('GameServer/Bot/AI/SoloSelfHeal');
+const PetHealRule = invoke('GameServer/Bot/AI/PetHealRule');
 const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
@@ -343,11 +344,36 @@ function coldSoloHeal(fighter, mobHp, time, at) {
     return skill ? { skill: skill.coldRecord, target: fighter } : null;
 }
 
+// The pet heal a summoner casts now on its living pet (PetHealRule: below
+// its line, with the MP and the reuse ready), or null.
+function coldPetHeal(profile, summon, vitals, cooldowns, at) {
+    if (!summon?.active || Number(summon.expiresAt || Infinity) <= at || !PetHealRule.wantsHeal(summon.hp, summon.maxHp)) return null;
+    return (profile.skills || []).filter((skill) => PetHealRule.isPetHeal(skill)
+        && Number(skill.mp || 0) <= vitals.mp && Number(cooldowns?.[skill.selfId] || 0) <= at)
+        .sort((a, b) => Number(b.level || 0) - Number(a.level || 0))[0] || null;
+}
+
+// Casts a pet heal: the pet's HP in place, the owner's MP and the reuse.
+function castColdPetHeal(summon, vitals, cooldowns, skill, at) {
+    summon.hp = Math.min(Number(summon.maxHp), Number(summon.hp) + Math.max(0, Formulas.calcHealAmount(skill.power)));
+    vitals.mp = Math.max(0, vitals.mp - Number(skill.mp || 0));
+    cooldowns[skill.selfId] = at + Math.max(0, Number(skill.reuse || 0));
+}
+
 // The self-heals a solo bot casts between fights instead of sitting
 // (SoloSelfHeal.betweenFights): vitals and cooldowns change in place.
 // Returns { casts, ms }.
-function coldHealBetweenFights(profile, vitals, cooldowns, at) {
+function coldHealBetweenFights(profile, vitals, cooldowns, at, summon = null) {
     let casts = 0, ms = 0;
+    // The pet first (PetHealRule), with the heals ready now: one on its reuse
+    // waits for the fight, as the hot bot walks on.
+    for (let guard = 0; guard < 20; guard++) {
+        const skill = coldPetHeal(profile, summon, vitals, cooldowns, at + ms);
+        if (!skill) break;
+        castColdPetHeal(summon, vitals, cooldowns, skill, at + ms);
+        ms += actionDelayMs(profile, skill);
+        casts += 1;
+    }
     for (;;) {
         const actor = ColdClassPolicy.actorFor(profile, { hp: vitals.hp, mp: vitals.mp, cooldowns, time: at + ms });
         const skill = SoloSelfHeal.betweenFights(actor);
@@ -1248,6 +1274,15 @@ function coldBotTurn(fighter, { allies, mob, mobFight = null, mobHp, at, time, r
         if (shot) spendColdShot(fighter);
         return null;
     }
+    // Alone, a summoner keeps its pet alive as the hot one does (PetHealRule).
+    const petHeal = solo ? coldPetHeal(fighter.profile, fighter.summon, fighter.vitals, fighter.cooldowns, at) : null;
+    if (petHeal) {
+        castColdPetHeal(fighter.summon, fighter.vitals, fighter.cooldowns, petHeal, at);
+        fighter.skillUses += 1;
+        fighter.petHeals = Number(fighter.petHeals || 0) + 1;
+        fighter.readyAt += actionDelayMs(fighter.profile, petHeal);
+        return null;
+    }
     const music = chooseMusicAction(fighter, allies, at, { solo });
     if (music) {
         const shot = loadColdShot(fighter, music.skill);
@@ -1589,7 +1624,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             inventory: fightState.inventory,
             summon: soloFighter.summon || null,
             debug: { actions, durationMs: time, skillUses: soloFighter.skillUses, shotActions: soloFighter.shotActions, heals: soloFighter.heals,
-                musicUses: soloFighter.musicUses, summonUses: soloFighter.summonUses, summonActions: soloFighter.summonActions, petTaken, summonDeaths: soloFighter.summonDeaths || 0,
+                musicUses: soloFighter.musicUses, summonUses: soloFighter.summonUses, summonActions: soloFighter.summonActions, petTaken, petHeals: soloFighter.petHeals || 0, summonDeaths: soloFighter.summonDeaths || 0,
                 potionsUsed: soloFighter.potionsUsed, drunkPotions: soloFighter.drunkPotions || null,
                 mobSelfId: mob.selfId || null, timedOut: !died, pullMobs, areaPullHits, damageTaken: taken, spellTaken }
         };
@@ -1639,7 +1674,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         soulCrystals: soloFighter.soulCrystals || [],
         summon: soloFighter.summon || null,
         debug: { actions, durationMs: time, skillUses: soloFighter.skillUses, shotActions: soloFighter.shotActions, heals: soloFighter.heals,
-            musicUses: soloFighter.musicUses, summonUses: soloFighter.summonUses, summonActions: soloFighter.summonActions, petTaken, summonDeaths: soloFighter.summonDeaths || 0,
+            musicUses: soloFighter.musicUses, summonUses: soloFighter.summonUses, summonActions: soloFighter.summonActions, petTaken, petHeals: soloFighter.petHeals || 0, summonDeaths: soloFighter.summonDeaths || 0,
             potionsUsed: soloFighter.potionsUsed, drunkPotions: soloFighter.drunkPotions || null,
             mobSelfId: mob.selfId || null, timedOut: false, overhit: kill.overhit, pullMobs, areaPullHits, killsPaid: pulled,
             // The killing action ends after the kill: its swing or cast (resolveSolo's floor per kill).
@@ -2048,7 +2083,7 @@ const BackgroundResolver = {
     needsRest,
     staleShopping,
     estimateRestMs,
-    // The offline hunt model (scripts/hunt-tables/HuntModel) prices a solo gap's heals by it.
+    // Between-fight heals (the pet's, then the bot's own): tests and the offline hunt model (T128).
     coldHealBetweenFights,
     applyStandingRegen,
     prepareRaidParty,
@@ -2432,7 +2467,7 @@ const BackgroundResolver = {
             // A won fight's gap: the self-heals that beat sitting (SoloSelfHeal, T107).
             if (result.won && result.profile) {
                 const healed = coldHealBetweenFights(result.profile, patch.vitals, patch.stats.coldCombat.cooldowns,
-                    timestamp + combatMs);
+                    timestamp + combatMs, patch.stats.coldCombat.summon);
                 combatMs += healed.ms;
                 heals += healed.casts;
                 gapHeals += healed.casts;

@@ -495,8 +495,10 @@ function productionCap(t, row, spotId, mask = ALL_SPECIES) {
 // (productionCap) times the part of it it may fight, as
 // BackgroundResolver.soloShareMobs counts each spawn group's production times
 // its admitted share. gate: gateAt's; its share, the admitted part, is 1
-// where the table does not measure it (a pack species taken in some pulls
-// only counts whole). Null without production data.
+// where the table does not measure it. Today's tables do not (the field is on
+// branch t106dev-spots, T128): a pack species taken in some pulls only counts
+// whole here, while the fight counts its admitted share. Null without
+// production data.
 function gapProduction(t, row, spotId, gate) {
     const spawns = productionCap(t, row, spotId, gate?.mask ?? ALL_SPECIES);
     return spawns === null ? null : spawns * (gate?.share ?? 1);
