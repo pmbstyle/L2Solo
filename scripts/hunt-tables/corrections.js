@@ -98,6 +98,7 @@ function mobInput(tables, npcId, pull) {
     combat.basePDef = combat.pDef; combat.baseMDef = combat.mDef;
     combat.vulnerabilities = combat.vulnerabilities || {};
     combat.undead = combat.undead === 1;
+    if (!combat.weaponKind) delete combat.weaponKind;
     // The species, for its skills in the fight (ColdMobAction.actionMix).
     combat.selfId = npcId;
     return { combat, exp: mob[3], sp: mob[4], reward: mob[6] >= 0 ? S.rewardsOf(tables.mobs.rewards[mob[6]]) : null, pull, danger: mob[5] };

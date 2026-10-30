@@ -36,7 +36,7 @@ function spotRows() {
 // ------------------------------------------------------------ 1 mobs
 
 const COMBAT_FIELDS = ['level', 'maxHp', 'pAtk', 'pAtkRnd', 'pDef', 'mDef', 'mAtk', 'atkSpd', 'accur', 'evasion', 'critical',
-    'atkRadius', 'hostile', 'undead', 'race', 'revHp', 'vulnerabilities'];
+    'atkRadius', 'hostile', 'undead', 'race', 'revHp', 'vulnerabilities', 'castSpd', 'weaponKind'];
 
 function compactRewards(groups = []) {
     return groups.map(group => [Number(group.overall) || 0,
@@ -63,7 +63,10 @@ function buildMobs() {
         const combat = [stats.level, stats.maxHp, stats.pAtk, stats.pAtkRnd, stats.pDef, stats.mDef, stats.mAtk, stats.atkSpd,
             C.round(stats.accur), C.round(stats.evasion), stats.critical, Number(npc.stats?.atkRadius) || 0,
             npc.template?.hostile === true ? 1 : 0, stats.undead ? 1 : 0, stats.race, C.round(Number(npc.vitals?.revHp) || 0),
-            Object.keys(vulnerabilities).length ? vulnerabilities : 0];
+            Object.keys(vulnerabilities).length ? vulnerabilities : 0,
+            // The cast speed times a monster's spells (ColdMobAction.mobSkillCastMs), the
+            // weapon kind its bow draw: without them a caster's damage reads NaN.
+            stats.castSpd, stats.weaponKind || 0];
         const key = JSON.stringify(combat);
         if (!combatIndex.has(key)) { combatIndex.set(key, combats.length); combats.push(combat); }
         const reward = Index.find(DataCache.npcRewards, id);

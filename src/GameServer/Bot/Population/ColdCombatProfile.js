@@ -856,7 +856,8 @@ function formulaPower(terms, equipment, base, stats) {
 // preparation slot); before = the kit profile; after(change) = the numbers
 // with the change:
 // - gear { free, wear }: the worn rows whose slot free(slot) answers true come
-//   off, wear ({ selfId, objectId, enchant, slot, template? } or null) goes on;
+//   off, wear ({ selfId, objectId, enchant, slot, template? }, a list of them,
+//   or null) goes on;
 // - { hennas }: the symbol list replaces the bot's;
 // - { skill: { selfId, level } }: the skill is learnt.
 // A gear or henna change returns the power numbers (formulaPower) only, the
@@ -896,12 +897,14 @@ function skillCandidate({ kitPart, profile }, skill, timestamp) {
 // effects) always takes the pass.
 // worn: the kit's worn rows prepared (prepareWorn), in kitPart.worn order.
 function gearCandidate(state, { kitPart, terms }, worn, { free, wear }, timestamp) {
-    const template = wear && (wear.template || itemTemplate(wear.selfId));
-    const added = template ? prepareWorn({ template, selfId: number(wear.selfId), objectId: number(wear.objectId, number(wear.selfId)),
-        enchant: number(wear.enchant), slot: number(wear.slot) }) : null;
-    const kept = [], changed = added ? [added] : [];
+    const added = [].concat(wear || []).map(one => {
+        const template = one.template || itemTemplate(one.selfId);
+        return template ? prepareWorn({ template, selfId: number(one.selfId), objectId: number(one.objectId, number(one.selfId)),
+            enchant: number(one.enchant), slot: number(one.slot) }) : null;
+    }).filter(Boolean);
+    const kept = [], changed = [...added];
     for (let index = 0; index < worn.length; index++) (free(kitPart.worn[index].slot) ? changed : kept).push(worn[index]);
-    const equipped = added ? [...kept, added] : kept;
+    const equipped = [...kept, ...added];
     const legacyEquipment = equipmentFromTemplates(equipped, kitPart.spellcaster, kitPart.classStats);
     const sameKit = equipped.length > 0 && hasInventory(state) && !changed.some(item => item.equipmentEffect)
         && sameGearConditions(legacyEquipment, kitPart.equipment, terms.armorKinds ??= armorKindsKey(kitPart.equipment.armorKinds))
