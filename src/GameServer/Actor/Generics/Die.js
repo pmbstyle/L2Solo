@@ -4,6 +4,7 @@ const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 const calculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
 const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 const EconomyContext = invoke('GameServer/Bot/Economy/EconomyContext');
+const EconomicValuation = invoke('GameServer/Bot/Economy/EconomicValuation');
 
 function clearEffectsOnDeath(session, actor) {
     const silentMoving = Object.values(actor.effects || {}).find((effect) => effect?.stats?.silentMoving);
@@ -73,10 +74,9 @@ function die(session, actor, context = {}) {
             const timestamp = Number(context.timestamp || Date.now());
             // The death price and persona come from the basics: no economy build on main.
             const economy = EconomyContext.basics(prior, { timestamp });
-            const Valuation = invoke('GameServer/Bot/Economy/EconomicValuation');
             // The basics price a table row's death; this live one also waits for its respawn.
-            const progress = Valuation.progressStats(prior, {
-                timestamp, losses: 1, lossHours: economy.deathHours + Valuation.RESPAWN_HOURS, persona: economy.persona,
+            const progress = EconomicValuation.progressStats(prior, {
+                timestamp, losses: 1, lossHours: economy.deathHours + EconomicValuation.RESPAWN_HOURS, persona: economy.persona,
                 knowledgeEnabled: invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled(),
                 startedAt: Number(victimSession.botStartedAt || timestamp)
             });

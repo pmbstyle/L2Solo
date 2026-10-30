@@ -139,6 +139,7 @@ function recordRound(state, result, { spotId, exp = 0, timestamp = Date.now(), s
     // foundation (with its earning-spot search) is not built for a zero.
     const life = Valuation.progressStats(state, { timestamp, startedAt, kills: debug.wins, losses,
         // The basics price a table row's death; a lived one also waited for its respawn.
+        // lazy: cycle EconomyContext loads this module
         lossHours: losses > 0 ? invoke('GameServer/Bot/Economy/EconomyContext').basics(state, { timestamp }).deathHours + Valuation.RESPAWN_HOURS : 0,
         risky: !!state.stats?.pvpIntent,
         persona: invoke('GameServer/Bot/AI/BotPersona').of(state), knowledgeEnabled: Learning.knowledgeEnabled() });
