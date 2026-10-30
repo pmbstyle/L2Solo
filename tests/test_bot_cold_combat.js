@@ -358,6 +358,9 @@ assert.strictEqual(highLevelNecromancerResult.patch.stats.coldCombat.summon?.npc
 assert.strictEqual(highLevelNecromancerResult.patch.stats.coldCombat.summon?.pAtk, 1459,
     'cold Necromancer summons must use the sourced NPC attack value');
 
+// Without its pet heal: the summoner would heal the pet between fights
+// (PetHealRule), and this checks the refresh alone keeps the pet's HP.
+const PetHealRule = invoke('GameServer/Bot/AI/PetHealRule');
 const persistedWeakKai = {
     ...coldSummoner,
     characterId: 906,
@@ -365,6 +368,7 @@ const persistedWeakKai = {
         ...coldSummoner.stats,
         coldCombat: {
             ...coldSummoner.stats.coldCombat,
+            skills: (coldSummoner.stats.coldCombat.skills || []).filter(skill => !PetHealRule.isPetHeal(skill)),
             summon: {
                 active: true,
                 skillId: 1276,

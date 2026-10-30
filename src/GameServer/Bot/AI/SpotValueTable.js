@@ -257,6 +257,58 @@ function shotKey(shots) {
     return shots === 2 ? 2 : shots ? 1 : 0;
 }
 
+// The rows as columns (T128): a JSON row is an array of ~22 numbers with two
+// nested arrays, ~61 MB of JS objects per thread (10-30 heap snapshot);
+// packed they are typed arrays with the same values. cells[spot * width +
+// cell]: the row's index or -1; numbers: its fields at index * fields (mix and
+// gate NaN; a null field 0, as it read in arithmetic, a null stacks NaN, read
+// as unknown); gates: its gate per gap; mix: [selfId, share, ...] from
+// mixStart[index] to mixStart[index + 1]. A row is a view of its numbers
+// (tableRow): row[field] reads as before; rowMix and gateAt read its index.
+function packRows(raw) {
+    const fields = raw.rowFields.length, gaps = raw.gaps.length;
+    const mixField = raw.rowFields.indexOf('mix'), gateField = raw.rowFields.indexOf('gate');
+    const stacksField = raw.rowFields.indexOf('stacks');
+    const width = raw.rows.reduce((most, cells) => Math.max(most, cells?.length || 0), 0);
+    let count = 0, mixLength = 0;
+    for (const cells of raw.rows) for (const row of cells || []) if (row) {
+        count += 1;
+        if (mixField >= 0 && Array.isArray(row[mixField])) mixLength += row[mixField].length;
+    }
+    const cells = new Int32Array(raw.rows.length * width).fill(-1);
+    const numbers = new Float64Array(count * fields).fill(NaN);
+    const gates = gateField >= 0 ? new Float64Array(count * gaps) : null;
+    const hasGate = new Uint8Array(count);
+    const mix = new Float64Array(mixLength), mixStart = new Int32Array(count + 1);
+    let index = 0, at = 0;
+    raw.rows.forEach((spotCells, spot) => (spotCells || []).forEach((row, cell) => {
+        if (!row) return;
+        cells[spot * width + cell] = index;
+        for (let field = 0; field < fields; field++) {
+            if (field === mixField || field === gateField || row[field] === undefined) continue;
+            numbers[index * fields + field] = row[field] === null ? (field === stacksField ? NaN : 0) : row[field];
+        }
+        if (gates && Array.isArray(row[gateField])) {
+            hasGate[index] = 1;
+            for (let gap = 0; gap < gaps; gap++) gates[index * gaps + gap] = Number(row[gateField][gap]) || 0;
+        }
+        mixStart[index] = at;
+        if (mixField >= 0 && Array.isArray(row[mixField])) for (const value of row[mixField]) mix[at++] = value;
+        index += 1;
+    }));
+    mixStart[count] = at;
+    return { width, fields, gaps, cells, numbers, gates, hasGate, mix, mixStart };
+}
+
+// The row of a spot's cell (spot index s, cell r * shots + shots slot), or null.
+function tableRow(t, s, cell) {
+    const rows = t.rows, index = rows.cells[s * rows.width + cell];
+    return index >= 0 ? rows.numbers.subarray(index * rows.fields, (index + 1) * rows.fields) : null;
+}
+function rowIndex(t, row) {
+    return row.byteOffset / Float64Array.BYTES_PER_ELEMENT / t.rows.fields;
+}
+
 function load() {
     if (table) return table;
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -296,7 +348,7 @@ function load() {
         roleIndex,
         spotIndex,
         spots: raw.spots,
-        rows: raw.rows,
+        rows: packRows(raw),
         curves,
         kitSurface: raw.kitSurface || null,
         maxBand,
@@ -410,8 +462,9 @@ function memoValue(t, rates, spotId, role, level, shots, skill, known = undefine
 // A row's measured kills by species ([selfId, share, ...]), or null for a
 // table before the mix.
 function rowMix(t, row) {
-    const mix = t.f.mix < 0 ? null : row?.[t.f.mix];
-    return Array.isArray(mix) && mix.length ? mix : null;
+    if (t.f.mix < 0 || !row) return null;
+    const index = rowIndex(t, row), start = t.rows.mixStart[index], end = t.rows.mixStart[index + 1];
+    return end > start ? t.rows.mix.subarray(start, end) : null;
 }
 
 // A row's gate at a bot's level gap (the generator's gapGate, measured at the
@@ -420,8 +473,10 @@ function rowMix(t, row) {
 // may fight alone there; null when it may fight none; undefined for a table
 // before the gate (the reference's cap and mix).
 function gateAt(t, row, gap) {
-    const gate = t.f.gate < 0 ? null : row?.[t.f.gate];
-    if (!Array.isArray(gate)) return undefined;
+    if (t.f.gate < 0 || !row) return undefined;
+    const index = rowIndex(t, row);
+    if (!t.rows.hasGate[index]) return undefined;
+    const gate = t.rows.gates.subarray(index * t.rows.gaps, (index + 1) * t.rows.gaps);
     let i = t.gaps.length - 1;
     while (i > 0 && t.gaps[i] > gap) i--;
     // Between a closed gap and an open one, the row's own minGap already
@@ -569,7 +624,7 @@ function rowCap(t, row, spot, gate) {
 // null when the bot finds no target it may fight alone there at this level. s, r: the spot's and role's
 // table indexes.
 function combat(t, s, r, level, shots) {
-    const row = t.rows[s][r * t.shotsIndex.size + t.shotsIndex.get(shotKey(shots))];
+    const row = tableRow(t, s, r * t.shotsIndex.size + t.shotsIndex.get(shotKey(shots)));
     if (!row) return null;
     const spot = t.spots[s], spotLevel = spot[1];
     const botLevel = Math.min(t.maxLevel, Number(level));
@@ -628,7 +683,7 @@ function computeValue(t, rates, spotId, role, level, shots, skill = roleSpoilLev
         rewardSource: rewards ? 'npc_rewards' : 'unavailable',
         shots: kills * row[t.f.shots] * busyRatio,
         potions: kills * row[t.f.potions] * busyRatio,
-        stacks: t.f.stacks < 0 || row[t.f.stacks] === null ? null
+        stacks: t.f.stacks < 0 || Number.isNaN(row[t.f.stacks]) ? null
             : kills * row[t.f.stacks] * lootFactor,
         busyShare: Math.min(1, kills * busy / 3600),
         production: c.production
@@ -722,7 +777,7 @@ function referenceLevel(spotId, role, shots = true) {
     const s = spotSlot(t, spotId);
     const r = roleSlot(t, role);
     if (s === undefined || r === undefined) return null;
-    const row = t.rows[s][r * t.shotsIndex.size + t.shotsIndex.get(shotKey(shots))];
+    const row = tableRow(t, s, r * t.shotsIndex.size + t.shotsIndex.get(shotKey(shots)));
     return row ? t.spots[s][1] + row[t.f.refGap] : null;
 }
 
