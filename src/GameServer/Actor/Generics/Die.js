@@ -76,7 +76,7 @@ function die(session, actor, context = {}) {
             const economy = EconomyContext.basics(prior, { timestamp });
             // The basics price a table row's death; this live one also waits for its respawn.
             const progress = EconomicValuation.progressStats(prior, {
-                timestamp, losses: 1, lossHours: economy.deathHours + EconomicValuation.RESPAWN_HOURS, persona: economy.persona,
+                timestamp, losses: 1, lossHours: EconomicValuation.liveDeathHours(economy.deathHours), persona: economy.persona,
                 knowledgeEnabled: invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled(),
                 startedAt: Number(victimSession.botStartedAt || timestamp)
             });

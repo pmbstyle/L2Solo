@@ -140,7 +140,8 @@ function recordRound(state, result, { spotId, exp = 0, timestamp = Date.now(), s
     const life = Valuation.progressStats(state, { timestamp, startedAt, kills: debug.wins, losses,
         // The basics price a table row's death; a lived one also waited for its respawn.
         // lazy: cycle EconomyContext loads this module
-        lossHours: losses > 0 ? invoke('GameServer/Bot/Economy/EconomyContext').basics(state, { timestamp }).deathHours + Valuation.RESPAWN_HOURS : 0,
+        lossHours: losses > 0 ? Valuation.liveDeathHours(invoke('GameServer/Bot/Economy/EconomyContext')
+            .basics(state, { timestamp }).deathHours) : 0,
         risky: !!state.stats?.pvpIntent,
         persona: invoke('GameServer/Bot/AI/BotPersona').of(state), knowledgeEnabled: Learning.knowledgeEnabled() });
     if (!(Number(debug.combatMs) > 0 || Number(debug.fights) > 0)) return life;

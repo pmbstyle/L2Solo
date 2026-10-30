@@ -820,7 +820,8 @@ async function run() {
     // T126: a table row's death already waited for its respawn; a live one adds it.
     const deathHours = Valuation.deathHours(base, { expPerHour: 100000 });
     assert.equal(deathHours, death.expLost / 100000);
-    assert.equal(Valuation.deathHours(base, { expPerHour: 100000, liveDeath: true }), death.expLost / 100000 + 90 / 3600);
+    // One live death price (a kill, a death in a fight, a PvP risk): the table row's plus the respawn wait.
+    assert.equal(Valuation.liveDeathHours(deathHours), death.expLost / 100000 + 90 / 3600);
     assert.equal(Valuation.karmaHours({ ...base, stats: { ...base.stats, karma: 100 } }, { expPerHour: 100000 }), .26);
     const pk = { ...base, stats: { ...base.stats, karma: 100, pk: 6 }, inventory: { 1864: { selfId: 1864, amount: 10 } } };
     assert.equal(Valuation.pkDropValue(pk, () => 100), invoke('GameServer/PkDropPolicy').expectedValue(pk, () => 100));

@@ -130,11 +130,20 @@ function spotsNearLevel(profiles, targetLevel) {
     return spots;
 }
 
-// The bots on a spot for its kill share (E69), main thread: the world index's
-// (SpotOccupancyIndex.huntersOn), as the worker's ColdSimulationKernel.spotHunters;
-// with a state, that bot counted once.
+// The occupancy index of this thread: main's world index; a cold worker
+// registers its kernel's once at its start (ColdSimulationWorker.startKernel),
+// read at each count, so no reader keeps a replaced kernel's.
+const mainOccupancy = () => BotLifeState.occupancyIndex();
+let threadOccupancy = mainOccupancy;
+function useOccupancy(read) {
+    threadOccupancy = read || mainOccupancy;
+}
+
+// The bots on a spot for its kill share (E69) and a spot value's crowd share
+// (SpotEconomics), in this thread's occupancy (SpotOccupancyIndex.huntersOn),
+// as ColdSimulationKernel.spotHunters; with a state, that bot counted once.
 function spotHunters(spot, state = null) {
-    return huntersOn(BotLifeState.occupancyIndex(), spot?.id, state);
+    return huntersOn(threadOccupancy(), spot?.id, state);
 }
 
 // How many bots a spot holds (LevelingRoutes.roomForSpot); a raid boss spot
@@ -427,6 +436,7 @@ const SpotProfiles = {
 };
 
 SpotProfiles.spotHunters = spotHunters;
+SpotProfiles.useOccupancy = useOccupancy;
 SpotProfiles.spotsNearLevel = spotsNearLevel;
 SpotProfiles.spotRoom = spotRoom;
 SpotProfiles.roomFilterFor = roomFilterFor;

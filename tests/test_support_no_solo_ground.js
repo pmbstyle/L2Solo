@@ -109,9 +109,8 @@ async function run() {
         'a search that finds no spot leaves it without ground');
     assert.strictEqual(Request.supportWithoutGround(levelled, spots, { owner: { route: { spotId: 'grey65' } }, timestamp: at }), true,
         'a search that keeps it on grey ground leaves it without ground');
-    const owner = {};
-    Request.supportWithoutGround(levelled, spots, { owner, timestamp: at });
-    assert.ok(owner.route && 'spotId' in owner.route, 'a record without a route keeps the search it ran for the trip start');
+    assert.strictEqual(Request.supportWithoutGround(levelled, spots, { owner: {}, timestamp: at }), false,
+        'a record without a route: its own search moves it to fitting ground');
 
     // Rule 3: a Prophet 46 with ground of its level plays as today.
     const young = bot(9005, 17, 46, 'ground46', 'buffer');

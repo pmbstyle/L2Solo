@@ -8,6 +8,7 @@ require('../src/Global');
 invoke('GameServer/DataCache').init();
 const Table = invoke('GameServer/Bot/AI/SpotValueTable');
 const Economics = invoke('GameServer/Bot/Economy/SpotEconomics');
+const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const Occupancy = require('../src/GameServer/Bot/Population/SpotOccupancyIndex');
 const HuntCycle = invoke('GameServer/Bot/AI/HuntCycle');
 const offline = require('../data/Bots/spot-reward-npcs.json');
@@ -21,24 +22,17 @@ const spot = { id: spotId, npcEntries: entries.map(([selfId, count]) => ({ selfI
 Table.useSpots([spot]);
 // The thread's hunters count (SpotOccupancyIndex.huntersOn): n others plus the bot.
 const hunters = n => ({ spotHunters: () => n + 1 });
-const Diagnostics = require('../src/GameServer/Bot/Economy/EconomyDiagnostics');
-const Config = require('../src/GameServer/Bot/Population/PopulationConfig');
-const previousDiagnostics = Config.developerDiagnostics;
 try {
     const alone = Economics.create(state, hunters(0))(spot, true);
     const production = Table.production(spotId, role, 30, true);
     assert(alone && production > 0, 'the spot has its row and its production');
     assert(alone.kills <= production + 1e-9, 'one hunter: at most the production');
-    Config.developerDiagnostics = true;
-    const cuts = () => Diagnostics.metrics().counts['spot_value:crowd:cut'] || 0;
-    const before = cuts();
     const crowd = Economics.create(state, hunters(3))(spot, true);
     const expected = Math.min(alone.kills, production / 4);
     assert(Math.abs(crowd.kills - expected) < 1e-6 * expected, `four hunters share it: ${crowd.kills} vs ${expected}`);
     assert(Math.abs(crowd.exp / crowd.kills - alone.exp / alone.kills) < 1e-6 * alone.exp / alone.kills, 'exp follows the kills');
     assert(crowd.valueHours < alone.valueHours, 'a crowded spot is worth less');
     assert(crowd.crowdFactor < 1, 'the crowd cuts the row');
-    assert.equal(cuts(), before + 1, 'the cut is counted for developers');
     // One count of hunters (huntersOn): the bot counted once, whether it
     // stands on the spot or weighs a move there; the fight's count without a
     // state is the bots there, at least one.
@@ -49,8 +43,15 @@ try {
     assert.equal(Occupancy.huntersOn(index, spotId, on(3, 'elsewhere')), 3, 'a bot weighing a move: the two there and itself');
     assert.equal(Occupancy.huntersOn(index, spotId), 2, 'the fight: the bots there');
     assert.equal(Occupancy.huntersOn(index, 'empty'), 1, 'an empty spot: one hunter');
+    // A caller that passes no count (EquipmentIncomeRoute, PartyIncomeComparison)
+    // reads the thread's occupancy: a cold worker's kernel index once registered.
+    index.update(on(4, spotId)); index.update(on(5, spotId));
+    SpotProfiles.useOccupancy(() => index);
+    const fromThread = Economics.create(state)(spot, true);
+    assert(Math.abs(fromThread.kills - Math.min(alone.kills, production / 5)) < 1e-6 * alone.kills,
+        `the thread's four others share it with a caller that passes no count: ${fromThread.kills}`);
 } finally {
-    Config.developerDiagnostics = previousDiagnostics;
+    SpotProfiles.useOccupancy(null);
     Table.useSpots([]);
 }
 console.log('PASS spot crowd share');

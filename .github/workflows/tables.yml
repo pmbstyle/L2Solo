@@ -50,6 +50,13 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      # The spot catalogue stands territory spawns on the geodata ground
+      # (SpawnNpcs.catalogueSpawns): the server's floors and spot ids.
+      - uses: actions/cache@v4
+        with:
+          path: data/Geodata
+          key: geodata-${{ hashFiles('scripts/geodata-release.json') }}
+      - run: npm run geodata
       - run: node scripts/generate-spot-table.js --jobs=4 ${{ needs.plan.outputs.args }} --phase=rows --shard=${{ matrix.shard }}/12 --out=parts/rows-${{ matrix.shard }}.json
       - uses: actions/upload-artifact@v4
         with:
@@ -72,6 +79,13 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      # The spot catalogue stands territory spawns on the geodata ground
+      # (SpawnNpcs.catalogueSpawns): the server's floors and spot ids.
+      - uses: actions/cache@v4
+        with:
+          path: data/Geodata
+          key: geodata-${{ hashFiles('scripts/geodata-release.json') }}
+      - run: npm run geodata
       - uses: actions/download-artifact@v4
         with:
           pattern: rows-*
@@ -95,6 +109,13 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      # The spot catalogue stands territory spawns on the geodata ground
+      # (SpawnNpcs.catalogueSpawns): the server's floors and spot ids.
+      - uses: actions/cache@v4
+        with:
+          path: data/Geodata
+          key: geodata-${{ hashFiles('scripts/geodata-release.json') }}
+      - run: npm run geodata
       - uses: actions/download-artifact@v4
         with:
           pattern: rows-*

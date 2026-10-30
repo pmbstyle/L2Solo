@@ -43,6 +43,7 @@ const tests = [
     'tests/test_c4_import_integration.js',
     'tests/test_generated_cold_loadout.js',
     'tests/test_generated_cold_seed_shots.js',
+    'tests/test_generated_seed_spot_level.js',
     'tests/test_c4_elven_forest_quests.js',
     'tests/test_c4_beginner_quests.js',
     'tests/test_c4_bounty_target_quests.js',

@@ -334,6 +334,12 @@ useRate('x1');
         assert.deepStrictEqual(ranked.map(row => row.spotId), ['b_big', 'a_small'], 'the spot that holds its bots ranks first');
         assert(ranked[1].income > ranked[0].income, 'one bot alone earns more on the small spot');
         near(ranked[1].kills, 150, 'the small spot\'s row: one bot\'s kills');
+        // The best spot of a role and level ranks the same way (one ranking), by exp and by income.
+        for (const metric of ['exp', 'income']) {
+            const best = Table.best('dps', 24, true, metric);
+            assert.strictEqual(best.spotId, 'b_big', `the best ${metric} spot is the one that holds its bots`);
+            near(best.kills, 100, `the best ${metric} row: one bot's kills`);
+        }
     } finally { Table.useSpots([]); Table.useFile(); fs.rmSync(path.dirname(file), { recursive: true, force: true }); }
 }
 {

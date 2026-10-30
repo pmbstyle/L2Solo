@@ -1,7 +1,6 @@
 'use strict';
 // Resolved at the first call (cycles); a require per call is a path lookup (L73).
 let SpotRewardExpectation = null;
-const { isMainThread } = require('node:worker_threads');
 const Diagnostics = require('./EconomyDiagnostics');
 // The hour fields of a table row that follow its kills (SpotValueTable.value).
 const PER_KILL_FIELDS = ['kills', 'deaths', 'exp', 'sp', 'adena', 'dropLoot', 'spoilLoot', 'loot', 'shots', 'potions'];
@@ -21,12 +20,11 @@ function moneyWeight(state) {
 // hunt: the build's own hunt (EconomyContext), so one build reads one hour;
 // a caller outside a build leaves it out and gets the bot's bare hunt.
 // spotHunters(spot, state): the hunters on a spot with the bot among them,
-// of the thread that plans (SpotOccupancyIndex.huntersOn): main's world index
-// by default (SpotProfiles.spotHunters), a worker's own passed in its deps
-// (ColdSimulationKernel.spotHunters); a worker caller without one reads the
-// bot alone.
+// of the thread that plans (SpotOccupancyIndex.huntersOn): by default
+// SpotProfiles.spotHunters, this thread's occupancy (main's world index, a
+// worker's kernel index).
 function create(state, { timestamp = Date.now(), mode, persona, deathHours, moneyWeight: weight = moneyWeight(state), price, hunt,
-    spotHunters = isMainThread ? invoke('GameServer/Bot/Population/SpotProfiles').spotHunters : null } = {}) { // lazy: cycle SpotProfiles' route search builds this reader
+    spotHunters = invoke('GameServer/Bot/Population/SpotProfiles').spotHunters } = {}) { // lazy: cycle SpotProfiles' route search builds this reader
     const Table = invoke('GameServer/Bot/AI/SpotValueTable');
     const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
     const Learning = invoke('GameServer/Bot/AI/KnowledgeLearning');

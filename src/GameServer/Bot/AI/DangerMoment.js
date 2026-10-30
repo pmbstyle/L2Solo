@@ -120,7 +120,7 @@ function forActor(session, actor, target, options = {}) {
         canEscape: EscapePolicy.assess(session, actor, attackers).possible,
         potion: heldPotion, restHours, fightHours: damageRate > 0 ? enemy.maxHp / damageRate / 3600 : 0,
         // A live death also waits for its respawn (the basics price a table row's).
-        deathHours: economy.deathHours + Valuation.RESPAWN_HOURS, moneyPrice, riskWeight: economy.riskWeight,
+        deathHours: Valuation.liveDeathHours(economy.deathHours), moneyPrice, riskWeight: economy.riskWeight,
         roll: TendencyRoll.roll('danger', actor.fetchId?.(), targetId) });
     session.dangerMoment = moment ? { targetId, action: moment.action } : undefined;
     return moment;

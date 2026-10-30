@@ -390,7 +390,7 @@ const SpotService = {
         if (this.spots) return this.spots;
 
         const World = invoke('GameServer/World/World');
-        if (!World?.npc?.spawns || !Array.isArray(World.npc.spawns)) return [];
+        if (!Array.isArray(World?.npc?.definitions)) return [];
         // lazy: worker SpotService also loads in the cold worker; these aggro owners import the live world.
         const SocialAggro = invoke('GameServer/Npc/SocialAggro');
         const NpcAggro = invoke('GameServer/Npc/NpcAggro'); // lazy: worker as SocialAggro above.
@@ -399,10 +399,10 @@ const SpotService = {
         // (SocialAggro, NpcAggro) share no fight: another floor.
         const floorBound = Math.max(SocialAggro.MAX_ASSIST_Z_DIFFERENCE, NpcAggro.MAX_AGGRO_Z_DIFFERENCE);
         const cells = new Map();
-        // Every spawn of the game day (T123): the period's own and the other
-        // period's (SpawnNpcs.periodShadows), whatever the period at start;
-        // the spot table measures the same catalogue.
-        const shadows = invoke('GameServer/World/Generics/SpawnNpcs').periodShadows(World); // lazy: the worker's SpotService never indexes
+        // Every spawn of the game day (T123) at its seeded catalogue point
+        // (SpawnNpcs.catalogueSpawns): the same spots at every start, the
+        // ones the spot table measures.
+        const spawns = invoke('GameServer/World/Generics/SpawnNpcs').catalogueSpawns(World); // lazy: the worker's SpotService never indexes
 
         const index = (npc) => {
             if (!npc.fetchAttackable || !npc.fetchAttackable()) return;
@@ -428,8 +428,7 @@ const SpotService = {
                 record: BotPullEstimate.record(npc)
             });
         };
-        World.npc.spawns.forEach(index);
-        shadows.forEach(index);
+        spawns.forEach(index);
 
         // A hunter of a field sees a spawn within the client's visibility
         // radius: an edge fragment's spawn of a species the neighbour field
@@ -451,19 +450,22 @@ const SpotService = {
         }, BotPullEstimate.minionJoiners(MinionManager.groupsByBoss));
         // One number on each spot entry that pulls more than one mob, in this
         // catalogue, its SpotProfiles copy and the cold worker's copy.
-        utils.infoSuccess('Spots', '%d spots (%d cells, %d floors split off, %d fragments joined, %d other-period spawns), pull table %d of %d entries above one (~%d KB per copy)',
+        utils.infoSuccess('Spots', '%d spots (%d cells, %d floors split off, %d fragments joined, %d spawns), pull table %d of %d entries above one (~%d KB per copy)',
             this.spots.length, cells.size, pieces.filter((piece) => piece.id !== piece.key).length,
-            pieces.length - this.spots.length, shadows.length, pulls.pulls, pulls.entries, Math.ceil(pulls.pulls * 16 / 1024));
+            pieces.length - this.spots.length, spawns.length, pulls.pulls, pulls.entries, Math.ceil(pulls.pulls * 16 / 1024));
 
         return this.spots;
     },
 
     // Mobs that come with this one (BotPullEstimate), from the table built
-    // when the spots were indexed at start; 1 before that.
-    pullSizeFor(npc) {
+    // when the spots were indexed at start; 1 before that. spot: the npc's
+    // (findCurrentSpot) when the caller already read it.
+    pullSizeFor(npc, spot = undefined) {
         if (!this.spots || !npc?.fetchLocX) return 1;
-        const loc = locFromActor(npc);
-        const spot = SpotIndex.spotAt(this.spots, cellAt(loc).key, Number(loc.locZ));
+        if (spot === undefined) {
+            const loc = locFromActor(npc);
+            spot = SpotIndex.spotAt(this.spots, cellAt(loc).key, Number(loc.locZ));
+        }
         return BotPullEstimate.entryPull(spot, npc.fetchSelfId?.());
     },
 

@@ -1702,6 +1702,8 @@ function startKernel(config = {}) {
         flushTargetMs: config.flushTargetMs,
         flushHardMs: config.flushHardMs
     });
+    // Every spot value's crowd share without its own count reads this kernel's occupancy (SpotProfiles.spotHunters).
+    SpotProfiles.useOccupancy(() => kernel?.occupancy);
     // Keep dependencies tied to the kernel's native lifetime. In-flight
     // scratch is cancelled on a newer canonical owner; it is never LRU-evicted.
     const nativeSet = kernel.states.set.bind(kernel.states), nativeDelete = kernel.states.delete.bind(kernel.states);
