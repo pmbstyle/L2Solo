@@ -34,7 +34,10 @@ const stubs = new Map([
             && effect?.type !== 'item_passive'
             && effect?.toggle !== true
             && !['hp_recover', 'life_force_orc'].includes(effect?.stackFamily),
-        list: () => []
+        list: () => [],
+        // A cold actor carries no live effects: nothing impairs it (PetHealRule.choose).
+        impairments: () => ({ disabled: false, afraid: false, confused: false, rooted: false, silenced: false,
+            physicalMuted: false, magicMuted: false })
     }],
     ['GameServer/Skills/ChargeLifecycle', { EXPIRY_MS: 600000 }],
     ['GameServer/Bot/AI/BotRaidSafety', {
