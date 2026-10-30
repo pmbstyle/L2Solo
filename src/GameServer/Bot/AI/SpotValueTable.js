@@ -337,12 +337,13 @@ function memoKey(t, spotId, role, level, shots, skill) {
     return `${spotId}\u0000${role}\u0000${level}\u0000${shotKey(shots)}\u0000${skill}`;
 }
 // The slot of the argument set's row; valid until the next memoValue call.
-function memoValue(t, rates, spotId, role, level, shots, skill) {
+// known: as computeValue's.
+function memoValue(t, rates, spotId, role, level, shots, skill, known = undefined) {
     const key = memoKey(t, spotId, role, level, shots, skill);
     let slot = valueMemo.get(key);
     if (slot === undefined) {
         DiagnosticConfig.developerDiagnostics && (stats.memoMisses += 1);
-        const row = computeValue(t, rates, spotId, role, level, shots, skill);
+        const row = computeValue(t, rates, spotId, role, level, shots, skill, known);
         slot = valueMemoTail;
         valueMemoTail = (valueMemoTail + 1) % MAX_VALUE_MEMO;
         const dropped = valueMemoOrder[slot];
@@ -513,11 +514,12 @@ function hourExp(t, rates, c) {
     return c.kills * (c.row[t.f.exp] * c.expRatio * c.gapFactor) * rates.exp;
 }
 
-function computeValue(t, rates, spotId, role, level, shots, skill = roleSpoilLevel(role, level)) {
+// known: the spot's combat() for these arguments when the caller read it.
+function computeValue(t, rates, spotId, role, level, shots, skill = roleSpoilLevel(role, level), known = undefined) {
     const s = t.spotIndex.get(String(spotId));
     const r = roleSlot(t, role);
     if (s === undefined || r === undefined) return null;
-    const c = combat(t, s, r, level, shots);
+    const c = known === undefined ? combat(t, s, r, level, shots) : known;
     if (!c) return null;
     const { row, curve, gap, refGap, kills, expRatio, busyRatio, gapFactor, mask } = c;
     // Combat remains an offline measurement. Money comes from the native
@@ -627,7 +629,9 @@ function referenceLevel(spotId, role, shots = true) {
 }
 
 // Static role/level/shot result, shared by every bot of that role: the row
-// of the most exp per hour. Built once per game-data combination, never by
+// of the most exp (or income: adena and loot) per hour a bot keeps on a spot
+// full of the bots it has room for (fullShare, rankIncome's ranking), the
+// row itself one bot's. Built once per game-data combination, never by
 // walking the population.
 function best(role, level, shots = true, metric = 'exp') {
     const t = load(), rates = ProgressionRates.profile();
@@ -639,30 +643,23 @@ function best(role, level, shots = true, metric = 'exp') {
     const key = `${role}:${level}:${shotKey(shots)}:${metric}`;
     if (bestRows.has(key)) { DiagnosticConfig.developerDiagnostics && (stats.bestHits += 1); return bestRows.get(key); }
     DiagnosticConfig.developerDiagnostics && (stats.bestMisses += 1);
-    if (metric === 'income') {
-        // The richest spot by adena and loot (SpotEconomics' fallback hour): every row priced once.
-        let bestRow = null;
-        for (const spot of t.spots) {
-            const row = computeValue(t, rates, spot[0], role, level, shots);
-            if (row && (!bestRow || row.adena + row.loot > bestRow.adena + bestRow.loot)) bestRow = { ...row, spotId: spot[0] };
-        }
-        bestRows.set(key, bestRow);
-        return bestRow;
-    }
-    // Exp is table-only (no reward groups): the scan reads the table's combat part of each spot, the
-    // first spot of the most exp wins, and only the winner's full row is priced. It bypasses the per-bot memo.
+    // The table's combat part of each spot is read once; exp needs no rewards,
+    // so only the income metric prices every row, and only the winner's full
+    // row is priced for exp. It bypasses the per-bot memo.
     const r = roleSlot(t, role);
-    let bestIndex = -1, bestExp = 0;
+    let bestIndex = -1, bestHeld = 0, bestRow = null;
     for (let s = 0; r !== undefined && s < t.spots.length; s++) {
         const c = combat(t, s, r, level, shots);
         if (!c) continue;
-        const exp = hourExp(t, rates, c);
-        if (bestIndex < 0 || exp > bestExp) { bestIndex = s; bestExp = exp; }
+        const row = metric === 'income' ? computeValue(t, rates, t.spots[s][0], role, level, shots, undefined, c) : null;
+        if (metric === 'income' && !row) continue;
+        const held = (row ? row.adena + row.loot : hourExp(t, rates, c)) * fullShare(t, s, c, c.kills);
+        if (bestIndex < 0 || held > bestHeld) { bestIndex = s; bestHeld = held; bestRow = row; }
     }
     const spotId = bestIndex < 0 ? null : t.spots[bestIndex][0];
-    const bestRow = bestIndex < 0 ? null : { ...computeValue(t, rates, spotId, role, level, shots), spotId };
-    bestRows.set(key, bestRow);
-    return bestRow;
+    const result = bestIndex < 0 ? null : { ...(bestRow || computeValue(t, rates, spotId, role, level, shots)), spotId };
+    bestRows.set(key, result);
+    return result;
 }
 // The table and rates of one income read, the shared rows reset when either moved.
 function incomeSource() {
@@ -734,17 +731,21 @@ function rankIncome(t, rates, role, level, costs, minGap, shots, skill) {
         const values = new Float64Array(t.spots.length * 3);
         const shares = new Float64Array(t.spots.length);
         let count = 0;
-        for (let index = 0; index < t.spots.length; index++) {
+        const r = roleSlot(t, role);
+        for (let index = 0; r !== undefined && index < t.spots.length; index++) {
             const spot = t.spots[index];
             if (spot[1] - level < basisGap || spot[1] - level > 8) continue;
-            const slot = memoValue(t, rates, spot[0], role, level, shots, skill);
+            // One combat read per spot: the row's (on a memo miss) and its share's.
+            const c = combat(t, index, r, level, shots);
+            if (!c) continue;
+            const slot = memoValue(t, rates, spot[0], role, level, shots, skill, c);
             if (memoFlags[slot] & NO_ROW) continue;
             const at = slot * ROW_NUMBERS;
             indexes[count] = index;
             values[count * 3] = memoNumbers[at + ADENA] + memoNumbers[at + LOOT];
             values[count * 3 + 1] = memoNumbers[at + SHOTS];
             values[count * 3 + 2] = memoNumbers[at + POTIONS];
-            shares[count] = fullShare(t, index, role, level, shots, memoNumbers[at]);
+            shares[count] = fullShare(t, index, c, memoNumbers[at]);
             count++;
         }
         basis = { indexes: indexes.slice(0, count), values: values.slice(0, count * 3), shares: shares.slice(0, count) };
@@ -773,11 +774,11 @@ function rankIncome(t, rates, role, level, costs, minGap, shots, skill) {
 // The share of its row's kills one bot keeps on a spot full of hunters: the
 // mobs per hour the spawns it may fight give back (productionCap) over the
 // bots the spot has room for (LevelingRoutes.roomForSpot, the room check at
-// arrival), at most 1; 1 without production data. The live hunters on a
-// spot crowd a bot's own value (SpotEconomics.create, crowded).
-function fullShare(t, s, role, level, shots, kills) {
-    const r = roleSlot(t, role), c = r === undefined || !(kills > 0) ? null : combat(t, s, r, level, shots);
-    const production = c && productionCap(t, c.row, t.spots[s][0], c.mask);
+// arrival), at most 1; 1 without production data. c: the spot's combat()
+// for the bot. The live hunters on a spot crowd a bot's own value
+// (SpotEconomics.create, crowded).
+function fullShare(t, s, c, kills) {
+    const production = kills > 0 && productionCap(t, c.row, t.spots[s][0], c.mask);
     if (!(production > 0)) return 1;
     const spot = SpotIndex.spotById(rewardSpots, t.spots[s][0]) || { density: t.spots[s][2] };
     return Math.min(1, production / (LevelingRoutes ||= invoke('GameServer/Bot/AI/LevelingRoutes')).roomForSpot(spot) / kills); // lazy: cycle LevelingRoutes' chain loads the combat profiles
