@@ -35,6 +35,9 @@ function regenTerms(profile, seated, timestamp) {
 }
 // A state without a profile: a bot's stored kit profile, else (a class at a
 // level, no bot) its class tree's skills with no kit (once per class and level).
+// A rest reads only the passives' ids and levels (statSources), so the tree
+// profile keeps those alone: whole skill rows of every class at every level
+// held 44 MB of the worker heap (10-30 heap snapshot).
 const treeProfiles = new Map();
 let profileTree = null;
 function restProfile(state, classId, level, timestamp) {
@@ -42,7 +45,11 @@ function restProfile(state, classId, level, timestamp) {
     if (profileTree !== DataCache.skillTree) { treeProfiles.clear(); profileTree = DataCache.skillTree; }
     const key = `${classId}:${level}`;
     let profile = treeProfiles.get(key);
-    if (!profile) treeProfiles.set(key, profile = { skills: ColdCombatProfile.skillsFor({ level, stats: { classId } }, classId, level), equipment: {}, effects: [] });
+    if (!profile) {
+        const skills = ColdCombatProfile.skillsFor({ level, stats: { classId } }, classId, level)
+            .filter(skill => skill.passive).map(skill => ({ selfId: skill.selfId, level: skill.level, passive: true }));
+        treeProfiles.set(key, profile = { skills, equipment: {}, effects: [] });
+    }
     return profile;
 }
 

@@ -440,16 +440,36 @@ const ALL_SPECIES = 255;
 // mask: the species of the mix the bot may fight at its gap (gateAt). Only
 // the measured species the spot spawns in this period count (a live spot of
 // other spawns than the table's prices by its own spawns).
-const killSpots = new WeakMap();
+// The spot caches below are keyed by what decides their answer (the spot,
+// the masked species of the row's mix and, for the kill draw, their shares),
+// not by the table row: rows of one spot share an entry (a Map per row held
+// ~107k Maps, 65 MB of the worker heap, 10-30 heap snapshot). A bound keeps
+// the oldest entries from piling up; the live spot (held.base) is rechecked.
+const SPOT_CACHE_LIMIT = 8192;
+function boundedGet(cache, key) {
+    const held = cache.get(key);
+    if (held !== undefined) { cache.delete(key); cache.set(key, held); }
+    return held;
+}
+function boundedSet(cache, key, held) {
+    cache.set(key, held);
+    if (cache.size > SPOT_CACHE_LIMIT) cache.delete(cache.keys().next().value);
+}
+function maskedMixKey(mix, mask, shares) {
+    let key = '';
+    for (let at = 0; mix && at < mix.length; at += 2)
+        if (mask & (1 << (at / 2))) key += shares ? `${mix[at]}:${mix[at + 1]},` : `${mix[at]},`;
+    return key;
+}
+
+const killSpots = new Map();
 function killSpot(t, row, spotId, mask = ALL_SPECIES) {
     const base = rewardSpot(spotId), mix = rowMix(t, row);
     if (!mix || !base) return base;
-    let byMask = killSpots.get(row);
-    if (!byMask) killSpots.set(row, byMask = new Map());
     // Keyed by the live spot too: its spawns of the period decide which of
     // the measured species are there now.
-    const key = `${mask}|${base.npcEntries?.length || 0}`;
-    let held = byMask.get(key);
+    const key = `${spotId}|${maskedMixKey(mix, mask, true)}|${base.npcEntries?.length || 0}`;
+    let held = boundedGet(killSpots, key);
     if (!held || held.base !== base) {
         const present = new Set((base.npcEntries || []).map(entry => Number(entry.selfId)));
         const npcEntries = [];
@@ -458,7 +478,7 @@ function killSpot(t, row, spotId, mask = ALL_SPECIES) {
             npcEntries.push({ selfId: mix[at], count: Math.max(1, Math.round(mix[at + 1] * 1000)) });
         }
         held = { base, spot: npcEntries.length ? { ...base, npcEntries, npcSelfIds: undefined } : base };
-        byMask.set(key, held);
+        boundedSet(killSpots, key, held);
     }
     return held.spot;
 }
@@ -467,16 +487,15 @@ function killSpot(t, row, spotId, mask = ALL_SPECIES) {
 // give back (their respawns), every spawn of them whole (gapProduction takes
 // the admitted part of it). mask as killSpot's; null without production data
 // (an offline spot).
-const productions = new WeakMap();
+const productions = new Map();
 function productionCap(t, row, spotId, mask = ALL_SPECIES) {
     const base = rewardSpot(spotId);
     if (!base?.npcEntries?.length) return null;
-    let byMask = productions.get(row);
-    if (!byMask) productions.set(row, byMask = new Map());
-    const key = `${mask}|${base.npcEntries.length}`;
-    let held = byMask.get(key);
+    const mix = rowMix(t, row);
+    const key = `${spotId}|${mix ? maskedMixKey(mix, mask, false) : '*'}|${base.npcEntries.length}`;
+    let held = boundedGet(productions, key);
     if (!held || held.base !== base) {
-        const mix = rowMix(t, row), species = mix ? new Set() : null;
+        const species = mix ? new Set() : null;
         for (let at = 0; mix && at < mix.length; at += 2) if (mask & (1 << (at / 2))) species.add(Number(mix[at]));
         let rows = 0, cap = 0;
         for (const entry of base.npcEntries) {
@@ -485,7 +504,7 @@ function productionCap(t, row, spotId, mask = ALL_SPECIES) {
             if (!species || species.has(Number(entry.selfId))) cap += entry.production;
         }
         held = { base, cap: rows && cap > 0 ? cap : null };
-        byMask.set(key, held);
+        boundedSet(productions, key, held);
     }
     return held.cap;
 }
@@ -507,21 +526,23 @@ function gapProduction(t, row, spotId, gate) {
 // The exp level-gap factor of a row's kills for a bot of level: the
 // species' own factors (MobExperience) in their measured shares, else the
 // spot's mean level's.
-const mixLevels = new WeakMap();
+// Species levels by NPC id, per npc list (an array per row held ~56k arrays,
+// 10 MB of the worker heap, 10-30 heap snapshot).
+const speciesLevels = new Map();
+let speciesNpcs = null;
+function speciesLevel(selfId, spotLevel) {
+    if (speciesNpcs !== DataCache.npcs) { speciesLevels.clear(); speciesNpcs = DataCache.npcs; }
+    let held = speciesLevels.get(selfId);
+    if (held === undefined) speciesLevels.set(selfId, held = Number(NpcIndex.find(DataCache.npcs, selfId)?.template?.level) || 0);
+    return held || spotLevel;
+}
 function killGapFactor(t, row, level, spotLevel, mask = ALL_SPECIES) {
     const mix = rowMix(t, row);
     if (!mix) return expGapFactor(level - spotLevel);
-    let levels = mixLevels.get(row);
-    if (!levels) {
-        levels = [];
-        for (let at = 0; at < mix.length; at += 2)
-            levels.push(Number(NpcIndex.find(DataCache.npcs, mix[at])?.template?.level) || spotLevel);
-        mixLevels.set(row, levels);
-    }
     let factor = 0, weight = 0;
     for (let at = 0; at < mix.length; at += 2) {
         if (!(mask & (1 << (at / 2)))) continue;
-        factor += mix[at + 1] * expGapFactor(level - levels[at / 2]);
+        factor += mix[at + 1] * expGapFactor(level - speciesLevel(mix[at], spotLevel));
         weight += mix[at + 1];
     }
     return weight > 0 ? factor / weight : expGapFactor(level - spotLevel);

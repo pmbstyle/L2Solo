@@ -108,6 +108,13 @@ try {
     const all = Rewards.value({ id: '-10_12', npcEntries: [{ selfId: 34, count: 10 }, { selfId: 38, count: 9 }, { selfId: 380, count: 6 }],
         rewards: { adenaMin: 34, adenaMax: 119 } }, 24);
     assert.notStrictEqual(Math.round(only.adena), Math.round(all.adena), 'the fixture tells the mix from the spawns');
+    // The kill cache is keyed by the spot and the row's mix, not the row: a
+    // row of the same spot with another mix pays as its own species.
+    for (const rows of fixture.rows) for (const row of rows) if (row) row[row.length - 1] = [34, 1];
+    fs.writeFileSync(file, JSON.stringify(fixture));
+    Table.useFile(file);
+    const other = Rewards.value({ id: '-10_12', npcEntries: [{ selfId: 34, count: 1 }], rewards: { adenaMin: 34, adenaMax: 119 } }, 24);
+    near(Table.value('-10_12', 'dps', 24, true).adena, 120 * other.adena, 'another mix of the spot pays as its species');
 } finally {
     Table.useFile();
     fs.rmSync(mixScratch, { recursive: true, force: true });
