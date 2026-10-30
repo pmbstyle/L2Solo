@@ -315,6 +315,19 @@ function mobHour(bot, mob, correction = null) {
     const hpLoss = Math.max(0, taken - standing * wall);
     let restEvery = hpLoss > 0 ? Math.floor((1 - limits.hp) * profile.maxHp / hpLoss) + 1 : Infinity;
     if (manaRest && mpSpent > 0) restEvery = Math.min(restEvery, Math.floor((1 - limits.mp) * profile.maxMp / mpSpent) + 1);
+    // Only the first fight after a rest opens at full MP: the others fight at
+    // the long-run rate (the opening's burst over the fights between rests).
+    if (opens && restEvery > 1) {
+        const plainDps = share * wet + (1 - share) * dry;
+        const plain = view.maxHp / plainDps;
+        const between = Number.isFinite(restEvery) ? restEvery : 50;
+        const blended = (fight + (between - 1) * plain) / between;
+        const scale = blended / fight;
+        wall += blended - fight;
+        taken *= scale;
+        worst *= scale;
+        fight = blended;
+    }
     const tail = Number.isFinite(restEvery) ? REST_TAIL_S / restEvery : 0;
     // A solo bot rests only below the threshold: the fights between two rests
     // start lower and lower (their mean death chance).
