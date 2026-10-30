@@ -225,7 +225,7 @@ function findPreferredMonster(session, bot, radius, options = {}) {
     const nearbyNpcs = limitTargetCandidates(session, bot, eligibleNearbyNpcs);
     const claimedIds = options.claimedIds || claimedTargetIds(session);
     // The spot a point is part of (its cell piece and floor, T123), else its cell.
-    const spotIdAt = (actor) => SpotService.findCurrentSpot(botLocation(actor))?.id
+    const spotIdAt = (actor, spot = SpotService.findCurrentSpot(botLocation(actor))) => spot?.id
         || `${Math.floor(actor.fetchLocX() / SPOT_CELL_SIZE)}_${Math.floor(actor.fetchLocY() / SPOT_CELL_SIZE)}`;
     const currentSpotId = String(session.currentSpot?.id || spotIdAt(bot));
     const partyActors = session.followPlayerSession || session.hotBackgroundPartyId
@@ -243,9 +243,11 @@ function findPreferredMonster(session, bot, radius, options = {}) {
     const candidates = nearbyNpcs
         .map((npc) => {
             const claimed = claimedIds.has(Number(npc.fetchId()));
-            const npcSpotId = spotIdAt(npc);
+            // One spot read per NPC: its id and its pull table.
+            const npcSpot = SpotService.findCurrentSpot(botLocation(npc));
+            const npcSpotId = spotIdAt(npc, npcSpot);
             // The target's helpers, aggressive neighbours and minions come with it.
-            const pull = SpotService.pullSizeFor(npc);
+            const pull = SpotService.pullSizeFor(npc, npcSpot);
             const matchupTarget = TargetMatchup.targetView(npc, matchupStats);
             const targetMatchup = TargetMatchup.evaluate(matchupProfiles, matchupTarget);
             if (isSoloHunter(session) && partyActors.length <= 1) {

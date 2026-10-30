@@ -458,11 +458,14 @@ const SpotService = {
     },
 
     // Mobs that come with this one (BotPullEstimate), from the table built
-    // when the spots were indexed at start; 1 before that.
-    pullSizeFor(npc) {
+    // when the spots were indexed at start; 1 before that. spot: the npc's
+    // (findCurrentSpot) when the caller already read it.
+    pullSizeFor(npc, spot = undefined) {
         if (!this.spots || !npc?.fetchLocX) return 1;
-        const loc = locFromActor(npc);
-        const spot = SpotIndex.spotAt(this.spots, cellAt(loc).key, Number(loc.locZ));
+        if (spot === undefined) {
+            const loc = locFromActor(npc);
+            spot = SpotIndex.spotAt(this.spots, cellAt(loc).key, Number(loc.locZ));
+        }
         return BotPullEstimate.entryPull(spot, npc.fetchSelfId?.());
     },
 
