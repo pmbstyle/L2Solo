@@ -224,8 +224,10 @@ function findPreferredMonster(session, bot, radius, options = {}) {
         .filter((npc) => npc.fetchAttackable() && !npc.isDead());
     const nearbyNpcs = limitTargetCandidates(session, bot, eligibleNearbyNpcs);
     const claimedIds = options.claimedIds || claimedTargetIds(session);
-    const spotIdAt = (actor) => `${Math.floor(actor.fetchLocX() / SPOT_CELL_SIZE)}_${Math.floor(actor.fetchLocY() / SPOT_CELL_SIZE)}`;
-    const currentSpotId = String(session.currentSpot?.id || spotIdAt(bot)).split(':')[0];
+    // The spot a point is part of (its cell piece and floor, T123), else its cell.
+    const spotIdAt = (actor) => SpotService.findCurrentSpot(botLocation(actor))?.id
+        || `${Math.floor(actor.fetchLocX() / SPOT_CELL_SIZE)}_${Math.floor(actor.fetchLocY() / SPOT_CELL_SIZE)}`;
+    const currentSpotId = String(session.currentSpot?.id || spotIdAt(bot));
     const partyActors = session.followPlayerSession || session.hotBackgroundPartyId
         ? PartyAwareness.partyActors(session.followPlayerSession || session) : [];
     const matchupProfiles = TargetMatchup.actorProfiles(partyActors.length ? partyActors : [bot]);

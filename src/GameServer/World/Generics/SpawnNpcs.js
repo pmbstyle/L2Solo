@@ -45,6 +45,25 @@ function createNpc(world, npc, coords, spawnDefinition = null) {
     return instance;
 }
 
+// The spawns of the period that is not now (T123): one NPC per periodic
+// definition its period keeps out of the world, at its datapack place (a
+// territory's: a random point in it), never added to the world, the grid or
+// a raid timer. Read by the spot catalogue (SpotService.ensureIndexed), so the
+// catalogue and the spot table hold every spawn of the game day whatever the
+// period at start.
+function periodShadows(world) {
+    const mode = world?.npc?.periodMode;
+    const shadows = [];
+    for (const definition of world?.npc?.periodDefinitions || []) {
+        if (isPeriodActive(definition.spawn, mode) || isRaidBossDefinition(definition)) continue;
+        const coords = utils.size(definition.spawn.coords) > 0 ? { ...definition.spawn.coords[0] } : randomCoords(definition);
+        const instance = new Npc(-(shadows.length + 1), { ...utils.crushOb(definition.npc), ...coords });
+        instance.spawnDefinition = definition;
+        shadows.push(instance);
+    }
+    return shadows;
+}
+
 function spawnChildNpc(world, npc, coords, metadata = {}) {
     if (!world?.npc?.spawns || !npc) return null;
     const instance = createNpc(world, npc, coords, null);
@@ -296,6 +315,7 @@ module.exports.spawnChildNpc = spawnChildNpc;
 module.exports.despawnQuestNpc = despawnQuestNpc;
 module.exports.clearQuestSpawn = clearQuestSpawn;
 module.exports.notifyNearby = notifyNearby;
+module.exports.periodShadows = periodShadows;
 module.exports.isRaidBossDefinition = isRaidBossDefinition;
 module.exports.raidBossRespawnAt = raidBossRespawnAt;
 module.exports.scheduleRaidBossRespawn = scheduleRaidBossRespawn;

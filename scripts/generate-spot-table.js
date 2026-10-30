@@ -53,7 +53,11 @@ process.env.L2NODE_PROGRESSION_RATE = 'x1';
 
 const SCHEMA_VERSION = 1;
 const CATALOGUE_SEED = 20261005;
+// The world spawns by day; the catalogue takes the night's spawns in too
+// (SpotService.ensureIndexed, SpawnNpcs.periodShadows, T123): the table
+// measures every spawn of the game day, a period's at its share of the day.
 const PERIOD_MODE = 'day';
+const CATALOGUE_PERIODS = 'day+night';
 const MAX_LEVEL = 78;
 const REF_GAP = 6;
 // Bot level minus spot level, every 2 levels from 4 below the mobs up to the
@@ -848,7 +852,7 @@ function gitRevision() {
 }
 
 function rewardCatalog(profiles) {
-    return { schema: 1, seed: CATALOGUE_SEED, periodMode: PERIOD_MODE,
+    return { schema: 1, seed: CATALOGUE_SEED, periodMode: CATALOGUE_PERIODS,
         rows: profiles.filter(spot => !spot.raidBoss).map(spot => [spot.id,
             (spot.npcEntries || []).map(entry => [Number(entry.selfId), Math.max(1, Number(entry.count) || 1)]),
             Number(spot.rewards?.adenaMin || 0), Number(spot.rewards?.adenaMax || 0)]) };
@@ -985,7 +989,7 @@ async function main() {
                 generator: 'scripts/generate-spot-table.js',
                 revision,
                 inputs: { hours: options.hours, curveHours: options.curveHours, catalogueSeed: CATALOGUE_SEED,
-                    periodMode: PERIOD_MODE, rate: 'x1', maxLevel: MAX_LEVEL, refGap: REF_GAP, bandLevels: BAND_LEVELS,
+                    periodMode: CATALOGUE_PERIODS, rate: 'x1', maxLevel: MAX_LEVEL, refGap: REF_GAP, bandLevels: BAND_LEVELS,
                     curveSpots: CURVE_SPOTS, roleClasses: roleClasses(), roleLines: ROLE_LINES,
                     spotLimit: options.spots || null },
                 counts: { catalogueSpots, spots: spots.length, rows: spots.length * roles().length * SHOTS.length,
