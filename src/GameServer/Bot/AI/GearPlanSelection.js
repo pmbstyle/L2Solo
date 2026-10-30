@@ -8,6 +8,7 @@ const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner'
 const OfferOrder = invoke('GameServer/Bot/Economy/OfferOrder');
 const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
+const { GRADES } = invoke('GameServer/Bot/AI/GearGradeRule');
 
 function deferredWishPlan(previousPlan, replanContext, state, timestamp = Date.now()) {
     const plan = { ...previousPlan, status: 'deferred', strategy: 'none', next: null, reason: 'wish_focus' };
@@ -40,7 +41,7 @@ function withBridgeInputPreparation(state, previous, next, timestamp = Date.now(
     const Data = invoke('GameServer/DataCache'), Index = invoke('GameServer/Item/ItemTemplateIndex');
     const target = Index.find(Data.items, Number(retained.combine?.resultId || retained.target.selfId));
     const bridge = Index.find(Data.items, Number(next.combine?.resultId || next.target?.selfId));
-    const ranks = ['none', 'd', 'c', 'b', 'a', 's'];
+    const ranks = GRADES;
     if (!target || !bridge || ranks.indexOf(target.etc?.rank) < 2
         || ranks.indexOf(target.etc?.rank) <= ranks.indexOf(bridge.etc?.rank)
         || !GearAcquisitionPlanner.considerable(target, state)

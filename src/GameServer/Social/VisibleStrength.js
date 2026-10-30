@@ -11,12 +11,13 @@ const Tendency = require('../Bot/AI/TendencyRoll');
 // look: 0.5 + SLOPE x (ratio - threshold). Tunable.
 const SLOPE = 2;
 
-const GRADE = Object.freeze({ none: 0, d: 1, c: 2, b: 3, a: 4, s: 5 });
+const { GRADES, rankOf } = invoke('GameServer/Bot/AI/GearGradeRule');
+const GRADE = Object.freeze(Object.fromEntries(GRADES.map((grade, rank) => [grade, rank])));
 const WEAPON_SLOTS = Object.freeze([7, 14]); // one-handed, two-handed
 const BODY_SLOTS = Object.freeze([10, 15]); // chest, full body armour
 const NOTHING = Object.freeze({ weapon: 0, glow: 0, body: 0 });
 const clamp = (value, low = 0, high = 1) => Math.max(low, Math.min(high, Number(value) || 0));
-const grade = rank => GRADE[String(rank || 'none').toLowerCase()] || 0;
+const grade = rankOf;
 
 // The C4 client's weapon glow (env.int [EnchantEffect]): faint from +4, the
 // particle effect from +7 (brighter up to +15), red from +16. Armour enchant

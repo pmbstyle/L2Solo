@@ -14,7 +14,7 @@ const Minions = require('../../../../data/Npcs/Minions/c4_raid_bosses.json');
 const Supply = require('./RaidSupplyPolicy');
 const Priority = require('./RaidRosterPriority');
 const Healing = require('./RaidHealingEstimate');
-const GRADE = { none: 0, d: 1, c: 2, b: 3, a: 4, s: 5 };
+const { rankOf } = invoke('GameServer/Bot/AI/GearGradeRule');
 const BASE_CLASSES = new Set([0, 10, 18, 25, 31, 38, 44, 53]);
 const id = s => Number(s?.characterId);
 const isObjective = o => o?.opportunisticRaid === true && o.sourceKind === 'raid';
@@ -414,7 +414,7 @@ function assessment(members, spot, { timestamp = Date.now(), maxFightSeconds = 7
     if (!composition(members).ready) { fail('raid_composition'); unchecked.push('equipment', 'combat'); return result(); }
     const level = Number(spot.avgLevel);
     if (members.some(s => !levelAllowed(s, level))) { fail('raid_level'); unchecked.push('equipment', 'combat'); return result(); }
-    const requiredRank = Math.max(1, GRADE[Gear.gradeForLevel(level)] || 0);
+    const requiredRank = Math.max(1, rankOf(Gear.gradeForLevel(level)));
     const data = invoke('GameServer/DataCache');
     const item = require('../../Item/ItemTemplateIndex');
     for (const s of members) {

@@ -15,7 +15,7 @@ function gradeForLevel(level) {
 
 // A grade's place in the wear order ('none' 0 .. 's' 5); 0 for anything else.
 function rankOf(grade) {
-    const rank = GRADES.indexOf(String(grade || 'none').toLowerCase());
+    const rank = GRADES.indexOf(String(grade || 'none').trim().toLowerCase());
     return rank < 0 ? 0 : rank;
 }
 

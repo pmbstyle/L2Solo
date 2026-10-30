@@ -31,7 +31,7 @@ const GRADE_BANDS = [
     { rank: 's', min: 76, max: 99 }
 ];
 
-const RANK_ORDER = ['none', 'd', 'c', 'b', 'a', 's'];
+const { GRADES: RANK_ORDER } = invoke('GameServer/Bot/AI/GearGradeRule');
 const NO_GRADE_PRICE_CAPS = [
     { maxLevel: 5, price: 1000 },
     { maxLevel: 10, price: 12500 },
