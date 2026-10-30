@@ -25,6 +25,12 @@ const hawkeye = rogue(idWithFuture(HAWKEYE)), hunter = rogue(idWithFuture(TREASU
 assert.equal(Progression.futureClass(ROGUE, hawkeye.characterId),
     Progression.nextClass(ROGUE, 40, hawkeye.characterId), 'the future is the pick class progression makes at 40');
 assert.equal(Progression.futureClass(HAWKEYE, 1), null, 'a second class has no future second class');
+// T127: the pick is kept per (class, id); every id reads the same pick on every call.
+for (let id = 1; id <= 200; id++) {
+    const pick = Progression.nextClass(ROGUE, 40, id);
+    assert.equal(Progression.futureClass(ROGUE, id), pick);
+    assert.equal(Roles.kitClassId(rogue(id)), pick, `id ${id}: the kit class is the pick at 40, on a repeated read too`);
+}
 
 assert.equal(Roles.inferRole(hawkeye), 'archer', 'a future Hawkeye Rogue is an archer');
 assert.equal(Roles.inferRole(hunter), 'dagger', 'a future Treasure Hunter Rogue is a dagger');

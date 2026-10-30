@@ -13,9 +13,15 @@ function gradeForLevel(level) {
     return 'none';
 }
 
+// A grade's place in the wear order ('none' 0 .. 's' 5); 0 for anything else.
+function rankOf(grade) {
+    const rank = GRADES.indexOf(String(grade || 'none').toLowerCase());
+    return rank < 0 ? 0 : rank;
+}
+
 // The first level that wears a grade ('none' from level 1).
 function levelForGrade(grade) {
     return GRADE_LEVELS[grade] || 1;
 }
 
-module.exports = { GRADES, gradeForLevel, levelForGrade };
+module.exports = { GRADES, rankOf, gradeForLevel, levelForGrade };

@@ -138,6 +138,27 @@ assert.strictEqual(NpcAggro.canEngage(stakato, actorAt(10005, 300)), false, 'out
 assert.strictEqual(NpcAggro.canEngage(stakato, actorAt(10006, 140)), true, 'inside its own range');
 assert.strictEqual(NpcAggro.canEngage(hostileNpcAt(0), actorAt(10007, 300)), true, 'no C4 range: the author\'s 500');
 
+// T127: the live sweep queries the world grid once and judges every NPC at its
+// own range: a range-1000 NPC still aggroes a bot 900 away, not one 1100 away;
+// a 500 NPC does not see 900. Through the real grid query of World.
+const World = invoke('GameServer/World/World');
+const sweepAt = (npc, distance) => {
+    const actor = actorAt(10010 + distance, 3000 + distance, 3000);
+    const grid = {};
+    (grid[World.npcGridKey(npc)] ||= []).push(npc);
+    const sweepWorld = {
+        npc: { grid },
+        user: { sessions: [{ constructor: { name: 'BotSession' }, accountId: 'bot_far', actor }] },
+        fetchNpcsInRadius: World.fetchNpcsInRadius
+    };
+    return NpcAggro.tickLiveActors(sweepWorld, Date.now()).includes(npc);
+};
+const farSighted = () => Object.assign(hostileNpcAt(3000, 3000), { fetchSelfId: () => 7039 });
+assert.strictEqual(NpcAggro.aggroRadius(farSighted()), 1000, 'fixture: a C4 range of 1000');
+assert.strictEqual(sweepAt(farSighted(), 900), true, 'a range-1000 NPC aggroes a bot 900 away');
+assert.strictEqual(sweepAt(farSighted(), 1100), false, 'a range-1000 NPC does not see 1100');
+assert.strictEqual(sweepAt(hostileNpcAt(3000, 3000), 900), false, 'a 500 NPC does not see 900');
+
 GeodataEngine.hasLineOfSight = originalHasLineOfSight;
 
 console.log('NPC hot-bot aggro regression checks passed');

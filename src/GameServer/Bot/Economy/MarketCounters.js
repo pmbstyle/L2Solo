@@ -15,6 +15,7 @@
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Uptime = require('../Population/Uptime');
 const DataCache = invoke('GameServer/DataCache');
+const GearGradeRule = invoke('GameServer/Bot/AI/GearGradeRule');
 const C4RecipeItems = invoke('GameServer/Items/C4RecipeItems');
 const TradeDemand = require('./MarketTradeDemand');
 const Diagnostics = require('./EconomyDiagnostics');
@@ -32,7 +33,7 @@ const GRADE_IN_NAME = /(?:^|[\s:])(D|C|B|A|S)(?:[- ]?Grade|\b)/i;
 // hourly move over the counters of the group E journal (e17, 44 h).
 const STARTING_MOVE = 0.05;
 const COUNTER_KEYS = Object.freeze(['gear', 'shot', 'recipe', 'material']
-    .flatMap((kind) => ['none', 'd', 'c', 'b', 'a', 's'].map((grade) => `${kind} ${grade}`)));
+    .flatMap((kind) => GearGradeRule.GRADES.map((grade) => `${kind} ${grade}`)));
 
 // The table row key of each counter, built once (a fresh string is hashed on every read).
 const COUNTER_ROW_KEYS = Object.freeze(COUNTER_KEYS.map((key) => `c:${key}`));

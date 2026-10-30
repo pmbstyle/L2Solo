@@ -1,24 +1,13 @@
 const DANGEROUS_SOLO_TAGS = new Set(['catacomb', 'party_required']);
-const GRADE_RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
+const { rankOf: gradeRank, gradeForLevel } = invoke('GameServer/Bot/AI/GearGradeRule');
 
 function number(value, fallback = 0) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-function gradeRank(value) {
-    const rank = GRADE_RANKS.indexOf(String(value || 'none').toLowerCase());
-    return rank < 0 ? 0 : rank;
-}
-
 function expectedGradeRank(level) {
-    const value = number(level, 1);
-    if (value >= 76) return 5;
-    if (value >= 61) return 4;
-    if (value >= 52) return 3;
-    if (value >= 40) return 2;
-    if (value >= 20) return 1;
-    return 0;
+    return gradeRank(gradeForLevel(level));
 }
 
 function equipmentRows(state = {}, options = {}) {

@@ -13,6 +13,7 @@ const DualSwords = require('../../Items/C4DualSwordCombinations');
 const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const DataCache = invoke('GameServer/DataCache');
+const { GRADES: GEAR_RANKS } = invoke('GameServer/Bot/AI/GearGradeRule');
 // A module read inside a hot function: require() walks the module path on
 // every call, so each path is resolved once here. The relative require keeps
 // the module's dependency boundary (tests pass their own require).
@@ -33,7 +34,6 @@ const GEAR_FINALISTS_PER_SLOT = 8;
 // review can hold as roots adds cost without a reachable choice.
 const WISH_ROOTS = 12;
 const PRODUCER_PRICED = WISH_ROOTS;
-const GEAR_RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
 // MVP-6 (PLAN "Admission and placement"): four gear roots, four admission
 // rounds (the initial evaluation plus three affected re-evaluations).
 const GEAR_ROOTS = 4;
