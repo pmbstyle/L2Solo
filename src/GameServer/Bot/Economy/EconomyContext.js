@@ -895,51 +895,46 @@ function incomeRouteFor(state, deps, timestamp, price, keep) {
     }
     const reads = keep ? [] : null;
     const read = keep ? id => { const value = price(id); reads.push(id, value); return value; } : price;
-    // The bot keeps its earning spot (decision 10-30): while nothing that
-    // chose it moved, it judges only the held spot, and searches again when
-    // that spot fails or pays far below what it was chosen for.
-    const marks = holdMarks(state, required);
-    const held = heldRoutes.get(Number(state.characterId));
+    // The bot keeps its earning spot (decision 10-30). Its held build
+    // (cache) names the spot and the income it was chosen for. A build that
+    // rebuilds its foundation (a section event, deps.searchIncome) searches
+    // afresh; any other read judges only the held spot, and searches again
+    // when the spot fails, pays below its income at the choice by more than
+    // the bot's income error (or the row's own noise), or after HOLD_MS.
+    const plan = deps.searchIncome ? null : cache.get(actorKeyOf(state, deps))?.plan;
     let route = null;
-    let why = !held ? 'none' : held.marks !== marks ? 'marks' : timestamp - held.at >= HOLD_MS ? 'window' : '';
+    let why = deps.searchIncome ? 'event' : !Number.isFinite(plan?.routeAt) ? 'none' : timestamp - plan.routeAt >= HOLD_MS ? 'window' : '';
     if (!why) {
-        route = IncomeRoute.select(state, { ...deps, timestamp, required, price: read, only: [held.spotId] });
-        // The held spot's own income, as at its choice (no walk, no own hour).
+        route = IncomeRoute.select(state, { ...deps, timestamp, required, price: read, only: [plan.bestSpotId] });
         if (!route) why = 'failed';
-        else if (!(Number(route.row?.income) >= HOLD_SHARE * held.income)) { route = null; why = 'poorer'; }
+        else if (poorer(state, deps, timestamp, route, plan.routeIncome)) { route = null; why = 'poorer'; }
     }
     holdStats[why || 'kept'] += 1;
-    if (!route) {
-        route = IncomeRoute.select(state, { ...deps, timestamp, required, price: read });
-        if (route && Number(state.characterId)) {
-            heldRoutes.delete(Number(state.characterId));
-            heldRoutes.set(Number(state.characterId), { spotId: route.spot.id, income: Number(route.row?.income) || 0, marks, at: timestamp });
-            if (heldRoutes.size > HOLD_LIMIT) heldRoutes.delete(heldRoutes.keys().next().value);
-        } else heldRoutes.delete(Number(state.characterId));
-    }
+    if (!route) route = IncomeRoute.select(state, { ...deps, timestamp, required, price: read });
     keep?.({ state, timestamp, spots: deps.spots, mode: deps.mode,
         maxChecks: deps.maxChecks, required, reads, route });
     return route;
 }
-// The held earning spot per bot (incomeRouteFor): searched again on a new
-// level, kit, death, goal or gear need (holdMarks), when the held spot fails
-// or pays below HOLD_SHARE of its income at the choice, or after 30 game minutes.
+// The held spot pays below its income at the choice (the row's own income,
+// no walk, no own hour) beyond what the bot can tell apart: its income error
+// (DecisionSections.incomeError) or the spot's sampled row noise.
+function poorer(state, deps, timestamp, route, chosen) {
+    const now = Number(route.row?.income) || 0;
+    if (!(chosen > 0) || now >= chosen) return false;
+    const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
+    const row = Hunt.sampledRows(state, timestamp, deps.mode).find(one => one.spotId === route.spot.id);
+    return (chosen - now) / chosen > Math.max(Sections.incomeError(state, personaOf(state, deps)), positive(row?.noise));
+}
+// The held build's earning spot is searched again at most every 30 game minutes.
 const HOLD_MS = 30 * GameTime.GAME_MINUTE_MS;
 // Holds kept and searches by reason (the worker status line's caches).
-const holdStats = { kept: 0, none: 0, marks: 0, window: 0, failed: 0, poorer: 0 };
-function incomeHoldStats() { return { size: heldRoutes.size, ...holdStats }; }
-// The spot a bot holds for earning now (incomeRouteFor), or null: the solo
+const holdStats = { kept: 0, event: 0, none: 0, window: 0, failed: 0, poorer: 0 };
+function incomeHoldStats() { return { ...holdStats }; }
+// The spot a bot's held build earns at (incomeRouteFor), or null: the solo
 // side of the party comparison judges it first (PartyIncomeComparison.soloRoute).
 function heldIncomeSpot(characterId, timestamp) {
-    const held = heldRoutes.get(Number(characterId));
-    return held && timestamp - held.at < HOLD_MS ? held.spotId : null;
-}
-const HOLD_SHARE = 0.7;
-const HOLD_LIMIT = 4096;
-const heldRoutes = new Map();
-function holdMarks(state, required) {
-    return [state.level, Sections.kit(state), Number(state.stats?.deaths ?? state.deathCount ?? 0),
-        String(state.stats?.wishFocus?.[0] || ''), required ? 1 : 0, state.party?.partyId || state.partyId || 0].join('|');
+    const plan = cache.get(`character:${Number(characterId) || 0}`)?.plan;
+    return Number.isFinite(plan?.routeAt) && timestamp - plan.routeAt < HOLD_MS ? plan.bestSpotId : null;
 }
 // The bot's own fit for the spot of its hunting leaf (docs/architecture.md §2
 // route): the route's one test, BotRoute.leafFitReader, as a yes or no per
@@ -1045,6 +1040,7 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
     const reserve = escapeCost + kit.reduce((sum, row) => sum + row.survivalMissing * row.unitPrice, 0);
     return { tableRole, hunt, hourAdena: Hunt.huntHour(hunt, state), survivalReserve: reserve, kitCost, kit: kitData,
         lostGearHours, bestSpotId, deathHours, bestTable, stock,
+        routeAt: incomeRoute ? timestamp : null, routeIncome: incomeRoute ? Number(incomeRoute.row?.income) || 0 : null,
         riskWeight: Valuation.riskWeight(state, persona),
         expectedDeathHours: positive(bestTable?.deaths) * deathHours,
         karmaHours: Valuation.karmaHours(state, { ...hunt, lostGearHours, deathsPerHour: positive(bestTable?.deaths) }) };
@@ -1054,6 +1050,7 @@ function foundationFromPlan(state, plan, deps, price) {
         () => plan.kit.scrollHours ??= scrollHoursFor(state, deps.spots, plan.bestSpotId));
     return { hunt: plan.hunt, hourAdena: plan.hourAdena, survivalReserve: plan.survivalReserve,
         kit: plan.kit, stock, kitCost, lostGearHours: plan.lostGearHours, bestSpotId: plan.bestSpotId,
+        routeAt: plan.routeAt, routeIncome: plan.routeIncome,
         deathHours: plan.deathHours, riskWeight: plan.riskWeight,
         expectedDeathHours: plan.expectedDeathHours, karmaHours: plan.karmaHours };
 }
@@ -1181,7 +1178,9 @@ function forState(state = {}, deps = {}) {
     // hunt efficiency and clock, spot risk and the active spot exclusions
     // (they expire by time), exp, persona, market trades, craft station,
     // the equipment plan and the crafter's MP.
-    const keptBase = held && !(mask & Sections.COMPUTED.foundation) ? held.plan : null;
+    // A held earning spot is searched again after its window (incomeRouteFor).
+    const keptBase = held && !(mask & Sections.COMPUTED.foundation)
+        && !(Number.isFinite(held.plan.routeAt) && timestamp - held.plan.routeAt >= HOLD_MS) ? held.plan : null;
     const keptSources = held?.sourceSections && !(mask & Sections.COMPUTED.sources) ? held : null;
     // The source walk's per-spot ground verdict, outside the memo's size cap:
     // its own section rule (GearAcquisitionPlanner.sourceGround).
@@ -1258,7 +1257,8 @@ function forState(state = {}, deps = {}) {
     // one): its solo matchup profiles serve the providers' source route reader.
     let incomeRecord = null;
     const base = keptBase ? foundationFromPlan(state, keptBase, deps, price)
-        : foundation(state, deps, persona, timestamp, price, record => { incomeRecord = record; });
+        : foundation(state, { ...deps, searchIncome: !!held && !!(mask & Sections.COMPUTED.foundation) }, persona, timestamp, price,
+            record => { incomeRecord = record; });
     // These facts still belong to the reused foundation: its items stay read.
     if (keptBase) for (const id of held.readIds) read(id);
     const quantityInputs = createQuantityInputs();
@@ -1566,7 +1566,8 @@ function planOf(context, base, { key, tripHour, projection = null, knowledgeEnab
         if (node.key.startsWith('stock:') && !stockRoots.has(node.key)) stockRoots.set(node.key, node.object?.itemId);
     return { pending: !projection, key, actorKey: context.actorKey, timestamp: context.timestamp,
         gearThreatMask: context.gearThreatMask, persona: context.persona, hunt: context.hunt,
-        riskWeight: context.riskWeight, bestSpotId: context.bestSpotId, deathHours: context.deathHours,
+        riskWeight: context.riskWeight, bestSpotId: context.bestSpotId, routeAt: base.routeAt, routeIncome: base.routeIncome,
+        deathHours: context.deathHours,
         lostGearHours: context.lostGearHours, karmaHours: context.karmaHours, expectedDeathHours: context.expectedDeathHours,
         survivalReserve: context.survivalReserve, kit: base.kit, hourAdena: context.hourAdena, workshop: context.workshop,
         routeKey: context.routeKey, routeRows: context.routeRows, tripHour,
@@ -1887,7 +1888,6 @@ function forgetContext(id, reason = 'explicit_invalidation', expectedState = nul
     // Publication replaces the facts object, not the economic decision. The
     // next reader's verdict validates the held build against the state.
     if (reason !== 'state_publication') {
-        heldRoutes.delete(id);
         if (cache.delete(key) && Diagnostics.active()) { Diagnostics.count('context', 'eviction', reason); }
         engine.forget(key, reason);
     }
@@ -1905,7 +1905,7 @@ function forget(id) {
 function reset() {
     if (Diagnostics.active() && cache.size) Diagnostics.count('context', 'eviction', 'reset', cache.size);
     if (Diagnostics.active() && groups.size) Diagnostics.count('context_group', 'eviction', 'reset', groups.size);
-    cache.clear(); groups.clear(); engine.clear(); routeAnchors = new WeakMap(); heldRoutes.clear();
+    cache.clear(); groups.clear(); engine.clear(); routeAnchors = new WeakMap();
 }
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 

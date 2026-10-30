@@ -339,13 +339,13 @@ const PopulationStatus = {
         if (worker.caches) {
             const s = worker.caches.spotValue || {};
             summary.line += ` workerCaches=s:${s.memo || 0}/${s.best || 0}/${s.income || 0}/${s.bases || 0}/${s.cells || 0}:${s.memoHits || 0}/${s.memoMisses || 0}:${s.memoEvictions || 0}/${s.incomeEvictions || 0}/${s.baseEvictions || 0}/${s.resets || 0}:${s.bestHits || 0}/${s.bestMisses || 0}:${s.incomeHits || 0}/${s.incomeMisses || 0},k:${worker.caches.kitProfiles || 0}`;
-            // incomeHold=<held bots>:<kept>/<searched: none,marks,window,failed,poorer> (EconomyContext.incomeRouteFor, decision 10-30).
+            // incomeHold=<kept>/<searched: event,none,window,failed,poorer> (EconomyContext.incomeRouteFor, decision 10-30).
             const h = worker.caches.incomeHold;
-            if (h) summary.line += ` incomeHold=${h.size || 0}:${h.kept || 0}/${h.none || 0},${h.marks || 0},${h.window || 0},${h.failed || 0},${h.poorer || 0}`;
+            if (h) summary.line += ` incomeHold=${h.kept || 0}/${h.event || 0},${h.none || 0},${h.window || 0},${h.failed || 0},${h.poorer || 0}`;
         }
         summary.line += ` mainKits=${ColdCombatProfile.kitStoreSize()}`;
         const soloHolds = coldWorker.soloHolds || {};
-        summary.line += ` soloHolds=${soloHolds.hits || 0}/${soloHolds.misses || 0}/${soloHolds.size || 0}`;
+        summary.line += ` soloHolds=${soloHolds.hits || 0}/${soloHolds.misses || 0}`;
         summary.line += ` snapshot=${snapshots.dirty || 0}/${snapshots.critical || 0}/${snapshots.inFlight ? 1 : 0} snapshotLast=${lastSnapshot.mode || 'none'}/${lastSnapshot.rows || 0}/${lastSnapshot.pages || 0}/${lastSnapshot.durationMs || 0}ms snapshotRuns=${snapshots.fullRuns || 0}/${snapshots.dirtyRuns || 0}/${snapshots.criticalRuns || 0} snapshotDeferrals=${snapshots.deferrals || 0} snapshotYields=${snapshots.yields || 0}`;
         summary.line += ` ${this.nearText(coldWorker)}`;
         return summary;
