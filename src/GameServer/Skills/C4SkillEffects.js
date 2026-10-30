@@ -438,7 +438,7 @@ function applyAggroPoints(session, actor, target, skill, semantic) {
 
         const level = Math.max(1, Number(npc.fetchLevel?.()) || 1);
         const hate = Math.floor((150 * aggroPoints) / (level + 7));
-        if (hate <= 0 || !npc.addDamageHate(session, actor, 0, hate)) return;
+        if (hate <= 0 || !npc.addDamageHate(session, actor, 0, hate, { attacked: npc === target })) return;
         applied += hate;
     });
 

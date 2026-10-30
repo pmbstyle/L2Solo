@@ -19,7 +19,13 @@ const NpcHate = invoke('GameServer/Npc/NpcHate');
 const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool');
 const AttackHelper   = new Attack();
 // Dropped chases and mobs left out of combat still hating (sleep, stun, fake death).
-const hateStats = { outOfReach: 0, noPath: 0, idleWithHate: 0 };
+const hateStats = { outOfReach: 0, noPath: 0, idleWithHate: 0, attackTimeout: 0 };
+// A monster that neither attacked or cast nor was attacked for 2 minutes drops
+// the chase and its hate, then walks home (Mobius C4 AttackableAI
+// MAX_ATTACK_TIMEOUT = 1200 game ticks, refreshed by each of those, not by hate
+// alone, not counted while it cannot move: the timeout is for targets it cannot
+// reach, such as a player running at its speed).
+const ATTACK_TIMEOUT_MS = 120000;
 
 // MoveToPawn already tells the client to follow a moving target. Rebuilding
 // that request on every 100ms combat tick yields visible stop/start jitter.
@@ -152,10 +158,12 @@ class Npc extends NpcModel {
         return entry;
     }
 
-    addDamageHate(session, actor, damage = 0, aggro = 0) {
+    // attacked: false is hate alone (another's skill near the fight), no attack on this mob.
+    addDamageHate(session, actor, damage = 0, aggro = 0, { attacked = true } = {}) {
         const entry = this.ensureAggroEntry(actor);
         if (!entry) return false;
 
+        if (attacked) this.combatActiveAt = Date.now();
         const damageValue = Math.max(0, Number(damage) || 0);
         const aggroValue = Number.isFinite(Number(aggro)) ? Number(aggro) : 0;
         entry.damage += damageValue;
@@ -285,6 +293,7 @@ class Npc extends NpcModel {
         invoke('GameServer/Npc/NpcWander').cancel(this, session);
         this.switchCombatTarget(target);
         this.state.setCombats(true);
+        this.combatActiveAt = Date.now();
 
         this.setStateRun(true);
         this.setStateAttack(true);
@@ -347,6 +356,12 @@ class Npc extends NpcModel {
                     // Lisvus forgets a hated actor that left its known list (3000,
                     // AttackableKnownList); this chase stops at 1500, so it forgets then.
                     this.removeAggroTarget(session, actor, 'outOfReach');
+                    return;
+                }
+
+                if (EffectRestrictions.canMove(this) && Date.now() - this.combatActiveAt >= ATTACK_TIMEOUT_MS) {
+                    hateStats.attackTimeout += 1;
+                    this.abortCombatState(session);
                     return;
                 }
 
@@ -748,6 +763,7 @@ class Npc extends NpcModel {
         if (!EffectRestrictions.canCast(this)) return;
         if (!this.canUseCombatSkillOn(actor, skill)) return;
         if (actor !== this && !this.hasCombatLineOfSight(actor)) return;
+        this.combatActiveAt = Date.now();
         this.attack.remoteHit({
             actor: this,
             dataSendToMe: (packet) => session.dataSendToMe?.(packet),
@@ -800,6 +816,7 @@ class Npc extends NpcModel {
             return;
         }
 
+        this.combatActiveAt = Date.now();
         const rangedAttack = AttackRange.weaponKind(src) === 'Weapon.Bow';
         const attackSpeed = src.fetchCollectiveAtkSpd();
         const timing = Formulas.attackTimes(attackSpeed, { bow: rangedAttack });

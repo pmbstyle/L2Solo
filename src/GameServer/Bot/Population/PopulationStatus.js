@@ -138,10 +138,10 @@ const PopulationStatus = {
         return h ? ` incomeHold=${h.kept || 0}/${h.none || 0},${h.unrouted || 0},${h.renewed || 0},${h.moved || 0},${h.event || 0};party${h.partyKept || 0}/${h.partyMissed || 0}` : '';
     },
 
-    // Mobs that forgot a chase (out of reach / no path) and mobs left out of combat still hating.
+    // Mobs that forgot a chase (out of reach / no path / 2 min without an attack) and mobs left out of combat still hating.
     npcHateText() {
         const hate = Npc.hateStats();
-        return `npcHate=${hate.outOfReach}o/${hate.noPath}n/${hate.idleWithHate}i`;
+        return `npcHate=${hate.outOfReach}o/${hate.noPath}n/${hate.idleWithHate}i/${hate.attackTimeout}t`;
     },
 
     summary() {
