@@ -13,6 +13,10 @@ const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const databasePath = path.join(process.cwd(), 'tmp', 'test-cold-potion-consumption.sqlite');
 const POTION = 1060; // Lesser Healing Potion
 const at = 1_750_000_000_000;
+// With max HP from the class template (Formulas.calcHp) a level 12 fighter
+// ends every admitted Brae Orc fight above the potion line; at level 11 the
+// pull gate still admits the fight and a heavy roll drops it below the line.
+const LEVEL = 11;
 
 function clean() {
     const history = databasePath.replace(/\.sqlite$/, '.history.sqlite');
@@ -28,7 +32,7 @@ function item(selfId, amount, name) {
 function fighter(state, hp) {
     const result = {
         ...state,
-        level: 12,
+        level: LEVEL,
         activity: 'hunting',
         vitals: { hp, maxHp: 500, mp: 200, maxMp: 200 },
         stats: {
@@ -45,8 +49,8 @@ function fighter(state, hp) {
         party: { role: 'dps' }
     };
     // Owned characters fight with their learned kit only (113e1791); the
-    // fighter carries the database-learned skills of a level 12 Human Fighter.
-    result.stats.coldCombat = ColdCombatProfile.legacySnapshot(result, ColdCombatProfile.skillRecordsFromTree(0, 12));
+    // fighter carries the database-learned skills of a Human Fighter of that level.
+    result.stats.coldCombat = ColdCombatProfile.legacySnapshot(result, ColdCombatProfile.skillRecordsFromTree(0, LEVEL));
     return result;
 }
 
@@ -96,7 +100,7 @@ async function physicalAmount(characterId, selfId) {
     await Database.setItem(id, item(POTION, 5, 'Lesser Healing Potion'));
     await Database.setItem(id, item(57, 100, 'Adena'));
     const base = await LifeState.upsertState({
-        characterId: id, accountName: 'bot_potion', name: 'PotionDrinker', level: 12, adena: 100,
+        characterId: id, accountName: 'bot_potion', name: 'PotionDrinker', level: LEVEL, adena: 100,
         phase: 'cold', activity: 'hunting', currentRegion: 'Gludio', spotId: spot.id,
         loc: { locX: -12000, locY: 122000, locZ: -3000 },
         inventory: LifeState.inventorySummaryFromItems(await Database.fetchItems(id)),

@@ -430,6 +430,25 @@ try {
     assert.strictEqual(summonerSession.lastCombatDecision.action, 'summon_servitor',
         'the hot summon action must be visible in combat telemetry');
 
+    // The pet tanks, as in C4 (user 10-29): with its servitor out, a hot
+    // summoner adds its own damage only while the mob is on the pet.
+    const pet = { fetchId: () => 77001, controlMode: 'attack', attackTargetId: 11041,
+        fetchMaxHp: () => 500, fetchHp: () => 500, state: {} };
+    const petOwner = bot(14, [], 100);
+    petOwner.fetchId = () => 11040;
+    petOwner.summon = pet;
+    const mobOn = holder => ({ ...npc(11041), fetchMostHated: () => holder });
+    const waitSession = {};
+    BotAI.executeCombat(waitSession, petOwner, mobOn(petOwner), generics());
+    assert.strictEqual(waitSession.lastCombatDecision.action, 'summon_tanks', 'the owner waits while the mob is on it');
+    const freeSession = {};
+    BotAI.executeCombat(freeSession, petOwner, mobOn(pet), generics());
+    assert.notStrictEqual(freeSession.lastCombatDecision?.action, 'summon_tanks', 'the owner fights once the pet holds the mob');
+    const tank = { fetchId: () => 11050 };
+    const partySession = {};
+    BotAI.executeCombat(partySession, { ...petOwner, party: { partyId: 9 } }, mobOn(tank), generics());
+    assert.notStrictEqual(partySession.lastCombatDecision?.action, 'summon_tanks', 'in a party the tank holds the mob: the owner fights');
+
     const necroCorpseSummon = skill(1154, {
         name: 'Summon Corrupted Man',
         mp: 70,

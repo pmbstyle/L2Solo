@@ -375,12 +375,12 @@ function prepared(members, timestamp) {
 }
 
 function attack(p, target, charged) {
-    const cycle = p.equipment.weaponKind === 'Weapon.Bow'
-        ? F.calcBowAttackTimes(p.atkSpd, p.equipment.attackReuseDelay || 1500).cycleMs : F.calcMeleeAtkTime(p.atkSpd);
+    const cycle = Combat.normalAttackMs(p);
     const hit = invoke('GameServer/Bot/Population/BackgroundResolver').combat;
     let landed = 0;
     for (let i = 0; i < 20; i++) landed += Number(hit.hitSucceeds(p.accur, target.evasion, () => (i + .5) / 20));
-    const key = { 'Weapon.Bow': 'bowWpnVuln', 'Weapon.Knife': 'daggerWpnVuln', 'Weapon.Blunt': 'bluntWpnVuln' }[p.equipment.weaponKind];
+    const key = { 'Weapon.Bow': 'bowWpnVuln', 'Weapon.Knife': 'daggerWpnVuln', 'Weapon.Blunt': 'bluntWpnVuln',
+        'Weapon.BigBlunt': 'bluntWpnVuln' }[p.equipment.weaponKind];
     return { rate: 1000 / cycle, dps: F.calcPhysicalDamage(p.pAtk, 0, target.pDef, 0,
         { soulshot: charged, rng: () => .5 }) * (1 + Math.min(1, p.critical / 1000))
         * (landed / 20) * (key ? target.vulnerabilities?.[key] ?? 1 : 1) * 1000 / cycle };

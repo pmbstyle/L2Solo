@@ -36,6 +36,13 @@ function nextClass(classId, level, seed) {
     return null;
 }
 
+// The second class a first class will take at 40 (the same pick nextClass
+// makes then), or null for a class with no second profession ahead.
+function futureClass(classId, seed) {
+    const current = Number(classId);
+    return ClassProgression.secondProfMap[current] ? nextClass(current, 40, seed) : null;
+}
+
 function plan({ classId, level, seed } = {}) {
     let resolvedClassId = Number(classId);
     const transitions = [];
@@ -89,4 +96,4 @@ async function reconcile({ characterId, classId, level, seed = characterId } = {
     return { classId: resolvedClassId, transitions, ...training };
 }
 
-module.exports = { nextClass, plan, reconcile };
+module.exports = { nextClass, futureClass, plan, reconcile };

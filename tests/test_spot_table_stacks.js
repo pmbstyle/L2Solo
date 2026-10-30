@@ -13,17 +13,18 @@ const simulation = {
     items: definitions,
     BotGear: { planFor: () => ({ items: [{ selfId: 1864, slot: 0 }] }) },
     Potions: { purchasePotionFor: () => null },
-    CCP: { profileFor: () => ({ maxHp: 100, maxMp: 100 }),
+    CCP: { profileFor: () => ({ maxHp: 100, maxMp: 100 }), attackReach: () => 0,
         skillRecordsFromTree: () => [], skillSnapshotsFromRecords: () => [] },
     HuntEfficiency: { lootValue: () => 0 },
-    BR: { resolveSolo({ timestamp }) {
+    BR: { admittedShares: () => null, admittedDensity: spot => spot.density, huntCycleDelayMs: roll => 30000 + roll * 90000,
+        soloFightCount: () => 1, resolveSolo({ timestamp }) {
         resolves++;
         return { materialize: { items: [
             { selfId: 57, amount: 100 },
             { selfId: 1864, amount: 10 },
             { selfId: 1865, amount: 20 },
             { selfId: 2, amount: resolves === 1 ? 3 : 2 }
-        ] }, debug: { wins: 300, combatMs: 1000 }, patch: {}, nextResolveAt: timestamp + 3600000 };
+        ] }, debug: { wins: 300, mobsKilled: 300, combatMs: 1000 }, patch: {}, nextResolveAt: timestamp + 3600000 };
     } }
 };
 const sum = Generator.hunt({ id: 'fixture', center: {}, density: 1 }, 'dps', 20, false, 2, simulation);

@@ -19,12 +19,15 @@ DataCache.init();
 async function run() {
     invoke('Database').init();
     assert(invoke('Database').isReady());
-    world.usePotionSpot();
+    // A level-30 fighter with shots drinks ~4.5 potions an hour at -9_31 in the
+    // one combat core's table (-10_30 fell to 1.4), so the two-hour stock
+    // exceeds the three-potion mixed stock below.
+    world.usePotionSpot('-9_31');
 
     const line = (selfId, amount) => ({ selfId, amount, name: DataCache.items.find((entry) => entry.selfId === selfId)?.template?.name });
     const state = {
         // The one available canonical spot consumes potions without changing its values.
-        characterId: 9500001, level: 30, spotId: '-10_30', adena: 1000, phase: 'cold', activity: 'shopping',
+        characterId: 9500001, level: 30, spotId: '-9_31', adena: 1000, phase: 'cold', activity: 'shopping',
         currentRegion: 'Giran', loc: world.town(),
         stats: { classId: 0, role: 'dps' },
         inventory: Object.fromEntries([

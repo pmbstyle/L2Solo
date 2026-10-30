@@ -4365,7 +4365,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 20,
+                "mp": 19,
                 "hp": 0,
                 "itemId": 1661,
                 "itemCount": 2
@@ -4397,7 +4397,7 @@
             {
                 "level": 5,
                 "power": 1,
-                "mp": 32,
+                "mp": 31,
                 "hp": 0,
                 "itemId": 1661,
                 "itemCount": 4
@@ -4421,7 +4421,7 @@
             {
                 "level": 8,
                 "power": 1,
-                "mp": 44,
+                "mp": 43,
                 "hp": 0,
                 "itemId": 1661,
                 "itemCount": 7
@@ -4429,7 +4429,7 @@
             {
                 "level": 9,
                 "power": 1,
-                "mp": 48,
+                "mp": 47,
                 "hp": 0,
                 "itemId": 1661,
                 "itemCount": 8
@@ -4437,7 +4437,7 @@
             {
                 "level": 10,
                 "power": 1,
-                "mp": 52,
+                "mp": 51,
                 "hp": 0,
                 "itemId": 1661,
                 "itemCount": 10
@@ -4453,7 +4453,7 @@
             {
                 "level": 12,
                 "power": 1,
-                "mp": 60,
+                "mp": 59,
                 "hp": 0,
                 "itemId": 1661,
                 "itemCount": 13
@@ -4461,7 +4461,7 @@
             {
                 "level": 13,
                 "power": 1,
-                "mp": 64,
+                "mp": 63,
                 "hp": 0,
                 "itemId": 1661,
                 "itemCount": 15
@@ -5525,7 +5525,7 @@
             {
                 "level": 1,
                 "power": 3,
-                "mp": 20,
+                "mp": 19,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -5533,7 +5533,7 @@
             {
                 "level": 2,
                 "power": 7,
-                "mp": 35,
+                "mp": 41,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -10195,7 +10195,7 @@
             {
                 "level": 5,
                 "power": 40,
-                "mp": 87,
+                "mp": 86,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -10211,7 +10211,7 @@
             {
                 "level": 7,
                 "power": 40,
-                "mp": 93,
+                "mp": 92,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -10227,7 +10227,7 @@
             {
                 "level": 9,
                 "power": 40,
-                "mp": 98,
+                "mp": 97,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -11619,7 +11619,7 @@
             {
                 "level": 3,
                 "power": 17,
-                "mp": 23,
+                "mp": 22,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -11627,7 +11627,7 @@
             {
                 "level": 4,
                 "power": 20,
-                "mp": 28,
+                "mp": 27,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13763,7 +13763,7 @@
             {
                 "level": 1,
                 "power": 236,
-                "mp": 92,
+                "mp": 115,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13771,7 +13771,7 @@
             {
                 "level": 2,
                 "power": 245,
-                "mp": 95,
+                "mp": 119,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13779,7 +13779,7 @@
             {
                 "level": 3,
                 "power": 254,
-                "mp": 97,
+                "mp": 122,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13787,7 +13787,7 @@
             {
                 "level": 4,
                 "power": 262,
-                "mp": 97,
+                "mp": 122,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13795,7 +13795,7 @@
             {
                 "level": 5,
                 "power": 271,
-                "mp": 101,
+                "mp": 127,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13803,7 +13803,7 @@
             {
                 "level": 6,
                 "power": 281,
-                "mp": 104,
+                "mp": 130,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13811,7 +13811,7 @@
             {
                 "level": 7,
                 "power": 290,
-                "mp": 107,
+                "mp": 134,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13819,7 +13819,7 @@
             {
                 "level": 8,
                 "power": 299,
-                "mp": 111,
+                "mp": 139,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13827,7 +13827,7 @@
             {
                 "level": 9,
                 "power": 308,
-                "mp": 114,
+                "mp": 143,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13835,7 +13835,7 @@
             {
                 "level": 10,
                 "power": 318,
-                "mp": 118,
+                "mp": 148,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13843,7 +13843,7 @@
             {
                 "level": 11,
                 "power": 327,
-                "mp": 121,
+                "mp": 152,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13851,7 +13851,7 @@
             {
                 "level": 12,
                 "power": 337,
-                "mp": 125,
+                "mp": 157,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13859,7 +13859,7 @@
             {
                 "level": 13,
                 "power": 346,
-                "mp": 127,
+                "mp": 159,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13867,7 +13867,7 @@
             {
                 "level": 14,
                 "power": 356,
-                "mp": 127,
+                "mp": 159,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13875,7 +13875,7 @@
             {
                 "level": 15,
                 "power": 365,
-                "mp": 131,
+                "mp": 164,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13883,7 +13883,7 @@
             {
                 "level": 16,
                 "power": 375,
-                "mp": 134,
+                "mp": 168,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13891,7 +13891,7 @@
             {
                 "level": 17,
                 "power": 384,
-                "mp": 138,
+                "mp": 173,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13899,7 +13899,7 @@
             {
                 "level": 18,
                 "power": 393,
-                "mp": 141,
+                "mp": 177,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13907,7 +13907,7 @@
             {
                 "level": 19,
                 "power": 403,
-                "mp": 144,
+                "mp": 180,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13915,7 +13915,7 @@
             {
                 "level": 20,
                 "power": 412,
-                "mp": 148,
+                "mp": 185,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13923,7 +13923,7 @@
             {
                 "level": 21,
                 "power": 421,
-                "mp": 151,
+                "mp": 189,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13931,7 +13931,7 @@
             {
                 "level": 22,
                 "power": 430,
-                "mp": 154,
+                "mp": 193,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13939,7 +13939,7 @@
             {
                 "level": 23,
                 "power": 439,
-                "mp": 156,
+                "mp": 195,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13947,7 +13947,7 @@
             {
                 "level": 24,
                 "power": 448,
-                "mp": 156,
+                "mp": 195,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13955,7 +13955,7 @@
             {
                 "level": 25,
                 "power": 457,
-                "mp": 159,
+                "mp": 199,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13963,7 +13963,7 @@
             {
                 "level": 26,
                 "power": 466,
-                "mp": 162,
+                "mp": 203,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13971,7 +13971,7 @@
             {
                 "level": 27,
                 "power": 474,
-                "mp": 165,
+                "mp": 207,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13979,7 +13979,7 @@
             {
                 "level": 28,
                 "power": 482,
-                "mp": 168,
+                "mp": 210,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13987,7 +13987,7 @@
             {
                 "level": 29,
                 "power": 490,
-                "mp": 171,
+                "mp": 214,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -13995,7 +13995,7 @@
             {
                 "level": 30,
                 "power": 498,
-                "mp": 174,
+                "mp": 218,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -14003,7 +14003,7 @@
             {
                 "level": 31,
                 "power": 506,
-                "mp": 177,
+                "mp": 222,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -14011,7 +14011,7 @@
             {
                 "level": 32,
                 "power": 513,
-                "mp": 179,
+                "mp": 224,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -14019,7 +14019,7 @@
             {
                 "level": 33,
                 "power": 520,
-                "mp": 182,
+                "mp": 228,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -14027,7 +14027,7 @@
             {
                 "level": 34,
                 "power": 527,
-                "mp": 184,
+                "mp": 230,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -14035,7 +14035,7 @@
             {
                 "level": 35,
                 "power": 534,
-                "mp": 186,
+                "mp": 233,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -14043,7 +14043,7 @@
             {
                 "level": 36,
                 "power": 540,
-                "mp": 189,
+                "mp": 237,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -14051,7 +14051,7 @@
             {
                 "level": 37,
                 "power": 546,
-                "mp": 191,
+                "mp": 239,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -16467,6 +16467,14 @@
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
+            },
+            {
+                "level": 3,
+                "power": 1,
+                "mp": 55,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
             }
         ]
     },
@@ -16895,7 +16903,7 @@
             {
                 "level": 1,
                 "power": 0,
-                "mp": 47,
+                "mp": 59,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -16903,7 +16911,7 @@
             {
                 "level": 2,
                 "power": 20,
-                "mp": 70,
+                "mp": 88,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -16911,7 +16919,7 @@
             {
                 "level": 3,
                 "power": 30,
-                "mp": 97,
+                "mp": 122,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -16919,7 +16927,7 @@
             {
                 "level": 4,
                 "power": 40,
-                "mp": 121,
+                "mp": 152,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -16927,7 +16935,7 @@
             {
                 "level": 5,
                 "power": 50,
-                "mp": 144,
+                "mp": 180,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -16935,7 +16943,7 @@
             {
                 "level": 6,
                 "power": 55,
-                "mp": 156,
+                "mp": 195,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -16943,7 +16951,7 @@
             {
                 "level": 7,
                 "power": 60,
-                "mp": 165,
+                "mp": 207,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -16951,7 +16959,7 @@
             {
                 "level": 8,
                 "power": 65,
-                "mp": 182,
+                "mp": 228,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -16959,7 +16967,7 @@
             {
                 "level": 9,
                 "power": 70,
-                "mp": 191,
+                "mp": 239,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -16995,6 +17003,14 @@
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
+            },
+            {
+                "level": 3,
+                "power": 1,
+                "mp": 55,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
             }
         ]
     },
@@ -17015,7 +17031,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 88,
+                "mp": 87,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -17023,7 +17039,7 @@
             {
                 "level": 2,
                 "power": 1,
-                "mp": 90,
+                "mp": 89,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -17031,7 +17047,7 @@
             {
                 "level": 3,
                 "power": 1,
-                "mp": 93,
+                "mp": 92,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -17047,7 +17063,7 @@
             {
                 "level": 5,
                 "power": 1,
-                "mp": 98,
+                "mp": 97,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -17055,7 +17071,7 @@
             {
                 "level": 6,
                 "power": 1,
-                "mp": 101,
+                "mp": 99,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -17063,7 +17079,7 @@
             {
                 "level": 7,
                 "power": 1,
-                "mp": 105,
+                "mp": 104,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -17071,7 +17087,7 @@
             {
                 "level": 8,
                 "power": 1,
-                "mp": 108,
+                "mp": 107,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -17079,7 +17095,151 @@
             {
                 "level": 9,
                 "power": 1,
-                "mp": 111,
+                "mp": 109,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 10,
+                "power": 1,
+                "mp": 112,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 11,
+                "power": 1,
+                "mp": 114,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 12,
+                "power": 1,
+                "mp": 117,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 13,
+                "power": 1,
+                "mp": 118,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 14,
+                "power": 1,
+                "mp": 118,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 15,
+                "power": 1,
+                "mp": 120,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 16,
+                "power": 1,
+                "mp": 123,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 17,
+                "power": 1,
+                "mp": 124,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 18,
+                "power": 1,
+                "mp": 127,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 19,
+                "power": 1,
+                "mp": 129,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 20,
+                "power": 1,
+                "mp": 132,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 21,
+                "power": 1,
+                "mp": 133,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 22,
+                "power": 1,
+                "mp": 135,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 23,
+                "power": 1,
+                "mp": 137,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 24,
+                "power": 1,
+                "mp": 139,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 25,
+                "power": 1,
+                "mp": 140,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 26,
+                "power": 1,
+                "mp": 142,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 27,
+                "power": 1,
+                "mp": 144,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -18011,6 +18171,22 @@
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
+            },
+            {
+                "level": 5,
+                "power": 1,
+                "mp": 60,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 6,
+                "power": 1,
+                "mp": 67,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
             }
         ]
     },
@@ -18104,6 +18280,22 @@
                 "level": 4,
                 "power": 1,
                 "mp": 52,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 5,
+                "power": 1,
+                "mp": 58,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 6,
+                "power": 1,
+                "mp": 65,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -18255,7 +18447,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 84,
+                "mp": 105,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -18263,7 +18455,7 @@
             {
                 "level": 2,
                 "power": 1,
-                "mp": 122,
+                "mp": 153,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19191,7 +19383,7 @@
             {
                 "level": 1,
                 "power": 30,
-                "mp": 24,
+                "mp": 30,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19199,7 +19391,7 @@
             {
                 "level": 2,
                 "power": 33,
-                "mp": 28,
+                "mp": 35,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19207,7 +19399,7 @@
             {
                 "level": 3,
                 "power": 37,
-                "mp": 31,
+                "mp": 39,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19215,7 +19407,7 @@
             {
                 "level": 4,
                 "power": 40,
-                "mp": 35,
+                "mp": 44,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19223,7 +19415,7 @@
             {
                 "level": 5,
                 "power": 43,
-                "mp": 38,
+                "mp": 48,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19231,7 +19423,7 @@
             {
                 "level": 6,
                 "power": 47,
-                "mp": 41,
+                "mp": 52,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19239,7 +19431,7 @@
             {
                 "level": 7,
                 "power": 50,
-                "mp": 43,
+                "mp": 54,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19247,7 +19439,7 @@
             {
                 "level": 8,
                 "power": 53,
-                "mp": 44,
+                "mp": 55,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19255,7 +19447,7 @@
             {
                 "level": 9,
                 "power": 57,
-                "mp": 46,
+                "mp": 58,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19263,7 +19455,7 @@
             {
                 "level": 10,
                 "power": 60,
-                "mp": 48,
+                "mp": 60,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19271,7 +19463,7 @@
             {
                 "level": 11,
                 "power": 63,
-                "mp": 49,
+                "mp": 62,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19279,7 +19471,7 @@
             {
                 "level": 12,
                 "power": 67,
-                "mp": 51,
+                "mp": 64,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19287,7 +19479,7 @@
             {
                 "level": 13,
                 "power": 70,
-                "mp": 52,
+                "mp": 65,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19295,7 +19487,7 @@
             {
                 "level": 14,
                 "power": 75,
-                "mp": 53,
+                "mp": 67,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19303,7 +19495,7 @@
             {
                 "level": 15,
                 "power": 80,
-                "mp": 55,
+                "mp": 69,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19759,7 +19951,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 12,
+                "mp": 15,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19767,7 +19959,7 @@
             {
                 "level": 2,
                 "power": 1,
-                "mp": 16,
+                "mp": 20,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19775,7 +19967,7 @@
             {
                 "level": 3,
                 "power": 1,
-                "mp": 18,
+                "mp": 23,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19783,7 +19975,7 @@
             {
                 "level": 4,
                 "power": 1,
-                "mp": 21,
+                "mp": 27,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19791,7 +19983,7 @@
             {
                 "level": 5,
                 "power": 1,
-                "mp": 24,
+                "mp": 30,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19799,7 +19991,7 @@
             {
                 "level": 6,
                 "power": 1,
-                "mp": 28,
+                "mp": 35,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19807,7 +19999,7 @@
             {
                 "level": 7,
                 "power": 1,
-                "mp": 31,
+                "mp": 39,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19815,7 +20007,7 @@
             {
                 "level": 8,
                 "power": 1,
-                "mp": 35,
+                "mp": 44,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19823,7 +20015,7 @@
             {
                 "level": 9,
                 "power": 1,
-                "mp": 38,
+                "mp": 48,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19831,7 +20023,7 @@
             {
                 "level": 10,
                 "power": 1,
-                "mp": 41,
+                "mp": 52,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19839,7 +20031,7 @@
             {
                 "level": 11,
                 "power": 1,
-                "mp": 43,
+                "mp": 54,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19847,7 +20039,7 @@
             {
                 "level": 12,
                 "power": 1,
-                "mp": 44,
+                "mp": 55,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19855,7 +20047,7 @@
             {
                 "level": 13,
                 "power": 1,
-                "mp": 46,
+                "mp": 58,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19863,7 +20055,7 @@
             {
                 "level": 14,
                 "power": 1,
-                "mp": 48,
+                "mp": 60,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19871,7 +20063,7 @@
             {
                 "level": 15,
                 "power": 1,
-                "mp": 49,
+                "mp": 62,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19879,7 +20071,7 @@
             {
                 "level": 16,
                 "power": 1,
-                "mp": 51,
+                "mp": 64,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19887,7 +20079,7 @@
             {
                 "level": 17,
                 "power": 1,
-                "mp": 52,
+                "mp": 65,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19895,7 +20087,7 @@
             {
                 "level": 18,
                 "power": 1,
-                "mp": 53,
+                "mp": 67,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19903,7 +20095,7 @@
             {
                 "level": 19,
                 "power": 1,
-                "mp": 55,
+                "mp": 69,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19927,7 +20119,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 8,
+                "mp": 10,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19935,7 +20127,7 @@
             {
                 "level": 2,
                 "power": 2,
-                "mp": 12,
+                "mp": 15,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19943,7 +20135,7 @@
             {
                 "level": 3,
                 "power": 3,
-                "mp": 16,
+                "mp": 20,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19951,7 +20143,7 @@
             {
                 "level": 4,
                 "power": 5,
-                "mp": 28,
+                "mp": 35,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -19959,7 +20151,7 @@
             {
                 "level": 5,
                 "power": 6,
-                "mp": 38,
+                "mp": 48,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22773,7 +22965,7 @@
             {
                 "level": 1,
                 "power": 31,
-                "mp": 33,
+                "mp": 42,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22781,7 +22973,7 @@
             {
                 "level": 2,
                 "power": 33,
-                "mp": 35,
+                "mp": 44,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22789,7 +22981,7 @@
             {
                 "level": 3,
                 "power": 34,
-                "mp": 36,
+                "mp": 45,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22797,7 +22989,7 @@
             {
                 "level": 4,
                 "power": 36,
-                "mp": 38,
+                "mp": 48,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22805,7 +22997,7 @@
             {
                 "level": 5,
                 "power": 38,
-                "mp": 39,
+                "mp": 49,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22813,7 +23005,7 @@
             {
                 "level": 6,
                 "power": 39,
-                "mp": 41,
+                "mp": 52,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22821,7 +23013,7 @@
             {
                 "level": 7,
                 "power": 41,
-                "mp": 43,
+                "mp": 54,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22829,7 +23021,7 @@
             {
                 "level": 8,
                 "power": 43,
-                "mp": 44,
+                "mp": 55,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22837,7 +23029,7 @@
             {
                 "level": 9,
                 "power": 45,
-                "mp": 46,
+                "mp": 58,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22845,7 +23037,7 @@
             {
                 "level": 10,
                 "power": 46,
-                "mp": 48,
+                "mp": 60,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22853,7 +23045,7 @@
             {
                 "level": 11,
                 "power": 48,
-                "mp": 49,
+                "mp": 62,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22861,7 +23053,7 @@
             {
                 "level": 12,
                 "power": 50,
-                "mp": 51,
+                "mp": 64,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22869,7 +23061,7 @@
             {
                 "level": 13,
                 "power": 51,
-                "mp": 52,
+                "mp": 65,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22877,7 +23069,7 @@
             {
                 "level": 14,
                 "power": 53,
-                "mp": 53,
+                "mp": 67,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22885,7 +23077,7 @@
             {
                 "level": 15,
                 "power": 54,
-                "mp": 55,
+                "mp": 69,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22909,7 +23101,7 @@
             {
                 "level": 1,
                 "power": 50,
-                "mp": 31,
+                "mp": 39,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22917,7 +23109,7 @@
             {
                 "level": 2,
                 "power": 50,
-                "mp": 35,
+                "mp": 44,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22925,7 +23117,7 @@
             {
                 "level": 3,
                 "power": 50,
-                "mp": 38,
+                "mp": 48,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22933,7 +23125,7 @@
             {
                 "level": 4,
                 "power": 50,
-                "mp": 41,
+                "mp": 52,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22941,7 +23133,7 @@
             {
                 "level": 5,
                 "power": 50,
-                "mp": 43,
+                "mp": 54,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22949,7 +23141,7 @@
             {
                 "level": 6,
                 "power": 50,
-                "mp": 44,
+                "mp": 55,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22957,7 +23149,7 @@
             {
                 "level": 7,
                 "power": 50,
-                "mp": 46,
+                "mp": 58,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22965,7 +23157,7 @@
             {
                 "level": 8,
                 "power": 50,
-                "mp": 48,
+                "mp": 60,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22973,7 +23165,7 @@
             {
                 "level": 9,
                 "power": 50,
-                "mp": 49,
+                "mp": 62,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22981,7 +23173,7 @@
             {
                 "level": 10,
                 "power": 50,
-                "mp": 51,
+                "mp": 64,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22989,7 +23181,7 @@
             {
                 "level": 11,
                 "power": 50,
-                "mp": 52,
+                "mp": 65,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -22997,7 +23189,7 @@
             {
                 "level": 12,
                 "power": 50,
-                "mp": 53,
+                "mp": 67,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -23005,7 +23197,7 @@
             {
                 "level": 13,
                 "power": 50,
-                "mp": 55,
+                "mp": 69,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -24254,7 +24446,7 @@
         },
         "time": {
             "hitTime": 1500,
-            "reuse": 2500,
+            "reuse": 2000,
             "buff": 0
         },
         "levels": [
@@ -25345,6 +25537,78 @@
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
+            },
+            {
+                "level": 25,
+                "power": 1,
+                "mp": 54,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 26,
+                "power": 1,
+                "mp": 55,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 27,
+                "power": 1,
+                "mp": 58,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 28,
+                "power": 1,
+                "mp": 60,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 29,
+                "power": 1,
+                "mp": 62,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 30,
+                "power": 1,
+                "mp": 64,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 31,
+                "power": 1,
+                "mp": 65,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 32,
+                "power": 1,
+                "mp": 67,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 33,
+                "power": 1,
+                "mp": 69,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
             }
         ]
     },
@@ -25397,7 +25661,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 15,
+                "mp": 3,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -25405,7 +25669,7 @@
             {
                 "level": 2,
                 "power": 1,
-                "mp": 20,
+                "mp": 10,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -25413,7 +25677,7 @@
             {
                 "level": 3,
                 "power": 1,
-                "mp": 35,
+                "mp": 12,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -25421,7 +25685,7 @@
             {
                 "level": 4,
                 "power": 1,
-                "mp": 44,
+                "mp": 14,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -25429,7 +25693,119 @@
             {
                 "level": 5,
                 "power": 1,
+                "mp": 15,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 6,
+                "power": 1,
+                "mp": 35,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 7,
+                "power": 1,
+                "mp": 39,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 8,
+                "power": 1,
+                "mp": 44,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 9,
+                "power": 1,
+                "mp": 48,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 10,
+                "power": 1,
                 "mp": 52,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 11,
+                "power": 1,
+                "mp": 54,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 12,
+                "power": 1,
+                "mp": 55,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 13,
+                "power": 1,
+                "mp": 58,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 14,
+                "power": 1,
+                "mp": 60,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 15,
+                "power": 1,
+                "mp": 62,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 16,
+                "power": 1,
+                "mp": 64,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 17,
+                "power": 1,
+                "mp": 65,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 18,
+                "power": 1,
+                "mp": 67,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 19,
+                "power": 1,
+                "mp": 69,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28101,6 +28477,78 @@
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
+            },
+            {
+                "level": 10,
+                "power": 1,
+                "mp": 189,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 11,
+                "power": 1,
+                "mp": 195,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 12,
+                "power": 1,
+                "mp": 199,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 13,
+                "power": 1,
+                "mp": 207,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 14,
+                "power": 1,
+                "mp": 214,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 15,
+                "power": 1,
+                "mp": 222,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 16,
+                "power": 1,
+                "mp": 228,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 17,
+                "power": 1,
+                "mp": 233,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 18,
+                "power": 1,
+                "mp": 239,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
             }
         ]
     },
@@ -28121,7 +28569,7 @@
             {
                 "level": 1,
                 "power": 49,
-                "mp": 27,
+                "mp": 34,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28129,7 +28577,7 @@
             {
                 "level": 2,
                 "power": 52,
-                "mp": 28,
+                "mp": 35,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28137,7 +28585,7 @@
             {
                 "level": 3,
                 "power": 55,
-                "mp": 30,
+                "mp": 38,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28145,7 +28593,7 @@
             {
                 "level": 4,
                 "power": 58,
-                "mp": 31,
+                "mp": 39,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28153,7 +28601,7 @@
             {
                 "level": 5,
                 "power": 61,
-                "mp": 33,
+                "mp": 42,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28161,7 +28609,7 @@
             {
                 "level": 6,
                 "power": 65,
-                "mp": 35,
+                "mp": 44,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28169,7 +28617,7 @@
             {
                 "level": 7,
                 "power": 68,
-                "mp": 36,
+                "mp": 45,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28177,7 +28625,7 @@
             {
                 "level": 8,
                 "power": 72,
-                "mp": 38,
+                "mp": 48,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28185,7 +28633,7 @@
             {
                 "level": 9,
                 "power": 75,
-                "mp": 39,
+                "mp": 49,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28193,7 +28641,7 @@
             {
                 "level": 10,
                 "power": 78,
-                "mp": 41,
+                "mp": 52,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28201,7 +28649,7 @@
             {
                 "level": 11,
                 "power": 80,
-                "mp": 42,
+                "mp": 53,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28209,7 +28657,7 @@
             {
                 "level": 12,
                 "power": 82,
-                "mp": 43,
+                "mp": 54,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28217,7 +28665,7 @@
             {
                 "level": 13,
                 "power": 84,
-                "mp": 44,
+                "mp": 55,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28225,7 +28673,7 @@
             {
                 "level": 14,
                 "power": 85,
-                "mp": 44,
+                "mp": 55,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28233,7 +28681,7 @@
             {
                 "level": 15,
                 "power": 87,
-                "mp": 45,
+                "mp": 57,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28241,7 +28689,7 @@
             {
                 "level": 16,
                 "power": 89,
-                "mp": 46,
+                "mp": 58,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28249,7 +28697,7 @@
             {
                 "level": 17,
                 "power": 90,
-                "mp": 47,
+                "mp": 59,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28257,7 +28705,7 @@
             {
                 "level": 18,
                 "power": 92,
-                "mp": 48,
+                "mp": 60,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28265,7 +28713,7 @@
             {
                 "level": 19,
                 "power": 94,
-                "mp": 48,
+                "mp": 60,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28273,7 +28721,7 @@
             {
                 "level": 20,
                 "power": 96,
-                "mp": 49,
+                "mp": 62,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28281,7 +28729,7 @@
             {
                 "level": 21,
                 "power": 97,
-                "mp": 50,
+                "mp": 63,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28289,7 +28737,7 @@
             {
                 "level": 22,
                 "power": 99,
-                "mp": 51,
+                "mp": 64,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28297,7 +28745,7 @@
             {
                 "level": 23,
                 "power": 100,
-                "mp": 51,
+                "mp": 64,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28305,7 +28753,7 @@
             {
                 "level": 24,
                 "power": 102,
-                "mp": 52,
+                "mp": 65,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28313,7 +28761,7 @@
             {
                 "level": 25,
                 "power": 104,
-                "mp": 53,
+                "mp": 67,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28321,7 +28769,7 @@
             {
                 "level": 26,
                 "power": 105,
-                "mp": 53,
+                "mp": 67,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28329,7 +28777,7 @@
             {
                 "level": 27,
                 "power": 107,
-                "mp": 54,
+                "mp": 68,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28337,7 +28785,7 @@
             {
                 "level": 28,
                 "power": 108,
-                "mp": 55,
+                "mp": 69,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28361,7 +28809,7 @@
             {
                 "level": 1,
                 "power": 39,
-                "mp": 27,
+                "mp": 34,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28369,7 +28817,7 @@
             {
                 "level": 2,
                 "power": 42,
-                "mp": 28,
+                "mp": 35,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28377,7 +28825,7 @@
             {
                 "level": 3,
                 "power": 44,
-                "mp": 30,
+                "mp": 38,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28385,7 +28833,7 @@
             {
                 "level": 4,
                 "power": 47,
-                "mp": 31,
+                "mp": 39,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28393,7 +28841,7 @@
             {
                 "level": 5,
                 "power": 49,
-                "mp": 33,
+                "mp": 42,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28401,7 +28849,7 @@
             {
                 "level": 6,
                 "power": 52,
-                "mp": 35,
+                "mp": 44,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28409,7 +28857,7 @@
             {
                 "level": 7,
                 "power": 55,
-                "mp": 36,
+                "mp": 45,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28417,7 +28865,7 @@
             {
                 "level": 8,
                 "power": 57,
-                "mp": 38,
+                "mp": 48,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28425,7 +28873,7 @@
             {
                 "level": 9,
                 "power": 60,
-                "mp": 39,
+                "mp": 49,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28433,7 +28881,7 @@
             {
                 "level": 10,
                 "power": 63,
-                "mp": 41,
+                "mp": 52,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28441,7 +28889,7 @@
             {
                 "level": 11,
                 "power": 64,
-                "mp": 42,
+                "mp": 53,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28449,7 +28897,7 @@
             {
                 "level": 12,
                 "power": 66,
-                "mp": 43,
+                "mp": 54,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28457,7 +28905,7 @@
             {
                 "level": 13,
                 "power": 67,
-                "mp": 44,
+                "mp": 55,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28465,7 +28913,7 @@
             {
                 "level": 14,
                 "power": 68,
-                "mp": 44,
+                "mp": 55,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28473,7 +28921,7 @@
             {
                 "level": 15,
                 "power": 70,
-                "mp": 45,
+                "mp": 57,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28481,7 +28929,7 @@
             {
                 "level": 16,
                 "power": 71,
-                "mp": 46,
+                "mp": 58,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28489,7 +28937,7 @@
             {
                 "level": 17,
                 "power": 72,
-                "mp": 47,
+                "mp": 59,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28497,7 +28945,7 @@
             {
                 "level": 18,
                 "power": 74,
-                "mp": 48,
+                "mp": 60,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28505,7 +28953,7 @@
             {
                 "level": 19,
                 "power": 75,
-                "mp": 48,
+                "mp": 60,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28513,7 +28961,7 @@
             {
                 "level": 20,
                 "power": 77,
-                "mp": 49,
+                "mp": 62,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28521,7 +28969,7 @@
             {
                 "level": 21,
                 "power": 78,
-                "mp": 50,
+                "mp": 63,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28529,7 +28977,7 @@
             {
                 "level": 22,
                 "power": 79,
-                "mp": 51,
+                "mp": 64,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28537,7 +28985,7 @@
             {
                 "level": 23,
                 "power": 80,
-                "mp": 51,
+                "mp": 64,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28545,7 +28993,7 @@
             {
                 "level": 24,
                 "power": 82,
-                "mp": 52,
+                "mp": 65,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28553,7 +29001,7 @@
             {
                 "level": 25,
                 "power": 83,
-                "mp": 53,
+                "mp": 67,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28561,7 +29009,7 @@
             {
                 "level": 26,
                 "power": 84,
-                "mp": 53,
+                "mp": 67,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28569,7 +29017,7 @@
             {
                 "level": 27,
                 "power": 85,
-                "mp": 54,
+                "mp": 68,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28577,7 +29025,7 @@
             {
                 "level": 28,
                 "power": 87,
-                "mp": 55,
+                "mp": 69,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28601,7 +29049,7 @@
             {
                 "level": 1,
                 "power": 10,
-                "mp": 28,
+                "mp": 35,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28609,7 +29057,7 @@
             {
                 "level": 2,
                 "power": 15,
-                "mp": 35,
+                "mp": 44,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28617,7 +29065,7 @@
             {
                 "level": 3,
                 "power": 20,
-                "mp": 41,
+                "mp": 52,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28641,7 +29089,7 @@
             {
                 "level": 1,
                 "power": 70,
-                "mp": 52,
+                "mp": 65,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28649,7 +29097,7 @@
             {
                 "level": 2,
                 "power": 70,
-                "mp": 61,
+                "mp": 77,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28657,7 +29105,7 @@
             {
                 "level": 3,
                 "power": 70,
-                "mp": 71,
+                "mp": 89,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28665,7 +29113,7 @@
             {
                 "level": 4,
                 "power": 70,
-                "mp": 82,
+                "mp": 103,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28929,7 +29377,7 @@
             {
                 "level": 1,
                 "power": 49,
-                "mp": 27,
+                "mp": 34,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28937,7 +29385,7 @@
             {
                 "level": 2,
                 "power": 52,
-                "mp": 28,
+                "mp": 35,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28945,7 +29393,7 @@
             {
                 "level": 3,
                 "power": 55,
-                "mp": 30,
+                "mp": 38,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28953,7 +29401,7 @@
             {
                 "level": 4,
                 "power": 58,
-                "mp": 31,
+                "mp": 39,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28961,7 +29409,7 @@
             {
                 "level": 5,
                 "power": 61,
-                "mp": 33,
+                "mp": 42,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28969,7 +29417,7 @@
             {
                 "level": 6,
                 "power": 65,
-                "mp": 35,
+                "mp": 44,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28977,7 +29425,7 @@
             {
                 "level": 7,
                 "power": 68,
-                "mp": 36,
+                "mp": 45,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28985,7 +29433,7 @@
             {
                 "level": 8,
                 "power": 72,
-                "mp": 38,
+                "mp": 48,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -28993,7 +29441,7 @@
             {
                 "level": 9,
                 "power": 75,
-                "mp": 39,
+                "mp": 49,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29001,7 +29449,7 @@
             {
                 "level": 10,
                 "power": 78,
-                "mp": 41,
+                "mp": 52,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29009,7 +29457,7 @@
             {
                 "level": 11,
                 "power": 80,
-                "mp": 42,
+                "mp": 53,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29017,7 +29465,7 @@
             {
                 "level": 12,
                 "power": 82,
-                "mp": 43,
+                "mp": 54,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29025,7 +29473,7 @@
             {
                 "level": 13,
                 "power": 84,
-                "mp": 44,
+                "mp": 55,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29033,7 +29481,7 @@
             {
                 "level": 14,
                 "power": 85,
-                "mp": 44,
+                "mp": 55,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29041,7 +29489,7 @@
             {
                 "level": 15,
                 "power": 87,
-                "mp": 45,
+                "mp": 57,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29049,7 +29497,7 @@
             {
                 "level": 16,
                 "power": 89,
-                "mp": 46,
+                "mp": 58,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29057,7 +29505,7 @@
             {
                 "level": 17,
                 "power": 90,
-                "mp": 47,
+                "mp": 59,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29065,7 +29513,7 @@
             {
                 "level": 18,
                 "power": 92,
-                "mp": 48,
+                "mp": 60,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29073,7 +29521,7 @@
             {
                 "level": 19,
                 "power": 94,
-                "mp": 48,
+                "mp": 60,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29081,7 +29529,7 @@
             {
                 "level": 20,
                 "power": 96,
-                "mp": 49,
+                "mp": 62,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29089,7 +29537,7 @@
             {
                 "level": 21,
                 "power": 97,
-                "mp": 50,
+                "mp": 63,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29097,7 +29545,7 @@
             {
                 "level": 22,
                 "power": 99,
-                "mp": 51,
+                "mp": 64,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29105,7 +29553,7 @@
             {
                 "level": 23,
                 "power": 100,
-                "mp": 51,
+                "mp": 64,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29113,7 +29561,7 @@
             {
                 "level": 24,
                 "power": 102,
-                "mp": 52,
+                "mp": 65,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29121,7 +29569,7 @@
             {
                 "level": 25,
                 "power": 104,
-                "mp": 53,
+                "mp": 67,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29129,7 +29577,7 @@
             {
                 "level": 26,
                 "power": 105,
-                "mp": 53,
+                "mp": 67,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29137,7 +29585,7 @@
             {
                 "level": 27,
                 "power": 107,
-                "mp": 54,
+                "mp": 68,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29145,7 +29593,7 @@
             {
                 "level": 28,
                 "power": 108,
-                "mp": 55,
+                "mp": 69,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29169,7 +29617,7 @@
             {
                 "level": 1,
                 "power": 30,
-                "mp": 27,
+                "mp": 34,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29177,7 +29625,7 @@
             {
                 "level": 2,
                 "power": 31,
-                "mp": 28,
+                "mp": 35,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29185,7 +29633,7 @@
             {
                 "level": 3,
                 "power": 33,
-                "mp": 30,
+                "mp": 38,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29193,7 +29641,7 @@
             {
                 "level": 4,
                 "power": 35,
-                "mp": 31,
+                "mp": 39,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29201,7 +29649,7 @@
             {
                 "level": 5,
                 "power": 37,
-                "mp": 33,
+                "mp": 42,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29209,7 +29657,7 @@
             {
                 "level": 6,
                 "power": 39,
-                "mp": 35,
+                "mp": 44,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29217,7 +29665,7 @@
             {
                 "level": 7,
                 "power": 41,
-                "mp": 36,
+                "mp": 45,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29225,7 +29673,7 @@
             {
                 "level": 8,
                 "power": 43,
-                "mp": 38,
+                "mp": 48,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29233,7 +29681,7 @@
             {
                 "level": 9,
                 "power": 45,
-                "mp": 39,
+                "mp": 49,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29241,7 +29689,7 @@
             {
                 "level": 10,
                 "power": 47,
-                "mp": 41,
+                "mp": 52,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29249,7 +29697,7 @@
             {
                 "level": 11,
                 "power": 49,
-                "mp": 43,
+                "mp": 54,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29257,7 +29705,7 @@
             {
                 "level": 12,
                 "power": 51,
-                "mp": 44,
+                "mp": 55,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29265,7 +29713,7 @@
             {
                 "level": 13,
                 "power": 53,
-                "mp": 46,
+                "mp": 58,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29273,7 +29721,7 @@
             {
                 "level": 14,
                 "power": 56,
-                "mp": 48,
+                "mp": 60,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29281,7 +29729,7 @@
             {
                 "level": 15,
                 "power": 58,
-                "mp": 49,
+                "mp": 62,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29289,7 +29737,7 @@
             {
                 "level": 16,
                 "power": 59,
-                "mp": 51,
+                "mp": 64,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29297,7 +29745,7 @@
             {
                 "level": 17,
                 "power": 61,
-                "mp": 52,
+                "mp": 65,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29305,7 +29753,7 @@
             {
                 "level": 18,
                 "power": 63,
-                "mp": 53,
+                "mp": 67,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29313,7 +29761,7 @@
             {
                 "level": 19,
                 "power": 65,
-                "mp": 55,
+                "mp": 69,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29337,7 +29785,7 @@
             {
                 "level": 1,
                 "power": 28,
-                "mp": 30,
+                "mp": 38,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29345,7 +29793,7 @@
             {
                 "level": 2,
                 "power": 29,
-                "mp": 32,
+                "mp": 40,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29353,7 +29801,7 @@
             {
                 "level": 3,
                 "power": 31,
-                "mp": 34,
+                "mp": 43,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29361,7 +29809,7 @@
             {
                 "level": 4,
                 "power": 33,
-                "mp": 36,
+                "mp": 45,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29369,7 +29817,7 @@
             {
                 "level": 5,
                 "power": 34,
-                "mp": 38,
+                "mp": 48,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29377,7 +29825,7 @@
             {
                 "level": 6,
                 "power": 36,
-                "mp": 39,
+                "mp": 49,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29385,7 +29833,7 @@
             {
                 "level": 7,
                 "power": 38,
-                "mp": 41,
+                "mp": 52,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29393,7 +29841,7 @@
             {
                 "level": 8,
                 "power": 39,
-                "mp": 43,
+                "mp": 54,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29401,7 +29849,7 @@
             {
                 "level": 9,
                 "power": 41,
-                "mp": 45,
+                "mp": 56,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29409,7 +29857,7 @@
             {
                 "level": 10,
                 "power": 43,
-                "mp": 46,
+                "mp": 58,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29417,7 +29865,7 @@
             {
                 "level": 11,
                 "power": 45,
-                "mp": 48,
+                "mp": 60,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29425,7 +29873,7 @@
             {
                 "level": 12,
                 "power": 46,
-                "mp": 49,
+                "mp": 62,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29433,7 +29881,7 @@
             {
                 "level": 13,
                 "power": 48,
-                "mp": 51,
+                "mp": 64,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29441,7 +29889,7 @@
             {
                 "level": 14,
                 "power": 50,
-                "mp": 53,
+                "mp": 66,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29449,7 +29897,7 @@
             {
                 "level": 15,
                 "power": 51,
-                "mp": 54,
+                "mp": 68,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29457,7 +29905,7 @@
             {
                 "level": 16,
                 "power": 53,
-                "mp": 56,
+                "mp": 70,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29465,7 +29913,7 @@
             {
                 "level": 17,
                 "power": 54,
-                "mp": 57,
+                "mp": 72,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29489,7 +29937,7 @@
             {
                 "level": 1,
                 "power": 10,
-                "mp": 28,
+                "mp": 35,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29497,7 +29945,7 @@
             {
                 "level": 2,
                 "power": 15,
-                "mp": 35,
+                "mp": 44,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29505,7 +29953,7 @@
             {
                 "level": 3,
                 "power": 20,
-                "mp": 41,
+                "mp": 52,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29529,7 +29977,7 @@
             {
                 "level": 1,
                 "power": 49,
-                "mp": 27,
+                "mp": 34,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29537,7 +29985,7 @@
             {
                 "level": 2,
                 "power": 52,
-                "mp": 28,
+                "mp": 35,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29545,7 +29993,7 @@
             {
                 "level": 3,
                 "power": 55,
-                "mp": 30,
+                "mp": 38,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29553,7 +30001,7 @@
             {
                 "level": 4,
                 "power": 58,
-                "mp": 31,
+                "mp": 39,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29561,7 +30009,7 @@
             {
                 "level": 5,
                 "power": 61,
-                "mp": 33,
+                "mp": 42,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29569,7 +30017,7 @@
             {
                 "level": 6,
                 "power": 65,
-                "mp": 35,
+                "mp": 44,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29577,7 +30025,7 @@
             {
                 "level": 7,
                 "power": 68,
-                "mp": 36,
+                "mp": 45,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29585,7 +30033,7 @@
             {
                 "level": 8,
                 "power": 72,
-                "mp": 38,
+                "mp": 48,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29593,7 +30041,7 @@
             {
                 "level": 9,
                 "power": 75,
-                "mp": 39,
+                "mp": 49,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29601,7 +30049,7 @@
             {
                 "level": 10,
                 "power": 78,
-                "mp": 41,
+                "mp": 52,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29609,7 +30057,7 @@
             {
                 "level": 11,
                 "power": 80,
-                "mp": 42,
+                "mp": 53,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29617,7 +30065,7 @@
             {
                 "level": 12,
                 "power": 82,
-                "mp": 43,
+                "mp": 54,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29625,7 +30073,7 @@
             {
                 "level": 13,
                 "power": 84,
-                "mp": 44,
+                "mp": 55,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29633,7 +30081,7 @@
             {
                 "level": 14,
                 "power": 85,
-                "mp": 44,
+                "mp": 55,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29641,7 +30089,7 @@
             {
                 "level": 15,
                 "power": 87,
-                "mp": 45,
+                "mp": 57,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29649,7 +30097,7 @@
             {
                 "level": 16,
                 "power": 89,
-                "mp": 46,
+                "mp": 58,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29657,7 +30105,7 @@
             {
                 "level": 17,
                 "power": 90,
-                "mp": 47,
+                "mp": 59,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29665,7 +30113,7 @@
             {
                 "level": 18,
                 "power": 92,
-                "mp": 48,
+                "mp": 60,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29673,7 +30121,7 @@
             {
                 "level": 19,
                 "power": 94,
-                "mp": 48,
+                "mp": 60,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29681,7 +30129,7 @@
             {
                 "level": 20,
                 "power": 96,
-                "mp": 49,
+                "mp": 62,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29689,7 +30137,7 @@
             {
                 "level": 21,
                 "power": 97,
-                "mp": 50,
+                "mp": 63,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29697,7 +30145,7 @@
             {
                 "level": 22,
                 "power": 99,
-                "mp": 51,
+                "mp": 64,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29705,7 +30153,7 @@
             {
                 "level": 23,
                 "power": 100,
-                "mp": 51,
+                "mp": 64,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29713,7 +30161,7 @@
             {
                 "level": 24,
                 "power": 102,
-                "mp": 52,
+                "mp": 65,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29721,7 +30169,7 @@
             {
                 "level": 25,
                 "power": 104,
-                "mp": 53,
+                "mp": 67,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29729,7 +30177,7 @@
             {
                 "level": 26,
                 "power": 105,
-                "mp": 53,
+                "mp": 67,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29737,7 +30185,7 @@
             {
                 "level": 27,
                 "power": 107,
-                "mp": 54,
+                "mp": 68,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29745,7 +30193,7 @@
             {
                 "level": 28,
                 "power": 108,
-                "mp": 55,
+                "mp": 69,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29869,6 +30317,30 @@
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
+            },
+            {
+                "level": 4,
+                "power": 1,
+                "mp": 58,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 5,
+                "power": 1,
+                "mp": 62,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 6,
+                "power": 1,
+                "mp": 65,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
             }
         ]
     },
@@ -29889,7 +30361,7 @@
             {
                 "level": 1,
                 "power": 70,
-                "mp": 42,
+                "mp": 53,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29897,7 +30369,7 @@
             {
                 "level": 2,
                 "power": 70,
-                "mp": 56,
+                "mp": 70,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29905,7 +30377,7 @@
             {
                 "level": 3,
                 "power": 70,
-                "mp": 71,
+                "mp": 89,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -29913,7 +30385,7 @@
             {
                 "level": 4,
                 "power": 70,
-                "mp": 80,
+                "mp": 100,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30189,6 +30661,102 @@
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
+            },
+            {
+                "level": 3,
+                "power": 1,
+                "mp": 65,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 4,
+                "power": 1,
+                "mp": 70,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 5,
+                "power": 1,
+                "mp": 77,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 6,
+                "power": 1,
+                "mp": 80,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 7,
+                "power": 1,
+                "mp": 83,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 8,
+                "power": 1,
+                "mp": 87,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 9,
+                "power": 1,
+                "mp": 89,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 10,
+                "power": 1,
+                "mp": 93,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 11,
+                "power": 1,
+                "mp": 95,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 12,
+                "power": 1,
+                "mp": 98,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 13,
+                "power": 1,
+                "mp": 100,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 14,
+                "power": 1,
+                "mp": 103,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
             }
         ]
     },
@@ -30321,7 +30889,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 232,
+                "mp": 154,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30329,7 +30897,7 @@
             {
                 "level": 2,
                 "power": 1,
-                "mp": 280,
+                "mp": 188,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30337,7 +30905,7 @@
             {
                 "level": 3,
                 "power": 1,
-                "mp": 305,
+                "mp": 204,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30361,7 +30929,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 209,
+                "mp": 139,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30369,7 +30937,7 @@
             {
                 "level": 2,
                 "power": 1,
-                "mp": 257,
+                "mp": 172,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30377,7 +30945,7 @@
             {
                 "level": 3,
                 "power": 1,
-                "mp": 305,
+                "mp": 204,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30513,7 +31081,7 @@
             {
                 "level": 1,
                 "power": 0,
-                "mp": 194,
+                "mp": 243,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30521,7 +31089,7 @@
             {
                 "level": 2,
                 "power": 20,
-                "mp": 214,
+                "mp": 268,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30529,7 +31097,7 @@
             {
                 "level": 3,
                 "power": 30,
-                "mp": 261,
+                "mp": 327,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30537,7 +31105,7 @@
             {
                 "level": 4,
                 "power": 40,
-                "mp": 288,
+                "mp": 360,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30545,7 +31113,7 @@
             {
                 "level": 5,
                 "power": 50,
-                "mp": 301,
+                "mp": 377,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30553,7 +31121,7 @@
             {
                 "level": 6,
                 "power": 55,
-                "mp": 353,
+                "mp": 442,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30577,7 +31145,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 205,
+                "mp": 257,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30585,7 +31153,7 @@
             {
                 "level": 2,
                 "power": 1,
-                "mp": 244,
+                "mp": 305,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30609,7 +31177,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 202,
+                "mp": 134,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30617,7 +31185,7 @@
             {
                 "level": 2,
                 "power": 1,
-                "mp": 224,
+                "mp": 152,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30625,7 +31193,7 @@
             {
                 "level": 3,
                 "power": 1,
-                "mp": 239,
+                "mp": 164,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30633,7 +31201,79 @@
             {
                 "level": 4,
                 "power": 1,
-                "mp": 260,
+                "mp": 180,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 5,
+                "power": 1,
+                "mp": 189,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 6,
+                "power": 1,
+                "mp": 195,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 7,
+                "power": 1,
+                "mp": 199,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 8,
+                "power": 1,
+                "mp": 207,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 9,
+                "power": 1,
+                "mp": 214,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 10,
+                "power": 1,
+                "mp": 222,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 11,
+                "power": 1,
+                "mp": 228,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 12,
+                "power": 1,
+                "mp": 233,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 13,
+                "power": 1,
+                "mp": 239,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30745,7 +31385,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 36,
+                "mp": 35,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30753,7 +31393,23 @@
             {
                 "level": 2,
                 "power": 1,
-                "mp": 44,
+                "mp": 48,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 3,
+                "power": 1,
+                "mp": 58,
+                "hp": 0,
+                "itemId": 0,
+                "itemCount": 0
+            },
+            {
+                "level": 4,
+                "power": 1,
+                "mp": 65,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30777,7 +31433,7 @@
             {
                 "level": 1,
                 "power": 0,
-                "mp": 21,
+                "mp": 27,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30785,7 +31441,7 @@
             {
                 "level": 2,
                 "power": 0,
-                "mp": 31,
+                "mp": 39,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30793,7 +31449,7 @@
             {
                 "level": 3,
                 "power": 0,
-                "mp": 43,
+                "mp": 54,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30801,7 +31457,7 @@
             {
                 "level": 4,
                 "power": 0,
-                "mp": 53,
+                "mp": 67,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30825,7 +31481,7 @@
             {
                 "level": 1,
                 "power": 80,
-                "mp": 43,
+                "mp": 54,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30833,7 +31489,7 @@
             {
                 "level": 2,
                 "power": 80,
-                "mp": 44,
+                "mp": 55,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30841,7 +31497,7 @@
             {
                 "level": 3,
                 "power": 80,
-                "mp": 46,
+                "mp": 58,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30849,7 +31505,7 @@
             {
                 "level": 4,
                 "power": 80,
-                "mp": 48,
+                "mp": 60,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30857,7 +31513,7 @@
             {
                 "level": 5,
                 "power": 80,
-                "mp": 49,
+                "mp": 62,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30865,7 +31521,7 @@
             {
                 "level": 6,
                 "power": 80,
-                "mp": 51,
+                "mp": 64,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30873,7 +31529,7 @@
             {
                 "level": 7,
                 "power": 80,
-                "mp": 52,
+                "mp": 65,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30881,7 +31537,7 @@
             {
                 "level": 8,
                 "power": 80,
-                "mp": 53,
+                "mp": 67,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30889,7 +31545,7 @@
             {
                 "level": 9,
                 "power": 80,
-                "mp": 55,
+                "mp": 69,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -30913,7 +31569,7 @@
             {
                 "level": 1,
                 "power": 100,
-                "mp": 171,
+                "mp": 214,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -32154,7 +32810,7 @@
             {
                 "level": 2,
                 "power": 1,
-                "mp": 108,
+                "mp": 78,
                 "hp": 0,
                 "itemId": 1459,
                 "itemCount": 1,
@@ -32288,7 +32944,7 @@
             {
                 "level": 2,
                 "power": 1,
-                "mp": 108,
+                "mp": 78,
                 "hp": 0,
                 "itemId": 1459,
                 "itemCount": 1,
@@ -32422,7 +33078,7 @@
             {
                 "level": 2,
                 "power": 1,
-                "mp": 108,
+                "mp": 78,
                 "hp": 0,
                 "itemId": 1459,
                 "itemCount": 1,
@@ -37964,7 +38620,7 @@
             {
                 "level": 2,
                 "power": 80,
-                "mp": 23,
+                "mp": 22,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -37972,7 +38628,7 @@
             {
                 "level": 3,
                 "power": 80,
-                "mp": 32,
+                "mp": 31,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -38332,7 +38988,7 @@
             {
                 "level": 1,
                 "power": 266024,
-                "mp": 150,
+                "mp": 0,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -38564,7 +39220,7 @@
             {
                 "level": 1,
                 "power": 2,
-                "mp": 9,
+                "mp": 14,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -38572,7 +39228,7 @@
             {
                 "level": 2,
                 "power": 3,
-                "mp": 13,
+                "mp": 22,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -38580,7 +39236,7 @@
             {
                 "level": 3,
                 "power": 4,
-                "mp": 17,
+                "mp": 31,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -38588,7 +39244,7 @@
             {
                 "level": 4,
                 "power": 5,
-                "mp": 22,
+                "mp": 43,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -38596,7 +39252,7 @@
             {
                 "level": 5,
                 "power": 6,
-                "mp": 27,
+                "mp": 55,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -38604,7 +39260,7 @@
             {
                 "level": 6,
                 "power": 7,
-                "mp": 31,
+                "mp": 68,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -38612,7 +39268,7 @@
             {
                 "level": 7,
                 "power": 8,
-                "mp": 34,
+                "mp": 79,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -38620,7 +39276,7 @@
             {
                 "level": 8,
                 "power": 8,
-                "mp": 34,
+                "mp": 84,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -38628,7 +39284,7 @@
             {
                 "level": 9,
                 "power": 9,
-                "mp": 35,
+                "mp": 89,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -38636,7 +39292,7 @@
             {
                 "level": 10,
                 "power": 9,
-                "mp": 35,
+                "mp": 92,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -38644,7 +39300,7 @@
             {
                 "level": 11,
                 "power": 10,
-                "mp": 36,
+                "mp": 94,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -38652,7 +39308,7 @@
             {
                 "level": 12,
                 "power": 10,
-                "mp": 36,
+                "mp": 95,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42593,7 +43249,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 111,
+                "mp": 139,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42601,7 +43257,7 @@
             {
                 "level": 2,
                 "power": 1,
-                "mp": 137,
+                "mp": 172,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42609,7 +43265,7 @@
             {
                 "level": 3,
                 "power": 1,
-                "mp": 163,
+                "mp": 204,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42633,7 +43289,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 123,
+                "mp": 154,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42641,7 +43297,7 @@
             {
                 "level": 2,
                 "power": 1,
-                "mp": 150,
+                "mp": 188,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42665,7 +43321,7 @@
             {
                 "level": 1,
                 "power": 80,
-                "mp": 31,
+                "mp": 39,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42673,7 +43329,7 @@
             {
                 "level": 2,
                 "power": 80,
-                "mp": 35,
+                "mp": 44,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42681,7 +43337,7 @@
             {
                 "level": 3,
                 "power": 80,
-                "mp": 38,
+                "mp": 48,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42689,7 +43345,7 @@
             {
                 "level": 4,
                 "power": 80,
-                "mp": 41,
+                "mp": 52,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42697,7 +43353,7 @@
             {
                 "level": 5,
                 "power": 80,
-                "mp": 43,
+                "mp": 54,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42705,7 +43361,7 @@
             {
                 "level": 6,
                 "power": 80,
-                "mp": 44,
+                "mp": 55,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42713,7 +43369,7 @@
             {
                 "level": 7,
                 "power": 80,
-                "mp": 46,
+                "mp": 58,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42721,7 +43377,7 @@
             {
                 "level": 8,
                 "power": 80,
-                "mp": 48,
+                "mp": 60,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42729,7 +43385,7 @@
             {
                 "level": 9,
                 "power": 80,
-                "mp": 49,
+                "mp": 62,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42737,7 +43393,7 @@
             {
                 "level": 10,
                 "power": 80,
-                "mp": 51,
+                "mp": 64,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42745,7 +43401,7 @@
             {
                 "level": 11,
                 "power": 80,
-                "mp": 52,
+                "mp": 65,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42753,7 +43409,7 @@
             {
                 "level": 12,
                 "power": 80,
-                "mp": 53,
+                "mp": 67,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42761,7 +43417,7 @@
             {
                 "level": 13,
                 "power": 80,
-                "mp": 55,
+                "mp": 69,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42785,7 +43441,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 93,
+                "mp": 117,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42793,7 +43449,7 @@
             {
                 "level": 2,
                 "power": 1,
-                "mp": 103,
+                "mp": 129,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42801,7 +43457,7 @@
             {
                 "level": 3,
                 "power": 1,
-                "mp": 112,
+                "mp": 140,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42809,7 +43465,7 @@
             {
                 "level": 4,
                 "power": 1,
-                "mp": 122,
+                "mp": 153,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42817,7 +43473,7 @@
             {
                 "level": 5,
                 "power": 1,
-                "mp": 127,
+                "mp": 159,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42825,7 +43481,7 @@
             {
                 "level": 6,
                 "power": 1,
-                "mp": 132,
+                "mp": 165,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42833,7 +43489,7 @@
             {
                 "level": 7,
                 "power": 1,
-                "mp": 137,
+                "mp": 172,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42841,7 +43497,7 @@
             {
                 "level": 8,
                 "power": 1,
-                "mp": 142,
+                "mp": 178,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42849,7 +43505,7 @@
             {
                 "level": 9,
                 "power": 1,
-                "mp": 147,
+                "mp": 184,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42857,7 +43513,7 @@
             {
                 "level": 10,
                 "power": 1,
-                "mp": 151,
+                "mp": 189,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42865,7 +43521,7 @@
             {
                 "level": 11,
                 "power": 1,
-                "mp": 155,
+                "mp": 194,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42873,7 +43529,7 @@
             {
                 "level": 12,
                 "power": 1,
-                "mp": 159,
+                "mp": 199,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42881,7 +43537,7 @@
             {
                 "level": 13,
                 "power": 1,
-                "mp": 163,
+                "mp": 204,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42905,7 +43561,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 38,
+                "mp": 48,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42913,7 +43569,7 @@
             {
                 "level": 2,
                 "power": 1,
-                "mp": 52,
+                "mp": 65,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42937,7 +43593,7 @@
             {
                 "level": 1,
                 "power": 3,
-                "mp": 28,
+                "mp": 35,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42945,7 +43601,7 @@
             {
                 "level": 2,
                 "power": 7,
-                "mp": 35,
+                "mp": 44,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42953,7 +43609,7 @@
             {
                 "level": 3,
                 "power": 9,
-                "mp": 44,
+                "mp": 55,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -42977,7 +43633,7 @@
             {
                 "level": 1,
                 "power": 3,
-                "mp": 46,
+                "mp": 58,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -43001,7 +43657,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 195,
+                "mp": 244,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -43009,7 +43665,7 @@
             {
                 "level": 2,
                 "power": 1,
-                "mp": 207,
+                "mp": 259,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -43017,7 +43673,7 @@
             {
                 "level": 3,
                 "power": 1,
-                "mp": 217,
+                "mp": 272,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -43041,7 +43697,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 137,
+                "mp": 172,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -43049,7 +43705,7 @@
             {
                 "level": 2,
                 "power": 1,
-                "mp": 156,
+                "mp": 220,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -43057,7 +43713,7 @@
             {
                 "level": 3,
                 "power": 1,
-                "mp": 201,
+                "mp": 252,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -43081,7 +43737,7 @@
             {
                 "level": 1,
                 "power": 15,
-                "mp": 273,
+                "mp": 342,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -43089,7 +43745,7 @@
             {
                 "level": 2,
                 "power": 20,
-                "mp": 326,
+                "mp": 408,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -43097,7 +43753,7 @@
             {
                 "level": 3,
                 "power": 25,
-                "mp": 352,
+                "mp": 440,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -43105,7 +43761,7 @@
             {
                 "level": 4,
                 "power": 30,
-                "mp": 378,
+                "mp": 473,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -43113,7 +43769,7 @@
             {
                 "level": 5,
                 "power": 35,
-                "mp": 402,
+                "mp": 503,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -43121,7 +43777,7 @@
             {
                 "level": 6,
                 "power": 40,
-                "mp": 424,
+                "mp": 530,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -43321,7 +43977,7 @@
             {
                 "level": 3,
                 "power": 1,
-                "mp": 60,
+                "mp": 59,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -43329,7 +43985,7 @@
             {
                 "level": 4,
                 "power": 1,
-                "mp": 62,
+                "mp": 61,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -43337,7 +43993,7 @@
             {
                 "level": 5,
                 "power": 1,
-                "mp": 64,
+                "mp": 63,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -43913,7 +44569,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 200,
+                "mp": 250,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -43937,7 +44593,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 200,
+                "mp": 250,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -43961,7 +44617,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 200,
+                "mp": 250,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -43985,7 +44641,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 46,
+                "mp": 58,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -43993,7 +44649,7 @@
             {
                 "level": 2,
                 "power": 1,
-                "mp": 52,
+                "mp": 65,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -44017,7 +44673,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 43,
+                "mp": 54,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -44025,7 +44681,7 @@
             {
                 "level": 2,
                 "power": 1,
-                "mp": 49,
+                "mp": 62,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -44033,7 +44689,7 @@
             {
                 "level": 3,
                 "power": 1,
-                "mp": 53,
+                "mp": 67,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -44772,7 +45428,7 @@
             {
                 "level": 1,
                 "power": 1000,
-                "mp": 98,
+                "mp": 123,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -44796,7 +45452,7 @@
             {
                 "level": 1,
                 "power": 80,
-                "mp": 56,
+                "mp": 70,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -44820,7 +45476,7 @@
             {
                 "level": 1,
                 "power": 80,
-                "mp": 57,
+                "mp": 72,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -44844,7 +45500,7 @@
             {
                 "level": 1,
                 "power": 40,
-                "mp": 57,
+                "mp": 72,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -44868,7 +45524,7 @@
             {
                 "level": 1,
                 "power": 140,
-                "mp": 84,
+                "mp": 105,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -44892,7 +45548,7 @@
             {
                 "level": 1,
                 "power": 140,
-                "mp": 84,
+                "mp": 105,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -44916,7 +45572,7 @@
             {
                 "level": 1,
                 "power": 140,
-                "mp": 84,
+                "mp": 105,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -44940,7 +45596,7 @@
             {
                 "level": 1,
                 "power": 139,
-                "mp": 84,
+                "mp": 105,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -44964,7 +45620,7 @@
             {
                 "level": 1,
                 "power": 139,
-                "mp": 84,
+                "mp": 105,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -44988,7 +45644,7 @@
             {
                 "level": 1,
                 "power": 40,
-                "mp": 80,
+                "mp": 105,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -45012,7 +45668,7 @@
             {
                 "level": 1,
                 "power": 40,
-                "mp": 80,
+                "mp": 107,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -45036,7 +45692,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 56,
+                "mp": 70,
                 "hp": 0,
                 "itemId": 3031,
                 "itemCount": 10
@@ -45060,7 +45716,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 56,
+                "mp": 70,
                 "hp": 0,
                 "itemId": 3031,
                 "itemCount": 10
@@ -45084,7 +45740,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 56,
+                "mp": 70,
                 "hp": 0,
                 "itemId": 3031,
                 "itemCount": 10
@@ -45108,7 +45764,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 57,
+                "mp": 72,
                 "hp": 0,
                 "itemId": 3031,
                 "itemCount": 20
@@ -45132,7 +45788,7 @@
             {
                 "level": 1,
                 "power": 80,
-                "mp": 50,
+                "mp": 70,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -45156,7 +45812,7 @@
             {
                 "level": 1,
                 "power": 80,
-                "mp": 50,
+                "mp": 70,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -45180,7 +45836,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 56,
+                "mp": 70,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -45204,7 +45860,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 56,
+                "mp": 70,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -45228,7 +45884,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 56,
+                "mp": 70,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -45252,7 +45908,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 57,
+                "mp": 72,
                 "hp": 0,
                 "itemId": 3031,
                 "itemCount": 5
@@ -45276,7 +45932,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 57,
+                "mp": 72,
                 "hp": 0,
                 "itemId": 3031,
                 "itemCount": 5
@@ -45300,7 +45956,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 57,
+                "mp": 72,
                 "hp": 0,
                 "itemId": 3031,
                 "itemCount": 5
@@ -45324,7 +45980,7 @@
             {
                 "level": 1,
                 "power": 80,
-                "mp": 56,
+                "mp": 70,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -45348,7 +46004,7 @@
             {
                 "level": 1,
                 "power": 80,
-                "mp": 56,
+                "mp": 70,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -45372,7 +46028,7 @@
             {
                 "level": 1,
                 "power": 80,
-                "mp": 84,
+                "mp": 105,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -45396,7 +46052,7 @@
             {
                 "level": 1,
                 "power": 80,
-                "mp": 85,
+                "mp": 107,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -45420,7 +46076,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 224,
+                "mp": 280,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -45444,7 +46100,7 @@
             {
                 "level": 1,
                 "power": 20,
-                "mp": 227,
+                "mp": 284,
                 "hp": 0,
                 "itemId": 3031,
                 "itemCount": 40
@@ -45468,7 +46124,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 224,
+                "mp": 280,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0
@@ -45492,7 +46148,7 @@
             {
                 "level": 1,
                 "power": 1,
-                "mp": 224,
+                "mp": 280,
                 "hp": 0,
                 "itemId": 0,
                 "itemCount": 0

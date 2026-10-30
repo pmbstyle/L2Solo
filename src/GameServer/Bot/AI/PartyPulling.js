@@ -242,7 +242,8 @@ function cancelForRevival(leaderSession) {
 
 function attackRange(actor, target) {
     const role = BotRoles.inferRole(actor);
-    const combat = BotCombatUtility.select(actor, target, role);
+    // The reach of a usable skill, not whether its MP pays now (T100 price).
+    const combat = BotCombatUtility.select(actor, target, role, { priceMana: false });
     const skillRange = Number(combat?.range);
     // This predicate decides whether normal combat may begin, rather than
     // whether its first selected skill can land in place.  A melee skill may
@@ -326,7 +327,7 @@ let pullJoiners = null;
 // and cold bots (BotPullEstimate), and the crowd standing at the target.
 function socialRisk(target) {
     const helpRadius = Math.max(0, Number(target.fetchClanHelpRadius?.()) || 0);
-    const radius = Math.max(PULL_SOCIAL_RISK_RADIUS, helpRadius, NpcAggro.AGGRO_RADIUS);
+    const radius = Math.max(PULL_SOCIAL_RISK_RADIUS, helpRadius, NpcAggro.MAX_AGGRO_RADIUS);
     const nearby = World.fetchNpcsInRadius(target.fetchLocX(), target.fetchLocY(), radius)
         .filter((npc) => npc !== target && !BotRaidSafety.isProtectedRaidEntity(npc) && npc.fetchAttackable?.() && !npc.isDead?.() && !npc.fetchDestId?.());
     pullJoiners = pullJoiners || BotPullEstimate.minionJoiners(MinionManager.groupsByBoss);

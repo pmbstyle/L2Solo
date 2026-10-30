@@ -30,6 +30,8 @@ assert(!Match.soloSurvival([mage], { ...target, maxHp: Math.ceil(damage / 1.5) +
 // A mixed spot needs at least 60% of its spawn weight solo-safe.
 const SAFE_NPC = 156;
 const UNSAFE_NPC = 608;
+// A camp no optimistic bound admits (Ant Patrol, level 34): the cheap pre-check rejects it alone.
+const LETHAL_NPC = 84;
 const mixed = (safe, unsafe) => ({ npcEntries: [{ selfId: SAFE_NPC, count: safe }, { selfId: UNSAFE_NPC, count: unsafe }]
     .filter((entry) => entry.count > 0) });
 assert.strictEqual(Match.spotMatchup(mixed(1, 0), [mage], { soloSafety: true }).eligible, true);
@@ -125,7 +127,7 @@ try {
             return (spot) => { fallbackChecks++; return read(spot); };
         };
         const crowdedCatalogue = Array.from({ length: 200 }, (_, i) => ({
-            ...spot(`bounded-${String(i).padStart(3, '0')}`, 19), npcEntries: [{ selfId: UNSAFE_NPC, count: 8 }] }));
+            ...spot(`bounded-${String(i).padStart(3, '0')}`, 19), npcEntries: [{ selfId: LETHAL_NPC, count: 8 }] }));
         assert.strictEqual(search(crowdedCatalogue, level35), null);
         assert.strictEqual(fallbackChecks, 0, 'the cheap optimistic bound rejects certainly lethal camps');
         Routes.isSpotAllowedForState = () => { fallbackChecks++; return false; };

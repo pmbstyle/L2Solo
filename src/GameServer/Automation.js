@@ -4,6 +4,7 @@ const Timer          = invoke('GameServer/Timer');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
 const AttackRange    = invoke('GameServer/Actor/AttackRange');
+const Formulas       = invoke('GameServer/Formulas');
 
 class Automation extends SelectedModel {
     static needsGeodataApproach(session, src, dst) {
@@ -63,7 +64,7 @@ class Automation extends SelectedModel {
         this.stopReplenish();
         this.timer.replenish = setInterval(() => {
             this.replenishVitalsTick(creature);
-        }, 3000);
+        }, Formulas.REGEN_TICK_MS);
     }
 
     replenishVitalsTick(creature) {
@@ -102,20 +103,31 @@ class Automation extends SelectedModel {
         return { hp: minHp, mp: minMp, ...(hasCp ? { cp: minCp } : {}) };
     }
 
-    fetchRevHpAmount(creature) {
+    // options.seated / options.standing: as fetchRevMpAmount's (a bot's solo self-heal, SoloSelfHeal).
+    fetchRevHpAmount(creature, options = {}) {
         const base = this.fetchPlayerRegenBase(creature, 'CON');
+        const posture = this.fetchRegenPosture(options);
         return Math.max(0, (
-            (base * EffectStats.multiplier(creature, 'regHp'))
-            + EffectStats.add(creature, 'regHpAdd')
-        ) * this.fetchRegenStateMultiplier(creature));
+            (base * EffectStats.multiplier(creature, 'regHp', 1, posture))
+            + EffectStats.add(creature, 'regHpAdd', 0, posture)
+        ) * this.fetchRegenStateMultiplier(creature, options));
     }
 
-    fetchRevMpAmount(creature) {
+    // options.seated / options.standing: the amount a seated or standing
+    // creature would regain, its posture's passives included (a bot's rest
+    // posture and MP price, RestPolicy.sitsToRest, BotCombatUtility), whatever
+    // its current state.
+    fetchRevMpAmount(creature, options = {}) {
         const base = this.fetchPlayerRegenBase(creature, 'MEN');
+        const posture = this.fetchRegenPosture(options);
         return Math.max(0, (
-            (base * EffectStats.multiplier(creature, 'regMp'))
-            + EffectStats.add(creature, 'regMpAdd')
-        ) * this.fetchRegenStateMultiplier(creature));
+            (base * EffectStats.multiplier(creature, 'regMp', 1, posture))
+            + EffectStats.add(creature, 'regMpAdd', 0, posture)
+        ) * this.fetchRegenStateMultiplier(creature, options));
+    }
+
+    fetchRegenPosture({ seated = false, standing = false } = {}) {
+        return seated ? { seated: true } : standing ? { seated: false } : undefined;
     }
 
     fetchRevCpAmount(creature) {
@@ -148,11 +160,12 @@ class Automation extends SelectedModel {
         return base * invoke('GameServer/Formulas').calcLevelMod(level) * statModifier;
     }
 
-    fetchRegenStateMultiplier(creature) {
+    fetchRegenStateMultiplier(creature, { seated = false, standing = false } = {}) {
         if (typeof creature?.fetchClassId !== 'function') return 1;
 
         const state = creature.state;
-        return state?.fetchSeated?.() === true
+        if (standing && !seated) return 1.1;
+        return seated || state?.fetchSeated?.() === true
             ? 1.5
             : state?.inMotion?.() === true
                 ? 0.7

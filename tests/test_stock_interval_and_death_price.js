@@ -18,20 +18,20 @@ const Trip = invoke('GameServer/Bot/Population/ColdTrip');
 const Routes = invoke('GameServer/Bot/Travel/TravelRoutes');
 const spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
 const deps = { spots, knowledgeEnabled: false };
-// T43 table: shots no longer pay for a D-grade Warrior (L20-40, low loot); a C-grade Gladiator at 46 buys them.
-const warrior = { characterId: 718001, level: 46, phase: 'hot', activity: 'hunting', adena: 100000,
-    stats: { classId: 2, exp: Data.experience[45] + 1 }, inventory: {}, loc: {},
+// T43 table: shots no longer pay for a D-grade Warrior (L20-40, low loot); a C-grade Gladiator buys them
+// (T106 per-mob tables: at 45, where the shot gain is widest over its price; no longer at 48).
+const warrior = { characterId: 718001, level: 45, phase: 'hot', activity: 'hunting', adena: 100000,
+    stats: { classId: 2, exp: Data.experience[44] + 1 }, inventory: {}, loc: {},
     vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 } };
 for (const [, items] of Providers.gearCandidates(warrior)) {
     const item = items[0]; if (item) warrior.inventory[item.selfId] = { selfId: item.selfId,
         amount: 1, equipped: true, equippedCount: 1, slot: Number(item.etc.slot), enchant: 0 };
 }
 const native = Economy.basics(warrior, deps), stock = native.stock('shots');
-// ARCH-NOTE: the validated table yields 1261.53/h (T43 table); use its exact rate and ceil, rather than rounding the fixture to the prose example.
-assert.equal(Math.round(stock.usePerHour), 1262);
-const use = stock.usePerHour;
 const withShots = Table.value(native.bestSpotId, native.tableRole, warrior.level, true);
-const withoutShots = Table.value(native.bestSpotId, native.tableRole, warrior.level, false);
+// ARCH-NOTE: the use is the table's exact rate at the best spot (read from the table: a regenerated table moves it).
+assert(stock.usePerHour > 0); assert.equal(stock.usePerHour, withShots.shots);
+const use = stock.usePerHour;
 const Floor = invoke('GameServer/Bot/Population/SurvivalFloor');
 // ARCH-NOTE: empty positive-use kit stacks consume their future slots while
 // sizing E9's interval, so a refill does not sell itself back to the NPC.
@@ -41,7 +41,8 @@ const freeSlots = Math.max(0, Floor.inventoryLimit(0) - Floor.stateInventory(war
 const bagT = withShots.stacks === null ? 24 : withShots.stacks === 0 ? 24
     : Math.max(.5, Math.min(24, freeSlots / withShots.stacks));
 const noHistoryT = Math.min(2, bagT);
-const b = 1 - withoutShots.exp / withShots.exp;
+// The farm the shots give: the best spot with shots against the best without.
+const b = 1 - Table.best(native.tableRole, warrior.level, false).exp / Table.best(native.tableRole, warrior.level, true).exp;
 assert(b >= withShots.shots * stock.unitPrice / native.hourAdena);
 for (const commitment of [.1, .9]) {
     const state = { ...warrior, stats: { ...warrior.stats, persona: { traits: { commitment } } } };
@@ -153,7 +154,7 @@ try {
     assert.equal(calls, spots.length); assert(Walk.summary().buildMs < 1000);
     for (let i = 0; i < 100; i++) Economy.basics(warrior, deps);
     assert.equal(calls, spots.length);
-    console.log(`Stock/death: native 1262/h, profitable-shot gate, town clocks, cached ${spots.length} return routes in ${Walk.summary().buildMs.toFixed(1)} ms passed`);
+    console.log(`Stock/death: native ${Math.round(use)}/h, profitable-shot gate, town clocks, cached ${spots.length} return routes in ${Walk.summary().buildMs.toFixed(1)} ms passed`);
 } finally { Trip.spotPlan = plan; Config.coldHonestTravel = honest; Walk.reset(); }
 coldVisits().then(() => { assert.equal(invoke('Database').isReady(), false); console.log('Cold visit end interval writer passed'); })
     .catch(error => { console.error(error); process.exitCode = 1; });

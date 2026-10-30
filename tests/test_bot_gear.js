@@ -151,8 +151,11 @@ assert.deepStrictEqual(BotWeaponCompatibility.weaponKindsFor('dps', 113), ['Weap
     'Titan must inherit the full Destroyer weapon profile through its normalized parent class');
 assert.deepStrictEqual(BotWeaponCompatibility.weaponKindsFor('dps', 114), ['Weapon.Fist', 'Weapon.DualFist'],
     'Grand Khavatari must inherit the Tyrant fist preference through its normalized parent class');
-assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon(demonFangs.fetchKind(), 'buffer', 115), true,
-    'Dominator must inherit Overlord caster compatibility through its normalized parent class');
+// Overlord keeps the Orc Shaman's melee blunt (user 10-29).
+assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon(demonFangs.fetchKind(), 'buffer', 115), false,
+    'Dominator must inherit the Overlord melee kit through its normalized parent class: no caster sword');
+assert.strictEqual(BotWeaponCompatibility.isCompatibleWeapon('Weapon.Blunt', 'buffer', 115), true,
+    'Dominator fights with the Overlord blunt');
 assert.strictEqual(BotWeaponCompatibility.isSuitableWeapon('Weapon.Blunt', 'Mystic Staff', 45, 32, 'buffer', 21), false,
     'Sword Singer must reject caster staves stored under the shared blunt family');
 assert.strictEqual(BotWeaponCompatibility.isSuitableWeapon('Weapon.Blunt', 'Bone Staff', 39, 35, 'dps', 47), false,
@@ -456,4 +459,9 @@ upgrades = BotEquipmentUpgrade.findBestUpgrades(upgradeSession({
 }));
 assert.strictEqual(upgrades.length, 0, 'low-level bot should not auto-equip gear above its grade band');
 
+// Placeholder rows (Flail 163, Heavy Flail 170, named '_': no C4 source) are never planned (T118).
+for (const classId of [0, 4, 5, 46]) for (const level of [62, 66, 70]) {
+    assert(!BotGear.planFor({ classId, level }).items.some(item => [163, 170].includes(Number(item.selfId))),
+        `no placeholder weapon in the class ${classId} level ${level} kit`);
+}
 console.log('Bot gear checks passed');

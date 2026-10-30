@@ -209,8 +209,12 @@ const immuneSpot = { id: 'resist-test', minLevel: 35, maxLevel: 45, avgLevel: 40
 {
     const resistantTarget = Cold.npcCombatStats(template);
     let safeArcher = { ...archer, maxHp: 10000, pDef: 100 };
-    const ratio = Matchup.soloSurvival([safeArcher], resistantTarget).survivalRatio;
-    safeArcher = { ...safeArcher, maxHp: safeArcher.maxHp * 1.6 / ratio };
+    // The ratio is affine in HP (the bow's opening shots come on top): a few
+    // rescales settle it at 1.6.
+    for (let pass = 0; pass < 6; pass++) {
+        const ratio = Matchup.soloSurvival([safeArcher], resistantTarget).survivalRatio;
+        safeArcher = { ...safeArcher, maxHp: safeArcher.maxHp * 1.6 / ratio };
+    }
     assert(Matchup.spotMatchup(immuneSpot, [safeArcher], { soloSafety: true }).eligible);
     assert(!Matchup.spotMatchup(immuneSpot, [safeArcher], { soloSafety: false }).eligible,
         'party hunts retain the resistance gate');

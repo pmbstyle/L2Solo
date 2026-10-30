@@ -14,7 +14,7 @@ const at = 1800000000000;
 function member(id, classId, level, weapon, healer = false) {
     const items = [weapon, 40, 45, 50, ...(healer ? [432, 465] : [347, 376, 625])]
         .map((selfId, i) => ({ selfId, name: Data.items.find(t => t.selfId === selfId).template.name,
-            amount: 1, equipped: 1, slot: [93, 178, 291].includes(selfId) ? 14 : [7, 12, 6, 9, 10, 11, 8][i] }));
+            amount: 1, equipped: 1, slot: [71, 93, 124, 178, 291].includes(selfId) ? 14 : [7, 12, 6, 9, 10, 11, 8][i] }));
     items.push(...[114, 114, 118, 876, 876].map((selfId, i) => ({ selfId, amount: 1, equipped: 1, slot: i + 1 })));
     items.push({ selfId: weapon === 3 ? 1835 : 1463, amount: 2500, slot: 0, equipped: 0 });
     const state = { characterId: id, name: `raider_${id}`, accountName: `bot_${id}`, level, classId,
@@ -34,7 +34,7 @@ function equip(state, selfId, enchant = 0) {
 }
 const party = [member(1,32,26,3), member(2,42,29,178,true), member(3,29,26,178,true),
     member(4,54,31,157), member(5,56,29,93), member(6,56,28,168),
-    member(7,54,28,156), member(8,1,29,123), member(9,56,30,291)];
+    member(7,54,28,156), member(8,1,29,124), member(9,56,30,291)];
 const spot = Catalog.findById('raid:10366');
 (async () => {
     const original = JSON.stringify(party), fit = Policy.assessment(party,spot,{timestamp:at});
@@ -42,7 +42,9 @@ const spot = Catalog.findById('raid:10366');
     assert.equal(fit.defense.requiredHp,(fit.defense.bossDps+fit.defense.guardDps)*12);
     assert(fit.healing>=fit.healingRequired && fit.seconds<=720);
     assert.equal(JSON.stringify(party),original,'assessment preserves physical bags, funds, vitals and skills');
-    const older = party.map(s => member(s.characterId,s.classId,44,Policy.role(s)==='healer'?178:162,Policy.role(s)==='healer'));
+    // The Warrior holds a C two-hander (user 10-29), the others a C War Axe.
+    const older = party.map(s => member(s.characterId,s.classId,44,
+        Policy.role(s)==='healer'?178:s.classId===1?71:162,Policy.role(s)==='healer'));
     const boss42 = Catalog.findById('raid:10007');
     const d = structuredClone(older); for (const id of [46,606,351,377,1123]) equip(d[0],id,3);
     const c = structuredClone(older); equip(c[0],62);

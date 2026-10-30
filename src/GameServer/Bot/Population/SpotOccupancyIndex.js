@@ -2,6 +2,7 @@
 
 const CharacterLocationIndex = require('../../World/CharacterLocationIndex');
 const providers = new WeakMap();
+const { isMainThread } = require('node:worker_threads');
 
 // Who stands on each spot and who is heading there, kept up to date at every
 // state write. Read only at a spot: the room check at arrival, the kill share,
@@ -138,4 +139,19 @@ class SpotOccupancyIndex {
     }
 }
 
-module.exports = { SpotOccupancyIndex, stateKey, occupiedSpotId };
+// The occupancy of the thread that plans, for a reader outside a route
+// search (SpotEconomics' crowd share, user 10-29): a cold worker registers
+// its kernel's (usePlanningIndex), main reads its world index.
+let planningIndex = null;
+function usePlanningIndex(index) {
+    planningIndex = index;
+}
+// The other bots indexed on a spot, those on their way there included (the
+// room check's count), the state itself left out.
+function othersOn(spotId, state) {
+    // lazy: cycle BotLifeState loads this module
+    const index = planningIndex || (isMainThread ? invoke('GameServer/Bot/Population/BotLifeState').occupancyIndex() : null);
+    return index && spotId ? index.physicalCount(spotId, { excludeKeys: new Set([stateKey(state)]) }) : 0;
+}
+
+module.exports = { SpotOccupancyIndex, stateKey, occupiedSpotId, usePlanningIndex, othersOn };

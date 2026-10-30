@@ -109,6 +109,15 @@ calculateStats({}, fighter);
 assert.strictEqual(Math.round(fighter.fetchMaxCp()), Math.round(Formulas.calcCp(1, 0, 43)), 'max CP should be calculated from sourced class template parameters');
 assert.strictEqual(fighter.fetchCp(), fighter.fetchMaxCp(), 'first CP stat calculation should fill legacy zero CP to max');
 
+// T109: a 2nd class reads its own template, not its starting class's curve.
+const gladiator = actor();
+gladiator.level = 76;
+gladiator.classId = 2;
+calculateStats({}, gladiator);
+assert.strictEqual(gladiator.fetchMaxHp(), Formulas.calcHp(76, 2, 43), 'a Gladiator\'s max HP is its class template value');
+assert.strictEqual(Math.round(gladiator.fetchMaxHp()), 4847);
+assert.strictEqual(gladiator.fetchMaxMp(), Formulas.calcMp(76, 2, 25), 'a Gladiator\'s max MP is its class template value');
+
 fighter.setCp(10);
 EffectStore.apply(fighter, { id: 9001, key: 'cp-set-bonus', stats: { maxCpMul: 1.5 } });
 calculateStats({}, fighter);

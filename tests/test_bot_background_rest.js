@@ -31,10 +31,13 @@ assert(recovering.patch.vitals.mp > state.vitals.mp, 'cold resting must restore 
 assert.strictEqual(recovering.materialize.exp, 0, 'cold resting must not award combat XP');
 assert(recovering.patch.stats.restUntil > now + 30000, 'cold recovery deadline must remain persisted in stats');
 
+// Full vitals: the class template's at the level, from the profile resolveRest reads.
+const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const full = ColdCombatProfile.fightProfile(state, now);
 const ready = BackgroundResolver.resolveSolo({
     state: {
         ...state,
-        vitals: { hp: 1200, maxHp: 1200, mp: 650, maxMp: 650 },
+        vitals: { hp: full.maxHp, maxHp: full.maxHp, mp: full.maxMp, maxMp: full.maxMp },
         stats: { ...state.stats, restUntil: now - 1 }
     },
     spot: { id: 'execution_ground' },
@@ -61,7 +64,7 @@ assert.strictEqual(readyBeforeEstimate.patch.stats.restUntil, null,
 
 const lowManaDps = {
     ...state,
-    vitals: { hp: 1200, maxHp: 1200, mp: 0, maxMp: 650 },
+    vitals: { hp: full.maxHp, maxHp: full.maxHp, mp: 0, maxMp: full.maxMp },
     stats: { ...state.stats, classId: 1, role: 'dps', restUntil: now + 600000 }
 };
 const activeDps = BackgroundResolver.resolveSolo({
@@ -75,9 +78,12 @@ assert.strictEqual(activeDps.patch.stats.restUntil, null, 'waking a non-mana rol
 assert.strictEqual(BackgroundResolver.needsRest(lowManaDps, lowManaDps.vitals), false,
     'zero MP alone must not stop a physical DPS cold lifecycle');
 
+const mageStats = { ...lowManaDps.stats, classId: 11, role: 'mage' };
+const fullMage = ColdCombatProfile.fightProfile({ ...state, stats: mageStats }, now);
 const lowManaMage = {
     ...lowManaDps,
-    stats: { ...lowManaDps.stats, classId: 11, role: 'mage' }
+    vitals: { hp: fullMage.maxHp, maxHp: fullMage.maxHp, mp: 0, maxMp: fullMage.maxMp },
+    stats: mageStats
 };
 const restingMage = BackgroundResolver.resolveSolo({
     state: lowManaMage,

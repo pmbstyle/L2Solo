@@ -189,7 +189,7 @@ function roleForState(state = {}) {
     if (state.party?.role) return state.party.role;
     if (state.stats?.routeRole) return state.stats.routeRole;
     if (state.stats?.role) return state.stats.role;
-    if (classId) return BotRoles.inferRole(classId);
+    if (classId) return BotRoles.inferRole({ classId, characterId: state.characterId });
     return 'dps';
 }
 

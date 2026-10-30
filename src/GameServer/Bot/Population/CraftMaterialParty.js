@@ -21,9 +21,8 @@ function partySpoiler(members) {
 function campsFor(state, itemId, spots, spoiler) {
     const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
     const index = Planner.sourceIndexFor(spots);
-    const role = state.stats?.role || state.party?.role || invoke('GameServer/Bot/AI/BotRoles').inferRole(state.stats?.classId ?? state.classId);
-    const tableRole = ({ melee: 'dps', nuker: 'mage', crafter: 'dps' })[role] || role;
     const Table = invoke('GameServer/Bot/AI/SpotValueTable');
+    const tableRole = Table.roleFor(state);
     let cache = sources.get(index);
     if (!cache) sources.set(index, cache = new Map());
     const key = `${itemId}:${state.level}:${tableRole}:${Number(spoiler)}:${Planner.rateProfileSignature()}`;

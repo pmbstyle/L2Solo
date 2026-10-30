@@ -1,7 +1,6 @@
 'use strict';
 const ClassProgression = invoke('GameServer/ClassProgression');
 const DataCache = invoke('GameServer/DataCache');
-const Roles = require('../AI/BotRoles');
 const Knowledge = require('../AI/KnowledgeLearning');
 const Crystallization = require('./BotCrystallization');
 const Floor = require('../Population/SurvivalFloor');
@@ -930,7 +929,7 @@ function leafFit(state, deps, timestamp) {
 function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
     const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
     const Table = invoke('GameServer/Bot/AI/SpotValueTable');
-    const tableRole = Roles.tableRoleFor(state);
+    const tableRole = Table.roleFor(state);
     const incomeRoute = incomeRouteFor(state, deps, timestamp, price, keepRoute);
     let hunt;
     if (incomeRoute) {
@@ -950,8 +949,7 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
     const shotPlan = ShotStock.planForState(state);
     const shotItemId = shotPlan.selfId;
     const potionItemId = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state).selfId;
-    const withoutShots = bestSpotId ? Table.value(bestSpotId, tableRole, state.level, false) : null;
-    const shotPolicy = ShotStock.usePolicy(state, { plan: shotPlan, bestTable, withoutShots,
+    const shotPolicy = ShotStock.usePolicy(state, { plan: shotPlan, bestTable,
         hourAdena: Hunt.huntHour(hunt, state), unitPrice: price(shotItemId) });
     const shotBenefit = shotPolicy.benefit;
     const beginnerCurrent = ShotStock.beginnerAmount(state, shotPlan);

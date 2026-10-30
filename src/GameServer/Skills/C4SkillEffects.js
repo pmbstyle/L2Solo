@@ -9,10 +9,9 @@ const EffectStats = invoke('GameServer/Effects/EffectStats');
 const ToggleSkills = invoke('GameServer/Skills/ToggleSkills');
 const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 const Formulas = invoke('GameServer/Formulas');
+const HitRules = invoke('GameServer/Combat/HitRules');
 const ServerResponse = invoke('GameServer/Network/Response');
 
-const COND_BEHIND = 0x0008;
-const COND_CRIT = 0x0010;
 
 function isBotSummonActor(session, actor) {
     const candidate = session || actor?.session;
@@ -1099,26 +1098,11 @@ function calcAggroDamage(skill, target) {
 }
 
 function rollBlow(actor, target, semantic, attack, rng) {
-    const condition = Number(semantic.requires?.condition) || 0;
-    if ((condition & COND_BEHIND) !== 0 && !attack?.isBehindTarget?.(actor, target)) {
-        return false;
-    }
-
-    if (condition !== 0 && (condition & COND_CRIT) === 0) {
-        return true;
-    }
-
-    if (condition === 0) return true;
-
     const behind = attack?.isBehindTarget?.(actor, target) === true;
     const front = !behind && attack?.isFacing?.(target, actor, 120) === true;
-    const baseChance = behind ? 70 : front ? 50 : 60;
-    const dex = Number(actor?.fetchDex?.()) || 20;
-    const chance = baseChance
-        * (1 + ((dex - 20) / 100))
-        * EffectStats.multiplier(actor, 'blowRateMul')
-        * EffectStats.situationalMultiplier(actor, 'blowRateMul', { behind, front });
-    return Math.max(0, chance) >= rng() * 100;
+    return HitRules.blowLands(semantic, { dex: Number(actor?.fetchDex?.()) || 20, behind, front,
+        rateMul: EffectStats.multiplier(actor, 'blowRateMul')
+            * EffectStats.situationalMultiplier(actor, 'blowRateMul', { behind, front }) }, rng);
 }
 
 function applyNegate(session, target, semantic) {
@@ -1224,45 +1208,17 @@ function rollMagicSuccess(actor, target, skill, semantic, rng) {
 }
 
 function resistEffect(actor, target, skill, semantic, magicSkill, rng) {
-    const effectTrait = semantic.effectTrait || semantic.trait;
-    // Lisvus calcSkillSuccess defaults unset lvlDepend to 1 for PARALYZE
-    // and FEAR, and to 2 for every other effect type.
-    const levelDepend = semantic.levelDepend || (
-        semantic.effect === 'paralyze' || semantic.effect === 'fear' || effectTrait === 'paralyze' || effectTrait === 'fear'
-            ? 1
-            : 2
-    );
-    const chance = Formulas.calcSkillEffectSuccessRate({
-        baseChance: semantic.baseLandRate,
-        magic: magicSkill,
-        mAtk: actor.fetchCollectiveMAtk?.(),
-        mDef: target.fetchCollectiveMDef?.(),
-        soulshot: !!actor.soulshotLoaded,
-        spiritshot: !!actor.spiritshotLoaded,
-        blessedSpiritshot: !!actor.blessedSpiritshotLoaded,
-        attackerLevel: actor.fetchLevel?.(),
-        targetLevel: target.fetchLevel?.(),
-        magicLevel: semantic.magicLevel,
-        levelDepend,
-        resistModifier: traitResistModifier(target, effectTrait)
-    });
+    const chance = HitRules.effectLandChance(semantic, magicSkill, {
+        level: actor.fetchLevel?.(), mAtk: actor.fetchCollectiveMAtk?.(), soulshot: !!actor.soulshotLoaded,
+        spiritshot: !!actor.spiritshotLoaded, blessedSpiritshot: !!actor.blessedSpiritshotLoaded
+    }, { level: target.fetchLevel?.(), mDef: target.fetchCollectiveMDef?.() },
+    traitResistModifier(target, semantic.effectTrait || semantic.trait));
     return !(chance >= rng() * 100);
 }
 
-const RESIST_FAMILY_BY_TRAIT = {
-    shock: { resist: 'stunResist', vulnerability: 'stunVuln' },
-    warrior_bane: { resist: 'cancelResist', vulnerability: 'cancelVuln' },
-    mage_bane: { resist: 'cancelResist', vulnerability: 'cancelVuln' }
-};
-
 function traitResistModifier(target, trait) {
-    const family = RESIST_FAMILY_BY_TRAIT[trait] || {
-        resist: `${trait}Resist`,
-        vulnerability: `${trait}Vuln`
-    };
-    const resist = EffectStats.add(target, family.resist);
-    const vulnerability = EffectStats.multiplier(target, family.vulnerability, 1);
-    return Math.max(0, 1 - (resist / 100)) * Math.max(0, vulnerability);
+    const family = HitRules.resistStats(trait);
+    return HitRules.traitResistModifier(EffectStats.add(target, family.resist), EffectStats.multiplier(target, family.vulnerability, 1));
 }
 
 function applyLethal(actor, target, skill, semantic, rng, result) {

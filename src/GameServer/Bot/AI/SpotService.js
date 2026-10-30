@@ -63,6 +63,17 @@ function identitySeedForState(state) {
     return `anonymous:${anonymousStateIds.get(state)}`;
 }
 
+// The area the spawns of a spot cover: a uniform spread over a w x h
+// rectangle has sigma w / sqrt(12), so 12 sigmaX sigmaY; at most the spot
+// cell (SPOT_CELL_SIZE squared), null without spawns.
+function spawnArea(records = []) {
+    if (!records.length) return null;
+    let sx = 0, sy = 0, sxx = 0, syy = 0;
+    for (const record of records) { sx += record.x; sy += record.y; sxx += record.x * record.x; syy += record.y * record.y; }
+    const n = records.length, vx = Math.max(0, sxx / n - (sx / n) ** 2), vy = Math.max(0, syy / n - (sy / n) ** 2);
+    return Math.round(Math.min(SPOT_CELL_SIZE * SPOT_CELL_SIZE, 12 * Math.sqrt(vx * vy)));
+}
+
 function constrainToSpotGrid(spot, locX, locY) {
     const match = /^(-?\d+)_(-?\d+)(?::.+)?$/.exec(String(spot?.id || ''));
     if (!match) return { locX, locY };
@@ -255,6 +266,9 @@ const SpotService = {
                 levelCounts: { ...sector.levels },
                 dominantLevels: levelEntries.slice(0, 3),
                 partitionedAreaId: sector.partitionedAreaId,
+                // The square its spawns cover (T106, the solo walk): a uniform
+                // spread's 12 sigmaX sigmaY, at most the spot cell.
+                spawnArea: spawnArea(sector.records),
                 records: sector.records
             };
 

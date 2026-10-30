@@ -91,10 +91,12 @@ try {
         const row = Table.value(s.id, 'dps', 50, true);
         return row ? Hunt.netIncome(row, Hunt.consumablePrices(fighter)) : 0;
     };
-    const bestIncome = Math.max(...oracle.map(income));
-    assert(bestIncome > 0);
-    const grey = oracle.filter(s => s.maxLevel <= 35 && income(s) > 0)
-        .sort((a, b) => income(a) - income(b))[0];
+    // The table ends at the deep-blue gap (drops at 30%, user 10-29): every camp a naked
+    // L50 survives lies past it, so none pays and the fallback takes the closest safe ground.
+    assert.equal(Math.max(...oracle.map(income)), 0, 'no camp past the deep-blue gap carries table income');
+    const distance = s => Math.abs(s.avgLevel - fighter.level);
+    const closest = Math.min(...oracle.map(distance));
+    const grey = oracle.filter(s => s.maxLevel <= 35).sort((a, b) => a.avgLevel - b.avgLevel)[0];
     assert(grey, 'fixture needs a real grey camp');
     fighter.spotId = grey.id;
     let fallbackChecks = 0;
@@ -112,13 +114,13 @@ try {
     const picked = Spots.findForState(fighter, options);
     assert(fallbackChecks > 0 && fallbackChecks <= 128, `fallback checks ${fallbackChecks}`);
     assert(picked, 'the full catalogue must provide a surviving camp within the fixed fallback budget');
-    assert.notEqual(picked.id, grey.id, 'a cheaper grey camp cannot pin this money-saving fighter');
-    assert(income(picked) >= bestIncome * 0.5, `${income(picked)} < half of ${bestIncome}`);
+    assert.notEqual(picked.id, grey.id, 'a far grey camp cannot pin this fighter');
+    assert.equal(distance(picked), closest, `picked ${picked.id} at ${picked.avgLevel}, closest safe gap ${closest}`);
     const upper = Match.soloSpotUpperBound(options.matchupProfiles);
     assert(oracle.every(spot => upper(spot)), 'cheap bound must retain every exact-safe camp');
     assert(Match.soloSpotUpperBound([{ survivalKnown: false }])(catalogue[0]), 'unknown kits remain neutral');
     console.log(`PASS full catalogue: ${world.npc.spawns.length} spawns, near=${near.length}, `
-        + `fallback=${fallbackChecks}, picked=${picked.id}, income ratio=${income(picked) / bestIncome}`);
+        + `fallback=${fallbackChecks}, picked=${picked.id} at ${picked.avgLevel}`);
 } finally {
     Math.random = savedRandom;
     World.npc = savedWorld.npc; World.user = savedWorld.user;

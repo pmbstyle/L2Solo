@@ -41,6 +41,8 @@ for (const honest of [false, true]) {
     assert.strictEqual(OfferOrder.tripCost(state)('Giran'), expected, `round trip, honest travel ${honest}`);
 }
 Config.coldHonestTravel = false;
+// The author's fixed shot merchant supplies the trips (off by default since T116).
+Config.staticShotsDisabled = false;
 
 // 2. A bot with karma enters no town but Floran, on foot (E48).
 {

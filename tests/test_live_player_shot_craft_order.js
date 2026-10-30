@@ -49,8 +49,15 @@ const near = context => ({ ...context, ...DecisionEvents.nearFields(context, con
     assert(Manufacture.publish(crafter, [{ recipeId: recipe.recipeId, price: 50 }]));
     for (const item of invoke('GameServer/Bot/AI/BotGear').planFor({ classId: 1, level: 30 }).items)
         await stock(customer, item.selfId, item.amount || 1, 0, true, item.slot);
-    for (const row of recipe.materials) await stock(customer, row.selfId, row.amount * 10);
-    await stock(customer, 1463, 2500);
+    // Half the shot target held, read from the table the bot hunts by: the refill
+    // then needs several whole batches at any table's shot use (the one combat
+    // core's tables put a level-30 Warrior's two-hour target under the 2500 once held).
+    const heldShots = Math.floor(Economy.basics(customer.coldLifeState).stock('shots').target / 2);
+    await stock(customer, 1463, heldShots);
+    // Materials for every batch the shot target needs: a refill never exceeds the target, and the
+    // material stacks only shorten the bag interval the target is sized on.
+    const heldBatches = Math.ceil(Economy.basics(customer.coldLifeState).stock('shots').target / recipe.productCount);
+    for (const row of recipe.materials) await stock(customer, row.selfId, row.amount * heldBatches);
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
     const equipmentPlan = { status: 'deferred', strategy: 'market', target: { selfId: 852, slot: 1 } };
     let state = customer.coldLifeState;
@@ -65,7 +72,7 @@ const near = context => ({ ...context, ...DecisionEvents.nearFields(context, con
     assert.equal(Wishes.personalCraftPlan(context.state, context), null, 'stock orders do not replace equipment plans');
     const target = Shopping.stockWorkshopTarget(customer, customer.actor, near(context));
     assert.equal(target?.actorId, crafter.actor.fetchId()); assert.equal(target.interactionDistance, 150);
-    assert.equal(target.state.stats.equipmentPlan.outputAmount, 2500 + leaf.amount,
+    assert.equal(target.state.stats.equipmentPlan.outputAmount, heldShots + leaf.amount,
         'the refill target includes shots already held exactly once');
     const closed = { ...context, state: { ...context.state, phase: 'cold' } };
     assert.equal(Shopping.stockWorkshopTarget(customer, customer.actor, near(closed)), null, 'cold bots cannot place remote player orders');
@@ -98,11 +105,11 @@ const near = context => ({ ...context, ...DecisionEvents.nearFields(context, con
     const deadline = Date.now() + 5000;
     while (customer.workshopCrafting && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
     assert.equal(customer.workshopCrafting, false, 'the visible shopping tick completes its native craft');
-    const batches = leaf.batches, fee = 50 * batches, output = 2500 + recipe.productCount * batches;
+    const batches = leaf.batches, fee = 50 * batches, output = heldShots + recipe.productCount * batches;
     assert.equal(await sqlAmount(customer, 1463), output); assert.equal(memoryAmount(customer, 1463), output);
     assert.equal(await sqlAmount(customer, 57), cash - fee); assert.equal(await sqlAmount(crafter, 57), feeWallet + fee);
     assert.equal(crafter.actor.mp, mp - recipe.mpCost * batches);
-    for (const row of recipe.materials) assert.equal(await sqlAmount(customer, row.selfId), row.amount * (10 - batches));
+    for (const row of recipe.materials) assert.equal(await sqlAmount(customer, row.selfId), row.amount * (heldBatches - batches));
     assert.deepEqual(customer.coldLifeState.stats.equipmentPlan, equipmentPlan, 'the stock visit preserves the separate gear plan');
     assert.equal(customer.shoppingTarget, undefined);
 

@@ -9,6 +9,7 @@ const Attack         = invoke('GameServer/Actor/Attack');
 const AttackRange    = invoke('GameServer/Actor/AttackRange');
 const ManorData      = invoke('GameServer/Manor/ManorData');
 const NpcSkills      = invoke('GameServer/Npc/NpcSkills');
+const NpcCombatChoice = invoke('GameServer/Npc/NpcCombatChoice');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const EffectTicker   = invoke('GameServer/Effects/EffectTicker');
@@ -28,27 +29,8 @@ const NPC_PATH_MAX_NODES = 8000;
 const NPC_PATH_RETRY_INTERVAL_MS = 500;
 const NPC_PATH_MAX_RETRY_INTERVAL_MS = 4000;
 const NPC_PATH_FAILURE_TIMEOUT_MS = 10000;
-const NPC_AI_TYPES = new Set(['fighter', 'mage', 'balanced', 'archer']);
-const HARD_CONTROL_EFFECTS = new Set(['stun', 'paralyze']);
-const SLEEP_EFFECTS = new Set(['sleep']);
-const ROOT_EFFECTS = new Set(['root']);
-const MUTE_EFFECTS = new Set(['silence', 'physical_mute', 'magic_mute', 'mute']);
 
-function semanticEffect(skill) {
-    const semantic = skill?.fetchSemantic?.() || {};
-    return String(semantic.effect || semantic.trait || '').trim().toLowerCase();
-}
 
-function skillDistance(skill) {
-    const semantic = skill?.fetchSemantic?.() || {};
-    const sourcedRange = Number(semantic.castRange);
-    const modelRange = Number(skill?.fetchDistance?.());
-    return Math.max(
-        0,
-        Number.isFinite(sourcedRange) ? sourcedRange : 0,
-        Number.isFinite(modelRange) ? modelRange : 0
-    );
-}
 
 class Npc extends NpcModel {
     static hateStats() {
@@ -669,25 +651,9 @@ class Npc extends NpcModel {
     }
 
     fetchAiType() {
-        const explicit = super.fetchAiType();
-        if (explicit && NPC_AI_TYPES.has(explicit)) return explicit;
-
-        // Most imported C4 templates do not carry the source AI enum. Keep a
-        // useful fallback instead of treating every NPC as a caster: long
-        // ranged physical attacks read as archers, while long-range magic
-        // damage reads as mage. The explicit template value always wins.
-        const skills = this.fetchCombatSkills();
-        const hasLongRangeMagicDamage = skills.some((skill) => (
-            skill.fetchTargetKind?.() === 'enemy'
-            && skill.fetchSpell?.() === true
-            && skillDistance(skill) >= 200
-            && !skill.fetchSemantic?.()?.effect
-        ));
-        if (hasLongRangeMagicDamage) return 'mage';
-
-        const attackRadius = Number(this.fetchAtkRadius());
-        if (Number.isFinite(attackRadius) && attackRadius >= 200) return 'archer';
-        return 'fighter';
+        // Most imported C4 templates do not carry the source AI enum
+        // (NpcCombatChoice.aiTypeFor reads it from skills and attack radius).
+        return NpcCombatChoice.aiTypeFor(super.fetchAiType(), this.fetchCombatSkills(), this.fetchAtkRadius());
     }
 
     fetchSkillCastRange(skill, actor) {
@@ -699,125 +665,38 @@ class Npc extends NpcModel {
     }
 
     selectCombatSkill(actor, rng = Math.random) {
-        if (!EffectRestrictions.canCast(this)) return null;
-        const skills = this.fetchCombatSkills().filter((skill) => {
-            if (this.fetchMp() < skill.fetchConsumedMp()) return false;
-            return this.canUseSkill(skill);
-        });
-        const selfBuff = skills.find((skill) => {
-            if (skill.fetchTargetKind() !== 'self') return false;
-            const semantic = skill.fetchSemantic?.() || {};
-            if (semantic.effectType !== 'buff' || !semantic.effect) return false;
-            if (skill.fetchSkillType?.() === 'hot') {
-                const targets = this.attack.resolveSkillTargets(null,this,this,skill);
-                if (!targets.some(target => Number(target.fetchHp?.()) < Number(target.fetchMaxHp?.()))) return false;
-            }
-            return !EffectStore.list(this).some((effect) => (
-                Number(effect.id) === Number(skill.fetchSelfId()) || effect.key === semantic.effect
-                || semantic.stackFamily && effect.stackFamily === semantic.stackFamily
-                    && Number(effect.stackOrder || 0) >= Number(semantic.stackOrder || 0)
-            ));
-        });
-        if (selfBuff) return selfBuff;
-
-        const enemySkills = skills.filter((skill) => skill.fetchTargetKind?.() === 'enemy');
-        if (enemySkills.length === 0 || !actor) return null;
-
-        const impairments = EffectStore.impairments(actor);
-        const targetAiType = actor.fetchAiType?.() || 'fighter';
-        const aiType = this.fetchAiType();
-        const chance = (skill, category) => this.fetchCombatSkillChance(
-            skill,
-            category,
-            aiType,
-            targetAiType
-        );
-        const passes = (skill, category) => Number(rng()) * 100 <= chance(skill, category);
-
-        // L2J checks special utility categories before ordinary damage. A
-        // failed special roll does not consume the action: the NPC may still
-        // roll a normal damage skill during this combat tick.
-        const hardControls = enemySkills.filter((skill) => this.isCombatSkillCategory(skill) === 'hard_control');
-        if (!impairments.disabled) {
-            const selected = hardControls.find((skill) => passes(skill, 'hard_control'));
-            if (selected) return selected;
-        }
-
-        const sleeps = enemySkills.filter((skill) => this.isCombatSkillCategory(skill) === 'sleep');
-        if (!impairments.disabled) {
-            const selected = sleeps.find((skill) => passes(skill, 'sleep'));
-            if (selected) return selected;
-        }
-
-        const roots = enemySkills.filter((skill) => this.isCombatSkillCategory(skill) === 'root');
-        if (!impairments.rooted) {
-            const selected = roots.find((skill) => passes(skill, 'root'));
-            if (selected) return selected;
-        }
-
-        const mutes = enemySkills.filter((skill) => this.isCombatSkillCategory(skill) === 'mute');
-        if (!impairments.silenced) {
-            const selected = mutes.find((skill) => passes(skill, 'mute'));
-            if (selected) return selected;
-        }
-
+        if (!this.fetchCombatSkills().length || !EffectRestrictions.canCast(this)) return null;
         const now = Date.now();
-        const debuffs = enemySkills.filter((skill) => this.isCombatSkillCategory(skill) === 'debuff');
-        if (now - this.lastDebuffAt >= 6000) {
-            const selected = debuffs.find((skill) => passes(skill, 'debuff'));
-            if (selected) {
-                this.lastDebuffAt = now;
-                return selected;
-            }
-        }
-
-        const damage = enemySkills.filter((skill) => this.isCombatSkillCategory(skill) === 'damage');
-        return damage.find((skill) => passes(skill, 'damage')) || null;
-    }
-
-    isCombatSkillCategory(skill) {
-        const semantic = skill?.fetchSemantic?.() || {};
-        const effect = semanticEffect(skill);
-        if (HARD_CONTROL_EFFECTS.has(effect)) return 'hard_control';
-        if (SLEEP_EFFECTS.has(effect)) return 'sleep';
-        if (ROOT_EFFECTS.has(effect)) return 'root';
-        if (MUTE_EFFECTS.has(effect) || semantic.physicalMute || semantic.magicMute) return 'mute';
-        if (semantic.effectType === 'debuff') return 'debuff';
-        return 'damage';
-    }
-
-    fetchCombatSkillChance(skill, category, aiType = 'fighter', targetAiType = 'fighter') {
-        const range = skillDistance(skill);
-        const closeRange = range < 200;
-
-        if (category === 'hard_control') {
-            return closeRange ? 10 : 7;
-        }
-        if (category === 'sleep') return 1;
-        if (category === 'root') return 8;
-        if (category === 'mute') return (targetAiType === 'mage' || targetAiType === 'balanced') ? 8 : 3;
-        if (category === 'debuff') {
-            let value = 5;
-            if (aiType === 'fighter' && ['mage', 'archer'].includes(targetAiType)) value = 3;
-            if (aiType === 'mage' && targetAiType !== 'mage') value = 4;
-            if (closeRange) value += 3;
-            return value;
-        }
-
-        if (aiType === 'mage') return closeRange ? 35 : 25;
-        if (aiType === 'balanced') {
-            if (closeRange) return 12;
-            return targetAiType === 'mage' ? 2 : 5;
-        }
-        if (aiType === 'archer') return closeRange ? 12 : 3;
-        if (closeRange) return 12;
-        return targetAiType === 'mage' ? 1 : 3;
+        const picked = NpcCombatChoice.select({
+            skills: this.fetchCombatSkills(),
+            usable: (skill) => this.fetchMp() >= skill.fetchConsumedMp() && this.canUseSkill(skill),
+            buffNeeded: (skill) => {
+                const semantic = skill.fetchSemantic?.() || {};
+                if (skill.fetchSkillType?.() === 'hot') {
+                    const targets = this.attack.resolveSkillTargets(null,this,this,skill);
+                    if (!targets.some(target => Number(target.fetchHp?.()) < Number(target.fetchMaxHp?.()))) return false;
+                }
+                return !EffectStore.list(this).some((effect) => (
+                    Number(effect.id) === Number(skill.fetchSelfId()) || effect.key === semantic.effect
+                    || semantic.stackFamily && effect.stackFamily === semantic.stackFamily
+                        && Number(effect.stackOrder || 0) >= Number(semantic.stackOrder || 0)
+                ));
+            },
+            hasTarget: !!actor,
+            impairments: actor ? EffectStore.impairments(actor) : {},
+            aiType: this.fetchAiType(),
+            targetAiType: actor?.fetchAiType?.() || 'fighter',
+            debuffReady: now - this.lastDebuffAt >= NpcCombatChoice.DEBUFF_GAP_MS,
+            rng
+        });
+        if (picked?.category === 'debuff') this.lastDebuffAt = now;
+        return picked?.skill || null;
     }
 
     canUseCombatSkillOn(actor, skill) {
         if (!actor || actor === this) return true;
         const impairments = EffectStore.impairments(actor);
-        switch (this.isCombatSkillCategory(skill)) {
+        switch (NpcCombatChoice.category(skill)) {
             case 'hard_control':
             case 'sleep':
                 return !impairments.disabled;
@@ -837,7 +716,7 @@ class Npc extends NpcModel {
     markSkillReuse(skill, now = Date.now()) {
         this.skillReuseUntil.set(
             skill.fetchSelfId(),
-            now + Math.max(1000, Number(skill.fetchReuseTime()) || 0)
+            now + NpcCombatChoice.reuseMs(skill)
         );
     }
 
@@ -910,10 +789,7 @@ class Npc extends NpcModel {
 
         const rangedAttack = AttackRange.weaponKind(src) === 'Weapon.Bow';
         const attackSpeed = src.fetchCollectiveAtkSpd();
-        const timing = rangedAttack
-            ? Formulas.calcBowAttackTimes(attackSpeed)
-            : { drawMs: Formulas.calcMeleeAtkTime(attackSpeed) * 0.644,
-                cycleMs: Formulas.calcMeleeAtkTime(attackSpeed) };
+        const timing = Formulas.attackTimes(attackSpeed, { bow: rangedAttack });
         const hitLanded = Formulas.calcHitChance(src, dst, Math.random, AttackHelper.positionContext(src, dst));
         const hit = AttackHelper.prepareNpcMeleeHit(src, dst, hitLanded);
 

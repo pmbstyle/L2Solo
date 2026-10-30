@@ -1,0 +1,134 @@
+name: Tables
+
+# Rebuilds the measured bot tables of one commit: the spot table
+# (scripts/generate-spot-table.js, split in shares) and the hunt tables
+# (scripts/hunt-tables/build.js). Started by a push to tables/<what>/<name>
+# (~/Games/tools/tables.sh), what = all | spot | hunt | probe (12 spots,
+# short hunts: compares a run here with the same run elsewhere). The tables
+# come back as the run's artifacts spot-table and hunt-tables.
+
+on:
+  push:
+    branches: ['tables/**']
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      spot: ${{ steps.plan.outputs.spot }}
+      hunt: ${{ steps.plan.outputs.hunt }}
+      args: ${{ steps.plan.outputs.args }}
+    steps:
+      - id: plan
+        env:
+          REF: ${{ github.ref_name }}
+        run: |
+          what=$(echo "$REF" | cut -d/ -f2)
+          case "$what" in
+            all) echo "spot=true" >> $GITHUB_OUTPUT; echo "hunt=true" >> $GITHUB_OUTPUT ;;
+            spot) echo "spot=true" >> $GITHUB_OUTPUT ;;
+            hunt) echo "hunt=true" >> $GITHUB_OUTPUT ;;
+            probe) echo "spot=true" >> $GITHUB_OUTPUT
+                   echo "args=--spots=12 --hours=0.25 --curve-hours=0.25" >> $GITHUB_OUTPUT ;;
+            *) echo "unknown tables '$what' (all, spot, hunt, probe)"; exit 1 ;;
+          esac
+
+  spot-rows:
+    name: Spot rows (${{ matrix.shard }}/12)
+    needs: plan
+    if: needs.plan.outputs.spot == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: true
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: node scripts/generate-spot-table.js --jobs=4 ${{ needs.plan.outputs.args }} --phase=rows --shard=${{ matrix.shard }}/12 --out=parts/rows-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rows-${{ matrix.shard }}
+          path: parts/rows-${{ matrix.shard }}.json
+          retention-days: 3
+
+  spot-curves:
+    name: Spot curves (${{ matrix.shard }}/12)
+    needs: [plan, spot-rows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: true
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rows-*
+          path: parts
+          merge-multiple: true
+      - run: node scripts/generate-spot-table.js --jobs=4 ${{ needs.plan.outputs.args }} --phase=curves --shard=${{ matrix.shard }}/12 --parts=parts --out=curves/curves-${{ matrix.shard }}.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: curves-${{ matrix.shard }}
+          path: curves/curves-${{ matrix.shard }}.json
+          retention-days: 3
+
+  spot-merge:
+    name: Spot table
+    needs: [plan, spot-curves]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rows-*
+          path: parts
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: curves-*
+          path: parts
+          merge-multiple: true
+      - run: node scripts/generate-spot-table.js ${{ needs.plan.outputs.args }} --phase=merge --parts=parts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: spot-table
+          path: |
+            data/Bots/spot-table.json
+            data/Bots/spot-reward-npcs.json
+          retention-days: 14
+
+  hunt:
+    name: Hunt tables
+    needs: plan
+    if: needs.plan.outputs.hunt == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: node scripts/hunt-tables/build.js --tables=all
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hunt-tables
+          path: data/Bots/hunt/
+          retention-days: 14

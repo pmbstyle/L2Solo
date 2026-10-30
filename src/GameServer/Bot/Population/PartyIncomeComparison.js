@@ -19,11 +19,6 @@ const rosterKey = members => members.map(member => Number(member.characterId)).s
 const adventurer = state => invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(state);
 const soloState = state => ({ ...state, activity: 'hunting', partyId: null,
     party: { ...state.party, partyId: null }, stats: { ...state.stats, backgroundPartyId: null, routeMode: 'solo' } });
-function tableRole(state) {
-    const Roles = invoke('GameServer/Bot/AI/BotRoles');
-    const role = state.stats?.role || state.party?.role || Roles.inferRole(state.stats?.classId ?? state.classId);
-    return Roles.isSpoiler(state) ? 'spoiler' : ({ melee: 'dps', nuker: 'mage', crafter: 'dps' }[role] || role);
-}
 
 // Pure comparison in the same units as fundingDelay. No XP reward enters
 // admission. Random/turn loot uses the member's expectation, never group cash.
@@ -173,7 +168,7 @@ function prepare(members, { objective, party, spots, memberContexts, timestamp =
         return member;
     });
     const values = members.map((member, index) => {
-        const row = Table.value(spot.id, tableRole(member), member.level, true,
+        const row = Table.value(spot.id, Table.roleFor(member), member.level, true,
             { spoilSkillLevel: Rewards.spoilSkillLevel(member) });
         if (!row || buffed[index] === member) return row;
         const damage = Match.damageRate(Match.stateProfiles(member, { timestamp, buffed: true }));
@@ -204,7 +199,7 @@ function prepare(members, { objective, party, spots, memberContexts, timestamp =
             spoilerLevel: member.level });
         const drop = expected ? expected.drop : (gross.dropLoot ?? gross.loot) / gross.kills;
         // Spoil stays with its spoiler under the native party agreement.
-        const raw = Table.value(spot.id, tableRole(member), member.level, true,
+        const raw = Table.value(spot.id, Table.roleFor(member), member.level, true,
             { spoilSkillLevel: Rewards.spoilSkillLevel(member) });
         const spoil = expected?.spoil || 0;
         const income = kills * ((expected?.adena ?? gross.adena / gross.kills) / members.length + drop / members.length + spoil

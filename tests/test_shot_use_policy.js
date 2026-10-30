@@ -119,8 +119,15 @@ try {
     assert.equal(Shots.keptAmounts(state, { stock: () => stock })[1835], 1000,
         'temporarily disabling shot use keeps compatible stock for a future hunt');
     const cheap = Shots.usePolicy(state, { plan: Shots.planForState(state), bestTable: Table.value('policy', 'dps', 7, true),
-        withoutShots: Table.value('policy', 'dps', 7, false), hourAdena: 10000, unitPrice: .1 });
+        hourAdena: 10000, unitPrice: .1 });
     assert.equal(cheap.purchaseUsePerHour, 0, 'a consumption wish cannot buy shots it would immediately reject for use');
+    // The hour is net of the shots at the shop price (7 x 100): priced once,
+    // 14 x 100 against 10000 + 700, not against 10000.
+    benefit = .135;
+    const once = Shots.usePolicy(state, { plan: Shots.planForState(state), bestTable: Table.value('policy', 'dps', 7, true),
+        hourAdena: 10000, unitPrice: 14 });
+    assert.equal(once.purchaseUsePerHour, 100, 'the shot cost is not subtracted twice');
+    benefit = .01;
     Shots.enableAutoShot(actor, { stock });
     assert.equal(actor.autoSoulshots.size, 0, 'a denied use clears a previously enabled compatible shot');
     // Actual solo/party charge sites: a real fixed monster and native weapon.

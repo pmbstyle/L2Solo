@@ -294,6 +294,21 @@ function route(state, currentSpot, party, partyMembers = [], { spots, timestamp,
         { spots, currentSpot, timestamp, frame });
 }
 
+// No solo ground (decision 10-30, T106): a solo bot hunts ground its level
+// does not fit. The spot search keeps a fitting current spot and walks the
+// fitting spots first, so the spot it left the bot on fails that same level
+// fit (SpotService.isSuitable at the search's solo target level) only when
+// its solo gate admitted no spot near the level: read on the search's
+// result, never searched again. A gear plan's own source is an errand there.
+function soloGroundMissing(state, spots) {
+    if (!state?.spotId || state.party?.partyId || state.stats?.travel) return false;
+    const plan = state.stats?.equipmentPlan;
+    if (plan?.status === 'active' && String(plan.next?.spotId || '') === String(state.spotId)) return false;
+    const spot = SpotIndex.spotById(spots, state.spotId);
+    return !!spot && spot.raidBoss !== true
+        && !SpotService.isSuitable(spot, LevelingRoutes.targetLevelForState(state, { mode: 'solo' }));
+}
+
 // The solo trip of a step: to the spot the step's own leaf names when the
 // bot may hunt there (a trip there drops the kept route: it was searched
 // from the ground the bot leaves), else to the route kept on `owner` (the
@@ -364,4 +379,4 @@ function dropReason(sectionsMoved, before = {}, after = {}) {
     return planKey(before.plan, before.request) !== planKey(after.plan, after.request) ? 'plan' : '';
 }
 
-module.exports = { choose, record, leafChoice, leafFitReader, route, trip, drop, dropReason };
+module.exports = { choose, record, leafChoice, leafFitReader, route, trip, drop, dropReason, soloGroundMissing };

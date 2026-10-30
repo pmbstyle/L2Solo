@@ -1,8 +1,7 @@
-const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const ConsumableRestock = invoke('GameServer/Inventory/ConsumableRestock');
-const DataCache = invoke('GameServer/DataCache');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const StaticMerchantPricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
 const C4ItemSkills = invoke('GameServer/Items/C4ItemSkills');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 
@@ -23,10 +22,6 @@ const MELEE_USE_HP_RATIO = 0.35;
 const RANGED_USE_HP_RATIO = 0.25;
 const QUICK_USE_HP_RATIO = 0.12;
 const DESIRED_HP_RATIO = 0.65;
-
-function templateFor(selfId) {
-    return ItemTemplateIndex.find(DataCache.items, selfId) || null;
-}
 
 function detailsFor(selfId) {
     return POTIONS.find((potion) => potion.selfId === Number(selfId)) || null;
@@ -53,11 +48,8 @@ function targetAmountFor(value) {
 function purchasePotionFor(value) {
     const level = Number(value?.fetchLevel?.() ?? value?.level ?? 1) || 1;
     const choice = PURCHASE_BY_LEVEL.find((entry) => level <= entry.maxLevel) || PURCHASE_BY_LEVEL[0];
-    const template = templateFor(choice.selfId);
-    return {
-        ...detailsFor(choice.selfId),
-        price: Math.max(0, Number(template?.template?.price || 0))
-    };
+    // The NPC's price at the current rate (x10: 660 for a 330 Healing Potion).
+    return { ...detailsFor(choice.selfId), price: StaticMerchantPricing.botBuyPrice(choice.selfId) };
 }
 
 // The shared operating reserve, read from a cold state or a hot actor.

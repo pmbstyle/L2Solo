@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { createExportedCatalogue } = require('../GameServer/Knowledge/ExportedCatalogueAdapter');
+const NpcTraits = require('../GameServer/Npc/NpcTraits');
 
 const DEFAULT_PAGE_SIZE = 60;
 const MAX_PAGE_SIZE = 100;
@@ -409,7 +410,7 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null,
             ...npcSummary(npc, data.skillById),
             title: String(npc?.template?.template?.title || ''),
             race: String(npc?.template?.traits?.race || ''),
-            undead: Boolean(npc?.template?.traits?.undead),
+            undead: NpcTraits.isUndead(npc?.template?.traits),
             hostile: Boolean(npc?.template?.template?.hostile),
             stats: npc.defaultEffectiveStats,
             progression: npc.progression,

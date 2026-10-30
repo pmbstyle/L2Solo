@@ -1,6 +1,8 @@
 'use strict';
 const assert = require('node:assert/strict');
 require('../src/Global');
+// The author's fixed shot merchant sells shots here (off by default since T116).
+invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = false;
 const Data = invoke('GameServer/DataCache');
 Data.init({ validate: false });
 const Policy = invoke('GameServer/Bot/Population/OpportunisticRaidPolicy');
@@ -16,7 +18,7 @@ function member(id, classId, level, weapon, healer = false) {
     const gear = [weapon, 40, 45, 50, ...(healer ? [432, 465] : [347, 376, 625])];
     const slot = [7, 12, 6, 9, 10, 11, 8];
     const items = gear.map((selfId, i) => ({ selfId, amount: 1, equipped: 1,
-        slot: [93, 178, 291].includes(selfId) ? 14 : slot[i], name: Data.items.find(t => t.selfId === selfId).template.name }));
+        slot: [93, 124, 178, 291].includes(selfId) ? 14 : slot[i], name: Data.items.find(t => t.selfId === selfId).template.name }));
     [114, 114, 118, 876, 876].forEach((selfId, i) => items.push({ selfId, amount: 1, equipped: 1,
         slot: i + 1, name: Data.items.find(t => t.selfId === selfId).template.name }));
     items.push({ selfId: weapon === 3 ? 1835 : 1463, amount: 2500, slot: 0, equipped: 0 });
@@ -28,9 +30,10 @@ function member(id, classId, level, weapon, healer = false) {
     return s;
 }
 
+// Member 8 holds a Two-Handed Sword: a Human Warrior wears only two-handers or polearms (user 10-29).
 const party = [member(1, 32, 26, 3), member(2, 42, 29, 178, true), member(3, 29, 26, 178, true),
     member(4, 54, 31, 157), member(5, 56, 29, 93), member(6, 56, 28, 168),
-    member(7, 54, 28, 156), member(8, 1, 29, 123), member(9, 56, 30, 291)];
+    member(7, 54, 28, 156), member(8, 1, 29, 124), member(9, 56, 30, 291)];
 const spot = Catalog.findById('raid:10366');
 
 // Frozen synchronous behavior for a narrow population: scheduling preserves

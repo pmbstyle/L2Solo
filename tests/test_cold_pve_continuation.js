@@ -16,7 +16,8 @@ const base = { characterId: 901, name: 'Slow', level: 12, phase: 'cold', activit
             atkSpd: 379, critical: 0, accur: 100, pDef: 120, mDef: 50, evasion: 0, bonusMp: 0, shieldPDef: 0 },
         skills: [], effects: [] } } };
 const spot = { id: 'continuation', name: 'Long fights', minLevel: 12, maxLevel: 12, avgLevel: 12,
-    density: 1, rewards: { exp: 1000, sp: 10, adenaMin: 1, adenaMax: 1 } };
+    // Dense enough that the walk to a mob (T106) fits the 12 s round.
+    density: 30, rewards: { exp: 1000, sp: 10, adenaMin: 1, adenaMax: 1 } };
 let selected = 0;
 let mobHp = 1200;
 Cold.npcForSpot = () => { selected++; return { level: 12, maxHp: mobHp, pAtk: 1, pAtkRnd: 0,

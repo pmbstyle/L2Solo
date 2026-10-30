@@ -5,6 +5,8 @@ const Formulas       = invoke('GameServer/Formulas');
 const DataCache      = invoke('GameServer/DataCache');
 const SkillEffects   = invoke('GameServer/Skills/C4SkillEffects');
 const C4SkillRules   = invoke('GameServer/Skills/C4SkillRules');
+const HitRules       = invoke('GameServer/Combat/HitRules');
+const CombatantView  = invoke('GameServer/Combat/CombatantView');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
@@ -157,11 +159,8 @@ class Attack {
 
         const attackSpeed = actor.fetchCollectiveAtkSpd();
         const weapon = actor.backpack?.fetchEquippedWeapon?.();
-        const timing = rangedAttack
-            ? Formulas.calcBowAttackTimes(attackSpeed, weapon?.fetchAttackReuseDelay?.() ?? 1500,
-                EffectStats.multiplier(actor, 'atkReuseMul'))
-            : { drawMs: Formulas.calcMeleeAtkTime(attackSpeed) * 0.644,
-                cycleMs: Formulas.calcMeleeAtkTime(attackSpeed) };
+        const timing = Formulas.attackTimes(attackSpeed, { bow: rangedAttack,
+            reuseDelay: weapon?.fetchAttackReuseDelay?.() ?? 1500, reuseMul: EffectStats.multiplier(actor, 'atkReuseMul') });
         const movementGeneration = Number(session.moveRouteGeneration || 0);
         this.repeatTarget = null;
         if (rangedAttack) this.bowReloading = true;
@@ -1062,86 +1061,69 @@ class Attack {
     }
 
     prepareSkillDamage(actor, creature, skill, magicSkill, rng = Math.random, magicAtkOverride = null) {
+        const semantic = skill.fetchSemantic?.() || {};
         if (magicSkill) {
             const usedSpiritshot = !!actor.spiritshotLoaded;
             const usedBlessedSpiritshot = usedSpiritshot && !!actor.blessedSpiritshotLoaded;
-            const semantic = skill.fetchSemantic?.() || {};
-            const vulnModifier = traitVulnerabilityModifier(creature, semantic.trait);
-            const magicCriticalRate = Formulas.magicCriticalRate({
-                multiplier: EffectStats.multiplier(actor, 'mCritRateMul'),
-                add: EffectStats.add(actor, 'mCritRateAdd'),
-                wit: actor.fetchCollectiveWit?.(),
-                weapon: !!actor.backpack?.fetchEquippedWeapon?.()
+            const attacker = CombatantView.view({
+                mAtk: magicAtkOverride ?? actor.fetchCollectiveMAtk(),
+                mCritRate: Formulas.magicCriticalRate({
+                    multiplier: EffectStats.multiplier(actor, 'mCritRateMul'),
+                    add: EffectStats.add(actor, 'mCritRateAdd'),
+                    wit: actor.fetchCollectiveWit?.(),
+                    weapon: !!actor.backpack?.fetchEquippedWeapon?.()
+                })
             });
-            const magicCritical = Formulas.rollCritical(magicCriticalRate, rng);
             const power = semantic.skillType === C4SkillRules.DEATH_LINK
                 ? Formulas.calcDeathLinkPower(skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.())
                 : skill.fetchPower();
-            const damage = Math.round(Formulas.calcMagicDamage(
-                magicAtkOverride ?? actor.fetchCollectiveMAtk(),
-                power,
-                creature.fetchCollectiveMDef(),
-                { spiritshot: usedSpiritshot, blessedSpiritshot: usedBlessedSpiritshot, magicCritical }
-            ) * vulnModifier * WeaponSA.pvpMultiplier(actor, creature, 'magic'));
+            const { damage } = HitRules.magicSkill(attacker, CombatantView.view({ mDef: creature.fetchCollectiveMDef() }), {
+                power, spiritshot: usedSpiritshot, blessedSpiritshot: usedBlessedSpiritshot,
+                modifier: traitVulnerabilityModifier(creature, semantic.trait) * WeaponSA.pvpMultiplier(actor, creature, 'magic')
+            }, rng);
             this.clearLoadedShot(actor, magicSkill);
             return damage;
         }
 
-        const shield = Formulas.rollShieldUse({
-            shieldRate: this.fetchShieldRate(creature),
-            dex: creature.fetchDex ? creature.fetchDex() : 0,
-            facing: this.isShieldFacing(creature, actor),
-            bow: this.isBowAttack(actor)
-        }, rng);
-
-        if (shield === Formulas.SHIELD_DEFENSE_PERFECT_BLOCK) {
-            this.clearLoadedShot(actor, magicSkill);
-            return 1;
-        }
-
-        const usedSoulshot = !!actor.soulshotLoaded;
-        const shieldPDef = shield === Formulas.SHIELD_DEFENSE_SUCCEED ? this.fetchShieldPDef(creature) : 0;
-        const semantic = skill.fetchSemantic?.() || {};
         const position = this.targetPosition(actor, creature);
-        const weaponPAtkRnd = actor.backpack?.fetchTotalWeaponPAtkRnd?.() ?? 0;
+        const attacker = CombatantView.view({
+            pAtk: actor.fetchCollectivePAtk(),
+            pAtkRnd: actor.backpack?.fetchTotalWeaponPAtkRnd?.() ?? 0,
+            critDamageMul: EffectStats.multiplier(actor, 'pCritDamageMul')
+                * EffectStats.situationalMultiplier(actor, 'pCritDamageMul', position),
+            critDamageAdd: EffectStats.add(actor, 'pCritDamageAdd'),
+            str: ((Number(actor?.fetchStr?.()) || 1) + EffectStats.add(actor, 'STR')) * EffectStats.multiplier(actor, 'STRMul')
+        });
         const weaponModifier = incomingWeaponVulnerabilityModifier(creature, {
             bow: semantic.trait === 'bow' || this.isBowAttack(actor),
             blunt: this.isBluntAttack(actor),
             dagger: semantic.trait === 'dagger' || this.isDaggerAttack(actor)
         });
-        const damageFormula = semantic.skillType === C4SkillRules.BLOW
-            ? Formulas.calcBlowDamage.bind(Formulas)
-            : Formulas.calcPhysicalDamage.bind(Formulas);
         const power = semantic.skillType === C4SkillRules.FATAL
             ? Formulas.calcFatalPower(skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.())
             : skill.fetchPower();
-        let damage = Math.round(damageFormula(
-            actor.fetchCollectivePAtk(),
-            weaponPAtkRnd,
-            creature.fetchCollectivePDef() + shieldPDef,
+        const { damage } = HitRules.physicalSkill(attacker, this.defenderView(creature), {
             power,
-            {
-                soulshot: usedSoulshot,
-                criticalDamageMultiplier: EffectStats.multiplier(actor, 'pCritDamageMul')
-                    * EffectStats.situationalMultiplier(actor, 'pCritDamageMul', position),
-                criticalDamageAdd: EffectStats.add(actor, 'pCritDamageAdd'),
-                rng
-            }
-        ) * weaponModifier * physicalUndeadModifier(actor, creature) * physicalRaceModifier(actor, creature) * WeaponSA.pvpMultiplier(actor, creature, 'skill'));
-        if (this.rollPhysicalSkillCritical(actor, semantic, rng)) damage *= 2;
+            blow: semantic.skillType === C4SkillRules.BLOW,
+            soulshot: !!actor.soulshotLoaded,
+            facing: this.isShieldFacing(creature, actor),
+            bow: this.isBowAttack(actor),
+            skillCritRate: HitRules.physicalSkillCritRate(semantic, attacker.str),
+            modifier: weaponModifier * physicalUndeadModifier(actor, creature) * physicalRaceModifier(actor, creature)
+                * WeaponSA.pvpMultiplier(actor, creature, 'skill')
+        }, rng);
         this.clearLoadedShot(actor, magicSkill);
         return damage;
     }
 
-    rollPhysicalSkillCritical(actor, semantic, rng = Math.random) {
-        const baseCritRate = Number(semantic?.baseCritRate) || 0;
-        if (baseCritRate <= 0) return false;
-
-        const baseStr = Number(actor?.fetchStr?.()) || 1;
-        const effectiveStr = Math.max(1, Math.round(
-            (baseStr + EffectStats.add(actor, 'STR')) * EffectStats.multiplier(actor, 'STRMul')
-        ));
-        return Formulas.rollCritical(baseCritRate * 10 * Formulas.calcBaseMod.STR(effectiveStr), rng);
+    // The defender's side of a hit (CombatantView): its defences and shield.
+    defenderView(creature) {
+        return CombatantView.view({
+            pDef: creature.fetchCollectivePDef(),
+            shieldPDef: this.fetchShieldPDef(creature),
+            shieldRate: this.fetchShieldRate(creature),
+            dex: creature.fetchDex ? creature.fetchDex() : 0
+        });
     }
 
     clearLoadedShot(actor, magicSkill) {
@@ -1160,42 +1142,36 @@ class Attack {
             };
         }
 
-        const pAtk  = actor.fetchCollectivePAtk();
-        const pRand = actor.backpack.fetchTotalWeaponPAtkRnd() ?? 0;
-        const shieldPDef = this.fetchShieldPDef(creature);
-        const shield = Formulas.rollShieldUse({
-            shieldRate: this.fetchShieldRate(creature),
-            dex: creature.fetchDex ? creature.fetchDex() : 0,
-            facing: this.isShieldFacing(creature, actor),
-            bow: this.isBowAttack(actor)
-        }, rng);
-        const shielded = shield > Formulas.SHIELD_DEFENSE_FAILED;
-        const pDef = creature.fetchCollectivePDef() + (shield === Formulas.SHIELD_DEFENSE_SUCCEED ? shieldPDef : 0);
         const position = this.targetPosition(actor, creature);
-        const critical = Formulas.rollCritical(this.fetchSituationalCriticalRate(actor, creature), rng);
-        const anger = critical && shield !== Formulas.SHIELD_DEFENSE_PERFECT_BLOCK ? WeaponSA.criticalAnger(actor) : 0;
+        const attacker = CombatantView.view({
+            pAtk: actor.fetchCollectivePAtk(),
+            pAtkRnd: actor.backpack.fetchTotalWeaponPAtkRnd() ?? 0,
+            critRate: this.fetchSituationalCriticalRate(actor, creature),
+            critDamageMul: EffectStats.multiplier(actor, 'pCritDamageMul')
+                * EffectStats.situationalMultiplier(actor, 'pCritDamageMul', position),
+            critDamageAdd: EffectStats.add(actor, 'pCritDamageAdd')
+        });
         const weaponModifier = incomingWeaponVulnerabilityModifier(creature, {
             bow: this.isBowAttack(actor),
             blunt: this.isBluntAttack(actor)
         });
-        const damage = shield === Formulas.SHIELD_DEFENSE_PERFECT_BLOCK
-            ? 1
-            : Math.round(Formulas.calcMeleeDamage(pAtk, pRand, pDef, {
-                critical,
-                soulshot: usedSoulshot,
-                criticalDamageMultiplier: EffectStats.multiplier(actor, 'pCritDamageMul')
-                    * EffectStats.situationalMultiplier(actor, 'pCritDamageMul', position),
-                criticalDamageAdd: EffectStats.add(actor, 'pCritDamageAdd') + anger
-            }) * weaponModifier * physicalUndeadModifier(actor, creature) * physicalRaceModifier(actor, creature) * WeaponSA.pvpMultiplier(actor, creature, 'melee'));
+        const hit = HitRules.melee(attacker, this.defenderView(creature), {
+            soulshot: usedSoulshot,
+            facing: this.isShieldFacing(creature, actor),
+            bow: this.isBowAttack(actor),
+            anger: () => WeaponSA.criticalAnger(actor),
+            modifier: weaponModifier * physicalUndeadModifier(actor, creature) * physicalRaceModifier(actor, creature)
+                * WeaponSA.pvpMultiplier(actor, creature, 'melee')
+        }, rng);
         let flags = usedSoulshot ? ServerResponse.attack.soulshotFlags(actor) : 0;
 
-        if (critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
-        if (shielded) flags |= ServerResponse.attack.HITFLAG_SHLD;
+        if (hit.critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
+        if (hit.shield > Formulas.SHIELD_DEFENSE_FAILED) flags |= ServerResponse.attack.HITFLAG_SHLD;
 
         return {
-            damage,
+            damage: hit.damage,
             flags,
-            anger: !!anger
+            anger: hit.anger
         };
     }
 
@@ -1207,38 +1183,32 @@ class Attack {
             };
         }
 
-        const shieldPDef = this.fetchShieldPDef(dst);
-        const shield = Formulas.rollShieldUse({
-            shieldRate: this.fetchShieldRate(dst),
-            dex: dst.fetchDex ? dst.fetchDex() : 0,
-            facing: this.isShieldFacing(dst, src),
-            bow: this.isBowAttack(src)
-        }, rng);
-        const shielded = shield > Formulas.SHIELD_DEFENSE_FAILED;
-        const pDef = dst.fetchCollectivePDef() + (shield === Formulas.SHIELD_DEFENSE_SUCCEED ? shieldPDef : 0);
-        const critical = Formulas.rollCritical(this.fetchSituationalCriticalRate(src, dst), rng);
+        const attacker = CombatantView.view({
+            pAtk: src.fetchCollectivePAtk(),
+            critRate: this.fetchSituationalCriticalRate(src, dst),
+            critDamageMul: EffectStats.multiplier(src, 'pCritDamageMul'),
+            critDamageAdd: EffectStats.add(src, 'pCritDamageAdd')
+        });
         const weaponModifier = incomingWeaponVulnerabilityModifier(dst, {
             bow: this.isBowAttack(src),
             blunt: this.isBluntAttack(src)
         });
-        const damage = shield === Formulas.SHIELD_DEFENSE_PERFECT_BLOCK
-            ? 1
-            : Math.round(Formulas.calcMeleeDamage(src.fetchCollectivePAtk(), 0, pDef, {
-                critical,
-                soulshot: src.fetchIsPet?.() === true && !!src.soulshotLoaded,
-                criticalDamageMultiplier: EffectStats.multiplier(src, 'pCritDamageMul'),
-                criticalDamageAdd: EffectStats.add(src, 'pCritDamageAdd')
-            }) * weaponModifier * physicalUndeadModifier(src, dst) * physicalRaceModifier(src, dst));
+        const hit = HitRules.melee(attacker, this.defenderView(dst), {
+            soulshot: src.fetchIsPet?.() === true && !!src.soulshotLoaded,
+            facing: this.isShieldFacing(dst, src),
+            bow: this.isBowAttack(src),
+            modifier: weaponModifier * physicalUndeadModifier(src, dst) * physicalRaceModifier(src, dst)
+        }, rng);
         let flags = 0;
         if (src.fetchIsPet?.() === true && src.soulshotLoaded) {
             flags |= ServerResponse.attack.HITFLAG_USESS;
             src.soulshotLoaded = false;
         }
 
-        if (critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
-        if (shielded) flags |= ServerResponse.attack.HITFLAG_SHLD;
+        if (hit.critical) flags |= ServerResponse.attack.HITFLAG_CRIT;
+        if (hit.shield > Formulas.SHIELD_DEFENSE_FAILED) flags |= ServerResponse.attack.HITFLAG_SHLD;
 
-        return { damage, flags };
+        return { damage: hit.damage, flags };
     }
 
     fetchShieldPDef(creature) {

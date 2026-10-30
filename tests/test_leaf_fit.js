@@ -39,16 +39,17 @@ const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const Gear = invoke('GameServer/Bot/AI/BotGear');
 const at = Date.now();
 
-// A level-35 human fighter wearing its whole baseline kit: no gear to earn,
-// so no income route; its hunt comes from the shared table.
+// A level-32 human fighter wearing its whole baseline kit: no gear to earn,
+// so no income route; its hunt comes from the shared table. (At 35 and 37
+// the regenerated table has no distinct progress and income picks.)
 const inventory = {};
 Gear.planFor({ classId: 1, level: 20 }).items.forEach((item, index) => {
     inventory[index + 1] = { selfId: Number(item.selfId), amount: 1, equipped: true, equippedSlots: [Number(item.slot)] };
 });
-const state = { characterId: 990101, level: 35, phase: 'cold', activity: 'hunting', stats: { classId: 1 }, inventory };
+const state = { characterId: 990101, level: 32, phase: 'cold', activity: 'hunting', stats: { classId: 1 }, inventory };
 const role = Roles.tableRoleFor(state);
-const ranked = Table.rankedIncome(role, 35, Hunt.consumablePrices(state), -7, true, { spoilSkillLevel: 0 });
-const tableBest = Table.best(role, 35, true).spotId;
+const ranked = Table.rankedIncome(role, 32, Hunt.consumablePrices(state), -7, true, { spoilSkillLevel: 0 });
+const tableBest = Table.best(role, 32, true).spotId;
 const tableIncome = ranked[0].spotId;
 assert.notEqual(tableBest, tableIncome, 'the fixture needs two table picks: the progress spot and the income spot');
 const spot = (id, extra = {}) => ({ id, avgLevel: 35, minLevel: 34, maxLevel: 36, density: 10,

@@ -126,7 +126,8 @@ for (const [spotId, seed, classId, level, expected] of SOLO) {
     const result = BackgroundResolver.resolveSolo({
         state: member(81, classId, level, spotId),
         spot: spots[spotId],
-        elapsedMs: 30000,
+        // Shorter than the walk to a mob (T106): the round holds one fight.
+        elapsedMs: 10000,
         rng: seeded(seed),
         timestamp: TIMESTAMP
     });

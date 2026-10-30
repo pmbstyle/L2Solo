@@ -164,7 +164,7 @@ function routeCandidate(options, geodata, from, requestedTo) {
     };
 }
 
-function evaluateCandidate(candidate, from, threat, hazards, aggroRadius) {
+function evaluateCandidate(candidate, from, threat, hazards, radius) {
     let newAggroCount = 0;
     let endpointAggroCount = 0;
     let bufferIntrusionCount = 0;
@@ -173,6 +173,8 @@ function evaluateCandidate(candidate, from, threat, hazards, aggroRadius) {
 
     hazards.forEach((npc) => {
         const hazard = point(npc);
+        // Each hazard at its own C4 aggro range (T114); options.aggroRadius overrides all.
+        const aggroRadius = radius ?? NpcAggro.aggroRadius(npc);
         const startDistance = distance2d(from, hazard);
         const endpointDistance = distance2d(candidate.to, hazard);
         const routeDistance = distanceToRoute(hazard, from, candidate);
@@ -228,8 +230,10 @@ function plan(bot, threatActor, options = {}) {
     const partyAnchor = options.partyAnchor ? point(options.partyAnchor) : null;
     const partyRadius = Math.max(100, Number(options.partyRadius || 450));
     const direction = awayVector(from, threat, preferredPoint);
-    const aggroRadius = Number(options.aggroRadius || NpcAggro.AGGRO_RADIUS);
-    const searchRadius = (partyAnchor ? distance2d(from, partyAnchor) + partyRadius : distance) + aggroRadius + AGGRO_BUFFER;
+    const fixedRadius = Number(options.aggroRadius) || null;
+    // The search reaches the farthest-seeing NPC; each hazard is then judged at its own range.
+    const searchRadius = (partyAnchor ? distance2d(from, partyAnchor) + partyRadius : distance)
+        + (fixedRadius || NpcAggro.MAX_AGGRO_RADIUS) + AGGRO_BUFFER;
     const hazards = [...(world.fetchNpcsInRadius?.(from.locX, from.locY, searchRadius) || [])
         .filter((npc) => isPotentialAggro(npc, threatId)),
         ...(options.threats || []).filter(actor => actorId(actor) !== threatId && !actor.state?.fetchDead?.())];
@@ -251,7 +255,7 @@ function plan(bot, threatActor, options = {}) {
             angle,
             angleRank,
             ...routeCandidate(options, geodata, from, destination)
-        }, from, threat, hazards, aggroRadius);
+        }, from, threat, hazards, fixedRadius);
         if (partyAnchor) {
             // Regroup into the leader's circle or kite inside it. A geodata
             // detour outside that circle must not turn into a solo escape.

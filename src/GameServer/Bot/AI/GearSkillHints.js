@@ -327,7 +327,7 @@ function actorValue(value, key, fallback = null) {
 function characterState(character = {}) {
     const classId = Number(actorValue(character, 'classId', character.stats?.classId || 0)) || null;
     const level = Number(actorValue(character, 'level', character.level || 1)) || 1;
-    const role = BotRoles.inferRole({ classId, level });
+    const role = BotRoles.inferRole(BotRoles.kitClassId(character) ?? { classId, level });
     return { classId, level, role };
 }
 

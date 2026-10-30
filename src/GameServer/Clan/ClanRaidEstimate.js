@@ -18,11 +18,8 @@ function castCycle(p, skill) {
 }
 
 function weaponDps(p, boss) {
-    const cycle = p.equipment?.weaponKind === 'Weapon.Bow'
-        ? Formulas.calcBowAttackTimes(p.atkSpd, p.equipment.attackReuseDelay ?? 1500,
-            Combat.statMultiplier(p, 'atkReuseMul')).cycleMs
-        : Formulas.calcMeleeAtkTime(p.atkSpd || 333);
-    return Formulas.calcPhysicalDamage(p.pAtk, 0, Math.max(1, boss.pDef), 0) * 1000 / Math.max(250, cycle);
+    return Formulas.calcPhysicalDamage(p.pAtk, 0, Math.max(1, boss.pDef), 0) * 1000
+        / Combat.normalAttackMs({ ...p, atkSpd: p.atkSpd || 333 });
 }
 
 function damageRate(entry, boss, seconds) {

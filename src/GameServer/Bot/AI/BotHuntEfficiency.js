@@ -4,6 +4,7 @@ const DataCache = invoke('GameServer/DataCache');
 const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
+const StaticMerchantPricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
 const MAX_SPOTS = 8;
 const MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
@@ -43,8 +44,8 @@ function lootValue(items = []) {
     return value;
 }
 // Prices are independent of the wish network: callers may supply their
-// current quotes, otherwise native shop/template prices are the baseline.
-function consumablePrices(state, price = id => Number(ItemTemplateIndex.find(DataCache.items, id)?.template?.price || 0)) {
+// current quotes, otherwise the NPC's price at the rate (else the template's).
+function consumablePrices(state, price = id => StaticMerchantPricing.botBuyPrice(id)) {
     const shots = invoke('GameServer/Inventory/ShotStock').planForState(state);
     const potion = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state);
     return { shots: Math.max(0, Number(price(shots.selfId)) || 0), potions: Math.max(0, Number(price(potion.selfId)) || 0) };
@@ -213,7 +214,7 @@ function huntIncome(state, timestamp = Date.now(), mode, fits = null) {
     }
     const Table = invoke('GameServer/Bot/AI/SpotValueTable');
     const rewardOptions = { spoilSkillLevel: require('../Economy/SpotRewardExpectation').spoilSkillLevel(state) };
-    const tableRole = Roles.tableRoleFor(state);
+    const tableRole = Table.roleFor(state);
     const level = levelOf(state);
     const currentFits = !state.spotId || !fits || fits(state.spotId);
     const current = state.spotId && currentFits && Table.value(state.spotId, tableRole, level, true, rewardOptions);
@@ -250,10 +251,10 @@ function huntIncome(state, timestamp = Date.now(), mode, fits = null) {
 // Adena per hour of repeatable hunting, independent of wallet and wishes.
 function huntHour(hunt, state = {}) {
     if (Number(hunt?.perHour) > 0) return Number(hunt.perHour);
-    const tableRole = Roles.tableRoleFor(state);
     const costs = consumablePrices(state);
     const rewardOptions = { spoilSkillLevel: require('../Economy/SpotRewardExpectation').spoilSkillLevel(state) };
     const table = invoke('GameServer/Bot/AI/SpotValueTable');
+    const tableRole = table.roleFor(state);
     const row = table.rankedIncome(tableRole, levelOf(state), costs, -7, true, rewardOptions)[0]
         || table.rankedIncome(tableRole, levelOf(state), costs, -7, false, rewardOptions)[0];
     return Math.max(1, row ? netIncome(row, costs) : 0);

@@ -53,14 +53,13 @@ function fetchNormalAttackRange(actor, data = {}) {
     }
 
     const kind = weaponKind(actor, weapon);
-    if (kind === 'Weapon.Bow') {
-        return BOW_ATTACK_RANGE + EffectStats.add(actor, 'pAtkRangeAdd');
-    }
+    return kindRange(kind, kind === 'Weapon.Bow' ? EffectStats.add(actor, 'pAtkRangeAdd') : 0);
+}
 
-    if (kind === 'Weapon.Pole') {
-        return POLEARM_ATTACK_RANGE;
-    }
-
+// A weapon kind's normal attack range (a bow's plus its range bonus); 0 unarmed.
+function kindRange(kind, bowRangeAdd = 0) {
+    if (kind === 'Weapon.Bow') return BOW_ATTACK_RANGE + (Number(bowRangeAdd) || 0);
+    if (kind === 'Weapon.Pole') return POLEARM_ATTACK_RANGE;
     return kind ? MELEE_ATTACK_RANGE : 0;
 }
 
@@ -117,6 +116,7 @@ module.exports = {
     effectiveRange,
     distance2d,
     fetchNormalAttackRange,
+    kindRange,
     isWithinRange,
     maxKnownTargetRadius,
     targetQueryRadius,

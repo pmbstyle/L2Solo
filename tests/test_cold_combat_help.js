@@ -60,7 +60,8 @@ soloHealer.activity = 'hunting';
 delete soloHealer.party;
 const soloProfile = Profile.profileFor(soloHealer, at);
 Object.assign(soloHealer.vitals, { maxHp: soloProfile.maxHp, mp: soloProfile.maxMp, maxMp: soloProfile.maxMp });
-const soloResolve = state => Resolver.resolveSolo({ state, spot, elapsedMs: 1, timestamp: at, rng: () => 0.5 });
+// 2 s: the solo self-heal lands on the fight's second turn.
+const soloResolve = state => Resolver.resolveSolo({ state, spot, elapsedMs: 2000, timestamp: at, rng: () => 0.5 });
 const resting = soloResolve(soloHealer);
 assert.strictEqual(resting.patch.activity, 'resting', 'an injured idle solo bot must recover before starting a fight');
 assert.strictEqual(resting.patch.stats.lastReason, 'solo_recovery_needed');
@@ -68,8 +69,10 @@ assert.strictEqual(resting.debug.heals, 0, 'pre-fight rest must not invent a com
 assert.strictEqual(resting.patch.vitals.mp, soloHealer.vitals.mp);
 
 // Healing belongs to the ongoing fight, which must bypass admission for a new one.
-const soloMob = { level: 20, maxHp: spot.mob.hp, pAtk: 1, pAtkRnd: 0, pDef: 1, mDef: 1,
-    accur: 1, evasion: 0, critical: 0, atkSpd: 253, mAtk: 1, castSpd: 333 };
+// T107: a solo bot heals in a fight only when it would not outlive the mob, so
+// this endless mob hits for real (a 1 P.Atk hit rounds to nothing, accuracy 1 misses).
+const soloMob = { level: 20, maxHp: spot.mob.hp, pAtk: 8, pAtkRnd: 0, pDef: 1, mDef: 1,
+    accur: 300, evasion: 0, critical: 0, atkSpd: 253, mAtk: 1, castSpd: 333 };
 soloHealer.stats.pveEncounter = Encounter.save(null, Encounter.key([soloHealer], spot, 0),
     soloMob, soloMob.maxHp, at, { botReadyAt: 0, mobReadyAt: 0 });
 const soloInput = JSON.stringify(soloHealer);
@@ -81,14 +84,15 @@ assert(soloHealed.patch.stats.coldCombat.cooldowns[1011] > at, 'solo healing mus
 assert.strictEqual(soloHealed.debug.skillUses, soloHealed.debug.heals, 'heals use the shared bounded cast budget');
 assert.strictEqual(soloHealed.memoryEvents?.length || 0, 0, 'self healing cannot earn gratitude');
 assert.strictEqual(JSON.stringify(soloHealer), soloInput, 'solo healing must not mutate its input');
+// T107: a healthy bot is not on this list: the endless mob wounds it, and a
+// bot that would not outlive its mob heals.
 const unavailable = [
     { ...soloHealer, vitals: { ...soloHealer.vitals, mp: 0 } },
-    { ...soloHealer, vitals: { ...soloHealer.vitals, hp: Profile.profileFor(soloHealer, at).maxHp } },
     { ...soloHealer, stats: { ...soloHealer.stats, coldCombat: { ...soloHealer.stats.coldCombat,
         cooldowns: { 1011: at + 60000 } } } }
 ];
 for (const state of unavailable) assert.strictEqual(soloResolve(state).debug.heals, 0,
-    'healthy, out-of-mana, and cooldown-bound solo bots must not cast a heal');
+    'out-of-mana and cooldown-bound solo bots must not cast a heal');
 for (const skill of [{ ...healerSkill, selfId: 45 }, { ...healerSkill, selfId: 109, power: 20 }]) {
     const state = { ...soloHealer, stats: { ...soloHealer.stats,
         pveEncounter: { ...soloHealer.stats.pveEncounter, hp: 1 },

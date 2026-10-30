@@ -101,22 +101,16 @@ function isRealCatalogItem(item = {}) {
     // Catalog classification wins over old inventory/worker projections.
     if (item.template?.kind === 'Other.Quest'
         || catalogItem(selfId)?.template?.kind === 'Other.Quest') return false;
-    const name = String(item.template?.name || '').trim();
-    // A loaded row is not automatically a usable game item.  The datapack has
-    // legacy placeholder rows (for example, the D-grade weapon named "0").
-    // Do not let an anonymous or malformed catalog record become a bot goal,
-    // party-loot candidate, or equipped item just because its combat stats are
-    // otherwise present.
-    return Number.isInteger(selfId) && selfId > 0
-        && name.length > 0
-        && name !== '0'
-        && !/^_+$/.test(name);
+    // A loaded row is not automatically a usable game item: an anonymous
+    // placeholder (BotGear.isNamedItem) never becomes a bot goal, party-loot
+    // candidate, or equipped item just because its combat stats are present.
+    return Number.isInteger(selfId) && selfId > 0 && BotGear.isNamedItem({ template: { name: item.template?.name } });
 }
 
 function roleFor(state = {}) {
     if (BotRoles.isSpoiler(state)) return 'spoiler';
     return state.party?.role || state.stats?.role || BotRoles.inferRole({
-        fetchClassId: () => Number(state.stats?.classId || state.classId || 0)
+        classId: Number(state.stats?.classId || state.classId || 0), characterId: state.characterId
     }) || 'dps';
 }
 

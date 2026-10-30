@@ -32,10 +32,11 @@ assert.strictEqual(ref.stacks, null, 'an old table does not invent zero bag grow
 near(Table.value('S', 'dps', 18).kills, 100, 'at the spot\'s level the curve halves the kills');
 near(Table.value('S', 'dps', 18).deaths, 100 * (0.001 + 0.01), 'deaths per kill add the curve\'s difference');
 near(Table.value('S', 'dps', 19).kills, 200 * 0.625, 'between measured gaps the curve is linear');
-near(Table.value('S', 'dps', 30).kills, 240, 'higher levels follow the curve');
-near(Table.value('S', 'dps', 40).kills, 240, 'beyond the last gap the curve is flat');
-near(Table.value('S', 'dps', 29).adena, 0, 'an old reward curve cannot stand in for actual NPCs');
-near(Table.value('S', 'dps', 90).kills, Table.value('S', 'dps', 78).kills, 'levels above the maximum count as the maximum');
+near(Table.value('S', 'dps', 27).adena, 0, 'an old reward curve cannot stand in for actual NPCs');
+// Spots down to the first deep-blue level only (user 10-29: 9 levels below
+// the bot, past it the C4 drop is 30% and less).
+assert(Table.value('S', 'dps', 27), 'nine levels above the spot: read');
+assert.strictEqual(Table.value('S', 'dps', 28), null, 'ten levels above: not read');
 near(Table.value('T', 'dps', 24).kills, 48, 'kills never exceed what the spot\'s monster count allows');
 assert.strictEqual(Table.value('S', 'dps', 15), null, 'below the lowest level that finds a safe target: no solo hunt');
 assert.strictEqual(Table.value('S', 'dps', 24, false), null, 'no row: no value');
@@ -82,6 +83,95 @@ try {
     fs.rmSync(scratch, { recursive: true, force: true });
 }
 
+// A per-mob table (user 10-29): a row's kills reach its own cap (the spawns
+// its bot may fight), are priced by the species it killed, and take their
+// exp gap from those species' levels, not the spot's other mobs.
+const mixScratch = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'spot-mix-'));
+try {
+    const Rewards = require('../src/GameServer/Bot/Economy/SpotRewardExpectation');
+    const Index = require('../src/GameServer/Item/ItemTemplateIndex');
+    const gapFactor = require('../src/GameServer/Progression/MobExperience').gapFactor;
+    const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'spot_table.json'), 'utf8'));
+    // Spot -10_12 of the reward catalog holds NPCs 34, 38 and 380.
+    fixture.spots[0][0] = '-10_12';
+    fixture.rowFields.push('pull', 'cap', 'mix');
+    for (const rows of fixture.rows) for (const row of rows) if (row) row.push(1, 120, [380, 1]);
+    const file = path.join(mixScratch, 'table.json');
+    fs.writeFileSync(file, JSON.stringify(fixture));
+    Table.useFile(file);
+    const mixed = Table.value('-10_12', 'dps', 24, true);
+    near(mixed.kills, 120, 'the row\'s own cap holds the kills');
+    const level = Number(Index.find(DataCache.npcs, 380).template.level);
+    near(mixed.exp, 120 * 100 * gapFactor(24 - level), 'the exp gap is the killed species\' level');
+    const only = Rewards.value({ id: '-10_12', npcEntries: [{ selfId: 380, count: 1 }], rewards: { adenaMin: 34, adenaMax: 119 } }, 24);
+    near(mixed.adena, 120 * only.adena, 'the kills pay as the killed species does');
+    const all = Rewards.value({ id: '-10_12', npcEntries: [{ selfId: 34, count: 10 }, { selfId: 38, count: 9 }, { selfId: 380, count: 6 }],
+        rewards: { adenaMin: 34, adenaMax: 119 } }, 24);
+    assert.notStrictEqual(Math.round(only.adena), Math.round(all.adena), 'the fixture tells the mix from the spawns');
+} finally {
+    Table.useFile();
+    fs.rmSync(mixScratch, { recursive: true, force: true });
+}
+
+// The gate per gap (T106): a row read below its reference keeps only the
+// species and the cap of the spawns that bot may fight; none closes the row.
+// Gaps 0-4: only NPC 380, cap 50; from 6: 380 and 34, cap 120; below 0: none.
+const gateScratch = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'spot-gate-'));
+try {
+    const Rewards = require('../src/GameServer/Bot/Economy/SpotRewardExpectation');
+    const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'spot_table.json'), 'utf8'));
+    fixture.spots[0][0] = '-10_12';
+    fixture.rowFields.push('pull', 'cap', 'mix', 'gate');
+    const gate = fixture.gaps.map(gap => gap < 0 ? 0 : gap < 6 ? 50 * 256 + 1 : 120 * 256 + 3);
+    for (const rows of fixture.rows) for (const row of rows) if (row) row.push(1, 120, [380, .5, 34, .5], gate);
+    const file = path.join(gateScratch, 'table.json');
+    fs.writeFileSync(file, JSON.stringify(fixture));
+    Table.useFile(file);
+    const rewards = { adenaMin: 34, adenaMax: 119 };
+    const at24 = Table.value('-10_12', 'dps', 24, true), at20 = Table.value('-10_12', 'dps', 20, true);
+    near(at24.kills, 120, 'at the reference the row\'s cap');
+    near(at24.adena, 120 * Rewards.value({ id: '-10_12', npcEntries: [{ selfId: 380, count: 500 }, { selfId: 34, count: 500 }], rewards }, 24).adena,
+        'both species pay at the reference');
+    near(at20.kills, 50, 'two levels lower the cap of the spawns that bot may fight');
+    near(at20.adena, 50 * Rewards.value({ id: '-10_12', npcEntries: [{ selfId: 380, count: 500 }], rewards }, 20).adena,
+        'only the species that bot may fight pay');
+    assert.strictEqual(Table.value('-10_12', 'dps', 16, true), null, 'a gap where the bot may fight none: no row');
+} finally {
+    Table.useFile();
+    fs.rmSync(gateScratch, { recursive: true, force: true });
+}
+
+// The walk of the gap adds to the time of a kill (T106): the row measured the
+// walk to its reference's spawns (cap 600: 6 s a mob), the bot two levels
+// lower walks to fewer (cap 300: 12 s a mob).
+const walkScratch = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'spot-walk-'));
+try {
+    const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'spot_table.json'), 'utf8'));
+    fixture.spots[0][0] = '-10_12';
+    fixture.rowFields.push('pull', 'cap', 'mix', 'gate');
+    const write = (name, gate) => {
+        const copy = structuredClone(fixture);
+        for (const rows of copy.rows) for (const row of rows) if (row) row.push(1, 600, [380, 1], gate);
+        const file = path.join(walkScratch, name);
+        fs.writeFileSync(file, JSON.stringify(copy));
+        return file;
+    };
+    Table.useFile(write('same.json', fixture.gaps.map(gap => gap < 0 ? 0 : 600 * 256 + 1)));
+    const measured = Table.value('-10_12', 'dps', 20, true).kills;
+    Table.useFile(write('walk.json', fixture.gaps.map(gap => gap < 0 ? 0 : gap < 6 ? 300 * 256 + 1 : 600 * 256 + 1)));
+    near(Table.value('-10_12', 'dps', 24, true).kills, 200, 'at the reference the measured kills');
+    near(Table.value('-10_12', 'dps', 20, true).kills, 3600 / (3600 / measured + 12 - 6), 'the longer walk of the gap');
+    // The spawns' respawns cap the read (E69 at the read, T106 audit): the
+    // row's species gives back 100 mobs an hour, another species 500 more.
+    Table.useSpots([{ id: '-10_12', npcEntries: [{ selfId: 380, count: 1, production: 100 }, { selfId: 999, count: 5, production: 500 }] }]);
+    near(Table.value('-10_12', 'dps', 24, true).kills, 100, 'no more kills than the species it fights gives back');
+    Table.useSpots([]);
+} finally {
+    Table.useSpots([]);
+    Table.useFile();
+    fs.rmSync(walkScratch, { recursive: true, force: true });
+}
+
 // ---------------------------------------------------------------- the committed table
 const raw = JSON.parse(fs.readFileSync(Table.DEFAULT_FILE, 'utf8'));
 assert.strictEqual(raw.rows.length, raw.spots.length, 'one row set per spot');
@@ -91,13 +181,14 @@ assert.strictEqual(raw.rows.flat().filter(Boolean).length, raw.header.counts.hun
 assert(raw.roles.every((role) => Object.keys(raw.curves[role] || {}).length > 0), 'every role has curves');
 assert.strictEqual(raw.header.inputs.rate, 'x1', 'the file is at rate x1');
 // The reader applies the C4 exp level-gap penalty; the measured curves must not carry it too
-// (T43: a table measured with it read (5/6)^6 = 0.33 at gap 12 against the reference gap).
+// (T43: a table measured with it read (5/6)^6 = 0.33 at gap 12 against the reference gap;
+// the gaps now end at the deep-blue gap, so the farthest one is read).
 raw.roles.forEach((role) => {
-    const ref = raw.gaps.indexOf(raw.header.inputs.refGap), far = raw.gaps.indexOf(12);
+    const ref = raw.gaps.indexOf(raw.header.inputs.refGap), far = raw.gaps.length - 1;
     const ratios = Object.values(raw.curves[role]).map((curve) => curve.exp)
         .filter((exp) => exp && exp[far] != null && exp[ref] > 0).map((exp) => exp[far] / exp[ref]).sort((a, b) => a - b);
     const median = ratios[Math.floor(ratios.length / 2)];
-    assert(median > 0.8, `${role}: exp per kill at gap 12 keeps the reference level's exp (median ${median})`);
+    assert(median > 0.8, `${role}: exp per kill at gap ${raw.gaps[far]} keeps the reference level's exp (median ${median})`);
 });
 
 // A few spots of the committed table (rate x1). Bearded Keltir fields (level 2): every role hunts it;
@@ -111,10 +202,11 @@ assert(keltir && keltir.kills > 100 && keltir.kills <= 275.2 && keltir.exp > 0 &
 assert(Table.value('-15_42', 'dps', 5, false).kills <= keltir.kills, 'shots do not slow a dps');
 assert(Table.value('-15_42', 'dps', 12, true).kills >= keltir.kills, 'a higher dps kills at least as fast');
 assert(raw.roles.every((role) => Table.value('-15_42', role, 8, true)), 'every role hunts the newbie field');
-// Level 44 spot 7_34: the dps row was measured six levels up; far below the spot there is no solo hunt.
-assert.strictEqual(Table.referenceLevel('7_34', 'dps'), 50);
-assert(Table.value('7_34', 'dps', 50).exp > Table.value('-15_42', 'dps', 8).exp * 5, 'higher spots give much more exp');
-assert.strictEqual(Table.value('7_34', 'dps', 30), null, 'no solo hunt far below the spot\'s level');
+// Level 44 spot 11_6: the dps row was measured six levels up; far below the spot there is no solo hunt.
+// (7_34's pack is judged as one pull since T100: no solo row there.)
+assert.strictEqual(Table.referenceLevel('11_6', 'dps'), 50);
+assert(Table.value('11_6', 'dps', 50).exp > Table.value('-15_42', 'dps', 8).exp * 5, 'higher spots give much more exp');
+assert.strictEqual(Table.value('11_6', 'dps', 30), null, 'no solo hunt far below the spot\'s level');
 // Seven Signs catacombs are not solo hunting grounds in the author's rules.
 assert(raw.roles.every((role) => Table.value('8_23:catacomb_of_the_heretics', role, 50) === null), 'catacombs: no solo row');
 useRate('x10');

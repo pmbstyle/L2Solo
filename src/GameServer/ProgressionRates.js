@@ -268,6 +268,7 @@ module.exports = {
     rollDropAmount,
     deepBlueRule,
     deepBlueActive,
+    DEEP_BLUE_LEVEL_GAP,
     deepBluePenaltyPercent,
     rewardGroupRoll,
     scaleAmount,

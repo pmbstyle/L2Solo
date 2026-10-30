@@ -1,3 +1,6 @@
+// The author's fixed shot merchant sells shots here (off by default since T116); set in the
+// environment, which the economy worker copies.
+process.env.BOT_STATIC_SHOTS_DISABLED = 'false';
 const assert = require('assert');
 require('./helpers/databaseIsolation');
 const isolated = require('./helpers/isolatedSocialDatabase')('progression-native-leaf');

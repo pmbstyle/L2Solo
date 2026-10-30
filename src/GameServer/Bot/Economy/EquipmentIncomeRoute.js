@@ -1,5 +1,4 @@
 'use strict';
-const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const ColdKillRewards = invoke('GameServer/Bot/Population/ColdKillRewards');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const SpotValueTable = invoke('GameServer/Bot/AI/SpotValueTable');
@@ -25,7 +24,7 @@ function spotList(state, { price } = {}) {
     const spoilerOf = () => spoiler !== undefined ? spoiler
         : (spoiler = ColdKillRewards.spoilerFor(state, { skills: ColdCombatProfile.skillsFor(state) }) || null);
     return { spoiler: spoilerOf, ids: (shots, level = state.level, minGap = -7) => SpotValueTable.rankedSpotIds(
-        spoilerOf() ? 'spoiler' : BotRoles.tableRoleFor(state), level,
+        SpotValueTable.roleFor(state), level,
         costs ||= BotHuntEfficiency.consumablePrices(state, price), minGap, shots,
         { spoilSkillLevel: spoilerOf()?.skillLevel || 0 }) };
 }

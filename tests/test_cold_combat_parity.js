@@ -78,7 +78,7 @@ function fighter(id, classId, level, gear, extra = {}) {
     if (extra.shots) {
         const selfId = ShotStock.planForState(state).selfId;
         inventory[selfId] = { selfId, amount: extra.shots };
-        state.spotId = { 2: '19_7', 12: '27_12', 16: '29_-3', 5: '21_-9' }[classId];
+        state.spotId = { 2: '23_3', 12: '11_-13', 5: '12_10' }[classId];
         assert(state.spotId, 'every shot fixture needs its verified native economic spot');
     }
     state.stats.coldCombat = ColdCombatProfile.legacySnapshot(state, ColdCombatProfile.skillRecordsFromTree(classId, level), TS);
@@ -122,12 +122,13 @@ const injuredBishop = fighter(1011, 16, 60, robe, { hpRatio: 0.5 });
 const injuredTyrant = fighter(1012, 48, 60, leather('Weapon.DualFist'), { potions: 20, hpRatio: 0.25 });
 // The same fighters holding the shot their weapon takes (S1).
 // Shot fighters stand at levels where their own hunt pays for shots on the Mobius table
-// (T43: B-grade Sorcerer 59, A-grade Bishop 70 and Paladin 72; at 60 their shots do not pay).
-const gladiatorShots = fighter(1013, 2, 60, chain('Weapon.Dual'), { potions: 5, shots: 5000 });
-const sorcererShots = fighter(1014, 12, 59, robeFull, { potions: 5, shots: 5000 });
-const bishopShots = fighter(1015, 16, 70, robe, { shots: 5000 });
-const injuredBishopShots = fighter(1016, 16, 70, robe, { hpRatio: 0.5, shots: 5000 });
-const paladinShots = fighter(1017, 5, 72, { ...chain('Weapon.Sword'), shield: true }, { role: 'tank', potions: 5, shots: 5000 });
+// (T43: B-grade Sorcerer 59 and A-grade Paladin 72; at 60 their shots do not pay).
+// T100: a Bishop's spot (spot table) no longer pays its spiritshots at any level.
+// T106 (class vitals, per-mob hunt tables): the Gladiator pays at 50 on 17_-2 (not at 52-69),
+// the Sorcerer at 60 on 11_-13, the Paladin at 50 on 15_-3 (no B-grade or higher level pays).
+const gladiatorShots = fighter(1013, 2, 50, chain('Weapon.Dual'), { potions: 5, shots: 5000 });
+const sorcererShots = fighter(1014, 12, 60, robeFull, { potions: 5, shots: 5000 });
+const paladinShots = fighter(1017, 5, 50, { ...chain('Weapon.Sword'), shield: true }, { role: 'tank', potions: 5, shots: 5000 });
 
 // ---------- solo fights ----------
 function soloOutcome(state, npcId, seed, fightLimitMs = 60000, maxActions = 400) {
@@ -166,27 +167,29 @@ const SOLO = [
     ['gladiator times out', gladiator, 5135, 14, 4000, 400],
     ['paladin runs out of actions', paladin, 122, 15, 60000, 10],
     ['gladiator charges with soulshots', gladiatorShots, 5135, 2],
-    ['sorcerer with spiritshots', sorcererShots, 241, 1],
-    ['bishop with spiritshots', bishopShots, 583, 3]
+    ['sorcerer with spiritshots', sorcererShots, 241, 1]
 ];
 const SOLO_GOLDEN = {
-    'sorcerer wins without a futile self-heal': { won: true, died: false, hp: 733, mp: 2422, charges: 0, actions: 11, durationMs: 9895, skillUses: 5, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'gladiator charges': { won: true, died: false, hp: 1389, mp: 384, charges: 0, actions: 18, durationMs: 11315, skillUses: 10, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'bishop': { won: true, died: false, hp: 1014, mp: 2489, charges: 0, actions: 19, durationMs: 19877, skillUses: 7, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'warlock servitor, heals, potion': { won: true, died: false, hp: 651, mp: 2286, charges: 0, actions: 42, durationMs: 30366, skillUses: 8, shotActions: 0, heals: 4, musicUses: 0, summonUses: 1, summonActions: 14, potionsUsed: 1, mobHp: null, botReadyAt: null },
-    'necromancer corpse servitor': { won: true, died: false, hp: 1140, mp: 2432, charges: 0, actions: 4, durationMs: 3442, skillUses: 2, shotActions: 0, heals: 0, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'swordsinger songs': { won: true, died: false, hp: 1141, mp: 13, charges: 0, actions: 33, durationMs: 24336, skillUses: 6, shotActions: 0, heals: 0, musicUses: 6, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'tyrant': { won: true, died: false, hp: 1717, mp: 691, charges: 0, actions: 7, durationMs: 3655, skillUses: 4, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'paladin': { won: true, died: false, hp: 1490, mp: 643, charges: 0, actions: 23, durationMs: 20867, skillUses: 8, shotActions: 0, heals: 1, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'sorcerer 40 survives without a futile self-heal': { won: true, died: false, hp: 365, mp: 1533, charges: 0, actions: 15, durationMs: 14170, skillUses: 6, shotActions: 0, heals: 2, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'bladedancer dances': { won: true, died: false, hp: 604, mp: 13, charges: 0, actions: 35, durationMs: 26083, skillUses: 6, shotActions: 0, heals: 0, musicUses: 6, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'gladiator times out': { won: false, died: false, hp: 1579, mp: 679, charges: 0, actions: 6, durationMs: 4000, skillUses: 3, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 1306, botReadyAt: 216 },
-    'paladin runs out of actions': { won: false, died: false, hp: 1398, mp: 774, charges: 0, actions: 10, durationMs: 7518, skillUses: 2, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 534, botReadyAt: 1127 },
-    'gladiator charges with soulshots': { won: true, died: false, hp: 1453, mp: 487, charges: 1, actions: 15, durationMs: 9165, skillUses: 8, shotActions: 5, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'sorcerer with spiritshots': { won: true, died: false, hp: 818, mp: 2371, charges: 0, actions: 10, durationMs: 6925, skillUses: 5, shotActions: 5, heals: 1, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'bishop with spiritshots': { won: true, died: false, hp: 1459, mp: 2935, charges: 0, actions: 11, durationMs: 9094, skillUses: 4, shotActions: 4, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null }
+    'sorcerer wins without a futile self-heal': { won: true, died: false, hp: 1419, mp: 2094, charges: 0, actions: 11, durationMs: 6453, skillUses: 6, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'gladiator charges': { won: true, died: false, hp: 3131, mp: 564, charges: 0, actions: 18, durationMs: 11315, skillUses: 10, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'bishop': { won: true, died: false, hp: 1828, mp: 2213, charges: 0, actions: 22, durationMs: 22544, skillUses: 8, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'warlock servitor, heals, potion': { won: true, died: false, hp: 2058, mp: 2112, charges: 0, actions: 29, durationMs: 22724, skillUses: 6, shotActions: 0, heals: 0, musicUses: 0, summonUses: 1, summonActions: 8, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'necromancer corpse servitor': { won: true, died: false, hp: 1907, mp: 2171, charges: 0, actions: 3, durationMs: 1291, skillUses: 2, shotActions: 0, heals: 0, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    // T106: a Swordsinger heals itself with MP, so it sits for MP and its skills pay their rest (one cast fewer).
+    'swordsinger songs': { won: true, died: false, hp: 2739, mp: 927, charges: 0, actions: 22, durationMs: 14559, skillUses: 2, shotActions: 0, heals: 0, musicUses: 1, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'tyrant': { won: true, died: false, hp: 3713, mp: 785, charges: 0, actions: 10, durationMs: 5134, skillUses: 6, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    // T106: a Paladin heals itself with MP, so it sits for MP and its skills pay their rest (one cast fewer).
+    'paladin': { won: true, died: false, hp: 2661, mp: 864, charges: 0, actions: 22, durationMs: 17647, skillUses: 5, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'sorcerer 40 survives without a futile self-heal': { won: true, died: false, hp: 722, mp: 1108, charges: 0, actions: 11, durationMs: 6642, skillUses: 6, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'bladedancer dances': { won: true, died: false, hp: 2048, mp: 668, charges: 0, actions: 25, durationMs: 17186, skillUses: 4, shotActions: 0, heals: 0, musicUses: 3, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'gladiator times out': { won: false, died: false, hp: 3341, mp: 768, charges: 0, actions: 8, durationMs: 4000, skillUses: 5, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 1026, botReadyAt: 1723 },
+    'paladin runs out of actions': { won: false, died: false, hp: 2991, mp: 976, charges: 0, actions: 10, durationMs: 5573, skillUses: 1, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 529, botReadyAt: 925 },
+    'gladiator charges with soulshots': { won: true, died: false, hp: 1898, mp: 365, charges: 0, actions: 20, durationMs: 12927, skillUses: 10, shotActions: 7, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'sorcerer with spiritshots': { won: true, died: false, hp: 1836, mp: 2181, charges: 0, actions: 7, durationMs: 3010, skillUses: 4, shotActions: 4, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null }
 };
-const unsafeFreshPull = withSeed(1, rng => resolveFight({ state: sorcerer, spot: spotFor(241), pressure: {},
+// T100: the gate counts the Sorcerer 60's priced pick, which wins this fight
+// (the golden below); the Sorcerer 40 is still out of its depth.
+const unsafeFreshPull = withSeed(1, rng => resolveFight({ state: sorcerer40, spot: spotFor(241), pressure: {},
     targetNpcId: 241, rng, timestamp: TS, fightLimitMs: 60000, maxActions: 400 }));
 assert.deepStrictEqual({ avoided: unsafeFreshPull.avoided, reason: unsafeFreshPull.reason },
     { avoided: true, reason: 'no_safe_solo_target' }, 'a dangerous fresh solo target is still declined');
@@ -202,6 +205,20 @@ for (const [name, state, npcId, seed, limitMs, maxActions] of SOLO) {
     soloObserved.push([name, soloOutcome(state, npcId, seed, limitMs, maxActions)]);
 }
 for (const [name, actual] of soloObserved) assert.deepStrictEqual(actual, SOLO_GOLDEN[name], `solo: ${name}`);
+
+// The pet tanks, as in C4 (user 10-29): the warlock's servitor takes the
+// mob's blows; its owner takes none while the pet stands.
+{
+    const spot = spotFor(239);
+    const mob = ColdCombatProfile.npcForSpot(spot, () => 0.5, { preferredNpcId: 239 });
+    const encounter = PveEncounter.save(null, PveEncounter.key([warlock], spot, 239), mob, mob.maxHp, TS, { botReadyAt: 0, mobReadyAt: 0 });
+    const engaged = { ...warlock, stats: { ...warlock.stats, pveEncounter: encounter } };
+    const r = withSeed(4, (rng) => resolveFight({ state: engaged, spot, pressure: {}, targetNpcId: 239, rng, timestamp: TS,
+        fightLimitMs: 60000, maxActions: 400 }));
+    assert(r.debug.petTaken > 0, 'the mob strikes the pet');
+    if (!r.debug.summonDeaths) assert.equal(r.debug.damageTaken, 0, 'the owner is untouched while its pet stands');
+    assert(!r.summon || r.summon.hp < r.summon.maxHp, 'the pet keeps the HP it lost');
+}
 
 // ---------- party fights ----------
 function partyOutcome(members, npcId, seed) {
@@ -219,30 +236,29 @@ const PARTY = [
     ['casters and a dancer', [sorcerer, necromancer, bishop, bladedancer], 7538, 12],
     ['injured with potions', [injuredTyrant, gladiator, sorcerer40], 7538, 13],
     ['necromancer corpse servitor', [necromancer, bishop], 129, 16],
-    ['tank and healer with shots', [paladinShots, injuredBishopShots], 5135, 11]
+    ['tank with shots and healer', [paladinShots, injuredBishop], 5135, 11]
 ];
 // R2: without a tank the mob hits the most hated member (NpcHate), no longer a
 // member rolled per swing, so the tankless pins carry the top damage dealer's HP loss.
+// T106: the shot Paladin is a C-grade 50 now (the only band whose shots pay): with the
+// injured Bishop it no longer kills Grima inside the 15 s party round (both alive, mob at 1069).
 const PARTY_GOLDEN = {
-    'tank, charges, healer, songs, servitor': { won: true, actions: 25, skillUses: 18, musicUses: 5, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0,
-        members: [[1008, 1340, 774, 4, 3, 0, 1, 0, 0],
-            [1002, 1734, 497, 7, 7, 0, 0, 0, 0],
-            [1011, 1290, 2565, 3, 3, 0, 0, 0, 0],
-            [1006, 1392, 223, 5, 5, 0, 0, 5, 0],
-            [1004, 1290, 2523, 1, 0, 0, 0, 0, 0]] },
-    'casters and a dancer': { won: true, actions: 9, skillUses: 7, musicUses: 2, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0,
-        members: [[1001, 1026, 2538, 2, 2, 0, 0, 0, 0],
-            [1005, 1290, 2432, 2, 2, 0, 0, 0, 0],
-            [1003, 1290, 2595, 1, 1, 0, 0, 0, 0],
-            [1010, 1324, 673, 2, 2, 0, 0, 2, 0]] },
-    'injured with potions': { won: true, actions: 12, skillUses: 9, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 1, mobHp: 0, help: 1,
-        members: [[1012, 1282, 765, 5, 4, 0, 1, 0, 0],
-            [1002, 1674, 679, 3, 3, 0, 0, 0, 0],
-            [1009, 821, 1659, 2, 2, 0, 2, 0, 0]] },
-    'necromancer corpse servitor': { won: true, actions: 5, skillUses: 3, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0,
-        members: [[1005, 1160, 2432, 2, 2, 0, 0, 0, 0],
-            [1003, 1290, 2595, 1, 1, 0, 0, 0, 0]] },
-    'tank and healer with shots': { won: true, actions: 15, skillUses: 7, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0, members: [[1017, 1742, 975, 5, 3, 3, 1, 0, 0], [1016, 1549, 2935, 4, 4, 4, 0, 0, 0]] }
+    'tank, charges, healer, songs, servitor': { won: true, actions: 23, skillUses: 13, musicUses: 4, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0, members: [[1008, 2933, 976, 6, 2, 0, 1, 0, 0],
+            [1002, 3481, 768, 6, 5, 0, 0, 0, 0],
+            [1011, 2041, 2311, 2, 2, 0, 0, 0, 0],
+            [1006, 2891, 586, 4, 4, 0, 0, 4, 0],
+            [1004, 2058, 2262, 1, 0, 0, 0, 0, 0]] },
+    'casters and a dancer': { won: true, actions: 10, skillUses: 8, musicUses: 2, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0, members: [[1001, 1823, 2209, 3, 3, 0, 0, 0, 0],
+            [1005, 1823, 2171, 2, 2, 0, 0, 0, 0],
+            [1003, 2200, 2334, 1, 1, 0, 0, 0, 0],
+            [1010, 2748, 856, 2, 2, 0, 0, 2, 0]] },
+    'injured with potions': { won: true, actions: 16, skillUses: 12, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 1, mobHp: 0, help: 0, members: [[1012, 2123, 842, 6, 5, 0, 1, 0, 0],
+            [1002, 3395, 768, 5, 5, 0, 0, 0, 0],
+            [1009, 1010, 1234, 2, 2, 0, 2, 0, 0]] },
+    'necromancer corpse servitor': { won: true, actions: 4, skillUses: 3, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0, members: [[1005, 1907, 2171, 2, 2, 0, 0, 0, 0],
+            [1003, 2200, 2334, 1, 1, 0, 0, 0, 0]] },
+    'tank with shots and healer': { won: false, actions: 22, skillUses: 7, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 1069, help: 0, members: [[1017, 1793, 454, 8, 2, 3, 2, 0, 0],
+            [1011, 2127, 2183, 5, 5, 0, 1, 0, 0]] }
 };
 for (const [name, members, npcId, seed] of PARTY) {
     members.forEach(assertNativeHeldPolicy);

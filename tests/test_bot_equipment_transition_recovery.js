@@ -38,10 +38,11 @@ assert(!Gear.replanContextFor({ ...failed, level: 61 }, cooldown, at + 1).exclud
 assert(Gear.replanContextFor(failed, cooldown, at + 7200000).excludedTargetIds.includes(84),
     'unchanged combat inputs keep the target dormant across elapsed time');
 
-const caster = { level: 56, adena: 11564058, stats: { classId: 51, role: 'buffer' },
+// A Prophet: a caster buffer (an Overlord keeps the melee blunt, user 10-29).
+const caster = { level: 56, adena: 11564058, stats: { classId: 17, role: 'buffer' },
     inventory: inventory([...heavy, [156, [7]]]) };
 assert.strictEqual(Gear.combatReadiness(caster).hasWeapon, false,
-    'a physical Hand Axe must not satisfy an Overlord caster weapon requirement');
+    'a physical Hand Axe must not satisfy a Prophet caster weapon requirement');
 const casterBridge = Gear.npcWeaponBridgePlan(caster);
 assert.strictEqual(casterBridge?.weaponBridge, true);
 assert.strictEqual(casterBridge.target.selfId, 178);

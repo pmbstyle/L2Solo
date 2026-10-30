@@ -129,6 +129,15 @@ assert.strictEqual(
     'a hostile NPC must not auto-aggro a target hidden behind geodata'
 );
 
+// T114: each aggressive NPC sees as far as its C4 aggro range (Lisvus npc.sql):
+// Splinter Stakato 150; an NPC without one keeps the author's 500.
+GeodataEngine.hasLineOfSight = () => true;
+const stakato = Object.assign(hostileNpcAt(0), { fetchSelfId: () => 1508 });
+assert.strictEqual(NpcAggro.aggroRadius(stakato), 150);
+assert.strictEqual(NpcAggro.canEngage(stakato, actorAt(10005, 300)), false, 'out of its own range');
+assert.strictEqual(NpcAggro.canEngage(stakato, actorAt(10006, 140)), true, 'inside its own range');
+assert.strictEqual(NpcAggro.canEngage(hostileNpcAt(0), actorAt(10007, 300)), true, 'no C4 range: the author\'s 500');
+
 GeodataEngine.hasLineOfSight = originalHasLineOfSight;
 
 console.log('NPC hot-bot aggro regression checks passed');

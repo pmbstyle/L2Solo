@@ -71,6 +71,14 @@ function flattenItem(item) {
     };
 }
 
+// A datapack row with a real name: legacy placeholders are named '0' or '_'
+// (Flail 163, Heavy Flail 170: no C4 source, l2hub.info/c4 lists none), and no
+// bot plans, wishes for or wears them (T118).
+function isNamedItem(item = {}) {
+    const name = String(item.template?.name ?? item.name ?? '').trim();
+    return name.length > 0 && name !== '0' && !/^_+$/.test(name);
+}
+
 // The item catalog is static after load, but gear planning asks for it once
 // per slot choice; rebuilding it each time dominated bot need evaluation.
 let catalogSource = null;
@@ -85,7 +93,7 @@ function allItems() {
         gearCatalog = Object.freeze(items
             .filter((item) => {
                 const kind = item?.template?.kind || '';
-                return kind.startsWith('Weapon.') || kind.startsWith('Armor.');
+                return (kind.startsWith('Weapon.') || kind.startsWith('Armor.')) && isNamedItem(item);
             })
             .map((item) => Object.freeze(flattenItem(item))));
     }
@@ -361,8 +369,10 @@ function planFor(character) {
         planCatalog = catalog;
         plans.clear();
     }
-    const key = `${classId}:${level}`;
-    if (!plans.has(key)) plans.set(key, buildPlan(classId, level));
+    // A split-kit first class gears for its future second class's role.
+    const role = BotRoles.inferRole(BotRoles.kitClassId(character) ?? classId);
+    const key = `${classId}:${role}:${level}`;
+    if (!plans.has(key)) plans.set(key, buildPlan(classId, level, role));
     const plan = plans.get(key);
     return {
         ...plan,
@@ -371,8 +381,7 @@ function planFor(character) {
     };
 }
 
-function buildPlan(classId, level) {
-    const role = BotRoles.inferRole(classId);
+function buildPlan(classId, level, role) {
     const band = gradeForLevel(level);
     const rank = band.rank;
     const style = BotEquipmentCompatibility.armorStyleFor(role, classId);
@@ -407,7 +416,7 @@ function buildPlan(classId, level) {
 }
 
 const BotGear = {
-    planFor, currentRankRows, currentSlotRows, currentWearableRows, currentNpcRows, wishKitsFor
+    planFor, currentRankRows, currentSlotRows, currentWearableRows, currentNpcRows, wishKitsFor, isNamedItem
 };
 
 module.exports = BotGear;

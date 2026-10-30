@@ -13,7 +13,8 @@ const fixture = { characterId: 91819, level: 30, phase: 'hot', activity: 'huntin
 Hunt.huntIncome = () => ({ spotId: spotPresent ? 'stack-fixture' : null, perHour: income, expPerHour: 1000000 });
 const row = withShots => ({ exp: withShots ? 1e6 : 5e5, shots: 1000, potions, deaths: .1, stacks });
 Table.value = (id, role, level, withShots) => rowPresent ? row(withShots) : null;
-Table.best = () => row(true);
+// ShotStock.usePolicy weighs the best row with shots against the best without.
+Table.best = (role, level, withShots) => row(withShots);
 const target = (state = fixture) => Economy.basics(state, { spots: [] }).stock('potions').targetHours;
 try {
     assert.equal(target(), 4, '80 slots - 40 physical slots with an existing kit, 10 new slots/h -> 4h');

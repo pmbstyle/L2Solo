@@ -2,6 +2,8 @@ const assert = require('assert');
 process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 
 require('../src/Global');
+// The author's fixed shot merchant sells shots here (off by default since T116).
+invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = false;
 
 const DataCache = invoke('GameServer/DataCache');
 const World = invoke('GameServer/World/World');

@@ -290,6 +290,11 @@ test('HTML windows and both trades read current prices and journal executed pric
 });
 
 test('bot shots retain authored price after player refresh; other static purchases are denied', async () => {
+    // The author's fixed shot offers (off by default since T116: no C4 NPC sells D+ shots).
+    const Population = invoke('GameServer/Bot/Population/PopulationConfig');
+    const disabled = Population.staticShotsDisabled;
+    Population.staticShotsDisabled = false;
+    try {
     const session = await player('FBotShots', { bot: true });
     const store = staticStore(Configs.IslandMats, SHOT);
     const source = Configs.IslandMats.items.find(item => item.selfId === SHOT);
@@ -305,6 +310,7 @@ test('bot shots retain authored price after player refresh; other static purchas
     await assert.rejects(TradeService.buyFromStore(session.actor, materialStore, MATERIAL, 1), /static.*unavailable/i);
     const ordinary = { storeType: 1, items: [{ selfId: MATERIAL, price: 7, count: 2 }] };
     assert.strictEqual((await TradeService.buyFromStore(session.actor, ordinary, MATERIAL, 1)).totalAdena, 7);
+    } finally { Population.staticShotsDisabled = disabled; }
 });
 
 test('bot static buy-back remains old price; a failing player write restores stock and money', async () => {

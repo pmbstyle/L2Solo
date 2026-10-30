@@ -1,3 +1,15 @@
+// Per class and level, the C4 template's max HP, MP and CP before the CON/MEN
+// bonus (L2J Mobius C4 lvlUpgainData, data/Templates/class-vitals.json; user
+// 10-29 "Max HP by class" in docs/game-decisions.md). Levels past the table
+// read its last row; an unknown class reads the Human Fighter's.
+const CLASS_VITALS = require('../../data/Templates/class-vitals.json').classes;
+
+function classVital(kind, level, classId) {
+    const rows = (CLASS_VITALS[Number(classId)] || CLASS_VITALS[0])[kind];
+    const index = Math.min(rows.length, Math.max(1, Math.floor(Number(level) || 1))) - 1;
+    return rows[index];
+}
+
 function magicFailureThreshold(attackerLevel, targetLevel, magicLevel) {
     const effectiveMagicLevel = Number(magicLevel) > 0 ? Number(magicLevel) : (Number(attackerLevel) || 1);
     return Math.round(Math.pow(1.3, (Number(targetLevel) || 1) - effectiveMagicLevel) * 100);
@@ -10,53 +22,8 @@ const Formulas = {
     DEFAULT_SHIELD_RATE: 20,
     DEFAULT_SHIELD_DEFENCE_ANGLE: 120,
     DEFAULT_PERFECT_SHIELD_BLOCK_RATE: 0,
-
-    calcBaseHp: (() => {
-        const table = utils.tupleAlloc(100, (level) => {
-            utils.infoFail('GameServer', 'unknown HP Table for Level %d', level);
-        });
-
-        function hp(level, a, b, c, d) {
-            return ((Math.pow(level, 2) *  a) + (level * b) +  c) / d;
-        }
-
-        table[ 0] = (level) => { return hp(level, 13, 2327, 13660, 200); };
-        table[10] = (level) => { return hp(level, 17, 3043, 17140, 200); };
-        table[18] = (level) => { return hp(level,  7, 1253,  7640, 100); };
-        table[25] = (level) => { return hp(level, 17, 3043, 17740, 200); };
-        table[31] = (level) => { return hp(level,  3,  537,  3220,  40); };
-        table[38] = (level) => { return hp(level, 17, 3043, 18140, 200); };
-        table[44] = (level) => { return hp(level,  7, 1253,  6740, 100); };
-        table[49] = (level) => { return hp(level, 17, 3043, 15940, 200); };
-        table[53] = (level) => { return hp(level,  7, 1253,  6740, 100); };
-
-        return table;
-    })(),
-
-    calcBaseMp: (() => {
-        const table = utils.tupleAlloc(3, (level) => {
-            utils.infoFail('GameServer', 'unknown MP Table for Level %d', level);
-        });
-
-        function mp(level, a, b, c, d) {
-            return ((Math.pow(level, 2) *  a) + (level * b) +  c) / d;
-        }
-
-        table[0] = [ // Base class
-            (level) => { return mp(level, 3, 537, 2460, 100); }, // F
-            (level) => { return mp(level, 1, 179,  820,  25); }, // M
-        ];
-        table[1] = [ // 1st class transfer
-            (level) => { return mp(level, 3, 537, 2460, 100) * 1.20; }, // F
-            (level) => { return mp(level, 1, 179,  820,  25) * 1.50; }, // M
-        ];
-        table[2] = [ // 2nd class transfer
-            (level) => { return mp(level, 3, 537, 2460, 100) * 1.40; }, // F
-            (level) => { return mp(level, 1, 179,  820,  25) * 2.00; }, // M
-        ];
-
-        return table;
-    })(),
+    // A player's HP and MP regain one tick every 3 s (Automation.replenishVitals).
+    REGEN_TICK_MS: 3000,
 
     calcBaseMod: (() => {
         function func(start, end, base, multiplier) {
@@ -89,90 +56,19 @@ const Formulas = {
         return 0;
     },
 
+    // Max HP, MP and CP: the class's C4 template value at the level
+    // (classVital) times the CON (HP, CP) or MEN (MP) bonus.
     calcHp(level, classId, con) {
-        const parentId = this.getParentClassId(classId);
-        return this.calcBaseHp[parentId](level) * this.calcBaseMod.CON(con);
+        return classVital('hp', level, classId) * this.calcBaseMod.CON(con);
     },
 
-    calcMp(level, kind, classTransfer, men) {
-        return this.calcBaseMp[classTransfer][kind](level) * this.calcBaseMod.MEN(men);
+    calcMp(level, classId, men) {
+        return classVital('mp', level, classId) * this.calcBaseMod.MEN(men);
     },
 
-    calcCp: (() => {
-        const table = {
-            0: { classBaseLevel: 1, baseCpMax: 32, lvlCpAdd: 4.73, lvlCpMod: 0.22 },
-            1: { classBaseLevel: 20, baseCpMax: 261.6, lvlCpAdd: 26.4, lvlCpMod: 0.22 },
-            2: { classBaseLevel: 40, baseCpMax: 939.6, lvlCpAdd: 44.46, lvlCpMod: 0.22 },
-            3: { classBaseLevel: 40, baseCpMax: 835.2, lvlCpAdd: 43.68, lvlCpMod: 0.22 },
-            4: { classBaseLevel: 20, baseCpMax: 196.2, lvlCpAdd: 17.82, lvlCpMod: 0.22 },
-            5: { classBaseLevel: 40, baseCpMax: 583.3, lvlCpAdd: 28.08, lvlCpMod: 0.22 },
-            6: { classBaseLevel: 40, baseCpMax: 583.3, lvlCpAdd: 28.08, lvlCpMod: 0.22 },
-            7: { classBaseLevel: 20, baseCpMax: 130.8, lvlCpAdd: 11, lvlCpMod: 0.22 },
-            8: { classBaseLevel: 40, baseCpMax: 369.8, lvlCpAdd: 16.64, lvlCpMod: 0.22 },
-            9: { classBaseLevel: 40, baseCpMax: 647.1, lvlCpAdd: 30.94, lvlCpMod: 0.22 },
-            10: { classBaseLevel: 1, baseCpMax: 50.5, lvlCpAdd: 7.84, lvlCpMod: 0.22 },
-            11: { classBaseLevel: 20, baseCpMax: 212, lvlCpAdd: 13.85, lvlCpMod: 0.22 },
-            12: { classBaseLevel: 40, baseCpMax: 510.7, lvlCpAdd: 22.85, lvlCpMod: 0.22 },
-            13: { classBaseLevel: 40, baseCpMax: 510.7, lvlCpAdd: 22.85, lvlCpMod: 0.22 },
-            14: { classBaseLevel: 40, baseCpMax: 612.9, lvlCpAdd: 29.74, lvlCpMod: 0.22 },
-            15: { classBaseLevel: 20, baseCpMax: 212, lvlCpAdd: 17.15, lvlCpMod: 0.22 },
-            16: { classBaseLevel: 40, baseCpMax: 815.4, lvlCpAdd: 34.68, lvlCpMod: 0.22 },
-            17: { classBaseLevel: 40, baseCpMax: 582.4, lvlCpAdd: 26.75, lvlCpMod: 0.22 },
-            18: { classBaseLevel: 1, baseCpMax: 35.6, lvlCpAdd: 5, lvlCpMod: 0.22 },
-            19: { classBaseLevel: 20, baseCpMax: 177.5, lvlCpAdd: 16.5, lvlCpMod: 0.22 },
-            20: { classBaseLevel: 40, baseCpMax: 643.2, lvlCpAdd: 31.2, lvlCpMod: 0.22 },
-            21: { classBaseLevel: 40, baseCpMax: 536, lvlCpAdd: 27.3, lvlCpMod: 0.22 },
-            22: { classBaseLevel: 20, baseCpMax: 142, lvlCpAdd: 12.32, lvlCpMod: 0.22 },
-            23: { classBaseLevel: 40, baseCpMax: 409.6, lvlCpAdd: 18.72, lvlCpMod: 0.22 },
-            24: { classBaseLevel: 40, baseCpMax: 512.1, lvlCpAdd: 24.7, lvlCpMod: 0.22 },
-            25: { classBaseLevel: 1, baseCpMax: 52, lvlCpAdd: 7.84, lvlCpMod: 0.22 },
-            26: { classBaseLevel: 20, baseCpMax: 213.5, lvlCpAdd: 14.4, lvlCpMod: 0.22 },
-            27: { classBaseLevel: 40, baseCpMax: 524.2, lvlCpAdd: 24.15, lvlCpMod: 0.22 },
-            28: { classBaseLevel: 40, baseCpMax: 629, lvlCpAdd: 30.52, lvlCpMod: 0.22 },
-            29: { classBaseLevel: 20, baseCpMax: 213.5, lvlCpAdd: 17.7, lvlCpMod: 0.22 },
-            30: { classBaseLevel: 40, baseCpMax: 595.9, lvlCpAdd: 27.4, lvlCpMod: 0.22 },
-            31: { classBaseLevel: 1, baseCpMax: 37.6, lvlCpAdd: 5.46, lvlCpMod: 0.22 },
-            32: { classBaseLevel: 20, baseCpMax: 189.5, lvlCpAdd: 17.6, lvlCpMod: 0.22 },
-            33: { classBaseLevel: 40, baseCpMax: 686.2, lvlCpAdd: 32.76, lvlCpMod: 0.22 },
-            34: { classBaseLevel: 40, baseCpMax: 571.9, lvlCpAdd: 29.25, lvlCpMod: 0.22 },
-            35: { classBaseLevel: 20, baseCpMax: 151.6, lvlCpAdd: 13.2, lvlCpMod: 0.22 },
-            36: { classBaseLevel: 40, baseCpMax: 438.4, lvlCpAdd: 19.76, lvlCpMod: 0.22 },
-            37: { classBaseLevel: 40, baseCpMax: 548, lvlCpAdd: 26, lvlCpMod: 0.22 },
-            38: { classBaseLevel: 1, baseCpMax: 53, lvlCpAdd: 7.84, lvlCpMod: 0.22 },
-            39: { classBaseLevel: 20, baseCpMax: 214.5, lvlCpAdd: 14.95, lvlCpMod: 0.22 },
-            40: { classBaseLevel: 40, baseCpMax: 537.1, lvlCpAdd: 24.15, lvlCpMod: 0.22 },
-            41: { classBaseLevel: 40, baseCpMax: 644.5, lvlCpAdd: 31.3, lvlCpMod: 0.22 },
-            42: { classBaseLevel: 20, baseCpMax: 214.5, lvlCpAdd: 18.25, lvlCpMod: 0.22 },
-            43: { classBaseLevel: 40, baseCpMax: 608.8, lvlCpAdd: 27.4, lvlCpMod: 0.22 },
-            44: { classBaseLevel: 1, baseCpMax: 40, lvlCpAdd: 6.27, lvlCpMod: 0.22 },
-            45: { classBaseLevel: 20, baseCpMax: 242.2, lvlCpAdd: 24.54, lvlCpMod: 0.22 },
-            46: { classBaseLevel: 40, baseCpMax: 777.5, lvlCpAdd: 39.94, lvlCpMod: 0.22 },
-            47: { classBaseLevel: 20, baseCpMax: 173, lvlCpAdd: 16.4, lvlCpMod: 0.22 },
-            48: { classBaseLevel: 40, baseCpMax: 531.5, lvlCpAdd: 27.2, lvlCpMod: 0.22 },
-            49: { classBaseLevel: 1, baseCpMax: 47.5, lvlCpAdd: 7.74, lvlCpMod: 0.22 },
-            50: { classBaseLevel: 20, baseCpMax: 209, lvlCpAdd: 17.6, lvlCpMod: 0.22 },
-            51: { classBaseLevel: 40, baseCpMax: 946.2, lvlCpAdd: 42.64, lvlCpMod: 0.22 },
-            52: { classBaseLevel: 40, baseCpMax: 591.4, lvlCpAdd: 26.65, lvlCpMod: 0.22 },
-            53: { classBaseLevel: 1, baseCpMax: 56, lvlCpAdd: 8.82, lvlCpMod: 0.22 },
-            54: { classBaseLevel: 20, baseCpMax: 242.2, lvlCpAdd: 24.54, lvlCpMod: 0.22 },
-            55: { classBaseLevel: 40, baseCpMax: 777.5, lvlCpAdd: 39.94, lvlCpMod: 0.22 },
-            56: { classBaseLevel: 20, baseCpMax: 276.8, lvlCpAdd: 26.3, lvlCpMod: 0.22 },
-            57: { classBaseLevel: 40, baseCpMax: 850.4, lvlCpAdd: 43.58, lvlCpMod: 0.22 }
-        };
-
-        Object.entries(invoke('GameServer/ClassProgression').thirdClasses).forEach(([classId, thirdClass]) => {
-            table[classId] = { classBaseLevel: 76, ...thirdClass.cp };
-        });
-
-        return (level, classId, con) => {
-            const data = table[classId] || table[0];
-            const delta = Math.max(0, (Number(level) || 1) - data.classBaseLevel);
-            const cpmod = data.lvlCpMod * delta;
-            const cpmax = (data.lvlCpAdd + cpmod) * delta;
-            const cpmin = (data.lvlCpAdd * delta) + cpmod;
-            return (data.baseCpMax + ((cpmax + cpmin) / 2)) * Formulas.calcBaseMod.CON(con);
-        };
-    })(),
+    calcCp(level, classId, con) {
+        return classVital('cp', level, classId) * this.calcBaseMod.CON(con);
+    },
 
     calcMaxLoad(con) {
         return this.calcBaseMod.CON(con) * 69000;
@@ -263,6 +159,20 @@ const Formulas = {
         return { drawMs, reuseMs, cycleMs: drawMs + reuseMs };
     },
 
+    // One normal attack's draw and whole cycle, as hot players and monsters
+    // attack (Attack.js, Npc.js): a bow draws and reloads
+    // (calcBowAttackTimes), any other weapon swings once per calcMeleeAtkTime
+    // and lands at 64.4% of it.
+    attackTimes(atkSpd, { bow = false, reuseDelay = 1500, reuseMul = 1 } = {}) {
+        if (bow) return this.calcBowAttackTimes(atkSpd, reuseDelay ?? 1500, reuseMul);
+        const cycleMs = this.calcMeleeAtkTime(atkSpd);
+        return { drawMs: cycleMs * 0.644, cycleMs };
+    },
+
+    normalAttackMs(atkSpd, options = {}) {
+        return this.attackTimes(atkSpd, options).cycleMs;
+    },
+
     calcRemoteAtkTime(time, castSpd) {
         return  (time / castSpd) * 333;
     },
@@ -320,6 +230,9 @@ const Formulas = {
     // Lisvus Formulas.calcBlowDamage: a blow applies the critical-damage
     // multiplier to P.Atk plus skill power, then adds the amplified flat
     // critical-damage bonus before the normal 70 / P.Def scaling.
+    // A soulshot doubles P.Atk as on every physical skill (T113: Lisvus
+    // Formulas.java:1196-1203, L2J 2007 calcBlowDamage; Mobius C4's 1.458
+    // belongs to its H5 formula with 77, marked unconfirmed by its author).
     calcBlowDamage(pAtk, pAtkRnd, pDef, power, { soulshot = false, criticalDamageMultiplier = 1, criticalDamageAdd = 0, rng = Math.random } = {}) {
         let damage = (pAtk * (soulshot ? 2 : 1)) + (Number(power) || 0);
         damage = (Math.max(0, Number(criticalDamageMultiplier) || 1) * damage)
@@ -338,17 +251,47 @@ const Formulas = {
         return Math.min(300, Math.max(0, (8 * witBonus * multiplier) + add));
     },
 
+    // The hit chance of a normal attack, 0.2..0.98: 80 + 2 x (accuracy -
+    // evasion) %, the attacker higher by 50 +3 % (lower -3 %), from behind
+    // +10 %, from the side +5 %. The hot hit (calcHitChance) and the cold
+    // fight (BackgroundResolver.hitSucceeds; HuntCycle) both read it.
+    hitChance(accuracy, evasion, context = {}, zDiff = 0) {
+        let modifier = 100;
+        if (zDiff > 50) modifier += 3;
+        else if (zDiff < -50) modifier -= 3;
+        if (context.behind) modifier += 10;
+        else if (context.front === false) modifier += 5;
+        if (context.night) modifier -= 10;
+        const chance = (80 + 2 * ((Number(accuracy) || 0) - (Number(evasion) || 0))) * 10 * modifier / 100;
+        return Math.max(Math.min(chance, 980), 200) / 1000;
+    },
+
     rollCritical(critical, rng = Math.random) {
         return (Number(critical) || 0) > rng() * 1000;
     },
 
+    // The shield's block rate in percent (DEX and a bow's shot applied), 0
+    // without a shield or from behind: rollShieldUse rolls it, shieldChances
+    // gives its expected outcomes.
+    shieldBlockRate({ shieldRate = 0, dex = 0, facing = true, bow = false } = {}) {
+        if ((Number(shieldRate) || 0) <= 0 || !facing) return 0;
+        const rate = Number(shieldRate) * this.calcBaseMod.DEX(Math.max(0, Math.min(Math.round(Number(dex) || 0), 99)));
+        return bow ? rate * 1.3 : rate;
+    },
+
+    // The chances of rollShieldUse's outcomes: { perfect, succeed } (the rest fails).
+    shieldChances({ perfectBlockRate = this.DEFAULT_PERFECT_SHIELD_BLOCK_RATE, ...shield } = {}) {
+        const rate = this.shieldBlockRate(shield);
+        if (!(rate > 0)) return { perfect: 0, succeed: 0 };
+        const perfect = Math.min(1, Math.max(0, Number(perfectBlockRate || 0) / 100));
+        return { perfect, succeed: (1 - perfect) * Math.min(1, rate / 100) };
+    },
+
     rollShieldUse({ shieldRate = 0, dex = 0, facing = true, bow = false, perfectBlockRate = this.DEFAULT_PERFECT_SHIELD_BLOCK_RATE } = {}, rng = Math.random) {
-        if ((Number(shieldRate) || 0) <= 0 || !facing) return this.SHIELD_DEFENSE_FAILED;
+        const rate = this.shieldBlockRate({ shieldRate, dex, facing, bow });
+        if (rate <= 0) return this.SHIELD_DEFENSE_FAILED;
 
-        let rate = Number(shieldRate) * this.calcBaseMod.DEX(Math.max(0, Math.min(Math.round(Number(dex) || 0), 99)));
-        if (bow) rate *= 1.3;
-
-        if (rate > 0 && 100 - Number(perfectBlockRate || 0) < rng() * 100) {
+        if (100 - Number(perfectBlockRate || 0) < rng() * 100) {
             return this.SHIELD_DEFENSE_PERFECT_BLOCK;
         }
 
@@ -360,20 +303,8 @@ const Formulas = {
     calcHitChance(attacker, target, rng = Math.random, context = {}) {
         const accuracy = safeNumber(attacker?.fetchCollectiveAccur?.(), safeNumber(attacker?.fetchAccur?.(), 0));
         const evasion = safeNumber(target?.fetchCollectiveEvasion?.(), safeNumber(target?.fetchEvasion?.(), 0));
-        let chance = (80 + (2 * (accuracy - evasion))) * 10;
-        let modifier = 100;
-
         const zDiff = safeNumber(attacker?.fetchLocZ?.(), 0) - safeNumber(target?.fetchLocZ?.(), 0);
-        if (zDiff > 50) modifier += 3;
-        else if (zDiff < -50) modifier -= 3;
-
-        if (context.behind) modifier += 10;
-        else if (context.front === false) modifier += 5;
-        if (context.night) modifier -= 10;
-
-        chance *= modifier / 100;
-        chance = Math.max(Math.min(chance, 980), 200);
-        return chance >= rng() * 1000;
+        return this.hitChance(accuracy, evasion, context, zDiff) >= rng();
     },
 
     calcMagicDamage(mAtk, power, mDef, { spiritshot = false, blessedSpiritshot = false, magicCritical = false } = {}) {
@@ -425,7 +356,9 @@ const Formulas = {
         return Math.max(0, (Number(absorbAbs) || 0) + ((Number(absorbPart) || 0) * drainableDamage));
     },
 
-    // L2J-style Heal handler baseline: power with shot multipliers; stat bonuses need real effect stats first.
+    // C4 Heal handler (T112: L2J C4 2006 Heal.java:84-112, Lisvus Heal.java:89-139):
+    // power x1.5 with Blessed Spiritshot, x1.3 with Spiritshot; M.Atk does not
+    // enter (Mobius C4's sqrt(M.Atk) is its H5 handler). Stat bonuses need real effect stats first.
     calcHealAmount(power, { spiritshot = false, blessedSpiritshot = false } = {}) {
         let amount = Number(power) || 0;
         if (blessedSpiritshot) amount *= 1.5;

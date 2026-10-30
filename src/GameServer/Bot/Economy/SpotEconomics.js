@@ -1,7 +1,9 @@
 'use strict';
-const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 // Resolved at the first call (cycles); a require per call is a path lookup (L73).
 let SpotRewardExpectation = null;
+const { othersOn } = require('../Population/SpotOccupancyIndex');
+// The hour fields of a table row that follow its kills (SpotValueTable.value).
+const PER_KILL_FIELDS = ['kills', 'deaths', 'exp', 'sp', 'adena', 'dropLoot', 'spoilLoot', 'loot', 'shots', 'potions'];
 // Shared table evaluation. It depends on native facts and own samples,
 // never on Context or pricing, so route and wish readers cannot recurse.
 function moneyWeight(state) {
@@ -25,7 +27,7 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
     const Tendency = invoke('GameServer/Bot/AI/TendencyRoll');
     const positive = value => Math.max(0, Number(value) || 0);
     persona ||= invoke('GameServer/Bot/AI/BotPersona').of(state) || { traits: {}, understanding: 0.3 };
-    const tableRole = BotRoles.tableRoleFor(state);
+    const tableRole = Table.roleFor(state);
     hunt ??= Hunt.huntIncome(state, timestamp, mode);
     // The previous build's packet hour comes first, by design; the hunt only fills a missing packet.
     const packetHour = Number(state.stats?.money?.[0]);
@@ -46,11 +48,25 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
     const calibration = calibrations.length ? calibrations.reduce((sum, value) => sum + value, 0) / calibrations.length : 1;
     const incomeError = Learning.knowledgeEnabled() ? Learning.stageError(0.03 + 0.25 * (1 - Number(persona.understanding ?? 0.3)),
         0.03, state.stats?.lifelongKills ?? state.stats?.fightsWon ?? 0, Learning.gradeOfLevel(state.level)) : 0;
+    // A table row on a spot other bots hunt (user 10-29): its kills at most the
+    // bot's share of what the spawns it may fight give back, production over
+    // the hunters with it (BackgroundResolver.soloShareMobs in the fight); the
+    // hour's fields follow its kills.
+    const crowded = (spot, row, shots) => {
+        const others = row ? othersOn(spot.id, state) : 0;
+        if (!(others > 0)) return row;
+        const share = Number(Table.production(spot.id, tableRole, state.level, shots)) / (others + 1);
+        const factor = share > 0 && row.kills > 0 ? Math.min(1, share / row.kills) : 1;
+        if (factor >= 1) return row;
+        const out = { ...row, crowdFactor: factor };
+        for (const field of PER_KILL_FIELDS) if (Number.isFinite(row[field])) out[field] = row[field] * factor;
+        return out;
+    };
     return (spot, shots = hunt.useShots !== false) => {
         // Charged observations cannot estimate a deliberately uncharged hunt.
         const observed = shots ? own.find(row => row.spotId === spot.id) : null;
         const rate = observed ? 3600000 / observed.cycleMs : 0;
-        const theoretical = Table.value(spot.id, tableRole, state.level, shots, rewardOptions);
+        const theoretical = crowded(spot, Table.value(spot.id, tableRole, state.level, shots, rewardOptions), shots);
         const base = observed ? {
             exp: observed.exp * rate, adena: observed.adena * rate, loot: observed.loot * rate,
             kills: observed.kills * rate, deaths: theoretical?.deaths || 0, costs: Number(observed.costs || 0) * rate
@@ -58,7 +74,8 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
         if (!base) return null;
         const bias = 1 + incomeError * (2 * Tendency.roll('spot-income', state.characterId, spot.id) - 1);
         const scale = observed ? 1 : calibration;
-        // No crowd divisor: the bot's own observed row already carries the share it got (ARCH-08-b).
+        // The bot's own observed row already carries the share it got (ARCH-08-b);
+        // a table row shares the spot's production with its other hunters (crowded).
         const row = { ...base, useShots: shots, exp: base.exp * scale * bias,
             adena: base.adena * scale * bias, loot: base.loot * scale * bias,
             kills: base.kills * scale };

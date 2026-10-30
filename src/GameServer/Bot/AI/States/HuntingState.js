@@ -17,6 +17,7 @@ const EncounterReadiness = invoke('GameServer/Bot/AI/BotEncounterReadiness');
 const BotPvpRisk      = invoke('GameServer/Bot/AI/BotPvpRisk');
 const BotRoles        = invoke('GameServer/Bot/AI/BotRoles');
 const RestPolicy      = invoke('GameServer/Bot/AI/RestPolicy');
+const SoloSelfHeal = invoke('GameServer/Bot/AI/SoloSelfHeal');
 const DangerMoment    = invoke('GameServer/Bot/AI/DangerMoment');
 const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const BotTownTravel  = invoke('GameServer/Bot/AI/BotTownTravel');
@@ -885,6 +886,9 @@ module.exports = {
         // Match RestingState's role-aware wake policy.  Melee/dps bots are
         // allowed to keep hunting with low MP; otherwise they immediately
         // wake again at full HP and oscillate between hunting and resting.
+        // Between fights a solo bot heals itself where that beats sitting (T107).
+        if (!encounterActionInFlight && !session.currentTargetId && isSoloHunter(session)
+            && SoloSelfHeal.tryBetweenFights(session, bot, Generics)) return;
         if (!encounterActionInFlight && RestPolicy.needsRest(bot, hpRatio, mpRatio)) {
             beginVoluntaryRecovery(session, bot, BotAI);
             return;

@@ -89,7 +89,8 @@ function forActor(session, actor, target, options = {}) {
     if (!economy || !target) return null;
     const hp = Number(actor.fetchHp?.() || 0), maxHp = Number(actor.fetchMaxHp?.() || 0);
     const mp = Number(actor.fetchMp?.() || 0), maxMp = Number(actor.fetchMaxMp?.() || 0);
-    const profiles = (options.profiles || TargetMatchup.actorProfiles([actor])).map(profile => profile.soloDamageReceiver === false ? profile
+    // A pet keeps its own HP (BotTargetMatchup.actorProfiles; it tanks first).
+    const profiles = (options.profiles || TargetMatchup.actorProfiles([actor])).map(profile => profile.soloDamageReceiver === false || profile.servitor === true ? profile
         : { ...profile, maxHp: Math.min(profile.maxHp, hp), maxMp: Math.min(profile.maxMp, mp) });
     const view = TargetMatchup.targetView(target);
     const attackers = options.attackers || attackersOf(actor, target);

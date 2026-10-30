@@ -106,8 +106,10 @@ assert.equal(Spots.findForState(state, { ...options, hasRoom: () => true })?.id,
 // the bot left goes home while that spot has room; when main's world index
 // holds a full spot there, the return goes to another spot the search picks.
 {
-    const savedCatalogue = SpotService.spots;
+    const savedCatalogue = SpotService.spots, select = IncomeRoute.select;
     SpotService.spots = profiles;
+    // No income route: the return is the list search's, not an income pick that leads elsewhere.
+    IncomeRoute.select = () => null;
     try {
         // No class in the stats: no matchup profile refuses a spot, so the
         // search has other spots to offer (the naked mage survives none).
@@ -147,7 +149,7 @@ assert.equal(Spots.findForState(state, { ...options, hasRoom: () => true })?.id,
         assert.equal(alone?.stats.travel.reason, 'return_after_market', 'a full saved spot alone: still a return trip');
         assert.equal(alone.stats.travel.spotId, homeSpot.id, 'a full saved spot and no other spot fits: the bot goes home');
         assert.equal(alone.stats.travel.regionName, homeSpot.name, 'the saved spot itself is the destination');
-    } finally { SpotService.spots = savedCatalogue; }
+    } finally { SpotService.spots = savedCatalogue; IncomeRoute.select = select; }
 }
 
 Spots.cache = originalCache;
