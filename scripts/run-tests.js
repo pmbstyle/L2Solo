@@ -745,6 +745,8 @@ const tests = [
     'tests/test_future_class_kit.js',
     'tests/test_spot_table_death_time.js',
     'tests/test_future_summoner_pet.js',
+    'tests/test_cold_hot_rules.js',
+    'tests/test_spot_cutting.js',
     'tests/test_cold_regen_passives.js',
     'tests/test_warrior_chanter_kits.js',
     'tests/test_spot_crowd_share.js',
