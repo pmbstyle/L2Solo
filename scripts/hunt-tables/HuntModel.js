@@ -222,6 +222,20 @@ function petHealOf(profile) {
         reuseSec: Math.max(1, Number(skill.reuse) || 0) / 1000 };
 }
 
+// A solo bot's own buffs (BackgroundResolver.castSoloBuffs from no effects):
+// cast seconds per second they last, 0 without them.
+function ownBuffRate(state, profile) {
+    const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
+    const full = { ...state, vitals: { hp: profile.maxHp, maxHp: profile.maxHp, mp: profile.maxMp, maxMp: profile.maxMp } };
+    full.stats = { ...full.stats, coldCombat: Profile.legacySnapshot(full, profile.skills || [], 0) };
+    const cast = Resolver.castSoloBuffs(full, 0, profile);
+    if (!(cast?.buffCasts > 0)) return 0;
+    const lives = (cast.fighter.profile.effects || []).map(effect => Number(effect.expiresAt) / 1000).filter(life => life > 0);
+    if (!lives.length) return 0;
+    const meanLife = lives.reduce((sum, life) => sum + life, 0) / lives.length;
+    return cast.durationMs / 1000 / meanLife;
+}
+
 function mobHour(bot, mob, correction = null) {
     const { profile, rot } = bot;
     const target = mob.combat;
@@ -265,6 +279,9 @@ function mobHour(bot, mob, correction = null) {
     // HP the owner gets back per second by its heals between fights
     // (BackgroundResolver.coldHealBetweenFights) when it has them, else 0: it sits.
     const gapHeal = gapHealRate(profile);
+    // Seconds of own-buff casting per second of hunting (resolveSolo casts
+    // them when due): their cast time over their lifetime.
+    const buffRate = ownBuffRate(state, profile);
     // A pulled melee mob strikes once it has closed in (ColdCombatProfile.openingMs).
     const opening = Profile.openingMs(profile, view) / 1000;
     let share = 1, petDeaths = 0, healSec = 0, petHealSec = 0, fight = 0, rest = 0, taken = 0, mpSpent = 0, wall = 0, worst = 0;
@@ -298,6 +315,7 @@ function mobHour(bot, mob, correction = null) {
         taken = mix.perSecond * (pet ? Math.min(exposed, petDeaths * summonSec) : exposed);
         const steps = Math.max(1, Math.ceil(fight / budget));
         wall = fight + (steps - 1) * (cycle - budget) + petDeaths * summonSec + healSec + petHealSec;
+        wall += buffRate * (wall + rest);
         // The most the fight's HP falls: its first step's damage, or all of it
         // less the regeneration between steps when the steps outpace it.
         worst = Math.max(taken * Math.min(1, budget / fight), taken - standing * cycle * (steps - 1));
