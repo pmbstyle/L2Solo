@@ -5,10 +5,11 @@
 # (offence = pAtk x atkSpd x (1 + crit/1000); kp, km: the spot's physical and
 # magic threat, C4 damage ~ attack / defence). "Tolerable": every spot mob is
 # survived in a bad fight (mean + 3 sigma, report.mob_hour's test); "easy":
-# tolerable and the rest after the spot's fights is shorter than the fights.
+# tolerable and the rest after the spot's fights is shorter than the fights:
+# a second number, defence against seated regeneration (easy_index).
 # Thresholds are fitted on sampled kits; printed: how many kits the
 # thresholds misclassify against the exact table.
-# Usage: spot_index.py <line.json.gz> [levels]
+# Usage: spot_index.py <line.json.gz> [levels] [buff mode: none|own|buffer|topBuffer|all]
 import gzip, json, math, random, sys
 
 SIGMA = 3
@@ -43,6 +44,12 @@ def index(x, w, a, j, kp, km):
     off = wr[2] * wr[4] * (1 + wr[5] / 1000)
     return ar[4] * off / (kp / max(1, ar[2]) + km / max(1, jr[2]) + 1e-9)
 
+def easy_index(x, a, j, kp, km):
+    # Rest < fight  <=>  (taken per second) < (seated regen per second): no
+    # offence or HP in it (both cancel), only defence against regeneration.
+    ar, jr = x['armour'][a], x['jewels'][j]
+    return (x['regen']['hp'] / 3) / (kp / max(1, ar[2]) + km / max(1, jr[2]) + 1e-9)
+
 def best_cut(samples):
     # samples: [(I, label)]; the cut with fewest errors (label True above it)
     s = sorted(samples); pos = sum(1 for _, l in s if l); best = (pos, 0.0)
@@ -54,13 +61,20 @@ def best_cut(samples):
         if err < best[0]: best = (err, v)
     return best
 
+def _cut(labelled):
+    return best_cut([(i, t) for i, t, _, _ in labelled])[1]
+
 def main():
     data = json.load(gzip.open(sys.argv[1]))['levels']
     spots = json.load(open('data/Bots/hunt/spots.json'))['spots']
-    levels = [int(v) for v in sys.argv[2].split(',')] if len(sys.argv) > 2 else [15, 20, 25, 30, 35, 40, 45, 50, 55, 60]
+    levels = [int(v) for v in sys.argv[2].split(',')] if len(sys.argv) > 2 and sys.argv[2] else [15, 20, 25, 30, 35, 40, 45, 50, 55, 60]
+    mode = sys.argv[3] if len(sys.argv) > 3 else 'none'
+    print('buff mode', mode)
     print('lvl spots kits | tolerable: share err | easy: share err   (err = kits the thresholds misclassify)')
     for level in levels:
         x = data.get(str(level))
+        if not x: continue
+        if mode != 'none': x = x.get('modes', {}).get(mode)
         if not x: continue
         at = {mob[0]: m for m, mob in enumerate(x['mobs'])}
         kits = [(random.randrange(len(x['weapons'])), random.randrange(len(x['armour'])), random.randrange(len(x['jewels']))) for _ in range(400)]
@@ -71,9 +85,11 @@ def main():
             if not rows or len(rows) < len(spot[5]): continue
             nspots += 1
             kp, km = threat(x, rows)
-            labelled = [(index(x, *k, kp, km), *exact(x, *k, rows)) for k in kits]
-            et, _ = best_cut([(i, t) for i, t, _ in labelled]); ee, _ = best_cut([(i, e) for i, _, e in labelled])
-            tot['n'] += len(labelled); tot['tol'] += sum(t for _, t, _ in labelled); tot['easy'] += sum(e for _, _, e in labelled)
+            labelled = [(index(x, *k, kp, km), *exact(x, *k, rows), easy_index(x, k[1], k[2], kp, km)) for k in kits]
+            et, _ = best_cut([(i, t) for i, t, _, _ in labelled])
+            # easy = tolerable and rest < fight: tolerable's cut, then the defence-vs-regen cut
+            ee, _ = best_cut([(i2 if i >= _cut(labelled) else -1, e) for i, _, e, i2 in labelled])
+            tot['n'] += len(labelled); tot['tol'] += sum(t for _, t, _, _ in labelled); tot['easy'] += sum(e for _, _, e, _ in labelled)
             tot['te'] += et; tot['ee'] += ee
         if not tot['n']: continue
         n = tot['n']

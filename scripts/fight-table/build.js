@@ -14,6 +14,7 @@
 //   armour   defence points (armour pieces, sets) x mob: the mob's physical
 //            damage per action (mean, second moment) and actions per second
 //   jewels   M.Def points x mob: its spell damage per action (mean, second)
+// Each level also per buff mode (modes.own, modes.buffer: buffModes).
 // A kit is a weapon point, an armour point and a jewel point; its fight is
 // assembled from the three (analysis), its death from the damage spread.
 // Mob window: from the grade's first level up while any kit survives
@@ -23,7 +24,7 @@
 // mixes its own pieces with those that succeeded at the end of the grade
 // below (survive a bad fight against a mob of their grade), slots full.
 //
-// Usage: node scripts/fight-table/build.js [--keys=7>9,...] [--levels=1-78] [--out=tmp/fight-table]
+// Usage: node scripts/fight-table/build.js [--keys=7>9,...] [--levels=1-78] [--only=20,25] [--out=tmp/fight-table]
 // Run through ~/Games/tools/check.sh (background priority).
 
 const fs = require('fs');
@@ -43,6 +44,7 @@ function args() {
         if (name === 'keys') out.keys = value.split(',');
         if (name === 'levels') out.levels = value.split('-').map(Number);
         if (name === 'out') out.out = value;
+        if (name === 'only') out.only = new Set(value.split(',').map(Number));
     }
     return out;
 }
@@ -80,7 +82,7 @@ function wearRow(item) {
     return { selfId: item.selfId, objectId: item.selfId, enchant: 0, slot: item.slot };
 }
 
-function buildLevel(ctx, key, level, carry) {
+function buildLevel(ctx, key, level, carry, effects = []) {
     const { M, K, Profile, Mob, Gear, tables, items, mobs } = ctx;
     const { classId } = C.parseKitKey(key);
     const classRow = C.rowOfKey(tables.classes.classes, key);
@@ -132,6 +134,22 @@ function buildLevel(ctx, key, level, carry) {
         if (!jewels.has(point)) jewels.set(point, { ids: set.filter(Boolean).map(item => item.selfId), kits: 0, numbers: { ...naked, ...n }, worn: new Set() });
         jewels.get(point).kits += 1;
         for (const item of set.filter(Boolean)) jewels.get(point).worn.add(item.selfId);
+    }
+
+    // Buffs (a T128 axis): a mode's effects over every point, through the
+    // fight profile (ColdCombatProfile.fightProfile: the kit plus buffs).
+    let base = naked;
+    if (effects.length) {
+        const buffed = rows => {
+            const buffState = M.kitState(key, level, rows);
+            buffState.stats.coldCombat.effects = effects;
+            return Profile.fightProfile(buffState, 0);
+        };
+        const pair = item => item.slot === 4 ? [wearRow(item)] : [wearRow(item), { ...wearRow(item), slot: item.slot + 1 }];
+        base = buffed([]);
+        for (const point of offence) point.numbers = buffed(point.ids.map(id => wearRow(ctx.weaponById.get(id))));
+        for (const point of armour.values()) point.numbers = buffed(point.ids.map(id => wearRow(items.get(id))));
+        for (const point of jewels.values()) point.numbers = buffed(point.ids.flatMap(id => pair(items.get(id))));
     }
 
     // Mobs from the level's grade low end (its first level) up, level by
@@ -211,15 +229,16 @@ function buildLevel(ctx, key, level, carry) {
     return {
         survivorSets: survivors,
         rot: { mpPerSec: rot.mpPerSec, shotMul: rot.shotMul },
-        naked: { maxHp: naked.maxHp, maxMp: naked.maxMp, con: naked.con, men: naked.men },
+        naked: { maxHp: base.maxHp, maxMp: base.maxMp, con: base.con, men: base.men },
         // Per mob: id, level, HP, exp and SP after the level gap, adena per kill (drop yield at this level).
         mobs: window.map(mob => {
             const gap = ctx.Experience.gapFactor(level - mob.combat.level);
             const adena = mob.reward ? ctx.Planner.itemDropYield(mob.reward, ADENA, 'drop', { npcLevel: mob.combat.level, killerLevel: level }).expectedYield : 0;
             return [mob.npcId, mob.combat.level, mob.combat.maxHp, Math.round(mob.exp * gap), Math.round(mob.sp * gap), Math.round(adena)];
         }),
-        // Seated regeneration per 3 s tick (ColdRest), of the naked bot.
-        regen: (({ hp, mp }) => ({ hp, mp }))(M.regenOf(classId, level, naked)),
+        // Seated regeneration per 3 s tick (ColdRest), of the naked bot (with the mode's buffs).
+        regen: (({ hp, mp }) => ({ hp, mp }))(M.ColdRest.coldRestRegenPerTick({ classId, level, stats: { classId } },
+            { stats: { con: base.con, men: base.men }, profile: base.skills ? base : undefined, timestamp: 0 })),
         weapons: pick(offence, ['pAtk', 'mAtk', 'atkSpd', 'critical', 'accur']),
         armour: pick([...armour.values()], ['pDef', 'evasion', 'maxHp', 'maxMp', 'shieldPDef']),
         jewels: pick([...jewels.values()], ['mDef']),
@@ -228,6 +247,28 @@ function buildLevel(ctx, key, level, carry) {
         survivors: survivors ? Object.fromEntries([...survivors].map(([slot, ids]) => [slot, [...ids]])) : null,
         counts: { armourKits: bodies.length * rest.length, jewelKits: [...jewels.values()].reduce((sum, jewel) => sum + jewel.kits, 0) }
     };
+}
+
+// The buff modes of a line at a level (T128): none; its own self buffs; a
+// buffer's set (a Prophet of the same level, ColdBuffOffer.choose: what the
+// recipient finds useful, one per family); a top buffer's (a level 76
+// Prophet: the buff service's sellers).
+const BUFFER_CLASS = 17, TOP_BUFFER_LEVEL = 76;
+function buffModes(ctx, key, level) {
+    const { M, Profile } = ctx;
+    const Offer = invoke('GameServer/Bot/Economy/ColdBuffOffer');
+    const Policy = invoke('GameServer/Bot/Economy/BuffServicePolicy');
+    const recipient = M.kitState(key, level, []);
+    const skillsOf = state => (Profile.profileFor(state, 0).skills || []).filter(record => !record.passive).map(Offer.skillAdapter);
+    const rich = { vitals: { mp: 1e9, maxMp: 1e9 } };
+    const own = skillsOf(recipient).filter(skill => skill.fetchSemantic()?.target === 'self'
+        && Object.keys(skill.fetchSemantic()?.stats || {}).length);
+    const pick = skills => Offer.effectsFor(Offer.choose(rich, recipient, 0, skills)?.selected || [], 0);
+    const bufferAt = at => skillsOf(M.kitState(String(BUFFER_CLASS), at, [])).filter(Policy.eligibleSkill);
+    const top = pick(bufferAt(TOP_BUFFER_LEVEL)), mine = pick(own);
+    // all: its own and the top buffer's, the bought one first in a shared family.
+    const all = [...top, ...mine.filter(effect => !top.some(other => other.stackFamily === effect.stackFamily))];
+    return { own: mine, buffer: pick(bufferAt(level)), topBuffer: top, all };
 }
 
 function main() {
@@ -256,10 +297,24 @@ function main() {
         // that succeeded at the end of the one below (buildLevel survivors).
         let carry = null;
         for (let level = 1; level <= opts.levels[1]; level++) {
+            // --only: the listed levels, and each grade's last for the carry.
+            const gradeEnd = ctx.Gear.gradeForLevel(level + 1) !== ctx.Gear.gradeForLevel(level);
+            if (opts.only && !opts.only.has(level) && !gradeEnd) continue;
             const row = buildLevel(ctx, key, level, carry);
-            if (row?.survivorSets) carry = row.survivorSets;
+            const next = row?.survivorSets;
             if (row) delete row.survivorSets;
-            if (level >= opts.levels[0]) levels[level] = row;
+            if (row && level >= opts.levels[0] && (!opts.only || opts.only.has(level))) {
+                const modes = buffModes(ctx, key, level);
+                row.modes = {};
+                for (const [mode, effects] of Object.entries(modes)) {
+                    const buffed = buildLevel(ctx, key, level, carry, effects);
+                    delete buffed.survivorSets;
+                    buffed.buffs = effects.map(effect => effect.name);
+                    row.modes[mode] = buffed;
+                }
+                levels[level] = row;
+            }
+            if (next) carry = next;
         }
         const file = path.join(opts.out, `${key.replace('>', '-')}.json.gz`);
         fs.writeFileSync(file, zlib.gzipSync(JSON.stringify({ key, sha: require('child_process').execSync('git rev-parse HEAD').toString().trim(), layout: 'see scripts/fight-table/build.js header', levels })));
