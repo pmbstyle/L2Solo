@@ -2,7 +2,6 @@
 
 const CharacterLocationIndex = require('../../World/CharacterLocationIndex');
 const providers = new WeakMap();
-const { isMainThread } = require('node:worker_threads');
 
 // Who stands on each spot and who is heading there, kept up to date at every
 // state write. Read only at a spot: the room check at arrival, the kill share,
@@ -117,11 +116,11 @@ class SpotOccupancyIndex {
 
     // How many bots the index has on a spot ('physical'): standingOnly leaves
     // out the bots still on their way there (indexed at their destination),
-    // excludeKeys the given state keys.
-    physicalCount(spotId, { excludeKeys = null, standingOnly = false } = {}) {
+    // excludeKeys the given state keys, excludeKey one (no set to build).
+    physicalCount(spotId, { excludeKeys = null, excludeKey = null, standingOnly = false } = {}) {
         let count = 0;
         for (const [key, state] of this.members(spotId, 'physical')) {
-            if (!(standingOnly && state?.activity === 'traveling') && !excludeKeys?.has(key)) count++;
+            if (!(standingOnly && state?.activity === 'traveling') && key !== excludeKey && !excludeKeys?.has(key)) count++;
         }
         return count;
     }
@@ -139,19 +138,17 @@ class SpotOccupancyIndex {
     }
 }
 
-// The occupancy of the thread that plans, for a reader outside a route
-// search (SpotEconomics' crowd share, user 10-29): a cold worker registers
-// its kernel's (usePlanningIndex), main reads its world index.
-let planningIndex = null;
-function usePlanningIndex(index) {
-    planningIndex = index;
-}
-// The other bots indexed on a spot, those on their way there included (the
-// room check's count), the state itself left out.
-function othersOn(spotId, state) {
-    // lazy: cycle BotLifeState loads this module
-    const index = planningIndex || (isMainThread ? invoke('GameServer/Bot/Population/BotLifeState').occupancyIndex() : null);
-    return index && spotId ? index.physicalCount(spotId, { excludeKeys: new Set([stateKey(state)]) }) : 0;
+// The hunters on a spot that share its production (E69, user 10-29), in the
+// index of the thread that asks (main's world index, a worker's kernel
+// index): the bots indexed there, those on their way included, at least one;
+// with a state, the others plus that bot, whether it stands there yet or
+// weighs a move there (SpotEconomics' crowd share). One count for the fight
+// (SpotProfiles.spotHunters, ColdSimulationKernel.spotHunters) and the spot
+// value.
+function huntersOn(index, spotId, state = null) {
+    if (!index || !spotId) return 1;
+    if (!state) return Math.max(1, index.physicalCount(spotId));
+    return index.physicalCount(spotId, { excludeKey: stateKey(state) }) + 1;
 }
 
-module.exports = { SpotOccupancyIndex, stateKey, occupiedSpotId, usePlanningIndex, othersOn };
+module.exports = { SpotOccupancyIndex, stateKey, occupiedSpotId, huntersOn };

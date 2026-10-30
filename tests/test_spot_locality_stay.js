@@ -29,12 +29,13 @@ const spot = (id, center, entries) => ({ id, name: id,
     npcEntries: entries.map(([selfId, count]) => ({ selfId, count })),
     levelCounts: Object.fromEntries(entries.map(([, count, level]) => [level, count])) });
 // Two keltir fields in other races' regions, two orc fields: one with wolves
-// (fails survival), one with keltirs only (passes). Level 1-2 mobs keep the
-// fields inside the level 6 search window (max mob level >= level - 4).
-const dwarf = spot('dwarf-keltir', { locX: 109648, locY: -174646 }, [[BEARDED_KELTIR, 20, 1], [LONGTAIL_KELTIR, 2, 2]]);
-const darkElf = spot('dark-elf-keltir', { locX: 29715, locY: 7844 }, [[BEARDED_KELTIR, 16, 1], [LONGTAIL_KELTIR, 2, 2]]);
+// (fails survival), one with keltirs only (passes). Level 1-2 mobs half and
+// half keep the fields inside the level 6 search window (their level mix,
+// mean plus spread, reaches level - 4: SpotService.levelMix, T123).
+const dwarf = spot('dwarf-keltir', { locX: 109648, locY: -174646 }, [[BEARDED_KELTIR, 11, 1], [LONGTAIL_KELTIR, 11, 2]]);
+const darkElf = spot('dark-elf-keltir', { locX: 29715, locY: 7844 }, [[BEARDED_KELTIR, 9, 1], [LONGTAIL_KELTIR, 9, 2]]);
 const orcWolves = spot('orc-wolves', { locX: -49570, locY: -115635 }, [[BEARDED_KELTIR, 6, 1], [KASHA_WOLF, 10, 4]]);
-const orcKeltir = spot('orc-keltir', { locX: -52000, locY: -112000 }, [[BEARDED_KELTIR, 12, 1], [LONGTAIL_KELTIR, 2, 2]]);
+const orcKeltir = spot('orc-keltir', { locX: -52000, locY: -112000 }, [[BEARDED_KELTIR, 7, 1], [LONGTAIL_KELTIR, 7, 2]]);
 const options = { matchupProfiles: [mystic], timestamp: at };
 const target = Routes.targetLevelForState(state, options);
 

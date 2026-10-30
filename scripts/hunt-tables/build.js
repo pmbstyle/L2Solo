@@ -59,7 +59,7 @@ function main() {
             body = S.buildSpots();
             counts = { spots: body.spots.length, spawned: body.spawned };
             delete body.spawned;
-            inputs = { catalogueSeed: 20261005, periodMode: 'day' };
+            inputs = { catalogueSeed: 20261005, periodMode: 'day+night' };
         } else if (name === 'classes') {
             body = S.buildClasses();
             counts = { classes: body.classes.length, rows: body.classes.length * C.MAX_LEVEL };

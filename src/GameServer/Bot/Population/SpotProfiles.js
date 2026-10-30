@@ -6,7 +6,7 @@ const EquipmentIncomeRoute = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute
 const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
-const { stateKey } = require('./SpotOccupancyIndex');
+const { stateKey, huntersOn } = require('./SpotOccupancyIndex');
 const { isMainThread } = require('node:worker_threads');
 
 function rewardForLevel(level) {
@@ -47,6 +47,9 @@ function profileFromSpot(spot) {
         dominantLevels: (spot.dominantLevels || []).map((entry) => ({ ...entry })),
         area: spot.area ? { ...spot.area } : null,
         spawnArea: Number(spot.spawnArea) || null,
+        // The cell pieces the spot covers (SpotIndex.piecesOf, T123).
+        floor: spot.floor ? { ...spot.floor } : null,
+        joins: spot.joins ? spot.joins.map((piece) => ({ ...piece })) : null,
         tags: [...(spot.tags || [])],
         tagsAuthoritative: spot.tagsAuthoritative === true,
         capacity: Number(spot.capacity || 0) || null,
@@ -91,7 +94,9 @@ function explicitClanRaidSpot(state = {}, profile = null) {
 
 // Level bounds are cheap and independent of the detailed route policy:
 // out-of-range spots are rejected before deriving their tags. The window of
-// one target level is the same for every search of one catalog.
+// one target level is the same for every search of one catalog. Near: the
+// spot's level mix (SpotService.levelMix, T123) meets the level +- 4, so a
+// few high spawns among a field of low ones do not make it near.
 const spotsNearLevelByCatalog = new WeakMap();
 // Catalogue-owned references, at most 80 level arrays; collecting/resetting a
 // catalogue releases its lists. No bot, state or matchup is retained here.
@@ -102,7 +107,8 @@ function lowerSpots(profiles, targetLevel) {
     if (!byLevel) lowerSpotsByCatalog.set(profiles, byLevel = new Map());
     let spots = byLevel.get(targetLevel);
     if (!spots) {
-        spots = profiles.filter(profile => profile.raidBoss !== true && profile.maxLevel < targetLevel - 4);
+        // Below the near window by the same level mix (spotsNearLevel).
+        spots = profiles.filter(profile => profile.raidBoss !== true && SpotService.levelMix(profile).high < targetLevel - 4);
         byLevel.set(targetLevel, spots);
         if (byLevel.size > 80) byLevel.delete(byLevel.keys().next().value);
     }
@@ -114,17 +120,21 @@ function spotsNearLevel(profiles, targetLevel) {
     if (!byLevel) spotsNearLevelByCatalog.set(profiles, byLevel = new Map());
     let spots = byLevel.get(targetLevel);
     if (!spots) {
-        spots = profiles.filter((profile) => profile.raidBoss !== true
-            && profile.minLevel <= targetLevel + 4 && profile.maxLevel >= targetLevel - 4);
+        spots = profiles.filter((profile) => {
+            if (profile.raidBoss === true) return false;
+            const mix = SpotService.levelMix(profile);
+            return mix.low <= targetLevel + 4 && mix.high >= targetLevel - 4;
+        });
         byLevel.set(targetLevel, spots);
     }
     return spots;
 }
 
 // The bots on a spot for its kill share (E69), main thread: the world index's
-// physical count, as the worker's ColdSimulationKernel.spotHunters.
-function spotHunters(spot) {
-    return spot?.id ? Math.max(1, BotLifeState.occupancyIndex().physicalCount(spot.id)) : 1;
+// (SpotOccupancyIndex.huntersOn), as the worker's ColdSimulationKernel.spotHunters;
+// with a state, that bot counted once.
+function spotHunters(spot, state = null) {
+    return huntersOn(BotLifeState.occupancyIndex(), spot?.id, state);
 }
 
 // How many bots a spot holds (LevelingRoutes.roomForSpot); a raid boss spot
@@ -208,7 +218,7 @@ const SpotProfiles = {
         const mode = LevelingRoutes.modeForState(state, options);
         const routeOptions = { ...options, excludedSpotIds,
             spotEconomics: options.spotEconomics || invoke('GameServer/Bot/Economy/SpotEconomics').create(state,
-                { timestamp, mode }),
+                { timestamp, mode, ...(options.spotHunters ? { spotHunters: options.spotHunters } : {}) }),
             matchupProfiles: TargetMatchup.stateProfiles(state, { ...options, mode }) };
         const currentMatch = currentSpot ? LevelingRoutes.scoreSpot(currentSpot, state, routeOptions) : null;
         // A starter field outside the bot's region (locality penalty) asks
@@ -417,6 +427,7 @@ const SpotProfiles = {
 };
 
 SpotProfiles.spotHunters = spotHunters;
+SpotProfiles.spotsNearLevel = spotsNearLevel;
 SpotProfiles.spotRoom = spotRoom;
 SpotProfiles.roomFilterFor = roomFilterFor;
 SpotProfiles.defaultRoomFilter = defaultRoomFilter;
