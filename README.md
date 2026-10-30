@@ -185,11 +185,7 @@ This command starts the L2Solo Launcher.
 
 Press `Start` in the launcher to run the server. 
 
-Use **Saved Games** while the server is stopped to save a full copy of your world database. Enter a name or leave it blank for a generated one. Saves are stored in `tmp/saves` (or `saves` inside a custom runtime directory), with no limit on their number beyond available disk space. The list shows each save's name, date, time, and size in GB.
-
-**Load** replaces the current database with the selected save and leaves the server stopped. **Delete** permanently removes that save. Both actions ask for confirmation. All saves are manual: loading never creates an automatic backup. Configuration files and launcher settings are not part of a save.
-
-Before opening the game server, L2Solo verifies `data/Geodata` against the pinned release in `scripts/geodata-release.json`: the exact region set, file sizes and SHA-256 checksums must match. Missing, outdated or damaged packs are downloaded and verified in a separate directory. The starter then preserves the entire previous directory as `Geodata.backup-*` and installs the new pack without mixing regions. The C4 pack generated from the local client contains 141 regions (about 681 MiB). See [client geodata](docs/client-geodata.md) for installation and rollback.
+Before opening the game server, L2Solo verifies `data/Geodata`, downloads and unpacks it if needed.
 
 ```bash
 npm run geodata
@@ -203,7 +199,7 @@ or
 
 https://drive.google.com/file/d/1P6ZCuSfCPS381zQLTXuce6wbiWc7BL50/view?usp=sharing
 
-
+Use **Saved Games** while the server is stopped to save a full copy of your world database. This is only needed if you want to roll back to the saved server state. Server data itself always saves and updates in real time.
 
 ## Configuration
 
