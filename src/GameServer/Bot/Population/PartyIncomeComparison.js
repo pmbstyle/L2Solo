@@ -75,8 +75,11 @@ function soloRoute(state, spots, timestamp, peers = []) {
             held = { spots, at: byId.at, choice: byId.choice };
             soloHoldCounts.hits += 1;
         } else {
-            held = { spots, at: timestamp, choice: Route.select(standalone,
-                { spots, timestamp, required: true, mode: 'solo', maxChecks: MAX_SOLO_CHECKS }) };
+            // The spot the bot holds for earning (decision 10-30) first; a full search when it fails.
+            const options = { spots, timestamp, required: true, mode: 'solo', maxChecks: MAX_SOLO_CHECKS };
+            const heldSpot = invoke('GameServer/Bot/Economy/EconomyContext').heldIncomeSpot(state.characterId, timestamp); // lazy: cycle EconomyContext > PartyIncomeComparison
+            held = { spots, at: timestamp, choice: (heldSpot != null && Route.select(standalone, { ...options, only: [heldSpot] }))
+                || Route.select(standalone, options) };
             if (input) soloHoldCounts.misses += 1;
             if (input) holdById(Number(state.characterId), { input, spots, at: timestamp, choice: held.choice }, timestamp);
         }

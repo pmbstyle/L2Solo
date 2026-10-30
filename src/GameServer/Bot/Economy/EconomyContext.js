@@ -928,6 +928,12 @@ const HOLD_MS = 30 * GameTime.GAME_MINUTE_MS;
 // Holds kept and searches by reason (the worker status line's caches).
 const holdStats = { kept: 0, none: 0, marks: 0, window: 0, failed: 0, poorer: 0 };
 function incomeHoldStats() { return { size: heldRoutes.size, ...holdStats }; }
+// The spot a bot holds for earning now (incomeRouteFor), or null: the solo
+// side of the party comparison judges it first (PartyIncomeComparison.soloRoute).
+function heldIncomeSpot(characterId, timestamp) {
+    const held = heldRoutes.get(Number(characterId));
+    return held && timestamp - held.at < HOLD_MS ? held.spotId : null;
+}
 const HOLD_SHARE = 0.7;
 const HOLD_LIMIT = 4096;
 const heldRoutes = new Map();
@@ -1903,5 +1909,5 @@ function reset() {
 }
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
-module.exports = { incomeHoldStats, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, stockFor, keptTargets, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
+module.exports = { incomeHoldStats, heldIncomeSpot, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, stockFor, keptTargets, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
     craftIncome };
