@@ -227,7 +227,7 @@ const SpotProfiles = {
         const mode = LevelingRoutes.modeForState(state, options);
         const routeOptions = { ...options, excludedSpotIds,
             spotEconomics: options.spotEconomics || invoke('GameServer/Bot/Economy/SpotEconomics').create(state,
-                { timestamp, mode, ...(options.spotHunters ? { spotHunters: options.spotHunters } : {}) }),
+                { timestamp, mode, members: options.capacityStates, ...(options.spotHunters ? { spotHunters: options.spotHunters } : {}) }),
             matchupProfiles: TargetMatchup.stateProfiles(state, { ...options, mode }) };
         const currentMatch = currentSpot ? LevelingRoutes.scoreSpot(currentSpot, state, routeOptions) : null;
         // A starter field outside the bot's region (locality penalty) asks
