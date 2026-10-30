@@ -1094,6 +1094,12 @@ function calcAggroDamage(skill, target) {
 
 function rollBlow(actor, target, semantic, attack, rng) {
     const behind = attack?.isBehindTarget?.(actor, target) === true;
+    // The position alone (HitRules.blowLandChance): at no rate a blow that
+    // needs no critical is whole (it lands, no roll); at the base rate a
+    // failed position is none (no roll). Only a critical's roll reads the
+    // facing, DEX and rates.
+    if (HitRules.blowLandChance(semantic, { behind, rateMul: 0 }) >= 100) return true;
+    if (!(HitRules.blowLandChance(semantic, { behind }) > 0)) return false;
     const front = !behind && attack?.isFacing?.(target, actor, 120) === true;
     return HitRules.blowLands(semantic, { dex: Number(actor?.fetchDex?.()) || 20, behind, front,
         rateMul: EffectStats.multiplier(actor, 'blowRateMul')

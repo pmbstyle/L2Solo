@@ -8,6 +8,7 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 const SpotValueTable = invoke('GameServer/Bot/AI/SpotValueTable');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+const StaticMerchantPricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
 
 const BeginnerShots = require('../Items/C4BeginnerShots');
 const DEFAULT_TARGET_AMOUNT = 1000;
@@ -119,7 +120,7 @@ function planForState(state, options = {}) {
     const classId = Number(state?.stats?.classId || state?.classId || 0), rank = weapon ? itemRank(weapon.selfId) : 'none';
     const spirit = classWantsSpiritshots(classId);
     if (options.blessed === true && !spirit) return null;
-    const blessed = spirit && (options.blessed ?? choosesBlessed(state, rank));
+    const blessed = spirit && (options.blessed ?? choosesBlessed(() => state, rank, selfId => heldAmount(state, selfId)));
     const plan = blessed ? planForKind('blessedSpiritshot', rank) : planFor({ classId, rank });
     const count = weapon ? templateFor(weapon.selfId)?.etc?.[plan.kind === 'soulshot' ? 'soulshot' : 'spiritshot'] : 0;
     return { ...plan, perAction: Math.max(0, Number(count) || 0) };
@@ -129,17 +130,35 @@ function heldAmount(state, selfId) {
     return Math.max(0, Number(state?.inventory?.[selfId]?.amount) || 0);
 }
 
-function choosesBlessed(state, rank) {
-    if (heldAmount(state, BLESSED_SPIRITSHOT_BY_RANK[rank]) > 0) return true;
-    if (heldAmount(state, SPIRITSHOT_BY_RANK[rank]) > 0) return false;
+// The one shot choice of a spiritshot class, cold (planForState) and hot
+// (planForActor): `held(selfId)` reads the bag; `roleState()` the role and
+// level inputs, read only when the bag holds neither shot.
+function choosesBlessed(roleState, rank, held) {
+    if (held(BLESSED_SPIRITSHOT_BY_RANK[rank]) > 0) return true;
+    if (held(SPIRITSHOT_BY_RANK[rank]) > 0) return false;
+    const state = roleState();
     return blessedPays(SpotValueTable.roleFor(state), Number(state?.level) || 1, rank);
+}
+
+// What a bot pays for a shot (StaticMerchantPricing.botBuyPrice): the one
+// consumable price of the hunt model (BotHuntEfficiency.consumablePrices).
+function botShotPrice(selfId) {
+    return StaticMerchantPricing.botBuyPrice(selfId);
+}
+
+// The paid shot of a plan's kind and grade (a beginner plan's shop shot).
+function paidShotId(plan) {
+    const byRank = plan.kind === 'blessedSpiritshot' ? BLESSED_SPIRITSHOT_BY_RANK
+        : plan.kind === 'spiritshot' ? SPIRITSHOT_BY_RANK : SOULSHOT_BY_RANK;
+    return byRank[normalizeRank(plan.rank)];
 }
 
 // Blessed Spiritshot over Spiritshot for a role, level and grade (user 10-29,
 // docs/game-decisions.md "Shots"): the farm it adds over the spiritshot (the
 // best spots' exp, as usePolicy's benefit) pays its extra cost per hour at
-// the template price (a D+ shot's craft materials) against the hour's money
-// before shots. One answer per table revision.
+// the bot's buy price (botShotPrice: the NPC's, else the template's, a D+
+// shot's craft materials) against the hour's money before shots. One answer
+// per table revision.
 const blessedChoices = new Map();
 function blessedPays(role, level, rank) {
     const key = `${SpotValueTable.revision()}|${role}|${level}|${rank}`;
@@ -148,7 +167,7 @@ function blessedPays(role, level, rank) {
     let pays = false;
     if (none && spirit && blessed) {
         const gain = row => 1 - Math.max(0, Number(none.exp) || 0) / Math.max(1, Number(row.exp) || 0);
-        const cost = (row, selfId) => Math.max(0, Number(row.shots) || 0) * itemPrice(selfId);
+        const cost = (row, selfId) => Math.max(0, Number(row.shots) || 0) * botShotPrice(selfId);
         const hour = Math.max(1, (Number(blessed.adena) || 0) + (Number(blessed.loot) || 0));
         pays = gain(blessed) - gain(spirit)
             >= (cost(blessed, BLESSED_SPIRITSHOT_BY_RANK[rank]) - cost(spirit, SPIRITSHOT_BY_RANK[rank])) / hour;
@@ -211,9 +230,11 @@ function usePolicy(state, prepared = {}) {
     const benefit = Math.max(0, 1 - Math.max(0, Number(withoutBest?.exp) || 0) / Math.max(1, Number(withBest?.exp) || 0));
     const buyback = BeginnerShots.isRestricted(plan.selfId) ? 0
         : invoke('GameServer/Items/NpcSellRules').npcBuyPrice(itemPrice(plan.selfId));
-    // huntHour is net of the shots at the shop price (BotHuntEfficiency.netIncome):
-    // the shots are priced against the hour before them, not twice.
-    const gross = Number(hour) > 0 ? Number(hour) + rawUse * Hunt.consumablePrices(state).shots : 0;
+    // huntHour is net of the shots at the bot's buy price (BotHuntEfficiency
+    // netIncome over consumablePrices): the shots are priced against the hour
+    // before them, not twice. The plan's paid shot is planForState's (a
+    // beginner plan keeps its kind and grade).
+    const gross = Number(hour) > 0 ? Number(hour) + rawUse * botShotPrice(paidShotId(plan)) : 0;
     const affordableUse = cost => rawUse > 0 && gross > 0 && benefit >= rawUse * cost / gross ? rawUse : 0;
     const paidUsePerHour = affordableUse(buyback);
     const beginnerUsePerHour = affordableUse(0);
@@ -272,11 +293,24 @@ function planForKind(kind, rank = 'none') {
     };
 }
 
+// A hot bot's shot: the one its cold state takes (planForState), Blessed
+// Spiritshot by the same choice (choosesBlessed) over the actor's bag, so
+// hot auto shots enable the shot the worker's stock names.
 function planForActor(actor) {
-    return planFor({
-        classId: actorClassId(actor),
-        rank: weaponRankFromActor(actor)
-    });
+    const classId = actorClassId(actor), rank = weaponRankFromActor(actor);
+    if (!classWantsSpiritshots(classId)) return planForKind('soulshot', rank);
+    const held = selfId => Math.max(0, Number(actor?.backpack?.fetchItemFromSelfId?.(selfId)?.fetchAmount?.()) || 0);
+    return planForKind(choosesBlessed(() => actorRoleState(actor, classId), rank, held) ? 'blessedSpiritshot' : 'spiritshot', rank);
+}
+
+// The role and level inputs of a hot bot's shot choice, as its cold state
+// (EconomyContext.stateForActor) carries them.
+function actorRoleState(actor, classId) {
+    const session = actor?.session, stored = session?.coldLifeState;
+    // lazy: cycle DecisionEvents requires this module at its top.
+    const role = invoke('GameServer/Bot/AI/DecisionEvents').decisionStatsFor(session).role;
+    return { characterId: actor?.fetchId?.(), level: actor?.fetchLevel?.(), classId, stats: { classId, role },
+        party: session?.hotBackgroundPartyId ? { partyId: session.hotBackgroundPartyId, role: stored?.party?.role } : null };
 }
 
 function planForActorKind(kind, actor) {
@@ -353,11 +387,12 @@ function enableAutoShot(actor, options = {}) {
     // physical units. A useful gift need not justify buying replacement stock.
     const beginnerId = BeginnerShots.selfIdFor(plan.kind, plan.rank);
     const inputs = options.inputs || autoInputs(actor);
-    if (inputs.beginnerReady && (stock.beginnerUsePerHour ?? stock.usePerHour) > 0) enabled.add(beginnerId);
+    // Blessed Spiritshot has no beginner variant (BeginnerShots.selfIdFor null).
+    if (beginnerId && inputs.beginnerReady && (stock.beginnerUsePerHour ?? stock.usePerHour) > 0) enabled.add(beginnerId);
     if (allowed && (stock.paidUsePerHour ?? stock.usePerHour) > 0) enabled.add(plan.selfId);
     actor.autoSoulshots = enabled;
     autoUse.set(actor, inputs);
-    const activeId = enabled.has(beginnerId) ? beginnerId : allowed ? plan.selfId : null;
+    const activeId = beginnerId && enabled.has(beginnerId) ? beginnerId : allowed ? plan.selfId : null;
     return activeId && actor.backpack.fetchItemFromSelfId?.(activeId)
         ? { ...plan, selfId: activeId, name: itemName(activeId), price: itemPrice(activeId) } : null;
 }
