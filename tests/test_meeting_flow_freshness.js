@@ -29,6 +29,10 @@ const native = require('./helpers/workerEconomyDecision');
     for (let i = 0; i < 3; i++) state.stats.huntEfficiency = Hunt.record(state,
         { spotId: 'flow_test_hunt', cycleMs: 3600000, adena: 77000, exp: 100000, kills: 1, timestamp });
     Market.reset();
+    // Peer deals price the D shot. Without them its belief is the craft first price, whose labour
+    // reads the level-20 crafter's table hour: the T106 tables tripled it (a D shot above every
+    // C-S shot), so the C-S crafts the new flow opens could not outrank the D recipe.
+    for (let i = 0; i < 5; i++) Market.deal(1463, 140, 1000, timestamp - (20 - i) * 60000, 910823, 'Giran');
     Market.supplyDeal(1463, 10000, 'Giran', timestamp - 600000);
     Market.supplyDeal(1463, 10000, 'Giran', timestamp - 300000);
     let marketSource;

@@ -38,7 +38,7 @@ let file = DEFAULT_FILE;
 const bestRows = new Map();
 const incomeRows = new Map();
 const incomeBases = new Map();
-// Three doubles and one index per cell: at most 7 MiB per thread.
+// Four doubles and one index per cell: at most 9 MiB per thread.
 const MAX_INCOME_BASE_CELLS = 262144;
 let incomeBaseCells = 0;
 // Cache use for the cold worker heartbeat (L104); counted only with developer diagnostics.
@@ -337,12 +337,13 @@ function memoKey(t, spotId, role, level, shots, skill) {
     return `${spotId}\u0000${role}\u0000${level}\u0000${shotKey(shots)}\u0000${skill}`;
 }
 // The slot of the argument set's row; valid until the next memoValue call.
-function memoValue(t, rates, spotId, role, level, shots, skill) {
+// known: as computeValue's.
+function memoValue(t, rates, spotId, role, level, shots, skill, known = undefined) {
     const key = memoKey(t, spotId, role, level, shots, skill);
     let slot = valueMemo.get(key);
     if (slot === undefined) {
         DiagnosticConfig.developerDiagnostics && (stats.memoMisses += 1);
-        const row = computeValue(t, rates, spotId, role, level, shots, skill);
+        const row = computeValue(t, rates, spotId, role, level, shots, skill, known);
         slot = valueMemoTail;
         valueMemoTail = (valueMemoTail + 1) % MAX_VALUE_MEMO;
         const dropped = valueMemoOrder[slot];
@@ -497,10 +498,10 @@ function combat(t, s, r, level, shots) {
     const curve = t.curves[r][Math.floor(spotLevel / t.bandLevels)];
     const refGap = row[t.f.refGap];
     const measured = row[t.f.kph] * ratio(curve.kph, t.gaps, refGap, gap);
-    const kills = Math.min(walked(t, row, refGap, gate, measured), rowCap(t, row, spot, gate),
-        productionCap(t, row, spot[0], mask) ?? Infinity);
+    const cap = Math.min(rowCap(t, row, spot, gate), productionCap(t, row, spot[0], mask) ?? Infinity);
+    const kills = Math.min(walked(t, row, refGap, gate, measured), cap);
     if (!(kills > 0)) return null;
-    return { row, curve, gap, refGap, kills, gate, mask, expRatio: ratio(curve.exp, t.gaps, refGap, gap),
+    return { row, curve, gap, refGap, kills, cap, gate, mask, expRatio: ratio(curve.exp, t.gaps, refGap, gap),
         busyRatio: ratio(curve.busy, t.gaps, refGap, gap), gapFactor: killGapFactor(t, row, botLevel, spotLevel, mask) };
 }
 // A curve's value at the bot's gap over its value at the row's reference gap.
@@ -513,11 +514,12 @@ function hourExp(t, rates, c) {
     return c.kills * (c.row[t.f.exp] * c.expRatio * c.gapFactor) * rates.exp;
 }
 
-function computeValue(t, rates, spotId, role, level, shots, skill = roleSpoilLevel(role, level)) {
+// known: the spot's combat() for these arguments when the caller read it.
+function computeValue(t, rates, spotId, role, level, shots, skill = roleSpoilLevel(role, level), known = undefined) {
     const s = t.spotIndex.get(String(spotId));
     const r = roleSlot(t, role);
     if (s === undefined || r === undefined) return null;
-    const c = combat(t, s, r, level, shots);
+    const c = known === undefined ? combat(t, s, r, level, shots) : known;
     if (!c) return null;
     const { row, curve, gap, refGap, kills, expRatio, busyRatio, gapFactor, mask } = c;
     // Combat remains an offline measurement. Money comes from the native
@@ -551,7 +553,7 @@ function computeValue(t, rates, spotId, role, level, shots, skill = roleSpoilLev
 // MP it ends short (hpLost, mpLost), deaths, money (adena and loot at the NPC
 // buy-back), shots and potions per kill, all at the bot's level gap (the
 // curves; HP lost follows taken, MP lost the fight); kph the kills per hour
-// its fights allow, cap the spot's, pull the monsters per pull; the kills'
+// at the bot's gap (value()'s), cap the spot's, pull the monsters per pull; the kills'
 // mean accuracy and evasion. Null where value() has no row or the table has
 // no cycle columns.
 // The mobs per hour the spawns a bot of role and level may fight on a spot
@@ -580,7 +582,9 @@ function cycle(spotId, role, level, shots = true, rewardOptions = {}) {
     const n = memoNumbers, at = slot * ROW_NUMBERS, kills = n[at];
     const { row, curve, gap, refGap } = c, f = t.f, spot = t.spots[s];
     const fight = ratio(curve.fight, t.gaps, refGap, gap), taken = ratio(curve.taken, t.gaps, refGap, gap);
-    return { spotId: spot[0], kph: row[f.kph] * ratio(curve.kph, t.gaps, refGap, gap), cap: rowCap(t, row, spot, c.gate), pull: 1,
+    // kph: the hour's kills, value()'s (combat: the walk at the bot's gap, at
+    // most the cap); cap: the spawns' and their production's (T127 D3).
+    return { spotId: spot[0], kph: kills, cap: c.cap, pull: 1,
         fight: row[f.fight] * fight, rest: row[f.rest] * ratio(curve.rest, t.gaps, refGap, gap),
         taken: row[f.taken] * taken, spellTaken: f.spellTaken < 0 ? 0 : row[f.spellTaken] * taken, hpLost: row[f.hpLost] * taken, mpLost: row[f.mpLost] * fight,
         deaths: n[at + 1] / kills, money: (n[at + ADENA] + n[at + LOOT]) / kills,
@@ -625,32 +629,37 @@ function referenceLevel(spotId, role, shots = true) {
 }
 
 // Static role/level/shot result, shared by every bot of that role: the row
-// of the most exp per hour. Built once per game-data combination, never by
+// of the most exp (or income: adena and loot) per hour a bot keeps on a spot
+// full of the bots it has room for (fullShare, rankIncome's ranking), the
+// row itself one bot's. Built once per game-data combination, never by
 // walking the population.
-function best(role, level, shots = true) {
+function best(role, level, shots = true, metric = 'exp') {
     const t = load(), rates = ProgressionRates.profile();
     refreshCatalog(rates);
     if (t !== incomeTable || rates !== incomeRates) {
         incomeTable = t; incomeRates = rates;
         dropRows();
     }
-    const key = `${role}:${level}:${shotKey(shots)}`;
+    const key = `${role}:${level}:${shotKey(shots)}:${metric}`;
     if (bestRows.has(key)) { DiagnosticConfig.developerDiagnostics && (stats.bestHits += 1); return bestRows.get(key); }
     DiagnosticConfig.developerDiagnostics && (stats.bestMisses += 1);
-    // Exp is table-only (no reward groups): the scan reads the table's combat part of each spot, the
-    // first spot of the most exp wins, and only the winner's full row is priced. It bypasses the per-bot memo.
+    // The table's combat part of each spot is read once; exp needs no rewards,
+    // so only the income metric prices every row, and only the winner's full
+    // row is priced for exp. It bypasses the per-bot memo.
     const r = roleSlot(t, role);
-    let bestIndex = -1, bestExp = 0;
+    let bestIndex = -1, bestHeld = 0, bestRow = null;
     for (let s = 0; r !== undefined && s < t.spots.length; s++) {
         const c = combat(t, s, r, level, shots);
         if (!c) continue;
-        const exp = hourExp(t, rates, c);
-        if (bestIndex < 0 || exp > bestExp) { bestIndex = s; bestExp = exp; }
+        const row = metric === 'income' ? computeValue(t, rates, t.spots[s][0], role, level, shots, undefined, c) : null;
+        if (metric === 'income' && !row) continue;
+        const held = (row ? row.adena + row.loot : hourExp(t, rates, c)) * fullShare(t, s, c, c.kills);
+        if (bestIndex < 0 || held > bestHeld) { bestIndex = s; bestHeld = held; bestRow = row; }
     }
     const spotId = bestIndex < 0 ? null : t.spots[bestIndex][0];
-    const bestRow = bestIndex < 0 ? null : { ...computeValue(t, rates, spotId, role, level, shots), spotId };
-    bestRows.set(key, bestRow);
-    return bestRow;
+    const result = bestIndex < 0 ? null : { ...(bestRow || computeValue(t, rates, spotId, role, level, shots)), spotId };
+    bestRows.set(key, result);
+    return result;
 }
 // The table and rates of one income read, the shared rows reset when either moved.
 function incomeSource() {
@@ -700,7 +709,11 @@ function rankedSpotIds(role, level, costs = { shots: 0, potions: 0 }, minGap = -
 }
 // The positive incomes of the role/level band at these consumable prices,
 // best first, ties to the spot whose level is closest to the bot's, then by
-// spot id; the first 64: [{ index, income }]. One basis per role and level
+// spot id; the first 64: [{ index, income }]. Best by what one bot gets on
+// the spot when it holds all the bots it has room for (T123, user 10-30:
+// a spot ranks by what it gives with the bots it holds, not one bot's
+// kills): the row's kills at most the production of its spawns over that
+// room (fullShare); `income` stays the one bot's row. One basis per role and level
 // spans the widest band any reader asks (BASIS_MIN_GAP, the income route's);
 // a narrower minGap filters its rows, so the readers share one basis.
 const BASIS_MIN_GAP = -15;
@@ -716,20 +729,26 @@ function rankIncome(t, rates, role, level, costs, minGap, shots, skill) {
         // after 32768 cells, forcing the atlas to be measured again per bot.
         const indexes = new Uint32Array(t.spots.length);
         const values = new Float64Array(t.spots.length * 3);
+        const shares = new Float64Array(t.spots.length);
         let count = 0;
-        for (let index = 0; index < t.spots.length; index++) {
+        const r = roleSlot(t, role);
+        for (let index = 0; r !== undefined && index < t.spots.length; index++) {
             const spot = t.spots[index];
             if (spot[1] - level < basisGap || spot[1] - level > 8) continue;
-            const slot = memoValue(t, rates, spot[0], role, level, shots, skill);
+            // One combat read per spot: the row's (on a memo miss) and its share's.
+            const c = combat(t, index, r, level, shots);
+            if (!c) continue;
+            const slot = memoValue(t, rates, spot[0], role, level, shots, skill, c);
             if (memoFlags[slot] & NO_ROW) continue;
             const at = slot * ROW_NUMBERS;
             indexes[count] = index;
             values[count * 3] = memoNumbers[at + ADENA] + memoNumbers[at + LOOT];
             values[count * 3 + 1] = memoNumbers[at + SHOTS];
             values[count * 3 + 2] = memoNumbers[at + POTIONS];
+            shares[count] = fullShare(t, index, c, memoNumbers[at]);
             count++;
         }
-        basis = { indexes: indexes.slice(0, count), values: values.slice(0, count * 3) };
+        basis = { indexes: indexes.slice(0, count), values: values.slice(0, count * 3), shares: shares.slice(0, count) };
         while (incomeBases.size && (incomeBases.size >= 256 || incomeBaseCells + count > MAX_INCOME_BASE_CELLS)) {
             const oldest = incomeBases.keys().next().value;
             incomeBaseCells -= incomeBases.get(oldest).indexes.length;
@@ -745,13 +764,27 @@ function rankIncome(t, rates, role, level, costs, minGap, shots, skill) {
         if (t.spots[basis.indexes[index]][1] - level < minGap) continue;
         const income = basis.values[index * 3] - basis.values[index * 3 + 1] * costs.shots
             - basis.values[index * 3 + 2] * costs.potions;
-        if (income > 0) rows.push({ index: basis.indexes[index], income });
+        if (income > 0) rows.push({ index: basis.indexes[index], income, held: income * basis.shares[index] });
     }
-    rows.sort((a, b) => b.income - a.income
+    rows.sort((a, b) => b.held - a.held
         || Math.abs(t.spots[a.index][1] - level) - Math.abs(t.spots[b.index][1] - level)
         || String(t.spots[a.index][0]).localeCompare(String(t.spots[b.index][0])));
     return rows.slice(0, 64);
 }
+// The share of its row's kills one bot keeps on a spot full of hunters: the
+// mobs per hour the spawns it may fight give back (productionCap) over the
+// bots the spot has room for (LevelingRoutes.roomForSpot, the room check at
+// arrival), at most 1; 1 without production data. c: the spot's combat()
+// for the bot. The live hunters on a spot crowd a bot's own value
+// (SpotEconomics.create, crowded).
+function fullShare(t, s, c, kills) {
+    const production = kills > 0 && productionCap(t, c.row, t.spots[s][0], c.mask);
+    if (!(production > 0)) return 1;
+    const spot = SpotIndex.spotById(rewardSpots, t.spots[s][0]) || { density: t.spots[s][2] };
+    return Math.min(1, production / (LevelingRoutes ||= invoke('GameServer/Bot/AI/LevelingRoutes')).roomForSpot(spot) / kills); // lazy: cycle LevelingRoutes' chain loads the combat profiles
+}
+let LevelingRoutes = null;
+
 function roles() {
     return load().roles;
 }

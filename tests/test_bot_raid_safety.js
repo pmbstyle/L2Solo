@@ -95,24 +95,6 @@ const regular = actor(6003, {
     attackable: true,
     locX: 140
 });
-const crumaInterior = actor(6006, {
-    selfId: 7001,
-    name: 'Cruma construct',
-    attackable: true,
-    locX: 18000,
-    locY: 111000,
-    locZ: -12096,
-    level: 45
-});
-const crumaSurface = actor(6007, {
-    selfId: 7002,
-    name: 'Surface monster',
-    attackable: true,
-    locX: 18000,
-    locY: 111000,
-    locZ: -3000,
-    level: 35
-});
 const siegeGuard = actor(6005, {
     selfId: 12114,
     name: 'Dion Bow Guard s E',
@@ -140,7 +122,7 @@ assert.strictEqual(BotHuntingTargetPolicy.canHunt({ clan: { clanName: 'ant_clan'
     'ordinary monster clans must remain eligible even when the NPC name contains Guard');
 
 registerSessions([leaderSession, companionSession]);
-World.npc = { spawns: [boss, minion, regular, siegeGuard, crumaInterior, crumaSurface], grid: {} };
+World.npc = { spawns: [boss, minion, regular, siegeGuard], grid: {} };
 World.fetchNpcsInRadius = () => [boss, minion, regular, siegeGuard];
 
 const originalPartyFind = BackgroundPartyState.find;
@@ -196,12 +178,26 @@ leader.fetchDestId = () => boss.fetchId();
 assert.strictEqual(PartyAwareness.leaderCombatTargetId(leaderSession), null,
     'companions must not inherit a player-selected raid target');
 
+// The hunting catalogue, built from the spawn definitions (SpawnNpcs.catalogueSpawns).
+const DataCache = invoke('GameServer/DataCache');
+DataCache.init();
+const MinionManager = invoke('GameServer/World/RaidBossMinionManager');
+const placed = (selfId, locX, locY, locZ) => ({ npc: DataCache.npcRow(selfId),
+    spawn: { selfId, respawn: 60, total: 1, coords: [{ locX, locY, locZ, head: 0 }] }, bounds: [] });
+const fieldMobs = DataCache.npcs.filter((row) => row.template?.kind === 'Monster' && !row.template?.raidBoss
+    && !MinionManager.groupsByBoss.has(Number(row.selfId)) && row.template.level >= 20 && row.template.level <= 30).map((row) => row.selfId);
+const raidRow = DataCache.npcs.find((row) => row.template?.raidBoss === true && MinionManager.groupsByBoss.get(Number(row.selfId))?.length);
+const raidMinionId = MinionManager.groupsByBoss.get(Number(raidRow.selfId))[0].minionId;
+const fixtureNpc = World.npc;
+World.npc = { spawns: [], grid: {}, definitions: [placed(fieldMobs[0], 140, 0, 0), placed(raidRow.selfId, 100, 0, 0),
+    placed(siegeGuard.fetchSelfId(), 160, 0, 0), placed(fieldMobs[1], 18000, 111000, -12096),
+    placed(fieldMobs[2], 18000, 111000, -3000)] };
 SpotService.reset();
 const spots = SpotService.ensureIndexed();
 const indexedIds = spots.flatMap((spot) => spot.npcSelfIds || []);
-assert(indexedIds.includes(regular.fetchSelfId()), 'ordinary monsters must remain in hunting-ground profiles');
-assert(!indexedIds.includes(boss.fetchSelfId()), 'raid bosses must not create bot hunting grounds');
-assert(!indexedIds.includes(minion.fetchSelfId()), 'raid minions must not create bot hunting grounds');
+assert(indexedIds.includes(fieldMobs[0]), 'ordinary monsters must remain in hunting-ground profiles');
+assert(!indexedIds.includes(raidRow.selfId), 'raid bosses must not create bot hunting grounds');
+assert(!indexedIds.includes(raidMinionId), 'raid minions must not create bot hunting grounds');
 assert(!indexedIds.includes(siegeGuard.fetchSelfId()), 'castle guards must not create bot hunting grounds');
 const indexedCrumaInterior = SpotService.findCurrentSpot({ locX: 18000, locY: 111000, locZ: -12096 });
 const indexedCrumaSurface = SpotService.findCurrentSpot({ locX: 18000, locY: 111000, locZ: -3000 });
@@ -213,6 +209,8 @@ assert.strictEqual(indexedCrumaSurface?.id, '3_18',
     'surface mobs sharing Cruma X/Y coordinates must remain in the ordinary surface spot');
 assert.strictEqual(indexedCrumaSurface?.tags?.includes('party_required') === true, false,
     'the nearby surface spot must not inherit Cruma party-only restrictions');
+World.npc = fixtureNpc;
+SpotService.reset();
 
 const tank = actor(5100, { classId: 5, hp: 500, maxHp: 1000, pDef: 500, heavyArmor: true });
 const heavyFighter = actor(5101, { classId: 1, hp: 1000, maxHp: 1000, pDef: 600, heavyArmor: true });

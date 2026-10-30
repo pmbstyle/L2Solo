@@ -27,18 +27,24 @@ const round = (state, spot, elapsedMs = 60000, timestamp = T) => Resolver.resolv
     elapsedMs, timestamp, rng: () => 0.5 });
 
 try {
-    // A mob the bot kills with its first hit: the walk between kills is all the round holds.
+    // A mob the bot kills with its first swing: the walk between kills and
+    // the killing swing (T126's kill floor) are all the round holds. The
+    // fighter has no skills here, so every kill is one swing.
     Cold.npcForSpot = () => ({ level: 10, maxHp: 1, pAtk: 1, pAtkRnd: 0, pDef: 1, mDef: 1, accur: 1,
         evasion: 0, critical: 0, atkSpd: 253 });
     const fighter = bot(0, 10);
+    const swinger = bot(0, 10, { coldCombat: { ...fighter.stats.coldCombat, skills: [] } });
     const runSpd = Cold.fightProfile(fighter, T).runSpd;
     assert(runSpd > 100, `a Human Fighter runs at its template speed (${runSpd})`);
+    const swingMs = Cold.normalAttackMs(Cold.fightProfile(swinger, T));
     for (const density of [9, 36]) {
         // It stops at its weapon's reach from the mob.
-        const walkMs = Resolver.soloWalkMs(density, runSpd, undefined, Cold.attackReach(Cold.fightProfile(fighter, T)));
-        const result = round(fighter, field(density));
-        // Every walk begun in the minute ends in a kill, the last by its opening blow.
-        assert.equal(result.debug.wins, Math.ceil(60000 / walkMs), `density ${density}: one kill per walk of ${walkMs} ms`);
+        const walkMs = Resolver.soloWalkMs(density, runSpd, undefined, Cold.attackReach(Cold.fightProfile(swinger, T)));
+        const result = round(swinger, field(density));
+        assert.equal(result.debug.skillUses, 0);
+        // Every walk begun in the minute ends in a kill by its opening swing.
+        assert.equal(result.debug.wins, Math.ceil(60000 / (walkMs + swingMs)),
+            `density ${density}: one kill per walk of ${walkMs} ms and swing of ${swingMs} ms`);
         assert.equal(result.debug.walkedMs, result.debug.wins * walkMs);
     }
     // Four times the monsters halve the walk.

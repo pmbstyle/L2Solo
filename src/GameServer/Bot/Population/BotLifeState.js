@@ -1353,6 +1353,7 @@ function mergeSessionIntoLifeState(session, state, phase, reason = '', options =
             ...(state.timing || {}),
             activityStartedAt: timestamp,
             nextResolveAt: options.nextResolveAt ?? state.timing?.nextResolveAt ?? null,
+            lastResolvedAt: options.lastResolvedAt ?? state.timing?.lastResolvedAt ?? null,
             lastHotAt: phase === 'hot' ? timestamp : state.timing?.lastHotAt || null
         },
         stats: {
@@ -2095,7 +2096,9 @@ const BotLifeState = {
                 timing: {
                     ...(craftState.timing || {}),
                     activityStartedAt: now(),
-                    nextResolveAt: null
+                    nextResolveAt: null,
+                    // The hot time is lived: the first cold step starts now (T126).
+                    lastResolvedAt: now()
                 },
                 stats: { ...(craftState.stats || {}), ...membershipStats, pvpEnemies: BotEnemyMemory.snapshot(session), lastReason: reason },
                 inventory: parseJson(row.inventorySummary, {})
@@ -2111,7 +2114,9 @@ const BotLifeState = {
             const nextState = mergeSessionIntoLifeState(session, preserved, 'cold', reason, {
                 physicalLocation,
                 loc: preserved.loc,
-                nextResolveAt: now() + 30000 + Math.round(Math.random() * 90000)
+                nextResolveAt: now() + 30000 + Math.round(Math.random() * 90000),
+                // The hot time is lived: the first cold step's length starts now (T126).
+                lastResolvedAt: now()
             });
             session.coldLifeState = nextState;
             RefreshPartyMemberships([session], invoke);
@@ -2120,7 +2125,8 @@ const BotLifeState = {
 
         const row = {
             ...recordFromSession(session, 'cold', reason),
-            nextResolveAt: now() + 30000 + Math.round(Math.random() * 90000)
+            nextResolveAt: now() + 30000 + Math.round(Math.random() * 90000),
+            lastResolvedAt: now()
         };
         const characterId = row.characterId;
         const previous = pendingWrites.get(characterId) || Promise.resolve();

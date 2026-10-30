@@ -97,6 +97,21 @@ async function run() {
     assert.deepStrictEqual(groups.map(group => group.map(state => state.characterId).sort()), [[3, 4, 9001]],
         'the seeker groups with the hunters of its request spot');
 
+    // Rule 4 (T126): the routed spot decides, not the old one. A Prophet 76 on
+    // grey ground whose search (the route kept on its worker record) moves it
+    // to ground of its level has solo ground; one whose search finds none has not.
+    const levelled = bot(9006, 17, 76, 'grey65', 'buffer');
+    assert.strictEqual(Request.supportWithoutGround(levelled, spots, { owner: { route: { spotId: 'ground76' } }, timestamp: at }), false,
+        'the search moves it to fitting ground: no party request');
+    assert.strictEqual(Request.partyRequestForPlan(levelled, null, at,
+        { spots, search: { owner: { route: { spotId: 'ground76' } }, timestamp: at } }), null, 'no request opens');
+    assert.strictEqual(Request.supportWithoutGround(levelled, spots, { owner: { route: { spotId: null } }, timestamp: at }), true,
+        'a search that finds no spot leaves it without ground');
+    assert.strictEqual(Request.supportWithoutGround(levelled, spots, { owner: { route: { spotId: 'grey65' } }, timestamp: at }), true,
+        'a search that keeps it on grey ground leaves it without ground');
+    assert.strictEqual(Request.supportWithoutGround(levelled, spots, { owner: {}, timestamp: at }), false,
+        'a record without a route: its own search moves it to fitting ground');
+
     // Rule 3: a Prophet 46 with ground of its level plays as today.
     const young = bot(9005, 17, 46, 'ground46', 'buffer');
     assert.strictEqual(Request.supportWithoutGround(young, spots), false);

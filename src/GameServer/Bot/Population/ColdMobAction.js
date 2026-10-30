@@ -17,15 +17,12 @@ const Pull = invoke('GameServer/Bot/AI/BotPullEstimate');
 const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
 
-const ELEMENTAL_DAMAGE_TRAITS = new Set(['fire', 'water', 'wind', 'earth', 'holy', 'dark']);
-
-function coldNpcWeaponModifier(mob, target, timestamp = Date.now(), fighter = null) {
-    const kind = String(mob?.weaponKind || '');
-    if (kind === 'Weapon.Bow') return Profile.statMultiplier(target, 'bowWpnVuln', timestamp, Profile.hitSources(fighter, timestamp));
-    if (kind === 'Weapon.Blunt' || kind === 'Weapon.BigBlunt') {
-        return Profile.statMultiplier(target, 'bluntWpnVuln', timestamp, Profile.hitSources(fighter, timestamp));
-    }
-    return 1;
+// The cold adapter of HitRules.targetModifier for a monster's hit on a
+// fighter ({ profile }: a fighter or a bare holder): the fighter's weaknesses
+// at the hit's time. A bot is no monster race and never undead: no bonus term.
+function mobHitModifier(mob, target, at, { magic = false, skill = false, trait = '' } = {}) {
+    return HitRules.targetModifier({ magic, skill, trait, weaponKind: String(mob?.weaponKind || '') },
+        stat => Profile.statMultiplier(target.profile, stat, at, Profile.hitSources(target, at)), () => 1);
 }
 
 // The cold monster's fight beside its HP: MP, its skills' reuse, the self
@@ -40,22 +37,106 @@ function coldMobSkills(mob) {
 // that slice's end, as the encounter's other timers). held: per impairment,
 // characterId -> the time this monster's control on that fighter ends.
 const MOB_IMPAIRMENTS = { hard_control: 'disabled', sleep: 'disabled', root: 'rooted', mute: 'silenced' };
+// heldUntil: the time a bot's stun on this monster ends; dots: the bot's
+// damage over time on it (landOnMob); dotBy: the caster of its last tick.
 function coldMobFight(mob, saved = null) {
     const skills = coldMobSkills(mob);
-    return { skills, mp: saved ? Number(saved.mp) || 0 : Number(mob.maxMp) || 0,
+    return { skills, mp: saved ? Number(saved.mp ?? mob.maxMp) || 0 : Number(mob.maxMp) || 0,
+        heldUntil: Number(saved?.heldFor) || 0, dots: (saved?.dots || []).map((dot) => ({ ...dot })),
         cooldowns: { ...(saved?.cooldowns || {}) }, buffs: new Set(saved?.buffs || []),
         lastDebuffAt: Number.isFinite(saved?.debuffAgo) ? -saved.debuffAgo : -Infinity,
         held: { disabled: { ...(saved?.held?.disabled || {}) }, rooted: { ...(saved?.held?.rooted || {}) },
             silenced: { ...(saved?.held?.silenced || {}) } },
         aiType: skills.length ? NpcCombatChoice.aiTypeFor(mob.aiType, skills, mob.atkRadius) : 'fighter' };
 }
+// A fresh fight read only for its skills and AI type (actionMix, meleeOnly),
+// once per monster view: the gate weighs a view many times. A self buff
+// (buffColdMob) changes neither.
+const freshFights = new WeakMap();
+function freshFight(mob) {
+    let fight = freshFights.get(mob);
+    if (!fight) freshFights.set(mob, fight = coldMobFight(mob));
+    return fight;
+}
 function coldMobFightSave(fight, time) {
-    if (!fight.skills.length) return null;
+    const dots = (fight.dots || []).map((dot) => ({ ...dot, next: dot.next - time }));
+    const heldFor = Math.max(0, (Number(fight.heldUntil) || 0) - time);
+    if (!fight.skills.length && !dots.length && !heldFor) return null;
     const after = (map) => Object.fromEntries(Object.entries(map).filter(([, until]) => until > time)
         .map(([key, until]) => [key, until - time]));
+    const effects = { ...(dots.length ? { dots } : {}), ...(heldFor ? { heldFor } : {}) };
+    if (!fight.skills.length) return effects;
     return { mp: fight.mp, cooldowns: after(fight.cooldowns), buffs: [...fight.buffs],
         held: { disabled: after(fight.held.disabled), rooted: after(fight.held.rooted), silenced: after(fight.held.silenced) },
-        debuffAgo: Number.isFinite(fight.lastDebuffAt) ? time - fight.lastDebuffAt : null };
+        debuffAgo: Number.isFinite(fight.lastDebuffAt) ? time - fight.lastDebuffAt : null, ...effects };
+}
+
+// Damage over time on a cold fighter or monster (hot EffectTicker.applyDot):
+// holder.dots, per effect key its next tick (fight time), ticks left, damage
+// and interval. The same effect landing again starts over (the hot ticker
+// clears its timer); its first tick comes one interval after it lands.
+// by: the caster's characterId (a bot's DoT on a monster: its kill's last hitter).
+function addDot(holder, key, dot, landedAt, by = null) {
+    const count = Math.max(0, Number(dot.count) || 0), damage = Math.max(0, Number(dot.damage) || 0);
+    if (!count || !damage) return;
+    const intervalMs = Math.max(1, Number(dot.intervalMs) || 3000);
+    holder.dots = (holder.dots || []).filter((held) => held.key !== String(key || ''));
+    holder.dots.push({ key: String(key || ''), next: landedAt + intervalMs, left: count, damage, intervalMs,
+        ...(by !== null ? { by } : {}) });
+}
+// The damage a holder's dots deal up to time (their ticks at or before it);
+// finished ones leave. holder.dotBy: the caster of the latest tick.
+function dotDamage(holder, time) {
+    if (!holder.dots?.length) return 0;
+    let damage = 0, ended = false, lastAt = -Infinity;
+    for (const dot of holder.dots) {
+        while (dot.left > 0 && dot.next <= time) {
+            damage += dot.damage;
+            if (dot.next >= lastAt) {
+                lastAt = dot.next;
+                holder.dotBy = dot.by ?? null;
+            }
+            dot.left -= 1;
+            dot.next += dot.intervalMs;
+        }
+        if (dot.left <= 0) ended = true;
+    }
+    if (ended) holder.dots = holder.dots.filter((dot) => dot.left > 0);
+    return damage;
+}
+
+// An effect's land chance in percent on a cold monster (HitRules.effectLandChance
+// against its trait resist, ColdCombatProfile.npcTraitResist: a raid boss's
+// passive 4045 cuts sleep, root, stun and paralysis to a tenth). caster
+// { level, mAtk, soulshot, spiritshot, blessedSpiritshot }.
+function controlLandChance(mob, semantic, magic, caster) {
+    return HitRules.effectLandChance(semantic, magic, caster, { level: mob.level, mDef: mob.mDef },
+        Profile.npcTraitResist(mob, semantic.effectTrait || semantic.trait));
+}
+
+// A bot's effect on the cold monster: the effect part of a damage+effect or a
+// drain skill (Stun Shot, Shield Stun, Ice Dagger's bleed; hot
+// C4SkillEffects.execute), rolled by controlLandChance. A stun or a paralysis
+// holds the monster (fight.heldUntil: it acts again only after), a poison or
+// a bleed deals its damage over time (fight.dots, dotDamage). A pull is one
+// view of its mobs (BotPullEstimate.pullView: its hits x its pack): a stun
+// on one of them leaves the others striking, as hot, so only an effect that
+// strikes the whole pull (struck, its mobs hit) holds it. Not modelled: a
+// sleep (the fighter's next hit wakes it), fear and stat debuffs (the
+// monster's numbers are fixed for the fight). skill: the cold skill record;
+// caster.characterId: the DoT's owner (addDot). Returns whether an effect landed.
+function landOnMob(mob, fight, skill, caster, time, rng, struck = 1) {
+    const semantic = C4SkillRules.resolveCached(skill);
+    if (!semantic.effect || semantic.effectType !== 'debuff') return false;
+    const durationMs = Number(semantic.durationMs ?? skill.buffTime) || 0;
+    const hold = durationMs > 0 && struck >= Math.max(1, Number(mob.pull) || 1)
+        && NpcCombatChoice.category({ fetchSemantic: () => semantic }) === 'hard_control';
+    const dot = HitRules.dotOf(semantic, skill.level, skill.power);
+    if (!hold && !dot) return false;
+    if (!(controlLandChance(mob, semantic, skill.spell === true, caster) >= rng() * 100)) return false;
+    if (hold) fight.heldUntil = Math.max(Number(fight.heldUntil) || 0, time + durationMs);
+    if (dot) addDot(fight, semantic.effect, dot, time, caster.characterId ?? null);
+    return true;
 }
 
 // A self buff's stats on the cold monster, as the hot one gains them
@@ -64,7 +145,7 @@ function coldMobFightSave(fight, time) {
 // cast in one slice stays on it in the next.
 const MOB_BUFF_MULS = { pAtkMul: 'pAtk', pDefMul: 'pDef', mAtkMul: 'mAtk', mDefMul: 'mDef', pAtkSpdMul: 'atkSpd',
     castSpdMul: 'castSpd', mCritRateMul: 'mCritRate' };
-const MOB_BUFF_ADDS = { pEvasionRateAdd: 'evasion', pAccuracyCombatAdd: 'accur' };
+const MOB_BUFF_ADDS = { pEvasionRateAdd: 'evasion', pAccuracyCombatAdd: 'accur', reflectDam: 'reflectDam' };
 function buffColdMob(mob, semantic) {
     for (const [stat, value] of Object.entries(semantic.stats || {})) {
         if (MOB_BUFF_MULS[stat]) mob[MOB_BUFF_MULS[stat]] = Number(mob[MOB_BUFF_MULS[stat]] || 0) * Number(value);
@@ -91,13 +172,19 @@ function mobSkillCastMs(mob, skill) {
 // weakness, a physical skill the monster's weapon weakness.
 function skillContext(mob, skill, target, at) {
     const semantic = skill.fetchSemantic?.() || {};
-    const profile = target.profile;
     if (skill.fetchSpell?.() === true) {
-        return { power: skill.fetchPower(), modifier: ELEMENTAL_DAMAGE_TRAITS.has(semantic.trait)
-            ? Profile.statMultiplier(profile, `${semantic.trait}Vuln`, at, Profile.hitSources(target, at)) : 1 };
+        return { power: skill.fetchPower(), modifier: mobHitModifier(mob, target, at, { magic: true, trait: semantic.trait }) };
     }
     return { power: skill.fetchPower(), blow: semantic.skillType === C4SkillRules.BLOW,
-        bow: mob.weaponKind === 'Weapon.Bow', modifier: coldNpcWeaponModifier(mob, profile, at, target) };
+        bow: mob.weaponKind === 'Weapon.Bow', modifier: mobHitModifier(mob, target, at, { skill: true, trait: semantic.trait }) };
+}
+
+// The share of a monster spell that passes the level-fail roll on a fighter
+// (HitRules.rollsMagicLevel: a nuke, a drain), 1 for any other skill.
+function spellLands(mob, skill, profile) {
+    const semantic = skill.fetchSemantic?.() || {};
+    return HitRules.rollsMagicLevel(semantic, skill.fetchSpell?.() === true)
+        ? HitRules.magicLevelChance(semantic, mob.level, profile.level) / 100 : 1;
 }
 
 // The mean of coldMobAction on a fighter (target: { profile }, a fighter or
@@ -108,14 +195,14 @@ function skillContext(mob, skill, target, at) {
 // are left out (a control's damage is none, its hold on the fighter is not
 // in the mean): the mean errs high. A skill the fighter's numbers cannot
 // meet (no M.Def for a spell) is left out too.
-function actionMix(mob, target, at = 0, fight = coldMobFight(mob)) {
+function actionMix(mob, target, at = 0, fight = freshFight(mob)) {
     const profile = target.profile;
     const attacker = Profile.attackerView(mob);
     const defender = Profile.defenderView(profile, at, target);
     const bow = mob.weaponKind === 'Weapon.Bow';
     const meleeMs = mobAttackMs(mob);
     const hitChance = Profile.expectedHitChance(mob.accur, profile.evasion);
-    const modifier = coldNpcWeaponModifier(mob, profile, at, target);
+    const modifier = mobHitModifier(mob, target, at);
     const critical = Math.min(1, Math.max(0, attacker.critRate) / 1000);
     const plain = HitRules.expectedMelee(CombatantView.view({ ...attacker, critRate: 0 }), defender, { bow, modifier });
     const crit = HitRules.expectedMelee(CombatantView.view({ ...attacker, critRate: 1000 }), defender, { bow, modifier });
@@ -130,7 +217,8 @@ function actionMix(mob, target, at = 0, fight = coldMobFight(mob)) {
         const share = left * Math.min(NpcCombatChoice.chance(skill, 'damage', fight.aiType) / 100,
             (meleeMs + castMs) / NpcCombatChoice.reuseMs(skill));
         const context = skillContext(mob, skill, target, at);
-        const each = pack * (spell ? HitRules.expectedMagicSkill : HitRules.expectedPhysicalSkill)(attacker, defender, context);
+        const each = pack * (spell ? HitRules.expectedMagicSkill : HitRules.expectedPhysicalSkill)(attacker, defender, context)
+            * spellLands(mob, skill, profile);
         mean += share * each; square += share * each * each; ms += share * castMs; left -= share;
         if (spell) { spellDamage += share * each; spellSquare += share * each * each; }
     }
@@ -151,7 +239,7 @@ function incomingPerSecond(mob, profile, at = 0) {
 // spell (its AI type by NpcCombatChoice.aiTypeFor reads both).
 function meleeOnly(mob) {
     if (!(Number(mob?.atkRadius) < 200)) return false;
-    return coldMobFight(mob).aiType === 'fighter';
+    return freshFight(mob).aiType === 'fighter';
 }
 
 // One action of a cold monster on a fighter, as the hot Npc's: a self buff
@@ -183,7 +271,7 @@ function coldMobAction(mob, fight, target, { time, at, rng, mobHp = mob.maxHp, p
     }) : null;
     if (!choice) {
         const damage = Profile.hitSucceeds(mob.accur, profile.evasion, rng)
-            ? HitRules.melee(attacker, defender, { bow, spreadRng: rng, modifier: coldNpcWeaponModifier(mob, profile, at, target) }, rng).damage
+            ? HitRules.melee(attacker, defender, { bow, spreadRng: rng, modifier: mobHitModifier(mob, target, at) }, rng).damage
             : 0;
         return { damage, delayMs: meleeMs };
     }
@@ -198,16 +286,22 @@ function coldMobAction(mob, fight, target, { time, at, rng, mobHp = mob.maxHp, p
         fight.buffs.add(semantic.effect);
         buffColdMob(mob, semantic);
     } else if (choice.category === 'damage') {
-        const context = skillContext(mob, skill, target, at);
-        damage = Pull.packOf(mob) * (spell ? HitRules.magicSkill : HitRules.physicalSkill)(attacker, defender, context, rng).damage;
+        // A nuke or a drain first rolls the level-fail roll (hot C4SkillEffects.execute).
+        if (!spell || !HitRules.rollsMagicLevel(semantic, true) || HitRules.magicLevelLands(semantic, mob.level, profile.level, rng)) {
+            const context = skillContext(mob, skill, target, at);
+            damage = Pull.packOf(mob) * (spell ? HitRules.magicSkill : HitRules.physicalSkill)(attacker, defender, context, rng).damage;
+        }
     } else {
         if (choice.category === 'debuff') fight.lastDebuffAt = time;
-        // Debuffs, root and mute take the monster's action; their effect on a
-        // cold fighter's numbers is not modelled (no movement, the profile is
-        // fixed for the fight), only that they hold until they end.
+        // Debuffs, root and mute take the monster's action. Of their effects
+        // a cold fighter meets the hold (until they end) and a poison or a
+        // bleed (its damage over time, dotDamage); a stat debuff is not
+        // modelled (the fighter's profile is fixed for the fight).
         const durationMs = Number(semantic.durationMs) || 0;
         const impairment = MOB_IMPAIRMENTS[choice.category];
-        if (impairment && durationMs > 0) {
+        // A pet takes no damage over time here (its HP is the summon's, ticked by no fight loop).
+        const dot = target.vitals ? HitRules.dotOf(semantic, skill.fetchLevel?.(), skill.fetchPower?.()) : null;
+        if ((impairment && durationMs > 0) || dot) {
             const family = HitRules.resistStats(semantic.effectTrait || semantic.trait);
             const sources = Profile.hitSources(target, at);
             const resist = HitRules.traitResistModifier(Profile.statAdd(profile, family.resist, at, sources),
@@ -215,11 +309,14 @@ function coldMobAction(mob, fight, target, { time, at, rng, mobHp = mob.maxHp, p
             const chance = HitRules.effectLandChance(semantic, spell, { level: mob.level, mAtk: mob.mAtk },
                 { level: profile.level, mDef: profile.mDef }, resist);
             if (chance >= rng() * 100) {
-                // A sleep ends at the monster's next weapon hit.
-                const until = time + castMs + (choice.category === 'sleep' ? Math.min(durationMs, meleeMs) : durationMs);
-                fight.held[impairment][id] = until;
                 if (Diagnostics.active()) Diagnostics.count('cold_mob', 'landed', choice.category);
-                if (impairment === 'disabled') target.readyAt = Math.max(Number(target.readyAt) || 0, until);
+                if (impairment && durationMs > 0) {
+                    // A sleep ends at the monster's next weapon hit.
+                    const until = time + castMs + (choice.category === 'sleep' ? Math.min(durationMs, meleeMs) : durationMs);
+                    fight.held[impairment][id] = until;
+                    if (impairment === 'disabled') target.readyAt = Math.max(Number(target.readyAt) || 0, until);
+                }
+                if (dot) addDot(target, semantic.effect, dot, time + castMs);
             }
         }
     }
@@ -227,5 +324,5 @@ function coldMobAction(mob, fight, target, { time, at, rng, mobHp = mob.maxHp, p
     return { damage, delayMs: castMs, spell: spell && choice.category === 'damage' };
 }
 
-module.exports = { ELEMENTAL_DAMAGE_TRAITS, coldNpcWeaponModifier, coldMobFight, coldMobFightSave, buffColdMob, mobAttackMs,
-    mobSkillCastMs, coldMobAction, actionMix, incomingPerSecond, meleeOnly };
+module.exports = { mobHitModifier, coldMobFight, coldMobFightSave, buffColdMob, mobAttackMs,
+    mobSkillCastMs, coldMobAction, actionMix, incomingPerSecond, meleeOnly, addDot, dotDamage, landOnMob, controlLandChance };

@@ -152,7 +152,9 @@ assert.strictEqual(change.removed, 3, 'the night leader and its two minions leav
 assert.ok(!inWorld(lord) && behemoths.every((npc) => !inWorld(npc)));
 assert.ok(newGuards.every(inWorld), 'other groups stay');
 
-// The hunting spot catalogue (cold bots' view) counts minions as spot monsters.
+// The hunting spot catalogue (cold bots' view, built from the spawn
+// definitions) counts a leader's minions as spot monsters.
+world.npc.definitions = [definition];
 withRuntimeWorld(() => {
     SpotService.reset();
     const spot = SpotService.ensureIndexed().find((entry) => entry.npcEntries.some((row) => row.selfId === 1369));

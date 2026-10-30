@@ -202,9 +202,10 @@ assert(keltir && keltir.kills > 100 && keltir.kills <= 275.2 && keltir.exp > 0 &
 assert(Table.value('-15_42', 'dps', 5, false).kills <= keltir.kills, 'shots do not slow a dps');
 assert(Table.value('-15_42', 'dps', 12, true).kills >= keltir.kills, 'a higher dps kills at least as fast');
 assert(raw.roles.every((role) => Table.value('-15_42', role, 8, true)), 'every role hunts the newbie field');
-// Level 44 spot 11_6: the dps row was measured six levels up; far below the spot there is no solo hunt.
-// (7_34's pack is judged as one pull since T100: no solo row there.)
-assert.strictEqual(Table.referenceLevel('11_6', 'dps'), 50);
+// Spot 11_6 (level 43 since T123's level mix): the dps row was measured refGap (six) levels up; far below
+// the spot there is no solo hunt. (7_34's pack is judged as one pull since T100: no solo row there.)
+assert.strictEqual(raw.header.inputs.refGap, 6);
+assert.strictEqual(Table.referenceLevel('11_6', 'dps'), Table.spotLevel('11_6') + 6);
 assert(Table.value('11_6', 'dps', 50).exp > Table.value('-15_42', 'dps', 8).exp * 5, 'higher spots give much more exp');
 assert.strictEqual(Table.value('11_6', 'dps', 30), null, 'no solo hunt far below the spot\'s level');
 // Seven Signs catacombs are not solo hunting grounds in the author's rules.
@@ -311,5 +312,52 @@ useRate('x1');
         assert(wide.includes('a_far') && !narrow.includes('a_far'), 'a level-8-lower spot is in the wide band only');
         assert.deepStrictEqual(narrow, wide.filter(id => id !== 'a_far'), 'the narrow band keeps the wide order');
     } finally { Table.useSpots([]); Table.useFile(); fs.rmSync(path.dirname(file), { recursive: true, force: true }); }
+}
+{
+    // Ranking by what a spot gives with the bots it holds (T123): a spot one
+    // bot farms at 150 kills an hour from spawns giving back 150 ranks below
+    // one of 100 kills an hour whose spawns give back 2000, though one bot alone
+    // earns more on the first; the rows keep the one bot's income.
+    const os = require('os');
+    const fixture = { header: { schema: 1, inputs: { bandLevels: 2, maxLevel: 78 } }, roles: ['dps'], shots: [1, 0],
+        gaps: [-4, -2, 0, 2, 4, 6, 8], rowFields: ['minGap', 'refGap', 'kph', 'busy', 'deaths', 'exp', 'sp', 'adena', 'loot', 'shots', 'potions'],
+        curveFields: ['kph', 'busy', 'deaths', 'exp', 'adena'],
+        spots: [['a_small', 24, 30, 2500, 1, 1, 1], ['b_big', 24, 30, 2500, 1, 1, 1]],
+        rows: [[[-4, 0, 200, 9, 0, 100, 5, 30, 20, 0, 0], null], [[-4, 0, 100, 9, 0, 100, 5, 30, 20, 0, 0], null]], curves: {} };
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'spot-table-')), 'held.json');
+    fs.writeFileSync(file, JSON.stringify(fixture));
+    const entries = production => [{ selfId: 776, count: 17, production: production * 0.75 }, { selfId: 418, count: 6, production: production * 0.25 }];
+    Table.useFile(file);
+    Table.useSpots([{ id: 'a_small', npcEntries: entries(150), rewards: { adenaMin: 40, adenaMax: 140 } },
+        { id: 'b_big', npcEntries: entries(2000), rewards: { adenaMin: 40, adenaMax: 140 } }]);
+    try {
+        const ranked = Table.rankedIncome('dps', 24, { shots: 0, potions: 0 });
+        assert.deepStrictEqual(ranked.map(row => row.spotId), ['b_big', 'a_small'], 'the spot that holds its bots ranks first');
+        assert(ranked[1].income > ranked[0].income, 'one bot alone earns more on the small spot');
+        near(ranked[1].kills, 150, 'the small spot\'s row: one bot\'s kills');
+        // The best spot of a role and level ranks the same way (one ranking), by exp and by income.
+        for (const metric of ['exp', 'income']) {
+            const best = Table.best('dps', 24, true, metric);
+            assert.strictEqual(best.spotId, 'b_big', `the best ${metric} spot is the one that holds its bots`);
+            near(best.kills, 100, `the best ${metric} row: one bot's kills`);
+        }
+    } finally { Table.useSpots([]); Table.useFile(); fs.rmSync(path.dirname(file), { recursive: true, force: true }); }
+}
+{
+    // One kills-per-hour answer (T127 D3): the hunt cycle's kph is value()'s
+    // kills, the production cap included; its cap is the cap the kills meet.
+    const offline = require('../data/Bots/spot-reward-npcs.json');
+    const spotId = Table.rankedSpotIds('dps', 24, { shots: 0, potions: 0 })[0];
+    const [, rows, adenaMin, adenaMax] = offline.rows.find(row => row[0] === spotId);
+    Table.useSpots([{ id: spotId, npcEntries: rows.map(([selfId, count]) => ({ selfId, count, production: count * 0.5 })),
+        rewards: { adenaMin, adenaMax } }]);
+    try {
+        const value = Table.value(spotId, 'dps', 24, true), cycle = Table.cycle(spotId, 'dps', 24, true);
+        const production = Table.production(spotId, 'dps', 24, true);
+        assert(value && cycle && production > 0, 'the spot has its row, its cycle and its production');
+        near(value.kills, production, 'the spawns cap the kills');
+        near(cycle.kph, value.kills, 'the cycle reads the same kills');
+        near(cycle.cap, production, 'its cap is the production');
+    } finally { Table.useSpots([]); }
 }
 console.log('Spot value table lookups, curves, caps, rates and the committed table passed');

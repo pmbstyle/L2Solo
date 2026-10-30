@@ -58,11 +58,18 @@ function aggroRadius(npc) {
 }
 
 function canEngage(npc, actor, now = Date.now()) {
-    if (!isAlive(actor) || !isEligible(npc, now)) return false;
-    if (isSilentMoving(actor, now) && npc.fetchIsRaidBoss?.() !== true) return false;
+    return isAlive(actor) && engages(npc, actor, now, isSilentMoving(actor, now));
+}
+
+// The one auto-aggro test. Number checks first (the NPC's own range, the
+// floor), so the many NPCs a radius query returns out of their own reach cost
+// no state or effect reads; the actor's SilentMove is read once per sweep.
+function engages(npc, actor, now, silent) {
     const range = aggroRadius(npc);
     if (distanceSquared(npc, actor) > range * range) return false;
     if (Math.abs(npc.fetchLocZ() - actor.fetchLocZ()) > MAX_AGGRO_Z_DIFFERENCE) return false;
+    if (!isEligible(npc, now)) return false;
+    if (silent && npc.fetchIsRaidBoss?.() !== true) return false;
 
     return GeodataEngine.hasLineOfSight(
         npc.fetchLocX(), npc.fetchLocY(), npc.fetchLocZ(),
@@ -70,16 +77,18 @@ function canEngage(npc, actor, now = Date.now()) {
     );
 }
 
+// The query reaches the farthest-seeing NPC (MAX_RANGE); the grid scan costs
+// the same at any radius (3x3 cells), and each NPC is then judged at its own
+// range before anything else is read.
 function engageNearby(session, actor, { world = invoke('GameServer/World/World'), now = Date.now(), npcs = null } = {}) {
     if (!isAlive(actor)) return [];
 
     const nearby = npcs || world.fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), AggroRange.MAX_RANGE);
-    return nearby
-        .filter((npc) => canEngage(npc, actor, now))
-        .map((npc) => {
-            npc.enterCombatState(session, actor);
-            return npc;
-        });
+    const silent = isSilentMoving(actor, now);
+    // All tests before any NPC enters combat: an engagement may change another's state.
+    const engaging = nearby.filter((npc) => engages(npc, actor, now, silent));
+    for (const npc of engaging) npc.enterCombatState(session, actor);
+    return engaging;
 }
 
 function armSpawnGrace(npc, now = Date.now()) {

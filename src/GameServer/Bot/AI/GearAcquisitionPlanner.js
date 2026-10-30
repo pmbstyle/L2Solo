@@ -11,7 +11,7 @@ const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const HuntEfficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
-const { gradeForLevel } = invoke('GameServer/Bot/AI/GearGradeRule');
+const { GRADES: RANKS, rankOf: rankIndex, gradeForLevel } = invoke('GameServer/Bot/AI/GearGradeRule');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
 // Common materials have hundreds of sources. Retain only their sorted index
@@ -48,7 +48,6 @@ const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
 
-const RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
 const { equipmentSlotKey, equipmentReplacementConflict } = BotEquipmentCompatibility;
 const ARMOR_SLOTS = new Set([6, 9, 10, 11, 12, 15]);
 const JEWEL_SLOTS = new Set([1, 2, 3, 4, 5]);
@@ -197,11 +196,6 @@ function itemScore(item, role, classId) {
     if (BotEquipmentCompatibility.isWeaponSlot(slot)) return BotWeaponCompatibility.scoreWeapon(stats.pAtk, stats.mAtk, role, classId);
     if (JEWEL_SLOTS.has(slot)) return Number(stats.mDef || 0);
     return Number(stats.pDef || 0) + Number(item.etc?.mp || 0);
-}
-
-function rankIndex(rank) {
-    const index = RANKS.indexOf(String(rank || 'none').toLowerCase());
-    return index < 0 ? 0 : index;
 }
 
 function recoveryWake(state = {}) {

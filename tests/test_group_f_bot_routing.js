@@ -1,5 +1,7 @@
 const assert = require('assert');
 require('../src/Global');
+// These routes read the author's fixed shot merchant and NPC D-S shots: off by default since T116.
+invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = false;
 
 const DataCache = invoke('GameServer/DataCache');
 DataCache.init();

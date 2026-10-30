@@ -1074,12 +1074,10 @@ class Attack {
                     weapon: !!actor.backpack?.fetchEquippedWeapon?.()
                 })
             });
-            const power = semantic.skillType === C4SkillRules.DEATH_LINK
-                ? Formulas.calcDeathLinkPower(skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.())
-                : skill.fetchPower();
+            const power = HitRules.skillPower(semantic, skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.());
             const { damage } = HitRules.magicSkill(attacker, CombatantView.view({ mDef: creature.fetchCollectiveMDef() }), {
                 power, spiritshot: usedSpiritshot, blessedSpiritshot: usedBlessedSpiritshot,
-                modifier: traitVulnerabilityModifier(creature, semantic.trait) * WeaponSA.pvpMultiplier(actor, creature, 'magic')
+                modifier: hitModifier(actor, creature, { magic: true, trait: semantic.trait }) * WeaponSA.pvpMultiplier(actor, creature, 'magic')
             }, rng);
             this.clearLoadedShot(actor, magicSkill);
             return damage;
@@ -1094,14 +1092,7 @@ class Attack {
             critDamageAdd: EffectStats.add(actor, 'pCritDamageAdd'),
             str: ((Number(actor?.fetchStr?.()) || 1) + EffectStats.add(actor, 'STR')) * EffectStats.multiplier(actor, 'STRMul')
         });
-        const weaponModifier = incomingWeaponVulnerabilityModifier(creature, {
-            bow: semantic.trait === 'bow' || this.isBowAttack(actor),
-            blunt: this.isBluntAttack(actor),
-            dagger: semantic.trait === 'dagger' || this.isDaggerAttack(actor)
-        });
-        const power = semantic.skillType === C4SkillRules.FATAL
-            ? Formulas.calcFatalPower(skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.())
-            : skill.fetchPower();
+        const power = HitRules.skillPower(semantic, skill.fetchPower(), actor.fetchHp?.(), actor.fetchMaxHp?.());
         const { damage } = HitRules.physicalSkill(attacker, this.defenderView(creature), {
             power,
             blow: semantic.skillType === C4SkillRules.BLOW,
@@ -1109,7 +1100,7 @@ class Attack {
             facing: this.isShieldFacing(creature, actor),
             bow: this.isBowAttack(actor),
             skillCritRate: HitRules.physicalSkillCritRate(semantic, attacker.str),
-            modifier: weaponModifier * physicalUndeadModifier(actor, creature) * physicalRaceModifier(actor, creature)
+            modifier: hitModifier(actor, creature, { skill: true, trait: semantic.trait })
                 * WeaponSA.pvpMultiplier(actor, creature, 'skill')
         }, rng);
         this.clearLoadedShot(actor, magicSkill);
@@ -1151,17 +1142,12 @@ class Attack {
                 * EffectStats.situationalMultiplier(actor, 'pCritDamageMul', position),
             critDamageAdd: EffectStats.add(actor, 'pCritDamageAdd')
         });
-        const weaponModifier = incomingWeaponVulnerabilityModifier(creature, {
-            bow: this.isBowAttack(actor),
-            blunt: this.isBluntAttack(actor)
-        });
         const hit = HitRules.melee(attacker, this.defenderView(creature), {
             soulshot: usedSoulshot,
             facing: this.isShieldFacing(creature, actor),
             bow: this.isBowAttack(actor),
             anger: () => WeaponSA.criticalAnger(actor),
-            modifier: weaponModifier * physicalUndeadModifier(actor, creature) * physicalRaceModifier(actor, creature)
-                * WeaponSA.pvpMultiplier(actor, creature, 'melee')
+            modifier: hitModifier(actor, creature) * WeaponSA.pvpMultiplier(actor, creature, 'melee')
         }, rng);
         let flags = usedSoulshot ? ServerResponse.attack.soulshotFlags(actor) : 0;
 
@@ -1189,15 +1175,11 @@ class Attack {
             critDamageMul: EffectStats.multiplier(src, 'pCritDamageMul'),
             critDamageAdd: EffectStats.add(src, 'pCritDamageAdd')
         });
-        const weaponModifier = incomingWeaponVulnerabilityModifier(dst, {
-            bow: this.isBowAttack(src),
-            blunt: this.isBluntAttack(src)
-        });
         const hit = HitRules.melee(attacker, this.defenderView(dst), {
             soulshot: src.fetchIsPet?.() === true && !!src.soulshotLoaded,
             facing: this.isShieldFacing(dst, src),
             bow: this.isBowAttack(src),
-            modifier: weaponModifier * physicalUndeadModifier(src, dst) * physicalRaceModifier(src, dst)
+            modifier: hitModifier(src, dst)
         }, rng);
         let flags = 0;
         if (src.fetchIsPet?.() === true && src.soulshotLoaded) {
@@ -1256,23 +1238,11 @@ class Attack {
     }
 
     isBowAttack(creature) {
-        const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
-        return kind === 'Weapon.Bow';
-    }
-
-    isBluntAttack(creature) {
-        const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
-        return kind === 'Weapon.Blunt' || kind === 'Weapon.BigBlunt';
-    }
-
-    isDaggerAttack(creature) {
-        const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
-        return kind === 'Weapon.Knife';
+        return attackKind(creature) === 'Weapon.Bow';
     }
 
     isPolearmAttack(creature) {
-        const kind = creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : this.fetchNpcWeaponKind(creature);
-        return kind === 'Weapon.Pole';
+        return attackKind(creature) === 'Weapon.Pole';
     }
 
     fetchNpcWeaponKind(creature) {
@@ -1291,13 +1261,8 @@ class Attack {
     applyDamageAbsorb(session, actor, damage) {
         if (this.isBowAttack(actor) || actor.fetchHp?.() <= 0 || actor.state?.fetchDead?.()) return 0;
 
-        const absorbPercent = EffectStats.add(actor, 'absorbDam');
-        if (absorbPercent <= 0) return 0;
-
-        const maxHp = Number(actor.fetchMaxHp?.()) || 0;
         const currentHp = Number(actor.fetchHp?.()) || 0;
-        const maxCanAbsorb = Math.max(0, maxHp - currentHp);
-        const absorbDamage = Math.min(maxCanAbsorb, Math.floor(absorbPercent / 100 * (Number(damage) || 0)));
+        const absorbDamage = HitRules.absorbedHp(EffectStats.add(actor, 'absorbDam'), damage, currentHp, Number(actor.fetchMaxHp?.()) || 0);
         if (absorbDamage <= 0) return 0;
 
         actor.setHp(currentHp + absorbDamage);
@@ -1455,8 +1420,7 @@ class Attack {
 
     applyReflectedDamage(session, actor, creature, hit) {
         if (!actor || actor === creature || actor.isDead?.() || creature?.isDead?.()) return;
-        const reflectPercent = Math.max(0, Number(EffectStats.add(creature, 'reflectDam')) || 0);
-        const reflected = Math.floor(Math.max(0, Number(hit) || 0) * reflectPercent / 100);
+        const reflected = HitRules.reflectedDamage(EffectStats.add(creature, 'reflectDam'), hit);
         if (reflected <= 0) return;
 
         if (Number(actor.fetchId?.()) >= 2000000) {
@@ -1467,38 +1431,26 @@ class Attack {
     }
 }
 
-const ELEMENTAL_DAMAGE_TRAITS = new Set(['fire', 'water', 'wind', 'earth', 'holy', 'dark']);
+// The hot adapters of HitRules.targetModifier: the target's weaknesses and
+// the attacker's undead and race bonuses from their live effects.
+function hitModifier(attacker, target, { magic = false, skill = false, trait = '' } = {}) {
+    return HitRules.targetModifier({ magic, skill, trait, weaponKind: attackKind(attacker),
+        race: target?.fetchRace?.() ?? target?.model?.race ?? target?.race,
+        undead: target?.fetchUndead?.() === true || target?.model?.undead === true },
+    stat => EffectStats.multiplier(target, stat, 1), stat => EffectStats.multiplier(attacker, stat));
+}
+
+function attackKind(creature) {
+    return creature?.backpack?.fetchTotalWeaponKind ? creature.backpack.fetchTotalWeaponKind() : Attack.prototype.fetchNpcWeaponKind(creature);
+}
 
 function traitVulnerabilityModifier(target, trait) {
-    if (!ELEMENTAL_DAMAGE_TRAITS.has(trait)) return 1;
-    return EffectStats.multiplier(target, `${trait}Vuln`, 1);
+    const stat = HitRules.elementVulnStat(trait);
+    return stat ? EffectStats.multiplier(target, stat, 1) : 1;
 }
-
-function incomingWeaponVulnerabilityModifier(target, { bow = false, blunt = false, dagger = false } = {}) {
-    if (bow) return EffectStats.multiplier(target, 'bowWpnVuln', 1);
-    if (blunt) return EffectStats.multiplier(target, 'bluntWpnVuln', 1);
-    if (dagger) return EffectStats.multiplier(target, 'daggerWpnVuln', 1);
-    return 1;
-}
-
-function physicalUndeadModifier(attacker, target) {
-    const undead = target?.fetchUndead?.() === true || target?.model?.undead === true;
-    return undead ? EffectStats.multiplier(attacker, 'pAtkUndeadMul') : 1;
-}
-
-const PHYSICAL_RACE_STATS = Object.freeze({
-    animal: 'pAtk-animals',
-    beast: 'pAtk-monsters',
-    construct: 'pAtk-mcreatures',
-    dragon: 'pAtk-dragons',
-    giant: 'pAtk-giants',
-    insect: 'pAtk-insects',
-    plant: 'pAtk-plants'
-});
 
 function physicalRaceModifier(attacker, target) {
-    const race = String(target?.fetchRace?.() ?? target?.model?.race ?? target?.race ?? '').toLowerCase();
-    const stat = PHYSICAL_RACE_STATS[race];
+    const stat = HitRules.raceStat(target?.fetchRace?.() ?? target?.model?.race ?? target?.race);
     return stat ? EffectStats.multiplier(attacker, stat) : 1;
 }
 
@@ -1506,5 +1458,4 @@ module.exports = Attack;
 module.exports.weaponMaskFor = weaponMaskFor;
 module.exports.physicalRaceModifier = physicalRaceModifier;
 module.exports.traitVulnerabilityModifier = traitVulnerabilityModifier;
-module.exports.incomingWeaponVulnerabilityModifier = incomingWeaponVulnerabilityModifier;
-module.exports.physicalUndeadModifier = physicalUndeadModifier;
+module.exports.hitModifier = hitModifier;

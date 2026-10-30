@@ -18,12 +18,7 @@ function stat(actor, name) {
 }
 
 function physicalModifier(actor, target, skill = null) {
-    const trait = skill?.fetchSemantic?.()?.trait;
-    return Attack.incomingWeaponVulnerabilityModifier(target, {
-        bow: trait === 'bow' || Attack.prototype.isBowAttack(actor),
-        blunt: trait === 'blunt' || Attack.prototype.isBluntAttack(actor),
-        dagger: !!skill && (trait === 'dagger' || Attack.prototype.isDaggerAttack(actor))
-    }) * Attack.physicalUndeadModifier(actor, target) * Attack.physicalRaceModifier(actor, target);
+    return Attack.hitModifier(actor, target, { skill: !!skill, trait: skill?.fetchSemantic?.()?.trait || '' });
 }
 
 function evaluate(session, bot, target) {

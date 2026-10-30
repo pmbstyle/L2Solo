@@ -102,7 +102,7 @@ const PartySpotRiskPolicy = require('./PartySpotRiskPolicy');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const DecisionEvents = require('../AI/DecisionEvents');
 const SavedStats = require('../SavedStats');
-const { stateKey, usePlanningIndex } = require('./SpotOccupancyIndex');
+const { stateKey } = require('./SpotOccupancyIndex');
 const DecisionSections = invoke('GameServer/Bot/Economy/DecisionSections');
 const PartyWaitFallback = invoke('GameServer/Bot/Population/PartyWaitFallback');
 const Protocol = require('./ColdSimulationProtocol');
@@ -1053,9 +1053,19 @@ function roomAtArrival(spotId, arriving, overflow = 0) {
 // room for the bot (SpotProfiles.roomFilterFor over this worker's index).
 // currentSpot: the spot the step's input state stands at.
 function routeTrip(state, currentSpot, leaf, timestamp) {
-    return BotRoute.trip(kernel.states.get(Number(state.characterId)), state, leaf,
-        { spots: planningSpots, currentSpot, timestamp,
-            hasRoom: SpotProfiles.roomFilterFor(kernel.occupancy, planningSpots, [state]) });
+    const search = routeSearch(state, timestamp);
+    return BotRoute.trip(search.owner, state, leaf, { spots: planningSpots, currentSpot, ...search });
+}
+// The hunters on a spot in this worker's occupancy (SpotEconomics' crowd
+// share, the search's spot values; the fight reads kernel.spotHunters too).
+function kernelHunters(spot, state) {
+    return kernel.spotHunters(spot, state);
+}
+// A solo bot's route search inputs here: its kernel record (the kept route),
+// this worker's room filter and hunters count (BotRoute.trip, soloGroundMissing).
+function routeSearch(state, timestamp) {
+    return { owner: kernel.states.get(Number(state.characterId)), timestamp,
+        hasRoom: SpotProfiles.roomFilterFor(kernel.occupancy, planningSpots, [state]), spotHunters: kernelHunters };
 }
 function dropRoute(characterId, why) {
     BotRoute.drop(kernel.states.get(Number(characterId)), why);
@@ -1369,7 +1379,8 @@ function startKernel(config = {}) {
             const war = require('./ClanWarMovement').route({ leader, party, members, spot, timestamp,
                 spots: planningSpots, wars: kernel.interactionMemory.clanWars });
             return war.active ? war.route : BotRoute.route(leader, spot, party, members,
-                { spots: planningSpots, timestamp, hasRoom: SpotProfiles.roomFilterFor(kernel.occupancy, planningSpots, members) });
+                { spots: planningSpots, timestamp, spotHunters: kernelHunters,
+                    hasRoom: SpotProfiles.roomFilterFor(kernel.occupancy, planningSpots, members) });
         },
         // writtenAt: the row's write stamp, the real now (timestamp is the
         // round's time, the bot's due for a step started its lead early).
@@ -1530,7 +1541,7 @@ function startKernel(config = {}) {
             // A healer or buffer without solo ground plans its party request
             // below (PartyRequestPlanner, decision 10-30): no card reuse.
             const solo = !state.party?.partyId && !state.partyId && !state.stats?.partyRequest
-                && !PartyRequestPlanner.supportWithoutGround(state, spots);
+                && !PartyRequestPlanner.supportWithoutGround(state, spots, routeSearch(state, timestamp));
             const nativeHolds = !nativeReplan.failure && !nativeReplan.invalidSource && !nativeReplan.levelingRecovery;
             // An active current plan: before, finalizePlan re-finalized it on
             // every such step. Its steps count as plan_holds finalized (paid)
@@ -1623,7 +1634,7 @@ function startKernel(config = {}) {
             const acquisitionPlan = invoke('GameServer/Bot/Economy/WishProviders').personalCraftPlan(state, preparedEconomy)
                 || selectedAcquisition.acquisitionPlan;
             const partyRequest = PartyRequestPlanner.partyRequestForPlan(state, acquisitionPlan, timestamp,
-                { spots, economy, memo: kernel.states.get(Number(state.characterId)) });
+                { spots, economy, memo: kernel.states.get(Number(state.characterId)), search: routeSearch(state, timestamp) });
             // The step took its build result, which clears wishDirty: a moved
             // route section, or a new plan destination the search reads (the
             // gear branch, the party wait), drops the kept route before the
@@ -1634,7 +1645,7 @@ function startKernel(config = {}) {
             const partyRouteWaiting = PartyWaitFallback.waiting(state, acquisitionPlan, partyRequest);
             const partyFallback = partyRouteWaiting
                 ? PartyWaitFallback.spotFor(state, acquisitionPlan, spots,
-                    { excludedSpotIds, timestamp,
+                    { excludedSpotIds, timestamp, spotHunters: kernelHunters,
                         hasRoom: SpotProfiles.roomFilterFor(kernel.occupancy, planningSpots, [state]) })
                 : null;
             const fallbackSpot = partyFallback?.spot || null;
@@ -1691,8 +1702,8 @@ function startKernel(config = {}) {
         flushTargetMs: config.flushTargetMs,
         flushHardMs: config.flushHardMs
     });
-    // SpotEconomics' crowd share reads this worker's occupancy.
-    usePlanningIndex(kernel.occupancy);
+    // Every spot value's crowd share without its own count reads this kernel's occupancy (SpotProfiles.spotHunters).
+    SpotProfiles.useOccupancy(() => kernel?.occupancy);
     // Keep dependencies tied to the kernel's native lifetime. In-flight
     // scratch is cancelled on a newer canonical owner; it is never LRU-evicted.
     const nativeSet = kernel.states.set.bind(kernel.states), nativeDelete = kernel.states.delete.bind(kernel.states);
@@ -1776,6 +1787,8 @@ function startKernel(config = {}) {
         npcOffersFor: OccupationSources.npcOffersFor,
         buyOrderEscrow: escrowFor,
         spots: () => planningSpots,
+        // SpotEconomics' crowd share in a build (deps.spotHunters).
+        spotHunters: kernelHunters,
         // The bot's memory rows for its relations fact, bond and threat (read
         // only), without the deep copy snapshot() makes; as main passes them.
         memory: characterId => kernel.interactionMemory.relationRows(Number(characterId)),

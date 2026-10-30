@@ -394,7 +394,7 @@ try {
             ...targetSpot, id: `evacuation-${i}`
         }));
         const outOfRange = Array.from({ length: 100 }, (_, i) => ({
-            ...targetSpot, id: `out-of-range-${i}`, minLevel: 70, maxLevel: 80
+            ...targetSpot, id: `out-of-range-${i}`, minLevel: 70, maxLevel: 80, avgLevel: 75, levelCounts: { 70: 4, 80: 4 }
         }));
         const catalog = [...outOfRange, ...alternatives];
         const evacuationState = {

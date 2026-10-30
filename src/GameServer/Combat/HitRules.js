@@ -15,6 +15,7 @@
 // that is not blocked) and spreadRng (the weapon spread's roll; hot leaves it
 // to Math.random). Returns { damage, critical, shield }.
 const Formulas = invoke('GameServer/Formulas');
+const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 
 function shieldRoll(defender, { facing = true, bow = false } = {}, rng) {
     return Formulas.rollShieldUse({ shieldRate: defender.shieldRate, dex: defender.dex, facing, bow }, rng);
@@ -159,5 +160,127 @@ function blowLands(semantic, position, rng = Math.random) {
     return (Number(semantic?.requires?.condition) & COND_CRIT) === 0 || chance >= rng() * 100;
 }
 
+// The target's terms of a hit, one copy for the hot Attack, the cold fight
+// and the solo gate (BotTargetMatchup, T124). A spell meets its element's
+// weakness; a weapon hit its weapon's (bow, blunt), a physical skill also the
+// dagger one (by its trait or a knife), and both the attacker's bonus against
+// an undead target and against the target's race. hit { magic, skill, trait,
+// weaponKind (the attacker's), race, undead (the target's) }; targetMul(stat)
+// the target's multiplier of a weakness stat (1 without one); attackerMul(stat)
+// the attacker's multiplier of a bonus stat.
+const ELEMENTAL_DAMAGE_TRAITS = new Set(['fire', 'water', 'wind', 'earth', 'holy', 'dark']);
+const PHYSICAL_RACE_STATS = Object.freeze({
+    animal: 'pAtk-animals',
+    beast: 'pAtk-monsters',
+    construct: 'pAtk-mcreatures',
+    dragon: 'pAtk-dragons',
+    giant: 'pAtk-giants',
+    insect: 'pAtk-insects',
+    plant: 'pAtk-plants'
+});
+function elementVulnStat(trait) {
+    return ELEMENTAL_DAMAGE_TRAITS.has(trait) ? `${trait}Vuln` : null;
+}
+function weaponVulnStat(weaponKind = '', trait = '', skill = false) {
+    if (trait === 'bow' || weaponKind === 'Weapon.Bow') return 'bowWpnVuln';
+    if (weaponKind === 'Weapon.Blunt' || weaponKind === 'Weapon.BigBlunt') return 'bluntWpnVuln';
+    if (skill && (trait === 'dagger' || weaponKind === 'Weapon.Knife')) return 'daggerWpnVuln';
+    return null;
+}
+function raceStat(race) {
+    return PHYSICAL_RACE_STATS[String(race || '').toLowerCase()] || null;
+}
+function targetModifier(hit, targetMul, attackerMul) {
+    if (hit.magic) {
+        const stat = elementVulnStat(hit.trait);
+        return stat ? targetMul(stat) : 1;
+    }
+    const weapon = weaponVulnStat(hit.weaponKind, hit.trait, hit.skill === true);
+    let modifier = weapon ? targetMul(weapon) : 1;
+    if (hit.undead === true) modifier *= attackerMul('pAtkUndeadMul');
+    const race = raceStat(hit.race);
+    if (race) modifier *= attackerMul(race);
+    return modifier;
+}
+
+// A skill's power by its caster's HP (Lisvus): Death Link grows as the HP
+// falls (Formulas.calcDeathLinkPower), Fatal from none at full HP; any other
+// skill keeps its power.
+function skillPower(semantic, power, hp, maxHp) {
+    if (semantic?.skillType === C4SkillRules.DEATH_LINK) return Formulas.calcDeathLinkPower(power, hp, maxHp);
+    if (semantic?.skillType === C4SkillRules.FATAL) return Formulas.calcFatalPower(power, hp, maxHp);
+    return Number(power) || 0;
+}
+
+// The older C4 magic level-fail roll (Lisvus calcMagicSuccess via
+// Formulas.calcMagicSuccessRate): an offensive spell whose effect has no
+// land rate of its own (a nuke, a drain) fails whole by the target's level
+// over the skill's magic level. rollsMagicLevel: whether a skill rolls it;
+// magicLevelChance: its chance in percent; magicLevelLands: the roll.
+const EFFECT_FORMULA_TYPES = new Set([C4SkillRules.EFFECT, C4SkillRules.DAMAGE_EFFECT, C4SkillRules.CANCEL, C4SkillRules.BANE,
+    C4SkillRules.AGGRO_REMOVE, C4SkillRules.AGGRO_REDUCE_CHAR]);
+function offensive(semantic) {
+    return semantic.target !== 'self' && semantic.effectType !== 'buff';
+}
+function rollsMagicLevel(semantic, magic) {
+    return magic === true && offensive(semantic) && semantic.skillType !== C4SkillRules.BLOW
+        && !EFFECT_FORMULA_TYPES.has(semantic.skillType);
+}
+function magicLevelChance(semantic, attackerLevel, targetLevel) {
+    return Formulas.calcMagicSuccessRate({ attackerLevel, targetLevel, magicLevel: semantic.magicLevel, levelDepend: semantic.levelDepend });
+}
+function magicLevelLands(semantic, attackerLevel, targetLevel, rng = Math.random) {
+    return magicLevelChance(semantic, attackerLevel, targetLevel) >= rng() * 100;
+}
+
+// A lethal strike after a skill's hit (Lisvus, C4SkillEffects.applyLethal):
+// semantic.lethal { sourceFormula } leaves the target at 1 HP by
+// Formulas.calcLethalStrikeChance (never a raid boss, a boss, a door or a
+// flag: guarded), else killChance (to 1 HP) or halfKillChance (to half its
+// max HP). target { level, hp, maxHp, guarded }, attacker { level },
+// skillLevel (the magic level's stand-in). Returns null, or { kind:
+// 'lethal' | 'kill' | 'half', hp: the HP the target is left at at most }.
+function lethalStrike(semantic, attacker, target, skillLevel, rng = Math.random) {
+    const lethal = semantic?.lethal;
+    if (!lethal) return null;
+    const maxHp = Number(target.maxHp) || 0, hp = Number(target.hp) || 0;
+    if (maxHp <= 1 || hp <= 1) return null;
+    if (lethal.sourceFormula === true) {
+        if (target.guarded === true) return null;
+        const chance = Formulas.calcLethalStrikeChance(attacker.level, target.level, semantic.magicLevel ?? skillLevel);
+        return chance > rng() * 100 ? { kind: 'lethal', hp: 1 } : null;
+    }
+    const killChance = Number(lethal.killChance) || 0;
+    if (killChance > 0 && killChance >= rng() * 100) return { kind: 'kill', hp: 1 };
+    const halfKillChance = Number(lethal.halfKillChance) || 0;
+    if (halfKillChance > 0 && halfKillChance >= rng() * 100) return { kind: 'half', hp: Math.max(1, Math.floor(maxHp / 2)) };
+    return null;
+}
+
+// HP a hit gives back to its attacker by life steal (absorbDam, percent:
+// a weapon SA, Vampiric Rage; hot Attack.applyDamageAbsorb): of the HP the
+// target lost, up to what the attacker misses. A bow hit steals none (the caller's).
+function absorbedHp(percent, hpDamage, hp, maxHp) {
+    if (!(percent > 0)) return 0;
+    return Math.max(0, Math.min(Math.max(0, maxHp - hp), Math.floor(percent / 100 * Math.max(0, Number(hpDamage) || 0))));
+}
+// Damage a hit sends back to its attacker (reflectDam, percent; hot Attack.applyReflectedDamage).
+function reflectedDamage(percent, damage) {
+    return Math.floor(Math.max(0, Number(damage) || 0) * Math.max(0, Number(percent) || 0) / 100);
+}
+
+// An effect's damage over time (hot C4SkillEffects.dotFromSkill): { count,
+// intervalMs, damage } of a skill at its level, or null without one.
+function dotOf(semantic, level, power) {
+    const dot = semantic?.dot;
+    if (!dot) return null;
+    let damage = dot.damage;
+    if (damage == null && dot.damageByLevel) {
+        damage = dot.damageByLevel[Math.max(0, Math.min(dot.damageByLevel.length - 1, (Number(level) || 1) - 1))];
+    }
+    return { count: dot.count, intervalMs: dot.intervalMs, damage: damage ?? power };
+}
+
 module.exports = { melee, physicalSkill, magicSkill, expectedMelee, expectedPhysicalSkill, expectedMagicSkill, physicalSkillCritRate, blowLandChance, blowLands, resistStats, traitResistModifier,
-    effectLandChance };
+    effectLandChance, ELEMENTAL_DAMAGE_TRAITS, elementVulnStat, weaponVulnStat, raceStat, targetModifier, skillPower,
+    rollsMagicLevel, magicLevelChance, magicLevelLands, lethalStrike, absorbedHp, reflectedDamage, dotOf };

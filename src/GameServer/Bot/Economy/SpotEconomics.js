@@ -1,7 +1,7 @@
 'use strict';
 // Resolved at the first call (cycles); a require per call is a path lookup (L73).
 let SpotRewardExpectation = null;
-const { othersOn } = require('../Population/SpotOccupancyIndex');
+const Diagnostics = require('./EconomyDiagnostics');
 // The hour fields of a table row that follow its kills (SpotValueTable.value).
 const PER_KILL_FIELDS = ['kills', 'deaths', 'exp', 'sp', 'adena', 'dropLoot', 'spoilLoot', 'loot', 'shots', 'potions'];
 // Shared table evaluation. It depends on native facts and own samples,
@@ -19,7 +19,12 @@ function moneyWeight(state) {
 
 // hunt: the build's own hunt (EconomyContext), so one build reads one hour;
 // a caller outside a build leaves it out and gets the bot's bare hunt.
-function create(state, { timestamp = Date.now(), mode, persona, deathHours, moneyWeight: weight = moneyWeight(state), price, hunt } = {}) {
+// spotHunters(spot, state): the hunters on a spot with the bot among them,
+// of the thread that plans (SpotOccupancyIndex.huntersOn): by default
+// SpotProfiles.spotHunters, this thread's occupancy (main's world index, a
+// worker's kernel index).
+function create(state, { timestamp = Date.now(), mode, persona, deathHours, moneyWeight: weight = moneyWeight(state), price, hunt,
+    spotHunters = invoke('GameServer/Bot/Population/SpotProfiles').spotHunters } = {}) { // lazy: cycle SpotProfiles' route search builds this reader
     const Table = invoke('GameServer/Bot/AI/SpotValueTable');
     const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
     const Learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
@@ -52,12 +57,15 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
     // bot's share of what the spawns it may fight give back, production over
     // the hunters with it (BackgroundResolver.soloShareMobs in the fight); the
     // hour's fields follow its kills.
+    // A crowd cut (crowdFactor < 1) is counted as spot_value:crowd:cut
+    // (developer diagnostics).
     const crowded = (spot, row, shots) => {
-        const others = row ? othersOn(spot.id, state) : 0;
-        if (!(others > 0)) return row;
-        const share = Number(Table.production(spot.id, tableRole, state.level, shots)) / (others + 1);
+        const hunters = row && spotHunters ? spotHunters(spot, state) : 1;
+        if (!(hunters > 1)) return row;
+        const share = Number(Table.production(spot.id, tableRole, state.level, shots)) / hunters;
         const factor = share > 0 && row.kills > 0 ? Math.min(1, share / row.kills) : 1;
         if (factor >= 1) return row;
+        if (Diagnostics.active()) Diagnostics.count('spot_value', 'crowd', 'cut');
         const out = { ...row, crowdFactor: factor };
         for (const field of PER_KILL_FIELDS) if (Number.isFinite(row[field])) out[field] = row[field] * factor;
         return out;

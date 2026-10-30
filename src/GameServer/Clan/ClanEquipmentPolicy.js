@@ -1,3 +1,5 @@
+const { rankOf: rankFor } = invoke('GameServer/Bot/AI/GearGradeRule');
+
 function number(value, fallback = 0) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
@@ -7,7 +9,6 @@ function number(value, fallback = 0) {
 // must keep walking nearby members/targets until it finds an actionable plan;
 // mandatory clan-progression items use the separate clan goal policy.
 const PLAN_STATUSES = new Set(['active', 'component_ready', 'ready_to_craft']);
-const GRADE_RANK = Object.freeze({ none: 0, d: 1, c: 2, b: 3, a: 4, s: 5 });
 const ROLE_PRIORITY = Object.freeze({
     tank: 45,
     healer: 40,
@@ -52,10 +53,6 @@ function planPriority(plan) {
     // is already ready to craft.
     return (statusPriority[String(plan?.status || '')] || 0)
         + Math.max(0, 40 - Math.min(40, effort / 25));
-}
-
-function rankFor(value) {
-    return GRADE_RANK[String(value || 'none').toLowerCase()] || 0;
 }
 
 function memberRole(member, options = {}) {

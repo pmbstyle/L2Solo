@@ -8,11 +8,10 @@ const HitRules = invoke('GameServer/Combat/HitRules');
 const CombatantView = invoke('GameServer/Combat/CombatantView');
 
 const MIN_EFFICIENCY = 0.15;
-const ELEMENTS = ['fire', 'water', 'wind', 'earth', 'holy', 'dark'];
+// The weakness stats a hit's damage reads (HitRules.targetModifier).
+const DAMAGE_VULN_STATS = ['bowWpnVuln', 'bluntWpnVuln', 'daggerWpnVuln', ...[...HitRules.ELEMENTAL_DAMAGE_TRAITS].map(e => `${e}Vuln`)];
 const DAMAGE_TYPES = new Set([Rules.DAMAGE, Rules.DAMAGE_EFFECT, Rules.DRAIN,
     Rules.DEATH_LINK, Rules.FATAL, Rules.BLOW]);
-const weaponStat = kind => ({ 'Weapon.Bow': 'bowWpnVuln', 'Weapon.Knife': 'daggerWpnVuln',
-    'Weapon.Blunt': 'bluntWpnVuln', 'Weapon.BigBlunt': 'bluntWpnVuln' })[kind];
 const number = (value, fallback = 1) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const positive = value => Math.max(1, number(value));
 // Resolved on first use (the cold worker loads this module before them);
@@ -65,7 +64,9 @@ function actorProfiles(actors) {
     });
 }
 
-function coldProfiles(profile, state = {}, timestamp = Date.now()) {
+// options.shot: the shot supply the caller's fight already holds
+// (BackgroundResolver: its fighter's), instead of a second read of the stock.
+function coldProfiles(profile, state = {}, timestamp = Date.now(), options = {}) {
     const profiles = [{ ...profile, skills: (profile.skills || []).map(skill => ({
         ...skill, semantic: skill.semantic || Rules.resolveCached(skill)
     })) }];
@@ -83,7 +84,7 @@ function coldProfiles(profile, state = {}, timestamp = Date.now()) {
             role: 'dps', skills: [], soloDamageReceiver: false, servitor: true, summonCastMs: Cold.actionDelayMs(profile, skill) });
     }
     // The shot the fight loads from the bot's stock (ColdCombatProfile.shotSupply).
-    if (state.inventory) profiles[0].shot = coldCombatProfile().shotSupply(state, timestamp);
+    if (state.inventory) profiles[0].shot = 'shot' in options ? options.shot : coldCombatProfile().shotSupply(state, timestamp);
     const role = profile.role || Roles.combatRoleFor(profile);
     if (role === 'mage' || role === 'healer') {
         profiles[0].soloAttackScores = invoke('GameServer/Bot/Population/ColdClassPolicy')
@@ -102,11 +103,13 @@ function profileKey(profiles) {
     return profiles.length > 1 ? Number(profiles[1].npcId) || 1 : 0;
 }
 
+// The weakness stats a kit's hits read (HitRules.targetModifier): its weapon's
+// and each skill's.
 function profileStats(profiles) {
-    return [...new Set((profiles || []).flatMap(profile => [weaponStat(profile.equipment?.weaponKind),
+    return [...new Set((profiles || []).flatMap(profile => [HitRules.weaponVulnStat(profile.equipment?.weaponKind, '', true),
         ...(profile.skills || []).map(skill => {
             const trait = (skill.semantic || Rules.resolve(skill)).trait;
-            return skill.spell && ELEMENTS.includes(trait) ? `${trait}Vuln` : null;
+            return skill.spell ? HitRules.elementVulnStat(trait) : HitRules.weaponVulnStat(profile.equipment?.weaponKind, trait, true);
         })]).filter(Boolean))];
 }
 
@@ -117,7 +120,7 @@ function skillStats(actor) {
         })) }]);
 }
 
-function targetView(target, stats = ['bowWpnVuln', 'bluntWpnVuln', 'daggerWpnVuln', ...ELEMENTS.map(e => `${e}Vuln`)]) {
+function targetView(target, stats = DAMAGE_VULN_STATS) {
     if (!target || typeof target.fetchHp !== 'function') return target || {};
     // ColdClassPolicy supplies the same projection as native target scans.
     if (target.matchupTarget) return target.matchupTarget;
@@ -131,22 +134,41 @@ function targetView(target, stats = ['bowWpnVuln', 'bluntWpnVuln', 'daggerWpnVul
     const pDef = target.fetchCollectivePDef?.() ?? target.fetchPDef?.();
     const mDef = target.fetchCollectiveMDef?.() ?? target.fetchMDef?.();
     return { vulnerabilities, pDef, mDef, undead: target.fetchUndead?.() === true,
+        race: String(target.fetchRace?.() ?? target.model?.race ?? '').toLowerCase(), level: target.fetchLevel?.(),
         maxHp: target.fetchMaxHp?.(),
         pAtk: target.fetchCollectivePAtk?.() ?? target.fetchPAtk?.(),
         atkSpd: target.fetchCollectiveAtkSpd?.() ?? target.fetchAtkSpd?.(),
         basePDef: target.fetchPDef?.() ?? pDef, baseMDef: target.fetchMDef?.() ?? mDef };
 }
 
-function modifier(target, semantic = {}, magic = false, kind = '') {
-    const stat = magic ? (ELEMENTS.includes(semantic.trait) ? `${semantic.trait}Vuln` : null)
-        : semantic.trait === 'bow' ? 'bowWpnVuln'
-            : semantic.trait === 'dagger' ? 'daggerWpnVuln' : weaponStat(kind);
-    const vuln = stat ? Math.max(0, number(target.vulnerabilities?.[stat])) : 1;
+// A hit's modifier on a target view: the fight's terms (HitRules.targetModifier:
+// weaknesses, the attacker's race and undead bonuses; bonus(stat) the
+// attacker's multiplier) times the target's defence buffs (its base defence
+// over the buffed one: channels hit the base). skill: a skill, not a normal
+// attack (only a skill reads the dagger weakness).
+function modifier(target, semantic = {}, magic = false, kind = '', skill = true, bonus = () => 1) {
+    const vuln = HitRules.targetModifier({ magic, skill, trait: semantic.trait, weaponKind: kind, race: target.race, undead: target.undead === true },
+        stat => coldCombatProfile().npcVulnerability(target, stat), bonus);
     const base = magic ? target.baseMDef : target.basePDef;
     const defense = magic ? target.mDef : target.pDef;
     return vuln * (number(base, 0) > 0 && number(defense, 0) > 0 ? base / defense : 1);
 }
 
+// A cold profile's bonus multiplier of a stat (race, undead), once per profile
+// object (a profile is fixed once built): its passives and effects now.
+const bonuses = new WeakMap();
+function profileBonus(profile) {
+    let held = bonuses.get(profile);
+    if (!held) bonuses.set(profile, held = new Map());
+    return stat => {
+        if (!held.has(stat)) held.set(stat, coldCombatProfile().statMultiplier(profile, stat, Date.now()));
+        return held.get(stat);
+    };
+}
+
+// The executor's pick (BotCombatUtility) ranks one actor's attacks on one
+// target: its race and undead bonuses multiply all its physical hits alike and
+// stay out (a hot actor's effects are not read in the cold worker).
 function skillModifier(actor, target, skill, view = targetView(target)) {
     return modifier(view, skill.fetchSemantic?.(), skill.fetchSpell?.() === true,
         actor.backpack?.fetchTotalWeaponKind?.() || '');
@@ -185,6 +207,7 @@ function channels(profile, target) {
     const bow = kind === 'Weapon.Bow';
     const physical = role !== 'mage';
     const attacker = Cold.attackerView(profile);
+    const bonus = profileBonus(profile);
     const defender = CombatantView.view({ pDef: positive(target.basePDef || target.pDef), mDef: positive(target.baseMDef || target.mDef),
         dex: target.dex, shieldPDef: target.shieldPDef, shieldRate: target.shieldRate });
     const result = [];
@@ -193,7 +216,7 @@ function channels(profile, target) {
         const hit = HitRules.expectedMelee(attacker, defender, { soulshot: shot?.soulshot === true, bow,
             hitChance: Cold.expectedHitChance(profile.accur, target.evasion) });
         const swingMs = profile.servitor ? Cold.summonAttackMs(profile) : Cold.normalAttackMs(profile);
-        result.push({ weight: hit * 1000 / swingMs, modifier: modifier(target, {}, false, kind), magic: false, normal: true });
+        result.push({ weight: hit * 1000 / swingMs, modifier: modifier(target, {}, false, kind, false, bonus), magic: false, normal: true });
     }
     for (const skill of profile.skills || []) {
         const semantic = skill.semantic || Rules.resolve(skill);
@@ -204,7 +227,8 @@ function channels(profile, target) {
             || (number(profile.maxMp, 0) > 0 && number(skill.mp, 0) > profile.maxMp)
             || (semantic.requires?.weaponsAllowed && !(semantic.requires.weaponsAllowed & profile.weaponMask))
             || (bow && number(semantic.castRange ?? skill.distance, 0) < 400)) continue;
-        const power = Math.max(0, number(skill.power ?? semantic.power, 0));
+        // At full HP, as the gate judges (Death Link and Fatal by the caster's HP: HitRules.skillPower).
+        const power = Math.max(0, HitRules.skillPower(semantic, number(skill.power ?? semantic.power, 0), 1, 1));
         if (!power) continue;
         // An area skill hits every mob of a pull (F20; BotPullEstimate.pullView).
         const area = Rules.hitsArea(semantic) && number(target.pull, 1) > 1;
@@ -214,12 +238,14 @@ function channels(profile, target) {
         const hitDamage = struck * (magic
             ? HitRules.expectedMagicSkill(attacker, defender, { power, spiritshot: shot?.spiritshot === true,
                 blessedSpiritshot: shot?.blessedSpiritshot === true })
+                // The level-fail roll a nuke or a drain makes (HitRules.rollsMagicLevel).
+                * (HitRules.rollsMagicLevel(semantic, true) ? HitRules.magicLevelChance(semantic, profile.level, target.level) / 100 : 1)
             : HitRules.expectedPhysicalSkill(attacker, defender, { power, blow, bow, soulshot: shot?.soulshot === true,
                 skillCritRate: HitRules.physicalSkillCritRate(semantic, profile.str),
                 landChance: blow ? HitRules.blowLandChance(semantic, { dex: profile.dex, front: true,
                     rateMul: Cold.statMultiplier(profile, 'blowRateMul', Date.now()) }) / 100 : 1 }));
         const weight = hitDamage * 1000 / Cold.actionDelayMs(profile, skill, shot?.spiritshot === true);
-        result.push({ weight, modifier: modifier(target, semantic, magic, kind), magic, area,
+        result.push({ weight, modifier: modifier(target, semantic, magic, kind, true, bonus), magic, area,
             soloScore: profile.soloAttackScores?.[skill.selfId],
             survivalWeight: Math.min(weight, hitDamage / Math.max(0.25, number(skill.reuse, 0) / 1000)),
             damageBudget: number(skill.mp, 0) > 0
@@ -274,7 +300,13 @@ function ownerReceivers(profiles) {
     return profiles?.filter(profile => profile.soloDamageReceiver !== false && profile.servitor !== true);
 }
 
-function soloSurvival(profiles, target, minimum = 1.5, attacksOf = channels) {
+// The solo hunt gate (T132, docs/game-decisions.md): the damage a bot deals
+// over the target's HP before its own runs out, needed to fight alone. Cold
+// hunt deaths do not fall above 1.0 (gate sweep, 700 kit and mob pairs), so no
+// extra margin is bought on top.
+const SOLO_GATE_MARGIN = 1.0;
+
+function soloSurvival(profiles, target, minimum = SOLO_GATE_MARGIN, attacksOf = channels) {
     // The mobs strike the pets first, then the owner (sideLifetime).
     const receivers = ownerReceivers(profiles);
     if (!receivers?.length || !(target.maxHp > 0) || !(target.pAtk > 0)
@@ -333,7 +365,7 @@ function soloChannels(profile, target, attacksOf = channels) {
 }
 
 function soloCanHunt(profiles, target, { maxTargetLevel, npcLevel, attacksOf = channels } = {}) {
-    const survival = soloSurvival(profiles, target, 1.5, attacksOf);
+    const survival = soloSurvival(profiles, target, SOLO_GATE_MARGIN, attacksOf);
     if (maxTargetLevel && Number(npcLevel || 0) > maxTargetLevel) {
         return { ...survival, eligible: false, reason: 'recovery_level' };
     }
@@ -388,15 +420,18 @@ function soloSpotUpperBound(profiles) {
         const Mob = coldMobAction();
         const seconds = sideLifetime(target, profiles, Mob)
             + coldCombatProfile().openingMs(receivers[0], target) / 1000;
-        let vulnerability = 1;
-        for (const stat in target.vulnerabilities) {
-            vulnerability = Math.max(vulnerability, number(target.vulnerabilities[stat]));
-        }
+        // The largest term a hit of theirs can meet: a damage weakness of the
+        // target, times a profile's bonus against its race or undead kind.
+        let vulnerability = 1, bonus = 1;
+        for (const stat of DAMAGE_VULN_STATS) vulnerability = Math.max(vulnerability, coldCombatProfile().npcVulnerability(target, stat));
+        for (const profile of profiles) bonus = Math.max(bonus, HitRules.targetModifier({ race: target.race, undead: target.undead === true },
+            () => 1, profileBonus(profile)));
+        vulnerability *= bonus;
         const damage = bounds.reduce((sum, bound) => sum + Math.max(
             bound.continuous * seconds / positive(target.pDef),
             Math.min(bound.physicalRate * seconds, bound.physicalBudget) / positive(target.pDef),
             Math.min(bound.magicRate * seconds, bound.magicBudget) / positive(target.mDef)) * vulnerability, 0);
-        return damage / target.maxHp >= 1.5;
+        return damage / target.maxHp >= SOLO_GATE_MARGIN;
     }
     return spot => {
         let total = 0, safe = 0;
@@ -543,5 +578,5 @@ function damageRate(profiles, target = {}) {
         .map(attack => (attack.survivalWeight ?? attack.weight) * attack.modifier)), 0);
 }
 
-module.exports = { MIN_EFFICIENCY, actorProfiles, coldProfiles, profileKey, targetView, skillModifier, damageRate, attackRate, spellRate, incomingRate,
+module.exports = { MIN_EFFICIENCY, SOLO_GATE_MARGIN, actorProfiles, coldProfiles, profileKey, targetView, skillModifier, channels, damageRate, attackRate, spellRate, incomingRate,
     profileStats, skillStats, evaluate, soloSurvival, soloCanHunt, soloSpotUpperBound, stateProfiles, spotMatchup, speciesPulls };

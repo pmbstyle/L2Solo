@@ -4,7 +4,7 @@ const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatib
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const ArmorPolicy = invoke('GameServer/Bot/AI/BotArmorPolicy');
-const { gradeForLevel } = invoke('GameServer/Bot/AI/GearGradeRule');
+const { gradeForLevel, GRADES: RANK_ORDER } = invoke('GameServer/Bot/AI/GearGradeRule');
 const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
 const Item = invoke('GameServer/Model/Item');
 
@@ -25,7 +25,6 @@ const ARMOR_SLOTS = {
     fullArmor: 15
 };
 
-const RANK_ORDER = ['none', 'd', 'c', 'b', 'a', 's'];
 const UPGRADE_COOLDOWN_MS = 5000;
 // session -> the inputs of its last periodic pass that found no upgrade.
 const emptyPasses = new WeakMap();

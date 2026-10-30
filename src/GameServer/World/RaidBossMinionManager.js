@@ -48,10 +48,10 @@ const telemetry = {
     });
 });
 
-function randomCount(min, max) {
+function randomCount(min, max, random = Math.random) {
     const low = Math.max(1, Number(min) || 1);
     const high = Math.max(low, Number(max) || low);
-    return low + Math.floor(Math.random() * (high - low + 1));
+    return low + Math.floor(random() * (high - low + 1));
 }
 
 function templateFor(minionId) {
@@ -79,15 +79,30 @@ function aliveMinions(world, group) {
     return group.members.filter((minion) => minion.state?.fetchDead?.() !== true && minion.isDead?.() !== true);
 }
 
-function minionCoords(boss) {
-    const angle = Math.random() * Math.PI * 2;
-    const radius = 80 + Math.random() * 220;
+function minionCoords(boss, random = Math.random) {
+    const angle = random() * Math.PI * 2;
+    const radius = 80 + random() * 220;
     return {
         locX: Math.round(Number(boss.fetchLocX?.() || 0) + Math.cos(angle) * radius),
         locY: Math.round(Number(boss.fetchLocY?.() || 0) + Math.sin(angle) * radius),
         locZ: Number(boss.fetchLocZ?.() || 0),
-        head: Math.floor(Math.random() * 65536)
+        head: Math.floor(random() * 65536)
     };
+}
+
+// The minions an ordinary group leader of the spot catalogue brings
+// (SpawnNpcs.catalogueSpawns): each group's count and places as attachBoss
+// and spawnMinion draw them, from the catalogue's seeded `random`.
+function catalogueMinions(leader, random) {
+    const minions = [];
+    for (const group of groupsByBoss.get(Number(leader?.fetchSelfId?.() || 0)) || []) {
+        const template = templateFor(group.minionId);
+        if (!template) continue;
+        for (let left = randomCount(group.min, group.max, random); left > 0; left--) {
+            minions.push({ template, coords: minionCoords(leader, random), link: { minionLeader: leader, minionGroup: group } });
+        }
+    }
+    return minions;
 }
 
 function spawnMinion(world, boss, group) {
@@ -349,6 +364,7 @@ function stop(world) {
 module.exports = {
     MINION_RESPAWN_DELAY_MS,
     attachBoss,
+    catalogueMinions,
     onBossAttacked,
     onMinionAttacked,
     onMinionDeath,

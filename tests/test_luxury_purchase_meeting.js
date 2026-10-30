@@ -25,8 +25,14 @@ const fixture = require('./fixtures/luxury_purchase_states.json');
         .map(table => ({ ...table, from: null, to: 0, full: true, removed: [], last: true }));
     for (const saved of fixture.states) {
         const state = shift(saved);
+        // The buyer 2006424 snapshot is a robed caster buffer. An Overlord fights in melee since T106
+        // (blunt, heavy armor, soulshots): a Prophet keeps the snapshot's caster kit and earring root.
+        if (state.characterId === 2006424) state.stats.classId = 17;
         // T43 table: C spiritshots now pay for 2006424; it holds its shot stock, so the crystal roots decide.
         if (state.characterId === 2006424) state.inventory[2511] = { ...state.inventory[2511], amount: 300 };
+        // T106 tables per class line: a level-47 Shillien Knight's C soulshots pay for a longer outing
+        // than its 1917; it holds that stock, so the crystal roots decide.
+        if (state.characterId === 2007229) state.inventory[1464] = { ...state.inventory[1464], amount: 3000 };
         const before = JSON.stringify(state);
         const secondRoot = state.characterId === 2007229, count = secondRoot ? 260 : 370;
         const seller = 2007106, side = state.characterId < seller ? 0 : 1;

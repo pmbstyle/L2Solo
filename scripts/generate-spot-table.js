@@ -35,8 +35,10 @@
 // with the spot's measured response to drop rates 10 and 50).
 //
 // Deterministic: every run is seeded from its spot, role, shots and level;
-// the spot catalogue is spawned with a seeded Math.random. The output does
-// not depend on --jobs.
+// the spot catalogue is the server's own (SpawnNpcs.catalogueSpawns: each
+// spawn definition at its seeded point, a territory's on the geodata ground,
+// so run with the server's geodata: npm run geodata; header inputs.geodata
+// names its profile). The output does not depend on --jobs.
 
 const childProcess = require('child_process');
 const fs = require('fs');
@@ -53,7 +55,11 @@ process.env.L2NODE_PROGRESSION_RATE = 'x1';
 
 const SCHEMA_VERSION = 1;
 const CATALOGUE_SEED = 20261005;
+// The world spawns by day; the catalogue takes every spawn definition of
+// the game day (SpotService.ensureIndexed, SpawnNpcs.catalogueSpawns, T123):
+// the table measures each at its share of the day.
 const PERIOD_MODE = 'day';
+const CATALOGUE_PERIODS = 'day+night';
 const MAX_LEVEL = 78;
 const REF_GAP = 6;
 // Bot level minus spot level, every 2 levels from 4 below the mobs up to the
@@ -254,8 +260,10 @@ function bandOf(level) {
 
 // ---------------------------------------------------------------- catalogue
 
-// The spots the server builds at start (SpotService over the spawned world),
-// from a world spawned here with a seeded Math.random.
+// The spots the server builds at start (SpotService over the spawned
+// world's definitions, at their seeded catalogue points), and the profile of
+// the geodata their territory points stand on (null: none, every territory
+// spawn at its maxZ hint: other floors than the server's).
 function buildCatalogue() {
     require('../src/Global');
     invoke('GameServer/DataCache').init();
@@ -279,7 +287,10 @@ function buildCatalogue() {
     SpotProfiles.reset();
     const profiles = SpotProfiles.ensure();
     Math.random = random;
-    return { spots: SpotService.spots, profiles, spawned: world.npc.spawns.length };
+    const manifest = path.join(invoke('GameServer/Geodata/GeodataEngine').getGeodataDir(), '.l2solo-geodata-manifest.json');
+    const geodata = fs.existsSync(manifest) ? JSON.parse(fs.readFileSync(manifest, 'utf8')).profile || null : null;
+    if (!geodata) process.stderr.write('no geodata: territory spawns stand at their maxZ hint, the floors differ from the server\'s (npm run geodata)\n');
+    return { spots: SpotService.spots, profiles, spawned: world.npc.spawns.length, geodata };
 }
 
 // ---------------------------------------------------------------- simulation (child)
@@ -855,7 +866,7 @@ function gitRevision() {
 }
 
 function rewardCatalog(profiles) {
-    return { schema: 1, seed: CATALOGUE_SEED, periodMode: PERIOD_MODE,
+    return { schema: 1, seed: CATALOGUE_SEED, periodMode: CATALOGUE_PERIODS,
         rows: profiles.filter(spot => !spot.raidBoss).map(spot => [spot.id,
             (spot.npcEntries || []).map(entry => [Number(entry.selfId), Math.max(1, Number(entry.count) || 1)]),
             Number(spot.rewards?.adenaMin || 0), Number(spot.rewards?.adenaMax || 0)]) };
@@ -991,8 +1002,8 @@ async function main() {
                 schema: SCHEMA_VERSION,
                 generator: 'scripts/generate-spot-table.js',
                 revision,
-                inputs: { hours: options.hours, curveHours: options.curveHours, catalogueSeed: CATALOGUE_SEED,
-                    periodMode: PERIOD_MODE, rate: 'x1', maxLevel: MAX_LEVEL, refGap: REF_GAP, bandLevels: BAND_LEVELS,
+                inputs: { hours: options.hours, curveHours: options.curveHours, catalogueSeed: CATALOGUE_SEED, geodata: catalogue.geodata,
+                    periodMode: CATALOGUE_PERIODS, rate: 'x1', maxLevel: MAX_LEVEL, refGap: REF_GAP, bandLevels: BAND_LEVELS,
                     curveSpots: CURVE_SPOTS, roleClasses: roleClasses(), roleLines: ROLE_LINES,
                     spotLimit: options.spots || null },
                 counts: { catalogueSpots, spots: spots.length, rows: spots.length * roles().length * SHOTS.length,

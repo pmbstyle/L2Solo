@@ -27,7 +27,7 @@ const NPC_SURPLUS_GEAR_MIN_SLOTS = 20;
 // alone stopped every sale for hours (live, 2026-10-03: 2,513 -> 21 static sales in 2 h).
 const HALF_FULL_CLEANUP_SLOTS = 40;
 const CLAN_PROGRESSION_ITEM_IDS = new Set([1419]);
-const GRADE_ORDER = Object.freeze({ none: 0, d: 1, c: 2, b: 3, a: 4, s: 5 });
+const { rankOf } = invoke('GameServer/Bot/AI/GearGradeRule');
 const SHOT_PRODUCT_RANK = Object.freeze({
     1463: 'd', 1464: 'c', 1465: 'b', 1466: 'a', 1467: 's',
     2510: 'd', 2511: 'c', 2512: 'b', 2513: 'a', 2514: 's',
@@ -78,7 +78,7 @@ function isEnchantScroll(item) {
 }
 
 function gradeIndex(rank) {
-    return GRADE_ORDER[String(rank || 'none').trim().toLowerCase().replaceAll('_', '-')] || 0;
+    return rankOf(rank);
 }
 
 function recipeInfo(item) {
@@ -736,7 +736,6 @@ function saleSummary(state, options = {}) {
 }
 
 module.exports = {
-    GRADE_ORDER,
     INVENTORY_SLOT_LIMIT,
     NPC_ONLY_CLEANUP_MIN_SLOTS,
     NPC_LIQUIDATION_MAX_UNIT_PRICE,

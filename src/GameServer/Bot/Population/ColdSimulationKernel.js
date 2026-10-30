@@ -40,7 +40,7 @@ const ColdEconomyDecision = require('./ColdEconomyDecision');
 const BotErrands = require('./BotErrands');
 const PartyMarketBreak = require('./PartyMarketBreak');
 const { eligible: eligibleBuyer } = require('../Economy/MarketBuyerWaiters');
-const { SpotOccupancyIndex, stateKey } = require('./SpotOccupancyIndex');
+const { SpotOccupancyIndex, stateKey, huntersOn } = require('./SpotOccupancyIndex');
 const C4Unseal = require('../../Items/C4Unseal');
 const ClanEquipment = require('./ClanEquipmentPartyPolicy');
 
@@ -1437,10 +1437,11 @@ class ColdSimulationKernel {
             && Protocol.sameCommandCheckpoint(current.state, attempt.checkpoint);
     }
 
-    // The bots on a spot for its kill share (E69), from the occupancy index.
-    spotHunters(spot) {
-        if (!spot?.id) return 1;
-        return Math.max(1, this.occupancy.physicalCount(spot.id));
+    // The bots on a spot for its kill share (E69), from this kernel's
+    // occupancy index (SpotOccupancyIndex.huntersOn); with a state, that bot
+    // counted once (SpotEconomics' crowd share, deps.spotHunters).
+    spotHunters(spot, state = null) {
+        return huntersOn(this.occupancy, spot?.id, state);
     }
 
     async resolveCommand(characterId, attempt) {

@@ -2,6 +2,7 @@ const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const Progression = invoke('GameServer/ClassProgression');
 const Equipment = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 const tree = require('../../../../data/Skills/Tree/tree.json');
+const Diagnostics = require('../Economy/EconomyDiagnostics');
 
 // Mechanics come from the C4 tree. These small preferences are tunable bot
 // decisions, not claims about an optimal player rotation. No SA assumptions.
@@ -23,11 +24,29 @@ function hasSkill(actor, skillId, level) {
     return availableAt !== undefined && availableAt <= Number(level ?? actor?.fetchLevel?.() ?? actor?.level ?? actor?.stats?.level ?? 1);
 }
 
+// A hot bot in a background party fights in party mode only while another
+// member lives beside it: alone, it fights solo, as the cold fight's party of
+// one does (BackgroundResolver.coldBotTurn, T126).
+function hotPartyAlone(session) {
+    // lazy: worker HotBackgroundParty loads the live world; only a hot session reaches here.
+    const roster = invoke('GameServer/Bot/AI/HotBackgroundParty').roster(session);
+    // A party not hot (yet) has no roster: it keeps the party mode it was given.
+    if (!roster.length) return false;
+    const selfId = session.actor?.fetchId?.();
+    return !roster.some((member) => member.actor && member.actor.fetchId() !== selfId
+        && !member.actor.state?.fetchDead?.() && !member.actor.isDead?.());
+}
+
 function modeFor(actor, context = {}) {
     if (['solo_pve', 'party_pve', 'solo_pvp', 'party_pvp'].includes(context.mode)) return context.mode;
     const session = context.session || actor?.session;
-    const party = context.party === true || context.mode === 'party' || context.mode === 'duo'
-        || !!actor?.party?.partyId || !!session?.hotBackgroundPartyId || session?.partyCompanion === true;
+    let party = context.party === true || context.mode === 'party' || context.mode === 'duo'
+        || !!actor?.party?.partyId || session?.partyCompanion === true;
+    if (!party && session?.hotBackgroundPartyId) {
+        party = !hotPartyAlone(session);
+        // class_mode:hot_party_alone: how often a hot party of one fights solo; only while diagnostics count.
+        if (!party && Diagnostics.active()) Diagnostics.count('class_mode', 'hot_party_alone', 'solo');
+    }
     return `${party ? 'party' : 'solo'}_${context.pvp === true ? 'pvp' : 'pve'}`;
 }
 

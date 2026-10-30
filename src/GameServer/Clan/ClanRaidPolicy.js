@@ -1,5 +1,6 @@
 const ClanPolicy = invoke('GameServer/Clan/ClanSimulationPolicy');
 const Gear = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+const GradeRule = invoke('GameServer/Bot/AI/GearGradeRule');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const SpotRisk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 
@@ -7,7 +8,6 @@ const MIN_MEMBERS = 7;
 const MAX_MEMBERS = 9;
 const MAX_LEVEL_ABOVE_BOSS = 8;
 const MAX_LEVEL_BELOW_BOSS = 5;
-const GRADE_RANK = Object.freeze({ none: 0, d: 1, c: 2, b: 3, a: 4, s: 5 });
 const MIN_EFFECTIVE_LEVEL_ADVANTAGE = 2;
 const EFFECTIVE_LEVEL_GEAR_COMPENSATION = 4;
 const ARMOR_GRADE_TOLERANCE = Object.freeze({
@@ -74,7 +74,7 @@ function raidRole(member) {
 }
 
 function requiredGearRank(profile = {}) {
-    return GRADE_RANK[Gear.gradeForLevel(number(profile.avgLevel, 1))] || 0;
+    return GradeRule.rankOf(Gear.gradeForLevel(number(profile.avgLevel, 1)));
 }
 
 function tankArmorRequirement(member, profile = {}) {

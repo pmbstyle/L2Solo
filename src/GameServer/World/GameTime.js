@@ -36,6 +36,13 @@ function mode(now = Date.now()) {
     return isNight(now) ? 'night' : 'day';
 }
 
+// The share of the game day a spawn period lasts: night until sunrise, day
+// the rest; any other period (always) the whole day.
+function periodShare(period) {
+    const night = SUNRISE_MINUTE / GAME_MINUTES_PER_DAY;
+    return period === 'night' ? night : period === 'day' ? 1 - night : 1;
+}
+
 function msUntilTransition(now = Date.now()) {
     const elapsed = elapsedInGameDay(now);
     const sunriseAt = SUNRISE_MINUTE * GAME_MINUTE_MS;
@@ -47,6 +54,7 @@ module.exports = {
     REAL_DAY_MS,
     GAME_MINUTE_MS,
     SUNRISE_MINUTE,
+    periodShare,
     localMidnight,
     nextLocalMidnight,
     gameMinute,
