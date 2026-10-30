@@ -411,7 +411,7 @@ function hunt(spot, role, level, shots, hours, simulation = sim, kit = null, cla
     const random = Math.random;
     Math.random = mulberry(seed ^ 0x9e3779b9);
     const sum = { kills: 0, mobs: 0, busyMs: 0, deaths: 0, exp: 0, sp: 0, adena: 0, loot: 0, shots: 0, potions: 0, stacks: 0,
-        fightMs: 0, walkMs: 0, buffCasts: 0, heals: 0, actions: 0, shotActions: 0, skillUses: 0, restMs: 0, taken: 0, spellTaken: 0, hpLost: 0, mpLost: 0, mix: {}, density: 0, runSpd: 0 };
+        fightMs: 0, walkMs: 0, buffCasts: 0, heals: 0, actions: 0, shotActions: 0, skillUses: 0, pulls: 0, pullMobs: 0, restMs: 0, taken: 0, spellTaken: 0, hpLost: 0, mpLost: 0, mix: {}, density: 0, runSpd: 0 };
     try {
         const made = newBot(classId, level, shots, simulation, kit, lineClassFor(role));
         const seen = new Set(Object.values(made.bot.inventory).filter(item => item.amount > 0).map(item => Number(item.selfId)));
@@ -451,6 +451,8 @@ function hunt(spot, role, level, shots, hours, simulation = sim, kit = null, cla
                 sum.actions += Number(debug.combatActions || 0);
                 sum.shotActions += Number(debug.shotActions || 0);
                 sum.skillUses += Number(debug.skillUses || 0);
+                sum.pulls += Number(debug.pulls || 0);
+                sum.pullMobs += Number(debug.pullMobs || 0);
                 sum.restMs += restMs;
                 sum.taken += Number(debug.damageTaken || 0);
                 sum.spellTaken += Number(debug.spellTaken || 0);
