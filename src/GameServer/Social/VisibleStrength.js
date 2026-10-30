@@ -11,7 +11,7 @@ const Tendency = require('../Bot/AI/TendencyRoll');
 // look: 0.5 + SLOPE x (ratio - threshold). Tunable.
 const SLOPE = 2;
 
-const { GRADES, rankOf } = invoke('GameServer/Bot/AI/GearGradeRule');
+const { GRADES, rankOf } = require('../Bot/AI/GearGradeRule');
 const GRADE = Object.freeze(Object.fromEntries(GRADES.map((grade, rank) => [grade, rank])));
 const WEAPON_SLOTS = Object.freeze([7, 14]); // one-handed, two-handed
 const BODY_SLOTS = Object.freeze([10, 15]); // chest, full body armour
