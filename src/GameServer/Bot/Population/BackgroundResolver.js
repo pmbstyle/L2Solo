@@ -1925,7 +1925,7 @@ function admittedDensity(spot, shares) {
 // to the next mob, at runSpd: the mean distance to the nearest of the density
 // monsters a bot may fight (admittedDensity) spread over the area its spawns
 // cover (SpotService spawnArea; without one the SPOT_CELL_SIZE square of the
-// spot, SpotService.spotIdAt), 1 / (2 sqrt(density / area)). The spot table
+// spot, SpotService.cellAt), 1 / (2 sqrt(density / area)). The spot table
 // generator reads the same rule.
 // reach: the bot walks only until the mob is in its range
 // (ColdCombatProfile.attackReach: a bow or a spell strikes from afar).
