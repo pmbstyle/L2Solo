@@ -60,7 +60,8 @@ const SHOP_DEPARTURE_RADIUS = 900;
 function leaveShop(session, bot, now = Date.now()) {
     if (!isSoloHunter(session) || !session.pendingFarmDepartureAnnouncement || session.spotRelocation
         || BotTownTravel.hasCombatThreat(session, bot) || bot.state?.fetchCasts?.()) return false;
-    if (RestPolicy.needsRest(bot, bot.fetchHp?.() / bot.fetchMaxHp?.(), bot.fetchMp?.() / bot.fetchMaxMp?.())) return false;
+    if (RestPolicy.needsRest(bot, bot.fetchHp?.() / bot.fetchMaxHp?.(), bot.fetchMp?.() / bot.fetchMaxMp?.(),
+        { pet: SummonerTactics.petRestView(bot) })) return false;
     const point = botLocation(bot);
     const town = TownPathfinder.getTown(point);
     if (!town || SpotService.distance2d(point, town.center) <= SHOP_DEPARTURE_RADIUS) return false;
@@ -893,10 +894,11 @@ module.exports = {
         // Between fights a solo bot heals itself where that beats sitting (T107).
         if (!encounterActionInFlight && !session.currentTargetId && isSoloHunter(session)
             && SoloSelfHeal.tryBetweenFights(session, bot, Generics)) return;
-        // A summoner keeps its pet alive between fights too (PetHealRule).
-        if (!encounterActionInFlight && !session.currentTargetId && isSoloHunter(session)
+        // A summoner keeps its pet alive between fights too (PetHealRule), solo or in a party.
+        if (!encounterActionInFlight && !session.currentTargetId
             && !bot.state?.fetchCasts?.() && SummonerTactics.healPetBetweenFights(session, bot, Generics)) return;
-        if (!encounterActionInFlight && RestPolicy.needsRest(bot, hpRatio, mpRatio)) {
+        // A pet it cannot heal now sends it to rest as its own HP would (RestPolicy).
+        if (!encounterActionInFlight && RestPolicy.needsRest(bot, hpRatio, mpRatio, { pet: SummonerTactics.petRestView(bot) })) {
             beginVoluntaryRecovery(session, bot, BotAI);
             return;
         }

@@ -175,8 +175,7 @@ function combatAction(session, actor, target, Generics) {
 
     const summonMaxHp = Number(summon.fetchMaxHp?.() || 0);
     const summonHp = Number(summon.fetchHp?.() || summonMaxHp);
-    const heal = petSkill(actor, (skill) => PetHealRule.isPetHeal(skill)
-        && PetHealRule.wantsHeal(summonHp, summonMaxHp));
+    const heal = PetHealRule.wantsHeal(summonHp, summonMaxHp) ? PetHealRule.choose(actor) : null;
     if (heal) return cast(session, actor, summon, heal, Generics);
 
     if (target) {
@@ -210,20 +209,31 @@ function combatAction(session, actor, target, Generics) {
     return { handled: true, reason: 'summon_follow', summon };
 }
 
-// Between fights a summoner heals its living pet below its line (PetHealRule),
-// as the cold one does. Returns true when it cast.
+// Between fights a summoner, solo or in a party, heals its living pet below
+// its line (PetHealRule), as the cold one does. Returns true when it cast.
+// Any owner of a living pet (a necromancer's too), as the cold one; never
+// seated (a seated cast is refused, SkillExec): the rest stands it up first.
 function healPetBetweenFights(session, actor, Generics) {
-    if (!BotRoles.isSummoner(actor)) return false;
+    if (actor?.state?.fetchSeated?.() === true) return false;
     const summon = SummonControl.activeSummon(actor);
     if (!summon || summon.isDead?.()) return false;
     const maxHp = Number(summon.fetchMaxHp?.() || 0);
     if (!PetHealRule.wantsHeal(Number(summon.fetchHp?.() ?? maxHp), maxHp)) return false;
-    const heal = petSkill(actor, (skill) => PetHealRule.isPetHeal(skill));
+    const heal = PetHealRule.choose(actor);
     return heal ? cast(session, actor, summon, heal, Generics).handled : false;
+}
+
+// The actor's living pet as the rest rule reads it (RestPolicy.needsRest
+// options.pet, PetHealRule.restView), or null.
+function petRestView(actor) {
+    const summon = SummonControl.activeSummon(actor);
+    if (!summon || summon.isDead?.()) return null;
+    return PetHealRule.restView(actor, Number(summon.fetchHp?.() ?? 0), Number(summon.fetchMaxHp?.() || 0));
 }
 
 module.exports = {
     healPetBetweenFights,
+    petRestView,
     PET_BUFF_IDS,
     isSummonSkill,
     isCorpseSummonSkill,

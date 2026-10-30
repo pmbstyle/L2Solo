@@ -1114,6 +1114,11 @@ const FollowingState = {
             return true;
         }
         Object.assign(ctx, { impairments });
+        // With no party threat, a summoner heals its pet below its line (PetHealRule).
+        if (!partyThreat && !bot.state?.fetchCasts?.() && SummonerTactics.healPetBetweenFights(session, bot, Generics)) {
+            recordRoleDecision(session, bot, 'heal_summon', 'between_fights');
+            return true;
+        }
         return false;
     },
 

@@ -3,6 +3,7 @@ const World = invoke('GameServer/World/World');
 const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
 const Restrictions = invoke('GameServer/Effects/EffectRestrictions');
 const Tactics = invoke('GameServer/Bot/AI/BotPvpTactics');
+const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
 const Support = invoke('GameServer/Bot/AI/BotSupportPlanner');
 const HuntingVisibility = invoke('GameServer/Bot/AI/BotHuntingVisibility');
@@ -458,7 +459,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     if (!incoming && target && !HuntingVisibility.canSee(owner.actor, target)) target = null;
     if (!target && !incoming) {
         const low = members.some(s => RestPolicy.needsRest(s.actor, ratio(s.actor.fetchHp(), s.actor.fetchMaxHp()),
-            ratio(s.actor.fetchMp(), s.actor.fetchMaxMp()), { party: true }));
+            ratio(s.actor.fetchMp(), s.actor.fetchMaxMp()), { party: true, pet: SummonerTactics.petRestView(s.actor) }));
         if (low) {
             Tactics.stop(session, bot);
             session.currentTargetId = undefined;
@@ -522,6 +523,8 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     owner.backgroundHuntTarget = target;
     if (!raidObjective) standForAction(session, bot);
     if (Tactics.support(session, bot, { owner, members: near, threats: [], raid: raidObjective }, Generics, now)) return true;
+    // A summoner keeps its pet alive between fights, as alone (PetHealRule).
+    if (!target && !bot.state?.fetchCasts?.() && SummonerTactics.healPetBetweenFights(session, bot, Generics)) return true;
     if (raidObjective && session.hotRaidResurrectionRecovery) {
         if (ratio(bot.fetchHp(), bot.fetchMaxHp()) < 0.65) {
             Tactics.stop(session, bot);

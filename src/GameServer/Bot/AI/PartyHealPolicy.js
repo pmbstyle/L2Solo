@@ -1,3 +1,7 @@
+// The HP share below which a party healer heals a member (bot parties hot
+// and cold, and a summoner its pet: PetHealRule).
+const HEAL_BELOW = 0.7;
+
 // Compare useful healing, not nominal spell power. Periodic healing is
 // valuable upkeep, but cannot substitute for a fast rescue at critical HP.
 function score({ missingHp, maxHp, power, cost, castMs, periodic = false, ticks = 1, recipients = 1 }) {
@@ -7,4 +11,4 @@ function score({ missingHp, maxHp, power, cost, castMs, periodic = false, ticks 
     return useful * Math.max(1, recipients) / Math.max(1, cost) / (1 + Math.max(0, castMs) / 10000);
 }
 
-module.exports = { score };
+module.exports = { HEAL_BELOW, score };

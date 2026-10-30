@@ -128,8 +128,12 @@ for (const [name, state] of [['future Sorcerer', sorcerer], ['player', player], 
     const dead = ready(later(null));
     assert.deepEqual({ avoided: dead.avoided, reason: dead.reason }, { avoided: true, reason: 'solo_recovery_needed' },
         'a cat dead this round no longer tanks the next fight');
-    const wounded = ready(later({ ...whole, hp: 1 }));
-    assert.equal(wounded.reason, 'solo_recovery_needed', 'a cat at 1 HP tanks with that HP');
+    // Its owner heals it (PetHealRule, T136): with no MP for a heal a cat at
+    // 1 HP tanks with that HP; with the MP its heals hold it.
+    const dry = (summon) => ({ ...later(summon), vitals: { ...warlock.vitals, mp: 0 } });
+    const wounded = ready(dry({ ...whole, hp: 1 }));
+    assert.equal(wounded.reason, 'solo_recovery_needed', 'a cat at 1 HP its owner cannot heal tanks with that HP');
+    assert(!ready(later({ ...whole, hp: 1 })).avoided, 'a cat at 1 HP its owner heals still tanks');
     assert(!ready(later(whole)).avoided, 'a whole cat still does');
 }
 

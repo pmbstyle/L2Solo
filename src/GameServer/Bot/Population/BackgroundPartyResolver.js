@@ -418,6 +418,7 @@ const BackgroundPartyResolver = {
         let combatMs = 0;
         let skillUses = 0;
         let heals = 0;
+        let petHeals = 0;
         let musicUses = 0;
         let summonUses = 0;
         let summonActions = 0;
@@ -463,6 +464,13 @@ const BackgroundPartyResolver = {
             summonUses += Number(encounter.debug?.summonUses || 0);
             summonActions += Number(encounter.debug?.summonActions || 0);
             potionsUsed += Number(encounter.debug?.potionsUsed || 0);
+            // A won fight's gap: the summoners heal their pets (PetHealRule), before the members are saved.
+            if (encounter.won && !raid) {
+                const healed = BackgroundResolver.healPartyPetsBetweenFights(encounter.members, timestamp);
+                combatMs += healed.ms;
+                skillUses += healed.petCasts;
+            }
+            petHeals += encounter.members.reduce((sum, member) => sum + Number(member.petHeals || 0), 0);
             for (const member of encounter.members) {
                 const id = Number(member.state.characterId);
                 memberShotActions.set(id, (memberShotActions.get(id) || 0) + Number(member.shotActions || 0));
@@ -538,7 +546,9 @@ const BackgroundPartyResolver = {
                     meta: { partyId: party.partyId, spotId: spot.id, fights, wins }
                 });
             } else {
-                if (!raid && BackgroundResolver.needsRest(state, vitals, { party: true })) {
+                // A summoner rests for a pet it cannot heal, as alone (RestPolicy).
+                if (!raid && BackgroundResolver.needsRest(state, vitals, { party: true,
+                    pet: BackgroundResolver.petViewForState(resolved, vitals, timestamp) })) {
                     activity = 'resting';
                     resting += 1;
                 }
@@ -786,6 +796,7 @@ const BackgroundPartyResolver = {
                 combatActions,
                 skillUses,
                 heals,
+                petHeals,
                 musicUses,
                 partyBuffCasts: huntBuffs?.buffCasts || 0,
                 summonUses,

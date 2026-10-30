@@ -3,6 +3,7 @@ const Rules = invoke('GameServer/Skills/C4SkillRules');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const WeaponMask = invoke('GameServer/Skills/WeaponMask');
 const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
+const PetHealRule = invoke('GameServer/Bot/AI/PetHealRule');
 const Pull = invoke('GameServer/Bot/AI/BotPullEstimate');
 const HitRules = invoke('GameServer/Combat/HitRules');
 const CombatantView = invoke('GameServer/Combat/CombatantView');
@@ -68,7 +69,8 @@ function actorProfiles(actors) {
         const profile = actorProfile(actor);
         if (actor.summon && !actor.summon.isDead?.() && !actor.summon.state?.fetchDead?.()) {
             return [profile, { ...actorProfile(actor.summon), role: 'dps', servitor: true,
-                hp: Number(actor.summon.fetchHp?.() ?? actor.summon.fetchMaxHp?.()) || undefined }];
+                hp: Number(actor.summon.fetchHp?.() ?? actor.summon.fetchMaxHp?.()) || undefined,
+                ...petHealFields(profile, actor.fetchMp?.()) }];
         }
         return coldProfiles(profile, { vitals: { mp: actor.fetchMp?.() } });
     });
@@ -81,19 +83,34 @@ function actorProfiles(actors) {
 // without either. coldProfiles builds the gate's pair with it, and a solo
 // fight's readiness reads it anew before each fight (a pet dead or raised
 // since the round's profiles were built).
+// A pet's owner heals it (PetHealRule, user 10-30): its best heal and the
+// MP that pays for it, the fields sideLifetime reads; none without a heal.
+// The owner's heal numbers once per profile object.
+const petSustains = new WeakMap();
+function petHealFields(profile, ownerMp) {
+    let petSustain = petSustains.get(profile);
+    if (petSustain === undefined) {
+        const Cold = coldCombatProfile();
+        petSustains.set(profile, petSustain = PetHealRule.sustainOf(profile.skills, record => Cold.actionDelayMs(profile, record)));
+    }
+    return petSustain ? { petSustain, ownerMp: number(ownerMp, profile.maxMp) } : {};
+}
+
 function servitorProfile(profile, state = {}, timestamp = Date.now()) {
     const summon = state.stats?.coldCombat?.summon;
+    const Cold = coldCombatProfile();
+    const healed = () => petHealFields(profile, state.vitals?.mp);
     if (summon?.active && number(summon.hp, summon.maxHp) > 0 && summon.expiresAt > timestamp) {
-        return { ...summon, role: 'dps', skills: [], soloDamageReceiver: false, servitor: true };
+        return { ...summon, role: 'dps', skills: [], soloDamageReceiver: false, servitor: true, ...healed() };
     }
     if (!Roles.isSummoner(profile)) return null;
-    const Cold = coldCombatProfile();
     const skill = Cold.summonSkills(profile).find(s => s.reuseReady !== false
         && number(s.mp, 0) <= number(state.vitals?.mp, profile.maxMp)
         && number(state.stats?.coldCombat?.cooldowns?.[s.selfId], 0) <= timestamp);
     // lazy: worker ColdSummonProfile loads ColdCombatProfile, resolved on first use (coldCombatProfile).
     return skill ? { ...invoke('GameServer/Bot/Population/ColdSummonProfile')(profile, Cold.summonDetails(skill)),
-        role: 'dps', skills: [], soloDamageReceiver: false, servitor: true, summonCastMs: Cold.actionDelayMs(profile, skill) } : null;
+        role: 'dps', skills: [], soloDamageReceiver: false, servitor: true, summonCastMs: Cold.actionDelayMs(profile, skill),
+        ...healed() } : null;
 }
 
 // options.shot: the shot supply the caller's fight already holds
@@ -311,14 +328,16 @@ function evaluate(profiles, target, attacksOf = channels) {
 // attack over that time; areaShare: the share of that damage by area
 // skills, which keeps a pull's mobs standing together (Pull.repack).
 // How long the bot's side outlives a mob view (user 10-29: the pet tanks, as
-// in C4): each servitor's HP over the damage it takes, then the owner's
-// (the longest of its receivers'). One rule for the gate, its bound and the
-// hot danger read.
+// in C4): each servitor's HP over the damage it takes, held longer by its
+// owner's heals (PetHealRule.healedLifetime: petSustain, ownerMp), then the
+// owner's (the longest of its receivers'). One rule for the gate, its bound
+// and the hot danger read.
 function sideLifetime(view, profiles, Mob = coldMobAction()) {
     let pets = 0, owner = 0;
     for (const profile of profiles) {
         if (profile.servitor === true) {
-            if (profile.maxHp > 0 && profile.pDef > 0) pets += Math.min(profile.maxHp, number(profile.hp, profile.maxHp)) / Mob.incomingPerSecond(view, profile);
+            if (profile.maxHp > 0 && profile.pDef > 0) pets += PetHealRule.healedLifetime(Math.min(profile.maxHp, number(profile.hp, profile.maxHp)),
+                Mob.incomingPerSecond(view, profile), profile.petSustain || null, profile.ownerMp);
         } else if (profile.soloDamageReceiver !== false) {
             owner = Math.max(owner, profile.maxHp / Mob.incomingPerSecond(view, profile));
         }

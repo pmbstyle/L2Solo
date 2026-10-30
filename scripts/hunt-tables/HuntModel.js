@@ -214,12 +214,9 @@ function gapHealRate(profile) {
 // A summoner's pet heal (PetHealRule): { amount, castSec, reuseSec } of its
 // best one, null without one.
 function petHealOf(profile) {
-    const Rule = invoke('GameServer/Bot/AI/PetHealRule');
     const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
-    const skill = (profile.skills || []).filter(one => Rule.isPetHeal(one)).sort((a, b) => b.level - a.level)[0];
-    if (!skill) return null;
-    return { amount: Math.max(1, Formulas.calcHealAmount(skill.power)), castSec: Resolver.combat.actionDelayMs(profile, skill) / 1000,
-        reuseSec: Math.max(1, Number(skill.reuse) || 0) / 1000 };
+    const heal = invoke('GameServer/Bot/AI/PetHealRule').sustainOf(profile.skills, record => Resolver.combat.actionDelayMs(profile, record));
+    return heal ? { amount: heal.amount, castSec: heal.castMs / 1000, reuseSec: heal.reuseMs / 1000 } : null;
 }
 
 // A solo bot's own buffs (BackgroundResolver.castSoloBuffs from no effects):

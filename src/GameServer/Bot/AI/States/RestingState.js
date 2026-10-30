@@ -12,6 +12,7 @@ const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const DangerMoment = invoke('GameServer/Bot/AI/DangerMoment');
 const EscapePolicy = invoke('GameServer/Bot/AI/BotEscapePolicy');
 const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
+const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 
 const REST_FOLLOW_WAKE_DISTANCE = 600;
 const EMERGENCY_RETREAT_DISTANCE = 850;
@@ -88,7 +89,7 @@ function needsRecovery(session, bot) {
     return RestPolicy.needsRest(bot,
         bot.fetchHp() / Math.max(1, bot.fetchMaxHp()),
         bot.fetchMp() / Math.max(1, bot.fetchMaxMp()),
-        { locked: !!session.recoveryLocked });
+        { locked: !!session.recoveryLocked, pet: SummonerTactics.petRestView(bot) });
 }
 
 function beginNewbieGuideRecovery(session, bot, playerSession) {
@@ -179,7 +180,7 @@ module.exports = {
             const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
             const recovered = hpRatio >= 0.95 && (
                 !RestPolicy.sitsForMana(bot) || mpRatio >= 0.95
-            );
+            ) && RestPolicy.petRested(SummonerTactics.petRestView(bot));
 
             // A companion can join while it is already sitting from a prior
             // hunt. If it is in a starter town, send low-level bots to the
@@ -276,7 +277,7 @@ module.exports = {
             && session.followPlayerSession?.actor?.state?.fetchSeated?.() === true;
         if (hpRatio >= 0.95 && (
             !RestPolicy.sitsForMana(bot) || mpRatio >= 0.95
-        ) && !restingWithLeader) {
+        ) && RestPolicy.petRested(SummonerTactics.petRestView(bot)) && !restingWithLeader) {
             session.recoveryLocked = false;
             delete session.explicitRestOrder;
             bot.state.setSeated(false);

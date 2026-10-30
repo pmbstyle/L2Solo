@@ -53,9 +53,22 @@ function healsWithMana(subject) {
     return heals;
 }
 
+// options.pet: a summoner's living pet, { ratio, healable } (PetHealRule.restView):
+// the summoner keeps its pet alive (docs/game-decisions.md, 10-30), so a pet
+// below the bot's own HP line that its owner cannot heal now (no heal, no MP
+// for it, silenced) sends the owner to rest as its own HP would; a heal on
+// its reuse does not (the bot walks on and casts it when ready).
 function needsRest(subject, hpRatio, mpRatio, options = {}) {
     const limits = options.locked ? THRESHOLDS.locked : options.party ? THRESHOLDS.party : THRESHOLDS.solo;
-    return hpRatio < limits.hp || (mpRatio < limits.mp && sitsForMana(subject, options.party === true));
+    return hpRatio < limits.hp || (mpRatio < limits.mp && sitsForMana(subject, options.party === true))
+        || petNeedsRest(options.pet, limits.hp);
+}
+function petNeedsRest(pet, line = THRESHOLDS.solo.hp) {
+    return !!pet && pet.healable !== true && Number(pet.ratio) < line;
+}
+// A rest ends only once the pet it waits for is whole too (or its owner can heal it).
+function petRested(pet) {
+    return !petNeedsRest(pet, THRESHOLDS.locked.hp);
 }
 
 function raidReady(subject, vitals = subject?.vitals || {}, paidCost = null) {
@@ -80,4 +93,4 @@ function sitsToRest(seated, standing, missingHp, missingMp, mana) {
     return ticks(seated) <= ticks(standing);
 }
 
-module.exports = { THRESHOLDS, restsForMana, sitsForMana, needsRest, raidReady, sitsToRest };
+module.exports = { THRESHOLDS, restsForMana, sitsForMana, needsRest, petRested, raidReady, sitsToRest };
