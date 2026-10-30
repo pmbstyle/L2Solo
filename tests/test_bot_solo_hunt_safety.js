@@ -84,11 +84,12 @@ try {
     assert.equal(fight.debug.heals - fight.debug.gapHeals, 0, 'a heal weaker than damage during its cast cannot replace the finishing attack');
     // T100: the priced pick (Aura Burn) kills fast enough for more lizards
     // within the minute; the remaining HP still admits them. T106: the walk
-    // between the six (10 s each) holds the minute to four kills, and the
-    // last walk engages a fifth.
-    assert.equal(fight.debug.wins, 4, 'the native rotation finishes the lizards');
+    // between the six (10 s each) and T126's kill floor (each kill also costs
+    // its killing cast) hold the minute to three kills, and the last walk
+    // engages a fourth.
+    assert.equal(fight.debug.wins, 3, 'the native rotation finishes the lizards');
     assert.equal(fight.debug.died, false);
-    assert.equal(fight.debug.attemptedFights, 5, 'remaining HP must be checked before the next voluntary mob');
+    assert.equal(fight.debug.attemptedFights, 4, 'remaining HP must be checked before the next voluntary mob');
     assert.equal(fight.patch.activity, 'hunting', 'quick kills leave enough HP to keep hunting');
 } finally { Cold.profileFor = savedProfile; Cold.fightProfile = savedFight; Spots.cache = savedSpots; }
 

@@ -100,10 +100,14 @@ try {
     finally { Economy.keptTargets = beforeKept; }
     // Fractional table rates are forecasts, but funded purchase tranches must
     // reach the same physical stock without fractional or duplicate units.
+    // A level-30 bot's death costs its exp (EconomicValuation.deathHours; a
+    // table row's deaths carry no respawn wait since T126, so a bot with no
+    // exp to lose and no walk back has a free death and no survival utility).
     potions = 2.25; stacks = 0;
+    const level30Exp = invoke('GameServer/DataCache').experience[29];
     for (const phase of ['hot', 'cold']) for (const hours of [.5, 1, 2, 4]) {
         for (const held of [0, 1, 2, 3, 8, 10]) {
-            const state = { ...fixture, phase, stats: { ...fixture.stats, visitEvery: [22, hours] },
+            const state = { ...fixture, phase, stats: { ...fixture.stats, visitEvery: [22, hours], exp: level30Exp },
                 inventory: { 1061: { selfId: 1061, amount: held, stackable: true } } };
             const stock = Economy.basics(state, { spots: [] }).stock('potions');
             assert.equal(stock.usePerHour, 2.25, 'native fractional table forecast reaches the stock rule');

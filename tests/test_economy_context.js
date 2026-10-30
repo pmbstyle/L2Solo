@@ -166,8 +166,12 @@ async function run() {
     assert(Math.abs(gladiator.hourAdena - Hunt.netIncome(Table.value(gladiatorHunt.spotId, 'dps', 50, true),
         Hunt.consumablePrices(gladiator.state))) < 1);
     assert.equal(gladiator.moneyPrice, 1 / gladiator.hourAdena);
+    // Its survival potions are held too: the best spot since T123's held-share
+    // ranking drinks ~1 potion an hour, so only the escape scroll stays reserved.
+    const warriorPotions = warriorContext.stock('potions');
     const stocked = { ...warrior, inventory: { ...warrior.inventory,
-        [warriorStock.itemId]: { selfId: warriorStock.itemId, amount: Math.ceil(warriorStock.usePerHour) } } };
+        [warriorStock.itemId]: { selfId: warriorStock.itemId, amount: Math.ceil(warriorStock.usePerHour) },
+        [warriorPotions.itemId]: { selfId: warriorPotions.itemId, amount: warriorPotions.survivalTarget } } };
     assert.equal(Economy.basics(stocked, kitDeps).kitCost(warriorStock.itemId), 0);
     assert.equal(Economy.basics(stocked, kitDeps).survivalReserve, warriorContext.price(736),
         'own one-hour shot stock releases its wallet reserve and retains the escape scroll');
