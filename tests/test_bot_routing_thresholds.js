@@ -18,20 +18,24 @@ const mage = { classId: 12, level: 29, role: 'mage', maxHp: 592, maxMp: 932,
 const target = { maxHp: 500, pAtk: 60, atkSpd: 253, pDef: 100, mDef: 70,
     basePDef: 100, baseMDef: 70, vulnerabilities: {} };
 
-// Solo survival needs 1.5x the target's HP in deliverable damage.
+// Solo survival needs the target's HP once in deliverable damage (T132: no
+// extra margin), the same for the gate default, a hunt and a spot bound.
 const damage = Match.soloSurvival([mage], target).survivalRatio * target.maxHp;
 assert(Math.abs(Match.soloSurvival([mage], { ...target, maxHp: 1000 }).survivalRatio * 1000 - damage) < 1e-6,
     'deliverable damage must not depend on the target HP, or the margin below is not a margin');
-assert(Match.soloSurvival([mage], { ...target, maxHp: Math.floor(damage / 1.5) }).eligible,
-    'damage of 1.5x the target HP is enough');
-assert(!Match.soloSurvival([mage], { ...target, maxHp: Math.ceil(damage / 1.5) + 1 }).eligible,
-    'damage under 1.5x the target HP is not enough');
+assert.strictEqual(Match.SOLO_GATE_MARGIN, 1, 'the solo gate buys no margin over an even race');
+assert(Match.soloSurvival([mage], { ...target, maxHp: Math.floor(damage) }).eligible,
+    'damage of the target HP is enough');
+assert(!Match.soloSurvival([mage], { ...target, maxHp: Math.ceil(damage) + 1 }).eligible,
+    'damage under the target HP is not enough');
+assert(Match.soloCanHunt([mage], { ...target, maxHp: Math.floor(damage / 1.2) }).eligible,
+    'a target the old 1.5 margin refused (ratio 1.2) is a solo hunt now');
 
 // A mixed spot needs at least 60% of its spawn weight solo-safe.
 const SAFE_NPC = 156;
-const UNSAFE_NPC = 608;
-// A camp no optimistic bound admits (Ant Patrol, level 34): the cheap pre-check rejects it alone.
-const LETHAL_NPC = 84;
+const UNSAFE_NPC = 201;
+// A camp no optimistic bound admits (Ant Soldier, level 35): the cheap pre-check rejects it alone.
+const LETHAL_NPC = 87;
 const mixed = (safe, unsafe) => ({ npcEntries: [{ selfId: SAFE_NPC, count: safe }, { selfId: UNSAFE_NPC, count: unsafe }]
     .filter((entry) => entry.count > 0) });
 assert.strictEqual(Match.spotMatchup(mixed(1, 0), [mage], { soloSafety: true }).eligible, true);

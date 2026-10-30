@@ -12,9 +12,11 @@ const Valuation = invoke('GameServer/Bot/Economy/EconomicValuation');
 // E70, §13.6 "it got dangerous": drink a potion, run to heal, sit or keep
 // fighting, each priced in the bot's hours. First choices, calibrated later
 // by the hot harness:
-// the survival margin 1.5 the target choice admits reads as a 0.15% lose
-// chance, 1.2 as 5%, an even race (margin 1) as 50%.
+// the survival margin the solo gate admits (BotTargetMatchup.SOLO_GATE_MARGIN)
+// reads as a 0.15% lose chance, 0.8 of it as 5%, two thirds of it as 50%:
+// the gate sweep (T132) saw cold hunts rarely lost below an even ratio.
 const LOSE_SLOPE = 16;
+const ADMITTED_LOSE = 0.0015;
 // Only a viable escape receives this discount; faster pursuers rule it out.
 const FLEE_EXPOSURE = 0.5;
 // One roll moves the bot's sense of the death price by up to +-50%.
@@ -25,7 +27,8 @@ const ATTACKER_RADIUS = 900;
 // The chance to lose the fight from the survival ratio: how many times the
 // enemies' remaining HP the bot deals before its own remaining HP runs out.
 function loseChance(survivalRatio) {
-    return survivalRatio > 0 ? 1 / (1 + survivalRatio ** LOSE_SLOPE) : 1;
+    const scale = (1 / ADMITTED_LOSE - 1) ** (1 / LOSE_SLOPE) / TargetMatchup.SOLO_GATE_MARGIN;
+    return survivalRatio > 0 ? 1 / (1 + (survivalRatio * scale) ** LOSE_SLOPE) : 1;
 }
 
 // One decision for hot and cold, in hours. Inputs: own HP now and max, the

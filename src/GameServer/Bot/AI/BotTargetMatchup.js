@@ -300,7 +300,13 @@ function ownerReceivers(profiles) {
     return profiles?.filter(profile => profile.soloDamageReceiver !== false && profile.servitor !== true);
 }
 
-function soloSurvival(profiles, target, minimum = 1.5, attacksOf = channels) {
+// The solo hunt gate (T132, docs/game-decisions.md): the damage a bot deals
+// over the target's HP before its own runs out, needed to fight alone. Cold
+// hunt deaths do not fall above 1.0 (gate sweep, 700 kit and mob pairs), so no
+// extra margin is bought on top.
+const SOLO_GATE_MARGIN = 1.0;
+
+function soloSurvival(profiles, target, minimum = SOLO_GATE_MARGIN, attacksOf = channels) {
     // The mobs strike the pets first, then the owner (sideLifetime).
     const receivers = ownerReceivers(profiles);
     if (!receivers?.length || !(target.maxHp > 0) || !(target.pAtk > 0)
@@ -359,7 +365,7 @@ function soloChannels(profile, target, attacksOf = channels) {
 }
 
 function soloCanHunt(profiles, target, { maxTargetLevel, npcLevel, attacksOf = channels } = {}) {
-    const survival = soloSurvival(profiles, target, 1.5, attacksOf);
+    const survival = soloSurvival(profiles, target, SOLO_GATE_MARGIN, attacksOf);
     if (maxTargetLevel && Number(npcLevel || 0) > maxTargetLevel) {
         return { ...survival, eligible: false, reason: 'recovery_level' };
     }
@@ -425,7 +431,7 @@ function soloSpotUpperBound(profiles) {
             bound.continuous * seconds / positive(target.pDef),
             Math.min(bound.physicalRate * seconds, bound.physicalBudget) / positive(target.pDef),
             Math.min(bound.magicRate * seconds, bound.magicBudget) / positive(target.mDef)) * vulnerability, 0);
-        return damage / target.maxHp >= 1.5;
+        return damage / target.maxHp >= SOLO_GATE_MARGIN;
     }
     return spot => {
         let total = 0, safe = 0;
@@ -572,5 +578,5 @@ function damageRate(profiles, target = {}) {
         .map(attack => (attack.survivalWeight ?? attack.weight) * attack.modifier)), 0);
 }
 
-module.exports = { MIN_EFFICIENCY, actorProfiles, coldProfiles, profileKey, targetView, skillModifier, channels, damageRate, attackRate, spellRate, incomingRate,
+module.exports = { MIN_EFFICIENCY, SOLO_GATE_MARGIN, actorProfiles, coldProfiles, profileKey, targetView, skillModifier, channels, damageRate, attackRate, spellRate, incomingRate,
     profileStats, skillStats, evaluate, soloSurvival, soloCanHunt, soloSpotUpperBound, stateProfiles, spotMatchup, speciesPulls };

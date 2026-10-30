@@ -28,7 +28,7 @@ assert(Match.soloSurvival(Match.stateProfiles({ level: 29 }), { ...target, maxHp
     'a partial route projection cannot manufacture a weak default build');
 assert(!Match.soloSurvival(Match.stateProfiles({ level: 29, stats: { classId: 12 } }), { ...target, maxHp: 10000 }).eligible,
     'a known unequipped mage is still subject to the safety check');
-const fragile = { ...mage, maxHp: 20 };
+const fragile = { ...mage, maxHp: 10 };
 const servitor = { role: 'dps', maxHp: 2000, pDef: 300, pAtk: 300, atkSpd: 300, skills: [] };
 assert(!Match.soloSurvival([fragile], target).eligible);
 assert(Match.soloSurvival([fragile, servitor], target).eligible, 'native profiles retain tanking allies');
@@ -100,8 +100,8 @@ try {
     Cold.profileFor = Cold.fightProfile = () => mage;
     const safe = { id: 'safe-lower-farm', name: 'Mandragora field', minLevel: 25, maxLevel: 25,
         avgLevel: 25, density: 6, npcEntries: [{ selfId: 156, count: 6 }] };
-    const unsafe = { id: 'unsafe-level-farm', name: 'Patin field', minLevel: 29, maxLevel: 29,
-        avgLevel: 29, density: 6, npcEntries: [{ selfId: 608, count: 6 }] };
+    const unsafe = { id: 'unsafe-level-farm', name: 'Spartoi field', minLevel: 29, maxLevel: 29,
+        avgLevel: 29, density: 6, npcEntries: [{ selfId: 1142, count: 6 }] };
     Spots.cache = [safe, unsafe];
     const Route = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
     for (const clanLevel of [0, 1]) for (const grade of ['d', 'c', 'b', 'a', 's']) {
@@ -109,7 +109,7 @@ try {
             clanId: clanLevel ? 7 : 0, clanLevel, inventory: {},
             vitals: { hp: mage.maxHp, mp: mage.maxMp }, stats: { classId: 12, role: 'mage',
                 wishFocus: ['power:200:14', 1, 1000000], equipmentPlan: { status: 'active',
-                    strategy: 'direct_drop', grade, next: { spotId: unsafe.id, npcId: 608 } } } };
+                    strategy: 'direct_drop', grade, next: { spotId: unsafe.id, npcId: 1142 } } } };
         for (let sample = 0; sample < 3; sample++) for (const spot of Spots.cache) {
             hunter.stats.huntEfficiency = Efficiency.record(hunter, { spotId: spot.id, timestamp: at,
                 cycleMs: 60000, adena: spot === unsafe ? 100000 : 1000, costs: 100,
@@ -126,10 +126,10 @@ const bow = { role: 'archer', pAtk: 100, pDef: 100, maxHp: 1000, atkSpd: 300,
     weaponMask: 32, equipment: { weaponKind: 'Weapon.Bow' }, skills: [] };
 const resistedTarget = { ...target, vulnerabilities: { bowWpnVuln: 0.1 } };
 const bowRatio = Match.soloSurvival([bow], resistedTarget).survivalRatio;
-const safeBow = { ...bow, maxHp: bow.maxHp * 1.6 / bowRatio };
+const safeBow = { ...bow, maxHp: bow.maxHp * 1.1 * Match.SOLO_GATE_MARGIN / bowRatio };
 assert(!Match.evaluate([safeBow], resistedTarget).eligible, 'fixture: the ordinary resistance gate rejects efficiency 0.1');
 assert(Match.soloCanHunt([safeBow], resistedTarget).eligible, 'solo hunting accepts a resisted mob it safely survives');
-assert(!Match.soloCanHunt([{ ...safeBow, maxHp: safeBow.maxHp * 1.2 / 1.6 }], resistedTarget).eligible);
+assert(!Match.soloCanHunt([{ ...safeBow, maxHp: safeBow.maxHp * 0.8 / 1.1 }], resistedTarget).eligible);
 assert(!Match.soloCanHunt([safeBow], resistedTarget, { maxTargetLevel: 27, npcLevel: 29 }).eligible);
 assert.equal(Match.soloCanHunt([safeBow], resistedTarget, { maxTargetLevel: 27, npcLevel: 29 }).reason, 'recovery_level');
 assert(!Match.soloCanHunt([{ ...safeBow, maxHp: undefined }], resistedTarget).eligible,
@@ -184,7 +184,7 @@ const spot = (id, npcId, level, density) => ({ id, name: id, minLevel: level, ma
     density, tags: [], tagsAuthoritative: true, center: { locX: 50000, locY: 150000, locZ: -3000 },
     npcEntries: [{ selfId: npcId, count: density }], levelCounts: { [level]: density } });
 const easy = spot('easy', 156, 25, 8);
-const hard = spot('danger', 608, 29, 1000);
+const hard = spot('danger', 1142, 29, 1000);
 const original = Spots.cache;
 try {
     Spots.cache = [hard, easy];
