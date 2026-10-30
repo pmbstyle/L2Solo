@@ -627,16 +627,26 @@ function referenceLevel(spotId, role, shots = true) {
 // Static role/level/shot result, shared by every bot of that role: the row
 // of the most exp per hour. Built once per game-data combination, never by
 // walking the population.
-function best(role, level, shots = true) {
+function best(role, level, shots = true, metric = 'exp') {
     const t = load(), rates = ProgressionRates.profile();
     refreshCatalog(rates);
     if (t !== incomeTable || rates !== incomeRates) {
         incomeTable = t; incomeRates = rates;
         dropRows();
     }
-    const key = `${role}:${level}:${shotKey(shots)}`;
+    const key = `${role}:${level}:${shotKey(shots)}:${metric}`;
     if (bestRows.has(key)) { DiagnosticConfig.developerDiagnostics && (stats.bestHits += 1); return bestRows.get(key); }
     DiagnosticConfig.developerDiagnostics && (stats.bestMisses += 1);
+    if (metric === 'income') {
+        // The richest spot by adena and loot (SpotEconomics' fallback hour): every row priced once.
+        let bestRow = null;
+        for (const spot of t.spots) {
+            const row = computeValue(t, rates, spot[0], role, level, shots);
+            if (row && (!bestRow || row.adena + row.loot > bestRow.adena + bestRow.loot)) bestRow = { ...row, spotId: spot[0] };
+        }
+        bestRows.set(key, bestRow);
+        return bestRow;
+    }
     // Exp is table-only (no reward groups): the scan reads the table's combat part of each spot, the
     // first spot of the most exp wins, and only the winner's full row is priced. It bypasses the per-bot memo.
     const r = roleSlot(t, role);

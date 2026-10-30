@@ -1150,29 +1150,20 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
                 : resisted === encounterEntries.length ? 'target_resistance' : 'no_safe_solo_target' };
     }
     const pickEntry = (candidates) => {
-        const weight = entry => Math.max(1, number(entry.count, 1)) * Math.min(1, entry.match?.efficiency ?? 1) ** 2;
-        const total = candidates.reduce((sum, entry) => sum + weight(entry), 0);
+        const total = candidates.reduce((sum, entry) => sum + killWeight(entry), 0);
         let needle = rng() * total;
         return candidates.find((entry) => {
-            needle -= weight(entry);
+            needle -= killWeight(entry);
             return needle <= 0;
         }) || candidates[0];
     };
-    const preferredNpcId = number(options.preferredNpcId);
-    const preferred = preferredNpcId > 0
-        ? entries.find((entry) => number(entry.selfId) === preferredNpcId)
-        : null;
-    // A direct-drop plan travels to the intended monster, but it is still a
-    // real hunting ground. Nearby aggressive mobs can engage first instead of
-    // making the bot immune to the rest of the encounter table.
-    const aggressive = preferred
-        ? encounterEntries.filter((entry) => number(entry.selfId) !== preferredNpcId
-            && ItemTemplateIndex.find(DataCache.npcs, entry.selfId)?.template?.hostile === true)
-        : [];
-    const interruptionChance = Math.max(0, Math.min(1, number(options.aggressiveInterruptionChance, 0.25)));
-    const selected = preferred && (!aggressive.length || rng() >= interruptionChance)
+    // One draw with the hunt tables' (killDraw, killChances): a direct-drop
+    // plan travels to its monster, yet nearby aggressive mobs may engage first.
+    const draw = killDraw(entries, encounterEntries, options);
+    const { preferred } = draw;
+    const selected = preferred && (!draw.interrupters.length || rng() >= draw.interruption)
         ? preferred
-        : pickEntry(aggressive.length ? aggressive : entries);
+        : pickEntry(draw.pool);
     const npc = ItemTemplateIndex.find(DataCache.npcs, selected?.selfId);
     if (!npc) return null;
     const combat = npcCombatStats(npc);
