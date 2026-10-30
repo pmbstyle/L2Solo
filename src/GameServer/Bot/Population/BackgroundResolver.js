@@ -2085,6 +2085,8 @@ const BackgroundResolver = {
     estimateRestMs,
     // Between-fight heals (the pet's, then the bot's own): tests and the offline hunt model (T128).
     coldHealBetweenFights,
+    // A solo bot's own buffs before a fight: the offline hunt model prices their casting time (T128).
+    castSoloBuffs,
     applyStandingRegen,
     prepareRaidParty,
     castHuntPartyBuffs,

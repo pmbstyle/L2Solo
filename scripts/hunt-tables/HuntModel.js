@@ -202,6 +202,40 @@ function matchupOf(bot) {
     return { state, profiles: Matchup.coldProfiles({ ...bot.profile, role: invoke('GameServer/Bot/AI/BotRoles').combatRoleFor(state) }, state, 0) };
 }
 
+// HP per second a bot's heals between fights give back (BackgroundResolver
+// coldHealBetweenFights from 1 HP), 0 for a bot without them.
+function gapHealRate(profile) {
+    const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
+    const vitals = { hp: 1, mp: profile.maxMp };
+    const { ms } = Resolver.coldHealBetweenFights(profile, vitals, {}, 0);
+    return ms > 0 ? (vitals.hp - 1) / (ms / 1000) : 0;
+}
+
+// A summoner's pet heal (PetHealRule): { amount, castSec, reuseSec } of its
+// best one, null without one.
+function petHealOf(profile) {
+    const Rule = invoke('GameServer/Bot/AI/PetHealRule');
+    const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
+    const skill = (profile.skills || []).filter(one => Rule.isPetHeal(one)).sort((a, b) => b.level - a.level)[0];
+    if (!skill) return null;
+    return { amount: Math.max(1, Formulas.calcHealAmount(skill.power)), castSec: Resolver.combat.actionDelayMs(profile, skill) / 1000,
+        reuseSec: Math.max(1, Number(skill.reuse) || 0) / 1000 };
+}
+
+// A solo bot's own buffs (BackgroundResolver.castSoloBuffs from no effects):
+// cast seconds per second they last, 0 without them.
+function ownBuffRate(state, profile) {
+    const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
+    const full = { ...state, vitals: { hp: profile.maxHp, maxHp: profile.maxHp, mp: profile.maxMp, maxMp: profile.maxMp } };
+    full.stats = { ...full.stats, coldCombat: Profile.legacySnapshot(full, profile.skills || [], 0) };
+    const cast = Resolver.castSoloBuffs(full, 0, profile);
+    if (!(cast?.buffCasts > 0)) return 0;
+    const lives = (cast.fighter.profile.effects || []).map(effect => Number(effect.expiresAt) / 1000).filter(life => life > 0);
+    if (!lives.length) return 0;
+    const meanLife = lives.reduce((sum, life) => sum + life, 0) / lives.length;
+    return cast.durationMs / 1000 / meanLife;
+}
+
 function mobHour(bot, mob, correction = null) {
     const { profile, rot } = bot;
     const target = mob.combat;
@@ -235,7 +269,22 @@ function mobHour(bot, mob, correction = null) {
     // regeneration of the whole elapsed step (applyStandingRegen).
     const { budget, cycle } = stepTimes();
     const standing = ColdRest.coldRestRegenPerTick(state, { profile, standing: true }).hp / 3;
-    let share = 1, fight = 0, rest = 0, taken = 0, mpSpent = 0, wall = 0, worst = 0;
+    // A summoner's pet takes every blow while it lives (BackgroundResolver.strikeSide);
+    // the owner is struck only while it casts a new one after a death.
+    const pet = profiles.find(one => one.servitor) || null;
+    const petMix = pet ? Mob.actionMix(view, { profile: pet }) : null;
+    const summonSec = pet ? (Number(pet.summonCastMs) || 0) / 1000 : 0;
+    // Its owner heals it (PetHealRule, T135): HP per cast, cast seconds, reuse seconds.
+    const petHeal = pet ? petHealOf(profile) : null;
+    // HP the owner gets back per second by its heals between fights
+    // (BackgroundResolver.coldHealBetweenFights) when it has them, else 0: it sits.
+    const gapHeal = gapHealRate(profile);
+    // Seconds of own-buff casting per second of hunting (resolveSolo casts
+    // them when due): their cast time over their lifetime.
+    const buffRate = ownBuffRate(state, profile);
+    // A pulled melee mob strikes once it has closed in (ColdCombatProfile.openingMs).
+    const opening = Profile.openingMs(profile, view) / 1000;
+    let share = 1, petDeaths = 0, healSec = 0, petHealSec = 0, fight = 0, rest = 0, taken = 0, mpSpent = 0, wall = 0, worst = 0;
     // Share of the fight on the rotation (MP) when the bot does not rest for
     // mana: what its rest refills of the MP the fight spends (two passes).
     // A bot that rests for mana opens each fight at full MP (its rest also
@@ -252,15 +301,31 @@ function mobHour(bot, mob, correction = null) {
             const burst = openingAt(rot, rot.openDamage, fight);
             if (burst > 0) fight = view.maxHp / (dps * burst);
         }
-        taken = mix.perSecond * fight;
+        if (pet) {
+            // Pet deaths per kill: the damage on it a kill brings past its
+            // regeneration over the kill's wall time and rest (petRegen).
+            const petRegen = (Number(pet.revHp) || 0) / (Formulas.REGEN_TICK_MS / 1000) * (fight + rest);
+            const petLoss = Math.max(0, petMix.perSecond * Math.max(0, fight - opening) - petRegen);
+            // The heals cover the loss up to one per reuse over the kill's time; the rest kills the pet.
+            const cover = petHeal ? petHeal.amount * Math.max(1, (fight + rest) / petHeal.reuseSec) : 0;
+            petHealSec = petHeal ? Math.min(petLoss, cover) / petHeal.amount * petHeal.castSec : 0;
+            petDeaths = Math.max(0, petLoss - cover) / Math.max(1, Number(pet.maxHp) || 1);
+        }
+        const exposed = Math.max(0, fight - opening);
+        taken = mix.perSecond * (pet ? Math.min(exposed, petDeaths * summonSec) : exposed);
         const steps = Math.max(1, Math.ceil(fight / budget));
-        wall = fight + (steps - 1) * (cycle - budget);
+        wall = fight + (steps - 1) * (cycle - budget) + petDeaths * summonSec + healSec + petHealSec;
+        wall += buffRate * (wall + rest);
         // The most the fight's HP falls: its first step's damage, or all of it
         // less the regeneration between steps when the steps outpace it.
         worst = Math.max(taken * Math.min(1, budget / fight), taken - standing * cycle * (steps - 1));
         const opened = opens ? openingAt(rot, rot.openMp, fight, rot.mpPerSec) : null;
         mpSpent = opened !== null ? Math.min(profile.maxMp, opened) : rot.mpPerSec * fight * share;
-        rest = ColdRest.restSeconds(state, Math.max(0, taken - standing * wall), mpSpent, { regen, requireMana: manaRest });
+        // HP a bot with heals between fights casts back (part of the fight's
+        // wall time, as resolveSolo counts them); it sits only for the rest.
+        const lost = Math.max(0, taken - standing * wall);
+        healSec = gapHeal > 0 ? lost / gapHeal : 0;
+        rest = ColdRest.restSeconds(state, gapHeal > 0 ? 0 : lost, mpSpent, { regen, requireMana: manaRest });
         if (manaRest || mpSpent <= 0 || !(wet > 0)) break;
         share = Math.min(1, (regen.mp / 3) * (rest + fight) / (rot.mpPerSec * fight));
     }
@@ -285,6 +350,19 @@ function mobHour(bot, mob, correction = null) {
     const hpLoss = Math.max(0, taken - standing * wall);
     let restEvery = hpLoss > 0 ? Math.floor((1 - limits.hp) * profile.maxHp / hpLoss) + 1 : Infinity;
     if (manaRest && mpSpent > 0) restEvery = Math.min(restEvery, Math.floor((1 - limits.mp) * profile.maxMp / mpSpent) + 1);
+    // Only the first fight after a rest opens at full MP: the others fight at
+    // the long-run rate (the opening's burst over the fights between rests).
+    if (opens && restEvery > 1) {
+        const plainDps = share * wet + (1 - share) * dry;
+        const plain = view.maxHp / plainDps;
+        const between = Number.isFinite(restEvery) ? restEvery : 50;
+        const blended = (fight + (between - 1) * plain) / between;
+        const scale = blended / fight;
+        wall += blended - fight;
+        taken *= scale;
+        worst *= scale;
+        fight = blended;
+    }
     const tail = Number.isFinite(restEvery) ? REST_TAIL_S / restEvery : 0;
     // A solo bot rests only below the threshold: the fights between two rests
     // start lower and lower (their mean death chance).
@@ -307,7 +385,7 @@ function mobHour(bot, mob, correction = null) {
             if (amount > 0) drops[id] = amount;
         }
     }
-    return { fight, wall, rest, taken, deathChance, share, fightsPerHour: cycles, kph: kills, deathsPerHour: cycles * deathChance,
+    return { fight, wall, rest, taken, petDeaths, healSec, petHealSec, deathChance, share, fightsPerHour: cycles, kph: kills, deathsPerHour: cycles * deathChance,
         exp: kills * mob.exp, expAfterGap: kills * mob.exp * MobExperience.gapFactor(gap), sp: kills * mob.sp, drops };
 }
 
