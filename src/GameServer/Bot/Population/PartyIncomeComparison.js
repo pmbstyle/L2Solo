@@ -9,7 +9,6 @@ const HOUR_MS = 3600000;
 const REVIEW_MS = 5 * 60000;
 const MAX_SOLO_CHECKS = 12;
 const soloChoices = new WeakMap();
-const soloHoldCounts = { hits: 0, misses: 0 };
 const positive = value => Math.max(0, Number(value) || 0);
 const rosterKey = members => members.map(member => Number(member.characterId)).sort((a, b) => a - b).join(',');
 const adventurer = state => invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(state);
@@ -67,9 +66,7 @@ function soloRoute(state, spots, timestamp, peers = []) {
     if (!held || held.spots !== spots || timestamp < held.at || timestamp - held.at >= REVIEW_MS) {
         // The spot the bot's held build earns at (decision 10-30) first; a full search when it fails.
         const options = { spots, timestamp, required: true, mode: 'solo', maxChecks: MAX_SOLO_CHECKS };
-        const heldSpot = invoke('GameServer/Bot/Economy/EconomyContext').heldIncomeSpot(state.characterId, timestamp); // lazy: cycle EconomyContext > PartyIncomeComparison
-        const kept = heldSpot != null && Route.select(standalone, { ...options, only: [heldSpot] });
-        soloHoldCounts[kept ? 'hits' : 'misses'] += 1;
+        const kept = invoke('GameServer/Bot/Economy/EconomyContext').heldIncomeRoute(standalone, { ...options, party: true }); // lazy: EconomyContext reads this module
         held = { spots, at: timestamp, choice: kept || Route.select(standalone, options) };
         soloChoices.set(state, held);
     }
@@ -103,7 +100,6 @@ function soloRoute(state, spots, timestamp, peers = []) {
 }
 
 // Cold rows only: every write to a far row moves its revision.
-const soloHoldStats = () => ({ ...soloHoldCounts });
 
 function withEffects(state, effects) {
     const Loadout = invoke('GameServer/Bot/AI/PartyBuffLoadout');
@@ -295,4 +291,4 @@ function compare(state, peers, options = {}) {
     return { ...answer, at: prepared.timestamp, soloSource: solo?.source || null, partySource: party?.source || null };
 }
 
-module.exports = { soloHoldStats, compare, prepare, evaluate, soloRoute, itemHours, soloItemRouteHours, rosterKey, REVIEW_MS, MAX_SOLO_CHECKS };
+module.exports = { compare, prepare, evaluate, soloRoute, itemHours, soloItemRouteHours, rosterKey, REVIEW_MS, MAX_SOLO_CHECKS };
