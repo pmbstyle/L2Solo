@@ -1876,7 +1876,7 @@ function startKernel(config = {}) {
             ...(Config.developerDiagnostics ? {
             tables: tables.summary(),
             developerDiagnostics: economyDiagnostics.delta(),
-            caches: { spotValue: SpotValueTable.cacheStats(), kitProfiles: ColdCombatProfile.kitStoreSize() },
+            caches: { spotValue: SpotValueTable.cacheStats(), kitProfiles: ColdCombatProfile.kitStoreSize(), incomeHold: EconomyContext.incomeHoldStats() },
             heapUsed: process.memoryUsage().heapUsed,
             rss: process.memoryUsage().rss,
             eventLoopLagP95Ms: lagP95Ms

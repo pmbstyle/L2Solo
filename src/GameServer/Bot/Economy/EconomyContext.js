@@ -11,6 +11,7 @@ const ItemIndex = require('../../Item/ItemTemplateIndex');
 const Valuation = require('./EconomicValuation');
 const Providers = require('./WishProviders');
 const Sections = require('./DecisionSections');
+const GameTime = invoke('GameServer/World/GameTime');
 const Funding = require('./PurchaseFunding');
 const SpotRiskPolicy = require('../Population/SpotRiskPolicy');
 const ColdEconomyDecision = require('../Population/ColdEconomyDecision');
@@ -893,11 +894,46 @@ function incomeRouteFor(state, deps, timestamp, price, keep) {
         if (same) { keep?.(prepared); return prepared.route; }
     }
     const reads = keep ? [] : null;
-    const route = IncomeRoute.select(state, { ...deps, timestamp, required,
-        price: keep ? id => { const value = price(id); reads.push(id, value); return value; } : price });
+    const read = keep ? id => { const value = price(id); reads.push(id, value); return value; } : price;
+    // The bot keeps its earning spot (decision 10-30): while nothing that
+    // chose it moved, it judges only the held spot, and searches again when
+    // that spot fails or pays far below what it was chosen for.
+    const marks = holdMarks(state, required);
+    const held = heldRoutes.get(Number(state.characterId));
+    let route = null;
+    let why = !held ? 'none' : held.marks !== marks ? 'marks' : timestamp - held.at >= HOLD_MS ? 'window' : '';
+    if (!why) {
+        route = IncomeRoute.select(state, { ...deps, timestamp, required, price: read, only: [held.spotId] });
+        // The held spot's own income, as at its choice (no walk, no own hour).
+        if (!route) why = 'failed';
+        else if (!(Number(route.row?.income) >= HOLD_SHARE * held.income)) { route = null; why = 'poorer'; }
+    }
+    holdStats[why || 'kept'] += 1;
+    if (!route) {
+        route = IncomeRoute.select(state, { ...deps, timestamp, required, price: read });
+        if (route && Number(state.characterId)) {
+            heldRoutes.delete(Number(state.characterId));
+            heldRoutes.set(Number(state.characterId), { spotId: route.spot.id, income: Number(route.row?.income) || 0, marks, at: timestamp });
+            if (heldRoutes.size > HOLD_LIMIT) heldRoutes.delete(heldRoutes.keys().next().value);
+        } else heldRoutes.delete(Number(state.characterId));
+    }
     keep?.({ state, timestamp, spots: deps.spots, mode: deps.mode,
         maxChecks: deps.maxChecks, required, reads, route });
     return route;
+}
+// The held earning spot per bot (incomeRouteFor): searched again on a new
+// level, kit, death, goal or gear need (holdMarks), when the held spot fails
+// or pays below HOLD_SHARE of its income at the choice, or after 30 game minutes.
+const HOLD_MS = 30 * GameTime.GAME_MINUTE_MS;
+// Holds kept and searches by reason (the worker status line's caches).
+const holdStats = { kept: 0, none: 0, marks: 0, window: 0, failed: 0, poorer: 0 };
+function incomeHoldStats() { return { size: heldRoutes.size, ...holdStats }; }
+const HOLD_SHARE = 0.7;
+const HOLD_LIMIT = 4096;
+const heldRoutes = new Map();
+function holdMarks(state, required) {
+    return [state.level, Sections.kit(state), Number(state.stats?.deaths ?? state.deathCount ?? 0),
+        String(state.stats?.wishFocus?.[0] || ''), required ? 1 : 0, state.party?.partyId || state.partyId || 0].join('|');
 }
 // The bot's own fit for the spot of its hunting leaf (docs/architecture.md §2
 // route): the route's one test, BotRoute.leafFitReader, as a yes or no per
@@ -1845,6 +1881,7 @@ function forgetContext(id, reason = 'explicit_invalidation', expectedState = nul
     // Publication replaces the facts object, not the economic decision. The
     // next reader's verdict validates the held build against the state.
     if (reason !== 'state_publication') {
+        heldRoutes.delete(id);
         if (cache.delete(key) && Diagnostics.active()) { Diagnostics.count('context', 'eviction', reason); }
         engine.forget(key, reason);
     }
@@ -1862,9 +1899,9 @@ function forget(id) {
 function reset() {
     if (Diagnostics.active() && cache.size) Diagnostics.count('context', 'eviction', 'reset', cache.size);
     if (Diagnostics.active() && groups.size) Diagnostics.count('context_group', 'eviction', 'reset', groups.size);
-    cache.clear(); groups.clear(); engine.clear(); routeAnchors = new WeakMap();
+    cache.clear(); groups.clear(); engine.clear(); routeAnchors = new WeakMap(); heldRoutes.clear();
 }
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
-module.exports = { FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, stockFor, keptTargets, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
+module.exports = { incomeHoldStats, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, stockFor, keptTargets, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
     craftIncome };

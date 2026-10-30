@@ -159,6 +159,36 @@ function verify() {
             loot: 0, exp: 100, kills: 10 }) } };
     assert.equal(Route.select(earning, { spots, timestamp, required: true }).spot.id, 'rich',
         'a suitable current spot does not pin the bot when another has better net profit');
+    // Decision 10-30: the bot keeps its earning spot. Once 'rich' is chosen
+    // and 'poor' turns better, the bot stays on 'rich' a game minute later;
+    // a death, the end of 30 game minutes or 'rich' falling far below
+    // its income at the choice send it to the better spot.
+    {
+        const GameTime = invoke('GameServer/World/GameTime');
+        const holder = { ...earning, characterId: 990901, stats: { ...earning.stats, wishFocus: ['power:200:14', 1, 1000000] } };
+        const at = timestamp + 1000;
+        assert.equal(Economy.basics(holder, { spots, timestamp: at }).hunt.spotId, 'rich', 'it chooses the better spot');
+        const better = (bot, richAdena) => {
+            let next = { ...bot, stats: { ...bot.stats, huntEfficiency: [] } };
+            for (let n = 0; n < 3; n++) for (const spot of spots) next = { ...next, stats: { ...next.stats,
+                huntEfficiency: Hunt.record(next, { spotId: spot.id, timestamp: at, cycleMs: 60000,
+                    adena: spot.id === 'poor' ? 1200 : richAdena, costs: 100, loot: 0, exp: 100, kills: 10 }) } };
+            return next;
+        };
+        const turned = better(holder, 750);
+        assert.equal(Economy.basics(turned, { spots, timestamp: at + GameTime.GAME_MINUTE_MS }).hunt.spotId, 'rich',
+            'a game minute later it keeps its spot');
+        assert.equal(Economy.basics({ ...turned, stats: { ...turned.stats, deaths: Number(turned.stats.deaths || 0) + 1 } },
+            { spots, timestamp: at + 2 * GameTime.GAME_MINUTE_MS }).hunt.spotId, 'poor', 'a death searches again');
+        Economy.basics(holder, { spots, timestamp: at + 3 * GameTime.GAME_MINUTE_MS });
+        assert.equal(Economy.basics(turned, { spots, timestamp: at + 4 * GameTime.GAME_MINUTE_MS }).hunt.spotId, 'rich', 'held again');
+        assert.equal(Economy.basics(turned, { spots, timestamp: at + 34 * GameTime.GAME_MINUTE_MS }).hunt.spotId, 'poor',
+            'after 30 game minutes it searches again');
+        Economy.basics(holder, { spots, timestamp: at + 35 * GameTime.GAME_MINUTE_MS });
+        assert.equal(Economy.basics(better(holder, 200), { spots, timestamp: at + 36 * GameTime.GAME_MINUTE_MS }).hunt.spotId, 'poor',
+            'a held spot paying far below its choice is left');
+        Economy.reset();
+    }
     let weak = { ...earning, level: 25, stats: { ...earning.stats, huntEfficiency: [] } };
     for (let at = 0; at < 3; at++) weak = { ...weak, stats: { ...weak.stats,
         huntEfficiency: Hunt.record(weak, { spotId: 'rich', timestamp, cycleMs: 60000,
