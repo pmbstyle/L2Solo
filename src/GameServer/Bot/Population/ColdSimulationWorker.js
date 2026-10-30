@@ -1875,7 +1875,6 @@ function startKernel(config = {}) {
             eventLoopLagMaxMs: lagMaxMs,
             ...(Config.developerDiagnostics ? { occupationPlanning: occupationPlanner.snapshot() } : {}),
             safety: safetyTotals(),
-            incomeHold: EconomyContext.incomeHoldStats(),
             competition: competitionCandidates?.snapshot() || null,
             ...(Config.developerDiagnostics ? {
             tables: tables.summary(),
