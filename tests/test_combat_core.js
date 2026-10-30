@@ -101,6 +101,27 @@ const nuke = coldMobAction(caster, casterFight, casterTarget, { time: 0, at: 0, 
 assert(nuke.damage > 0 && nuke.spell === true, 'a damage spell is marked as one');
 casterFight.mp = 0;
 assert(!coldMobAction(caster, casterFight, casterTarget, { time: 5000, at: 0, rng: constant(0) }).spell, 'a hit is not a spell');
+// The monster regains MP over the fight as the hot one does (its template
+// revMp each regen tick): a caster run dry casts again once the ticks paid a spell.
+assert(caster.revMp > 0, 'the caster regenerates MP');
+const dry = coldMobFight(caster, { mp: 0 });
+assert(!coldMobAction(caster, dry, casterTarget, { time: 0, at: 0, rng: constant(0) }).spell, 'a dry caster hits');
+const cheapest = Math.min(...dry.skills.map(skill => skill.fetchConsumedMp()));
+assert(coldMobAction(caster, dry, casterTarget, { time: Math.ceil(cheapest / caster.revMp) * Formulas.REGEN_TICK_MS, at: 0,
+    rng: constant(0) }).spell, 'the MP it regained pays a spell');
+
+// A stun the monster lays on a solo fighter's pet holds the pet's next strike
+// (strikeSide), as it holds a fighter.
+const pet = { active: true, hp: 1e6, maxHp: 1e6, level: stunner.level, pDef: 100, mDef: 100, evasion: 0, atkSpd: 300 };
+const owner = { ...fighter, vitals: { hp: 1, maxHp: 1 }, summon: pet, summonReadyAt: 0 };
+const petFight = coldMobFight(stunner);
+let petTime = 0;
+for (let step = 0; step < 6 && !(owner.summonReadyAt > petTime); step++) {
+    const struck = BackgroundResolver.combat.strikeSide(owner, stunner, petFight, { time: petTime, at: 0, rng: constant(0) });
+    assert(struck.pet, 'the pet takes the action');
+    petTime += struck.action.delayMs;
+}
+assert(owner.summonReadyAt > petTime, 'a landed stun holds the pet');
 
 // A blow that needs a critical lands by position and DEX; one that needs the rear never lands in front.
 const deadly = { requires: { condition: 0x10 } }, backstab = { requires: { condition: 0x08 } };

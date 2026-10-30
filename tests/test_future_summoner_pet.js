@@ -18,6 +18,7 @@ const Table = invoke('GameServer/Bot/AI/SpotValueTable');
 const HuntCycle = invoke('GameServer/Bot/AI/HuntCycle');
 const Skill = invoke('GameServer/Model/Skill');
 const PveEncounter = require('../src/GameServer/Bot/Population/ColdPveEncounter');
+const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 // One fight is module-private (as test_cold_combat_parity): a second copy of
 // the resolver that also exports it.
 const full = path.join(__dirname, '../src/GameServer/Bot/Population/BackgroundResolver.js');
@@ -73,6 +74,78 @@ for (const [name, state] of [['future Sorcerer', sorcerer], ['player', player], 
     assert.equal(result.debug.summonUses || 0, 0, `a ${name} Wizard summons nothing`);
     assert.equal(result.debug.petTaken || 0, 0, `a ${name} Wizard has no pet to take the hits`);
     assert(result.debug.damageTaken > 0, `a ${name} Wizard takes the hits itself`);
+}
+
+// The pet keeps the HP it lost across its owner's turns: a long fight wears
+// it down whole (its full HP, not one gap's worth), it dies once (its
+// summons on their 6 h reuse raise no other), and then the mob strikes the
+// owner.
+{
+    const profile = Cold.profileFor(warlock, TS);
+    const katHp = invoke('GameServer/Bot/Population/ColdSummonProfile')(profile,
+        Cold.summonDetails(Cold.summonSkills(profile).find((skill) => skill.selfId === KAT))).maxHp;
+    const reuse = Object.fromEntries(Cold.summonSkills(profile).map((skill) => [skill.selfId, TS + 21600000]));
+    const strong = Cold.npcForSpot(spot, () => 0.5, { preferredNpcId: MOB });
+    const encounter = PveEncounter.save(null, PveEncounter.key([warlock], spot, MOB), { ...strong, maxHp: 1e7 }, 1e7, TS,
+        { botReadyAt: 0, mobReadyAt: 0 });
+    const state = { ...warlock, stats: { ...warlock.stats, pveEncounter: encounter, coldCombat: { ...warlock.stats.coldCombat,
+        cooldowns: reuse, summon: { active: true, skillId: KAT, expiresAt: TS + 1e6, hp: katHp } } } };
+    let seed = 11;
+    const rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const worn = resolveFight({ state, spot, pressure: {}, targetNpcId: MOB, rng, timestamp: TS, fightLimitMs: 180000, maxActions: 2000 });
+    assert.equal(worn.debug.summonUses, 0);
+    assert.equal(worn.debug.summonDeaths, 1, 'the pet dies of the blows summed over the fight');
+    assert(worn.debug.petTaken >= katHp && worn.debug.petTaken < 2 * katHp, `the pet took its own HP (${worn.debug.petTaken} of ${katHp})`);
+    assert(worn.debug.damageTaken > 0, 'with the pet down the mob strikes its owner');
+}
+
+// Each fight's readiness reads the pet beside the bot now
+// (BotTargetMatchup.servitorProfile), not the round's: a mob the Warlock
+// beats only with its cat (Delu Lizardman Supplier, 344) is declined once
+// the cat died this round (its summons on their 6 h reuse) or is down to 1 HP.
+{
+    const SUPPLIER = 344;
+    const supplierNpc = DataCache.npcs.find((row) => row.selfId === SUPPLIER);
+    const field = { ...spot, id: 'pet-readiness', avgLevel: supplierNpc.template.level, minLevel: supplierNpc.template.level,
+        maxLevel: supplierNpc.template.level, npcEntries: [{ selfId: SUPPLIER, count: 1 }], npcSelfIds: [SUPPLIER] };
+    const profile = Cold.profileFor(warlock, TS);
+    const reuse = Object.fromEntries(Cold.summonSkills(profile).map((skill) => [skill.selfId, TS + 21600000]));
+    const later = (summon) => ({ ...warlock, stats: { ...warlock.stats,
+        coldCombat: { ...warlock.stats.coldCombat, cooldowns: reuse, summon } } });
+    // A saved pet carries its numbers (BackgroundResolver.startColdSummon).
+    const stats = invoke('GameServer/Bot/Population/ColdSummonProfile')(profile,
+        Cold.summonDetails(Cold.summonSkills(profile).find((skill) => skill.selfId === KAT)));
+    const whole = { ...stats, active: true, skillId: KAT, expiresAt: TS + 1e6, hp: stats.maxHp };
+    // The round's profiles, built with the whole cat out.
+    const round = Match.coldProfiles(profile, later(whole), TS);
+    const target = Cold.npcCombatStats(supplierNpc);
+    assert(Match.soloSurvival(round, target).eligible && !Match.soloSurvival(round.filter((p) => !p.servitor), target).eligible,
+        'the Supplier is a fight for the Warlock with its cat only');
+    const ready = (state) => resolveFight({ state, spot: field, pressure: {}, targetNpcId: SUPPLIER, rng: () => 0.5,
+        timestamp: TS, fightLimitMs: 1, maxActions: 1, roundProfiles: round });
+    const dead = ready(later(null));
+    assert.deepEqual({ avoided: dead.avoided, reason: dead.reason }, { avoided: true, reason: 'solo_recovery_needed' },
+        'a cat dead this round no longer tanks the next fight');
+    const wounded = ready(later({ ...whole, hp: 1 }));
+    assert.equal(wounded.reason, 'solo_recovery_needed', 'a cat at 1 HP tanks with that HP');
+    assert(!ready(later(whole)).avoided, 'a whole cat still does');
+}
+
+// In a party the mob strikes the member its aggro holds, a summoner too: the
+// pet tanks only alone (the hot SummonerTactics).
+{
+    const pet = { active: true, skillId: KAT, expiresAt: TS + 1e6, hp: 600 };
+    const owner = { ...warlock, stats: { ...warlock.stats, coldCombat: { ...warlock.stats.coldCombat, summon: pet } } };
+    const members = [owner, sorcerer];
+    const strong = Cold.npcForSpot(spot, () => 0.5, { preferredNpcId: MOB });
+    const encounter = PveEncounter.save(null, PveEncounter.key(members, spot, MOB), { ...strong, maxHp: 1e7 }, 1e7, TS,
+        { mobReadyAt: 0, hate: { [owner.characterId]: 1e9 } });
+    let seed = 5;
+    const rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    const party = Resolver.resolvePartyFight({ members, spot, targetNpcId: MOB, rng, timestamp: TS, encounter });
+    const fought = party.members.find((member) => member.state.characterId === owner.characterId);
+    assert.equal(fought.summon?.hp, 600, 'the pet takes no blow in a party');
+    assert(fought.vitals.hp < fought.vitals.maxHp, 'its owner, held by the aggro, does');
 }
 
 // The solo gate counts the servitor the fight raises (coldProfiles).

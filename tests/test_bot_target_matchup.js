@@ -290,4 +290,44 @@ assert.strictEqual(Matchup.coldProfiles(summoner, summonerState).length, 2,
     'a summoner can plan around an affordable available servitor before summoning');
 assert.strictEqual(Matchup.coldProfiles(summoner, { vitals: { mp: 0 } }).length, 1,
     'an unaffordable summon is not an alternative damage source');
+// The hot solo gate reads the cold fight's monster (ColdCombatProfile.npcCombatStats
+// of its template under its live numbers) and the bot's live hit numbers: a
+// caster mob's view carries its spells, and the gate's ratio is the cold
+// one for the same mob and stats.
+{
+    const NpcSkills = invoke('GameServer/Npc/NpcSkills'), NpcCombatChoice = invoke('GameServer/Npc/NpcCombatChoice');
+    const ColdMobAction = invoke('GameServer/Bot/Population/ColdMobAction');
+    const HuntCycle = invoke('GameServer/Bot/AI/HuntCycle');
+    const casterTemplate = Data.npcs.find(n => n.template?.level >= 25 && n.template.level <= 35
+        && NpcSkills.combatSkillsFor({ fetchSelfId: () => n.selfId })
+            .some(s => s.fetchSpell?.() === true && NpcCombatChoice.category(s) === 'damage'));
+    const casterNpc = new Npc(9876546, { ...utils.crushOb(casterTemplate), locX: 0, locY: 0, locZ: 0, head: 0 });
+    const view = Matchup.targetView(casterNpc), cold = Cold.npcCombatStats(casterTemplate);
+    assert.strictEqual(view.selfId, casterTemplate.selfId, 'the view names its species (its skills)');
+    const p = { ...Cold.fightProfile(HuntCycle.referenceState(2, 30), 0), skills: [] };
+    const actor = { fetchClassId: () => p.classId, fetchLevel: () => p.level, fetchCollectivePAtk: () => p.pAtk,
+        fetchCollectiveMAtk: () => p.mAtk, fetchCollectiveAtkSpd: () => p.atkSpd, fetchCollectiveCastSpd: () => p.castSpd,
+        fetchMaxMp: () => p.maxMp, fetchMp: () => p.maxMp, fetchMaxHp: () => p.maxHp, fetchHp: () => p.maxHp,
+        fetchCollectivePDef: () => p.pDef, fetchCollectiveMDef: () => p.mDef, fetchCollectiveAccur: () => p.accur,
+        fetchCollectiveEvasion: () => p.evasion, fetchCollectiveCritical: () => p.critical, fetchStr: () => p.str, fetchDex: () => p.dex,
+        skillset: { skills: [] }, backpack: { fetchTotalWeaponKind: () => p.equipment.weaponKind,
+            fetchTotalWeaponPAtkRnd: () => p.equipment.pAtkRnd, fetchTotalShieldPDef: () => p.equipment.shieldPDef,
+            fetchTotalShieldRate: () => p.equipment.shieldRate,
+            fetchEquippedWeapon: () => ({ fetchAttackReuseDelay: () => p.equipment.attackReuseDelay }) } };
+    const hotProfiles = Matchup.actorProfiles([actor]);
+    assert(ColdMobAction.actionMix(view, { profile: hotProfiles[0] }).spellShare > 0, 'its spells are in the hits the gate expects');
+    const hotRatio = Matchup.soloSurvival(hotProfiles, view).survivalRatio;
+    assert(hotRatio > 0);
+    assert.strictEqual(hotRatio, Matchup.soloSurvival(Matchup.coldProfiles(p, {}, 0), cold).survivalRatio, 'hot and cold gates agree');
+
+    // A bot that sits for MP (RestPolicy.sitsForMana: a Paladin heals itself
+    // with it) fights with its weapon: its gate reads the normal attack
+    // however strong its skills; a Gladiator's reads its skills.
+    const boosted = q => ({ ...q, skills: q.skills.map(s => s.passive ? s : { ...s, power: Number(s.power || 0) * 100 }) });
+    const bare = q => ({ ...q, skills: q.skills.filter(s => s.passive) });
+    const ratio = q => Matchup.soloSurvival(Matchup.coldProfiles(q, {}, 0), cold).survivalRatio;
+    const paladin = Cold.fightProfile(HuntCycle.referenceState(5, 40), 0), gladiator = Cold.fightProfile(HuntCycle.referenceState(2, 40), 0);
+    assert.strictEqual(ratio(boosted(paladin)), ratio(bare(paladin)), 'a Paladin\'s gate is its weapon fight');
+    assert(ratio(boosted(gladiator)) > 2 * ratio(bare(gladiator)), 'a Gladiator\'s counts its skills');
+}
 console.log('Bot resistance-aware targets, spells, spots, parties and cold reward checks passed');

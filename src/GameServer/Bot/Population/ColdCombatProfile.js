@@ -330,6 +330,9 @@ function npcCombatStats(npc) {
         // (CombatantView, NpcCombatChoice): MP, DEX, magic critical, shield,
         // AI type and attack radius.
         maxMp: Math.max(0, number(npc.vitals?.maxMp)),
+        // MP back per regen tick (Formulas.REGEN_TICK_MS), as the hot Npc's
+        // Automation.fetchRevMpAmount: its template revMp by its passives.
+        revMp: Math.max(0, number(npc.vitals?.revMp) * npcPassiveMultiplier(actor, 'regMp') + npcPassiveAdd(actor, 'regMpAdd')),
         dex,
         // A hot Npc has no backpack: its magic critical reads no weapon.
         mCritRate: Formulas.magicCriticalRate({ wit: number(npc.base?.wit), weapon: false }),
@@ -658,6 +661,30 @@ function fightProfile(state = {}, timestamp = Date.now(), options = {}) {
     const profile = profileNumbers(kitPart, effects, timestamp, {});
     profile.cp = currentCp(state, profile, timestamp);
     return profile;
+}
+
+// A fight profile kept across the fights of one solo round (BackgroundResolver):
+// held { profile, effects, night, from, until } (this function's last answer)
+// stands while the state's saved effects are the list the profile was built
+// with and still holds, the night is the same and the time lies between its
+// build and the first effect expiry after it (fightSources' rule), its cp
+// brought to timestamp; otherwise a new one by build (the caller's
+// fightProfile). The kit is the round's (no gear or level changes between its
+// fights). Returns the holder.
+function heldFightProfile(state, timestamp, held = null, build = fightProfile) {
+    const effects = state.stats?.coldCombat?.effects;
+    if (held !== null && effects === held.effects && held.profile.effects === held.effects
+        && held.night === GameTime.isNight(timestamp) && timestamp >= held.from && timestamp < held.until) {
+        held.profile.cp = currentCp(state, held.profile, timestamp);
+        return held;
+    }
+    const profile = build(state, timestamp);
+    let until = Infinity;
+    for (const effect of profile.effects || []) {
+        const end = number(effect?.expiresAt);
+        if (end > timestamp && end < until) until = end;
+    }
+    return { profile, effects: profile.effects, night: GameTime.isNight(timestamp), from: timestamp, until };
 }
 
 // The saved kit of a bot that fights before any capture: the kit fields
@@ -1325,12 +1352,20 @@ function hitStatAdd(fighter, stat, timestamp) {
 // cold fight's and the solo gate's (BotTargetMatchup): a fight
 // profile as attacker and as defender, a monster (npcCombatStats or a pull
 // view of it) likewise. One view per object: a profile is built per fight.
-const attackerViews = new WeakMap(), defenderViews = new WeakMap();
+// Without a fighter both views of one profile read one build of its stat
+// sources (a gate's copy of a profile is viewed anew).
+const attackerViews = new WeakMap(), defenderViews = new WeakMap(), viewSources = new WeakMap();
+function profileViewSources(subject, timestamp, fighter) {
+    if (fighter) return hitSources(fighter, timestamp);
+    let sources = viewSources.get(subject);
+    if (!sources) viewSources.set(subject, sources = statSources(subject, timestamp));
+    return sources;
+}
 function attackerView(subject, timestamp = Date.now(), fighter = null) {
     let view = attackerViews.get(subject);
     if (view) return view;
     if (subject.equipment) {
-        const sources = hitSources(fighter, timestamp);
+        const sources = profileViewSources(subject, timestamp, fighter);
         view = CombatantView.view({ pAtk: subject.pAtk, pAtkRnd: subject.equipment.pAtkRnd, mAtk: subject.mAtk,
             critRate: subject.critical, mCritRate: subject.mCritRate, str: subject.str,
             critDamageMul: multiplier(subject, 'pCritDamageMul', timestamp, sources),
@@ -1346,7 +1381,7 @@ function defenderView(subject, timestamp = Date.now(), fighter = null) {
     let view = defenderViews.get(subject);
     if (view) return view;
     if (subject.equipment) {
-        const sources = hitSources(fighter, timestamp);
+        const sources = profileViewSources(subject, timestamp, fighter);
         view = CombatantView.view({ pDef: subject.pDef, mDef: subject.mDef, dex: subject.dex,
             shieldPDef: Number(subject.equipment.shieldPDef || 0) * multiplier(subject, 'sDefMul', timestamp, sources)
                 + (Number(subject.equipment.shieldPDef) > 0 ? add(subject, 'sDefAdd', timestamp, sources) : 0),
@@ -1363,6 +1398,7 @@ function defenderView(subject, timestamp = Date.now(), fighter = null) {
 function forgetViews(subject) {
     attackerViews.delete(subject);
     defenderViews.delete(subject);
+    viewSources.delete(subject);
 }
 
 function hitSucceeds(accuracy, evasion, rng) {
@@ -1429,8 +1465,15 @@ function actionShot(shot, skill = null) {
 // opens (an aggressive interruption) gives none (the caller's).
 // How far the fighter strikes from: its weapon's range (a bow's with its
 // range bonus), a caster's longest spell. It opens a fight from there
-// (openingMs) and walks only that close to its next mob (soloWalkMs).
+// (openingMs) and walks only that close to its next mob (soloWalkMs). Kept
+// per profile object, as normalAttackMs: the gate asks it per mob it weighs.
+const reaches = new WeakMap();
 function attackReach(profile = {}) {
+    let reach = reaches.get(profile);
+    if (reach === undefined) reaches.set(profile, reach = profileReach(profile));
+    return reach;
+}
+function profileReach(profile) {
     const kind = profile.equipment?.weaponKind || '';
     let reach = AttackRange.kindRange(kind, kind === 'Weapon.Bow' ? add(profile, 'pAtkRangeAdd', Date.now()) : 0);
     if (BotRoles.usesCasterWeaponCombat(profile)) {
@@ -1457,7 +1500,7 @@ function kitStoreSize() { return kitProfiles.size; }
 
 module.exports = {
     PROFILE_VERSION, classIdOf, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor, buildCount, buildMs, withBuildSite,
-    fightProfile, currentCp, seedSnapshot, oldSeedRepair, candidateProfiles, fightSources, combatView, kitHash, skillsFor, forgetBuild, kitStoreSize,
+    fightProfile, heldFightProfile, currentCp, seedSnapshot, oldSeedRepair, candidateProfiles, fightSources, combatView, kitHash, skillsFor, forgetBuild, kitStoreSize,
     isAttackSkill, offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect, normalAttackMs,
     spotSpawns, npcForSpot, killDraw, killChances, npcCombatStats, npcVulnerability, npcTraitResist, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
     statMultiplier: multiplier, statAdd: add, hitStatAdd, statSources,

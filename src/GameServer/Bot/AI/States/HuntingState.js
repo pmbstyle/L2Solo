@@ -358,7 +358,7 @@ function liveCurrentNpcTarget(session, bot, radius = session.huntingSearchRadius
 function encounterReadiness(bot, target) {
     return EncounterReadiness.evaluate({
         hp: bot.fetchHp(), maxHp: bot.fetchMaxHp(), mp: bot.fetchMp(), maxMp: bot.fetchMaxMp(),
-        level: bot.fetchLevel(), manaDependent: BotRoles.shouldRestForMana(bot)
+        level: bot.fetchLevel(), manaDependent: RestPolicy.sitsForMana(bot)
     }, { hp: target?.fetchHp?.(), maxHp: target?.fetchMaxHp?.(), level: target?.fetchLevel?.() });
 }
 
