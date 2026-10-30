@@ -1,6 +1,8 @@
 const assert = require('assert');
 
 require('../src/Global');
+// The errand buys D soulshots from an NPC offer: off by default since T116 (no C4 NPC sells them).
+invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = false;
 
 const BotSupplyErrand = invoke('GameServer/Bot/AI/BotSupplyErrand');
 const BotTownTravel = invoke('GameServer/Bot/AI/BotTownTravel');

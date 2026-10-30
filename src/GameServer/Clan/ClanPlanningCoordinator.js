@@ -134,7 +134,7 @@ class ClanPlanningCoordinator {
         });
         this.initializing = (async () => {
             // Bound serialization work on the game thread, including initial startup.
-            for (const name of ['items', 'npcs', 'npcRewards', 'npcSpawns', 'newbieItems', 'experience', 'skillTree', 'classTemplates', 'revitalize']) {
+            for (const name of ['items', 'npcs', 'npcRewards', 'npcSpawns', 'newbieItems', 'experience', 'skillTree', 'skills', 'classTemplates', 'revitalize']) {
                 const rows = catalogRows(catalogs, name);
                 for (let offset = 0; offset < rows.length; offset += 128) {
                     await this.send('catalog', { name, rows: rows.slice(offset, offset + 128) });

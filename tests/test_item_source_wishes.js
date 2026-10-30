@@ -17,9 +17,11 @@ const suspects = require('./fixtures/source_less_c4_gear.json');
 assert.equal(suspects.length, 392);
 const forbidden = new Set(suspects);
 const nominated = new Set();
-function cInventory(classId) {
+// The character id picks a split-kit first class's future second class (BotRoles.kitClassId):
+// the kit is the one the assessed bot itself plans.
+function cInventory(classId, characterId) {
     const inventory = {};
-    for (const entry of Gear.planFor({ classId, level: 40 }).items) {
+    for (const entry of Gear.planFor({ characterId, classId, level: 40 }).items) {
         const old = inventory[entry.selfId], equippedSlots = [...(old?.equippedSlots || []), entry.slot];
         inventory[entry.selfId] = { ...entry, amount: Number(old?.amount || 0) + 1,
             equipped: true, equippedCount: equippedSlots.length, equippedSlots };
@@ -27,7 +29,7 @@ function cInventory(classId) {
     return inventory;
 }
 for (let classId = 0; classId <= 118; classId++) {
-    const state = { characterId: 990000 + classId, level: 78, stats: { classId }, inventory: cInventory(classId) };
+    const state = { characterId: 990000 + classId, level: 78, stats: { classId }, inventory: cInventory(classId, 990000 + classId) };
     assert.equal(Progression.assess(state).required, false, `class ${classId} owns its full usable C kit`);
     for (const items of Wishes.gearCandidates(state).values()) for (const item of items) {
         assert(!forbidden.has(Number(item.selfId)), `class ${classId} nominated source-less ${item.selfId}`);
