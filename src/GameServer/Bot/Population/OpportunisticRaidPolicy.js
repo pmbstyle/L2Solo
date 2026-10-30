@@ -5,6 +5,7 @@ const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Gear = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const Shots = invoke('GameServer/Inventory/ShotStock');
 const F = invoke('GameServer/Formulas');
+const HitRules = invoke('GameServer/Combat/HitRules');
 const Rules = invoke('GameServer/Skills/C4SkillRules');
 const Buffs = invoke('GameServer/Bot/AI/PartyBuffLoadout');
 const Capabilities = require('../../Clan/ClanCandidateCapabilities');
@@ -379,11 +380,12 @@ function attack(p, target, charged) {
     const hit = invoke('GameServer/Bot/Population/BackgroundResolver').combat;
     let landed = 0;
     for (let i = 0; i < 20; i++) landed += Number(hit.hitSucceeds(p.accur, target.evasion, () => (i + .5) / 20));
-    const key = { 'Weapon.Bow': 'bowWpnVuln', 'Weapon.Knife': 'daggerWpnVuln', 'Weapon.Blunt': 'bluntWpnVuln',
-        'Weapon.BigBlunt': 'bluntWpnVuln' }[p.equipment.weaponKind];
+    // The fight's modifier of a normal hit (HitRules.targetModifier: a knife meets no dagger weakness).
+    const modifier = HitRules.targetModifier({ weaponKind: p.equipment.weaponKind, race: target.race, undead: target.undead === true },
+        stat => Combat.npcVulnerability(target, stat), stat => Combat.statMultiplier(p, stat, Date.now()));
     return { rate: 1000 / cycle, dps: F.calcPhysicalDamage(p.pAtk, 0, target.pDef, 0,
         { soulshot: charged, rng: () => .5 }) * (1 + Math.min(1, p.critical / 1000))
-        * (landed / 20) * (key ? target.vulnerabilities?.[key] ?? 1 : 1) * 1000 / cycle };
+        * (landed / 20) * modifier * 1000 / cycle };
 }
 
 // Check native worn slots and compatible heavy body pieces. Grade is not a

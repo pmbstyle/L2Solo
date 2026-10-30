@@ -169,23 +169,25 @@ const SOLO = [
     ['gladiator charges with soulshots', gladiatorShots, 5135, 2],
     ['sorcerer with spiritshots', sorcererShots, 241, 1]
 ];
+// T124: re-pinned where the new hot rules in the cold fight (a spell's level-fail roll
+// before its critical, the monster's spells rolling it too) moved the rolls.
 const SOLO_GOLDEN = {
-    'sorcerer wins without a futile self-heal': { won: true, died: false, hp: 1419, mp: 2094, charges: 0, actions: 11, durationMs: 6453, skillUses: 6, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'sorcerer wins without a futile self-heal': { won: true, died: false, hp: 1975, mp: 2264, charges: 0, actions: 3, durationMs: 1291, skillUses: 2, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     'gladiator charges': { won: true, died: false, hp: 3131, mp: 564, charges: 0, actions: 18, durationMs: 11315, skillUses: 10, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'bishop': { won: true, died: false, hp: 1828, mp: 2213, charges: 0, actions: 22, durationMs: 22544, skillUses: 8, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'warlock servitor, heals, potion': { won: true, died: false, hp: 2058, mp: 2112, charges: 0, actions: 29, durationMs: 22724, skillUses: 6, shotActions: 0, heals: 0, musicUses: 0, summonUses: 1, summonActions: 8, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'bishop': { won: true, died: false, hp: 2023, mp: 2243, charges: 0, actions: 16, durationMs: 16435, skillUses: 6, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'warlock servitor, heals, potion': { won: true, died: false, hp: 2058, mp: 2097, charges: 0, actions: 32, durationMs: 25179, skillUses: 6, shotActions: 0, heals: 0, musicUses: 0, summonUses: 1, summonActions: 10, potionsUsed: 0, mobHp: null, botReadyAt: null },
     'necromancer corpse servitor': { won: true, died: false, hp: 1907, mp: 2171, charges: 0, actions: 3, durationMs: 1291, skillUses: 2, shotActions: 0, heals: 0, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     // T106: a Swordsinger heals itself with MP, so it sits for MP and its skills pay their rest (one cast fewer).
     'swordsinger songs': { won: true, died: false, hp: 2739, mp: 927, charges: 0, actions: 22, durationMs: 14559, skillUses: 2, shotActions: 0, heals: 0, musicUses: 1, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     'tyrant': { won: true, died: false, hp: 3713, mp: 785, charges: 0, actions: 10, durationMs: 5134, skillUses: 6, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     // T106: a Paladin heals itself with MP, so it sits for MP and its skills pay their rest (one cast fewer).
-    'paladin': { won: true, died: false, hp: 2661, mp: 864, charges: 0, actions: 22, durationMs: 17647, skillUses: 5, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'paladin': { won: true, died: false, hp: 2717, mp: 864, charges: 0, actions: 22, durationMs: 17647, skillUses: 5, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     'sorcerer 40 survives without a futile self-heal': { won: true, died: false, hp: 722, mp: 1108, charges: 0, actions: 11, durationMs: 6642, skillUses: 6, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'bladedancer dances': { won: true, died: false, hp: 2048, mp: 668, charges: 0, actions: 25, durationMs: 17186, skillUses: 4, shotActions: 0, heals: 0, musicUses: 3, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'bladedancer dances': { won: true, died: false, hp: 2258, mp: 668, charges: 0, actions: 23, durationMs: 16085, skillUses: 4, shotActions: 0, heals: 0, musicUses: 3, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     'gladiator times out': { won: false, died: false, hp: 3341, mp: 768, charges: 0, actions: 8, durationMs: 4000, skillUses: 5, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 1026, botReadyAt: 1723 },
     'paladin runs out of actions': { won: false, died: false, hp: 2991, mp: 976, charges: 0, actions: 10, durationMs: 5573, skillUses: 1, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 529, botReadyAt: 925 },
     'gladiator charges with soulshots': { won: true, died: false, hp: 1898, mp: 365, charges: 0, actions: 20, durationMs: 12927, skillUses: 10, shotActions: 7, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'sorcerer with spiritshots': { won: true, died: false, hp: 1836, mp: 2181, charges: 0, actions: 7, durationMs: 3010, skillUses: 4, shotActions: 4, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null }
+    'sorcerer with spiritshots': { won: true, died: false, hp: 1975, mp: 2294, charges: 0, actions: 1, durationMs: 0, skillUses: 1, shotActions: 1, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null }
 };
 // T100: the gate counts the Sorcerer 60's priced pick, which wins this fight
 // (the golden below); the Sorcerer 40 is still out of its depth.
@@ -241,24 +243,26 @@ const PARTY = [
 // R2: without a tank the mob hits the most hated member (NpcHate), no longer a
 // member rolled per swing, so the tankless pins carry the top damage dealer's HP loss.
 // T106: the shot Paladin is a C-grade 50 now (the only band whose shots pay): with the
-// injured Bishop it no longer kills Grima inside the 15 s party round (both alive, mob at 1069).
+// injured Bishop it no longer kills Grima inside the 15 s party round (both alive, mob at 715).
+// T124: the cold fight rolls the hot rules it lacked (a spell's level-fail roll, drains,
+// effects, damage over time): the fights that meet them, or roll after them, were re-pinned.
 const PARTY_GOLDEN = {
-    'tank, charges, healer, songs, servitor': { won: true, actions: 23, skillUses: 13, musicUses: 4, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0, members: [[1008, 2933, 976, 6, 2, 0, 1, 0, 0],
+    'tank, charges, healer, songs, servitor': { won: true, actions: 22, skillUses: 13, musicUses: 4, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0, members: [[1008, 2933, 976, 5, 2, 0, 1, 0, 0],
             [1002, 3481, 768, 6, 5, 0, 0, 0, 0],
-            [1011, 2041, 2311, 2, 2, 0, 0, 0, 0],
+            [1011, 2112, 2311, 2, 2, 0, 0, 0, 0],
             [1006, 2891, 586, 4, 4, 0, 0, 4, 0],
             [1004, 2058, 2262, 1, 0, 0, 0, 0, 0]] },
-    'casters and a dancer': { won: true, actions: 10, skillUses: 8, musicUses: 2, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0, members: [[1001, 1823, 2209, 3, 3, 0, 0, 0, 0],
-            [1005, 1823, 2171, 2, 2, 0, 0, 0, 0],
-            [1003, 2200, 2334, 1, 1, 0, 0, 0, 0],
+    'casters and a dancer': { won: true, actions: 13, skillUses: 10, musicUses: 2, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0, members: [[1001, 1519, 2179, 4, 4, 0, 0, 0, 0],
+            [1005, 1975, 2171, 2, 2, 0, 0, 0, 0],
+            [1003, 2200, 2311, 2, 2, 0, 0, 0, 0],
             [1010, 2748, 856, 2, 2, 0, 0, 2, 0]] },
     'injured with potions': { won: true, actions: 16, skillUses: 12, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 1, mobHp: 0, help: 0, members: [[1012, 2123, 842, 6, 5, 0, 1, 0, 0],
             [1002, 3395, 768, 5, 5, 0, 0, 0, 0],
             [1009, 1010, 1234, 2, 2, 0, 2, 0, 0]] },
     'necromancer corpse servitor': { won: true, actions: 4, skillUses: 3, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0, members: [[1005, 1907, 2171, 2, 2, 0, 0, 0, 0],
             [1003, 2200, 2334, 1, 1, 0, 0, 0, 0]] },
-    'tank with shots and healer': { won: false, actions: 22, skillUses: 7, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 1069, help: 0, members: [[1017, 1793, 454, 8, 2, 3, 2, 0, 0],
-            [1011, 2127, 2183, 5, 5, 0, 1, 0, 0]] }
+    'tank with shots and healer': { won: false, actions: 22, skillUses: 7, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 715, help: 0, members: [[1017, 1793, 454, 8, 2, 5, 2, 0, 0],
+            [1011, 2198, 2183, 5, 5, 0, 1, 0, 0]] }
 };
 for (const [name, members, npcId, seed] of PARTY) {
     members.forEach(assertNativeHeldPolicy);

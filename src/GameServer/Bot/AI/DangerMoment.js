@@ -7,6 +7,7 @@ const ColdRest = invoke('GameServer/Bot/Population/ColdRest');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
 const EscapePolicy = invoke('GameServer/Bot/AI/BotEscapePolicy');
+const Valuation = invoke('GameServer/Bot/Economy/EconomicValuation');
 
 // E70, §13.6 "it got dangerous": drink a potion, run to heal, sit or keep
 // fighting, each priced in the bot's hours. First choices, calibrated later
@@ -117,7 +118,9 @@ function forActor(session, actor, target, options = {}) {
         { hp, maxHp, mp, maxMp }) / 3600000;
     const moment = decide({ hp, maxHp, survivalRatio: survival.survivalRatio, attacked: options.attacked !== false,
         canEscape: EscapePolicy.assess(session, actor, attackers).possible,
-        potion: heldPotion, restHours, fightHours: damageRate > 0 ? enemy.maxHp / damageRate / 3600 : 0, deathHours: economy.deathHours, moneyPrice, riskWeight: economy.riskWeight,
+        potion: heldPotion, restHours, fightHours: damageRate > 0 ? enemy.maxHp / damageRate / 3600 : 0,
+        // A live death also waits for its respawn (the basics price a table row's).
+        deathHours: economy.deathHours + Valuation.RESPAWN_HOURS, moneyPrice, riskWeight: economy.riskWeight,
         roll: TendencyRoll.roll('danger', actor.fetchId?.(), targetId) });
     session.dangerMoment = moment ? { targetId, action: moment.action } : undefined;
     return moment;

@@ -13,7 +13,8 @@
 // P.Atk), B the part that does not (skill power, a summon). Four runs per
 // row: the kit at defences (1000, 1000), the kit at (2000, 1000) (splits the
 // two parts), the kit without its weapon (a second P.Atk, solves A and B),
-// the kit with shots (the shot multiplier), a pull of two (the area share).
+// the kit with shots (the shot multiplier), a pull of two (the area share),
+// an undead target (undeadMul).
 // The opening: what a fight from full MP deals and spends in its first 3, 6,
 // 12, 24, 48 s (openDamage over the long run's rate, openMp cumulative), the
 // burst every hunt fight after a rest starts with.
@@ -51,9 +52,13 @@ const SPOT = { id: 'hunt-tables-dummy', npcEntries: [], avgLevel: 1 };
 
 // The dummy shows the class policy (ColdClassPolicy, which reads the
 // target's max HP) the typical mob's HP of its level; its own HP never ends.
-function dummy(level, pDef, mDef, maxHp, pull = 1) {
+// It is a living target of no race and no weakness: the model applies a real
+// mob's terms (HuntModel.mobHour: the matchup's modifier) and, for an undead
+// one, the rotation measured on an undead dummy (undeadMul: its undead-only
+// skills and bonuses, T124).
+function dummy(level, pDef, mDef, maxHp, pull = 1, undead = false) {
     return { selfId: 0, level, maxHp, pull, pAtk: 1, pAtkRnd: 0, pDef, mDef, basePDef: pDef, baseMDef: mDef, accur: 1, evasion: 0,
-        critical: 0, atkSpd: 1, castSpd: 333, race: '', undead: false, vulnerabilities: {}, rewardExp: 0, rewardSp: 0 };
+        critical: 0, atkSpd: 1, castSpd: 333, race: '', undead, vulnerabilities: {}, rewardExp: 0, rewardSp: 0 };
 }
 
 // The bot of a class key (C.kitKey: '7>9' a Rogue with the Hawkeye's bow)
@@ -81,7 +86,7 @@ function rotationBot(classKey, level, { weaponless = false, shots = false } = {}
 // mp } and the dry phase { ms, damage } (dry only when asked).
 function fight(classKey, level, pDef, mDef, options = {}, dry = false) {
     const { state, profile } = rotationBot(classKey, level, options);
-    const mob = dummy(level, pDef, mDef, typicalHp(level), options.pull || 1);
+    const mob = dummy(level, pDef, mDef, typicalHp(level), options.pull || 1, options.undead === true);
     const rng = C.mulberry(C.hash(`${classKey}|${level}|${pDef}|${mDef}|${JSON.stringify(options)}`));
     const key = PveEncounter.key([state], SPOT, 0);
     let t = START, botReadyAt = 0, hp = 1e12;
@@ -164,6 +169,8 @@ function measure(classKey, level) {
     // A pull of two: an area skill strikes both (resolveFight), so the
     // damage over one mob's is 1 + the area share.
     const pair = fight(classKey, level, DEF, DEF, { pull: 2 });
+    // The same fight on an undead target: its damage over the living one's.
+    const undead = fight(classKey, level, DEF, DEF, { undead: true });
     const d1 = perSecond(kit.phase) * DEF, d2 = perSecond(harder.phase) * DEF;
     // Physical part at defence 1000 (halves at 2000), magic the rest.
     const phys1 = Math.max(0, Math.min(d1, 2 * (d1 - d2)));
@@ -185,11 +192,12 @@ function measure(classKey, level) {
         A, B, M: mUnit, magicShare: d1 > 0 ? magic1 / d1 : 0, mpPerSec, mpPhaseSec: kit.phase.ms / 1000,
         dryUnit: physUnit(dry, kit.profile) / Math.max(1, p1), shotMul,
         areaShare: d1 > 0 ? Math.max(0, perSecond(pair.phase) * DEF / d1 - 1) : 0, d1,
+        undeadMul: d1 > 0 ? perSecond(undead.phase) * DEF / d1 : 1,
         openDamage: open.map(point => d1 > 0 ? C.round(point.damage / d1) : 1), openMp: open.map(point => C.round(point.mp)) };
 }
 
 const FIELDS = ['level', 'refPAtk', 'refMAtk', 'refAtkSpd', 'refCastSpd', 'A', 'B', 'M', 'magicShare', 'mpPerSec', 'mpPhaseSec',
-    'dryUnit', 'shotMul', 'areaShare', 'd1', 'openDamage', 'openMp'];
+    'dryUnit', 'shotMul', 'areaShare', 'd1', 'openDamage', 'openMp', 'undeadMul'];
 
 function bandsFor(classId) {
     const stage = Math.max(0, Math.min(2, ClassProgression.lineage(classId).length - 1));
@@ -210,7 +218,7 @@ function build(classTable, gearTable, options = {}) {
             const level = Math.max(1, Math.min(C.MAX_LEVEL, 2 * band + 1));
             const measured = measure(classKey, level);
             rows[classKey][band] = FIELDS.map(field => Array.isArray(measured[field]) ? measured[field] : C.round(measured[field]));
-            runs += 5;
+            runs += 6;
         }
         process.stderr.write(`  rotation class ${classKey}: ${Object.keys(rows[classKey]).length} bands\n`);
     }

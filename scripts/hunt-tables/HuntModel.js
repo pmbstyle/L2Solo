@@ -216,8 +216,15 @@ function mobHour(bot, mob, correction = null) {
     // Area skills strike every mob of the pull (resolveFight): the measured
     // area share of the rotation's damage counts pull times.
     const area = 1 + (Number(rot.areaShare) || 0) * (pull - 1);
-    const wet = (terms.phys / Math.max(1, view.pDef) + terms.magic / Math.max(1, view.mDef)) * shot * area;
-    const dry = terms.dry / Math.max(1, view.pDef) * shot;
+    // The mob's terms the fight meets (HitRules.targetModifier, T124): with MP
+    // the best attack's modifier on it as a living target (the matchup's,
+    // BotTargetMatchup.evaluate), an undead one also the rotation's undead
+    // gain (undeadMul); dry, the normal attack's modifier.
+    const living = { ...view, undead: false };
+    const wetTerms = Matchup.evaluate(profiles, living).efficiency * (target.undead === true ? Number(rot.undeadMul) || 1 : 1);
+    const dryTerms = Matchup.channels(profiles[0], view).find(attack => attack.normal)?.modifier ?? 1;
+    const wet = (terms.phys / Math.max(1, view.pDef) + terms.magic / Math.max(1, view.mDef)) * shot * area * wetTerms;
+    const dry = terms.dry / Math.max(1, view.pDef) * shot * dryTerms;
     const manaRest = RestPolicy.restsForMana(state);
     const regen = regenOf(bot.classId, bot.level, profile);
     // The mob's actions on the bot as the cold fight rolls them (ColdMobAction.actionMix:

@@ -37,24 +37,39 @@ function selfHeal(semantic, targetKind, periodic) {
         && ON_SELF.has(semantic.target || targetKind);
 }
 
-// The heals the bot can cast on itself now: { skill, amount, mp, castMs }.
-function heals(actor, periodic) {
-    const hp = Number(actor.fetchHp?.()) || 0, maxHp = Math.max(1, Number(actor.fetchMaxHp?.()) || 1);
-    const mp = Number(actor.fetchMp?.()) || 0;
+// The heals a bot has: { skill, limit (its HP percent at most), amount, mp,
+// castMs }. A cold actor is one fixed profile (ColdClassPolicy.actorFor,
+// fixedProfile): its list is made once (T127 R2); a hot actor's per call
+// (its buffs move its numbers).
+const lists = new WeakMap();
+function candidates(actor, periodic) {
+    const fixed = actor.fixedProfile === true;
+    let held = fixed ? lists.get(actor) : null;
+    if (!held) {
+        held = {};
+        if (fixed) lists.set(actor, held);
+    }
+    const key = periodic ? 'periodic' : 'instant';
+    if (held[key]) return held[key];
     const speed = { castSpd: Math.max(1, Utility.statOf(actor, 'CastSpd')), atkSpd: Math.max(1, Utility.statOf(actor, 'AtkSpd')) };
     const list = [];
     for (const skill of actor.skillset?.skills || []) {
         if (!skill || skill.fetchPassive?.()) continue;
         const semantic = skill.fetchSemantic?.() || {};
         if (!selfHeal(semantic, skill.fetchTargetKind?.(), periodic)) continue;
-        const limit = semantic.condition?.actorHpPercentAtMost;
-        if (limit !== undefined && hp / maxHp * 100 > limit) continue;
-        const cost = Number(skill.fetchConsumedMp?.()) || 0;
-        if (cost > mp || actor.canUseSkill?.(skill) === false) continue;
         const amount = healAmount(actor, skill, semantic, periodic);
-        if (amount > 0) list.push({ skill, amount, mp: cost, castMs: Math.max(1, Utility.skillHitMs(speed, skill)) });
+        if (amount > 0) list.push({ skill, limit: semantic.condition?.actorHpPercentAtMost, amount,
+            mp: Number(skill.fetchConsumedMp?.()) || 0, castMs: Math.max(1, Utility.skillHitMs(speed, skill)) });
     }
-    return list;
+    return held[key] = list;
+}
+
+// The heals the bot can cast on itself now (candidates by its HP, MP and reuse).
+function heals(actor, periodic) {
+    const hp = Number(actor.fetchHp?.()) || 0, maxHp = Math.max(1, Number(actor.fetchMaxHp?.()) || 1);
+    const mp = Number(actor.fetchMp?.()) || 0;
+    return candidates(actor, periodic).filter((heal) => (heal.limit === undefined || hp / maxHp * 100 <= heal.limit)
+        && heal.mp <= mp && actor.canUseSkill?.(heal.skill) !== false);
 }
 
 // In a fight: pace { dealtPerMs (to the mob), takenPerMs (by the bot) }, mobHp.
