@@ -66,7 +66,8 @@ function buildMobs() {
             Object.keys(vulnerabilities).length ? vulnerabilities : 0,
             // The cast speed times a monster's spells (ColdMobAction.mobSkillCastMs), the
             // weapon kind its bow draw: without them a caster's damage reads NaN.
-            stats.castSpd, stats.weaponKind || 0];
+            // The run speed it closes in at (ColdCombatProfile.openingMs).
+            stats.castSpd, stats.weaponKind || 0, stats.runSpd || 0];
         const key = JSON.stringify(combat);
         if (!combatIndex.has(key)) { combatIndex.set(key, combats.length); combats.push(combat); }
         const reward = Index.find(DataCache.npcRewards, id);
