@@ -78,7 +78,7 @@ function fighter(id, classId, level, gear, extra = {}) {
     if (extra.shots) {
         const selfId = ShotStock.planForState(state).selfId;
         inventory[selfId] = { selfId, amount: extra.shots };
-        state.spotId = { 2: '23_3', 12: '11_-13', 5: '12_10' }[classId];
+        state.spotId = { 2: '11_25', 12: '11_-13', 5: '12_10' }[classId];
         assert(state.spotId, 'every shot fixture needs its verified native economic spot');
     }
     state.stats.coldCombat = ColdCombatProfile.legacySnapshot(state, ColdCombatProfile.skillRecordsFromTree(classId, level), TS);
