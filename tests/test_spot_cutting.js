@@ -9,7 +9,6 @@ const assert = require('node:assert/strict');
 require('../src/Global');
 const DataCache = invoke('GameServer/DataCache');
 DataCache.init();
-const Npc = invoke('GameServer/Npc/Npc');
 const World = invoke('GameServer/World/World');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
@@ -20,14 +19,8 @@ const { SPOT_CELL_SIZE } = invoke('GameServer/World/WorldConstants');
 const monsters = DataCache.npcs.filter(row => row.template?.kind === 'Monster' && !row.template?.raidBoss
     && row.template.level >= 20 && row.template.level <= 30).slice(0, 3).map(row => row.selfId);
 assert.equal(monsters.length, 3, 'three field monsters in the datapack');
-let nextId = 1;
 const definition = (selfId, extra = {}) => ({ npc: DataCache.npcRow(selfId), spawn: { selfId, respawn: 60, ...extra }, bounds: [] });
-const npcAt = (selfId, locX, locY, locZ, extra) => {
-    const def = definition(selfId, extra);
-    const npc = new Npc(nextId++, { ...utils.crushOb(def.npc), locX, locY, locZ });
-    npc.spawnDefinition = def;
-    return npc;
-};
+const npcAt = (selfId, locX, locY, locZ, extra) => definition(selfId, { ...extra, coords: [{ locX, locY, locZ, head: 0 }] });
 const cell = (gx, gy, dx, dy) => [gx * SPOT_CELL_SIZE + dx, gy * SPOT_CELL_SIZE + dy];
 const [A, B, C] = monsters;
 const spawns = [];
@@ -44,7 +37,7 @@ const [nx, ny] = cell(30, 10, 3000, 3000);
 const night = [0, 1, 2].map(i => ({ ...definition(C, { period: 'night', coords: [{ locX: nx + i * 300, locY: ny, locZ: 0, head: 0 }] }) }));
 
 const saved = World.npc;
-World.npc = { spawns, periodMode: 'day', periodDefinitions: night };
+World.npc = { spawns: [], periodMode: 'day', periodDefinitions: night, definitions: [...spawns, ...night] };
 SpotService.reset();
 try {
     const spots = SpotService.ensureIndexed();
@@ -69,7 +62,7 @@ try {
     const nightSpot = byId('30_10');
     assert.equal(nightSpot?.density, 3, 'the night spawns are a spot by day');
     assert(Math.abs(nightSpot.npcEntries[0].production - 3 * 60 * 0.25) < 0.01, `night production over the day: ${nightSpot.npcEntries[0].production}`);
-    assert.equal(World.npc.spawns.length, spawns.length, 'the night spawns are not added to the world');
+    assert.equal(World.npc.spawns.length, 0, 'the catalogue adds no spawn to the world');
 } finally {
     World.npc = saved;
     SpotService.reset();
