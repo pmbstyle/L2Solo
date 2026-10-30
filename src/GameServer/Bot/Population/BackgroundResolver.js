@@ -28,7 +28,7 @@ const CombatantView = invoke('GameServer/Combat/CombatantView');
 // A monster's side of the fight, and the fighter's views, hit roll, action
 // times and shot supply: their owners' (combat core, T106).
 const ColdMobAction = require('./ColdMobAction');
-const { ELEMENTAL_DAMAGE_TRAITS, coldNpcWeaponModifier, coldMobFight, coldMobFightSave, coldMobAction, mobAttackMs } = ColdMobAction;
+const { mobHitModifier, coldMobFight, coldMobFightSave, coldMobAction, mobAttackMs, dotDamage, landOnMob, controlLandChance } = ColdMobAction;
 const { hitSources, attackerView, defenderView, hitSucceeds, actionDelayMs } = ColdCombatProfile;
 const summonAttackDelay = ColdCombatProfile.summonAttackMs, coldShotSupply = ColdCombatProfile.shotSupply;
 const SurvivalFloor = require('./SurvivalFloor');
@@ -70,45 +70,15 @@ function combatRoleForState(state) {
 // A party buff is cast again once it has this share of its duration left, at most this many ms.
 const BUFF_RECAST_SHARE = 0.25;
 const BUFF_RECAST_MAX_MS = 120000;
-const PHYSICAL_RACE_STATS = Object.freeze({
-    animal: 'pAtk-animals',
-    beast: 'pAtk-monsters',
-    construct: 'pAtk-mcreatures',
-    dragon: 'pAtk-dragons',
-    giant: 'pAtk-giants',
-    insect: 'pAtk-insects',
-    plant: 'pAtk-plants'
-});
-
-function mobVulnerability(mob, stat) {
-    const value = Number(mob?.vulnerabilities?.[stat]);
-    return Number.isFinite(value) ? Math.max(0, value) : 1;
-}
-
-// As the hot Attack (incomingWeaponVulnerabilityModifier): a weapon hit
-// reads the bow and blunt weaknesses, a skill also the dagger one.
-function coldWeaponVulnerability(bot, mob, semantic = {}, skill = true) {
-    const kind = String(bot?.equipment?.weaponKind || '');
-    if (semantic.trait === 'bow' || kind === 'Weapon.Bow') return mobVulnerability(mob, 'bowWpnVuln');
-    if (kind === 'Weapon.Blunt' || kind === 'Weapon.BigBlunt') return mobVulnerability(mob, 'bluntWpnVuln');
-    if (skill && (semantic.trait === 'dagger' || kind === 'Weapon.Knife')) return mobVulnerability(mob, 'daggerWpnVuln');
-    return 1;
-}
-
-function coldPhysicalTargetModifier(bot, mob, semantic = {}, timestamp = Date.now(), fighter = null, skill = true) {
-    let modifier = coldWeaponVulnerability(bot, mob, semantic, skill);
-    const raceStat = PHYSICAL_RACE_STATS[String(mob?.race || '').toLowerCase()];
-    if (mob?.undead !== true && !raceStat) return modifier;
-    const sources = hitSources(fighter, timestamp);
-    if (mob?.undead === true) modifier *= ColdCombatProfile.statMultiplier(bot, 'pAtkUndeadMul', timestamp, sources);
-    if (raceStat) modifier *= ColdCombatProfile.statMultiplier(bot, raceStat, timestamp, sources);
-    return modifier;
-}
-
-function coldMagicTargetModifier(mob, semantic = {}) {
-    return ELEMENTAL_DAMAGE_TRAITS.has(semantic.trait)
-        ? mobVulnerability(mob, `${semantic.trait}Vuln`)
-        : 1;
+// The cold adapter of HitRules.targetModifier for a fighter's hit on a
+// monster: the monster's weaknesses (ColdCombatProfile.npcVulnerability) and
+// the fighter's race and undead bonuses at the hit's time.
+function coldTargetModifier(fighter, mob, semantic = {}, { magic = false, skill = false, at = Date.now() } = {}) {
+    const profile = fighter.profile;
+    return HitRules.targetModifier({ magic, skill, trait: semantic.trait, weaponKind: profile.equipment?.weaponKind || '',
+        race: mob?.race, undead: mob?.undead === true },
+    stat => ColdCombatProfile.npcVulnerability(mob, stat),
+    stat => ColdCombatProfile.statMultiplier(profile, stat, at, hitSources(fighter, at)));
 }
 
 function coldChargeState(state, timestamp) {
@@ -354,11 +324,9 @@ function resolveDeathRecovery(state, timestamp = Date.now()) {
     };
 }
 
+// A skill's power at the caster's HP (HitRules.skillPower: Death Link, Fatal).
 function effectiveSkillPower(profile, skill, hp) {
-    const basePower = Number(skill?.power) || 0;
-    return C4SkillRules.resolve(skill || {}).skillType === C4SkillRules.FATAL
-        ? Formulas.calcFatalPower(basePower, hp, profile.maxHp)
-        : basePower;
+    return HitRules.skillPower(C4SkillRules.resolveCached(skill || {}), Number(skill?.power) || 0, hp, profile.maxHp);
 }
 
 // The solo self-heal of a cold fighter in its fight (SoloSelfHeal.inFight):
@@ -401,16 +369,26 @@ function chooseChargeSkill(profile, mp, cooldowns, time, charges = 0, context = 
     return ColdClassPolicy.select(profile,{hp:profile.maxHp,mp,cooldowns,time,charges,...context,prepare:true});
 }
 
+// The raid's minions its members hold: per member with MP for one, its
+// likeliest sleep, root or stun to land (ColdMobAction.controlLandChance: the
+// land rate by levels and M.Atk, cut by the encounter's trait resists, a raid
+// boss's passive 4045 to a tenth), at most the minions.
 function coldRaidControlCapacity(fighters = [], mob = {}) {
     const minionCount = Math.max(0, Number(mob.raidMinionCount || 0));
     if (!minionCount) return 0;
-    const controllers = fighters.filter((fighter) => (fighter.profile?.skills || []).some((skill) => {
-        if (skill.passive || Number(skill.mp || 0) > Number(fighter.vitals?.mp || 0)) return false;
-        const semantic = C4SkillRules.resolve(skill);
-        const effect = String(semantic.effect || '').toLowerCase();
-        return semantic.effectType === 'debuff' && /sleep|root|stun/.test(effect);
-    })).length;
-    return Math.min(minionCount, controllers);
+    let held = 0;
+    for (const fighter of fighters) {
+        let best = 0;
+        for (const skill of fighter.profile?.skills || []) {
+            if (skill.passive || Number(skill.mp || 0) > Number(fighter.vitals?.mp || 0)) continue;
+            const semantic = C4SkillRules.resolveCached(skill);
+            if (semantic.effectType !== 'debuff' || !/sleep|root|stun/.test(String(semantic.effect || '').toLowerCase())) continue;
+            best = Math.max(best, controlLandChance(mob, semantic, skill.spell === true,
+                { level: fighter.profile.level, mAtk: fighter.profile.mAtk }) / 100);
+        }
+        held += best;
+    }
+    return Math.min(minionCount, held);
 }
 
 function coldRaidMinionPressure(mob = {}, mobHp = 0, controlCapacity = 0) {
@@ -748,6 +726,19 @@ function buffHeld(effects, skill, timestamp) {
     ));
 }
 
+// Whether a buff (an adapter) can be cast now: its MP, and its reuse when
+// cooldowns are the caster's (a party pass casts its plan whole: none).
+function buffCastable(skill, mp, cooldowns, at) {
+    return Number(skill.fetchConsumedMp() || 0) <= mp && !(Number(cooldowns[skill.fetchSelfId()] || 0) > at);
+}
+// Whether a solo bot's own buff is due: castable now and not held with more
+// than its recast share left (buffHeld). castSoloBuffs asks it before the
+// fighter is built; the plan's pass (coldBuffPlan, castPartyBuffs) asks the
+// same two halves.
+function buffDue(skill, effects, mp, cooldowns, at) {
+    return buffCastable(skill, mp, cooldowns, at) && !buffHeld(effects, skill, at);
+}
+
 // One cast pass of the planned party buffs: the raid preparation and an
 // ordinary cold party hunt both call it. Returns the casts and their duration.
 function castPartyBuffs(fighters, timestamp, options = {}) {
@@ -756,11 +747,10 @@ function castPartyBuffs(fighters, timestamp, options = {}) {
     for (const action of coldBuffPlan(fighters, timestamp, options)) {
         const provider = action.provider.fighter;
         const cost = Math.max(0, Number(action.skill.fetchConsumedMp() || 0));
-        if (provider.vitals.mp < cost) continue;
         // Alone, a buff still on its reuse waits (War Cry: 60 s on, 180 s
         // reuse). A party pass casts its plan whole (its single-target buffs
         // go to each member in one pass).
-        if (options.self && Number(provider.cooldowns[action.skill.fetchSelfId()] || 0) > timestamp + durationMs) continue;
+        if (!buffCastable(action.skill, provider.vitals.mp, options.self ? provider.cooldowns : {}, timestamp + durationMs)) continue;
         const effect = coldBuffEffect(action.skill, timestamp + durationMs);
         action.recipients.forEach((actor) => {
             const target = actor.fighter;
@@ -811,8 +801,7 @@ function castSoloBuffs(state, timestamp) {
     const effects = state.stats?.coldCombat?.effects, cooldowns = state.stats?.coldCombat?.cooldowns || {};
     const mp = Number(state.vitals?.mp) || 0;
     const due = ColdCombatProfile.skillsFor(state).some((skill) => coldBuffSkill(skill, true)
-        && Number(skill.mp || 0) <= mp && !(Number(cooldowns[skill.selfId] || 0) > timestamp)
-        && !buffHeld(effects, coldSkillAdapter(skill), timestamp));
+        && buffDue(coldSkillAdapter(skill), effects, mp, cooldowns, timestamp));
     if (!due) return null;
     const fighters = raidPreparationFighters([state], timestamp);
     const { buffCasts, durationMs } = castPartyBuffs(fighters, timestamp, { self: true });
@@ -1137,9 +1126,11 @@ function attackDamage(fighter, selected, target, rng, { vsMob = false, at = 0, s
     const bow = profile.equipment?.weaponKind === 'Weapon.Bow';
     let damage = 0;
     if (selected?.magic) {
+        // A nuke or a drain fails whole by the level-fail roll (hot C4SkillEffects.execute).
+        if (HitRules.rollsMagicLevel(semantic, true) && !HitRules.magicLevelLands(semantic, profile.level, target.level, rng)) return 0;
         damage = HitRules.magicSkill(attacker, defender, { power: Math.max(1, selected.power),
             spiritshot: shot?.spiritshot === true, blessedSpiritshot: shot?.blessedSpiritshot === true,
-            modifier: vsMob ? coldMagicTargetModifier(target, semantic) : 1 }, rng).damage;
+            modifier: vsMob ? coldTargetModifier(fighter, target, semantic, { magic: true, at }) : 1 }, rng).damage;
     } else if (selected?.skill) {
         // A physical skill never misses (the hot Attack rolls the hit only for
         // a weapon hit); a blow lands by its own chance (HitRules.blowLandChance).
@@ -1150,10 +1141,10 @@ function attackDamage(fighter, selected, target, rng, { vsMob = false, at = 0, s
         damage = HitRules.physicalSkill(attacker, defender, { power: selected.power || 0,
             blow, soulshot: shot?.soulshot === true, bow,
             skillCritRate: HitRules.physicalSkillCritRate(semantic, profile.str),
-            modifier: vsMob ? coldPhysicalTargetModifier(profile, target, semantic, at, fighter, true) : 1 }, rng).damage;
+            modifier: vsMob ? coldTargetModifier(fighter, target, semantic, { skill: true, at }) : 1 }, rng).damage;
     } else if (hitSucceeds(profile.accur, target.evasion, rng)) {
         damage = HitRules.melee(attacker, defender, { soulshot: shot?.soulshot === true, bow, spreadRng: rng,
-            modifier: vsMob ? coldPhysicalTargetModifier(profile, target, semantic, at, fighter, false) : 1 }, rng).damage;
+            modifier: vsMob ? coldTargetModifier(fighter, target, semantic, { at }) : 1 }, rng).damage;
     }
     if (Number(semantic.requires?.charges) > 0) damage *= 0.8 + (0.201 * fighter.charges);
     return damage;
@@ -1189,12 +1180,11 @@ function spendColdShot(fighter) {
 // not an attack, otherwise { skill, damage } for the caller's kill
 // bookkeeping. A killing blow lets a living necromancer among the allies
 // raise a servitor from the corpse.
-function coldBotTurn(fighter, { allies, mob, mobHp, at, time, rng, party = false, help = null }) {
+function coldBotTurn(fighter, { allies, mob, mobFight = null, mobHp, at, time, rng, party = false, help = null }) {
     fighter.now = at;
     // Alone (no other living ally, a party of one too) the bot fights solo:
-    // its class mode, MP price and songs (T100) are a solo bot's. ARCH-NOTE:
-    // a hot bot left alone in its party keeps the party mode (BotClassPolicy
-    // .modeFor reads actor.party); todo T126.
+    // its class mode, MP price and songs (T100) are a solo bot's, as a hot bot
+    // alone in its party (BotClassPolicy.modeFor, T126).
     const solo = !allies.some((ally) => ally !== fighter && ally.vitals.hp > 0);
     if (ensureColdSummon(fighter, at, fighter.cooldowns)) return null;
     expireCharges(fighter, at);
@@ -1204,7 +1194,7 @@ function coldBotTurn(fighter, { allies, mob, mobHp, at, time, rng, party = false
     }
     // Alone, the bot heals itself by the solo rule (SoloSelfHeal, T107); in a party by the author's.
     const heal = solo ? coldSoloHeal(fighter, mobHp, time, at)
-        : chooseHeal(fighter.profile, allies, fighter.vitals.mp, fighter.cooldowns, at, fighter, mob);
+        : chooseHeal(fighter.profile, allies, fighter.vitals.mp, fighter.cooldowns, at, fighter);
     if (heal) {
         const shot = loadColdShot(fighter, heal.skill);
         const hpBefore = fighter.vitals.hp;
@@ -1247,12 +1237,25 @@ function coldBotTurn(fighter, { allies, mob, mobHp, at, time, rng, party = false
     const selected = chooseSkill(profile, fighter.vitals.hp, fighter.vitals.mp, fighter.cooldowns, at, fighter.charges, rng,
         { mob, mobHp, party: party && !solo, summon: fighter.summon });
     const skill = selected?.skill || null;
+    // A bow shot costs its MP (C4WeaponSA.expectedBowMp), as a player's does;
+    // below it no shot leaves (hot BowResources.consume): the bot stands until
+    // its standing regeneration pays the shot (ColdRest), then shoots.
+    const bowMp = skill ? 0 : Number(profile.equipment?.bowMp) || 0;
+    if (bowMp > fighter.vitals.mp) {
+        const perMs = coldRestRegenPerTick(fighter.state, { profile, standing: true, timestamp: at }).mp / Formulas.REGEN_TICK_MS;
+        fighter.readyAt += perMs > 0 ? Math.ceil((bowMp - fighter.vitals.mp) / perMs) : actionDelayMs(profile, null);
+        if (perMs > 0) fighter.vitals.mp = bowMp;
+        countHitRule('bow_mp_wait');
+        return null;
+    }
     const shot = loadColdShot(fighter, skill);
-    const damage = attackDamage(fighter, selected, mob, rng, { vsMob: true, at, shot });
+    let damage = attackDamage(fighter, selected, mob, rng, { vsMob: true, at, shot });
+    // An area skill hits every mob of a pull, each for the full hit (F20).
+    const struck = skill && Number(mob.pull) > 1 && C4SkillRules.hitsArea(C4SkillRules.resolveCached(skill)) ? Number(mob.pull) : 1;
+    if (damage > 0) damage = afterBotHit(fighter, { skill, shot, damage, struck }, mob, mobFight, mobHp, { time, at, rng });
     // A missed normal attack deals 0 and keeps its soulshot.
     if (shot && (skill || damage > 0)) spendColdShot(fighter);
-    // A bow shot costs its MP (C4WeaponSA.expectedBowMp), as a player's does.
-    if (!skill) fighter.vitals.mp = Math.max(0, fighter.vitals.mp - (Number(profile.equipment?.bowMp) || 0));
+    fighter.vitals.mp -= bowMp;
     if (skill) {
         settleCharges(fighter, C4SkillRules.resolve(skill), at);
         spendSkill(fighter, skill, at);
@@ -1267,7 +1270,57 @@ function coldBotTurn(fighter, { allies, mob, mobHp, at, time, rng, party = false
         ));
         if (necromancer) startColdCorpseSummon(necromancer, at, necromancer.cooldowns);
     }
-    return { skill, damage };
+    return { skill, damage, struck };
+}
+
+// What a bot's landed hit on a cold monster does beyond its damage, as the
+// hot hit does (T124): a lethal strike leaves the struck mob at 1 HP
+// (HitRules.lethalStrike; never on a raid boss); a drain heals the caster
+// (Formulas.calcDrainHeal, Vampiric Claw) and a normal hit, not a bow's,
+// steals life (absorbDam: a weapon SA, Vampiric Rage; HitRules.absorbedHp),
+// each of the HP the struck mob had; the monster sends back its reflectDam
+// share of each hit (HitRules.reflectedDamage); a damage+effect or drain
+// skill's effect may land (ColdMobAction.landOnMob). The mobs of a pull share
+// one HP pool: the struck one holds what is left over whole mobs. Returns the
+// damage after a lethal strike.
+function afterBotHit(fighter, { skill, shot, damage, struck }, mob, mobFight, mobHp, { time, at, rng }) {
+    const profile = fighter.profile, vitals = fighter.vitals;
+    const pull = Math.max(1, Number(mob.pull) || 1), oneMaxHp = mob.maxHp / pull;
+    const oneHp = mobHp - Math.max(0, Math.ceil(mobHp / oneMaxHp) - 1) * oneMaxHp;
+    const semantic = skill ? C4SkillRules.resolveCached(skill) : null;
+    if (semantic?.lethal) {
+        const strike = HitRules.lethalStrike(semantic, { level: profile.level },
+            { level: mob.level, hp: oneHp, maxHp: oneMaxHp, guarded: mob.boss === true || mob.raidBossMaxHp != null }, skill.level, rng);
+        if (strike) {
+            damage = Math.max(damage, oneHp - strike.hp);
+            countHitRule('lethal');
+        }
+    }
+    const hpDamage = Math.min(damage, oneHp);
+    if (semantic?.skillType === C4SkillRules.DRAIN) {
+        vitals.hp = Math.min(vitals.maxHp, vitals.hp + struck * Formulas.calcDrainHeal({ damage, targetHp: oneHp,
+            absorbPart: semantic.absorbPart, absorbAbs: semantic.absorbAbs }));
+        countHitRule('drain');
+    } else if (!skill && profile.equipment?.weaponKind !== 'Weapon.Bow') {
+        const stolen = HitRules.absorbedHp(ColdCombatProfile.statAdd(profile, 'absorbDam', at, hitSources(fighter, at)), hpDamage, vitals.hp, vitals.maxHp);
+        vitals.hp += stolen;
+        if (stolen > 0) countHitRule('life_steal');
+    }
+    // A mob the hit killed sends nothing back (hot: no reflect from the dead).
+    const reflected = mobHp > damage * struck ? struck * HitRules.reflectedDamage(mob.reflectDam, damage) : 0;
+    if (reflected > 0) {
+        vitals.hp = Math.max(0, vitals.hp - reflected);
+        countHitRule('reflect');
+    }
+    if (skill && mobFight && landOnMob(mob, mobFight, skill, { level: profile.level, mAtk: profile.mAtk, soulshot: shot?.soulshot === true,
+        spiritshot: shot?.spiritshot === true, blessedSpiritshot: shot?.blessedSpiritshot === true }, time, rng)) countHitRule('effect_landed');
+    return damage;
+}
+
+// cold_fight:<rule>: how often the cold fight meets a hot rule it rolls
+// (T124: lethal, drain, life_steal, reflect, effect_landed, bow_mp_wait); only while diagnostics count.
+function countHitRule(rule) {
+    if (Diagnostics.active()) Diagnostics.count('cold_fight', 'rule', rule);
 }
 
 // roundProfiles: the solo round's matchup profiles (resolveSolo), so its
@@ -1279,7 +1332,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
     const bot = botCombatStats(fightState, timestamp);
     const encounterKey = PveEncounter.key([state], spot, targetNpcId);
     const pending = PveEncounter.read(state.stats?.pveEncounter, encounterKey, timestamp);
-    const matchupProfiles = pending ? null : roundProfiles || TargetMatchup.coldProfiles(bot, fightState, timestamp);
+    const shot = coldShotSupply(fightState, timestamp);
+    const matchupProfiles = pending ? null : roundProfiles || TargetMatchup.coldProfiles(bot, fightState, timestamp, { shot });
     const picked = pending?.mob || ColdCombatProfile.npcForSpot(spot, rng, { preferredNpcId: targetNpcId,
         ...soloPickOptions(state), pull: true, matchupProfiles }) || {
         level: Number(spot.avgLevel || bot.level), maxHp: Math.max(1, Number(spot.mob?.hp || 1)),
@@ -1335,7 +1389,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         cooldowns: { ...(state.stats?.coldCombat?.cooldowns || {}) },
         readyAt: Number(pending?.botReadyAt || 0),
         soulCrystalMark: pending?.soulCrystalMark || null,
-        shot: coldShotSupply(fightState, timestamp),
+        shot,
         shotActions: 0,
         skillUses: 0,
         heals: 0,
@@ -1347,6 +1401,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         summonReadyAt: Number.POSITIVE_INFINITY,
         potionsUsed: 0,
         potionHot: null,
+        // A monster's damage over time still running from the last slice (ColdMobAction.addDot).
+        dots: (pending?.botDots || []).map((dot) => ({ ...dot })),
         now: timestamp
     };
     const allies = [soloFighter];
@@ -1386,6 +1442,13 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         }
         applyColdPotionTicks(soloFighter, time);
         applyPartyHotTicks(soloFighter, timestamp + time);
+        // Damage over time on both sides (ColdMobAction.dotDamage): a monster's
+        // poison or bleed on the bot, the bot's on the monster.
+        const dotTaken = dotDamage(soloFighter, time);
+        vitals.hp -= dotTaken;
+        taken += dotTaken;
+        mobHp -= dotDamage(mobFight, time);
+        if (vitals.hp <= 0 || mobHp <= 0) break;
         actions += 1;
 
         if (summonActs) {
@@ -1402,13 +1465,14 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             if (mobHp <= 0) break;
         }
         else if (botActs) {
-            const hit = coldBotTurn(soloFighter, { allies, mob, mobHp, at: timestamp + time, time, rng });
+            const hit = coldBotTurn(soloFighter, { allies, mob, mobFight, mobHp, at: timestamp + time, time, rng });
+            // A stun that landed holds the monster's next action.
+            mobReadyAt = Math.max(mobReadyAt, mobFight.heldUntil);
             if (!hit) continue;
             const targetHpBeforeHit = mobHp;
-            // An area skill hits every mob of the pull, each for the full hit (F20):
+            // Each mob of a pull an area skill strikes takes the full hit (F20):
             // exact while all k stand, a little generous once some have fallen.
-            const struck = hit.skill && Number(mob.pull) > 1 && C4SkillRules.hitsArea(C4SkillRules.resolveCached(hit.skill))
-                ? Number(mob.pull) : 1;
+            const struck = hit.struck;
             if (struck > 1) areaPullHits += 1;
             mobHp -= Math.max(0, hit.damage) * struck;
             if (mobHp <= 0) {
@@ -1448,7 +1512,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             encounter: !died ? PveEncounter.save(pending, encounterKey, mob, mobHp, timestamp, {
                 soulCrystalMark: soloFighter.soulCrystalMark || null,
                 botReadyAt: Math.max(0, soloFighter.readyAt - time), mobReadyAt: Math.max(0, mobReadyAt - time),
-                mobFight: coldMobFightSave(mobFight, time)
+                mobFight: coldMobFightSave(mobFight, time),
+                ...(soloFighter.dots.length ? { botDots: soloFighter.dots.map((dot) => ({ ...dot, next: dot.next - time })) } : {})
             }) : null,
             died,
             hp: Math.max(0, Math.round(vitals.hp)),
@@ -1518,30 +1583,19 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             musicUses: soloFighter.musicUses, summonUses: soloFighter.summonUses, summonActions: soloFighter.summonActions, petTaken, summonDeaths: soloFighter.summonDeaths || 0,
             potionsUsed: soloFighter.potionsUsed, drunkPotions: soloFighter.drunkPotions || null,
             mobSelfId: mob.selfId || null, timedOut: false, overhit: kill.overhit, pullMobs, areaPullHits, killsPaid: pulled,
+            // The killing action ends after the kill: its swing or cast (resolveSolo's floor per kill).
+            killMs: Math.max(time, soloFighter.readyAt),
             damageTaken: taken, spellTaken }
     };
 }
 
-function chooseHeal(profile, allies, mp, cooldowns, time, caster, mob) {
+function chooseHeal(profile, allies, mp, cooldowns, time, caster) {
     const injured = allies.filter((ally) => ally.vitals.hp > 0 && ally.vitals.hp / Math.max(1, ally.vitals.maxHp) < 0.7)
         .sort((a, b) => (a.vitals.hp / a.vitals.maxHp) - (b.vitals.hp / b.vitals.maxHp))[0];
     if (!injured) return null;
     const skill = (profile.skills || []).filter((candidate) => {
         if (candidate.passive || Number(candidate.mp || 0) > mp || Number(cooldowns[candidate.selfId] || 0) > time) return false;
         const semantic = C4SkillRules.resolveCached(candidate);
-        if (allies.length === 1 && mob && !semantic.hot
-            && [C4SkillRules.HEAL, C4SkillRules.HEAL_PERCENT].includes(semantic.skillType)) {
-            const shot = loadColdShot(caster, candidate);
-            const amount = semantic.skillType === C4SkillRules.HEAL_PERCENT
-                ? profile.maxHp * Number(candidate.power || 0) / 100
-                : Formulas.calcHealAmount(candidate.power, { spiritshot: shot?.spiritshot === true,
-                    blessedSpiritshot: shot?.blessedSpiritshot === true });
-            const damage = ColdMobAction.incomingPerSecond(mob, profile, time)
-                * actionDelayMs(profile, candidate, shot?.spiritshot === true) / 1000;
-            // A weak solo heal that loses more HP during its cast creates an
-            // endless heal loop. Keep attacking or use a useful sustain skill.
-            if (Math.min(profile.maxHp - caster.vitals.hp, amount) <= damage) return false;
-        }
         return [C4SkillRules.HEAL, C4SkillRules.HEAL_PERCENT, C4SkillRules.HEAL_HOT, C4SkillRules.HOT].includes(semantic.skillType)
             && ['self', 'party', 'ally', 'friendly'].includes(semantic.target)
             && (semantic.target !== 'ally' || caster === injured || Number(caster?.state.clanId) > 0
@@ -1648,7 +1702,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
         };
     });
     const matchupProfiles = pending ? [] : fighters.filter(f => f.vitals.hp > 0)
-        .flatMap(f => TargetMatchup.coldProfiles(f.profile, f.state, timestamp));
+        .flatMap(f => TargetMatchup.coldProfiles(f.profile, f.state, timestamp, { shot: f.shot }));
     const persistedRaid = sharedEncounter
         ? coldRaidEncounterProfile(pending, spot, targetNpcId)
         : { mob: pending?.mob || null, hp: Number(pending?.hp), upgraded: false };
@@ -1695,6 +1749,13 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
         time = summonActs ? summonReadyAt : botActs ? ownerReadyAt : mobReadyAt;
         if (time >= fightLimitMs) { time = fightLimitMs; break; }
         fighters.forEach((fighter) => { applyColdPotionTicks(fighter, time); applyPartyHotTicks(fighter, timestamp + time); });
+        // Damage over time (ColdMobAction.dotDamage); a party member's own
+        // poison ends with the slice (only the monster's effects are saved).
+        for (const fighter of fighters) {
+            if (fighter.vitals.hp > 0) fighter.vitals.hp = Math.max(0, fighter.vitals.hp - dotDamage(fighter, time));
+        }
+        mobHp -= dotDamage(mobFight, time);
+        if (mobHp <= 0 || !fighters.some((fighter) => fighter.vitals.hp > 0)) break;
         actions += 1;
 
         if (summonActs) {
@@ -1712,7 +1773,8 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
         }
         else if (botActs) {
             next.actions += 1;
-            const hit = coldBotTurn(next, { allies: fighters, mob, mobHp, at: timestamp + time, time, rng, party: true, help });
+            const hit = coldBotTurn(next, { allies: fighters, mob, mobFight, mobHp, at: timestamp + time, time, rng, party: true, help });
+            mobReadyAt = Math.max(mobReadyAt, mobFight.heldUntil);
             if (!hit) continue;
             // A miss leaves the hate table alone, as a missed hot swing never reaches ReceivedHit.
             if (hit.damage > 0) next.hate = NpcHate.add(next.hate, NpcHate.fromDamage(hit.damage));
@@ -1757,7 +1819,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
                 if (addTarget && hitSucceeds(mob.accur, addTarget.profile.evasion, rng)) {
                     const damage = HitRules.melee(CombatantView.view({ ...attackerView(mob), pAtk: raidPressure.pAtk }),
                         defenderView(addTarget.profile, timestamp + time, addTarget), { bow: mob.weaponKind === 'Weapon.Bow', spreadRng: rng,
-                            modifier: coldNpcWeaponModifier(mob, addTarget.profile, timestamp + time, addTarget) }, rng).damage;
+                            modifier: mobHitModifier(mob, addTarget, timestamp + time) }, rng).damage;
                     const before = addTarget.vitals.hp;
                     addTarget.vitals.hp = Math.max(0, before - damage);
                     if (addTarget.vitals.hp < before) lastVictim = { fighter: addTarget, at: time };
@@ -2245,7 +2307,10 @@ const BackgroundResolver = {
             materialize.items.push(...result.loot);
             combatActions += Number(result.debug?.actions || 0);
             shotActions += Number(result.debug?.shotActions || 0);
-            combatMs += Number(result.debug?.durationMs || 0);
+            // A kill costs at least its killing action (T126): with no walk to
+            // the next mob a one-shot kill would cost no time at all.
+            combatMs += walkMs > 0 ? Number(result.debug?.durationMs || 0)
+                : Math.max(Number(result.debug?.durationMs || 0), Number(result.debug?.killMs || 0));
             skillUses += Number(result.debug?.skillUses || 0);
             heals += Number(result.debug?.heals || 0);
             musicUses += Number(result.debug?.musicUses || 0);

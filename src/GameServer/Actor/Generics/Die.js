@@ -73,8 +73,10 @@ function die(session, actor, context = {}) {
             const timestamp = Number(context.timestamp || Date.now());
             // The death price and persona come from the basics: no economy build on main.
             const economy = EconomyContext.basics(prior, { timestamp });
-            const progress = invoke('GameServer/Bot/Economy/EconomicValuation').progressStats(prior, {
-                timestamp, losses: 1, lossHours: economy.deathHours, persona: economy.persona,
+            const Valuation = invoke('GameServer/Bot/Economy/EconomicValuation');
+            // The basics price a table row's death; this live one also waits for its respawn.
+            const progress = Valuation.progressStats(prior, {
+                timestamp, losses: 1, lossHours: economy.deathHours + Valuation.RESPAWN_HOURS, persona: economy.persona,
                 knowledgeEnabled: invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled(),
                 startedAt: Number(victimSession.botStartedAt || timestamp)
             });

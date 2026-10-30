@@ -1,6 +1,8 @@
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const Attack = invoke('GameServer/Skills/WeaponMask');
 const Formulas = invoke('GameServer/Formulas');
+const HitRules = invoke('GameServer/Combat/HitRules');
+const CombatantView = invoke('GameServer/Combat/CombatantView');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
 const ClassPolicy = invoke('GameServer/Bot/AI/BotClassPolicy');
 const Feedback = invoke('GameServer/Bot/AI/BotActionFeedback');
@@ -116,7 +118,7 @@ function restMsPerMp(bot, party = false) {
 // overflow), the whole rest once the bar is empty; a bot that never sits for
 // MP (RestPolicy: it rests for HP and its MP refills meanwhile) pays none.
 // Estimates are ordinary hits (no crit, shot or spread), skill and attack
-// measured alike.
+// measured alike, by the fight's rules (HitRules.expected*).
 
 // The numbers every candidate of one pick shares (once per select), or null
 // when the bot or target lacks them (no price, the old pick stands).
@@ -141,10 +143,12 @@ function restShare(mp, maxMp) {
 function manaPrice(context, decision, totalMp = decision.cost, extraMs = 0) {
     if (!context) return null;
     const skill = decision.skill, spell = skill.fetchSpell?.() === true;
-    const raw = spell ? Formulas.calcMagicDamage(context.mAtk, decision.power, context.mDef)
-        : skill.fetchSkillType?.() === C4SkillRules.BLOW
-            ? Formulas.calcBlowDamage(context.pAtk, 0, context.pDef, decision.power, { rng: () => 0 })
-            : Formulas.calcPhysicalDamage(context.pAtk, 0, context.pDef, decision.power, { rng: () => 0.5 });
+    // The fight's hit rules in expectation (HitRules.expected*) on ordinary
+    // views: no critical, shot, shield or spread.
+    const raw = spell
+        ? HitRules.expectedMagicSkill(CombatantView.view({ mAtk: context.mAtk }), CombatantView.view({ mDef: context.mDef }), { power: decision.power })
+        : HitRules.expectedPhysicalSkill(CombatantView.view({ pAtk: context.pAtk }), CombatantView.view({ pDef: context.pDef }),
+            { power: decision.power, blow: skill.fetchSkillType?.() === C4SkillRules.BLOW });
     const restMs = context.restMsPerMp * Math.max(0, totalMp);
     const rate = Math.min(context.targetHp, raw * decision.effectiveness)
         / Math.max(1, skillHitMs(context, skill) + extraMs + restMs);
@@ -248,9 +252,8 @@ function evaluateCandidate(bot, target, skill, role, policy = {}, plannedCharges
 
     const type = skill.fetchSkillType();
     const basePower = Math.max(0, Number(skill.fetchPower?.() || 0));
-    let power = type === C4SkillRules.FATAL
-        ? Formulas.calcFatalPower(basePower, bot.fetchHp?.(), bot.fetchMaxHp?.())
-        : basePower;
+    // The power the hit will have at the bot's HP (HitRules.skillPower: Death Link, Fatal).
+    let power = HitRules.skillPower({ skillType: type }, basePower, bot.fetchHp?.(), bot.fetchMaxHp?.());
     if (requiredCharges > 0) power *= 0.8 + (0.201 * currentCharges);
     const distance = distance2d(bot, target);
     const reasons = [];

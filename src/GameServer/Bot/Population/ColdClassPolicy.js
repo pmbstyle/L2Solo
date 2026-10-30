@@ -44,6 +44,8 @@ function adapter(profile) {
         // A bot's id (ColdCombatProfile): a split-kit first class fights for
         // its future second class (BotRoles.kitClassId), hot and cold.
         characterId:profile.characterId,
+        // Its numbers are the profile's for its life (SoloSelfHeal lists its heals once).
+        fixedProfile:true,
         fetchClassId:()=>profile.classId,fetchLevel:()=>profile.level,
         fetchPAtk:()=>profile.pAtk,fetchMAtk:()=>profile.mAtk,fetchAtkSpd:()=>profile.atkSpd,fetchCastSpd:()=>profile.castSpd,
         fetchNormalAttackMs:()=>ColdCombatProfile.normalAttackMs(profile),

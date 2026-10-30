@@ -222,7 +222,7 @@ function execute(session, actor, target, skill, context = {}) {
         return finish();
     }
 
-    if (magicSkill && isOffensive(semantic) && !usesEffectSuccessFormula(semantic) && !rollMagicSuccess(actor, target, skill, semantic, rng)) {
+    if (HitRules.rollsMagicLevel(semantic, magicSkill) && !HitRules.magicLevelLands(semantic, actor.fetchLevel?.(), target.fetchLevel?.(), rng)) {
         clearLoadedShot(context.attack, actor, magicSkill);
         result.resisted = true;
         return finish();
@@ -1049,12 +1049,7 @@ function applyCancel(session, target, semantic, rng) {
 }
 
 function dotFromSkill(skill, semantic) {
-    if (!semantic.dot) return null;
-    return {
-        count: semantic.dot.count,
-        intervalMs: semantic.dot.intervalMs,
-        damage: semantic.dot.damage ?? damageByLevel(skill, semantic.dot) ?? skill.fetchPower()
-    };
+    return HitRules.dotOf(semantic, skill.fetchLevel(), skill.fetchPower());
 }
 
 function hotFromSkill(skill, semantic) {
@@ -1197,15 +1192,6 @@ function clearNpcAggro(session, target, actor) {
     return true;
 }
 
-function rollMagicSuccess(actor, target, skill, semantic, rng) {
-    const chance = Formulas.calcMagicSuccessRate({
-        attackerLevel: actor.fetchLevel?.(),
-        targetLevel: target.fetchLevel?.(),
-        magicLevel: semantic.magicLevel,
-        levelDepend: semantic.levelDepend
-    });
-    return chance >= rng() * 100;
-}
 
 function resistEffect(actor, target, skill, semantic, magicSkill, rng) {
     const chance = HitRules.effectLandChance(semantic, magicSkill, {
@@ -1222,55 +1208,22 @@ function traitResistModifier(target, trait) {
 }
 
 function applyLethal(actor, target, skill, semantic, rng, result) {
-    const lethal = semantic.lethal || {};
-    const maxHp = Number(target.fetchMaxHp?.()) || 0;
-    const currentHp = Number(target.fetchHp?.()) || 0;
-    if (maxHp <= 1 || currentHp <= 1) return false;
-
-    if (lethal.sourceFormula === true) {
-        const protectedTarget = target.fetchIsRaidBoss?.() === true
-            || target.fetchKind?.() === 'Boss'
-            || ['Door', 'SiegeFlag'].includes(target.fetchKind?.());
-        if (protectedTarget) return false;
-        const chance = Formulas.calcLethalStrikeChance(
-            actor.fetchLevel?.(),
-            target.fetchLevel?.(),
-            semantic.magicLevel ?? skill.fetchLevel?.()
-        );
-        if (chance > rng() * 100) {
-            result.forceLethalVitals = true;
-            return true;
-        }
-        return false;
-    }
-
-    const killChance = Number(lethal.killChance) || 0;
-    if (killChance > 0 && killChance >= rng() * 100) {
-        result.damage = Math.max(result.damage, currentHp - 1);
-        return true;
-    }
-
-    const halfKillChance = Number(lethal.halfKillChance) || 0;
-    if (halfKillChance > 0 && halfKillChance >= rng() * 100) {
-        result.damage = Math.max(result.damage, currentHp - Math.max(1, Math.floor(maxHp / 2)));
-        return true;
-    }
-
-    return false;
+    const kind = target.fetchKind?.();
+    const strike = HitRules.lethalStrike(semantic, { level: actor.fetchLevel?.() }, {
+        level: target.fetchLevel?.(), hp: target.fetchHp?.(), maxHp: target.fetchMaxHp?.(),
+        guarded: target.fetchIsRaidBoss?.() === true || kind === 'Boss' || kind === 'Door' || kind === 'SiegeFlag'
+    }, skill.fetchLevel?.(), rng);
+    if (!strike) return false;
+    // A lethal strike leaves the target at 1 HP and 1 CP after the hit (Attack.applyRemoteCastEffect).
+    if (strike.kind === 'lethal') result.forceLethalVitals = true;
+    else result.damage = Math.max(result.damage, (Number(target.fetchHp?.()) || 0) - strike.hp);
+    return true;
 }
 
 function isOffensive(semantic) {
     return semantic.target !== 'self' && semantic.effectType !== 'buff';
 }
 
-function usesEffectSuccessFormula(semantic) {
-    return semantic.skillType === C4SkillRules.EFFECT
-        || semantic.skillType === C4SkillRules.DAMAGE_EFFECT
-        || semantic.skillType === C4SkillRules.CANCEL
-        || semantic.skillType === C4SkillRules.BANE
-        || semantic.skillType === C4SkillRules.AGGRO_REMOVE
-        || semantic.skillType === C4SkillRules.AGGRO_REDUCE_CHAR;
-}
 
 function isAttackableNpc(target) {
     return target?.fetchAttackable?.() === true;

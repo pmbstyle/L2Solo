@@ -520,6 +520,17 @@ assert.strictEqual(strongSoloResult.materialize.exp, Math.round(2376 * expectedG
 assert.strictEqual(strongSoloResult.materialize.sp, Math.round(108 * expectedGapFactor * ProgressionRates.profile().sp));
 assert.strictEqual(strongSoloResult.materialize.adena, 0);
 
+// T126: with no walk between mobs (a crowded spot) each kill still costs its
+// killing action: the one-shot kills of a round fit in its time.
+{
+    const crowded = { ...gigantSpot, id: 'crowded_gigant_slave', spawnArea: 1, npcEntries: [{ selfId: 1187, count: 500 }] };
+    const dense = BackgroundResolver.resolveSolo({ state: strongColdHunter, spot: crowded, targetNpcId: 1187, elapsedMs: 12000, timestamp,
+        rng: () => 0.1 });
+    const swingMs = ColdCombatProfile.normalAttackMs(ColdCombatProfile.fightProfile(strongColdHunter, timestamp));
+    assert(dense.debug.wins >= 1 && dense.debug.wins <= Math.ceil(12000 / swingMs) + 1,
+        `one-shot kills cost their swing: ${dense.debug.wins} kills of ${swingMs} ms in 12 s`);
+}
+
 for (const restUntil of [timestamp - 600000, timestamp + 600000]) {
     const scheduled = BackgroundResolver.resolveSolo({
         state: { ...strongColdHunter, stats: { ...strongColdHunter.stats, restUntil } },
@@ -797,8 +808,10 @@ const coldController = {
     profile: { skills: [{ selfId: 1201, level: 1, passive: false, mp: 20 }] },
     vitals: { mp: 100 }
 };
-assert.strictEqual(BackgroundResolver.combat.coldRaidControlCapacity([coldController], coldRaidMob), 1,
-    'a cold raid party must recognize one available root/sleep/stun controller');
+// T124: a controller holds its land chance of a minion (HitRules.effectLandChance), not a whole one.
+const controlCapacity = BackgroundResolver.combat.coldRaidControlCapacity([coldController], coldRaidMob);
+assert(controlCapacity > 0 && controlCapacity < 1,
+    `a cold raid party must recognize one available root/sleep/stun controller by its land chance (${controlCapacity})`);
 assert.deepStrictEqual(
     BackgroundResolver.combat.coldRaidMinionPressure(coldRaidMob, 1300, 1),
     { activeMinions: 3, uncontrolledMinions: 2, pAtk: 200 },

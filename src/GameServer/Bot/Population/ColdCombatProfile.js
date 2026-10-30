@@ -5,6 +5,7 @@ const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const Formulas = invoke('GameServer/Formulas');
 const CombatantView = invoke('GameServer/Combat/CombatantView');
+const HitRules = invoke('GameServer/Combat/HitRules');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const AttackRange = invoke('GameServer/Actor/AttackRange');
 const { skillTreeEntries, learnedTreeRow, treeSkillLevel } = require('./ColdSkillTree');
@@ -239,6 +240,19 @@ function npcPassiveStatValues(actor, stat) {
         .filter(Number.isFinite);
 }
 
+// The stats an NPC's passives name: every weakness (*Vuln) and resist (*Resist)
+// a hit or an effect's land chance reads (HitRules.targetModifier, traitResistModifier).
+function npcPassiveTraitStats(actor) {
+    const keys = new Set(['bowWpnVuln', 'bluntWpnVuln', 'daggerWpnVuln',
+        ...[...HitRules.ELEMENTAL_DAMAGE_TRAITS].map((element) => `${element}Vuln`)]);
+    for (const skill of actor.fetchPassiveSkills() || []) {
+        if (skill?.fetchPassive?.() !== true) continue;
+        const semantic = skill.fetchSemantic?.() || C4SkillRules.resolve({ selfId: skill.fetchSelfId?.(), name: skill.fetchName?.(), level: skill.fetchLevel?.() });
+        for (const stat of Object.keys(semantic?.stats || {})) if (/(Vuln|Resist)$/.test(stat)) keys.add(stat);
+    }
+    return keys;
+}
+
 function npcPassiveMultiplier(actor, stat) {
     return npcPassiveStatValues(actor, stat).reduce((total, value) => total * value, 1);
 }
@@ -252,6 +266,18 @@ function adjustedNpcStat(base, actor, stat) {
         (number(base) * npcPassiveMultiplier(actor, `${stat}Mul`))
         + npcPassiveAdd(actor, `${stat}Add`)
     ));
+}
+
+// A cold monster's weakness multiplier of a stat (1 without one), and the
+// resist modifier of an effect trait (HitRules.traitResistModifier): the
+// cold fight, its monster side and the solo gate read them here.
+function npcVulnerability(mob, stat) {
+    const value = Number(mob?.vulnerabilities?.[stat]);
+    return Number.isFinite(value) ? Math.max(0, value) : 1;
+}
+function npcTraitResist(mob, trait) {
+    const family = HitRules.resistStats(trait);
+    return HitRules.traitResistModifier(Number(mob?.resists?.[family.resist]) || 0, npcVulnerability(mob, family.vulnerability));
 }
 
 function npcCombatStats(npc) {
@@ -273,13 +299,14 @@ function npcCombatStats(npc) {
     const dex = number(npc.base?.dex, 1);
     const weapon = itemTemplate(npc.equipment?.weapon);
     const shield = Number(npc.equipment?.shield) ? itemTemplate(npc.equipment.shield) : null;
-    const vulnerabilities = {};
-    [
-        'bowWpnVuln', 'bluntWpnVuln', 'daggerWpnVuln',
-        'fireVuln', 'waterVuln', 'windVuln', 'earthVuln', 'holyVuln', 'darkVuln'
-    ].forEach((stat) => {
-        vulnerabilities[stat] = npcPassiveMultiplier(actor, stat);
-    });
+    // Weaknesses (multipliers) and resists (percent) as the hot Npc's
+    // EffectStats reads them from its passives (boss passive 4045: 0.1 to sleep,
+    // root, stun and paralysis).
+    const vulnerabilities = {}, resists = {};
+    for (const stat of npcPassiveTraitStats(actor)) {
+        if (stat.endsWith('Vuln')) vulnerabilities[stat] = npcPassiveMultiplier(actor, stat);
+        else resists[stat] = npcPassiveAdd(actor, stat);
+    }
 
     const result = {
         selfId: number(npc.selfId),
@@ -316,6 +343,12 @@ function npcCombatStats(npc) {
         race: String(npc.traits?.race || '').toLowerCase(),
         undead: NpcTraits.isUndead(npc.traits),
         vulnerabilities,
+        resists,
+        // Damage it sends back of each hit it takes (hot Attack.applyReflectedDamage); a
+        // self buff adds to it (ColdMobAction.buffColdMob).
+        reflectDam: npcPassiveAdd(actor, 'reflectDam'),
+        // A raid boss: no lethal strike lands on it (HitRules.lethalStrike).
+        boss: npc.template?.kind === 'Boss',
         rewardExp: Math.max(0, Formulas.calcAcquiredExp(level, number(npc.rewards?.exp))),
         rewardSp: Math.max(0, number(npc.rewards?.sp))
     };
@@ -1414,7 +1447,7 @@ module.exports = {
     PROFILE_VERSION, classIdOf, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor, buildCount, buildMs, withBuildSite,
     fightProfile, currentCp, seedSnapshot, oldSeedRepair, candidateProfiles, fightSources, combatView, kitHash, skillsFor, forgetBuild, kitStoreSize,
     isAttackSkill, offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect, normalAttackMs,
-    spotSpawns, npcForSpot, killDraw, killChances, npcCombatStats, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
+    spotSpawns, npcForSpot, killDraw, killChances, npcCombatStats, npcVulnerability, npcTraitResist, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
     statMultiplier: multiplier, statAdd: add, statSources,
     // The cold fight's views, hit roll, action times, shots and opening (BackgroundResolver, the solo gate).
     hitSources, attackerView, defenderView, forgetViews, hitSucceeds, expectedHitChance, actionDelayMs, summonAttackMs,
