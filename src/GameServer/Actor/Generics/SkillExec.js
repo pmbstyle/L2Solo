@@ -12,10 +12,33 @@ function cancelFailedSupportTarget(session, actor, data, skill) {
     invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, target, skill);
 }
 
+function canStartSkill(session, actor, data) {
+    if (actor.isDead?.()) return false;
+    const restrictions = invoke('GameServer/Effects/EffectRestrictions');
+    if (!restrictions.canCast(actor)) {
+        restrictions.reject(session);
+        return false;
+    }
+    if (actor.isBlocked?.()) {
+        invoke(path.actor).queueRequest(session, actor, 'skill', data);
+        return false;
+    }
+    return true;
+}
+
 function skillExec(session, actor, data) {
     const skill = actor.skillset.fetchSkill(data.selfId);
-    if (!skill) return;
+    if (!skill || !canStartSkill(session, actor, data)) return;
     const SpoilSweep = invoke('GameServer/Npc/SpoilSweep');
+
+    function scheduleCast(target, callback, options) {
+        // Target lookups and approaches outlive the request's initial action
+        // check. A different request may have started casting or swinging.
+        if (!canStartSkill(session, actor, data)) return;
+        actor.automation.scheduleAction(session, actor, target, skill.fetchDistance(), () => {
+            if (canStartSkill(session, actor, data)) callback();
+        }, options);
+    }
 
     if (skill.fetchTargetKind() === 'self') {
         actor.attack.remoteHit(session, actor, skill);
@@ -28,7 +51,7 @@ function skillExec(session, actor, data) {
             cancelFailedSupportTarget(session, actor, data, skill);
             return;
         }
-        actor.automation.scheduleAction(session, actor, summon, skill.fetchDistance(), () => {
+        scheduleCast(summon, () => {
             actor.attack.remoteHit(session, summon, skill);
         });
         return;
@@ -51,7 +74,7 @@ function skillExec(session, actor, data) {
     }
 
     World.fetchNpc(data.id).then((npc) => {
-        actor.automation.scheduleAction(session, actor, npc, skill.fetchDistance(), () => {
+        scheduleCast(npc, () => {
             if (SpoilSweep.isSpoilSkill(data.selfId)) {
                 SpoilSweep.castSpoil(session, actor, npc, skill);
                 return;
@@ -81,7 +104,7 @@ function skillExec(session, actor, data) {
             && String(session?.accountId || '').startsWith('bot_') });
     }).catch(() => {
         World.fetchUser(data.id).then((user) => {
-            actor.automation.scheduleAction(session, actor, user, skill.fetchDistance(), () => {
+            scheduleCast(user, () => {
                 if (skill.fetchTargetKind() !== 'enemy') {
                     actor.attack.remoteHit(session, user, skill);
                 }

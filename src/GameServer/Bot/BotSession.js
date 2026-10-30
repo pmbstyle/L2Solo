@@ -43,16 +43,29 @@ class BotSession {
             HotActorLodPolicy.recordPacketBroadcast(0, data?.length || 0);
             return;
         }
+        if (data?.__relationActor) {
+            recipients.forEach(user => user.dataSendToMe
+                ? user.dataSendToMe(data)
+                : user.socket.write(this.packData(invoke('GameServer/Network/Response').relationChanged(data.__relationActor, user.actor))));
+            HotActorLodPolicy.recordPacketBroadcast(recipients.length, data.length);
+            return;
+        }
         const packet = this.packData(data);
         recipients.forEach((user) => {
             if (user.socket && typeof user.socket.write === 'function') {
+                if (data?.__movingActor) invoke('GameServer/World/CharacterVisibility').beforeSend(user, data);
                 NpcVisibility.trackNpcPacket(user, data);
                 if (user.recordOutboundPacket) {
                     user.recordOutboundPacket(data);
                 }
                 user.socket.write(packet);
+                if (data?.__characterActor && user.actor && user.dataSendToMe
+                    && invoke('GameServer/Clan/ClanWarRuntime').between(user.actor, data.__characterActor).status !== 'neutral') {
+                    user.dataSendToMe(invoke('GameServer/Network/Response').relationChanged(data.__characterActor, user.actor));
+                }
                 GroundItemVisibility.trackPacket(user, data);
                 NpcVisibility.sendNpcMotionAfterInfo(user, data);
+                if (data?.__characterActor || data?.[0] === 0x12) invoke('GameServer/World/CharacterVisibility').afterSend(user, data);
             }
         });
         HotActorLodPolicy.recordPacketBroadcast(recipients.length, packet.length);

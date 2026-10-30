@@ -6,6 +6,7 @@ function required(objective) {
 }
 function elective(party, now) {
     return party.status === 'active' && !party.stats?.objective?.clanGoalKey
+        && !party.stats?.warOperation
         && party.stats?.objective?.priority !== 'required'
         && !MarketBreak.pending(party, now).length
         && !party.stats?.travel && !party.stats?.coldCompetition?.wait;

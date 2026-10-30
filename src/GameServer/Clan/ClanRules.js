@@ -5,6 +5,8 @@ const CP_CL_MANAGE_CREST = 8;
 const CP_CH_OPEN_DOOR = 16;
 const CP_CL_CLAN_WAR = 1024;
 const CP_ALL = 2047;
+// Wall-clock milliseconds; independent of game time and progression rates.
+const JOIN_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 const LEVEL_REQUIREMENTS = {
     0: { nextLevel: 1, sp: 30000, adena: 650000 },
@@ -46,6 +48,7 @@ module.exports = {
     CP_CH_OPEN_DOOR,
     CP_CL_CLAN_WAR,
     CP_ALL,
+    JOIN_COOLDOWN_MS,
     LEVEL_REQUIREMENTS,
     memberLimit,
     normalizeName,

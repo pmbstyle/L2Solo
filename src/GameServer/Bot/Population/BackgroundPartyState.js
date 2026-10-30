@@ -363,14 +363,14 @@ const BackgroundPartyState = {
         });
     },
 
-    createOrUpdate(party) {
+    createOrUpdate(party, options = {}) {
         const prepared = this.prepareCommit(party);
         if (!prepared) return Promise.resolve(skippedWrite('roster_size', party?.partyId));
         const ready = initialized ? Promise.resolve(true) : this.init();
 
         return ready.then((isReady) => {
             if (!isReady) return skippedWrite('db_not_ready', prepared.snapshot.partyId);
-            return Database.saveBackgroundParty(prepared.row).then((result) => {
+            return Database.saveBackgroundParty(prepared.row, options).then((result) => {
                 // Only the whole-party lifecycle can change a hot roster.
                 // A cold maintenance job may have prepared this save before activation.
                 if (!result.affectedRows) return skippedWrite(result.reason || 'not_written', prepared.snapshot.partyId);

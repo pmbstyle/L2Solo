@@ -38,9 +38,10 @@ async function run() {
     Generation.configure({ code: '1'.repeat(40), config: '2'.repeat(64) });
     const Board = invoke('GameServer/AfkTrade/BoardIndex').BoardIndex;
     const board = new Board();
-    // Native fields of level 30-31 monsters a level-35 warrior may hunt alone
-    // (and 13_20, monster 711, a level-40 field it may not).
-    const spots = require('./helpers/wishSectionSpots')([711, 485, 79, 924, 344]);
+    // Native fields of level 30 monsters a level-35 warrior may hunt alone
+    // (and 17_13, monster 600, a level-40 field it may not). T43 spawns: the
+    // former monsters (711, 485, 79, 344) have no coordinate spawns any more.
+    const spots = require('./helpers/wishSectionSpots')([600, 1011, 924, 755, 609]);
     Economy.configure({ board: () => board, spots: () => spots });
     Config.knowledgeErrorsEnabled = false;
     // A warrior in the gear its level plans, so the route finds fields it may hunt.
@@ -56,8 +57,8 @@ async function run() {
         timing: {}, vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 } };
     const T = Date.now();
 
-    // One bot, idle on the field X its held decision hunts (-5_29, monster
-    // 79), pulled to A (13_20) before the trip (`standing`: the published
+    // One bot, idle on the field X its held decision hunts (-5_16, monster
+    // 924), pulled to A (17_13) before the trip (`standing`: the published
     // state moved before it; `room`: the spots with room), the trip, its
     // arrival. verdict(state) = does the held decision hold over that state;
     // round(before, after) = the sections a far step's round raises with the
@@ -68,14 +69,14 @@ async function run() {
         return { ...state, spotId: spot.id, currentRegion: spot.name,
             loc: { locX: spot.center.locX, locY: spot.center.locY, locZ: spot.center.locZ } };
     };
-    const pulled = state => ({ ...spotAt(state, '13_20'), activity: 'hunting' });
+    const pulled = state => ({ ...spotAt(state, '17_13'), activity: 'hunting' });
     const full = X => id => String(id) !== String(X);
     const backoff = id => ({ spotId: id, untilStep: 1e9, startedAt: T, attempts: 1, reason: 'death_pressure' });
     function detour(characterId, { stats = {}, standing = pulled, room = full } = {}) {
-        const native = { ...spotAt(base, '-5_29'), activity: 'idle', characterId, stats: { ...base.stats, ...stats } };
+        const native = { ...spotAt(base, '-5_16'), activity: 'idle', characterId, stats: { ...base.stats, ...stats } };
         const held = Economy.forState(native, { timestamp: T });
         const leaf = held.network.activity, X = leaf?.spotId;
-        assert(leaf?.activity === 'hunting' && String(X) === '-5_29', 'fixture: a hunting decision at the field it stands on');
+        assert(leaf?.activity === 'hunting' && String(X) === '-5_16', 'fixture: a hunting decision at the field it stands on');
         const packet = held.statsPacket, published = { ...native, stats: { ...native.stats, ...packet } };
         const proof = held.eventProof();
         const verdict = state => Economy.eventProofHolds(state, proof, { timestamp: T },
@@ -156,7 +157,7 @@ async function run() {
         // and stands there with X full: its search is a flight, which stays
         // an event.
         const Z = spots.find(spot => spot.raidBoss !== true && spot.center
-            && spot.npcEntries?.some(entry => entry.selfId === 485));
+            && spot.npcEntries?.some(entry => entry.selfId === 1011));
         assert(Z, 'fixture: a ground to flee from');
         const { X, route, traveling, arrived, verdict } = detour(990102, { stats: { spotBackoffs: [backoff(Z.id)] },
             standing: state => ({ ...spotAt(state, Z.id), activity: 'hunting' }) });

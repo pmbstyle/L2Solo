@@ -176,14 +176,13 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], timestamp = Da
     const finalizedPlan = preservePreviousPlan
         ? previousPlan
         : GearAcquisitionPlanner.finalizePlan(state, previousPlan, rawPlan, finalizationContext, timestamp);
-    const costedPlan = GearAcquisitionPlanner.withMaterialFarmEffort(finalizedPlan, state, spots);
-    const retainedInputs = previousPlan?.crystalPreparation && ['complete', 'blocked'].includes(costedPlan.status)
+    const retainedInputs = previousPlan?.crystalPreparation && ['complete', 'blocked'].includes(finalizedPlan.status)
         && !GearAcquisitionPlanner.equipmentTargetFulfilled(state, previousPlan)
         && GearAcquisitionPlanner.acquisitionTargetAllowed(state, previousPlan)
         && (previousPlan.materials || []).some(row => Number(state.inventory?.[row.selfId]?.amount || 0) > 0);
     const acquisitionPlan = retainedInputs ? deferredWishPlan(previousPlan, replanContext, state, timestamp) : withBridgeInputPreparation(state, previousPlan, {
-        ...costedPlan,
-        ...(costedPlan.target?.selfId === wishTargetId ? { target: { ...costedPlan.target, slot: Number(chosen.object.slot) } } : {}),
+        ...finalizedPlan,
+        ...(finalizedPlan.target?.selfId === wishTargetId ? { target: { ...finalizedPlan.target, slot: Number(chosen.object.slot) } } : {}),
         marketFallback: finalizedPlan.status === 'active' && finalizedPlan.strategy === 'craft'
             && Number(finalizedPlan.acquisitionProgress?.at || finalizedPlan.startedAt || timestamp) + 20 * 60 * 1000 <= timestamp
     }, timestamp);

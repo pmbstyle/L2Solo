@@ -1,6 +1,30 @@
 const ClanService = invoke('GameServer/Clan/ClanService');
 const ServerResponse = invoke('GameServer/Network/Response');
 
+// C4/Lisvus CheckClanJoinCondition: target penalties precede the capacity check.
+const FAILURE_MESSAGES = {
+    no_clan: 212,
+    no_privilege: 794,
+    clan_invite_cooldown: 231,
+    target_has_clan: 10,
+    clan_full: 233
+};
+
+function notifyRejection(session, code, target) {
+    if (code === 'target_join_cooldown') {
+        const minutes = Math.max(1, Math.ceil((target.fetchClanJoinExpiryTime() - Date.now()) / 60000));
+        const remaining = `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+        session.dataSendToMe(ServerResponse.systemMessage.text(
+            `${target.fetchName()} cannot join another clan yet. Penalty remaining: ${remaining} (real time).`
+        ));
+        return;
+    }
+    const id = code === 'invalid_target' && target === session.actor ? 4 : FAILURE_MESSAGES[code];
+    if (!id) return;
+    const args = [231, 10].includes(id) ? [target.fetchName()] : [];
+    session.dataSendToMe(ServerResponse.systemMessage(id, ...args));
+}
+
 function isBotSession(session) {
     return !!(session && (
         session.constructor.name === 'BotSession' ||
@@ -42,6 +66,7 @@ function accept(session, options = {}) {
 
     const allowed = ClanService.canInvite(requestor, session.actor);
     if (!allowed.ok || Number(allowed.clan.id) !== Number(clan.id)) {
+        notifyRejection(invite.requestorSession, allowed.code, session.actor);
         session.dataSendToMe(ServerResponse.actionFailed());
         return Promise.resolve({ ok: false, code: allowed.code || 'not_allowed' });
     }
@@ -85,5 +110,6 @@ function accept(session, options = {}) {
 
 module.exports = {
     accept,
+    notifyRejection,
     isBotSession
 };

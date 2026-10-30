@@ -72,9 +72,10 @@ assert.strictEqual(radarSession.sent[1].readInt32LE(5), 1);
 assert.strictEqual(QuestService.removeRadar(radarSession, -16760, 78268, -3480), true);
 assert.strictEqual(radarSession.sent.at(-1).readInt32LE(1), 1, 'removal must send RadarControl delete');
 
-const bandits = DataCache.npcSpawns.find((entry) => entry.selfId === 'gludio01_qm1822_01');
-assert.strictEqual(bandits.spawns.length, 10, 'Cat’s Eye Bandit must have all ten source spawns');
-assert.deepStrictEqual(bandits.spawns[0].coords[0], { locX: -46027, locY: 145033, locZ: -3032, head: 11372 });
-assert.deepStrictEqual(bandits.spawns.at(-1).coords[0], { locX: -49201, locY: 147781, locZ: -2792, head: 14037 });
+// Cat's Eye Bandit (Q403 Path to Rogue target) stands at its nine Mobius C4 points.
+const bandits = DataCache.npcSpawns.flatMap((entry) => entry.spawns).filter((spawn) => spawn.selfId === 5038);
+assert.strictEqual(bandits.flatMap((spawn) => spawn.coords).length, 9, 'Cat’s Eye Bandit must have all nine source spawns');
+assert.ok(bandits.flatMap((spawn) => spawn.coords).some((coord) =>
+    coord.locX === -49201 && coord.locY === 147781 && coord.locZ === -2784 && coord.head === 14037));
 
 console.log('quest spawn and radar checks passed');

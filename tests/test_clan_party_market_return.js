@@ -45,5 +45,38 @@ Risk.backoffForStates = () => { throw new Error('must not apply solo bans to a c
     assert.strictEqual(saved.activity, 'party_wait');
     assert.strictEqual(saved.stats.partyRequest.clanGoalKey, objective.clanGoalKey);
     assert.strictEqual(saved.stats.partyMarketReturn, null);
+    const warToken = { ...token, objective: {}, warOperationId: 'active-war', supplyItemId: 1463 };
+    const warArrival = { ...arrived, stats: { partyMarketReturn: warToken } };
+    party = { ...party, status: 'active', memberIds: [1, 2, 4, 5, 6, 7, 8, 9], stats: {
+        warOperation: { id: 'active-war', status: 'returning', expiresAt: now - 1 }, marketAbsences: { 3: warToken } } };
+    Life.statesForParty = async () => party.memberIds.map(id => ({ ...leader, characterId: id }));
+    const returned = await Service.resolveColdState(warArrival);
+    assert.strictEqual(returned.reason, 'returned_to_clan_party');
+    assert.strictEqual(party.memberIds.length, 9, 'military return uses the nine-member limit, not the ordinary limit of five');
+    assert.deepStrictEqual(party.stats.marketAbsences, {});
+    assert.strictEqual(assigned.at(-1).state.stats.partyRequest, null, 'a military ticket cannot create a clan equipment assignment');
+    for (const operation of [null, { id: 'different-war' }]) {
+        party = { ...party, stats: { ...party.stats, warOperation: operation } };
+        const ended = await Service.resolveColdState(warArrival);
+        assert.strictEqual(ended.reason, 'war_supply_operation_ended');
+        assert.strictEqual(saved.activity, 'hunting');
+        assert.strictEqual(saved.stats.partyMarketReturn, null);
+        assert.strictEqual(saved.stats.partyRequest, null);
+    }
+    party = { ...party, status: 'hot', stats: { warOperation: { id: 'active-war' } } };
+    const held = await Service.resolveColdState(warArrival);
+    assert.strictEqual(held.reason, 'party_return_retry', 'an existing hot military party keeps its supply return pending');
+    assert.strictEqual(held.state.stats.partyMarketReturn.warOperationId, 'active-war');
+    party.status = 'active';
+    const shopping = { ...returning, stats: { ...returning.stats, partyMarketReturn: warToken, townVisit: { completed: false } } };
+    for (const marketResult of [{ purchased: true }, { purchased: false, reason: 'war_supply_only' }]) {
+        const home = await Service.finishColdMarketStep(shopping, null, null, null, { state: shopping }, { ...marketResult, state: shopping }, null);
+        assert.strictEqual(home.activity, 'traveling', 'a military supply visit returns instead of continuing gear purchases or town errands');
+        assert.deepStrictEqual(home.stats.travel.to, leader.loc);
+        assert.strictEqual(home.stats.travel.arrivalActivity, 'party_wait');
+        assert.strictEqual(home.stats.partyMarketReturn.warOperationId, 'active-war');
+    }
+    assert.strictEqual(Service.finishColdMarketStep(shopping, null, null, null, { state: shopping }, { state: shopping, pending: true }, null), shopping,
+        'a supply deal already in progress retains ownership until it completes');
     console.log('Clan market return: live rendezvous, solo risk isolation, same-party return and dissolved-party waiting passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

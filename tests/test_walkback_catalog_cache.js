@@ -35,7 +35,8 @@ try {
     World.npc = world.npc; World.user = world.user;
     Spots.reset(); Profiles.reset(); Walk.reset();
     const profiles = Profiles.ensure(), raw = Spots.spots, catalogs = [profiles, raw];
-    assert(raw.length > 1800 && profiles.length > raw.length);
+    // The whole native catalogue: 1583 spots on the Mobius spawns (T43 table; 1868 before).
+    assert(raw.length > 1500 && profiles.length > raw.length);
     Math.random = original.random;
     let compared = 0;
     for (const honest of [false, true]) for (const karma of [0, 3000]) {

@@ -1037,7 +1037,7 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
             // read: the same evaluate and soloCanHunt for these profiles and
             // safety options (resisted only names a pick without safety).
             if (options.soloSafety) {
-                const verdict = Matchup.speciesVerdict(options.matchupProfiles, entry.selfId, options);
+                const verdict = Matchup.speciesVerdict(options.matchupProfiles, entry.selfId, { ...options, pull: entry.pull });
                 return { ...entry, match: { eligible: verdict?.canHunt === true, efficiency: verdict?.efficiency } };
             }
             const match = Matchup.evaluate(options.matchupProfiles, npcCombatStats(ItemTemplateIndex.find(DataCache.npcs, entry.selfId)));
@@ -1114,21 +1114,37 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
 
 // The kit parts' text forms (combatView over a state; a near bot's state is
 // the row it posts). wornPart: the worn rows of a state-format inventory (null: none).
-function wornPart(inventory) {
-    return inventory && typeof inventory === 'object'
-        ? Object.values(inventory).filter((row) => row?.equipped).map((row) => [row.selfId, row.amount, row.slot,
-            row.enchant, (row.equippedSlots?.length ? row.equippedSlots : [row.slot]).join('.'), (row.instances || []).filter((item) => item.equipped)
-                .map((item) => `${item.slot}.${item.enchant}`).join('/')].join(':')).sort().join(',')
-        : 'no-inventory';
+function wornPart(inventory, known = {}) {
+    if (!inventory || typeof inventory !== 'object') return 'no-inventory';
+    const rows = [];
+    for (const item of Object.values(inventory)) {
+        if (!item?.equipped) continue;
+        const template = itemTemplate(item.selfId);
+        if (template) known.worn = true;
+        const amount = Math.max(0, number(item.amount, 1));
+        const explicit = Array.isArray(item.equippedSlots)
+            ? [...new Set(item.equippedSlots.map(Number).filter(slot => slot > 0))].slice(0, amount) : [];
+        const slot = number(item.slot, number(template?.etc?.slot));
+        const pair = [1, 2].includes(slot) ? [1, 2] : [4, 5].includes(slot) ? [4, 5] : [slot];
+        const slots = explicit.length ? explicit : pair.slice(0, Math.min(amount, pair.length));
+        for (const wornSlot of slots) {
+            const instance = item.instances?.find(row => row.equipped && number(row.slot) === wornSlot);
+            rows.push([Number(item.selfId), wornSlot, number(instance?.enchant, number(item.enchant))].join(':'));
+        }
+    }
+    return rows.sort().join(',');
 }
 // The skills of a capture (stats.coldCombat).
 function skillsPart(saved) {
-    return Array.isArray(saved.skills) ? `${saved.skillSource}:${saved.skills.map((skill) => `${skill.selfId}:${skill.level}`).join(',')}` : '';
+    const source = ['database', 'hot'].includes(saved.skillSource) ? 'learned' : saved.skillSource;
+    return Array.isArray(saved.skills) ? `${source}:${saved.skills.map(skill => `${skill.selfId}:${skill.level}`).sort().join(',')}` : '';
 }
 // The capture's numbers (stats.coldCombat); setEffects: its armour set
 // effects when the state has no inventory to derive them (savedSetEffects).
-function capturePart(saved, setEffects = []) {
-    return JSON.stringify([saved.base || null, saved.henna || null, saved.equipment || null, ...setEffects]);
+function capturePart(saved, setEffects = [], worn = false) {
+    // With a native worn bag gatherKit derives every equipment field from
+    // those slots. The hot capture's redundant aggregate is not another kit.
+    return JSON.stringify([saved.base || null, saved.henna || null, worn ? null : saved.equipment || null, ...setEffects]);
 }
 // The slow build inputs, no clock: class (saved, current), level, worn gear,
 // hennas, skills, the hot capture. A new array per call.
@@ -1137,8 +1153,10 @@ function combatView(state) {
     const currentClassId = number(state.stats?.classId, number(state.classId));
     // Main publishes the current class in stats; worker hydration may also
     // carry its alias at the root. Both forms have the same native build.
-    return [number(saved.classId, currentClassId), currentClassId, state.level, wornPart(state.inventory),
-        (state.stats?.hennas || []).join(','), skillsPart(saved), capturePart(saved, savedSetEffects(state))];
+    const known = {}, worn = wornPart(state.inventory, known);
+    const hennas = [0, 1, 2].map(slot => number(state.stats?.hennas?.[slot]));
+    return [number(saved.classId, currentClassId), currentClassId, state.level, worn,
+        hennas.join(','), skillsPart(saved), capturePart(saved, savedSetEffects(state), known.worn)];
 }
 function buildHash(text) {
     return fnv1a32(text) * 2 ** 21 + (fnv1a32(text, 0x9e3779b9) & 0x1fffff);

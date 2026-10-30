@@ -1,6 +1,6 @@
 const Geodata = invoke('GameServer/Geodata/GeodataEngine');
 
-const SPACING = 640;
+const SPACING = 320;
 const MAX_POINTS = 128;
 const OFFSETS = [-80, -56, -32, -16, 16, 32, 56, 80];
 
@@ -63,7 +63,9 @@ function build(path, checkBudget = () => {}) {
                 const tangent = center[index - 1];
                 const length = distance(tangent, next) || 1;
                 let selected = base;
-                for (const scale of [1, 0.5]) {
+                // Keep narrower, fully checked lanes when a client doorway
+                // cannot fit the wider offsets. Never relax body clearance.
+                for (const scale of [1, 0.5, 0.25, 0.125]) {
                     const candidate = {
                         locX: Math.round(base.locX - (next.locY - tangent.locY) / length * offset * scale),
                         locY: Math.round(base.locY + (next.locX - tangent.locX) / length * offset * scale),

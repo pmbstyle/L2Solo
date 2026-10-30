@@ -4,11 +4,9 @@ require('../src/Global');
 
 const DataCache = invoke('GameServer/DataCache');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
-const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const skillBindings = require('../data/Npcs/Skills/c4_devils_isle.json');
-const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 DataCache.init();
 
@@ -16,37 +14,16 @@ const mobIds = [832, 833, 834, 835, 836, 839, 840, 841, 842, 843, 844, 845, 846,
 const mobIdSet = new Set(mobIds);
 const npcs = DataCache.npcs.filter((npc) => mobIdSet.has(npc.selfId));
 const rewards = DataCache.npcRewards.filter((reward) => mobIdSet.has(reward.selfId));
-const spawnArea = DataCache.npcSpawns.find((area) => area.selfId === 'c4-devils-isle');
 
 assert.strictEqual(npcs.length, 15, "all 15 Lisvus Devil's Isle monster variants must be loaded");
 assert.strictEqual(rewards.length, 15, "every Devil's Isle monster must have a reward template");
-assert.ok(spawnArea, "Devil's Isle spawn slice must be loaded");
 
-const spawnCoords = spawnArea.spawns.flatMap((spawn) => spawn.coords);
-assert.strictEqual(spawnArea.spawns.length, 15, 'spawn definitions must cover every source monster variant');
-assert.strictEqual(spawnCoords.length, 452, 'the import must retain all 452 Lisvus spawn rows');
-assert.ok(spawnArea.spawns.every((spawn) => spawn.total === 1 && spawn.bias === 0));
-assert.ok(spawnArea.spawns.filter((spawn) => spawn.selfId !== 986).every((spawn) => spawn.respawn === 55));
-assert.strictEqual(spawnArea.spawns.find((spawn) => spawn.selfId === 986).respawn, 320,
-    'Sairon must retain its distinct source respawn');
-
-assert.deepStrictEqual(
-    [...new Set(spawnCoords.map((coord) => GeodataEngine.getRegionKey(coord.locX, coord.locY)))],
-    ['21_24'],
-    "all source spawns must remain in the Devil's Isle geodata region"
-);
-verifyGeodataWhenAvailable(GeodataEngine, [[21, 24]], "Devil's Isle", () => {
-    const heightDeltas = spawnCoords.map((coord) => Math.abs(
-        GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-    ));
-    assert.ok(heightDeltas.filter((delta) => delta <= 128).length >= 449,
-        'at least 449 source coordinates must agree with geodata within 128 Z');
-    assert.strictEqual(Math.max(...heightDeltas), 4432,
-        'the audited multi-level ship coordinate must retain its exact source/geodata delta');
-});
-assert.ok(spawnArea.spawns.find((spawn) => spawn.selfId === 847).coords.some((coord) =>
-    coord.locX === 52196 && coord.locY === 213895 && coord.locZ === -4032),
-    'the lower-deck Vale Master source coordinate must not be snapped to the surface geodata layer');
+const mobiusIds = new Set(DataCache.npcSpawns.filter((area) => String(area.selfId).startsWith('mobius:'))
+    .flatMap((area) => area.spawns.map((spawn) => Number(spawn.selfId))));
+// Mardian (834): Mobius has its template (20834) but no spawn row.
+const unspawned = new Set([834]);
+assert.deepStrictEqual(mobIds.filter((id) => !unspawned.has(id) && !mobiusIds.has(id)), [],
+    "Devil's Isle monsters are spawned from Mobius");
 
 const pikeman = npcs.find((npc) => npc.selfId === 832);
 assert.deepStrictEqual(

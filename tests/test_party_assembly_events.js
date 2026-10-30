@@ -72,7 +72,8 @@ async function main() {
         at: options.prepared.timestamp, soloSource: null, partySource: null });
     disposers.push(() => { Income.compare = originalIncome; });
     Coordinator.requestPartyGoals = async (party, selected) => ({ ok: true,
-        sources: GoalCalculation.sources(selected), joint: GoalPolicy.joint(party, selected) });
+        sources: GoalCalculation.sources(selected), joint: party.stats.forming
+        ? GoalPolicy.formingVerdict(selected, party.stats.forming.requested) : GoalPolicy.joint(party, selected) });
     const clock = { now: Date.now() }, jobs = registry(clock);
     const driver = new PartyAssemblyEvents({ registry: jobs, life: Life, parties: Parties,
         classify: state => Population.partyAssemblyInput(state),

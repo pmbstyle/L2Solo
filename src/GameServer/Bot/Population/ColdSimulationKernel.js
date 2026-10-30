@@ -8,6 +8,10 @@ const PROPOSAL_PAYLOAD_LIMIT_BYTES = 240 * 1024;
 // A step not answered by a commit ack this long after its start is requeued
 // (a party by its leader); a late ack then misses its proposal and is dropped.
 const STEP_STALL_MS = 30000;
+// Ready resolver promises chained back to back ran a tick's whole batch as one task (T41 profile
+// 10-26: up to 1.3 s with no turn; the heartbeat, the flush and main's acks waited behind it). Each
+// queued step and command starts on its own turn: same work, no long task.
+const nextTurn = require('../../EventLoopTurn');
 // Step lead: a far step starts this much before its due so its commit lands
 // by the due (resolved as of the due, max(now, dueAt)). It follows the
 // measured start -> commit ack time as a one-sided average: it rises a
@@ -199,6 +203,7 @@ const NO_FACTS = Object.freeze({ leaderParty: () => null, partyMembers: () => []
 
 // party: the party row this bot leads, or null.
 function partySessionExpiryAt(state = {}, party = null, partySession = {}) {
+    if (party?.stats?.warOperation) return 0;
     const partyId = party?.partyId || state.party?.partyId || state.partyId || '';
     if (!partyId) return 0;
 
@@ -302,7 +307,7 @@ function partyTransitionProposals(run, memberStates, party, timestamp, enqueuedA
     };
     // Material travel changes the collection contract, and evacuation returns
     // funded help. Fence that party row in the same transaction as every leg.
-    if (fence || (CraftMaterialParty.isObjective(run.party.stats?.objective)
+    if (fence || run.party.stats?.warOperation || (CraftMaterialParty.isObjective(run.party.stats?.objective)
         && ['party_travel', 'party_travel_wait', 'party_arrival'].includes(activity))) {
         party = { ...party, updatedAt: Math.max(enqueuedAt, Number(run.party.updatedAt || 0) + 1) };
         atomicGroup.partyChanges = [{ ...fencedPartyChange(run, party), ...(party.spotId ? { spotId: party.spotId } : {}) }];
@@ -408,6 +413,18 @@ function lifecycleKind(state = {}, facts = NO_FACTS) {
 
 function isSchedulableKind(kind) {
     return kind !== 'inactive' && kind !== 'event_driven' && kind !== 'party_member';
+}
+
+function occupationRound(state, plan, timestamp) {
+    const activity = plan?.activityPick?.activity;
+    if (state?.activity !== 'hunting' || state.stats?.pvpEncounter
+        || !['shopping', 'selling', 'crafting', 'improving'].includes(activity)) return null;
+    const pending = state.stats?.pveEncounter;
+    if (pending && require('./ColdPveEncounter').read(pending, pending.key, timestamp)) return null;
+    // The chosen occupation owns this round. Fighting before posting its
+    // execution can spend the kit and replace a purchase with recovery.
+    return { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+        nextResolveAt: timestamp + 30000, debug: { activity, reason: 'selected_occupation' } };
 }
 
 // A caller that already read this state's kind in the same call passes it;
@@ -652,6 +669,7 @@ class ColdSimulationKernel {
         this.spotOf = typeof options.spotOf === 'function' ? options.spotOf : () => null;
         this.interactionMemory.playingHours = id => this.states.get(id)?.state?.stats?.playedHours;
         this.interactionMemory.clanSocial = new (require('../../Clan/ClanSocialView'))();
+        this.interactionMemory.clanWars = new (require('../../Clan/ClanWarView'))();
         this.versions = new Map();
         this.heap = new DueHeap();
         this.scheduleTokens = new Map();
@@ -1292,7 +1310,7 @@ class ColdSimulationKernel {
                 if (!attempt) continue;
                 commandsSelected += 1;
                 DiagnosticConfig.developerDiagnostics && (this.stats.commands += 1);
-                this.resolveChain = this.resolveChain.then(() => this.resolveCommand(id, attempt));
+                this.resolveChain = this.resolveChain.then(nextTurn).then(() => this.resolveCommand(id, attempt));
             }
         }
         // Back on the heap unless the scan replaced or cancelled them.
@@ -1444,7 +1462,7 @@ class ColdSimulationKernel {
             const spot = this.spotOf(current.state);
             const result = hallVisit
                 ? { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 30000 }
-                : await this.resolveSolo({
+                : occupationRound(resolveState, lifecyclePlan, timestamp) || await this.resolveSolo({
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 state: resolveState,
                 spot,
@@ -1608,10 +1626,10 @@ class ColdSimulationKernel {
                 if (parties.has(partyId)) continue;
                 parties.add(partyId);
                 const source = this.capturePartyResolverSource(partyId);
-                this.resolveChain = this.resolveChain.then(() => this.resolvePartyStep(partyId, source));
+                this.resolveChain = this.resolveChain.then(nextTurn).then(() => this.resolvePartyStep(partyId, source));
             } else {
                 const id = Number(candidate.characterId), source = this.captureResolverSource(id);
-                this.resolveChain = this.resolveChain.then(() => this.resolveStep(id, source));
+                this.resolveChain = this.resolveChain.then(nextTurn).then(() => this.resolveStep(id, source));
             }
         }
     }
@@ -1689,9 +1707,9 @@ class ColdSimulationKernel {
 
             const meetingPending = require('./PartyHuntingAssembly').meetingPending(run.members);
             const rescuing = run.members.some(s => s.vitals?.hp <= 0);
-            const equipmentBridgeReview = !meetingPending && !rescuing && !BackgroundPartyLifecycle.raidStarted(run.party)
+            const equipmentBridgeReview = !run.party.stats?.warOperation && !meetingPending && !rescuing && !BackgroundPartyLifecycle.raidStarted(run.party)
                 && run.members.some(member => this.equipmentBridgeReason?.(member) || this.requiresWeaponBridge?.(member));
-            if (!meetingPending && !rescuing && !CraftMaterialPartyRoute.evacuating(run.party)
+            if (!meetingPending && !rescuing && !run.party.stats?.warOperation && !CraftMaterialPartyRoute.evacuating(run.party)
                 && (BackgroundPartyLifecycle.sessionExpired(run.party, startedAt, this.partySession)
                 || ClanEquipment.needsReview(run.party, run.members)
                 || equipmentBridgeReview)) {
@@ -2085,7 +2103,7 @@ class ColdSimulationKernel {
             if (!this.resolverSourceCurrent(source)) return;
             const resolveState = lifecyclePlan?.plannedState || active.state;
             const spot = resolveState.activity === 'traveling' ? null : lifecyclePlan?.spot || this.spotOf(active.state);
-            const result = await this.resolveSolo({
+            const result = occupationRound(resolveState, lifecyclePlan, timestamp) || await this.resolveSolo({
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 state: resolveState,
                 spot,

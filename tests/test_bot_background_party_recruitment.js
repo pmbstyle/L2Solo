@@ -66,7 +66,8 @@ async function run() {
     assert(Database.isReady());
     // A unit world with one available authored ordinary camp. Its actual NPC
     // mix and center are borrowed from canonical data, never invented combat.
-    const NATIVE_SPOT = '-1_10';
+    // T43 table: '0_13' (level 18, NPCs 44/36 as the gone level-19 '-1_10', plus 466).
+    const NATIVE_SPOT = '0_13';
     const source = require('../data/Bots/spot-reward-npcs.json').rows.find(row => row[0] === NATIVE_SPOT);
     const cell = require('../data/Bots/spot-table.json').spots.find(row => row[0] === NATIVE_SPOT);
     assert(source && cell);
@@ -375,15 +376,19 @@ async function run() {
         activity: 'hunting',
         party: { partyId: null, leaderId: null }
     };
+    let activationSnapshot = groupedState;
     PartyState.setStatus = async (partyId, status) => {
         activationOrder.push(`status:${partyId}:${status}`);
         return { partyId, status };
     };
     LifeState.releaseDissolvedPartyMembers = async (partyId, reason) => {
         activationOrder.push(`release:${partyId}:${reason}`);
+        activationSnapshot = releasedState;
         return 2;
     };
-    LifeState.cachedState = (characterId) => characterId === groupedState.characterId ? releasedState : null;
+    // The cache keeps the party link until the native cleanup completes.
+    // Activation now refreshes this snapshot after fencing the cold worker.
+    LifeState.cachedState = (characterId) => characterId === activationSnapshot.characterId ? activationSnapshot : null;
     SpotService.findCurrentSpot = () => null;
     BotManager.loadAndSpawnBot = (_accountName, options) => {
         activationOrder.push(`spawn:${options.coldLifeState?.party?.partyId || 'solo'}`);
@@ -410,6 +415,16 @@ async function run() {
         ],
         'background party cleanup must finish before a member spawns from the released solo snapshot'
     );
+
+    activationOrder.length = 0;
+    const alreadyReleasedState = { ...groupedState, characterId: 91006, name: 'ReleasedDuringFenceProbe' };
+    activationSnapshot = { ...alreadyReleasedState, activity: 'hunting', party: { partyId: null, leaderId: null } };
+    const alreadyReleased = await HotActivation.activate(alreadyReleasedState, 'manual', {
+        keepStoreLocation: true, interruptBackgroundActivity: true
+    });
+    assert.strictEqual(alreadyReleased.ok, true);
+    assert.deepStrictEqual(activationOrder, ['handoff:91006', 'spawn:solo'],
+        'a party link cleared before the fence completes must not dissolve the old roster again');
 
     activationOrder.length = 0;
     const travelingState = {
@@ -550,10 +565,12 @@ async function run() {
         characterId: 91004,
         name: 'FailedSpawnProbe'
     };
-    LifeState.releaseDissolvedPartyMembers = async () => 2;
-    LifeState.cachedState = (characterId) => characterId === failedSpawnState.characterId
-        ? { ...releasedState, characterId: failedSpawnState.characterId, name: failedSpawnState.name }
-        : null;
+    let failedSpawnSnapshot = failedSpawnState;
+    LifeState.releaseDissolvedPartyMembers = async () => {
+        failedSpawnSnapshot = { ...failedSpawnState, activity: 'hunting', party: { partyId: null, leaderId: null } };
+        return 2;
+    };
+    LifeState.cachedState = (characterId) => characterId === failedSpawnState.characterId ? failedSpawnSnapshot : null;
     BotManager.loadAndSpawnBot = () => Promise.resolve(null);
     ColdSimulationCoordinator.acceptColdState = async (state) => {
         activationOrder.push(`restore:${state.characterId}`);
@@ -580,13 +597,22 @@ async function run() {
     };
     let releaseStatus;
     const releaseGate = new Promise((resolve) => { releaseStatus = resolve; });
-    PartyState.setStatus = async () => releaseGate;
-    LifeState.releaseDissolvedPartyMembers = async () => 2;
-    LifeState.cachedState = (characterId) => characterId === concurrentState.characterId ? concurrentReleasedState : null;
+    let concurrentSnapshot = concurrentState;
+    PartyState.setStatus = async (partyId, status) => {
+        activationOrder.push(`status:${partyId}:${status}`);
+        return releaseGate;
+    };
+    LifeState.releaseDissolvedPartyMembers = async () => {
+        concurrentSnapshot = concurrentReleasedState;
+        return 2;
+    };
+    LifeState.cachedState = (characterId) => characterId === concurrentState.characterId ? concurrentSnapshot : null;
 
     const firstActivation = HotActivation.activate(concurrentState, 'concurrent_first', { keepStoreLocation: true, interruptBackgroundActivity: true });
     const secondActivation = HotActivation.activate(concurrentState, 'concurrent_second', { keepStoreLocation: true, interruptBackgroundActivity: true });
-    await Promise.resolve();
+    await new Promise(setImmediate);
+    assert.deepStrictEqual(activationOrder, ['handoff:91003', 'status:bgp_activation_probe:dissolved'],
+        'the first activation must wait for native party cleanup before spawning');
     releaseStatus({ partyId: concurrentState.party.partyId, status: 'dissolved' });
     const concurrentResults = await Promise.all([firstActivation, secondActivation]);
     assert.strictEqual(concurrentResults.filter((result) => result.ok).length, 1, 'only one concurrent request may activate a character');

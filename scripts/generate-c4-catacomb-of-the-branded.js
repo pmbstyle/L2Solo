@@ -162,16 +162,6 @@ const npcs = newMobIds.map((id) => npcRowsById.get(id)).map((row) => {
 });
 
 const npcNameById = new Map(mobIds.map((id) => [id, npcRowsById.get(id)[2]]));
-const spawnDefinitions = mobIds.map((npcId) => ({
-    selfId: npcId,
-    name: npcNameById.get(npcId),
-    coords: spawnRows.filter((row) => Number(row[3]) === npcId)
-        .map((row) => ({ locX: row[4], locY: row[5], locZ: row[6], head: row[9] })),
-    total: 1,
-    respawn: 60,
-    bias: 0
-}));
-const spawns = [{ selfId: 'c4-catacomb-of-the-branded', bounds: [], spawns: spawnDefinitions }];
 
 const dropRows = tuples('sql/droplist.sql').filter((row) => newMobIdSet.has(Number(row[0])));
 if (dropRows.length !== 236) throw new Error(`Expected 236 monster drops, found ${dropRows.length}`);
@@ -258,7 +248,6 @@ if (JSON.stringify(missingItems.map((item) => item.selfId)) !== JSON.stringify(e
 }
 
 writeJson('data/Npcs/c4_catacomb_of_the_branded.json', npcs);
-writeJson('data/Npcs/Spawns/c4_catacomb_of_the_branded.json', spawns);
 writeJson('data/Npcs/Rewards/c4_catacomb_of_the_branded.json', rewards);
 writeJson('data/Items/Others/c4_catacomb_of_the_branded.json', missingItems);
 writeJson('data/Npcs/Skills/c4_catacomb_of_the_branded.json', skillRows);

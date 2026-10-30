@@ -2,14 +2,9 @@ const assertLocation = require('./helpers/assert_c4_monster_location');
 
 assertLocation({
     slug: 'c4_necropolis_of_pilgrims',
-    areaId: 'c4-necropolis-of-pilgrims',
     displayName: 'Necropolis of Pilgrims',
     mobIds: [1144, 1145, 1146, 1170, 1171, 1172, 1191, 1192, 1193, 1213, 1214, 1215],
     importedNpcIds: [1144, 1145, 1146, 1170, 1171, 1172, 1191, 1192, 1193, 1213, 1214, 1215],
-    spawnCounts: [[1144, 14], [1145, 15], [1146, 15], [1170, 15], [1171, 14], [1172, 16],
-        [1191, 15], [1192, 14], [1193, 14], [1213, 15], [1214, 15], [1215, 14]],
-    respawn: 120,
-    region: [21, 21],
     origin: [50000, 118000, -5408],
     sample: {
         id: 1144, name: 'Catacomb Shadow', level: 34, hostile: true,

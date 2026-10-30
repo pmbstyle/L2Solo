@@ -44,6 +44,38 @@ async function run() {
         members[2], now, null, shotGoal), 'a raid cannot be interrupted by a stock trip');
     assert(!Break.allowed(clanParty, members[2], now, null, { ...shotGoal, target: { itemId: 1864, amount: 390 } }),
         'a material order cannot impersonate a shot refill');
+    const cleanup = { reason: 'inventory_capacity', slots: 81, limit: 80 };
+    const sellGoal = { type: 'sell_inventory', target: { itemId: 1463, amount: 1 },
+        plan: { expectedBenefit: 'market_sale_inventory' } };
+    for (const status of ['assembling', 'traveling', 'holding', 'fighting', 'returning']) {
+        const warParty = { ...party, status: 'active', stats: { ...clanParty.stats,
+            warOperation: { id: 'live-war', status, expiresAt: now - 1 } } };
+        for (const current of [gearGoal, sellGoal, { ...shotGoal, target: { itemId: 1864, amount: 50 } }]) {
+            assert(!Break.allowed(warParty, members[2], now, cleanup, current), `${status}: shopping/cleanup cannot leave an unfinished war`);
+            assert.strictEqual(Break.goal(warParty, members[2], current, now, cleanup), null);
+            assert.strictEqual(Break.departure(warParty, members[2], { stats: {} }, now, cleanup, current), null);
+        }
+        for (const itemId of [1463, 2510, 3948, 17, 1342, 1061, 736, 737]) {
+            const current = { ...shotGoal, target: { itemId, amount: 10 } };
+            assert(Break.allowed(warParty, members[2], now, cleanup, current), `${status}: combat supply ${itemId} may be restocked`);
+            assert.strictEqual(Break.goal(warParty, members[2], current, now, cleanup), current,
+                'an overfull bag cannot replace the permitted refill with a sale');
+            const departed = Break.departure(warParty, members[2], { stats: {} }, now, cleanup, current);
+            assert.strictEqual(departed.stats.partyMarketReturn.warOperationId, 'live-war');
+            assert.strictEqual(departed.stats.partyMarketReturn.supplyItemId, itemId);
+            assert(!Break.allowed({ ...warParty, stats: { ...warParty.stats, ...Break.stats(warParty, departed) } },
+                members[1], now, null, current), 'another member waits for the reserved supply absence');
+        }
+        const errand = { type: 'market_errand', target: { itemId: 1341, amount: 100 },
+            plan: { expectedBenefit: 'market_errand', purpose: 'arrows', marketTown: 'Dion' } };
+        assert(Break.allowed(warParty, members[2], now, null, errand));
+        assert(!Break.allowed(warParty, members[2], now, null,
+            { ...errand, target: { itemId: 729, amount: 1 } }), 'an enchant scroll is not a supply exception');
+        assert(!Break.allowed(warParty, members[2], now, null,
+            { ...shotGoal, target: { itemId: 1463, amount: 0 } }), 'an empty order cannot authorize a supply absence');
+    }
+    const completed = { ...party, stats: { ...party.stats, warOperation: null } };
+    assert(Break.allowed(completed, members[2], now, cleanup, gearGoal), 'ordinary market rules resume once the order is cleared');
     console.log('Bot party market break checks passed');
 }
 

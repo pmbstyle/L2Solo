@@ -315,6 +315,27 @@ try {
     }, { minDensity: 1, minDistance: 1, maxDistance: 10000 });
     assert.strictEqual(nestedRoleRoute.route.role, 'spoiler',
         'SpotService must preserve nested role and class metadata for route scoring');
+
+    const easier = { id: 'safe-lower-band', name: 'Safe lower field', minLevel: 58, maxLevel: 58,
+        avgLevel: 58, levelCounts: { 58: 8 }, density: 8,
+        center: { locX: 2500, locY: 0, locZ: 0 }, npcNames: ['Field beast'] };
+    const stranded = { level: 65, classId: 40, role: 'mage', loc: { locX: 0, locY: 0, locZ: 0 } };
+    SpotService.ensureIndexed = () => [easier];
+    assert.strictEqual(SpotService.findBestSpot(stranded)?.spot.id, easier.id,
+        'relocation must search the full seven-level ordinary target band');
+    assert.strictEqual(SpotService.findBestSpot(stranded, { levelRange: 3 }), null,
+        'an explicitly narrower search keeps its requested range');
+    SpotService.ensureIndexed = () => [{ ...easier, minLevel: 57, maxLevel: 57, avgLevel: 57, levelCounts: { 57: 8 } }];
+    assert.strictEqual(SpotService.findBestSpot(stranded), null,
+        'ordinary relocation does not silently widen the target band');
+    const recoverySpot = { ...easier, id: 'safe-recovery', minLevel: 50, maxLevel: 50,
+        avgLevel: 50, levelCounts: { 50: 8 } };
+    SpotService.ensureIndexed = () => [recoverySpot];
+    assert.strictEqual(SpotService.findBestSpot(stranded, { allowEasierSpots: true })?.spot.id, recoverySpot.id,
+        'a stranded hot hunter can relocate to safe easier ground when ordinary camps are absent');
+    SpotService.ensureIndexed = () => [{ ...recoverySpot, minLevel: 49, maxLevel: 49, avgLevel: 49, levelCounts: { 49: 8 } }];
+    assert.strictEqual(SpotService.findBestSpot(stranded, { allowEasierSpots: true }), null,
+        'easier-ground relocation is bounded to fifteen levels');
 } finally {
     SpotService.ensureIndexed = originalEnsureIndexed;
 }

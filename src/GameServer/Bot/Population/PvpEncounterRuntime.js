@@ -46,7 +46,7 @@ async function finish(e, actions, reason = 'pvp_interrupted') {
     // (a kill ends it in a step), at its deadline or earlier.
     const at = Date.now();
     PvpJournal.coldConflict({ key: e.key, revenge: e.reason === 'revenge',
-        reason: e.reason === 'revenge' ? 'revenge' : 'contest', spotId: e.spotId, npcId: e.npcId,
+        reason: e.reason === 'clan_war' ? 'clan_war' : e.reason === 'revenge' ? 'revenge' : 'contest', spotId: e.spotId, npcId: e.npcId,
         partyIds: e.sides.map(s => s.partyId), sideSizes: e.sides.map(s => s.memberIds.length),
         outcome: reason, fought: true, principals: e.sides.map(s => actions.life.cachedState(s.principalId) || { characterId: s.principalId }),
         durationMs: Math.min(at, e.expiresAt) - e.startedAt, actions: e.actions, personaFor: actions.personaFor, at });
@@ -106,7 +106,7 @@ async function pass(actions) {
                     partyRevision: p?.revision };
             };
             const event = { key: e.key, at, pressure: 3, spotId: e.spotId, npcId: e.npcId,
-                actor: participant(e.sides[0]), peer: participant(e.sides[1]), action: e.reason === 'revenge' ? 'revenge' : 'contest', pvpIntent: true, willing: e.willing };
+                actor: participant(e.sides[0]), peer: participant(e.sides[1]), action: e.reason === 'clan_war' ? 'clan_war' : e.reason === 'revenge' ? 'revenge' : 'contest', pvpIntent: true, willing: e.willing };
             const result = await ColdPartyConflict.apply({ ...actions, event, resume: e,
                 incrementalPvp: true, onEncounter: register, waitMs: 15000, cooldownMs: 600000,
                 rng: seeded(`${e.key}:${e.sequence}`) });
@@ -115,7 +115,7 @@ async function pass(actions) {
                 if (!result.encounter) encounters.delete(e.key);
             } else {
                 actions.report && (actions.report.lastPvpStepFailure = { key: e.key, at, reason: result.reason });
-                if (result.reason === 'encounter_separated_or_protected') await finish(e, actions, 'pvp_separated_or_protected');
+                if (['encounter_separated_or_protected', 'revenge_no_longer_wanted', 'war_context_changed'].includes(result.reason)) await finish(e, actions, 'pvp_separated_or_protected');
                 else if (e.expiresAt <= Date.now()) await finish(e, actions, 'pvp_expired');
             }
         } finally { pending.delete(e.key); }

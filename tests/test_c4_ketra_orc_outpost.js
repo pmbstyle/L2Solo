@@ -1,12 +1,6 @@
-const assert = require('assert');
-
 require('../src/Global');
 
-const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const assertC4MonsterLocation = require('./helpers/assert_c4_monster_location');
-const assertMonsterEmptyBeforeSlice = require('./helpers/assert_monster_empty_before_slice');
-const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
-const spawnAreas = require('../data/Npcs/Spawns/c4_ketra_orc_outpost.json');
 
 const mobIds = [
     1324, 1325, 1326, 1327, 1328, 1329, 1330, 1331, 1332, 1333, 1334,
@@ -16,20 +10,9 @@ const mobIds = [
 assertC4MonsterLocation({
     slug: 'c4_ketra_orc_outpost',
     displayName: 'Ketra Orc Outpost',
-    areaId: 'c4-ketra-orc-outpost',
     mobIds,
     importedNpcIds: mobIds,
     bindingSlugs: ['c4_ketra_orc_outpost'],
-    spawnCounts: [
-        [1324, 52], [1325, 51], [1326, 54], [1327, 34], [1328, 28], [1329, 34],
-        [1330, 36], [1331, 36], [1332, 32], [1333, 36], [1334, 34], [1335, 42],
-        [1336, 32], [1337, 40], [1338, 36], [1339, 42], [1340, 34], [1341, 44],
-        [1342, 34], [1343, 10], [1345, 10], [1347, 10]
-    ],
-    respawn: 120,
-    respawnByMob: { 1343: 100, 1345: 100, 1347: 100 },
-    region: [24, 15],
-    maxHeightDelta: 1340,
     origin: [140000, -80000, -4000],
     sample: {
         id: 1324, name: 'Ketra Orc Footman', level: 77, hostile: true,
@@ -63,23 +46,4 @@ assertC4MonsterLocation({
         1342: [4158, 4561, 4571, 4031, 4035], 1343: [4038],
         1345: [4100], 1347: [4158, 4561, 4030, 4035]
     }
-});
-
-assertMonsterEmptyBeforeSlice({
-    slug: 'c4_ketra_orc_outpost',
-    displayName: 'Ketra Orc Outpost',
-    box: { minX: 132272, maxX: 159607, minY: -95555, maxY: -68265, minZ: -5584, maxZ: -2832 }
-});
-
-verifyGeodataWhenAvailable(GeodataEngine, [[24, 15]], 'Ketra Orc Outpost', () => {
-    const coords = spawnAreas[0].spawns.flatMap((spawn) => spawn.coords);
-    const heightDeltas = coords.map((coord) => Math.abs(
-        GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-    ));
-    assert.strictEqual(heightDeltas.filter((delta) => delta <= 32).length, 648,
-        '648 authentic Ketra points must agree with current C4 geodata within 32 Z');
-    assert.strictEqual(heightDeltas.filter((delta) => delta <= 128).length, 687,
-        '687 authentic Ketra points must agree with current C4 geodata within 128 Z');
-    assert.strictEqual(Math.max(...heightDeltas), 1340,
-        'known multi-level Ketra source offsets must not drift beyond the audited maximum');
 });

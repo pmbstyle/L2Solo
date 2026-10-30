@@ -4,6 +4,7 @@
 // hourly summary for days.
 
 const MAX_PENDING = 5000;
+const WarCombat = require('./GameServer/Clan/ClanWarCombat');
 
 let pending = [];
 
@@ -30,7 +31,7 @@ const matchup = (partyIds) => partyIds.map((partyId) => (partyId ? 'party' : 'so
 // that leaves the fight going writes nothing. kills: the cold kills of the
 // fight; a kill ends it, so they all come from its last step.
 function coldConflict({ key, revenge, reason, spotId, npcId, partyIds, sideSizes, outcome, fought,
-    principals, losingSide = null, kills = [], durationMs = 0, actions = 0, personaFor, at }) {
+    principals, combatants = principals, losingSide = null, kills = [], durationMs = 0, actions = 0, personaFor, at }) {
     const [first, second] = principals;
     record({
         at,
@@ -57,7 +58,8 @@ function coldConflict({ key, revenge, reason, spotId, npcId, partyIds, sideSizes
         pkKills: kills.filter((kill) => !kill.pvp).length,
         durationMs: Math.max(0, Math.round(Number(durationMs) || 0)),
         actions: Number(actions || 0),
-        playerInvolved: 0
+        playerInvolved: 0,
+        warFacts: WarCombat.cold({ key, at, fought, actions, principals, combatants, kills })
     });
 }
 
@@ -88,7 +90,8 @@ function hotKill({ attacker, victim, pk, attackerKarma, playerInvolved, at }) {
         pkKills: pk ? 1 : 0,
         durationMs: 0,
         actions: 0,
-        playerInvolved: playerInvolved ? 1 : 0
+        playerInvolved: playerInvolved ? 1 : 0,
+        warFacts: WarCombat.hot(attacker, victim, at)
     });
 }
 

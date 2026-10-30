@@ -572,3 +572,43 @@ body[data-view="clans"] .observer-shell, body[data-view="rankings"] .observer-sh
 }
 .has-app-shell .point-label, .has-app-shell .cluster-breakdown, .has-app-shell .raid-boss-label { fill: var(--map-text); stroke: var(--map-outline); }
 .has-app-shell .point.is-selected .point-core { stroke: var(--map-text); }
+
+.clan-warfare { margin: 22px 0; padding: 22px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.clan-war-heading, .clan-war-operation-heading, .clan-war-operation-title, .clan-war-event { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+.clan-war-heading h4 { margin: 6px 0 0; font-size: 20px; }
+.clan-war-badge, .clan-war-directory-badge { display: inline-flex; flex-shrink: 0; align-items: center; border: 1px solid var(--line-soft); border-radius: 5px; padding: 4px 7px; font-size: 10px; font-weight: 600; color: var(--muted); }
+.clan-war-badge.mutual, .clan-war-directory-badge.mutual { color: var(--red); border-color: color-mix(in srgb, var(--red) 35%, transparent); background: color-mix(in srgb, var(--red) 8%, transparent); }
+.clan-war-badge.pending, .clan-war-badge.incoming, .clan-war-badge.outgoing, .clan-war-directory-badge.pending { color: var(--amber); }
+.clan-war-badge.peace { color: var(--green); }
+.clan-row-side .clan-war-directory-badge { display: inline-flex; width: max-content; max-width: 100%; justify-content: center; padding: 2px 5px; font-size: 9px; text-align: center; }
+.clan-war-relations, .clan-war-operations { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 10px; margin-top: 16px; }
+.clan-war-relation, .clan-war-operation { min-width: 0; padding: 14px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--surface-soft); }
+.clan-war-relation > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.clan-warfare a { color: var(--text); text-decoration: none; overflow-wrap: anywhere; }
+.clan-warfare a:hover { color: var(--gold); text-decoration: underline; }
+.clan-warfare a:focus-visible { outline: 2px solid var(--gold); outline-offset: 4px; }
+.clan-war-relation p, .clan-war-operation p, .clan-war-note { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.clan-war-relation p { margin: 10px 0 6px; }
+.clan-war-note { margin: 12px 0 0; }
+.clan-war-note.is-stale { color: var(--amber); }
+.clan-war-relation time, .clan-war-event time { color: var(--faint); font-size: 10px; white-space: nowrap; }
+.clan-war-decision { font-size: 12px; line-height: 1.7; margin: 16px 0 0; }
+.clan-war-decision > span { display: block; color: var(--muted); }
+.clan-war-operation-heading { margin: 20px 0 0; padding-top: 18px; border-top: 1px solid var(--line-soft); font-size: 12px; }
+.clan-war-operation-heading > span { color: var(--faint); }
+.clan-war-operation-title { align-items: flex-start; flex-wrap: wrap; font-size: 12px; line-height: 1.6; }
+.clan-war-operation-title > span { color: var(--gold); font-size: 10px; }
+.clan-war-operation.is-incoming { border-left: 2px solid var(--red); }
+.clan-war-destination { display: flex; flex-direction: column; gap: 5px; font-size: 12px; line-height: 1.6; }
+.clan-war-destination small { color: var(--faint); font-size: 10px; }
+.clan-warfare .clan-war-map-link { display: inline-block; margin-top: 12px; color: var(--gold); font-size: 11px; }
+.clan-war-history { margin-top: 18px; border-top: 1px solid var(--line-soft); font-size: 12px; }
+.clan-war-history summary { padding: 14px 0 0; cursor: pointer; }
+.clan-war-history summary > span { margin-left: 8px; color: var(--faint); font-size: 10px; }
+.clan-war-event { padding-top: 14px; align-items: flex-start; font-size: 11px; line-height: 1.7; }
+.clan-war-event small { display: block; color: var(--muted); font-size: 10px; }
+@media (max-width: 680px) {
+    .clan-warfare { padding: 16px; }
+    .clan-war-heading { flex-wrap: wrap; }
+    .clan-war-event { flex-wrap: wrap; gap: 3px; }
+}

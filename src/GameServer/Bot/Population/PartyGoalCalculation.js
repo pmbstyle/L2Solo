@@ -1,11 +1,12 @@
 'use strict';
+const Sections = require('../Economy/DecisionSections');
 
 // Complete group inputs are process-local. Only source versions and the joint
 // policy's small stats packet cross back to the main thread.
 function source(state) {
     return { characterId: Number(state.characterId),
         updatedAt: Number(state.updatedAt || 0), phase: state.phase,
-        partyId: String(state.party?.partyId || state.partyId || ''),
+        partyId: Sections.partyIdOf(state),
         revision: Number(state.simulation?.revision || 0) };
 }
 
@@ -37,7 +38,14 @@ function validMembers(party, members, partial = false) {
         && party.memberIds.includes(party.leaderId) && typeof party.partyId === 'string' && !!party.partyId;
 }
 
+// A forming roster (main's `stats.forming`, before the party is built) gets only its verdict,
+// PartyGoalPolicy.formingVerdict: the accepted ids, no goals.
 async function calculate(party, members, prepare, timestamp, current = () => true, { spots } = {}) {
+    if (party.stats?.forming) {
+        if (!current()) throw new Error('party_goal_expired');
+        // lazy: optional the joint policy loads only for a goal or recruit check
+        return require('./PartyGoalPolicy').formingVerdict(members, party.stats.forming.requested || null, { spots, timestamp });
+    }
     if (require('./OpportunisticRaidPolicy').isObjective(party.stats?.objective)) {
         if (!current()) throw new Error('party_goal_expired');
         const objective = party.stats.objective;

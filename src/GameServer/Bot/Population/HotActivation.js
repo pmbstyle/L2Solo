@@ -75,6 +75,7 @@ function releaseBackgroundParty(state, reason) {
 function restoreColdAfterActivationFailure(state) {
     if (!state?.characterId) return Promise.resolve({ ok: false, reason: 'missing_state' });
     const current = LifeState.cachedState(state.characterId) || state;
+    if (current.phase !== 'cold') return Promise.resolve({ ok: false, reason: 'not_cold' });
     return ColdSimulationCoordinator.acceptColdState(current).then((accepted) => {
         if (!accepted?.ok) {
             utils.infoWarn('BotPopulation', 'failed to return %s to cold worker after activation failure: %s', state.name, accepted?.reason || 'unknown');
@@ -126,7 +127,7 @@ const HotActivation = {
             const mammonVisit = state.activity === 'crafting' && !!state.stats?.mammonReturn;
             const craftShop = state.activity === 'crafting' && !mammonVisit && state.stats?.craftShop
                 ? CraftShopService.profileFor(state) : null;
-            const placement = ActivationPlacement.resolve(state, {
+            let placement = ActivationPlacement.resolve(state, {
                 ...options,
                 keepStoreLocation: options.keepStoreLocation || !!craftShop || mammonVisit,
                 storeLoc: craftShop?.loc || state.loc
@@ -142,13 +143,34 @@ const HotActivation = {
             const BotManager = invoke('GameServer/Bot/BotManager');
             let craftActivation = false;
             let releasedForActivation = false;
+            let fencedForActivation = false;
+            let economyDecision = null;
             return ColdSimulationCoordinator.fenceBot(state.characterId).then((fence) => {
+                fencedForActivation = true;
                 if (!fence.ok && fence.reason !== 'worker_not_ready') {
                     utils.infoWarn('ColdWorker', 'activation fence fallback for %s: %s', state.name, fence.reason);
                 }
                 const current = LifeState.cachedState(state.characterId) || state;
                 if (playerInvite && current.party?.partyId) throw Object.assign(Error('already_grouped'), { partyRefusal: true });
-                if (playerInvite) state = current;
+                const moved = current.spotId !== state.spotId || ['locX', 'locY', 'locZ']
+                    .some(key => current.loc?.[key] !== state.loc?.[key]);
+                state = current;
+                if (current.activity === 'traveling' && !leavesTrip) {
+                    throw Object.assign(Error('in_transit'), { activationRefusal: 'in_transit' });
+                }
+                if (moved) {
+                    placement = ActivationPlacement.resolve(current, {
+                        ...options,
+                        keepStoreLocation: options.keepStoreLocation || !!craftShop || mammonVisit,
+                        storeLoc: craftShop?.loc || current.loc
+                    });
+                    if (!placement) throw Object.assign(Error('no_safe_activation_placement'),
+                        { activationRefusal: 'no_safe_activation_placement' });
+                }
+                if (!leavesTrip && !playerInvite && options.interruptBackgroundActivity !== true) {
+                    const decisions = invoke('GameServer/Bot/Population/ColdEconomyDecision');
+                    economyDecision = decisions.current(current, fence.economyDecision) ? fence.economyDecision : null;
+                }
                 return ColdSimulationOwner.handoffToMain(current);
             }).then((handoff) => {
                 if (!handoff.ok) throw new Error(`simulation_owner_handoff_failed:${handoff.reason}`);
@@ -201,6 +223,7 @@ const HotActivation = {
                         locZ: placement.loc?.locZ,
                         keepStoreLocation: !!craftShop || mammonVisit,
                         coldLifeState: !craftShop ? state : null,
+                        economyDecision: !craftShop ? economyDecision : null,
                         populationLocationPolicy: reason === 'near_player' && !options.forceNearPlayer
                             ? 'physical' : 'return',
                         coldCraftState: craftShop ? state : null,
@@ -229,13 +252,13 @@ const HotActivation = {
                     return { ok: true, state, reason };
                 }));
             }).catch((error) => {
-                const restore = releasedForActivation
+                const restore = releasedForActivation || fencedForActivation
                     ? restoreColdAfterActivationFailure(state)
                     : Promise.resolve(null);
                 return restore.then(() => {
                     pendingActivations.delete(state.characterId);
-                    const failureReason = error.partyRefusal ? 'already_grouped'
-                        : craftActivation ? 'craft_recipe_sync_failed' : 'activation_prepare_failed';
+                    const failureReason = error.activationRefusal || (error.partyRefusal ? 'already_grouped'
+                        : craftActivation ? 'craft_recipe_sync_failed' : 'activation_prepare_failed');
                     utils.infoWarn('BotPopulation', 'activation failed for %s: %s', state.name, error.message || error);
                     return { ok: false, reason: failureReason, state };
                 });

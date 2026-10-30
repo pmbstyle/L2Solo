@@ -186,7 +186,8 @@ const GeodataEngine = {
     },
 
     getGeodataDir() {
-        return process.env.L2NODE_GEODATA_DIR || path.join(__dirname, '../../../data/Geodata');
+        return sharedGeodata?.descriptor.directory
+            || path.resolve(process.env.L2NODE_GEODATA_DIR || path.join(__dirname, '../../../data/Geodata'));
     },
 
     sharedDescriptor() {

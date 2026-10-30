@@ -46,4 +46,19 @@ function busyWith(state, flags) {
     return null;
 }
 
-module.exports = { GROUPS, COLD_CLAIM, CLAIM_REASONS, busyWith };
+// A saved shop return point can predate military assignment. Only a present
+// member of the operation may supersede it; supply departures retain their
+// separate ticket and must physically return before they can fight again.
+function staleWarMarketReturn(state, party) {
+    const stats = state?.stats || {}, operation = party?.stats?.warOperation;
+    return !!stats.marketReturn && party?.status === 'active' && !!operation?.id
+        && Number(stats.clanId ?? state.clanId) === operation.clanId
+        && (state.party?.partyId || state.partyId) === party.partyId
+        && party.memberIds.includes(state.characterId)
+        && ['grouped', 'hunting', 'resting', 'dead'].includes(state.activity)
+        && !stats.travel && !stats.partyMarketReturn && !stats.tradeMeeting
+        && !stats.supplyErrand && !stats.warehouseWorkflow && !stats.warehouseErrand
+        && !stats.craftShop && !stats.craftStationId;
+}
+
+module.exports = { GROUPS, COLD_CLAIM, CLAIM_REASONS, busyWith, staleWarMarketReturn };

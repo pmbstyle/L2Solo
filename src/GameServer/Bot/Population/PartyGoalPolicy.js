@@ -78,8 +78,13 @@ function participation(state, peers, { persona, roll = 0.5, bonus = 0 } = {}) {
     return { accept: roll < probability, probability, roll, goal: declaration(state) };
 }
 
+// Clan and raid rosters form without a forming verdict.
+function verdictFree(requested) {
+    return !!requested?.clanGoalKey || requested?.sourceKind === 'raid';
+}
+
 function formingMembers(members, requested, options = {}) {
-    if (requested?.clanGoalKey || requested?.sourceKind === 'raid') return members;
+    if (verdictFree(requested)) return members;
     const filter = roster => {
         const prepared = PartyIncomeComparison.prepare(roster, { objective: requested, ...options });
         return roster.filter(member => {
@@ -97,6 +102,31 @@ function formingMembers(members, requested, options = {}) {
     // a roster based on the economics of members who will not actually join.
     const confirmed = filter(accepted);
     return confirmed.length === accepted.length ? confirmed : [];
+}
+
+// The forming verdict of one roster, asked once before main builds the party (main for an
+// all-near roster, the worker's party goal request otherwise): the accepted ids. A material
+// roster also carries its reviews, and only an economic accept admits a material hunt (a member
+// without a camp forecast is refused).
+function formingVerdict(members, requested, { spots, timestamp = Date.now() } = {}) {
+    if (!CraftMaterialParty.isObjective(requested)) return { formingAccepted: formingMembers(members, requested,
+        { spots, timestamp }).map(member => Number(member.characterId)) };
+    const decisions = new Map();
+    const formed = new Set(formingMembers(members, requested, { spots, timestamp,
+        onReview: (member, decision) => decisions.set(Number(member.characterId), decision) })
+        .map(member => Number(member.characterId)));
+    const incomeReviews = members.map(member => {
+        // The wire packet carries only the validated economic fields of the comparison.
+        const characterId = Number(member.characterId), checked = decisions.get(characterId);
+        const reviewed = checked?.at === timestamp;
+        const row = { characterId, ...(reviewed ? checked
+            : { ...PartyIncomeComparison.evaluate(), at: timestamp, soloSource: null, partySource: null }),
+        accept: reviewed && formed.has(characterId) };
+        delete row.probability; delete row.roll; delete row.goal;
+        return row;
+    });
+    return { formingAccepted: incomeReviews.filter(row => row.accept).map(row => row.characterId),
+        lastIncomeReviewAt: timestamp, incomeReviews };
 }
 
 // A prospective roster needs one bounded income/safety forecast, not new
@@ -118,4 +148,5 @@ function itemNeed(state, item, projected) {
     return positive(ColdEconomyDecision.economyFor(current).itemUsefulness(Number(item.selfId)));
 }
 
-module.exports = { declaration, pending, joint, participation, groupContext, decide, formingMembers, recruitment, itemNeed };
+module.exports = { declaration, pending, joint, participation, groupContext, decide, verdictFree, formingMembers, formingVerdict,
+    recruitment, itemNeed };

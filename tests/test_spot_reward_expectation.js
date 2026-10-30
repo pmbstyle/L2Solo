@@ -141,16 +141,17 @@ try {
     close(Rewards.value(blue, 26).drop, before * 2, 'catalog revision invalidates reward prices');
     close(Table.value('S', 'dps', 26).loot, tableBefore * 2, 'catalog revision also invalidates outer table memo');
     Table.useFile(); Table.useSpots([]);
-    const authored = Table.value('-8_6', 'mage', 18, false);
+    // T43 table: '-2_3' (level 9, NPCs 328/385/386 as the gone '-8_6') has a mage no-shot row.
+    const authored = Table.value('-2_3', 'mage', 18, false);
     assert(authored?.loot > 0 && authored.rewardSource === 'npc_rewards',
         'standalone lookup has concrete NPC reward data in the compact catalog');
-    let actual = [spot('-8_6', [{ selfId: lower, count: 1 }])];
+    let actual = [spot('-2_3', [{ selfId: lower, count: 1 }])];
     Table.useSpots(() => actual);
-    const overridden = Table.value('-8_6', 'mage', 18, false);
+    const overridden = Table.value('-2_3', 'mage', 18, false);
     close(overridden.loot, overridden.kills * Rewards.value(actual[0], 18).drop,
         'actual period NPCs override the authored fallback');
-    actual = [spot('-8_6', [{ selfId: higher, count: 1 }])];
-    const replaced = Table.value('-8_6', 'mage', 33, false);
+    actual = [spot('-2_3', [{ selfId: higher, count: 1 }])];
+    const replaced = Table.value('-2_3', 'mage', 33, false);
     close(replaced.loot, replaced.kills * Rewards.value(actual[0], 33).drop,
         'replacing a same-size period catalog invalidates the outer money memo');
     const alias = spot('native-id-alias', [{ selfId: 5038, count: 1 }]);

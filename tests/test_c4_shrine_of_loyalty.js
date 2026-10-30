@@ -1,21 +1,15 @@
 require('../src/Global');
 
 const assertC4MonsterLocation = require('./helpers/assert_c4_monster_location');
-const assertMonsterEmptyBeforeSlice = require('./helpers/assert_monster_empty_before_slice');
 
 const mobIds = [1646, 1647, 1648, 1649, 1650, 1651];
 
 assertC4MonsterLocation({
     slug: 'c4_shrine_of_loyalty',
     displayName: 'Shrine of Loyalty',
-    areaId: 'c4-shrine-of-loyalty',
     mobIds,
     importedNpcIds: mobIds,
     bindingSlugs: ['c4_shrine_of_loyalty'],
-    spawnCounts: [[1646, 6], [1647, 8], [1648, 12], [1649, 7], [1650, 10], [1651, 9]],
-    respawn: 45,
-    regions: [[25, 15], [25, 16]],
-    maxHeightDelta: 805,
     origin: [190000, -64000, -2800],
     sample: {
         id: 1646, name: 'Grave Scarab', level: 73, hostile: false,
@@ -32,9 +26,3 @@ assertC4MonsterLocation({
     }
 });
 
-assertMonsterEmptyBeforeSlice({
-    slug: 'c4_shrine_of_loyalty',
-    displayName: 'Shrine of Loyalty',
-    ignoreSlugs: ['c4_wall_of_argos'],
-    box: { minX: 185384, maxX: 194404, minY: -70460, maxY: -58698, minZ: -3000, maxZ: -2568 }
-});

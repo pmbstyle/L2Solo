@@ -171,6 +171,10 @@ class InteractionMemory {
         const result = Policy.assess(this.views.get(source.id) || EMPTY_VIEW, source, target, context, now);
         result.sourceClanId = Number(source.clanId || 0);
         result.targetClanId = Number(target.clanId || 0);
+        if (this.clanWars) {
+            result.war = this.clanWars.between(result.sourceClanId, result.targetClanId);
+            result.diplomaticEnemy = result.diplomaticEnemy || result.war.mutual;
+        }
         if (this.clanSocial) {
             result.clanSocial = this.clanSocial.assess(source, target, result.personal, now, result.clan);
             result.effective = result.clanSocial.effective;

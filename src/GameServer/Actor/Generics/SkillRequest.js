@@ -66,25 +66,16 @@ function skillRequest(session, actor, data) {
         return;
     }
 
-    if (!EffectRestrictions.canMove(actor)) {
-        Generics.skillExec(session, actor, data);
+    if (actor.state.fetchTowards() === 'remote' && Number(data.id) === Number(actor.automation.fetchDestId())) {
         return;
     }
 
-    if (actor.state.inMotion()) {
-        if (actor.state.fetchTowards() === 'melee' || actor.fetchDestId() !== actor.automation.fetchDestId()) {
-            actor.storedSpell = data;
-            Generics.stopAutomation(session, actor);
-            return;
-        }
-    }
-
-    if (actor.state.fetchTowards() === 'remote') {
-        return;
-    }
-
-    actor.storedSpell = data;
-    Generics.stopAutomation(session, actor);
+    // As with normal attacks, StopMove does not guarantee a subsequent
+    // ValidatePosition. Dispatch now; SkillExec still owns range and movement.
+    Generics.clearStoredActions(session, actor);
+    if (EffectRestrictions.canMove(actor)) Generics.stopAutomation(session, actor);
+    else actor.automation.abortAll(actor, { notifyClient: false });
+    Generics.skillExec(session, actor, data);
 }
 
 module.exports = skillRequest;

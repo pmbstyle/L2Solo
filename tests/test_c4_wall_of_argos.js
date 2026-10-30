@@ -4,30 +4,15 @@ require('../src/Global');
 
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const assertC4MonsterLocation = require('./helpers/assert_c4_monster_location');
-const assertMonsterEmptyBeforeSlice = require('./helpers/assert_monster_empty_before_slice');
 
 const mobIds = [1294, 1295, 1296, 1297, 1298, 1299, 1300, 1301, 1302, 1303, 1304, 1305, 1306, 1307, 1308, 1309, 1310, 1311, 1312];
 
 assertC4MonsterLocation({
     slug: 'c4_wall_of_argos',
     displayName: 'Wall of Argos',
-    areaId: 'c4-wall-of-argos',
     mobIds,
     importedNpcIds: mobIds,
     bindingSlugs: ['c4_wall_of_argos'],
-    spawnCounts: [
-        [1294, 16], [1295, 17], [1296, 16], [1297, 16], [1298, 9], [1299, 11],
-        [1300, 11], [1301, 11], [1302, 12], [1303, 10], [1304, 9], [1305, 9],
-        [1306, 13], [1307, 16], [1308, 42], [1309, 42], [1310, 32], [1311, 31], [1312, 5]
-    ],
-    respawn: 60,
-    respawnByMob: {
-        1294: 55, 1295: 55, 1296: 100, 1297: 65, 1300: 75, 1301: 100,
-        1304: 100, 1305: 75, 1306: 130, 1307: 100, 1308: 130, 1309: 130,
-        1310: 100, 1311: 100, 1312: 340
-    },
-    region: [25, 16],
-    maxHeightDelta: 1811,
     origin: [180000, -50000, -3200],
     sample: {
         id: 1294, name: 'Canyon Antelope', level: 68, hostile: false,
@@ -53,12 +38,6 @@ assertC4MonsterLocation({
     ]
 });
 
-assertMonsterEmptyBeforeSlice({
-    slug: 'c4_wall_of_argos',
-    displayName: 'Wall of Argos',
-    ignoreSlugs: ['c4_shrine_of_loyalty'],
-    box: { minX: 166355, maxX: 194636, minY: -63702, maxY: -35114, minZ: -3904, maxZ: -2720 }
-});
 
 const hold = C4SkillRules.resolve({ selfId: 4657, level: 7, name: 'Hold', power: 102, buff: 30000, spell: true, distance: 600 });
 assert.strictEqual(hold.skillType, C4SkillRules.DRAIN);

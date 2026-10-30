@@ -96,6 +96,86 @@ try {
     assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500), local,
         'a preferred level behind a wall must not beat a visible weaker monster');
 
+    const easier = candidate(910003, 100, hunter.fetchLevel() - 10);
+    const tooLow = candidate(910004, 100, hunter.fetchLevel() - 16);
+    const recovery = { allowEasierTargets: true };
+    Geo.hasLineOfSight = () => true;
+    World.fetchNpcsInRadius = () => [easier];
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500), null,
+        'ordinary target scans retain their level band');
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), easier,
+        'a stranded solo hunter can fight safe easier mobs instead of wandering forever');
+    assert(session.lastTargetEvaluation.reasons.includes('easier_ground'));
+
+    const blue = candidate(910005, 1600, hunter.fetchLevel() - 15);
+    const fartherBlue = candidate(910006, 2200, hunter.fetchLevel() - 15);
+    World.fetchNpcsInRadius = () => [fartherBlue, blue];
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), blue,
+        'safe easier targets with negative scores must still beat an empty search walk');
+    assert(session.lastTargetEvaluation.score < 0, 'the fallback must retain the relative target score');
+    const incomeSession = { ...session, coldLifeState: { characterId: 2000999,
+        stats: { wishFocus: ['power:2402:11'] } } };
+    assert(invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').economicHunt(incomeSession.coldLifeState));
+    assert.strictEqual(Hunting.findPreferredMonster(incomeSession, hunter, 2500), null,
+        'ordinary economic scans retain the positive-utility requirement');
+    assert.strictEqual(Hunting.findPreferredMonster(incomeSession, hunter, 2500, recovery), blue,
+        'recovery also handles easier targets already admitted by the economic level band');
+    const graveTemplate = Data.npcs.find(npc => Number(npc.selfId) === 998);
+    assert(graveTemplate, 'the real cemetery undead fixture must exist');
+    const grave = new Npc(9876600, { ...utils.crushOb(graveTemplate), locX: 200, locY: 0, locZ: 0, head: 0 });
+    const elder = { ...hunter, fetchClassId: () => 30, fetchLevel: () => 70,
+        fetchCollectivePAtk: () => 208.7, fetchCollectiveMAtk: () => 426.4,
+        fetchCollectivePDef: () => 447.6, fetchMaxHp: () => 1463.65,
+        fetchMaxMp: () => 2821, fetchMp: () => 2821,
+        fetchCollectiveAtkSpd: () => 394, fetchCollectiveCastSpd: () => 447,
+        skillset: { skills: [owned({ selfId: 1028, level: 17, power: 82, mp: 65 })] },
+        backpack: { fetchTotalWeaponKind: () => 'Weapon.Etc' } };
+    const elderSession = { actor: elder, plan: 'hunting', deferredOccupation: 'power:148:7',
+        coldLifeState: { stats: { wishFocus: ['power:148:7'] } } };
+    World.fetchNpcsInRadius = () => [grave];
+    assert.equal(Hunting.findPreferredMonster({ ...elderSession, deferredOccupation: null }, elder, 2500, recovery), null,
+        'an ordinary route retains its level floor');
+    assert.equal(Hunting.findPreferredMonster(elderSession, elder, 2500, recovery), grave,
+        'an elder using Might of Heaven must be able to earn on safe cemetery undead while his purchase waits');
+    elder.skillset.skills.push(owned({ selfId: 1031, level: 8, power: 36, mp: 30 }));
+    const mirrorTemplate = Data.npcs.find(npc => Number(npc.selfId) === 636);
+    const mirrorGhost = new Npc(9876601, { ...utils.crushOb(mirrorTemplate), locX: 200, locY: 0, locZ: 0, head: 0 });
+    World.fetchNpcsInRadius = () => [mirrorGhost];
+    assert.equal(Hunting.findPreferredMonster(elderSession, elder, 2500, recovery), mirrorGhost,
+        'the elder with his cheaper Disrupt Undead rotation still needs a safe earning target below the ordinary band');
+
+    World.fetchNpcsInRadius = () => [blue, hidden];
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), hidden,
+        'an ordinary target still outranks negative-score easier recovery');
+    Geo.hasLineOfSight = () => false;
+    World.fetchNpcsInRadius = () => [blue];
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), null,
+        'a negative-score fallback cannot chase a mob through a wall');
+    Geo.hasLineOfSight = () => true;
+    const tiredHunter = { ...hunter, fetchHp: () => 1 };
+    const tiredSession = { actor: tiredHunter, plan: 'hunting' };
+    assert.strictEqual(Hunting.findPreferredMonster(tiredSession, tiredHunter, 2500,
+        { ...recovery, readyOnly: true }), null, 'easier recovery must wait for HP before the next fight');
+    assert.strictEqual(tiredSession.lastEncounterReadiness.ready, false);
+    World.fetchNpcsInRadius = () => [easier, hidden];
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), hidden,
+        'an ordinary eligible target wins before easier-ground recovery');
+    World.fetchNpcsInRadius = () => [tooLow];
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), null,
+        'recovery does not exceed the existing fifteen-level earning band');
+    World.fetchNpcsInRadius = () => [easier];
+    assert.strictEqual(Hunting.findPreferredMonster({ ...session, partyCompanion: true }, hunter, 2500, recovery), null,
+        'solo recovery cannot change a companion party target policy');
+    assert.strictEqual(Hunting.findPreferredMonster({ ...session, hotBackgroundPartyId: 'hunting-party' }, hunter, 2500, recovery), null,
+        'solo recovery cannot change an autonomous party target policy');
+    const weak = { ...hunter, fetchCollectivePAtk: () => 1, fetchCollectivePDef: () => 1,
+        fetchMaxHp: () => 10 };
+    assert.strictEqual(Hunting.findPreferredMonster({ actor: weak, plan: 'hunting' }, weak, 2500, recovery), null,
+        'lower-level recovery still requires a survivable encounter');
+    Geo.hasLineOfSight = () => false;
+    assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), null,
+        'easier targets still require line of sight');
+
     const crowded = [1, 2, 3, 4, 5].map(n => candidate(920000 + n, n * 100));
     World.fetchNpcsInRadius = () => crowded;
     const checked = [];
@@ -136,6 +216,13 @@ const immuneSpot = { id: 'resist-test', minLevel: 35, maxLevel: 45, avgLevel: 40
         'party hunts retain the resistance gate');
     assert.strictEqual(Cold.npcForSpot(immuneSpot, () => 0, { matchupProfiles: [safeArcher], soloSafety: true }).selfId,
         template.selfId, 'cold solo picks the resisted mob it survives');
+    const packSpot = { ...immuneSpot, npcEntries: [{ selfId: template.selfId, count: 10, pull: 5 }] };
+    assert.strictEqual(Matchup.spotMatchup(packSpot, [safeArcher], { soloSafety: true }).eligible, false,
+        'a route cannot admit a lethal pack using the survival verdict for a single mob');
+    assert(Cold.npcForSpot(packSpot, () => 0, { matchupProfiles: [safeArcher], soloSafety: true }).avoided,
+        'cold target selection must honor the same pack pressure as hot hunting');
+    assert(Matchup.spotMatchup(immuneSpot, [safeArcher], { soloSafety: true }).eligible,
+        'a pack verdict cannot poison a later single-mob spot');
     assert(Cold.npcForSpot(immuneSpot, () => 0, { matchupProfiles: [safeArcher] }).avoided);
     const originalScan = World.fetchNpcsInRadius, originalSight = Geo.hasLineOfSight, originalScore = Scorer.score;
     const checked = [];

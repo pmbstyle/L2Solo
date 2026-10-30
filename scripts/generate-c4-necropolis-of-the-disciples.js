@@ -2,7 +2,6 @@ const generate = require('./lib/generate-c4-monster-location');
 
 const result = generate({
     slug: 'c4_necropolis_of_the_disciples',
-    areaId: 'c4-necropolis-of-the-disciples',
     sourceLabel: 'DisciplesNecropolis',
     displayName: 'Necropolis of the Disciples',
     mobIds: [
@@ -11,7 +10,6 @@ const result = generate({
     ],
     reusedMobIds: [1183, 1204],
     spawnRows: 225,
-    respawn: 120,
     dropRows: 219,
     skillRows: 98,
     missingItemIds: [7645, 7665, 7666, 7667, 7672, 7673, 7674, 7675, 7676, 7835]

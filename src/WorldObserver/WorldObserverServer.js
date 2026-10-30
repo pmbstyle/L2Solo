@@ -1,4 +1,5 @@
 const ClassProgression = invoke('GameServer/ClassProgression');
+const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 const ItemTemplateIndex = require('../GameServer/Item/ItemTemplateIndex');
 const http = require('http');
 const fs = require('fs');
@@ -835,6 +836,19 @@ async function clanSnapshot() {
 // revision, so tabs share a build for a short age.
 const CLAN_DIRECTORY_CACHE_MS = 5000;
 const cachedClanSnapshot = createAgeCache(clanSnapshot, CLAN_DIRECTORY_CACHE_MS);
+
+async function clanWarSnapshot() {
+    const events = await Database.execute(['SELECT id,fromClanId,toClanId,action,reason,createdAt FROM clan_war_events ORDER BY id DESC LIMIT 80'], 'observer:clan-war-events');
+    const campaigns = invoke('GameServer/Bot/Population/PopulationService').clanWars?.inspect() || null;
+    const spotName = id => invoke('GameServer/Bot/Population/SpotProfiles').findById(id)?.name
+        || invoke('GameServer/Bot/AI/SpotService').findById(id)?.name || null;
+    return { generatedAt: Date.now(), enabled: require('../GameServer/Clan/ClanWarConfig').enabled,
+        ...invoke('GameServer/Clan/ClanWarRuntime').inspect(),
+        clans: ClanService.all().map(c => ({ id: c.id, name: c.name })), events,
+        campaigns: campaigns ? { ...campaigns, operations: campaigns.operations.map(op => ({ ...op,
+            targetName: spotName(op.targetSpotId), homeName: spotName(op.homeSpotId) })) } : null };
+}
+const cachedClanWarSnapshot = createAgeCache(clanWarSnapshot, 2000);
 
 function clanMemberQuery(clanId) {
     return Database.execute([`
@@ -1920,7 +1934,9 @@ function compactColdDetail(state, leaderState = null) {
             leaderId: Number(state.party.leaderId || stats.leaderId || 0) || null,
             leader: coldPartyLeader(state, leaderState)
         } : null,
-        build: compactBuild(stats.build),
+        // The build hint follows from class, level and role alone: computed
+        // for the inspected bot, never held in its state.
+        build: compactBuild(GearSkillHints.forCharacter({ classId, level: state.level }, { role: stats.role || null })),
         equipment: compactColdEquipment(state),
         combat: effectiveColdCombat(state),
         adena: Number(state.adena || 0),
@@ -2743,6 +2759,12 @@ function serveWorldReads(request, response, url) {
         return true;
     }
 
+    if (url.pathname === '/observer/api/clans/wars') {
+        if (request.method !== 'GET') { response.writeHead(405, { Allow: 'GET' }); response.end(); return true; }
+        cachedClanWarSnapshot().then(data => sendJson(response, data))
+            .catch(err => sendJson(response, { error: err.message }, 500));
+        return true;
+    }
     if (url.pathname === '/observer/api/clans/social') {
         if (request.method !== 'GET') { response.writeHead(405, { Allow: 'GET' }); response.end(); return true; }
         sendJson(response, (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) ? invoke('GameServer/Clan/ClanSocialRuntime').inspect() : { enabled: false });
@@ -3167,6 +3189,7 @@ const WorldObserverServer = {
     deletePlayerManagedClanCrest,
     clanCrest,
     clanSnapshot,
+    clanWarSnapshot,
     clanDetail,
     clanOrderItems,
     createPlayerManagedClanOrder,

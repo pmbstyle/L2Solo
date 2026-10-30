@@ -113,6 +113,10 @@ function receivedHit(session, actor, hit, options = {}) {
     const ArenaCombatRules = invoke('GameServer/World/ArenaCombatRules');
     if (source && source !== actor && !ArenaCombatRules.canInteract(source, actor)) return;
     if (Number(hit) > 0) {
+        if (!ArenaCombatRules.suppressConsequences(source, actor) && Number(actor.fetchClanId?.()) > 0
+            && (Number(source?.fetchClanId?.()) > 0 || Number(source?.fetchOwnerId?.()) > 0)) {
+            invoke('GameServer/Clan/ClanWarRuntime').recordCombat(source, actor);
+        }
         const threats = invoke('GameServer/Bot/AI/BotPvpThreats');
         if (threats.record(actor, source) && source?.fetchKind) {
             const owner = threats.character(source);
@@ -145,7 +149,7 @@ function receivedHit(session, actor, hit, options = {}) {
         if (killer && !ArenaCombatRules.suppressConsequences(killer, actor)) {
             invoke('GameServer/Bot/AI/BotEnemyMemory').record(actor, killer, true);
         }
-        if (killer && killer !== actor && !actor.fetchKind && !ArenaCombatRules.suppressConsequences(killer, actor)) {
+        if (hpBefore > 0 && killer && killer !== actor && !actor.fetchKind && !ArenaCombatRules.suppressConsequences(killer, actor)) {
             const attacker = killer;
             const victim = actor;
             const attackerSession = attacker.session || session;
@@ -153,16 +157,17 @@ function receivedHit(session, actor, hit, options = {}) {
             const ServerResponse = invoke('GameServer/Network/Response');
             const isBotSession = invoke('GameServer/World/World').isBotSession;
             const isPlayer = (character) => !!character.session && !isBotSession(character.session);
+            const mutualWar = invoke('GameServer/Clan/ClanWarRuntime').between(attacker, victim).mutual;
             invoke('PvpJournal').hotKill({
                 attacker,
                 victim,
-                pk: !(victim.fetchPvpFlag() === 1 || victim.fetchKarma() > 0),
+                pk: !(mutualWar || victim.fetchPvpFlag() === 1 || victim.fetchKarma() > 0),
                 attackerKarma: attacker.fetchKarma(),
                 playerInvolved: isPlayer(attacker) || isPlayer(victim),
                 at: Date.now()
             });
 
-            if (victim.fetchPvpFlag() === 1 || victim.fetchKarma() > 0) {
+            if (mutualWar || victim.fetchPvpFlag() === 1 || victim.fetchKarma() > 0) {
                 // Legitimate PvP or PK-hunting kill
                 attacker.setPvp(attacker.fetchPvp() + 1);
                 attackerSession.dataSendToMe(ServerResponse.userInfo(attacker));

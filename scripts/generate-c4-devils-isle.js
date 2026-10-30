@@ -164,20 +164,6 @@ const npcs = mobIds.map((id) => npcRowsById.get(id)).map((row) => {
 });
 
 const npcNameById = new Map(npcs.map((npc) => [npc.selfId, npc.template.name]));
-const spawnDefinitions = mobIds.map((npcId) => {
-    const rows = spawnRows.filter((row) => Number(row[3]) === npcId);
-    const respawns = [...new Set(rows.map((row) => Number(row[10])))];
-    if (respawns.length !== 1) throw new Error(`NPC ${npcId} has mixed respawns: ${respawns.join(', ')}`);
-    return {
-        selfId: npcId,
-        name: npcNameById.get(npcId),
-        coords: rows.map((row) => ({ locX: row[4], locY: row[5], locZ: row[6], head: row[9] })),
-        total: 1,
-        respawn: respawns[0],
-        bias: 0
-    };
-});
-const spawns = [{ selfId: 'c4-devils-isle', bounds: [], spawns: spawnDefinitions }];
 
 const dropRows = tuples('sql/droplist.sql').filter((row) => mobIdSet.has(Number(row[0])));
 if (dropRows.length !== 266) throw new Error(`Expected 266 drops, found ${dropRows.length}`);
@@ -261,7 +247,6 @@ const skillTemplates = [
 ];
 
 writeJson('data/Npcs/c4_devils_isle.json', npcs);
-writeJson('data/Npcs/Spawns/c4_devils_isle.json', spawns);
 writeJson('data/Npcs/Rewards/c4_devils_isle.json', rewards);
 writeJson('data/Items/Others/c4_devils_isle.json', missingItems);
 writeJson('data/Npcs/Skills/c4_devils_isle.json', skillRows);

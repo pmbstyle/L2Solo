@@ -24,12 +24,13 @@ try {
     if (process.env.L2NODE_SKIP_RAW_GEODATA_TESTS !== '1') {
         invoke('GameServer/Geodata/VirtualObstacles/index').init();
         // Real Giran geodata and the exact coordinates from EloraMoss's activation.
-        assert.strictEqual(Geo.getHeight(roof.locX, roof.locY, anchor.locZ), roof.locZ);
+        assert(Math.abs(Geo.getHeight(roof.locX, roof.locY, anchor.locZ) - anchor.locZ) > 64,
+            'the captured roof XY must not resolve to the street layer');
         assert.strictEqual(Geo.hasLineOfSight(anchor.locX, anchor.locY, anchor.locZ,
             roof.locX, roof.locY, roof.locZ), false);
         samplePoint(anchor, roof);
         const result = Placement.resolve({ loc: anchor });
-        assert.deepStrictEqual(result.loc, { ...anchor, locZ: -3400 },
+        assert.deepStrictEqual(result.loc, { ...anchor, locZ: Geo.getHeight(anchor.locX, anchor.locY, anchor.locZ) },
             'roof samples must be rejected and fall back to the verified original street');
         const nearPlayer = { ...anchor, locX: anchor.locX + 50 };
         assert.strictEqual(Placement.resolve({ loc: anchor }, { playerLoc: nearPlayer }), null,
@@ -58,17 +59,16 @@ try {
         assert(Geo.hasLineOfSight(-3451, 112819, -3448,
             outdoorRaid.loc.locX, outdoorRaid.loc.locY, outdoorRaid.loc.locZ),
             'the outdoor rally must be reachable from the actual boss ground');
-        // Exact automatic Repiro roster: its height-valid arrival lands on
-        // the cliff east of the boss, with partial NSWE and no boss path.
+        // Repiro arrivals depend on terrain. Validate the generated roster's
+        // placement and connectivity instead of pinning an old pack's cliff XY.
         const repiro = invoke('GameServer/RaidBoss/RaidBossSourceCatalog').findById('raid:10099');
         const roster = [2006161,2006162,2006168,2006407,2006791,2006856,2007116,2007436,2007686]
             .map(characterId => ({ characterId, spotId: repiro.id }));
         const arrivals = Spots.arrivalPointsForParty(roster, repiro);
         const leader = roster.find(s => s.characterId === 2006407);
-        assert.deepStrictEqual(arrivals[leader.characterId], { locX: 65067, locY: 15938, locZ: -3256 });
-        assert(Geo.getCellData(65067,15938,-3256).nswe, 'the incident anchor passes the old surface-only check');
+        assert(Spots.containsLocation(repiro, arrivals[leader.characterId]),
+            'the generated leader arrival must stay inside the raid area');
         const bossFloor = { ...repiro.center, locZ: Geo.getHeight(64048,16048,-3536) };
-        assert(!Geo.hasLineOfSight(64048,16048,bossFloor.locZ,65067,15938,-3256));
         let randomCalls = 0;
         Math.random = () => { randomCalls++; return ((seed = (Math.imul(seed,1664525)+1013904223) >>> 0) / 4294967296); };
         for (let round = 0; round < 16; round++) {

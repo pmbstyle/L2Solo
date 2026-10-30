@@ -1,7 +1,7 @@
 'use strict';
 
 const { performance } = require('node:perf_hooks');
-const yieldToLoop = () => new Promise(resolve => setImmediate(resolve));
+const yieldToLoop = require('../../EventLoopTurn');
 
 // One generator step is one candidate or relationship check. A time budget
 // plus a step cap also bounds cheap work when the clock barely advances.

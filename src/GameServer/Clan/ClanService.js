@@ -3,7 +3,7 @@ const ClanRules = invoke('GameServer/Clan/ClanRules');
 const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
 
 const DAY_MS = 86400000;
-const JOIN_COOLDOWN_MS = 5 * DAY_MS;
+const JOIN_COOLDOWN_MS = ClanRules.JOIN_COOLDOWN_MS;
 const CREATE_COOLDOWN_MS = 10 * DAY_MS;
 const SMALL_CREST_KIND = 'pledge';
 const SMALL_CREST_MAX_BYTES = 256;
@@ -201,6 +201,7 @@ const ClanService = {
             .then(() => this.reload())
             .then(() => ClanCrestService.ensureAutonomousClans())
             .then((result) => result.assigned ? this.reload() : this.all())
+            .then(() => invoke('GameServer/Clan/ClanWarRuntime').refresh(true))
             .then(() => utils.infoSuccess('Clan', 'loaded %d clans', state.clans.size))
             .catch((err) => {
                 utils.infoWarn('Clan', 'clan tables unavailable: %s', err.message);
@@ -268,6 +269,7 @@ const ClanService = {
         if (number(actor.fetchLevel?.()) < 10) return { ok: false, code: 'level_too_low' };
         if (number(actor.fetchClanId?.()) !== 0) return { ok: false, code: 'already_in_clan' };
         if (number(actor.fetchClanCreateExpiryTime?.()) > nowMs()) return { ok: false, code: 'create_cooldown' };
+        if (number(actor.fetchClanJoinExpiryTime?.()) > nowMs()) return { ok: false, code: 'join_cooldown' };
         if (this.findByName(valid.name)) return { ok: false, code: 'name_exists' };
         return { ok: true, name: valid.name };
     },
@@ -370,8 +372,12 @@ const ClanService = {
 
         return Database.isAutonomousBotMember(member.id, clan.id).then((permanent) => {
             if (permanent) return { ok: false, code: 'autonomous_membership_permanent' };
-            return Database.removeCharacterFromClan(member.id).then(() => {
-                if (options.actor) clearActorClan(options.actor);
+            const joinExpiryTime = nowMs() + JOIN_COOLDOWN_MS;
+            return Database.removeCharacterFromClan(member.id, joinExpiryTime).then(() => {
+                if (options.actor) {
+                    clearActorClan(options.actor);
+                    options.actor.setClanJoinExpiryTime?.(joinExpiryTime);
+                }
                 removeMemberFromCache(clan.id, member.id);
                 syncSocialMemberships();
                 return Database.syncPlayerManagedClan(clan.id).catch((error) => {

@@ -19,6 +19,7 @@ const EncounterReadiness = invoke('GameServer/Bot/AI/BotEncounterReadiness');
 const PartyBuffLoadout = invoke('GameServer/Bot/AI/PartyBuffLoadout');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const Karma = invoke('GameServer/Karma');
+const NpcHate = invoke('GameServer/Npc/NpcHate');
 const SurvivalFloor = require('./SurvivalFloor');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
 
@@ -1486,6 +1487,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             },
             cooldowns: { ...(state.stats?.coldCombat?.cooldowns || {}) },
             readyAt: Number(pending?.readyAt?.[state.characterId] || 0),
+            hate: Number(pending?.hate?.[state.characterId] || 0),
             soulCrystalMark: pending?.soulCrystalMarks?.[state.characterId] || null,
             actions: 0,
             shot: coldShotSupply(fighterState, timestamp),
@@ -1569,6 +1571,8 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             next.actions += 1;
             const hit = coldBotTurn(next, { allies: fighters, mob, mobHp, at: timestamp + time, time, rng, party: true, help });
             if (!hit) continue;
+            // A miss leaves the hate table alone, as a missed hot swing never reaches ReceivedHit.
+            if (hit.damage > 0) next.hate = NpcHate.add(next.hate, NpcHate.fromDamage(hit.damage));
             const targetHpBeforeHit = mobHp;
             mobHp -= Math.max(0, hit.damage);
             if (mobHp <= 0) {
@@ -1585,9 +1589,15 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
                 break;
             }
         } else {
+            // A living tank holds the mob, as the hot tank takes it back with
+            // Aggression (FollowingState); otherwise the most hated member.
             const targets = fighters.filter((fighter) => fighter.vitals.hp > 0);
             const tank = targets.find((fighter) => fighter.role === 'tank');
-            const target = tank || targets[Math.floor(rng() * targets.length)];
+            let target = tank || NpcHate.mostHated(targets);
+            if (!target && targets.length) {
+                target = targets[Math.floor(rng() * targets.length)];
+                target.hate = NpcHate.ENGAGE_HATE;
+            }
             const raidPressure = coldRaidMinionPressure(mob, mobHp, raidControlCapacity);
             const bossPAtk = Number(mob.raidBossPAtk || mob.pAtk);
             if (target && hitSucceeds(mob.accur, target.profile.evasion, rng)) {
@@ -1635,7 +1645,8 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             ? PveEncounter.save(pending, encounterKey, mob, mobHp, timestamp, {
                 mobReadyAt: Math.max(0, mobReadyAt - time),
                 soulCrystalMarks: Object.fromEntries(fighters.filter(f => f.soulCrystalMark).map(f => [f.state.characterId,f.soulCrystalMark])),
-                readyAt: Object.fromEntries(fighters.map(f => [f.state.characterId, Math.max(0, f.readyAt - time)]))
+                readyAt: Object.fromEntries(fighters.map(f => [f.state.characterId, Math.max(0, f.readyAt - time)])),
+                hate: Object.fromEntries(fighters.filter(f => f.vitals.hp > 0 && f.hate > 0).map(f => [f.state.characterId, f.hate]))
             }) : null,
         members: fighters,
         help: [...help.values()],

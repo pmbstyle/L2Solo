@@ -135,6 +135,7 @@ function receive(session, card, near) {
     Object.assign(statsFor(session), near.statsPacket);
     session.heldEconomy = Object.assign(Decisions.nearView(Economy.stateForActor(actor, session), card), near);
     session.heldNearSeq = Number(near.nearSeq || 0);
+    session.activationEconomyDecision = null;
     const raise = session.nearRaise, answered = Number(near.raiseSeq || 0);
     if (raise && answered >= raise.seq) session.nearRaise = null;
     else if (raise?.impossible && answered >= Number(raise.impossibleSeq || 0)) { raise.impossible = false; raise.impossibleSeq = 0; }
@@ -142,11 +143,13 @@ function receive(session, card, near) {
     return session.heldEconomy;
 }
 // The decision a near body holds: the last one received, else (before the
-// first) a view without a card over the body, made once per session.
+// first) its cold handoff's accepted card. Without one it waits for the
+// worker's first answer; the body's target search cannot invent a new job.
 function held(session) {
     if (session?.heldEconomy) return session.heldEconomy;
     if (!session?.actor) return null;
-    const view = Decisions.nearView(Economy.stateForActor(session.actor, session), null);
+    const view = Decisions.nearView(Economy.stateForActor(session.actor, session), session.activationEconomyDecision || null);
+    session.activationEconomyDecision = null;
     view.statsPacket = statsFor(session);
     return session.heldEconomy = view;
 }

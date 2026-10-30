@@ -13,10 +13,15 @@ const Formulas = invoke('GameServer/Formulas');
 
 (async () => {
     const saved = { npc: World.fetchNpc, user: World.fetchUser, start: Timer.start, clear: Timer.clear,
-        chance: Formulas.calcHitChance, peace: utils.isInPeaceZone };
+        chance: Formulas.calcHitChance, peace: utils.isInPeaceZone, now: Date.now,
+        timeout: global.setTimeout, clearTimeout: global.clearTimeout };
     let starts = 0;
+    let now = 10000;
     try {
-        Timer.start = (handler, callback) => { handler.timer = { callback }; starts++; };
+        Date.now = () => now;
+        global.setTimeout = (callback, ms) => ({ callback, ms });
+        global.clearTimeout = () => {};
+        Timer.start = (handler, callback, ms) => { handler.timer = { callback, due: now + ms }; starts++; };
         Timer.clear = handler => { delete handler.timer; };
         Formulas.calcHitChance = () => true;
         utils.isInPeaceZone = () => false;
@@ -76,6 +81,7 @@ const Formulas = invoke('GameServer/Formulas');
                 if (liveArcher) actor.setLocXYZ({ locX: -96095, locY: 105739, locZ: -3357 });
                 else actor.x = target.x - offset - 50;
                 assert(!Range.isWithinRange(actor, target, Range.fetchNormalAttackRange(actor)));
+                now = pending.due;
                 pending.callback();
                 assert(actor.state.fetchHits(), 'arrival at a stationary target must begin the real attack');
                 hits.shift()();
@@ -93,6 +99,7 @@ const Formulas = invoke('GameServer/Formulas');
                 await drain();
                 const oldArrival = actor.automation.timer.action.timer;
                 target.x += 1000;
+                now = oldArrival.due;
                 oldArrival.callback();
                 assert(!actor.state.fetchHits(), 'arrival at the old position must not hit an escaping target');
                 assert.strictEqual(hits.length, 0, 'an escaped target must not schedule remote damage');
@@ -104,6 +111,7 @@ const Formulas = invoke('GameServer/Formulas');
     } finally {
         World.fetchNpc = saved.npc; World.fetchUser = saved.user; Timer.start = saved.start; Timer.clear = saved.clear;
         Formulas.calcHitChance = saved.chance; utils.isInPeaceZone = saved.peace;
+        Date.now = saved.now; global.setTimeout = saved.timeout; global.clearTimeout = saved.clearTimeout;
     }
     console.log('Player attack approach and repeated-click checks passed');
 })().catch(error => { console.error(error); process.exitCode = 1; });

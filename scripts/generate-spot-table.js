@@ -24,7 +24,7 @@
 //   changes with the bot's level over the spot's level, measured on a few
 //   spots of the band. The curve carries the kit grade steps of the band and
 //   the author's deep-blue drop rule; the C4 exp penalty (E11) is not in the
-//   author's combat and is not in the curve.
+//   curve: the reader applies it, so the measurement takes it out of combat.
 // Everything is at rate x1: the reader applies the server's rates (for loot
 // with the spot's measured response to drop rates 10 and 50).
 //
@@ -201,6 +201,17 @@ function loadSimulation(catalogueFile) {
         const result = nativeFloor(...args);
         return result?.action === 'unload' ? null : result;
     };
+    // ARCH-NOTE: cold combat spends shots only when ShotStock.usePolicy, read from
+    // this very table, says they pay (0175fd237). Measuring through it would read the
+    // previous table: a cell without shot use stays without forever. The table
+    // measures the shots row with the shots loaded, so the bag's shots are used.
+    const ShotStock = invoke('GameServer/Inventory/ShotStock');
+    ShotStock.usePolicy = () => ({ usePerHour: 1 });
+    // ARCH-NOTE: cold kills apply the C4 exp level-gap penalty (MobExperience,
+    // d4322a214) and SpotValueTable applies it again on read for the bot's own
+    // gap. The table keeps the pre-penalty exp the reader expects.
+    const MobExperience = invoke('GameServer/Progression/MobExperience');
+    MobExperience.rewards = (exp, sp) => ({ exp: Math.max(0, Number(exp) || 0), sp: Math.max(0, Number(sp) || 0) });
     const saved = JSON.parse(fs.readFileSync(catalogueFile, 'utf8'));
     invoke('GameServer/Bot/AI/SpotService').spots = saved.spots;
     invoke('GameServer/Bot/Population/SpotProfiles').cache = saved.profiles;
@@ -230,6 +241,10 @@ function newBot(classId, level, shots, simulation = sim) {
     }
     const bot = { characterId: 990001, name: 'SpotTable', classId, level, activity: 'hunting', phase: 'cold',
         vitals: {}, stats: { classId }, inventory };
+    // Cold combat reads only learned skills (113e17913): the bot has learned its whole tree
+    // for the level, saved as a live bot's learned rows are.
+    bot.stats.coldCombat = { skillSource: 'database',
+        skills: simulation.CCP.skillSnapshotsFromRecords(simulation.CCP.skillRecordsFromTree(classId, level)) };
     let shotId = 0;
     if (shots) {
         const plan = simulation.ShotStock.planForState(bot);
@@ -565,7 +580,9 @@ async function main() {
         }
 
         // Curve spots: per role and band, up to CURVE_SPOTS spots of the band
-        // where the role hunts at the reference gap, in a fixed hashed order.
+        // where the role hunts at the reference gap: the narrowest monster level
+        // spread first (a lone low monster on a spot makes a lower bot farm only
+        // it and bends the whole band's curve, T43), then a fixed hashed order.
         const curveSpots = new Map();
         spots.forEach((spot, index) => {
             ROLES.forEach((role, roleIndex) => {
@@ -576,10 +593,12 @@ async function main() {
                 curveSpots.get(key).push(spot.id);
             });
         });
+        const spotById = new Map(spots.map((spot) => [spot.id, spot]));
+        const spread = (id) => Number(spotById.get(id).maxLevel) - Number(spotById.get(id).minLevel);
         const curveTasks = [];
         for (const [key, ids] of curveSpots) {
             const [role] = key.split('|');
-            const chosen = ids.sort((a, b) => hash(`${a}|${role}`) - hash(`${b}|${role}`)).slice(0, CURVE_SPOTS);
+            const chosen = ids.sort((a, b) => spread(a) - spread(b) || hash(`${a}|${role}`) - hash(`${b}|${role}`)).slice(0, CURVE_SPOTS);
             curveSpots.set(key, chosen);
             for (const spotId of chosen) for (const gap of GAPS) curveTasks.push({ kind: 'curve', key, spotId, role, gap, hours: options.curveHours });
         }

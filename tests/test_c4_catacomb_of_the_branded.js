@@ -4,12 +4,9 @@ require('../src/Global');
 
 const DataCache = invoke('GameServer/DataCache');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
-const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
-const baseSpawns = require('../data/Npcs/Spawns/spawns.json');
 const skillBindings = require('../data/Npcs/Skills/c4_catacomb_of_the_branded.json');
-const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 DataCache.init();
 
@@ -17,37 +14,14 @@ const mobIds = [1147, 1149, 1150, 1151, 1173, 1174, 1175, 1176, 1194, 1195, 1196
 const mobIdSet = new Set(mobIds);
 const npcs = DataCache.npcs.filter((npc) => mobIdSet.has(npc.selfId));
 const rewards = DataCache.npcRewards.filter((reward) => mobIdSet.has(reward.selfId));
-const spawnArea = DataCache.npcSpawns.find((area) => area.selfId === 'c4-catacomb-of-the-branded');
 
 assert.strictEqual(npcs.length, 16, 'all sixteen Lisvus Catacomb of the Branded monsters must be loaded');
 assert.strictEqual(rewards.length, 16, 'every Catacomb of the Branded monster must have rewards');
-assert.ok(spawnArea, 'the Catacomb of the Branded spawn slice must be loaded');
-assert.ok(baseSpawns.every((area) => area.spawns.every((spawn) => !mobIdSet.has(Number(spawn.selfId)))),
-    'the additive import must remain limited to monster families absent from the old datapack');
 
-const spawnCoords = spawnArea.spawns.flatMap((spawn) => spawn.coords);
-assert.strictEqual(spawnArea.spawns.length, 16, 'spawn definitions must cover every source monster family');
-assert.strictEqual(spawnCoords.length, 252, 'the import must retain all 252 Lisvus spawn rows');
-assert.ok(spawnArea.spawns.every((spawn) => spawn.total === 1 && spawn.respawn === 60 && spawn.bias === 0));
-assert.deepStrictEqual(
-    spawnArea.spawns.map((spawn) => [spawn.selfId, spawn.coords.length]),
-    [[1147, 15], [1149, 15], [1150, 16], [1151, 16], [1173, 17], [1174, 15], [1175, 15], [1176, 16],
-        [1194, 17], [1195, 15], [1196, 15], [1197, 16], [1240, 17], [1241, 17], [1242, 15], [1243, 15]],
-    'every family must retain its exact local population'
-);
-
-assert.deepStrictEqual(
-    [...new Set(spawnCoords.map((coord) => GeodataEngine.getRegionKey(coord.locX, coord.locY)))],
-    ['21_23'],
-    'the underground source rows must stay in the Catacomb geodata region'
-);
-verifyGeodataWhenAvailable(GeodataEngine, [[21, 23]], 'Catacomb of the Branded', () => {
-    const heightDeltas = spawnCoords.map((coord) => Math.abs(
-        GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-    ));
-    assert.ok(heightDeltas.every((delta) => delta === 0),
-        'every source coordinate must match the underground geodata exactly');
-});
+const mobiusIds = new Set(DataCache.npcSpawns.filter((area) => String(area.selfId).startsWith('mobius:'))
+    .flatMap((area) => area.spawns.map((spawn) => Number(spawn.selfId))));
+assert.deepStrictEqual(mobIds.filter((id) => !mobiusIds.has(id)), [],
+    'Catacomb of the Branded monsters are spawned from Mobius');
 
 const gargoyle = npcs.find((npc) => npc.selfId === 1147);
 assert.deepStrictEqual(

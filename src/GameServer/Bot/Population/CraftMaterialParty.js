@@ -192,21 +192,7 @@ function joint(party, members, { timestamp = Date.now(), spots } = {}) {
     const goals = needs(members, party.stats.objective, party.stats.agreement);
     const Income = require('./PartyIncomeComparison');
     let review = {};
-    if (party.stats.materialFormation) {
-        const decisions = new Map();
-        const accepted = new Set(require('./PartyGoalPolicy').formingMembers(members, party.stats.objective,
-            { spots, timestamp, onReview: (member, decision) => decisions.set(Number(member.characterId), decision) })
-            .map(member => Number(member.characterId)));
-        review = { lastIncomeReviewAt: timestamp, incomeReviews: members.map(member => {
-            // Formation calls the economic comparison directly so the wire
-            // packet contains only the already validated economic fields.
-            const checked = decisions.get(Number(member.characterId));
-            const { probability, roll, goal, ...decision } = checked?.at === timestamp ? checked
-                : { ...Income.evaluate(), at: timestamp, soloSource: null, partySource: null };
-            return { characterId: Number(member.characterId), ...decision,
-                accept: checked?.at === timestamp && accepted.has(Number(member.characterId)) };
-        }) };
-    } else if (timestamp - Number(party.stats.lastIncomeReviewAt || party.startedAt || timestamp) >= Income.REVIEW_MS) {
+    if (timestamp - Number(party.stats.lastIncomeReviewAt || party.startedAt || timestamp) >= Income.REVIEW_MS) {
         const prepared = Income.prepare(members, { party, objective: party.stats.objective, spots, timestamp });
         review = { lastIncomeReviewAt: timestamp, incomeReviews: members.map(member => ({ characterId: Number(member.characterId),
             ...Income.compare(member, members.filter(peer => peer !== member), { prepared, party, objective: party.stats.objective }) })) };
@@ -239,8 +225,28 @@ function selectMembers(candidates, { minSize = 2, maxSize = MAX_MEMBERS, levelRa
         && !(state.stats?.partyRequest?.status === 'deferred' && Number(state.stats.partyRequest.deferredUntil) > timestamp));
     const recruits = Composition.selectRecruits(core, supports, { maxSize: Math.min(MAX_MEMBERS, maxSize), levelRange, timestamp });
     const members = [...core, ...recruits];
-    return members.length >= minSize ? members : [];
+    if (members.length < minSize) return [];
+    const spot = invoke('GameServer/Bot/Population/SpotProfiles').findById(spotId);
+    return !spot || canHunt(members, spot) ? members : [];
 }
 
-module.exports = { request, requestOf, isObjective, needs, remaining, supplyPause, selectMembers, agreement, departureRequest, joint, target, campsFor, partySpoiler,
+// A material contract needs a roster that can take its actual pull. A
+// collection of support requests is not proof that the assembled team can
+// fight the leader and all its minions once it becomes visible.
+function canHunt(members, spot, profiles = null, npcIds = null) {
+    const Match = invoke('GameServer/Bot/AI/BotTargetMatchup');
+    const Pull = invoke('GameServer/Bot/AI/BotPullEstimate');
+    const Cold = invoke('GameServer/Bot/Population/ColdCombatProfile');
+    profiles ||= Match.stateProfiles(members[0], { mode: 'party', capacityStates: members, buffed: true });
+    npcIds ||= [...new Set(members.map(member => Number(requestOf(member)?.npcId)).filter(Boolean))];
+    const entries = (spot?.npcEntries || []).filter(entry => !npcIds.length || npcIds.includes(Number(entry.selfId)));
+    if (!entries.length) return true;
+    return entries.every(entry => {
+        const npc = invoke('GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').npcs, entry.selfId);
+        return !npc || Match.soloSurvival(profiles,
+            Pull.pullView(Cold.npcCombatStats(npc), Pull.entryPull(spot, entry.selfId))).eligible;
+    });
+}
+
+module.exports = { request, requestOf, isObjective, needs, remaining, supplyPause, selectMembers, canHunt, agreement, departureRequest, joint, target, campsFor, partySpoiler,
     MAX_SOURCE_CHECKS, MAX_CAMPS, MAX_CORE, MAX_MEMBERS, REVIEW_MS };

@@ -15,6 +15,7 @@ memory.enrichEvent = event => {
         World.registeredActorById(event.targetId)?.actor);
 };
 memory.clanSocial = invoke('GameServer/Clan/ClanSocialRuntime').view;
+memory.clanWars = invoke('GameServer/Clan/ClanWarRuntime').view;
 // The 'memory' table (ColdTableChannel, key: owner id): every accepted
 // snapshot (load, ensureMany, a committed episode, a bot's reflected commit,
 // a clan discipline) is published once; the worker accepts it into its own

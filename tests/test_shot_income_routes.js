@@ -112,9 +112,13 @@ const Demand = require('../src/GameServer/Bot/Economy/ShotTradeDemand');
         assert.equal(native.exit.type, 'listing');
         assert.equal(native.exit.repeatable, false, 'observed demand is a forecast, never perpetual funding');
         if (recipeId === 20) {
+            // T43 table: buying D shots does not pay for this crafter, so its personal target is
+            // the stock it holds; it holds some, and only the rest of the output is for sale.
+            const held = 500;
             const producer = { ...state, level: 52, inventory: {
                 ...Object.fromEntries(recipe.materials.map(row => [row.selfId,
                     { selfId: row.selfId, amount: row.amount * 64, stackable: true }])),
+                [recipe.productId]: { selfId: recipe.productId, amount: held, stackable: true },
                 168: { selfId: 168, amount: 1, equipped: true, slot: 7, stackable: false } } };
             const refreshed = await probe(producer, { recipeEarning: true, refreshEconomy: true, timestamp: now,
                 recipes: { recipeBook: Codec.pack([20]), knownShotRecipes: [20] }, tablePages: [{ tables: [
@@ -124,7 +128,7 @@ const Demand = require('../src/GameServer/Bot/Economy/ShotTradeDemand');
             assert(refreshed.selected?.craft?.ownReserve > 0, 'native economy refresh retains the real personal shot reserve');
             const checked = atDecision(() => Shots.recheck(producer, refreshed.selected.craft));
             assert(checked && checked.expectedSold > 0, 'the native batch produces a commercial surplus after its personal reserve');
-            assert(checked.expectedSold <= checked.batches * recipe.productCount - refreshed.selected.craft.ownReserve,
+            assert(checked.expectedSold <= checked.batches * recipe.productCount + held - refreshed.selected.craft.ownReserve,
                 'native recheck cannot count personal shots as sold');
         }
         const withOutput = structuredClone(state);

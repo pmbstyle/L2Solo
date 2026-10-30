@@ -138,14 +138,7 @@ for (const seller of rows) {
     const approach = TownNpcApproach.pointsFor(seller);
     assert(approach, `${seller.town} ${seller.name} must expose heading-derived approach points`);
     assert(
-        GeodataEngine.hasLineOfSight(
-            approach.interaction.locX,
-            approach.interaction.locY,
-            approach.interaction.locZ,
-            seller.locX,
-            seller.locY,
-            seller.locZ
-        ),
+        TownNpcApproach.hasInteractionLineOfSight(approach.interaction, seller),
         `${seller.town} ${seller.name} interaction point must be on a visible side of the NPC`
     );
     const stagingPath = GeodataEngine.findPath(
@@ -175,6 +168,18 @@ for (const seller of rows) {
     }
     assert(frontReachable.get(routeKey(seller)),
         `${seller.town} ${seller.name} needs a reachable front-side waypoint whenever the NPC itself is reachable`);
+    const street = stagingPath?.at(-1) || town;
+    const counterPath = GeodataEngine.findPath(street.locX, street.locY, street.locZ,
+        approach.interaction.locX, approach.interaction.locY, approach.interaction.locZ, 120000,
+        { debug: false, goalRadius: TownNpcApproach.INTERACTION_ARRIVAL_RADIUS, goalZTolerance: 64 });
+    assert(counterPath?.length, `${seller.town} ${seller.name} must reach the actual counter from the street`);
+    const endpoint = counterPath.at(-1);
+    const bot = { ...endpoint, fetchId: () => 900000 + seller.npcSelfId,
+        fetchLocX() { return this.locX; }, fetchLocY() { return this.locY; }, fetchLocZ() { return this.locZ; } };
+    const session = {};
+    assert(TownNpcApproach.plan(session, bot, seller, 'shopping').ready,
+        `${seller.town} ${seller.name} must allow interaction at the reachable counter endpoint`);
+    TownNpcApproach.reset(session);
     const arrived = path[path.length - 1];
     assert(Math.hypot(arrived.locX - seller.locX, arrived.locY - seller.locY) <= 240,
         `${seller.town} ${seller.name} route must stop inside the interaction radius`);

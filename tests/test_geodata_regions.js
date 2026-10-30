@@ -18,4 +18,44 @@ for (const [name, x, y, expected] of cases) {
     assert.strictEqual(GeodataEngine.getRegionKey(x, y), expected, name);
 }
 
-console.log('Geodata region mapping checks passed');
+(async () => {
+    const fs = require('fs'), os = require('os'), path = require('path');
+    const { Worker } = require('worker_threads');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'l2solo-geodata-directory-'));
+    const selected = path.join(root, 'selected'), decoy = path.join(root, 'decoy');
+    const originalDirectory = process.env.L2NODE_GEODATA_DIR;
+    let worker;
+    try {
+        for (const [directory, height] of [[selected, 120], [decoy, 512]]) {
+            fs.mkdirSync(directory);
+            const region = Buffer.alloc(256 * 256 * 3);
+            for (let offset = 0; offset < region.length; offset += 3) region.writeInt16LE(height, offset + 1);
+            fs.writeFileSync(path.join(directory, '17_25.l2j'), region);
+        }
+        process.env.L2NODE_GEODATA_DIR = selected;
+        const descriptor = GeodataEngine.sharedDescriptor();
+        assert.strictEqual(descriptor.directory, selected);
+        process.env.L2NODE_GEODATA_DIR = decoy;
+        assert.strictEqual(GeodataEngine.getGeodataDir(), selected,
+            'an existing catalog must retain its selected directory until restart');
+        assert.strictEqual(GeodataEngine.getHeight(-84108, 244604, 0), 120);
+        worker = new Worker(`
+            const { parentPort, workerData } = require('worker_threads');
+            require(workerData.globalPath);
+            const geo = invoke('GameServer/Geodata/GeodataEngine');
+            geo.attachShared(workerData.descriptor);
+            parentPort.postMessage({ directory: geo.getGeodataDir(),
+                height: geo.getHeight(-84108, 244604, 0), regions: geo.sharedDescriptor().regions.length });
+        `, { eval: true, workerData: { descriptor, globalPath: path.resolve(__dirname, '../src/Global.js') },
+            env: { ...process.env, L2NODE_GEODATA_DIR: decoy } });
+        const answer = await new Promise((resolve, reject) => { worker.once('message', resolve); worker.once('error', reject); });
+        assert.deepStrictEqual(answer, { directory: selected, height: 120, regions: 1 },
+            'workers must use the main thread catalog even when their environment points elsewhere');
+        console.log('Geodata region mapping, external directory and shared worker checks passed');
+    } finally {
+        await worker?.terminate();
+        if (originalDirectory === undefined) delete process.env.L2NODE_GEODATA_DIR;
+        else process.env.L2NODE_GEODATA_DIR = originalDirectory;
+        fs.rmSync(root, { recursive: true, force: true });
+    }
+})().catch(error => { console.error(error); process.exitCode = 1; });

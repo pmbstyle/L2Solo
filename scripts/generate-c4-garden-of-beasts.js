@@ -163,19 +163,6 @@ if (spawnRows.some((row) => Number(row[2]) !== 1 || Number(row[10]) !== 40)) {
     throw new Error('Unexpected Garden of Beasts spawn count/respawn semantics');
 }
 
-const spawnDefinitions = [...mobIds].map((npcId) => {
-    const rows = spawnRows.filter((row) => Number(row[3]) === npcId);
-    if (!rows.length) throw new Error(`Missing Garden of Beasts spawns for NPC ${npcId}`);
-    return {
-        selfId: npcId,
-        name: npcNameById.get(npcId),
-        coords: rows.map((row) => ({ locX: row[4], locY: row[5], locZ: row[6], head: row[9] })),
-        total: 1,
-        respawn: 40,
-        bias: 0
-    };
-});
-const spawns = [{ selfId: 'c4-garden-of-beasts', bounds: [], spawns: spawnDefinitions }];
 
 const dropRows = tuples('sql/droplist.sql').filter((row) => mobIds.has(Number(row[0])));
 if (dropRows.length !== 308) throw new Error(`Expected 308 drops, found ${dropRows.length}`);
@@ -293,7 +280,6 @@ const skillTemplates = [
 ];
 
 writeJson('data/Npcs/c4_garden_of_beasts.json', npcs);
-writeJson('data/Npcs/Spawns/c4_garden_of_beasts.json', spawns);
 writeJson('data/Npcs/Rewards/c4_garden_of_beasts.json', rewards);
 writeJson('data/Items/Others/c4_garden_of_beasts.json', missingItems);
 writeJson('data/Npcs/Skills/c4_garden_of_beasts.json', skillRows);

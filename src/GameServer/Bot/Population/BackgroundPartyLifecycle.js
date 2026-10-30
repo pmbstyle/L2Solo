@@ -35,6 +35,7 @@ function rotationExpiry(partyId, startedAt, options = {}) {
 }
 
 function sessionExpired(party, timestamp = Date.now(), options = {}) {
+    if (party.stats?.warOperation) return false;
     if (AssemblyRecovery.expired(party) && !party?.stats?.travel
         && Number(party?.stats?.restUntil || 0) <= timestamp
         && !require('./PartyMarketBreak').pending(party, timestamp).length) return true;

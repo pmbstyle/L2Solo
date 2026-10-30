@@ -70,9 +70,7 @@ function recipeKnowledgeFor(state) {
         ? CraftWorkshopService.knowledgeFor(state.characterId) : {};
 }
 
-function yieldToLoop() {
-    return new Promise((resolve) => setImmediate(resolve));
-}
+const yieldToLoop = require('../../EventLoopTurn');
 
 function npcPlanningCatalogRows() {
     return ColdNpcPlanningCatalog.buildRows({
@@ -101,6 +99,8 @@ function heapSnapshotOptions() {
     return { execArgv: ['--heapsnapshot-near-heap-limit=1', `--diagnostic-dir=${HEAP_SNAPSHOT_DIR}`] };
 }
 
+const emptyBusyWindow = () => ({ activeMs: 0, idleMs: 0, maxElu: 0, lagMs: 0 });
+
 class ColdSimulationCoordinator {
     constructor(options = {}) {
         this.WorkerClass = options.WorkerClass || Worker;
@@ -116,6 +116,7 @@ class ColdSimulationCoordinator {
         this.ready = false;
         this.snapshotsLoaded = false;
         this.lastHeartbeatAt = 0;
+        this.busyWindow = emptyBusyWindow();
         this.lastWorkerMessage = null;
         this.terminateCause = null;
         this.lastWatchdogAt = 0;
@@ -161,7 +162,7 @@ class ColdSimulationCoordinator {
             contestContextAllowed: (state, event) => {
                 const physical = SpotService.findCurrentSpot(state.loc);
                 const spot = SpotProfiles.findById(event.spotId);
-                return physical?.id === event.spotId && (event.action === 'revenge' || !!spot?.npcEntries?.some(row => Number(row.selfId) === event.npcId));
+                return physical?.id === event.spotId && (['revenge', 'clan_war'].includes(event.action) || !!spot?.npcEntries?.some(row => Number(row.selfId) === event.npcId));
             },
             participantAllowed: id => !this.fencedBots.has(Number(id)),
             releaseForecasts: events => this.post('competition_release', { events: events.map(e => ({ at: e.at, action: e.action,
@@ -323,6 +324,7 @@ class ColdSimulationCoordinator {
             await BackgroundPartyState.purgeHistory();
             await invoke('GameServer/Bot/Population/ColdRaidAuthority').init();
             await ClanSocial.refresh(true);
+            await invoke('GameServer/Clan/ClanWarRuntime').refresh(true);
             invoke('GameServer/Bot/Population/ColdOccupationSources').initialise();
             this.queue.start();
             this.startWorker();
@@ -422,6 +424,22 @@ class ColdSimulationCoordinator {
             return;
         }
         this.workerDiagnosticsSeq = delta.seq;
+    }
+
+    // The health line's worker numbers since its last line (PopulationStatus.goalText takes them):
+    // the busy share as summed active / idle ms, the busiest beat and the longest loop delay.
+    noteBusy(payload) {
+        const window = this.busyWindow;
+        window.activeMs += Number(payload.eluActiveMs) || 0;
+        window.idleMs += Number(payload.eluIdleMs) || 0;
+        window.maxElu = Math.max(window.maxElu, Number(payload.eventLoopUtilization) || 0);
+        window.lagMs = Math.max(window.lagMs, Number(payload.eventLoopLagMaxMs) || 0);
+    }
+
+    takeBusyWindow() {
+        const window = this.busyWindow;
+        this.busyWindow = emptyBusyWindow();
+        return window;
     }
 
     // With diagnostics off the payload is stored as sent; with them on the kept table stands in for the delta,
@@ -811,6 +829,7 @@ class ColdSimulationCoordinator {
             break;
         case 'heartbeat':
             this.lastHeartbeatAt = Date.now();
+            this.noteBusy(payload);
             this.storeWorkerSnapshot(payload, true);
             if (!this.stopping) Metrics.recordColdSafetyTotals(epoch, payload.safety);
             this.handleCompetitionForecast(payload.competition, worker, epoch);
@@ -1342,6 +1361,7 @@ class ColdSimulationCoordinator {
         // An incremental continuation has no final initial-ready marker.
         if (initial) this.snapshotBootstrapPending = true;
         await ClanSocial.refresh();
+        await invoke('GameServer/Clan/ClanWarRuntime').refresh();
         await ClanSocial.enforceOne(this);
         ClanSocial.send(this);
         if (this.snapshotInFlight || this.criticalSnapshotInFlight) {
@@ -1921,7 +1941,7 @@ class ColdSimulationCoordinator {
                     results.push({ ...identity, ok: false, reason: error?.message || 'command_error', retryAfterMs: 5000,
                         ...(state ? { state } : {}) });
                 }
-                await new Promise((resolve) => setImmediate(resolve));
+                await yieldToLoop();
             }
             if (!sourceCurrent()) return;
             // Each request answered once, in order.
@@ -2052,9 +2072,20 @@ class ColdSimulationCoordinator {
 
     async fenceBot(characterId, timeoutMs = 500) {
         const id = Number(characterId);
-        this.economyDecisions.forget(id);
+        // Return the last accepted cold advice with the ownership handoff.
+        // A commit already in flight may publish a newer card while fencing;
+        // take it only after those writes settle, against the resulting row.
+        // Advice carries no permission to execute a native transaction.
+        const takeDecision = () => {
+            const state = LifeState.cachedState(id);
+            return state?.phase === 'cold' ? this.economyDecisions.decided(state) : null;
+        };
         EconomyContext.forget(id);
-        if (!this.worker || !this.ready) return { ok: true, reason: 'worker_not_ready' };
+        if (!this.worker || !this.ready) {
+            const economyDecision = takeDecision();
+            this.economyDecisions.forget(id);
+            return { ok: true, reason: 'worker_not_ready', economyDecision };
+        }
         const worker = this.worker, epoch = this.workerEpoch;
         this.fencedBots.add(id);
         DiagnosticConfig.developerDiagnostics && (this.counters.fences += 1);
@@ -2068,7 +2099,10 @@ class ColdSimulationCoordinator {
         // still precedes handoff. Keep those exact promises across both waits.
         captureCommitAcks();
         const msgId = this.post('fence', { characterId: id, deadlineAt: Date.now() + timeoutMs });
-        if (!msgId) return { ok: false, reason: 'fence_send_failed' };
+        if (!msgId) {
+            this.economyDecisions.forget(id);
+            return { ok: false, reason: 'fence_send_failed' };
+        }
         let timer = null;
         const response = new Promise((resolve, reject) => {
             timer = setTimeout(() => reject(new Error('cold_worker_fence_timeout')), Math.max(50, Number(timeoutMs) || 500));
@@ -2085,13 +2119,14 @@ class ColdSimulationCoordinator {
             if (command) await Promise.race([command.catch(() => null), wait(timeoutMs)]);
             await this.queue.flushCharacter(id);
             await Promise.all(commitAcks);
-            return { ok: true, reason: 'fenced', ...fenced };
+            return { ok: true, reason: 'fenced', ...fenced, economyDecision: takeDecision() };
         } catch (error) {
             DiagnosticConfig.developerDiagnostics && (this.counters.fenceTimeouts += 1);
             this.waiters.delete(msgId);
             return { ok: false, reason: error.message };
         } finally {
             clearTimeout(timer);
+            this.economyDecisions.forget(id);
         }
     }
 

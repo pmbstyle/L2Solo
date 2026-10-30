@@ -98,8 +98,8 @@ function finishMarketVisit(state, timestamp = Date.now(), options = {}) {
 
 function finishVisit(state, timestamp, options) {
     if (!state || !['shopping', 'merchant'].includes(state.activity)) return null;
-    if (CombinedErrands.pending(state, timestamp, state.currentRegion).length
-        || (state.stats?.townVisit && state.stats.townVisit.completed !== true)) return null;
+    if (!state.stats?.partyMarketReturn?.warOperationId && (CombinedErrands.pending(state, timestamp, state.currentRegion).length
+        || (state.stats?.townVisit && state.stats.townVisit.completed !== true))) return null;
     let destination = state.stats?.marketReturn;
     const returningParty = state.stats?.partyMarketReturn
         ? invoke('GameServer/Bot/Population/BackgroundPartyState').find(state.stats.partyMarketReturn.partyId) : null;

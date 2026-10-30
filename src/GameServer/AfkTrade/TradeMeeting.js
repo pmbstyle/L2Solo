@@ -109,6 +109,9 @@ function create(io) {
             } else if (party.route.method.startsWith('meeting:')) throw Error('trade_meeting_route_changed');
             const life = one("SELECT *, json_extract(statsJson,'$.playerPartyTakeover.playerId') playerPartyId FROM bot_life_state WHERE characterId=?", [id]);
             if (io.canStartTrade && !io.canStartTrade(id, life)) throw Error('trade_meeting_party_busy');
+            if (life && io.canReceive) for (const line of request.lines.filter(line => line.payer === side)) {
+                io.canReceive(id, life, line.selfId);
+            }
             if (life && (Number(life.hp) <= 0 || life.activity === 'dead' || Number(life.simulationRevision) !== party.revision || life.phase !== party.phase
                 || Number(life.lastHotAt || 0) !== party.hotAt)) throw Error('trade_meeting_authority_changed');
             if (life && party.phase === 'hot' && !io.position(id)?.alive) throw Error('trade_meeting_authority_changed');

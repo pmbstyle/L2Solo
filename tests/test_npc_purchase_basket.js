@@ -33,6 +33,12 @@ async function native(state, settings) {
 }
 async function run() {
     await DB.init();
+    let military = await seed(9599, 5000, { partyMarketReturn: { warOperationId: 'war', supplyItemId: 2509, until: Date.now() + 900000 } });
+    await assert.rejects(native(military), /war_supply_only/, 'a military supply basket cannot sneak unrelated items into a shot refill');
+    assert.equal(await amount(9599, 57), 5000); assert.equal(await amount(9599, 2509), 0, 'the whole mixed basket rolls back');
+    military = Life.cachedState(9599) || military;
+    await native(military, { lines: [lines[0]] });
+    assert.equal(await amount(9599, 2509), 100, 'the reserved shot refill still commits through the native writer');
     const at = Date.now(), first = { selfId: 2509, town: 'Dion', amount: 120, at, purpose: 'shots', money: 2160 };
     const unrelated = { selfId: 736, town: 'Giran', amount: 2, at, purpose: 'scrolls' };
     let state = await seed(9511, 5000, { marketErrands: [first, unrelated], marketErrand: first });
@@ -93,6 +99,8 @@ async function run() {
     assert.equal(await amount(9515, 2509), 0); assert.equal(await amount(9515, 57), 5000);
 
     state = await seed(9516, 5000, {}, 'hot');
+    state = await Life.upsertState({ ...state, activity: 'hunting', currentRegion: 'Tarlk Bugbear fields',
+        loc: { locX: 96534, locY: 16945, locZ: -3320 } }, 'basket_stale_background_anchor');
     const Actor = invoke('GameServer/Model/Actor'), Backpack = invoke('GameServer/Actor/Backpack');
     const actor = new Actor({ id: 9516, name: 'Basket9516', classId: 0, race: 0, level: 1,
         hp: 100, maxHp: 100, mp: 100, maxMp: 100, locX: seller.locX, locY: seller.locY, locZ: seller.locZ });
@@ -101,7 +109,13 @@ async function run() {
     actor.session = { actor, coldLifeState: state, plan: 'shopping', botSession: true };
     const hot = await Basket.purchaseForActor(actor, { seller, lines });
     assert(hot.ok); assert.equal(actor.backpack.fetchItemFromSelfId(57).fetchAmount(), 2504);
+    assert.equal(hot.state.currentRegion, 'Dion', 'the live shop visit replaces the old background hunting region');
+    assert.equal(hot.state.activity, 'shopping');
+    assert.deepEqual(hot.state.loc, { locX: seller.locX, locY: seller.locY, locZ: seller.locZ });
     assert.equal(actor.backpack.fetchItemFromSelfId(2509).fetchAmount(), 100);
+    await assert.rejects(Basket.purchaseForActor(actor, { seller: { ...seller, town: 'Giran' }, lines }), /npc_seller_changed/,
+        'the physical town proof cannot authorize a seller in another town');
+    assert.equal(await amount(9516, 57), 2504);
     const stale = Commit.header(hot.economyCommand[0], hot.economyCommand[1], hot.economyCommand[2],
         { ...hot.economyCommand.authority, phase: 'cold' });
     await assert.rejects(DB.purchaseNpcInventoryBasket(9516, { economyCommand: stale }), /owner_changed/);

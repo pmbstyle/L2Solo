@@ -27,7 +27,6 @@ const EconomyCommit = require('../Economy/EconomyCommit');
 const SavedStats = require('../SavedStats');
 
 const TABLE = 'bot_life_state';
-const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 const BotClassProgression = invoke('GameServer/Bot/BotClassProgression');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
@@ -117,10 +116,13 @@ function notifyColdSnapshot(state, reason = 'state_changed', options = {}) {
 // queue entry per bot. The far poster's gate above stays for far bots.
 function notifyNearFacts(session, reason) {
     if (!session?.accountId?.startsWith?.('bot_') || session.arenaEphemeral === true) return;
+    // Ownership is persisted before enterWorld finishes. That provisional
+    // body must not look like a changed kit to the occupation planner.
+    if (session.populationActivating === true) return;
     const handle = setImmediate(() => {
         try {
             const actor = session.actor;
-            if (!actor) return;
+            if (!actor || session.populationActivating === true) return;
             const current = cache.get(Number(actor.fetchId()));
             if (current?.phase !== 'hot') return;
             const row = mergeSessionIntoLifeState(session, session.coldLifeState || current, 'hot', reason,
@@ -506,6 +508,8 @@ function inventoryAdena(inventory) {
 
 function marketPurchaseBlocker(state = {}, offer = {}, qty = 1) {
     const selfId = Number(offer?.selfId || 0);
+    const warBlocker = require('./PartyMarketBreak').warSupplyPurchaseBlocker(state, selfId);
+    if (warBlocker) return warBlocker;
     const count = Number(qty);
     const template = itemTemplate(selfId);
     if (!template || !Number.isSafeInteger(count) || count <= 0) return null;
@@ -560,12 +564,13 @@ function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
         .filter((npcId) => npcId > 0);
     const targetKills = defeatedNpcIds.filter((npcId) => npcId === targetNpcId).length;
     const interruptions = defeatedNpcIds.length - targetKills;
+    // A population entry holds counters only; the last fight's NPC list is
+    // the bot's own (top level, GearThreat reads it), never one per target.
     const add = (current = {}) => ({
         resolves: Number(current.resolves || 0) + 1,
         defeated: Number(current.defeated || 0) + defeatedNpcIds.length,
         targetKills: Number(current.targetKills || 0) + targetKills,
         interruptions: Number(current.interruptions || 0) + interruptions,
-        lastDefeatedNpcIds: defeatedNpcIds,
         lastResolvedAt: timestamp
     });
     const limitTargets = (values) => Object.fromEntries(Object.entries(values)
@@ -587,6 +592,7 @@ function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
         ...retained,
         targetNpcId,
         ...current,
+        lastDefeatedNpcIds: defeatedNpcIds,
         populationTargets: limitTargets(populationTargets)
     };
 }
@@ -735,7 +741,6 @@ function recordFromSession(session, phase, reason = '') {
         clanHallVisit: session.clanHallVisit === undefined ? session.coldLifeState?.stats?.clanHallVisit || null : session.clanHallVisit,
         clanHallRetryAt: session.clanHallRetryAt ?? session.coldLifeState?.stats?.clanHallRetryAt ?? 0,
         route: currentSpot?.route || null,
-        build: GearSkillHints.forCharacter(actor, { role: session.botStatus?.role || null }),
         equipment: equipmentSummaryFromInventory(inventory),
         // Cold combat must start from the exact same character model as the
         // hot session: equipped item totals, learned skills and live effects.
@@ -1034,12 +1039,13 @@ function save(row, options = {}) {
     });
 }
 
-// A party's write to a far member (its requirement plan, its departure), built
-// on the copy main read before: only the given fields are written (`stats`:
-// top-level stats keys, `columns`: row columns), held on that copy's revision,
-// and the write moves it. A write that moved the row in between (the member's
-// own review: its training, buff or plan) wins and nothing is written: false,
-// and the caller marks the party's re-plan due again.
+// A main write of only its own fields to a far bot (a party's plan or
+// departure for a member, the seed pass's station crafter), built on the copy
+// main read before: only the given fields are written (`stats`: top-level
+// stats keys, `columns`: row columns), held on that copy's revision, and the
+// write moves it. A write that moved the row in between (the bot's own review,
+// its training, a craft, a sale) wins and nothing is written: false, and the
+// caller compares again on its next pass (a party marks its re-plan due).
 function writeHeldOnRevision(member, { stats = {}, columns = {} }, reason) {
     const id = Number(member.characterId);
     const statsEntries = Object.entries(stats), columnEntries = Object.entries(columns);
@@ -1223,7 +1229,6 @@ function applyClassProgression(state, profile = {}) {
                 ...(state.stats || {}),
                 classId,
                 role,
-                build: GearSkillHints.forCharacter({ classId, level }, { role }),
                 classProgressionLevel: level,
                 classProgressionClassId: classId,
                 classTransitions: resolved.transitions?.length
@@ -2933,7 +2938,6 @@ const BotLifeState = {
                     ...(nextState.stats || {}),
                     classId,
                     role,
-                    build: GearSkillHints.forCharacter({ classId, level }, { role }),
                     classProgressionLevel: level,
                     classProgressionClassId: classId,
                     classTransitions: resolved.transitions?.length
@@ -3635,6 +3639,14 @@ const BotLifeState = {
         });
         pendingWrites.set(id, tracked);
         return next;
+    },
+
+    // writeHeldOnRevision for a caller outside this module; `inventory` is
+    // saved as the row's bag summary the way a full save writes it.
+    writeHeldFields(read, { stats = {}, columns = {}, inventory = null }, reason) {
+        return writeHeldOnRevision(read, { stats: { ...stats, lastReason: reason }, columns: inventory
+            ? { ...columns, inventorySummary: safeJson(InventorySummary.canonicalize(inventory)) }
+            : columns }, reason);
     },
 
     // One member's plan from its party's requirement refresh

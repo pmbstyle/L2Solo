@@ -172,7 +172,7 @@ function collectBlockers(session, bot, vitals, party) {
     return blockers;
 }
 
-function nearbySnapshot(bot) {
+function nearbySnapshot(bot, session) {
     const World = invoke('GameServer/World/World');
     const loc = actorLocation(bot);
     let realPlayers = 0;
@@ -214,6 +214,21 @@ function nearbySnapshot(bot) {
         .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
         .slice(0, 3)
         .map(([name, count]) => ({ name, count }));
+    const scan = session?.huntingTargetScan;
+    // The hunting executor includes safe easier targets and can expand its
+    // search within the selected field. Chat reads that actual scan, rather
+    // than contradicting it with this older level-only 1500-unit count.
+    if (session?.plan === 'hunting' && scan && Date.now() - scan.at < 10000
+        && distance2d(loc, scan.loc) <= 128) {
+        attackableNpcs = scan.attackableNpcs;
+        eligibleAttackableNpcs = scan.eligibleAttackableNpcs;
+    }
+    const engaged = session?.plan === 'hunting' && NpcObjectIndex.find(World, session.currentTargetId);
+    if (engaged && engaged.fetchAttackable?.() && !engaged.isDead?.()
+        && !BotRaidSafety.isProtectedRaidEntity(engaged)) {
+        attackableNpcs = Math.max(1, attackableNpcs);
+        eligibleAttackableNpcs = Math.max(1, eligibleAttackableNpcs);
+    }
     return { realPlayers, friendlyBots, hostilePlayers, attackableNpcs, eligibleAttackableNpcs, attackableNpcNames };
 }
 
@@ -412,7 +427,7 @@ const BotStatus = {
                 fleeStartedAt: session.fleeStart || null,
                 shopStartedAt: session.shopTimer || null
             },
-            nearby: nearbySnapshot(bot),
+            nearby: nearbySnapshot(bot, session),
             trade: tradeSnapshot(session, bot),
             ambient,
             inference: BotInferenceBudget.snapshot(session),

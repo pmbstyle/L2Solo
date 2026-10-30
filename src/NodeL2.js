@@ -103,6 +103,7 @@ Database.init(() => {
         }
     }).then(() => ClanService.init()).then(async () => {
         GeodataEngine.init();
+        invoke('GameServer/Geodata/NpcInteractionGeometry').init();
         await World.init();
         await invoke('GameServer/Recommendations/Runtime').start();
         await invoke('GameServer/ClanHall/Runtime').start();

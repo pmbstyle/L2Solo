@@ -3,6 +3,7 @@ const InventorySummary = require('./InventorySummary');
 const Episode = require('./ColdCompetitionEpisode');
 const EncounterBudget = require('./PvpEncounterBudget');
 const Journal = require('../../../PvpJournal');
+const BotErrands = require('./BotErrands');
 // Main-process execution of one bounded encounter (at most two C4 parties).
 // Membership alone never makes a bot an aggressor or creates a memory edge.
 const { seeded } = require('../AI/TendencyRoll');
@@ -21,7 +22,8 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
     incrementalPvp = false, resume = null, onEncounter = () => {}, rng = seeded(event.key) }) {
     if (!parties) return { ok: false, reason: 'party_conflicts_unavailable' };
     const timestamp = now();
-    const revenge = (resume?.reason || event.action) === 'revenge';
+    const war = (resume?.reason || event.action) === 'clan_war';
+    const revenge = war || (resume?.reason || event.action) === 'revenge';
     const sides = [];
     for (const participant of [event.actor, event.peer]) {
         const principal = life.cachedState(participant.id);
@@ -47,6 +49,7 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
     const nearby = (a, b) => Math.hypot(a.loc.locX - b.loc.locX, a.loc.locY - b.loc.locY) <= 1800
         && Math.abs(a.loc.locZ - b.loc.locZ) <= 500;
     const revengeAllowed = () => {
+        if (war) return memory.assess({ id: sides[0].principal.characterId }, { id: sides[1].principal.characterId }, {}, timestamp).war?.mutual === true;
         if (!revenge || resume) return true;
         const [a, b] = sides.map(s => s.principal);
         const identity = s => ({ id: s.characterId, clanId: Number(s.stats?.clanId || 0), partyId: partyIdOf(s) });
@@ -57,12 +60,15 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
             && sides.every(side => side.members.every(s => nearby(s, side.principal)));
     };
     if (!revengeAllowed()) return { ok: false, reason: 'revenge_no_longer_wanted' };
-    if (resume && (!ColdPvpResolver.allowed(sides) || (resume.materialized
+    if (resume && (!ColdPvpResolver.allowed(sides, war) || (resume.materialized
         && (!nearby(sides[0].principal, sides[1].principal) || sides.some(side => side.members.some(s => !nearby(s, side.principal))))))) {
         return { ok: false, reason: 'encounter_separated_or_protected' };
     }
     const { roles, deescalated } = resume ? { roles: new Map(resume.roles), deescalated: false }
-        : select(sides, memory, personaFor, rng, timestamp);
+        : war ? { roles: new Map(sides.flatMap((side, i) => side.members.map(s => [s.characterId,
+            s.characterId === side.principal.characterId ? i === 0 ? 'initiator' : 'target'
+                : memory.assess({ id: s.characterId }, { id: sides[1 - i].principal.characterId }, {}, timestamp).war?.mutual ? 'support' : 'stand_aside']))), deescalated: false }
+            : select(sides, memory, personaFor, rng, timestamp);
     const step = incrementalPvp ? { resuming: !!resume, seen: resume?.seen || [],
         until: timestamp, expiresAt: resume?.expiresAt || timestamp + EncounterBudget.INITIAL_MS,
         maxActions: Math.max(0, EncounterBudget.MAX_ACTIONS - (resume?.actions || 0)) } : null;
@@ -73,7 +79,7 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
     const combatAt = resume ? Math.max(resume.stepAt, timestamp - 1000) : timestamp;
     const pvp = !deescalated && event.pvpIntent === true && pvpEnabled()
         ? ColdPvpResolver.resolve({ sides, roles, timestamp: combatAt,
-            rng, personaFor, step, openingSide: opener, key: event.key }) : null;
+            rng, personaFor, step, openingSide: opener, key: event.key, wars: memory.clanWars, war }) : null;
     // A refused revenge forecast cannot displace hunters or fabricate a resource offense.
     if (revenge && !pvp?.started) return { ok: false, reason: deescalated ? 'revenge_deescalated' : pvp?.reason || 'pvp_disabled' };
     const involved = side => side.members.filter(s => s.characterId === side.principal.characterId || roles.get(s.characterId) === 'support');
@@ -89,7 +95,7 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
         actions: (resume?.actions || 0) + pvp.actions,
         extensions: Number(resume?.extensions || 0),
         materialized: resume?.materialized === true,
-        ...(revenge ? { reason: 'revenge' } : {}),
+        ...(revenge ? { reason: war ? 'clan_war' : 'revenge' } : {}),
         spotId: event.spotId, npcId: event.npcId,
         sides: sides.map(s => ({ principalId: s.principal.characterId, memberIds: s.members.map(m => m.characterId), partyId: s.party?.partyId || null })),
         roles: [...roles], seen: [...(resume?.seen || [])], willing }, pvp, timestamp) : null;
@@ -112,7 +118,8 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
         const delayed = pvp?.started || !deescalated && index === losingIndex;
         const result = pvp?.updates?.get(state.characterId) || state;
         return { ...result, stats: { ...result.stats,
-            ...(revenge ? { revengeUntil: Math.max(Number(state.stats?.revengeUntil || 0), (resume?.startedAt || timestamp) + RevengePolicy.RETRY_MS) } : {}),
+            ...(war && pvp?.started && BotErrands.staleWarMarketReturn(state, side.party) ? { marketReturn: null } : {}),
+            ...(revenge && !war ? { revengeUntil: Math.max(Number(state.stats?.revengeUntil || 0), (resume?.startedAt || timestamp) + RevengePolicy.RETRY_MS) } : {}),
             ...(incrementalPvp ? { pvpEncounter: encounter } : {}), coldCompetition: Episode.begin(state.stats?.coldCompetition, { ...episode,
             peerId: sides[1 - index].principal.characterId, role: roles.get(state.characterId),
             ...(delayed ? { wait } : {}) }) }, timing: delayed ? { ...state.timing,
@@ -160,7 +167,9 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
             positive ? 'cooperation' : e.type === 'mob_contested' ? 'aggression'
                 : aggressor ? revenge ? 'aggression' : 'provoked' : 'defense', positive || e.type === 'aided_opponent');
     }
+    const warState = war ? memory.assess({ id: sides[0].principal.characterId }, { id: sides[1].principal.characterId }, {}, timestamp) : null;
     const group = { id: event.key, memberIds: states.map(s => s.characterId),
+        ...(war ? { warContext: { fromClanId: warState.sourceClanId, toClanId: warState.targetClanId, revision: warState.war.revision } } : {}),
         ...(pvp?.started ? { pvpContext: sides.map(side => side.members.map(s => ({ id: s.characterId,
             clanId: Number(s.stats?.clanId || s.clanId || 0), karma: Number(s.stats?.karma || 0) }))) } : {}),
         partyChanges: preparedParties.flatMap((prepared, index) => prepared ? [{
@@ -189,8 +198,8 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
     if (!encounter) Journal.coldConflict({ key: event.key, revenge, reason: pvp?.reason || event.action,
         spotId: event.spotId, npcId: event.npcId, partyIds,
         sideSizes: sides.map(s => s.members.length), outcome, fought: !!pvp?.started,
-        principals: sides.map(s => s.principal), personaFor, at: timestamp,
-        ...(pvp?.started ? { losingSide: pvp.losingSide, kills: pvp.fighters.flatMap(f => f.kills),
+        principals: sides.map(s => s.principal), combatants: states, personaFor, at: timestamp,
+        ...(pvp?.started ? { losingSide: pvp.losingSide, kills: pvp.fighters.flatMap(f => f.kills.map(k => ({ ...k, killerId: f.id }))),
             durationMs: Math.min(combatAt + pvp.durationMs, step?.expiresAt ?? Infinity) - startedAt,
             actions: (resume?.actions || 0) + pvp.actions } : {}) });
     return { ok: true, deescalated, outcome, pvp: !!pvp?.started,

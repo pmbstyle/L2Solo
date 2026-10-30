@@ -53,6 +53,9 @@ module.exports.stepProbe = async (id) => {
             nextResolveAt: timestamp + 60000 }, timestamp, plan);
         const ColdEconomyDecision = invoke('GameServer/Bot/Population/ColdEconomyDecision');
         return { decided, afterRound: builds - decided, activity: state.activity,
+            selectedActivity: plan.economy.network.activity?.activity,
+            selectedRoot: plan.economy.network.activity?.rootKey,
+            execution: plan.economyPlan?.travel,
             wishDirty: Number(projection.state.stats.wishDirty || 0),
             seq: [Number(plan.statsPacket.decisionSeq || 0), Number(projection.state.stats.decisionSeq || 0)],
             baseline: [plan.statsPacket.wishSections?.at, projection.state.stats.wishSections?.at],
@@ -109,6 +112,20 @@ module.exports.kitProbe = async (id) => {
     const gain = Number(Data.experience[quiet.state.level]) - Number(quiet.state.exp) + 1;
     const levelUp = await step(quiet.state, gain, timestamp + 2000);
     return { quiet: quiet.kitMoved, levelUp: levelUp.kitMoved, levels: [quiet.state.level, levelUp.state.level] };
+};
+module.exports.occupationProbe = async (id) => {
+    const saved = kernel.states.get(id), state = saved.state;
+    kernel.states.set(id, { ...saved, wishAdvisory: null, route: null,
+        state: { ...state, adena: 100000000, inventory: { ...state.inventory, 57: { selfId: 57, amount: 100000000 } },
+            stats: { ...state.stats, wishFocus: null, activityLeaf: 0, wishDirty: 1, equipmentPlan: null } } });
+    try {
+        const plan = await kernel.planLifecycle({ state: kernel.states.get(id).state, timestamp: Date.now() });
+        const entry = kernel.states.get(id);
+        entry.state = { ...plan.plannedState, stats: { ...plan.plannedState.stats, ...plan.statsPacket } };
+        const resumed = await kernel.planLifecycle({ state: entry.state, timestamp: Date.now() + 1 });
+        return { activity: plan.economy.network.activity?.activity, root: plan.economy.network.activity?.rootKey,
+            execution: plan.economyPlan?.travel, resumedExecution: resumed.economyPlan?.travel, route: plan.route?.spotId || null };
+    } finally { kernel.states.set(id, saved); }
 };`;
 const wrapper = String.raw`
 const fs = require('node:fs'), path = require('node:path'), Module = require('node:module');
@@ -117,7 +134,7 @@ const loaded = new Module(workerData.workerPath, module);
 loaded.filename = workerData.workerPath; loaded.paths = Module._nodeModulePaths(path.dirname(workerData.workerPath));
 loaded._compile(fs.readFileSync(workerData.workerPath, 'utf8') + workerData.observer, workerData.workerPath);
 parentPort.on('message', message => {
-    const probe = ['stepProbe', 'goalProbe', 'kitProbe'].find(name => message[name]);
+    const probe = ['stepProbe', 'goalProbe', 'kitProbe', 'occupationProbe'].find(name => message[name]);
     if (!probe) return;
     loaded.exports[probe](message[probe]).then(value => parentPort.postMessage({ probeId: message.msgId, value }))
         .catch(error => parentPort.postMessage({ probeId: message.msgId, error: error.stack }));
@@ -196,6 +213,15 @@ parentPort.on('message', message => {
         assert.equal(kit.levels[1], kit.levels[0] + 1, 'the fixture member levels up in its round');
         assert.equal(kit.quiet, false, 'a quiet party member step moves no kit');
         assert.equal(kit.levelUp, true, 'a level gained in a party round is a kit event for the party step');
+        worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'occupation'), occupationProbe: id });
+        const occupationResponse = await wait(message => message.probeId === 'occupation');
+        if (occupationResponse.error) throw Error(occupationResponse.error);
+        const occupation = occupationResponse.value;
+        console.log(JSON.stringify(occupation));
+        assert.equal(occupation.activity, 'shopping', 'a funded native purchase is selected without a supplied leaf');
+        assert.equal(occupation.execution, occupation.root, 'the selected purchase reaches native execution');
+        assert.equal(occupation.resumedExecution, occupation.root, 'resuming a held decision still supplies its physical execution');
+        assert.equal(occupation.route, null, 'the purchase cannot be replaced with an unrelated field trip');
         console.log('One economy decision per far solo step passed');
     } finally { await worker?.terminate(); await world.close(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

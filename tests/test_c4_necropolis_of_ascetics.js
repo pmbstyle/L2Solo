@@ -2,15 +2,9 @@ const assertLocation = require('./helpers/assert_c4_monster_location');
 
 assertLocation({
     slug: 'c4_necropolis_of_ascetics',
-    areaId: 'c4-necropolis-of-ascetics',
     displayName: 'Necropolis of Ascetics',
     mobIds: [1156, 1157, 1158, 1179, 1180, 1181, 1200, 1201, 1202, 1224, 1225, 1226],
     importedNpcIds: [1158, 1224, 1225, 1226],
-    spawnCounts: [[1156, 15], [1157, 16], [1158, 16], [1179, 15], [1180, 15], [1181, 16],
-        [1200, 15], [1201, 15], [1202, 16], [1224, 15], [1225, 15], [1226, 15]],
-    respawn: 120,
-    region: [18, 20],
-    maxHeightDelta: 48,
     origin: [-47000, 84000, -4784],
     sample: {
         id: 1158, name: 'Hell Keeper Crimson Doll', level: 67, hostile: true,

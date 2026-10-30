@@ -1,5 +1,4 @@
 const { SPOT_CELL_SIZE } = invoke('GameServer/World/WorldConstants');
-const DEFAULT_LEVEL_RANGE = 3;
 const DEFAULT_MIN_HUNT_LEVEL_GAP = -7;
 const DEFAULT_MAX_HUNT_LEVEL_GAP = 3;
 // The farthest hunting spot a hot bot reaches on foot; beyond it, SoE or a gatekeeper.
@@ -323,7 +322,10 @@ const SpotService = {
     findBestSpot(status, options = {}) {
         const loc = status.loc;
         const targetLevel = options.level || status.level || 1;
-        const levelRange = options.levelRange || DEFAULT_LEVEL_RANGE;
+        // The coarse spot filter must include the same lower-level mobs as
+        // isSuitable. A symmetric +/-3 search hid safe camps in the -7 band.
+        const band = options.levelRange === undefined ? huntBand(targetLevel, options)
+            : { min: targetLevel - options.levelRange, max: targetLevel + options.levelRange };
         const currentSpotId = status.spot?.id;
         const minDistance = options.minDistance || 1200;
         const maxDistance = options.maxDistance || (options.walkOnly === true ? MAX_WALK_SPOT_DISTANCE : 90000);
@@ -351,7 +353,7 @@ const SpotService = {
         const candidates = this.ensureIndexed()
             .filter((spot) => !(Number(options.spotRetryAfter?.[spot.id]) > Date.now()))
             .filter((spot) => spot.density >= (options.minDensity || 4))
-            .filter((spot) => spot.minLevel <= targetLevel + levelRange && spot.maxLevel >= targetLevel - levelRange)
+            .filter((spot) => spot.minLevel <= band.max && spot.maxLevel >= band.min)
             .filter((spot) => isSuitable(spot, targetLevel, options))
             .filter((spot) => LevelingRoutes.isSpotAllowedForState(spot, routeState, routeOptions))
             .filter((spot) => {
@@ -396,6 +398,11 @@ const SpotService = {
             })
             .sort((a, b) => b.score - a.score);
 
+        if (!candidates.length && options.allowEasierSpots && options.levelRange === undefined
+            && band.min > Math.max(1, targetLevel - 15)) {
+            return this.findBestSpot(status, { ...options, allowEasierSpots: false, minLevelGap: -15,
+                matchupProfiles: routeOptions.matchupProfiles });
+        }
         return candidates[0] || null;
     },
 

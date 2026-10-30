@@ -210,25 +210,42 @@ class Automation extends SelectedModel {
     updateMovePosition() {
         const move = this.moveInterpolation;
         if (!move) return;
-        const ratio = Math.min(1, Math.max(0, (Date.now() - move.startedAt) / move.duration));
+        let ratio;
+        if (move.followTarget) {
+            // MoveToPawn follows the live pawn on the client. Summons must
+            // follow that same pawn on the server, including turns and a
+            // target running towards the owner during the first attack.
+            move.from = { locX: move.actor.fetchLocX(), locY: move.actor.fetchLocY(), locZ: move.actor.fetchLocZ() };
+            move.to = this.actionStopCoords(move.actor, move.followTarget, move.followRadius);
+            const distance = Math.hypot(move.to.locX - move.from.locX,
+                move.to.locY - move.from.locY, move.to.locZ - move.from.locZ);
+            const step = Math.max(0, Date.now() - move.updatedAt) * move.actor.fetchCollectiveRunSpd() / 1000;
+            ratio = distance > 0 ? Math.min(1, step / distance) : 1;
+            move.updatedAt = Date.now();
+        } else {
+            ratio = Math.min(1, Math.max(0, (Date.now() - move.startedAt) / move.duration));
+        }
         move.actor.setLocXYZ({
             locX: Math.round(move.from.locX + (move.to.locX - move.from.locX) * ratio),
             locY: Math.round(move.from.locY + (move.to.locY - move.from.locY) * ratio),
-            locZ: Math.round(move.from.locZ + (move.to.locZ - move.from.locZ) * ratio)
+            locZ: move.horizontal ? move.actor.fetchLocZ()
+                : Math.round(move.from.locZ + (move.to.locZ - move.from.locZ) * ratio)
         });
         move.onPosition?.();
     }
 
-    stopMoveInterpolation() {
+    stopMoveInterpolation({ updatePosition = true } = {}) {
         const move = this.moveInterpolation;
         if (!move) return;
-        this.updateMovePosition();
+        if (updatePosition) this.updateMovePosition();
         clearTimeout(move.timer);
         if (move.session?.moveTimer === move.timer) move.session.moveTimer = null;
         this.moveInterpolation = null;
     }
 
-    startMoveInterpolation(session, actor, to, duration, onPosition) {
+    startMoveInterpolation(session, actor, to, duration, onPosition, {
+        horizontal = false, followTarget = null, followRadius = 0, arrivalRange = followRadius, onArrival
+    } = {}) {
         this.stopMoveInterpolation();
         // NPCs and summons borrow a recipient's session to broadcast. Keep
         // their movement on their own automation, never on that recipient.
@@ -240,11 +257,20 @@ class Automation extends SelectedModel {
         const move = this.moveInterpolation = {
             actor, session: ownSession, to: { ...to },
             from: { locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() },
-            startedAt: Date.now(), duration: Math.max(1, duration), timer: null, onPosition
+            startedAt: Date.now(), duration: Math.max(1, duration), timer: null, onPosition, horizontal,
+            followTarget, followRadius, updatedAt: Date.now()
         };
         const advance = () => {
             if (this.moveInterpolation !== move) return;
             this.updateMovePosition();
+            if (followTarget) {
+                if (AttackRange.distance2d(actor, followTarget) <= arrivalRange) {
+                    onArrival();
+                    return;
+                }
+                move.timer = setTimeout(advance, 100);
+                return;
+            }
             const remaining = move.duration - (Date.now() - move.startedAt);
             if (remaining <= 0) return;
             move.timer = setTimeout(advance, Math.min(100, remaining));
@@ -277,7 +303,13 @@ class Automation extends SelectedModel {
             ? AttackRange.effectiveRange(src, dst, radius)
             : Math.max(0, Number(radius) || 0);
         const weaponAttack = options.action === 'attack';
-        if (weaponAttack && AttackRange.distance2d(src, dst) <= actionRange) {
+        const movingSelf = session?.actor === src;
+        const followingPawn = !movingSelf && (src.fetchIsSummon?.() === true || src.fetchIsPet?.() === true);
+        const movingBot = movingSelf && (
+            session.constructor.name === 'BotSession'
+            || session.accountId?.startsWith('bot_')
+        );
+        if (AttackRange.distance2d(src, dst) <= actionRange) {
             this.abortAll(src);
             callback();
             return true;
@@ -286,23 +318,22 @@ class Automation extends SelectedModel {
         // not strand a stationary target just outside the exact boundary.
         const movementRadius = weaponAttack
             ? Math.max(0, actionRange - Math.min(10, actionRange / 4))
-            : actionRange;
+            : followingPawn ? Math.max(0, actionRange - 1) : actionRange;
         if (!invoke('GameServer/Effects/EffectRestrictions').canMove(src)) {
-            const distance = Math.hypot(dst.fetchLocX() - src.fetchLocX(), dst.fetchLocY() - src.fetchLocY());
-            if (distance <= movementRadius) {
-                callback();
-                return true;
+            if (weaponAttack && movingSelf && !movingBot) {
+                // Keep the player's attack intention while rooted. A target
+                // may return to range, or root may expire, without a new click.
+                const approach = this.playerAttackApproach = {
+                    session, src, dst, radius, callback, options, actionRange, stationary: true,
+                    finish: () => { this.clearPlayerAttackApproach(); callback(); }
+                };
+                this.watchPlayerAttackRange(approach);
             }
             invoke('GameServer/Effects/EffectRestrictions').reject(session);
             return false;
         }
         // NPCs and summons also send movement through another actor's session.
         // Only the moving actor may replace that session's active route.
-        const movingSelf = session?.actor === src;
-        const movingBot = movingSelf && (
-            session.constructor.name === 'BotSession'
-            || session.accountId?.startsWith('bot_')
-        );
         // Player movement follows the client floor. Match the horizontal
         // attack range instead of timing a climb toward the target's Z.
         const movementOptions = { horizontal: movingSelf && !movingBot };
@@ -319,13 +350,18 @@ class Automation extends SelectedModel {
             movementRadius, src.fetchCollectiveRunSpd(), movementOptions
         );
 
-        if (!movingSelf || movingBot) this.startMoveInterpolation(session, src, stopCoords, ticks);
+        // C4 may send no further position report before a root or a new
+        // action interrupts MoveToPawn. Track the player's progress too,
+        // keeping its accepted floor instead of interpolating to the NPC Z.
+        if (!followingPawn && (!movingSelf || movingBot || weaponAttack)) {
+            this.startMoveInterpolation(session, src, stopCoords, ticks, undefined, movementOptions);
+        }
 
         // Players report position intermittently. Keep the fallback arrival,
         // but allow an accepted position update to shorten its stale estimate.
         const approach = movingSelf && !movingBot && weaponAttack ? {
             session, src, dst, movementRadius, actionRange, dueAt: Date.now() + ticks,
-            stopCoords, finish: null, timerRevision: 0
+            stopCoords, finish: null, timerRevision: 0, radius, callback, options
         } : null;
         this.playerAttackApproach = approach;
         // Arrived
@@ -333,7 +369,7 @@ class Automation extends SelectedModel {
             if (approach && this.playerAttackApproach !== approach) return;
             this.clearPlayerAttackApproach();
             if (approach) Timer.clear(this.timer.action);
-            this.stopMoveInterpolation();
+            this.stopMoveInterpolation({ updatePosition: !approach });
             src.state.setTowards(false);
             this.clearDestId();
             // C4 need not acknowledge the final MoveToPawn point, so complete
@@ -341,9 +377,11 @@ class Automation extends SelectedModel {
             // floor: borrowing it makes the next player report look like a
             // fall. Keep the player's latest accepted height at arrival.
             const arrivalCoords = approach ? approach.stopCoords : stopCoords;
-            src.setLocXYZ(movingSelf && !movingBot
-                ? { ...arrivalCoords, locZ: src.fetchLocZ() }
-                : arrivalCoords);
+            if (!followingPawn) {
+                src.setLocXYZ(movingSelf && !movingBot
+                    ? { ...arrivalCoords, locZ: src.fetchLocZ() }
+                    : arrivalCoords);
+            }
             if (movingSelf) {
                 if (session.moveTimer) {
                     clearInterval(session.moveTimer);
@@ -357,7 +395,12 @@ class Automation extends SelectedModel {
             callback();
 
         };
-        if (approach) {
+        if (followingPawn) {
+            Timer.clear(this.timer.action);
+            this.startMoveInterpolation(session, src, stopCoords, ticks, undefined, {
+                followTarget: dst, followRadius: movementRadius, arrivalRange: actionRange, onArrival: arrive
+            });
+        } else if (approach) {
             approach.finish = arrive;
             this.schedulePlayerAttackArrival(approach, ticks);
             this.watchPlayerAttackRange(approach);
@@ -370,7 +413,17 @@ class Automation extends SelectedModel {
         const revision = ++approach.timerRevision;
         Timer.start(this.timer.action, () => {
             if (this.playerAttackApproach !== approach || approach.timerRevision !== revision) return;
-            this.finishPlayerAttackInRange(approach) || approach.finish();
+            if (this.finishPlayerAttackInRange(approach)) return;
+            // The target may have moved farther away since this deadline
+            // was set. Complete only the distance actually travelled; the
+            // attack callback can start a new chase from this position.
+            this.updateMovePosition();
+            approach.stopCoords = {
+                locX: approach.src.fetchLocX(),
+                locY: approach.src.fetchLocY(),
+                locZ: approach.src.fetchLocZ()
+            };
+            approach.finish();
         }, delay);
     }
 
@@ -394,6 +447,18 @@ class Automation extends SelectedModel {
     watchPlayerAttackRange(approach) {
         approach.rangeTimer = setTimeout(() => {
             if (this.playerAttackApproach !== approach) return;
+            const restrictions = invoke('GameServer/Effects/EffectRestrictions');
+            if (approach.src.state?.fetchDead?.() || approach.dst.state?.fetchDead?.()
+                || approach.stationary && Number(approach.src.fetchDestId?.()) !== Number(approach.dst.fetchId())
+                || !restrictions.canAttack(approach.src)) {
+                this.abortAll(approach.src);
+                return;
+            }
+            if (approach.stationary && restrictions.canMove(approach.src)) {
+                this.scheduleAction(approach.session, approach.src, approach.dst,
+                    approach.radius, approach.callback, approach.options);
+                return;
+            }
             // A moving target can enter melee range without another player
             // ValidatePosition. Do not wait for the old travel deadline or
             // move the player back to the target's former stopping point.
@@ -406,6 +471,7 @@ class Automation extends SelectedModel {
     refreshPlayerAttackApproach(session, actor) {
         const approach = this.playerAttackApproach;
         if (!approach || approach.session !== session || approach.src !== actor) return;
+        if (approach.stationary) return;
         if (actor.isDead?.() || !invoke('GameServer/Effects/EffectRestrictions').canMove(actor)) return;
         if (AttackRange.distance2d(actor, approach.dst) <= approach.actionRange) {
             approach.stopCoords = { locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() };
@@ -416,6 +482,17 @@ class Automation extends SelectedModel {
             approach.dst.fetchLocX(), approach.dst.fetchLocY(), approach.dst.fetchLocZ(),
             approach.movementRadius, actor.fetchCollectiveRunSpd(), { horizontal: true });
         const dueAt = Date.now() + ticks;
+        // UpdatePosition has already accepted these coordinates. Rebase the
+        // estimate without writing the previous interpolation over them.
+        const move = this.moveInterpolation;
+        if (move?.actor === actor) {
+            move.from = { locX: actor.fetchLocX(), locY: actor.fetchLocY(), locZ: actor.fetchLocZ() };
+            move.startedAt = Date.now();
+            // The old fallback may fire earlier, but it cannot increase
+            // movement speed to reach a fleeing target by that deadline.
+            move.duration = Math.max(1, ticks);
+            move.to = this.actionStopCoords(actor, approach.dst, approach.movementRadius, { horizontal: true });
+        }
         // Duplicated or older reports must not extend the original deadline.
         if (!Number.isFinite(dueAt) || dueAt >= approach.dueAt) return;
         approach.dueAt = dueAt;
@@ -544,6 +621,7 @@ class Automation extends SelectedModel {
         if (session) {
             if (session.activeMoveGoal?.town) invoke('GameServer/Bot/AI/TownTraffic').remove(Number(creature.fetchId()));
             session.activeMoveGoal = null;
+            session.activeMoveSegment = null;
             session.moveRouteGeneration = Number(session.moveRouteGeneration || 0) + 1;
             if (session.pendingPathRequest?.cancel) {
                 session.pendingPathRequest.cancel();

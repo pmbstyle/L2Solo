@@ -5,6 +5,8 @@ const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 
 const FALL_HEIGHT = 333;
 const FALLING_VALIDATION_DELAY_MS = 10000;
+const IMMOBILE_XY_TOLERANCE = 16;
+const IMMOBILE_Z_TOLERANCE = 64;
 
 function validatePosition(session, buffer) {
     const packet = new ReceivePacket(buffer);
@@ -26,8 +28,13 @@ function validatePosition(session, buffer) {
 
 function consume(session, data) {
     if (!EffectRestrictions.canMove(session.actor)) {
-        EffectRestrictions.stopMovement(session, session.actor);
-        EffectRestrictions.reject(session);
+        // A passive acknowledgement is not a new action. Repeated StopMove
+        // and ActionFailed packets here interrupt rooted combat animations.
+        const actor = session.actor;
+        if (Math.hypot(data.locX - actor.fetchLocX(), data.locY - actor.fetchLocY()) > IMMOBILE_XY_TOLERANCE
+            || Math.abs(data.locZ - actor.fetchLocZ()) > IMMOBILE_Z_TOLERANCE) {
+            EffectRestrictions.stopMovement(session, actor);
+        }
         return false;
     }
     if (isFalling(session.actor, data)) return false;

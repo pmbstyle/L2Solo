@@ -741,6 +741,11 @@ tables.watch('memory', {
     put: (key, row) => { if (kernel?.interactionMemory.accept(row)) kernel.decisionEvents?.memoryChanged(Number(key)); },
     remove() {}
 }, { retain: false });
+tables.watch('clan_wars', {
+    reset: () => kernel?.interactionMemory.clanWars.replace([]),
+    put: (_key, row) => kernel?.interactionMemory.clanWars.accept(row),
+    remove() {}
+}, { retain: false });
 tables.watch('pressure', {
     reset: () => { if (kernel) kernel.pressureRow = null; },
     put: (_key, row) => { if (kernel) kernel.pressureRow = row; },
@@ -917,6 +922,7 @@ BotPersona.useRowSource((characterId) => tables.rows('personas').get(characterId
 ClanSupplyPolicy.useRowSource(id => tables.rows('clan_supplies').get(id), () => tables.ready('clan_supplies'));
 PersonalWarehouseIndex.useRowSource(id => tables.rows('personal_warehouse').get(id), () => tables.ready('personal_warehouse'));
 let eventLoopDelay = null;
+const LAG_RESOLUTION_MS = 20;
 
 // The owner notices moved counters only during its own natural resolve.
 const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
@@ -1198,20 +1204,28 @@ function requestPartyGoals(payload, msgId, admitted = false) {
         if (!partyMembersAvailable(members)) throw Error('party_goal_member_busy');
         const joint = await Calculation.calculate(payload.party, members, async (member, timestamp) => {
             const at = members.indexOf(member);
-            // Recipe authority belongs to this main query, not the worker's
-            // 'recipes' table. Public workshop entries remain the fallback.
+            // Main's recipe book feeds only a refusal's ask (askWorkshop); the
+            // build and its verdict read the worker's recipes mirror.
             const options = { buyOrderEscrow: payload.escrows[at], recipeKnowledge: payload.recipeKnowledge?.[at] || {} };
             const routeRows = await occupationFor(member, timestamp, options, 'wish');
             if (!partyMembersAvailable(members)) throw Error('party_goal_member_busy');
-            const workshop = await askWorkshop(member, timestamp, routeRows, 'party_goal', options);
+            // The lifecycle's order: the held build's verdict on this state
+            // (main's escrow in it) keeps its workshop, else the planner is
+            // asked. A valid verdict serves the held build when its entry kept
+            // the graph nodes (a party member's); a formation candidate's
+            // entry kept none, so it is built (withNodes). Never remembered:
+            // a query's own snapshot must not displace the bot's held build (L133).
+            // A bot that is no service crafter is not asked: the planner
+            // answers it with no workshop (its occupation branch), and the
+            // feasibility mask that answer carries is not read by the goal.
+            const deps = { timestamp, spots: planningSpots, board: boardReady(), routeRows,
+                buyOrderEscrow: options.buyOrderEscrow, rememberContext: false, caller: 'workerPartyGoal' };
+            const verdict = {};
+            const workshop = EconomyContext.heldWorkshop(member, deps, verdict)
+                || (CraftEligibility.isServiceCrafter(member)
+                    ? await askWorkshop(member, timestamp, deps.routeRows, 'party_goal', options) : noWorkshop());
             if (!partyMembersAvailable(members)) throw Error('party_goal_member_busy');
-            return invoke('GameServer/Bot/Economy/EconomyContext').forState(member, {
-                timestamp, spots: planningSpots, board: boardReady(),
-                workshop, routeRows,
-                // Never held: its occupation card moves the key off the bot's own plan and the
-                // worker entry keeps no graph nodes for withNodes, so it would only displace it (L133).
-                rememberContext: false,
-                buyOrderEscrow: options.buyOrderEscrow, caller: 'workerPartyGoal', withNodes: true });
+            return EconomyContext.forState(member, { ...deps, workshop, eventVerdict: verdict, withNodes: true });
         }, payload.timestamp, () => !shuttingDown && !kernel.stopping && Date.now() < payload.replyBy
             && partyMembersAvailable(members), { spots: planningSpots });
         if (!shuttingDown && !kernel.stopping && Date.now() < payload.replyBy)
@@ -1311,10 +1325,10 @@ function startKernel(config = {}) {
     // major-GC observer and two clock reads per heartbeat.
     heapTelemetry = invoke('GameServer/Bot/Population/WorkerHeapTelemetry').observe();
     previousElu = performance.eventLoopUtilization();
-    if (Config.developerDiagnostics) {
-        eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
-        eventLoopDelay.enable();
-    }
+    // The longest loop delay per heartbeat is the health line's spike number (workerLag): always on,
+    // a native histogram on a LAG_RESOLUTION_MS timer.
+    eventLoopDelay = monitorEventLoopDelay({ resolution: LAG_RESOLUTION_MS });
+    eventLoopDelay.enable();
     Config.economyDiagnosticsBotIds = Config.economyDiagnostics ? config.economyDiagnosticsBotIds || '' : '';
     if (Config.economyDiagnostics) economyDiagnostics.connect(batch => {
         if (shuttingDown) return false;
@@ -1350,8 +1364,13 @@ function startKernel(config = {}) {
         partyArrival,
         // The party's spot search skips a spot with no room for the whole
         // party (its own members not counted against it).
-        partyRoute: ({ leader, party, members, spot, timestamp }) => BotRoute.route(leader, spot, party, members,
-            { spots: planningSpots, timestamp, hasRoom: SpotProfiles.roomFilterFor(kernel.occupancy, planningSpots, members) }),
+        partyRoute: ({ leader, party, members, spot, timestamp }) => {
+            if (party.stats?.warOperation && !tables.ready('clan_wars')) return null;
+            const war = require('./ClanWarMovement').route({ leader, party, members, spot, timestamp,
+                spots: planningSpots, wars: kernel.interactionMemory.clanWars });
+            return war.active ? war.route : BotRoute.route(leader, spot, party, members,
+                { spots: planningSpots, timestamp, hasRoom: SpotProfiles.roomFilterFor(kernel.occupancy, planningSpots, members) });
+        },
         // writtenAt: the row's write stamp, the real now (timestamp is the
         // round's time, the bot's due for a step started its lead early).
         projectResolve: async (state, result, timestamp, lifecyclePlan = null, writtenAt = timestamp) => {
@@ -1573,11 +1592,14 @@ function startKernel(config = {}) {
                 // The card holds the plan: the route is read on the input state.
                 const route = routeTrip(state, standingSpot(state), leaf, timestamp);
                 const routedState = beginHuntingTrip(state, route, timestamp) || state;
+                const occupation = routedState.activity === 'hunting' && leaf.activity !== 'hunting'
+                    ? await occupationFor(routedState, timestamp, { economy: refreshed.economy }, 'action') : null;
                 rememberWishAdvisory(kernel.states.get(Number(state.characterId)), refreshed.advisory);
                 // economy: worker-local, the step's one decision; the
                 // projection after the round reads it (never posted).
                 return { statsPacket: stepStatsPacket(state, refreshed.economy, timestamp), economy: refreshed.economy,
-                    ...(refreshed.economyPlan ? { economyPlan: refreshed.economyPlan } : {}),
+                    ...(occupation?.economyPlan || refreshed.economyPlan
+                        ? { economyPlan: occupation?.economyPlan || refreshed.economyPlan } : {}),
                     activityPick: { activity: leaf.activity, spotId: leaf.spotId, npcId: leaf.npcId },
                     economyDecision: refreshed.decision, previousPlan, acquisitionPlan: previousPlan,
                     partyRequest: null, reusablePartyRequest: false, replanFailure: null,
@@ -1629,8 +1651,11 @@ function startKernel(config = {}) {
             };
             const route = routeTrip(plannedState, standingSpot(state), economy.network.activity, timestamp);
             const routedState = beginHuntingTrip(plannedState, route, timestamp) || plannedState;
-            const showcase = routedState.activity === 'shopping'
-                ? await occupationFor(routedState, timestamp, { economy }, 'showcase') : null;
+            const preparedOccupation = routedState.activity === 'shopping'
+                ? await occupationFor(routedState, timestamp, { economy }, 'showcase')
+                : routedState.activity === 'hunting' && economy.network.activity?.activity
+                    && economy.network.activity.activity !== 'hunting'
+                    ? await occupationFor(routedState, timestamp, { economy }, 'action') : null;
             const seen = { ...routedState, stats: { ...routedState.stats, ...statsPacket } };
             const heldDecision = nullReuse ? ColdEconomyDecision.compact({ data: refreshed.decision.data.slice(0),
                 updatedAt: Number(seen.updatedAt || 0), echo: ColdEconomyDecision.stateEcho(seen), flags: 0 }) : null;
@@ -1639,8 +1664,8 @@ function startKernel(config = {}) {
             rememberWishAdvisory(kernel.states.get(Number(state.characterId)), advice, seen, deps);
             if (nullReuse && economyDiagnostics.active()) economyDiagnostics.count('advisory', 'reuse', 'lifecycle');
             return {
-                ...(showcase?.economyPlan || nullReuse && refreshed?.economyPlan
-                    ? { economyPlan: showcase?.economyPlan || refreshed.economyPlan } : {}),
+                ...(preparedOccupation?.economyPlan || nullReuse && refreshed?.economyPlan
+                    ? { economyPlan: preparedOccupation?.economyPlan || refreshed.economyPlan } : {}),
                 statsPacket,
                 economy,
                 activityPick: economy.network.activity ? { activity: economy.network.activity.activity,
@@ -1796,7 +1821,7 @@ function startKernel(config = {}) {
                         pendingSpotKeys: large, pendingActorKeys: large, deliveryMode: 'addressed',
                         revenge: { evaluated: large, intents: large, at: frame.at, active: 128, sampledActors: 128, overflow: false } },
                     tables: tables.summary(), heapUsed: large, rss: large, v8Heap: { used: large, total: large, external: large, limit: large, afterGc: large, afterGcMax: large, late: large },
-                    eventLoopUtilization: 1, eventLoopLagP95Ms: large,
+                    eventLoopUtilization: 1, eluActiveMs: large, eluIdleMs: large, eventLoopLagP95Ms: large,
                     eventLoopLagMaxMs: large
                 }, 'x'.repeat(160));
                 return new (invoke('GameServer/Bot/Population/ColdCompetitionFrameSizer').ColdCompetitionFrameSizer)(message, report.recent);
@@ -1806,6 +1831,11 @@ function startKernel(config = {}) {
     }
     flushTimer = setInterval(() => kernel.flushDue(), Math.max(50, Math.min(250, Number(config.flushTargetMs) || 2000)));
     heartbeatTimer = setInterval(() => {
+        // Read and reset first: the beat's own work (the review, the send) counts in the next beat; a
+        // sample counts the whole timer interval, so the resolution comes off (0 = no delay).
+        const lagMaxMs = Math.max(0, eventLoopDelay.max / 1e6 - LAG_RESOLUTION_MS) || 0;
+        const lagP95Ms = Config.developerDiagnostics ? Number(eventLoopDelay.percentile(95) / 1e6) || 0 : 0;
+        eventLoopDelay.reset();
         if (competitionCandidates && competitionReady && !kernel.paused && !shuttingDown) {
             const started = Config.developerDiagnostics ? performance.now() : 0;
             competitionCandidates.reviewBatch(Date.now());
@@ -1818,7 +1848,10 @@ function startKernel(config = {}) {
             ...kernel.heartbeatSnapshot(),
             ...heapTelemetry.snapshot(),
             geodata: GeodataEngine.storageStats(),
-            eventLoopUtilization: elu.utilization,
+            // The beat's busy share and its active / idle ms: main sums the ms into the health line's
+            // busy share over its own window (a beat delayed by a long task lasts longer).
+            eventLoopUtilization: elu.utilization, eluActiveMs: elu.active, eluIdleMs: elu.idle,
+            eventLoopLagMaxMs: lagMaxMs,
             ...(Config.developerDiagnostics ? { occupationPlanning: occupationPlanner.snapshot() } : {}),
             safety: safetyTotals(),
             competition: competitionCandidates?.snapshot() || null,
@@ -1828,8 +1861,7 @@ function startKernel(config = {}) {
             caches: { spotValue: SpotValueTable.cacheStats(), kitProfiles: ColdCombatProfile.kitStoreSize() },
             heapUsed: process.memoryUsage().heapUsed,
             rss: process.memoryUsage().rss,
-            eventLoopLagP95Ms: Number(eventLoopDelay.percentile(95) / 1e6) || 0,
-            eventLoopLagMaxMs: Number(eventLoopDelay.max / 1e6) || 0
+            eventLoopLagP95Ms: lagP95Ms
             } : {})
         };
         try {
@@ -1843,7 +1875,6 @@ function startKernel(config = {}) {
             // owned here for the next existing heartbeat, including backpressure.
             if (Config.developerDiagnostics && competition) competition.report.deliverySendFailures = (competition.report.deliverySendFailures || 0) + 1;
         }
-        eventLoopDelay?.reset();
     }, Math.max(250, Number(config.heartbeatMs) || 1000));
     loopTimer.unref?.();
     flushTimer.unref?.();

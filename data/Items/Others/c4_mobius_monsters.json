@@ -1,0 +1,77 @@
+[
+  {
+    "selfId": 5153,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Soulshot (D) Compressed Package (100%)",
+      "class1": 4,
+      "class2": 5,
+      "mass": 30,
+      "price": 5000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5158,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Spiritshot (D) Compressed Package (100%)",
+      "class1": 4,
+      "class2": 5,
+      "mass": 30,
+      "price": 5000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5268,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Greater Soulshot (D) Compressed Package (100%)",
+      "class1": 4,
+      "class2": 5,
+      "mass": 30,
+      "price": 5000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5278,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Greater Blessed Spiritshot (D) Compressed Package(100%)",
+      "class1": 4,
+      "class2": 5,
+      "mass": 30,
+      "price": 8000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  },
+  {
+    "selfId": 5279,
+    "template": {
+      "kind": "Other.Recipe",
+      "name": "Recipe: Greater Blessed Spiritshot (C) Compressed Package(100%)",
+      "class1": 4,
+      "class2": 5,
+      "mass": 30,
+      "price": 80000
+    },
+    "etc": {
+      "stackable": true,
+      "consumable": false
+    }
+  }
+]

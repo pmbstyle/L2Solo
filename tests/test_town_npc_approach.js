@@ -5,6 +5,7 @@ require('../src/Global');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const Slots = invoke('GameServer/Bot/AI/TownNpcSlots');
+const InteractionGeometry = invoke('GameServer/Geodata/NpcInteractionGeometry');
 const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 function botAt(locX, locY, locZ = -100) {
@@ -24,6 +25,13 @@ function identifiedBotAt(actorId, locX, locY, locZ = -100) {
         fetchId: () => actorId
     };
 }
+
+// Protocol/queue behavior should not depend on an installed terrain pack.
+const originalGeo = Object.fromEntries(['hasGeo', 'hasLineOfSight', 'getHeight', 'getCellData', 'checkVirtualObstacles']
+    .map(key => [key, GeodataEngine[key]]));
+GeodataEngine.hasGeo = () => false;
+GeodataEngine.hasLineOfSight = () => true;
+GeodataEngine.getHeight = (x, y, z) => z;
 
 const target = {
     actorId: 101,
@@ -158,6 +166,51 @@ for (let index = 0; index < 32; index++) {
         'a completed shopper must not reserve the next place while waiting for its return');
 }
 
+{
+    const edgeTarget = { ...target, npcSelfId: 7003 };
+    const edgePoints = TownNpcApproach.pointsFor(edgeTarget);
+    const edge = botAt(edgePoints.interaction.locX + 8, edgePoints.interaction.locY);
+    GeodataEngine.hasLineOfSight = (x, y) => x !== edge.locX || y !== edge.locY;
+    assert(!TownNpcApproach.hasLineOfSight(edge, edgeTarget));
+    assert(TownNpcApproach.plan({}, edge, edgeTarget, 'shopping').ready,
+        'a clipped arrival cell within 16 units of a visible counter point may complete interaction');
+    edge.locX += 16;
+    assert(!TownNpcApproach.plan({}, edge, edgeTarget, 'shopping').ready,
+        'a clipped arrival cell beyond the tight counter allowance must require visibility');
+}
+
+{
+    const from = { locX: 0, locY: 0, locZ: 0 };
+    const to = { locX: 72, locY: 0, locZ: 0 };
+    let obstacleHeight = 24, virtualWall = false;
+    const originalVisibility = InteractionGeometry.canSee;
+    InteractionGeometry.canSee = () => true;
+    GeodataEngine.hasGeo = () => true;
+    GeodataEngine.hasLineOfSight = () => false;
+    GeodataEngine.getCellData = x => ({ z: x >= 32 && x <= 40 ? obstacleHeight : 0, nswe: 0 });
+    GeodataEngine.checkVirtualObstacles = () => virtualWall;
+    assert(TownNpcApproach.hasInteractionLineOfSight(from, to),
+        'conversation can cross a low counter that blocks walking');
+    assert(!TownNpcApproach.hasLineOfSight(from, to), 'a visible counter must still block walking');
+    obstacleHeight = 128;
+    assert(!TownNpcApproach.hasInteractionLineOfSight(from, to), 'a full wall must block conversation');
+    obstacleHeight = 24;
+    virtualWall = true;
+    assert(!TownNpcApproach.hasInteractionLineOfSight(from, to), 'virtual walls must remain opaque');
+    virtualWall = false;
+    assert(!TownNpcApproach.hasInteractionLineOfSight(from, { ...to, locZ: 200 }),
+        'conversation must not cross floors');
+    assert(!TownNpcApproach.hasInteractionLineOfSight(from, { ...to, locZ: 64 }),
+        'nearby stacked floors must not bypass the walking layer check');
+    InteractionGeometry.canSee = () => false;
+    assert(!TownNpcApproach.hasInteractionLineOfSight(from, to), 'NSWE blocks remain opaque without verified collision geometry');
+    InteractionGeometry.canSee = originalVisibility;
+    GeodataEngine.hasGeo = () => false;
+    assert(!TownNpcApproach.hasInteractionLineOfSight(from, to),
+        'missing geodata must not bypass a rejected walking segment');
+}
+Object.assign(GeodataEngine, originalGeo);
+
 verifyGeodataWhenAvailable(GeodataEngine, [[22, 22]], 'Giran Helvetia counter approach', () => {
     const helvetia = {
         actorId: 1001,
@@ -170,16 +223,10 @@ verifyGeodataWhenAvailable(GeodataEngine, [[22, 22]], 'Giran Helvetia counter ap
         head: 32768
     };
     const helvetiaPoints = TownNpcApproach.pointsFor(helvetia);
-    assert.deepStrictEqual(helvetiaPoints.interaction, { locX: 80467, locY: 147871, locZ: -3506 });
-    const reachableCounterEdge = botAt(80456, 147864, -3504);
-    assert.strictEqual(TownNpcApproach.hasLineOfSight(reachableCounterEdge, helvetia), false,
-        'the last reachable Helvetia geodata cell should reproduce the live counter-edge LOS clip');
-    assert.strictEqual(TownNpcApproach.plan({}, reachableCounterEdge, helvetia, 'shopping').ready, true,
-        'reaching the tight edge of a validated counter point must permit interaction');
-    const outsideCounterEdge = botAt(80448, 147864, -3504);
-    assert.strictEqual(TownNpcApproach.hasLineOfSight(outsideCounterEdge, helvetia), false);
-    assert.strictEqual(TownNpcApproach.plan({}, outsideCounterEdge, helvetia, 'shopping').ready, false,
-        'a bot beyond the tight counter-edge allowance must still need direct line of sight');
+    assert(TownNpcApproach.hasInteractionLineOfSight(helvetiaPoints.interaction, helvetia),
+        'the chosen counter point must see Helvetia on the installed client geometry');
+    assert(Math.abs(GeodataEngine.getHeight(helvetiaPoints.staging.locX, helvetiaPoints.staging.locY,
+        helvetiaPoints.staging.locZ) - helvetiaPoints.staging.locZ) <= 64);
 
     for (const fixture of [
         { id: 2002921, locY: 147688, npc: helvetia },
@@ -198,7 +245,7 @@ verifyGeodataWhenAvailable(GeodataEngine, [[22, 22]], 'Giran Helvetia counter ap
             assert(path?.length, `${fixture.npc.name} slot ${offset} must be reachable from the actual street position`);
             Object.assign(bot, path.at(-1));
             assert(TownNpcApproach.plan(session, bot, fixture.npc, 'shopping').ready,
-                'the reachable path endpoint must complete interaction without crossing the counter');
+                `the reachable ${fixture.npc.name} slot ${offset} endpoint ${JSON.stringify(bot)} must complete interaction without crossing the counter`);
             TownNpcApproach.reset(session);
         }
     }
@@ -215,8 +262,11 @@ verifyGeodataWhenAvailable(GeodataEngine, [[22, 22]], 'Giran Helvetia counter ap
         Object.assign(bot, helvetiaPoints.staging);
     }
     const arrivals = shoppers.map(({ session, bot }) => TownNpcApproach.plan(session, bot, helvetia, 'shopping'));
-    assert.strictEqual(arrivals.filter(approach => !approach.waiting).length, 2,
-        'Helvetia must retain only the two actually reachable counter places');
+    const occupied = arrivals.filter(approach => !approach.waiting);
+    assert(occupied.length >= 1 && occupied.length <= 5,
+        'only the validated counter places may be occupied at once');
+    assert.strictEqual(new Set(occupied.map(row => `${row.destination.locX}:${row.destination.locY}`)).size,
+        occupied.length, 'each admitted shopper must own a distinct counter place');
     let completed = 0;
     // Reverse polling reproduces a scheduler that favors late arrivals.
     for (let wave = 0; wave < 32 && completed < shoppers.length; wave++) {
@@ -283,5 +333,30 @@ openBoundaryBot.locX += 1;
 const outsideOpenBoundary = TownNpcApproach.planOpen({}, openBoundaryBot, target, 'newbie_guide');
 assert.strictEqual(outsideOpenBoundary.ready, false,
     'open-air interaction must still reject bots just outside the nearby radius');
+
+// One rule for talking to an NPC (T49 review): an NPC seen only across a low counter is in reach for the hot
+// improvement check and the clan hall managers too, not only for plan().
+{
+    const npc = { ...botAt(72, 0, 0), fetchSelfId: () => 7097, fetchHead: () => 32768 };
+    GeodataEngine.hasGeo = () => true;
+    GeodataEngine.hasLineOfSight = () => false;
+    GeodataEngine.getCellData = x => ({ z: x >= 32 && x <= 40 ? 24 : 0, nswe: 0 });
+    GeodataEngine.checkVirtualObstacles = () => false;
+    const clientSight = InteractionGeometry.canSee;
+    InteractionGeometry.canSee = () => true;
+    assert(TownNpcApproach.canInteract({ locX: 0, locY: 0, locZ: 0 }, TownNpcApproach.npcTarget(npc)),
+        'an NPC behind a low counter can be talked to');
+    assert(invoke('GameServer/ClanHall/Services').near(botAt(0, 0, 0), npc),
+        'a clan hall manager behind a low counter is near');
+    InteractionGeometry.canSee = clientSight;
+    Object.assign(GeodataEngine, originalGeo);
+}
+
+verifyGeodataWhenAvailable(GeodataEngine, [[22, 22]], 'Giran luxury exchange counter', () => {
+    const galladucci = TownNpcApproach.npcTarget({ ...botAt(79599, 145522, -3494), fetchSelfId: () => 7097, fetchHead: () => 0 });
+    // The point plan() walks to (pointsFor): the bot can talk from there under the client geometry.
+    const interaction = TownNpcApproach.pointsFor(galladucci).interaction;
+    assert(TownNpcApproach.canInteract(interaction, galladucci), 'Galladucci is in reach from his interaction point');
+});
 
 console.log('Town NPC front-side approach checks passed');

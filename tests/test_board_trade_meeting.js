@@ -59,6 +59,11 @@ const point = { locX: 83396, locY: 147904, locZ: -3400 };
         const difference = (after, before) => Object.fromEntries([...new Set([...Object.keys(after), ...Object.keys(before)])]
             .map(key => [key, Number(after[key] || 0) - Number(before[key] || 0)]).filter(row => row[1]));
         const holdings = await held(), journal = await flows();
+        await Database.execute(["UPDATE bot_life_state SET statsJson=json_set(statsJson,'$.partyMarketReturn',json(?)) WHERE characterId=?",
+            [JSON.stringify({ warOperationId: 'war', supplyItemId: 1463, until: Date.now() + 900000 }), ids[0]]]);
+        await assert.rejects(Database.acceptTradeMeeting(request), /war_supply_only/, 'a detached military supplier cannot accept a material purchase through a meeting');
+        assert.deepStrictEqual(await held(), holdings, 'the refused meeting changes no wallet, stock or escrow');
+        await Database.execute(["UPDATE bot_life_state SET statsJson=json_remove(statsJson,'$.partyMarketReturn') WHERE characterId=?", [ids[0]]]);
         // A fresh native membership wins over an earlier unassigned projection.
         for (const phase of ['cold', 'hot']) {
             await Database.execute(['UPDATE bot_life_state SET partyId=?,phase=? WHERE characterId=?', ['native-party', phase, ids[1]]]);

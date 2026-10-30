@@ -32,6 +32,7 @@ const PartyComposition = invoke('GameServer/Bot/Population/BackgroundPartyCompos
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const GearPlanSelection = invoke('GameServer/Bot/AI/GearPlanSelection');
 const DecisionEvents = require('../AI/DecisionEvents');
+const DecisionSections = require('../Economy/DecisionSections');
 const PartyWaitFallback = invoke('GameServer/Bot/Population/PartyWaitFallback');
 const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const ColdWealthCraftService = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
@@ -73,23 +74,27 @@ const SurvivalFloor = require('./SurvivalFloor');
 const CombinedErrands = require('./CombinedErrandPolicy');
 const TradeMeetingService = invoke('GameServer/AfkTrade/TradeMeetingService');
 const ClanRaidRoster = require('../../Clan/ClanRaidRoster');
-const activationFailureLogAt = new Map();
+const partyFailureLogAt = new Map();
 // The completion key a far bot already waited on in town since its last
 // buy or improvement this visit (main only; the visit's end clears it).
 const exchangeWaits = new Map();
 // Returned by a resolveColdState branch method that did not take its branch.
 const COLD_RESOLVE_NEXT = Symbol('cold_resolve_next');
 
-function logPartyActivationFailure(state, result, timestamp = Date.now()) {
-    const partyId = state?.party?.partyId;
+// A party step's refusal (step: 'activation', 'goal' for the worker's party
+// goal query), one line per party, step and reason in 30 s: the live read
+// with diagnostics off.
+function logPartyFailure(partyId, step, result, timestamp = Date.now()) {
     if (!partyId || result?.ok !== false) return;
     const reason = String(result.reason || 'unknown');
     const detail = String(result.detail || '');
-    const key = `${partyId}:${reason}:${detail}`;
-    if (timestamp - Number(activationFailureLogAt.get(key) || 0) < 30000) return;
-    activationFailureLogAt.set(key, timestamp);
-    utils.infoWarn('BotPopulation', 'party activation deferred %s reason=%s%s',
-        partyId, reason, detail ? ` detail=${detail}` : '');
+    const key = `${partyId}:${step}:${reason}:${detail}`;
+    if (timestamp - Number(partyFailureLogAt.get(key) || 0) < 30000) return;
+    // Lapsed keys go once the map grows (a forming roster's id is its member set).
+    if (partyFailureLogAt.size >= 256) for (const [old, loggedAt] of partyFailureLogAt) if (timestamp - loggedAt >= 30000) partyFailureLogAt.delete(old);
+    partyFailureLogAt.set(key, timestamp);
+    utils.infoWarn('BotPopulation', 'party %s deferred %s reason=%s%s',
+        step, partyId, reason, detail ? ` detail=${detail}` : '');
 }
 
 function hasFiniteCoordinate(value) {
@@ -380,6 +385,9 @@ function canResumeWarehouseMarketSale(state) {
 // cleanupNeed: the member's bag need when the caller already has it.
 function canTakePartyMarketBreak(party, members, member, timestamp = Date.now(), cleanupNeed = undefined, goal = null) {
     if (!PartyMarketBreak.allowed(party, member, timestamp, cleanupNeed, goal)) return false;
+    if (PartyMarketBreak.warDuty(party)) return members.length > Math.max(1, Config.partyMinSize)
+        && !party.stats?.travel && !party.stats?.pveEncounter && !member.stats?.pvpEncounter && !member.stats?.travel
+        && !members.some(state => state.stats?.pvpEncounter || state.stats?.travel);
     if (PartyMarketBreak.clanDuty(party)) return members.length > 1;
     if (!PartyMarketBreak.sessionReady(party, member, goal, timestamp, Config)) return false;
     const role = PartyComposition.roleForState(member);
@@ -418,6 +426,8 @@ function requiresClanEquipmentParty(state) {
 async function jointPartyGoals(party, members, timestamp, options = {}) {
     const Policy = invoke('GameServer/Bot/Population/PartyGoalPolicy');
     if (party.stats?.objective?.opportunisticRaid === true) return Policy.pending(party, members);
+    if (party.stats?.forming && !members.some(member => member.phase === 'cold'))
+        return Policy.formingVerdict(members, party.stats.forming.requested, { timestamp });
     if (!members.some(member => member.phase === 'cold') && CraftMaterialParty.isObjective(party.stats?.objective))
         return Policy.joint(party, members, { timestamp, spots: SpotProfiles.ensure() });
     if (!members.some(member => member.phase === 'cold'))
@@ -427,6 +437,9 @@ async function jointPartyGoals(party, members, timestamp, options = {}) {
     // Two other parties hold the worker's goal slots: keep the current
     // objective now; the next party resolve reviews the goals again.
     if (result.reason === 'party_goal_busy') return Policy.pending(party, members);
+    // A member mid native step (party_goal_member_busy) is a designed race,
+    // not a failure: no log; the next party resolve asks again.
+    if (result.reason !== 'party_goal_member_busy') logPartyFailure(party.partyId, 'goal', result);
     return result.ok && PartyGoalCalculation.matches(members, result.sources) ? result.joint : null;
 }
 
@@ -439,50 +452,50 @@ async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
     if (party.status !== 'active') return { party, reviewed: 0, departed: null };
     const members = (party.memberIds || [])
         .map((characterId) => LifeState.cachedState(characterId))
-        .filter((member) => member && String(member.party?.partyId || member.partyId || '') === String(party.partyId));
+        .filter((member) => member && DecisionSections.partyIdOf(member) === String(party.partyId));
     if (!members.length) return { party, reviewed: 0, departed: null };
 
     const spot = SpotProfiles.findById(party.spotId) || null;
     let reviewed = 0;
     let departed = null;
     for (const member of members) {
-        const plan = member.stats?.equipmentPlan;
-        const costedPlan = !CraftMaterialParty.isObjective(party.stats?.objective)
-            && plan?.status === 'active' && plan.strategy === 'craft'
-            && (plan.materials || []).some((material) => !Object.hasOwn(material, 'farmEffort'))
-            ? GearAcquisitionPlanner.withMaterialFarmEffort(plan, member, SpotProfiles.ensure())
-            : plan;
-        const current = costedPlan === plan ? member : await LifeState.upsertState({
-            ...member, stats: { ...member.stats, equipmentPlan: costedPlan }
-        }, 'clan_material_farm_cost') || member;
-        const cachedGoal = GoalService.snapshot(current.characterId);
-        const cleanupNeeded = PartyMarketBreak.cleanupNeed(current, timestamp);
-        const due = current !== member || !cachedGoal?.current
+        const cachedGoal = GoalService.snapshot(member.characterId);
+        const cleanupNeeded = PartyMarketBreak.cleanupNeed(member, timestamp);
+        const due = !cachedGoal?.current
             || Number(cachedGoal.current.nextReviewAt || 0) <= timestamp;
         const goalSnapshot = due || cleanupNeeded
-            ? await GoalService.review(current, { spot, now: timestamp })
+            ? await GoalService.review(member, { spot, now: timestamp })
             : cachedGoal;
         if (due || cleanupNeeded) reviewed += 1;
-        await BotAfkMarketService.reconcile(current, goalSnapshot?.current, goalSnapshot?.candidates);
-        if (departed || !canTakePartyMarketBreak(party, members, current, timestamp, cleanupNeeded, goalSnapshot?.current)) continue;
+        await BotAfkMarketService.reconcile(member, goalSnapshot?.current, goalSnapshot?.candidates);
+        // Goal/market review yields to campaign maintenance. Its current order
+        // decides whether this is a supply break or ordinary shopping now.
+        party = BackgroundPartyState.find(party.partyId) || party;
+        if (party.status !== 'active') return { party, reviewed, departed };
+        if (departed || !canTakePartyMarketBreak(party, members, member, timestamp, cleanupNeeded, goalSnapshot?.current)) continue;
 
         // Goal review can overlap the next worker claim. Re-read the reflected
         // ownership revision immediately before the atomic transition so the
         // handoff fences that live token instead of an older cached snapshot.
         const currentMember = LifeState.cachedState(member.characterId) || member;
-        if (String(currentMember.party?.partyId || currentMember.partyId || '') !== String(party.partyId)) continue;
-        const need = currentMember === current ? cleanupNeeded : PartyMarketBreak.memberNeed(party, currentMember, timestamp);
+        if (DecisionSections.partyIdOf(currentMember) !== String(party.partyId)) continue;
+        const need = currentMember === member ? cleanupNeeded : PartyMarketBreak.memberNeed(party, currentMember, timestamp);
         if (!canTakePartyMarketBreak(party, members, currentMember, timestamp, need, goalSnapshot?.current)) continue;
         const travel = GoalExecutor.beginMarketTravel(currentMember,
             PartyMarketBreak.goal(party, currentMember, goalSnapshot?.current, timestamp, need), timestamp,
-            { economy: currentMember === current ? goalSnapshot?.economy : null });
+            { economy: currentMember === member ? goalSnapshot?.economy : null });
         if (!travel) continue;
-        const detached = await LifeState.leaveParty(PartyMarketBreak.departure(party, currentMember, travel, timestamp, need),
+        const departure = PartyMarketBreak.departure(party, currentMember, travel, timestamp, need, goalSnapshot?.current);
+        if (!departure) continue;
+        const detached = await LifeState.leaveParty(departure,
             'market_break', { ownerHandoff: true });
         if (detached) departed = detached;
     }
 
     if (!departed) {
+        party = BackgroundPartyState.find(party.partyId) || party;
+        // An economic preference cannot replace a live military assignment.
+        if (PartyMarketBreak.warDuty(party)) return { party, reviewed, departed: null };
         const currentMembers = members.map(member => LifeState.cachedState(member.characterId) || member);
         const joint = await jointPartyGoals(party, currentMembers, timestamp);
         if (!joint) return { party, reviewed, departed: null };
@@ -492,7 +505,7 @@ async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
         if (incomeDeparture && !PartyMarketBreak.pending(party).length && !party.stats?.pveEncounter
             && !currentMembers.some(member => member.stats?.tradeMeeting || member.activity === 'traveling' || member.activity === 'dead')) {
             const member = LifeState.cachedState(incomeDeparture.characterId);
-            if (member && String(member.party?.partyId || member.partyId || '') === String(party.partyId)) {
+            if (member && DecisionSections.partyIdOf(member) === String(party.partyId)) {
                 const detached = await LifeState.leaveParty({ ...member, stats: { ...member.stats,
                     partyIncomeDecision: incomeDeparture } }, 'better_solo_income', { ownerHandoff: true });
                 if (detached) {
@@ -519,7 +532,10 @@ async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
         }
         return { party, reviewed, departed: null };
     }
-    const activeMembers = members.filter((member) => Number(member.characterId) !== Number(departed.characterId));
+    party = BackgroundPartyState.find(party.partyId) || party;
+    if (party.status !== 'active') return { party, reviewed, departed, dissolved: party.status === 'dissolved' };
+    const activeMembers = party.memberIds.filter(id => Number(id) !== Number(departed.characterId))
+        .map(id => LifeState.cachedState(id)).filter(Boolean);
     if (activeMembers.length < Config.partyMinSize && !departed.stats?.partyMarketReturn) {
         const dissolved = await dissolveBackgroundParty(party, 'market_break', activeMembers.length);
         return { party: dissolved.party || party, reviewed, departed, dissolved: true };
@@ -539,17 +555,25 @@ async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
             ...PartyMarketBreak.stats(party, departed)
         },
         updatedAt: timestamp
-    });
+    }, { preserveWarOperation: !!departed.stats?.partyMarketReturn?.warOperationId });
     return { party: updatedParty || party, reviewed, departed, dissolved: false };
 }
 
 async function resumePartyMarketBreak(state, timestamp) {
     const token = state.stats.partyMarketReturn;
     const party = BackgroundPartyState.find(token.partyId);
+    const war = !!token.warOperationId;
+    const matching = war ? party?.stats?.warOperation?.id === token.warOperationId
+        : party?.stats?.objective?.clanGoalKey === token.objective.clanGoalKey;
+    if (war && (!matching || !['active', 'hot'].includes(party?.status))) {
+        const saved = await LifeState.upsertState({ ...state, activity: 'hunting', stats: { ...state.stats,
+            partyMarketReturn: null, clanPartyObjective: null, partyRequest: null } }, 'war_supply_operation_ended');
+        return { ok: !!saved, state: saved || state, reason: 'war_supply_operation_ended' };
+    }
     const prepared = { ...state, activity: 'party_wait', stats: { ...state.stats,
-        partyMarketReturn: null, clanPartyObjective: token.objective, partyRequest: token.objective } };
-    if (party?.status === 'active' && party.stats?.objective?.clanGoalKey === token.objective.clanGoalKey
-        && party.memberIds.length < partyLimitsForObjective(party.stats.objective).maxSize) {
+        partyMarketReturn: null, clanPartyObjective: war ? null : token.objective, partyRequest: war ? null : token.objective } };
+    const maxSize = war ? require('../../Clan/ClanWarConfig').maxMembers : partyLimitsForObjective(party?.stats?.objective).maxSize;
+    if (party?.status === 'active' && matching && party.memberIds.length < maxSize) {
         const members = await LifeState.statesForParty(party.partyId);
         if (members.length !== party.memberIds.length) return { ok: false, state, reason: 'party_return_retry' };
         const absences = { ...party.stats?.marketAbsences };
@@ -559,10 +583,12 @@ async function resumePartyMarketBreak(state, timestamp) {
             memberIds: roster.map(member => member.characterId),
             roleCoverage: PartyComposition.roleCoverage(roster),
             nextResolveAt: timestamp, stats: { ...party.stats, marketAbsences: absences,
-                memberNames: roster.map(member => member.name) } }, roster);
+                memberNames: roster.map(member => member.name) } }, roster, null,
+            war ? { expectedPartyRevision: party.revision } : {});
         return { ok: !!result.party, state: LifeState.cachedState(state.characterId) || state,
             reason: result.party ? 'returned_to_clan_party' : 'party_return_retry' };
     }
+    if (war) return { ok: false, state, reason: 'party_return_retry' };
     // A dissolved or full party must not turn the clan assignment into solo combat.
     const saved = await LifeState.upsertState(prepared, 'clan_party_return_wait');
     return { ok: !!saved, state: saved || state, reason: 'clan_party_return_wait' };
@@ -862,7 +888,7 @@ async function createAndCommitBackgroundParty(members = [], objectiveOverride = 
         if (members.length < partyLimitsForObjective(objective).minSize) return null;
     }
     let release = partyAdmission.reserve(BackgroundPartyState.admitted(), Config);
-    if (!release && ClanPartyCapacity.required(objective)) {
+    if (!release && ClanPartyCapacity.required(objective) && partyAdmission.canReclaim(BackgroundPartyState.admitted(), Config)) {
         const limits = partyLimitsForObjective(objective);
         if (ClanRaidRoster.selectMembers(members, objective, limits).length < limits.minSize) return null;
         const reclaimed = await ClanPartyCapacity.reclaim(objective, {
@@ -875,15 +901,31 @@ async function createAndCommitBackgroundParty(members = [], objectiveOverride = 
     finally { release(); }
 }
 
+// The forming verdict of a roster (PartyGoalPolicy.formingVerdict) before main builds the party,
+// asked like its goals (jointPartyGoals: main for an all-near roster, the worker otherwise). A busy
+// or failed worker defers the roster to the next assembly: no main thought and no build for a far
+// roster. The roster's id is its member set, so a refusal repeated per attempt logs once (logPartyFailure).
+async function formingVerdict(members, requested, options) {
+    const memberIds = members.map(member => Number(member.characterId));
+    const verdict = await jointPartyGoals({ partyId: `forming_${[...memberIds].sort((a, b) => a - b).join('_')}`,
+        leaderId: memberIds[0], memberIds, stats: { forming: { requested: requested || null } } }, members, Date.now(), options);
+    return Array.isArray(verdict?.formingAccepted) ? verdict : null;
+}
+
 async function createBackgroundParty(members = [], objectiveOverride = null, options = {}) {
     const requested = objectiveOverride || members.map(partyObjectiveForState).find(objective => objective?.priority === 'required');
     if (members.length < Config.partyMinSize) return null;
-    const workerMaterialFormation = CraftMaterialParty.isObjective(requested) && members.some(member => member.phase === 'cold');
-    if (!workerMaterialFormation && !requested?.clanGoalKey && requested?.sourceKind !== 'raid') {
-        members = invoke('GameServer/Bot/Population/PartyGoalPolicy').formingMembers(members, requested);
-        if (members.length < Config.partyMinSize) return Promise.resolve(null);
+    let review = null;
+    if (!PartyGoalPolicy.verdictFree(requested)) {
+        const verdict = await formingVerdict(members, requested, options);
+        const accepted = new Set(verdict?.formingAccepted || []);
+        members = members.filter(member => accepted.has(Number(member.characterId)));
+        if (members.length < Config.partyMinSize) return null;
+        // A material roster keeps the reviews of its admission (CraftMaterialParty: economic accepts only).
+        if (verdict.incomeReviews) review = { lastIncomeReviewAt: verdict.lastIncomeReviewAt,
+            incomeReviews: verdict.incomeReviews.filter(row => accepted.has(row.characterId)) };
     }
-    let leader = PartyComposition.chooseLeader(members);
+    const leader = PartyComposition.chooseLeader(members);
     if (!leader) return Promise.resolve(null);
     const objectiveMember = members.find((member) => (
         member.stats?.partyRequest?.status === 'open'
@@ -908,7 +950,6 @@ async function createBackgroundParty(members = [], objectiveOverride = null, opt
         roleCoverage: coverage,
         stats: {
             formedAt: timestamp,
-            ...(workerMaterialFormation ? { materialFormation: true } : {}),
             memberNames: members.map((state) => state.name),
             personaFormation: Object.fromEntries(members.map((member) => [
                 member.characterId,
@@ -927,24 +968,7 @@ async function createBackgroundParty(members = [], objectiveOverride = null, opt
         .propose(leader, members, objective, { persona: BotPersona.of(leader) });
     const joint = await jointPartyGoals(party, members, timestamp, options);
     if (!joint) return null;
-    if (workerMaterialFormation) {
-        // Busy or stale worker advice cannot admit an unsafe material hunt.
-        if (joint.incomeReviews?.length !== members.length) return null;
-        const accepted = new Set(joint.incomeReviews.filter(row => row.accept).map(row => Number(row.characterId)));
-        members = members.filter(member => accepted.has(Number(member.characterId)));
-        if (members.length < Config.partyMinSize) return null;
-        leader = PartyComposition.chooseLeader(members);
-        party.leaderId = leader.characterId;
-        party.memberIds = members.map(member => member.characterId);
-        party.roleCoverage = PartyComposition.roleCoverage(members);
-        party.stats.memberNames = members.map(member => member.name);
-        party.stats.personaFormation = Object.fromEntries(Object.entries(party.stats.personaFormation)
-            .filter(([id]) => accepted.has(Number(id))));
-        joint.memberGoals = joint.memberGoals.filter(goal => accepted.has(Number(goal.characterId)));
-        joint.incomeReviews = joint.incomeReviews.filter(row => accepted.has(Number(row.characterId)));
-        delete party.stats.materialFormation;
-    }
-    party.stats = { ...party.stats, ...joint,
+    party.stats = { ...party.stats, ...joint, ...review,
         agreement: PartyAgreement.propose(leader, members, objective,
             { persona: BotPersona.of(leader), rng: invoke('GameServer/Bot/AI/TendencyRoll').seeded(`agreement:${partyId}`) }) };
     const partyEvent = {
@@ -1123,6 +1147,8 @@ const PopulationService = {
         this.startPartyAssemblyEvents();
         Promise.resolve(this.lifeReadyPromise).then(() => this.startOpportunisticRaids())
             .catch(error => utils.infoWarn('BotRaid', 'startup failed: %s', error.message));
+        Promise.resolve(this.lifeReadyPromise).then(() => this.startClanWars())
+            .catch(error => utils.infoWarn('ClanWar', 'startup failed: %s', error.message));
 
         Promise.resolve(this.lifeReadyPromise).then(() => {
             if (!this.started) return;
@@ -1167,6 +1193,8 @@ const PopulationService = {
 
     stop() {
         this.opportunisticRaids?.stop();
+        this.clanWars?.stop();
+        this.clanWars = null;
         this.opportunisticRaids = null;
         ClanActionService.stopEvents();
         this.stopPartyAssemblyEvents();
@@ -1451,6 +1479,8 @@ const PopulationService = {
             run: () => this.opportunisticRaids?.pulse() });
         registry.register({ name: 'opportunistic_raid_combat', intervalMs: 4000, offsetMs: 45000,
             run: () => this.opportunisticRaids?.maintain() });
+        registry.register({ name: 'clan_wars', intervalMs: 5000, offsetMs: 60000,
+            run: () => this.clanWars?.pulse() });
 
         if (ClanSimulationConfig.enabled !== false) {
             const clanIntervalMs = Math.max(1000, Number(ClanSimulationConfig.resolveIntervalMs) || 60000);
@@ -1480,6 +1510,27 @@ const PopulationService = {
         this.backgroundJobRegistry = registry;
         registry.start();
         return registry;
+    },
+
+    async startClanWars() {
+        if (!this.started || this.clanWars || !require('../../Clan/ClanWarConfig').enabled
+            || ClanSimulationConfig.enabled === false) return;
+        const service = new (require('../../Clan/ClanWarDirector').ClanWarDirector)({
+            database: Database, life: LifeState, parties: BackgroundPartyState,
+            clans: invoke('GameServer/Clan/ClanService'), war: invoke('GameServer/Clan/ClanWarRuntime'),
+            social: invoke('GameServer/Clan/ClanSocialRuntime').view, memory: invoke('GameServer/Social/InteractionMemoryRuntime'),
+            personaFor: state => BotPersona.of(state), form: (members, operation) => this.formClanWarParty(members, operation),
+            updateDemand: ids => partyAdmission.syncWarRequests(Config.backgroundPartyEnabled && this.started ? ids : []),
+            formationStatus: () => this.lastClanWarFormation,
+            actions: ColdSimulationCoordinator.competitionActions,
+            canContinue: () => this.started && ClanSimulationConfig.enabled !== false,
+            canWork: () => this.started && ClanSimulationConfig.enabled !== false && !this.resolving && !this.partyFormationRunning
+                && Number(Database.pending()) < 4 && Number(Metrics.currentEventLoopLag()) < 40
+                && ColdSimulationCoordinator.competitionActions.canRun()
+        });
+        this.clanWars = service;
+        await service.start();
+        if (!this.started || this.clanWars !== service) service.stop();
     },
 
     async startOpportunisticRaids() {
@@ -2021,7 +2072,7 @@ const PopulationService = {
                                     keepStoreLocation: state.activity === 'crafting' && !!state.stats?.craftShop,
                                     playerLoc: loc
                                 }).then((result) => {
-                                    logPartyActivationFailure(state, result);
+                                    logPartyFailure(state?.party?.partyId, 'activation', result);
                                     return result;
                                 });
                             }).then((result) => {
@@ -2938,27 +2989,17 @@ const PopulationService = {
         const passiveActivity = ['traveling', 'shopping', 'merchant', 'crafting', 'dead'].includes(state?.activity) && !staleShopping;
         const workerPlan = workerRequest?.precomputedPlan || null;
         const previousPlan = workerPlan ? workerPlan.previousPlan : state.stats?.equipmentPlan;
-        // A travelling bot does not fight at a spot during this resolve, but its
-        // gear plan still needs the complete atlas.  Passing [] here turned every
-        // in-progress craft route into `blocked` on its first travel tick.
-        const spots = SpotProfiles.ensure();
-        const buyOrderEscrow = BotAfkMarketService.buyOrderEscrow(state.characterId);
-        let replanContext = { failure: workerPlan?.replanFailure || null, buyOrderEscrow };
+        // The worker's gear plan (source and replacement included) is applied
+        // as is: main does not pick a source again.
+        let replanContext = { failure: workerPlan?.replanFailure || null };
         let acquisitionPlan = workerPlan?.acquisitionPlan || null;
-        const workerPlanHasSource = acquisitionPlan?.status === 'active'
-            && ['direct_drop', 'craft'].includes(acquisitionPlan.strategy)
-            && !!acquisitionPlan.next?.spotId;
-        if (workerPlanHasSource) {
-            acquisitionPlan = this.retargetColdWorkerPlan(state, acquisitionPlan, previousPlan, spots, replanContext, startedAt);
-        }
         if (!acquisitionPlan) {
             acquisitionPlan = previousPlan;
             replanContext = {};
             this.planDeferred = Number(this.planDeferred || 0) + 1;
         }
         // The background thread's request, built with the bot's economy for
-        // the plan it sent. A plan main re-targeted (retargetColdWorkerPlan)
-        // gets none: the bot's next worker step builds it for the new target.
+        // the plan it sent; none when the worker sent no plan for that target.
         // Without a worker plan the saved request stands.
         const partyRequest = !workerPlan ? state.stats?.partyRequest || null
             : Number(workerPlan.acquisitionPlan?.target?.selfId || 0) === Number(acquisitionPlan?.target?.selfId || 0)
@@ -2982,7 +3023,7 @@ const PopulationService = {
         const partyRouteWaiting = PartyWaitFallback.waiting(state, acquisitionPlan, partyRequest);
         const excludedSpotIds = SpotRiskPolicy.excludedSpotIdsForStates([plannedState], startedAt);
         const partyFallback = partyRouteWaiting && !passiveActivity
-            ? PartyWaitFallback.spotFor(state, acquisitionPlan, spots, { excludedSpotIds, timestamp: startedAt })
+            ? PartyWaitFallback.spotFor(state, acquisitionPlan, SpotProfiles.ensure(), { excludedSpotIds, timestamp: startedAt })
             : null;
         const fallbackSpot = partyFallback?.spot || null;
         // A waiter that is resting finishes its rest first.
@@ -3170,32 +3211,6 @@ const PopulationService = {
         return COLD_RESOLVE_NEXT;
     },
 
-    retargetColdWorkerPlan(state, acquisitionPlan, previousPlan, spots, replanContext, startedAt) {
-        const availableSource = GearAcquisitionPlanner.bestSourceForPlan(
-            state,
-            acquisitionPlan,
-            spots
-        );
-        if (availableSource) {
-            acquisitionPlan = GearAcquisitionPlanner.retargetPlanSource(state, acquisitionPlan, availableSource);
-        } else if (!GearAcquisitionPlanner.clanGoalPlanLocked(state, acquisitionPlan)) {
-            const replacement = GearAcquisitionPlanner.replacementPlanFor(
-                state,
-                acquisitionPlan,
-                spots,
-                { ...replanContext }
-            );
-            acquisitionPlan = GearAcquisitionPlanner.finalizePlan(
-                state,
-                previousPlan,
-                replacement,
-                replanContext,
-                startedAt
-            );
-        }
-        return acquisitionPlan;
-    },
-
     resolveColdCraft(state, plannedState, startedAt) {
         return ColdCraftingService.craft(plannedState).then((craft) => {
             const completed = craft.reason === 'crafted'
@@ -3335,7 +3350,9 @@ const PopulationService = {
             return { ok: true, state: updatedState, debug: result.debug };
         }
         const tripEdge = CombinedErrands.edge(state, updatedState, result);
-        return invoke('GameServer/Bot/Economy/CraftWorkshopService').review(updatedState)
+        const preparation = updatedState.stats?.partyMarketReturn?.warOperationId
+            ? Promise.resolve({ state: updatedState })
+            : invoke('GameServer/Bot/Economy/CraftWorkshopService').review(updatedState)
             .then(workshopState => ColdShotEconomyService.review(workshopState, Date.now(), { edge: tripEdge }))
             .then((shotEconomy) => ColdWealthCraftService.tryCraft(shotEconomy.state || updatedState))
             .then(async (wealthCraft) => {
@@ -3343,8 +3360,8 @@ const PopulationService = {
                 const released = invoke('GameServer/Bot/Economy/BotImprovementService').inTown(current)
                     ? await BotWarehouse.releaseCold(current, { inTown: true }) : { state: current };
                 return ColdMarketListingService.resolve(LifeState.cachedState(current.characterId) || released.state || current);
-            })
-            .then((marketLifecycle) => GoalService.currentForMarket(marketLifecycle.state, {
+            });
+        return preparation.then((marketLifecycle) => GoalService.currentForMarket(marketLifecycle.state, {
                 spot: SpotProfiles.findById(marketLifecycle.state.stats?.marketReturn?.spotId) || spot
             })
                 .then((goalSnapshot) => (heldVisit(marketLifecycle.state)
@@ -3375,6 +3392,10 @@ const PopulationService = {
         // 500 ms at most): its row is the actor's now; nothing cold is written over it.
         const hotRow = LifeState.hotRow(purchasedState.characterId);
         if (hotRow) return hotRow;
+        if (purchasedState.stats?.partyMarketReturn?.warOperationId) {
+            const returning = GoalExecutor.finishMarketVisit(purchasedState, Date.now(), { recoverMissingReturn: true });
+            return returning ? LifeState.upsertState(returning, 'war_supply_return').then(saved => saved || returning) : purchasedState;
+        }
         if (marketResult.purchased) {
             exchangeWaits.delete(Number(purchasedState.characterId));
             const batchState = {
@@ -3543,6 +3564,51 @@ const PopulationService = {
 
     reserveCompetitionPartySlot() {
         return Config.backgroundPartyEnabled ? partyAdmission.reserve(BackgroundPartyState.admitted(), Config) : null;
+    },
+
+    async formClanWarParty(members, operation) {
+        if (!this.started || this.partyFormationRunning || this.resolving || members.length < 3 || members.length > 9) return null;
+        const release = Config.backgroundPartyEnabled
+            ? partyAdmission.reserveWar(BackgroundPartyState.admitted(), Config, operation.clanId) : null;
+        if (!release) {
+            this.lastClanWarFormation = { at: Date.now(), clanId: operation.clanId, reason: 'party_capacity_wait' };
+            return null;
+        }
+        this.partyFormationRunning = true;
+        const ids = members.map(s => s.characterId);
+        try {
+            const fenced = await Promise.all(ids.map(id => ColdSimulationCoordinator.fenceBot(id)));
+            if (fenced.some(r => !r.ok)) {
+                this.lastClanWarFormation = { at: Date.now(), clanId: operation.clanId, reason: 'member_busy' };
+                return null;
+            }
+            await LifeState.settleWrites(ids);
+            const current = ids.map(id => LifeState.cachedState(id));
+            if (!this.started || current.some(s => !s || s.party?.partyId || s.partyId
+                || !require('../../Clan/ClanWarPolicy').available(s, Date.now()))) {
+                this.lastClanWarFormation = { at: Date.now(), clanId: operation.clanId, reason: 'roster_changed' };
+                return null;
+            }
+            const leader = PartyComposition.chooseLeader(current), timestamp = Date.now();
+            const home = { ...operation, homeSpotId: leader.spotId, homeLoc: { ...leader.loc } };
+            home.homeLoc = require('./ClanWarHome').point(home);
+            if (!home.homeLoc) {
+                this.lastClanWarFormation = { at: timestamp, clanId: operation.clanId, reason: 'home_unavailable' };
+                return null;
+            }
+            const party = { partyId: `war_${timestamp.toString(36)}_${leader.characterId}`, leaderId: leader.characterId,
+                memberIds: ids, spotId: leader.spotId, status: 'active', startedAt: timestamp, nextResolveAt: timestamp + 1000,
+                roleCoverage: PartyComposition.roleCoverage(current), cohesion: 0.75, risk: 0.3,
+                stats: { formedAt: timestamp, warOperation: home,
+                    memberNames: current.map(s => s.name), memberGoals: current.map(PartyGoalPolicy.declaration) } };
+            const result = await commitPartyMembership(party, current, { characterId: leader.characterId, eventType: 'clan_war_assembly',
+                summary: 'Clan assembled a war party', meta: { operationId: operation.id, enemyClanId: operation.enemyClanId }, weight: 3, createdAt: timestamp });
+            this.lastClanWarFormation = { at: timestamp, clanId: operation.clanId, reason: result.party ? 'formed' : result.reason || 'membership_refused' };
+            return result.party || null;
+        } finally {
+            this.partyFormationRunning = false; release();
+            ids.map(id => LifeState.cachedState(id)).filter(Boolean).forEach(s => ColdSimulationCoordinator.notifyState(s));
+        }
     },
 
     async formCompetitionParty(members, event, options = {}) {

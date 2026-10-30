@@ -4,24 +4,15 @@ require('../src/Global');
 
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const assertC4MonsterLocation = require('./helpers/assert_c4_monster_location');
-const assertMonsterEmptyBeforeSlice = require('./helpers/assert_monster_empty_before_slice');
 
 const mobIds = [1314, 1315, 1316, 1317, 1318, 1319, 1320, 1321, 1322, 1323];
 
 assertC4MonsterLocation({
     slug: 'c4_hot_springs',
     displayName: 'Hot Springs',
-    areaId: 'c4-hot-springs',
     mobIds,
     importedNpcIds: mobIds,
     bindingSlugs: ['c4_hot_springs'],
-    spawnCounts: [
-        [1314, 21], [1315, 18], [1316, 12], [1317, 9], [1318, 26],
-        [1319, 25], [1320, 22], [1321, 13], [1322, 15], [1323, 10]
-    ],
-    respawn: 70,
-    region: [24, 14],
-    maxHeightDelta: 440,
     origin: [148000, -113000, -2500],
     sample: {
         id: 1314, name: 'Hot Springs Bandersnatchling', level: 73, hostile: true,
@@ -52,11 +43,6 @@ assertC4MonsterLocation({
     }
 });
 
-assertMonsterEmptyBeforeSlice({
-    slug: 'c4_hot_springs',
-    displayName: 'Hot Springs',
-    box: { minX: 138484, maxX: 158620, minY: -123090, maxY: -102992, minZ: -3832, maxZ: -1280 }
-});
 
 const semantic = (selfId, level) => C4SkillRules.resolve({
     selfId, level, name: 'Hot Springs disease', power: 100, buff: 600000, spell: true, distance: 600

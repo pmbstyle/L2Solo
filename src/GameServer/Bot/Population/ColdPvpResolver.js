@@ -15,12 +15,12 @@ const RECOVERY_MS = 90000;
 const clamp = (n, low, high) => Math.max(low, Math.min(high, n));
 const clan = state => Number(state.stats?.clanId || state.clanId || 0);
 
-function allowed(sides) {
+function allowed(sides, war = false) {
     const states = sides.flatMap(side => side.members);
-    if (states.some(s => s.phase !== 'cold' || !(s.vitals?.hp > 0)
+    if (states.some(s => s.phase !== 'cold' || !war && !(s.vitals?.hp > 0)
         || !Number.isFinite(s.loc?.locX) || !Number.isFinite(s.loc?.locY)
         || utils.isInPeaceZone(s.loc.locX, s.loc.locY))) return false;
-    // Clan diplomacy is not implemented here; never infer a war permission.
+    // The formal pair is checked by resolve and again by the native writer.
     return !sides[0].members.some(a => sides[1].members.some(b => clan(a) > 0 && clan(a) === clan(b)));
 }
 
@@ -53,11 +53,12 @@ function clearlyWeaker(own, other, timestamp) {
 }
 
 // key: the encounter's key, for the start gate's one roll.
-function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openingSide = 1, key = null }) {
-    if (!allowed(sides)) return { started: false, reason: 'pvp_protected_context' };
+function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openingSide = 1, key = null, wars = null, war = false }) {
+    if (!allowed(sides, war)) return { started: false, reason: 'pvp_protected_context' };
+    if (war && !wars?.between(clan(sides[0].principal), clan(sides[1].principal)).mutual) return { started: false, reason: 'war_changed' };
     if (!step?.resuming && Aggression.normalize(Config.pvpAggression) === 0) return { started: false, reason: 'pvp_passive' };
     const fighters = sides.flatMap((side, index) => side.members
-        .filter(state => state.characterId === side.principal.characterId || roles.get(state.characterId) === 'support')
+        .filter(state => state.vitals?.hp > 0 && (state.characterId === side.principal.characterId || roles.get(state.characterId) === 'support'))
         .map(state => {
             const profile = Profile.fightProfile(state, timestamp);
             return { state, side: index, profile, id: state.characterId,
@@ -97,7 +98,8 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
         const next = fighters.filter(f => f.vitals.hp > 0).sort((a, b) => a.readyAt - b.readyAt || a.id - b.id)[0];
         if (!next || next.readyAt > windowMs || (step && timestamp + next.readyAt >= step.expiresAt)) break;
         time = next.readyAt;
-        const opponents = fighters.filter(f => f.side !== next.side && f.vitals.hp > 0);
+        const opponents = fighters.filter(f => f.side !== next.side && f.vitals.hp > 0
+            && (!war || wars.between(clan(next.state), clan(f.state)).mutual));
         const target = opponents.find(f => f.id === sides[1 - next.side].principal.characterId) || opponents[0];
         if (!target) { losingSide = 1 - next.side; outcome = 'defeated'; break; }
         const caution = clamp(Number(personaFor(next.state)?.traits?.caution ?? 0.5), 0, 1);
@@ -158,9 +160,14 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
                 }
                 incident(target, next, true);
                 next.kills.push({ victimId: target.id, victimLevel: target.state.level,
-                    pvp: target.flagged || Number(target.state.stats?.karma || 0) > 0 });
-                losingSide = target.side; outcome = 'killed'; time += delay;
-                break; // A casualty ends the resource skirmish; no automatic party wipe.
+                    pvp: target.flagged || Number(target.state.stats?.karma || 0) > 0
+                        || !!wars?.between(clan(next.state), clan(target.state)).mutual });
+                // Stepped encounters close on a casualty; campaigns can engage
+                // survivors again without materializing a dead actor at handoff.
+                if (!war || step || !fighters.some(f => f.side === target.side && f.vitals.hp > 0)) {
+                    losingSide = target.side; outcome = 'killed'; time += delay;
+                    break;
+                }
             }
         }
         next.readyAt = time + delay;
@@ -199,9 +206,9 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
                     cooldowns: dead ? {} : f.cooldowns,
                     charges: dead ? 0 : f.charges, chargeExpiresAt: dead ? null : f.chargeExpiresAt,
                     ...(dead ? { effects: [], charges: 0, chargeExpiresAt: null, summon: null } : {}) } } };
-        // The C4 death penalty of an ordinary cold death, with the PvP context.
-        // No clan wars, arenas or PvP zones reach cold PvP (peace zones never fight).
-        return [f.id, dead ? DeathExperience.applyColdDeath(next, { timestamp, cold: true, killerPlayable: true }).state : next];
+        const killer = fighters.find(other => other.kills.some(k => k.victimId === f.id));
+        return [f.id, dead ? DeathExperience.applyColdDeath(next, { timestamp, cold: true, killerPlayable: true,
+            clanWar: !!killer && !!wars?.between(clan(killer.state), clan(f.state)).outgoing }).state : next];
     }));
     return { started: true, ongoing, outcome: ongoing ? 'fighting' : outcome, durationMs, until: step ? step.until : until, losingSide, updates,
         incidents: [...incidents.values()], help: [...help.values()], opponentAid: [...opponentAid.values()], fighters: fighters.map(f => ({ id: f.id, side: f.side,

@@ -162,16 +162,6 @@ const npcs = mobIds.map((id) => npcRowsById.get(id)).map((row) => {
 });
 
 const npcNameById = new Map(npcs.map((npc) => [npc.selfId, npc.template.name]));
-const spawnDefinitions = mobIds.map((npcId) => ({
-    selfId: npcId,
-    name: npcNameById.get(npcId),
-    coords: spawnRows.filter((row) => Number(row[3]) === npcId)
-        .map((row) => ({ locX: row[4], locY: row[5], locZ: row[6], head: row[9] })),
-    total: 1,
-    respawn: 120,
-    bias: 0
-}));
-const spawns = [{ selfId: 'c4-necropolis-of-sacrifice', bounds: [], spawns: spawnDefinitions }];
 
 const dropRows = tuples('sql/droplist.sql').filter((row) => mobIdSet.has(Number(row[0])));
 if (dropRows.length !== 193) throw new Error(`Expected 193 drops, found ${dropRows.length}`);
@@ -277,7 +267,6 @@ const skillTemplates = [
 ];
 
 writeJson('data/Npcs/c4_necropolis_of_sacrifice.json', npcs);
-writeJson('data/Npcs/Spawns/c4_necropolis_of_sacrifice.json', spawns);
 writeJson('data/Npcs/Rewards/c4_necropolis_of_sacrifice.json', rewards);
 writeJson('data/Items/Weapons/c4_necropolis_of_sacrifice.json', missingWeapons);
 writeJson('data/Items/Others/c4_necropolis_of_sacrifice.json', missingItems);

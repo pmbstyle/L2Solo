@@ -81,6 +81,10 @@ try {
     assert.equal(due(seller)?.reason, 'wish_funding');
     seller.bot.backpack.inventoryRevision = 1;
     assert.equal(due(seller)?.reason, 'wish_funding', 'loot reuses the held selling choice without a context build');
+    HuntingState.pauseSelling(seller.session, now);
+    assert.equal(due(seller), null, 'a held selling leaf cannot bypass the sale retry after hot activation');
+    assert.equal(due(seller, now + ColdMarket.SELL_RETRY_DELAY_MS)?.reason, 'wish_funding',
+        'the held sale can resume when its existing pause expires');
     // The next decision the body receives (DecisionEvents.receive) replaces the held one.
     seller.session.coldLifeState.stats.decisionSeq = 13;
     seller.session.heldEconomy = { network: { activity: null } };

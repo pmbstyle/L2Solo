@@ -22,6 +22,7 @@ const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const BotTownTravel  = invoke('GameServer/Bot/AI/BotTownTravel');
 const BotSpotTravel  = invoke('GameServer/Bot/AI/BotSpotTravel');
 const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
+const EscapePolicy = invoke('GameServer/Bot/AI/BotEscapePolicy');
 const BotEmergencyFinisher = invoke('GameServer/Bot/AI/BotEmergencyFinisher');
 const BotRaidSafety   = invoke('GameServer/Bot/AI/BotRaidSafety');
 const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
@@ -52,6 +53,7 @@ const MAX_SPOT_RELOCATION_MS = 120000;
 const FAILED_SPOT_RETRY_MS = 60000;
 const FULL_TARGET_CANDIDATE_LIMIT = 96;
 const VISIBLE_TARGET_CANDIDATE_LIMIT = 32;
+const LOCAL_TARGET_SEARCH_RADIUS = 2500;
 const SHOP_DEPARTURE_RADIUS = 900;
 
 function leaveShop(session, bot, now = Date.now()) {
@@ -107,9 +109,9 @@ function sellTripDue(session, bot, now = Date.now()) {
     if (partyId) state.partyId = partyId;
     const forced = ItemDisposition.inventoryCleanupNeed(state, { now });
     const activity = DecisionEvents.held(session)?.network.activity;
-    const need = forced || (activity?.activity === 'selling'
-        ? { reason: 'wish_funding', itemIds: activity.items } : null);
     const pause = Number(state.stats?.marketSellRetryAfter || 0);
+    const need = forced || (activity?.activity === 'selling' && pause <= now
+        ? { reason: 'wish_funding', itemIds: activity.items } : null);
     session.sellTripCheck = { items, count: items.length, life, level, partyId, decisionSeq,
         revision: Number(bot.backpack.inventoryRevision || 0),
         pauseEndsAt: pause > now ? pause : 0, need };
@@ -139,6 +141,12 @@ function startShopping(session, bot, BotAI, reason, townName = null) {
         return false;
     }
 
+    // A failed physical town route has its own existing retry window. It
+    // defers every errand on that route, including stock; an equipment
+    // quote's retry alone must not block consumables. Hunt locally meanwhile.
+    if (session.roleDecision?.reason === 'shopping_route_unreachable'
+        && Number(session.companionEquipmentRetryAt || 0) > Date.now()) return 'deferred';
+
     const destination = townName ? Object.values(invoke('GameServer/World/TownRespawn').towns)
         .find(town => town.name === townName) : null;
     return BotTownTravel.request(session, bot, BotAI, reason, destination ? {
@@ -149,11 +157,13 @@ function startShopping(session, bot, BotAI, reason, townName = null) {
 function startWorkshopOrder(session, bot, BotAI, economy) {
     const leaf = economy?.network?.activity;
     if (!isSoloHunter(session) || leaf?.activity !== 'crafting' || leaf.kind !== 'craft'
-        || !/^stock:(shots|potions|scrolls)$/.test(String(leaf.rootKey))
+        || /^resale:/.test(String(leaf.rootKey))
         || BotTownTravel.hasCombatThreat(session, bot) || bot.state?.fetchCasts?.()) return false;
-    // The held decision carries the worker's stock plan (the selected dwarf,
+    // The held decision carries the worker's craft plan (the selected dwarf,
     // fee, quantities and funding) through the physical visit.
-    const target = ShoppingState.stockWorkshopTarget(session, bot, economy);
+    const stock = /^stock:(shots|potions|scrolls)$/.test(String(leaf.rootKey));
+    const target = stock ? ShoppingState.stockWorkshopTarget(session, bot, economy)
+        : economy.personalCraft && ShoppingState.workshopTarget(session, bot, economy.personalCraft);
     if (!target) return false;
     const trip = startShopping(session, bot, BotAI, 'Heading to town for my planned craft order.', target.town);
     if (trip === 'deferred' || trip === false) return false;
@@ -193,9 +203,19 @@ function limitTargetCandidates(session, bot, candidates) {
 function findPreferredMonster(session, bot, radius, options = {}) {
     const scanStartedAt = Date.now();
     const allNearbyNpcs = World.fetchNpcsInRadius(bot.fetchLocX(), bot.fetchLocY(), radius);
+    // Target scans read the already held advice; they never prepare an
+    // economy context of their own (standalone scans may precede admission).
+    const leaf = isSoloHunter(session)
+        ? session.heldEconomy?.network.activity || session.activationEconomyDecision?.activity : null;
+    const materialNpc = invoke('GameServer/Bot/Population/ColdEconomyDecision').materialHunt(leaf)
+        ? Number(leaf.npcId || 0) : 0;
     // Far-visible actors still choose a plausible nearby target, but do not
     // multiply the expensive claim scan by every NPC in a dense spawn cell.
     const eligibleNearbyNpcs = allNearbyNpcs
+        .filter(npc => !materialNpc || Number(npc.fetchSelfId?.()) === materialNpc)
+        .filter(npc => !options.spotOnly || SpotService.containsLocation(options.spotOnly, botLocation(npc))
+            || (options.nearbyRadius > 0
+                && SpotService.distance2d(botLocation(bot), botLocation(npc)) <= options.nearbyRadius))
         .filter((npc) => !options.excludeTargetId || npc.fetchId() !== options.excludeTargetId)
         .filter((npc) => !BotRaidSafety.isProtectedRaidEntity(npc))
         .filter((npc) => !invoke('GameServer/Bot/AI/HotResourceCompetition').blockedTarget(session, npc))
@@ -227,7 +247,7 @@ function findPreferredMonster(session, bot, radius, options = {}) {
             const targetMatchup = TargetMatchup.evaluate(matchupProfiles, matchupTarget);
             if (isSoloHunter(session) && partyActors.length <= 1) {
                 const canHunt = TargetMatchup.soloCanHunt(matchupProfiles, BotPullEstimate.pullView(matchupTarget, pull));
-                Object.assign(targetMatchup, { eligible: canHunt.eligible, reason: canHunt.reason });
+                Object.assign(targetMatchup, canHunt);
             }
             const scoreContext = {
                 attackable: npc.fetchAttackable(),
@@ -268,7 +288,25 @@ function findPreferredMonster(session, bot, radius, options = {}) {
         })
         .filter((candidate) => !options.freeOnly || !candidate.claimed);
 
-    const ranked = BotTargetScorer.rank(candidates);
+    let ranked = BotTargetScorer.rank(candidates);
+    // Cold routing can recover on easier ground when the current kit cannot
+    // handle level-appropriate mobs. Once all safety gates pass, low-level
+    // penalties are relative preferences: a negative score must not send a
+    // solo body wandering past a safe visible mob. Economic hunts may already
+    // admit the wider level band, so include those candidates in recovery too.
+    if (!ranked.length && options.allowEasierTargets && isSoloHunter(session) && !session.hotBackgroundPartyId) {
+        // Any deferred errand, including consumable restocking, can leave a
+        // kit unable to handle the -15 band. Keep native reward penalties and
+        // the full solo survival gate when recovering on easier local mobs.
+        const allowTrivialTargets = !!session.deferredOccupation;
+        const easier = candidates.filter(candidate => candidate.evaluation.reason === 'level_too_low'
+            || candidate.evaluation.eligible && candidate.evaluation.levelGap < BotTargetScorer.MIN_LEVEL_GAP)
+            .map(candidate => ({ ...candidate,
+                evaluation: BotTargetScorer.score({ ...candidate.scoreContext, minLevelGap: -15, allowTrivialTargets }) }));
+        ranked = easier.filter(candidate => candidate.evaluation.eligible && Number.isFinite(candidate.evaluation.score))
+            .sort((first, second) => second.evaluation.score - first.evaluation.score);
+        for (const candidate of ranked) candidate.evaluation.reasons.push('easier_ground');
+    }
     // Prefer a fight we can finish, but retain a visible unready candidate
     // so the caller can recover instead of wandering while exhausted.
     const ordered = options.readyOnly
@@ -276,6 +314,8 @@ function findPreferredMonster(session, bot, radius, options = {}) {
         : ranked;
     const scan = HuntingVisibility.select(session, 'solo', bot, ordered, candidate => candidate.npc);
     session.huntTargetScanPending = scan.pending;
+    session.huntingTargetScan = { at: Date.now(), loc: botLocation(bot), radius,
+        attackableNpcs: eligibleNearbyNpcs.length, eligibleAttackableNpcs: ranked.length };
     const readinessCandidate = options.readyOnly ? scan.candidate : null;
     const selected = options.readyOnly && !scan.candidate?.readiness.ready ? null : scan.candidate;
     session.lastEncounterReadiness = readinessCandidate ? {
@@ -299,7 +339,7 @@ function targetDistance(bot, target) {
         .distance(new SpeckMath.Point3D(target.fetchLocX(), target.fetchLocY(), target.fetchLocZ()));
 }
 
-function liveCurrentNpcTarget(session, bot, radius = 2500) {
+function liveCurrentNpcTarget(session, bot, radius = session.huntingSearchRadius || 2500) {
     const targetId = Number(session.currentTargetId || 0);
     if (!targetId) return null;
 
@@ -462,7 +502,7 @@ function tickSpotRelocation(session, bot) {
     return !!session.spotRelocation;
 }
 
-function beginSpotRelocation(session, bot, spot, BotAI) {
+function beginSpotRelocation(session, bot, spot, BotAI, deferredOccupation = null) {
     if (Number(session.townTravelRetryAt || 0) > Date.now()) return;
     const destination = { ...spot.center };
     session.currentTargetId = undefined;
@@ -481,6 +521,7 @@ function beginSpotRelocation(session, bot, spot, BotAI) {
     const travelDistance = SpotService.distance2d(botLocation(bot), destination);
     if (travelDistance > MAX_WALK_SPOT_DISTANCE && !Karma.closesTowns(bot.fetchKarma?.())) {
         BotSpotTravel.start(session, bot, spot, destination);
+        if (session.spotRelocation && deferredOccupation) session.spotRelocation.deferredOccupation = deferredOccupation;
         return;
     }
 
@@ -494,6 +535,7 @@ function beginSpotRelocation(session, bot, spot, BotAI) {
         startedAt: Date.now(),
         lastCommandAt: 0
     };
+    if (deferredOccupation) session.spotRelocation.deferredOccupation = deferredOccupation;
     issueWalkRelocation(session, bot, session.spotRelocation);
 }
 
@@ -587,6 +629,7 @@ module.exports = {
     limitTargetCandidates,
     claimedTargetIds,
     tick(session, bot, Generics, BotAI) {
+        session.deferredOccupation = null;
         if (session.pendingTownTrip) {
             const trip = startShopping(session, bot, BotAI, session.pendingTownTrip.reason);
             if (trip !== 'deferred') return;
@@ -634,7 +677,8 @@ module.exports = {
             }
         }
 
-        if (isSoloHunter(session) && Number(session.companionEquipmentRetryAt || 0) <= Date.now()) {
+        if (isSoloHunter(session) && (Number(session.companionEquipmentRetryAt || 0) <= Date.now()
+            || /^stock:/.test(String(DecisionEvents.held(session)?.network.activity?.rootKey)))) {
             const economy = DecisionEvents.held(session);
             const wealthCraft = require('../../Economy/HotWealthCraftService');
             if (wealthCraft.canStart(session, economy.network.activity)) {
@@ -657,10 +701,11 @@ module.exports = {
             if (economy.network.activity?.activity === 'shopping') {
                 const leaf = economy.network.activity;
                 const state = invoke('GameServer/Bot/Economy/EconomyContext').stateForActor(bot, session);
-                if (invoke('GameServer/Bot/Economy/ColdMarketService').canTravelForPurchase(state,
+                const amount = invoke('GameServer/Bot/Population/ColdEconomyDecision').remainingToOrder(leaf, state);
+                if (amount > 0 && invoke('GameServer/Bot/Economy/ColdMarketService').canTravelForPurchase(state,
                     { selfId: Number(leaf.itemId || leaf.object?.itemId || leaf.object),
-                        amount: Number(leaf.amount || 1), town: leaf.town,
-                        valueHours: leaf.valueHours }, { economy })) {
+                        amount, town: leaf.town, valueHours: leaf.valueHours,
+                        ...(!/^stock:/.test(String(leaf.rootKey)) && leaf.r > 0 ? { r: leaf.r } : {}) }, { economy })) {
                     const trip = startShopping(session, bot, BotAI, 'Heading to town for my next planned purchase.', leaf.town);
                     if (trip !== 'deferred' && trip !== false) return;
                 }
@@ -781,7 +826,8 @@ module.exports = {
             const moment = groundSafety.allowed ? DangerMoment.take(session, bot, incomingMonster,
                 { profiles: matchupProfiles, near: threatScan.near }) : null;
             if (moment === 'drank') return;
-            if (!groundSafety.allowed || (moment ? moment === 'flee' : needsEmergencyRetreat(bot))) {
+            if ((!groundSafety.allowed || (moment ? moment === 'flee' : needsEmergencyRetreat(bot)))
+                && EscapePolicy.canRetreatFrom(session, bot, incomingMonster, threatScan.near)) {
                 if (groundSafety.allowed && isSoloHunter(session) &&
                     BotEmergencyFinisher.tryFinish(session, bot, incomingMonster, Generics, BotAI)) return;
                 retreatFromThreat(session, bot, incomingMonster);
@@ -820,7 +866,9 @@ module.exports = {
         const moment = liveEncounterTarget ? DangerMoment.take(session, bot, liveEncounterTarget) : null;
         if (moment === 'drank') return;
         if (liveEncounterTarget && (moment ? moment === 'flee'
-            : !nativeCombatActionInFlight && needsEmergencyRetreat(bot))) {
+            : !nativeCombatActionInFlight && needsEmergencyRetreat(bot))
+            && (BotRaidSafety.isProtectedRaidEntity(liveEncounterTarget)
+                || EscapePolicy.canRetreatFrom(session, bot, liveEncounterTarget))) {
             if (session.spotRelocation) BotSpotTravel.cancel(session, bot, 'low_resources_in_combat');
             if (BotRaidSafety.retreat(session, bot, liveEncounterTarget, { distance: EMERGENCY_RETREAT_DISTANCE })) {
                 return;
@@ -840,6 +888,34 @@ module.exports = {
         if (!encounterActionInFlight && RestPolicy.needsRest(bot, hpRatio, mpRatio)) {
             beginVoluntaryRecovery(session, bot, BotAI);
             return;
+        }
+
+        if (isSoloHunter(session)) {
+            const leaf = DecisionEvents.held(session)?.network.activity;
+            if (leaf?.activity === 'selling' && sellTripDue(session, bot)) {
+                const closestTown = BotAI.getClosestTown(bot.fetchLocX(), bot.fetchLocY(), bot.fetchLocZ());
+                pauseSelling(session);
+                const trip = startShopping(session, bot, BotAI, `My bags are full of loot. Heading to ${closestTown.name} to sell and restock.`);
+                if (trip !== 'deferred') return;
+            }
+            const ground = currentHuntingGround(session, bot);
+            if (leaf?.activity && leaf.activity !== 'hunting' && !session.currentTargetId
+                && !BotTownTravel.inCombat(session, bot)
+                && (!ground || BotHuntingGroundPolicy.evaluate(ground, { level: bot.fetchLevel() }, {
+                    mode: 'solo', equipment: equippedItems(bot)
+                }).allowed)) {
+                session.deferredOccupation = DecisionService.occupationKey(leaf);
+                if (session.spotRelocation && session.spotRelocation.deferredOccupation !== session.deferredOccupation
+                    && BotSpotTravel.cancel(session, bot, 'selected_occupation')) {
+                    bot.automation?.abortAll?.(bot);
+                }
+                // A purchase not worth its own journey (or a craft awaiting
+                // its station) keeps its wish. Earn locally, then recover to
+                // safe ground if the expanded search cannot find a fight.
+                // A quote refusal is not a
+                // failed native transaction and must not reroll every tick.
+                session.lastDecision = { action: 'search_locally', reason: 'occupation_deferred', activity: leaf.activity };
+            }
         }
 
         // A hunting-ground relocation owns the movement/combat window. Do not
@@ -863,6 +939,7 @@ module.exports = {
                     walkOnly: Karma.closesTowns(bot.fetchKarma?.()),
                     minDistance: 1,
                     mode: 'solo',
+                    allowEasierSpots: true,
                     matchupProfiles: TargetMatchup.actorProfiles([bot]),
                     equipment: equippedItems(bot)
                 });
@@ -884,6 +961,18 @@ module.exports = {
             pauseSelling(session);
             const trip = startShopping(session, bot, BotAI, `My bags are full of loot. Heading to ${closestTown.name} to sell and restock.`);
             if (trip !== 'deferred') return;
+        }
+
+        let huntingDecision;
+        if (isSoloHunter(session) && !session.currentTargetId) {
+            reconcilePhysicalSpot(session, bot);
+            const decision = huntingDecision = DecisionService.suggest(session.botStatus || BotAI.getStatus(session), session);
+            if (decision.action === 'move_to_spot' && decision.spot) {
+                session.lastDecision = { action: decision.action, reason: decision.reason,
+                    spotId: decision.spot.id, spotName: decision.spot.name };
+                beginSpotRelocation(session, bot, decision.spot, BotAI, decision.deferredOccupation);
+                return;
+            }
         }
 
         // 5. Hunt/Attack Combat execution
@@ -986,9 +1075,17 @@ module.exports = {
             });
         } else {
             reconcilePhysicalSpot(session, bot);
+            const expanded = isSoloHunter(session) && Number(session.noTargetTicks || 0) >= 2 && session.currentSpot;
+            const searchRadius = expanded ? Math.ceil(SPOT_CELL_SIZE * Math.SQRT2) : LOCAL_TARGET_SEARCH_RADIUS;
+            session.huntingSearchRadius = searchRadius;
             // Prefer unclaimed mobs so solo bots do not form accidental trains.
-            const closestMonster = findPreferredMonster(session, bot, 2500, {
-                readyOnly: isSoloHunter(session)
+            const closestMonster = findPreferredMonster(session, bot, searchRadius, {
+                readyOnly: isSoloHunter(session),
+                allowEasierTargets: isSoloHunter(session),
+                spotOnly: expanded ? session.currentSpot : null,
+                // Expanding the field scan must retain nearby candidates
+                // across grid borders; only distant targets stay on this spot.
+                nearbyRadius: LOCAL_TARGET_SEARCH_RADIUS
             });
 
             if (closestMonster) {
@@ -1037,18 +1134,23 @@ module.exports = {
                     SpotService.assignSpot(session, currentSpot);
                 }
 
-                const decision = DecisionService.suggest(session.botStatus || BotAI.getStatus(session), session);
+                const decision = huntingDecision || DecisionService.suggest(session.botStatus || BotAI.getStatus(session), session);
                 session.lastDecision = {
                     action: decision.action,
                     reason: decision.reason,
+                    activity: decision.activity,
                     spotId: decision.spot?.id || null,
                     spotName: decision.spot?.name || null
                 };
 
                 if (decision.action === 'move_to_spot' && decision.spot) {
-                    beginSpotRelocation(session, bot, decision.spot, BotAI);
+                    beginSpotRelocation(session, bot, decision.spot, BotAI, decision.deferredOccupation);
                     return;
                 }
+
+                // Finish the current search walk before choosing another point.
+                // Target scans above can still interrupt it for a real encounter.
+                if (bot.state.fetchTowards() || bot.state.fetchHits() || bot.state.fetchCasts()) return;
 
                 // Wandering to search for monsters in starting zones if none nearby
                 if (Math.random() < 0.50) {

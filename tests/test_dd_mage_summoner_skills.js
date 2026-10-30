@@ -238,8 +238,7 @@ const petSession = { actor: petActor, dataSendToMe() {}, dataSendToMeAndOthers()
 const request = { selfId: 1127 };
 SkillRequest(petSession, petActor, request);
 assert.strictEqual(request.id, ownSummon.fetchId(), 'TARGET_PET requests should resolve the active owned summon without a selected target');
-assert.strictEqual(petActor.storedSpell.id, ownSummon.fetchId(), 'the queued pet cast should retain the owned summon id');
-SkillExec(petSession, petActor, request);
-assert.strictEqual(executedPetTarget, ownSummon, 'TARGET_PET execution should reach the active owned summon');
+assert.strictEqual(petActor.storedSpell, undefined, 'the pet cast must not wait for a position acknowledgement');
+assert.strictEqual(executedPetTarget, ownSummon, 'TARGET_PET requests should immediately reach the active owned summon');
 
 console.log('DD mage and summoner skill checks passed');

@@ -164,24 +164,6 @@ const npcs = npcRows.map((row) => {
 });
 
 const npcNameById = new Map(npcs.map((npc) => [npc.selfId, npc.template.name]));
-const periodName = new Map([[0, 'always'], [1, 'day'], [2, 'night']]);
-const spawnDefinitions = [];
-mobIds.forEach((npcId) => {
-    [0, 1, 2].forEach((period) => {
-        const rows = spawnRows.filter((row) => Number(row[3]) === npcId && Number(row[12]) === period);
-        if (!rows.length) return;
-        spawnDefinitions.push({
-            selfId: npcId,
-            name: npcNameById.get(npcId),
-            coords: rows.map((row) => ({ locX: row[4], locY: row[5], locZ: row[6], head: row[9] })),
-            total: 1,
-            respawn: 240,
-            bias: 0,
-            period: periodName.get(period)
-        });
-    });
-});
-const spawns = [{ selfId: 'c4-forest-of-the-dead', bounds: [], spawns: spawnDefinitions }];
 
 const dropRows = tuples('sql/droplist.sql').filter((row) => mobIdSet.has(Number(row[0])));
 if (dropRows.length !== 564) throw new Error(`Expected 564 drops, found ${dropRows.length}`);
@@ -293,13 +275,9 @@ const skillTemplates = [
 if (skillTemplates.length !== 31) throw new Error(`Expected 31 skill templates, found ${skillTemplates.length}`);
 
 writeJson('data/Npcs/c4_forest_of_the_dead.json', npcs);
-writeJson('data/Npcs/Spawns/c4_forest_of_the_dead.json', spawns);
 writeJson('data/Npcs/Rewards/c4_forest_of_the_dead.json', rewards);
 writeJson('data/Items/Others/c4_forest_of_the_dead.json', missingItems);
 writeJson('data/Npcs/Skills/c4_forest_of_the_dead.json', skillRows);
 writeJson('data/Npcs/Skills/c4_forest_of_the_dead_templates.json', skillTemplates);
 
-const periodCounts = Object.fromEntries(['always', 'day', 'night'].map((period) => [
-    period, spawnDefinitions.filter((spawn) => spawn.period === period).reduce((sum, spawn) => sum + spawn.coords.length, 0)
-]));
-console.info(`Generated ${npcs.length} NPCs, ${spawnRows.length} spawns ${JSON.stringify(periodCounts)}, ${dropRows.length} drops, ${skillRows.length} skills, ${missingItems.length} items.`);
+console.info(`Generated ${npcs.length} NPCs, ${spawnRows.length} spawns, ${dropRows.length} drops, ${skillRows.length} skills, ${missingItems.length} items.`);

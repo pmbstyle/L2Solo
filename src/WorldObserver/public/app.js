@@ -7,6 +7,7 @@ const MapViewport = window.WorldObserverMapViewport;
 const Router = window.WorldObserverSpaRouter;
 const UiLanguage = window.WorldObserverUiLanguage;
 const Relationships = window.WorldObserverRelationships;
+const ClanWars = window.WorldObserverClanWars;
 
 let playerPages = null;
 let mapControls = null;
@@ -78,6 +79,10 @@ const state = {
     clanError: null,
     clanRequest: 0,
     clanLastLoadedAt: 0,
+    clanWars: null,
+    clanWarError: null,
+    clanWarLoading: false,
+    clanWarLoadedAt: 0,
     clanFocusReturn: null,
     clanManagerOpen: false,
     clanManagerTab: 'goal',
@@ -992,7 +997,7 @@ function renderClans({ renderDetail = true } = {}) {
                 <strong class="clan-name-line">${clanCrestMarkup(clan)}<span class="clan-name">${text(clan.name, 'Unnamed clan')}</span></strong>
                 <span>${text(clan.leaderName, 'Unknown leader')} · ${number(clan.botMembers)}/${number(clan.memberCount)} bots</span>
             </span>
-            <span class="clan-row-side"><strong>${number(clan.memberCount)}</strong><span>members</span></span>
+            <span class="clan-row-side"><strong>${number(clan.memberCount)}</strong><span>members</span>${clanWarBadge(clan.id)}</span>
         </button>
     `).join('') : '<div class="list-empty">No clans match this search.</div>';
     if (renderDetail) renderClanDetail();
@@ -1534,6 +1539,7 @@ function renderClanDetail() {
             </div>
         </div>
         ${clanStrategyMarkup(clan.strategy)}
+        <section class="clan-warfare" data-clan-wars aria-label="Clan wars"></section>
         <div class="clan-briefing">
             <section class="clan-goal-brief">
                 <div class="clan-block-title"><span>${uiIcon('target')}${text(clanGoalExplanation(clan, detail.order).mode)}</span><b>${text(goal.progress)}</b></div>
@@ -1584,6 +1590,7 @@ function renderClanDetail() {
         </div>
     `;
     renderClanManager();
+    renderClanWars();
     for (const option of expandedSettings) els.clansModal.querySelector(`[data-clan-order-option="${option}"]`)?.setAttribute('open', '');
     els.clanDetail.scrollTop = scrollTop;
 }
@@ -1893,7 +1900,46 @@ async function removeClanCrest() {
     }
 }
 
+function clanWarBadge(clanId) {
+    const brief = ClanWars.summary(state.clanWars, clanId);
+    return brief?.total ? `<span class="clan-war-directory-badge ${brief.tone}" title="${text(brief.label)}">${brief.mutual ? 'War' : '!'}</span>` : '';
+}
+
+function renderClanWars() {
+    const panel = els.clanDetail?.querySelector('[data-clan-wars]');
+    if (!panel || !state.clanDetail?.clan) return;
+    const expanded = panel.querySelector('details')?.open;
+    panel.innerHTML = ClanWars.render(state.clanWars, state.clanDetail.clan.id, {
+        clans: clanItems(), error: state.clanWarError, relative: formatRelative, time: formatTime });
+    if (expanded) panel.querySelector('details')?.setAttribute('open', '');
+}
+
+async function loadClanWars({ force = false } = {}) {
+    if (!state.clanOpen || document.hidden || !state.live || state.clanWarLoading
+        || !force && Date.now() - state.clanWarLoadedAt < 10000) return;
+    state.clanWarLoading = true;
+    const epoch = state.worldEpoch;
+    state.clanWarLoadedAt = Date.now();
+    const controller = new AbortController(), timeout = window.setTimeout(() => controller.abort(), 10000);
+    try {
+        const response = await fetch('/observer/api/clans/wars', { cache: 'no-store', signal: controller.signal });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const snapshot = await response.json();
+        if (!Array.isArray(snapshot?.declarations)) throw new Error('Invalid war snapshot');
+        if (epoch !== state.worldEpoch) { state.clanWarLoadedAt = 0; return; }
+        state.clanWars = snapshot;
+        state.clanWarError = null;
+        state.clanWarLoadedAt = Date.now();
+    } catch (error) { state.clanWarError = error.message; }
+    finally {
+        window.clearTimeout(timeout);
+        state.clanWarLoading = false;
+        if (state.clanOpen) { renderClans({ renderDetail: false }); renderClanWars(); }
+    }
+}
+
 async function loadClanDirectory({ force = false, selectFirst = false } = {}) {
+    loadClanWars({ force });
     if (!force && !state.clanOpen && state.clanDirectory) return;
     if (!force && Date.now() - state.clanLastLoadedAt < 10000) return;
     try {
@@ -3621,6 +3667,8 @@ els.raidBossesModal?.addEventListener('click', (event) => {
 });
 
 els.clansModal?.addEventListener('click', (event) => {
+    const warClan = event.target.closest('[data-war-clan-id]');
+    if (warClan) { event.preventDefault(); loadClanDetail(warClan.dataset.warClanId); return; }
     if (event.target.closest('[data-clan-manager-close]')) { closeClanManager(); return; }
     const managerTab = event.target.closest('[data-clan-manager-tab]');
     if (managerTab) {

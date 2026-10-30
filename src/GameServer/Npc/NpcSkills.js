@@ -24,6 +24,7 @@ const c4LowLevelRaidBossSkills = require('../../../data/Npcs/Skills/c4_low_level
 const c4RaidBossSkills = require('../../../data/Npcs/Skills/c4_raid_bosses_templates.json');
 const c4RaidBossMinionSkills = require('../../../data/Npcs/Skills/c4_raid_boss_minions_templates.json');
 const c4GroupLeaderMinionSkills = require('../../../data/Npcs/Skills/c4_group_leader_minions_templates.json');
+const c4MobiusMonsterSkills = require('../../../data/Npcs/Skills/c4_mobius_monsters_templates.json');
 const c4LegacyMonsterSkillTemplates = require('../../../data/Npcs/Skills/c4_legacy_monster_templates.json');
 const c4LegacyMonsterSkillRows = require('../../../data/Npcs/Skills/c4_legacy_monsters.json');
 const c4LegacyMonsterIds = new Set(c4LegacyMonsterSkillRows.map((row) => Number(row.npcId)));
@@ -63,6 +64,7 @@ const npcSkillRows = [
     ...require('../../../data/Npcs/Skills/c4_tower_of_insolence_lower_floors.json'),
     ...require('../../../data/Npcs/Skills/c4_skyshadow_meadow.json'),
     ...require('../../../data/Npcs/Skills/c4_beast_farm.json'),
+    ...require('../../../data/Npcs/Skills/c4_mobius_monsters.json'),
     ...require('../../../data/Npcs/Skills/c4_remaining_high_level_monsters.json'),
     ...require('../../../data/Npcs/Skills/c4_necropolis_of_sacrifice.json'),
     ...require('../../../data/Npcs/Skills/c4_catacomb_of_the_branded.json'),
@@ -104,7 +106,7 @@ const summonActionSkillIds = new Map([
 ]);
 
 const skillTemplates = new Map(
-    [...activeSkills, ...passiveSkills, ...npcActiveSkills, ...c4LegacyMonsterSkillTemplates, ...c4SwampSkills, ...c4GardenSkills, ...c4ValleySkills, ...summonActionSkills, ...c4ForestSkills, ...c4DevilsIsleSkills, ...c4NecropolisSacrificeSkills, ...c4DevastatedCastleSkills, ...c4KetraOrcOutpostSkills, ...c4VarkaSilenosStrongholdSkills, ...c4HotSpringsSkills, ...c4WallOfArgosSkills, ...c4ForgeOfTheGodsSkills, ...c4FieldsSkills, ...c4HeathenCampSkills, ...c4ImperialTombSkills, ...c4LowLevelRaidBossSkills, ...c4RaidBossSkills, ...c4RaidBossMinionSkills, ...c4GroupLeaderMinionSkills, ...require('../../../data/Pets/c4-skills.json').skills, ...phantomSummons.templates]
+    [...activeSkills, ...passiveSkills, ...npcActiveSkills, ...c4LegacyMonsterSkillTemplates, ...c4SwampSkills, ...c4GardenSkills, ...c4ValleySkills, ...summonActionSkills, ...c4ForestSkills, ...c4DevilsIsleSkills, ...c4NecropolisSacrificeSkills, ...c4DevastatedCastleSkills, ...c4KetraOrcOutpostSkills, ...c4VarkaSilenosStrongholdSkills, ...c4HotSpringsSkills, ...c4WallOfArgosSkills, ...c4ForgeOfTheGodsSkills, ...c4FieldsSkills, ...c4HeathenCampSkills, ...c4ImperialTombSkills, ...c4LowLevelRaidBossSkills, ...c4RaidBossSkills, ...c4RaidBossMinionSkills, ...c4GroupLeaderMinionSkills, ...c4MobiusMonsterSkills, ...require('../../../data/Pets/c4-skills.json').skills, ...phantomSummons.templates]
         .map((skill) => [Number(skill.selfId), skill])
 );
 

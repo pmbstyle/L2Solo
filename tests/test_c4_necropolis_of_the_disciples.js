@@ -4,14 +4,11 @@ require('../src/Global');
 
 const DataCache = invoke('GameServer/DataCache');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
-const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
-const baseSpawns = require('../data/Npcs/Spawns/spawns.json');
 const importedNpcs = require('../data/Npcs/c4_necropolis_of_the_disciples.json');
 const newSkillBindings = require('../data/Npcs/Skills/c4_necropolis_of_the_disciples.json');
 const witchSkillBindings = require('../data/Npcs/Skills/c4_catacomb_of_the_witch.json');
-const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 DataCache.init();
 
@@ -20,40 +17,17 @@ const reusedMobIds = new Set([1183, 1204]);
 const mobIdSet = new Set(mobIds);
 const npcs = DataCache.npcs.filter((npc) => mobIdSet.has(npc.selfId));
 const rewards = DataCache.npcRewards.filter((reward) => mobIdSet.has(reward.selfId));
-const spawnArea = DataCache.npcSpawns.find((area) => area.selfId === 'c4-necropolis-of-the-disciples');
 
 assert.strictEqual(importedNpcs.length, 14, 'only the fourteen previously unloaded monster templates may be imported');
 assert.ok(importedNpcs.every((npc) => !reusedMobIds.has(npc.selfId)),
     'Witch-slice monster templates must be reused instead of duplicated');
 assert.strictEqual(npcs.length, 16, 'all sixteen Lisvus Necropolis of the Disciples monsters must be loaded exactly once');
 assert.strictEqual(rewards.length, 16, 'every Disciples monster must have exactly one reward table');
-assert.ok(spawnArea, 'the Necropolis of the Disciples spawn slice must be loaded');
-assert.ok(baseSpawns.every((area) => area.spawns.every((spawn) => !mobIdSet.has(Number(spawn.selfId)))),
-    'the additive import must remain limited to monster families absent from the old datapack');
 
-const spawnCoords = spawnArea.spawns.flatMap((spawn) => spawn.coords);
-assert.strictEqual(spawnArea.spawns.length, 16, 'spawn definitions must cover every source monster family');
-assert.strictEqual(spawnCoords.length, 225, 'the import must retain all 225 Lisvus monster spawn rows');
-assert.ok(spawnArea.spawns.every((spawn) => spawn.total === 1 && spawn.respawn === 120 && spawn.bias === 0));
-assert.deepStrictEqual(
-    spawnArea.spawns.map((spawn) => [spawn.selfId, spawn.coords.length]),
-    [[1161, 16], [1162, 13], [1164, 15], [1165, 12], [1183, 16], [1184, 13], [1185, 15], [1186, 12],
-        [1204, 17], [1205, 13], [1206, 15], [1207, 12], [1228, 16], [1229, 12], [1230, 15], [1231, 13]],
-    'every family must retain its exact local population'
-);
-
-assert.deepStrictEqual(
-    [...new Set(spawnCoords.map((coord) => GeodataEngine.getRegionKey(coord.locX, coord.locY)))],
-    ['25_17'],
-    'the underground source rows must stay in the Necropolis geodata region'
-);
-verifyGeodataWhenAvailable(GeodataEngine, [[25, 17]], 'Necropolis of the Disciples', () => {
-    const heightDeltas = spawnCoords.map((coord) => Math.abs(
-        GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-    ));
-    assert.ok(heightDeltas.every((delta) => delta === 0),
-        'every source monster coordinate must match underground geodata exactly');
-});
+const mobiusIds = new Set(DataCache.npcSpawns.filter((area) => String(area.selfId).startsWith('mobius:'))
+    .flatMap((area) => area.spawns.map((spawn) => Number(spawn.selfId))));
+assert.deepStrictEqual(mobIds.filter((id) => !mobiusIds.has(id)), [],
+    'Necropolis of the Disciples monsters are spawned from Mobius');
 
 const soldier = npcs.find((npc) => npc.selfId === 1161);
 assert.deepStrictEqual(

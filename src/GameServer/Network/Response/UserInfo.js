@@ -3,6 +3,7 @@ const Pledge = invoke('GameServer/Network/Response/PledgeHelpers');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const weaponEnchantEffect = invoke('GameServer/Network/Response/WeaponEnchantEffect');
+const movementInfo = require('./CharacterMovementInfo');
 
 function boatObjectId(actor) {
     const boat = actor?.fetchBoat?.() || actor?.boat;
@@ -13,6 +14,7 @@ function userInfo(actor) {
     const packet = new SendPacket(0x04);
     const clan = Pledge.clan(actor);
     const relation = ClanService.isLeader(actor, clan) ? 0x40 : 0x00;
+    const movement = movementInfo(actor);
     const paperdollId = (slot) => actor.backpack.fetchPaperdollId(slot) || 0;
     const paperdollSelfId = (slot) => actor.backpack.fetchPaperdollSelfId(slot) || 0;
     // Two-hand gear lives in slot 14 locally, but C4 needs it in both weapon fields.
@@ -71,15 +73,15 @@ function userInfo(actor) {
         .writeD(actor.fetchCollectiveMDef())
         .writeD(actor.fetchPvpFlag())  // Purple = 0x01
         .writeD(actor.fetchKarma())
-        .writeD(actor.fetchCollectiveRunSpd())
-        .writeD(actor.fetchCollectiveWalkSpd())
-        .writeD(actor.fetchSwim())
-        .writeD(actor.fetchSwim())
-        .writeD(0x00)  // Floating Run Speed
-        .writeD(0x00)  // Floating Walk Speed
-        .writeD(0x00)  // Flying Run Speed
-        .writeD(0x00)  // Flying Walk Speed
-        .writeF(1.0)   // Movement Multiplier
+        .writeD(movement.run)
+        .writeD(movement.walk)
+        .writeD(movement.swimRun)
+        .writeD(movement.swimWalk)
+        .writeD(movement.run)   // Floating Run Speed
+        .writeD(movement.walk)  // Floating Walk Speed
+        .writeD(movement.run)   // Flying Run Speed
+        .writeD(movement.walk)  // Flying Walk Speed
+        .writeF(movement.multiplier)
         .writeF(actor.fetchAtkSpdMultiplier())
         .writeF(actor.fetchRadius())
         .writeF(actor.fetchSize())

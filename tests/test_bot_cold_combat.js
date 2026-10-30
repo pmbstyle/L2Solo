@@ -613,6 +613,27 @@ const partyFight = BackgroundResolver.resolvePartyFight({
 });
 assert(partyFight.debug.actions > 0, 'party cold combat must execute one shared NPC encounter');
 assert(partyFight.members[1].heals > 0, 'a learned friendly heal must be applied to an injured party member');
+{
+    // Without a tank the mob hits the member with the most hate (its damage),
+    // as the live hate table does, not a member rolled per swing.
+    const weak = { ...fighter, characterId: 905, stats: { ...fighter.stats, coldCombat: { ...fighter.stats.coldCombat,
+        effects: [], skills: [], equipment: { ...fighter.stats.coldCombat.equipment, pAtk: 1, critical: 0 } } } };
+    const strong = { ...fighter, characterId: 904 };
+    const noTankSpot = { ...spot, npcSelfIds: [], mob: { hp: 10000000, damage: 5 } };
+    const noTankFight = BackgroundResolver.resolvePartyFight({ members: [weak, strong], spot: noTankSpot, timestamp, rng: () => 0.1 });
+    const [weakAfter, strongAfter] = noTankFight.members;
+    assert(strongAfter.vitals.hp < strongAfter.vitals.maxHp, 'the top damage dealer must draw the mob');
+    assert.strictEqual(weakAfter.vitals.hp, weakAfter.vitals.maxHp, 'a member with less hate must not be hit');
+    // The next slice of the same fight reads the hate it carried: a large
+    // carried hate on the weak member outweighs the strong member's new damage.
+    const nextSlice = BackgroundResolver.resolvePartyFight({
+        members: [weak, strong], spot: noTankSpot, timestamp, rng: () => 0.1,
+        encounter: { ...noTankFight.encounter, hate: { 905: 1e9 } }
+    });
+    assert(nextSlice.members[0].vitals.hp < nextSlice.members[0].vitals.maxHp, 'carried hate must hold the mob in the next slice');
+    assert.strictEqual(nextSlice.members[1].vitals.hp, nextSlice.members[1].vitals.maxHp,
+        'new damage below the carried hate must not take the mob');
+}
 const summonerPartyFight = BackgroundResolver.resolvePartyFight({
     members: [coldSummoner, fighter],
     spot: { ...spot, npcSelfIds: [], mob: { hp: 100000, damage: 1 } },

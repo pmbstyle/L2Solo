@@ -19,11 +19,13 @@ function evidence(input) {
     if (!input) return null;
     if (!/^[a-zA-Z0-9:_.-]{1,96}$/.test(input.episode || '')
         || !['aggression', 'provoked', 'defense', 'unknown', 'cooperation'].includes(input.responsibility)
-        || ['sourceClanId', 'targetClanId'].some(k => !Number.isSafeInteger(input[k]) || input[k] < 0)) {
+        || ['sourceClanId', 'targetClanId'].some(k => !Number.isSafeInteger(input[k]) || input[k] < 0)
+        || input.warRevision !== undefined && (!Number.isSafeInteger(input.warRevision) || input.warRevision <= 0)) {
         throw Error('clan social: invalid evidence');
     }
     return { episode: input.episode, sourceClanId: input.sourceClanId, targetClanId: input.targetClanId,
-        responsibility: input.responsibility, significant: input.significant === true };
+        responsibility: input.responsibility, significant: input.significant === true,
+        ...(input.warRevision ? { warRevision: input.warRevision } : {}) };
 }
 function relation(row, at) {
     if (!row) return null;
@@ -78,6 +80,8 @@ function apply(snapshot, event, at, context = {}) {
     const observed = snapshot.clanId === fact.sourceClanId;
     if (!own && !observed) return snapshot;
     const positive = type.trust > 0;
+    // Lawful war combat remains personal memory, but is not clan misconduct.
+    if (!positive && context.authorisedWar === true) return snapshot;
     if (event.type === 'aided_opponent' && !fact.significant) return snapshot;
     if (positive && event.type !== 'hunted_together' && !fact.significant) return snapshot;
     const factor = positive ? 1 : fact.responsibility === 'aggression' ? 1 : fact.responsibility === 'provoked' ? 0.4 : 0;

@@ -7,19 +7,12 @@ const result = generateC4MonsterLocation({
     slug: 'c4_fields_of_silence_and_whispers',
     sourcePrefixes: ['innadril03_2223_', 'innadril04_2224_', 'innadril08_2323_'],
     displayName: 'Fields of Silence and Whispers',
-    areaId: 'c4-fields-of-silence-and-whispers',
     mobIds: [
         783, 784, 785, 786, 787, 788, 789, 790, 793,
         804, 805, 806, 807, 808, 989, 991, 1034,
         1638, 1639, 1640, 1641, 1642, 1643, 1644, 1645
     ],
     spawnRows: 957,
-    respawn: 25,
-    respawnByMob: {
-        788: 30, 789: 30, 790: 30, 793: 30,
-        804: 60, 805: 60, 806: 60, 807: 60, 808: 60,
-        989: 45, 991: 80
-    },
     skillRows: 103,
     dropRows: 409,
     missingItemIds: [6667],

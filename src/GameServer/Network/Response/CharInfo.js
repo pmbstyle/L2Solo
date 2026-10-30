@@ -2,33 +2,11 @@ const SendPacket = invoke('Packet/Send');
 const Pledge = invoke('GameServer/Network/Response/PledgeHelpers');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const weaponEnchantEffect = invoke('GameServer/Network/Response/WeaponEnchantEffect');
+const movementInfo = require('./CharacterMovementInfo');
 
 function boatObjectId(actor) {
     const boat = actor?.fetchBoat?.() || actor?.boat;
     return Number(actor?.fetchBoatId?.() ?? boat?.fetchId?.() ?? boat?.id ?? 0) || 0;
-}
-
-function movementInfo(actor) {
-    const collectiveRun = Math.max(0, Number(actor.fetchCollectiveRunSpd?.()) || 0);
-    const collectiveWalk = Math.max(0, Number(actor.fetchCollectiveWalkSpd?.()) || 0);
-    const running = actor.state?.fetchWalkin?.() !== true;
-    const baseRun = Math.max(0, Number(actor.fetchRunSpd?.()) || collectiveRun);
-    const baseWalk = Math.max(0, Number(actor.fetchWalkSpd?.()) || collectiveWalk);
-    const activeCollective = running ? collectiveRun : collectiveWalk;
-    const activeBase = running ? baseRun : baseWalk;
-    const multiplier = activeBase > 0 && activeCollective > 0
-        ? activeCollective / activeBase
-        : 1;
-    const safeMultiplier = Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1;
-
-    // C4 keeps template speeds and the current stat multiplier in separate
-    // fields.  Sending the already-modified speed with a hard-coded 1.0 makes
-    // remote-character interpolation and animation disagree with the server.
-    return {
-        run: Math.round(baseRun),
-        walk: Math.round(baseWalk),
-        multiplier: safeMultiplier
-    };
 }
 
 function charInfo(actor) {
@@ -39,9 +17,6 @@ function charInfo(actor) {
     const movement = movementInfo(actor);
     const runSpeed = movement.run;
     const walkSpeed = movement.walk;
-    const swimSpeed = actor.fetchSwim && actor.fetchSwim();
-    const swimRunSpeed = swimSpeed ? Math.round(swimSpeed / movement.multiplier) : runSpeed;
-    const swimWalkSpeed = swimSpeed ? Math.round(swimSpeed / movement.multiplier) : walkSpeed;
     const privateStoreType = actor.fetchPrivateStoreType();
     const standingState = actor.state.fetchSeated() ? 0x00 : 0x01;
     const runningState = actor.state.fetchWalkin?.() ? 0x00 : 0x01;
@@ -84,8 +59,8 @@ function charInfo(actor) {
         .writeD(karma)
         .writeD(runSpeed)
         .writeD(walkSpeed)
-        .writeD(swimRunSpeed)
-        .writeD(swimWalkSpeed)
+        .writeD(movement.swimRun)
+        .writeD(movement.swimWalk)
         .writeD(runSpeed)   // Floating run speed
         .writeD(walkSpeed)  // Floating walk speed
         .writeD(runSpeed)   // Flying run speed
@@ -136,6 +111,7 @@ function charInfo(actor) {
         .writeD(0xffffff); // Name color
 
     const buffer = packet.fetchBuffer();
+    buffer.__characterActor = actor;
     if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true && process.env.L2NODE_PACKET_TRACE !== '0') buffer.__packetTrace = `char=${actor.fetchId()}:${actor.fetchName()}:store=${actor.fetchPrivateStoreType()}:stand=${standingState}:run=${runningState}:baseRun=${runSpeed}:baseWalk=${walkSpeed}:moveMult=${movement.multiplier}:collectiveRun=${actor.fetchCollectiveRunSpd?.()}:combat=${combatState}:dead=${deadState}:titleLen=${title.length}`;
     return buffer;
 }

@@ -88,6 +88,9 @@ function castUtilitySkill(session, actor, target, skill, effect) {
             return;
         }
         effect();
+        // Spoil uses this utility cast path rather than Attack.remoteHit.
+        // Apply the same queued-command and sourced post-cast attack rules.
+        actor.attack.finishSkillAction?.(session, actor, skill, target);
     }, skill.fetchCalculatedHitTime());
 }
 

@@ -197,6 +197,46 @@ try {
     leader.incoming = null;
     Geo.hasLineOfSight = () => true;
 
+    const NpcIndex = require('../src/GameServer/World/NpcObjectIndex');
+    const stale = actor(8801, 50, 'Monster'), replacement = actor(8802, 50, 'Monster');
+    replace(World, 'npc', { spawns: [replacement] });
+    NpcIndex.reset(World);
+    NpcIndex.add(World, replacement);
+    available = [replacement];
+    leader.backgroundHuntTarget = stale;
+    leader.currentTargetId = stale.fetchId();
+    leader.nextBackgroundTargetScanAt = 0;
+    searchTick(leader, 80000);
+    assert.strictEqual(leader.backgroundHuntTarget, replacement,
+        'a detached living minion cannot keep the party attacking an object absent from the world');
+    assert.strictEqual(leader.currentTargetId, replacement.fetchId());
+    // The remaining reward fixtures intentionally use a lightweight world.
+    World.npc = { spawns: [] };
+
+    const Match = invoke('GameServer/Bot/AI/BotTargetMatchup');
+    const Lifecycle = invoke('GameServer/Bot/Population/HotPartyLifecycle');
+    let unsafeReviews = 0;
+    replace(Match, 'soloSurvival', () => ({ eligible: false }));
+    replace(require('../src/GameServer/Bot/Population/CraftMaterialParty'), 'canHunt', () => false);
+    replace(Lifecycle, 'releaseUnsafeHunt', async () => { unsafeReviews++; return { ok: true }; });
+    party.stats.objective.materialParty = true;
+    leader.backgroundHuntTarget = null;
+    leader.nextBackgroundTargetScanAt = 0;
+    leader.actor.moved = false;
+    searchTick(leader, 82000);
+    searchTick(follower, 82000);
+    assert.equal(leader.lastDecision.action, 'party_unsafe_ground');
+    assert.equal(leader.actor.moved, false, 'a rejected pull must not become an exploration destination');
+    assert.equal(unsafeReviews, 1, 'only the leader requests a fenced material-party review');
+    delete party.stats.objective.materialParty;
+    available = [remote];
+    leader.nextBackgroundTargetScanAt = 0;
+    leader.nextBackgroundSearchAt = 0;
+    searchTick(leader, 84000);
+    assert.notEqual(leader.lastDecision.action, 'party_unsafe_ground', 'ordinary parties retain their search path');
+    assert.equal(leader.actor.moved, false, 'the wider search and arrival points cannot send the group into a rejected pull');
+    assert.equal(unsafeReviews, 1, 'ordinary parties are not dissolved by material recovery');
+
     // Exercise the real death callback: every nearby native party actor gets
     // the C4 share, including a healer that never hit the monster.
     leader.actor.hp = 100;

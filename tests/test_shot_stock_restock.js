@@ -71,11 +71,12 @@ async function run() {
     offers = []; failed.clear();
 
     const dPlan = Shot.planForKind('soulshot', 'd');
-    const economicSpot = require('./fixtures/profitable_stock_state').spotFor('7_20');
-    let cold = { characterId: 100, level: 30, phase: 'cold', spotId: economicSpot.id, adena: 51000,
+    // T43 table: an unarmed bot's economic hunt has healing demand at 50 ('6_32'), none at 20-39.
+    const economicSpot = require('./fixtures/profitable_stock_state').spotFor('6_32');
+    let cold = { characterId: 100, level: 50, phase: 'cold', spotId: economicSpot.id, adena: 51000,
         stats: { classId: 0, money: [10000, .0001, 7500, 0, .001, 60000, 1463, .001, 61400, 1061] },
         inventory: { 1463: { selfId: 1463, amount: 200 } } };
-    const hot = actor(0, 51000, 7500); hot.fetchLevel = () => 30;
+    const hot = actor(0, 51000, 7500); hot.fetchLevel = () => 50;
     hot.session.coldLifeState = { ...cold, phase: 'hot' };
     const held = { id: 3, selfId: 1463, amount: 200, fetchId() { return this.id; }, fetchSelfId() { return this.selfId; }, fetchAmount() { return this.amount; } };
     const fetch = hot.backpack.fetchItemFromSelfId;

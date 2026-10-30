@@ -113,6 +113,9 @@ function openManufactureWindow(session, crafter) {
 
 function select(session, actor, data) {
     const Generics = invoke(path.actor);
+    const moveGeneration = Number(actor.moveRequestGeneration || 0);
+    const isCurrent = () => session.actor === actor
+        && Number(actor.moveRequestGeneration || 0) === moveGeneration;
     // AI target refreshes are not client double-clicks. Combat planners
     // choose whether to cast, finish with a weapon, or hold their attack.
     const selectionOnly = session?.constructor?.name === 'BotSession'
@@ -179,6 +182,7 @@ function select(session, actor, data) {
 
     // Fallback to World lookups for non-bot entities
     World.fetchNpc(data.id).then((npc) => {
+        if (session.actor !== actor) return;
         // Another AI pass can select this target while the lookup is pending.
         if (selectionOnly && Number(actor.fetchDestId()) === Number(npc.fetchId())) return;
         if (npc.fetchId() !== actor.fetchDestId()) { // First click on a Creature
@@ -187,6 +191,7 @@ function select(session, actor, data) {
             actor.statusUpdateVitals(npc);
         }
         else { // Second click on same Creature
+            if (!isCurrent()) return;
             if (npc.fetchIsSummon?.() === true && Number(npc.fetchOwnerId?.()) === Number(actor.fetchId())) {
                 SummonControl.showStatusWindow(session, actor, npc);
                 return;
@@ -196,9 +201,10 @@ function select(session, actor, data) {
         }
     }).catch(() => {
         World.fetchItem(data.id).then(() => {
-            Generics.pickupRequest(session, actor, data);
+            if (isCurrent()) Generics.pickupRequest(session, actor, data);
         }).catch(() => {
             World.fetchUser(data.id).then((user) => {
+                if (session.actor !== actor) return;
                 if (selectionOnly && Number(actor.fetchDestId()) === Number(user.fetchId())) return;
                 if (user.fetchId() !== actor.fetchDestId()) { // First click on a User
                     actor.setDestId(user.fetchId());
@@ -206,6 +212,7 @@ function select(session, actor, data) {
                     session.dataSendToMe(ServerResponse.relationChanged(user));
                 }
                 else { // Second click on same User
+                    if (!isCurrent()) return;
                     if (user.fetchPrivateStoreType && user.fetchPrivateStoreType() !== 0) {
                         session.viewedPrivateStoreSeller = user;
                         if (user.fetchPrivateStoreType() === 1) {
@@ -222,7 +229,7 @@ function select(session, actor, data) {
                     Generics.attackRequest(session, actor, data);
                 }
             }).catch(() => {
-                if (session.actor !== actor) return;
+                if (!isCurrent()) return;
                 // C4 keeps a clicked object's Action pending until the server
                 // answers. A stale ground object must not lock client input.
                 session.dataSendToMe(ServerResponse.actionFailed());

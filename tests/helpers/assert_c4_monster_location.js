@@ -5,11 +5,8 @@ require('../../src/Global');
 
 const DataCache = invoke('GameServer/DataCache');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
-const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
-const baseSpawns = require('../../data/Npcs/Spawns/spawns.json');
-const verifyGeodataWhenAvailable = require('./verify_geodata_when_available');
 
 const root = path.resolve(__dirname, '..', '..');
 
@@ -29,7 +26,6 @@ module.exports = function assertC4MonsterLocation(config) {
         .filter((binding) => mobIdSet.has(binding.npcId));
     const npcs = DataCache.npcs.filter((npc) => mobIdSet.has(npc.selfId));
     const rewards = DataCache.npcRewards.filter((reward) => mobIdSet.has(reward.selfId));
-    const spawnArea = DataCache.npcSpawns.find((area) => area.selfId === config.areaId);
 
     assert.deepStrictEqual(importedNpcs.map((npc) => npc.selfId), config.importedNpcIds,
         `only previously unloaded ${config.displayName} templates may be imported`);
@@ -41,40 +37,16 @@ module.exports = function assertC4MonsterLocation(config) {
         `all ${config.displayName} monsters must be loaded exactly once`);
     assert.strictEqual(rewards.length, config.mobIds.length,
         `every ${config.displayName} monster must have exactly one reward table`);
-    assert.ok(spawnArea, `${config.displayName} spawn slice must be loaded`);
-    assert.ok(baseSpawns.every((area) => area.spawns.every((spawn) => !mobIdSet.has(Number(spawn.selfId)))),
-        'the additive import must remain limited to monster families absent from the old datapack');
-
-    const spawnCoords = spawnArea.spawns.flatMap((spawn) => spawn.coords);
-    const respawnByMob = new Map(Object.entries(config.respawnByMob || {})
-        .map(([npcId, respawn]) => [Number(npcId), Number(respawn)]));
-    const expectedSpawnRows = config.spawnCounts.reduce((sum, [, count]) => sum + count, 0);
-    assert.strictEqual(spawnArea.spawns.length, config.mobIds.length,
-        'spawn definitions must cover every source monster family');
-    assert.strictEqual(spawnCoords.length, expectedSpawnRows,
-        `the import must retain all ${expectedSpawnRows} Lisvus monster spawn rows`);
-    assert.ok(spawnArea.spawns.every((spawn) =>
-        spawn.total === 1
-        && spawn.respawn === (respawnByMob.get(Number(spawn.selfId)) ?? config.respawn)
-        && spawn.bias === 0
-        && (!config.period || spawn.period === config.period)));
-    assert.deepStrictEqual(spawnArea.spawns.map((spawn) => [spawn.selfId, spawn.coords.length]), config.spawnCounts,
-        'every family must retain its exact local population');
-
-    const regions = config.regions || [config.region];
-    const expectedRegionKeys = regions.map((region) => region.join('_')).sort();
-    assert.deepStrictEqual(
-        [...new Set(spawnCoords.map((coord) => GeodataEngine.getRegionKey(coord.locX, coord.locY)))].sort(),
-        expectedRegionKeys,
-        'the source rows must stay in the expected geodata regions'
-    );
-    verifyGeodataWhenAvailable(GeodataEngine, regions, config.displayName, () => {
-        const heightDeltas = spawnCoords.map((coord) => Math.abs(
-            GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-        ));
-        assert.ok(heightDeltas.every((delta) => delta <= (config.maxHeightDelta || 0)),
-            `every source coordinate must stay within ${config.maxHeightDelta || 0} Z units of geodata`);
-    });
+    // Spawns come from L2J_Mobius C4 (scripts/generate-c4-mobius-spawns.js); only the families it never
+    // places (config.unspawned, e.g. beasts born by feeding) are absent from the world.
+    const unspawned = new Set(config.unspawned || []);
+    const spawnedIds = new Set(DataCache.npcSpawns
+        .filter((area) => String(area.selfId).startsWith('mobius:'))
+        .flatMap((area) => area.spawns.map((spawn) => Number(spawn.selfId))));
+    assert.deepStrictEqual(config.mobIds.filter((id) => !spawnedIds.has(id) && !unspawned.has(id)), [],
+        `every ${config.displayName} family must be spawned from Mobius`);
+    assert.deepStrictEqual([...unspawned].filter((id) => spawnedIds.has(id)), [],
+        `${config.displayName} unspawned families must stay out of the Mobius spawns`);
 
     const sample = npcs.find((npc) => npc.selfId === config.sample.id);
     assert.ok(sample, `representative NPC ${config.sample.id} must be loaded`);

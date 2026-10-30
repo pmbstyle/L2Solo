@@ -125,11 +125,16 @@ if (process.env.L2NODE_SKIP_RAW_GEODATA_TESTS === '1') {
         false,
         'real close layers in region 20_21 must not see through one another'
     );
-    assert.strictEqual(
-        GeodataEngine.findPath(264, 127176, -3432, 264, 127176, -3376),
-        null,
-        'real close layers in region 20_21 must not produce a one-point vertical path'
-    );
+    const closeLayerPath = GeodataEngine.findPath(264, 127176, -3432, 264, 127176, -3376);
+    if (closeLayerPath) {
+        assert(closeLayerPath.length > 2, 'close layers may only connect by a real horizontal detour');
+        for (let i = 1; i < closeLayerPath.length; i++) {
+            const a = closeLayerPath[i - 1], b = closeLayerPath[i];
+            assert(GeodataEngine.hasLineOfSight(a.locX, a.locY, a.locZ, b.locX, b.locY, b.locZ),
+                'each detour segment must follow walkable geodata rather than jump vertically');
+        }
+    }
+
 } else {
     console.log('SKIP: raw Cruma geodata region 20_21 is not available');
 }

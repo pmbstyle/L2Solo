@@ -100,6 +100,70 @@ async function main() {
         assert.equal(session.currentTargetId, 99, 'ordinary visible hunting resumes');
         assert.equal(attacks.at(-1), 99);
 
+        session.currentTargetId = undefined;
+        available = [];
+        bot.moving = false;
+        bot.moves.length = 0;
+        tick();
+        assert.equal(bot.moves.length, 1, 'an idle hunter starts a local search walk');
+        bot.moving = true;
+        tick();
+        assert.equal(bot.moves.length, 1, 'a search walk keeps its destination until arrival');
+        available = [{ ...npc(100, 100), fetchLevel: () => 10 }];
+        tick();
+        assert.equal(session.currentTargetId, 100,
+            'a visible safe easier mob interrupts the search walk when no normal target exists');
+        assert.equal(attacks.at(-1), 100);
+
+        // The cold material hunt names its monster as well as its ground.
+        // An ordinary closer mob cannot silently replace that occupation.
+        const previousActivity = session.heldEconomy.network.activity;
+        session.heldEconomy.network.activity = { activity: 'hunting', itemId: 1874, amount: 1, npcId: 150 };
+        session.currentTargetId = undefined;
+        bot.moving = false;
+        available = [npc(101, 30), npc(150, 200)];
+        tick();
+        assert.equal(session.currentTargetId, 150, 'the selected material hunt keeps its monster');
+        session.testIncoming = available[0];
+        tick();
+        assert.equal(attacks.at(-1), 101, 'self-defense can still interrupt the selected material hunt');
+        session.testIncoming = null;
+        session.currentTargetId = undefined;
+        session.heldEconomy.network.activity = previousActivity;
+
+        const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
+        const Events = invoke('GameServer/Bot/AI/DecisionEvents');
+        const oldTravel = Market.canTravelForPurchase, oldReject = Events.rejectSession;
+        try {
+            Market.canTravelForPurchase = () => false;
+            Events.rejectSession = () => { throw Error('a declined journey must not reroll the occupation'); };
+            session.heldEconomy.network.activity = { activity: 'shopping', itemId: 736, amount: 1,
+                town: 'Oren', rootKey: 'stock:scrolls' };
+            available = [npc(201, 100)];
+            tick();
+            assert.equal(session.currentTargetId, 201, 'an unprofitable separate shopping journey leaves the bot farming locally');
+            assert.equal(session.heldEconomy.network.activity.activity, 'shopping', 'local earning preserves the pending occupation');
+            assert.equal(session.spotRelocation, undefined, 'waiting for a worthwhile shopping visit cannot choose another field');
+        } finally {
+            Market.canTravelForPurchase = oldTravel; Events.rejectSession = oldReject;
+            session.heldEconomy.network.activity = previousActivity;
+            session.currentTargetId = undefined;
+        }
+
+        session.currentSpot = { id: '0_0', center: { locX: 8, locY: 8, locZ: 0 } };
+        session.noTargetTicks = 2;
+        session.currentTargetId = undefined;
+        const oldRadiusScan = World.fetchNpcsInRadius;
+        World.fetchNpcsInRadius = (_x, _y, radius) => available.filter(target => Math.abs(target.fetchLocX() - 8) <= radius);
+        available = [npc(250, 4800), npc(251, 6200)];
+        tick();
+        assert.equal(session.currentTargetId, 250, 'an exhausted local search expands to a visible mob elsewhere on the same field');
+        assert(session.huntingSearchRadius > 6000);
+        assert.equal(session.huntingTargetScan.eligibleAttackableNpcs, 1, 'the neighbouring field is not a new hunting destination');
+        World.fetchNpcsInRadius = oldRadiusScan;
+        session.currentTargetId = undefined;
+        session.currentSpot = null;
+
         // Native action automation is a separate movement path from moveTo.
         // Even an in-range attack/cast must route rather than cross a wall.
         const Automation = invoke('GameServer/Automation');

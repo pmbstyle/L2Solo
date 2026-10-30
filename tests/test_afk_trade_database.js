@@ -66,6 +66,14 @@ function amountOf(rows, selfId) {
     assert.strictEqual(amountOf(sale.ownerInventory, 1001), 6, 'sale stock must leave usable inventory');
     assert.strictEqual((await Database.fetchAfkTradeShops(ownerId))[0].lines[0].count, 4);
 
+    await Database.execute([`INSERT INTO bot_life_state(characterId,accountName,characterName,phase,activity,statsJson)
+        VALUES (?,'bot_supply','Supply','cold','shopping',?)`, [customerId, JSON.stringify({ partyMarketReturn: {
+        warOperationId: 'war', supplyItemId: 1463, until: Date.now() + 900000 } })]]);
+    await assert.rejects(Database.buyFromAfkTradeShop(customerId, { shopId: sale.shop.id, ownerId,
+        lineId: sale.shop.lines[0].id, amount: 2 }), /war_supply_only/);
+    assert.strictEqual(amountOf(await inventory(customerId), 57), 1000, 'forbidden military purchases never debit the wallet');
+    assert.strictEqual((await Database.fetchAfkTradeShops(ownerId))[0].lines[0].count, 4, 'the seller stock is unchanged on refusal');
+    await Database.execute(['DELETE FROM bot_life_state WHERE characterId=?', [customerId]]);
     const purchased = await Database.buyFromAfkTradeShop(customerId, {
         shopId: sale.shop.id,
         ownerId,

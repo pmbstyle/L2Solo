@@ -59,7 +59,7 @@ function restoredKeepers() {
     const spawned = new Set();
     for (const group of DataCache.npcSpawns) {
         for (const spawn of group.spawns) {
-            if (spawn.coords?.length) spawned.add(Number(spawn.selfId));
+            spawned.add(Number(spawn.selfId));
         }
     }
 

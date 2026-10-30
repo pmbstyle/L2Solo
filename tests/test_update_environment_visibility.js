@@ -104,6 +104,20 @@ try {
     assert.strictEqual(realObserver.packets.length, 4, 'the real observer must receive the moving player snapshot twice across refreshes');
     assert.strictEqual(botObserver.packetCount, 0, 'bot observers must remain packet-free for real sources too');
     assert.deepStrictEqual(wakeups, [], 'real movement must not fan out AI wakeups to every visible bot');
+
+    botObserver.aiActive = true;
+    botObserver.hotActorLod = { tier: 'preload' };
+    updateEnvironment(botSource, sourceActor, { forceRefresh: true, immediateNpcInfo: true });
+    assert.deepStrictEqual(wakeups, [], 'bot movement cannot wake dormant bots');
+    updateEnvironment(realSource, realSourceActor, { forceRefresh: true, immediateNpcInfo: true });
+    assert.deepStrictEqual(wakeups, [botObserver], 'a real arrival wakes preload AI without waiting 30 seconds');
+    botObserver.hotActorLod.tier = 'visible';
+    updateEnvironment(realSource, realSourceActor, { forceRefresh: true, immediateNpcInfo: true });
+    assert.deepStrictEqual(wakeups, [botObserver], 'active visible AI keeps its regular cadence');
+    botObserver.hotActorLod.tier = 'preload';
+    botObserver.aiActive = false;
+    updateEnvironment(realSource, realSourceActor, { forceRefresh: true, immediateNpcInfo: true });
+    assert.deepStrictEqual(wakeups, [botObserver], 'an arrival cannot restart stopped AI');
 } finally {
     World.fetchNpcsInRadius = originalFetchNpcsInRadius;
     World.fetchVisibleUsers = originalFetchVisibleUsers;

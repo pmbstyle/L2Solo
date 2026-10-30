@@ -1,10 +1,35 @@
 // All formation paths share this admission budget. Historical origin labels
 // never grant slots or protect a party; reservations include in-flight commits.
 class PartyAdmission {
-    constructor() { this.pending = 0; }
-    reserve(parties, config) {
+    constructor() { this.pending = 0; this.warWaiters = new Map(); this.managedWars = new Set(); }
+    // The director refreshes these from cached roster readiness every five
+    // seconds. Its FIFO survives slow diplomatic reviews and capacity waits.
+    syncWarRequests(clanIds) {
+        const next = new Set(clanIds);
+        for (const id of this.managedWars) if (!next.has(id)) this.warWaiters.delete(id);
+        const unmanaged = [...this.warWaiters].filter(([id]) => !this.managedWars.has(id) && !next.has(id));
+        this.managedWars = next;
+        this.warWaiters = new Map([...clanIds.map(id => [id, Infinity]), ...unmanaged]);
+    }
+    reserveWar(parties, config, clanId, now = Date.now()) {
+        this.warWaiters.set(clanId, this.managedWars.has(clanId) ? Infinity : now + 60000);
+        return this.reserve(parties, config, { warClanId: clanId, now });
+    }
+    canReclaim(parties, config) {
+        // Reclaiming cannot satisfy an ordinary request while the next slots
+        // belong to ready armies. Avoid dissolving unrelated parties in vain.
+        return !this.warWaiters.size && parties.length + this.pending >= Math.max(0, Math.floor(Number(config.maxBackgroundParties) || 0));
+    }
+    reserve(parties, config, { warClanId = null, now = Date.now() } = {}) {
+        for (const [id, until] of this.warWaiters) if (until <= now) this.warWaiters.delete(id);
         const limit = Math.max(0, Math.floor(Number(config.maxBackgroundParties) || 0));
         if (parties.length + this.pending >= limit) return null;
+        // Accepted military demand waits for a real free slot. It cannot
+        // exceed the shared cap or interrupt an existing required contract.
+        if (warClanId !== null) {
+            if (this.warWaiters.keys().next().value !== warClanId) return null;
+            this.warWaiters.delete(warClanId);
+        } else if (limit - parties.length - this.pending <= this.warWaiters.size) return null;
         this.pending++;
         let released = false;
         return () => { if (!released) { released = true; this.pending--; } };

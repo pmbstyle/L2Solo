@@ -216,11 +216,10 @@ function scheduleFollowStep(session, actor, summon) {
 }
 
 function startFollowOwner(session, actor, summon) {
-    delete summon.attackTargetId;
     ensureTimerBag(summon);
-    clearFollowTimer(summon);
-    clearResumeTimer(summon);
-    summon.attack?.clearTimers?.();
+    // Replace an active chase immediately; its old arrival must not stop a
+    // later follow command or leave the client running towards the old mob.
+    stop(session, summon);
     if (summon.fetchStateRun?.() !== true) {
         summon.setStateRun?.(true);
         session?.dataSendToMeAndOthers?.(ServerResponse.walkAndRun(summon.fetchId(), 1), summon);

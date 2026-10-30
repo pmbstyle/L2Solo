@@ -7,6 +7,9 @@ const Formulas = invoke('GameServer/Formulas');
 const Backpack = invoke('GameServer/Actor/Backpack');
 const Item = invoke('GameServer/Item/Item');
 const CompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
+const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
+const ValidatePosition = invoke('GameServer/Network/Request/ValidatePosition');
 
 function fixture(kind = 'Weapon.DualFist', targetX = 40) {
     const timers = [], timerDelays = [], packets = [], damage = [], chases = [];
@@ -148,6 +151,26 @@ try {
     repeated.timers[0]();
     repeated.timers[1]();
     assert.strictEqual(repeated.packets.length, 2, 'the running loop still swings again after the swing ends');
+
+    const rooted = fixture('Weapon.Knife', 40);
+    rooted.session.actor.attack = rooted.attack;
+    rooted.attack.meleeHit(rooted.session, rooted.target);
+    const root = EffectStore.apply(rooted.actor, { key: 'root', id: 1201, type: 'debuff', durationMs: 60000 });
+    EffectRestrictions.interruptOnApply(rooted.session, rooted.actor, root);
+    rooted.packets.length = 0;
+    for (let cycle = 0; cycle < 3; cycle++) {
+        assert.strictEqual(ValidatePosition(rooted.session, Buffer.alloc(21)), false);
+        rooted.timers[cycle * 2]();
+        rooted.timers[cycle * 2 + 1]();
+    }
+    assert.strictEqual(rooted.damage.length, 3, 'root and position acknowledgements must preserve every in-range swing');
+    assert.strictEqual(rooted.packets.filter(p => p[0] === 0x05).length, 3, 'auto-attack must continue at every weapon cycle');
+    assert(!rooted.packets.some(p => p[0] === 0x47 || p[0] === 0x25), 'rooted validation must not send combat-interrupting packets');
+    rooted.target.x = 200;
+    rooted.timers[6]();
+    rooted.timers[7]();
+    assert.strictEqual(rooted.chases.length, 1, 'an auto-attack leaving root range must retain its target through automation');
+    EffectStore.remove(rooted.actor, 'root');
 
     const switched = fixture('Weapon.DualFist', 40);
     const other = { ...switched.target, fetchId: () => 2000003 };

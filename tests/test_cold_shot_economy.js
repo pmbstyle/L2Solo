@@ -265,7 +265,8 @@ async function images(ids) {
         // short walk to Gludio pays for the batch; this field is far enough
         // (about 0.09 h) that the journey cannot pay.
         const fieldLoc = { locX: -45000, locY: 110000, locZ: -3000 };
-        let hunter = await nativeEconomy(await seed(fighterItems, { classId: 1, name: 'Field', town: 'Gludio', loc: fieldLoc }), now);
+        // T43 table: a level-30 Warrior's owned D shots no longer pay (no batch to weigh); at 38 they do.
+        let hunter = await nativeEconomy(await seed(fighterItems, { classId: 1, level: 38, name: 'Field', town: 'Gludio', loc: fieldLoc }), now);
         hunter = await Life.upsertState({ ...hunter, activity: 'hunting' }, 'native_field_restock');
         const fieldBefore = await images([hunter.characterId]);purchases.length = 0;
         const traveling = (await Shots.review(hunter, now + 72000)).state;

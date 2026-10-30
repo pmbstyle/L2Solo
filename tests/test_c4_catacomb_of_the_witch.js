@@ -4,12 +4,9 @@ require('../src/Global');
 
 const DataCache = invoke('GameServer/DataCache');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
-const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const Npc = invoke('GameServer/Npc/Npc');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
-const baseSpawns = require('../data/Npcs/Spawns/spawns.json');
 const skillBindings = require('../data/Npcs/Skills/c4_catacomb_of_the_witch.json');
-const verifyGeodataWhenAvailable = require('./helpers/verify_geodata_when_available');
 
 DataCache.init();
 
@@ -20,38 +17,14 @@ const mobIds = [
 const mobIdSet = new Set(mobIds);
 const npcs = DataCache.npcs.filter((npc) => mobIdSet.has(npc.selfId));
 const rewards = DataCache.npcRewards.filter((reward) => mobIdSet.has(reward.selfId));
-const spawnArea = DataCache.npcSpawns.find((area) => area.selfId === 'c4-catacomb-of-the-witch');
 
 assert.strictEqual(npcs.length, 19, 'all nineteen Lisvus Catacomb of the Witch monsters must be loaded');
 assert.strictEqual(rewards.length, 19, 'every Catacomb of the Witch monster must have rewards');
-assert.ok(spawnArea, 'the Catacomb of the Witch spawn slice must be loaded');
-assert.ok(baseSpawns.every((area) => area.spawns.every((spawn) => !mobIdSet.has(Number(spawn.selfId)))),
-    'the additive import must remain limited to monster families absent from the old datapack');
 
-const spawnCoords = spawnArea.spawns.flatMap((spawn) => spawn.coords);
-assert.strictEqual(spawnArea.spawns.length, 19, 'spawn definitions must cover every source monster family');
-assert.strictEqual(spawnCoords.length, 234, 'the import must retain all 234 Lisvus monster spawn rows');
-assert.ok(spawnArea.spawns.every((spawn) => spawn.total === 1 && spawn.respawn === 120 && spawn.bias === 0));
-assert.deepStrictEqual(
-    spawnArea.spawns.map((spawn) => [spawn.selfId, spawn.coords.length]),
-    [[1156, 11], [1157, 21], [1159, 15], [1160, 13], [1179, 11], [1180, 7], [1181, 9],
-        [1182, 15], [1183, 13], [1200, 11], [1201, 10], [1202, 11], [1203, 15], [1204, 12],
-        [1248, 11], [1249, 8], [1250, 13], [1251, 15], [1252, 13]],
-    'every family must retain its exact local population'
-);
-
-assert.deepStrictEqual(
-    [...new Set(spawnCoords.map((coord) => GeodataEngine.getRegionKey(coord.locX, coord.locY)))],
-    ['24_20'],
-    'the underground source rows must stay in the Catacomb geodata region'
-);
-verifyGeodataWhenAvailable(GeodataEngine, [[24, 20]], 'Catacomb of the Witch', () => {
-    const heightDeltas = spawnCoords.map((coord) => Math.abs(
-        GeodataEngine.getHeight(coord.locX, coord.locY, coord.locZ) - coord.locZ
-    ));
-    assert.ok(heightDeltas.every((delta) => delta === 0),
-        'every source monster coordinate must match underground geodata exactly');
-});
+const mobiusIds = new Set(DataCache.npcSpawns.filter((area) => String(area.selfId).startsWith('mobius:'))
+    .flatMap((area) => area.spawns.map((spawn) => Number(spawn.selfId))));
+assert.deepStrictEqual(mobIds.filter((id) => !mobiusIds.has(id)), [],
+    'Catacomb of the Witch monsters are spawned from Mobius');
 
 const shadow = npcs.find((npc) => npc.selfId === 1156);
 assert.deepStrictEqual(

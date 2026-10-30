@@ -109,6 +109,19 @@ try {
         'without a Scroll of Escape a far town trip is walked');
     assert.strictEqual(scrollless.moves.length, 1, 'the scrollless bot walks to town');
 
+    const waitingBot = botAt({ locX: 0, locY: 0, locZ: 0 });
+    const waitingSession = session(waitingBot);
+    waitingSession.townTravelRetryAt = Date.now() + 60000;
+    assert.strictEqual(BotTownTravel.request(waitingSession, waitingBot, farAi, 'Retry sale.'), 'deferred');
+    assert.strictEqual(waitingSession.plan, 'hunting', 'a failed town route leaves local hunting active');
+    assert.strictEqual(waitingSession.townEscape, undefined, 'the retry cannot spend another scroll');
+    assert.strictEqual(waitingBot.backpack.items.get(736).amount, 5);
+    assert.strictEqual(waitingSession.pendingTownTrip?.reason, 'Retry sale.',
+        'the route pause must retain a sale request whose selling pause already started');
+    waitingSession.townTravelRetryAt = Date.now() - 1;
+    assert.strictEqual(BotTownTravel.request(waitingSession, waitingBot, farAi, 'Retry sale.'), 'escape',
+        'town travel resumes once its retry expires');
+
     // E197: a gatekeeper fee the backpack cannot cover is counted per path;
     // an ordinary trip then walks, a supply errand that must read a scroll is
     // refused.
@@ -141,12 +154,22 @@ try {
 
     const closeBot = botAt({ locX: 0, locY: 0, locZ: 0 });
     const closeSession = session(closeBot);
+    closeSession.spotRelocation = { method: 'walk', spotId: 'old_hunt' };
     const closeResult = BotTownTravel.request(closeSession, closeBot, {
         getClosestTown: () => ({ name: 'Close Town', x: 1000, y: 0, z: -100 }),
         say() {}
     });
     assert.strictEqual(closeResult, 'walk', 'nearby town trip should stay on foot');
     assert.strictEqual(closeBot.moves.length, 1, 'nearby town trip should issue movement');
+    assert.strictEqual(closeSession.spotRelocation, undefined, 'the selected town errand releases the old farming route');
+    assert.strictEqual(closeSession.lastSpotRelocation.reason, 'town_trip');
+
+    const arrivingBot = botAt({ locX: 0, locY: 0, locZ: 0 });
+    const arrivingSession = session(arrivingBot);
+    arrivingSession.spotRelocation = { method: 'clan_hall', spotId: 'old_hunt', arrivalPending: true };
+    assert.strictEqual(BotTownTravel.request(arrivingSession, arrivingBot, farAi, 'Restock.'), 'deferred');
+    assert.strictEqual(arrivingBot.moves.length, 0, 'an already submitted teleport settles before the town errand');
+    assert.strictEqual(arrivingSession.spotRelocation.arrivalPending, true);
 
     const fightingBot = botAt({ locX: 0, locY: 0, locZ: 0 });
     const fightingSession = session(fightingBot);

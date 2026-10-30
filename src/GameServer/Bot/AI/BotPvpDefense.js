@@ -54,6 +54,7 @@ function clear(session, { dead = false } = {}) {
 function tick(session, bot, Generics, BotAI, { now = Date.now(), rng = Math.random } = {}) {
     if (session.pvpEncounter && now < Number(session.pvpActionReadyAt || 0)) return true;
     const Revenge = invoke('GameServer/Bot/AI/BotRevenge');
+    invoke('GameServer/Bot/AI/BotClanWar').tryStart(session, now);
     Revenge.tryStart(session, now, rng);
     if (!session.pvpAggressors?.size && !session.pvpDefense && !session.pvpRevenge) return false;
     if (!Threats.alive(bot)) { clear(session, { dead: true }); return false; }

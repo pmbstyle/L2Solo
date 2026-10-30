@@ -37,7 +37,9 @@ function die(session, actor, context = {}) {
             arena: victimSession?.arenaEphemeral === true || !!victimSession?.arenaDuelId
                 || !!ArenaDuelService.duelForActor?.(actor),
             killerPlayable: !!killer && killer !== actor && !killer.fetchKind,
-            clanWar: context.clanWar === true,
+            clanWar: context.clanWar === true || !!killer && Number(actor.fetchClanId?.()) > 0
+                && (Number(killer.fetchClanId?.()) > 0 || Number(killer.fetchOwnerId?.()) > 0)
+                && invoke('GameServer/Clan/ClanWarRuntime').between(killer, actor).outgoing,
             festival: context.festival === true,
             event: context.event === true,
             pvpZone: context.pvpZone === true,

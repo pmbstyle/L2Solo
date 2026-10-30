@@ -2,6 +2,7 @@ const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Rules = invoke('GameServer/Skills/C4SkillRules');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const WeaponMask = invoke('GameServer/Skills/WeaponMask');
+const PullEstimate = require('./BotPullEstimate');
 
 const MIN_EFFICIENCY = 0.15;
 const ELEMENTS = ['fire', 'water', 'wind', 'earth', 'holy', 'dark'];
@@ -73,7 +74,8 @@ function coldProfiles(profile, state = {}, timestamp = Date.now()) {
         if (skill) profiles.push({ ...invoke('GameServer/Bot/Population/ColdSummonProfile')(profile, Cold.summonDetails(skill)),
             role: 'dps', skills: [], soloDamageReceiver: false });
     }
-    if ((profile.role || Roles.combatRoleFor(profile)) === 'mage') {
+    const role = profile.role || Roles.combatRoleFor(profile);
+    if (role === 'mage' || role === 'healer') {
         profiles[0].soloAttackScores = invoke('GameServer/Bot/Population/ColdClassPolicy')
             .soloAttackScores(profiles[0], { summon: profiles.length > 1 });
     }
@@ -216,8 +218,8 @@ function soloSurvival(profiles, target, minimum = 1.5) {
 function soloChannels(profile, target) {
     const attacks = channels(profile, target);
     if (!profile.soloAttackScores) return attacks;
-    // The executor chooses by native skill priority, not maximum DPS. Do not
-    // admit a fight on a fast spell the bot would never select at full HP.
+    // The executor chooses by native skill priority, not maximum DPS. Healers
+    // may prefer cheap Disrupt Undead over stronger Might of Heaven too.
     let best = null, score = -Infinity;
     for (const attack of attacks) {
         if (!Number.isFinite(attack.soloScore)) continue;
@@ -225,7 +227,10 @@ function soloChannels(profile, target) {
             Math.max(0.01, Math.min(2, attack.modifier))));
         if (current > score) { best = attack; score = current; }
     }
-    return best ? [best] : [];
+    if (best) return [best];
+    // Holy-only healers use their weapon against living targets; a mage
+    // without an available spell does not have that ordinary melee rotation.
+    return (profile.role || Roles.combatRoleFor(profile)) === 'mage' ? [] : attacks.slice(0, 1);
 }
 
 function soloCanHunt(profiles, target, { maxTargetLevel, npcLevel } = {}) {
@@ -332,7 +337,8 @@ const npcVerdicts = new WeakMap();
 function optionVerdicts(profiles, options) {
     let byOptions = npcVerdicts.get(profiles);
     if (!byOptions) npcVerdicts.set(profiles, byOptions = new Map());
-    const optionsKey = `${options.soloSafety ? 1 : 0}:${options.maxTargetLevel || 0}`;
+    const pull = options.soloSafety ? Math.max(1, number(options.pull)) : 1;
+    const optionsKey = `${options.soloSafety ? 1 : 0}:${options.maxTargetLevel || 0}:${pull}`;
     let verdicts = byOptions.get(optionsKey);
     if (!verdicts) byOptions.set(optionsKey, verdicts = new Map());
     return verdicts;
@@ -346,7 +352,7 @@ function npcVerdict(verdicts, selfId, options) {
         const target = coldCombatProfile().npcCombatStats(npc);
         const match = evaluate(options.profiles, target);
         const withinRecoveryLevel = !options.maxTargetLevel || Number(npc.template?.level || 0) <= options.maxTargetLevel;
-        const canHunt = options.soloSafety ? soloCanHunt(options.profiles, target,
+        const canHunt = options.soloSafety ? soloCanHunt(options.profiles, PullEstimate.pullView(target, options.pull),
             { maxTargetLevel: options.maxTargetLevel, npcLevel: Number(npc.template?.level || 0) }).eligible
             : match.eligible && withinRecoveryLevel;
         verdict = Object.freeze({ efficiency: match.efficiency, canHunt });
@@ -365,7 +371,7 @@ const spotMatchups = new WeakMap();
 // reads, so a solo fight's pick (ColdCombatProfile.npcForSpot) shares it.
 function speciesVerdict(profiles, selfId, options = {}) {
     return npcVerdict(optionVerdicts(profiles, options), Number(selfId),
-        { profiles, soloSafety: options.soloSafety, maxTargetLevel: options.maxTargetLevel });
+        { profiles, soloSafety: options.soloSafety, maxTargetLevel: options.maxTargetLevel, pull: options.pull });
 }
 
 function spotMatchup(spot, profiles, options = {}) {
@@ -378,7 +384,11 @@ function spotMatchup(spot, profiles, options = {}) {
     if (known) return known;
     const verdictOptions = { profiles, soloSafety: options.soloSafety, maxTargetLevel: options.maxTargetLevel };
     for (const entry of spot.npcEntries || []) {
-        const verdict = npcVerdict(verdicts, Number(entry.selfId), verdictOptions);
+        // A species can be safe alone and lethal with its helpers. Routing
+        // must judge the same pull that the hot hunter and cold fight take.
+        const verdict = options.soloSafety && entry.pull > 1
+            ? speciesVerdict(profiles, entry.selfId, { ...options, pull: entry.pull })
+            : npcVerdict(verdicts, Number(entry.selfId), verdictOptions);
         if (!verdict) continue;
         const weight = Math.max(1, number(entry.count));
         total += weight;

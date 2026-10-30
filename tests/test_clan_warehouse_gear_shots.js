@@ -29,7 +29,8 @@ async function main() {
     assert(Database.isReady());
     // One available authored camp, using the persisted native NPC mix and
     // a published coordinate belonging to the same native cell. No world spawn.
-    const id = '-5_26', table = require('../data/Bots/spot-table.json');
+    // T43 table: at '-5_26' (lower loot after the Mobius spawns) a two-hour shot stock no longer pays; '4_22' is a level-23 camp where it does.
+    const id = '4_22', table = require('../data/Bots/spot-table.json');
     const index = table.spots.findIndex(row => row[0] === id);
     const source = require('../data/Bots/spot-reward-npcs.json').rows.find(row => row[0] === id);
     assert(index >= 0 && source);

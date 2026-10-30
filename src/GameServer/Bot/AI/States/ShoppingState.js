@@ -29,6 +29,8 @@ const World = invoke('GameServer/World/World');
 const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
 
 const COMPANION_EQUIPMENT_FAILURE_RETRY_MS = 5 * 60 * 1000;
+const RESTOCK_RETRY_MS = 5000;
+const MAX_RESTOCK_ATTEMPTS = 3;
 
 // The store a shopping target stands for: its stall's, or a board record's
 // (an ad has no stall: it is dealt with by record, MarketOpportunity.offerTarget).
@@ -248,6 +250,8 @@ function clearShoppingServiceState(session) {
     session.shoppingEquipmentPlanChecked = undefined;
     session.shoppingLiveShotStopChecked = undefined;
     session.shoppingLiveBuyerChecked = undefined;
+    session.shoppingRestockRetryAt = undefined;
+    session.shoppingRestockFailures = undefined;
 }
 
 async function waitForShoppingMeeting(session, bot, pending, visit) {
@@ -610,6 +614,10 @@ module.exports = {
                 const companionResume = session.resumeAfterShopping;
                 const returningToCompanion = session.partyCompanion === true && companionResume?.followPlayerSession?.actor?.fetchIsOnline?.();
                 deferEquipmentRetry(session);
+                // A failed sale/restock route needs the same pause as an
+                // equipment errand. Otherwise forced cleanup restarts it on
+                // the next hunting tick, before any local fight can begin.
+                TownTransitPolicy.defer(session, bot, 'shopping_route_unreachable');
                 session.plan = returningToCompanion ? 'following' : 'hunting';
                 // ARCH-NOTE: an unreachable shopping route also ends this town visit.
                 if (session.plan === 'hunting') raiseDecision(session, 'town', { impossible: true });
@@ -964,7 +972,7 @@ module.exports = {
     },
 
     scheduleRestock(session, bot, Generics, BotAI) {
-        if (session.shoppingRestock) return;
+        if (session.shoppingRestock || Number(session.shoppingRestockRetryAt || 0) > Date.now()) return;
         if (!session.shoppingLiveShotStopChecked) {
             session.shoppingLiveShotStopChecked = true;
             const town = TownTransitPolicy.townAt(bot);
@@ -982,6 +990,7 @@ module.exports = {
         let completeRestock;
         const restockWork = new Promise(resolve => { completeRestock = resolve; });
         session.shoppingRestock = restockWork;
+        let restockFailure = null;
         setTimeout(async () => {
             if (session.actor !== bot || session.plan !== 'shopping' || session.shoppingRestock !== restockWork) {
                 completeRestock();
@@ -1015,6 +1024,7 @@ module.exports = {
                     cost: Number(board.cost || 0) + Number(shot?.amount || 0) * Number(shot?.unitPrice || 0),
                     adena: Number(bot.backpack.fetchItemFromSelfId(57)?.fetchAmount?.() || 0) };
                 if (!result.ok) {
+                    restockFailure = 'restock_incomplete';
                     TownChatter.say(session, BotAI, 'shots-too-expensive', Speech.lines('town.shots-too-expensive', { item: ShotStock.describe(plan), adena: result.adena || 0, cost: result.cost || expectedCost }),
                         { priority: 'coordination', values: { item: ShotStock.describe(plan) } });
                 } else {
@@ -1034,6 +1044,7 @@ module.exports = {
                     refreshPartyMemberships([session], invoke);
                 }
             } catch (err) {
+                restockFailure = err.message;
                 utils.infoWarn('Shopping', 'consumable restock failed for %s: %s', bot.fetchName(), err.message);
             } finally {
                 completeRestock();
@@ -1045,6 +1056,15 @@ module.exports = {
             if (session.actor !== bot || session.plan !== 'shopping' || session.shoppingRestock !== restockWork) return;
             if (!LifeState.hotRow(bot.fetchId())) return;
             session.shoppingRestock = undefined;
+            if (restockFailure) {
+                session.shoppingRestockFailures = Number(session.shoppingRestockFailures || 0) + 1;
+                raiseDecision(session, 'town');
+                if (session.shoppingRestockFailures < MAX_RESTOCK_ATTEMPTS) {
+                    session.shoppingRestockRetryAt = Date.now() + RESTOCK_RETRY_MS;
+                    session.lastDecision = { action: 'shopping_retry', reason: restockFailure, at: Date.now() };
+                    return;
+                }
+            }
             const companionResume = session.resumeAfterShopping;
             const returningToCompanion = session.partyCompanion === true && companionResume?.followPlayerSession?.actor?.fetchIsOnline?.();
             const townBuffVisit = HotTownRebuff.syncVisit(session, bot, BotAI);
@@ -1058,12 +1078,14 @@ module.exports = {
             if (!returningToCompanion) raiseDecision(session, 'town');
             Promise.resolve(BotEventJournal.record({
                 botId: bot.fetchId(),
-                eventType: 'shopping_completed',
-                summary: `${bot.fetchName?.() || 'Bot'} finished shopping and returned to ${session.plan}.`,
+                eventType: restockFailure ? 'shopping_deferred' : 'shopping_completed',
+                summary: restockFailure
+                    ? `${bot.fetchName?.() || 'Bot'} deferred shopping after ${restockFailure} and returned to ${session.plan}.`
+                    : `${bot.fetchName?.() || 'Bot'} finished shopping and returned to ${session.plan}.`,
                 weight: 2,
                 dedupeKey: `shopping_done:${bot.fetchId()}`,
                 coalesceWindowMs: 30000,
-                meta: { plan: session.plan }
+                meta: { plan: session.plan, ...(restockFailure ? { reason: restockFailure } : {}) }
             })).catch(() => {});
             session.shoppingDoneAnnounced = false;
             session.shoppingTarget = undefined;

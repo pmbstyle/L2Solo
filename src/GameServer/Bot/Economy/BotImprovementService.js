@@ -2,6 +2,7 @@
 const DiagnosticConfig = require('../Population/PopulationConfig');
 const Policy = require('./BotImprovementPolicy');
 const DecisionEvents = require('../AI/DecisionEvents');
+const Approach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const pendingCold = new Map(), pendingHot = new WeakMap();
 let improvementDeferred = 0;
 const INPUT_REJECTIONS = new Set(['improvement_source_changed', 'improvement_missing_materials', 'improvement_missing_template',
@@ -95,7 +96,7 @@ function reviewHot(session) {
     if (improvement.kind !== 'enchant' && !selfCrystallization(improvement)) {
         const candidates = World.fetchNpcsInRadius(actor.fetchLocX(),actor.fetchLocY(),300);
         const target = candidates.find(npc => stationMatches(npc, improvement));
-        if (!target || !invoke('GameServer/Bot/AI/TownNpcApproach').hasLineOfSight({locX:actor.fetchLocX(),locY:actor.fetchLocY(),locZ:actor.fetchLocZ()}, {locX:target.fetchLocX(),locY:target.fetchLocY(),locZ:target.fetchLocZ()})) return Promise.resolve(null);
+        if (!target || !Approach.canInteract(Approach.pointOf(actor), Approach.npcTarget(target))) return Promise.resolve(null);
         if (improvement.kind === 'sa') improvement.npcId = target.fetchSelfId();
     }
     const work = invoke('Database').applyBotImprovement(actor.fetchId(),improvement,{beforeWrite() {

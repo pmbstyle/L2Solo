@@ -133,6 +133,10 @@ class ColdCompetitionActions {
         if (event.action === 'avoid' || event.action === 'yield' && participants.some(p => p.partyId)) {
             return require('./ColdCompetitionRetreat').apply({ ...this, event, waitMs: WAIT_MS });
         }
+        if (event.action === 'clan_war') {
+            if (!this.pvpEnabled()) return { ok: false, reason: 'forecast_only' };
+            return require('./ColdPartyConflict').apply({ ...this, event, waitMs: 1000, cooldownMs: 15000, disputeCooldownMs: 15000 });
+        }
         if (event.action === 'revenge') {
             if (!this.conflictsEnabled() || !this.pvpEnabled()) return { ok: false, reason: 'forecast_only' };
             return require('./ColdPartyConflict').apply({ ...this, event, waitMs: WAIT_MS, cooldownMs: CONFLICT_COOLDOWN_MS, disputeCooldownMs: DISPUTE_COOLDOWN_MS });

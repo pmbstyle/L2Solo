@@ -33,10 +33,12 @@ function allows(session, target, now = Date.now()) {
     const objective = session?.pvpRevenge;
     if (!objective || objective.target !== target || objective.expiresAt <= now || !eligible(session, target) ||
         Threats.distance(session.actor, target) > Threats.PARTY_RADIUS) return false;
+    if (objective.reason === 'clan_war') return invoke('GameServer/Clan/ClanWarRuntime').between(session.actor, target).mutual;
     if (objective.reason === 'continued_encounter') {
         const e = session.pvpEncounter, ownId = Number(session.actor.fetchId()), targetId = Number(target.fetchId());
         const side = e?.sides.find(s => s.memberIds.includes(ownId));
-        return e?.expiresAt > now && side && e.sides.some(s => s !== side && s.memberIds.includes(targetId))
+        return e?.expiresAt > now && (e.reason !== 'clan_war' || invoke('GameServer/Clan/ClanWarRuntime').between(session.actor, target).mutual)
+            && side && e.sides.some(s => s !== side && s.memberIds.includes(targetId))
             && ['initiator', 'target', 'support'].includes(new Map(e.roles).get(ownId));
     }
     if (!objective.startedAt && !Participation.valid(objective.participation, objective.initiator, target, now)) {
@@ -160,6 +162,16 @@ function onAttack(attacker, target, now = Date.now(), rng = Math.random) {
     if (!objective && session.pvpDefense) return; // self-defense already shares aggressors
     if (objective && !allows(session, target, now)) return;
     const party = Threats.members(session);
+    if (objective?.reason === 'clan_war') {
+        objective.startedAt ||= now;
+        objective.expiresAt = now + ENCOUNTER_MS;
+        for (const member of party) if (member !== session && String(member.accountId || '').startsWith('bot_')
+            && !member.partyCompanion && !member.followPlayerSession && !member.pvpDefense && !member.pvpRevenge
+            && eligible(member, target) && invoke('GameServer/Clan/ClanWarRuntime').between(member.actor, target).mutual) {
+            member.pvpRevenge = { ...objective, initiator: session };
+        }
+        return;
+    }
     if (!objective) {
         if (party.length < 2) return;
         const participation = Participation.prepare(session, target, now, rng);
