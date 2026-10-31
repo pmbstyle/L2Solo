@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "articles": [
+    {
+      "id": "release-v0.1.0",
+      "category": "SERVER UPDATE",
+      "title": "A new chapter for your world",
+      "excerpt": "A short summary of the update, written for players. Keep the details in the full article.",
+      "publishedAt": "2026-10-31T12:00:00Z",
+      "url": "https://l2solo.com/news/release-v0.1.0"
+    }
+  ]
+}

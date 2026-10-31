@@ -1,0 +1,47 @@
+name: Desktop launcher checks
+
+on:
+  pull_request:
+    paths:
+      - 'launcher/**'
+      - 'scripts/geodata-bootstrap.js'
+      - 'scripts/run-server.js'
+      - '.github/workflows/launcher.yml'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  launcher:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: launcher
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run runtime
+      - run: xvfb-run -a npm run test:ui
+        if: runner.os == 'Linux'
+      - run: npm run test:ui
+        if: runner.os != 'Linux'
+      - run: npm run pack
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - run: xvfb-run -a npm run test:packaged
+        if: runner.os == 'Linux'
+      - run: npm run test:packaged
+        if: runner.os != 'Linux'

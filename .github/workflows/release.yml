@@ -1,0 +1,123 @@
+name: Tagged release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  server-tests:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+        if: matrix.shard == 1
+      - run: npm test -- --keep-going --shard=${{ matrix.shard }}/12
+        env:
+          L2NODE_TEST_TIMEOUT_MS: 180000
+
+  server:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
+      - run: npm ci
+        working-directory: launcher
+      - run: npm run release:server
+        working-directory: launcher
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-release
+          path: launcher/dist/server/*
+          if-no-files-found: error
+
+  desktop:
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x64
+          - os: windows-latest
+            arch: x64
+          - os: macos-15-intel
+            arch: x64
+          - os: macos-15
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: launcher
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run runtime
+      - run: npm run dist -- --${{ matrix.arch }}
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          CSC_LINK: ${{ runner.os == 'Windows' && secrets.WIN_CSC_LINK || runner.os == 'macOS' && secrets.MAC_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ runner.os == 'Windows' && secrets.WIN_CSC_KEY_PASSWORD || runner.os == 'macOS' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - run: xvfb-run -a npm run test:packaged
+        if: runner.os == 'Linux'
+      - run: npm run test:packaged
+        if: runner.os != 'Linux'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            launcher/dist/*.exe
+            launcher/dist/*.dmg
+            launcher/dist/*.zip
+            launcher/dist/*.AppImage
+            launcher/dist/*.deb
+          if-no-files-found: error
+
+  publish:
+    needs: [server-tests, server, desktop]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Create complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" release-assets/* --verify-tag --title "L2Solo $RELEASE_TAG" --generate-notes --latest

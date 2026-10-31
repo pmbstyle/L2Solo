@@ -67,6 +67,9 @@ async function main() {
 process.on('exit', () => releaseGeodataUsage(geodataUsage));
 process.on('SIGINT', () => stopServer('SIGINT'));
 process.on('SIGTERM', () => stopServer('SIGTERM'));
+// A desktop launcher can disappear without sending a signal (crash/OS quit).
+// Retain the normal database drain rather than orphaning the server tree.
+process.on('disconnect', () => stopServer('SIGTERM'));
 process.on('message', (message) => {
     if (message?.type === 'shutdown') stopServer(message.reason || 'launcher_stop');
 });

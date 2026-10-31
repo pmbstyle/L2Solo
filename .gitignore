@@ -1,8 +1,14 @@
 node_modules
 package-lock.json
+!/package-lock.json
+!/launcher/package-lock.json
+/launcher/dist/
+/launcher/runtime/
 data/Geodata/
 data/Geodata.backup-*/
 data/.Geodata.*/
 config/local.ini
 tmp/
 /.codex-remote-attachments
+.DS_Store
+.DS_Store
