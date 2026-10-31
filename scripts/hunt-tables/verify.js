@@ -176,17 +176,18 @@ function spotTableCheck() {
     const items = K.itemRows(tables.gear);
     const spotsById = new Map(tables.spots.spots.map(row => [row[0], row]));
     const dpsKey = spotTable.header.inputs.roleLines?.dps || 'dps';
-    const roleIndex = spotTable.roles.indexOf(dpsKey), shotIndex = spotTable.shots.indexOf(1);
+    // A spot's rows: one per role and shots state, shots fastest (the table's own stride).
+    const roleIndex = spotTable.roles.indexOf(dpsKey), shotIndex = spotTable.shots.indexOf(1), stride = spotTable.shots.length;
     const kph = spotTable.rowFields.indexOf('kph'), expField = spotTable.rowFields.indexOf('exp'), deathsField = spotTable.rowFields.indexOf('deaths'),
         refGap = spotTable.rowFields.indexOf('refGap'), capField = spotTable.rowFields.indexOf('cap');
     const out = [];
     // Spots of bands 25, 35, 45, 55 with the dps role huntable, a fixed pick.
     for (const want of [24, 34, 44, 54]) {
-        const index = spotTable.spots.findIndex((spot, i) => spot[1] === want && spotTable.rows[i][roleIndex * 2 + shotIndex]
+        const index = spotTable.spots.findIndex((spot, i) => spot[1] === want && spotTable.rows[i][roleIndex * stride + shotIndex]
             && spotsById.has(spot[0]));
         if (index < 0) continue;
         const spot = spotTable.spots[index];
-        const row = spotTable.rows[index][roleIndex * 2 + shotIndex];
+        const row = spotTable.rows[index][roleIndex * stride + shotIndex];
         const level = spot[1] + row[refGap];
         const classId = spotTable.header.inputs.roleClasses[dpsKey][level < 20 ? 0 : level < 40 ? 1 : 2];
         const rot = M.rotationOf(tables.rotation, classId, level);

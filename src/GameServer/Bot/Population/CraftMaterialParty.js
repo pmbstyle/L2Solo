@@ -240,17 +240,12 @@ function selectMembers(candidates, { minSize = 2, maxSize = MAX_MEMBERS, levelRa
 // fight the leader and all its minions once it becomes visible.
 function canHunt(members, spot, profiles = null, npcIds = null) {
     const Match = invoke('GameServer/Bot/AI/BotTargetMatchup');
-    const Pull = invoke('GameServer/Bot/AI/BotPullEstimate');
-    const Cold = invoke('GameServer/Bot/Population/ColdCombatProfile');
     profiles ||= Match.stateProfiles(members[0], { mode: 'party', capacityStates: members, buffed: true });
     npcIds ||= [...new Set(members.map(member => Number(requestOf(member)?.npcId)).filter(Boolean))];
     const entries = (spot?.npcEntries || []).filter(entry => !npcIds.length || npcIds.includes(Number(entry.selfId)));
     if (!entries.length) return true;
-    return entries.every(entry => {
-        const npc = invoke('GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').npcs, entry.selfId);
-        return !npc || Match.soloSurvival(profiles,
-            Pull.pullView(Cold.npcCombatStats(npc), Pull.entryPull(spot, entry.selfId))).eligible;
-    });
+    // No mob is in sight yet: each pull size of the spawn group is judged, as a cold pick's.
+    return entries.every(entry => Match.speciesPulls(profiles, entry, { soloSafety: true })?.canHunt !== false);
 }
 
 module.exports = { request, requestOf, isObjective, needs, remaining, supplyPause, selectMembers, canHunt, agreement, departureRequest, joint, target, campsFor, partySpoiler,

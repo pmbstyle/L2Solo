@@ -57,4 +57,35 @@ assert(deadly.calls.downMs >= respawnMs);
 const lost = calm.kills - died.kills;
 assert.equal(lost, 1 + Math.ceil(deadly.calls.downMs / FIGHT_MS), `kills lost to the death: ${lost} (down ${deadly.calls.downMs} ms)`);
 assert.equal(died.exp, died.kills * 100, 'the exp is the kills\' (the loss is the reader\'s)');
+
+// T141: the row's potions are what a bot of that level carries. A bot that
+// drinks one bottle a fight from its bag: at 0 deaths its stock has no worth
+// and it carries the survival tranche, the use of one hour, each outing (2 h);
+// a row with deaths gives the stock worth, the bot buys the outing's use.
+function drinker(dieAfter = Infinity) {
+    let fights = 0;
+    return {
+        items: invoke('GameServer/DataCache').items,
+        BotGear: invoke('GameServer/Bot/AI/BotGear'),
+        CCP: invoke('GameServer/Bot/Population/ColdCombatProfile'),
+        ShotStock: invoke('GameServer/Inventory/ShotStock'),
+        Potions: invoke('GameServer/Bot/AI/HealingPotionStock'),
+        HuntEfficiency: { lootValue: () => 0 },
+        BR: { admittedShares: () => null, admittedDensity: density => density.density,
+            resolveSolo({ state, timestamp }) {
+                fights += 1;
+                const potion = String(invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor({ level: state.level }).selfId);
+                const held = Number(state.inventory[potion]?.amount || 0);
+                const drinks = held > 0 ? 1 : 0;
+                const inventory = { ...state.inventory, [potion]: { ...state.inventory[potion], amount: held - drinks } };
+                const died = fights === dieAfter;
+                return { patch: { inventory, ...(died ? { activity: 'hunting' } : {}) }, materialize: { exp: 1 },
+                    debug: { wins: 1, mobsKilled: 1, combatMs: 60000, potionsUsed: drinks, died }, nextResolveAt: timestamp + 60000 };
+            } }
+    };
+}
+const lean = Generator.hunt(spot, 'dps', 20, 0, 2, drinker());
+assert.equal(lean.potions, 60, 'a 0-death row wants 60 bottles an hour and carries one hour\'s use for its two hours');
+const dying = Generator.hunt(spot, 'dps', 20, 0, 2, drinker(5));
+assert.equal(dying.potions, 120, 'a row with deaths carries the outing\'s use: a bottle every fight');
 console.log('PASS spot table death time');

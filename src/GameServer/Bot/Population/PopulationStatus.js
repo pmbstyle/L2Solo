@@ -132,10 +132,10 @@ const PopulationStatus = {
             + this.incomeHoldText(worker.incomeHold);
     },
 
-    // incomeHold=<kept>/<none>,<unrouted>,<renewed>,<moved>,<event>;party<kept>/<missed>: held earning
+    // incomeHold=<kept>/<none>,<unrouted>,<renewed>,<moved>,<event>,<goal>;party<kept>/<missed>: held earning
     // spot reads since the worker started (EconomyContext.heldIncomeRoute, decision 10-30), diagnostics off too.
     incomeHoldText(h) {
-        return h ? ` incomeHold=${h.kept || 0}/${h.none || 0},${h.unrouted || 0},${h.renewed || 0},${h.moved || 0},${h.event || 0};party${h.partyKept || 0}/${h.partyMissed || 0}` : '';
+        return h ? ` incomeHold=${h.kept || 0}/${h.none || 0},${h.unrouted || 0},${h.renewed || 0},${h.moved || 0},${h.event || 0},${h.goal || 0};party${h.partyKept || 0}/${h.partyMissed || 0}` : '';
     },
 
     // Mobs that forgot a chase (out of reach / no path / 2 min without an attack) and mobs left out of combat still hating.

@@ -427,6 +427,9 @@ const BackgroundPartyResolver = {
         let avoidedReason = null;
         const combatHelp = new Map();
         const memberShotActions = new Map();
+        // The bottles each member drank (BackgroundResolver.startColdPotion):
+        // the save debits them from its stored stock, as the solo round's.
+        const memberPotions = new Map();
         const memberSoulCrystals = new Map();
         let combatMembers = members.map((state) => ({
             ...state,
@@ -435,6 +438,11 @@ const BackgroundPartyResolver = {
         // Raid preparation casts its own buffs; an ordinary hunt casts them between fights (F23).
         const huntBuffs = raid || pending ? null : BackgroundResolver.castHuntPartyBuffs(combatMembers, timestamp);
         if (huntBuffs) combatMembers = huntBuffs.members;
+        // A party rests between fights, never in one, as hot (HotBackgroundParty:
+        // no target, nothing incoming): a member below its line, or a summoner
+        // for a pet it cannot heal (RestPolicy), sends it to rest at a fight's end.
+        const restsNow = (state, resolved, vitals) => !raid && BackgroundResolver.needsRest(state, vitals, { party: true,
+            pet: BackgroundResolver.petViewForState(resolved, vitals, timestamp) });
         for (let i = 0; i < fightBudget; i++) {
             const encounter = BackgroundResolver.resolvePartyFight({
                 members: combatMembers,
@@ -474,6 +482,13 @@ const BackgroundPartyResolver = {
             for (const member of encounter.members) {
                 const id = Number(member.state.characterId);
                 memberShotActions.set(id, (memberShotActions.get(id) || 0) + Number(member.shotActions || 0));
+                if (member.drunkPotions) {
+                    const drunk = memberPotions.get(id) || {};
+                    for (const [selfId, count] of Object.entries(member.drunkPotions)) {
+                        drunk[selfId] = Number(drunk[selfId] || 0) + Number(count);
+                    }
+                    memberPotions.set(id, drunk);
+                }
                 if (member.soulCrystals?.length) {
                     const outcomes = memberSoulCrystals.get(id) || [];
                     outcomes.push(...member.soulCrystals);
@@ -489,6 +504,8 @@ const BackgroundPartyResolver = {
                         ...(member.state.stats?.coldCombat || ColdCombatProfile.seedSnapshot(member.state, timestamp)),
                         effects: member.profile.effects || member.state.stats?.coldCombat?.effects || [],
                         cooldowns: member.cooldowns,
+                        // The bottle it drank runs on: the next one waits for it (coldPotionRuns).
+                        ...(member.potionUntil ? { potionUntil: member.potionUntil } : {}),
                         charges: member.charges || 0,
                         chargeExpiresAt: member.chargeExpiresAt || null
                     }
@@ -501,6 +518,7 @@ const BackgroundPartyResolver = {
             }
             else if (!pending) losses += 1;
             if (!encounter.won || combatMembers.some((member) => Number(member.vitals?.hp || 0) <= 0)) break;
+            if (combatMembers.some((member) => restsNow(member, member, member.vitals))) break;
         }
 
         const rewards = distributeRewards({ members, spot, wins, defeatedNpcIds, overhitContexts, pressure, rng, timestamp });
@@ -546,9 +564,7 @@ const BackgroundPartyResolver = {
                     meta: { partyId: party.partyId, spotId: spot.id, fights, wins }
                 });
             } else {
-                // A summoner rests for a pet it cannot heal, as alone (RestPolicy).
-                if (!raid && BackgroundResolver.needsRest(state, vitals, { party: true,
-                    pet: BackgroundResolver.petViewForState(resolved, vitals, timestamp) })) {
+                if (!pending && restsNow(state, resolved, vitals)) {
                     activity = 'resting';
                     resting += 1;
                 }
@@ -610,6 +626,7 @@ const BackgroundPartyResolver = {
                         // result order to nominate exactly one aggregate owner.
                         populationTelemetryOwner: index === 0,
                         shotActions: memberShotActions.get(Number(state.characterId)) || 0,
+                        drunkPotions: memberPotions.get(Number(state.characterId)) || null,
                         // The worker delivers member results, not the outer
                         // aggregate. Carry combat totals on this owner only.
                         ...(index === 0 ? { combatActions, skillUses, heals, partyBuffCasts: huntBuffs?.buffCasts || 0 } : {})
@@ -702,7 +719,7 @@ const BackgroundPartyResolver = {
         const raidFailed = raid && raidSnapshot?.status !== 'defeated' && casualties.some((member, index) =>
             require('./RaidCasualtyPolicy').disposition(member, { previousDamageCasualties: index, remainingHpRatio }) !== 'continue');
         const raidDefeated = raid && raidSnapshot?.status === 'defeated';
-        if (!raid && pending && (resting > 0 || deaths > 0 || pending.slices >= PveEncounter.MAX_SLICES)) {
+        if (!raid && pending && (deaths > 0 || pending.slices >= PveEncounter.MAX_SLICES)) {
             pending = null;
             fights += 1;
             losses += 1;

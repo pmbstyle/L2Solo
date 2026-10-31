@@ -75,6 +75,15 @@ assert(ratio([{ ...even, evasion: even.evasion + 10 }]) > ratio([even]), 'the bo
         soloDamageReceiver: false, servitor: true };
     assert(ratio([owner, { ...pet, summonCastMs: 8000 }]) < ratio([owner, pet]), 'the cast comes first');
     assert(ratio([owner, pet]) > ratio([owner]), 'a raised servitor strikes');
+    // T140, the hot rule read by the gate (PetTankRule): the owner of a summoner
+    // class strikes only under its pet's hate, so while the pet stands its damage
+    // stops there, and a pet never leaves it worse off than no pet.
+    const summoner = { ...fighter, classId: 14, pAtk: 900 }, unbound = { ...summoner, classId: 2 };
+    const weakPet = { ...pet, pAtk: 40 };
+    assert(ratio([summoner, weakPet]) < ratio([unbound, weakPet]), 'the pet\'s hate caps its owner\'s damage');
+    assert(ratio([{ ...summoner, pAtk: 60 }, pet]) > ratio([{ ...summoner, skills: [], role: 'mage' }, pet]), 'an owner below its pet\'s damage adds its own');
+    assert(Matchup.damageRate([summoner, weakPet], mob) <= 2 * Matchup.damageRate([weakPet], mob) + 1e-6, 'the pair deals at most twice the pet');
+    assert(ratio([summoner, weakPet]) >= ratio([summoner]), 'a pet is never worse than no pet: it stands first, then the owner fights as alone');
 }
 
 // 5. A pull worn down by area skills hits as all its mobs: the pack grows to k.
@@ -104,6 +113,8 @@ assert.strictEqual(Pull.packFactor(3, 1), 3);
     const swing = Matchup.soloSurvival([archer], mob);
     const noOpening = Matchup.soloSurvival([archer], { ...mob, runSpd: 0 });
     assert(swing.survivalRatio > noOpening.survivalRatio, 'the opening shots count');
+    // A mob already in the fight has no way to close in (DangerMoment's read).
+    assert.strictEqual(Matchup.soloSurvival([archer], { ...mob, engaged: true }).survivalRatio, noOpening.survivalRatio, 'no opening mid-fight');
 }
 
 console.log('Solo gate fight model passed');

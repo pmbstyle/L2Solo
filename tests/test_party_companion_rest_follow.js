@@ -1777,6 +1777,25 @@ try {
     assert.strictEqual(lowManaMeleeSession.plan, 'following', 'a melee companion already resting only for MP should immediately return to the party');
     assert.strictEqual(lowManaMelee.state.fetchSeated(), false, 'the stale MP-rest state must stand the melee companion up');
 
+    // T107: the mana rule of a self-healer is solo only. A companion Paladin
+    // sitting at whole HP gets up and follows, whatever its MP; alone it rests on.
+    const companionPaladin = fakeActor(2000113, { locX: 80, locY: 0, classId: 5, level: 46, hp: 100, maxHp: 100, mp: 30, maxMp: 100 });
+    const companionPaladinSession = fakeSession('bot_companion_paladin_rest', companionPaladin);
+    companionPaladinSession.followPlayerSession = manaLeaderSession;
+    companionPaladinSession.partyCompanion = true;
+    companionPaladinSession.plan = 'resting';
+    companionPaladin.state.setSeated(true);
+    publishSessions([manaLeaderSession, companionPaladinSession]);
+    RestingState.tick(companionPaladinSession, companionPaladin, {}, { say() {} });
+    assert.strictEqual(companionPaladinSession.plan, 'following', 'a companion Paladin at whole HP does not wait for 95% MP');
+    assert.strictEqual(companionPaladin.state.fetchSeated(), false, 'it stands up to follow');
+    const soloPaladin = fakeActor(2000114, { locX: 80, locY: 0, classId: 5, level: 46, hp: 100, maxHp: 100, mp: 30, maxMp: 100 });
+    const soloPaladinSession = fakeSession('bot_solo_paladin_rest', soloPaladin);
+    soloPaladinSession.plan = 'resting';
+    soloPaladin.state.setSeated(true);
+    RestingState.tick(soloPaladinSession, soloPaladin, {}, { say() {} });
+    assert.strictEqual(soloPaladinSession.plan, 'resting', 'alone the same Paladin rests on for its MP');
+
     const lowManaArcherRest = fakeActor(2000106, { locX: 80, locY: 0, classId: 9, hp: 100, maxHp: 100, mp: 1, maxMp: 100 });
     const lowManaArcherRestSession = fakeSession('bot_low_mana_archer_rest', lowManaArcherRest);
     lowManaArcherRestSession.followPlayerSession = manaLeaderSession;

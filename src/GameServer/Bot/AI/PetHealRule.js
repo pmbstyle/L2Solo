@@ -26,14 +26,22 @@ function isPetHeal(skill) {
     return semantic.skillType === C4SkillRules.HEAL && semantic.target === 'pet';
 }
 
+// May the actor cast now? Silence or a stun refuses the cast (SkillRequest),
+// so a bot's own heal rule reads this before it plans one. The worker's and
+// a cold actor's EffectStore answer it too; EffectRestrictions.canCast loads
+// the network and is main's.
+function castBlocked(actor) {
+    const impairments = EffectStore.impairments(actor);
+    return impairments.disabled || impairments.silenced || impairments.magicMuted;
+}
+
 // The pet heal an owner casts now, on the actor API (a hot actor, or a cold
 // profile through ColdClassPolicy.actorFor): its highest level with the reuse
-// and MP ready; none while the owner may not cast (silence, stun: the cast
-// would be refused, SkillRequest), so a silenced bot walks on, not stalls.
+// and MP ready; none while the owner may not cast (castBlocked), so a
+// silenced bot walks on, not stalls.
 // options.anyReuse: one on its reuse counts too (restView).
 function choose(actor, options = {}) {
-    const impairments = EffectStore.impairments(actor);
-    if (impairments.disabled || impairments.silenced || impairments.magicMuted) return null;
+    if (castBlocked(actor)) return null;
     const skills = actor?.skillset?.skills || actor?.skillset?.fetchSkills?.() || [];
     const mp = Number(actor.fetchMp?.() || 0);
     let best = null;
@@ -81,4 +89,4 @@ function healedLifetime(hp, incoming, sustain, ownerMp) {
     return Math.min(byRate, (hp + paid * sustain.amount) / incoming);
 }
 
-module.exports = { PET_HEAL_BELOW, wantsHeal, isPetHeal, choose, restView, amount, sustainOf, healedLifetime };
+module.exports = { PET_HEAL_BELOW, wantsHeal, isPetHeal, castBlocked, choose, restView, amount, sustainOf, healedLifetime };

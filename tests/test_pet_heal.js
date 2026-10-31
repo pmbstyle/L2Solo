@@ -107,4 +107,29 @@ assert.ok(withHeal > without, `the healed pet holds longer (${withHeal} > ${with
 assert.equal(Rule.healedLifetime(100, 10, null, 0), 10, 'no heal: HP over damage');
 assert.equal(Rule.healedLifetime(100, 10, { amount: 50, mp: 10, castMs: 1000, reuseMs: 5000 }, 20), 20,
     'two paid heals: HP and both heals over damage');
+
+// A pet carried from a hot bot: the snapshot saves its skill, HP and life
+// (ColdCombatProfile.summonSnapshot), and every cold reader sees it whole, as
+// the first fight does: the gate, the rest rule, its regen.
+const petSkill = ColdCombatProfile.summonSkills(profile)[0];
+const petStats = invoke('GameServer/Bot/Population/ColdSummonProfile')(profile, ColdCombatProfile.summonDetails(petSkill));
+const carried = (hp, summon = { active: true, skillId: petSkill.selfId, hp, expiresAt: 1e12 }) => ({ ...state,
+    vitals: { hp: profile.maxHp, maxHp: profile.maxHp, mp: 0, maxMp: profile.maxMp },
+    stats: { ...state.stats, coldCombat: { ...state.stats.coldCombat, summon } } });
+const snapshotRound = Match.coldProfiles(profile, carried(petStats.maxHp), 0);
+const seenPet = snapshotRound.find(one => one.servitor);
+assert.equal(seenPet.maxHp, petStats.maxHp, 'the gate sees the pet\'s max HP');
+assert.equal(seenPet.pDef, petStats.pDef, 'and its defence');
+const whole = Match.coldProfiles(profile, carried(petStats.maxHp, { active: true, skillId: petSkill.selfId, expiresAt: 1e12, ...petStats, hp: petStats.maxHp }), 0);
+assert.equal(Match.soloSurvival(snapshotRound, target).survivalRatio, Match.soloSurvival(whole, target).survivalRatio,
+    'a snapshot pet holds the mob as a pet saved by a fight');
+assert.ok(Match.soloSurvival(snapshotRound, target).survivalRatio > Match.soloSurvival(snapshotRound.filter(one => !one.servitor), target).survivalRatio,
+    'and longer than no pet');
+const woundedHp = Math.round(petStats.maxHp * 0.2);
+const wounded = carried(woundedHp);
+assert.ok(Math.abs(Resolver.petViewForState(wounded, wounded.vitals, 0).ratio - woundedHp / petStats.maxHp) < 1e-9,
+    'the rest rule reads a snapshot pet\'s HP share');
+const rested = Resolver.resolveRest(wounded, 600000, 0).patch.stats.coldCombat.summon;
+assert.ok(rested.hp > woundedHp, `a snapshot pet regenerates on the rest (${rested.hp})`);
+assert.equal(rested.maxHp, petStats.maxHp);
 console.log('test_pet_heal: ok');

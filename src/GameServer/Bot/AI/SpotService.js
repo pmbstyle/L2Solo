@@ -457,16 +457,24 @@ const SpotService = {
         return this.spots;
     },
 
-    // Mobs that come with this one (BotPullEstimate), from the table built
-    // when the spots were indexed at start; 1 before that. spot: the npc's
-    // (findCurrentSpot) when the caller already read it.
-    pullSizeFor(npc, spot = undefined) {
-        if (!this.spots || !npc?.fetchLocX) return 1;
-        if (spot === undefined) {
-            const loc = locFromActor(npc);
-            spot = SpotIndex.spotAt(this.spots, cellAt(loc).key, Number(loc.locZ));
-        }
-        return BotPullEstimate.entryPull(spot, npc.fetchSelfId?.());
+    // The mobs of a caller's world scan that can join a pull: alive, attackable,
+    // not on a target yet, no raid entity.
+    idleMobs(npcs) {
+        return npcs.filter(npc => !BotRaidSafety.isProtectedRaidEntity(npc) && npc.fetchAttackable?.() && !npc.isDead?.() && !npc.fetchDestId?.());
+    },
+
+    // A caller's world scan made ready for livePull, once per scan, no scan of its own.
+    idlePack(npcs) {
+        const SocialAggro = invoke('GameServer/Npc/SocialAggro'); // lazy: worker never reaches this hot read (ensureIndexed).
+        const NpcAggro = invoke('GameServer/Npc/NpcAggro'); // lazy: as SocialAggro above.
+        return BotPullEstimate.packIndex(this.idleMobs(npcs).map(BotPullEstimate.record), { assistZ: SocialAggro.MAX_ASSIST_Z_DIFFERENCE,
+            aggroRadius: NpcAggro.AGGRO_RADIUS, aggroZ: NpcAggro.MAX_AGGRO_Z_DIFFERENCE });
+    },
+
+    // The mobs that come with a live npc now: the bot stands before it and its
+    // pack (BotPullEstimate.packPull over an idlePack).
+    livePull(npc, pack) {
+        return BotPullEstimate.packPull(BotPullEstimate.record(npc), pack);
     },
 
     findById(id) {

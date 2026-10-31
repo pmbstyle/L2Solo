@@ -14,6 +14,7 @@
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const Formulas = invoke('GameServer/Formulas');
 const Utility = invoke('GameServer/Bot/AI/BotCombatUtility');
+const PetHealRule = invoke('GameServer/Bot/AI/PetHealRule');
 
 const INSTANT = new Set([C4SkillRules.HEAL, C4SkillRules.HEAL_PERCENT, C4SkillRules.HEAL_STATIC, C4SkillRules.HEAL_HOT]);
 const PERIODIC = new Set([C4SkillRules.HOT, C4SkillRules.HEAL_HOT]);
@@ -64,11 +65,15 @@ function candidates(actor, periodic) {
     return held[key] = list;
 }
 
-// The heals the bot can cast on itself now (candidates by its HP, MP and reuse).
+// The heals the bot can cast on itself now (candidates by its HP, MP and
+// reuse); none while it may not cast: a silenced bot fights on with its
+// weapon and walks on between fights.
 function heals(actor, periodic) {
+    const list = candidates(actor, periodic);
+    if (!list.length || PetHealRule.castBlocked(actor)) return [];
     const hp = Number(actor.fetchHp?.()) || 0, maxHp = Math.max(1, Number(actor.fetchMaxHp?.()) || 1);
     const mp = Number(actor.fetchMp?.()) || 0;
-    return candidates(actor, periodic).filter((heal) => (heal.limit === undefined || hp / maxHp * 100 <= heal.limit)
+    return list.filter((heal) => (heal.limit === undefined || hp / maxHp * 100 <= heal.limit)
         && heal.mp <= mp && actor.canUseSkill?.(heal.skill) !== false);
 }
 

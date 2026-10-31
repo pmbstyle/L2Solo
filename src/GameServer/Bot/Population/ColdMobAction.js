@@ -258,6 +258,14 @@ function meleeOnly(mob) {
     return freshFight(mob).aiType === 'fighter';
 }
 
+// How far the monster still strikes a target that runs from it: its weapon's
+// reach, for one that fights at range (not meleeOnly) its longest skill's.
+function reachOf(mob, fight) {
+    const weapon = Number(mob?.atkRadius) || 0;
+    if (meleeOnly(mob)) return weapon;
+    return fight.skills.reduce((reach, skill) => Math.max(reach, Number(skill.fetchDistance?.()) || 0), weapon);
+}
+
 // One action of a cold monster on a fighter, as the hot Npc's: a self buff
 // it lacks, a control or damage skill by its rolled chances
 // (NpcCombatChoice), else its weapon hit (HitRules). A control that lands
@@ -342,4 +350,4 @@ function coldMobAction(mob, fight, target, { time, at, rng, mobHp = mob.maxHp, p
 }
 
 module.exports = { mobHitModifier, coldMobFight, coldMobFightSave, buffColdMob, mobAttackMs,
-    mobSkillCastMs, coldMobAction, actionMix, incomingPerSecond, meleeOnly, addDot, dotDamage, landOnMob, controlLandChance };
+    mobSkillCastMs, coldMobAction, actionMix, incomingPerSecond, meleeOnly, reachOf, addDot, dotDamage, landOnMob, controlLandChance };

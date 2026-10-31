@@ -62,15 +62,18 @@ function soloRoute(state, spots, timestamp, peers = []) {
     const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
     const Route = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
     const standalone = soloState(state);
-    let held = soloChoices.get(state);
-    if (!held || held.spots !== spots || timestamp < held.at || timestamp - held.at >= REVIEW_MS) {
-        // The spot the bot's held build earns at (decision 10-30) first; a full search when it fails.
-        const options = { spots, timestamp, required: true, mode: 'solo', maxChecks: MAX_SOLO_CHECKS };
-        const kept = invoke('GameServer/Bot/Economy/EconomyContext').heldIncomeRoute(standalone, { ...options, party: true }); // lazy: EconomyContext reads this module
-        held = { spots, at: timestamp, choice: kept || Route.select(standalone, options) };
-        soloChoices.set(state, held);
+    const options = { spots, timestamp, required: true, mode: 'solo', maxChecks: MAX_SOLO_CHECKS };
+    // The spot the bot's held build earns at (decision 10-30), read each time
+    // (no search, and no memo may outlive its window); else a search of its own.
+    let choice = invoke('GameServer/Bot/Economy/EconomyContext').heldIncomeRoute(standalone, { ...options, party: true }); // lazy: EconomyContext reads this module
+    if (!choice) {
+        let held = soloChoices.get(state);
+        if (!held || held.spots !== spots || timestamp < held.at || timestamp - held.at >= REVIEW_MS) {
+            held = { spots, at: timestamp, choice: Route.select(standalone, options) };
+            soloChoices.set(state, held);
+        }
+        choice = held.choice;
     }
-    const choice = held.choice;
     if (!choice) return null;
     const row = choice.row;
     let best = { ...row, income: row.income * Hunt.onSpotShare(state), spotId: choice.spot.id,
@@ -98,8 +101,6 @@ function soloRoute(state, spots, timestamp, peers = []) {
     }
     return best;
 }
-
-// Cold rows only: every write to a far row moves its revision.
 
 function withEffects(state, effects) {
     const Loadout = invoke('GameServer/Bot/AI/PartyBuffLoadout');

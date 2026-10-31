@@ -28,7 +28,7 @@ function compact(stats = {}) {
 // and published card). It is saved in its own column (bot_life_state.mindJson),
 // so a refused body write never takes the decision with it.
 const MIND_KEYS = Object.freeze(['decisionSeq', 'activityLeaf', 'wishFocus', 'wishSections', 'wishDirty',
-    'dormantWishes', 'money', 'stockTargets', 'wishAdvisory']);
+    'dormantWishes', 'money', 'stockTargets', 'dangerPrice', 'wishAdvisory']);
 
 // A whole stats object (or a stats patch) as its two saved halves.
 function split(stats = {}) {

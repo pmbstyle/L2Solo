@@ -150,7 +150,9 @@ try {
 
 // The walk of the gap adds to the time of a kill (T106): the row measured the
 // walk to its reference's spawns (cap 600: 6 s a mob), the bot two levels
-// lower walks to fewer (cap 300: 12 s a mob).
+// lower walks to fewer (cap 300: 12 s a mob). The level curve (0.75 of the
+// reference's kills at gap 2) moves the rest of a kill's time; the walk is
+// the gap's own.
 const walkScratch = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'spot-walk-'));
 try {
     const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'spot_table.json'), 'utf8'));
@@ -163,11 +165,12 @@ try {
         fs.writeFileSync(file, JSON.stringify(copy));
         return file;
     };
+    const besidesWalk = (3600 / 200 - 6) / 0.75;
     Table.useFile(write('same.json', fixture.gaps.map(gap => gap < 0 ? 0 : 600 * 256 + 1)));
-    const measured = Table.value('-10_12', 'dps', 20, true).kills;
+    near(Table.value('-10_12', 'dps', 20, true).kills, 3600 / (besidesWalk + 6), 'the same walk: the curve moves the rest of the time');
     Table.useFile(write('walk.json', fixture.gaps.map(gap => gap < 0 ? 0 : gap < 6 ? 300 * 256 + 1 : 600 * 256 + 1)));
     near(Table.value('-10_12', 'dps', 24, true).kills, 200, 'at the reference the measured kills');
-    near(Table.value('-10_12', 'dps', 20, true).kills, 3600 / (3600 / measured + 12 - 6), 'the longer walk of the gap');
+    near(Table.value('-10_12', 'dps', 20, true).kills, 3600 / (besidesWalk + 12), 'the longer walk of the gap');
     // The spawns' respawns cap the read (E69 at the read, T106 audit): the
     // row's species gives back 100 mobs an hour, another species 500 more.
     Table.useSpots([{ id: '-10_12', npcEntries: [{ selfId: 380, count: 1, production: 100 }, { selfId: 999, count: 5, production: 500 }] }]);
@@ -177,6 +180,28 @@ try {
     Table.useSpots([]);
     Table.useFile();
     fs.rmSync(walkScratch, { recursive: true, force: true });
+}
+
+// The admitted part of the spawns' production (the fight's soloShareMobs: a
+// group's production times its admitted share): a bot that takes 4 in 10 of
+// the pulls of both species keeps 0.4 of their 200 mobs an hour.
+const shareScratch = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'spot-share-'));
+try {
+    const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'spot_table.json'), 'utf8'));
+    fixture.spots[0][0] = '-10_12';
+    fixture.rowFields.push('pull', 'cap', 'mix', 'gate', 'gateShare');
+    for (const rows of fixture.rows) for (const row of rows) if (row) row.push(1, 3600, [380, .5, 34, .5],
+        fixture.gaps.map(() => 3600 * 256 + 3), fixture.gaps.map(() => 0.4));
+    const file = path.join(shareScratch, 'table.json');
+    fs.writeFileSync(file, JSON.stringify(fixture));
+    Table.useFile(file);
+    Table.useSpots([{ id: '-10_12', npcEntries: [{ selfId: 380, count: 1, production: 100 }, { selfId: 34, count: 1, production: 100 }] }]);
+    near(Table.production('-10_12', 'dps', 24, true), 80, 'the admitted part of the production');
+    near(Table.value('-10_12', 'dps', 24, true).kills, 80, 'the kills at most that part');
+} finally {
+    Table.useSpots([]);
+    Table.useFile();
+    fs.rmSync(shareScratch, { recursive: true, force: true });
 }
 
 // A spotId saved before the cut (a cell piece a spot took in, SpotIndex)
@@ -264,6 +289,22 @@ useRate('x10');
 const keltirX10 = Table.value('-15_42', 'dps', 5, true);
 near(keltirX10.exp, keltir.exp * 10, 'the committed table scales exp with the rate');
 useRate('x1');
+// Spot 20_-30 (level 13): at gap 8 the gate opens to every spawn and the walk
+// to the next mob falls to nothing (cap 3600000); the bot still kills, at
+// most what the spawns give back (T106 review: the old walk swap went
+// negative there and dropped the spot).
+{
+    const offline = require('../data/Bots/spot-reward-npcs.json');
+    const [, entries] = offline.rows.find(row => row[0] === '20_-30');
+    Table.useSpots([{ id: '20_-30', npcEntries: entries.map(([selfId, count]) => ({ selfId, count, production: count * 6 })) }]);
+    try {
+        for (const line of ['9', '24', '37']) for (const level of [21, 22]) {
+            const row = Table.value('20_-30', line, level, true), production = Table.production('20_-30', line, level, true);
+            assert(row && row.kills > 0 && Number.isFinite(row.kills), `line ${line} at ${level} hunts 20_-30`);
+            assert(row.kills <= production + 1e-9, `line ${line} at ${level}: at most the production`);
+        }
+    } finally { Table.useSpots([]); }
+}
 
 
 // The value memo drops its oldest row at the cap, in insertion order, and a clear restarts the order at the

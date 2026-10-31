@@ -37,6 +37,23 @@ assert.ok(Heal.betweenFights(healer({ hp: 500, seatedHp: 0.01 })), '300 HP in ab
 assert.equal(Heal.betweenFights(healer({ hp: 800 })), null, 'missing 200: a 300 HP heal waits');
 assert.equal(Heal.betweenFights(healer({ hp: 500, seatedHp: 1 })), null, 'sitting at 1000 HP a second beats the heal');
 
+// A silenced bot casts nothing, in a fight or between fights: a heal would be
+// refused at the cast, so the turn goes to its weapon and the walk goes on.
+const EffectStore = invoke('GameServer/Effects/EffectStore');
+const silence = (actor) => { EffectStore.apply(actor, { key: 'silence', id: 1064, type: 'debuff', durationMs: 60000 }); return actor; };
+const hot = (actor) => Object.assign(actor, { state: { fetchCasts: () => false }, fetchId: () => 1 });
+const casts = [];
+const generics = { skillExec: (session, bot, data) => casts.push(data) };
+const mob = { fetchId: () => 7, fetchHp: () => 1000 };
+// The bot's HP fell from 500 to 400 in the fight's last second, the mob's did not.
+const fightTurn = (actor) => Heal.tryInFight({ selfHealPace: { targetId: 7, at: Date.now() - 1000, hp: 500, mobHp: 1000, healed: 0 } }, actor, mob, generics);
+assert.equal(fightTurn(hot(healer({ hp: 400 }))), true, 'unsilenced it heals in the fight');
+assert.equal(casts.length, 1);
+casts.length = 0;
+assert.equal(fightTurn(silence(hot(healer({ hp: 400 })))), false, 'silenced it fights on');
+assert.equal(Heal.tryBetweenFights({}, silence(hot(healer({ hp: 500 }))), generics), false, 'silenced it does not stop to heal between fights');
+assert.deepEqual(casts, [], 'no refused cast is sent');
+
 // The same rule reads a cold profile (ColdClassPolicy.actorFor): a level-40 Bishop between fights.
 const bishop = HuntCycle.referenceState(16, 40);
 const profile = ColdCombatProfile.profileFor(bishop, 0, { store: false });

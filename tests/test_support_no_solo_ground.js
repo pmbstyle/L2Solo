@@ -111,6 +111,13 @@ async function run() {
         'a search that keeps it on grey ground leaves it without ground');
     assert.strictEqual(Request.supportWithoutGround(levelled, spots, { owner: {}, timestamp: at }), false,
         'a record without a route: its own search moves it to fitting ground');
+    // A support on a resting step is not searched for (choose: not asked): that
+    // is no verdict, so no request opens until it hunts again.
+    const resting = { ...levelled, activity: 'resting' };
+    assert.strictEqual(Request.supportWithoutGround(resting, spots, { owner: {}, timestamp: at }), false,
+        'a rest asks no search: it says nothing about the ground');
+    assert.strictEqual(Request.partyRequestForPlan(resting, null, at, { spots, search: { owner: {}, timestamp: at } }), null,
+        'no request opens on a rest');
 
     // Rule 3: a Prophet 46 with ground of its level plays as today.
     const young = bot(9005, 17, 46, 'ground46', 'buffer');

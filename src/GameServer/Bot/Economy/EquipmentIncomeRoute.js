@@ -29,10 +29,9 @@ function spotList(state, { price } = {}) {
         { spoilSkillLevel: spoilerOf()?.skillLevel || 0 }) };
 }
 
-// list: the search's spotList, when the caller reads it too. only: spot ids
-// to judge instead of the ranked band (the held spot, EconomyContext.incomeRouteFor).
+// list: the search's spotList, when the caller reads it too.
 function select(state, { spots = [], timestamp = Date.now(), price, required = false, mode,
-    maxChecks = 32, list = null, only = null } = {}) {
+    maxChecks = 32, list = null } = {}) {
     if (!spots.length || state.party?.partyId || ['party', 'duo'].includes(mode)
         || !invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(state)) return null;
     const minGap = -15;
@@ -48,12 +47,12 @@ function select(state, { spots = [], timestamp = Date.now(), price, required = f
     const options = { timestamp, mode: 'solo', matchupProfiles: Match.stateProfiles(state, { timestamp }) };
     const survives = Match.soloSpotUpperBound(options.matchupProfiles);
     const origin = Index.spotById(spots, state.spotId)?.center || state.loc;
-    const ids = new Set(only || [state.spotId, ...BotHuntEfficiency.sampledRows(state, timestamp).map(row => row.spotId)]);
+    const ids = new Set([state.spotId, ...BotHuntEfficiency.sampledRows(state, timestamp).map(row => row.spotId)]);
     // Search-local: null rejects a spot; undefined awaits its first walk factor.
     const spotFactors = new Map();
     const candidates = shots => {
         // costs are the bot's own price beliefs: the id view, not the shared shortlist rows.
-        if (!only) for (const spotId of list.ids(shots, state.level, minGap)) ids.add(spotId);
+        for (const spotId of list.ids(shots, state.level, minGap)) ids.add(spotId);
         return [...ids].map(id => Index.spotById(spots, id)).filter(spot => {
             if (!spot) return false;
             if (spotFactors.has(spot)) return spotFactors.get(spot) !== null;

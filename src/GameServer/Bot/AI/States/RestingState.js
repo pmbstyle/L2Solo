@@ -2,7 +2,9 @@ const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const ServerResponse = invoke('GameServer/Network/Response');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
+const BotClassPolicy = invoke('GameServer/Bot/AI/BotClassPolicy');
 const RestPolicy     = invoke('GameServer/Bot/AI/RestPolicy');
+const RestPotion     = invoke('GameServer/Bot/AI/RestPotion');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const PartyPulling = invoke('GameServer/Bot/AI/PartyPulling');
@@ -15,7 +17,7 @@ const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 
 const REST_FOLLOW_WAKE_DISTANCE = 600;
-const EMERGENCY_RETREAT_DISTANCE = 850;
+const { EMERGENCY_RETREAT_DISTANCE } = invoke('GameServer/Bot/AI/DangerRule');
 const MANA_REGEN_CAST_RETRY_MS = 8000;
 const PARTY_REST_FORMATION_TOLERANCE = 45;
 
@@ -59,12 +61,19 @@ function sitDown(session, bot) {
 
 // The rest's posture (RestPolicy.sitsToRest, user 10-29): seated unless
 // standing refills what the bot lacks faster (a Sorcerer's Clear Mind).
-function restsSeated(bot) {
+function restsSeated(session, bot) {
     const automation = bot.automation;
     if (typeof automation?.fetchRevMpAmount !== 'function') return true;
     const tick = (options) => ({ hp: automation.fetchRevHpAmount(bot, options), mp: automation.fetchRevMpAmount(bot, options) });
     return RestPolicy.sitsToRest(tick({ seated: true }), tick({ standing: true }),
-        bot.fetchMaxHp() - bot.fetchHp(), bot.fetchMaxMp() - bot.fetchMp(), RestPolicy.sitsForMana(bot));
+        bot.fetchMaxHp() - bot.fetchHp(), bot.fetchMaxMp() - bot.fetchMp(), waitsForMana(session, bot));
+}
+
+// Does this rest last until MP is back (RestPolicy.restWaitsForMana)? The
+// party state is the fight mode's (BotClassPolicy.modeFor): a player's
+// companion, a bot party with a member beside it.
+function waitsForMana(session, bot) {
+    return RestPolicy.restWaitsForMana(bot, BotClassPolicy.modeFor(bot, { session }) !== 'solo_pve');
 }
 
 function maybeCastManaRegeneration(session, bot, Generics) {
@@ -86,7 +95,7 @@ function maybeCastManaRegeneration(session, bot, Generics) {
 }
 
 function needsRecovery(session, bot) {
-    return RestPolicy.needsRest(bot,
+    return RestPolicy.needsRetreat(bot,
         bot.fetchHp() / Math.max(1, bot.fetchMaxHp()),
         bot.fetchMp() / Math.max(1, bot.fetchMaxMp()),
         { locked: !!session.recoveryLocked, pet: SummonerTactics.petRestView(bot) });
@@ -179,7 +188,7 @@ module.exports = {
             const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
             const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
             const recovered = hpRatio >= 0.95 && (
-                !RestPolicy.sitsForMana(bot) || mpRatio >= 0.95
+                !waitsForMana(session, bot) || mpRatio >= 0.95
             ) && RestPolicy.petRested(SummonerTactics.petRestView(bot));
 
             // A companion can join while it is already sitting from a prior
@@ -276,7 +285,7 @@ module.exports = {
         const restingWithLeader = session.partyCompanion === true
             && session.followPlayerSession?.actor?.state?.fetchSeated?.() === true;
         if (hpRatio >= 0.95 && (
-            !RestPolicy.sitsForMana(bot) || mpRatio >= 0.95
+            !waitsForMana(session, bot) || mpRatio >= 0.95
         ) && RestPolicy.petRested(SummonerTactics.petRestView(bot)) && !restingWithLeader) {
             session.recoveryLocked = false;
             delete session.explicitRestOrder;
@@ -293,8 +302,11 @@ module.exports = {
             // skillExec marks the actor as casting immediately.  Do not sit
             // on the next brain tick while the native self-cast is still live.
             if (bot.state.fetchHits?.() || bot.state.fetchCasts?.()) return;
+            // Alone, a bottle may shorten the rest (RestPotion, T141); it stays seated.
+            if (BotClassPolicy.modeFor(bot, { session }) === 'solo_pve'
+                && RestPotion.tryBetweenFights(session, bot, () => SummonerTactics.petRestView(bot))) return;
             if (maybeCastManaRegeneration(session, bot, Generics)) return;
-            if (restsSeated(bot)) sitDown(session, bot);
+            if (restsSeated(session, bot)) sitDown(session, bot);
             else standUp(session, bot);
             // 3% chance per tick to attempt conversation when resting near other bots
             if (Math.random() < 0.03) {

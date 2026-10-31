@@ -216,7 +216,7 @@ try {
     const Match = invoke('GameServer/Bot/AI/BotTargetMatchup');
     const Lifecycle = invoke('GameServer/Bot/Population/HotPartyLifecycle');
     let unsafeReviews = 0;
-    replace(Match, 'soloSurvival', () => ({ eligible: false }));
+    replace(Match, 'pullVerdict', () => ({ eligible: false }));
     replace(require('../src/GameServer/Bot/Population/CraftMaterialParty'), 'canHunt', () => false);
     replace(Lifecycle, 'releaseUnsafeHunt', async () => { unsafeReviews++; return { ok: true }; });
     party.stats.objective.materialParty = true;
