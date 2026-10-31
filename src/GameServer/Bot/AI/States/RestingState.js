@@ -17,7 +17,7 @@ const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 
 const REST_FOLLOW_WAKE_DISTANCE = 600;
-const EMERGENCY_RETREAT_DISTANCE = 850;
+const { EMERGENCY_RETREAT_DISTANCE } = invoke('GameServer/Bot/AI/DangerRule');
 const MANA_REGEN_CAST_RETRY_MS = 8000;
 const PARTY_REST_FORMATION_TOLERANCE = 45;
 
@@ -303,7 +303,7 @@ module.exports = {
             // on the next brain tick while the native self-cast is still live.
             if (bot.state.fetchHits?.() || bot.state.fetchCasts?.()) return;
             // Alone, a bottle may shorten the rest (RestPotion, T141); it stays seated.
-            if (!session.followPlayerSession && session.partyCompanion !== true
+            if (BotClassPolicy.modeFor(bot, { session }) === 'solo_pve'
                 && RestPotion.tryBetweenFights(session, bot, () => SummonerTactics.petRestView(bot))) return;
             if (maybeCastManaRegeneration(session, bot, Generics)) return;
             if (restsSeated(session, bot)) sitDown(session, bot);

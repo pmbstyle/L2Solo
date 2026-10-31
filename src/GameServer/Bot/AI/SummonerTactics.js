@@ -149,9 +149,8 @@ function ownerWaits(session, actor, target, action, skill = null) {
 }
 
 function combatAction(session, actor, target, Generics) {
-    const isSummoner = BotRoles.isSummoner(actor);
+    if (!actor || !PetTankRule.binds(actor)) return { handled: false, reason: 'not_summoner' };
     const isNecromancer = BotRoles.isNecromancer(actor);
-    if (!actor || (!isSummoner && !isNecromancer)) return { handled: false, reason: 'not_summoner' };
 
     rememberNecromancerTarget(session, actor, target);
 

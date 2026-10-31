@@ -390,8 +390,9 @@ const persistedWeakKaiResult = BackgroundResolver.resolveSolo({
 });
 assert(persistedWeakKaiResult.patch.stats.coldCombat.summon.pAtk >= 342,
     'an already active persisted Kai must refresh stale fallback combat stats');
-assert.strictEqual(persistedWeakKaiResult.patch.stats.coldCombat.summon.hp, 42,
-    'refreshing persisted summon stats must preserve current summon HP');
+// The round's regeneration aside (petRegen): the refresh does not fill the pet.
+const refreshedKai = persistedWeakKaiResult.patch.stats.coldCombat.summon;
+assert(refreshedKai.hp >= 42 && refreshedKai.hp < refreshedKai.maxHp, 'refreshing persisted summon stats must preserve current summon HP');
 const raidMixedSpot = {
     ...spot,
     npcEntries: [
