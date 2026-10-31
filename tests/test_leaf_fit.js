@@ -39,16 +39,15 @@ const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const Gear = invoke('GameServer/Bot/AI/BotGear');
 const at = Date.now();
 
-// A level-31 human fighter wearing its whole baseline kit: no gear to earn,
-// so no income route; its hunt comes from the shared table. (On the T123
-// tables at 32 the first fitting earner is also the fitting spot with the
-// most exp once the progress pick is unfit; at 34 and 37 the progress and
-// income picks are one spot.)
+// A level-37 human fighter wearing its level-20 baseline kit; its hunt comes
+// from the shared table. The level is the table's: on the T143 tables (of
+// 1616da214) 31 lost the fixture (the first fitting earner is the fitting
+// spot with the most exp); 37 holds all three picks apart.
 const inventory = {};
 Gear.planFor({ classId: 1, level: 20 }).items.forEach((item, index) => {
     inventory[index + 1] = { selfId: Number(item.selfId), amount: 1, equipped: true, equippedSlots: [Number(item.slot)] };
 });
-const state = { characterId: 990101, level: 31, phase: 'cold', activity: 'hunting', stats: { classId: 1 }, inventory };
+const state = { characterId: 990101, level: 37, phase: 'cold', activity: 'hunting', stats: { classId: 1 }, inventory };
 const role = Roles.tableRoleFor(state);
 const ranked = Table.rankedIncome(role, state.level, Hunt.consumablePrices(state), -7, true, { spoilSkillLevel: 0 });
 const tableBest = Table.best(role, state.level, true).spotId;
