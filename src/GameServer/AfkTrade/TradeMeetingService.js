@@ -598,6 +598,18 @@ async function processMeeting(id, meetingId) {
     if (arrived.meeting.arrivalMask & 1 << side) return;
     const anchorId = state?.stats?.tradeMeeting?.[0] || await db().fetchTradeMeetingForOwner?.(id).then(anchor => anchor?.id);
     if (anchorId && anchorId !== row.id) return;
+    // Recover walks persisted by the old insufficient-fare fallback. The
+    // original departure, rather than an interpolated position en route,
+    // determines whether the agreed native journey is still funded.
+    const travel = state?.stats?.travel, suffix = side ? 'B' : 'A';
+    if (state?.phase === 'cold' && travel?.meetingId === row.id && travel.method === 'walk'
+        && Math.hypot(travel.to.locX - row.locX, travel.to.locY - row.locY, travel.to.locZ - row.locZ) <= 200
+        && JSON.parse(row[`route${suffix}`]).method !== 'walk') {
+        const native = require('../Bot/Travel/TravelRoutes').between(travel.from || state.loc, travel.to);
+        if (!native.route || native.route.fee > row[`routeReserve${suffix}`]) {
+            acceptRows(await db().cancelTradeMeeting(row.id, 'route_unfunded')); wake(id); return;
+        }
+    }
     if (state?.phase === 'cold' && !state.stats?.travel && !['fighting', 'resting'].includes(state.activity)) {
         await continueColdTravel(row, side, state);
     } else if (session && state?.phase === 'hot') {
@@ -628,13 +640,19 @@ async function continueColdTravel(row, side, state) {
     }
     const Routes = require('../Bot/Travel/TravelRoutes');
     const route = JSON.parse(row[`route${suffix}`]);
-    if (route.method === 'walk' || String(route.method).startsWith('meeting:')) {
+    if (route.method === 'walk') {
         const legId = `walk:${point.locX}:${point.locY}:${point.locZ}`;
         acceptRows(await db().payTradeMeetingLeg(row.id, side, row[`nextLeg${suffix}`], legId, 0, false));
         return;
     }
     const native = Routes.between(state.loc, point);
     if (!native.route) { acceptRows(await db().cancelTradeMeeting(row.id, 'route_unavailable')); wake(state.characterId); return; }
+    // A changed departure cannot turn a consented teleport into a walk
+    // across the world. Native cancellation refunds the held goods/fare so
+    // both sides can make a fresh decision from their current positions.
+    if (native.route.fee > row[`routeReserve${suffix}`]) {
+        acceptRows(await db().cancelTradeMeeting(row.id, 'route_unfunded')); wake(state.characterId); return;
+    }
     let kind = 'walk', destination = point, fee = 0, scroll = false;
     if (route.scroll && row[`nextLeg${suffix}`] === 1) {
         kind = 'soe'; destination = native.start; scroll = true;
@@ -648,9 +666,6 @@ async function continueColdTravel(row, side, state) {
             kind = 'gk'; destination = step; fee = step.fee;
         } else destination = gate;
     }
-    // A changed physical route may cost more than the held future fare. Walk
-    // to the agreed point instead; spent legs remain spent, custody is intact.
-    if (fee > row[`routeReserve${suffix}`]) { kind = 'walk'; destination = point; fee = 0; }
     const legId = `${kind}:${destination.locX}:${destination.locY}:${destination.locZ}`;
     acceptRows(await db().payTradeMeetingLeg(row.id, side, row[`nextLeg${suffix}`], legId, fee, scroll));
 }

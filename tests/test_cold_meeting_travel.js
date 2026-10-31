@@ -47,9 +47,10 @@ const flush = async () => { for (let n = 0; n < 8; n++) await new Promise(resolv
         assert.deepEqual(acked, [1]);
         assert.equal(paid.at(-1).legId, 'walk:2000:0:0');
         assert.equal(paid.at(-1).fee, 0, 'final movement is on foot');
-        row.legA = null; row.nextLegA = 3; step = { locX: 3000, locY: 0, locZ: 0, fee: 200, npcId: 10 };
+        row.legA = null; row.nextLegA = 3; row.routeReserveA = 200;
+        step = { locX: 3000, locY: 0, locZ: 0, fee: 200, npcId: 10 };
         lifeListener(1); await flush();
-        assert.equal(paid.at(-1).legId, 'walk:2000:0:0', 'a changed unaffordable route preserves the agreement and walks');
+        assert.equal(paid.at(-1).legId, 'gk:3000:0:0', 'a funded remaining native route continues by gatekeeper');
         row.legA = JSON.stringify({ sequence: 3, legId: 'soe:1000:0:0', fee: 0, scroll: true });
         state.loc = { locX: 500, locY: 0, locZ: 0 }; step = null;
         lifeListener(1); await flush();
