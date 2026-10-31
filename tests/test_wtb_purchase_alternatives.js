@@ -125,6 +125,44 @@ assert.throws(() => Alternative.assertMeetingPurchase([agreed(80001)], 0, 'Dion'
 assert.doesNotThrow(() => Alternative.assertMeetingPurchase([agreed(80000)], 0, 'Dion', ctx));
 assert.doesNotThrow(() => Alternative.assertMeetingPurchase([agreed(188565)], 1, 'Dion', ctx),
     'a seller does not prepare the counterparty purchase');
+const witnessed = extra => {
+    try { Alternative.assertMeetingPurchase([agreed(188565)], 0, 'Dion', { ...ctx, ...extra }); }
+    catch (error) { return error.independentPriceProof; }
+    return false;
+};
+assert.equal(witnessed({ proofMoney: 1000000 }), true, 'free cash and a local NPC prove the partial fill overpriced');
+assert.equal(witnessed({ proofMoney: 100 }), false, 'money committed to other wishes cannot prove the outside option');
+board.clear(); npc = [];
+shop(30, 74000, 1, { custodyPolicy: 1, kind: 'sell_ad' });
+assert.equal(witnessed({ proofMoney: 1000000, economy: { activity: { activity: 'shopping', kind: 'buy',
+    sourceType: 'afk', quoted: true, executable: true, itemId: ITEM, town: 'Dion', unitPrice: 74000, amount: 1 } } }), false,
+    'unreserved conditional stock never proves a persistent refusal');
+board.clear(); npc = [{ sourceType: 'npc', town: 'Giran', price: 80000 }];
+routes.Giran = { known: true, hours: 0.01, fees: 100 };
+assert.equal(witnessed({ proofMoney: 1000000 }), false, 'a longer trip depends on the buyer income and needs the full evidence');
+routes.Giran = { known: true, hours: 0, fees: 0 };
+assert.equal(witnessed({ proofMoney: 1000000 }), true, 'a no-longer, no-dearer trip proves the alternate purchase');
+// Live NUK3R case: one material costs more at the backed shop, but reaching
+// it is 8100 Adena cheaper than the Giran meeting. The buyer's cash is fully
+// committed to wishes, yet any funded meeting also funds this better option.
+board.clear(); npc = [];
+shop(41, 6004, 1, { town: 'Dion', custodyPolicy: 0, kind: 'shop' });
+routes.Dion = { known: true, hours: .013888888888888888, fees: 0 };
+routes.Giran = { known: true, hours: .013888888888888888, fees: 8100 };
+let dominated;
+try { Alternative.assertMeetingPurchase([agreed(5174)], 0, 'Giran', { ...ctx, proofMoney: 13274 }, 13274); }
+catch (error) { dominated = error; }
+assert.equal(dominated?.message, 'trade_meeting_purchase_price_changed');
+assert.equal(dominated?.fundingDominance, true, 'the cheaper total and no-longer route prove the rejection');
+routes.Dion = { known: true, hours: .02, fees: 0 };
+dominated = null;
+try { Alternative.assertMeetingPurchase([agreed(5174)], 0, 'Giran', { ...ctx, proofMoney: 13274 }, 13274); }
+catch (error) { dominated = error; }
+assert.notEqual(dominated?.fundingDominance, true, 'a longer trip needs fresh income evidence');
+routes.Dion = { known: true, hours: 0, fees: 0 };
+routes.Giran = { known: true, hours: 0, fees: 0 };
+board.clear();
+npc = [{ sourceType: 'npc', town: 'Dion', price: 80000 }];
 const absentTrip = { ...ctx, travelDetails: () => ({ known: false, hours: NaN, fees: NaN }) };
 assert.throws(() => Alternative.assertMeetingPurchase([agreed(80000)], 0, 'Dion', absentTrip), /trade_meeting_route/);
 npc = []; shop(1, 74000);
@@ -208,4 +246,14 @@ assert.equal(Town.buyAdTown(buyer, [{ selfId: ITEM }], [
     { kind: 'buy_ad', storeType: BUY, selfId: ITEM, count: 1, recordId: 8, town: 'Gludio' },
     { kind: 'buy_ad', storeType: BUY, selfId: ITEM, count: 1, recordId: 7, town: 'Dion' }
 ]), 'Dion', 'worker preparation and native publication retain the same matching meeting town');
+const Refusals = invoke('GameServer/Bot/Economy/MeetingPriceRefusals');
+const admissionBoard = new BoardIndex({ groupOf: Counters.counterOf });
+const index = invoke('GameServer/Bot/Population/ColdOccupationSources').recipeIndex(admissionBoard);
+const recipe = index.catalog.rows.find(row => row.level <= 9 && index.accept(row));
+assert(recipe);
+const scopeBefore = Refusals.admissionFingerprint(admissionBoard, 'recipe-production:9');
+admissionBoard.put({ id: 900, ownerId: 901, revision: 1, storeType: BUY, town: 'Dion',
+    lines: [{ lineId: 902, selfId: recipe.productId, count: 1, price: 100 }] });
+assert.notEqual(Refusals.admissionFingerprint(admissionBoard, 'recipe-production:9'), scopeBefore,
+    'public recipe admission changes retire price refusals on both board mirrors');
 console.log('WTB alternatives: publication, review, quantities, routes, funding and conditional execution passed');

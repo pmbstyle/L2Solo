@@ -112,6 +112,9 @@ function* decisionSearch(state, knownRecipes, context, options, mode) {
     const learned = new Set((knownRecipes || []).map(row => Number(row.recipeId ?? row)));
     const seen = new Set();
     function* candidates() {
+        // A meeting rechecks one already selected production job. It must
+        // not scan or admit other recipes while certifying its input.
+        if (options.onlyRecipeId) { yield Number(options.onlyRecipeId); return; }
         yield* knownRecipes || [];
         for (const key in state.inventory || {}) {
             const recipe = Recipes.resolve(Number(state.inventory[key].selfId || key));

@@ -97,22 +97,8 @@ function* prepareNative(state, economy, options) {
     const bidLimits = limits.length ? { bidLimits: limits } : {};
     const purchase = canAct && !options.showcaseOnly
         ? Ready.purchase(state, economy, options.board) || Ready.clanCraftPurchase(state, economy, options.board) : null;
-    const kept = new Map(own.filter(line => line.storeType === SELL)
-        .map(line => [`${line.selfId}:${line.enchant || 0}`, line.price]));
-    const inventory = { ...state.inventory };
-    for (const line of own) {
-        if (line.storeType !== SELL || line.custodyPolicy === 1) continue;
-        const row = inventory[line.selfId] || { selfId: line.selfId, amount: 0 };
-        inventory[line.selfId] = { ...row, amount: Number(row.amount || 0) + line.count,
-            instances: [...(row.instances || []), { id: -line.lineId, amount: line.count, enchant: line.enchant, equipped: false }] };
-    }
-    const saleState = { ...state, inventory };
-    const conditionalKept = new Set(own.filter(line => line.storeType === SELL && line.custodyPolicy === 1)
-        .map(line => `${line.selfId}:${line.enchant || 0}`));
-    for (const line of own) if (line.storeType === SELL && line.custodyPolicy !== 1)
-        conditionalKept.delete(`${line.selfId}:${line.enchant || 0}`);
-    const sale = Listing.evaluate(saleState, { ...options, economy, stockQuotes: true,
-        slots: Listing.BOARD_SLOTS, kept, conditionalKept, stored: new Map() });
+    const saleInput = Listing.ownSaleInputs(state, own, { ...options, economy });
+    const sale = Listing.evaluate(saleInput.state, saleInput.options);
     // A profitable surplus sale uses a meeting or a backed shop in the town
     // already reached. Leave the selected purchase/focus intact for review.
     const answer = canAct && !options.showcaseOnly ? Ready.sale(sale.answers, state) : null;

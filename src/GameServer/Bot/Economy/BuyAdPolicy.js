@@ -68,11 +68,16 @@ function keepRetainedBids(state, owned, wanted, moneyPrice, escrow = 0) {
             || count * price > PurchaseFunding.spendable(state, escrow, { r: need.valueRate })) continue;
         const existing = output.findIndex(row => Number(row.selfId) === Number(line.selfId));
         if (existing >= 0 && Number(output[existing].count) >= count) continue;
+        // A larger standing quantity cannot override the current price check.
+        // Keep the freshly prepared line so publication can reprice the ad.
+        const current = existing >= 0 ? output[existing] : null;
+        if (current && !withinCap(price, current.purchaseCap)) continue;
         if (existing < 0 && output.length >= limit) continue;
         const template = templateFor(Number(line.selfId));
         const carried = { selfId: Number(line.selfId), name: line.name || template?.template?.name || `Item ${line.selfId}`,
             count, price, enchant: 0, slot: Number(template?.etc?.slot || 0), stackable: template?.etc?.stackable === true,
-            pricing: line.pricing, intent: { ...need, amount: count, price, valueHours: count * price * Number(moneyPrice) } };
+            pricing: line.pricing, ...(current ? { purchaseCap: current.purchaseCap, survivalCost: current.survivalCost } : {}),
+            intent: { ...need, amount: count, price, valueHours: count * price * Number(moneyPrice) } };
         if (existing >= 0) output[existing] = carried; else output.push(carried);
     }
     return output;

@@ -6597,6 +6597,11 @@ const Database = {
         return mutationAdmission.run(beforeWrite, () => Promise.resolve().then(work));
     },
 
+    withoutMutationAdmission(work) {
+        if (typeof work !== 'function') throw new TypeError('invalid_mutation_admission');
+        return mutationAdmission.run(undefined, work);
+    },
+
     cooperatively(work, sliceMs = 12) {
         const outermost = cooperative.depth === 0;
         if (outermost) {

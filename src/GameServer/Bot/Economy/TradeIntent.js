@@ -1,8 +1,8 @@
 'use strict';
 
-// Version 1 of the board command's typed root certificate. This is a view
-// of the wish graph, never a second wallet or a persistent acquisition plan.
-const roots = [null, 'power', 'stock', 'book', 'enchant', 'sa', 'henna', 'status', 'resale'];
+// Version 1 of the board command's typed root certificate. Its root is a
+// fresh wish or production decision, never another wallet or saved plan.
+const roots = [null, 'power', 'stock', 'book', 'enchant', 'sa', 'henna', 'status', 'resale', 'production'];
 const stockKinds = [null, 'shots', 'potions', 'scrolls'];
 const Funding = require('./PurchaseFunding');
 const { MAX_DEPTH } = require('./WishNetwork');

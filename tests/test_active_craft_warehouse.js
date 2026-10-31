@@ -305,6 +305,21 @@ try {
             assert.equal(merged[1].count, 2);
             const partial = BuyAds.keepRetainedBids(actor, ads, [{ selfId: 4113, count: 1, price: 100 }], .01);
             assert.equal(partial[0].count, 2, 'a smaller competing quote cannot shrink the still-needed standing order');
+            const cheaper = { selfId: 4113, count: 1, price: 50, purchaseCap: 50,
+                intent: { valueRate: .01, amount: 1, price: 50 } };
+            const repriced = BuyAds.keepRetainedBids(actor, ads, [cheaper], .01);
+            assert.deepEqual(repriced, [cheaper], 'a larger old bid cannot override the fresh purchase cap');
+            assert.deepEqual(BuyAds.keepRetainedBids(actor, ads, repriced, .01), [cheaper],
+                'the cap survives the second retention pass before publication');
+            const townAds = [{ ...ads[0], kind: 'buy_ad', town: 'Giran' }];
+            const ready = BuyAds.retainedLines(actor, repriced, townAds, 'Giran');
+            assert.equal(ready[0].price, 50, 'quantity reconciliation cannot restore the old price');
+            assert.equal(ready[0].purchaseCap, 50, 'publication receives the fresh cap to reprice the old ad');
+            const allowed = BuyAds.keepRetainedBids(actor, ads,
+                [{ selfId: 4113, count: 1, price: 100, purchaseCap: 110, survivalCost: 25 }], .01);
+            assert.equal(allowed[0].count, 2, 'a larger still-valid bid keeps its quantity');
+            assert.equal(allowed[0].purchaseCap, 110, 'a retained bid keeps the fresh purchase cap');
+            assert.equal(allowed[0].survivalCost, 25, 'a retained bid keeps the fresh survival tranche');
             assert.equal(BuyAds.keepRetainedBids({ ...actor, adena: 100 }, ads, [], .01).length, 0,
                 'an unaffordable order is not protected');
             assert.equal(BuyAds.keepRetainedBids({ ...actor, inventory: { ...actor.inventory, 4113: item(4113, 2) } }, ads, [], .01).length, 0,

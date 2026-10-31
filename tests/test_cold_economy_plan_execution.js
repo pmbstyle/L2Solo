@@ -182,6 +182,11 @@ function stub(object, key, value) { const previous = object[key]; restores.push(
         { reviewGoal: false, step: work => work() });
         assert.equal(Afk.ownerRecords(id).find(row => row.id === standing.id).lines[0].price, 95,
             'a native shopping decision corrects an old bid independently of the current buy watch');
+        await Market.executePlan(Life.cachedState(id), { sell: [], withdraw: [], travel: null,
+            bidLimits: [[bid.id, standing.id, standing.revision, bid.count, bid.price, 95]] },
+        { reviewGoal: false, step: work => work() });
+        assert.equal(Afk.ownerRecords(id).find(row => row.id === standing.id).lines[0].price, 95,
+            'a correction already applied by the postcommit review does not invalidate the remaining plan');
         await assert.rejects(Market.executePlan(Life.cachedState(id), { sell: [], withdraw: [], travel: null,
             bidLimits: [[bid.id, standing.id, standing.revision, bid.count, bid.price, 90]] },
         { reviewGoal: false, step: work => work() }), /afk_trade_shop_changed/,

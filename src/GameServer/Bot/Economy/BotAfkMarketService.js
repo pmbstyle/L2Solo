@@ -791,6 +791,10 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
             const [lineId, recordId, revision, count, price, ceiling] = row;
             const ad = ads.find(record => record.id === recordId);
             const line = ad?.lines.find(candidate => candidate.id === lineId);
+            // The postcommit board review can apply the same correction
+            // before this prepared plan arrives. Its newer record is already
+            // within the limit; do not abort unrelated work or write it again.
+            if (!line || Number(line.price) <= ceiling) continue;
             if (!line?.pricing || ad.revision !== revision || line.count !== count || line.price !== price)
                 throw Error('afk_trade_shop_changed');
             const move = { lineId, recordId, selfId: line.selfId, expectedRevision: revision,
@@ -798,6 +802,7 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
             if (!ceiling) withdrawals.push(move);
             else reprices.push({ ...move, price: ceiling, pricing: { ...line.pricing, price: ceiling } });
         }
+        if (!reprices.length && !withdrawals.length) return { state };
         const result = await AfkTrade.repriceBotLines(ownerId, reprices, { withdrawals,
             ...(authority.phase === 'cold' ? { coldAuthority: authority } : { hotAuthority: authority }) });
         if (result.skipped) throw Error('afk_trade_shop_changed');

@@ -263,9 +263,15 @@ const occupationPlanner = new ColdOccupationPlanner({
         && left.mode === right.mode && left.buyOrderEscrow === right.buyOrderEscrow,
     capture: (id, input, read, readScope) => {
         const book = RecipeBookCodec.unpack(input.recipeBook);
-        return { state: input.state, board: boardReady(), timestamp: input.timestamp, read, readScope,
+        const exactReads = input.mode === 'meeting' ? new Map() : null;
+        const readItem = exactReads ? itemId => {
+            itemId = Number(itemId);
+            if (itemId > 0 && !exactReads.has(itemId)) exactReads.set(itemId, boardIndex.itemFingerprint(itemId));
+            read(itemId);
+        } : read;
+        return { state: input.state, board: boardReady(), timestamp: input.timestamp, read: readItem, readScope, exactReads,
             knownRecipes: book || input.state.stats?.workshop?.entries || [], knownShotRecipes: input.knownShotRecipes || [],
-            recipesKnown: book !== null || Array.isArray(input.state.stats?.workshop?.entries),
+            recipesKnown: book !== null || Array.isArray(input.state.stats?.workshop?.entries), bookKnown: book !== null,
             buyOrderEscrow: input.buyOrderEscrow, stock: input.stock || null, economy: input.economy || null,
             routeRows: input.routeRows || null, routeKey: input.routeKey, mode: input.mode || 'occupation', meeting: input.meeting, pending: input.pending };
     },
@@ -312,6 +318,7 @@ const occupationPlanner = new ColdOccupationPlanner({
             own.route = shared ? { fee: 0, scroll: false, method: own.route.method, durationMs: 0 }
                 : { fee: routePlan.route.fee, scroll: !!routePlan.scroll, method: routePlan.method, durationMs: routePlan.durationMs };
             let total = own.route.fee, valueRate = Infinity, sellerDecision = null;
+            let productionReviewed = false, productionOpportunity = null;
             const survival = new Map();
             const required = new Map(), sold = new Map();
             for (const line of request.lines) if (line.payer === side) required.set(line.selfId, (required.get(line.selfId) || 0) + line.count);
@@ -319,9 +326,49 @@ const occupationPlanner = new ColdOccupationPlanner({
             for (const line of request.lines) {
                 input.read(line.selfId);
                 if (line.payer === side) {
-                    const intent = invoke('GameServer/Bot/Economy/TradeIntent').meetingPurchase(economy.network, intents,
+                    let intent = invoke('GameServer/Bot/Economy/TradeIntent').meetingPurchase(economy.network, intents,
                         { selfId: line.selfId, count: required.get(line.selfId), price: line.price,
                             town: request.town, enchant: Number(line.enchant || 0) }, input.state);
+                    const job = input.state.stats?.wealthCraft;
+                    if (!intent && job?.outcome === 'buying') {
+                        if (!productionReviewed) {
+                            productionReviewed = true;
+                            const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(Number(job.recipeId));
+                            const batches = Number(job.batches);
+                            const relevant = recipe && (Number(recipe.recipeItemId) === Number(line.selfId)
+                                || recipe.materials.some(row => Number(row.selfId) === Number(line.selfId)));
+                            if (relevant && Number.isSafeInteger(batches) && batches > 0 && batches <= 64) {
+                                // The production basket prices physical inputs. A separate
+                                // accepted delivery may still be cancelled or arrive, so
+                                // wait for it rather than buy the same inputs twice.
+                                if ([recipe.recipeItemId, ...recipe.materials.map(row => row.selfId)]
+                                    .some(id => Number(input.state.acceptedIncoming?.[id] || 0) > 0))
+                                    throw Error('trade_meeting_preparation_pending');
+                                // Workshop entries are only the public subset; learning
+                                // must be priced against the complete native book.
+                                if (!input.bookKnown) throw Error('trade_meeting_preparation_pending');
+                                const Errands = invoke('GameServer/Bot/Population/CombinedErrandPolicy');
+                                const remaining = Errands.pending(input.state, input.timestamp).filter(row =>
+                                    !(Number(row.selfId) === Number(line.selfId) && row.town === request.town
+                                        && ['wealth_craft', 'recipe'].includes(row.purpose)));
+                                const state = Errands.withPending(input.state, remaining);
+                                const Wealth = invoke('GameServer/Bot/Economy/WealthCraftDecision');
+                                if (Wealth.eligible(state, { ownLines: input.board.ownerLines(ownId), now: input.timestamp })) {
+                                    const prepared = yield* OccupationSources.prepare(state, { ...input, targetRecipe: recipe,
+                                        stock: economy.stock('shots'), economy, routeRows, routeKey: EconomicTrip.key(state) });
+                                    if (prepared) {
+                                        const cursor = Wealth.createAction(state, input.knownRecipes,
+                                            { ...prepared.context, fixedBatches: batches },
+                                            { ...prepared.options, onlyRecipeId: recipe.recipeId });
+                                        while (!Wealth.stepAction(cursor)) yield cursor.stage;
+                                        productionOpportunity = Wealth.resultAction(cursor);
+                                    }
+                                }
+                            }
+                        }
+                        intent = require('../Economy/ProductionMeeting').purchaseIntent(productionOpportunity, line,
+                            required.get(line.selfId), request.town);
+                    }
                     if (!intent) throw Error('trade_meeting_need_changed');
                     if (economyDiagnostics.active() && !intents.some(row => row.itemId === line.selfId
                         && row.amount >= required.get(line.selfId)
@@ -349,10 +396,15 @@ const occupationPlanner = new ColdOccupationPlanner({
                     if (free < sold.get(line.selfId)) throw Error('trade_meeting_protected_stock');
                     const quote = input.board?.records.get(line.adId)?.find(row => row.selfId === line.selfId);
                     if (Number(quote?.ownerId) !== ownId) {
-                        sellerDecision ||= invoke('GameServer/Bot/Economy/MarketListingPolicy').evaluate(input.state, { economy, board: input.board,
-                            npcOffersFor: OccupationSources.npcOffersFor,
-                            findSpot: id => SpotIndex.spotById(planningSpots, id),
-                            now: input.timestamp, decisionPoint: `meeting:${request.token}`, slots: 5 });
+                        if (!sellerDecision) {
+                            const listing = invoke('GameServer/Bot/Economy/MarketListingPolicy');
+                            const saleInput = listing.ownSaleInputs(input.state, input.board?.ownerLines(ownId) || [],
+                                { economy, board: input.board, npcOffersFor: OccupationSources.npcOffersFor,
+                                    findSpot: id => SpotIndex.spotById(planningSpots, id),
+                                    now: input.timestamp, decisionPoint: `meeting:${request.token}`,
+                                    selectedAnswer: { selfId: line.selfId, enchant: line.enchant, recordId: line.adId } });
+                            sellerDecision = listing.evaluate(saleInput.state, saleInput.options);
+                        }
                         const answer = sellerDecision.answers.find(row => row.item.selfId === line.selfId
                             && Number(row.line.recordId) === line.adId && row.count >= line.count);
                         if (!answer) throw Error('trade_meeting_sale_changed');
@@ -362,15 +414,71 @@ const occupationPlanner = new ColdOccupationPlanner({
             }
             // The native accept checks the same terms (TradeMeeting funding).
             own.survivalCost = [...survival.values()].reduce((a, b) => a + b, 0);
-            const spendable = survival.size ? invoke('GameServer/Bot/Economy/PurchaseFunding').spendable(input.state,
-                input.buyOrderEscrow || 0, { r: valueRate, survivalCost: own.survivalCost }) : Infinity;
+            // The transaction pays only from the physical wallet, not from
+            // buy-shop escrow. A seller's fare also uses free money, whose
+            // protected goal and survival reserves still apply.
+            const fundingState = { adena: input.state.adena, stats: { money: input.state.stats?.money } };
+            const spendable = invoke('GameServer/Bot/Economy/PurchaseFunding').spendable(fundingState, 0,
+                { r: valueRate, free: survival.size === 0, survivalCost: own.survivalCost });
             if (!Number.isSafeInteger(total) || total > spendable || own.route.fee > Number(input.state.adena || 0))
                 throw Error('trade_meeting_funding');
-            invoke('GameServer/Bot/Economy/BidPurchaseAlternative').assertMeetingPurchase(request.lines, side, request.town, {
-                state: input.state, characterId: ownId, adena: Number(input.state.adena || 0), hour: economy.hourAdena,
-                economy, board: input.board, travelDetails: economy.trip.details,
-                npcOffersFor: OccupationSources.npcOffersFor
-            }, Math.min(spendable, Number(input.state.adena || 0)));
+            try {
+                invoke('GameServer/Bot/Economy/BidPurchaseAlternative').assertMeetingPurchase(request.lines, side, request.town, {
+                    state: input.state, characterId: ownId, adena: Number(input.state.adena || 0), hour: economy.hourAdena,
+                    economy, board: input.board, travelDetails: economy.trip.details,
+                    proofMoney: Math.min(spendable, Number(input.state.adena || 0)),
+                    npcOffersFor: OccupationSources.npcOffersFor
+                }, Math.min(spendable, Number(input.state.adena || 0)));
+            } catch (error) {
+                if (error.message === 'trade_meeting_purchase_price_changed' && error.purchase) {
+                    const slot = occupationPlanner.slots.get(ownId);
+                    if (!slot || kernel.states.get(ownId)?.state !== slot.input.sourceState) throw error;
+                    const itemId = error.purchase.selfId;
+                    const refusals = invoke('GameServer/Bot/Economy/MeetingPriceRefusals');
+                    const npcAllowed = invoke('GameServer/Bot/Economy/ProductionPolicy').allowsNpcShot(itemId);
+                    if (error.independentPriceProof && refusals.witnessCurrent(input.board, error.priceWitness, error.purchase)) {
+                        error.priceEvidence = { purchase: error.purchase, authority: EconomyCommit.authority(input.state),
+                            updatedAt: Number(input.state.updatedAt || 0), scopes: [], offers: error.priceWitness, npcAllowed,
+                            fundingDominance: true };
+                        refusals.remember(slot.input.sourceState, input.board, request, error.purchase,
+                            () => refusals.witnessCurrent(input.board, error.priceWitness, error.purchase)
+                                && invoke('GameServer/Bot/Economy/ProductionPolicy').allowsNpcShot(itemId) === npcAllowed,
+                            { fundingDominance: true });
+                        throw error;
+                    }
+                    // A thrown preparation bypasses the planner's ordinary
+                    // final validation. A changed source cannot prove a
+                    // refusal to another seller.
+                    if (slot.dirty
+                        || slot.admissionScope != null && occupationPlanner.sourceScopeToken(slot.admissionScope) !== slot.admissionToken
+                        || [...slot.reads].some(([id, token]) => occupationPlanner.sourceToken(id, slot.input) !== token)) throw error;
+                    const scopes = [...new Set([...slot.reads.keys()].map(id => MarketCounters.counterOf(id)))];
+                    const tokens = scopes.map(scope => [scope, boardIndex.groupFingerprint(scope),
+                        MarketCounters.meetingRevisionOf(scope), digestToken(workshopScopeDigests.get(scope))]);
+                    const admissionScope = slot.admissionScope;
+                    const admission = refusals.admissionFingerprint(input.board, admissionScope);
+                    if (admissionScope != null && admission === null) throw error;
+                    const base = { purchase: error.purchase, authority: EconomyCommit.authority(input.state),
+                        updatedAt: Number(input.state.updatedAt || 0), scopes, npcAllowed, admissionScope, admission };
+                    const broad = { ...base, source: refusals.fingerprint(tokens) };
+                    const items = [...input.exactReads.keys()];
+                    const exactTokens = () => [items.map(id => [id, boardIndex.itemFingerprint(id)]),
+                        scopes.map(scope => [scope, MarketCounters.meetingRevisionOf(scope), digestToken(workshopScopeDigests.get(scope))])];
+                    const exact = items.length > 0 && items.length <= 60
+                        && [...input.exactReads].every(([id, token]) => boardIndex.itemFingerprint(id) === token);
+                    const source = exact ? refusals.fingerprint(exactTokens()) : broad.source;
+                    error.priceEvidence = exact ? { ...base, items, source } : broad;
+                    if (exact) error.priceFallback = broad;
+                    refusals.remember(input.sourceState || input.state, input.board, request, error.purchase,
+                        () => (exact ? refusals.fingerprint(exactTokens()) === source
+                            : tokens.every(([scope, board, market, workshop]) => boardIndex.groupFingerprint(scope) === board
+                                && MarketCounters.meetingRevisionOf(scope) === market
+                                && digestToken(workshopScopeDigests.get(scope)) === workshop))
+                            && invoke('GameServer/Bot/Economy/ProductionPolicy').allowsNpcShot(itemId) === npcAllowed
+                            && refusals.admissionFingerprint(boardIndex, admissionScope) === admission);
+                }
+                throw error;
+            }
             request.dependencies = [...occupationPlanner.slots.get(ownId).reads.keys()].map(id => {
                 const scope = MarketCounters.counterOf(id);
                 return [id, `g:${input.board.groupFingerprint(scope)}`, MarketCounters.meetingRevisionOf(scope),
@@ -715,7 +823,7 @@ function nearEvents(id, previous, entry, applied) {
 const goalRevision = characterId => tables.ready('goals')
     ? (tables.rows('goals').get(Number(characterId))?.revision ?? 0) : undefined;
 tables.watch('board', {
-    reset: () => { escrowByRecord.clear(); escrowByOwner.clear(); publicWorkshopIndex.clear(); publicWorkshopKeys.clear(); workshopRevisions.clear(); workshopDigests.clear(); workshopScopeDigests.clear(); boardReplacing = true; boardFollower.reset(); OccupationSources.recipeIndex(boardIndex).reset(); kernel?.lookSeen.clear(); },
+    reset: () => { escrowByRecord.clear(); escrowByOwner.clear(); publicWorkshopIndex.clear(); publicWorkshopKeys.clear(); workshopRevisions.clear(); workshopDigests.clear(); workshopScopeDigests.clear(); boardReplacing = true; boardFollower.reset(); OccupationSources.recipeIndex(boardIndex).reset(); kernel?.lookSeen.clear(); invoke('GameServer/Bot/Economy/MeetingPriceRefusals').clear(); },
     put: (key, row) => {
         if (String(key).startsWith('w:')) { changeWorkshop(key, typeof row[0] === 'string' ? row.slice(1) : row); return; }
         const previous = boardIndex.records.get(Number(key)) || [];
@@ -1264,10 +1372,14 @@ function requestPartyGoals(payload, msgId, admitted = false) {
     });
 }
 
-function send(type, payload = {}, msgId = null, payloadBytes = null) {
+function send(type, payload = {}, msgId = null, payloadBytes = null, meetingFallback = null) {
     const packed = invoke('GameServer/Bot/Population/ColdStateWire').packPayload(type, payload);
     if (packed !== payload) { payload = packed; payloadBytes = null; }
-    const message = Protocol.envelope(type, epoch, payload, msgId);
+    let message = Protocol.envelope(type, epoch, payload, msgId);
+    if (type === 'command_ack') {
+        const fitted = Protocol.fitMeetingAck(message, meetingFallback);
+        if (fitted !== message) { message = fitted; payloadBytes = null; }
+    }
     const bytes = Number.isFinite(payloadBytes) ? Protocol.envelopeBytes(message, payloadBytes) : null;
     let valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: epoch, bytes });
     if (!valid.ok && economyDiagnostics.omitAggregatesOnOverflow(message, valid.reason)) {
@@ -1772,7 +1884,12 @@ function startKernel(config = {}) {
         return occupationPlanner.request(id, { state, sourceState: entry.state, timestamp: Date.now(), assetsKey: assetsKey(state),
             mode: 'meeting', meeting, recipeBook: recipeKnowledgeOf(entry.state).recipeBook, buyOrderEscrow: escrowFor(id),
             routeKey: EconomicTrip.key(entry.state), sourceReady: tables.ready('board') && tables.ready('market') }).then(result => {
-                if (!result?.token) throw Error(result?.reason || 'trade_meeting_preparation_pending');
+                if (!result?.token) {
+                    const error = Error(result?.reason || 'trade_meeting_preparation_pending');
+                    if (result?.priceEvidence) error.priceEvidence = result.priceEvidence;
+                    if (result?.priceFallback) error.priceFallback = result.priceFallback;
+                    throw error;
+                }
                 return result;
             });
     };
