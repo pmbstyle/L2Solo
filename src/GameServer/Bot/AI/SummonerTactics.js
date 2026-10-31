@@ -8,6 +8,7 @@ const World = invoke('GameServer/World/World');
 const PetHealRule = invoke('GameServer/Bot/AI/PetHealRule');
 const PetTankRule = invoke('GameServer/Bot/AI/PetTankRule');
 const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
+const DangerMoment = invoke('GameServer/Bot/AI/DangerMoment');
 const PET_BUFF_IDS = new Set([1139, 1140, 1141, 1144, 1145, 1146, 1299, 1301]);
 
 function skillsFor(actor) {
@@ -133,19 +134,35 @@ function cast(session, actor, summon, skill, Generics) {
     };
 }
 
+// PetTankRule binds a solo fight only: in a party the tank holds the mob, the owner fights.
+function fightsSolo(session, actor) {
+    return BotClassPolicy.modeFor(actor, { session }).startsWith('solo');
+}
+
+// Does target's hate table put it on the actor?
+function isOnOwner(target, actor) {
+    return Number(target.fetchMostHated?.()?.fetchId?.()) === Number(actor.fetchId?.());
+}
+
 // The hot adapter of PetTankRule.ownerWaits, once the owner has chosen its next
 // hit: action, combatAction's answer with its pet (ordered: the pet's order
-// given this tick); skill, the hit, none for its weapon. A solo fight only: in a
-// party the tank holds the mob, the owner fights. A target without a hate table
-// (a player in PvP) has no tank to wait for.
+// given this tick); skill, the hit, none for its weapon. A target without a hate
+// table (a player in PvP) has no tank to wait for.
 function ownerWaits(session, actor, target, action, skill = null) {
     const summon = action?.summon;
-    if (!summon || typeof target?.getHating !== 'function' || !BotClassPolicy.modeFor(actor, { session }).startsWith('solo')) return false;
+    if (!summon || typeof target?.getHating !== 'function' || !fightsSolo(session, actor)) return false;
     const view = TargetMatchup.targetView(target);
-    const onOwner = Number(target.fetchMostHated?.()?.fetchId?.()) === Number(actor.fetchId?.());
+    const onOwner = isOnOwner(target, actor);
     return PetTankRule.ownerWaits({ petCanTake: SummonControl.canTake(summon, target, action.ordered === true), onOwner,
         ownerHate: target.getHating(actor), petHate: target.getHating(summon),
         nextHit: TargetMatchup.actorHit(actor, view, skill), petHit: onOwner ? TargetMatchup.actorHit(summon, view) : 0 });
+}
+
+// The hot adapter of PetTankRule.winsAlone: an owner with no pet, the mob on it.
+function strikesAlone(session, actor, target) {
+    if (!target || !isOnOwner(target, actor) || !fightsSolo(session, actor)) return false;
+    return PetTankRule.winsAlone({ profiles: TargetMatchup.actorProfiles([actor]), hp: Number(actor.fetchHp?.() || 0),
+        mp: Number(actor.fetchMp?.() || 0), enemy: DangerMoment.enemyOn(actor, target) });
 }
 
 function combatAction(session, actor, target, Generics) {
@@ -173,6 +190,7 @@ function combatAction(session, actor, target, Generics) {
 
         const skill = summonSkill(actor);
         if (!skill) return { handled: false, reason: 'summon_unavailable' };
+        if (strikesAlone(session, actor, target)) return { handled: false, reason: 'strikes_alone' };
         Generics.skillExec(session, actor, {
             id: actor.fetchId(),
             selfId: skill.fetchSelfId(),

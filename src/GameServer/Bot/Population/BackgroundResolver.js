@@ -1244,11 +1244,16 @@ function setPersistedSummon(fighter, summon) {
     };
 }
 
-function startColdSummon(fighter, timestamp, cooldowns, skills = ColdCombatProfile.summonSkills(fighter.profile)) {
-    const skill = skills.find((candidate) => (
+// The summon the fighter can cast now (its reuse over, its MP there).
+function castableSummon(fighter, timestamp, cooldowns, skills = ColdCombatProfile.summonSkills(fighter.profile)) {
+    return skills.find((candidate) => (
         Number(cooldowns[candidate.selfId] || 0) <= timestamp
         && Number(candidate.mp || 0) <= fighter.vitals.mp
     ));
+}
+
+function startColdSummon(fighter, timestamp, cooldowns, skills) {
+    const skill = castableSummon(fighter, timestamp, cooldowns, skills);
     if (!skill) return false;
 
     const details = ColdCombatProfile.summonDetails(skill);
@@ -1304,17 +1309,33 @@ function heldSummon(fighter, timestamp) {
         && Number(summon.expiresAt) === Number(saved.expiresAt) && Number(saved.expiresAt) > timestamp;
 }
 
-function ensureColdSummon(fighter, timestamp, cooldowns) {
-    if (heldSummon(fighter, timestamp)) return false;
+// The fighter's pet at its side: the held one or the saved one brought back;
+// false without one, a new one is a cast (startColdSummon).
+function keepColdSummon(fighter, timestamp) {
+    if (heldSummon(fighter, timestamp)) return true;
     const existing = persistedSummon(fighter, timestamp);
     if (existing) {
         fighter.summon = existing;
         fighter.summonReadyAt = Number(fighter.readyAt || 0) + summonAttackDelay(existing);
-        return false;
+        return true;
     }
     if (fighter.state.stats?.coldCombat?.summon?.active) setPersistedSummon(fighter, null);
     fighter.summon = null;
-    return startColdSummon(fighter, timestamp, cooldowns);
+    return false;
+}
+
+function ensureColdSummon(fighter, timestamp, cooldowns) {
+    return !keepColdSummon(fighter, timestamp) && startColdSummon(fighter, timestamp, cooldowns);
+}
+
+// The cold adapter of PetTankRule.winsAlone: an owner with no pet and a summon to
+// cast, the mob on it. With no pet the cold mob comes on to the owner (mobHolder)
+// once the fight is under way: its hate, or the mob its dead pet left wounded; a
+// mob not yet met is not on it. The owner's profiles are built once a fight.
+function strikesAlone(fighter, mob, mobHp, at) {
+    if (!(fighter.hate > 0 || mobHp < mob.maxHp) || !castableSummon(fighter, at, fighter.cooldowns)) return false;
+    fighter.ownerProfiles ??= TargetMatchup.coldProfiles(fighter.profile, fighter.state, at, { shot: fighter.shot });
+    return PetTankRule.winsAlone({ profiles: fighter.ownerProfiles, hp: fighter.vitals.hp, mp: fighter.vitals.mp, enemy: { ...mob, maxHp: mobHp } });
 }
 
 function summonDamage(fighter, mob, rng) {
@@ -1400,7 +1421,8 @@ function coldBotTurn(fighter, { allies, mob, mobFight = null, mobHp, at, time, r
     // its class mode, MP price and songs (T100) are a solo bot's, as a hot bot
     // alone in its party (BotClassPolicy.modeFor, T126).
     const solo = !allies.some((ally) => ally !== fighter && ally.vitals.hp > 0);
-    if (ensureColdSummon(fighter, at, fighter.cooldowns)) return null;
+    if (!keepColdSummon(fighter, at) && !(solo && strikesAlone(fighter, mob, mobHp, at))
+        && startColdSummon(fighter, at, fighter.cooldowns)) return null;
     expireCharges(fighter, at);
     if (startColdPotion(fighter, time)) {
         fighter.readyAt += 250;
@@ -1575,7 +1597,7 @@ function coldDangerMoment(fighter, mob, mobHp, { profiles, time, at, rng }) {
     const price = hp < maxHp ? coldDangerPrice(state.stats) : null;
     let moment = null;
     if (price) {
-        const owners = TargetMatchup.atVitals(profiles.filter(profile => profile.servitor !== true), hp, mp);
+        const owners = TargetMatchup.ownersAtVitals(profiles, hp, mp);
         const pet = TargetMatchup.servitorProfile(bot, { ...state, vitals, stats: { ...state.stats,
             coldCombat: { ...state.stats?.coldCombat, cooldowns: fighter.cooldowns, ...(fighter.summon ? { summon: fighter.summon } : {}) } } }, at);
         const bottle = coldBottleFree(fighter) ? HealingPotionStock.selectPotion(state.inventory, hp, maxHp, state, { dangerMoment: true }) : null;
@@ -1708,8 +1730,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         // remain now; pending fights and aggressive interruptions still run.
         // The pet is the one beside the bot now (TargetMatchup.servitorProfile:
         // alive with the HP it has left, or one to raise), not the round's.
-        const remaining = TargetMatchup.atVitals(matchupProfiles.filter(profile => profile.servitor !== true),
-            state.vitals?.hp ?? Infinity, state.vitals?.mp ?? Infinity);
+        const remaining = TargetMatchup.ownersAtVitals(matchupProfiles, state.vitals?.hp ?? Infinity, state.vitals?.mp ?? Infinity);
         petNear = TargetMatchup.servitorProfile(bot, state, timestamp);
         if (petNear) remaining.push(petNear);
         // One mob carries no pull: channels count area skills by target.pull.
@@ -1983,7 +2004,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         effects: soloFighter.profile.effects,
         inventory: soloFighter.state.inventory,
         soulCrystals: soloFighter.soulCrystals || [],
-        summon: soloFighter.summon || null,
+        // Won before the bot's first turn (a DoT tick): its saved pet was never loaded.
+        summon: soloFighter.summon === undefined ? soloFighter.state.stats?.coldCombat?.summon ?? null : soloFighter.summon,
         debug: { actions, durationMs: time, skillUses: soloFighter.skillUses, shotActions: soloFighter.shotActions, heals: soloFighter.heals,
             musicUses: soloFighter.musicUses, summonUses: soloFighter.summonUses, summonActions: soloFighter.summonActions, petTaken, petHeals: soloFighter.petHeals || 0, summonDeaths: soloFighter.summonDeaths || 0, petWaits: soloFighter.petWaits || 0,
             potionsUsed: soloFighter.potionsUsed, drunkPotions: soloFighter.drunkPotions || null,

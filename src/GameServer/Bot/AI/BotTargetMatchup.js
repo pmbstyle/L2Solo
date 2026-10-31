@@ -385,6 +385,10 @@ function atVitals(profiles, hp, mp) {
     return profiles.map(profile => profile.soloDamageReceiver === false || profile.servitor === true ? profile
         : { ...profile, maxHp: Math.min(profile.maxHp, hp), maxMp: Math.min(profile.maxMp, mp) });
 }
+// The bot's side with no pet, at the HP and MP it has left.
+function ownersAtVitals(profiles, hp, mp) {
+    return atVitals(profiles.filter(profile => profile.servitor !== true), hp, mp);
+}
 // The pair PetTankRule binds: one owner of a class that sends a pet ahead and
 // its one pet, their indices in profiles; null for anything else (a party's
 // tank holds its mob: the owner fights).
@@ -698,4 +702,4 @@ function damageRate(profiles, target = {}) {
 }
 
 module.exports = { MIN_EFFICIENCY, SOLO_GATE_MARGIN, actorProfiles, coldProfiles, servitorProfile, profileKey, targetView, skillModifier, channels, damageRate, attackRate, spellRate, incomingRate,
-    profileStats, skillStats, evaluate, atVitals, soloSurvival, soloCanHunt, pullVerdict, soloSpotUpperBound, stateProfiles, spotMatchup, speciesPulls, expectedHit, actorHit };
+    profileStats, skillStats, evaluate, atVitals, ownersAtVitals, soloSurvival, soloCanHunt, pullVerdict, soloSpotUpperBound, stateProfiles, spotMatchup, speciesPulls, expectedHit, actorHit };
