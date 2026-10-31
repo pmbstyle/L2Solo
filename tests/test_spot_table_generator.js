@@ -109,12 +109,17 @@ try {
     // The kit surface (user 10-29): fight and damage-taken coefficients per
     // line and band over the kit features, fitted from real fights in kits.
     assert.deepStrictEqual(table.kitSurface.features, ['offence', 'pDefence', 'mDefence', 'hp']);
-    const surfaces = Object.values(table.kitSurface.rows).flatMap((byBand) => Object.values(byBand));
+    const surfaces = Object.entries(table.kitSurface.rows).flatMap(([line, byBand]) =>
+        Object.entries(byBand).map(([band, surface]) => [`${line}/${band}`, ...surface]));
     assert(surfaces.length > 0, 'a band has its kit surface');
-    for (const [fight, taken, points] of surfaces) {
+    for (const [where, fight, taken, points] of surfaces) {
         // taken null: a line that kills before contact in every kit (a bow below 40 too).
         assert(fight.length === 4 && (taken === null || taken.length === 4) && points >= 8, 'four coefficients each, from enough kits');
-        assert(fight[0] < 0, `a stronger weapon shortens the fight: ${fight}`);
+        // A summoner's blows are held under its pet's hate (PetTankRule): the pet sets the pace.
+        const line = where.split('/')[0];
+        const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+        if (table.header.inputs.roleClasses[line].some((classId) => BotRoles.isSummoner({ classId }))) continue;
+        assert(fight[0] < 0, `a stronger weapon shortens the fight of ${where}: ${fight}`);
     }
     for (const role of Object.keys(table.curves)) {
         for (const curve of Object.values(table.curves[role])) {
