@@ -64,6 +64,11 @@ try {
     const graded = bot(nearDarkElven, 'test_elven_spot');
     assert.strictEqual(town(graded, [dItem]), MarketTownPolicy.dGradeMarketFor(graded));
     assert.strictEqual(town(graded, [cItem]), 'Giran');
+
+    // The cold worker has no world: a buy ad's town reads the spot through
+    // the findSpot it is given.
+    assert.strictEqual(MarketTownPolicy.buyAdTown(bot(nearElven, 'test_elven_spot'), [SHORT_GLOVES], [],
+        { findSpot: () => ({ center: { ...nearDarkElven } }) }), town(bot(nearDarkElven, 'test_dark_elven_spot')));
 } finally {
     SpotService.spots = originalSpots;
 }
