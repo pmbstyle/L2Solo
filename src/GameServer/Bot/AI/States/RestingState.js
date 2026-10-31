@@ -4,6 +4,7 @@ const SpeckMath      = invoke('GameServer/SpeckMath');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const BotClassPolicy = invoke('GameServer/Bot/AI/BotClassPolicy');
 const RestPolicy     = invoke('GameServer/Bot/AI/RestPolicy');
+const RestPotion     = invoke('GameServer/Bot/AI/RestPotion');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const PartyPulling = invoke('GameServer/Bot/AI/PartyPulling');
@@ -301,6 +302,9 @@ module.exports = {
             // skillExec marks the actor as casting immediately.  Do not sit
             // on the next brain tick while the native self-cast is still live.
             if (bot.state.fetchHits?.() || bot.state.fetchCasts?.()) return;
+            // Alone, a bottle may shorten the rest (RestPotion, T141); it stays seated.
+            if (!session.followPlayerSession && session.partyCompanion !== true
+                && RestPotion.tryBetweenFights(session, bot, () => SummonerTactics.petRestView(bot))) return;
             if (maybeCastManaRegeneration(session, bot, Generics)) return;
             if (restsSeated(session, bot)) sitDown(session, bot);
             else standUp(session, bot);

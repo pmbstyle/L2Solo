@@ -18,6 +18,7 @@ const BotPvpRisk      = invoke('GameServer/Bot/AI/BotPvpRisk');
 const BotRoles        = invoke('GameServer/Bot/AI/BotRoles');
 const RestPolicy      = invoke('GameServer/Bot/AI/RestPolicy');
 const SoloSelfHeal = invoke('GameServer/Bot/AI/SoloSelfHeal');
+const RestPotion = invoke('GameServer/Bot/AI/RestPotion');
 const DangerMoment    = invoke('GameServer/Bot/AI/DangerMoment');
 const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const BotTownTravel  = invoke('GameServer/Bot/AI/BotTownTravel');
@@ -897,6 +898,9 @@ module.exports = {
         // A summoner keeps its pet alive between fights too (PetHealRule), solo or in a party.
         if (!encounterActionInFlight && !session.currentTargetId
             && !bot.state?.fetchCasts?.() && SummonerTactics.healPetBetweenFights(session, bot, Generics)) return;
+        // Then a healing potion where the rest it saves pays for it (RestPotion, T141).
+        if (!encounterActionInFlight && !session.currentTargetId && isSoloHunter(session)
+            && RestPotion.tryBetweenFights(session, bot, () => SummonerTactics.petRestView(bot))) return;
         // A pet it cannot heal now sends it to rest as its own HP would (RestPolicy).
         if (!encounterActionInFlight && RestPolicy.needsRest(bot, hpRatio, mpRatio, { pet: SummonerTactics.petRestView(bot) })) {
             beginVoluntaryRecovery(session, bot, BotAI);

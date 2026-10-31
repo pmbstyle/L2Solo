@@ -17,6 +17,7 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
 const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
+const RestPotion = invoke('GameServer/Bot/AI/RestPotion');
 const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
 const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
@@ -425,6 +426,39 @@ function coldHealBetweenFights(profile, vitals, cooldowns, at, summon = null, op
         cooldowns[skill.fetchSelfId()] = at + ms + Math.max(0, Number(skill.fetchReuseTime?.()) || 0);
         ms += actionDelayMs(profile, skill.coldRecord);
         casts += 1;
+    }
+}
+
+// The healing potions a solo bot drinks between fights to save rest
+// (RestPotion, T141): at the gap one, once the last has run out; sitting down
+// (options.resting) then one more each time the last runs out, as RestingState
+// does, the rest's regeneration counted for each next choice. vitals take a
+// bottle's heal at once, as a won fight's tail (settleColdTails). bag: the
+// round's inventory; options.shared: the state's own, copied before a debit.
+// stats: the bot's; a first round without its coldCombat drinks nothing.
+// Returns { bag, drunk (by selfId) or null, count, ms, until }: ms the rest the
+// bottles run for at least, until the last one's end.
+function coldRestPotions(profile, vitals, stats, bag, at, { resting = false, pet = null, shared = null } = {}) {
+    const outcome = { bag, drunk: null, count: 0, ms: 0, until: 0 };
+    const combat = stats.coldCombat;
+    const waits = Math.max(0, Number(combat?.potionUntil || 0) - at);
+    if (!combat || (waits > 0 && !resting)) return outcome;
+    const cooldowns = combat.cooldowns || {};
+    const seated = ColdClassPolicy.actorFor(profile, { hp: vitals.hp, mp: vitals.mp, cooldowns, time: at });
+    const hpPerMs = BotCombatUtility.seatedHpPerMs(seated), mpPerMs = BotCombatUtility.seatedMpPerMs(seated);
+    for (let ms = waits; ; ms += HealingPotionStock.HOT_MS) {
+        const actor = ColdClassPolicy.actorFor(profile, { hp: Math.min(vitals.maxHp, vitals.hp + hpPerMs * ms),
+            mp: Math.min(vitals.maxMp, vitals.mp + mpPerMs * ms), cooldowns, time: at + ms });
+        const potion = RestPotion.betweenFights(actor, { stats, inventory: outcome.bag, pet: () => pet });
+        if (!potion) return outcome;
+        if (outcome.bag === shared) outcome.bag = { ...shared };
+        HealingPotionStock.debitColdPotion(outcome.bag, potion);
+        vitals.hp = Math.min(vitals.maxHp, vitals.hp + potion.heal);
+        (outcome.drunk ||= {})[potion.selfId] = Number(outcome.drunk[potion.selfId] || 0) + 1;
+        outcome.count += 1;
+        outcome.ms = ms + HealingPotionStock.HOT_MS;
+        outcome.until = at + outcome.ms;
+        if (!resting) return outcome;
     }
 }
 
@@ -1064,8 +1098,12 @@ function settleColdTails(fighter) {
     return taken;
 }
 
+// The time a cold bottle runs to: the next one waits for it, as activePotionHot
+// makes a hot bot wait, across the round's gaps and fights.
+const coldPotionRuns = (fighter) => Number(fighter?.potionUntil ?? fighter?.state?.stats?.coldCombat?.potionUntil) || 0;
+
 function startColdPotion(fighter, time) {
-    if (!fighter || fighter.potionsUsed > 0 || fighter.potionHot) return null;
+    if (!fighter || fighter.potionsUsed > 0 || fighter.potionHot || coldPotionRuns(fighter) > fighter.now) return null;
     const potion = HealingPotionStock.consumeColdPotion(
         fighter.state.inventory,
         fighter.vitals.hp,
@@ -1076,6 +1114,7 @@ function startColdPotion(fighter, time) {
     const effect = HealingPotionStock.coldEffectFor(potion, time);
     fighter.vitals.hp = Math.min(fighter.vitals.maxHp, fighter.vitals.hp + Number(effect.immediateHeal || 0));
     fighter.potionHot = effect.hot;
+    if (effect.hot) fighter.potionUntil = fighter.now + HealingPotionStock.HOT_MS;
     fighter.potionsUsed = Number(fighter.potionsUsed || 0) + 1;
     // The fight drinks from its own inventory copy (mutableCombatState); the
     // resolve then debits these bottles from the stored stock, as it debits
@@ -1675,6 +1714,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             adena: 0,
             loot: [],
             cooldowns: soloFighter.cooldowns,
+            potionUntil: soloFighter.potionUntil,
             charges: died ? 0 : soloFighter.charges,
             chargeExpiresAt: died ? null : soloFighter.chargeExpiresAt,
             effects: soloFighter.profile.effects,
@@ -1722,6 +1762,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         adena: rewards.adena,
         loot: rewards.loot.flatMap(({ drops, spoil }) => [...drops, ...spoil]),
         cooldowns: soloFighter.cooldowns,
+        potionUntil: soloFighter.potionUntil,
         // The fight's profile, for the heals between fights (resolveSolo); not stored.
         profile: bot,
         charges: died ? 0 : soloFighter.charges,
@@ -2407,6 +2448,21 @@ const BackgroundResolver = {
         let walkedMs = 0, buffCasts = 0, buffsTried = false;
         // The fights' shared setup (resolveFight's round).
         const round = {};
+        // The bottles that save rest (coldRestPotions) go into the round's
+        // counts; returns the ms they run for.
+        const drinkToRest = (profile, resting, pet) => {
+            const drank = coldRestPotions(profile, patch.vitals, patch.stats, patch.inventory || state.inventory,
+                timestamp + combatMs, { resting, pet, shared: state.inventory });
+            if (!drank.count) return 0;
+            patch.inventory = drank.bag;
+            patch.stats.coldCombat = { ...patch.stats.coldCombat, potionUntil: drank.until };
+            potionsUsed += drank.count;
+            for (const [selfId, count] of Object.entries(drank.drunk)) {
+                drunkPotions[selfId] = Number(drunkPotions[selfId] || 0) + count;
+            }
+            if (Diagnostics.active()) Diagnostics.count('cold_fight', 'potion', 'rest', drank.count);
+            return drank.ms;
+        };
 
         for (let i = 0; i < fights; i++) {
             // The first fight starts in any round (its readiness may send the bot to rest).
@@ -2448,7 +2504,9 @@ const BackgroundResolver = {
                 patch.stats.lastReason = result.reason;
                 if (result.needsRest) {
                     patch.activity = 'resting';
-                    patch.stats.restUntil = timestamp + estimateRestMs(fightState, patch.vitals);
+                    const drinkMs = drinkToRest(roundProfile, true, coldPetView(roundProfile, patch.stats.coldCombat?.summon, patch.vitals,
+                        patch.stats.coldCombat?.cooldowns, timestamp + combatMs));
+                    patch.stats.restUntil = timestamp + Math.max(estimateRestMs(fightState, patch.vitals), drinkMs);
                     events.push({ type: 'rest', weight: 2,
                         summary: `${state.name || 'Bot'} sat down before another fight near ${spot.name}`,
                         meta: { spotId: spot.id, reason: result.reason } });
@@ -2473,6 +2531,7 @@ const BackgroundResolver = {
                     ...(patch.stats?.coldCombat || ColdCombatProfile.seedSnapshot(fightState, timestamp)),
                     effects: result.effects || patch.stats?.coldCombat?.effects || [],
                     cooldowns: result.cooldowns || {},
+                    ...(result.potionUntil ? { potionUntil: result.potionUntil } : {}),
                     charges: result.charges || 0,
                     chargeExpiresAt: result.chargeExpiresAt || null,
                     summon: result.died ? null : (result.summon || null)
@@ -2552,14 +2611,17 @@ const BackgroundResolver = {
             // A rest is a between-fights choice, as HuntingState's (its guard
             // !encounterActionInFlight): a fight the round cut goes on in the
             // next round, whatever the bot's HP and MP; only a kill, a death
-            // or the slice bound below ends it.
-            if (!patch.stats.pveEncounter && needsRest(fightState, patch.vitals, { pet: petView })) {
+            // or the slice bound below ends it. The rest is decided at the HP
+            // the fight left: a bottle's heal runs on while the hot bot sits down.
+            const resting = !patch.stats.pveEncounter && needsRest(fightState, patch.vitals, { pet: petView });
+            const drinkMs = result.won || resting ? drinkToRest(result.profile || roundProfile, resting, petView) : 0;
+            if (resting) {
                 // cold_fight:pet:rest: a rest its pet sent it to (the live read).
                 if (Diagnostics.active() && !RestPolicy.petRested(petView)) Diagnostics.count('cold_fight', 'pet', 'rest');
                 patch.activity = 'resting';
                 patch.stats = {
                     ...(patch.stats || state.stats || {}),
-                    restUntil: timestamp + Math.max(estimateRestMs(fightState, patch.vitals),
+                    restUntil: timestamp + Math.max(estimateRestMs(fightState, patch.vitals), drinkMs,
                         RestPolicy.petRested(petView) ? 0 : petRestMs(result.profile, summonLeft, patch.vitals, timestamp + combatMs))
                 };
                 events.push({

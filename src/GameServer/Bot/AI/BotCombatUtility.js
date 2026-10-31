@@ -419,6 +419,7 @@ module.exports = {
     restShare,
     restMsPerMp,
     seatedHpPerMs,
+    seatedMpPerMs,
     statOf,
     skillHitMs,
     basicAttackDamageEstimate,

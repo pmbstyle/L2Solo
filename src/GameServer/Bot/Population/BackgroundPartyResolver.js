@@ -427,6 +427,9 @@ const BackgroundPartyResolver = {
         let avoidedReason = null;
         const combatHelp = new Map();
         const memberShotActions = new Map();
+        // The bottles each member drank (BackgroundResolver.startColdPotion):
+        // the save debits them from its stored stock, as the solo round's.
+        const memberPotions = new Map();
         const memberSoulCrystals = new Map();
         let combatMembers = members.map((state) => ({
             ...state,
@@ -474,6 +477,13 @@ const BackgroundPartyResolver = {
             for (const member of encounter.members) {
                 const id = Number(member.state.characterId);
                 memberShotActions.set(id, (memberShotActions.get(id) || 0) + Number(member.shotActions || 0));
+                if (member.drunkPotions) {
+                    const drunk = memberPotions.get(id) || {};
+                    for (const [selfId, count] of Object.entries(member.drunkPotions)) {
+                        drunk[selfId] = Number(drunk[selfId] || 0) + Number(count);
+                    }
+                    memberPotions.set(id, drunk);
+                }
                 if (member.soulCrystals?.length) {
                     const outcomes = memberSoulCrystals.get(id) || [];
                     outcomes.push(...member.soulCrystals);
@@ -610,6 +620,7 @@ const BackgroundPartyResolver = {
                         // result order to nominate exactly one aggregate owner.
                         populationTelemetryOwner: index === 0,
                         shotActions: memberShotActions.get(Number(state.characterId)) || 0,
+                        drunkPotions: memberPotions.get(Number(state.characterId)) || null,
                         // The worker delivers member results, not the outer
                         // aggregate. Carry combat totals on this owner only.
                         ...(index === 0 ? { combatActions, skillUses, heals, partyBuffCasts: huntBuffs?.buffCasts || 0 } : {})

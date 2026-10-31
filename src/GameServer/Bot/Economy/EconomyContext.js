@@ -44,6 +44,8 @@ const WalkBack = invoke('GameServer/Bot/Economy/WalkBack');
 const ColdTrip = invoke('GameServer/Bot/Population/ColdTrip');
 const TravelRoutes = invoke('GameServer/Bot/Travel/TravelRoutes');
 const GearProgression = invoke('GameServer/Bot/AI/PersonalGearProgression');
+const RestPotion = invoke('GameServer/Bot/AI/RestPotion');
+const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const TradeIntent = require('./TradeIntent');
 // The bound of an event proof's packed and wire forms.
 const PROOF_RAW_BYTES = 65536;
@@ -528,7 +530,7 @@ function quantityBands(state, context, projection) {
     for (const kind of ['shots', 'potions', 'scrolls']) {
         const row = context.stock(kind);
         if (row?.itemId && row.target > 0) stock.set(Number(row.itemId), [Math.max(1, Math.ceil(row.target - positive(row.beginnerCurrent))),
-            kind === 'shots' ? row : null]);
+            kind === 'scrolls' ? null : row]);
     }
     const reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(state);
     const used = new Set((projection?.nodes || []).filter(node => node.key.startsWith('item:')).map(node => Number(node.key.slice(5))));
@@ -539,18 +541,18 @@ function quantityBands(state, context, projection) {
             || row.acceptedCustomer || row.assignedClan || row.available === false || positive(reserved[id])
             || (row.stackable ?? template?.etc?.stackable) !== true) continue;
         if (stock.has(itemId)) {
-            const [target, shots] = stock.get(itemId);
+            const [target, used] = stock.get(itemId);
             if (amount >= target) bands.push([itemId, target, null, amount]);
-            else if (shots && shots.unitPrice > 0) {
-                // Shots between the survival line and the target: each unit
-                // only moves the restock wish's amount, price and value
-                // together. Consumption below the bot's own error (money and
-                // hours) is noise; the survival line (survival reserve,
+            else if (used && used.unitPrice > 0) {
+                // Shots or potions between the survival line and the target:
+                // each unit only moves the restock wish's amount, price and
+                // value together. Consumption below the bot's own error (money
+                // and hours) is noise; the survival line (survival reserve,
                 // `needed`) and an empty stack (use rate, planned slot) stay
                 // hard, and any rise is the purchase's own event.
-                const floor = Math.max(1, Math.ceil(shots.survivalTarget - positive(shots.beginnerCurrent)));
-                const allowance = Math.floor(Math.min(positive(context.hourAdena) * error / shots.unitPrice,
-                    shots.benefitPerUnit > 0 ? error / shots.benefitPerUnit : Infinity));
+                const floor = Math.max(1, Math.ceil(used.survivalTarget - positive(used.beginnerCurrent)));
+                const allowance = Math.floor(Math.min(positive(context.hourAdena) * error / used.unitPrice,
+                    used.benefitPerUnit > 0 ? error / used.benefitPerUnit : Infinity));
                 const low = Math.max(floor, amount - allowance);
                 if (amount >= floor && low < amount) bands.push([itemId, low, amount, amount]);
             }
@@ -832,7 +834,11 @@ function kitReader(data, price, scrollUseHours) {
         const shots = kind === 'shots';
         const row = shots ? data.shots : data.potions;
         const { itemId, use, current } = row;
-        const wantedTarget = Math.max(Math.ceil(use), Math.ceil(use * data.targetHours));
+        // Potions: beside the survival use, the bottles that save rest
+        // (RestPotion.stockUse), an outing's and at most what restCap allows.
+        const allUse = use + positive(row.restUse);
+        const wantedTarget = Math.max(Math.ceil(use), Math.ceil(use * data.targetHours),
+            Math.min(Math.ceil(allUse * data.targetHours), positive(row.restCap)));
         // Useful owned stock need not justify expensive replacement stock.
         const target = row.canRestock ? wantedTarget : Math.min(current, wantedTarget);
         // Forecast consumption may be fractional; both purchase tranches use
@@ -840,7 +846,7 @@ function kitReader(data, price, scrollUseHours) {
         const survivalTarget = row.canRestock ? Math.ceil(use) : Math.min(current, Math.ceil(use));
         const survivalMissing = Math.max(0, survivalTarget - current);
         const missing = Math.max(0, target - Math.max(current, survivalTarget));
-        const benefitPerUnit = use > 0 ? row.benefit / use : 0;
+        const benefitPerUnit = allUse > 0 ? (row.benefit + positive(row.restHours)) / allUse : 0;
         const benefitHours = missing * benefitPerUnit;
         return { itemId: Number(itemId), usePerHour: use, ...(shots ? { ownedUsePerHour: row.ownedUsePerHour, beginnerCurrent: row.beginnerCurrent,
                 beginnerUsePerHour: row.beginnerUsePerHour, paidUsePerHour: row.paidUsePerHour } : {}),
@@ -1021,14 +1027,19 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
     const ShotStock = invoke('GameServer/Inventory/ShotStock');
     const shotPlan = ShotStock.planForState(state);
     const shotItemId = shotPlan.selfId;
-    const potionItemId = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state).selfId;
+    const potion = HealingPotionStock.purchasePotionFor(state), potionItemId = potion.selfId;
+    const hourAdena = Hunt.huntHour(hunt, state);
     const shotPolicy = ShotStock.usePolicy(state, { plan: shotPlan, bestTable,
-        hourAdena: Hunt.huntHour(hunt, state), unitPrice: price(shotItemId) });
+        hourAdena, unitPrice: price(shotItemId) });
     const shotBenefit = shotPolicy.benefit;
     const beginnerCurrent = ShotStock.beginnerAmount(state, shotPlan);
     const shotUse = positive(state.inventory?.[shotItemId]?.amount) + beginnerCurrent > 0
         ? shotPolicy.usePerHour : shotPolicy.purchaseUsePerHour;
     const potionUse = positive(bestTable?.potions);
+    // The bottles that save rest (a solo hunter's, RestPotion).
+    const potionRest = spotTable && Hunt.situationOf(state, deps.mode) === 'solo'
+        ? RestPotion.stockUse(state, { row: Table.cycle(bestSpotId, tableRole, state.level, hunt.useShots !== false),
+            potion, hour: hourAdena, timestamp }) : { use: 0, hours: 0 };
     let bagHours = 2;
     const hasBagForecast = spotTable?.stacks !== null && spotTable?.stacks !== undefined;
     if (hasBagForecast) {
@@ -1040,7 +1051,7 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
         // sells part of that refill back to the NPC. Existing stacks retain
         // the exact physical free-slot formula; zero-use stock reserves none.
         const plannedSlots = Number(shotUse > 0 && !positive(state.inventory?.[shotItemId]?.amount) && !beginnerCurrent)
-            + Number(potionUse > 0 && !positive(state.inventory?.[potionItemId]?.amount));
+            + Number(potionUse + potionRest.use > 0 && !positive(state.inventory?.[potionItemId]?.amount));
         let slotLimit = Floor.inventoryLimit(race);
         const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
         const saleLimit = Disposition.soloSaleSlotLimit(state, timestamp);
@@ -1048,7 +1059,7 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
             // Stock cannot be its own reason for an earlier town visit. Keep
             // the entire usable kit while checking known free saleable loot.
             const keptAmounts = { [shotItemId]: positive(state.inventory?.[shotItemId]?.amount),
-                ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: Infinity }),
+                ...HealingPotionStock.keptAmounts(state, { targetAmount: Infinity }),
                 736: positive(state.inventory?.[736]?.amount) };
             if (Disposition.saleCandidates(state, { keptAmounts, preparedReservations: deps.saleReservations,
                 presenceOnly: true })) slotLimit = Math.min(slotLimit, saleLimit);
@@ -1070,11 +1081,16 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
             canRestock: shotPolicy.purchaseUsePerHour > 0, benefit: shotBenefit, ownedUsePerHour: shotPolicy.usePerHour,
             beginnerCurrent, beginnerUsePerHour: shotPolicy.beginnerUsePerHour, paidUsePerHour: shotPolicy.paidUsePerHour },
         potions: { itemId: potionItemId, use: potionUse, current: positive(state.inventory?.[potionItemId]?.amount),
-            canRestock: true, benefit: positive(bestTable?.deaths) * deathHours } };
+            canRestock: true, benefit: positive(bestTable?.deaths) * deathHours, restUse: potionRest.use, restHours: potionRest.hours } };
     const { stock, kitCost, kit, escapeCost } = kitReader(kitData, price,
         () => kitData.scrollHours ??= scrollHoursFor(state, deps.spots, bestSpotId));
     const reserve = escapeCost + kit.reduce((sum, row) => sum + row.survivalMissing * row.unitPrice, 0);
-    return { tableRole, hunt, hourAdena: Hunt.huntHour(hunt, state), survivalReserve: reserve, kitCost, kit: kitData,
+    // The rest bottles the wallet pays now: a stock it cannot pay would stand
+    // first in the money queue, its gap (WishNetwork.moneyQueue), and hold back
+    // every wish below it. The rule pays them back within the outing.
+    if (potionRest.use > 0) kitData.potions.restCap = kitData.potions.current
+        + Math.floor(Math.max(0, Funding.budget(state) - reserve) / Math.max(1, price(potionItemId)));
+    return { tableRole, hunt, hourAdena, survivalReserve: reserve, kitCost, kit: kitData,
         lostGearHours, bestSpotId, deathHours, bestTable, stock,
         routeAt: income.routeAt, heldRoute: income.heldRoute,
         riskWeight: Valuation.riskWeight(state, persona),
@@ -1712,7 +1728,8 @@ function view(state, plan, deps, built = {}) {
 // fall needs no fresh read).
 function stockTargets(base) {
     const potions = base.stock('potions'), shots = base.stock('shots');
-    return [potions.itemId, potions.target, shots.itemId, shots.target, shots.current];
+    // [5]: the bottles the survival drink keeps from the rest drink (RestPotion).
+    return [potions.itemId, potions.target, shots.itemId, shots.target, shots.current, potions.survivalTarget];
 }
 // The bot's missing shot stack as crafters see it (stats.shotDemand, read by
 // MarketDemandIndex and CraftWorkshopService): null when the stock rule wants
@@ -1741,7 +1758,7 @@ function shotDemand(economy, state, timestamp, previous = null) {
 function keptTargets(state = {}, deps = {}) {
     const row = state.stats?.stockTargets, ShotStock = invoke('GameServer/Inventory/ShotStock'), plan = ShotStock.planForState(state);
     const beginnerCurrent = ShotStock.beginnerAmount(state, plan);
-    if (Array.isArray(row) && row.length === 5 && row[0] === invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state).selfId
+    if (Array.isArray(row) && row.length >= 5 && row[0] === HealingPotionStock.purchasePotionFor(state).selfId
         && row[2] === plan.selfId && positive(state.inventory?.[plan.selfId]?.amount) + beginnerCurrent <= row[4])
         return { potions: row[1], shots: { itemId: row[2], target: row[3], beginnerCurrent } };
     const base = basics(state, deps);
