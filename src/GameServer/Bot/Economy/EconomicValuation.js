@@ -97,6 +97,11 @@ function riskWeight(state, persona) {
     return (1 + trait(persona, 'caution')) / (0.5 + trait(persona, 'resilience'))
         * (1 + positive(state.stats?.frustration));
 }
+// What an hour of a bot's progress is worth to it, in hours (the level wish's
+// value, its spot value's side against money).
+function powerWeight(persona) {
+    return (persona?.primaryDrive === 'progression' ? 1 : 0.5) + trait(persona, 'caution');
+}
 function stageHours(state, expPerHour, persona) {
     const Learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
     const Data = invoke('GameServer/DataCache');
@@ -158,5 +163,5 @@ function progressStats(state, { timestamp = Date.now(), startedAt = 0, kills = 0
         frustration: Math.max(0, frustration - positive(kills) / Math.max(1, positive(stats.lifelongKills) + positive(kills))),
         lifelongKills: positive(stats.lifelongKills) + (knowledgeEnabled ? positive(kills) : 0) };
 }
-module.exports = { riskWeight, stageHours, decisionHorizon, deathHours, liveDeathHours, karmaHours, pkDropValue, resale, progressStats, trait,
+module.exports = { riskWeight, powerWeight, stageHours, decisionHorizon, deathHours, liveDeathHours, karmaHours, pkDropValue, resale, progressStats, trait,
     opportunity, acquisition, createOpportunity, addOutcome, finishOpportunity, OUTCOME_LIMIT, fundingDelay, readyBenefit };

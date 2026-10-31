@@ -2,6 +2,7 @@
 const DiagnosticConfig = require('../Population/PopulationConfig');
 const Trip = require('../Population/ColdTrip');
 const Routes = require('../Travel/TravelRoutes');
+const Karma = require('../../Karma');
 const EMPTY_SPOTS = Object.freeze([]);
 let source, entries = new Map(), catalogs = new WeakMap(), builds = 0, missing = 0, buildMs = 0;
 function table(spots) {
@@ -35,10 +36,18 @@ function hours(spotId, state = {}, spots = invoke('GameServer/Bot/AI/SpotService
     if (!spotId) return 0;
     const entry = table(spots).get(String(spotId));
     if (!entry) { if (DiagnosticConfig.developerDiagnostics) missing++; return 0; }
-    if (invoke('GameServer/Karma').closesTowns(state.stats?.karma)) return Trip.runMs(entry.from, entry.to) / 3600000;
+    if (Karma.closesTowns(state.stats?.karma)) return Trip.runMs(entry.from, entry.to) / 3600000;
     // ARCH-NOTE: the default world uses the authored 25-second trip; price
     // the actual downtime rather than charging a walk it does not perform.
     return (Trip.honest() ? entry.ms : Trip.AUTHOR_TRIP_MS) / 3600000;
 }
-module.exports = { hours, reset: () => { source = undefined; entries = new Map(); catalogs = new WeakMap(); builds = missing = buildMs = 0; },
+// About how long a bot's trip from `from` to a spot takes, read per candidate
+// of a search in O(1): the run there, or the way a bot takes to a far spot, the
+// run from the spot's town (hours; the scroll and the gatekeepers before it are
+// seconds and left out). A bot with karma enters no town: it runs.
+function tripHours(from, spot, state = {}, spots = undefined) {
+    const run = from && spot?.center ? Trip.runMs(from, spot.center) / 3600000 : 0;
+    return Karma.closesTowns(state.stats?.karma) ? run : Math.min(run, hours(spot?.id, state, spots));
+}
+module.exports = { hours, tripHours, reset: () => { source = undefined; entries = new Map(); catalogs = new WeakMap(); builds = missing = buildMs = 0; },
     summary: () => DiagnosticConfig.developerDiagnostics ? ({ size: entries.size, builds, missing, buildMs }) : { enabled: false } };

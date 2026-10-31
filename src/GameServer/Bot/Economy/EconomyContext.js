@@ -924,13 +924,13 @@ function incomeRouteFor(state, deps, timestamp, price, keep) {
     return record;
 }
 // What a held build keeps of the search that chose its route (decision 10-30):
-// the route's spot and income row (null: the search found none), not the
+// the route's spot, income row and hour (null: the search found none), not the
 // search's matchup profiles (their verdict caches would live with the plan);
 // when it ran and the goal it ran for (the focus, main's goal revision).
 // moved: the hold a later search found instead, until the build is rebuilt;
 // afterGoal: that search was a goal change's, not the window's.
 function newHold(state, route, at, goal, afterGoal = false) {
-    return { at, route: route ? { spot: route.spot, row: route.row } : null,
+    return { at, route: route ? { spot: route.spot, row: route.row, earning: route.earning } : null,
         focus: focusOf(state), goal, moved: null, afterGoal };
 }
 const focusOf = state => state.stats?.wishFocus?.[0] ?? null;
@@ -1056,7 +1056,7 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
     if (incomeRoute) {
         // select already passed this spot through the same ground and matchup reader.
         const row = incomeRoute.row;
-        hunt = { perHour: row.income * Hunt.onSpotShare(state), perKill: row.kills > 0 ? row.income / row.kills : 0,
+        hunt = { perHour: incomeRoute.earning * Hunt.onSpotShare(state), perKill: row.kills > 0 ? row.income / row.kills : 0,
             expPerHour: row.exp * Hunt.onSpotShare(state), source: 'route', spotId: incomeRoute.spot.id,
             progressSpotId: incomeRoute.spot.id, useShots: row.useShots };
     } else hunt = Hunt.huntIncome(state, timestamp, deps.mode, leafFit(state, deps, timestamp));

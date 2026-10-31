@@ -5,6 +5,7 @@ const Rewards = require('../Economy/SpotRewardExpectation');
 const GameDataCatalogue = require('../../Knowledge/GameDataCatalogue');
 const Material = require('./CraftMaterialParty');
 const SpotEconomics = require('../Economy/SpotEconomics');
+const WalkBack = require('../Economy/WalkBack');
 const HOUR_MS = 3600000;
 const REVIEW_MS = 5 * 60000;
 const MAX_SOLO_CHECKS = 12;
@@ -76,8 +77,8 @@ function soloRoute(state, spots, timestamp, peers = []) {
     }
     if (!choice) return null;
     const row = choice.row;
-    let best = { ...row, income: row.income * Hunt.onSpotShare(state), spotId: choice.spot.id,
-        travelHours: walkHours(state, choice.spot), source: 'solo_route', buffPrice: 0 };
+    let best = { ...row, income: choice.earning * Hunt.onSpotShare(state), spotId: choice.spot.id,
+        travelHours: WalkBack.tripHours(state.loc, choice.spot, state, spots), source: 'solo_route', buffPrice: 0 };
     // At most one physically available provider: compare buying its native
     // useful effects at the existing price with the unbuffed earning route.
     const Offer = invoke('GameServer/Bot/Economy/ColdBuffOffer');
@@ -107,11 +108,6 @@ function withEffects(state, effects) {
     const families = new Set(effects.map(effect => Loadout.family(effect.key)));
     return { ...state, stats: { ...state.stats, coldCombat: { ...state.stats?.coldCombat,
         effects: [...(state.stats?.coldCombat?.effects || []).filter(effect => !families.has(Loadout.family(effect.key))), ...effects] } } };
-}
-function walkHours(state, spot) {
-    const origin = state.loc, destination = spot?.center;
-    return origin && destination ? Math.hypot(Number(origin.locX || 0) - Number(destination.locX || 0),
-        Number(origin.locY || 0) - Number(destination.locY || 0)) / (120 * 3600) : 0;
 }
 
 // One bounded forecast for a complete roster. Static point lookups are
@@ -177,7 +173,7 @@ function prepare(members, { objective, party, spots, memberContexts, timestamp =
         const income = kills * ((expected?.adena ?? gross.adena / gross.kills) / members.length + drop / members.length + spoil
             - share * (raw.shots * costs.shots + raw.potions * costs.potions) / raw.kills);
         rows.set(member.characterId, { income: income * Hunt.onSpotShare(member), kills, spotId,
-            source: 'table_party', travelHours: walkHours(member, spot) });
+            source: 'table_party', travelHours: WalkBack.tripHours(member.loc, spot, member, spots) });
     }
     return { rows, spots, timestamp, spot, roster: key,
         workshops: new Map((memberContexts || []).map(context => [context.state.characterId, context.workshop])) };
@@ -229,7 +225,7 @@ function soloItemRouteHours(state, spots, goal, timestamp) {
     const choices = [true, false].map(shots => evaluateSpot(spot, shots)).filter(row => row?.income > 0)
         .map(row => itemHours(state, spot, row.kills * Hunt.onSpotShare(state), goal, [state]))
         .filter(hours => hours !== null);
-    return choices.length ? Math.min(...choices) + walkHours(state, spot) : null;
+    return choices.length ? Math.min(...choices) + WalkBack.tripHours(state.loc, spot, state, spots) : null;
 }
 
 function compare(state, peers, options = {}) {

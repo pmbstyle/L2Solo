@@ -146,6 +146,14 @@ function spotHunters(spot, state = null) {
     return huntersOn(threadOccupancy(), spot?.id, state);
 }
 
+// A spot has room for this bot in this thread's occupancy (roomFilterFor's
+// rule for one bot, with no set per search); its own spot always has.
+function roomFor(spot, state) {
+    if (String(spot.id) === String(state.spotId) || spotHunters(spot, state) <= LevelingRoutes.roomForSpot(spot)) return true;
+    Diagnostics.count('spot_list', 'skip', 'full');
+    return false;
+}
+
 // How many bots a spot holds (LevelingRoutes.roomForSpot); a raid boss spot
 // or a spot the catalog does not know: no limit. The worker's arrival check
 // and the route search's room filter below read this one rule.
@@ -436,6 +444,7 @@ const SpotProfiles = {
 };
 
 SpotProfiles.spotHunters = spotHunters;
+SpotProfiles.roomFor = roomFor;
 SpotProfiles.useOccupancy = useOccupancy;
 SpotProfiles.spotsNearLevel = spotsNearLevel;
 SpotProfiles.spotRoom = spotRoom;

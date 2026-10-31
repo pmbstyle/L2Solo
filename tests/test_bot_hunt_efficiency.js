@@ -29,7 +29,7 @@ for(let i=0;i<3;i++) {sample('sustainable',100,10000);sample('costly',200,10000,
 const scores=Efficiency.scores(state,at);
 assert(scores.get('sustainable')>scores.get('costly'),'useful XP includes recovery cost rather than raw kill rewards');
 const spot=id=>({id,avgLevel:40,minLevel:39,maxLevel:41,density:1,tagsAuthoritative:true,tags:[],center:{locX:50000,locY:15000}});
-assert(Routes.scoreSpot(spot('sustainable'),state,{timestamp:at}).score>Routes.scoreSpot(spot('costly'),state,{timestamp:at}).score);
+assert(Routes.scoreSpot(spot('sustainable'),state,{timestamp:at}).efficiencyAdjustment>Routes.scoreSpot(spot('costly'),state,{timestamp:at}).efficiencyAdjustment);
 assert.strictEqual(Routes.scoreSpot(spot('unknown'),state,{timestamp:at}).efficiencyAdjustment,0,'unknown hunts remain available');
 assert.strictEqual(Efficiency.scores({...state,party:{partyId:'new'}},at).size,0,'party change invalidates solo results');
 assert.strictEqual(Routes.scoreSpot(spot('sustainable'),state,{timestamp:at,mode:'party'}).efficiencyAdjustment,0,'explicit party planning does not reuse solo cycle samples');

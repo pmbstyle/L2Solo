@@ -1,6 +1,6 @@
 'use strict';
 
-const { trait, stageHours, decisionHorizon, resale, liveDeathHours } = require('./EconomicValuation');
+const { trait, stageHours, decisionHorizon, resale, liveDeathHours, powerWeight: progressWorth } = require('./EconomicValuation');
 const { SELL } = require('../../AfkTrade/BoardIndex');
 const Sources = require('../../Items/ItemAcquisitionCatalog');
 const Diagnostics = require('./EconomyDiagnostics');
@@ -337,7 +337,7 @@ function buildProjection(state, ctx, deps) {
     const crystalSupply = clanSupply?.selfId === 1459
         || Number(state.level) >= 52 && !cProgression.required && Progression.adventurer?.(state);
     const luxuryInputs = new Map();
-    const powerWeight = (ctx.persona.primaryDrive === 'progression' ? 1 : 0.5) + trait(ctx.persona, 'caution');
+    const powerWeight = progressWorth(ctx.persona);
     const statusWeight = trait(ctx.persona, 'ambition') * (1 + Number(ctx.persona.primaryDrive === 'wealth'));
     const sourceIndex = deps.spots?.length ? Planner.sourceIndexFor(deps.spots) : null;
     // ARCH-NOTE: PERF: Native repeated source reads fell 7004→1395 / 7229→1408;

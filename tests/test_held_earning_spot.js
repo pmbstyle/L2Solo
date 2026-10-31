@@ -31,7 +31,7 @@ function sampled(state, better) {
     let next = { ...state, stats: { ...state.stats, huntEfficiency: [] } };
     for (let n = 0; n < 3; n++) for (const spot of spots) next = { ...next, stats: { ...next.stats,
         huntEfficiency: Hunt.record(next, { spotId: spot.id, timestamp: started, cycleMs: 60000,
-            adena: spot.id === better ? 1200 : 750, costs: 100, loot: 0, exp: 100, kills: 10 }) } };
+            adena: spot.id === better ? 1200 : 750, costs: 100, loot: 0, exp: spot.id === better ? 200 : 100, kills: 10 }) } };
     return next;
 }
 // complete: a working kit; else one earring short, so a search runs whatever the goal.

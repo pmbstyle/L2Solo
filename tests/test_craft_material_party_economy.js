@@ -25,7 +25,7 @@ const original = { select: Route.select, allowed: Routes.isSpotAllowedForState, 
     forState: Economy.forState, forGroup: Economy.forGroup, npc: Data.npcs, rewards: Data.npcRewards };
 let scans = 0, exact = 0;
 try {
-    Route.select = () => { scans++; return { spot: { id: 'solo' }, row: { income: 1000000, kills: 100 } }; };
+    Route.select = () => { scans++; return { spot: { id: 'solo' }, row: { income: 1000000, kills: 100 }, earning: 1000000 }; };
     Routes.isSpotAllowedForState = () => { exact++; return false; };
     Hunt.onSpotShare = () => 1;
     Economy.forState = Economy.forGroup = () => { throw Error('material admission rebuilt wishes'); };
