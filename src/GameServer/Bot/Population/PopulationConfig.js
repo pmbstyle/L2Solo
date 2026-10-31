@@ -63,6 +63,10 @@ const DEFAULTS = {
     // A full 1,700-bot world with warm economic caches exceeds 256 MiB
     // after major GC. Leave headroom for transient planning/clone allocations.
     coldWorkerHeapMb: 512,
+    // The worker's young generation, three semi-spaces. V8's 48 MB let a plan
+    // build's short-lived objects reach the old space: a major GC every 3 s
+    // (gc-trace 11-01). Restart to apply.
+    coldWorkerYoungMb: 192,
     // Diagnostics: the cold worker writes one heap snapshot per server boot as its heap nears
     // coldWorkerHeapMb (into tmp/heap/ of the server root). Off by default; restart to apply.
     coldWorkerHeapSnapshot: false,
@@ -267,6 +271,7 @@ const ENV_KEYS = {
     coldWorkerQueueMaxEntries: 'BOT_POPULATION_COLD_WORKER_QUEUE_ENTRIES',
     coldWorkerQueueMaxBytes: 'BOT_POPULATION_COLD_WORKER_QUEUE_BYTES',
     coldWorkerHeapMb: 'BOT_POPULATION_COLD_WORKER_HEAP_MB',
+    coldWorkerYoungMb: 'BOT_POPULATION_COLD_WORKER_YOUNG_MB',
     coldWorkerHeapSnapshot: 'BOT_POPULATION_COLD_WORKER_HEAP_SNAPSHOT',
     playerProtectionGraceMs: 'BOT_POPULATION_PLAYER_PROTECTION_GRACE_MS',
     schedulerLagThrottleMs: 'BOT_POPULATION_SCHEDULER_LAG_THROTTLE_MS',
