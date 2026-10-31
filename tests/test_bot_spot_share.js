@@ -68,7 +68,7 @@ const pullSpot = gremlins({ density: 3, npcEntries: [{ selfId: 1, count: 3, pull
 const startedAt = 1_750_000_000_000;
 const pullView = { selfId: 1, level: 1, maxHp: 24, pAtk: 1, pAtkRnd: 0, pDef: 1, mDef: 1,
     accur: 1, evasion: 0, critical: 0, atkSpd: 253, mAtk: 1, castSpd: 333, pull: 3 };
-const opened = PveEncounter.save(null, PveEncounter.key([hunter()], pullSpot, 0), pullView, 1, startedAt,
+const opened = PveEncounter.save(null, PveEncounter.key([hunter()], pullSpot), pullView, 1, startedAt,
     { botReadyAt: 0, mobReadyAt: 0 });
 const closed = Resolver.resolveSolo({ state: hunter({ pveEncounter: opened, coldShare: { spotId: pullSpot.id, carry: 0 } }),
     spot: pullSpot, spotHunters: 1, elapsedMs: 60000, rng: () => 0, timestamp: startedAt + 60000 });

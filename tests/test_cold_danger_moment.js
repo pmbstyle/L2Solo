@@ -35,7 +35,7 @@ function state({ hp = base.vitals.hp, mobHp = mob.maxHp, foe = mob, bottles = 0,
     const fighter = { ...structuredClone(base), vitals: { ...base.vitals, hp } };
     if (bottles) fighter.inventory = { [POTION.selfId]: { selfId: POTION.selfId, amount: bottles } };
     fighter.stats = { ...fighter.stats, ...stats };
-    fighter.stats.pveEncounter = Encounter.save(null, Encounter.key([fighter], spot, 0), foe, mobHp, T, timers);
+    fighter.stats.pveEncounter = Encounter.save(null, Encounter.key([fighter], spot), foe, mobHp, T, timers);
     return fighter;
 }
 const slice = (fighter, seed = 0.5) => Solo.resolveSolo({ state: fighter, spot, elapsedMs: SLICE_MS, timestamp: T + 30000, rng: () => seed });
@@ -91,8 +91,9 @@ for (const [name, want, input] of [
 // no rest; the mob strikes while the bot is in its reach.
 {
     const atFight = T + 30000;
-    const longRun = slice(state({ foe: { ...mob, runSpd: profile.runSpd - 10 } }));
-    const shortRun = slice(state({ foe: { ...mob, runSpd: 1 } }));
+    const quiet = { botReadyAt: 1050, mobReadyAt: 1e6 };
+    const longRun = slice(state({ foe: { ...mob, runSpd: profile.runSpd - 10 }, timers: quiet }));
+    const shortRun = slice(state({ foe: { ...mob, runSpd: 1 }, timers: quiet }));
     assert(longRun.patch.stats.restUntil - shortRun.patch.stats.restUntil
         >= DangerRule.chaseMs(profile.runSpd, profile.runSpd - 10) - DangerRule.chaseMs(profile.runSpd, 1) - 1000,
     'a chaser nearly as fast costs the longer run');
@@ -103,6 +104,8 @@ for (const [name, want, input] of [
     assert(melee.debug.damageTaken > 0, 'the swing under way lands as the bot turns');
     assert.strictEqual(slice(state({ timers: { botReadyAt: 1050, mobReadyAt: 3000 } })).debug.damageTaken, 0,
         'a melee mob gets no blow on a bot it cannot catch');
+    assert(slice(state({ foe: { ...mob, runSpd: profile.runSpd - 10 }, timers: { botReadyAt: 1050, mobReadyAt: 3000 } })).debug.damageTaken > 0,
+        'a chaser nearly as fast keeps the bot in its reach');
     const archer = { ...mob, atkRadius: 900 };
     const shot = slice(state({ foe: archer, timers: swing }));
     assert(shot.debug.damageTaken > melee.debug.damageTaken, 'a ranged mob strikes longer than a melee one');
@@ -127,13 +130,30 @@ for (const [name, want, input] of [
     const owner = Cold.profileFor(summoner, T);
     summoner.vitals = { hp: Math.floor(owner.maxHp * 0.2), maxHp: owner.maxHp, mp: owner.maxMp, maxMp: owner.maxMp };
     summoner.stats.coldCombat.summon = { active: true, skillId: Number(Cold.summonSkills(owner)[0].selfId), hp: 5000, maxHp: 5000, expiresAt: T + 1e7 };
-    summoner.stats.pveEncounter = Encounter.save(null, Encounter.key([summoner], spot, 0), mob, mob.maxHp, T,
+    summoner.stats.pveEncounter = Encounter.save(null, Encounter.key([summoner], spot), mob, mob.maxHp, T,
         { botReadyAt: 0, mobReadyAt: 1100, ownerHate: 0, petHate: 1e6 });
-    const left = slice(summoner);
-    assert.strictEqual(left.patch.activity, 'resting', 'the owner leaves');
-    assert.strictEqual(left.debug.damageTaken, 0, 'the mob does not turn on it');
-    assert(left.debug.petTaken > 0, 'the pet holds the mob while the owner leaves');
-    assert(left.patch.stats.coldCombat.summon.hp < 5000, 'the pet keeps what it lost');
+    const hotState = (pet, hp, ownerHate = 0) => {
+        const fighter = structuredClone(summoner);
+        fighter.stats.coldCombat.summon.hp = fighter.stats.coldCombat.summon.maxHp = pet;
+        fighter.stats.pveEncounter = Encounter.save(null, Encounter.key([fighter], spot), { ...mob, maxHp: hp }, hp, T,
+            { botReadyAt: 0, mobReadyAt: 1100, ownerHate, petHate: 1e6 });
+        return fighter;
+    };
+    // Hot, the pet stays until it or the mob is dead, and its kill pays as hot.
+    const wins = slice(hotState(5000, 300));
+    assert.strictEqual(wins.patch.activity, 'resting', 'the owner leaves');
+    assert.strictEqual(wins.debug.damageTaken, 0, 'the mob does not turn on it');
+    assert.strictEqual(wins.debug.wins, 1, 'the pet finishes the mob');
+    assert(wins.materialize.exp > 0, 'the kill pays');
+    assert(wins.patch.stats.coldCombat.summon.hp <= 5000, 'the pet keeps what it lost');
+    const loses = slice(hotState(100, 1e7));
+    assert.strictEqual(loses.patch.stats.coldCombat.summon, null, 'a pet that cannot win is lost');
+    assert.strictEqual(loses.debug.summonDeaths, 1);
+    assert.strictEqual(loses.debug.wins, 0);
+    assert(loses.debug.petTaken > 0);
+    assert.strictEqual(loses.materialize.exp, 0);
+    const hunted = slice(hotState(100, 1e7, 500));
+    assert(hunted.patch.stats.restUntil > loses.patch.stats.restUntil, 'a mob with the owner\'s hate comes for it next');
 }
 
 console.log('Cold danger moment: the hot rule at a slice\'s end, a flight paid in time and blows passed');

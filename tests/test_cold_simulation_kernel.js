@@ -359,7 +359,7 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     for (const expired of [false, true]) {
         let combats = 0;
         const pending = recordingKernel({ now: () => 5000,
-            resolveSolo: input => { combats++; return resolver(input); },
+            resolveSolo: input => { combats++; assert.equal(input.lastFight, true, 'the occupation waits for this fight only'); return resolver(input); },
             planLifecycle: ({ state: current }) => ({ plannedState: current, activityPick: { activity: 'shopping' } }),
             projectResolve: current => current, emit: () => {} });
         pending.upsert(standOn(pending, { state: state(90002, { stats: { pveEncounter: {
@@ -1008,6 +1008,20 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.strictEqual(partyRouteProposal.payload.proposals.length, 2);
     assert(partyRouteProposal.payload.proposals.every((proposalEntry) => proposalEntry.nextState.activity === 'traveling'),
         'a party route must move every member into the same finite travel state');
+    // A party's wanted trip waits for its engaged fight, which ends with no new one.
+    {
+        let fight = null;
+        const held = recordingKernel({ resolveSolo: resolver, partyRoute: () => partyRoute, emit: () => {}, now: () => now,
+            resolveParty: (options) => { fight = options; return { memberResults: options.members.map(member => ({ state: member, result: {} })),
+                events: [], partyPatch: {}, nextResolveAt: options.timestamp + 60000 }; } });
+        held.upsert(standOn(held, { state: partyRouteMembers[0] }, { id: 'starter-field' }));
+        held.upsert({ state: partyRouteMembers[1] });
+        held.partyPut(partyRouteParty.partyId, { ...partyRouteParty, stats: { ...partyRouteParty.stats,
+            pveEncounter: { version: 1, key: 'held', hp: 100, slices: 1, at: now } } });
+        held.tick();
+        await held.resolveChain;
+        assert.strictEqual(fight?.lastFight, true, 'the party fights this fight out, then goes');
+    }
     assert(partyRouteProposal.payload.proposals.every((proposalEntry) => proposalEntry.nextState.stats.travel.spotId === 'mid-level-field'));
     assert.strictEqual(partyRouteProposal.payload.proposals.find((proposalEntry) => proposalEntry.characterId === 30)
         .partyResolution.party.stats.travel.spotId, 'mid-level-field');

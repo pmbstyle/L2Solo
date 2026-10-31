@@ -166,7 +166,7 @@ async function main() {
         const members=[{...state,party:{partyId:'fixture_sc'},stats:{...state.stats,coldCombat:{...state.stats.coldCombat,skills:[]}}},
             {...other.state,party:{partyId:'fixture_sc'}}];
         const spot={id:'fixture_sc',density:1,avgLevel:40,npcEntries:[{selfId:ruleId,count:1}],mob:{hp:100,damage:1}};
-        const at=Date.now(), key=Encounter.key(members,spot,ruleId,'fixture_sc');
+        const at=Date.now(), key=Encounter.key(members,spot,'fixture_sc');
         const pending=Encounter.save(null,key,mob,50,at,{mobReadyAt:5000,readyAt:{},soulCrystalMarks:{}});
         const partyResult=Resolver.resolve({party:{partyId:'fixture_sc',cohesion:1,stats:{pveEncounter:pending}},members,spot,targetNpcId:ruleId,
             elapsedMs:12000,timestamp:at,rng:()=>0});

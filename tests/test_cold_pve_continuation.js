@@ -39,7 +39,7 @@ try {
         assert.strictEqual(selected, 1, 'resume must not resample an opponent');
     }
     assert(won, 'solo must eventually finish a mob that exceeds one slice');
-    assert.strictEqual(Encounter.read(first, Encounter.key([base], { ...spot, id: 'elsewhere' }, 0), start + 60000), null);
+    assert.strictEqual(Encounter.read(first, Encounter.key([base], { ...spot, id: 'elsewhere' }), start + 60000), null);
     assert.strictEqual(Encounter.read(first, first.key, start + 11 * 60000), null, 'stale encounters expire');
     const fatal = Solo.resolveSolo({ state: { ...base, stats: { ...base.stats, pveEncounter: {
         ...first, mob: { ...first.mob, pAtk: 1e9, accur: 1000 }, mobReadyAt: 0, botReadyAt: 1000
@@ -61,6 +61,29 @@ try {
         const nextRound = Solo.resolveSolo({ state: merge(base, late.patch), spot, elapsedMs: 500, timestamp: start + 500, rng: () => .5 });
         assert.strictEqual(selected, before, 'the next round does not pick another mob');
         assert.strictEqual(nextRound.debug.pendingFight, true, 'the fight goes on');
+    }
+    // A rebuild that moves the step's target does not drop the engaged mob.
+    {
+        const before = selected;
+        const moved = Solo.resolveSolo({ state: { ...base, stats: { ...base.stats, pveEncounter: first } }, spot, targetNpcId: 777,
+            elapsedMs: 12000, timestamp: start + 60000, rng: () => .5 });
+        assert.strictEqual(selected, before, 'no new mob is picked');
+        assert(moved.patch.stats.pveEncounter?.hp < first.hp, 'the same mob takes the blows');
+    }
+    // A bot that wants a trip ends its engaged fight and starts no other: the
+    // next step is free to go, whatever the rounds' budget.
+    {
+        const before = selected;
+        const lastBlow = { ...first, hp: 1 };
+        const fighting = { ...base, stats: { ...base.stats, pveEncounter: lastBlow } };
+        assert.strictEqual(Encounter.holdsTrip(fighting, { needed: true }, start + 60000), true, 'the trip waits this step');
+        const ended = Solo.resolveSolo({ state: fighting, spot, lastFight: true, elapsedMs: 60000, timestamp: start + 60000, rng: () => .5 });
+        assert.strictEqual(ended.debug.wins, 1, 'the engaged mob falls');
+        assert.strictEqual(selected, before, 'no new fight starts in a 60 s round');
+        assert.strictEqual(ended.patch.stats.pveEncounter, null);
+        assert.strictEqual(Encounter.holdsTrip(merge(fighting, ended.patch), { needed: true }, start + 90000), false, 'the next step goes');
+        const noFight = Solo.resolveSolo({ state: structuredClone(base), spot, lastFight: true, elapsedMs: 60000, timestamp: start + 60000, rng: () => .5 });
+        assert.strictEqual(noFight.debug.attemptedFights, 0, 'with no fight engaged none starts');
     }
     // A fight the round cut with the bot's HP below the rest line goes on against
     // a mob it cannot outrun: the mob does not vanish, no fight is counted, and
@@ -85,13 +108,13 @@ try {
     const caster = { ...base, vitals: { ...base.vitals, mp: 0 }, stats: { ...base.stats, classId: 10, coldCombat: { ...base.stats.coldCombat, classId: 10,
         skills: [{ selfId: 1177, level: 1, mp: 10, passive: false }] } } };
     const casting = Solo.resolveSolo({ state: { ...caster, stats: { ...caster.stats, pveEncounter:
-        Encounter.save(null, Encounter.key([caster], spot, 0), mageMob, 1e6, start + 50000, { botReadyAt: 0, mobReadyAt: 0 }) } },
+        Encounter.save(null, Encounter.key([caster], spot), mageMob, 1e6, start + 50000, { botReadyAt: 0, mobReadyAt: 0 }) } },
     spot, elapsedMs: 12000, timestamp: start + 60000, rng: () => .5 });
     assert(casting.patch.stats.pveEncounter?.hp > 0, 'the fight of a mage out of MP stays pending');
     assert.strictEqual(casting.patch.activity, 'hunting');
     // A record too old to go on is no fight: the floor reads, and the mage rests.
     const stale = Solo.resolveSolo({ state: { ...caster, stats: { ...caster.stats, pveEncounter:
-        Encounter.save(null, Encounter.key([caster], spot, 0), mageMob, 1e6, start - 3600000, { botReadyAt: 0, mobReadyAt: 0 }) } },
+        Encounter.save(null, Encounter.key([caster], spot), mageMob, 1e6, start - 3600000, { botReadyAt: 0, mobReadyAt: 0 }) } },
     spot, elapsedMs: 12000, timestamp: start + 60000, rng: () => .5 });
     assert.strictEqual(stale.patch.activity, 'resting', 'a stale record does not hold the survival floor back');
     const rest = Solo.resolveSolo({ state: { ...base, activity: 'resting', stats: { ...base.stats, pveEncounter: first } },
@@ -117,13 +140,31 @@ try {
         previousHp = party.stats.pveEncounter.hp;
         assert.strictEqual(selected, 1);
         assert(result.memberResults.every(x => x.result.debug.fights === 0 && x.result.materialize.exp === 0));
-        const altered = Encounter.key(members.slice(1), spot, 0, party.partyId);
+        const altered = Encounter.key(members.slice(1), spot, party.partyId);
         assert.strictEqual(Encounter.read(party.stats.pveEncounter, altered, start + i * 60000), null);
     }
     assert(won, 'party must eventually finish its shared mob');
     assert.strictEqual(party.stats.fightsResolved, 1);
     assert.strictEqual(party.stats.fightsWon, 1);
     assert.strictEqual(party.stats.pveEncounter, null);
+    // A fight the slice bound gives up is a fight's end: a member below its line rests then.
+    {
+        mobHp = 1e7;
+        const fresh = Party.resolve({ party: { ...party, stats: {} }, members, spot, elapsedMs: 12000, timestamp: start + 21 * 60000, rng: () => .5 });
+        const record = { ...fresh.partyPatch.stats.pveEncounter, slices: Encounter.MAX_SLICES - 1 };
+        const hurt = members.map(member => ({ ...member, vitals: { ...member.vitals, hp: 50 } }));
+        const given = Party.resolve({ party: { ...party, stats: { pveEncounter: record } }, members: hurt, spot, elapsedMs: 12000,
+            timestamp: start + 22 * 60000, rng: () => .5 });
+        assert.strictEqual(given.partyPatch.stats.pveEncounter, null, 'the bound drops the fight');
+        assert(given.memberResults.every(({ result }) => result.patch.activity === 'resting'), 'the wounded party rests');
+        // A party that wants a trip ends its engaged fight and starts no other.
+        selected = 0; mobHp = 4000;
+        const ending = Party.resolve({ party: { ...party, stats: { pveEncounter: { ...record, slices: 1, hp: 1 } } }, members, spot, lastFight: true,
+            elapsedMs: 60000, timestamp: start + 22 * 60000, rng: () => .5 });
+        assert.strictEqual(ending.debug.wins, 1, 'the engaged mob falls');
+        assert.strictEqual(selected, 0, 'no new fight starts');
+        assert.strictEqual(ending.partyPatch.stats.pveEncounter, null);
+    }
     Cold.npcForSpot = () => ({ avoided: true, reason: 'target_resistance' });
     const avoided = Party.resolve({ party, members, spot, elapsedMs: 60000, timestamp: start + 20 * 60000, rng: () => .5 });
     assert.strictEqual(avoided.debug.fights, 0, 'an avoided encounter cannot inflate the planned fight count');

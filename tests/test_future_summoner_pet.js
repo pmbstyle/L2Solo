@@ -58,7 +58,7 @@ const spot = { id: 'future-pet', name: 'future pet', avgLevel: npc.template.leve
 // An engaged fight (the mob met), seeded.
 function fight(state) {
     const mob = Cold.npcForSpot(spot, () => 0.5, { preferredNpcId: MOB });
-    const encounter = PveEncounter.save(null, PveEncounter.key([state], spot, MOB), mob, mob.maxHp, TS,
+    const encounter = PveEncounter.save(null, PveEncounter.key([state], spot), mob, mob.maxHp, TS,
         { botReadyAt: 0, mobReadyAt: 0 });
     let seed = 7;
     const rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
@@ -86,7 +86,7 @@ for (const [name, state] of [['future Sorcerer', sorcerer], ['player', player], 
         Cold.summonDetails(Cold.summonSkills(profile).find((skill) => skill.selfId === KAT))).maxHp;
     const reuse = Object.fromEntries(Cold.summonSkills(profile).map((skill) => [skill.selfId, TS + 21600000]));
     const strong = Cold.npcForSpot(spot, () => 0.5, { preferredNpcId: MOB });
-    const encounter = PveEncounter.save(null, PveEncounter.key([warlock], spot, MOB), { ...strong, maxHp: 1e7 }, 1e7, TS,
+    const encounter = PveEncounter.save(null, PveEncounter.key([warlock], spot), { ...strong, maxHp: 1e7 }, 1e7, TS,
         { botReadyAt: 0, mobReadyAt: 0 });
     const state = { ...warlock, stats: { ...warlock.stats, pveEncounter: encounter, coldCombat: { ...warlock.stats.coldCombat,
         cooldowns: reuse, summon: { active: true, skillId: KAT, expiresAt: TS + 1e6, hp: katHp } } } };
@@ -144,7 +144,7 @@ for (const [name, state] of [['future Sorcerer', sorcerer], ['player', player], 
     const owner = { ...warlock, stats: { ...warlock.stats, coldCombat: { ...warlock.stats.coldCombat, summon: pet } } };
     const members = [owner, sorcerer];
     const strong = Cold.npcForSpot(spot, () => 0.5, { preferredNpcId: MOB });
-    const encounter = PveEncounter.save(null, PveEncounter.key(members, spot, MOB), { ...strong, maxHp: 1e7 }, 1e7, TS,
+    const encounter = PveEncounter.save(null, PveEncounter.key(members, spot), { ...strong, maxHp: 1e7 }, 1e7, TS,
         { mobReadyAt: 0, hate: { [owner.characterId]: 1e9 } });
     let seed = 5;
     const rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);

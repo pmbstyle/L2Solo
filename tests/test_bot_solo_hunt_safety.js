@@ -231,7 +231,7 @@ try {
     assert.strictEqual(recover.materialize.exp, 0);
     assert(recover.nextResolveAt > at && recover.events.some(event => event.type === 'rest'));
     const inCombat = { ...hurt, stats: { ...hurt.stats, pveEncounter: Encounter.save(null,
-        Encounter.key([hurt], easy, 0), Cold.npcForSpot(), 1, at, { botReadyAt: 0, mobReadyAt: 10000 }) } };
+        Encounter.key([hurt], easy), Cold.npcForSpot(), 1, at, { botReadyAt: 0, mobReadyAt: 10000 }) } };
     const continued = Resolver.resolveSolo({ state: inCombat, spot: easy, elapsedMs: 0, timestamp: at, rng: () => 0.5 });
     assert(continued.debug.attemptedFights > 0, 'a pending fight cannot disappear into pre-fight recovery');
     Cold.npcForSpot = () => ({ ...target, level: 25, selfId: 156, aggressiveInterruption: true,

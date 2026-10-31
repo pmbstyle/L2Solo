@@ -87,10 +87,14 @@ async function run() {
         const routed = standing(published, X);
         const route = BotRoute.trip({}, routed, leaf, { spots, timestamp: T, hasRoom: room(X) });
         assert(route?.needed, 'fixture: a trip');
-        // A fight under way ends first; a record too old to go on holds nothing.
+        // A wanted trip waits for the engaged fight only; a flight off unsafe ground does not.
         const fighting = at => ({ ...routed, stats: { ...routed.stats, pveEncounter: PveEncounter.save(null, 'fight', {}, 100, at, {}) } });
-        assert.equal(BotRoute.trip({}, fighting(T), leaf, { spots, timestamp: T, hasRoom: room(X) }), null, 'a pending fight holds the trip');
-        assert(BotRoute.trip({}, fighting(T - 3600000), leaf, { spots, timestamp: T, hasRoom: room(X) })?.needed, 'a stale record holds no trip');
+        assert.equal(PveEncounter.holdsTrip(fighting(T), route, T), true, 'a pending fight holds the trip');
+        assert.equal(PveEncounter.holdsTrip(fighting(T - 3600000), route, T), false, 'a stale record holds no trip');
+        assert.equal(PveEncounter.holdsTrip(fighting(T), { ...route, reason: 'unsafe_ground_evacuation' }, T), false,
+            'the unsafe-ground flight is not held');
+        assert.deepEqual(BotRoute.trip({}, fighting(T), leaf, { spots, timestamp: T, hasRoom: room(X) })?.spotId, route.spotId,
+            'the trip is still searched, for the step after the fight');
         const traveling = beginHuntingTrip(routed, route, T);
         assert(traveling, 'fixture: the trip starts');
         const arrival = Resolver.resolveSolo({ state: traveling, timestamp: traveling.stats.travel.arrivalAt });

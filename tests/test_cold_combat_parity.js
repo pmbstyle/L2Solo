@@ -136,7 +136,7 @@ function soloOutcome(state, npcId, seed, fightLimitMs = 60000, maxActions = 400)
     // An already engaged bot must finish even if it would now decline a new
     // voluntary fight. Pin the combat engine through its native saved encounter.
     const mob = ColdCombatProfile.npcForSpot(spot, () => 0.5, { preferredNpcId: npcId });
-    const encounter = PveEncounter.save(null, PveEncounter.key([state], spot, npcId), mob, mob.maxHp, TS,
+    const encounter = PveEncounter.save(null, PveEncounter.key([state], spot), mob, mob.maxHp, TS,
         { botReadyAt: 0, mobReadyAt: 0 });
     const engaged = { ...state, stats: { ...state.stats, pveEncounter: encounter } };
     const r = withSeed(seed, (rng) => resolveFight({ state: engaged, spot, pressure: {}, targetNpcId: npcId,
@@ -217,7 +217,7 @@ for (const [name, actual] of soloObserved) assert.deepStrictEqual(actual, SOLO_G
     const fight = (owner, hate, seed = 4, fightLimitMs = 60000) => {
         const spot = spotFor(239);
         const mob = ColdCombatProfile.npcForSpot(spot, () => 0.5, { preferredNpcId: 239 });
-        const encounter = PveEncounter.save(null, PveEncounter.key([owner], spot, 239), mob, mob.maxHp, TS, { botReadyAt: 0, mobReadyAt: 0, ...hate });
+        const encounter = PveEncounter.save(null, PveEncounter.key([owner], spot), mob, mob.maxHp, TS, { botReadyAt: 0, mobReadyAt: 0, ...hate });
         const engaged = { ...owner, stats: { ...owner.stats, pveEncounter: encounter } };
         return withSeed(seed, (rng) => resolveFight({ state: engaged, spot, pressure: {}, targetNpcId: 239, rng, timestamp: TS, fightLimitMs, maxActions: 400 }));
     };
@@ -271,7 +271,7 @@ for (const [name, actual] of soloObserved) assert.deepStrictEqual(actual, SOLO_G
             && skill.fetchSemantic?.()?.effectType === 'buff' && Object.keys(skill.fetchSemantic().stats || {}).length > 0));
     const spot = spotFor(buffer.selfId);
     const mob = ColdCombatProfile.npcForSpot(spot, () => 0.5, { preferredNpcId: buffer.selfId });
-    const encounter = PveEncounter.save(null, PveEncounter.key([gladiator], spot, buffer.selfId), { ...mob, maxHp: 1e7 }, 1e7, TS,
+    const encounter = PveEncounter.save(null, PveEncounter.key([gladiator], spot), { ...mob, maxHp: 1e7 }, 1e7, TS,
         { botReadyAt: 0, mobReadyAt: 0 });
     const saved = structuredClone(encounter.mob);
     const r = withSeed(3, (rng) => resolveFight({ state: { ...gladiator, stats: { ...gladiator.stats, pveEncounter: encounter } },
@@ -333,7 +333,7 @@ for (const [name, members, npcId, seed] of PARTY) {
 for (const [name, state, npcId, seed] of SOLO) {
     const spot = spotFor(npcId);
     const mob = ColdCombatProfile.npcForSpot(spot, () => 0.5, { preferredNpcId: npcId });
-    const encounter = PveEncounter.save(null, PveEncounter.key([state], spot, npcId), mob, mob.maxHp, TS,
+    const encounter = PveEncounter.save(null, PveEncounter.key([state], spot), mob, mob.maxHp, TS,
         { botReadyAt: 0, mobReadyAt: 0 });
     const member = { ...state, stats: { ...state.stats, role: 'tank', pveEncounter: encounter } };
     const solo = withSeed(seed, (rng) => resolveFight({ state: member, spot: spotFor(npcId), pressure: {}, targetNpcId: npcId,
