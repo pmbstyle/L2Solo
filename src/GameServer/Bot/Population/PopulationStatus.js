@@ -129,8 +129,9 @@ const PopulationStatus = {
         const geodata = GeodataEngine.storageStats();
         // noCheckpoint: commands a bot could not begin, its state refused by the
         // command checkpoint (a fractional clock); 0 in a healthy world.
+        // stepsRefused: steps main sent back since the start (the row moved).
         return `coldDue=${queue.overdue || 0} coldDueAll=${queue.due || 0} coldDueAge=${Math.round((queue.oldestAgeMs || 0) / 1000)}s`
-            + ` noCheckpoint=${worker.checkpointsRefused || 0}`
+            + ` noCheckpoint=${worker.checkpointsRefused || 0} stepsRefused=${worker.stepsRefused || 0}`
             + ` ${this.workerBusyText()} mainElu=${mainElu.utilization.toFixed(2)} workerHeapGc=${mb(worker.heapAfterGc)}/${mb(worker.heapAfterGcMax10)}MB`
             + ` stepLead=${worker.stepLeadMs || 0}ms pvp=${pvp.live}/${pvp.steps}/${pvp.ms}ms/${pvp.left}`
             + ` geo=${mb(geodata.loadedBytes)}MB/${geodata.loadedRegions} geoViews=${mb(geodata.attachedBytes)}+${mb(worker.geodata?.attachedBytes)}MB`

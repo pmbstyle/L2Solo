@@ -720,6 +720,8 @@ class ColdSimulationKernel {
         // the plan is re-planned at the bot's next step, its buff or training waits).
         this.reviewsSkipped = 0;
         this.checkpointsRefused = 0;
+        // Steps main refused: each is one build paid twice.
+        this.stepsRefused = 0;
         this.checkpointErrors = new Set();
         // Bots main named overdue: lines left of their journal (traceWrite).
         this.tracedBots = new Map();
@@ -2455,6 +2457,7 @@ class ColdSimulationKernel {
                 this.partyRequirementProgress.delete(String(active?.state?.party?.partyId || ''));
                 // No review runs the plan this step stamped as sent.
                 if (active?.economyPlan) this.forgetSentPlan(id);
+                this.stepsRefused += 1;
                 if (DiagnosticConfig.developerDiagnostics && Protocol.staleRefusal(result)) this.stats.stale += 1;
                 EconomyDiagnostics.count('commit_ack', 'refused', result.detail || result.reason);
                 if (this.tracedBots.has(id)) console.info('ColdWorker :: overdue refusal %s', JSON.stringify({ id, reason: result.reason, detail: result.detail,
@@ -2650,6 +2653,7 @@ class ColdSimulationKernel {
             heldCommand: this.heldEntry(this.commandStartedAt, now, attempt => `${attempt.kind}${attempt.sent ? ':sent' : ''}`),
             reviewsSkipped: this.reviewsSkipped,
             checkpointsRefused: this.checkpointsRefused,
+            stepsRefused: this.stepsRefused,
             ackUnbuilt: this.ackUnbuilt,
             stepLeadMs: Math.round(this.stepLeadMs),
             maxInFlight: this.maxInFlight,
