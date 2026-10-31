@@ -17,6 +17,7 @@ class ColdOccupationPlanner {
         Object.assign(this, { capture, create, step, result, ownCurrent, sameInput, sourceToken, sourceScope, sourceScopeToken, onSlots, onWorking, publish, onPublishError, now, schedule });
         this.slots = new Map(); this.waiting = new Map(); this.ready = new Set(); this.dependencies = new Map();
         this.workingContexts = 0;
+        this.errorsSeen = new Set();
         this.scopes = new Map();
         this.scopeDependencies = new Map();
         // Meeting readers share one representative item per category: their
@@ -190,6 +191,14 @@ class ColdOccupationPlanner {
         entry.validation = null;
     }
 
+    // A failed build ends as an empty result: each distinct failure is logged
+    // once, as an error the deploy read counts. A meeting's refusal is its answer.
+    reportError(entry) {
+        if (entry.input.mode === 'meeting' || this.errorsSeen.has(entry.error) || this.errorsSeen.size >= 32) return;
+        this.errorsSeen.add(entry.error);
+        console.error(`ColdOccupationPlanner :: Error: ${entry.error}`);
+    }
+
     finish(entry, value) {
         if (entry.done || this.slots.get(entry.id) !== entry) return;
         entry.done = true; entry.value = value ?? (entry.input.mode === 'action' ? null : unknownWorkshop());
@@ -250,7 +259,7 @@ class ColdOccupationPlanner {
                 if (units && clock - started >= SLICE_MS) break;
                 const unitStarted = clock;
                 try { this.unit(entry); }
-                catch (error) { entry.error = String(error?.message || error); this.finish(entry, entry.input.mode === 'meeting'
+                catch (error) { entry.error = String(error?.message || error); this.reportError(entry); this.finish(entry, entry.input.mode === 'meeting'
                     ? { refused: true, reason: entry.error } : unknownWorkshop()); }
                 clock = this.now();
                 const duration = clock - unitStarted;

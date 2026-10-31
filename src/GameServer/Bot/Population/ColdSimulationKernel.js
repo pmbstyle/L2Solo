@@ -415,12 +415,28 @@ function isSchedulableKind(kind) {
     return kind !== 'inactive' && kind !== 'event_driven' && kind !== 'party_member';
 }
 
-function occupationRound(state, plan, timestamp) {
+// Whether a step's economy plan has anything for main to carry out.
+function planActs(plan) {
+    return !!plan && !!(plan.take || plan.travel || plan.shot || plan.sell?.length || plan.withdraw?.length || plan.buyAds?.length);
+}
+
+// The decision an occupation round is held for: the leaf the bot chose.
+function occupationDecision(state, plan) {
+    return `${plan.activityPick.activity}:${plan.statsPacket?.activityLeaf ?? state.stats?.activityLeaf}`;
+}
+
+function occupationRound(state, plan, timestamp, record) {
     const activity = plan?.activityPick?.activity;
     if (state?.activity !== 'hunting' || state.stats?.pvpEncounter
         || !['shopping', 'selling', 'crafting', 'improving'].includes(activity)) return null;
+    // A chosen occupation holds a round once per decision, and only with a plan
+    // to post: main may refuse the plan (a trip not worth it, a retry window)
+    // and keep the state, and an empty round starts no trip. The bot hunts on;
+    // the plan rides each proposal and the fight's edge starts the trip.
+    if (!planActs(plan.economyPlan) || record?.heldOccupation === occupationDecision(state, plan)) return null;
     const pending = state.stats?.pveEncounter;
     if (pending && require('./ColdPveEncounter').read(pending, pending.key, timestamp)) return null;
+    if (record) record.heldOccupation = occupationDecision(state, plan);
     // The chosen occupation owns this round. Fighting before posting its
     // execution can spend the kit and replace a purchase with recovery.
     return { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
@@ -1462,7 +1478,7 @@ class ColdSimulationKernel {
             const spot = this.spotOf(current.state);
             const result = hallVisit
                 ? { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 30000 }
-                : occupationRound(resolveState, lifecyclePlan, timestamp) || await this.resolveSolo({
+                : occupationRound(resolveState, lifecyclePlan, timestamp, this.states.get(id)) || await this.resolveSolo({
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 state: resolveState,
                 spot,
@@ -2103,7 +2119,7 @@ class ColdSimulationKernel {
             if (!this.resolverSourceCurrent(source)) return;
             const resolveState = lifecyclePlan?.plannedState || active.state;
             const spot = resolveState.activity === 'traveling' ? null : lifecyclePlan?.spot || this.spotOf(active.state);
-            const result = occupationRound(resolveState, lifecyclePlan, timestamp) || await this.resolveSolo({
+            const result = occupationRound(resolveState, lifecyclePlan, timestamp, this.states.get(Number(characterId))) || await this.resolveSolo({
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 state: resolveState,
                 spot,

@@ -356,11 +356,37 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
             }
         }
     }
+    // A chosen occupation with nothing to post does not take the round.
+    for (const economyPlan of [undefined, { sell: [], withdraw: [], travel: null }]) {
+        let combats = 0;
+        const planless = recordingKernel({ now: () => 5000,
+            resolveSolo: input => { combats++; return resolver(input); },
+            planLifecycle: ({ state: current }) => ({ plannedState: current, activityPick: { activity: 'shopping' }, economyPlan }),
+            projectResolve: current => current, emit: () => {} });
+        planless.upsert(standOn(planless, { state: state(90003, { vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 } }) }, { id: 'planless-field' }));
+        planless.tick(); await planless.resolveChain;
+        assert.equal(combats, 1, 'the bot hunts while its occupation has no plan');
+    }
+    // Main may refuse a plan and keep the state: the same decision holds one round, the next one fights.
+    {
+        let combats = 0;
+        const refused = recordingKernel({ now: () => 5000,
+            resolveSolo: input => { combats++; return resolver(input); },
+            planLifecycle: ({ state: current }) => ({ plannedState: current, activityPick: { activity: 'shopping' },
+                economyPlan: { travel: 'power:1:1', sell: [], withdraw: [] }, statsPacket: { activityLeaf: 7 } }),
+            projectResolve: current => current, emit: () => {} });
+        refused.upsert(standOn(refused, { state: state(90004, { vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 } }) }, { id: 'refused-field' }));
+        refused.tick(); await refused.resolveChain;
+        assert.equal(combats, 0, 'a new decision holds its round');
+        await refused.resolveStep(90004);
+        assert.equal(combats, 1, 'the same decision fights on');
+    }
     for (const expired of [false, true]) {
         let combats = 0;
         const pending = recordingKernel({ now: () => 5000,
             resolveSolo: input => { combats++; return resolver(input); },
-            planLifecycle: ({ state: current }) => ({ plannedState: current, activityPick: { activity: 'shopping' } }),
+            planLifecycle: ({ state: current }) => ({ plannedState: current, activityPick: { activity: 'shopping' },
+                economyPlan: { travel: 'power:1:1', sell: [], withdraw: [] } }),
             projectResolve: current => current, emit: () => {} });
         pending.upsert(standOn(pending, { state: state(90002, { stats: { pveEncounter: {
             version: 1, key: 'held', hp: 100, slices: expired ? 20 : 1, at: 4000 } } }) }, { id: 'pending-field' }));
