@@ -2457,6 +2457,9 @@ class ColdSimulationKernel {
                 if (active?.economyPlan) this.forgetSentPlan(id);
                 if (DiagnosticConfig.developerDiagnostics && Protocol.staleRefusal(result)) this.stats.stale += 1;
                 EconomyDiagnostics.count('commit_ack', 'refused', result.detail || result.reason);
+                if (this.tracedBots.has(id)) console.info('ColdWorker :: overdue refusal %s', JSON.stringify({ id, reason: result.reason, detail: result.detail,
+                    stage: result.stage, revision: result.revision, proposed: active?.proposed?.simulation?.revision, stateRevision: result.state?.simulation?.revision,
+                    activity: active?.proposed?.activity, proposedDue: active?.proposed?.timing?.nextResolveAt, keys: Object.keys(result).slice(0, 12) }));
                 if (result.state) this.upsert({
                     state: {
                         ...result.state,
