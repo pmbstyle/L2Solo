@@ -207,6 +207,13 @@ function deferEquipmentRetry(session) {
     session.companionEquipmentRetryAt = Date.now() + COMPANION_EQUIPMENT_FAILURE_RETRY_MS;
 }
 
+// A refused gear purchase names its cause: the bot only says it could not buy.
+function equipmentPurchaseFailed(session, bot, errand, error) {
+    deferEquipmentRetry(session);
+    session.lastTradeSummary = `could not buy ${errand.itemName || errand.itemId}`;
+    utils.infoWarn('Shopping', '%s could not buy %s (%s): %s', bot.fetchName(), errand.itemId, errand.kind, error?.message || error);
+}
+
 function usesWarehouseStop(session) {
     const kind = session.companionShopping?.kind;
     return !kind || kind === 'sell_resources' || kind === 'sell_junk';
@@ -859,8 +866,7 @@ module.exports = {
                     { values: { item: boughtSummary.name, seller: sellerName } });
                 purchaseSucceeded = true;
             } catch (err) {
-                deferEquipmentRetry(session);
-                session.lastTradeSummary = `could not buy ${companionErrand.itemName || companionErrand.itemId}`;
+                equipmentPurchaseFailed(session, bot, companionErrand, err);
                 TownChatter.say(session, BotAI, 'market-offer-gone', Speech.lines('town.market-offer-gone'));
             }
             if (purchaseSucceeded) await invoke('GameServer/Bot/BotSkillTraining').review(session);
@@ -888,7 +894,8 @@ module.exports = {
                 if (session.actor !== bot || !LifeState.hotRow(bot.fetchId())) return;
                 const line = result.receipts.flatMap(row => row.lines || [])
                     .find(row => Number(row.selfId) === Number(companionErrand.itemId));
-                if (!result.ok || !line) throw Error('npc_offer_unavailable');
+                if (!result.ok || !line) throw Error(result.ok ? 'npc_line_not_funded'
+                    : result.receipts.find(row => !row.ok)?.reason || 'npc_offer_unavailable');
                 const bought = { qty: line.amount, name: offer.itemName, totalAdena: line.amount * line.unitPrice };
                 await withdrawBuyOrderFor(bot, companionErrand.itemId);
                 BotEquipmentUpgrade.applyBestUpgrades(session, { force: true });
@@ -904,8 +911,7 @@ module.exports = {
                     { values: { item: bought.name, seller: companionErrand.target.name } });
                 purchaseSucceeded = true;
             } catch (err) {
-                deferEquipmentRetry(session);
-                session.lastTradeSummary = `could not buy ${companionErrand.itemName || companionErrand.itemId}`;
+                equipmentPurchaseFailed(session, bot, companionErrand, err);
                 TownChatter.say(session, BotAI, 'npc-gear-purchase-failed', err?.message === 'Not enough Adena.'
             ? Speech.lines('town.npc-gear-purchase-failed.short-adena')
             : Speech.lines('town.npc-gear-purchase-failed.unavailable'), { priority: 'coordination' });

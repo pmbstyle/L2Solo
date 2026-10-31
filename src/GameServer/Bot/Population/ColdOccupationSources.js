@@ -181,15 +181,29 @@ function craftLabour(state, timestamp = Date.now(), profile = null) {
     return { executor: 'cold', mpCapacity, mpPerHour: mpPerHour(state) };
 }
 
+// A bot with no plan hunts on and shops nothing: each reason says so once per
+// thread, with the first bot it met, for the live log.
+const noPlanSeen = new Set();
+function noPlan(reason, state) {
+    if (!noPlanSeen.has(reason)) {
+        noPlanSeen.add(reason);
+        utils.infoWarn('ColdWork', 'no occupation plan: %s (first bot %d)', reason, Number(state.characterId));
+    }
+    return null;
+}
+
 function* prepare(state, { board, timestamp, read = () => {}, readScope = () => {}, stock = null, economy = null,
     routeRows = null, routeKey = null } = {}) {
     const packet = state.stats?.money;
-    if (!board || !Array.isArray(packet) || packet.length < 4 || !(packet[0] > 0) || !(packet[1] > 0)) return null;
+    if (!board) return noPlan('no_board', state);
+    if (!Array.isArray(packet) || packet.length < 4) return noPlan('no_money_packet', state);
+    if (!(packet[0] > 0)) return noPlan('no_hour_value', state);
+    if (!(packet[1] > 0)) return noPlan('no_money_price', state);
     const admission = recipeIndex(board);
     const craftLevel = invoke('GameServer/Bot/Economy/CraftShopService').craftLevelFor(state);
     readScope(admission.scopeFor(craftLevel));
     const reserved = yield* reservations(state);
-    if (!reserved) return null;
+    if (!reserved) return noPlan('unknown_reservations', state);
     const preparedFeasibility = yield* feasibility(state, { board, read }, reserved);
     const ownStock = new Map(), routes = [];
     const key = EconomicTrip.key(state);

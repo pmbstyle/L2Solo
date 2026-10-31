@@ -111,6 +111,13 @@ async function main() {
         assert.strictEqual(MarketOpportunity.resolveSupplyItem('Soulshots D grade').selfId, 1463);
         assert.strictEqual(MarketOpportunity.normalizeItemLookup('D-grade soulshots'), 'soulshot_d_grade');
         assert.strictEqual(MarketOpportunity.normalizeItemLookup('No-grade soulshots'), 'soulshot_no_grade');
+        // A board writer keeps the reserve: a wallet that covers the item only by
+        // dipping into it is refused here, before the bot leaves the party.
+        MarketOpportunity.bestSupplyOffer = () => ({ sourceType: 'afk_bot_store', sourceId: 7005, sourceName: 'Seller',
+            town: 'Talking Island', selfId: 1463, price: 17, itemName: 'Soulshot: D-grade', available: true });
+        session.coldLifeState = { stats: { money: [1000, .001, BotSupplyErrand.actorAdena(bot) - 16, 0] } };
+        assert.strictEqual(BotSupplyErrand.request(session, player, 1463, 1).reason, 'not_enough_adena');
+        session.coldLifeState = undefined;
         MarketOpportunity.bestSupplyOffer = () => ({
             sourceType: 'npc', sourceId: 7004, sourceName: 'D-grade grocer', town: 'Talking Island',
             selfId: 1463, price: 17, itemName: 'Soulshot: D-grade', available: true

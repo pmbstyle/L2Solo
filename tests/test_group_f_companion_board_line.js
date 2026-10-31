@@ -11,6 +11,7 @@ const Equipment = invoke('GameServer/Bot/AI/CompanionEquipmentShopping');
 const Shopping = invoke('GameServer/Bot/AI/States/ShoppingState');
 const Upgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
 const Training = invoke('GameServer/Bot/BotSkillTraining');
+const Supply = invoke('GameServer/Bot/AI/BotSupplyErrand');
 
 const scratch = path.join(process.cwd(), 'tmp', 'test-group-f-companion-line');
 fs.mkdirSync(scratch, { recursive: true });
@@ -20,11 +21,12 @@ process.env.TMPDIR = directory;
 const originals = { world: RuntimeWorld.user, restock: Shopping.scheduleRestock, upgrade: Upgrade.applyBestUpgrades, training: Training.review };
 const BUYER = 988100;
 const SELLER = 988101;
+const RESELLER = 988102;
 const SABER = 123;
 
 (async () => {
     const fixture = await createWorld([{ id: BUYER, name: 'Buyer', level: 40 },
-        { id: SELLER, name: 'Seller', level: 40 }], 'group-f-companion-line');
+        { id: SELLER, name: 'Seller', level: 40 }, { id: RESELLER, name: 'Reseller', level: 40 }], 'group-f-companion-line');
     try {
         await Database.setItem(BUYER, { selfId: 57, name: 'Adena', amount: 100000,
             enchant: 0, equipped: false, slot: 0 });
@@ -106,6 +108,70 @@ const SABER = 123;
         const [untouched] = await Database.execute(['SELECT count FROM afk_trade_lines WHERE id = ?', [store.lines[0].id]]);
         assert.equal(untouched.count, 1);
         console.log('PASS stale exact board line refuses equal-price enchanted substitute');
+
+        // A companion buys on the player's visit, not from its own money queue:
+        // a packet with no row for the item (a rich bot's usual packet, the
+        // live shape) still pays for the upgrade from the wallet above the reserve.
+        const LONG_SWORD = 2, LEATHER_SHIRT = 27, LEATHER_HELMET = 44, COMPOSITION_BOW = 273, RESERVE = 500, unfunded = [100000, .0001, RESERVE, 0];
+        const withoutRow = async (selfId, name, market = {}) => {
+            const current = LifeState.cachedState(BUYER);
+            session.coldLifeState = await LifeState.upsertState({ ...current, stats: { ...current.stats, money: unfunded,
+                equipmentPlan: { strategy: 'market', status: 'active', market, target: { selfId, name, slot: 7 } } } },
+            'group_f_companion_unfunded');
+            session.heldEconomy = undefined;
+        };
+        const stock = Number((await Database.setItem(RESELLER, { selfId: LONG_SWORD, name: 'Long Sword',
+            amount: 1, enchant: 0, equipped: false, slot: 0 })).insertId);
+        AfkTrade.refreshRecord((await Database.createAfkTradeShop(RESELLER, { kind: 'shop', storeType: 1, town: 'Giran',
+            locX: 83000, locY: 148000, locZ: -3400, lines: [{ objectId: stock, selfId: LONG_SWORD, name: 'Long Sword',
+                count: 1, price: 300, enchant: 0, stackable: false }] })).shop);
+        await withoutRow(LONG_SWORD, 'Long Sword');
+        const boardErrand = Equipment.planErrand(session, bot, { name: 'Giran' });
+        assert.equal(boardErrand?.kind, 'market_purchase');
+        const boardMoney = await fixture.amount(BUYER, 57);
+        session.companionShopping = boardErrand;
+        await Shopping.sellAndRestock(session, bot, null, { say() {} });
+        assert.equal(await fixture.amount(BUYER, LONG_SWORD), 1, session.lastTradeSummary);
+        assert.equal(await fixture.amount(BUYER, 57), boardMoney - 300);
+        console.log('PASS companion buys a board upgrade its money queue does not fund');
+
+        // The basket saves the hot body's vitals with the town it stands in.
+        Object.assign(bot, { fetchHp: () => 100, fetchMaxHp: () => 100, fetchMp: () => 100, fetchMaxMp: () => 100 });
+        const shop = Market.npcOffers(LEATHER_SHIRT, 'Giran')[0];
+        assert(shop, 'the C4 Giran armour shop sells the shirt');
+        await withoutRow(LEATHER_SHIRT, 'Hard Leather Shirt', { sourceType: 'npc' });
+        const shopErrand = Equipment.planErrand(session, bot, { name: 'Giran' });
+        assert.equal(shopErrand?.kind, 'npc_equipment_purchase');
+        const shopMoney = await fixture.amount(BUYER, 57);
+        session.companionShopping = shopErrand;
+        await Shopping.sellAndRestock(session, bot, null, { say() {} });
+        assert.equal(await fixture.amount(BUYER, LEATHER_SHIRT), 1, session.lastTradeSummary);
+        assert.equal(await fixture.amount(BUYER, 57), shopMoney - shop.price);
+        console.log('PASS companion buys an NPC upgrade its money queue does not fund');
+
+        // The player's own order at a board shop: the same terms, the same writer.
+        const ordered = Number((await Database.setItem(RESELLER, { selfId: LEATHER_HELMET, name: 'Leather Helmet',
+            amount: 1, enchant: 0, equipped: false, slot: 0 })).insertId);
+        const record = (await Database.createAfkTradeShop(RESELLER, { kind: 'shop', storeType: 1, town: 'Giran',
+            locX: 83000, locY: 148000, locZ: -3400, lines: [{ objectId: ordered, selfId: LEATHER_HELMET, name: 'Leather Helmet',
+                count: 1, price: 200, enchant: 0, stackable: false }] })).shop;
+        AfkTrade.refreshRecord(record);
+        await withoutRow(LEATHER_SHIRT, 'Hard Leather Shirt');
+        const order = await Supply.purchaseAtDestination(bot, { sourceType: 'afk_player_store', itemId: LEATHER_HELMET, amount: 1,
+            unitPrice: 200, totalCost: 200, recordId: record.id, lineId: record.lines[0].id, target: { town: 'Giran' } });
+        assert.equal(await fixture.amount(BUYER, LEATHER_HELMET), 1, String(order.reason));
+        console.log('PASS companion buys a board item the player ordered');
+
+        const bow = Market.npcOffers(COMPOSITION_BOW, 'Giran')[0];
+        const wallet = amount => bot.backpack.fetchItemFromSelfId(57).setAmount(amount);
+        await withoutRow(COMPOSITION_BOW, 'Composition Bow', { sourceType: 'npc' });
+        wallet(bow.price + RESERVE);
+        assert.equal(Equipment.planErrand(session, bot, { name: 'Giran' })?.itemId, COMPOSITION_BOW);
+        await withoutRow(COMPOSITION_BOW, 'Composition Bow', { sourceType: 'npc' });
+        wallet(bow.price + RESERVE - 1);
+        assert.notEqual(Equipment.planErrand(session, bot, { name: 'Giran' })?.itemId, COMPOSITION_BOW,
+            'the reserve stays with the companion');
+        console.log('PASS companion keeps its reserve');
     } finally {
         Shopping.scheduleRestock = originals.restock;
         Upgrade.applyBestUpgrades = originals.upgrade;

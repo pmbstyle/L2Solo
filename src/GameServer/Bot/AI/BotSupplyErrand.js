@@ -8,8 +8,13 @@ const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 const WorkflowTelemetry = invoke('GameServer/Bot/AI/BotWorkflowTelemetry');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 
 const MAX_REQUEST_AMOUNT = 5000;
+
+function isBoardSource(sourceType) {
+    return ['afk_player_store', 'afk_bot_store'].includes(sourceType);
+}
 
 function actorAdena(actor) {
     return Number(actor?.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() || 0);
@@ -84,7 +89,10 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
     const cost = Number(Market.price) * amount;
     const adena = actorAdena(bot);
     if (cost <= 0) return { ok: false, reason: 'supply_price_invalid' };
-    if (adena < cost) return { ok: false, reason: 'not_enough_adena', cost, adena, itemName: Market.itemName };
+    // A board writer keeps the reserve (companionTerms); an NPC takes the whole wallet.
+    const money = isBoardSource(Market.sourceType) ? PurchaseFunding.spendable({ ...session.coldLifeState, adena }, 0,
+        PurchaseFunding.companionTerms(selfId)) : adena;
+    if (money < cost) return { ok: false, reason: 'not_enough_adena', cost, adena, itemName: Market.itemName };
 
     const BotAI = invoke('GameServer/Bot/BotAI');
     const town = townDestination(Market, bot, BotAI);
@@ -219,7 +227,7 @@ async function purchaseAtDestination(bot, errand) {
     if (!MarketOpportunity.botCanBuy({ ...errand, selfId: errand.itemId })) {
         return { ok: false, reason: 'configured_supply_retired' };
     }
-    const boardSource = ['afk_player_store', 'afk_bot_store'].includes(errand.sourceType);
+    const boardSource = isBoardSource(errand.sourceType);
     if (!boardSource && !['npc', 'configured_store'].includes(errand.sourceType)) {
         return { ok: false, reason: 'supply_source_unavailable' };
     }
@@ -273,7 +281,8 @@ async function purchaseAtDestination(bot, errand) {
         const trade = boardSource
             ? await invoke('GameServer/AfkTrade/AfkTradeService').buyFromShop(bot.fetchId(), boardOffer.store,
                 Number(errand.itemId), Number(errand.amount), { lineId: boardOffer.lineId,
-                    expectedPrice: Number(errand.unitPrice), coldState: bot.session?.coldLifeState, autoEquip: false })
+                    expectedPrice: Number(errand.unitPrice), coldState: bot.session?.coldLifeState, autoEquip: false,
+                    funding: PurchaseFunding.companionTerms(errand.itemId) })
             : await TradeService.buyFromStore(bot, store, Number(errand.itemId), Number(errand.amount), {
                 expectedUnitPrice: Number(errand.unitPrice)
             });

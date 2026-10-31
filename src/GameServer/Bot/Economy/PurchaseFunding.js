@@ -40,7 +40,7 @@ function packetAfterPurchase(packet, spent, funding = {}) {
     if (!Array.isArray(packet) || packet.length < 4 || !(spent > 0)
         || !Number.isFinite(spent) || funding.free === true) return packet;
     let rate = null, itemIndex = -1;
-    if (funding.r !== undefined) {
+    if (funding.r !== undefined && funding.r !== Infinity) {
         if (!(Number(funding.r) > 0) || !Number.isFinite(Number(funding.r))) return packet;
         rate = significant(Number(funding.r));
     } else if (funding.valueHours === undefined && Number(funding.itemId) > 0) {
@@ -164,6 +164,13 @@ function nativeTerms(options = {}, itemId = 0) {
     if (options.clanPart !== undefined && Number.isFinite(Number(options.clanPart)) && Number(options.clanPart) >= 0) terms.clanPart = Number(options.clanPart);
     return terms;
 }
+// ARCH-NOTE: Player companion errands use the player's choice; autonomous bots
+// spend only on their funded item. A companion stands ahead of its own money
+// queue: it spends the wallet above the reserve (r Infinity is upperBound in the
+// terms the native writer checks at the counter). Its item's row, if any, is paid.
+function companionTerms(itemId) {
+    return nativeTerms({ r: Infinity }, itemId);
+}
 // A root's place in the money queue (r) as a goal and the compact card carry
 // it: only a funded root has one.
 function rootRatio(wish) {
@@ -211,5 +218,5 @@ function packetFor(network, hour, reserve) {
     return packet;
 }
 function tripEscrow(plan, escrow = 0) { return plan?.market?.sourceType === 'npc' ? escrow : 0; }
-module.exports = { budget, operatingReserve, shortfall, surplus, spendable, clanCredit, stockAllowance, quoteScale, forOpportunity, nativeTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, leafRatio, goalTerms, stockTerms,
+module.exports = { budget, operatingReserve, shortfall, surplus, spendable, clanCredit, stockAllowance, quoteScale, forOpportunity, nativeTerms, companionTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, leafRatio, goalTerms, stockTerms,
     summary: () => Diagnostics.active() ? ({ moneyPacketMissing }) : ({ enabled: false }), resetCounters: () => { moneyPacketMissing = 0; } };

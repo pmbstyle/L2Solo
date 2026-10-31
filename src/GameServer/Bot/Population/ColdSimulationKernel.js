@@ -1,5 +1,6 @@
 const { isDeepStrictEqual } = require('node:util');
 const PveEncounter = require('./ColdPveEncounter');
+const ColdEconomyPlan = require('./ColdEconomyPlan');
 const DiagnosticConfig = require('./PopulationConfig');
 const CharacterStateSources = require('../../World/CharacterStateSources');
 const SparseNumericStorage = require('./SparseNumericStorage');
@@ -419,11 +420,6 @@ function isSchedulableKind(kind) {
     return kind !== 'inactive' && kind !== 'event_driven' && kind !== 'party_member';
 }
 
-// Whether a step's economy plan has anything for main to carry out.
-function planActs(plan) {
-    return !!plan && !!(plan.take || plan.travel || plan.shot || plan.sell?.length || plan.withdraw?.length || plan.buyAds?.length);
-}
-
 // The decision an occupation round is held for: the leaf the bot chose.
 function occupationDecision(state, plan) {
     return `${plan.activityPick.activity}:${plan.statsPacket?.activityLeaf ?? state.stats?.activityLeaf}`;
@@ -436,7 +432,7 @@ function occupationDecision(state, plan) {
 function occupationWanted(state, plan, record) {
     return state?.activity === 'hunting' && !state.stats?.pvpEncounter
         && ['shopping', 'selling', 'crafting', 'improving'].includes(plan?.activityPick?.activity)
-        && planActs(plan.economyPlan) && record?.heldOccupation !== occupationDecision(state, plan);
+        && ColdEconomyPlan.acts(plan.economyPlan) && record?.heldOccupation !== occupationDecision(state, plan);
 }
 
 // A bot whose next act waits for its fight ends that fight and starts no other:

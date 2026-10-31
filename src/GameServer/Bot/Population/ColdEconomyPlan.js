@@ -48,6 +48,13 @@ function edges(before, after, options = {}) {
     return bits;
 }
 
+// Whether a step's plan is worth a held round: something BotAfkMarketService.executePlan
+// carries out for the bot. plan.shop only names the town of plan.sell, buyKit and
+// buyCaps go with buyAds; bidLimits ride every proposal and hold nothing.
+function acts(plan) {
+    return !!plan && !!(plan.take || plan.travel || plan.shot || plan.sell?.length || plan.withdraw?.length || plan.buyAds?.length);
+}
+
 // Same native sale/bid policies as a town/remote review, with the worker's
 // mirrors supplied explicitly. No warehouse or life-state/database reader.
 function prepare(state, economy, options = {}) {
@@ -261,4 +268,4 @@ function decideShot(state, economy, options = {}) {
     // a recipe/gear/quote scan by falling through this publication adapter.
     return { unknown: true };
 }
-module.exports = { edges, decide, prepare, buyBatch, decideShot, MAX_BYTES, MAX_SHOT_BYTES, MAX_PLAN_PAYLOAD_BYTES, MAX_SHOT_PAYLOAD_BYTES };
+module.exports = { edges, acts, decide, prepare, buyBatch, decideShot, MAX_BYTES, MAX_SHOT_BYTES, MAX_PLAN_PAYLOAD_BYTES, MAX_SHOT_PAYLOAD_BYTES };
