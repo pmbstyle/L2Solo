@@ -720,9 +720,9 @@ function buildProjection(state, ctx, deps) {
             if (material) best = exitCeiling(fixedBids, ownSales, best);
             if (shot && need('./ShotTradeDemand').forecast(id, null, timestamp)) best = Math.max(best, positive(price(id)));
             if (!(best > 0)) continue;
-            // An invested recipe retains priority, but ordinary shots and
-            // intermediate materials compete on their actual finite value.
-            const earningPreference = shot && Number(recipe.recipeItemId) === investmentId ? 2 : 0;
+            // A finite setup retains priority through recipe and material
+            // purchases. Ordinary shots and materials compete on finite value.
+            const earningPreference = shot && productionBatches(recipe) ? 2 : 0;
             const demand = material ? [...publicBids.slice(0, 5), ...fixedBids.slice(0, 5)]
                 .reduce((max, offer) => offer.type !== 'static' && usableExit(offer, ownSales)
                     ? Math.max(max, Number(offer.count || 0)) : max, 0) : 0;
