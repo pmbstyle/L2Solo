@@ -1458,7 +1458,10 @@ class ColdSimulationKernel {
         let oldest = null;
         this.states.forEach((record) => {
             const { state } = record, due = Number(state.timing?.nextResolveAt || 0);
-            if (state.phase !== 'cold' || state.party?.partyId || state.activity === 'pk_hunting' || !due) return;
+            // The bots coldDueSummary leaves out: the ones that wait on an event by design.
+            if (state.phase !== 'cold' || state.party?.partyId || state.activity === 'pk_hunting' || !due
+                || (state.activity === 'crafting' && state.stats?.craftShop)
+                || (state.stats?.tradeMeeting && lifecycleKind(state, this) === 'event_driven')) return;
             if (due <= timestamp - OVERDUE_TRACE_AGE_MS && (!oldest || due < oldest.due)) oldest = { record, due };
         });
         if (!oldest) return;
