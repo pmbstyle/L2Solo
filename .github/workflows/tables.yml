@@ -151,6 +151,13 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      # Its spots table builds the same catalogue as the spot jobs
+      # (static-tables.js buildSpots): on the geodata ground, the same floors and ids.
+      - uses: actions/cache@v4
+        with:
+          path: data/Geodata
+          key: geodata-${{ hashFiles('scripts/geodata-release.json') }}
+      - run: npm run geodata
       - run: node scripts/hunt-tables/build.js --tables=all
       - uses: actions/upload-artifact@v4
         with:

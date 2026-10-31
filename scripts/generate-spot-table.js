@@ -301,7 +301,10 @@ function buildCatalogue() {
     const profiles = SpotProfiles.ensure();
     Math.random = random;
     const geodata = invoke('GameServer/Bot/AI/SpotValueTable').geodataProfile();
-    if (!geodata) process.stderr.write('no geodata: territory spawns stand at their maxZ hint, the floors differ from the server\'s (npm run geodata)\n');
+    // Without geodata territory spawns stand at their maxZ hint: no floor
+    // spots, ids that differ from the server's. A table of that is wrong.
+    const floors = SpotService.spots.filter(spot => /:f\d+$/.test(String(spot.id))).length;
+    if (!geodata || !floors) throw new Error(`spot catalogue without geodata (${floors} floor spots): run npm run geodata`);
     return { spots: SpotService.spots, profiles, spawned: world.npc.spawns.length, geodata };
 }
 
