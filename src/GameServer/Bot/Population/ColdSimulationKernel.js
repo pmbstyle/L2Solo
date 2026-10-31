@@ -9,6 +9,9 @@ const PROPOSAL_PAYLOAD_LIMIT_BYTES = 240 * 1024;
 // A step not answered by a commit ack this long after its start is requeued
 // (a party by its leader); a late ack then misses its proposal and is dropped.
 const STEP_STALL_MS = 30000;
+// The overdue trace: at most one line per period, for a bot this long past its due.
+const OVERDUE_TRACE_PERIOD_MS = 30000;
+const OVERDUE_TRACE_AGE_MS = 60000;
 // Ready resolver promises chained back to back ran a tick's whole batch as one task (T41 profile
 // 10-26: up to 1.3 s with no turn; the heartbeat, the flush and main's acks waited behind it). Each
 // queued step and command starts on its own turn: same work, no long task.
@@ -725,6 +728,7 @@ class ColdSimulationKernel {
         this.reviewsSkipped = 0;
         this.checkpointsRefused = 0;
         this.checkpointErrors = new Set();
+        this.overdueTraceAt = 0;
         // Ok commit acks with numbers only whose state this thread could not
         // rebuild (no proposal kept, a bad number): always counted.
         this.ackUnbuilt = 0;
@@ -1446,6 +1450,33 @@ class ColdSimulationKernel {
         return attempt;
     }
 
+    // Main's overdue line names the bot; only this thread sees why it waits: its
+    // token, what holds it, what the heap would start next. Diagnostics off too.
+    traceOverdue(timestamp) {
+        if (timestamp < this.overdueTraceAt) return;
+        this.overdueTraceAt = timestamp + OVERDUE_TRACE_PERIOD_MS;
+        let oldest = null;
+        this.states.forEach((record) => {
+            const { state } = record, due = Number(state.timing?.nextResolveAt || 0);
+            if (state.phase !== 'cold' || state.party?.partyId || state.activity === 'pk_hunting' || !due) return;
+            if (due <= timestamp - OVERDUE_TRACE_AGE_MS && (!oldest || due < oldest.due)) oldest = { record, due };
+        });
+        if (!oldest) return;
+        const { state, version } = oldest.record, id = Number(state.characterId);
+        const token = this.scheduleTokens.get(id), entry = token?.heapEntry;
+        const step = this.inFlight.get(id), command = this.commandStartedAt.get(id), head = this.heap.peek();
+        console.info('ColdWorker :: overdue trace %s', JSON.stringify({ id, activity: state.activity, kind: lifecycleKind(state, this),
+            dueAgoS: Math.round((timestamp - oldest.due) / 1000), kernelDueInMs: Math.round(this.dueAt(state, timestamp) - timestamp), version,
+            covered: this.hasNormalCoverage(id), busy: this.busy(id), dirty: this.dirty.has(id), wake: this.buyerWakeups.has(id),
+            token: token ? { dueInMs: Math.round(token.dueAt - timestamp), version: token.version, inHeap: this.heap.positions.has(entry),
+                lead: entry?.lead, startInMs: entry ? Math.round(this.startAt(entry) - timestamp) : null } : null,
+            step: step ? { ageMs: timestamp - step.startedAt, sent: !!step.pendingCommitId } : null,
+            command: command ? { kind: command.kind, sent: !!command.sent, ageMs: timestamp - command.startedAt } : null,
+            carries: ['pveEncounter', 'pvpEncounter', 'tradeMeeting', 'travel'].filter(key => state.stats?.[key]),
+            heap: this.heap.size, headInMs: head ? Math.round(Number(head.dueAt || 0) - timestamp) : null,
+            inFlight: this.inFlight.size, commanding: this.commanding.size, stepLeadMs: Math.round(this.stepLeadMs), paused: this.paused }));
+    }
+
     // A state the checkpoint refuses (a fractional clock) is its writer's bug: an
     // error line, so a deploy read fails on it instead of a bot going quiet. A
     // market wake would hold the bot on commands; its resolver steps still run.
@@ -1653,6 +1684,7 @@ class ColdSimulationKernel {
         const decisionBudget = { remaining: 64 };
         this.drainDecisionDeadlines(this.stats.lastLoopAt, decisionBudget);
         this.recoverStalled(this.stats.lastLoopAt);
+        this.traceOverdue(this.stats.lastLoopAt);
         if (this.paused || this.stopping) {
             DiagnosticConfig.developerDiagnostics && EconomyDiagnostics.count('worker_tick', 'empty', 'paused');
             return;
