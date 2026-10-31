@@ -131,6 +131,10 @@ function* decisionSearch(state, knownRecipes, context, options, mode) {
         if (!recipe || recipe.type !== 'dwarven' || !CraftShopService.canCraft(state, recipe)) continue;
         const template = ItemTemplateIndex.find(DataCache.items, recipe.productId);
         if (!template || !recipe.materials?.length) continue;
+        // Shot production has its own demand-aware executor and batch sizing.
+        // Keep an explicitly selected legacy job eligible for meeting rechecks.
+        if (mode === 'action' && String(template.template?.kind || '').startsWith('Other.Shot')
+            && (!options.onlyRecipeId || !learned.has(id))) continue;
         const exits = options.prepareExits ? yield* options.prepareExits(state, recipe, template, trip)
             : exitsFor(state, recipe, template, trip, options);
         if (!options.prepareExits) yield 'exits';
@@ -141,9 +145,6 @@ function* decisionSearch(state, knownRecipes, context, options, mode) {
             }
         }
         const learning = !learned.has(id);
-        // Unknown shot acquisition already belongs to the shared shot route;
-        // retain that executor and its existing compact recipeTarget command.
-        if (learning && String(template.template?.kind || '').startsWith('Other.Shot')) continue;
         if (learning && !ItemDisposition.canLearnRecipe(state, { selfId: Number(recipe.recipeItemId) })) continue;
         const recipeContext = { ...evaluationContext,
             ...(learning ? { recipeInput: Number(recipe.recipeItemId),
