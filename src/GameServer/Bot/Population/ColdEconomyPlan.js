@@ -95,23 +95,10 @@ function* prepareNative(state, economy, options) {
         }
     }
     const bidLimits = limits.length ? { bidLimits: limits } : {};
-    const purchase = canAct && !options.showcaseOnly ? Ready.purchase(state, economy, options.board) : null;
-    const kept = new Map(own.filter(line => line.storeType === SELL)
-        .map(line => [`${line.selfId}:${line.enchant || 0}`, line.price]));
-    const inventory = { ...state.inventory };
-    for (const line of own) {
-        if (line.storeType !== SELL || line.custodyPolicy === 1) continue;
-        const row = inventory[line.selfId] || { selfId: line.selfId, amount: 0 };
-        inventory[line.selfId] = { ...row, amount: Number(row.amount || 0) + line.count,
-            instances: [...(row.instances || []), { id: -line.lineId, amount: line.count, enchant: line.enchant, equipped: false }] };
-    }
-    const saleState = { ...state, inventory };
-    const conditionalKept = new Set(own.filter(line => line.storeType === SELL && line.custodyPolicy === 1)
-        .map(line => `${line.selfId}:${line.enchant || 0}`));
-    for (const line of own) if (line.storeType === SELL && line.custodyPolicy !== 1)
-        conditionalKept.delete(`${line.selfId}:${line.enchant || 0}`);
-    const sale = Listing.evaluate(saleState, { ...options, economy, stockQuotes: true,
-        slots: Listing.BOARD_SLOTS, kept, conditionalKept, stored: new Map() });
+    const purchase = canAct && !options.showcaseOnly
+        ? Ready.purchase(state, economy, options.board) || Ready.clanCraftPurchase(state, economy, options.board) : null;
+    const saleInput = Listing.ownSaleInputs(state, own, { ...options, economy });
+    const sale = Listing.evaluate(saleInput.state, saleInput.options);
     // A profitable surplus sale uses a meeting or a backed shop in the town
     // already reached. Leave the selected purchase/focus intact for review.
     const answer = canAct && !options.showcaseOnly ? Ready.sale(sale.answers, state) : null;
@@ -162,9 +149,10 @@ function* prepareNative(state, economy, options) {
         goal = needs[0];
         const buyState = { ...state, adena: Funding.budget(state, options.buyOrderEscrow || 0) };
         money = BuyAds.goalMoney(state, goal, options.buyOrderEscrow || 0, economy);
-        const lines = BuyAds.linesFor(buyState, goal, { ...options, economy,
+        let lines = BuyAds.linesFor(buyState, goal, { ...options, economy,
             townFor: items => Town.buyAdTown(state, items, own),
             watchList: economy.watchList || [], money });
+        lines = BuyAds.keepRetainedBids(state, own, lines, economy.network?.moneyPrice, options.buyOrderEscrow || 0);
         // The native activity selected the priority. A buy may replace a sale
         // shop; ordinary surplus listings cannot evict a standing buy shop.
         plan.buyShop = ['upgrade_gear', 'buy_craft_material'].includes(goal?.type) ? BoardRules.BUY

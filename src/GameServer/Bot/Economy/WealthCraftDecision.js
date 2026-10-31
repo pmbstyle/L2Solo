@@ -55,7 +55,7 @@ function eligible(state, { ownLines = [], now = Date.now() } = {}) {
         || state.stats?.craftStationId || /^bot_craft_\d+$/i.test(String(state.accountName || ''))) return false;
     if (!CraftShopService.isServiceCrafter(state) || CraftShopService.craftLevelFor(state) <= 0) return false;
     if (state.stats?.equipmentPlan?.strategy === 'craft'
-        && ['active', 'component_ready', 'ready_to_craft'].includes(state.stats.equipmentPlan.status)) return false;
+        && ['component_ready', 'ready_to_craft'].includes(state.stats.equipmentPlan.status)) return false;
     const previous = state.stats?.wealthCraft;
     if (previous?.outcome === 'waiting_for_buyer') {
         const id = Number(previous.productId);
@@ -112,6 +112,9 @@ function* decisionSearch(state, knownRecipes, context, options, mode) {
     const learned = new Set((knownRecipes || []).map(row => Number(row.recipeId ?? row)));
     const seen = new Set();
     function* candidates() {
+        // A meeting rechecks one already selected production job. It must
+        // not scan or admit other recipes while certifying its input.
+        if (options.onlyRecipeId) { yield Number(options.onlyRecipeId); return; }
         yield* knownRecipes || [];
         for (const key in state.inventory || {}) {
             const recipe = Recipes.resolve(Number(state.inventory[key].selfId || key));
@@ -128,6 +131,10 @@ function* decisionSearch(state, knownRecipes, context, options, mode) {
         if (!recipe || recipe.type !== 'dwarven' || !CraftShopService.canCraft(state, recipe)) continue;
         const template = ItemTemplateIndex.find(DataCache.items, recipe.productId);
         if (!template || !recipe.materials?.length) continue;
+        // Shot production has its own demand-aware executor and batch sizing.
+        // Keep an explicitly selected legacy job eligible for meeting rechecks.
+        if (mode === 'action' && String(template.template?.kind || '').startsWith('Other.Shot')
+            && (!options.onlyRecipeId || !learned.has(id))) continue;
         const exits = options.prepareExits ? yield* options.prepareExits(state, recipe, template, trip)
             : exitsFor(state, recipe, template, trip, options);
         if (!options.prepareExits) yield 'exits';
@@ -138,9 +145,6 @@ function* decisionSearch(state, knownRecipes, context, options, mode) {
             }
         }
         const learning = !learned.has(id);
-        // Unknown shot acquisition already belongs to the shared shot route;
-        // retain that executor and its existing compact recipeTarget command.
-        if (learning && String(template.template?.kind || '').startsWith('Other.Shot')) continue;
         if (learning && !ItemDisposition.canLearnRecipe(state, { selfId: Number(recipe.recipeItemId) })) continue;
         const recipeContext = { ...evaluationContext,
             ...(learning ? { recipeInput: Number(recipe.recipeItemId),

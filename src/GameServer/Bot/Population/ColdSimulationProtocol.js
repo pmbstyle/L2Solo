@@ -419,6 +419,21 @@ function meetingIdentity(value) {
         || value.pageIndex < -1 || value.pageIndex > 3) return null;
     return { characterId: value.characterId, commandId: value.commandId, kind: 'meeting' };
 }
+
+// Evidence on a refusal is advisory. Size the complete wire envelope, whose
+// epoch and message ID can be much longer than the result row itself, and
+// keep the refusal even when neither evidence form fits the meeting limit.
+function fitMeetingAck(message, fallback) {
+    const results = message?.type === 'command_ack' && message.payload?.results;
+    if (!Array.isArray(results) || results.length !== 1 || !meetingIdentity(results[0])
+        || results[0].ok !== false || !results[0].priceEvidence || byteLength(message) <= 768) return message;
+    const { priceEvidence, ...result } = results[0];
+    if (fallback) {
+        const candidate = { ...message, payload: { ...message.payload, results: [{ ...result, priceEvidence: fallback }] } };
+        if (byteLength(candidate) <= 768) return candidate;
+    }
+    return { ...message, payload: { ...message.payload, results: [result] } };
+}
 function commandIdentity(value) {
     if (value?.kind === 'meeting') return meetingIdentity(value);
     if (!value || typeof value !== 'object' || Array.isArray(value)
@@ -486,6 +501,7 @@ module.exports = {
     commandIdentity,
     REVIEW_STEPS,
     meetingIdentity,
+    fitMeetingAck,
     byteLength,
     omitPlannedStates,
     competitionEvent

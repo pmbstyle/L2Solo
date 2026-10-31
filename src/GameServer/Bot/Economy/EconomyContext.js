@@ -1345,7 +1345,7 @@ function forState(state = {}, deps = {}) {
     Object.assign(context, valueReaders(state, network, projection.values, persona, knowledgeEnabled,
         base.kitCost, () => context.statsPacket.money));
     context.watchList = TradeIntent.project(state, network, projection, id => context.worth(id) ?? price(id),
-        BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.buy_ad);
+        BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.buy_ad, context.board, context.trip?.details);
     context.intentPending = context.watchList === null;
     context.watchList ||= [];
     context.statsPacket = { wishFocus: network.focus, dormantWishes: network.dormant,
@@ -1452,7 +1452,7 @@ function forState(state = {}, deps = {}) {
 // npcOwnsPurchase, WishProviders.personalCraftPlan. Shared nodes stay shared.
 // A requirement row without its plan is looked up by key in network.plans
 // (personalCraftPlan); `unresolved` collects those keys for the kept map.
-const NODE_FIELDS = ['kind', 'sourceType', 'quoted', 'executable', 'recipeId', 'missingAmount', 'improvement', 'unseal', 'batches',
+const NODE_FIELDS = ['kind', 'sourceType', 'quoted', 'executable', 'recipeId', 'missingAmount', 'improvement', 'unseal', 'batches', 'keyInputs',
     'unitPrice', 'town', 'availableUnits'];
 const NO_REQUIREMENTS = Object.freeze([]);
 function planTrimmer(unresolved = new Set()) {
@@ -1465,7 +1465,8 @@ function planTrimmer(unresolved = new Set()) {
         const out = {};
         for (const field of NODE_FIELDS) if (plan[field] !== undefined) out[field] = plan[field];
         if (plan.workshop) out.workshop = { characterId: plan.workshop.characterId, price: plan.workshop.price,
-            loc: plan.workshop.loc, townName: plan.workshop.townName };
+            loc: plan.workshop.loc, townName: plan.workshop.townName,
+            ...(plan.workshop.publicStation ? { publicStation: true } : {}) };
         seen.set(plan, out);
         if (plan.grossRequirements) out.grossRequirements = plan.grossRequirements.map(row => ({ key: row.key,
             amount: row.amount, ...(row.once ? { once: true } : {}) }));
@@ -1546,11 +1547,16 @@ function stockReader(state, rootItem) {
     // reaches the seller with no surviving need for its own reserved goods.
     let productionReserved;
     const supply = state.stats?.equipmentPlan?.clanGoal?.clanId && require('./ClanCrystalSupply').requirement(state);
+    const Warehouse = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
+    const active = Warehouse.ready() && Warehouse.hasItems(state) && require('./CraftWarehousePolicy').planFor(state);
+    const bank = active ? require('./CraftWarehousePolicy').available(state, Object.values(Warehouse.inventory(state))).warehouse : null;
+    const bankRoot = active && `power:${Number(active.plan.target.selfId)}:${Number(active.plan.target.slot)}`;
     return (id, rootKey) => ({ owned: supply?.key === rootKey ? require('./ClanCrystalSupply').stock(state, id)
         : rootKey.startsWith('stock:') && rootItem(rootKey) === id
         ? positive(state.inventory?.[id]?.amount) : invoke('GameServer/Bot/Economy/WealthCraftDecision').freeAmount(state, state.inventory?.[id] || {},
             rootKey.startsWith('resale:') ? productionReserved ||= invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(state) : reserved),
-    incoming: positive(state.acceptedIncoming?.[id]) });
+    incoming: positive(state.acceptedIncoming?.[id]) + (rootKey === bankRoot && Number(id) !== Number(active.plan.target.selfId)
+        ? positive(bank?.[id]) : 0) });
 }
 function valueReaders(state, network, values, persona, knowledgeEnabled, kitCost, money) {
     const itemUsefulness = id => invoke('GameServer/Bot/Population/ColdEconomyDecision').personalUsefulness(
@@ -1624,6 +1630,15 @@ function view(state, plan, deps, built = {}) {
     context.horizonHours = plan.horizonHours;
     Object.assign(context, valueReaders(state, network, plan.values, plan.persona, plan.knowledgeEnabled,
         kitCost, () => context.statsPacket.money));
+    // The retained kit can change independently of the cached decision. Its
+    // small list of bids must use today's physical stock, not the old view.
+    if (state.stats?.equipmentPlan?.inputPreparation || state.stats?.equipmentPlan?.clanGoal
+        || state.stats?.equipmentPlan?.strategy === 'craft' && state.stats?.equipmentPlan?.status === 'active'
+        || state.stats?.equipmentPlan?.status === 'deferred' && state.stats?.equipmentPlan?.reason === 'wish_focus') {
+        const watch = TradeIntent.project(state, network, context.projection,
+            id => context.worth(id) ?? price(id), BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.buy_ad, context.board, context.trip?.details);
+        if (watch) context.watchList = watch;
+    }
     return context;
 }
 // The plan's own potion and shot targets, published with its money packet
@@ -1868,5 +1883,5 @@ function reset() {
 }
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
-module.exports = { FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, stockFor, keptTargets, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
+module.exports = { FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, stockFor, stockReader, keptTargets, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
     craftIncome };

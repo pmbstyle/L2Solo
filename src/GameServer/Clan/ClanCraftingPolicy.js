@@ -39,7 +39,8 @@ function craftStock(inventory = {}, rows = []) {
 }
 
 function recipeForProvider(recipe, provider, batches = 1) {
-    if (!provider || provider.known) return recipe;
+    if (!provider || provider.publicStation) return require('../Crafting/StationRecipe').forStation(recipe);
+    if (provider.known || provider.workshop) return recipe;
     const materials = recipe.materials.map(row => ({ ...row }));
     const scroll = materials.find(row => Number(row.selfId) === Number(recipe.recipeItemId));
     if (scroll) scroll.amount += 1 / batches;

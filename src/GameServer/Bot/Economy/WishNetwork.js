@@ -637,8 +637,10 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
         // without cash, never a costlier step now.
         const completionHours = choice => choice.hours + (adenaToHours > 0
             ? Math.max(0, choice.price - Math.max(0, wallet - survivalReserve)) * adenaToHours : choice.price > wallet ? Infinity : 0);
+        const order = choice => choice.acquisitionOrder === 1 && choice.kind === 'buy'
+            && choice.price > Math.max(0, wallet - survivalReserve) ? 3 : nonnegative(choice.acquisitionOrder);
         const acquisitionOrder = (a, b) => a.supported && a.resolved && b.supported && b.resolved
-            ? nonnegative(a.acquisitionOrder) - nonnegative(b.acquisitionOrder) : 0;
+            ? order(a) - order(b) : 0;
         choices.sort((a, b) => acquisitionOrder(a, b) || (completionFirst
             ? Number(b.supported) - Number(a.supported) || completionHours(a) - completionHours(b) || a.effort - b.effort
             : planning
@@ -936,8 +938,11 @@ class WishNetwork {
                 leaf.valueHours += value * acquired / amount;
                 leaves.set(leafKey, leaf);
             }
-            const total = plan.requirements.reduce((sum, row) => sum + row.amount, 0);
-            for (const requirement of plan.requirements) flow(requirement.key,
+            const keyRequirements = plan.keyInputs?.length
+                ? plan.requirements.filter(row => plan.keyInputs.includes(row.key)) : [];
+            const activeRequirements = keyRequirements.length ? keyRequirements : plan.requirements;
+            const total = activeRequirements.reduce((sum, row) => sum + row.amount, 0);
+            for (const requirement of activeRequirements) flow(requirement.key,
                 value * share * requirement.amount / total, stockFor ? requirement.amount : amount * requirement.amount, rootKey, requirement.plan);
         };
         for (const wish of weighted) flow(wish.key, wish.valueHours, 1, wish.key, stockFor ? wish.plan : null);

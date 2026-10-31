@@ -14,13 +14,13 @@ function signature(recipe) {
     for (const row of recipe.materials || []) if (positive(row.amount)) values.push(Number(row.selfId), Number(row.amount));
     return values;
 }
-function readers(reached, nonRaid, recipeIds, recipeSignatures, counts) {
+function readers(reached, nonRaid, recipeIds, stationRecipeIds, recipeSignatures, counts) {
     return Object.freeze({
         hasSource: id => reached.has(Number(id)),
         hasNonRaidSource: id => nonRaid.has(Number(id)),
-        allowsRecipe(recipe) {
+        allowsRecipe(recipe, options = {}) {
             const id = Number(typeof recipe === 'object' ? recipe?.recipeId : recipe);
-            if (!recipeIds.has(id)) return false;
+            if (!recipeIds.has(id) && !(options.station && stationRecipeIds.has(id))) return false;
             if (typeof recipe !== 'object' || !recipe) return true;
             const expected = recipeSignatures.get(id), actual = signature(recipe);
             return !!expected && expected.length === actual.length && expected.every((value, index) => value === actual[index]);
@@ -75,18 +75,23 @@ function build(input) {
     }
     // Every operation is an AND gate. Count distinct prerequisites once; the
     // queue touches each item and each prerequisite edge once, including cycles.
-    const reverse = new Map(), operations = [], recipeIds = new Set(), recipeSignatures = new Map();
-    function operation(required, outputs, recipeId, recipeSignature) {
+    const reverse = new Map(), operations = [], recipeIds = new Set(), stationRecipeIds = new Set(), recipeSignatures = new Map();
+    const stations = new Set((input.stationRecipeIds || []).map(Number));
+    function operation(required, outputs, recipeId, recipeSignature, station = false) {
         const needs = [...new Set(required.map(Number))], produces = outputs.map(Number).filter(permitted);
         if (!produces.length || !needs.length || !needs.every(permitted)) return;
         const index = operations.length;
-        operations.push({ left: needs.length, ordinaryLeft: needs.length, outputs: produces, recipeId: Number(recipeId) || 0, recipeSignature });
+        operations.push({ left: needs.length, ordinaryLeft: needs.length, outputs: produces, recipeId: Number(recipeId) || 0, recipeSignature, station });
         for (const id of needs) { if (!reverse.has(id)) reverse.set(id, []); reverse.get(id).push(index); }
     }
     for (const recipe of input.recipes || []) if (positive(recipe.successRate) && positive(recipe.productCount)) {
         const needs = ids(recipe.materials);
         if (recipe.type !== 'blacksmith_exchange') needs.push(Number(recipe.recipeItemId));
         operation(needs, [recipe.productId], recipe.recipeId, signature(recipe));
+        if (stations.has(Number(recipe.recipeId))) {
+            const stationInputs = require('../Crafting/StationRecipe').forStation(recipe);
+            operation(ids(stationInputs.materials), [recipe.productId], recipe.recipeId, signature(recipe), true);
+        }
     }
     for (const row of input.transformations || []) operation(row.inputs, row.outputs, row.recipeId);
     const crystals = { d: 1458, c: 1459, b: 1460, a: 1461, s: 1462 };
@@ -95,7 +100,7 @@ function build(input) {
     for (let i = 0; i < queue.length; i++) for (const index of reverse.get(queue[i]) || []) {
         const op = operations[index];
         if (--op.left !== 0) continue;
-        if (op.recipeId) { recipeIds.add(op.recipeId); if (op.recipeSignature) recipeSignatures.set(op.recipeId, op.recipeSignature); }
+        if (op.recipeId) { (op.station ? stationRecipeIds : recipeIds).add(op.recipeId); if (op.recipeSignature) recipeSignatures.set(op.recipeId, op.recipeSignature); }
         for (const id of op.outputs) admit(id);
     }
     // Reuse the same AND graph for ordinary provenance; no raid-only input
@@ -106,7 +111,7 @@ function build(input) {
         for (const id of op.outputs) admit(id, true);
     }
     // Temporary graph/npc indices are released. Retain numeric sets only.
-    return readers(reached, nonRaid, recipeIds, recipeSignatures, { items: items.size, admitted: reached.size, nonRaid: nonRaid.size, recipes: recipeIds.size, excluded: excluded.size });
+    return readers(reached, nonRaid, recipeIds, stationRecipeIds, recipeSignatures, { items: items.size, admitted: reached.size, nonRaid: nonRaid.size, recipes: recipeIds.size, excluded: excluded.size });
 }
 function nativeInputs(Data) {
     const shops = require('../World/Generics/NpcShopBuyLists');
@@ -123,10 +128,12 @@ function nativeInputs(Data) {
     for (const [id, row] of Object.entries(require('./C4ExtractableItems').loadExtractableItems())) for (const group of row.products || []) if (positive(group.chance))
         transformations.push({ inputs: [Number(id)], outputs: ids(group.items || [group]) });
     const questItemIds = require('../Quest/QuestRegistry').equipmentTools();
+    const stationRecipes = invoke('GameServer/Bot/Economy/CraftShopService').publishedStationRecipes();
     return { items: Data.items, npcs: Data.npcs, npcSpawns: Data.npcSpawns, npcRewards: Data.npcRewards,
         newbieItems: Data.newbieItems, questItemIds,
         offers: shops.npcIds().flatMap(npcId => shops.fetchForNpc(npcId).map(row => ({ npcId, selfId: row.selfId }))),
         minions: [...require('../../../data/Npcs/Minions/c4_raid_bosses.json'), ...require('../../../data/Npcs/Minions/c4_group_leaders.json')],
+        stationRecipeIds: [...(stationRecipes.ids || stationRecipes.stationByRecipeId.keys())],
         recipes: [...Object.values(require('./C4RecipeItems').loadRecipeItems()), ...require('./C4DualSwordCombinations').loadRecipes()
             .filter(recipe => spawnedIds.has(Number(recipe.station?.npcId)))], transformations };
 }
@@ -147,5 +154,5 @@ function current() {
 }
 module.exports = { build, prepare, reset() { prepared = sourceRefs = null; generation++; },
     revision() { current(); return generation; },
-    hasSource: id => current().hasSource(id), hasNonRaidSource: id => current().hasNonRaidSource(id), allowsRecipe: recipe => current().allowsRecipe(recipe),
+    hasSource: id => current().hasSource(id), hasNonRaidSource: id => current().hasNonRaidSource(id), allowsRecipe: (recipe, options) => current().allowsRecipe(recipe, options),
     counts: () => current().counts };

@@ -11,6 +11,7 @@ const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
 const Needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+const TradeIntent = invoke('GameServer/Bot/Economy/TradeIntent');
 Data.init();
 invoke('GameServer/Bot/Economy/MarketCounters').useSpots(() => invoke('GameServer/Bot/Population/SpotProfiles').ensure() || []);
 const NOW = 1750000000000;
@@ -21,7 +22,8 @@ const base = { characterId: 7, phase: 'cold', activity: 'dead', level: 40, adena
     stats: { generatedCold: true, classId: 0, build: { grade: 'c', classId: 0, level: 40 }, equipment: [],
         equipmentPlan: { status: 'active', strategy: 'market', target: { selfId: 32, slot: 11 },
             market: { town: 'Gludio', price: 37213, reserve: 6250, sourceType: 'afk_bot_store' } } } };
-const original = { snapshot: Life.snapshot, ownerRecords: Afk.ownerRecords, closeBotRecord: Afk.closeBotRecord };
+const original = { snapshot: Life.snapshot, ownerRecords: Afk.ownerRecords, closeBotRecord: Afk.closeBotRecord,
+    retainedProjectIntents: TradeIntent.retainedProjectIntents };
 let current = base, records = [order];
 const closes = [];
 // This is a real goal/reader control, with a spy at the monetary writer seam.
@@ -59,6 +61,15 @@ const closes = [];
         await Market.reconcileBuyAds(current, null, missing);
         assert.deepEqual(closes.map(args => args.slice(0, 2)), [[7, 95726]]);
         closes.length = 0;
+        current = { ...current, stats: { ...current.stats, equipmentPlan: { ...current.stats.equipmentPlan,
+            inputPreparation: { recipeId: 441, target: { selfId: 91, slot: 7 } } } } };
+        records = [order, { ...order, id: 95727, lines: [{ ...order.lines[0], selfId: 33 }] }];
+        TradeIntent.retainedProjectIntents = () => [{ itemId: 32 }];
+        await Market.reconcileBuyAds(current, { type: 'sell_inventory', status: 'active',
+            plan: { expectedBenefit: 'market_sale_inventory' } }, []);
+        assert.deepEqual(closes.map(args => args.slice(0, 2)), [[7, 95727]],
+            'switching to a sale retains the unfinished craft bid and removes unrelated bids');
+        closes.length = 0;
         records = [];
         current = base;
         assert.equal((await Market.reconcileBuyAds(base, recovered[0], recovered)).changed, false);
@@ -68,6 +79,7 @@ const closes = [];
         Life.snapshot = original.snapshot;
         Afk.ownerRecords = original.ownerRecords;
         Afk.closeBotRecord = original.closeBotRecord;
+        TradeIntent.retainedProjectIntents = original.retainedProjectIntents;
         Coordinator.economyDecisions.forget(7);
         Market._resetForTests();
         fs.rmSync(isolated.directory, { recursive: true, force: true });

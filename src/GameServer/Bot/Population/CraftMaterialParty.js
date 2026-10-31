@@ -134,7 +134,13 @@ function remaining(state, goal, inventory = state.inventory) {
     const plan = state.stats?.equipmentPlan;
     if (!goal || Number(plan?.target?.selfId) !== Number(goal.targetId) || plan.status === 'complete'
         || positive(inventory?.[goal.targetId]?.amount) > 0 || positive(inventory?.[plan.unseal?.sourceId]?.amount) > 0) return 0;
-    const physical = Math.max(0, positive(goal.requiredTotal) - positive(inventory?.[goal.itemId]?.amount));
+    let stored = 0;
+    const Warehouse = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
+    if (Warehouse.ready() && Warehouse.hasItems(state)) {
+        const policy = require('../Economy/CraftWarehousePolicy');
+        if (policy.planFor(state)) stored = Number(policy.available({ ...state, inventory }, Object.values(Warehouse.inventory(state))).warehouse[goal.itemId] || 0);
+    }
+    const physical = Math.max(0, positive(goal.requiredTotal) - positive(inventory?.[goal.itemId]?.amount) - stored);
     return Math.min(physical, goal.quota === undefined ? Infinity : Math.max(0, goal.quota - positive(goal.collected)));
 }
 

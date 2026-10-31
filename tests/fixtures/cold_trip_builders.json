@@ -242,9 +242,9 @@
     },
     "travel": {
       "from": {
-        "locX": 83396,
-        "locY": 147904,
-        "locZ": -3400
+        "locX": 80971,
+        "locY": 148143,
+        "locZ": -3466
       },
       "arrivalEvent": "returned_to_spot",
       "to": {
@@ -280,9 +280,9 @@
     },
     "travel": {
       "from": {
-        "locX": 83396,
-        "locY": 147904,
-        "locZ": -3400
+        "locX": 81603,
+        "locY": 147722,
+        "locZ": -3466
       },
       "arrivalEvent": "returned_to_spot",
       "to": {
