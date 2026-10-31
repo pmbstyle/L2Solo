@@ -20,7 +20,7 @@ const NpcWander = invoke('GameServer/Npc/NpcWander');
 const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool');
 const AttackHelper   = new Attack();
 // Dropped chases and mobs left out of combat still hating (sleep, stun, fake death).
-const hateStats = { outOfReach: 0, noPath: 0, idleWithHate: 0, attackTimeout: 0, homeTeleport: 0 };
+const hateStats = { outOfReach: 0, noPath: 0, idleWithHate: 0, attackTimeout: 0 };
 // A monster that neither attacked or cast nor was attacked for 2 minutes drops
 // the chase and its hate, then walks home (Mobius C4 AttackableAI
 // MAX_ATTACK_TIMEOUT = 1200 game ticks, refreshed by each of those, not by hate
@@ -780,7 +780,7 @@ class Npc extends NpcModel {
     // no such thing: death, confusion and skills that clear hate go through it too.
     endFight(session) {
         this.abortCombatState(session);
-        if (NpcWander.leaveFight(this)) hateStats.homeTeleport += 1;
+        NpcWander.leaveFight(this);
     }
 
     abortCombatState(session, { preserveAggro = false } = {}) {
@@ -841,7 +841,8 @@ class Npc extends NpcModel {
         clearTimeout(this.timer.hit);
         this.timer.hit = setTimeout(() => {
             this.timer.hit = undefined;
-            if (!EffectRestrictions.canAttack(src) || this.checkParticipants(session, src, dst)) {
+            if (!EffectRestrictions.canAttack(src) || this.checkParticipants(session, src, dst)
+                || AttackRange.lostFromView(src, dst)) {
                 return;
             }
 

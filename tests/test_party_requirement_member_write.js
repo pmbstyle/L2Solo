@@ -132,6 +132,8 @@ const plan = target => ({ status: 'active', strategy: 'direct_drop', partyNeed: 
         assert.equal(Life.cachedState(done).simulation.revision, doneRead + 2, 'the cache takes the written revision');
         assert.deepEqual(Parties.find(DEPARTURE_PARTY)?.memberIds?.map(Number), [leader, needing],
             'the party row drops the departed member');
+        assert.deepEqual(Parties.find(DEPARTURE_PARTY).stats.memberNames, [leader, needing].map(id => Life.cachedState(id).name),
+            'the party row names the members it keeps');
         assert.equal(Population.partyRequirementRefreshDue.has(DEPARTURE_PARTY), false, 'a landed departure clears the re-plan mark');
         console.log('PASS a party departure holds on the member revision it read');
 

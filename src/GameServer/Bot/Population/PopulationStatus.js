@@ -18,6 +18,9 @@ const BackgroundJobRegistry = invoke('GameServer/Bot/Population/BackgroundJobReg
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const NpcDecay = invoke('GameServer/World/Generics/NpcDecay');
 const Npc = invoke('GameServer/Npc/Npc');
+const NpcWander = invoke('GameServer/Npc/NpcWander');
+const AttackRange = invoke('GameServer/Actor/AttackRange');
+const SpoilSweep = invoke('GameServer/Npc/SpoilSweep');
 const Attack = invoke('GameServer/Actor/Attack');
 const PvpEncounterRuntime = invoke('GameServer/Bot/Population/PvpEncounterRuntime');
 const { heapRecord, heapsLine } = require('./WorkerHeapTelemetry');
@@ -143,11 +146,15 @@ const PopulationStatus = {
     },
 
     // Mobs that forgot a chase (out of reach / no path / 2 min without an attack), mobs left out of
-    // combat still hating, mobs sent home unseen, and melee swings kept on a target that stepped away.
+    // combat still hating, mobs sent home unseen or with a blocked way, melee swings kept on a target
+    // that stepped away, started attacks dropped because the target left the view, and Spoil casts
+    // bots left out on monsters with no list.
     npcHateText() {
         const hate = Npc.hateStats();
-        return `npcHate=${hate.outOfReach}o/${hate.noPath}n/${hate.idleWithHate}i/${hate.attackTimeout}t/${hate.homeTeleport}h`
-            + ` keptSwings=${Attack.keptSwings()}`;
+        const home = NpcWander.homeTeleportStats();
+        return `npcHate=${hate.outOfReach}o/${hate.noPath}n/${hate.idleWithHate}i/${hate.attackTimeout}t/${home.unseen}h/${home.blocked}b`
+            + ` keptSwings=${Attack.keptSwings()} lostView=${AttackRange.lostFromViewCount()}`
+            + ` spoilNoList=${SpoilSweep.sparedSpoils()}`;
     },
 
     summary() {

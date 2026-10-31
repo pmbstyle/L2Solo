@@ -13,6 +13,7 @@ const SPOIL_SKILL_ID = 254;
 const SPOIL_FESTIVAL_SKILL_ID = 302;
 const SWEEP_SKILL_ID = 42;
 const SPOILED_CORPSE_TIME = 30000;
+let sparedSpoils = 0;
 
 function fetchSpoilGroups(npc) {
     let spoils = [];
@@ -165,8 +166,30 @@ const SpoilSweep = {
         return Number(selfId) === SWEEP_SKILL_ID;
     },
 
+    // A list of its own to sweep: a bot spares its MP on a monster without one.
+    hasSpoilList(npc) {
+        const listed = hasSpoils(npc);
+        if (!listed) sparedSpoils += 1;
+        return listed;
+    },
+
+    // Spoil casts bots left out on monsters with no list (status line).
+    sparedSpoils() {
+        return sparedSpoils;
+    },
+
+    // Spoiled and not swept yet. The list check costs a copy of the rewards, so
+    // a per-tick read stops here; isSweepable adds it for the sweep itself.
+    isUnswept(npc) {
+        return !!npc?.model?.spoil?.spoiled && !npc.model.spoil.swept;
+    },
+
+    spoilerId(npc) {
+        return Number(npc?.model?.spoil?.spoilerId || 0);
+    },
+
     isSweepable(npc) {
-        return !!npc.model.spoil?.spoiled && !npc.model.spoil?.swept && hasSpoils(npc);
+        return this.isUnswept(npc) && hasSpoils(npc);
     },
 
     markSpoiled(session, actor, npc, skill, options) {
@@ -237,7 +260,7 @@ const SpoilSweep = {
             return;
         }
 
-        if (npc.model.spoil?.spoilerId && npc.model.spoil.spoilerId !== actor.fetchId()) {
+        if (this.spoilerId(npc) && this.spoilerId(npc) !== actor.fetchId()) {
             session.dataSendToMe(ServerResponse.actionFailed());
             return;
         }

@@ -238,12 +238,10 @@ class Attack {
                 const target = entry.target;
                 if (index > 0 && RaidCurse.normalAttackBlocked(session, actor, target)) return;
                 if (target?.state?.fetchDead?.() || target?.isDead?.()) return;
-                // A target that stepped away still takes a started swing, polearm
-                // secondary targets too. Already-launched arrows keep travelling.
-                if (!rangedAttack) {
-                    if (AttackRange.lostFromView(actor, target)) return;
-                    if (!AttackRange.isWithinRange(actor, target, attackRange)) keptSwings += 1;
-                }
+                // A target that stepped away still takes a started swing or a
+                // launched arrow, polearm secondary targets too; one out of view does not.
+                if (AttackRange.lostFromView(actor, target)) return;
+                if (!rangedAttack && !AttackRange.isWithinRange(actor, target, attackRange)) keptSwings += 1;
                 if (!invoke('GameServer/Clan/ClanRaidRoster').beforeOffensiveEffect(session, actor, target, raidParty)) return;
 
                 if (!entry.hitLanded || entry.hit.damage <= 0) this.recordPlayerAggression(session, actor, target);

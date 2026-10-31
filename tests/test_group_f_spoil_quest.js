@@ -34,7 +34,8 @@ async function run() {
         });
         session.actor.mp = 1000;
         const npc = (id) => ({ model: {}, fetchSelfId: () => 79, fetchId: () => id,
-            fetchLevel: () => 35, fetchAttackable: () => true, isDead: () => false, enterCombatState() {} });
+            fetchLevel: () => 35, fetchAttackable: () => true, isDead: () => false, enterCombatState() {},
+            isSpoil: Npc.prototype.isSpoil });
         const target = npc(790061);
         runtime.npc.spawns.push(target);
         const template = DataCache.skills.find(row => Number(row.selfId) === 254);

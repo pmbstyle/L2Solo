@@ -139,6 +139,13 @@ try {
     assert.strictEqual(bow.actor.fetchMp(), 8, 'chasing must not spend MP');
     assert.strictEqual(bow.actor.backpack.fetchItemFromSelfId(17).fetchAmount(), 1);
 
+    const lostArrow = fixture('Weapon.Bow', 600);
+    lostArrow.attack.meleeHit(lostArrow.session, lostArrow.target);
+    lostArrow.target.x = 7000;
+    lostArrow.timers[0]();
+    assert.strictEqual(lostArrow.damage.length, 0, 'an arrow takes nothing from a target that left the view');
+    assert.strictEqual(lostArrow.actor.state.fetchHits(), false, 'the lost arrow still frees movement');
+
     const movingBow = fixture('Weapon.Bow', 600);
     movingBow.attack.meleeHit(movingBow.session, movingBow.target);
     movingBow.timers[0]();

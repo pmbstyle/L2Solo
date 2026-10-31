@@ -2,7 +2,8 @@ const Geodata = invoke('GameServer/Geodata/GeodataEngine');
 const Restrictions = invoke('GameServer/Effects/EffectRestrictions');
 const Response = invoke('GameServer/Network/Response');
 const TownGuard = invoke('GameServer/Npc/TownGuard');
-const { CLIENT_VISIBILITY_RADIUS, NPC_GRID_SIZE } = require('../World/WorldConstants');
+const PlayerActivitySignal = require('../Bot/Population/PlayerActivitySignal');
+const { NPC_GRID_SIZE, inClientView } = require('../World/WorldConstants');
 const source = require('../../../data/Npcs/wander-exclusions.json');
 
 // Lisvus fdc7e33a: thinkActive every second, RANDOM_WALK_RATE=30,
@@ -15,6 +16,7 @@ const MAX_STEP_DISTANCE = DRIFT_RANGE * 2;
 const excludedIds = new Set(Object.values(source.groups).flat());
 const territoryBoxes = new WeakMap();
 const walksByWorld = new WeakMap();
+const homeTeleports = { unseen: 0, blocked: 0 };
 
 function activeWalks(world) {
     let active = walksByWorld.get(world.npc);
@@ -72,14 +74,16 @@ function limitStep(from, to, maxDistance) {
 // Real players only: bots do not watch monsters, so one out of a player's view
 // can go home at once, and one a player watches walks.
 function realObservers(world) {
-    return (world.user?.sessions || []).filter(session => session.actor?.fetchIsOnline?.() === true
-        && session.accountId && !String(session.accountId).startsWith('bot_')
-        && session.constructor?.name !== 'BotSession');
+    return (world.user?.sessions || []).filter(PlayerActivitySignal.isRealPlayerSession);
 }
 
+function seesNpc(actor, npc) {
+    return inClientView(actor.fetchLocX(), actor.fetchLocY(), npc.fetchLocX(), npc.fetchLocY());
+}
+
+// A floor above or below does not count as watching a monster walk.
 function inView(actor, npc) {
-    return (actor.fetchLocX() - npc.fetchLocX()) ** 2 + (actor.fetchLocY() - npc.fetchLocY()) ** 2
-        <= CLIENT_VISIBILITY_RADIUS ** 2 && Math.abs(actor.fetchLocZ() - npc.fetchLocZ()) <= 400;
+    return seesNpc(actor, npc) && Math.abs(actor.fetchLocZ() - npc.fetchLocZ()) <= 400;
 }
 
 function sendToWatchers(npc, observers, packet) {
@@ -87,8 +91,7 @@ function sendToWatchers(npc, observers, packet) {
         const actor = session.actor;
         if (actor?.fetchIsOnline?.() !== true || typeof session.dataSendToMe !== 'function') continue;
         if (session.knownNpcIds && !session.knownNpcIds.has(npc.fetchId())) continue;
-        if ((actor.fetchLocX() - npc.fetchLocX()) ** 2 + (actor.fetchLocY() - npc.fetchLocY()) ** 2
-            <= CLIENT_VISIBILITY_RADIUS ** 2) session.dataSendToMe(packet);
+        if (seesNpc(actor, npc)) session.dataSendToMe(packet);
     }
 }
 
@@ -165,7 +168,9 @@ function leaveFight(npc, world = invoke('GameServer/World/World')) { // lazy: cy
     if (!eligible(npc) || !Restrictions.canMove(npc) || !awayFromHome(npc)) return false;
     const observers = realObservers(world);
     if (observers.some(session => inView(session.actor, npc))) return false;
-    return teleportHome(npc, world, observers);
+    const sent = teleportHome(npc, world, observers);
+    if (sent) homeTeleports.unseen += 1;
+    return sent;
 }
 
 function start(npc, world, observers, random = Math.random) {
@@ -179,7 +184,11 @@ function start(npc, world, observers, random = Math.random) {
     const to = destination(npc, random);
     // A way home that is blocked ends in a teleport (Mobius C4 sends a monster
     // back that way): this never queues pathfinding work for an idle monster.
-    const blocked = () => awayFromHome(npc, from) && teleportHome(npc, world, observers);
+    const blocked = () => {
+        const sent = awayFromHome(npc, from) && teleportHome(npc, world, observers);
+        if (sent) homeTeleports.blocked += 1;
+        return sent;
+    };
     if (!to) return blocked();
     if (Math.hypot(to.locX - from.locX, to.locY - from.locY) < 16) return false;
     // Cosmetic movement fails closed in uncovered regions. This never loads
@@ -255,4 +264,9 @@ function tick(world, { random = Math.random } = {}) {
     return requests.reduce((count, npc) => count + Number(start(npc, world, observers, random)), 0);
 }
 
-module.exports = { tick, eligible, destination, start, leaveFight, cancel, WALK_RATE, DRIFT_RANGE, MAX_GEO_CHECKS, MAX_ACTIVE_WALKS };
+// Monsters sent home at once: unseen at a fight's end, or with a blocked way (status line).
+function homeTeleportStats() {
+    return { ...homeTeleports };
+}
+
+module.exports = { tick, eligible, destination, start, leaveFight, cancel, homeTeleportStats, WALK_RATE, DRIFT_RANGE, MAX_GEO_CHECKS, MAX_ACTIVE_WALKS };

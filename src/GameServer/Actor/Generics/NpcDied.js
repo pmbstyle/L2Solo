@@ -94,8 +94,7 @@ function clearSweepRetry(spoilerSession, retries, npcId) {
 }
 
 function autoSweepSpoiledCorpse(npc, Generics) {
-    const spoil = npc?.model?.spoil;
-    const spoilerId = Number(spoil?.spoilerId || 0);
+    const spoilerId = SpoilSweep.spoilerId(npc);
     if (!SpoilSweep.isSweepable(npc) || !spoilerId) return false;
 
     const spoilerSession = (World.user?.sessions || []).find((candidate) => (

@@ -11,17 +11,10 @@ const MinionManager = invoke('GameServer/World/RaidBossMinionManager');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const TendencyRoll = invoke('GameServer/Bot/AI/TendencyRoll');
 
-const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
-
-function distanceSquared(first, second) {
-    const dx = first.fetchLocX() - second.fetchLocX();
-    const dy = first.fetchLocY() - second.fetchLocY();
-    return (dx * dx) + (dy * dy);
-}
+const { inClientView } = invoke('GameServer/World/WorldConstants');
 
 function notifyNearby(world, npc, response = ServerResponse) {
     if (!world?.user?.sessions || !npc) return;
-    const radiusSquared = CLIENT_VISIBILITY_RADIUS * CLIENT_VISIBILITY_RADIUS;
     const packet = response.npcInfo(npc);
 
     world.user.sessions.forEach((session) => {
@@ -29,7 +22,7 @@ function notifyNearby(world, npc, response = ServerResponse) {
         if (
             actor?.fetchIsOnline?.() === true &&
             typeof session.dataSendToMe === 'function' &&
-            distanceSquared(actor, npc) <= radiusSquared
+            inClientView(actor.fetchLocX(), actor.fetchLocY(), npc.fetchLocX(), npc.fetchLocY())
         ) {
             session.dataSendToMe(packet);
         }

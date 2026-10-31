@@ -514,13 +514,10 @@ async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
                         const dissolved = await dissolveBackgroundParty(party, 'better_solo_income', retained.length);
                         return { party: dissolved.party || party, reviewed, departed: detached, dissolved: true };
                     }
-                    const leaderId = leaderIdForMembers(party, retained);
-                    const nextParty = { ...party,
-                        leaderId, memberIds: retained.map(member => member.characterId),
-                        roleCoverage: PartyComposition.roleCoverage(retained), stats: { ...party.stats, ...joint,
-                            memberGoals: retained.map(invoke('GameServer/Bot/Population/PartyGoalPolicy').declaration),
-                            agreement: party.stats?.agreement ? { ...party.stats.agreement, memberIds: retained.map(member => member.characterId) } : null } };
-                    await syncPartyLeader(retained, nextParty, leaderId);
+                    const nextParty = partyWithRoster(party, retained, { ...joint,
+                        memberGoals: retained.map(PartyGoalPolicy.declaration),
+                        agreement: party.stats?.agreement ? { ...party.stats.agreement, memberIds: retained.map(member => member.characterId) } : null });
+                    await syncPartyLeader(retained, nextParty, nextParty.leaderId);
                     const updated = await BackgroundPartyState.createOrUpdate(nextParty);
                     return { party: updated || party, reviewed, departed: detached };
                 }
@@ -545,19 +542,9 @@ async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
         return { party: dissolved.party || party, reviewed, departed, dissolved: true };
     }
 
-    const leaderId = leaderIdForMembers(party, activeMembers);
-    const nextParty = {
-        ...party,
-        leaderId,
-        memberIds: activeMembers.map((member) => Number(member.characterId)),
-        roleCoverage: PartyComposition.roleCoverage(activeMembers),
-        stats: {
-            ...(party.stats || {}),
-            lastMarketBreakAt: timestamp,
-            ...PartyMarketBreak.stats(party, departed)
-        }
-    };
-    await syncPartyLeader(activeMembers, nextParty, leaderId);
+    const nextParty = partyWithRoster(party, activeMembers,
+        { lastMarketBreakAt: timestamp, ...PartyMarketBreak.stats(party, departed) });
+    await syncPartyLeader(activeMembers, nextParty, nextParty.leaderId);
     const updatedParty = await BackgroundPartyState.createOrUpdate(nextParty,
         { preserveWarOperation: !!departed.stats?.partyMarketReturn?.warOperationId });
     return { party: updatedParty || party, reviewed, departed, dissolved: false };
@@ -881,12 +868,7 @@ async function releaseForClanHelp(state) {
     if (remaining.length < Config.partyMinSize) {
         await dissolveBackgroundParty(previous, 'clan_rescue', remaining.length);
     } else {
-        const leaderId = leaderIdForMembers(previous, remaining);
-        await commitPartyMembership({ ...previous, leaderId,
-            memberIds: remaining.map(member => member.characterId),
-            roleCoverage: PartyComposition.roleCoverage(remaining),
-            stats: { ...previous.stats, memberNames: remaining.map(member => member.name) }
-        }, remaining);
+        await commitPartyMembership(partyWithRoster(previous, remaining), remaining);
     }
     return LifeState.cachedState(state.characterId) || released;
 }
@@ -1035,6 +1017,17 @@ function retainedMembers(party, departedId) {
     return (party.memberIds || []).filter(id => Number(id) !== Number(departedId))
         .map(id => LifeState.cachedState(id))
         .filter(member => member && DecisionSections.partyIdOf(member) === String(party.partyId));
+}
+
+// The party row with the members it keeps: the one roster of every path that
+// drops a member or repairs the list. Each path keeps its own save: a clan
+// release or a repair commits row and members in one transaction; the others
+// write the members first.
+function partyWithRoster(party, retained, stats = {}) {
+    return { ...party, leaderId: leaderIdForMembers(party, retained),
+        memberIds: retained.map(member => Number(member.characterId)),
+        roleCoverage: PartyComposition.roleCoverage(retained),
+        stats: { ...party.stats, memberNames: retained.map(member => member.name), ...stats } };
 }
 
 function syncPartyLeader(members = [], party, leaderId) {
@@ -2656,23 +2649,14 @@ const PopulationService = {
             member.stats?.equipmentPlan?.partyNeed === 'required'
         )) || retainedMembers.find((member) => partyObjectiveForState(member));
         const objective = objectiveMember ? partyObjectiveForState(objectiveMember) : null;
-        const nextLeaderId = leaderIdForMembers(party, retainedMembers);
-        const nextParty = {
-            ...party,
-            leaderId: nextLeaderId,
-            memberIds: retainedMembers.map((member) => member.characterId),
-            roleCoverage: PartyComposition.roleCoverage(retainedMembers),
-            spotId: objective?.spotId || party.spotId,
-            stats: {
-                ...(party.stats || {}),
-                objective: objective || null,
-                acquisitionGoal: objectiveMember?.stats?.equipmentPlan?.status === 'active'
-                    ? objectiveMember.stats.equipmentPlan
-                    : null
-            }
-        };
-        if (Number(nextLeaderId) !== Number(party.leaderId)) {
-            await syncPartyLeader(retainedMembers, nextParty, nextLeaderId);
+        const nextParty = { ...partyWithRoster(party, retainedMembers, {
+            objective: objective || null,
+            acquisitionGoal: objectiveMember?.stats?.equipmentPlan?.status === 'active'
+                ? objectiveMember.stats.equipmentPlan
+                : null
+        }), spotId: objective?.spotId || party.spotId };
+        if (Number(nextParty.leaderId) !== Number(party.leaderId)) {
+            await syncPartyLeader(retainedMembers, nextParty, nextParty.leaderId);
         }
         await BackgroundPartyState.createOrUpdate(nextParty);
         // After the last write: it also erases the marks of this apply's own
@@ -2776,18 +2760,7 @@ const PopulationService = {
                     || members.some((member) => !persistedMemberIds.has(Number(member.characterId)));
                 if (members.length >= partyLimits.maxSize) {
                     if (!membershipMismatch) return null;
-                    const electedLeaderId = leaderIdForMembers(party, members);
-                    const reconciledParty = {
-                        ...party,
-                        leaderId: electedLeaderId,
-                        memberIds: members.map((member) => member.characterId),
-                        roleCoverage: PartyComposition.roleCoverage(members),
-                        stats: {
-                            ...(party.stats || {}),
-                            memberNames: members.map((member) => member.name),
-                            lastMembershipRepairAt: Date.now()
-                        }
-                    };
+                    const reconciledParty = partyWithRoster(party, members, { lastMembershipRepairAt: Date.now() });
                     return commitPartyMembership(reconciledParty, members).then(({ party: repaired, failed }) => {
                         if (!repaired || failed.length) return null;
                         Config.developerDiagnostics && console.info('BotPopulation :: reconciled background party %s members=%d', party.partyId, members.length);

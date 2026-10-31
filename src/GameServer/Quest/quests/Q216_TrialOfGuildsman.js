@@ -2,6 +2,7 @@
 const H = require('../SecondProfessionQuest');
 const NpcIndex = invoke('GameServer/World/NpcObjectIndex');
 const World = invoke('GameServer/World/World');
+const SpoilSweep = invoke('GameServer/Npc/SpoilSweep');
 const NPCS = [7103, 7283, 7210, 7688, 7298];
 const MATERIALS = [[200, 3130, 2], [201, 3130, 2], [83, 3131, 7], [202, 3132, 7], [168, 3133, 10]];
 const seen = new WeakMap();
@@ -77,7 +78,7 @@ const quest = {
             || s.getInt('pinter') !== 1 || !H.has(s, [[3122, 1], [3135, 1]])) return;
         const actual = NpcIndex.find(World, npc.fetchId());
         if (actual !== npc || npc.isDead() || !quest.skillNpcs.includes(npc.fetchSelfId())
-            || !npc.model?.spoil?.spoiled || npc.model.spoil.spoilerId !== s.session.actor.fetchId()) return;
+            || !npc.isSpoil() || SpoilSweep.spoilerId(npc) !== s.session.actor.fetchId()) return;
         const receipts = seen.get(npc) || new Set(), owner = s.session.actor.fetchId();
         if (receipts.has(owner)) return;
         const amount = invoke('GameServer/Quest/QuestService').questDropAmount(5, 70, H.count(s, 3136));

@@ -61,6 +61,8 @@ async function departureChecks() {
         const party = PartyState.find(partyId);
         assert(party.memberIds.length >= Config.partyMinSize && !party.memberIds.includes(leaver), 'the row drops the leaver');
         assert.notStrictEqual(party.leaderId, leaver, 'the row elects a new leader');
+        assert.deepStrictEqual(party.stats.memberNames, party.memberIds.map(id => LifeState.cachedState(id).name),
+            'the row names the members it keeps');
         for (const id of party.memberIds) {
             const member = LifeState.cachedState(id), saved = await durable(id);
             assert.strictEqual(member.party.partyId, partyId);

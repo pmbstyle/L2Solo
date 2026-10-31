@@ -10,7 +10,7 @@ const TownTraffic = invoke('GameServer/Bot/AI/TownTraffic');
 // World.fetchVisibleUsers broadcasts movement to observers inside this same
 // radius.  Low-detail simulation must never silently relocate a bot that is
 // already visible to a player (or whose requested destination is visible).
-const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
+const { CLIENT_VISIBILITY_RADIUS, inClientView } = invoke('GameServer/World/WorldConstants');
 const COMPANION_DIRECT_DISTANCE = 256;
 const COMPANION_PATH_TIMEOUT_MS = 2000;
 const COMPANION_PATH_MAX_NODES = 4000;
@@ -205,7 +205,8 @@ function startPathMovement({ session, actor, path, isClose, approachingObservers
         approachingObservers.forEach((observer) => {
             const observerSession = observer.session;
             if (!observerSession?.actor?.fetchIsOnline?.() || !observerSession.dataSendToMe) return;
-            if (distance2d(observerSession.actor, currentLoc) <= CLIENT_VISIBILITY_RADIUS) return;
+            if (inClientView(observerSession.actor.fetchLocX(), observerSession.actor.fetchLocY(),
+                currentLoc.locX, currentLoc.locY)) return;
             if (!crossesPlayerVisibility(observerSession.actor, currentLoc, nextLoc)) return;
             if (!observer.announced) {
                 const info = ServerResponse.charInfo(actor);
@@ -315,7 +316,7 @@ function crossesPlayerVisibility(player, from, to) {
     const lengthSquared = dx * dx + dy * dy;
     const px = player.fetchLocX() - from.locX, py = player.fetchLocY() - from.locY;
     const t = lengthSquared > 0 ? Math.max(0, Math.min(1, (px * dx + py * dy) / lengthSquared)) : 0;
-    return Math.hypot(px - t * dx, py - t * dy) <= CLIENT_VISIBILITY_RADIUS;
+    return inClientView(px, py, t * dx, t * dy);
 }
 
 function shouldUseLowLodWarp({ startDistance, destinationDistance, isCompanion, plan, crossesVisibility = false }) {

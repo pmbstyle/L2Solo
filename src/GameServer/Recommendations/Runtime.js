@@ -1,4 +1,5 @@
 const Rules = require('./Rules');
+const { inClientView } = require('../World/WorldConstants');
 const messages = { invalid_target: 144, self: 829, level: 898, duplicate: 832, exhausted: 833, full: 1188 };
 let timer = null, running = null, cursor = 0, sweptDay = -1, stopping = false;
 const notified = new Set();
@@ -47,8 +48,7 @@ async function recommend(session, targetId) {
         && session.actor === actor && activeRecord(sourceRecord.id) === sourceRecord
         && activeRecord(Number(targetId)) === targetRecord
         && Number(actor.fetchDestId()) === Number(targetId)
-        && Math.hypot(actor.fetchLocX() - target.fetchLocX(), actor.fetchLocY() - target.fetchLocY())
-            < require('../World/WorldConstants').CLIENT_VISIBILITY_RADIUS;
+        && inClientView(actor.fetchLocX(), actor.fetchLocY(), target.fetchLocX(), target.fetchLocY());
     if (!eligible()) {
         session?.dataSendToMe?.(response().systemMessage(messages.invalid_target));
         return { ok: false, code: 'invalid_target' };

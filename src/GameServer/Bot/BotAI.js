@@ -2,7 +2,7 @@ const ClassProgression = invoke('GameServer/ClassProgression');
 const DiagnosticConfig = require('./Population/PopulationConfig');
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const { raiseDecision } = require('./AI/DecisionEvents');
-const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
+const { inClientView } = invoke('GameServer/World/WorldConstants');
 const BotStatus      = invoke('GameServer/Bot/AI/BotStatus');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
@@ -20,6 +20,7 @@ const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
 const HotAiDispatcher = invoke('GameServer/Bot/AI/HotAiDispatcher');
 const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
+const SpoilSweep = invoke('GameServer/Npc/SpoilSweep');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const BotRangedCombatPositioning = invoke('GameServer/Bot/AI/BotRangedCombatPositioning');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
@@ -137,6 +138,12 @@ function trySpoil(session, bot, npc, Generics) {
     const skill = bot.skillset?.fetchSkill?.(SPOIL_SKILL_ID);
     if (!skill || !canPaySkill(bot, skill) || bot.canUseSkill?.(skill) === false
         || typeof Generics?.skillExec !== 'function') return false;
+    // Spoil lands on any monster, but one with no spoil list gives a bot nothing
+    // for its MP. That lasts the whole encounter: no second look at the rewards.
+    if (!SpoilSweep.hasSpoilList(npc)) {
+        session.spoilAttemptedTargetId = targetId;
+        return false;
+    }
 
     // The attempt is encounter-scoped. Record it only after the transient
     // preflight gates pass, so a bot that recovers MP or leaves reuse can try
@@ -158,9 +165,9 @@ function trySweep(session, bot, npc, Generics) {
     if (!session || !bot || !npc || !BotRoles.isSpoiler(bot) || !targetIsDead(npc)) return false;
     if (npc.fetchAttackable?.() !== true) return false;
 
-    const spoil = npc.model?.spoil;
-    if (!spoil?.spoiled || spoil.swept) return false;
-    if (spoil.spoilerId && Number(spoil.spoilerId) !== targetIdOf(bot)) return false;
+    if (!SpoilSweep.isUnswept(npc)) return false;
+    const spoilerId = SpoilSweep.spoilerId(npc);
+    if (spoilerId && spoilerId !== targetIdOf(bot)) return false;
 
     const targetId = targetIdOf(npc);
     if (!targetId || session.sweepAttemptedTargetId === targetId) return false;
@@ -982,9 +989,7 @@ const BotAI = {
             const y = bot.fetchLocY();
             return players.filter((candidate) => {
                 if (candidate === session || !candidate.actor || typeof candidate.actor.fetchLocX !== 'function' || typeof candidate.actor.fetchLocY !== 'function') return false;
-                const dx = candidate.actor.fetchLocX() - x;
-                const dy = candidate.actor.fetchLocY() - y;
-                return dx * dx + dy * dy <= CLIENT_VISIBILITY_RADIUS * CLIENT_VISIBILITY_RADIUS;
+                return inClientView(x, y, candidate.actor.fetchLocX(), candidate.actor.fetchLocY());
             });
         }
         const fetchVisiblePlayers = typeof World.fetchVisibleRealPlayers === 'function'
