@@ -128,7 +128,14 @@ const PopulationStatus = {
             + ` stepLead=${worker.stepLeadMs || 0}ms pvp=${pvp.live}/${pvp.steps}/${pvp.ms}ms/${pvp.left}`
             + ` geo=${mb(geodata.loadedBytes)}MB/${geodata.loadedRegions} geoViews=${mb(geodata.attachedBytes)}+${mb(worker.geodata?.attachedBytes)}MB`
             + ` geoRaw=${geodata.rawRegions || 0} geoIndexOnly=${geodata.indexOnlyRegions || 0}`
-            + ` geoHeightReads=${geodata.heightFileReads || 0}+${worker.geodata?.heightFileReads || 0} ${this.npcHateText()}`;
+            + ` geoHeightReads=${geodata.heightFileReads || 0}+${worker.geodata?.heightFileReads || 0} ${this.npcHateText()}`
+            + this.incomeHoldText(worker.incomeHold);
+    },
+
+    // incomeHold=<kept>/<none>,<unrouted>,<renewed>,<moved>,<event>;party<kept>/<missed>: held earning
+    // spot reads since the worker started (EconomyContext.heldIncomeRoute, decision 10-30), diagnostics off too.
+    incomeHoldText(h) {
+        return h ? ` incomeHold=${h.kept || 0}/${h.none || 0},${h.unrouted || 0},${h.renewed || 0},${h.moved || 0},${h.event || 0};party${h.partyKept || 0}/${h.partyMissed || 0}` : '';
     },
 
     // Mobs that forgot a chase (out of reach / no path) and mobs left out of combat still hating.
@@ -341,9 +348,6 @@ const PopulationStatus = {
             summary.line += ` workerCaches=s:${s.memo || 0}/${s.best || 0}/${s.income || 0}/${s.bases || 0}/${s.cells || 0}:${s.memoHits || 0}/${s.memoMisses || 0}:${s.memoEvictions || 0}/${s.incomeEvictions || 0}/${s.baseEvictions || 0}/${s.resets || 0}:${s.bestHits || 0}/${s.bestMisses || 0}:${s.incomeHits || 0}/${s.incomeMisses || 0},k:${worker.caches.kitProfiles || 0}`;
         }
         summary.line += ` mainKits=${ColdCombatProfile.kitStoreSize()}`;
-        // incomeHold=<kept>/<none>,<unrouted>,<failed>,<event>;party <kept>/<missed> (EconomyContext.heldIncomeRoute, decision 10-30).
-        const h = worker.incomeHold;
-        if (h) summary.line += ` incomeHold=${h.kept || 0}/${h.none || 0},${h.unrouted || 0},${h.failed || 0},${h.event || 0};party${h.partyKept || 0}/${h.partyMissed || 0}`;
         summary.line += ` snapshot=${snapshots.dirty || 0}/${snapshots.critical || 0}/${snapshots.inFlight ? 1 : 0} snapshotLast=${lastSnapshot.mode || 'none'}/${lastSnapshot.rows || 0}/${lastSnapshot.pages || 0}/${lastSnapshot.durationMs || 0}ms snapshotRuns=${snapshots.fullRuns || 0}/${snapshots.dirtyRuns || 0}/${snapshots.criticalRuns || 0} snapshotDeferrals=${snapshots.deferrals || 0} snapshotYields=${snapshots.yields || 0}`;
         summary.line += ` ${this.nearText(coldWorker)}`;
         return summary;

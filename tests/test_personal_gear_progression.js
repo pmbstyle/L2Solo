@@ -161,7 +161,7 @@ function verify() {
         'a suitable current spot does not pin the bot when another has better net profit');
     // Decision 10-30: the bot keeps its earning spot. The held build chose
     // 'rich'; once 'poor' turns better a read without an event keeps 'rich'
-    // (also past the window: only a build searches). A section event
+    // until the window (30 game minutes) ends; then one search. A section event
     // searches, also when the step's basics record judged the held spot.
     // The party comparison's solo side reads the same hold.
     {
@@ -176,7 +176,6 @@ function verify() {
             huntEfficiency: Hunt.record(turned, { spotId: spot.id, timestamp: at, cycleMs: 60000,
                 adena: spot.id === 'poor' ? 1200 : 750, costs: 100, loot: 0, exp: 100, kills: 10 }) } };
         assert.equal(Economy.basics(turned, { spots, timestamp: time(1) }).hunt.spotId, 'rich', 'a game minute later it keeps its spot');
-        assert.equal(Economy.basics(turned, { spots, timestamp: time(31) }).hunt.spotId, 'rich', 'a read past the window does not search');
         const before = Economy.incomeHoldStats().partyKept;
         assert.equal(Party.soloRoute(turned, spots, time(1))?.spotId, 'rich', 'the party comparison judges the held spot');
         assert.equal(Economy.incomeHoldStats().partyKept, before + 1, 'through the one hold');
@@ -185,6 +184,18 @@ function verify() {
         assert.equal(basics.hunt.spotId, 'rich', 'the step basics judge the held spot');
         assert.equal(Economy.forState(dead, { spots, timestamp: time(2), preparedIncomeRoute: basics.preparedIncomeRoute }).hunt.spotId,
             'poor', 'a section event searches again over the basics record');
+        // Past the window one search: the held spot again renews the hold in
+        // place; a better spot moves it, and the next build rebuilds on it.
+        Economy.reset();
+        assert.equal(Economy.forState(holder, { spots, timestamp: time(0) }).hunt.spotId, 'rich', 'held again');
+        const renewed = Economy.incomeHoldStats().renewed;
+        assert.equal(Economy.basics(holder, { spots, timestamp: time(31) }).hunt.spotId, 'rich', 'past the window the same spot');
+        assert.equal(Economy.incomeHoldStats().renewed, renewed + 1, 'renews the hold');
+        assert.equal(Economy.basics(turned, { spots, timestamp: time(32) }).hunt.spotId, 'rich', 'and holds it for a new window');
+        Economy.reset();
+        assert.equal(Economy.forState(holder, { spots, timestamp: time(0) }).hunt.spotId, 'rich', 'held once more');
+        assert.equal(Economy.basics(turned, { spots, timestamp: time(31) }).hunt.spotId, 'poor', 'past the window a better spot is found');
+        assert.equal(Economy.forState(turned, { spots, timestamp: time(31) }).hunt.spotId, 'poor', 'and the build moves to it');
         Economy.reset();
     }
     let weak = { ...earning, level: 25, stats: { ...earning.stats, huntEfficiency: [] } };

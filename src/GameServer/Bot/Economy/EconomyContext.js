@@ -906,7 +906,8 @@ function incomeRouteFor(state, deps, timestamp, price, keep) {
     const plan = held && cache.get(actorKeyOf(state, deps)).plan;
     const record = { state, timestamp, spots: deps.spots, mode: deps.mode, maxChecks: deps.maxChecks, required, reads, route,
         searched: !held, routeAt: !route ? null : held ? plan.routeAt : timestamp,
-        routeIncome: !route ? null : held ? plan.routeIncome : Number(route.row?.income) || 0 };
+        routeIncome: !route ? null : held ? plan.routeIncome : Number(route.row?.income) || 0,
+        heldRoute: route || null };
     keep?.(record);
     return record;
 }
@@ -914,22 +915,44 @@ function incomeRouteFor(state, deps, timestamp, price, keep) {
 // minutes (forState rebuilds its foundation after the window).
 const HOLD_MS = 30 * GameTime.GAME_MINUTE_MS;
 // Held-spot reads by verdict (the worker status line): kept, no held build,
-// a held build without a route, the held spot failed, an event search;
-// party: the party comparison's solo side.
-const holdStats = { kept: 0, none: 0, unrouted: 0, failed: 0, event: 0, partyKept: 0, partyMissed: 0 };
+// a held build without a route, renewed (the window's search chose the held
+// spot again), moved (it chose another), an event search; party: the party
+// comparison's solo side.
+const holdStats = { kept: 0, none: 0, unrouted: 0, renewed: 0, moved: 0, event: 0, partyKept: 0, partyMissed: 0 };
 function incomeHoldStats() { return { ...holdStats }; }
-// The one hold (decision 10-30): the bot's held build's earning spot judged
-// alone by IncomeRoute.select with the caller's options, or null when the
-// bot holds none or it fails there. The economy's income route
+// The one hold (decision 10-30): the route the bot's held build chose
+// (spot, income row, matchup profiles), kept as chosen: no search and no
+// matchup per read (10-31: re-judging the held spot per read cost more than
+// the ranking it saved). What would change the verdict is a section event
+// (level, kit, death, goal, gear need, party: forState rebuilds the
+// foundation and searches, deps.searchIncome) or the income drift (the
+// observation event). Once the window (HOLD_MS) has passed, one full search:
+// the held spot again renews the window in place (the build stays held);
+// another spot marks the build (routeMoved) so forState rebuilds its
+// foundation on it. Null without a held route. The economy's income route
 // (incomeRouteFor) and the party comparison's solo side
 // (PartyIncomeComparison.soloRoute, options.party) read it.
 function heldIncomeRoute(state, options) {
     const plan = cache.get(`character:${Number(state.characterId) || 0}`)?.plan;
-    const why = !plan ? 'none' : !Number.isFinite(plan.routeAt) ? 'unrouted' : '';
-    const route = why ? null : IncomeRoute.select(state, { ...options, only: [plan.bestSpotId] });
-    if (options.party) holdStats[route ? 'partyKept' : 'partyMissed'] += 1;
-    else holdStats[why || (route ? 'kept' : 'failed')] += 1;
-    return route;
+    const route = plan?.heldRoute;
+    const why = !plan ? 'none' : !Number.isFinite(plan.routeAt) || !route || String(route.spot?.id) !== String(plan.bestSpotId) ? 'unrouted' : '';
+    if (why) { holdStats[options.party ? 'partyMissed' : why] += 1; return null; }
+    const timestamp = Number(options.timestamp) || Date.now();
+    // Moved: the build is rebuilt on its new spot (forState); until then the economy searches.
+    if (plan.routeMoved && !options.party) return null;
+    if (options.party || timestamp - plan.routeAt < HOLD_MS) {
+        holdStats[options.party ? 'partyKept' : 'kept'] += 1;
+        return route;
+    }
+    const found = IncomeRoute.select(state, options);
+    if (found && String(found.spot.id) === String(plan.bestSpotId)) {
+        Object.assign(plan, { routeAt: timestamp, heldRoute: found });
+        holdStats.renewed += 1;
+    } else {
+        plan.routeMoved = true;
+        holdStats.moved += 1;
+    }
+    return found;
 }
 // The bot's own fit for the spot of its hunting leaf (docs/architecture.md §2
 // route): the route's one test, BotRoute.leafFitReader, as a yes or no per
@@ -1035,7 +1058,7 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
     const reserve = escapeCost + kit.reduce((sum, row) => sum + row.survivalMissing * row.unitPrice, 0);
     return { tableRole, hunt, hourAdena: Hunt.huntHour(hunt, state), survivalReserve: reserve, kitCost, kit: kitData,
         lostGearHours, bestSpotId, deathHours, bestTable, stock,
-        routeAt: income.routeAt, routeIncome: income.routeIncome,
+        routeAt: income.routeAt, routeIncome: income.routeIncome, heldRoute: income.heldRoute,
         riskWeight: Valuation.riskWeight(state, persona),
         expectedDeathHours: positive(bestTable?.deaths) * deathHours,
         karmaHours: Valuation.karmaHours(state, { ...hunt, lostGearHours, deathsPerHour: positive(bestTable?.deaths) }) };
@@ -1045,7 +1068,7 @@ function foundationFromPlan(state, plan, deps, price) {
         () => plan.kit.scrollHours ??= scrollHoursFor(state, deps.spots, plan.bestSpotId));
     return { hunt: plan.hunt, hourAdena: plan.hourAdena, survivalReserve: plan.survivalReserve,
         kit: plan.kit, stock, kitCost, lostGearHours: plan.lostGearHours, bestSpotId: plan.bestSpotId,
-        routeAt: plan.routeAt, routeIncome: plan.routeIncome,
+        routeAt: plan.routeAt, routeIncome: plan.routeIncome, heldRoute: plan.heldRoute,
         deathHours: plan.deathHours, riskWeight: plan.riskWeight,
         expectedDeathHours: plan.expectedDeathHours, karmaHours: plan.karmaHours };
 }
@@ -1173,9 +1196,8 @@ function forState(state = {}, deps = {}) {
     // hunt efficiency and clock, spot risk and the active spot exclusions
     // (they expire by time), exp, persona, market trades, craft station,
     // the equipment plan and the crafter's MP.
-    // A held earning spot is searched again after its window (incomeRouteFor).
-    const keptBase = held && !(mask & Sections.COMPUTED.foundation)
-        && !(Number.isFinite(held.plan.routeAt) && timestamp - held.plan.routeAt >= HOLD_MS) ? held.plan : null;
+    // A held earning spot the window's search moved off (heldIncomeRoute) rebuilds the foundation on the new one.
+    const keptBase = held && !(mask & Sections.COMPUTED.foundation) && !held.plan.routeMoved ? held.plan : null;
     const keptSources = held?.sourceSections && !(mask & Sections.COMPUTED.sources) ? held : null;
     // The source walk's per-spot ground verdict, outside the memo's size cap:
     // its own section rule (GearAcquisitionPlanner.sourceGround).
@@ -1252,7 +1274,8 @@ function forState(state = {}, deps = {}) {
     // one): its solo matchup profiles serve the providers' source route reader.
     let incomeRecord = null;
     const base = keptBase ? foundationFromPlan(state, keptBase, deps, price)
-        : foundation(state, { ...deps, searchIncome: !!held && !!(mask & Sections.COMPUTED.foundation) }, persona, timestamp, price,
+        : foundation(state, { ...deps, searchIncome: !!held && (!!(mask & Sections.COMPUTED.foundation) || held.plan.routeMoved === true) },
+            persona, timestamp, price,
             record => { incomeRecord = record; });
     // These facts still belong to the reused foundation: its items stay read.
     if (keptBase) for (const id of held.readIds) read(id);
@@ -1561,7 +1584,7 @@ function planOf(context, base, { key, tripHour, projection = null, knowledgeEnab
         if (node.key.startsWith('stock:') && !stockRoots.has(node.key)) stockRoots.set(node.key, node.object?.itemId);
     return { pending: !projection, key, actorKey: context.actorKey, timestamp: context.timestamp,
         gearThreatMask: context.gearThreatMask, persona: context.persona, hunt: context.hunt,
-        riskWeight: context.riskWeight, bestSpotId: context.bestSpotId, routeAt: base.routeAt, routeIncome: base.routeIncome,
+        riskWeight: context.riskWeight, bestSpotId: context.bestSpotId, routeAt: base.routeAt, routeIncome: base.routeIncome, heldRoute: base.heldRoute || null,
         deathHours: context.deathHours,
         lostGearHours: context.lostGearHours, karmaHours: context.karmaHours, expectedDeathHours: context.expectedDeathHours,
         survivalReserve: context.survivalReserve, kit: base.kit, hourAdena: context.hourAdena, workshop: context.workshop,
