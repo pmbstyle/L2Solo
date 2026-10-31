@@ -591,8 +591,6 @@ function refusal(state, accepted, deps = {}, options = {}) {
     // lazy: cycle EconomyContext constructs and validates these cards.
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     if (state.stats?.wishDirty) return 'wish_dirty';
-    // The window search moved the earning spot (EconomyContext.incomeMoved): rebuild on it.
-    if (Economy.incomeMoved(state)) return 'income_moved';
     const echo = Sections.decisionRefusal(state, accepted.decisionSeq, accepted.activityLeaf, accepted.focus);
     if (echo) return echo;
     // A card without a leaf reuses only as a completed (null) activity its
@@ -610,7 +608,8 @@ function refusal(state, accepted, deps = {}, options = {}) {
         && !invoke('GameServer/Bot/Population/BackgroundResolver').travelRecord(state.stats.travel)) return 'travel_record'; // lazy: as canReuse before L114 (load order unchecked)
     // A goal change (main's goal revision moved since the build) is seen at
     // the next decision point. No revision on the card (restored after a
-    // restart) differs too: one rebuild.
+    // restart) differs too: one rebuild. The build reads the same revision for
+    // the held earning spot (EconomyContext.holdRead: a goal change searches).
     if (Number.isFinite(deps.goalRevision) && deps.goalRevision !== accepted.goalRevision) return 'goal';
     // options.collect: a build of the same step on this state follows a
     // refusal; the verdict collects and hands itself to it (forState).
