@@ -143,6 +143,9 @@ async function physicalAmount(characterId, selfId) {
         assert.strictEqual(memberProjection.inventory[POTION].amount, member.state.inventory[POTION].amount - bottles,
             'the projection debits the bottles this member drank');
     }
+    // The bottle runs on past the fight, as a solo bot's: the next one waits for it.
+    const drinker = partyResult.memberResults.find(member => member.result.debug.drunkPotions);
+    assert(drinker.result.patch.stats.coldCombat.potionUntil > at, 'a party member keeps its bottle\'s lock');
     assert.strictEqual(partyResult.memberResults.reduce((sum, member) => sum + Number(member.result.debug.drunkPotions?.[POTION] || 0), 0),
         partyResult.debug.potionsUsed, 'the members\' bottles are the party\'s count');
 

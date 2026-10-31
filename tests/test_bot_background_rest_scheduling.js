@@ -94,11 +94,11 @@ BackgroundResolver.resolvePartyFight = function () {
     observedCombat = { input: arguments[0], result };
     return result;
 };
-let combatRestParty;
+let combatRestParty, combatMembers;
 try {
 combatRestParty = BackgroundPartyResolver.resolve({
     party: { partyId: 'combat-rest', cohesion: 0.7, risk: 0.2, roleCoverage: { dps: 2 }, stats: {} },
-    members: [
+    members: combatMembers = [
         { ...exhausted, characterId: 83, activity: 'grouped', vitals: { hp: 800, maxHp: 800, mp: 1, maxMp: 420 }, stats: { classId: 5, role: 'tank' }, party: { role: 'tank' } },
         { ...exhausted, characterId: 84, activity: 'grouped', vitals: { hp: 800, maxHp: 800, mp: 420, maxMp: 420 }, stats: { classId: 1, role: 'dps' }, party: { role: 'dps' } }
     ],
@@ -108,11 +108,8 @@ combatRestParty = BackgroundPartyResolver.resolve({
     rng: () => 0
 });
 } finally { BackgroundResolver.resolvePartyFight = nativeFight; }
-assert(combatRestParty.partyPatch.stats.restUntil > timestamp, 'combat exhaustion must create a shared party recovery deadline immediately');
-assert.strictEqual(combatRestParty.nextResolveAt, combatRestParty.partyPatch.stats.restUntil);
-assert(combatRestParty.memberResults.every(({ result }) => result.patch.activity === 'resting'), 'a party combat rest must seat every living member together');
-// An unfinished encounter that triggers recovery is abandoned, not a kill.
-// Rewards for completed wins are covered by native party/reward fixtures.
+// A party rests between fights, never in one, as hot: a tank out of MP in a live
+// fight fights on, and the mob stays pending, not a kill and not a loss.
 assert(observedCombat.result.timedOut && !observedCombat.result.won,
     'the original bounded encounter times out before the monster is defeated');
 assert(observedCombat.result.debug.remainingHp > 0, 'the timed-out target is still alive');
@@ -121,11 +118,28 @@ assert.strictEqual(observedCombat.input.spot, combatSpot, 'the authored ordinary
 assert.strictEqual(observedCombat.result.debug.mobSelfId, combatNpc.selfId);
 assert.strictEqual(combatRestParty.debug.spotId, combatSpot.id);
 assert.strictEqual(combatRestParty.debug.attemptedFights, 1, 'the original elapsed window attempts one encounter');
-assert.strictEqual(combatRestParty.debug.wins, 0, 'rest cannot fabricate a completed kill');
-assert.strictEqual(combatRestParty.debug.losses, 1, 'the native recovery boundary abandons the unfinished fight');
-assert.strictEqual(combatRestParty.partyPatch.stats.pveEncounter, null, 'recovery clears that abandoned encounter');
+assert.strictEqual(combatRestParty.debug.wins, 0, 'a cut fight mints no kill');
+assert.strictEqual(combatRestParty.debug.losses, 0, 'a cut fight is no loss');
+assert(combatRestParty.memberResults.every(({ result }) => result.patch.activity === 'grouped'), 'nobody sits down in a live fight');
+assert(combatRestParty.partyPatch.stats.pveEncounter?.hp > 0, 'the fight stays pending');
+assert(!combatRestParty.partyPatch.stats.restUntil, 'no rest deadline while the mob lives');
 assert(combatRestParty.memberResults.every(({ result }) => Number(result.materialize.exp || 0) === 0
     && Number(result.materialize.sp || 0) === 0), 'an unfinished encounter mints no EXP or SP');
+// The kill ends the fight: the whole party sits together, before any next pull.
+const killedParty = BackgroundPartyResolver.resolve({
+    party: { partyId: 'combat-rest', cohesion: 0.7, risk: 0.2, roleCoverage: { dps: 2 },
+        stats: { pveEncounter: { ...combatRestParty.partyPatch.stats.pveEncounter, hp: 1 } } },
+    members: combatMembers,
+    spot: combatSpot,
+    elapsedMs: 10_000,
+    timestamp: timestamp + 10_000,
+    rng: () => 0
+});
+assert.strictEqual(killedParty.debug.wins, 1, 'the pending mob falls, and the party takes no next one');
+assert(killedParty.partyPatch.stats.restUntil > timestamp + 10_000, 'the rest deadline comes with the fight\'s end');
+assert.strictEqual(killedParty.nextResolveAt, killedParty.partyPatch.stats.restUntil);
+assert(killedParty.memberResults.every(({ result }) => result.patch.activity === 'resting'), 'a party rest seats every living member together');
+assert.strictEqual(killedParty.partyPatch.stats.pveEncounter, null);
 assert.strictEqual(BackgroundResolver.needsRest({ stats: { classId: 1 } }, {
     hp: 800, maxHp: 800, mp: 0, maxMp: 420
 }, { party: true, hpThreshold: 0.3, mpThreshold: 0.18 }), false,
