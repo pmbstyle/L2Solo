@@ -124,6 +124,7 @@ const ColdCompetitionCandidates = require('./ColdCompetitionCandidates');
 const { ColdSimulationKernel } = require('./ColdSimulationKernel');
 const PartyGoalCalculation = require('./PartyGoalCalculation');
 const { beginHuntingTrip } = require('./HuntingTravel');
+const PveEncounter = require('./ColdPveEncounter');
 const BotRoute = require('./BotRoute');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
 const TableMirror = require('./TableMirror');
@@ -1179,6 +1180,13 @@ function roomAtArrival(spotId, arriving, overflow = 0) {
     return standing + arriving.size <= room + overflow;
 }
 
+// The step's trip begins, or waits for the engaged fight (PveEncounter.holdsTrip):
+// the round then ends that fight with no new one, and the kept route waits on
+// the record for the next step.
+function stepTrip(state, route, timestamp) {
+    if (PveEncounter.holdsTrip(state, route, timestamp)) return { routedState: state, route: null, lastFight: true };
+    return { routedState: beginHuntingTrip(state, route, timestamp) || state, route, lastFight: false };
+}
 // The step's solo trip and the kept route's drop (BotRoute.trip / drop): the
 // route lives in the bot's kernel record. The search skips a spot with no
 // room for the bot (SpotProfiles.roomFilterFor over this worker's index).
@@ -1745,8 +1753,7 @@ function startKernel(config = {}) {
                 if (economyDiagnostics.active()) economyDiagnostics.count('advisory', 'reuse', 'lifecycle');
                 const leaf = refreshed.economy.network.activity;
                 // The card holds the plan: the route is read on the input state.
-                const route = routeTrip(state, standingSpot(state), leaf, timestamp);
-                const routedState = beginHuntingTrip(state, route, timestamp) || state;
+                const { routedState, route, lastFight } = stepTrip(state, routeTrip(state, standingSpot(state), leaf, timestamp), timestamp);
                 let occupation = routedState.activity === 'hunting' && leaf.activity !== 'hunting'
                     ? await occupationFor(routedState, timestamp, { economy: refreshed.economy }, 'action') : null;
                 if (!occupation?.economyPlan && !refreshed.economyPlan)
@@ -1760,7 +1767,7 @@ function startKernel(config = {}) {
                     activityPick: { activity: leaf.activity, spotId: leaf.spotId, npcId: leaf.npcId },
                     economyDecision: refreshed.decision, previousPlan, acquisitionPlan: previousPlan,
                     partyRequest: null, reusablePartyRequest: false, replanFailure: null,
-                    targetNpcId: Number(previousPlan?.next?.npcId || leaf.npcId || 0), plannedState: routedState, route };
+                    targetNpcId: Number(previousPlan?.next?.npcId || leaf.npcId || 0), plannedState: routedState, route, lastFight };
             }
             const preparedEconomy = nullReuse ? refreshed.economy
                 : Economy.forState(preparationState, withIncomeRoute(withEventVerdict(deps, prepared), prepared.basics));
@@ -1808,8 +1815,7 @@ function startKernel(config = {}) {
                 spotId: fallbackSpot ? fallbackSpot.id : state.spotId,
                 stats: plannedStats
             };
-            const route = routeTrip(plannedState, standingSpot(state), economy.network.activity, timestamp);
-            const routedState = beginHuntingTrip(plannedState, route, timestamp) || plannedState;
+            const { routedState, route, lastFight } = stepTrip(plannedState, routeTrip(plannedState, standingSpot(state), economy.network.activity, timestamp), timestamp);
             let preparedOccupation = routedState.activity === 'shopping'
                 ? await occupationFor(routedState, timestamp, { economy }, 'showcase')
                 : routedState.activity === 'hunting' && economy.network.activity?.activity
@@ -1841,7 +1847,8 @@ function startKernel(config = {}) {
                 reusablePartyRequest,
                 replanFailure: replanContext.failure || null,
                 plannedState: routedState,
-                route
+                route,
+                lastFight
             };
         },
         emit: send,

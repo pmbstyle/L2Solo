@@ -1,8 +1,9 @@
 // One bounded record per solo actor / party. No live actor, timer or world scan.
 const MAX_AGE_MS = 10 * 60 * 1000;
 const MAX_SLICES = 20;
-function key(members, spot, targetNpcId, partyId = '') {
-    return JSON.stringify([partyId, spot?.id, Number(targetNpcId || 0),
+// The fight's own: the step's target may move, the engaged mob does not.
+function key(members, spot, partyId = '') {
+    return JSON.stringify([partyId, spot?.id,
         members.map(s => [s.characterId, s.loc?.locX, s.loc?.locY, s.loc?.locZ, s.timing?.lastHotAt])
             .sort((a, b) => a[0] - b[0])]);
 }
@@ -17,10 +18,16 @@ function pending(state, timestamp) {
     const record = state?.stats?.pveEncounter;
     return !!record && !!read(record, record.key, timestamp);
 }
+// A wanted trip waits for the engaged fight and for no other: the round then
+// starts no new one (lastFight), so the next step is clean. A flight from ground
+// the bot may not hunt does not wait: a hot bot leaves it under a mob (HuntingState).
+function holdsTrip(subject, route, timestamp) {
+    return !!route?.needed && route.reason !== 'unsafe_ground_evacuation' && pending(subject, timestamp);
+}
 // timestamp: the round that saved it, never a fight's clock inside the round
 // (ahead of the next round's start, read would drop the fight).
 function save(previous, encounterKey, mob, hp, timestamp, timers) {
     return { version: 1, key: encounterKey, mob, hp: Math.max(0, hp), at: timestamp,
         slices: Number(previous?.slices || 0) + 1, ...timers };
 }
-module.exports = { key, read, pending, save, MAX_SLICES };
+module.exports = { key, read, pending, holdsTrip, save, MAX_SLICES };

@@ -97,6 +97,11 @@ function chaseMs(botSpeed, threatSpeed = 0) {
     return CHASE_BREAK_DISTANCE / gain * 1000;
 }
 
+// How long a chasing monster keeps a running bot in its reach.
+function reachMs(reach, botSpeed, threatSpeed = 0) {
+    return reach / (botSpeed - threatSpeed) * 1000;
+}
+
 // Does a wounded bot stay for the kill: its next hit, at the margin, ends the
 // target within the hits and the time a last strike may take?
 function finishes(targetHp, hit, actionMs) {
@@ -107,4 +112,4 @@ function finishes(targetHp, hit, actionMs) {
 
 module.exports = { LOSE_SLOPE, FLEE_EXPOSURE, ROLL_SPREAD, CHASE_BREAK_DISTANCE, EMERGENCY_RETREAT_DISTANCE,
     RETREAT_PROGRESS_MS, MIN_RETREAT_DISTANCE_GAIN, FINISH_DAMAGE_MARGIN, FINISH_HITS, FINISH_MS,
-    loseChance, decide, moment, outruns, chaseMs, finishes };
+    loseChance, decide, moment, outruns, chaseMs, reachMs, finishes };

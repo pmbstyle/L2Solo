@@ -1547,6 +1547,9 @@ function afterBotHit(fighter, { skill, shot, damage, struck }, mob, mobFight, mo
 
 // cold_fight:<rule>: how often the cold fight meets a hot rule it rolls
 // (T124: lethal, drain, life_steal, reflect, effect_landed, bow_mp_wait); only while diagnostics count.
+// The bound of a pet's fight left alone (coldPetStays).
+const PET_LEFT_ACTIONS = 400;
+
 // What a fight's danger moment weighs, from the bot's packet (DangerRule); null
 // before its first decision, as a hot body's first ticks (the retreat rule then).
 function coldDangerPrice(stats) {
@@ -1594,34 +1597,60 @@ function coldDangerMoment(fighter, mob, mobHp, { profiles, time, at, rng }) {
     return 'flee';
 }
 
+// The fight a pet is left in, as hot: it stands until it or the mob is dead (or
+// its time ends, or a slice's bound of actions passes: then it counts as lost).
+// flight: coldFlee's record, its mobHp the mob's HP left.
+function coldPetStays(fighter, mob, mobFight, flight, { time, mobReadyAt, timestamp, rng }) {
+    let mobAt = Math.max(time, mobReadyAt);
+    for (let turn = 0; turn < PET_LEFT_ACTIONS && fighter.summon && flight.mobHp > 0; turn++) {
+        const petAt = Math.max(time, fighter.summonReadyAt), at = Math.min(petAt, mobAt);
+        if (Number(fighter.summon.expiresAt || 0) <= timestamp + at) { dropSummon(fighter); return; }
+        if (petAt <= mobAt) {
+            flight.mobHp -= summonDamage(fighter, mob, rng);
+            fighter.summonActions += 1;
+            fighter.summonReadyAt = at + summonAttackDelay(fighter.summon);
+        } else {
+            const { action } = strikeSide(fighter, mob, mobFight, { time: at, at: timestamp + at, rng, mobHp: flight.mobHp });
+            flight.petTaken += Math.max(0, action.damage);
+            mobAt += action.delayMs;
+        }
+    }
+    if (fighter.summon && flight.mobHp > 0) {
+        dropSummon(fighter);
+        fighter.summonDeaths = Number(fighter.summonDeaths || 0) + 1;
+    }
+}
+
 // The cold run, the hot one's price (FleeingState, Npc's chase, retreatFromThreat):
-// the bot leaves when its action or a hold ends, the mob strikes while the
-// bot is in its reach (ColdMobAction.reachOf) and a mob it can only chase lands
-// nothing after that; the bot runs until the chase breaks (DangerRule.chaseMs),
-// no kill paid, then rests. A mob on its pet does not chase: the bot runs one leg
-// (EMERGENCY_RETREAT_DISTANCE) and the mob strikes the pet meanwhile, then
-// the pet comes away with the HP left (hot, it stays until one of them is dead).
-// Returns { runMs, taken, spellTaken, petTaken }; the fighter's HP are lowered.
+// the bot leaves when its action or a hold ends; a mob on it strikes while the
+// bot is in its reach (ColdMobAction.reachOf, DangerRule.reachMs: it chases) and
+// after that lands nothing; the bot runs until the chase breaks
+// (DangerRule.chaseMs), then rests. A mob on its pet does not chase: the bot
+// runs one leg (EMERGENCY_RETREAT_DISTANCE) and leaves the pet in the fight
+// (coldPetStays), a kill of the pet's paying as hot; a mob that then comes for
+// an owner it holds hate of chases it on.
+// Returns { runMs, taken, spellTaken, petTaken, mobHp }; the fighter's HP are lowered.
 function coldFlee(fighter, mob, mobFight, { time, mobReadyAt, mobFar, timestamp, rng, mobHp }) {
     const id = fighter.state?.characterId, speed = fighter.profile.runSpd;
     const leavesAt = () => Math.max(time, fighter.readyAt, Number(mobFight.held.rooted[id]) || 0);
-    const onPet = mobHolder(fighter) === 'pet';
-    const legMs = DangerRule.EMERGENCY_RETREAT_DISTANCE / speed * 1000;
-    const exposedMs = onPet ? legMs : ColdMobAction.reachOf(mob, mobFight) / speed * 1000;
-    const flight = { taken: 0, spellTaken: 0, petTaken: 0 };
-    let at = mobReadyAt;
-    while (fighter.vitals.hp > 0 && at <= leavesAt() + exposedMs && mobHolder(fighter) === (onPet ? 'pet' : 'owner') && (onPet || !(mobFar > 0))) {
-        const { action, pet } = strikeSide(fighter, mob, mobFight, { time: at, at: timestamp + at, rng, mobHp });
+    const flight = { taken: 0, spellTaken: 0, petTaken: 0, mobHp };
+    const chaseMs = DangerRule.chaseMs(speed, mob.runSpd);
+    if (mobHolder(fighter) === 'pet') {
+        coldPetStays(fighter, mob, mobFight, flight, { time, mobReadyAt, timestamp, rng });
+        flight.runMs = leavesAt() - time + DangerRule.EMERGENCY_RETREAT_DISTANCE / speed * 1000
+            + (flight.mobHp > 0 && fighter.hate > 0 ? chaseMs : 0);
+        return flight;
+    }
+    const exposedMs = DangerRule.reachMs(ColdMobAction.reachOf(mob, mobFight), speed, mob.runSpd);
+    for (let at = mobReadyAt; fighter.vitals.hp > 0 && at <= leavesAt() + exposedMs && !(mobFar > 0) && mobHolder(fighter) === 'owner';) {
+        const { action } = strikeSide(fighter, mob, mobFight, { time: at, at: timestamp + at, rng, mobHp });
         const damage = Math.max(0, action.damage);
-        if (pet) flight.petTaken += damage;
-        else {
-            fighter.vitals.hp -= damage;
-            flight.taken += damage;
-            if (action.spell) flight.spellTaken += damage;
-        }
+        fighter.vitals.hp -= damage;
+        flight.taken += damage;
+        if (action.spell) flight.spellTaken += damage;
         at += action.delayMs;
     }
-    flight.runMs = leavesAt() - time + (onPet ? legMs : DangerRule.chaseMs(speed, mob.runSpd));
+    flight.runMs = leavesAt() - time + chaseMs;
     return flight;
 }
 
@@ -1646,7 +1675,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
     } else {
         bot = botCombatStats(fightState, timestamp);
     }
-    const encounterKey = PveEncounter.key([state], spot, targetNpcId);
+    const encounterKey = PveEncounter.key([state], spot);
     const pending = PveEncounter.read(state.stats?.pveEncounter, encounterKey, timestamp);
     const shot = round?.inventory && fightState.inventory === round.inventory && round.shot !== undefined ? round.shot
         : coldShotSupply(fightState, timestamp);
@@ -1845,7 +1874,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         }
     }
 
-    const won = mobHp <= 0;
+    let won = mobHp <= 0;
     // Background time jumps past the quiet tail of a completed potion HoT.
     // Apply that tail only after the damage sequence and only to survivors;
     // a won fight's DoT tail too (an unfinished one carries its dots on).
@@ -1860,6 +1889,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         taken += flight.taken;
         spellTaken += flight.spellTaken;
         petTaken += flight.petTaken;
+        mobHp = flight.mobHp;
+        won = mobHp <= 0;
         // A poison runs on behind the bot, as a won fight's.
         if (vitals.hp > 0) taken += settleColdTails(soloFighter);
     }
@@ -1930,6 +1961,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
     // A DoT that outlived the kill may still kill the winner.
     return {
         won: true,
+        fled: !!flight && !died,
+        runMs: flight?.runMs || 0,
         died,
         hp: died ? 0 : Math.max(1, Math.round(vitals.hp)),
         maxHp: Math.max(1, Math.round(vitals.maxHp)),
@@ -2033,7 +2066,7 @@ function applyPartyHotTicks(fighter, at) {
 
 function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, timestamp = Date.now(), encounter = null,
     partyId = '', encounterKey: sharedEncounterKey = null, sharedEncounter = false }) {
-    const encounterKey = sharedEncounterKey || PveEncounter.key(members, spot, targetNpcId, partyId);
+    const encounterKey = sharedEncounterKey || PveEncounter.key(members, spot, partyId);
     const pending = PveEncounter.read(encounter, encounterKey, timestamp, {
         maxSlices: sharedEncounter ? 1000 : PveEncounter.MAX_SLICES
     });
@@ -2386,7 +2419,8 @@ const BackgroundResolver = {
     // The offline hunt tables (scripts/hunt-tables) measure a rotation against a dummy target.
     resolveFight,
     // spotHunters: the bots on the spot, from the caller's occupancy (E69).
-    resolveSolo({ state, spot, pressure = {}, targetNpcId = 0, elapsedMs = 60000, spotHunters = 1, rng = Math.random, timestamp = Date.now() }) {
+    // lastFight: the bot's next act waits for the engaged fight: the round starts no new one (PveEncounter.holdsTrip).
+    resolveSolo({ state, spot, pressure = {}, targetNpcId = 0, lastFight = false, elapsedMs = 60000, spotHunters = 1, rng = Math.random, timestamp = Date.now() }) {
         if (!state) {
             return {
                 patch: {},
@@ -2508,7 +2542,7 @@ const BackgroundResolver = {
         }
 
         // The floor is a between-fights read too: a pending fight goes on first.
-        const continuing = PveEncounter.read(state.stats?.pveEncounter, PveEncounter.key([state], spot, targetNpcId), timestamp);
+        const continuing = PveEncounter.read(state.stats?.pveEncounter, PveEncounter.key([state], spot), timestamp);
         const floor = continuing ? null : SurvivalFloor.forState(state, timestamp);
         if (floor?.action === 'rest') {
             const resting = resolveRest(state, 0, timestamp, { requireMana: true });
@@ -2661,6 +2695,7 @@ const BackgroundResolver = {
             if (i > 0 && (combatMs >= combatBudgetMs || combatActions >= actionBudget)) break;
             // A mob already engaged is finished; a new one needs a whole mob of the share.
             const engaged = i === 0 && !!continuing;
+            if (lastFight && !engaged) break;
             if (mobsKilled + 1 > shareMobs && !engaged) {
                 // The fights the walk would still allow.
                 shareCut = Math.max(1, Math.ceil((combatBudgetMs - combatMs) / Math.max(1, walkMs)));

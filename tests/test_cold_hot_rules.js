@@ -71,7 +71,7 @@ function soloFight({ classId, level, skills = [], effects = [], hp = null, mp = 
     const profile = ColdCombatProfile.fightProfile(state, TS);
     state.vitals = { hp: hp ?? profile.maxHp, mp: mp ?? profile.maxMp };
     const spot = { id: 'rules', avgLevel: level, npcEntries: [], rewards: { adenaMin: 0, adenaMax: 0 } };
-    state.stats.pveEncounter = PveEncounter.save(null, PveEncounter.key([state], spot, 0), mob, mobHp, TS,
+    state.stats.pveEncounter = PveEncounter.save(null, PveEncounter.key([state], spot), mob, mobHp, TS,
         { botReadyAt: 0, mobReadyAt: 1e9, ...timers });
     const result = Resolver.resolveFight({ state, spot, pressure: {}, rng, timestamp: TS, maxActions });
     return { result, state, profile, hp: state.vitals.hp, mobHp: result.won ? 0 : result.encounter.hp };
@@ -291,7 +291,7 @@ function soloFight({ classId, level, skills = [], effects = [], hp = null, mp = 
     const mob = ColdCombatProfile.npcCombatStats(ItemTemplateIndex.find(DataCache.npcs, npcId));
     const member = HuntCycle.referenceState(0, 20);
     const spot = { id: 'rules_party', avgLevel: mob.level, npcEntries: [{ selfId: npcId, count: 1 }] };
-    const encounter = PveEncounter.save(null, PveEncounter.key([member], spot, npcId), mob, 10, TS, {
+    const encounter = PveEncounter.save(null, PveEncounter.key([member], spot), mob, 10, TS, {
         mobReadyAt: 1e9, readyAt: { [member.characterId]: 5000 },
         mobFight: { dots: [{ key: 'bleed', next: 3000, left: 1, damage: 100, intervalMs: 3000, by: member.characterId }] } });
     const outcome = ColdSoulCrystal.outcome, absorbers = [];

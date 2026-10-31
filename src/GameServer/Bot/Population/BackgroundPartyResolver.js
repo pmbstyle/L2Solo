@@ -148,7 +148,8 @@ const BackgroundPartyResolver = {
             debug: { reason: 'party_meeting_lifecycle', fights: 0, wins: 0 } };
     },
 
-    resolve({ party, members, spot, pressure = {}, targetNpcId = 0, elapsedMs = 60000, rng = Math.random, timestamp = Date.now(),
+    // lastFight: the party's next act waits for the engaged fight: it starts no new one (PveEncounter.holdsTrip).
+    resolve({ party, members, spot, pressure = {}, targetNpcId = 0, lastFight = false, elapsedMs = 60000, rng = Math.random, timestamp = Date.now(),
         episodeId = null, assessRelationship = null, raidOwner = null }) {
         const meeting = BackgroundPartyResolver.resolveMeetingLifecycle({ party, members, timestamp, episodeId, assessRelationship });
         if (meeting) return meeting;
@@ -410,7 +411,7 @@ const BackgroundPartyResolver = {
         let attemptedFights = 0;
         let pending = raid
             ? raidSnapshot?.encounter || null
-            : PveEncounter.read(party.stats?.pveEncounter, PveEncounter.key(members, spot, targetNpcId, party.partyId), timestamp);
+            : PveEncounter.read(party.stats?.pveEncounter, PveEncounter.key(members, spot, party.partyId), timestamp);
         let wins = 0;
         const overhitContexts = [];
         let losses = 0;
@@ -444,6 +445,7 @@ const BackgroundPartyResolver = {
         const restsNow = (state, resolved, vitals) => !raid && BackgroundResolver.needsRest(state, vitals, { party: true,
             pet: BackgroundResolver.petViewForState(resolved, vitals, timestamp) });
         for (let i = 0; i < fightBudget; i++) {
+            if (lastFight && !pending) break;
             const encounter = BackgroundResolver.resolvePartyFight({
                 members: combatMembers,
                 spot,
@@ -519,6 +521,12 @@ const BackgroundPartyResolver = {
             else if (!pending) losses += 1;
             if (!encounter.won || combatMembers.some((member) => Number(member.vitals?.hp || 0) <= 0)) break;
             if (combatMembers.some((member) => restsNow(member, member, member.vitals))) break;
+        }
+        // The slice bound gives the fight up, before the members' rest is read.
+        if (!raid && pending && pending.slices >= PveEncounter.MAX_SLICES) {
+            pending = null;
+            fights += 1;
+            losses += 1;
         }
 
         const rewards = distributeRewards({ members, spot, wins, defeatedNpcIds, overhitContexts, pressure, rng, timestamp });
@@ -719,11 +727,7 @@ const BackgroundPartyResolver = {
         const raidFailed = raid && raidSnapshot?.status !== 'defeated' && casualties.some((member, index) =>
             require('./RaidCasualtyPolicy').disposition(member, { previousDamageCasualties: index, remainingHpRatio }) !== 'continue');
         const raidDefeated = raid && raidSnapshot?.status === 'defeated';
-        if (!raid && pending && (deaths > 0 || pending.slices >= PveEncounter.MAX_SLICES)) {
-            pending = null;
-            fights += 1;
-            losses += 1;
-        } else if (raidFailed) {
+        if (raidFailed) {
             // A death ends this clan's attempt. Persist the actual remaining
             // HP for retry policy, then reset the shared boss to full health
             // before another clan or retry can begin.
