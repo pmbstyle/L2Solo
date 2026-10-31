@@ -1044,6 +1044,11 @@ class ColdSimulationKernel {
         this.heap.push(heapEntry);
     }
 
+    heldEntry(map, now, label) {
+        const [id, entry] = map.entries().next().value || [];
+        return entry ? { id, what: label(entry), ageMs: Math.max(0, now - Number(entry.startedAt || now)) } : null;
+    }
+
     storeSizes() {
         const skillDtos = this.states.skillDtoSize();
         return {
@@ -2601,6 +2606,10 @@ class ColdSimulationKernel {
             dirtyAgeMs: this.dirty.size ? Math.max(0, now - oldestDirtyAt) : 0,
             commanding: this.commanding.size,
             commandingAgeMs: this.commanding.size ? Math.max(0, now - oldestCommandAt) : 0,
+            // The oldest step and command by id: a bot long past its due names
+            // what holds it (Coordinator.overdueReason); both are in start order.
+            heldStep: this.heldEntry(this.inFlight, now, active => (active.pendingCommitId ? 'sent' : 'unsent')),
+            heldCommand: this.heldEntry(this.commandStartedAt, now, attempt => `${attempt.kind}${attempt.sent ? ':sent' : ''}`),
             reviewsSkipped: this.reviewsSkipped,
             checkpointsRefused: this.checkpointsRefused,
             ackUnbuilt: this.ackUnbuilt,

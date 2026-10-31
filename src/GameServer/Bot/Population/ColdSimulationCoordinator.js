@@ -2341,7 +2341,10 @@ class ColdSimulationCoordinator {
         const beat = this.lastWorkerSnapshot || {};
         const occupied = Number(beat.inFlight || 0) + Number(beat.commanding || 0);
         const max = Number(this.workerMaxInFlight || 0);
-        return `${max > 0 && occupied >= max ? 'worker_full' : 'unclaimed'}:${occupied}/${max || '-'}`;
+        // The worker's oldest step and command: named when they hold this bot.
+        const held = [['step', beat.heldStep], ['command', beat.heldCommand]].find(([, entry]) => entry?.id === characterId);
+        const holder = held ? ` ${held[0]}:${held[1].what}:${Math.round(held[1].ageMs / 1000)}s` : '';
+        return `${max > 0 && occupied >= max ? 'worker_full' : 'unclaimed'}:${occupied}/${max || '-'}${holder}`;
     }
 
     snapshot() {
