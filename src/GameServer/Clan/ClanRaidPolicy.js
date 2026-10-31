@@ -313,8 +313,9 @@ function assessment(clan = {}, profile = {}, previousGoal = null, options = {}) 
     }
     const raidComposition = composition(eligible, compositionOptions);
     const power = feasibility(core, profile, readinessCache);
-    const raidEstimate = require('./ClanRaidEstimate').estimate(eligible, profile, readinessCache);
     const ready = raidComposition.ready && power.ready;
+    // Only a ready roster's estimate is read: a clan sweep asks every raid spot.
+    const raidEstimate = ready ? require('./ClanRaidEstimate').estimate(eligible, profile, readinessCache) : null;
     return {
         ...raidComposition,
         ...power,

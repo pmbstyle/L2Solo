@@ -6,7 +6,7 @@ const Formulas = invoke('GameServer/Formulas');
 function castCycle(p, skill) {
     const magic = skill.spell !== false;
     const speed = Math.max(1, Number(magic ? p.castSpd : p.atkSpd) || 333);
-    const semantic = Rules.resolve(skill);
+    const semantic = Rules.resolveCached(skill);
     const cast = Formulas.calcSkillHitTime(Number(skill.hitTime) || 1000, speed,
         { magic, staticHitTime: !!semantic.staticHitTime });
     let reuse = Number(skill.reuse) || 0;
@@ -22,18 +22,27 @@ function weaponDps(p, boss) {
         / Combat.normalAttackMs({ ...p, atkSpd: p.atkSpd || 333 });
 }
 
-function damageRate(entry, boss, seconds) {
+// A mage's damaging spells and their cast rate: the same for every boss and
+// every pass, so one member pays for them once per planning job.
+function castRates({ member, profile: p }, cache) {
+    const key = `raid_spells:${member.characterId || member.id}`;
+    if (cache.has(key)) return cache.get(key);
+    const rates = (p.skills || []).filter(skill => !skill.passive && skill.spell !== false
+        && [Rules.DAMAGE, Rules.DAMAGE_EFFECT, Rules.DRAIN, Rules.DEATH_LINK].includes(Rules.resolveCached(skill).skillType)
+        && Number(skill.power) > 0).map(skill => ({ skill, castsPerSecond: 1000 / castCycle(p, skill) }));
+    cache.set(key, rates);
+    return rates;
+}
+
+function damageRate(entry, boss, seconds, cache) {
     const { profile: p, role, member } = entry;
     if (role === 'healer' || role === 'buffer' && !Roles.isPartyMusicFighter(member)) return 0;
     const physical = weaponDps(p, boss);
     if (role !== 'mage') return physical;
-    const spells = (p.skills || []).filter(skill => !skill.passive && skill.spell !== false
-        && [Rules.DAMAGE, Rules.DAMAGE_EFFECT, Rules.DRAIN, Rules.DEATH_LINK].includes(Rules.resolve(skill).skillType)
-        && Number(skill.power) > 0);
-    return Math.max(physical, ...spells.map(skill => {
-        const castsPerSecond = Math.min(1000 / castCycle(p, skill), Number(skill.mp) > 0
+    return Math.max(physical, ...castRates(entry, cache).map(({ skill, castsPerSecond }) => {
+        const sustained = Math.min(castsPerSecond, Number(skill.mp) > 0
             ? p.maxMp * 0.85 / Number(skill.mp) / seconds : Infinity);
-        return Formulas.calcMagicDamage(p.mAtk, Number(skill.power), Math.max(1, boss.mDef)) * castsPerSecond;
+        return Formulas.calcMagicDamage(p.mAtk, Number(skill.power), Math.max(1, boss.mDef)) * sustained;
     }));
 }
 
@@ -53,7 +62,7 @@ function estimate(members, spot, cache = new Map()) {
     // A small bounded estimate, not a combat simulation in the planner.
     // Re-evaluate mana-limited casting against the estimated fight length.
     for (let pass = 0; pass < 4; pass++) {
-        dps = profiles.reduce((sum, entry) => sum + damageRate(entry, boss, fightSeconds), 0);
+        dps = profiles.reduce((sum, entry) => sum + damageRate(entry, boss, fightSeconds, cache), 0);
         fightSeconds = Math.max(15, Math.min(3600, Number(boss.maxHp) / Math.max(1, dps * 1.2)));
     }
     const tank = profiles.find(entry => entry.role === 'tank')?.profile;
@@ -64,7 +73,7 @@ function estimate(members, spot, cache = new Map()) {
     for (const { profile: p, role } of profiles) {
         if (!['healer', 'buffer'].includes(role)) continue;
         const heals = (p.skills || []).flatMap(skill => {
-            const semantic = Rules.resolve(skill);
+            const semantic = Rules.resolveCached(skill);
             if (skill.passive || ![Rules.HEAL, Rules.HEAL_HOT, Rules.HOT, Rules.HEAL_PERCENT].includes(semantic.skillType)
                 || !['friendly', 'party', 'ally'].includes(semantic.target)) return [];
             const amount = semantic.hot ? Number(semantic.hot.heal || skill.power) * Number(semantic.hot.count || 1)
