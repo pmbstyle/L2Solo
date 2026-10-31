@@ -721,6 +721,8 @@ class ColdSimulationKernel {
         this.reviewsSkipped = 0;
         this.checkpointsRefused = 0;
         this.checkpointErrors = new Set();
+        // Bots main named overdue: lines left of their journal (traceWrite).
+        this.tracedBots = new Map();
         // Ok commit acks with numbers only whose state this thread could not
         // rebuild (no proposal kept, a bad number): always counted.
         this.ackUnbuilt = 0;
@@ -909,6 +911,7 @@ class ColdSimulationKernel {
         const ownOutput = entry.ownOutput === 'commit' || entry.ownOutput === 'review' ? entry.ownOutput : null;
         const previousRecord = this.states.locationIndex.getSource(characterId, 'state');
         const current = this.states.get(characterId);
+        if (this.tracedBots.size) this.traceWrite(characterId, current?.state, state, ownOutput);
         // Only an active bilateral preparation needs stable object identity.
         // Repeated structured-clone snapshots of identical physical state are
         // not new consent. Changed bags/timing/ownership still invalidate it.
@@ -1442,10 +1445,26 @@ class ColdSimulationKernel {
         return attempt;
     }
 
+    // Every state that reaches a bot main named overdue: what moved it, a step or
+    // something else. Bounded per bot; only a named bot pays.
+    traceWrite(characterId, before, after, ownOutput) {
+        const left = this.tracedBots.get(characterId);
+        if (!left) return;
+        if (left <= 1) this.tracedBots.delete(characterId);
+        else this.tracedBots.set(characterId, left - 1);
+        const changed = before ? Object.keys({ ...before.stats, ...after.stats })
+            .filter(key => !isDeepStrictEqual(before.stats?.[key], after.stats?.[key])) : [];
+        console.info('ColdWorker :: overdue write %s', JSON.stringify({ id: characterId, at: this.now(), ownOutput, busy: this.busy(characterId),
+            revision: [before?.simulation?.revision, after.simulation?.revision], activity: [before?.activity, after.activity],
+            nextResolveAt: [before?.timing?.nextResolveAt, after.timing?.nextResolveAt],
+            lastResolvedAt: [before?.timing?.lastResolvedAt, after.timing?.lastResolvedAt], reason: after.stats?.lastReason, changed }));
+    }
+
     // Main's overdue line names the bot and sends its own view; only this thread
     // sees its copy, its token, what holds it. Diagnostics off too.
     traceBot(characterId, main = {}) {
         const id = Number(characterId), record = this.states.get(id), timestamp = this.now();
+        if (this.tracedBots.size < 4 && !this.tracedBots.has(id)) this.tracedBots.set(id, 60);
         if (!record) return console.info('ColdWorker :: overdue trace %s', JSON.stringify({ id, main, worker: null }));
         const { state, version } = record, token = this.scheduleTokens.get(id), entry = token?.heapEntry;
         const step = this.inFlight.get(id), command = this.commandStartedAt.get(id), head = this.heap.peek();
