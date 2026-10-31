@@ -52,9 +52,21 @@ try {
     } } }, spot, elapsedMs: 12000, timestamp: start + 60000, rng: () => .5 });
     assert.strictEqual(exhausted.patch.stats.pveEncounter, null, 'an unwinnable fight cannot continue forever');
     assert.strictEqual(exhausted.debug.fights, 1);
-    // A fight the round cut with the bot's HP below the rest line goes on: the
-    // mob does not vanish, no fight is counted, and the next round picks it up.
-    const hurt = Solo.resolveSolo({ state: { ...base, vitals: { ...base.vitals, hp: 100 }, stats: { ...base.stats, pveEncounter: first } },
+    // A fight begun late in a round stands in the next one, which starts before
+    // that fight's clock: the same mob, nothing dropped.
+    {
+        const late = Solo.resolveSolo({ state: structuredClone(base), spot, elapsedMs: 60000, timestamp: start, rng: () => .5 });
+        assert(late.debug.walkedMs > 500 && late.patch.stats.pveEncounter, 'the mob is met after a walk and outlives the round');
+        const before = selected;
+        const nextRound = Solo.resolveSolo({ state: merge(base, late.patch), spot, elapsedMs: 500, timestamp: start + 500, rng: () => .5 });
+        assert.strictEqual(selected, before, 'the next round does not pick another mob');
+        assert.strictEqual(nextRound.debug.pendingFight, true, 'the fight goes on');
+    }
+    // A fight the round cut with the bot's HP below the rest line goes on against
+    // a mob it cannot outrun: the mob does not vanish, no fight is counted, and
+    // the next round picks it up.
+    const cornered = { ...first, mob: { ...first.mob, runSpd: 1000 } };
+    const hurt = Solo.resolveSolo({ state: { ...base, vitals: { ...base.vitals, hp: 100 }, stats: { ...base.stats, pveEncounter: cornered } },
         spot, elapsedMs: 12000, timestamp: start + 60000, rng: () => .5 });
     assert.strictEqual(hurt.patch.activity, 'hunting', 'a bot in a live fight does not sit down');
     assert(hurt.patch.stats.pveEncounter?.hp > 0 && hurt.patch.stats.pveEncounter.hp < first.hp, 'the same mob stays pending, with the damage done');
@@ -67,8 +79,9 @@ try {
     assert.strictEqual(killed.debug.wins, 1);
     assert.strictEqual(killed.patch.activity, 'resting', 'the rest comes after the kill');
     assert.strictEqual(killed.patch.stats.pveEncounter, null);
-    // A mage out of MP for any cast: the survival floor waits for the fight's end too.
-    const mageMob = { ...first.mob, hp: 1e6 };
+    // A mage out of MP for any cast, against a mob it cannot outrun: the survival
+    // floor waits for the fight's end too.
+    const mageMob = { ...first.mob, hp: 1e6, runSpd: 1000 };
     const caster = { ...base, vitals: { ...base.vitals, mp: 0 }, stats: { ...base.stats, classId: 10, coldCombat: { ...base.stats.coldCombat, classId: 10,
         skills: [{ selfId: 1177, level: 1, mp: 10, passive: false }] } } };
     const casting = Solo.resolveSolo({ state: { ...caster, stats: { ...caster.stats, pveEncounter:
@@ -76,6 +89,11 @@ try {
     spot, elapsedMs: 12000, timestamp: start + 60000, rng: () => .5 });
     assert(casting.patch.stats.pveEncounter?.hp > 0, 'the fight of a mage out of MP stays pending');
     assert.strictEqual(casting.patch.activity, 'hunting');
+    // A record too old to go on is no fight: the floor reads, and the mage rests.
+    const stale = Solo.resolveSolo({ state: { ...caster, stats: { ...caster.stats, pveEncounter:
+        Encounter.save(null, Encounter.key([caster], spot, 0), mageMob, 1e6, start - 3600000, { botReadyAt: 0, mobReadyAt: 0 }) } },
+    spot, elapsedMs: 12000, timestamp: start + 60000, rng: () => .5 });
+    assert.strictEqual(stale.patch.activity, 'resting', 'a stale record does not hold the survival floor back');
     const rest = Solo.resolveSolo({ state: { ...base, activity: 'resting', stats: { ...base.stats, pveEncounter: first } },
         spot, elapsedMs: 60000, timestamp: start + 60000, rng: () => .5 });
     assert.strictEqual(rest.patch.stats.pveEncounter, null, 'rest abandons the encounter');

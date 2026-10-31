@@ -229,28 +229,37 @@ for (const [name, actual] of soloObserved) assert.deepStrictEqual(actual, SOLO_G
     const petHolds = fight(petOut, { petHate: 1e9 });
     assert(petHolds.debug.petTaken > 0, 'the mob strikes the pet that holds it');
     assert.equal(petHolds.debug.damageTaken, 0, 'the owner is untouched while its pet holds the mob');
-    assert.equal(petHolds.debug.petWaits, 0, 'the owner strikes while its pet holds the mob');
+    assert(petHolds.debug.skillUses > 0, 'the owner strikes while its pet holds the mob');
     assert(!petHolds.summon || petHolds.summon.hp < petHolds.summon.maxHp, 'the pet keeps the HP it lost');
 
     const ownerHolds = fight(petOut, { ownerHate: 1e9 }, 4, 12000);
     assert.equal(ownerHolds.debug.petTaken, 0, 'the mob stays on the owner that holds it');
     assert(ownerHolds.debug.damageTaken > 0, 'the owner takes the blows');
-    assert.equal(ownerHolds.debug.petWaits, 0, 'under a lead the pet cannot retake the owner fights on, not idle');
-    assert(ownerHolds.debug.skillUses > 0, 'it strikes');
-    const close = fight(petOut, { ownerHate: 2, petHate: 1 }, 4, 3000);
-    assert(close.debug.petWaits > 0, 'a lead the pet\'s next hit retakes: the owner holds its hit');
+    assert(ownerHolds.debug.skillUses > 0, 'under a lead the pet cannot retake the owner fights on, not idle');
     const sliced = fight(petOut, { ownerHate: 1e9 }, 4, 3000);
+    const close = fight(petOut, { ownerHate: 2, petHate: 1 }, 4, 3000);
+    assert(close.debug.skillUses < sliced.debug.skillUses, 'a lead the pet\'s next hit retakes: the owner holds its hit');
     assert(sliced.encounter.ownerHate >= 1e9, 'a slice saves the hate');
     const resumed = fight(petOut, { ownerHate: sliced.encounter.ownerHate, petHate: sliced.encounter.petHate }, 5, 3000);
     assert.equal(resumed.debug.petTaken, 0, 'the saved hate holds across a slice');
 
+    // A pet dead in a slice takes the fight's hate record with it no more: the
+    // owner's stays, and the next pet starts under it.
+    const lastPet = { ...petOut, vitals: { ...petOut.vitals, mp: 0 }, stats: { ...petOut.stats, coldCombat: { ...petOut.stats.coldCombat,
+        summon: { ...petOut.stats.coldCombat.summon, hp: 1 } } } };
+    const petLost = fight(lastPet, { ownerHate: 5000, petHate: 1e9 }, 4, 3000);
+    assert.equal(petLost.debug.summonDeaths, 1, 'the mob kills the pet in the slice');
+    assert(petLost.encounter.ownerHate >= 5000, 'the owner\'s hate outlives its pet across the slice');
+
     const opened = fight(petOut, {});
-    assert(opened.debug.petWaits > 0, 'a mob no one hit: the owner waits for the pet\'s first hit');
+    assert(fight(petOut, {}, 4, 3000).debug.skillUses < sliced.debug.skillUses, 'a mob no one hit: the owner waits for the pet\'s first hit');
     assert(opened.debug.petTaken > 0, 'the pet\'s hit takes the mob');
     assert(opened.debug.damageTaken < opened.debug.petTaken, 'the owner stays under the pet\'s hate: the mob stays on the pet');
 
     // The same path for a necromancer's corpse servitor.
-    assert(fight(out(necromancer, ColdCombatProfile.corpseSummonSkills), {}, 4, 12000).debug.petWaits > 0, 'a necromancer waits for its pet too');
+    const necromancerPet = out(necromancer, ColdCombatProfile.corpseSummonSkills);
+    assert(fight(necromancerPet, {}, 4, 3000).debug.skillUses < fight(necromancerPet, { ownerHate: 1e9 }, 4, 3000).debug.skillUses,
+        'a necromancer waits for its pet too');
 }
 
 // A continued fight works on its own copy of the saved mob: the self buff the

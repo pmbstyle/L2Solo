@@ -5,6 +5,7 @@ require('../src/Global');
 const DataCache = invoke('GameServer/DataCache');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const DangerMoment = invoke('GameServer/Bot/AI/DangerMoment');
+const DangerRule = invoke('GameServer/Bot/AI/DangerRule');
 const { SOLO_GATE_MARGIN } = invoke('GameServer/Bot/AI/BotTargetMatchup');
 
 DataCache.init();
@@ -14,34 +15,34 @@ DataCache.init();
 const base = { hp: 30, maxHp: 100, survivalRatio: 0.6, attacked: true, potion: { heal: 112, price: 50 },
     restHours: 0.02, deathHours: 0.5, moneyPrice: 1 / 10000, riskWeight: 1.5, roll: 0.5 };
 
-assert.strictEqual(DangerMoment.decide(base).action, 'drink',
+assert.strictEqual(DangerRule.decide(base).action, 'drink',
     'a wounded melee bot losing the race drinks a cheap potion instead of running');
-assert.strictEqual(DangerMoment.decide({ ...base, hp: 100, survivalRatio: 3 }).action, 'fight',
+assert.strictEqual(DangerRule.decide({ ...base, hp: 100, survivalRatio: 3 }).action, 'fight',
     'a healthy bot winning the race keeps fighting');
 // Live values: the margin the solo gate admits at full HP, 8 s of rest, 30 s left to kill.
 const live = { ...base, hp: 100, survivalRatio: SOLO_GATE_MARGIN, restHours: 8 / 3600, fightHours: 30 / 3600 };
-assert.strictEqual(DangerMoment.decide(live).action, 'fight', 'a healthy bot does not run from an admitted mob');
-assert.strictEqual(DangerMoment.decide({ ...live, hp: 95, survivalRatio: 0.95 * SOLO_GATE_MARGIN }).action, 'fight',
+assert.strictEqual(DangerRule.decide(live).action, 'fight', 'a healthy bot does not run from an admitted mob');
+assert.strictEqual(DangerRule.decide({ ...live, hp: 95, survivalRatio: 0.95 * SOLO_GATE_MARGIN }).action, 'fight',
     'one hit taken is no reason to drink');
-assert.strictEqual(DangerMoment.decide({ ...base, potion: null }).action, 'flee',
+assert.strictEqual(DangerRule.decide({ ...base, potion: null }).action, 'flee',
     'without a potion a bot losing the race runs');
-assert.strictEqual(DangerMoment.decide({ ...base, potion: null, canEscape: false }).action, 'fight',
+assert.strictEqual(DangerRule.decide({ ...base, potion: null, canEscape: false }).action, 'fight',
     'an impossible escape cannot receive a risk discount over defending');
-assert.strictEqual(DangerMoment.decide({ ...base, canEscape: false }).action, 'drink',
+assert.strictEqual(DangerRule.decide({ ...base, canEscape: false }).action, 'drink',
     'a bot that cannot escape can still drink a potion');
-assert.strictEqual(DangerMoment.decide({ ...base, attacked: false, potion: null }).action, 'sit',
+assert.strictEqual(DangerRule.decide({ ...base, attacked: false, potion: null }).action, 'sit',
     'with nobody hitting it a wounded bot sits instead of running');
-assert.notStrictEqual(DangerMoment.decide({ ...base, attacked: false }).action, 'flee',
+assert.notStrictEqual(DangerRule.decide({ ...base, attacked: false }).action, 'flee',
     'nothing to run from when nobody attacks');
-assert.strictEqual(DangerMoment.decide({ ...base, moneyPrice: 1 / 10 }).action, 'flee',
+assert.strictEqual(DangerRule.decide({ ...base, moneyPrice: 1 / 10 }).action, 'flee',
     'a potion priced above the risk it removes is not drunk');
-assert.strictEqual(DangerMoment.decide({ ...base, survivalRatio: null }), null,
+assert.strictEqual(DangerRule.decide({ ...base, survivalRatio: null }), null,
     'an unknown matchup leaves the author rule in place');
 // Caution and resilience (riskWeight) move the same moment: a cautious bot
 // drinks where a resilient one still fights.
 const edge = { ...base, hp: 60, survivalRatio: 0.8 * SOLO_GATE_MARGIN, potion: { heal: 112, price: 300 } };
-assert.strictEqual(DangerMoment.decide({ ...edge, riskWeight: 4 }).action, 'drink');
-assert.strictEqual(DangerMoment.decide({ ...edge, riskWeight: 0.67 }).action, 'fight');
+assert.strictEqual(DangerRule.decide({ ...edge, riskWeight: 4 }).action, 'drink');
+assert.strictEqual(DangerRule.decide({ ...edge, riskWeight: 0.67 }).action, 'fight');
 
 // Hot side: the moment reads the held economy and the live fight.
 function item(selfId, amount, objectId = selfId + 100000) {
@@ -83,8 +84,8 @@ assert.strictEqual(DangerMoment.forActor({}, actor, mob, { attackers: [mob] }), 
 // The price of money unknown (no moneyPrice, no money[1] in the stats packet):
 // a potion priced at zero would be drunk whenever the last one wears off, so
 // the author's 0.35 rule decides.
-assert.strictEqual(DangerMoment.decide({ ...base, moneyPrice: null }), null);
-assert.strictEqual(DangerMoment.decide({ ...base, moneyPrice: undefined }), null);
+assert.strictEqual(DangerRule.decide({ ...base, moneyPrice: null }), null);
+assert.strictEqual(DangerRule.decide({ ...base, moneyPrice: undefined }), null);
 const noPrice = { coldLifeState: { stats: { decisionSeq: 3 } },
     heldEconomy: { decided: true, deathHours: 0.5, riskWeight: 1.5, statsPacket: { money: [12000] }, network: { activity: null } } };
 assert.strictEqual(DangerMoment.forActor(noPrice, actor, mob, { attackers: [mob] }), null,

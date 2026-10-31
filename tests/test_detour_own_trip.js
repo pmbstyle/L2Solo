@@ -28,6 +28,7 @@ async function run() {
     const Data = invoke('GameServer/DataCache'); Data.init();
     const Config = invoke('GameServer/Bot/Population/PopulationConfig');
     const BotRoute = invoke('GameServer/Bot/Population/BotRoute');
+    const PveEncounter = invoke('GameServer/Bot/Population/ColdPveEncounter');
     const { beginHuntingTrip } = invoke('GameServer/Bot/Population/HuntingTravel');
     const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
     const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
@@ -86,6 +87,10 @@ async function run() {
         const routed = standing(published, X);
         const route = BotRoute.trip({}, routed, leaf, { spots, timestamp: T, hasRoom: room(X) });
         assert(route?.needed, 'fixture: a trip');
+        // A fight under way ends first; a record too old to go on holds nothing.
+        const fighting = at => ({ ...routed, stats: { ...routed.stats, pveEncounter: PveEncounter.save(null, 'fight', {}, 100, at, {}) } });
+        assert.equal(BotRoute.trip({}, fighting(T), leaf, { spots, timestamp: T, hasRoom: room(X) }), null, 'a pending fight holds the trip');
+        assert(BotRoute.trip({}, fighting(T - 3600000), leaf, { spots, timestamp: T, hasRoom: room(X) })?.needed, 'a stale record holds no trip');
         const traveling = beginHuntingTrip(routed, route, T);
         assert(traveling, 'fixture: the trip starts');
         const arrival = Resolver.resolveSolo({ state: traveling, timestamp: traveling.stats.travel.arrivalAt });

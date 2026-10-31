@@ -12,8 +12,15 @@ function read(record, encounterKey, timestamp, options = {}) {
         && timestamp >= record.at && timestamp - record.at <= MAX_AGE_MS
         && record.slices < maxSlices ? record : null;
 }
+// The bot's own fight still goes on: a round for it comes before any other act.
+function pending(state, timestamp) {
+    const record = state?.stats?.pveEncounter;
+    return !!record && !!read(record, record.key, timestamp);
+}
+// timestamp: the round that saved it, never a fight's clock inside the round
+// (ahead of the next round's start, read would drop the fight).
 function save(previous, encounterKey, mob, hp, timestamp, timers) {
     return { version: 1, key: encounterKey, mob, hp: Math.max(0, hp), at: timestamp,
         slices: Number(previous?.slices || 0) + 1, ...timers };
 }
-module.exports = { key, read, save, MAX_SLICES };
+module.exports = { key, read, pending, save, MAX_SLICES };

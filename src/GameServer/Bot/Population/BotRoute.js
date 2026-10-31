@@ -33,12 +33,15 @@ const PartyHuntingAssembly = require('./PartyHuntingAssembly');
 const CraftMaterialParty = require('./CraftMaterialParty');
 const CraftMaterialPartyRoute = require('./CraftMaterialPartyRoute');
 const ColdTrip = require('./ColdTrip');
+const PveEncounter = require('./ColdPveEncounter');
 const EconomyDiagnostics = require('../Economy/EconomyDiagnostics');
 
 // The gates: a bot that may be routed now. Checked by choose and again by
 // record at every read (activity, travel and the duties move step by step).
-function routable(state, party, partyMembers) {
+function routable(state, party, partyMembers, timestamp) {
     if (!state || state.phase !== 'cold' || state.stats?.travel) return false;
+    // A fight under way ends first: a trip would drop it (HuntingTravel).
+    if (PveEncounter.pending(party || state, timestamp)) return false;
     if (!party && ClanPartyDuty.waiting(state)) return false;
     if (!(state.activity === 'hunting' || (party && state.activity === 'grouped'))) return false;
     if (!party && BotCrystallization.ready(state)) return false;
@@ -108,7 +111,7 @@ function unsafeSoloGround(state, currentSpot, frame) {
 // or null when the bot may not be routed now or the search threw (nothing
 // to keep: the next trip start searches again). Reads no leaf and no focus.
 function choose(state, currentSpot, party, partyMembers = [], { spots, timestamp, frame = null }) {
-    if (!routable(state, party, partyMembers)) return null;
+    if (!routable(state, party, partyMembers, timestamp)) return null;
     frame = frame || frameFor(state, party, partyMembers, timestamp);
     const { partyRoute, excludedSpotIds, role, options } = frame;
     const currentId = currentSpotId(state, currentSpot, party, spots);
@@ -208,7 +211,7 @@ function leafFitReader(state, { spots, timestamp, frame = null }) {
 // stands in for it (trip); the room is checked again at arrival. Null: the
 // kept route decides.
 function leafChoice(state, leaf, { spots, timestamp, frame = null }) {
-    if (leaf?.activity !== 'hunting' || !leaf.spotId || !routable(state, null, [])) return null;
+    if (leaf?.activity !== 'hunting' || !leaf.spotId || !routable(state, null, [], timestamp)) return null;
     frame = frame || frameFor(state, null, [], timestamp);
     const verdict = leafFitReader(state, { spots, timestamp, frame })(leaf.spotId);
     if (verdict === 'missing') { EconomyDiagnostics.count('route', 'trip', 'leaf_missing'); return null; }
@@ -229,7 +232,7 @@ function leafChoice(state, leaf, { spots, timestamp, frame = null }) {
 // are read here, at the trip's start: a kept choice is read later, from
 // another place (its death pressure and its ground are those of the start).
 function record(state, chosen, party, partyMembers = [], { spots, currentSpot = null, timestamp, frame = null }) {
-    if (!chosen?.spotId || !routable(state, party, partyMembers)) return null;
+    if (!chosen?.spotId || !routable(state, party, partyMembers, timestamp)) return null;
     const selected = SpotIndex.spotById(spots, chosen.spotId);
     if (!selected) return null;
     const partyRoute = !!party;
@@ -285,7 +288,7 @@ function record(state, chosen, party, partyMembers = [], { spots, currentSpot = 
 // One search and its trip, nothing kept: the party run (the worker's room
 // filter in hasRoom) and the retreat (main: none, the search reads main's index).
 function route(state, currentSpot, party, partyMembers = [], { spots, timestamp, hasRoom = null, spotHunters = null }) {
-    if (!routable(state, party, partyMembers)) return null;
+    if (!routable(state, party, partyMembers, timestamp)) return null;
     const frame = frameFor(state, party, partyMembers, timestamp, hasRoom, spotHunters);
     return record(state, choose(state, currentSpot, party, partyMembers, { spots, timestamp, frame }), party, partyMembers,
         { spots, currentSpot, timestamp, frame });
@@ -339,7 +342,7 @@ function soloGroundMissing(state, spots, search = null) {
 // monster brings the material in).
 const DETOUR_REASONS = new Set(['level_replan', 'equipment_source_replan']);
 function trip(owner, state, leaf, { spots, currentSpot = null, timestamp, hasRoom = null, spotHunters = null }) {
-    if (!routable(state, null, [])) return null;
+    if (!routable(state, null, [], timestamp)) return null;
     const frame = frameFor(state, null, [], timestamp, hasRoom, spotHunters);
     // The accepted occupation owns this round. A routine hunting replan
     // must not turn a pending purchase/craft/sale into another field trip

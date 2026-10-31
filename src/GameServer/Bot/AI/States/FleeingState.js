@@ -3,6 +3,7 @@ const BotRetreatPlanner = invoke('GameServer/Bot/AI/BotRetreatPlanner');
 const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
 const EscapePolicy = invoke('GameServer/Bot/AI/BotEscapePolicy');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
+const DangerRule = invoke('GameServer/Bot/AI/DangerRule');
 const NpcObjectIndex = require('../../../World/NpcObjectIndex');
 
 const MIN_RETREAT_MS = 1000;
@@ -10,8 +11,7 @@ const RETREAT_REPATH_COOLDOWN_MS = 750;
 const MAX_RETREAT_MS = 30000;
 const NPC_CHASE_BREAK_DISTANCE = EscapePolicy.CHASE_BREAK_DISTANCE;
 const RAID_PARTY_HOLD_DISTANCE = 1800;
-const RETREAT_PROGRESS_MS = 8000;
-const MIN_RETREAT_DISTANCE_GAIN = 64;
+const { RETREAT_PROGRESS_MS, MIN_RETREAT_DISTANCE_GAIN } = DangerRule;
 
 function stillMoving(session, bot) {
     return !!session.moveTimer || !!bot.state?.fetchTowards?.();

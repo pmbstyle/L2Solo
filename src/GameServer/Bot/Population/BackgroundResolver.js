@@ -12,6 +12,7 @@ const ColdClassPolicy = invoke('GameServer/Bot/Population/ColdClassPolicy');
 const SoloSelfHeal = invoke('GameServer/Bot/AI/SoloSelfHeal');
 const PetHealRule = invoke('GameServer/Bot/AI/PetHealRule');
 const PetTankRule = invoke('GameServer/Bot/AI/PetTankRule');
+const DangerRule = invoke('GameServer/Bot/AI/DangerRule');
 const PartyHealPolicy = invoke('GameServer/Bot/AI/PartyHealPolicy');
 const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
@@ -1102,14 +1103,17 @@ function settleColdTails(fighter) {
 // The time a cold bottle runs to: the next one waits for it, as activePotionHot
 // makes a hot bot wait, across the round's gaps and fights.
 const coldPotionRuns = (fighter) => Number(fighter?.potionUntil ?? fighter?.state?.stats?.coldCombat?.potionUntil) || 0;
+const coldBottleFree = (fighter) => !(fighter.potionsUsed > 0) && !fighter.potionHot && coldPotionRuns(fighter) <= fighter.now;
 
-function startColdPotion(fighter, time) {
-    if (!fighter || fighter.potionsUsed > 0 || fighter.potionHot || coldPotionRuns(fighter) > fighter.now) return null;
+// options: as HealingPotionStock.selectPotion's (the danger moment chooses when).
+function startColdPotion(fighter, time, options = {}) {
+    if (!fighter || !coldBottleFree(fighter)) return null;
     const potion = HealingPotionStock.consumeColdPotion(
         fighter.state.inventory,
         fighter.vitals.hp,
         fighter.vitals.maxHp,
-        fighter.state
+        fighter.state,
+        options
     );
     if (!potion) return null;
     const effect = HealingPotionStock.coldEffectFor(potion, time);
@@ -1543,6 +1547,84 @@ function afterBotHit(fighter, { skill, shot, damage, struck }, mob, mobFight, mo
 
 // cold_fight:<rule>: how often the cold fight meets a hot rule it rolls
 // (T124: lethal, drain, life_steal, reflect, effect_landed, bow_mp_wait); only while diagnostics count.
+// What a fight's danger moment weighs, from the bot's packet (DangerRule); null
+// before its first decision, as a hot body's first ticks (the retreat rule then).
+function coldDangerPrice(stats) {
+    const [deathHours, riskWeight] = stats?.dangerPrice || [];
+    const moneyPrice = Number(stats?.money?.[1]);
+    return deathHours >= 0 && moneyPrice > 0 ? { deathHours, riskWeight, moneyPrice } : null;
+}
+
+// A slice's end is the cold fight's one look at its danger, where the hot bot
+// looks each tick (HuntingState, DangerMoment.take), by the same rule: the
+// moment at the HP left against the mob's HP left; without a price the retreat
+// rule (RestPolicy.needsRetreat). Returns 'flee', after a bottle 'drank', else
+// null: the fight goes on. A flight needs a mob it can outrun, and a bot one
+// last strike from the kill stays for it (BotEmergencyFinisher). profiles: the
+// fight's matchup profiles, its pet replaced by the one beside it now.
+function coldDangerMoment(fighter, mob, mobHp, { profiles, time, at, rng }) {
+    const { profile: bot, vitals, state } = fighter;
+    const { hp, maxHp, mp, maxMp } = vitals;
+    fighter.now = at;
+    const canEscape = DangerRule.chaseMs(bot.runSpd, mob.runSpd) !== null;
+    const price = hp < maxHp ? coldDangerPrice(state.stats) : null;
+    let moment = null;
+    if (price) {
+        const owners = TargetMatchup.atVitals(profiles.filter(profile => profile.servitor !== true), hp, mp);
+        const pet = TargetMatchup.servitorProfile(bot, { ...state, vitals, stats: { ...state.stats,
+            coldCombat: { ...state.stats?.coldCombat, cooldowns: fighter.cooldowns, ...(fighter.summon ? { summon: fighter.summon } : {}) } } }, at);
+        const bottle = coldBottleFree(fighter) ? HealingPotionStock.selectPotion(state.inventory, hp, maxHp, state, { dangerMoment: true }) : null;
+        moment = DangerRule.moment({ profiles: pet ? [...owners, pet] : owners, enemy: { ...mob, maxHp: mobHp, engaged: true },
+            hp, maxHp, mp, maxMp, level: bot.level, classId: bot.classId, canEscape,
+            potion: bottle ? { heal: bottle.heal, price: HealingPotionStock.purchasePotionFor(state).price } : null,
+            ...price, botId: state.characterId, targetId: mob.selfId });
+        if (moment && Diagnostics.active()) Diagnostics.count('danger_moment', moment.action, 'cold');
+    }
+    if (moment?.action === 'drink') {
+        startColdPotion(fighter, time, { dangerMoment: true });
+        // The bottle's ticks pass with the slice's quiet tail, as a survivor's (resolveFight).
+        applyColdPotionTicks(fighter, Number.MAX_SAFE_INTEGER);
+        fighter.readyAt += 250;
+        return 'drank';
+    }
+    if (!(moment ? moment.action === 'flee' : RestPolicy.needsRetreat(state, hp / maxHp, mp / maxMp)) || !canEscape) return null;
+    const next = chooseSkill(bot, hp, mp, fighter.cooldowns, at, fighter.charges, rng, { mob, mobHp, summon: fighter.summon })?.skill || null;
+    if (DangerRule.finishes(mobHp, TargetMatchup.expectedHit(bot, mob, next, fighter.shot), actionDelayMs(bot, next))) return null;
+    if (Diagnostics.active()) Diagnostics.count('cold_fight', 'flee', moment ? 'moment' : 'retreat_rule');
+    return 'flee';
+}
+
+// The cold run, the hot one's price (FleeingState, Npc's chase, retreatFromThreat):
+// the bot leaves when its action or a hold ends, the mob strikes while the
+// bot is in its reach (ColdMobAction.reachOf) and a mob it can only chase lands
+// nothing after that; the bot runs until the chase breaks (DangerRule.chaseMs),
+// no kill paid, then rests. A mob on its pet does not chase: the bot runs one leg
+// (EMERGENCY_RETREAT_DISTANCE) and the mob strikes the pet meanwhile, then
+// the pet comes away with the HP left (hot, it stays until one of them is dead).
+// Returns { runMs, taken, spellTaken, petTaken }; the fighter's HP are lowered.
+function coldFlee(fighter, mob, mobFight, { time, mobReadyAt, mobFar, timestamp, rng, mobHp }) {
+    const id = fighter.state?.characterId, speed = fighter.profile.runSpd;
+    const leavesAt = () => Math.max(time, fighter.readyAt, Number(mobFight.held.rooted[id]) || 0);
+    const onPet = mobHolder(fighter) === 'pet';
+    const legMs = DangerRule.EMERGENCY_RETREAT_DISTANCE / speed * 1000;
+    const exposedMs = onPet ? legMs : ColdMobAction.reachOf(mob, mobFight) / speed * 1000;
+    const flight = { taken: 0, spellTaken: 0, petTaken: 0 };
+    let at = mobReadyAt;
+    while (fighter.vitals.hp > 0 && at <= leavesAt() + exposedMs && mobHolder(fighter) === (onPet ? 'pet' : 'owner') && (onPet || !(mobFar > 0))) {
+        const { action, pet } = strikeSide(fighter, mob, mobFight, { time: at, at: timestamp + at, rng, mobHp });
+        const damage = Math.max(0, action.damage);
+        if (pet) flight.petTaken += damage;
+        else {
+            fighter.vitals.hp -= damage;
+            flight.taken += damage;
+            if (action.spell) flight.spellTaken += damage;
+        }
+        at += action.delayMs;
+    }
+    flight.runMs = leavesAt() - time + (onPet ? legMs : DangerRule.chaseMs(speed, mob.runSpd));
+    return flight;
+}
+
 function countHitRule(rule) {
     if (Diagnostics.active()) Diagnostics.count('cold_fight', 'rule', rule);
 }
@@ -1554,7 +1636,7 @@ function countHitRule(rule) {
 // inventory copy they spend from (with the shot supply drawn from it), the
 // fight profile while it holds (ColdCombatProfile.heldFightProfile) and its
 // hits' stat sources; each fight leaves its own there.
-function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp = Date.now(), fightLimitMs = 12000, maxActions = 48,
+function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp = Date.now(), roundAt = timestamp, fightLimitMs = 12000, maxActions = 48,
     roundProfiles = null, round = null }) {
     const fightState = mutableCombatState(state, round);
     let bot;
@@ -1595,12 +1677,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         // remain now; pending fights and aggressive interruptions still run.
         // The pet is the one beside the bot now (TargetMatchup.servitorProfile:
         // alive with the HP it has left, or one to raise), not the round's.
-        const remaining = matchupProfiles.flatMap(profile => profile.servitor === true ? []
-            : profile.soloDamageReceiver === false ? [profile] : [{
-                ...profile,
-                maxHp: Math.min(profile.maxHp, state.vitals?.hp ?? profile.maxHp),
-                maxMp: Math.min(profile.maxMp, state.vitals?.mp ?? profile.maxMp)
-            }]);
+        const remaining = TargetMatchup.atVitals(matchupProfiles.filter(profile => profile.servitor !== true),
+            state.vitals?.hp ?? Infinity, state.vitals?.mp ?? Infinity);
         petNear = TargetMatchup.servitorProfile(bot, state, timestamp);
         if (petNear) remaining.push(petNear);
         // One mob carries no pull: channels count area skills by target.pull.
@@ -1768,24 +1846,39 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
     }
 
     const won = mobHp <= 0;
-    if (round) Object.assign(round, { inventory: fightState.inventory, shot: soloFighter.shot, statSources: soloFighter.statSources });
     // Background time jumps past the quiet tail of a completed potion HoT.
     // Apply that tail only after the damage sequence and only to survivors;
     // a won fight's DoT tail too (an unfinished one carries its dots on).
     if (won) taken += settleColdTails(soloFighter);
     else if (vitals.hp > 0) applyColdPotionTicks(soloFighter, Number.MAX_SAFE_INTEGER);
 
+    // A round's fight it cut goes on, unless the danger moment ends it (resolveSolo).
+    let flight = null;
+    if (round && !won && vitals.hp > 0 && coldDangerMoment(soloFighter, mob, mobHp, { rng, time, at: timestamp + time,
+        profiles: matchupProfiles || roundProfiles || TargetMatchup.coldProfiles(bot, fightState, timestamp, { shot }) }) === 'flee') {
+        flight = coldFlee(soloFighter, mob, mobFight, { time, mobReadyAt, mobFar, timestamp, rng, mobHp });
+        taken += flight.taken;
+        spellTaken += flight.spellTaken;
+        petTaken += flight.petTaken;
+        // A poison runs on behind the bot, as a won fight's.
+        if (vitals.hp > 0) taken += settleColdTails(soloFighter);
+    }
+    if (round) Object.assign(round, { inventory: fightState.inventory, shot: soloFighter.shot, statSources: soloFighter.statSources });
+
     const died = vitals.hp <= 0;
     if (!won) {
         return {
             won: false,
-            encounter: !died ? PveEncounter.save(pending, encounterKey, mob, mobHp, timestamp, {
+            fled: !!flight && !died,
+            runMs: flight?.runMs || 0,
+            encounter: !died && !flight ? PveEncounter.save(pending, encounterKey, mob, mobHp, roundAt, {
                 soulCrystalMark: soloFighter.soulCrystalMark || null,
                 botReadyAt: Math.max(0, soloFighter.readyAt - time), mobReadyAt: Math.max(0, mobReadyAt - time),
                 mobFight: coldMobFightSave(mobFight, time),
                 ...(soloFighter.dots.length ? { botDots: soloFighter.dots.map((dot) => ({ ...dot, next: dot.next - time })) } : {}),
-                // The two hates and the mob's walk, whole numbers: a pet's fight only.
-                ...(soloFighter.summon ? { ownerHate: Math.round(soloFighter.hate), petHate: Math.round(soloFighter.petHate),
+                // The two hates and the mob's walk, whole numbers, for a bot that fights
+                // beside a pet, alive or not: the next pet comes to the hate left.
+                ...(PetTankRule.binds(bot) ? { ownerHate: Math.round(soloFighter.hate), petHate: Math.round(soloFighter.petHate),
                     ...(mobFar > 0 ? { mobFar: Math.round(mobFar) } : {}) } : {})
             }) : null,
             died,
@@ -1803,11 +1896,12 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             chargeExpiresAt: died ? null : soloFighter.chargeExpiresAt,
             effects: soloFighter.profile.effects,
             inventory: fightState.inventory,
-            summon: soloFighter.summon || null,
+            // A slice with no turn of the bot's never loaded its pet: the saved one stays.
+            summon: soloFighter.summon || soloFighter.state.stats?.coldCombat?.summon || null,
             debug: { actions, durationMs: time, skillUses: soloFighter.skillUses, shotActions: soloFighter.shotActions, heals: soloFighter.heals,
                 musicUses: soloFighter.musicUses, summonUses: soloFighter.summonUses, summonActions: soloFighter.summonActions, petTaken, petHeals: soloFighter.petHeals || 0, summonDeaths: soloFighter.summonDeaths || 0, petWaits: soloFighter.petWaits || 0,
                 potionsUsed: soloFighter.potionsUsed, drunkPotions: soloFighter.drunkPotions || null,
-                mobSelfId: mob.selfId || null, timedOut: !died, pullMobs, areaPullHits, damageTaken: taken, spellTaken }
+                mobSelfId: mob.selfId || null, timedOut: !died && !flight, pullMobs, areaPullHits, damageTaken: taken, spellTaken }
         };
     }
 
@@ -2414,7 +2508,8 @@ const BackgroundResolver = {
         }
 
         // The floor is a between-fights read too: a pending fight goes on first.
-        const floor = state.stats?.pveEncounter ? null : SurvivalFloor.forState(state, timestamp);
+        const continuing = PveEncounter.read(state.stats?.pveEncounter, PveEncounter.key([state], spot, targetNpcId), timestamp);
+        const floor = continuing ? null : SurvivalFloor.forState(state, timestamp);
         if (floor?.action === 'rest') {
             const resting = resolveRest(state, 0, timestamp, { requireMana: true });
             resting.debug.reason = 'survival_no_mp';
@@ -2502,7 +2597,6 @@ const BackgroundResolver = {
         const actionBudget = fights * 48;
         const events = [];
         const materialize = { exp: 0, sp: 0, adena: 0, items: [] };
-        const continuing = PveEncounter.read(state.stats?.pveEncounter, PveEncounter.key([state], spot, targetNpcId), timestamp);
         const patch = {
             vitals: continuing ? { ...state.vitals } : applyStandingRegen(state, state.vitals, elapsedMs, timestamp),
             activity: 'hunting',
@@ -2531,7 +2625,7 @@ const BackgroundResolver = {
         let combatMs = 0;
         let damageTaken = 0, spellTaken = 0;
         // The pet's share (user 10-29: it tanks a solo fight): the damage it took, its deaths.
-        let petTaken = 0, summonDeaths = 0;
+        let petTaken = 0, summonDeaths = 0, petWaits = 0;
         const foughtNpcIds = [];
         // The mobs killed by species (the spot table's measured kill mix).
         const killedNpcs = {};
@@ -2596,7 +2690,7 @@ const BackgroundResolver = {
                 stats: { ...(state.stats || {}), ...(patch.stats || {}) }
             };
             const result = countedBuilds('fight', 'solo', resolveFight, { state: fightState, spot, pressure, targetNpcId, rng,
-                timestamp: timestamp + combatMs, fightLimitMs: Math.max(1, combatBudgetMs - combatMs),
+                timestamp: timestamp + combatMs, roundAt: timestamp, fightLimitMs: Math.max(1, combatBudgetMs - combatMs),
                 maxActions: actionBudget - combatActions, roundProfiles: profiles, round });
             if (result.avoided) {
                 patch.stats.lastReason = result.reason;
@@ -2612,7 +2706,7 @@ const BackgroundResolver = {
                 break;
             }
             attemptedFights += 1;
-            if (result.won || result.died) completedFights += 1;
+            if (result.won || result.died || result.fled) completedFights += 1;
             patch.stats.pveEncounter = result.encounter || null;
             patch.vitals.hp = result.hp;
             patch.vitals.maxHp = result.maxHp;
@@ -2655,6 +2749,7 @@ const BackgroundResolver = {
             spellTaken += Number(result.debug?.spellTaken || 0);
             petTaken += Number(result.debug?.petTaken || 0);
             summonDeaths += Number(result.debug?.summonDeaths || 0);
+            petWaits += Number(result.debug?.petWaits || 0);
             if (result.debug?.pullMobs > 0) {
                 pulls += 1;
                 pullMobs += result.debug.pullMobs;
@@ -2705,22 +2800,24 @@ const BackgroundResolver = {
             const hpPct = patch.vitals.hp / Math.max(1, patch.vitals.maxHp || patch.vitals.hp);
             const mpPct = patch.vitals.mp / Math.max(1, patch.vitals.maxMp || patch.vitals.mp || 1);
             const summonLeft = patch.stats.coldCombat?.summon;
-            const petView = coldPetView(result.profile, summonLeft, patch.vitals, patch.stats.coldCombat?.cooldowns, timestamp + combatMs);
+            const fightProfile = result.profile || (result.fled ? roundProfile : null);
+            const petView = coldPetView(fightProfile, summonLeft, patch.vitals, patch.stats.coldCombat?.cooldowns, timestamp + combatMs);
             // A rest is a between-fights choice, as HuntingState's (its guard
             // !encounterActionInFlight): a fight the round cut goes on in the
-            // next round, whatever the bot's HP and MP; only a kill, a death
-            // or the slice bound below ends it. The rest is decided at the HP
-            // the fight left: a bottle's heal runs on while the hot bot sits down.
-            const resting = !patch.stats.pveEncounter && needsRest(fightState, patch.vitals, { pet: petView });
-            const drinkMs = result.won || resting ? drinkToRest(result.profile || roundProfile, resting, petView) : 0;
+            // next round, whatever the bot's HP and MP; only a kill, a death,
+            // a flight (coldDangerMoment: it rests after it, as a hot flight's
+            // recovery lock) or the slice bound below ends it. The rest is decided
+            // at the HP the fight left: a bottle's heal runs on while the hot bot sits down.
+            const resting = result.fled || (!patch.stats.pveEncounter && needsRest(fightState, patch.vitals, { pet: petView }));
+            const drinkMs = result.won || resting ? drinkToRest(fightProfile || roundProfile, resting, petView) : 0;
             if (resting) {
                 // cold_fight:pet:rest: a rest its pet sent it to (the live read).
                 if (Diagnostics.active() && !RestPolicy.petRested(petView)) Diagnostics.count('cold_fight', 'pet', 'rest');
                 patch.activity = 'resting';
                 patch.stats = {
                     ...(patch.stats || state.stats || {}),
-                    restUntil: timestamp + Math.max(estimateRestMs(fightState, patch.vitals), drinkMs,
-                        RestPolicy.petRested(petView) ? 0 : petRestMs(result.profile, summonLeft, patch.vitals, timestamp + combatMs))
+                    restUntil: timestamp + Math.round(result.runMs || 0) + Math.max(estimateRestMs(fightState, patch.vitals), drinkMs,
+                        RestPolicy.petRested(petView) ? 0 : petRestMs(fightProfile, summonLeft, patch.vitals, timestamp + combatMs))
                 };
                 events.push({
                     type: 'rest',
@@ -2735,6 +2832,8 @@ const BackgroundResolver = {
                     patch.stats.pveEncounter = null;
                     patch.stats.lastReason = 'pve_encounter_stalled';
                     completedFights += 1;
+                    // cold_fight:stalled: a fight given up at the slice bound (the live read).
+                    if (Diagnostics.active()) Diagnostics.count('cold_fight', 'stalled', 'all');
                 }
                 break;
             }
@@ -2745,8 +2844,11 @@ const BackgroundResolver = {
             // Whole mobs left unused stay for the other hunters.
             patch.stats.coldShare = { spotId: spot.id, carry: Math.round((left < 0 ? left : left % 1) * 1000) / 1000 };
         }
-        // cold_fight:pet: the round's pet damage, deaths and heals for the live read; only while diagnostics count.
+        // cold_fight:pet: the round's pet damage, deaths, heals and an owner's waits for the live read;
+        // cold_fight:continued: a fight carried into the next round; only while diagnostics count.
         if (Diagnostics.active()) {
+            if (patch.stats.pveEncounter) Diagnostics.count('cold_fight', 'continued', 'all');
+            if (petWaits > 0) Diagnostics.count('cold_fight', 'pet', 'waits', petWaits);
             if (petTaken > 0) Diagnostics.count('cold_fight', 'pet', 'taken', Math.round(petTaken));
             if (summonDeaths > 0) Diagnostics.count('cold_fight', 'pet', 'deaths', summonDeaths);
             if (petHeals > 0) Diagnostics.count('cold_fight', 'pet', 'heals', petHeals);

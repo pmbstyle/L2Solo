@@ -79,6 +79,7 @@ const tests = [
     'tests/test_bot_hunting_visibility.js',
     'tests/test_skill_cooldowns.js',
     'tests/test_cold_pve_continuation.js',
+    'tests/test_cold_danger_moment.js',
     'tests/test_bot_acquisition_recovery.js',
     'tests/test_bot_leveling_recovery.js',
     'tests/test_npc_passive_retaliation.js',

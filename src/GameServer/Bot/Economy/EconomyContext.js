@@ -1416,7 +1416,8 @@ function forState(state = {}, deps = {}) {
         context.itemUsefulness = () => 0; context.worth = price; context.purchaseBudget = () => 0;
         context.statsPacket = { wishFocus: context.network.focus, dormantWishes: context.network.dormant,
             decisionSeq: context.network.decisionSeq, activityLeaf: context.network.activityLeaf,
-            money: state.stats?.money || [0, 0, base.survivalReserve, 0], stockTargets: state.stats?.stockTargets || stockTargets(base) };
+            money: state.stats?.money || [0, 0, base.survivalReserve, 0], stockTargets: state.stats?.stockTargets || stockTargets(base),
+            dangerPrice: dangerPrice(base) };
         endTokens(); readIds = null;
         return view(state, planOf(context, base, { key, tripHour, prices }), deps, { price, kit: base, board, read, spotValue: context.spotValue, trip: context.trip });
     }
@@ -1486,7 +1487,8 @@ function forState(state = {}, deps = {}) {
     context.watchList ||= [];
     context.statsPacket = { wishFocus: network.focus, dormantWishes: network.dormant,
         decisionSeq: network.decisionSeq, activityLeaf: network.activityLeaf,
-        money: Funding.packetFor(network, context.hourAdena, base.survivalReserve), stockTargets: stockTargets(base), wishDirty: 0 };
+        money: Funding.packetFor(network, context.hourAdena, base.survivalReserve), stockTargets: stockTargets(base),
+        dangerPrice: dangerPrice(base), wishDirty: 0 };
     let cumulative = base.survivalReserve;
     for (const wish of network.queue) { cumulative += cashCharge(wish); budget.watch(cumulative); }
     const watchedWish = network.gap || network.queue.find(wish => wish.key === network.focus?.[0]);
@@ -1770,6 +1772,11 @@ function view(state, plan, deps, built = {}) {
 // do shots risen since the build: without restock their target is capped by
 // the stock owned then (the sale list keeps at most what is owned, so a
 // fall needs no fresh read).
+// What a fight's danger moment weighs (DangerRule), for the cold fight, which
+// reads the bot's packet: a read of the view's basics would build them.
+function dangerPrice(base) {
+    return [base.deathHours, base.riskWeight];
+}
 function stockTargets(base) {
     const potions = base.stock('potions'), shots = base.stock('shots');
     // [5]: the bottles the survival drink keeps from the rest drink (RestPotion).

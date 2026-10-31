@@ -643,7 +643,7 @@ function refreshAdvisory(state, accepted, deps = {}, options = {}) {
     economy.wallet = PurchaseFunding.budget(state, deps.buyOrderEscrow);
     economy.statsPacket = { wishFocus: state.stats.wishFocus, dormantWishes: state.stats.dormantWishes,
         decisionSeq: state.stats.decisionSeq, activityLeaf: state.stats.activityLeaf, money: state.stats.money,
-        stockTargets: state.stats.stockTargets, wishSections: accepted.baseline, wishDirty: 0,
+        stockTargets: state.stats.stockTargets, dangerPrice: state.stats.dangerPrice, wishSections: accepted.baseline, wishDirty: 0,
         wishAdvisory: accepted.saved || null };
     Object.assign(economy.network, { focus: state.stats.wishFocus, dormant: state.stats.dormantWishes,
         decisionSeq: state.stats.decisionSeq, activityLeaf: state.stats.activityLeaf });

@@ -214,7 +214,7 @@ function selectPotion(inventory, hp, maxHp, roleOrActor, options = {}) {
     const safeMaxHp = Math.max(1, Number(maxHp || hp || 1));
     const safeHp = Math.max(0, Number(hp || 0));
     const hpRatio = safeHp / safeMaxHp;
-    // The danger moment (E70, DangerMoment) chooses when; the fixed ratio stays for cold and PvP.
+    // The danger moment (E70, DangerRule) chooses when; the fixed ratio stays for a cold slice's turns and PvP.
     if (!options.dangerMoment && hpRatio > (options.pvp ? 0.65 : useThreshold(roleOrActor))) return null;
     const available = availablePotions(inventory, hpRatio, options);
     if (!available.length) return null;
@@ -292,8 +292,8 @@ function debitColdPotion(inventory, potion) {
     return true;
 }
 
-function consumeColdPotion(inventory, hp, maxHp, roleOrActor) {
-    const potion = selectPotion(inventory, hp, maxHp, roleOrActor);
+function consumeColdPotion(inventory, hp, maxHp, roleOrActor, options = {}) {
+    const potion = selectPotion(inventory, hp, maxHp, roleOrActor, options);
     return potion && debitColdPotion(inventory, potion) ? potion : null;
 }
 

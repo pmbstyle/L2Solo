@@ -1,4 +1,5 @@
 const { isDeepStrictEqual } = require('node:util');
+const PveEncounter = require('./ColdPveEncounter');
 const DiagnosticConfig = require('./PopulationConfig');
 const CharacterStateSources = require('../../World/CharacterStateSources');
 const SparseNumericStorage = require('./SparseNumericStorage');
@@ -419,8 +420,7 @@ function occupationRound(state, plan, timestamp) {
     const activity = plan?.activityPick?.activity;
     if (state?.activity !== 'hunting' || state.stats?.pvpEncounter
         || !['shopping', 'selling', 'crafting', 'improving'].includes(activity)) return null;
-    const pending = state.stats?.pveEncounter;
-    if (pending && require('./ColdPveEncounter').read(pending, pending.key, timestamp)) return null;
+    if (PveEncounter.pending(state, timestamp)) return null;
     // The chosen occupation owns this round. Fighting before posting its
     // execution can spend the kit and replace a purchase with recovery.
     return { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
