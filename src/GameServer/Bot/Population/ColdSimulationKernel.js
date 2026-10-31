@@ -416,20 +416,36 @@ function isSchedulableKind(kind) {
     return kind !== 'inactive' && kind !== 'event_driven' && kind !== 'party_member';
 }
 
-function occupationWanted(state, plan) {
+// Whether a step's economy plan has anything for main to carry out.
+function planActs(plan) {
+    return !!plan && !!(plan.take || plan.travel || plan.shot || plan.sell?.length || plan.withdraw?.length || plan.buyAds?.length);
+}
+
+// The decision an occupation round is held for: the leaf the bot chose.
+function occupationDecision(state, plan) {
+    return `${plan.activityPick.activity}:${plan.statsPacket?.activityLeaf ?? state.stats?.activityLeaf}`;
+}
+
+// A chosen occupation holds a round once per decision, and only with a plan to
+// post: main may refuse the plan (a trip not worth it, a retry window) and keep
+// the state, and an empty round starts no trip. The bot hunts on; the plan rides
+// each proposal and the fight's edge starts the trip.
+function occupationWanted(state, plan, record) {
     return state?.activity === 'hunting' && !state.stats?.pvpEncounter
-        && ['shopping', 'selling', 'crafting', 'improving'].includes(plan?.activityPick?.activity);
+        && ['shopping', 'selling', 'crafting', 'improving'].includes(plan?.activityPick?.activity)
+        && planActs(plan.economyPlan) && record?.heldOccupation !== occupationDecision(state, plan);
 }
 
 // A bot whose next act waits for its fight ends that fight and starts no other:
 // a trip (the plan's lastFight, PveEncounter.holdsTrip) or an occupation.
-function lastFight(state, plan) {
-    return plan?.lastFight === true || occupationWanted(state, plan);
+function lastFight(state, plan, record) {
+    return plan?.lastFight === true || occupationWanted(state, plan, record);
 }
 
-function occupationRound(state, plan, timestamp) {
-    if (!occupationWanted(state, plan) || PveEncounter.pending(state, timestamp)) return null;
+function occupationRound(state, plan, timestamp, record) {
+    if (!occupationWanted(state, plan, record) || PveEncounter.pending(state, timestamp)) return null;
     const activity = plan.activityPick.activity;
+    if (record) record.heldOccupation = occupationDecision(state, plan);
     // The chosen occupation owns this round. Fighting before posting its
     // execution can spend the kit and replace a purchase with recovery.
     return { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
@@ -1472,11 +1488,11 @@ class ColdSimulationKernel {
             const spot = this.spotOf(current.state);
             const result = hallVisit
                 ? { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 30000 }
-                : occupationRound(resolveState, lifecyclePlan, timestamp) || await this.resolveSolo({
+                : occupationRound(resolveState, lifecyclePlan, timestamp, this.states.get(id)) || await this.resolveSolo({
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 state: resolveState,
                 spot,
-                lastFight: lastFight(resolveState, lifecyclePlan),
+                lastFight: lastFight(resolveState, lifecyclePlan, this.states.get(id)),
                 spotHunters: this.spotHunters(spot),
                 pressure: pressureFor(current.state, this.pressureRow),
                 targetNpcId: Number(lifecyclePlan?.targetNpcId ||
@@ -2116,11 +2132,11 @@ class ColdSimulationKernel {
             if (!this.resolverSourceCurrent(source)) return;
             const resolveState = lifecyclePlan?.plannedState || active.state;
             const spot = resolveState.activity === 'traveling' ? null : lifecyclePlan?.spot || this.spotOf(active.state);
-            const result = occupationRound(resolveState, lifecyclePlan, timestamp) || await this.resolveSolo({
+            const result = occupationRound(resolveState, lifecyclePlan, timestamp, this.states.get(Number(characterId))) || await this.resolveSolo({
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 state: resolveState,
                 spot,
-                lastFight: lastFight(resolveState, lifecyclePlan),
+                lastFight: lastFight(resolveState, lifecyclePlan, this.states.get(Number(characterId))),
                 spotHunters: this.spotHunters(spot),
                 pressure: pressureFor(active.state, this.pressureRow),
                 targetNpcId: Number(lifecyclePlan?.targetNpcId || lifecyclePlan?.acquisitionPlan?.next?.npcId ||
