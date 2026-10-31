@@ -88,7 +88,7 @@ function fight(classKey, level, pDef, mDef, options = {}, dry = false) {
     const { state, profile } = rotationBot(classKey, level, options);
     const mob = dummy(level, pDef, mDef, typicalHp(level), options.pull || 1, options.undead === true);
     const rng = C.mulberry(C.hash(`${classKey}|${level}|${pDef}|${mDef}|${JSON.stringify(options)}`));
-    const key = PveEncounter.key([state], SPOT, 0);
+    const key = PveEncounter.key([state], SPOT);
     let t = START, botReadyAt = 0, hp = 1e12;
     const phase = { ms: 0, damage: 0, mp: 0 }, dryPhase = { ms: 0, damage: 0 };
     const empty = () => state.vitals.mp < 0.05 * profile.maxMp;
@@ -140,7 +140,7 @@ function opening(classKey, level) {
     return OPENING_SECONDS.map(seconds => {
         const { state, profile } = rotationBot(classKey, level);
         const mob = dummy(level, DEF, DEF, typicalHp(level));
-        state.stats.pveEncounter = { version: 1, key: PveEncounter.key([state], SPOT, 0), mob, hp: 1e12, at: START, slices: 0,
+        state.stats.pveEncounter = { version: 1, key: PveEncounter.key([state], SPOT), mob, hp: 1e12, at: START, slices: 0,
             botReadyAt: 0, mobReadyAt: 1e15 };
         const result = Resolver.resolveFight({ state, spot: SPOT, rng: C.mulberry(C.hash(`${classKey}|${level}|open|${seconds}`)),
             timestamp: START, fightLimitMs: seconds * 1000, maxActions: 10000 });
