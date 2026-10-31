@@ -118,7 +118,7 @@ function request(state, plan, { spots = [], economy, memo = null, timestamp = Da
     const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
     const allowed = Planner.sourceRouteReader(state, { timestamp, spots });
     const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
-    if (camps.some(row => allowed(SpotIndex.spotById(spots, row.spotId))
+    if (camps.some(row => allowed(SpotIndex.spotById(spots, row.spotId), row.npcId)
         && Planner.soloSafeForSource(state, row))) return noRequest();
     const { forecastKnown, ...selected } = camps[Number(previous?.attempts || 0) % camps.length];
     return { status: 'open', priority: 'required', reason: 'craft_material', materialParty: true,

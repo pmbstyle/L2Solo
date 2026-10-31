@@ -43,7 +43,13 @@ try {
     Routes.isSpotAllowedForState = (_spot, _state, options) => {
         gates++; assert.equal(options.mode, 'solo'); assert.equal(options.timestamp, timestamp); return true;
     };
-    Matchup.stateProfiles = (...args) => { profiles++; return original.profiles(...args); };
+    // This block tests reader reuse on admitted ground, with a kit strong
+    // enough for the source itself as well as the field.
+    Matchup.stateProfiles = (...args) => {
+        profiles++;
+        return original.profiles(...args).map(profile => ({ ...profile,
+            pAtk: profile.pAtk * 10, pDef: profile.pDef * 10, maxHp: profile.maxHp * 10 }));
+    };
     const routeAllowed = Planner.sourceRouteReader(state, { timestamp, spots: [spot] });
     assert(facts({ routeAllowed }).some(row => row.status === 'ready'), 'an allowed source remains available');
     facts({ routeAllowed });

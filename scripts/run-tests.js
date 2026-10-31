@@ -1136,6 +1136,8 @@ const tests = [
     'tests/test_walkback_catalog_cache.js',
     'tests/test_source_facts.js',
     'tests/test_source_route_admission.js',
+    'tests/test_spot_source_targets.js',
+    'tests/test_market_return_hunting_origin.js',
     'tests/test_stock_bag_fill_interval.js',
     'tests/test_stock_refill_preservation.js',
     'tests/test_cold_decision_clan_clock.js',

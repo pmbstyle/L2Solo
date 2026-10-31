@@ -1098,6 +1098,8 @@ function samePlanJson(a, b) {
 // The existing native plan verdict. It grants no economy command or social
 // interaction.
 function nativePlanHolds(state, previousPlan, nativeReplan, timestamp, onFinalize = null) {
+    if (previousPlan?.status === 'active' && !GearAcquisitionPlanner.isPlanSourceViableForState(state, previousPlan,
+        { spots: planningSpots, timestamp })) return false;
     const wishFocus = previousPlan?.status === 'deferred' && previousPlan.strategy === 'none'
         && previousPlan.next == null && previousPlan.reason === 'wish_focus';
     const wishHolds = (wishFocus || previousPlan?.source === 'wish_network')
