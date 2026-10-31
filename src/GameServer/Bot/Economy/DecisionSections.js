@@ -166,10 +166,17 @@ function moneyChanged(state, baseline, escrow, allowSoft) {
     if (physicalWallet < Number(baseline.cashBounds?.[0] ?? -1)
         || budgetTracked && decisionBudget < Number(baseline.budgetBounds[0])
         || baseline.funding !== fundingMark(state, budgetTracked ? escrow : 0)) return true;
-    return allowSoft && (reachesUpper(physicalWallet, baseline.cashBounds)
-        || budgetTracked && reachesUpper(decisionBudget, baseline.budgetBounds)
+    return allowSoft && (moneyBound(state, baseline, escrow)
         || Number(baseline.moneyError) >= 0
             && Math.abs(decisionBudget - baseline.wallet) > baseline.moneyError);
+}
+// The wallet or the budget reached the decision's next wish (its upper bound):
+// the soft money event without the drift. A solo hunt window ends here
+// (ColdSoloWindow); the drift waits for the soft point at its end.
+function moneyBound(state, baseline, escrow = 0) {
+    if (!baseline) return false;
+    return reachesUpper(positive(state.adena), baseline.cashBounds) || Array.isArray(baseline.budgetBounds)
+        && reachesUpper(PurchaseFunding.budget(state, escrow), baseline.budgetBounds);
 }
 function meaningfulMoney(state, baseline = state.stats?.wishSections, escrow = 0) {
     return moneyChanged(state, baseline, escrow, true);
@@ -522,5 +529,5 @@ function factEvents(previousFact, current, funding = false, facts = null, planne
 function kitMoved(before, after) {
     return (before?.stats?.wishSections?.build ?? null) !== (after?.stats?.wishSections?.build ?? null);
 }
-module.exports = { SECTIONS, COMPUTED, FACT_SECTIONS, sectionBit, sectionMask, sectionNames, kit, kitMoved, moneyChanged, observationChanged, incomeError,
+module.exports = { SECTIONS, COMPUTED, FACT_SECTIONS, sectionBit, sectionMask, sectionNames, kit, kitMoved, moneyChanged, moneyBound, observationChanged, incomeError,
     MARKET_WATCH, softEvents, carrySectionBaseline, baselineIdentity, sample, sampleRows, packSample, observationBaselineValid, bounds, snapshot, semanticFacts, factsOf, relationTargetIds, events, factEvents, occupationPlanned, hash, isEmptyWishPlan, decisionRefusal, partyIdOf };

@@ -875,6 +875,7 @@ class ColdSimulationCoordinator {
             developerDiagnostics: Config.developerDiagnostics === true,
             ...(Config.developerDiagnostics && Config.economyDiagnostics ? { economyDiagnostics: true, economyDiagnosticsBotIds: EconomyDiagnostics.ownerIds() } : {}),
             coldHonestTravel: Config.coldHonestTravel,
+            coldSoloWindow: Config.coldSoloWindow === true,
             pvpAggression: Config.pvpAggression,
             maxBatch: Math.max(1, Math.min(64, Number(Config.coldWorkerBatchSize) || 64)),
             maxInFlight: this.desiredWorkerPressure().maxInFlight,

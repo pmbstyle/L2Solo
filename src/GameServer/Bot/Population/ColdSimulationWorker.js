@@ -967,6 +967,31 @@ function stepStatsPacket(state, economy, timestamp) {
 function samePlanJson(a, b) {
     return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
+// The options of a step's projection (BotLifeState.prepareResolve), a window's
+// round or the step's own.
+function roundProjection(state, timestamp, writtenAt, plan) {
+    return { persist: false, timestamp, writtenAt, projectClassProgression: true,
+        moneyEscrowFor: () => escrowFor(state.characterId),
+        // The step's held leaf: the round's check reads its own trip and
+        // arrival as no event (DecisionSections.events).
+        leaf: plan?.economy?.network?.activity ?? null };
+}
+// The economy edges of a held decision over a stretch of rounds.
+function stockEdges(before, after, economy) {
+    return ColdEconomyPlan.edges(before, after,
+        { buyOrderEscrow: escrowFor(after.characterId), stockFor: (_state, kind) => economy.stock(kind) });
+}
+// What the step's decision counts its own item's progress from (a material
+// hunt's), for a leaf that does not carry it.
+function heldAtStep(plan) {
+    const leaf = plan.economy.network?.activity, own = ColdEconomyDecision.ownItem(leaf);
+    return leaf?.heldAtDecision ?? (own === null ? undefined : ColdEconomyDecision.heldFor(plan.plannedState, own));
+}
+// The native facts that hold a plan with no planner run: failure counters and
+// recovery deadlines, live even while the wish calculation holds.
+function nativeFactsHold(replan) {
+    return !replan.failure && !replan.invalidSource && !replan.levelingRecovery;
+}
 // The existing native plan verdict. It grants no economy command or social
 // interaction.
 function nativePlanHolds(state, previousPlan, nativeReplan, timestamp, onFinalize = null) {
@@ -1395,7 +1420,8 @@ function startKernel(config = {}) {
         },
         // writtenAt: the row's write stamp, the real now (timestamp is the
         // round's time, the bot's due for a step started its lead early).
-        projectResolve: async (state, result, timestamp, lifecyclePlan = null, writtenAt = timestamp) => {
+        // windowStart: the state a hunt window (ColdSoloWindow) started on: `state` is its last round's.
+        projectResolve: async (state, result, timestamp, lifecyclePlan = null, writtenAt = timestamp, windowStart = state) => {
             const owner = kernel.states.get(Number(state.characterId));
             // Room at arrival, before the projection: a full spot's mark rides
             // the patch, its sections join the step's one raise.
@@ -1410,15 +1436,8 @@ function startKernel(config = {}) {
             let economy = stepEconomy, seenEcho = null, refreshed = null, observedDeps = null, economyEdges = null;
             const ownEscrow = () => escrowFor(state.characterId);
             const base = {
-                persist: false,
-                timestamp,
-                writtenAt,
-                projectClassProgression: true,
+                ...roundProjection(state, timestamp, writtenAt, lifecyclePlan),
                 ...(crowded ? { checkSections: ROOM_SECTIONS } : {}),
-                moneyEscrowFor: ownEscrow,
-                // The step's held leaf: the round's check reads its own trip and
-                // arrival as no event (DecisionSections.events).
-                leaf: stepEconomy?.network?.activity ?? null,
                 // The soft point's inputs (BotLifeState.prepareResolve, every
                 // step): the board mirror (null until ready), the escrow and
                 // the bot's memory rows, read only when its bond is compared.
@@ -1466,8 +1485,7 @@ function startKernel(config = {}) {
             const projected = ClanMembershipPolicy.reconcileState(resolved);
             if (stepEconomy) {
                 seenEcho = ColdEconomyDecision.stateEcho(projected);
-                economyEdges = ColdEconomyPlan.edges(state, projected,
-                    { buyOrderEscrow: ownEscrow(), stockFor: (_state, kind) => stepEconomy.stock(kind) });
+                economyEdges = stockEdges(windowStart, projected, stepEconomy);
             }
             const beforeLevel = Number(state.stats?.classProgressionLevel || 0);
             const beforeClassId = Number(state.stats?.classProgressionClassId ?? state.stats?.classId ?? 0);
@@ -1517,6 +1535,25 @@ function startKernel(config = {}) {
                 ...(economyDecision ? { economyDecision } : {})
             };
         },
+        soloWindow: {
+            on: config.coldSoloWindow === true,
+            // One round of a window: the step's projection without its soft
+            // point and what follows it (ColdSoloWindow, the window's end has them).
+            projectRound: (state, result, timestamp, plan, writtenAt) => LifeStateProjector.prepareResolve(state, result,
+                { ...roundProjection(state, timestamp, writtenAt, plan), statsPacket: plan.statsPacket, statsPacketBeforeResolve: true }),
+            deadline: (state, timestamp) => EconomyContext.holdEndsAt(state, timestamp),
+            readers: plan => ({
+                edges: (before, after) => stockEdges(before, after, plan.economy),
+                moneyBound: after => DecisionSections.moneyBound(after, after.stats?.wishSections, escrowFor(after.characterId)),
+                feasible: after => !EconomyContext.leafCheck(after, plan.economy.network?.activity, {}, { heldUnits: heldAtStep(plan) }),
+                // The native facts planLifecycle reads, on the round's end.
+                planHolds: (after, at) => {
+                    const held = after.stats?.equipmentPlan || null;
+                    const replan = GearAcquisitionPlanner.replanContextFor(after, held, at);
+                    return nativeFactsHold(replan) && nativePlanHolds(after, held, replan, at);
+                }
+            })
+        },
         // The member's own build of this step (projectResolve) while the
         // projection after it (class training, equipped upgrades) left its kit
         // (the build's baseline build fact); else one build on the same board
@@ -1553,7 +1590,7 @@ function startKernel(config = {}) {
             // below (PartyRequestPlanner, decision 10-30): no card reuse.
             const solo = !state.party?.partyId && !state.partyId && !state.stats?.partyRequest
                 && !PartyRequestPlanner.supportWithoutGround(state, spots, routeSearch(state, timestamp));
-            const nativeHolds = !nativeReplan.failure && !nativeReplan.invalidSource && !nativeReplan.levelingRecovery;
+            const nativeHolds = nativeFactsHold(nativeReplan);
             // An active current plan: before, finalizePlan re-finalized it on
             // every such step. Its steps count as plan_holds finalized (paid)
             // + skipped (saved).
@@ -1691,6 +1728,8 @@ function startKernel(config = {}) {
                     ? { economyPlan: preparedOccupation?.economyPlan || refreshed.economyPlan } : {}),
                 statsPacket,
                 economy,
+                // The shadow of a hunt window counts it (ColdSimulationKernel.shadowStep).
+                rebuilt: !nullReuse,
                 activityPick: economy.network.activity ? { activity: economy.network.activity.activity,
                     spotId: economy.network.activity.spotId, npcId: economy.network.activity.npcId } : null,
                 economyDecision: heldDecision || ColdEconomyDecision.capture({ ...economy, workshop: deps.workshop }, routedState),

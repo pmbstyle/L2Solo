@@ -1,4 +1,5 @@
 const PartyMarketBreak = require('./PartyMarketBreak');
+const { stepElapsedMs } = require('./ColdSoloWindow');
 const { WorkerCommandAdmissionRefusal, checkWorkerCommandAdmission } = require('./WorkerCommandAdmission');
 const { PartyAdmission, priority: admissionPriority } = require('./PartyAdmission');
 const partyAdmission = new PartyAdmission();
@@ -2984,7 +2985,7 @@ const PopulationService = {
             && !!inventoryCleanupGoal(state, startedAt);
         const cleanupState = precomputedResult ? null : inventoryCleanupTravelState(state, startedAt);
         if (cleanupState) return this.resolveColdCleanupTravel(state, cleanupState, startedAt);
-        const elapsedMs = state.timing?.lastResolvedAt ? Math.max(1000, startedAt - state.timing.lastResolvedAt) : 60000;
+        const elapsedMs = stepElapsedMs(state, startedAt);
         // These transitions have no planning, market search, or inventory work
         // between their persisted deadline and the next state change.
         if (cleanupAfterFight || state.activity === 'traveling'
@@ -3113,7 +3114,7 @@ const PopulationService = {
             const result = BackgroundResolver.resolveSolo({ state: karmaPlan.plannedState,
                 spot: karmaPlan.spot, spotHunters: SpotProfiles.spotHunters(karmaPlan.spot),
                 targetNpcId: karmaPlan.targetNpcId, timestamp: startedAt,
-                elapsedMs: Math.max(1000, startedAt - Number(state.timing?.lastResolvedAt || startedAt - 60000)) });
+                elapsedMs: stepElapsedMs(state, startedAt) });
             return LifeState.applyResolve(karmaPlan.plannedState, result, options)
                 .then(saved => ({ ok: !!saved, state: saved || state, debug: result.debug }));
         }

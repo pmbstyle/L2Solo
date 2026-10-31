@@ -137,7 +137,18 @@ const PopulationStatus = {
             + ` geo=${mb(geodata.loadedBytes)}MB/${geodata.loadedRegions} geoViews=${mb(geodata.attachedBytes)}+${mb(worker.geodata?.attachedBytes)}MB`
             + ` geoRaw=${geodata.rawRegions || 0} geoIndexOnly=${geodata.indexOnlyRegions || 0}`
             + ` geoHeightReads=${geodata.heightFileReads || 0}+${worker.geodata?.heightFileReads || 0} ${this.npcHateText()}`
-            + this.incomeHoldText(worker.incomeHold);
+            + this.incomeHoldText(worker.incomeHold) + this.soloWindowText(worker.soloWindow);
+    },
+
+    // huntSteps=<steps per hunting bot-hour>/<rounds per step>: solo hunting steps since the worker
+    // started (T120, ColdSoloWindow), <on|shadow>; end: what ended the windows; skip=<steps>/<rebuilt>/<moved>:
+    // the shadow's steps a window would skip, those that rebuilt, those whose plan moved.
+    soloWindowText(w) {
+        if (!w) return '';
+        const rate = w.huntMs > 0 ? (3.6e6 * w.steps / w.huntMs).toFixed(1) : '-';
+        const ended = Object.entries(w.ended || {}).map(([why, count]) => `${why}:${count}`).join(',') || '-';
+        return ` huntSteps=${rate}/${w.steps > 0 ? (w.rounds / w.steps).toFixed(1) : '-'}/${w.on ? 'on' : 'shadow'}`
+            + ` windowEnd=${ended} skip=${w.skipped}/${w.rebuilt}/${w.moved}`;
     },
 
     // incomeHold=<kept>/<none>,<unrouted>,<renewed>,<moved>,<event>,<goal>;party<kept>/<missed>: held earning

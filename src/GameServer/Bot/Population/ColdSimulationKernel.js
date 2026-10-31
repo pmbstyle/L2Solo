@@ -1,6 +1,8 @@
 const { isDeepStrictEqual } = require('node:util');
 const PveEncounter = require('./ColdPveEncounter');
 const ColdEconomyPlan = require('./ColdEconomyPlan');
+const ColdSoloWindow = require('./ColdSoloWindow');
+const { ownClock, stepElapsedMs } = ColdSoloWindow;
 const DiagnosticConfig = require('./PopulationConfig');
 const CharacterStateSources = require('../../World/CharacterStateSources');
 const SparseNumericStorage = require('./SparseNumericStorage');
@@ -643,6 +645,18 @@ class ColdSimulationKernel {
         this.equipmentBridgeReason = typeof options.equipmentBridgeReason === 'function'
             ? options.equipmentBridgeReason : null;
         this.projectResolve = typeof options.projectResolve === 'function' ? options.projectResolve : null;
+        // A hunting solo step's window (T120, ColdSoloWindow), the worker's:
+        // { on, projectRound(state, result, timestamp, plan, writtenAt),
+        // deadline(state, timestamp), readers(plan) }. Off: the shadow, today's
+        // steps counting what the window would skip (windowShadow).
+        this.soloWindow = options.soloWindow || null;
+        // Always on, read by the health line (PopulationStatus.soloWindowText):
+        // solo hunting steps, their rounds and hunt time (steps per hunting
+        // bot-hour = 3.6e6 * steps / huntMs); what ended each; the shadow's
+        // steps a window would have skipped, those that rebuilt, those with another plan.
+        this.soloWindowStats = { steps: 0, rounds: 0, huntMs: 0, ended: {}, skipped: 0, rebuilt: 0, moved: 0 };
+        // The shadow: a bot's plan key and deadline while its next step would be skipped.
+        this.windowShadow = new Map();
         // The room check at a party's arrival (the worker's partyArrival):
         // { party, members } with the "was full" mark, or null.
         this.partyArrival = typeof options.partyArrival === 'function' ? options.partyArrival : null;
@@ -1020,6 +1034,7 @@ class ColdSimulationKernel {
         this.buyerEvents?.remove(id);
         this.buyerWakeups.delete(id);
         this.lookSeen.delete(id);
+        this.windowShadow.delete(id);
         this.decisionEvents?.ownerRemoved(id, previousRecord, current);
         this.versions.set(id, Number(this.versions.get(id) || 0) + 1);
         this.heap.remove(this.scheduleTokens.get(id)?.heapEntry);
@@ -1231,6 +1246,8 @@ class ColdSimulationKernel {
             }
             const kind = this.buyerWakeups.has(id) && eligibleBuyer(current.state)
                 ? 'command' : lifecycleKind(current.state, this);
+            // A step a window would have held off: it asks more than a round.
+            if (kind !== 'resolver' && this.windowShadow.has(id)) this.shadowStep(id, null, current.state, null, true);
             if (kind === 'resolver') {
                 // The step starts from the kernel's own copy at once.
                 this.inFlight.set(id, { state: current.state, startedAt: this.now(), dueAt: Number(entry.dueAt) });
@@ -1541,9 +1558,7 @@ class ColdSimulationKernel {
         if (!this.currentCommand(id, attempt)) return;
         const timestamp = this.now();
         try {
-            const elapsedMs = current.state.timing?.lastResolvedAt
-                ? Math.max(1000, timestamp - Number(current.state.timing.lastResolvedAt))
-                : 60000;
+            const elapsedMs = stepElapsedMs(current.state, timestamp);
             const raidPreparing = require('./RaidSupplyPolicy').held(current.state, timestamp);
             const hallVisit = !raidPreparing && (!!current.state.stats?.clanHallVisit || this.hallNeeded(current.state));
             const lifecyclePlan = !hallVisit && !raidPreparing && this.planLifecycle
@@ -1955,7 +1970,7 @@ class ColdSimulationKernel {
             }
 
             if (!this.resolveParty) throw new Error('party_resolver_unavailable');
-            const lastResolvedAt = Math.min(...run.members.map((member) => Number(member.timing?.lastResolvedAt || startedAt - 60000)));
+            const lastResolvedAt = Math.min(...run.members.map((member) => ownClock(member) || startedAt - 60000));
             const resolveOptions = {
                 episodeId: stepProposalId(run.party.leaderId, run.startedAt),
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
@@ -2189,43 +2204,55 @@ class ColdSimulationKernel {
             // early lives the same round as one started on time. The row's
             // write stamp (updatedAt) stays the real start. Whole: a due read from
             // the stats can hold a fraction, and every clock of the step comes from here.
-            const timestamp = Math.ceil(Math.max(startedAt, active.dueAt || 0));
-            const elapsedMs = active.state.timing?.lastResolvedAt
-                ? Math.max(1000, timestamp - Number(active.state.timing.lastResolvedAt))
-                : 60000;
+            // Never before the bot's own clock: a step woken inside a hunt window
+            // (T120) goes on from its end, it lives that time once.
+            const timestamp = Math.ceil(Math.max(startedAt, active.dueAt || 0, ownClock(active.state)));
+            const elapsedMs = stepElapsedMs(active.state, timestamp);
             const lifecyclePlan = !require('./RaidSupplyPolicy').held(active.state, timestamp) && this.planLifecycle
                 ? await this.planLifecycle({ state: active.state, timestamp })
                 : null;
             if (!this.resolverSourceCurrent(source)) return;
             const resolveState = lifecyclePlan?.plannedState || active.state;
             const spot = resolveState.activity === 'traveling' ? null : lifecyclePlan?.spot || this.spotOf(active.state);
-            const result = occupationRound(resolveState, lifecyclePlan, timestamp, this.states.get(Number(characterId))) || await this.resolveSolo({
+            const roundOptions = {
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
-                state: resolveState,
                 spot,
-                lastFight: lastFight(resolveState, lifecyclePlan, this.states.get(Number(characterId))),
                 spotHunters: this.spotHunters(spot),
                 pressure: pressureFor(active.state, this.pressureRow),
                 targetNpcId: Number(lifecyclePlan?.targetNpcId || lifecyclePlan?.acquisitionPlan?.next?.npcId ||
-                    (lifecyclePlan?.activityPick?.activity === 'hunting' ? lifecyclePlan.activityPick.npcId : 0) || 0),
+                    (lifecyclePlan?.activityPick?.activity === 'hunting' ? lifecyclePlan.activityPick.npcId : 0) || 0)
+            };
+            const result = occupationRound(resolveState, lifecyclePlan, timestamp, this.states.get(Number(characterId))) || await this.resolveSolo({
+                ...roundOptions,
+                state: resolveState,
+                lastFight: lastFight(resolveState, lifecyclePlan, this.states.get(Number(characterId))),
                 elapsedMs,
                 rng: deterministicRandom(active.state),
                 timestamp
             });
             if (!this.resolverSourceCurrent(source)) return;
+            const first = { state: resolveState, result, timestamp };
+            const window = this.soloWindow && ColdSoloWindow.opens(resolveState, lifecyclePlan, result, timestamp,
+                startedAt + STEP_LEAD_MAX_MS) ? this.soloWindow : null;
+            const round = window?.on ? await this.huntWindow(source, first, lifecyclePlan, roundOptions, startedAt) : first;
+            if (!round || !this.resolverSourceCurrent(source)) return;
             // The step's one decision (its economy, worker-local) travels
             // through the round: the projection asks no second one.
             const projection = this.projectResolve
-                ? await this.projectResolve(resolveState, result, timestamp, lifecyclePlan, startedAt)
+                ? await this.projectResolve(round.state, round.result, round.timestamp, lifecyclePlan, startedAt, resolveState)
                 : null;
             if (!this.resolverSourceCurrent(source)) return;
             const projectedState = projection?.state || projection;
+            const shadowed = this.shadowStep(characterId, lifecyclePlan, resolveState, projection?.economyPlan);
+            this.countHuntStep(first, round, window && !window.on
+                ? await this.shadowEnd(characterId, first, lifecyclePlan, startedAt, shadowed?.until) : round.ended);
+            if (!this.resolverSourceCurrent(source)) return;
             // The forced cleanup on the fight's result, over a trip this step
             // started (main starts the cleanup trip).
             const cleanupNeed = projectedState && !require('./RaidSupplyPolicy').held(active.state, timestamp) ? PartyMarketBreak.forcedCleanupNeed(
-                PartyMarketBreak.withoutStartedTrip(active.state, projectedState), timestamp) : null;
+                PartyMarketBreak.withoutStartedTrip(active.state, projectedState), round.timestamp) : null;
             const priority = playerWaitingTransition(active.state, null, this) ? 'P0'
-                : projection?.durable ? 'P1' : priorityForResult(active.state, result);
+                : projection?.durable ? 'P1' : priorityForResult(active.state, round.loot || round.result);
             const proposal = {
                 proposalId: stepProposalId(characterId, active.startedAt),
                 characterId: Number(characterId),
@@ -2241,7 +2268,7 @@ class ColdSimulationKernel {
                 ...(projection?.economyPlan ? { economyPlan: projection.economyPlan } : {}),
                 ...(projection?.buffOffer ? { buffOffer: projection.buffOffer } : {}),
                 ...(cleanupNeed ? { cleanupNeed } : {}),
-                result: proposalResult(result),
+                result: proposalResult({ ...round.result, ...round.posted }),
                 options: { allowLifecycle: true, allowParty: !!active.state.stats?.tradeMeeting }
             };
             handled = true;
@@ -2264,6 +2291,87 @@ class ColdSimulationKernel {
                 DiagnosticConfig.developerDiagnostics && (this.stats.maxResolveMs = Math.max(this.stats.maxResolveMs, elapsed));
             }
         }
+    }
+
+    // T120: the hunt runs on from the step's first round, its rounds as its steps
+    // would run them (their due, their seed), each projected on the last, until
+    // one ends the window (ColdSoloWindow.endOf). Each round is a turn of its
+    // own. Returns the last round: its base state for the step's full projection,
+    // its timestamp, ended, and the window's sums (the bag's loot for the
+    // priority, the events and debug main reads); null when the step went stale.
+    async huntWindow(source, first, plan, roundOptions, writtenAt) {
+        const { projectRound, deadline } = this.soloWindow;
+        const until = deadline(first.state, first.timestamp), readers = this.windowReaders(plan);
+        const events = [], soulCrystals = [], items = [];
+        let round = first, rounds = 1, debug = {};
+        const add = result => {
+            events.push(...result.events || []);
+            soulCrystals.push(...result.soulCrystals || []);
+            if (!items.length) items.push(...(result.materialize?.items || []).filter(item => Number(item.selfId) !== 57));
+            debug = ColdSoloWindow.sumDebug(debug, result.debug);
+        };
+        add(first.result);
+        for (;;) {
+            const after = await projectRound(round.state, round.result, round.timestamp, plan, writtenAt);
+            if (!this.resolverSourceCurrent(source)) return null;
+            const ended = ColdSoloWindow.endOf(round.state, after, round.result, until, readers);
+            if (ended) {
+                // huntedThrough (ColdSoloWindow): the last round's start, the end of the credited hunt.
+                const result = { ...round.result, ...(soulCrystals.length ? { soulCrystals } : {}),
+                    patch: { ...round.result.patch, stats: { ...round.result.patch?.stats, huntedThrough: round.timestamp } } };
+                return { ...round, result, ended, rounds, loot: { ...result, materialize: { items } }, posted: { events, debug } };
+            }
+            await nextTurn();
+            if (!this.resolverSourceCurrent(source)) return null;
+            const timestamp = Math.ceil(Number(after.timing.nextResolveAt));
+            const result = await this.resolveSolo({ ...roundOptions, state: after, elapsedMs: stepElapsedMs(after, timestamp),
+                rng: deterministicRandom(after), timestamp });
+            if (!this.resolverSourceCurrent(source)) return null;
+            add(result);
+            round = { state: after, result, timestamp };
+            rounds += 1;
+        }
+    }
+
+    // The health line's count of a solo hunting step: rounds and hunt time over
+    // its window, what ended it (none when no window opened).
+    countHuntStep(first, round, ended) {
+        const stats = this.soloWindowStats;
+        if (!ColdSoloWindow.huntingRound(first.result) || first.state.party?.partyId || first.state.partyId) return;
+        stats.steps += 1;
+        stats.rounds += round.rounds || 1;
+        stats.huntMs += Math.max(0, Number(round.result.nextResolveAt) - first.timestamp);
+        if (ended) stats.ended[ended] = (stats.ended[ended] || 0) + 1;
+    }
+
+    windowReaders(plan) {
+        return { ...this.soloWindow.readers(plan), kind: after => lifecycleKind(after, this) };
+    }
+
+    // The shadow (design rules, Recompute): a step the window would have
+    // skipped counts, with whether its plan rebuilt and whether it gave what a
+    // window would have delayed: another plan, or an act after its round
+    // (action). A command step is such a move by itself (left). Returns the
+    // bot's open window ({ key, until }), gone from the map.
+    shadowStep(characterId, plan, state, action = null, left = false) {
+        const id = Number(characterId), open = this.windowShadow.get(id);
+        if (!open) return null;
+        this.windowShadow.delete(id);
+        const stats = this.soloWindowStats;
+        stats.skipped += 1;
+        if (plan?.rebuilt) stats.rebuilt += 1;
+        if (left || ColdEconomyPlan.acts(action) || ColdSoloWindow.planMoved(plan, open.key, state)) stats.moved += 1;
+        return open;
+    }
+
+    // The shadow's end of a step's window, by the live rule on the step's own
+    // round (projected as a window's, without its soft events): one that runs
+    // on leaves the next step skipped. until: the deadline of the window it continues.
+    async shadowEnd(characterId, first, plan, writtenAt, until = this.soloWindow.deadline(first.state, first.timestamp)) {
+        const after = await this.soloWindow.projectRound(first.state, first.result, first.timestamp, plan, writtenAt);
+        const ended = ColdSoloWindow.endOf(first.state, after, first.result, until, this.windowReaders(plan));
+        if (!ended) this.windowShadow.set(Number(characterId), { key: ColdSoloWindow.planKey(plan), until });
+        return ended;
     }
 
     flush(priority = null, force = false, options = {}) {
@@ -2656,6 +2764,7 @@ class ColdSimulationKernel {
             stepsRefused: this.stepsRefused,
             ackUnbuilt: this.ackUnbuilt,
             stepLeadMs: Math.round(this.stepLeadMs),
+            soloWindow: { ...this.soloWindowStats, on: this.soloWindow?.on === true },
             maxInFlight: this.maxInFlight,
             maxAtomicPartySize: this.maxAtomicPartySize,
             paused: this.paused,

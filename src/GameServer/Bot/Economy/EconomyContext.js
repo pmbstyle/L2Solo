@@ -952,8 +952,17 @@ function incomeHoldStats() { return { ...holdStats }; }
 function goalMoved(hold, state, goal) {
     return hold.focus !== focusOf(state) || Number.isFinite(goal) && goal !== hold.goal;
 }
+const holdDueAt = hold => hold.at + HOLD_MS;
 function holdDue(hold, state, timestamp, goal) {
-    return timestamp - hold.at >= HOLD_MS || goalMoved(hold, state, goal);
+    return timestamp >= holdDueAt(hold) || goalMoved(hold, state, goal);
+}
+// When the bot's held spot is searched again: a plan deadline of a solo hunt
+// window (ColdSoloWindow); a hold another search moved is due now, a bot with
+// none counts its window from `timestamp`.
+function holdEndsAt(state, timestamp) {
+    const hold = cache.get(`character:${Number(state.characterId) || 0}`)?.plan?.hold;
+    if (hold?.moved) return timestamp;
+    return holdDueAt(hold || { at: timestamp });
 }
 // The one hold (decision 10-30): the answer of the search the bot's held build
 // made (a route or none), kept as found: no search and no matchup per read
@@ -2013,5 +2022,5 @@ function reset() {
 }
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
-module.exports = { incomeHoldStats, heldIncomeRoute, incomeMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, stockFor, keptTargets, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
+module.exports = { incomeHoldStats, holdEndsAt, heldIncomeRoute, incomeMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, stockFor, keptTargets, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
     craftIncome };

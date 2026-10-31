@@ -1029,6 +1029,7 @@ const tests = [
     'tests/test_clan_order_crafting.js',
     'tests/test_cold_snapshot_queue.js',
     'tests/test_cold_solo_combat_budget.js',
+    'tests/test_cold_solo_window.js',
     'tests/test_cold_worker_pressure.js',
     'tests/test_private_store_limits.js',
     'tests/test_update_environment_visibility.js',
