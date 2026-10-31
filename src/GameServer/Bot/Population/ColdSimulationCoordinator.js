@@ -2332,6 +2332,11 @@ class ColdSimulationCoordinator {
         return held ? Math.max(1, Date.now() - held.startedAt) : 0;
     }
 
+    // The worker answers with its copy of the bot, in the log (Kernel.traceBot).
+    traceBot(characterId, main) {
+        if (this.worker && this.ready) this.post('overdue_trace', { characterId, main });
+    }
+
     overdueReason(characterId) {
         const heldMs = this.heldAckAgeMs(characterId);
         if (heldMs) return `held_ack:${Math.round(heldMs / 1000)}s`;

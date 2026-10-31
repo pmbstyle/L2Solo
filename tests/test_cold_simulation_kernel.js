@@ -1541,9 +1541,9 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         assert.strictEqual(steps, 0, 'no step while the bot waits for a command it cannot begin');
         const traced = [], consoleInfo = console.info;
         console.info = (...line) => traced.push(line.join(' '));
-        refusedKernel.traceOverdue(clock + 40000);
+        refusedKernel.traceBot(2001000, { nextResolveAt: at - 60000 });
         console.info = consoleInfo;
-        assert.match(traced.join(), /"id":2001000.*"kind":"command"/, 'the worker says why an overdue bot waits');
+        assert.match(traced.join(), /"id":2001000,"main".*"kind":"command"/, 'the worker says why an overdue bot waits');
         hallNeeded = false;
         clock += 30001;
         refusedKernel.tick();

@@ -2034,6 +2034,9 @@ async function handle(message) {
     case 'resume':
         kernel?.resume();
         break;
+    case 'overdue_trace':
+        kernel?.traceBot(payload.characterId, payload.main);
+        break;
     case 'throttle':
         kernel?.setMaxInFlight(payload.maxInFlight);
         break;

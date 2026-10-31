@@ -3694,8 +3694,11 @@ const PopulationService = {
             const bot = queue.oldest, at = Date.now();
             const reason = ColdSimulationCoordinator.overdueReason(bot.characterId);
             // What the bot carries that makes the worker hold it on purpose.
+            const held = LifeState.cachedState(bot.characterId);
+            ColdSimulationCoordinator.traceBot(bot.characterId, { at, activity: bot.activity, nextResolveAt: held?.timing?.nextResolveAt,
+                lastResolvedAt: held?.timing?.lastResolvedAt, updatedAt: held?.updatedAt, revision: held?.simulation?.revision });
             const carried = ['pvpEncounter', 'pveEncounter', 'tradeMeeting', 'travel', 'constPartySession']
-                .filter(key => LifeState.cachedState(bot.characterId)?.stats?.[key]).join('+');
+                .filter(key => held?.stats?.[key]).join('+');
             console.info('BotPopulation :: overdue %s(%d) %s due %ds ago, last step %ds ago, reason %s%s, due total %d',
                 bot.name, bot.characterId, bot.activity, Math.round(queue.oldestAgeMs / 1000),
                 bot.lastResolvedAt > 0 ? Math.round((at - bot.lastResolvedAt) / 1000) : -1, reason,

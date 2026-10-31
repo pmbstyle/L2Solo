@@ -27,6 +27,7 @@ const MAIN_TYPES = new Set([
     'pause',
     'resume',
     'throttle',
+    'overdue_trace',
     'diagnostics_resync',
     'competition_release',
     'shutdown'
