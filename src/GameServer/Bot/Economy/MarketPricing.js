@@ -120,6 +120,9 @@ function bestAnswer(selfId, ctx, { units = 1, enchant = 0, residualUnitValue = 0
     const seller = { characterId: Number(ctx.characterId), marketTrades: ctx.marketTrades || {} };
     for (const line of lines) {
         if (line.ownerId === Number(ctx.characterId) || line.enchant !== Number(enchant || 0)) continue;
+        if (line.custodyPolicy === 1 && !require('../Population/PartyAdmission').personalOfferAllowed(line, ctx.state)) continue;
+        if (line.custodyPolicy === 1 && require('./MeetingPriceRefusals').rejects(line,
+            Math.min(units, line.count), require('../Population/PartyAdmission').counterpartyState(line.ownerId))) continue;
         const sale = PriceDecision.bidSale(seller, line, { board: ctx.board, persona: ctx.persona,
             timestamp: ctx.timestamp, units, residualUnitValue, belief });
         const outcome = sale.after;
@@ -210,7 +213,8 @@ function lineState(selfId, ctx, { price, storeType = SELL, worth = 0, fills = 0,
 // monetary value, physical residual and actual trip time/fees before one
 // tendency roll. `gain` is the board's Adena over the NPC for slot selection;
 // answering a bid returns its physical line/count, including partial demand.
-function disposition(item, ctx, { town = null, room = 1, stockQuote = false, standingPrice = 0, rollKey }) {
+function disposition(item, ctx, { town = null, room = 1, stockQuote = false, standingPrice = 0, rollKey,
+    selectedAnswerRecord = 0 }) {
     const marketOnly = invoke('GameServer/Bot/Economy/ItemDisposition').isGradeCrystal(item);
     const units = Math.max(1, Number(item.count) || 1);
     const priced = priceForSale(item.selfId, ctx, { town, units, enchant: item.enchant || 0,
@@ -260,18 +264,23 @@ function disposition(item, ctx, { town = null, room = 1, stockQuote = false, sta
         else fields.actualCashFees = Math.max(0, ctx.travel?.(answer.line.town) || 0);
         add('ad', fields);
     }
-    const chosen = PriceDecision.chooseByValue(options, rollKey);
+    // A previously selected sale has already won its roll. Fresh consent
+    // still needs the exact bid to remain the executable positive-value
+    // answer; a second unrelated roll is not a change in those facts.
+    const selected = Number(selectedAnswerRecord) === Number(answer?.line?.recordId)
+        ? options.find(option => option.action === 'ad') : null;
+    const chosen = selected || PriceDecision.chooseByValue(options, rollKey);
     if (!chosen) return { action: 'keep', priced, gain: 0, answer: null, known: false };
     return { action: chosen.action, priced, gain: chosen.action === 'list' ? gain : 0,
         answer: chosen.action === 'ad' ? { line: answer.line, count: answer.count, receipts: answer.outcome.receipts } : null };
 }
 
 // A buy ad keeps authored worth with its line; the next ad starts fresh.
-function bid(selfId, ctx, { units = 1, worth, cap, money = ctx.adena, town = null, rollKey }) {
+function bid(selfId, ctx, { units = 1, worth, cap, money = ctx.adena, town = null, rollKey, preferProvidedWorth = false }) {
     if (ctx.canBuy?.({ selfId, enchant: 0 }) === false) return null;
     const belief = PriceBelief.prior(selfId, ctx);
     if (!belief) return null;
-    worth = ctx.economy?.worth(selfId) ?? worth;
+    if (!preferProvidedWorth) worth = ctx.economy?.worth(selfId) ?? worth;
     const meeting = ctx.travelDetails?.(town);
     if (town && !meeting?.known) return null;
     const spendable = Number.isFinite(money) ? Math.max(0, money - (meeting?.known ? meeting.fees : 0)) : money;

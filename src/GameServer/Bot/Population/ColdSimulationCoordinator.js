@@ -599,7 +599,8 @@ class ColdSimulationCoordinator {
                     const own = result.parties[side];
                     const proof = { token: result.token, characterId: identity.characterId, sequence: own.sequence,
                         authority: { phase: own.phase, hotAt: own.hotAt, revision: own.revision },
-                        route: own.route, certificates: result.lines.map(line => line.payer === side ? line.certificate : null),
+                        route: own.route, survivalCost: own.survivalCost,
+                        certificates: result.lines.map(line => line.payer === side ? line.certificate : null),
                         dependencies: result.dependencies || [], sources: result.lines.map(line => [line.adId, line.adRevision]), epoch, worker, approved: true };
                     this.finishMeetingPreparation(identity.characterId, held, proof);
                 }
@@ -735,8 +736,11 @@ class ColdSimulationCoordinator {
         case 'command_ack':
             for (const result of payload.results || []) {
                 const held = this.commandInflight.get(result.characterId);
-                if (held?.meetingToken === result.commandId && result.ok === false)
-                    this.finishMeetingPreparation(result.characterId, held, null, Error(result.reason || 'trade_meeting_preparation_refused'));
+                if (held?.meetingToken === result.commandId && result.ok === false) {
+                    const error = Error(result.reason || 'trade_meeting_preparation_refused');
+                    if (result.reason === 'trade_meeting_purchase_price_changed') error.priceEvidence = result.priceEvidence;
+                    this.finishMeetingPreparation(result.characterId, held, null, error);
+                }
             }
             break;
         case 'ready':

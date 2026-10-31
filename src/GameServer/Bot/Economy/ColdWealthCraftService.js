@@ -142,7 +142,7 @@ function eligible(state) {
     if (!CraftShopService.isServiceCrafter(state)) return false;
     if (CraftShopService.craftLevelFor(state) <= 0) return false;
     if (state.stats?.equipmentPlan?.strategy === 'craft'
-        && ['active', 'component_ready', 'ready_to_craft'].includes(state.stats.equipmentPlan.status)) return false;
+        && ['component_ready', 'ready_to_craft'].includes(state.stats.equipmentPlan.status)) return false;
     const previousCraft = state.stats?.wealthCraft;
     if (previousCraft?.outcome === 'waiting_for_buyer') {
         const outputId = Number(previousCraft.productId || 0);

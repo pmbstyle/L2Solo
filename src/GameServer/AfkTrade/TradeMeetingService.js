@@ -259,6 +259,7 @@ async function prepareActors(token) {
         const side = entry.actors.indexOf(Number(proof.characterId));
         if (side < 0 || proof.token !== token || proof.sequence !== request.parties[side].sequence) throw Error('trade_meeting_consent_changed');
         request.parties[side].route = proof.route;
+        request.parties[side].survivalCost = proof.survivalCost ?? 0;
         request.lines.forEach((line, index) => {
             if (line.payer === side) {
                 const certificate = proof.certificates?.[index];
@@ -403,6 +404,11 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
         // ad on the board for every later seller (E198 (2)).
         if (error.message === 'trade_meeting_need_changed' && record.storeType === 3) await buyAdNeedChanged(record, line);
         else if (error.message === 'trade_meeting_need_changed') await purchaseNeedChanged(buyer, errand, purchaseGoal);
+        else if (error.message === 'trade_meeting_purchase_price_changed'
+            && life().cachedState(buyer)?.phase === 'cold') {
+            rememberPriceRefusal(buyer, request, error.priceEvidence);
+            coordinator()?.requestEconomyRefresh?.(buyer);
+        }
         throw error;
     });
     entry.ready.catch(() => {}); // UI confirmation or the bot continuation owns the outcome.
@@ -412,6 +418,31 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
 // owner publish its fresh quantities/value. A later revision survives this
 // cleanup; sibling shop lines and both physical wallets are preserved.
 const refusedAds = new Map();
+function rememberPriceRefusal(buyer, request, evidence) {
+    const state = life().cachedState(buyer), scopes = evidence?.scopes, purchase = evidence?.purchase;
+    if (!state || !purchase || !Array.isArray(scopes) || scopes.length > 40
+        || !scopes.every(scope => typeof scope === 'string')
+        || evidence.offers === undefined && typeof evidence.source !== 'string'
+        || evidence.items !== undefined && (!Array.isArray(evidence.items) || evidence.items.length > 60
+            || !evidence.items.every(id => Number.isSafeInteger(id) && id > 0))
+        || !EconomyCommit.sameAuthority(EconomyCommit.authority(state), evidence.authority)
+        || Number(state.updatedAt || 0) !== evidence.updatedAt) return;
+    const board = afk().boardIndex(), counters = invoke('GameServer/Bot/Economy/MarketCounters');
+    const workshops = invoke('GameServer/Bot/Economy/CraftWorkshopService');
+    const production = invoke('GameServer/Bot/Economy/ProductionPolicy');
+    const refusals = invoke('GameServer/Bot/Economy/MeetingPriceRefusals');
+    const current = () => (evidence.offers !== undefined
+        ? evidence.fundingDominance === true && scopes.length === 0 && refusals.witnessCurrent(board, evidence.offers, purchase)
+        : refusals.fingerprint(evidence.items
+        ? [evidence.items.map(id => [id, board.itemFingerprint(id)]),
+            scopes.map(scope => [scope, counters.meetingRevisionOf(scope), workshops.publicScopeDigest(scope)])]
+        : scopes.map(scope => [scope, board.groupFingerprint(scope),
+            counters.meetingRevisionOf(scope), workshops.publicScopeDigest(scope)])) === evidence.source)
+        && production.allowsNpcShot(purchase.selfId) === evidence.npcAllowed
+        && refusals.admissionFingerprint(board, evidence.admissionScope) === (evidence.admission ?? null);
+    if (current()) refusals.remember(state, board, request, purchase, current,
+        { minimumFree: evidence.minimumFree, fundingDominance: evidence.fundingDominance === true });
+}
 async function purchaseNeedChanged(ownerId, errand, goal) {
     try {
         await db().withMutationAdmission(() => {
@@ -486,7 +517,10 @@ async function trade(characterId, store, itemId, amount, options) {
     // A lifecycle command may be waiting for this return on commandTail.
     // Release it before either independent worker preparation replies.
     const token = prepared.preparationId, entry = staged.get(token);
-    entry.ready.then(() => accept(token, characterId)).catch(error => {
+    // Preparation outlives the initiating command. Its acceptance has its
+    // own bilateral proof and native transaction checks; the old command's
+    // async-local write guard must not survive into that independent action.
+    entry.ready.then(() => db().withoutMutationAdmission(() => accept(token, characterId))).catch(error => {
         utils.infoWarn('AfkTrade', 'meeting preparation %s: %s (actor=%d record=%d item=%d count=%d)',
             token, error.message, characterId, store.shopId, itemId, amount);
     });
@@ -504,6 +538,7 @@ function presenceChanged(session) {
     marker.present = present; marker.atWaypoint = atWaypoint; wake(actor.fetchId());
 }
 function reset() {
+    invoke('GameServer/Bot/Economy/MeetingPriceRefusals').clear();
     unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.();
     unsubscribeLife = unsubscribeMarketLife = unsubscribePlayer = unsubscribeBoard = undefined;
     for (const token of [...staged.keys()]) discard(token);

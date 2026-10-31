@@ -34,6 +34,7 @@ const native = {
 global.utils = { infoWarn() {} };
 global.invoke = name => ({
     Database: native,
+    'GameServer/Bot/Economy/MeetingPriceRefusals': { clear() {} },
     'GameServer/Bot/Population/BotLifeState': { cachedState: id => id === 5 ? botState : null,
         subscribeChanges: () => () => {}, subscribeMarketReviewChanges: () => () => {} },
     'GameServer/AfkTrade/AfkTradeService': { subscribeBoardChanges: () => () => {},

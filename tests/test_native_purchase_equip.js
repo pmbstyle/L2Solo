@@ -8,14 +8,15 @@ const Database = invoke('Database'), Life = invoke('GameServer/Bot/Population/Bo
 const Commit = require('../src/GameServer/Bot/Economy/EconomyCommit');
 const Native = require('./helpers/nativeMarketFixture');
 invoke('GameServer/DataCache').init();
-async function owner(id) {
+async function owner(id, inputPreparation = null) {
     await Native.character(Database, id, `Equip${id}`, `bot_equip_${id}`);
     await Database.setItem(id, { selfId: 57, name: 'Adena', amount: 5000 });
     return Life.upsertState({ characterId: id, accountName: `bot_equip_${id}`, phase: 'cold', activity: 'shopping', level: 40,
         adena: 5000, inventory: Life.inventorySummaryFromItems(await Database.fetchItems(id)),
         currentRegion: 'Gludio', loc: { locX: -14900, locY: 123000, locZ: -3100 }, timing: {},
         vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }, stats: { classId: 0, money: [36000, 0, 0, 0],
-            equipmentPlan: { status: 'active', target: { selfId: 45, slot: 6, name: 'Bone Helmet' } } } }, 'native_equip_fixture');
+            equipmentPlan: { status: 'active', target: { selfId: 45, slot: 6, name: 'Bone Helmet' },
+                ...(inputPreparation ? { inputPreparation } : {}) } } }, 'native_equip_fixture');
 }
 const details = (command, autoEquip = true) => ({ selfId: 45, name: 'Bone Helmet', amount: 1, unitPrice: 1000,
     stackable: false, slot: 6, autoEquip, economyCommand: command });
@@ -49,6 +50,20 @@ async function run() {
     assert(retry.ok); assert.equal(Native.amount(await Database.fetchItems(9302), 57), 4000);
     const again = await Database.purchaseNpcInventoryItem(9302, details(admitted.command));
     assert(again.replayed); assert.equal(Native.amount(await Database.fetchItems(9302), 45), 1);
+    const savedCraft = { status: 'deferred', strategy: 'none', reason: 'wish_focus', recipeId: 191,
+        target: { selfId: 76, slot: 7 }, materials: [{ selfId: 1458, amount: 20 }], heldInputs: { 1458: 10 } };
+    state = await owner(9303, savedCraft); admitted = await Commit.admit(state, Commit.KINDS.npcBuy);
+    try { result = await Database.purchaseNpcInventoryItem(9303, details(admitted.command)); }
+    finally { Commit.finish(9303, admitted.command); }
+    assert.deepEqual(Commit.acceptRow(result.coldLifeRow).stats.equipmentPlan, savedCraft,
+        'the transaction resumes the separate unfinished craft after equipping the alternative');
+    const boughtCraft = { status: 'deferred', strategy: 'none', reason: 'wish_focus', recipeId: 191,
+        target: { selfId: 45, slot: 6 }, heldInputs: { 1458: 5 }, inputPreparation: savedCraft };
+    state = await owner(9304, boughtCraft); admitted = await Commit.admit(state, Commit.KINDS.npcBuy);
+    try { result = await Database.purchaseNpcInventoryItem(9304, details(admitted.command)); }
+    finally { Commit.finish(9304, admitted.command); }
+    assert.deepEqual(Commit.acceptRow(result.coldLifeRow).stats.equipmentPlan, savedCraft,
+        'fulfilling the current paused craft resumes the older retained project');
     console.log('Native cold gear: actual flags/slots and plan, explicit hold, rollback, retry and replay passed');
 }
 run().then(() => Database.close()).catch(async error => { console.error(error); process.exitCode = 1; await Database.close(); });

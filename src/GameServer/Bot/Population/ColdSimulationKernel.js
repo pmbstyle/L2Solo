@@ -1364,8 +1364,11 @@ class ColdSimulationKernel {
                     throw Error('trade_meeting_send_failed');
             }).catch(error => {
                 if (!this.cancelCommand(id, attempt)) return;
-                this.emit('command_ack', { results: [{ ...identity, pageIndex: -1, ok: false,
-                    reason: String(error.message || error) }] });
+                const result = { ...identity, pageIndex: -1, ok: false, reason: String(error.message || error) };
+                if (error.priceEvidence || error.priceFallback) result.priceEvidence = error.priceEvidence || error.priceFallback;
+                // The sender checks the full envelope and can use the smaller
+                // evidence or omit it without losing the refusal itself.
+                this.emit('command_ack', { results: [result] }, null, null, error.priceFallback);
             });
             return true;
         } catch (error) {

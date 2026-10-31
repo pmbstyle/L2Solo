@@ -116,6 +116,45 @@ async function noSpend(state, itemId, message) {
         assert.equal(bought.state.adena, arrivedWallet - npc.price);
         assert.equal(Number.isInteger(bought.state.adena), true);
 
+        // A remembered conditional-shop refusal can arrive after selection.
+        // A deferred real NPC remainder must still settle the errand in this
+        // visit, rather than lose the whole request to a replan.
+        const stackNpc = Offers.npcOffers(736, 'Giran')[0];
+        assert(stackNpc && stackNpc.price > 1, 'the fixture has a stackable NPC scroll');
+        const npcSeller = await arrive(await stateFor());
+        await Database.setItem(npcSeller.characterId, { selfId: stackNpc.selfId, name: stackNpc.itemName, amount: 1, slot: 0 });
+        await Database.replaceBoardRecords(npcSeller.characterId, 'sell_ad', [{ storeType: Afk.SELL, town: 'Giran',
+            title: 'Refused NPC input', ...GIRAN, lines: [{ selfId: stackNpc.selfId, count: 1, price: stackNpc.price - 1,
+                stackable: true }] }], { expected: {} });
+        const npcAd = (await Database.fetchAfkTradeShops(npcSeller.characterId)).find(row => row.kind === 'sell_ad');
+        Afk.refreshRecord(npcAd);
+        const npcErrand = { selfId: stackNpc.selfId, amount: 2, town: 'Giran', money: WALLET, purpose: 'craft_input',
+            r: RATE, at: Date.now() };
+        const npcBuyer = await arrive(await stateFor(OLD, { marketErrand: npcErrand,
+            townVisit: { town: 'Giran', completed: true } }));
+        const priceMemo = require('../src/GameServer/Bot/Economy/MeetingPriceRefusals');
+        const previousOfferOf = Afk.offerOf;
+        let refusedAfterPlan = false;
+        Afk.offerOf = function (line, ...args) {
+            if (!refusedAfterPlan && Number(line.recordId) === Number(npcAd.id)) {
+                refusedAfterPlan = true;
+                const current = Life.cachedState(npcBuyer.characterId);
+                priceMemo.remember(current, Afk.boardIndex(), { actorA: current.characterId, actorB: npcSeller.characterId,
+                    lines: [{ payer: 0, adId: npcAd.id, adRevision: npcAd.revision, selfId: stackNpc.selfId,
+                        count: 1, price: stackNpc.price - 1 }] },
+                { selfId: stackNpc.selfId, enchant: 0, units: 1, cost: stackNpc.price - 1 }, () => true, { fundingDominance: true });
+            }
+            return previousOfferOf.call(this, line, ...args);
+        };
+        let npcAfter;
+        try { npcAfter = await Market.finishTownErrands(npcBuyer); }
+        finally { Afk.offerOf = previousOfferOf; priceMemo.clear(); }
+        assert(refusedAfterPlan, 'the seller refusal was learned after the NPC basket was planned');
+        assert((await stock(npcBuyer.characterId, stackNpc.selfId)) >= 2, 'the current NPC supplies the remaining quantity');
+        assert.equal(npcAfter.stats.lastErrand?.units, 2, 'the separate survival restock is not charged to the errand');
+        assert.equal(Errands.pending(npcAfter).length, 0, 'the filled NPC errand closes normally');
+        await Afk.closeBotRecord(npcSeller.characterId, npcAd.id);
+
         // Explicit zero is not permission to look up a better item rate.
         const zero = await stateFor([77000, 1.3e-5, 15000, 0, RATE, 30000, npc.selfId], {
             marketErrand: { selfId: npc.selfId, amount: 1, town: 'Giran', money: 985000,
@@ -154,6 +193,31 @@ async function noSpend(state, itemId, message) {
         const boardStale = await arrive(await errand(await stateFor(), 1864, 2, { npc: false }), CHANGED);
         await noSpend(boardStale, 1864, 'a changed money packet also rejects a board transaction');
         assert.equal(Afk.boardIndex().ownerLines(seller.characterId)[0].count, 20);
+
+        // A completed meeting can deliver part of a production errand after
+        // its original lifecycle command returned. Buy only the still-missing
+        // recipe input on the next pass, even if the saved errand is older.
+        const production = await stateFor(OLD, { wealthCraft: { recipeId: 28, batches: 5, outcome: 'buying' },
+            marketErrand: { selfId: 1864, amount: 25, town: 'Giran', money: WALLET,
+                purpose: 'wealth_craft', tag: [-5], r: RATE, at: Date.now() } });
+        await Database.setItem(production.characterId, { selfId: 1864, name: 'Stem', amount: 19, slot: 0 });
+        const productionArrival = await arrive(await Life.upsertState({ ...production,
+            inventory: Life.inventorySummaryFromItems(await Database.fetchItems(production.characterId)) }, 'production_partial_delivery'));
+        const productionResult = await Market.tryPurchase(productionArrival, { type: 'market_errand' });
+        assert.equal(productionResult.units, 6, 'a 25-unit production input with 19 already delivered buys only six');
+        assert.equal(await stock(production.characterId, 1864), 25);
+        assert.equal(Errands.pending(productionResult.state).length, 0);
+
+        const complete = await stateFor(OLD, { wealthCraft: { recipeId: 28, batches: 1, outcome: 'buying' },
+            marketErrand: { selfId: 1864, amount: 5, town: 'Giran', money: WALLET,
+                purpose: 'wealth_craft', tag: [-5], r: RATE, at: Date.now() } });
+        await Database.setItem(complete.characterId, { selfId: 1864, name: 'Stem', amount: 5, slot: 0 });
+        const completeArrival = await arrive(await Life.upsertState({ ...complete,
+            inventory: Life.inventorySummaryFromItems(await Database.fetchItems(complete.characterId)) }, 'production_full_delivery'));
+        const completeResult = await Market.tryPurchase(completeArrival, { type: 'market_errand' });
+        assert.equal(completeResult.units, 0, 'a fully delivered input never starts another purchase');
+        assert.equal(await stock(complete.characterId, 1864), 5);
+        assert.equal(Errands.pending(completeResult.state).length, 0);
 
         await Database.setItem(seller.characterId, { selfId: 736, name: 'Scroll of Escape', amount: 1, slot: 0 });
         await sellShop(seller.characterId, 'One genuine escape scroll',

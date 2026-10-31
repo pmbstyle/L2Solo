@@ -197,11 +197,11 @@ const GoalState = {
         });
     },
 
-    abandonAccepted(characterId, expectedGoal) {
+    closeAccepted(characterId, expectedGoal, status) {
         const id = Number(characterId), existing = this.snapshot(id);
-        if (!expectedGoal || !existing?.current || existing.current.status !== 'active'
+        if (!['abandoned', 'completed'].includes(status) || !expectedGoal || !existing?.current || existing.current.status !== 'active'
             || safeJson(existing.current) !== safeJson(expectedGoal)) return Promise.resolve(null);
-        const timestamp = now(), current = normalizeGoal({ ...existing.current, status: 'abandoned',
+        const timestamp = now(), current = normalizeGoal({ ...existing.current, status,
             reviewedAt: timestamp, nextReviewAt: timestamp });
         const snapshot = { ...existing, current, updatedAt: timestamp, inputHash: undefined };
         return Database.execute([`UPDATE ${TABLE} SET goalJson = ?, updatedAt = ?
@@ -211,6 +211,10 @@ const GoalState = {
             if (cache.get(id) === existing) store(snapshot);
             return snapshot;
         });
+    },
+
+    abandonAccepted(characterId, expectedGoal) {
+        return this.closeAccepted(characterId, expectedGoal, 'abandoned');
     },
 
     // Advance only the goal accepted before the asynchronous native purchase.

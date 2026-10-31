@@ -361,7 +361,15 @@ function reconcileFulfilledEquipmentPlan(state = {}) {
         stats.marketRetryAfter = null;
         stats.marketLead = null;
     }
-    delete stats.equipmentPlan;
+    let retained = plan?.inputPreparation;
+    while (retained && (!retained.recipeId || !retained.target?.selfId
+        || Number(retained.target.selfId) === Number(plan.target.selfId)
+        || equipmentTargetFulfilled({ equipmentPlan: retained }, state.inventory))) retained = retained.inputPreparation;
+    if (retained) {
+        // Completing a temporary equipment goal must not erase the separate
+        // unfinished recipe that was waiting behind it.
+        stats.equipmentPlan = retained;
+    } else delete stats.equipmentPlan;
     delete stats.partyRequest;
     delete stats.clanPartyObjective;
     return { ...state, stats };

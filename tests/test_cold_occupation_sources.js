@@ -192,6 +192,13 @@ assert.equal(releasedPurchase.lines[0].line.recordId, 701, 'leaving the party op
     assert.deepEqual(recordsOf(OfferQuery.cheapestIn(flipping, 6)), [701]);
     assert.equal(flipping.byAmount.size, 1, 'the flip cleared the memo, only the amount asked since is held');
     assert(!flipping.byAmount.has(5));
+    sourceOwner = { characterId: 701, phase: 'cold', activity: 'hunting', adena: 1000000,
+        loc: { locX: -44600, locY: -112400, locZ: -240 }, stats: { money: [1000, .001, 0, 500] } };
+    assert.deepEqual(recordsOf(OfferQuery.cheapestIn(flipping, 5)), [702], 'a paid route cannot spend a seller\'s protected money');
+    sourceOwner = { ...sourceOwner, stats: { money: [1000, .001, 0, 0] } };
+    assert.deepEqual(recordsOf(OfferQuery.cheapestIn(flipping, 5)), [701], 'the same memoized offer reopens when the seller can pay');
+    sourceOwner = { ...sourceOwner, loc: { locX: 83396, locY: 147904, locZ: -3400 }, stats: { money: [1000, .001, 0, 500] } };
+    assert.deepEqual(recordsOf(OfferQuery.cheapestIn(flipping, 5)), [701], 'the seller can meet locally without spending protected money');
     // A memoized null: nothing fills under maxPrice 0; the second call does not walk the rows again.
     const nothing = OfferQuery.townTable(admissionBoard, 1864, { quoteDepth: 5, maxPrice: 0 });
     const rows = nothing.rows;

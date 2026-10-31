@@ -106,6 +106,7 @@ module.exports = { init, inventory, LIMIT, prepareRow,
         return { ...state, inventory: bag };
     },
     version(state) { return Number(source(Number(state?.characterId))?.[1] || 0); },
+    hasItems(state) { return !!source(Number(state?.characterId))?.[2]?.length; },
     changed(id) { if (isMainThread) { pending.add(Number(id)); if (initialized) setImmediate(drain); } },
     useRowSource(reader, isReady) {
         source = reader || (id => records.get(id));

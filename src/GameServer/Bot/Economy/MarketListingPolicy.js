@@ -130,6 +130,9 @@ function evaluate(state, options = {}) {
     const decisions = [];
     const forBoard = [];
     for (const item of candidates) {
+        const selectedAnswerRecord = Number(options.selectedAnswer?.selfId) === Number(item.selfId)
+            && Number(options.selectedAnswer?.enchant || 0) === Number(item.enchant || 0)
+            ? Number(options.selectedAnswer.recordId) : 0;
         const marketOnly = ItemDisposition.isGradeCrystal(item);
         const hard = classify(state, item);
         if (hard.action !== 'market') {
@@ -146,7 +149,7 @@ function evaluate(state, options = {}) {
                 const chosen = MarketPricing.disposition(item, ctx, {
                     town: state.currentRegion, room: roomFor(item, options.stored), stockQuote: true,
                     standingPrice: kept.get(keptKey) ?? kept.get(Number(item.selfId)),
-                    rollKey: ['dispose', ctx.characterId, item.selfId, decisionPoint]
+                    rollKey: ['dispose', ctx.characterId, item.selfId, decisionPoint], selectedAnswerRecord
                 });
                 if (chosen.action === 'ad') {
                     decisions.push({ action: 'ad', reason: 'expected_value', item, priced: chosen.priced,
@@ -164,7 +167,7 @@ function evaluate(state, options = {}) {
             // otherwise liquidates surplus instead of warehousing it.
             town, room: options.stockQuotes === true || marketOnly ? 1 : liquidate ? 0 : roomFor(item, options.stored),
             stockQuote: options.stockQuotes === true || marketOnly,
-            rollKey: ['dispose', ctx.characterId, item.selfId, decisionPoint]
+            rollKey: ['dispose', ctx.characterId, item.selfId, decisionPoint], selectedAnswerRecord
         });
         // A valid ask without a known buyer waits on the market. It creates
         // no assumed receipts; physical reservations were removed above.
@@ -210,6 +213,27 @@ function evaluate(state, options = {}) {
     };
 }
 
+// Both the economy plan and bilateral consent evaluate the same physical bag
+// and held lines. Backed stock is shown only for listing reconciliation;
+// meeting admission still separately checks the seller's actual free stock.
+function ownSaleInputs(state, own, options = {}) {
+    const kept = new Map(own.filter(line => line.storeType === BoardRules.SELL)
+        .map(line => [`${line.selfId}:${line.enchant || 0}`, line.price]));
+    const inventory = { ...state.inventory };
+    for (const line of own) {
+        if (line.storeType !== BoardRules.SELL || line.custodyPolicy === 1) continue;
+        const row = inventory[line.selfId] || { selfId: line.selfId, amount: 0 };
+        inventory[line.selfId] = { ...row, amount: Number(row.amount || 0) + line.count,
+            instances: [...(row.instances || []), { id: -line.lineId, amount: line.count, enchant: line.enchant, equipped: false }] };
+    }
+    const conditionalKept = new Set(own.filter(line => line.storeType === BoardRules.SELL && line.custodyPolicy === 1)
+        .map(line => `${line.selfId}:${line.enchant || 0}`));
+    for (const line of own) if (line.storeType === BoardRules.SELL && line.custodyPolicy !== 1)
+        conditionalKept.delete(`${line.selfId}:${line.enchant || 0}`);
+    return { state: { ...state, inventory }, options: { ...options, stockQuotes: true,
+        slots: BOARD_SLOTS, kept, conditionalKept, stored: new Map() } };
+}
+
 // Room to keep an item: gear keeps two copies in the warehouse
 // (BotWarehouseService), anything else has room.
 function roomFor(item, stored) {
@@ -251,6 +275,7 @@ module.exports = {
     BOARD_SLOTS,
     classify,
     evaluate,
+    ownSaleInputs,
     isGear,
     prioritizeListings,
     traderContext,

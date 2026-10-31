@@ -16,6 +16,8 @@ const notRunTests = new Map([
 ]);
 
 const tests = [
+    'tests/test_active_craft_warehouse.js',
+    'tests/test_active_craft_warehouse_sqlite.js',
     'tests/test_clan_war_home.js',
     'tests/test_clan_war_return_geodata.js',
     'tests/test_clan_war_return.js',
@@ -39,6 +41,7 @@ const tests = [
     'tests/test_bot_dialogue_grounding.js',
     'tests/test_bot_dialogue_party.js',
     'tests/test_bot_afk_buy_shop.js',
+    'tests/test_duplicate_craft_buy_ads.js',
     'tests/test_native_board.js',
     'tests/test_c4_import_integration.js',
     'tests/test_generated_cold_loadout.js',
@@ -1071,10 +1074,15 @@ const tests = [
     'tests/test_shot_setup_purchase.js',
     'tests/test_trade_intent.js',
     'tests/test_selected_purchase_meeting.js',
+    'tests/test_meeting_survival_transport.js',
+    'tests/test_production_purchase_meeting.js',
     'tests/test_luxury_purchase_meeting.js',
     'tests/test_meeting_flow_freshness.js',
     'tests/test_refused_purchase_errand.js',
+    'tests/test_sell_ad_price_refusal.js',
+    'tests/test_sell_ad_price_replan.js',
     'tests/test_board_trade_meeting.js',
+    'tests/test_trade_meeting_detached_admission.js',
     'tests/test_same_point_trade_meetings.js',
     'tests/test_reserved_board_stock.js',
     'tests/test_delete_character_trade_meetings.js',

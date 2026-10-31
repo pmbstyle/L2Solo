@@ -1,5 +1,5 @@
 <a href="https://l2solo.com">
-<img alt="Lineage2 Solo local server" src="https://github.com/user-attachments/assets/34f25f32-ed7c-4d6d-9d85-ea12e3c56a46" />
+<img alt="Lineage2 Solo local server" src="https://github.com/user-attachments/assets/a75ad34c-6371-46f5-8f78-0447ccc333a3" />
 </a>
 
 
@@ -21,7 +21,7 @@ Support, updates, and communication. Join the Discord to stay up to date with de
 ⚔️ [Game client](https://drive.google.com/file/d/1u0nW3m9c6Hql8sR9POQAcvglxIno23lv/view?usp=sharing)
 Clean C4 client protocol 656
 
-🧩 [L2Solo client mod](https://drive.google.com/file/d/1u7zzKEUqDHQCBojFr3MeyYzDfWt4vkeY/view?usp=sharing)
+🧩 [L2Solo client mod](https://drive.google.com/file/d/16snZK_8KQOzGfgEO6hmAoXOtkL4iMhM8/view?usp=sharing)
 Optional but recommended for a better experience
 
 
@@ -35,6 +35,9 @@ Optional but recommended for a better experience
 
 
 ## Latest updates
+- **2026-10-30** Clan wars, geodata, bug fixes
+- **2026-10-26** Server stability, better AI, spoil, hunting, bug fixes
+- **2026-10-18** A living world economy, market board, better bot progression
 - **2026-10-03** Bot and performance fixes, player-led raids, better observer, quests and more
 - **2026-09-29** Market, recipes, bot shoulshots craft, paid buffs, fixes and improvements
 - **2026-09-26** Bot raid boss farm, player bot party join, SA, fixes and updates
@@ -53,12 +56,12 @@ Optional but recommended for a better experience
 - **2026-08-28** Skills, bot behavior, gear planning, and seeder fixes and improvements
 - **2026-08-27** Add LLM-driven clan management
 - **2026-08-26** Observer update, better and faster, player clan crest control, player clan goal control
-- **2026-08-25** Bot clans update follow-up, bug fixes
-- **2026-08-24** Bot clans, better cold/hot performance, bug fixes, and more
 
 <details>
 <summary>Earlier</summary>
 
+- **2026-08-25** Bot clans update follow-up, bug fixes
+- **2026-08-24** Bot clans, better cold/hot performance, bug fixes, and more
 - **2026-08-20** Loot and mob skills bug fixes, bot social graph base
 - **2026-08-19** Runtime optimization, cold bot progression bottlenecks fix, bot equipment enchantment
 - **2026-08-18** Fixes, cold bots progression, better AI compatibility
@@ -74,7 +77,7 @@ Optional but recommended for a better experience
 
 </details>
 
-See full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
+See the full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 
 ## Game Checklist
 
@@ -147,10 +150,10 @@ See full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 - Bots will fight over mobs on a farm spot
 - Bot clans can form raid boss farm parties
 - Players can join bot parties
+- Clan wars, including autonomous clan wars
 
 ### ✴️ Will be added
 
-- Clan wars
 - Olympiad, heroes
 - Sieges (bot- or player -driven)
 - World bosses
@@ -178,37 +181,31 @@ npm install
 npm start
 ```
 
-That command will start the L2Solo Launcher.
+This command starts the L2Solo Launcher.
 
 Press `Start` in the launcher to run the server. 
 
-Use **Saved Games** while the server is stopped to save a full copy of your world database. Enter a name or leave it blank for a generated one. Saves are stored in `tmp/saves` (or `saves` inside a custom runtime directory), with no limit on their number beyond available disk space. The list shows each save's name, date, time, and size in GB.
-
-**Load** replaces the current database with the selected save and leaves the server stopped. **Delete** permanently removes that save. Both actions ask for confirmation. All saves are manual: loading never creates an automatic backup. Configuration files and launcher settings are not part of a save.
-
-Before opening the game server, L2Solo verifies `data/Geodata` against the pinned release in `scripts/geodata-release.json`: the exact region set, file sizes and SHA-256 checksums must match. Missing, outdated or damaged packs are downloaded and verified in a separate directory. The starter then preserves the entire previous directory as `Geodata.backup-*` and installs the new pack without mixing regions. The C4 pack generated from the local client contains 141 regions (about 681 MiB). The malformed client map `15_21` is excluded because its terrain belongs to `15_20`. See [client geodata](docs/client-geodata.md) for installation and rollback.
+Before opening the game server, L2Solo verifies `data/Geodata`, downloads and unpacks it if needed.
 
 ```bash
 npm run geodata
 npm run test:geodata
 ```
+Manual download links:
 
-Current verified packs start without network access. Stop all server instances sharing a pack before updating it. For a verified archive mirror, configure both `L2NODE_GEODATA_URL` and `L2NODE_GEODATA_SHA256`. `L2NODE_GEODATA_DIR` selects an external directory; `L2NODE_GEODATA_RELEASE` selects a trusted release descriptor for a deliberate rollback or custom pack. The starter never falls back to the retired High Five download.
+https://l2solo.com/files/geodata-c4-client-20261027.zip
+
+or
+
+https://drive.google.com/file/d/1P6ZCuSfCPS381zQLTXuce6wbiWc7BL50/view?usp=sharing
+
+Use **Saved Games** while the server is stopped to save a full copy of your world database. This is only needed if you want to roll back to the saved server state. Server data itself always saves and updates in real time.
 
 ## Configuration
 
 Committed defaults live in `config/default.ini`.
 
 Private local overrides go in ignored `config/local.ini`. This is where API keys and a machine-specific SQLite path belong.
-
-Players' personal warehouses are shared by all characters on the same account.
-On startup, existing player warehouse items move to account ownership, preserving
-equipment enchantments and pet data. Bots retain their character warehouses.
-Deleting a character leaves the account warehouse intact. The shared capacity is
-300 item stacks or individual equipment rows for every player character, regardless
-of race or Expand Storage skill. Override `[GameServer] playerWarehouseSlots`
-(1..1000) to change it; restart to apply. Existing stock above a reduced limit
-remains withdrawable, and deposits into existing stacks remain available.
 
 Example:
 
@@ -264,58 +261,9 @@ set `reasoningEffort` to `low`, `medium`, or `high` when the selected model
 benefits from explicit reasoning.
 
 Clan chat uses the same `model` and `partyRouterModel` settings. Names, roles,
-selected clanmates and follow-up messages are routed first; ambiguous messages
+selected clanmates, and follow-up messages are routed first; ambiguous messages
 use the routing model to choose one responder or ask for clarification. Both
-active and background clan bots can reply in the clan channel. This path is
-conversation-only, with no tools or game actions. The clan shares a bounded
-in-memory conversation history, separate from party chat and private tells;
-it expires after 30 minutes of inactivity and resets on server restart.
-
-### Autonomous clan strategy
-
-With inference configured, autonomous clans choose a persistent strategic objective
-using the leader's stored drive and seven personality traits, capable roster,
-available treasury and recent strategic outcomes. Supported objectives are clan
-progression (through the existing level-four trial), member equipment, a native
-raid upgrade, recruitment, a treasury reserve and a clan hall. Native planners
-still own routes, readiness, spending checks and execution. Strategic equipment
-planning replaces the additional per-item LLM selection.
-
-`[ClanSimulation] strategicManagementEnabled` enables this layer by default;
-`llmGoalManagementEnabled` controls its inference calls. An installation without
-configured inference and without an existing strategy keeps its legacy lifecycle.
-Setting `strategicManagementEnabled = false` restores that lifecycle explicitly.
-Existing strategies continue deterministically during an inference outage.
-Their next decision still discovers fresh native equipment plans, even with
-inference disabled. Disabling inference retires pending strategic advice without
-waiting for its response or applying it later.
-
-A cheap review checks progress and significant changes; elapsed time alone does
-not require an LLM call. Choices survive restarts, and ordinary loot, movement and
-simulation revisions do not invalidate them. `strategyMinHoldMs` defaults to 30
-minutes, `strategyStallMs` to six hours, and `strategyRetryMs` to five minutes.
-Accepted equipment targets survive changed quotes, routes and personal gear
-preferences. A missing tactical route must persist for the retry interval before
-another strategic choice; gathering materials also refreshes the stall timer.
-Clan crystal shortages enter the shared economy's native purchase, crystallization
-and Luxury exchange chain, retaining the accepted equipment owner and reservations.
-Completion, an unavailable route or a changed leader can trigger an earlier
-review. Each clan has at most one model request in flight. The compact request
-has an estimated input limit of 1800 tokens and a 128-token completion limit.
-It skips the gateway's expanding schema-repair generation. Failed or stale responses use
-validated deterministic choices with a persisted retry backoff.
-
-The strategy directs discretionary clan purchases and prioritizes recruitment.
-Ordinary recruitment continues alongside every strategic objective and aims for
-the clan level's full member limit (10, 15, 20, 30, 40, 40 at levels 0–5).
-Candidate suitability and the configured population share limit still apply;
-selected raid and crafting recruits retain their reserved places.
-Existing raid/trial commitments and player orders retain priority; maintenance and personal
-bot lifecycles retain their native executors. Observer's clan detail shows the
-strategic objective, measurable progress, reason and cumulative reported token
-usage separately from the current operational task. A durable completed-upgrade
-counter carries progress across objectives and restores prior completions from
-the clan history when upgrading an existing world.
+active and background clan bots can reply in the clan channel.
 
 ## In-Game Commands
 

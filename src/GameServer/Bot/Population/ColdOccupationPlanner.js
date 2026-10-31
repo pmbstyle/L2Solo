@@ -251,7 +251,9 @@ class ColdOccupationPlanner {
                 const unitStarted = clock;
                 try { this.unit(entry); }
                 catch (error) { entry.error = String(error?.message || error); this.finish(entry, entry.input.mode === 'meeting'
-                    ? { refused: true, reason: entry.error } : unknownWorkshop()); }
+                    ? { refused: true, reason: entry.error, ...(error.priceEvidence ? { priceEvidence: error.priceEvidence } : {}),
+                        ...(error.priceFallback ? { priceFallback: error.priceFallback } : {}) }
+                    : unknownWorkshop()); }
                 clock = this.now();
                 const duration = clock - unitStarted;
                 DiagnosticConfig.developerDiagnostics && (this.stats.maxUnitMs = Math.max(this.stats.maxUnitMs, duration));

@@ -32,6 +32,19 @@ for (const phase of ['hot', 'cold']) {
     assert.equal(Choice.resolve([1, 1869, 2, 77, 78, 4, 237], board, 42), null, 'a selected seller who joined a party is invalidated');
 }
 Admission.configureTradeAdmission(() => null);
+{
+    const seller = { characterId: 99, phase: 'cold', activity: 'hunting', adena: 1000000,
+        loc: { locX: 83396, locY: 147904, locZ: -3400 }, stats: { money: [1000, .001, 0, 500] } };
+    Admission.configureTradeAdmission(id => id === 99 ? seller : null);
+    assert.equal(Choice.purchase(state, economy, board), null, 'a seller cannot offer a paid trip using protected funds');
+    assert.equal(Choice.resolve([1, 1869, 2, 77, 78, 4, 237], board, 42), null, 'the main thread also skips the unaffordable quote');
+    seller.stats.money = [1000, .001, 0, 0];
+    assert(Choice.purchase(state, economy, board), 'the unchanged ad becomes available when the owner can pay');
+    seller.stats.money = [1000, .001, 0, 500];
+    seller.loc = { locX: 115072, locY: -178176, locZ: -800 };
+    assert(Choice.purchase(state, economy, board), 'a free local trip remains possible even with protected funds');
+    Admission.configureTradeAdmission(() => null);
+}
 const Plan = require('../src/GameServer/Bot/Population/ColdEconomyPlan');
 function prepared(input) {
     const iterator = Plan.prepare(input, economy, { board });
