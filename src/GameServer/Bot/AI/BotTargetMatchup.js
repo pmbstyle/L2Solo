@@ -4,6 +4,7 @@ const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const WeaponMask = invoke('GameServer/Skills/WeaponMask');
 const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
 const PetHealRule = invoke('GameServer/Bot/AI/PetHealRule');
+const PetTankRule = invoke('GameServer/Bot/AI/PetTankRule');
 const Pull = invoke('GameServer/Bot/AI/BotPullEstimate');
 const HitRules = invoke('GameServer/Combat/HitRules');
 const CombatantView = invoke('GameServer/Combat/CombatantView');
@@ -246,60 +247,87 @@ function incomingRate(target, profile) {
 // loads) over the action's time (ColdCombatProfile.actionDelayMs, a weapon
 // cycle, a servitor's swing), against the target's base defence (modifier:
 // its weaknesses and defence buffs). An area skill hits every mob of a pull.
-// weight: damage per second; survivalWeight: bounded by the skill's reuse;
-// damageBudget: what the MP bar pays for; area: an area skill on a pull.
-function channels(profile, target) {
+// weight: damage per second; hit: of one action on one mob; struck: the mobs
+// it hits; survivalWeight: bounded by the skill's reuse; damageBudget: what
+// the MP bar pays for; area: an area skill on a pull.
+function channelContext(profile, target, shot = profile.shot) {
     const Cold = coldCombatProfile();
-    const role = profile.role || Roles.combatRoleFor(profile);
     const kind = profile.equipment?.weaponKind || '';
-    const bow = kind === 'Weapon.Bow';
-    const physical = role !== 'mage';
-    const attacker = Cold.attackerView(profile);
-    const bonus = profileBonus(profile);
-    const defender = CombatantView.view({ pDef: positive(target.basePDef || target.pDef), mDef: positive(target.baseMDef || target.mDef),
-        dex: target.dex, shieldPDef: target.shieldPDef, shieldRate: target.shieldRate });
+    return { Cold, shot, kind, bow: kind === 'Weapon.Bow', attacker: Cold.attackerView(profile), bonus: profileBonus(profile),
+        defender: CombatantView.view({ pDef: positive(target.basePDef || target.pDef), mDef: positive(target.baseMDef || target.mDef),
+            dex: target.dex, shieldPDef: target.shieldPDef, shieldRate: target.shieldRate }) };
+}
+
+function normalChannel(profile, target, { Cold, shot: supply, kind, bow, attacker, defender, bonus }) {
+    const shot = Cold.actionShot(supply, null);
+    const hit = HitRules.expectedMelee(attacker, defender, { soulshot: shot?.soulshot === true, bow,
+        hitChance: Cold.expectedHitChance(profile.accur, target.evasion) });
+    const swingMs = profile.servitor ? Cold.summonAttackMs(profile) : Cold.normalAttackMs(profile);
+    return { weight: hit * 1000 / swingMs, hit, modifier: modifier(target, {}, false, kind, false, bonus), magic: false, normal: true };
+}
+
+function skillChannel(profile, target, skill, { Cold, shot: supply, kind, bow, attacker, defender, bonus }) {
+    const semantic = skill.semantic || Rules.resolve(skill);
+    const magic = skill.spell === true;
+    // At full HP, as the gate judges (Death Link and Fatal by the caster's HP: HitRules.skillPower).
+    const power = Math.max(0, HitRules.skillPower(semantic, number(skill.power ?? semantic.power, 0), 1, 1));
+    if (!power) return null;
+    // An area skill hits every mob of a pull (F20; BotPullEstimate.pullView).
+    const area = Rules.hitsArea(semantic) && number(target.pull, 1) > 1;
+    const struck = area ? number(target.pull) : 1;
+    const shot = Cold.actionShot(supply, skill);
+    const blow = semantic.skillType === Rules.BLOW;
+    const hit = magic
+        ? HitRules.expectedMagicSkill(attacker, defender, { power, spiritshot: shot?.spiritshot === true,
+            blessedSpiritshot: shot?.blessedSpiritshot === true })
+            // The level-fail roll a nuke or a drain makes (HitRules.rollsMagicLevel).
+            * (HitRules.rollsMagicLevel(semantic, true) ? HitRules.magicLevelChance(semantic, profile.level, target.level) / 100 : 1)
+        : HitRules.expectedPhysicalSkill(attacker, defender, { power, blow, bow, soulshot: shot?.soulshot === true,
+            skillCritRate: HitRules.physicalSkillCritRate(semantic, profile.str),
+            landChance: blow ? HitRules.blowLandChance(semantic, { dex: profile.dex, front: true,
+                rateMul: bonus('blowRateMul') }) / 100 : 1 });
+    const hitDamage = struck * hit;
+    const weight = hitDamage * 1000 / Cold.actionDelayMs(profile, skill, shot?.spiritshot === true);
+    return { weight, hit, struck, modifier: modifier(target, semantic, magic, kind, true, bonus), magic, area,
+        soloScore: profile.soloAttackScores?.[skill.selfId],
+        survivalWeight: Math.min(weight, hitDamage / Math.max(0.25, number(skill.reuse, 0) / 1000)),
+        damageBudget: number(skill.mp, 0) > 0
+            ? Math.floor(number(profile.maxMp, 0) / skill.mp) * hitDamage : Infinity };
+}
+
+function channels(profile, target) {
+    const context = channelContext(profile, target);
+    const role = profile.role || Roles.combatRoleFor(profile);
     const result = [];
-    if (physical) {
-        const shot = Cold.actionShot(profile.shot, null);
-        const hit = HitRules.expectedMelee(attacker, defender, { soulshot: shot?.soulshot === true, bow,
-            hitChance: Cold.expectedHitChance(profile.accur, target.evasion) });
-        const swingMs = profile.servitor ? Cold.summonAttackMs(profile) : Cold.normalAttackMs(profile);
-        result.push({ weight: hit * 1000 / swingMs, modifier: modifier(target, {}, false, kind, false, bonus), magic: false, normal: true });
-    }
+    if (role !== 'mage') result.push(normalChannel(profile, target, context));
     for (const skill of profile.skills || []) {
         const semantic = skill.semantic || Rules.resolve(skill);
-        const magic = skill.spell === true;
         if (skill.passive || !DAMAGE_TYPES.has(semantic.skillType) || semantic.target !== 'enemy'
-            || semantic.notUsedInC4 || (role === 'mage' && !magic)
+            || semantic.notUsedInC4 || (role === 'mage' && skill.spell !== true)
             || (semantic.undeadOnly && target.undead !== true)
             || (number(profile.maxMp, 0) > 0 && number(skill.mp, 0) > profile.maxMp)
             || (semantic.requires?.weaponsAllowed && !(semantic.requires.weaponsAllowed & profile.weaponMask))
-            || (bow && number(semantic.castRange ?? skill.distance, 0) < 400)) continue;
-        // At full HP, as the gate judges (Death Link and Fatal by the caster's HP: HitRules.skillPower).
-        const power = Math.max(0, HitRules.skillPower(semantic, number(skill.power ?? semantic.power, 0), 1, 1));
-        if (!power) continue;
-        // An area skill hits every mob of a pull (F20; BotPullEstimate.pullView).
-        const area = Rules.hitsArea(semantic) && number(target.pull, 1) > 1;
-        const struck = area ? number(target.pull) : 1;
-        const shot = Cold.actionShot(profile.shot, skill);
-        const blow = semantic.skillType === Rules.BLOW;
-        const hitDamage = struck * (magic
-            ? HitRules.expectedMagicSkill(attacker, defender, { power, spiritshot: shot?.spiritshot === true,
-                blessedSpiritshot: shot?.blessedSpiritshot === true })
-                // The level-fail roll a nuke or a drain makes (HitRules.rollsMagicLevel).
-                * (HitRules.rollsMagicLevel(semantic, true) ? HitRules.magicLevelChance(semantic, profile.level, target.level) / 100 : 1)
-            : HitRules.expectedPhysicalSkill(attacker, defender, { power, blow, bow, soulshot: shot?.soulshot === true,
-                skillCritRate: HitRules.physicalSkillCritRate(semantic, profile.str),
-                landChance: blow ? HitRules.blowLandChance(semantic, { dex: profile.dex, front: true,
-                    rateMul: bonus('blowRateMul') }) / 100 : 1 }));
-        const weight = hitDamage * 1000 / Cold.actionDelayMs(profile, skill, shot?.spiritshot === true);
-        result.push({ weight, modifier: modifier(target, semantic, magic, kind, true, bonus), magic, area,
-            soloScore: profile.soloAttackScores?.[skill.selfId],
-            survivalWeight: Math.min(weight, hitDamage / Math.max(0.25, number(skill.reuse, 0) / 1000)),
-            damageBudget: number(skill.mp, 0) > 0
-                ? Math.floor(number(profile.maxMp, 0) / skill.mp) * hitDamage : Infinity });
+            || (context.bow && number(semantic.castRange ?? skill.distance, 0) < 400)) continue;
+        const channel = skillChannel(profile, target, skill, context);
+        if (channel) result.push(channel);
     }
     return result;
+}
+
+// The expected damage of a profile's next action on one mob of target: skill,
+// or its weapon hit (PetTankRule prices the hit before the cast). shot: the
+// supply its fight holds, else the profile's.
+function expectedHit(profile, target, skill = null, shot = profile.shot) {
+    const context = channelContext(profile, target, shot);
+    const channel = skill ? skillChannel(profile, target, skill, context) : normalChannel(profile, target, context);
+    return channel ? channel.hit * channel.modifier : 0;
+}
+
+// expectedHit for a live actor (hot): skill by its id, a pet or a bot alike.
+function actorHit(actor, target, skill = null) {
+    const profile = actorProfile(actor);
+    const id = skill?.fetchSelfId?.();
+    return expectedHit(profile, target, id === undefined ? null : profile.skills.find(record => record.selfId === id) || null);
 }
 
 // attacksOf: channels, or a caller's per-target list of them (npcVerdict).
@@ -325,15 +353,17 @@ function evaluate(profiles, target, attacksOf = channels) {
 // (ColdMobAction.incomingPerSecond: hits, criticals, skills), plus the
 // opening it strikes before a melee monster closes in
 // (ColdCombatProfile.openingMs); a servitor still to be raised strikes, and
-// its owner acts, only after the summon's cast. Each attacker deals its best
-// attack over that time; areaShare: the share of that damage by area
-// skills, which keeps a pull's mobs standing together (Pull.repack).
+// its owner acts, only after the summon's cast. Each attacker deals its best attack over that
+// time; areaShare: the share of that damage by area skills, which keeps a
+// pull's mobs standing together (Pull.repack).
 // How long the bot's side outlives a mob view (user 10-29: the pet tanks, as
-// in C4): each servitor's HP over the damage it takes, held longer by its
-// owner's heals (PetHealRule.healedLifetime: petSustain, ownerMp), then the
-// owner's (the longest of its receivers'). One rule for the gate, its bound
-// and the hot danger read.
-function sideLifetime(view, profiles, Mob = coldMobAction()) {
+// in C4): { total, pet }, pet: the time the pet stands. Each servitor's HP over
+// the damage it takes, held longer by its owner's heals
+// (PetHealRule.healedLifetime: petSustain, ownerMp), then the owner's (the
+// longest of its receivers', with the opening: the mob walks to the owner, not
+// to a pet at its side; PetTankRule keeps it off the owner till then). One rule
+// for the gate, its bound and the hot danger read.
+function sideLifetime(view, profiles, Mob, opening = 0) {
     let pets = 0, owner = 0;
     for (const profile of profiles) {
         if (profile.servitor === true) {
@@ -343,11 +373,25 @@ function sideLifetime(view, profiles, Mob = coldMobAction()) {
             owner = Math.max(owner, profile.maxHp / Mob.incomingPerSecond(view, profile));
         }
     }
-    return pets + owner;
+    return { total: pets + owner + opening, pet: pets };
 }
-// The owners the mobs strike once the pets are down (sideLifetime).
+// The owners, the bot's own side of a fight (sideLifetime).
 function ownerReceivers(profiles) {
     return profiles?.filter(profile => profile.soloDamageReceiver !== false && profile.servitor !== true);
+}
+// The pair PetTankRule binds: one owner of a class that sends a pet ahead and
+// its one pet, their indices in profiles; null for anything else (a party's
+// tank holds its mob: the owner fights).
+function soloPair(profiles) {
+    if (!profiles || profiles.length !== 2) return null;
+    const pet = profiles.findIndex(profile => profile.servitor === true);
+    return pet >= 0 && PetTankRule.binds(profiles[1 - pet]) ? { owner: 1 - pet, pet } : null;
+}
+// The best damage per second of a list of attacks.
+function bestRate(attacks) {
+    let best = 0;
+    for (const attack of attacks) best = Math.max(best, (attack.survivalWeight ?? attack.weight) * attack.modifier);
+    return best;
 }
 
 // The solo hunt gate (T132, docs/game-decisions.md): the damage a bot deals
@@ -357,7 +401,6 @@ function ownerReceivers(profiles) {
 const SOLO_GATE_MARGIN = 1.0;
 
 function soloSurvival(profiles, target, minimum = SOLO_GATE_MARGIN, attacksOf = channels) {
-    // The mobs strike the pets first, then the owner (sideLifetime).
     const receivers = ownerReceivers(profiles);
     if (!receivers?.length || !(target.maxHp > 0) || !(target.pAtk > 0)
         || receivers.some(profile => profile.survivalKnown === false || !(profile.maxHp > 0) || !(profile.pDef > 0))) {
@@ -367,16 +410,25 @@ function soloSurvival(profiles, target, minimum = SOLO_GATE_MARGIN, attacksOf = 
     const openingSeconds = Cold.openingMs(receivers[0], target) / 1000;
     const castSeconds = Math.max(0, ...profiles.map(profile => number(profile.summonCastMs, 0))) / 1000;
     const lists = profiles.map(profile => soloChannels(profile, target, attacksOf));
+    const pair = soloPair(profiles);
     const plan = view => {
-        const lifetime = sideLifetime(view, profiles, Mob);
-        const seconds = Math.max(0, lifetime + openingSeconds - castSeconds);
-        let damage = 0, area = 0;
-        for (const attacks of lists) {
+        const side = sideLifetime(view, profiles, Mob, openingSeconds);
+        const seconds = Math.max(0, side.total - castSeconds), petSeconds = Math.max(0, side.pet - castSeconds);
+        let damage = 0, area = 0, petDealt = 0;
+        // The pair's pet first: it strikes while it stands, and its hate caps its owner's damage.
+        for (const index of pair ? [pair.pet, pair.owner] : lists.keys()) {
+            const onPet = pair?.pet === index, ownerOfPet = pair?.owner === index;
+            const time = onPet ? petSeconds : seconds;
             let best = 0, bestArea = false;
-            for (const attack of attacks) {
-                const dealt = Math.min((attack.survivalWeight ?? attack.weight) * seconds, attack.damageBudget ?? Infinity) * attack.modifier;
+            for (const attack of lists[index]) {
+                const rate = (attack.survivalWeight ?? attack.weight) * attack.modifier;
+                let dealt = Math.min(rate * time, (attack.damageBudget ?? Infinity) * attack.modifier);
+                // Once the pet is down nothing holds the owner back.
+                if (ownerOfPet) dealt = Math.min(dealt, PetTankRule.ownerCap(petDealt, number(attack.hit, 0) * attack.modifier) * number(attack.struck, 1)
+                    + rate * (seconds - petSeconds));
                 if (dealt > best) { best = dealt; bestArea = attack.area === true; }
             }
+            if (onPet) petDealt = best;
             damage += best;
             if (bestArea) area += best;
         }
@@ -467,9 +519,7 @@ function soloSpotUpperBound(profiles) {
         if (!(target?.maxHp > 0) || !(target.pAtk > 0)
             || !(target.basePDef > 0) || !(target.baseMDef > 0)) return true;
         // The gate's own lifetime and opening (soloSurvival), no summon cast.
-        const Mob = coldMobAction();
-        const seconds = sideLifetime(target, profiles, Mob)
-            + coldCombatProfile().openingMs(receivers[0], target) / 1000;
+        const seconds = sideLifetime(target, profiles, coldMobAction(), coldCombatProfile().openingMs(receivers[0], target) / 1000).total;
         // The largest term a hit of theirs can meet: a damage weakness of the
         // target, times a profile's bonus against its race or undead kind.
         let vulnerability = 1, bonus = 1;
@@ -624,9 +674,11 @@ function spotMatchup(spot, profiles, options = {}) {
 // A fixed attack envelope, shared with the survival gate. Admission may
 // compare native buff effects without running an encounter simulation.
 function damageRate(profiles, target = {}) {
-    return profiles.reduce((sum, profile) => sum + Math.max(0, ...channels(profile, target)
-        .map(attack => (attack.survivalWeight ?? attack.weight) * attack.modifier)), 0);
+    const rates = profiles.map(profile => bestRate(channels(profile, target)));
+    const pair = soloPair(profiles);
+    if (pair) rates[pair.owner] = Math.min(rates[pair.owner], rates[pair.pet]);
+    return rates.reduce((sum, rate) => sum + rate, 0);
 }
 
 module.exports = { MIN_EFFICIENCY, SOLO_GATE_MARGIN, actorProfiles, coldProfiles, servitorProfile, profileKey, targetView, skillModifier, channels, damageRate, attackRate, spellRate, incomingRate,
-    profileStats, skillStats, evaluate, soloSurvival, soloCanHunt, soloSpotUpperBound, stateProfiles, spotMatchup, speciesPulls };
+    profileStats, skillStats, evaluate, soloSurvival, soloCanHunt, soloSpotUpperBound, stateProfiles, spotMatchup, speciesPulls, expectedHit, actorHit };

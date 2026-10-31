@@ -869,6 +869,11 @@ const BotAI = {
             return true;
         }
         const decision = offense?.ready || null;
+        // The pet tanks a solo fight: the chosen hit waits on its hate (PetTankRule).
+        if (SummonerTactics.ownerWaits(session, bot, npc, summonAction, decision?.skill)) {
+            session.lastCombatDecision = { action: 'summon_tanks', role, targetId: npc.fetchId(), at: Date.now() };
+            return true;
+        }
         if (decision) {
             session.lastCombatDecision = {
                 action: 'cast_skill',

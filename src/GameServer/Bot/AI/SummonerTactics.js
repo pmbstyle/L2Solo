@@ -6,6 +6,8 @@ const SummonControl = invoke('GameServer/Npc/SummonControl');
 const World = invoke('GameServer/World/World');
 
 const PetHealRule = invoke('GameServer/Bot/AI/PetHealRule');
+const PetTankRule = invoke('GameServer/Bot/AI/PetTankRule');
+const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const PET_BUFF_IDS = new Set([1139, 1140, 1141, 1144, 1145, 1146, 1299, 1301]);
 
 function skillsFor(actor) {
@@ -131,12 +133,19 @@ function cast(session, actor, summon, skill, Generics) {
     };
 }
 
-// The mob attacks the pet: the pet holds its most hate (Npc.fetchMostHated).
-// A target without a hate table (a player in PvP) has no tank to wait for.
-function petHoldsMob(target, summon) {
-    if (typeof target?.fetchMostHated !== 'function') return true;
-    const held = target.fetchMostHated();
-    return !!held && Number(held.fetchId?.()) === Number(summon.fetchId?.());
+// The hot adapter of PetTankRule.ownerWaits, once the owner has chosen its next
+// hit: action, combatAction's answer with its pet (ordered: the pet's order
+// given this tick); skill, the hit, none for its weapon. A solo fight only: in a
+// party the tank holds the mob, the owner fights. A target without a hate table
+// (a player in PvP) has no tank to wait for.
+function ownerWaits(session, actor, target, action, skill = null) {
+    const summon = action?.summon;
+    if (!summon || typeof target?.getHating !== 'function' || !BotClassPolicy.modeFor(actor, { session }).startsWith('solo')) return false;
+    const view = TargetMatchup.targetView(target);
+    const onOwner = Number(target.fetchMostHated?.()?.fetchId?.()) === Number(actor.fetchId?.());
+    return PetTankRule.ownerWaits({ petCanTake: SummonControl.canTake(summon, target, action.ordered === true), onOwner,
+        ownerHate: target.getHating(actor), petHate: target.getHating(summon),
+        nextHit: TargetMatchup.actorHit(actor, view, skill), petHit: onOwner ? TargetMatchup.actorHit(summon, view) : 0 });
 }
 
 function combatAction(session, actor, target, Generics) {
@@ -181,21 +190,18 @@ function combatAction(session, actor, target, Generics) {
     if (target) {
         const targetId = Number(target.fetchId?.() || 0);
         const selectedId = Number(summon.attackTargetId || 0);
-        if (summon.controlMode !== 'attack' || selectedId !== targetId) {
+        const ordered = summon.controlMode !== 'attack' || selectedId !== targetId;
+        if (ordered) {
             actor.select?.({ id: targetId });
             SummonControl.attack(session, actor, summon);
         }
-        // The pet tanks a solo fight, as in C4 (user 10-29): the owner adds
-        // its own damage only while the mob is on the pet (the pet holds its
-        // most hate), so its hits never draw the mob off; until then it waits,
-        // and the pet's hits take the mob (back). Its heals and buffs above
-        // stay free. In a party the tank holds the mob: the owner fights.
-        if (BotClassPolicy.modeFor(actor, { session }).startsWith('solo') && !petHoldsMob(target, summon)) return { handled: true, reason: 'summon_tanks', summon, target };
 
         // Pet maintenance must not steal a combat tick from the owner while
         // the servitor is already engaged. Let the normal combat selector
         // choose the summoner's own spell or weapon attack first.
-        return { handled: false, reason: 'summon_attacking', summon, target };
+        // Its next hit waits on the pet once it is chosen (ownerWaits); its
+        // heals and buffs above stay free.
+        return { handled: false, reason: 'summon_attacking', summon, target, ordered };
     }
 
     // With no active target, refresh one missing pet buff at a time. This
@@ -241,5 +247,5 @@ module.exports = {
     corpseSummonSkill,
     corpseTarget,
     combatAction,
-    petHoldsMob
+    ownerWaits
 };

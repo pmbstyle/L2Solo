@@ -11,6 +11,7 @@ const ColdKillRewards = invoke('GameServer/Bot/Population/ColdKillRewards');
 const ColdClassPolicy = invoke('GameServer/Bot/Population/ColdClassPolicy');
 const SoloSelfHeal = invoke('GameServer/Bot/AI/SoloSelfHeal');
 const PetHealRule = invoke('GameServer/Bot/AI/PetHealRule');
+const PetTankRule = invoke('GameServer/Bot/AI/PetTankRule');
 const PartyHealPolicy = invoke('GameServer/Bot/AI/PartyHealPolicy');
 const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
@@ -1151,25 +1152,66 @@ function petTarget(fighter) {
     return fighter.petTarget;
 }
 
-// One mob action on a solo fighter's side (a party member left alone too):
-// its living pet takes it first, as in C4 (user 10-29, solo fights; a
-// party's mob strikes by its aggro), then the fighter. Returns { action,
-// pet } (pet: the summon took it; a stun or a sleep holds its next strike;
-// dead, it is gone and a new one is a new cast, its MP and reuse,
-// ensureColdSummon). The fighter's own HP is the caller's to lower.
+// The hit of a fighter's side on the mob adds its damage as hate (a miss adds
+// none, as a missed hot swing never reaches ReceivedHit; NpcHate).
+function addHate(hate, damage) {
+    return damage > 0 ? NpcHate.add(Number(hate) || 0, NpcHate.fromDamage(damage)) : Number(hate) || 0;
+}
+
+// Who holds a fight's mob on a fighter's side, as the hot hate table reads it
+// (NpcHate.mostHated, the pet's entry first): 'pet', 'owner', or null while
+// neither has hate (a mob with no hate stands, as hot, until a hit lands).
+// Without a pet the fighter alone is there.
+function mobHolder(fighter) {
+    if (!petTarget(fighter)) return 'owner';
+    return NpcHate.mostHated([{ side: 'pet', hate: fighter.petHate || 0 }, { side: 'owner', hate: fighter.hate || 0 }])?.side ?? null;
+}
+
+// A mob no one holds (mobHolder) stands until the side's next action, the
+// time its next turn comes; that turn costs the fight no action.
+function mobStandsUntil(fighter, time) {
+    return Math.max(time + 1, Math.min(fighter.readyAt, fighter.summonReadyAt));
+}
+
+// The fighter's pet is gone (dead, expired): its hate goes with it, a new one
+// is a new cast, its MP and reuse (ensureColdSummon).
+function dropSummon(fighter) {
+    setPersistedSummon(fighter, null);
+    fighter.summon = null;
+    fighter.summonReadyAt = Number.POSITIVE_INFINITY;
+    fighter.petHate = 0;
+}
+
+// One mob action on a solo fighter's side (a party member left alone too;
+// a party's mob strikes by its aggro): it hits whoever holds its hate
+// (mobHolder). Returns { action, pet }: pet, the summon took it (a stun or a
+// sleep holds its next strike); action null, no one holds the mob, it stands.
+// The fighter's own HP is the caller's to lower.
 function strikeSide(fighter, mob, mobFight, options) {
+    const holder = mobHolder(fighter);
+    if (!holder) return { action: null, pet: false };
+    if (holder === 'owner') return { action: coldMobAction(mob, mobFight, fighter, options), pet: false };
     const pet = petTarget(fighter);
-    const action = coldMobAction(mob, mobFight, pet || fighter, options);
-    if (!pet) return { action, pet: false };
+    const action = coldMobAction(mob, mobFight, pet, options);
     if (pet.readyAt > fighter.summonReadyAt) fighter.summonReadyAt = pet.readyAt;
     fighter.summon.hp = Math.max(0, Number(fighter.summon.hp) - Math.max(0, action.damage));
     if (fighter.summon.hp <= 0) {
-        setPersistedSummon(fighter, null);
-        fighter.summon = null;
-        fighter.summonReadyAt = Number.POSITIVE_INFINITY;
+        dropSummon(fighter);
         fighter.summonDeaths = Number(fighter.summonDeaths || 0) + 1;
     }
     return { action, pet: true };
+}
+
+// The cold adapter of PetTankRule.ownerWaits: skill (null: its weapon) is the
+// hit it would strike next. A pet the mob stunned or put to sleep cannot take
+// it (the hot SummonControl.canTake); the cold fight has no reach to stop a pet by.
+function ownerWaitsForPet(fighter, mob, skill, time) {
+    const pet = petTarget(fighter);
+    if (!pet || !Number.isFinite(fighter.summonReadyAt) || !PetTankRule.binds(fighter.profile)) return false;
+    const onOwner = mobHolder(fighter) === 'owner';
+    return PetTankRule.ownerWaits({ petCanTake: pet.readyAt <= time, onOwner, ownerHate: fighter.hate || 0, petHate: fighter.petHate || 0,
+        nextHit: TargetMatchup.expectedHit(fighter.profile, mob, skill, fighter.shot),
+        petHit: onOwner ? TargetMatchup.expectedHit(fighter.summon, mob) : 0 });
 }
 
 // A saved pet's HP after elapsedMs out of a fight (its template's revHp per
@@ -1218,6 +1260,7 @@ function startColdSummon(fighter, timestamp, cooldowns, skills = ColdCombatProfi
     // from summon crystal costs. Authored skill ownership, MP and reuse still apply.
     setPersistedSummon(fighter, summon);
     fighter.summon = summon;
+    fighter.petHate = 0;
     fighter.summonUses = Number(fighter.summonUses || 0) + 1;
     cooldowns[skill.selfId] = timestamp + Math.max(0, Number(skill.reuse || 0));
     fighter.readyAt = Number(fighter.readyAt || 0) + actionDelayMs(fighter.profile, skill);
@@ -1341,8 +1384,10 @@ function spendColdShot(fighter) {
 // bot itself when solo), `party` switches the class policy to party mode and
 // heal help events go to `help` when given. Returns null when the action was
 // not an attack, otherwise { skill, damage } for the caller's kill
-// bookkeeping. A killing blow lets a living necromancer among the allies
-// raise a servitor from the corpse.
+// bookkeeping (WAITED: it waited for its pet, no action of the fight's budget).
+// A killing blow lets a living necromancer among the allies raise a servitor
+// from the corpse.
+const WAITED = Object.freeze({ waited: true });
 function coldBotTurn(fighter, { allies, mob, mobFight = null, mobHp, at, time, rng, party = false, help = null }) {
     fighter.now = at;
     // Alone (no other living ally, a party of one too) the bot fights solo:
@@ -1408,6 +1453,13 @@ function coldBotTurn(fighter, { allies, mob, mobFight = null, mobHp, at, time, r
     const selected = chooseSkill(profile, fighter.vitals.hp, fighter.vitals.mp, fighter.cooldowns, at, fighter.charges, rng,
         { mob, mobHp, party: party && !solo, summon: fighter.summon });
     const skill = selected?.skill || null;
+    // Its pet tanks a solo fight (PetTankRule): the owner waits for the pet's
+    // next hit. Its heals above stay free.
+    if (solo && ownerWaitsForPet(fighter, mob, skill, time)) {
+        fighter.readyAt = fighter.summonReadyAt;
+        fighter.petWaits = Number(fighter.petWaits || 0) + 1;
+        return WAITED;
+    }
     // A bow shot costs its MP (C4WeaponSA.expectedBowMp), as a player's does;
     // below it no shot leaves (hot BowResources.consume): the bot stands until
     // its standing regeneration pays the shot (ColdRest), then shoots.
@@ -1531,7 +1583,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
     // neighbours and minions beyond it come regardless (design 13.5).
     // The share of the bot's damage by area skills: a pull it wears down
     // together keeps its mobs standing together (BotPullEstimate.pullView).
-    let areaShare = 0;
+    let areaShare = 0, petNear = null;
     if (!pending && !picked.aggressiveInterruption) {
         const readiness = EncounterReadiness.evaluate({
             hp: state.vitals?.hp ?? bot.maxHp, maxHp: bot.maxHp,
@@ -1549,8 +1601,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
                 maxHp: Math.min(profile.maxHp, state.vitals?.hp ?? profile.maxHp),
                 maxMp: Math.min(profile.maxMp, state.vitals?.mp ?? profile.maxMp)
             }]);
-        const pet = TargetMatchup.servitorProfile(bot, state, timestamp);
-        if (pet) remaining.push(pet);
+        petNear = TargetMatchup.servitorProfile(bot, state, timestamp);
+        if (petNear) remaining.push(petNear);
         // One mob carries no pull: channels count area skills by target.pull.
         const usual = BotPullEstimate.pullView({ ...picked, pull: 1 }, Number(picked.usualPull) || 1);
         const survival = TargetMatchup.soloSurvival(remaining, usual);
@@ -1584,6 +1636,10 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         summonUses: 0,
         summonActions: 0,
         summonReadyAt: Number.POSITIVE_INFINITY,
+        // Its hate and its pet's on the mob (mobHolder); one the mob came at
+        // first (an aggressive interruption) has engaged the bot.
+        hate: Number(pending?.ownerHate ?? (picked.aggressiveInterruption ? NpcHate.ENGAGE_HATE : 0)),
+        petHate: Number(pending?.petHate || 0),
         potionsUsed: 0,
         potionHot: null,
         // A monster's damage over time still running from the last slice (ColdMobAction.addDot).
@@ -1601,8 +1657,14 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
     }
     const mob = pending ? picked : BotPullEstimate.pullView(picked, picked.pull, areaShare);
     // The bot that pulls a melee monster strikes while it closes in; one that
-    // came at the bot first (an aggressive interruption) strikes at once.
-    if (!pending && !picked.aggressiveInterruption) mobReadyAt = ColdCombatProfile.openingMs(bot, mob);
+    // came at the bot first (an aggressive interruption) strikes at once. A
+    // pet takes the mob where it stands: the mob walks only when it first
+    // turns on the owner (mobFar: the rest of that walk, fight time).
+    let mobFar = Number(pending?.mobFar || 0);
+    if (!pending && !picked.aggressiveInterruption) {
+        if (petNear) mobFar = ColdCombatProfile.openingMs(bot, mob);
+        else mobReadyAt = ColdCombatProfile.openingMs(bot, mob);
+    }
     const mobFight = coldMobFight(mob, pending?.mobFight);
     const pullMobs = pending ? 0 : Number(picked.pull || 1);
     let areaPullHits = 0;
@@ -1633,19 +1695,22 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         const dotTaken = dotDamage(soloFighter, time);
         vitals.hp -= dotTaken;
         taken += dotTaken;
-        mobHp -= dotDamage(mobFight, time);
+        // The bot's own damage over time adds its hate, tick by tick (hot EffectTicker -> ReceivedHit).
+        const dotDealt = dotDamage(mobFight, time);
+        mobHp -= dotDealt;
+        soloFighter.hate = addHate(soloFighter.hate, dotDealt);
         if (vitals.hp <= 0 || mobHp <= 0) break;
         actions += 1;
 
         if (summonActs) {
             soloFighter.now = timestamp + time;
             if (Number(soloFighter.summon.expiresAt || 0) <= soloFighter.now) {
-                setPersistedSummon(soloFighter, null);
-                soloFighter.summon = null;
-                soloFighter.summonReadyAt = Number.POSITIVE_INFINITY;
+                dropSummon(soloFighter);
                 continue;
             }
-            mobHp -= summonDamage(soloFighter, mob, rng);
+            const petHit = summonDamage(soloFighter, mob, rng);
+            mobHp -= petHit;
+            soloFighter.petHate = addHate(soloFighter.petHate, petHit);
             soloFighter.summonActions += 1;
             soloFighter.summonReadyAt = time + summonAttackDelay(soloFighter.summon);
             if (mobHp <= 0) break;
@@ -1654,7 +1719,10 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             const hit = coldBotTurn(soloFighter, { allies, mob, mobFight, mobHp, at: timestamp + time, time, rng });
             // A stun that landed holds the monster's next action.
             mobReadyAt = Math.max(mobReadyAt, mobFight.heldUntil);
-            if (!hit) continue;
+            if (hit === WAITED) actions -= 1;
+            if (!hit || hit === WAITED) continue;
+            // One mob's hate: an area hit adds the same on each of its pull.
+            soloFighter.hate = addHate(soloFighter.hate, hit.damage);
             const targetHpBeforeHit = mobHp;
             // Each mob of a pull an area skill strikes takes the full hit (F20):
             // exact while all k stand, a little generous once some have fallen.
@@ -1674,6 +1742,19 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
                 break;
             }
         } else {
+            const holder = mobHolder(soloFighter);
+            if (!holder) {
+                actions -= 1;
+                mobReadyAt = mobStandsUntil(soloFighter, time);
+                continue;
+            }
+            // The first turn on the owner: the mob walks to it from the pet.
+            if (holder === 'owner' && mobFar > 0) {
+                actions -= 1;
+                mobReadyAt = time + mobFar;
+                mobFar = 0;
+                continue;
+            }
             const { action, pet } = strikeSide(soloFighter, mob, mobFight, { time, at: timestamp + time, rng, mobHp });
             if (pet) {
                 petTaken += Math.max(0, action.damage);
@@ -1702,7 +1783,10 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
                 soulCrystalMark: soloFighter.soulCrystalMark || null,
                 botReadyAt: Math.max(0, soloFighter.readyAt - time), mobReadyAt: Math.max(0, mobReadyAt - time),
                 mobFight: coldMobFightSave(mobFight, time),
-                ...(soloFighter.dots.length ? { botDots: soloFighter.dots.map((dot) => ({ ...dot, next: dot.next - time })) } : {})
+                ...(soloFighter.dots.length ? { botDots: soloFighter.dots.map((dot) => ({ ...dot, next: dot.next - time })) } : {}),
+                // The two hates and the mob's walk, whole numbers: a pet's fight only.
+                ...(soloFighter.summon ? { ownerHate: Math.round(soloFighter.hate), petHate: Math.round(soloFighter.petHate),
+                    ...(mobFar > 0 ? { mobFar: Math.round(mobFar) } : {}) } : {})
             }) : null,
             died,
             hp: Math.max(0, Math.round(vitals.hp)),
@@ -1721,7 +1805,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
             inventory: fightState.inventory,
             summon: soloFighter.summon || null,
             debug: { actions, durationMs: time, skillUses: soloFighter.skillUses, shotActions: soloFighter.shotActions, heals: soloFighter.heals,
-                musicUses: soloFighter.musicUses, summonUses: soloFighter.summonUses, summonActions: soloFighter.summonActions, petTaken, petHeals: soloFighter.petHeals || 0, summonDeaths: soloFighter.summonDeaths || 0,
+                musicUses: soloFighter.musicUses, summonUses: soloFighter.summonUses, summonActions: soloFighter.summonActions, petTaken, petHeals: soloFighter.petHeals || 0, summonDeaths: soloFighter.summonDeaths || 0, petWaits: soloFighter.petWaits || 0,
                 potionsUsed: soloFighter.potionsUsed, drunkPotions: soloFighter.drunkPotions || null,
                 mobSelfId: mob.selfId || null, timedOut: !died, pullMobs, areaPullHits, damageTaken: taken, spellTaken }
         };
@@ -1772,7 +1856,7 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         soulCrystals: soloFighter.soulCrystals || [],
         summon: soloFighter.summon || null,
         debug: { actions, durationMs: time, skillUses: soloFighter.skillUses, shotActions: soloFighter.shotActions, heals: soloFighter.heals,
-            musicUses: soloFighter.musicUses, summonUses: soloFighter.summonUses, summonActions: soloFighter.summonActions, petTaken, petHeals: soloFighter.petHeals || 0, summonDeaths: soloFighter.summonDeaths || 0,
+            musicUses: soloFighter.musicUses, summonUses: soloFighter.summonUses, summonActions: soloFighter.summonActions, petTaken, petHeals: soloFighter.petHeals || 0, summonDeaths: soloFighter.summonDeaths || 0, petWaits: soloFighter.petWaits || 0,
             potionsUsed: soloFighter.potionsUsed, drunkPotions: soloFighter.drunkPotions || null,
             mobSelfId: mob.selfId || null, timedOut: false, overhit: kill.overhit, pullMobs, areaPullHits, killsPaid: pulled,
             // The killing action ends after the kill: its swing or cast (resolveSolo's floor per kill).
@@ -1876,6 +1960,7 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             cooldowns: { ...(state.stats?.coldCombat?.cooldowns || {}) },
             readyAt: Number(pending?.readyAt?.[state.characterId] || 0),
             hate: Number(pending?.hate?.[state.characterId] || 0),
+            petHate: Number(pending?.petHate?.[state.characterId] || 0),
             soulCrystalMark: pending?.soulCrystalMarks?.[state.characterId] || null,
             actions: 0,
             shot: coldShotSupply(fighterState, timestamp),
@@ -1947,7 +2032,13 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
         for (const fighter of fighters) {
             if (fighter.vitals.hp > 0) fighter.vitals.hp = Math.max(0, fighter.vitals.hp - dotDamage(fighter, time));
         }
-        mobHp -= dotDamage(mobFight, time);
+        const dotDealt = dotDamage(mobFight, time);
+        mobHp -= dotDealt;
+        // A DoT adds its caster's hate, tick by tick (hot EffectTicker -> ReceivedHit).
+        if (dotDealt > 0) {
+            const dotter = fighters.find((fighter) => fighter.state.characterId === mobFight.dotBy);
+            if (dotter) dotter.hate = addHate(dotter.hate, dotDealt);
+        }
         if (mobHp <= 0) {
             // A DoT's kill is its caster's last hit (the soul crystal reads it).
             lastKiller = fighters.find((fighter) => fighter.vitals.hp > 0 && fighter.state.characterId === mobFight.dotBy) || null;
@@ -1959,12 +2050,12 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
         if (summonActs) {
             nextSummon.now = timestamp + time;
             if (Number(nextSummon.summon.expiresAt || 0) <= nextSummon.now) {
-                setPersistedSummon(nextSummon, null);
-                nextSummon.summon = null;
-                nextSummon.summonReadyAt = Number.POSITIVE_INFINITY;
+                dropSummon(nextSummon);
                 continue;
             }
-            mobHp -= summonDamage(nextSummon, mob, rng);
+            const petHit = summonDamage(nextSummon, mob, rng);
+            mobHp -= petHit;
+            nextSummon.petHate = addHate(nextSummon.petHate, petHit);
             nextSummon.summonActions += 1;
             nextSummon.summonReadyAt = time + summonAttackDelay(nextSummon.summon);
             if (mobHp <= 0) { lastKiller = nextSummon; rescued(nextSummon); break; }
@@ -1973,9 +2064,9 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             next.actions += 1;
             const hit = coldBotTurn(next, { allies: fighters, mob, mobFight, mobHp, at: timestamp + time, time, rng, party: true, help });
             mobReadyAt = Math.max(mobReadyAt, mobFight.heldUntil);
-            if (!hit) continue;
-            // A miss leaves the hate table alone, as a missed hot swing never reaches ReceivedHit.
-            if (hit.damage > 0) next.hate = NpcHate.add(next.hate, NpcHate.fromDamage(hit.damage));
+            if (hit === WAITED) { actions -= 1; next.actions -= 1; }
+            if (!hit || hit === WAITED) continue;
+            next.hate = addHate(next.hate, hit.damage);
             const targetHpBeforeHit = mobHp;
             mobHp -= Math.max(0, hit.damage);
             if (mobHp <= 0) {
@@ -1996,7 +2087,8 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
             // Aggression (FollowingState); otherwise the most hated member.
             const targets = fighters.filter((fighter) => fighter.vitals.hp > 0);
             const tank = targets.find((fighter) => fighter.role === 'tank');
-            let target = tank || NpcHate.mostHated(targets);
+            const alonePet = targets.length === 1 && !!petTarget(targets[0]);
+            let target = tank || (alonePet ? targets[0] : NpcHate.mostHated(targets));
             if (!target && targets.length) {
                 target = targets[Math.floor(rng() * targets.length)];
                 target.hate = NpcHate.ENGAGE_HATE;
@@ -2011,6 +2103,11 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
                 const options = { time, at: timestamp + time, rng, mobHp, pAtk: bossPAtk };
                 const { action, pet } = targets.length === 1 ? strikeSide(target, mob, mobFight, options)
                     : { action: coldMobAction(mob, mobFight, target, options), pet: false };
+                if (!action) {
+                    actions -= 1;
+                    mobReadyAt = mobStandsUntil(target, time);
+                    continue;
+                }
                 delayMs = action.delayMs;
                 const before = target.vitals.hp;
                 if (!pet) target.vitals.hp = Math.max(0, before - action.damage);
@@ -2057,7 +2154,8 @@ function resolvePartyFight({ members, spot, targetNpcId = 0, rng = Math.random, 
                 mobFight: coldMobFightSave(mobFight, time),
                 soulCrystalMarks: Object.fromEntries(fighters.filter(f => f.soulCrystalMark).map(f => [f.state.characterId,f.soulCrystalMark])),
                 readyAt: Object.fromEntries(fighters.map(f => [f.state.characterId, Math.max(0, f.readyAt - time)])),
-                hate: Object.fromEntries(fighters.filter(f => f.vitals.hp > 0 && f.hate > 0).map(f => [f.state.characterId, f.hate]))
+                hate: Object.fromEntries(fighters.filter(f => f.vitals.hp > 0 && f.hate > 0).map(f => [f.state.characterId, f.hate])),
+                petHate: Object.fromEntries(fighters.filter(f => f.vitals.hp > 0 && f.petHate > 0).map(f => [f.state.characterId, Math.round(f.petHate)]))
             }) : null,
         members: fighters,
         help: [...help.values()],
@@ -2174,7 +2272,7 @@ const BackgroundResolver = {
     combat: { chooseSkill, chooseChargeSkill, coldChargeState, expireCharges, addCharges, consumeCharges,
         spendSkill, settleCharges, attackDamage,
         chooseHeal, applyAllyHeal, applyPartyHotTicks, actionDelayMs, hitSucceeds, coldRaidControlCapacity, coldRaidMinionPressure,
-        coldRaidEncounterProfile, coldMobFight, coldMobFightSave, coldMobAction, strikeSide },
+        coldRaidEncounterProfile, coldMobFight, coldMobFightSave, coldMobAction, strikeSide, ownerWaitsForPet },
     resolveDeathRecovery,
     resolveRest,
     resolvePartyFight: options => countedBuilds('fight', 'party', resolvePartyFight, options),

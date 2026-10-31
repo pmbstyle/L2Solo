@@ -176,7 +176,8 @@ const SOLO_GOLDEN = {
     'gladiator charges': { won: true, died: false, hp: 3131, mp: 564, charges: 0, actions: 18, durationMs: 11315, skillUses: 10, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     'bishop': { won: true, died: false, hp: 2023, mp: 2243, charges: 0, actions: 16, durationMs: 16435, skillUses: 6, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     // T135: the warlock heals its pet once (one more skill use, its MP), so the pet strikes twice more.
-    'warlock servitor, heals, potion': { won: true, died: false, hp: 2058, mp: 1931, charges: 0, actions: 37, durationMs: 27633, skillUses: 7, shotActions: 0, heals: 0, musicUses: 0, summonUses: 1, summonActions: 12, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    // T140: the mob hits whoever holds its hate, and the owner strikes only under the pet's hate.
+    'warlock servitor, heals, potion': { won: true, died: false, hp: 2058, mp: 2074, charges: 0, actions: 42, durationMs: 38677, skillUses: 4, shotActions: 0, heals: 0, musicUses: 0, summonUses: 1, summonActions: 21, potionsUsed: 0, mobHp: null, botReadyAt: null },
     'necromancer corpse servitor': { won: true, died: false, hp: 1907, mp: 2171, charges: 0, actions: 3, durationMs: 1291, skillUses: 2, shotActions: 0, heals: 0, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
     // T106: a Swordsinger heals itself with MP, so it sits for MP and its skills pay their rest (one cast fewer).
     'swordsinger songs': { won: true, died: false, hp: 2739, mp: 927, charges: 0, actions: 22, durationMs: 14559, skillUses: 2, shotActions: 0, heals: 0, musicUses: 1, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
@@ -209,18 +210,47 @@ for (const [name, state, npcId, seed, limitMs, maxActions] of SOLO) {
 }
 for (const [name, actual] of soloObserved) assert.deepStrictEqual(actual, SOLO_GOLDEN[name], `solo: ${name}`);
 
-// The pet tanks, as in C4 (user 10-29): the warlock's servitor takes the
-// mob's blows; its owner takes none while the pet stands.
+// The pet tanks by hate, the hot rule read cold (T140, PetTankRule): the mob
+// hits whoever holds its hate, and a solo owner strikes only under its pet's
+// hate. hate: the encounter's saved numbers.
 {
-    const spot = spotFor(239);
-    const mob = ColdCombatProfile.npcForSpot(spot, () => 0.5, { preferredNpcId: 239 });
-    const encounter = PveEncounter.save(null, PveEncounter.key([warlock], spot, 239), mob, mob.maxHp, TS, { botReadyAt: 0, mobReadyAt: 0 });
-    const engaged = { ...warlock, stats: { ...warlock.stats, pveEncounter: encounter } };
-    const r = withSeed(4, (rng) => resolveFight({ state: engaged, spot, pressure: {}, targetNpcId: 239, rng, timestamp: TS,
-        fightLimitMs: 60000, maxActions: 400 }));
-    assert(r.debug.petTaken > 0, 'the mob strikes the pet');
-    if (!r.debug.summonDeaths) assert.equal(r.debug.damageTaken, 0, 'the owner is untouched while its pet stands');
-    assert(!r.summon || r.summon.hp < r.summon.maxHp, 'the pet keeps the HP it lost');
+    const fight = (owner, hate, seed = 4, fightLimitMs = 60000) => {
+        const spot = spotFor(239);
+        const mob = ColdCombatProfile.npcForSpot(spot, () => 0.5, { preferredNpcId: 239 });
+        const encounter = PveEncounter.save(null, PveEncounter.key([owner], spot, 239), mob, mob.maxHp, TS, { botReadyAt: 0, mobReadyAt: 0, ...hate });
+        const engaged = { ...owner, stats: { ...owner.stats, pveEncounter: encounter } };
+        return withSeed(seed, (rng) => resolveFight({ state: engaged, spot, pressure: {}, targetNpcId: 239, rng, timestamp: TS, fightLimitMs, maxActions: 400 }));
+    };
+    // A pet out, as a saved one: a pet raised in the fight starts with no hate.
+    const out = (state, skills) => { const profile = ColdCombatProfile.profileFor(state, TS);
+        return { ...state, stats: { ...state.stats, coldCombat: { ...state.stats.coldCombat,
+            summon: { active: true, skillId: Number(skills(profile)[0].selfId), hp: 5000, maxHp: 5000, expiresAt: TS + 1e7 } } } }; };
+    const petOut = out(warlock, ColdCombatProfile.summonSkills);
+    const petHolds = fight(petOut, { petHate: 1e9 });
+    assert(petHolds.debug.petTaken > 0, 'the mob strikes the pet that holds it');
+    assert.equal(petHolds.debug.damageTaken, 0, 'the owner is untouched while its pet holds the mob');
+    assert.equal(petHolds.debug.petWaits, 0, 'the owner strikes while its pet holds the mob');
+    assert(!petHolds.summon || petHolds.summon.hp < petHolds.summon.maxHp, 'the pet keeps the HP it lost');
+
+    const ownerHolds = fight(petOut, { ownerHate: 1e9 }, 4, 12000);
+    assert.equal(ownerHolds.debug.petTaken, 0, 'the mob stays on the owner that holds it');
+    assert(ownerHolds.debug.damageTaken > 0, 'the owner takes the blows');
+    assert.equal(ownerHolds.debug.petWaits, 0, 'under a lead the pet cannot retake the owner fights on, not idle');
+    assert(ownerHolds.debug.skillUses > 0, 'it strikes');
+    const close = fight(petOut, { ownerHate: 2, petHate: 1 }, 4, 3000);
+    assert(close.debug.petWaits > 0, 'a lead the pet\'s next hit retakes: the owner holds its hit');
+    const sliced = fight(petOut, { ownerHate: 1e9 }, 4, 3000);
+    assert(sliced.encounter.ownerHate >= 1e9, 'a slice saves the hate');
+    const resumed = fight(petOut, { ownerHate: sliced.encounter.ownerHate, petHate: sliced.encounter.petHate }, 5, 3000);
+    assert.equal(resumed.debug.petTaken, 0, 'the saved hate holds across a slice');
+
+    const opened = fight(petOut, {});
+    assert(opened.debug.petWaits > 0, 'a mob no one hit: the owner waits for the pet\'s first hit');
+    assert(opened.debug.petTaken > 0, 'the pet\'s hit takes the mob');
+    assert(opened.debug.damageTaken < opened.debug.petTaken, 'the owner stays under the pet\'s hate: the mob stays on the pet');
+
+    // The same path for a necromancer's corpse servitor.
+    assert(fight(out(necromancer, ColdCombatProfile.corpseSummonSkills), {}, 4, 12000).debug.petWaits > 0, 'a necromancer waits for its pet too');
 }
 
 // A continued fight works on its own copy of the saved mob: the self buff the

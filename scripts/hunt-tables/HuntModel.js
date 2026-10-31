@@ -266,8 +266,9 @@ function mobHour(bot, mob, correction = null) {
     // regeneration of the whole elapsed step (applyStandingRegen).
     const { budget, cycle } = stepTimes();
     const standing = ColdRest.coldRestRegenPerTick(state, { profile, standing: true }).hp / 3;
-    // A summoner's pet takes every blow while it lives (BackgroundResolver.strikeSide);
-    // the owner is struck only while it casts a new one after a death.
+    // The owner's hits stay under its pet's hate (PetTankRule), so the pet takes
+    // the blows while it lives; the owner is struck only while it casts a new one
+    // after a death.
     const pet = profiles.find(one => one.servitor) || null;
     const petMix = pet ? Mob.actionMix(view, { profile: pet }) : null;
     const summonSec = pet ? (Number(pet.summonCastMs) || 0) / 1000 : 0;
@@ -302,7 +303,7 @@ function mobHour(bot, mob, correction = null) {
             // Pet deaths per kill: the damage on it a kill brings past its
             // regeneration over the kill's wall time and rest (petRegen).
             const petRegen = (Number(pet.revHp) || 0) / (Formulas.REGEN_TICK_MS / 1000) * (fight + rest);
-            const petLoss = Math.max(0, petMix.perSecond * Math.max(0, fight - opening) - petRegen);
+            const petLoss = Math.max(0, petMix.perSecond * fight - petRegen);
             // The heals cover the loss up to one per reuse over the kill's time; the rest kills the pet.
             const cover = petHeal ? petHeal.amount * Math.max(1, (fight + rest) / petHeal.reuseSec) : 0;
             petHealSec = petHeal ? Math.min(petLoss, cover) / petHeal.amount * petHeal.castSec : 0;

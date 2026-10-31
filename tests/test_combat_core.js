@@ -113,7 +113,7 @@ assert(coldMobAction(caster, dry, casterTarget, { time: Math.ceil(cheapest / cas
 // A stun the monster lays on a solo fighter's pet holds the pet's next strike
 // (strikeSide), as it holds a fighter.
 const pet = { active: true, hp: 1e6, maxHp: 1e6, level: stunner.level, pDef: 100, mDef: 100, evasion: 0, atkSpd: 300 };
-const owner = { ...fighter, vitals: { hp: 1, maxHp: 1 }, summon: pet, summonReadyAt: 0 };
+const owner = { ...fighter, vitals: { hp: 1, maxHp: 1 }, summon: pet, summonReadyAt: 0, petHate: 1 };
 const petFight = coldMobFight(stunner);
 let petTime = 0;
 for (let step = 0; step < 6 && !(owner.summonReadyAt > petTime); step++) {
@@ -122,6 +122,10 @@ for (let step = 0; step < 6 && !(owner.summonReadyAt > petTime); step++) {
     petTime += struck.action.delayMs;
 }
 assert(owner.summonReadyAt > petTime, 'a landed stun holds the pet');
+// A pet the mob holds cannot take it: its owner does not wait for it (PetTankRule).
+const waitingOwner = { ...owner, profile: { ...fighter.profile, classId: 14 }, hate: 0, petHate: 1, summonReadyAt: petTime + 1000 };
+assert.strictEqual(BackgroundResolver.combat.ownerWaitsForPet(waitingOwner, stunner, null, petTime), false, 'a stunned pet ends the wait');
+assert.strictEqual(BackgroundResolver.combat.ownerWaitsForPet(waitingOwner, stunner, null, Number(owner.petTarget.readyAt)), true, 'its stun over, the owner waits again');
 
 // A blow that needs a critical lands by position and DEX; one that needs the rear never lands in front.
 const deadly = { requires: { condition: 0x10 } }, backstab = { requires: { condition: 0x08 } };

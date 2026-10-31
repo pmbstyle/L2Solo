@@ -22,20 +22,22 @@ function summonNpcStats(profile, details) {
         .map((id) => ItemTemplateIndex.find(DataCache.npcs, id))
         .find(Boolean);
     const npc = direct || levelCandidates[0]?.npc || familyFallback;
+    // The numbers a hot Npc derives from its template (accuracy, evasion).
+    const combat = npc ? ColdCombatProfile.npcCombatStats(npc) : null;
     return {
         npcId: Number(details.npcId || 0),
         maxHp: Math.max(1, Number(npc?.vitals?.maxHp || profile.maxHp * 1.15)),
         pAtk: Math.max(1, Number(npc?.stats?.pAtk || profile.pAtk * 0.85)),
         pAtkRnd: Math.max(0, Number(npc?.stats?.pAtkRnd || profile.equipment?.pAtkRnd || 0)),
         pDef: Math.max(1, Number(npc?.stats?.pDef || profile.pDef * 0.8)),
-        accur: Math.max(1, Number(npc?.stats?.accur || profile.accur)),
+        accur: Math.max(1, Number(combat?.accur || profile.accur)),
         critical: Math.max(0, Number(npc?.stats?.crit || profile.critical)),
         atkSpd: Math.max(1, Number(npc?.stats?.atkSpd || profile.atkSpd)),
         // Its defence as the mobs' target (the pet tanks, user 10-29) and its
         // HP back per regen tick between fights (the template's revHp).
         mDef: Math.max(1, Number(npc?.stats?.mDef || profile.mDef * 0.8)),
         dex: Math.max(1, Number(npc?.base?.dex || profile.dex || 1)),
-        evasion: npc ? Number(ColdCombatProfile.npcCombatStats(npc)?.evasion) || 0 : Number(profile.evasion) || 0,
+        evasion: Number(combat ? combat.evasion : profile.evasion) || 0,
         level: Math.max(1, Number(npc?.template?.level || profile.level || 1)),
         revHp: Math.max(0, Number(npc?.vitals?.revHp) || 0)
     };

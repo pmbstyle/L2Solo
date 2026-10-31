@@ -68,6 +68,7 @@ function fight(state) {
 const pet = fight(warlock);
 assert(pet.debug.summonUses > 0, 'a future Warlock Wizard summons its servitor');
 assert(pet.debug.petTaken > 0, 'the mob strikes the pet');
+assert(pet.debug.petWaits > 0, 'its owner holds the hit that would pass the pet\'s hate');
 if (!pet.debug.summonDeaths) assert.equal(pet.debug.damageTaken, 0, 'the owner is untouched while its pet stands');
 for (const [name, state] of [['future Sorcerer', sorcerer], ['player', player], ['class-only', classOnly]]) {
     const result = fight(state);
