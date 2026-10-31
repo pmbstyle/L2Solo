@@ -68,6 +68,7 @@ const mocks = {
     Database: {}, 'GameServer/World/World': world,
     'GameServer/Bot/Population/BotLifeState': invoke('GameServer/Bot/Population/BotLifeState'),
     'GameServer/Bot/Economy/EconomyContext': invoke('GameServer/Bot/Economy/EconomyContext'),
+    'GameServer/Bot/Economy/EconomicValuation': invoke('GameServer/Bot/Economy/EconomicValuation'),
     'GameServer/Bot/BotManager': { botPartySay: (s, message) => { lifecycle.push('report'); return true; } },
     'GameServer/Bot/BotAI': {
         clearTacticalState: BotAI.clearTacticalState,

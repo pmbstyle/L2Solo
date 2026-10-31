@@ -140,4 +140,12 @@ function priceFor(store, line, { viewerId = 0, actor = null, enchant = 0 } = {})
     return ask ? Math.max(price, Number(ask.price)) : price;
 }
 
-module.exports = { BUYBACK_RATIO, botPriceFor, buyQuote, cheapestPurchase, botPurchasePrice: id => cheapestPurchase(id, { forBot: true }), priceFor, sellersOf };
+// What a bot pays an NPC for an item at the current rate, else (no NPC sells
+// it) its template price: the baseline consumable price of the hunt model.
+function botBuyPrice(id) {
+    const npc = cheapestPurchase(id, { forBot: true });
+    return Number.isFinite(npc) ? npc : Math.max(0, Number(ItemTemplateIndex.find(DataCache.items, id)?.template?.price || 0));
+}
+
+module.exports = { BUYBACK_RATIO, botPriceFor, buyQuote, cheapestPurchase, botPurchasePrice: id => cheapestPurchase(id, { forBot: true }), botBuyPrice,
+    priceFor, sellersOf };

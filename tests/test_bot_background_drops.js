@@ -69,7 +69,8 @@ const state = {
     stats: {},
     party: { role: 'dps' }
 };
-const result = BackgroundResolver.resolveSolo({ state, spot, elapsedMs: 12000, rng: () => 0 });
+// 40 s: the walk to the spot's mobs alone takes longer than the old 12 s window (T106 spot walk).
+const result = BackgroundResolver.resolveSolo({ state, spot, elapsedMs: 40000, rng: () => 0 });
 assert.strictEqual(result.materialize.items.length, 2);
 assert.strictEqual(result.materialize.items[0].selfId, 1121);
 assert.strictEqual(result.materialize.items[0].name, "Apprentice's Shoes");

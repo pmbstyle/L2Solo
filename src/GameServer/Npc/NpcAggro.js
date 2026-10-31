@@ -2,7 +2,9 @@
 // and decrements it once per second.  A mob therefore cannot auto-attack for
 // its first ten seconds in the world.
 const SPAWN_AGGRO_DELAY_MS = 10000;
-const AGGRO_RADIUS = 500;
+const AggroRange = invoke('GameServer/Npc/NpcAggroRange');
+// The author's range for an NPC without a C4 one (NpcAggroRange).
+const AGGRO_RADIUS = AggroRange.DEFAULT_RANGE;
 const MAX_AGGRO_Z_DIFFERENCE = 400;
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const TownGuard = invoke('GameServer/Npc/TownGuard');
@@ -50,11 +52,24 @@ function isSilentMoving(actor, now = Date.now()) {
     ));
 }
 
+// How far this NPC sees a target (NpcAggroRange: its C4 range, else 500).
+function aggroRadius(npc) {
+    return AggroRange.of(Number(npc?.fetchSelfId?.() || 0));
+}
+
 function canEngage(npc, actor, now = Date.now()) {
-    if (!isAlive(actor) || !isEligible(npc, now)) return false;
-    if (isSilentMoving(actor, now) && npc.fetchIsRaidBoss?.() !== true) return false;
-    if (distanceSquared(npc, actor) > AGGRO_RADIUS * AGGRO_RADIUS) return false;
+    return isAlive(actor) && engages(npc, actor, now, isSilentMoving(actor, now));
+}
+
+// The one auto-aggro test. Number checks first (the NPC's own range, the
+// floor), so the many NPCs a radius query returns out of their own reach cost
+// no state or effect reads; the actor's SilentMove is read once per sweep.
+function engages(npc, actor, now, silent) {
+    const range = aggroRadius(npc);
+    if (distanceSquared(npc, actor) > range * range) return false;
     if (Math.abs(npc.fetchLocZ() - actor.fetchLocZ()) > MAX_AGGRO_Z_DIFFERENCE) return false;
+    if (!isEligible(npc, now)) return false;
+    if (silent && npc.fetchIsRaidBoss?.() !== true) return false;
 
     return GeodataEngine.hasLineOfSight(
         npc.fetchLocX(), npc.fetchLocY(), npc.fetchLocZ(),
@@ -62,16 +77,18 @@ function canEngage(npc, actor, now = Date.now()) {
     );
 }
 
+// The query reaches the farthest-seeing NPC (MAX_RANGE); the grid scan costs
+// the same at any radius (3x3 cells), and each NPC is then judged at its own
+// range before anything else is read.
 function engageNearby(session, actor, { world = invoke('GameServer/World/World'), now = Date.now(), npcs = null } = {}) {
     if (!isAlive(actor)) return [];
 
-    const nearby = npcs || world.fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), AGGRO_RADIUS);
-    return nearby
-        .filter((npc) => canEngage(npc, actor, now))
-        .map((npc) => {
-            npc.enterCombatState(session, actor);
-            return npc;
-        });
+    const nearby = npcs || world.fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), AggroRange.MAX_RANGE);
+    const silent = isSilentMoving(actor, now);
+    // All tests before any NPC enters combat: an engagement may change another's state.
+    const engaging = nearby.filter((npc) => engages(npc, actor, now, silent));
+    for (const npc of engaging) npc.enterCombatState(session, actor);
+    return engaging;
 }
 
 function armSpawnGrace(npc, now = Date.now()) {
@@ -106,6 +123,8 @@ function startAggroTicker(world = invoke('GameServer/World/World'), {
 
 module.exports = {
     AGGRO_RADIUS,
+    MAX_AGGRO_RADIUS: AggroRange.MAX_RANGE,
+    aggroRadius,
     SPAWN_AGGRO_DELAY_MS,
     MAX_AGGRO_Z_DIFFERENCE,
     isHotBotSession,

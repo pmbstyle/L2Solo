@@ -3,6 +3,7 @@ const assert = require('assert');
 require('../src/Global');
 
 const BackgroundPartyResolver = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
+const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 invoke('GameServer/DataCache').init();
 
 const now = 1_750_000_000_000;
@@ -51,12 +52,16 @@ assert.deepStrictEqual(result.memberResults[1].result.events, [],
 
 const recovered = BackgroundPartyResolver.resolve({
     party: { partyId: 'rest-party', leaderId: 81, cohesion: 0.7, risk: 0.2, stats: { restUntil: now - 1 } },
-    members: members.map((member) => ({
-        ...member,
-        activity: 'resting',
-        vitals: { ...member.vitals, hp: member.vitals.maxHp, mp: member.vitals.maxMp },
-        stats: { ...member.stats, restUntil: now - 1 }
-    })),
+    members: members.map((member) => {
+        // Full vitals: the class template's at the level, from the profile the rest reads.
+        const full = ColdCombatProfile.fightProfile(member, now);
+        return {
+            ...member,
+            activity: 'resting',
+            vitals: { hp: full.maxHp, maxHp: full.maxHp, mp: full.maxMp, maxMp: full.maxMp },
+            stats: { ...member.stats, restUntil: now - 1 }
+        };
+    }),
     spot: { id: 'execution_ground', name: 'Execution Ground', density: 3, avgLevel: 40 },
     elapsedMs: 3000,
     timestamp: now,

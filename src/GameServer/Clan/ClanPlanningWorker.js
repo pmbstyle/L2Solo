@@ -10,8 +10,9 @@ if (workerData?.developerDiagnostics) observe(); // major-GC window for the v8He
 const spotCatalog = new SpotCatalogReader();
 
 // Only immutable catalogs and per-request snapshots enter this process.
-const catalogs = { items: [], npcs: [], npcRewards: [], npcSpawns: [], newbieItems: [], experience: [], skillTree: [], classTemplates: [], revitalize: {} };
-// ARCH-NOTE: native cap, tree and seated recovery readers capture DataCache.
+const catalogs = { items: [], npcs: [], npcRewards: [], npcSpawns: [], newbieItems: [], experience: [], skillTree: [], skills: [], classTemplates: [], revitalize: {} };
+// ARCH-NOTE: native cap, tree and seated recovery readers capture DataCache
+// (seated recovery reads the class tree's passives: skills, ColdRest).
 // Keep the same authored arrays/objects behind the facade and populate them
 // once per epoch; full native planning previously failed at missing craftLevelFor
 // and then FirstPrice's eager BackgroundResolver/ChargeLifecycle import.

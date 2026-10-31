@@ -142,8 +142,9 @@ function targetSpot(level, index, base = {}) {
         }
     };
     const allSpots = SpotProfiles.ensure();
-    const profiles = allSpots
-        .filter((spot) => spot.minLevel <= level + 3 && spot.maxLevel >= level - 3);
+    // Near the level by the spots' level mix (SpotProfiles.spotsNearLevel): a
+    // few strong spawns among weak ones do not bring a spot near.
+    const profiles = SpotProfiles.spotsNearLevel(allSpots, level);
     const guided = LevelingRoutes.rankedSpots(profiles, state, { mode: 'solo' });
     if (guided.length > 0) {
         const bestScore = guided[0].score;
@@ -153,7 +154,7 @@ function targetSpot(level, index, base = {}) {
         return (shortlist.length ? shortlist : guided)[index % Math.max(1, shortlist.length || guided.length)].spot;
     }
 
-    return profiles
+    return [...profiles]
         .sort((a, b) => {
             const aGap = Math.abs(a.avgLevel - level);
             const bGap = Math.abs(b.avgLevel - level);

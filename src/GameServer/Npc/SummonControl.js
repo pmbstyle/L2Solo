@@ -302,6 +302,20 @@ function attack(session, actor, summon) {
     });
 }
 
+// Whether the pet can land a hit on target (its attack order is the caller's;
+// ordered: it was given this tick and has not started): not a pet that never
+// attacks (attack), not a stopped one: stunned, asleep, rooted out of reach, or
+// short of the mob with no swing or run going.
+function canTake(summon, target, ordered = false) {
+    if (Number(summon.fetchSummonSkillId?.()) === 301) return false;
+    const Restrictions = invoke('GameServer/Effects/EffectRestrictions'); // lazy: as in attackTick, a summon's actor modules load after this one.
+    if (!Restrictions.canAttack(summon)) return false;
+    const AttackRange = invoke('GameServer/Actor/AttackRange'); // lazy: as EffectRestrictions above.
+    if (AttackRange.isWithinRange(summon, target, Math.max(0, Number(summon.fetchAtkRadius?.()) || 40))) return true;
+    if (!Restrictions.canMove(summon)) return false;
+    return ordered || summon.state?.fetchHits?.() === true || summon.state?.inMotion?.() === true;
+}
+
 function attackTick(session, summon, target) {
     if (!target || summon.controlMode !== 'attack' || summon.isDead?.()) {
         stop(session, summon);
@@ -548,6 +562,7 @@ module.exports = {
     startFollowOwner,
     startLifetime,
     attackTick,
+    canTake,
     isValidEnemyTarget,
     startPetFeed,
     stop,

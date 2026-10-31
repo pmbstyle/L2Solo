@@ -166,8 +166,12 @@ async function run() {
     assert(Math.abs(gladiator.hourAdena - Hunt.netIncome(Table.value(gladiatorHunt.spotId, 'dps', 50, true),
         Hunt.consumablePrices(gladiator.state))) < 1);
     assert.equal(gladiator.moneyPrice, 1 / gladiator.hourAdena);
+    // Its survival potions are held too: the best spot since T123's held-share
+    // ranking drinks ~1 potion an hour, so only the escape scroll stays reserved.
+    const warriorPotions = warriorContext.stock('potions');
     const stocked = { ...warrior, inventory: { ...warrior.inventory,
-        [warriorStock.itemId]: { selfId: warriorStock.itemId, amount: Math.ceil(warriorStock.usePerHour) } } };
+        [warriorStock.itemId]: { selfId: warriorStock.itemId, amount: Math.ceil(warriorStock.usePerHour) },
+        [warriorPotions.itemId]: { selfId: warriorPotions.itemId, amount: warriorPotions.survivalTarget } } };
     assert.equal(Economy.basics(stocked, kitDeps).kitCost(warriorStock.itemId), 0);
     assert.equal(Economy.basics(stocked, kitDeps).survivalReserve, warriorContext.price(736),
         'own one-hour shot stock releases its wallet reserve and retains the escape scroll');
@@ -817,8 +821,11 @@ async function run() {
     Hunt.observe(sampled);
     assert.equal(Hunt.huntIncome(base).source, 'table', 'another bot cannot donate private income to a cohort median');
     const death = invoke('GameServer/Progression/DeathExperience').calculateLoss({ ...base, exp: base.stats.exp });
+    // T126: a table row's death already waited for its respawn; a live one adds it.
     const deathHours = Valuation.deathHours(base, { expPerHour: 100000 });
-    assert.equal(deathHours, death.expLost / 100000 + 90 / 3600);
+    assert.equal(deathHours, death.expLost / 100000);
+    // One live death price (a kill, a death in a fight, a PvP risk): the table row's plus the respawn wait.
+    assert.equal(Valuation.liveDeathHours(deathHours), death.expLost / 100000 + 90 / 3600);
     assert.equal(Valuation.karmaHours({ ...base, stats: { ...base.stats, karma: 100 } }, { expPerHour: 100000 }), .26);
     const pk = { ...base, stats: { ...base.stats, karma: 100, pk: 6 }, inventory: { 1864: { selfId: 1864, amount: 10 } } };
     assert.equal(Valuation.pkDropValue(pk, () => 100), invoke('GameServer/PkDropPolicy').expectedValue(pk, () => 100));

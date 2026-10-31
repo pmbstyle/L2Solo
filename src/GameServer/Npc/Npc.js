@@ -9,6 +9,7 @@ const Attack         = invoke('GameServer/Actor/Attack');
 const AttackRange    = invoke('GameServer/Actor/AttackRange');
 const ManorData      = invoke('GameServer/Manor/ManorData');
 const NpcSkills      = invoke('GameServer/Npc/NpcSkills');
+const NpcCombatChoice = invoke('GameServer/Npc/NpcCombatChoice');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const EffectTicker   = invoke('GameServer/Effects/EffectTicker');
@@ -18,7 +19,13 @@ const NpcHate = invoke('GameServer/Npc/NpcHate');
 const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool');
 const AttackHelper   = new Attack();
 // Dropped chases and mobs left out of combat still hating (sleep, stun, fake death).
-const hateStats = { outOfReach: 0, noPath: 0, idleWithHate: 0 };
+const hateStats = { outOfReach: 0, noPath: 0, idleWithHate: 0, attackTimeout: 0 };
+// A monster that neither attacked or cast nor was attacked for 2 minutes drops
+// the chase and its hate, then walks home (Mobius C4 AttackableAI
+// MAX_ATTACK_TIMEOUT = 1200 game ticks, refreshed by each of those, not by hate
+// alone, not counted while it cannot move: the timeout is for targets it cannot
+// reach, such as a player running at its speed).
+const ATTACK_TIMEOUT_MS = 120000;
 
 // MoveToPawn already tells the client to follow a moving target. Rebuilding
 // that request on every 100ms combat tick yields visible stop/start jitter.
@@ -28,27 +35,8 @@ const NPC_PATH_MAX_NODES = 8000;
 const NPC_PATH_RETRY_INTERVAL_MS = 500;
 const NPC_PATH_MAX_RETRY_INTERVAL_MS = 4000;
 const NPC_PATH_FAILURE_TIMEOUT_MS = 10000;
-const NPC_AI_TYPES = new Set(['fighter', 'mage', 'balanced', 'archer']);
-const HARD_CONTROL_EFFECTS = new Set(['stun', 'paralyze']);
-const SLEEP_EFFECTS = new Set(['sleep']);
-const ROOT_EFFECTS = new Set(['root']);
-const MUTE_EFFECTS = new Set(['silence', 'physical_mute', 'magic_mute', 'mute']);
 
-function semanticEffect(skill) {
-    const semantic = skill?.fetchSemantic?.() || {};
-    return String(semantic.effect || semantic.trait || '').trim().toLowerCase();
-}
 
-function skillDistance(skill) {
-    const semantic = skill?.fetchSemantic?.() || {};
-    const sourcedRange = Number(semantic.castRange);
-    const modelRange = Number(skill?.fetchDistance?.());
-    return Math.max(
-        0,
-        Number.isFinite(sourcedRange) ? sourcedRange : 0,
-        Number.isFinite(modelRange) ? modelRange : 0
-    );
-}
 
 class Npc extends NpcModel {
     static hateStats() {
@@ -170,10 +158,12 @@ class Npc extends NpcModel {
         return entry;
     }
 
-    addDamageHate(session, actor, damage = 0, aggro = 0) {
+    // attacked: false is hate alone (another's skill near the fight), no attack on this mob.
+    addDamageHate(session, actor, damage = 0, aggro = 0, { attacked = true } = {}) {
         const entry = this.ensureAggroEntry(actor);
         if (!entry) return false;
 
+        if (attacked) this.combatActiveAt = Date.now();
         const damageValue = Math.max(0, Number(damage) || 0);
         const aggroValue = Number.isFinite(Number(aggro)) ? Number(aggro) : 0;
         entry.damage += damageValue;
@@ -303,6 +293,7 @@ class Npc extends NpcModel {
         invoke('GameServer/Npc/NpcWander').cancel(this, session);
         this.switchCombatTarget(target);
         this.state.setCombats(true);
+        this.combatActiveAt = Date.now();
 
         this.setStateRun(true);
         this.setStateAttack(true);
@@ -365,6 +356,12 @@ class Npc extends NpcModel {
                     // Lisvus forgets a hated actor that left its known list (3000,
                     // AttackableKnownList); this chase stops at 1500, so it forgets then.
                     this.removeAggroTarget(session, actor, 'outOfReach');
+                    return;
+                }
+
+                if (EffectRestrictions.canMove(this) && Date.now() - this.combatActiveAt >= ATTACK_TIMEOUT_MS) {
+                    hateStats.attackTimeout += 1;
+                    this.abortCombatState(session);
                     return;
                 }
 
@@ -669,25 +666,20 @@ class Npc extends NpcModel {
     }
 
     fetchAiType() {
-        const explicit = super.fetchAiType();
-        if (explicit && NPC_AI_TYPES.has(explicit)) return explicit;
+        return this.combatProfile().aiType;
+    }
 
-        // Most imported C4 templates do not carry the source AI enum. Keep a
-        // useful fallback instead of treating every NPC as a caster: long
-        // ranged physical attacks read as archers, while long-range magic
-        // damage reads as mage. The explicit template value always wins.
+    // What the combat skill list makes of the monster, once per list and
+    // template: its AI type (most imported C4 templates do not carry the
+    // source AI enum; NpcCombatChoice.aiTypeFor reads it from skills and
+    // attack radius) and whether any skill aims at an enemy.
+    combatProfile() {
         const skills = this.fetchCombatSkills();
-        const hasLongRangeMagicDamage = skills.some((skill) => (
-            skill.fetchTargetKind?.() === 'enemy'
-            && skill.fetchSpell?.() === true
-            && skillDistance(skill) >= 200
-            && !skill.fetchSemantic?.()?.effect
-        ));
-        if (hasLongRangeMagicDamage) return 'mage';
-
-        const attackRadius = Number(this.fetchAtkRadius());
-        if (Number.isFinite(attackRadius) && attackRadius >= 200) return 'archer';
-        return 'fighter';
+        const held = this.heldCombatProfile;
+        if (held?.skills === skills && held.model === this.model) return held;
+        return this.heldCombatProfile = { skills, model: this.model,
+            aiType: NpcCombatChoice.aiTypeFor(super.fetchAiType(), skills, this.fetchAtkRadius()),
+            enemySkills: skills.some((skill) => skill.fetchTargetKind?.() === 'enemy') };
     }
 
     fetchSkillCastRange(skill, actor) {
@@ -699,125 +691,40 @@ class Npc extends NpcModel {
     }
 
     selectCombatSkill(actor, rng = Math.random) {
-        if (!EffectRestrictions.canCast(this)) return null;
-        const skills = this.fetchCombatSkills().filter((skill) => {
-            if (this.fetchMp() < skill.fetchConsumedMp()) return false;
-            return this.canUseSkill(skill);
-        });
-        const selfBuff = skills.find((skill) => {
-            if (skill.fetchTargetKind() !== 'self') return false;
-            const semantic = skill.fetchSemantic?.() || {};
-            if (semantic.effectType !== 'buff' || !semantic.effect) return false;
-            if (skill.fetchSkillType?.() === 'hot') {
-                const targets = this.attack.resolveSkillTargets(null,this,this,skill);
-                if (!targets.some(target => Number(target.fetchHp?.()) < Number(target.fetchMaxHp?.()))) return false;
-            }
-            return !EffectStore.list(this).some((effect) => (
-                Number(effect.id) === Number(skill.fetchSelfId()) || effect.key === semantic.effect
-                || semantic.stackFamily && effect.stackFamily === semantic.stackFamily
-                    && Number(effect.stackOrder || 0) >= Number(semantic.stackOrder || 0)
-            ));
-        });
-        if (selfBuff) return selfBuff;
-
-        const enemySkills = skills.filter((skill) => skill.fetchTargetKind?.() === 'enemy');
-        if (enemySkills.length === 0 || !actor) return null;
-
-        const impairments = EffectStore.impairments(actor);
-        const targetAiType = actor.fetchAiType?.() || 'fighter';
-        const aiType = this.fetchAiType();
-        const chance = (skill, category) => this.fetchCombatSkillChance(
-            skill,
-            category,
-            aiType,
-            targetAiType
-        );
-        const passes = (skill, category) => Number(rng()) * 100 <= chance(skill, category);
-
-        // L2J checks special utility categories before ordinary damage. A
-        // failed special roll does not consume the action: the NPC may still
-        // roll a normal damage skill during this combat tick.
-        const hardControls = enemySkills.filter((skill) => this.isCombatSkillCategory(skill) === 'hard_control');
-        if (!impairments.disabled) {
-            const selected = hardControls.find((skill) => passes(skill, 'hard_control'));
-            if (selected) return selected;
-        }
-
-        const sleeps = enemySkills.filter((skill) => this.isCombatSkillCategory(skill) === 'sleep');
-        if (!impairments.disabled) {
-            const selected = sleeps.find((skill) => passes(skill, 'sleep'));
-            if (selected) return selected;
-        }
-
-        const roots = enemySkills.filter((skill) => this.isCombatSkillCategory(skill) === 'root');
-        if (!impairments.rooted) {
-            const selected = roots.find((skill) => passes(skill, 'root'));
-            if (selected) return selected;
-        }
-
-        const mutes = enemySkills.filter((skill) => this.isCombatSkillCategory(skill) === 'mute');
-        if (!impairments.silenced) {
-            const selected = mutes.find((skill) => passes(skill, 'mute'));
-            if (selected) return selected;
-        }
-
+        if (!this.fetchCombatSkills().length || !EffectRestrictions.canCast(this)) return null;
         const now = Date.now();
-        const debuffs = enemySkills.filter((skill) => this.isCombatSkillCategory(skill) === 'debuff');
-        if (now - this.lastDebuffAt >= 6000) {
-            const selected = debuffs.find((skill) => passes(skill, 'debuff'));
-            if (selected) {
-                this.lastDebuffAt = now;
-                return selected;
-            }
-        }
-
-        const damage = enemySkills.filter((skill) => this.isCombatSkillCategory(skill) === 'damage');
-        return damage.find((skill) => passes(skill, 'damage')) || null;
-    }
-
-    isCombatSkillCategory(skill) {
-        const semantic = skill?.fetchSemantic?.() || {};
-        const effect = semanticEffect(skill);
-        if (HARD_CONTROL_EFFECTS.has(effect)) return 'hard_control';
-        if (SLEEP_EFFECTS.has(effect)) return 'sleep';
-        if (ROOT_EFFECTS.has(effect)) return 'root';
-        if (MUTE_EFFECTS.has(effect) || semantic.physicalMute || semantic.magicMute) return 'mute';
-        if (semantic.effectType === 'debuff') return 'debuff';
-        return 'damage';
-    }
-
-    fetchCombatSkillChance(skill, category, aiType = 'fighter', targetAiType = 'fighter') {
-        const range = skillDistance(skill);
-        const closeRange = range < 200;
-
-        if (category === 'hard_control') {
-            return closeRange ? 10 : 7;
-        }
-        if (category === 'sleep') return 1;
-        if (category === 'root') return 8;
-        if (category === 'mute') return (targetAiType === 'mage' || targetAiType === 'balanced') ? 8 : 3;
-        if (category === 'debuff') {
-            let value = 5;
-            if (aiType === 'fighter' && ['mage', 'archer'].includes(targetAiType)) value = 3;
-            if (aiType === 'mage' && targetAiType !== 'mage') value = 4;
-            if (closeRange) value += 3;
-            return value;
-        }
-
-        if (aiType === 'mage') return closeRange ? 35 : 25;
-        if (aiType === 'balanced') {
-            if (closeRange) return 12;
-            return targetAiType === 'mage' ? 2 : 5;
-        }
-        if (aiType === 'archer') return closeRange ? 12 : 3;
-        if (closeRange) return 12;
-        return targetAiType === 'mage' ? 1 : 3;
+        // A target's impairments and AI type only weigh an enemy skill.
+        const profile = this.combatProfile(), aimed = !!actor && profile.enemySkills;
+        const picked = NpcCombatChoice.select({
+            skills: this.fetchCombatSkills(),
+            usable: (skill) => this.fetchMp() >= skill.fetchConsumedMp() && this.canUseSkill(skill),
+            buffNeeded: (skill) => {
+                const semantic = skill.fetchSemantic?.() || {};
+                if (skill.fetchSkillType?.() === 'hot') {
+                    const targets = this.attack.resolveSkillTargets(null,this,this,skill);
+                    if (!targets.some(target => Number(target.fetchHp?.()) < Number(target.fetchMaxHp?.()))) return false;
+                }
+                return !EffectStore.list(this).some((effect) => (
+                    Number(effect.id) === Number(skill.fetchSelfId()) || effect.key === semantic.effect
+                    || semantic.stackFamily && effect.stackFamily === semantic.stackFamily
+                        && Number(effect.stackOrder || 0) >= Number(semantic.stackOrder || 0)
+                ));
+            },
+            hasTarget: !!actor,
+            impairments: aimed ? EffectStore.impairments(actor) : {},
+            aiType: profile.aiType,
+            targetAiType: aimed && actor.fetchAiType?.() || 'fighter',
+            debuffReady: now - this.lastDebuffAt >= NpcCombatChoice.DEBUFF_GAP_MS,
+            rng
+        });
+        if (picked?.category === 'debuff') this.lastDebuffAt = now;
+        return picked?.skill || null;
     }
 
     canUseCombatSkillOn(actor, skill) {
         if (!actor || actor === this) return true;
         const impairments = EffectStore.impairments(actor);
-        switch (this.isCombatSkillCategory(skill)) {
+        switch (NpcCombatChoice.category(skill)) {
             case 'hard_control':
             case 'sleep':
                 return !impairments.disabled;
@@ -837,7 +744,7 @@ class Npc extends NpcModel {
     markSkillReuse(skill, now = Date.now()) {
         this.skillReuseUntil.set(
             skill.fetchSelfId(),
-            now + Math.max(1000, Number(skill.fetchReuseTime()) || 0)
+            now + NpcCombatChoice.reuseMs(skill)
         );
     }
 
@@ -856,6 +763,7 @@ class Npc extends NpcModel {
         if (!EffectRestrictions.canCast(this)) return;
         if (!this.canUseCombatSkillOn(actor, skill)) return;
         if (actor !== this && !this.hasCombatLineOfSight(actor)) return;
+        this.combatActiveAt = Date.now();
         this.attack.remoteHit({
             actor: this,
             dataSendToMe: (packet) => session.dataSendToMe?.(packet),
@@ -908,12 +816,10 @@ class Npc extends NpcModel {
             return;
         }
 
+        this.combatActiveAt = Date.now();
         const rangedAttack = AttackRange.weaponKind(src) === 'Weapon.Bow';
         const attackSpeed = src.fetchCollectiveAtkSpd();
-        const timing = rangedAttack
-            ? Formulas.calcBowAttackTimes(attackSpeed)
-            : { drawMs: Formulas.calcMeleeAtkTime(attackSpeed) * 0.644,
-                cycleMs: Formulas.calcMeleeAtkTime(attackSpeed) };
+        const timing = Formulas.attackTimes(attackSpeed, { bow: rangedAttack });
         const hitLanded = Formulas.calcHitChance(src, dst, Math.random, AttackHelper.positionContext(src, dst));
         const hit = AttackHelper.prepareNpcMeleeHit(src, dst, hitLanded);
 

@@ -32,10 +32,11 @@ assert.strictEqual(ref.stacks, null, 'an old table does not invent zero bag grow
 near(Table.value('S', 'dps', 18).kills, 100, 'at the spot\'s level the curve halves the kills');
 near(Table.value('S', 'dps', 18).deaths, 100 * (0.001 + 0.01), 'deaths per kill add the curve\'s difference');
 near(Table.value('S', 'dps', 19).kills, 200 * 0.625, 'between measured gaps the curve is linear');
-near(Table.value('S', 'dps', 30).kills, 240, 'higher levels follow the curve');
-near(Table.value('S', 'dps', 40).kills, 240, 'beyond the last gap the curve is flat');
-near(Table.value('S', 'dps', 29).adena, 0, 'an old reward curve cannot stand in for actual NPCs');
-near(Table.value('S', 'dps', 90).kills, Table.value('S', 'dps', 78).kills, 'levels above the maximum count as the maximum');
+near(Table.value('S', 'dps', 27).adena, 0, 'an old reward curve cannot stand in for actual NPCs');
+// Spots down to the first deep-blue level only (user 10-29: 9 levels below
+// the bot, past it the C4 drop is 30% and less).
+assert(Table.value('S', 'dps', 27), 'nine levels above the spot: read');
+assert.strictEqual(Table.value('S', 'dps', 28), null, 'ten levels above: not read');
 near(Table.value('T', 'dps', 24).kills, 48, 'kills never exceed what the spot\'s monster count allows');
 assert.strictEqual(Table.value('S', 'dps', 15), null, 'below the lowest level that finds a safe target: no solo hunt');
 assert.strictEqual(Table.value('S', 'dps', 24, false), null, 'no row: no value');
@@ -82,6 +83,170 @@ try {
     fs.rmSync(scratch, { recursive: true, force: true });
 }
 
+// A per-mob table (user 10-29): a row's kills reach its own cap (the spawns
+// its bot may fight), are priced by the species it killed, and take their
+// exp gap from those species' levels, not the spot's other mobs.
+const mixScratch = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'spot-mix-'));
+try {
+    const Rewards = require('../src/GameServer/Bot/Economy/SpotRewardExpectation');
+    const Index = require('../src/GameServer/Item/ItemTemplateIndex');
+    const gapFactor = require('../src/GameServer/Progression/MobExperience').gapFactor;
+    const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'spot_table.json'), 'utf8'));
+    // Spot -10_12 of the reward catalog holds NPCs 34, 38 and 380.
+    fixture.spots[0][0] = '-10_12';
+    fixture.rowFields.push('pull', 'cap', 'mix');
+    for (const rows of fixture.rows) for (const row of rows) if (row) row.push(1, 120, [380, 1]);
+    const file = path.join(mixScratch, 'table.json');
+    fs.writeFileSync(file, JSON.stringify(fixture));
+    Table.useFile(file);
+    const mixed = Table.value('-10_12', 'dps', 24, true);
+    near(mixed.kills, 120, 'the row\'s own cap holds the kills');
+    const level = Number(Index.find(DataCache.npcs, 380).template.level);
+    near(mixed.exp, 120 * 100 * gapFactor(24 - level), 'the exp gap is the killed species\' level');
+    const only = Rewards.value({ id: '-10_12', npcEntries: [{ selfId: 380, count: 1 }], rewards: { adenaMin: 34, adenaMax: 119 } }, 24);
+    near(mixed.adena, 120 * only.adena, 'the kills pay as the killed species does');
+    const all = Rewards.value({ id: '-10_12', npcEntries: [{ selfId: 34, count: 10 }, { selfId: 38, count: 9 }, { selfId: 380, count: 6 }],
+        rewards: { adenaMin: 34, adenaMax: 119 } }, 24);
+    assert.notStrictEqual(Math.round(only.adena), Math.round(all.adena), 'the fixture tells the mix from the spawns');
+    // The kill cache is keyed by the spot and the row's mix, not the row: a
+    // row of the same spot with another mix pays as its own species.
+    for (const rows of fixture.rows) for (const row of rows) if (row) row[row.length - 1] = [34, 1];
+    fs.writeFileSync(file, JSON.stringify(fixture));
+    Table.useFile(file);
+    const other = Rewards.value({ id: '-10_12', npcEntries: [{ selfId: 34, count: 1 }], rewards: { adenaMin: 34, adenaMax: 119 } }, 24);
+    near(Table.value('-10_12', 'dps', 24, true).adena, 120 * other.adena, 'another mix of the spot pays as its species');
+} finally {
+    Table.useFile();
+    fs.rmSync(mixScratch, { recursive: true, force: true });
+}
+
+// The gate per gap (T106): a row read below its reference keeps only the
+// species and the cap of the spawns that bot may fight; none closes the row.
+// Gaps 0-4: only NPC 380, cap 50; from 6: 380 and 34, cap 120; below 0: none.
+const gateScratch = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'spot-gate-'));
+try {
+    const Rewards = require('../src/GameServer/Bot/Economy/SpotRewardExpectation');
+    const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'spot_table.json'), 'utf8'));
+    fixture.spots[0][0] = '-10_12';
+    fixture.rowFields.push('pull', 'cap', 'mix', 'gate');
+    const gate = fixture.gaps.map(gap => gap < 0 ? 0 : gap < 6 ? 50 * 256 + 1 : 120 * 256 + 3);
+    for (const rows of fixture.rows) for (const row of rows) if (row) row.push(1, 120, [380, .5, 34, .5], gate);
+    const file = path.join(gateScratch, 'table.json');
+    fs.writeFileSync(file, JSON.stringify(fixture));
+    Table.useFile(file);
+    const rewards = { adenaMin: 34, adenaMax: 119 };
+    const at24 = Table.value('-10_12', 'dps', 24, true), at20 = Table.value('-10_12', 'dps', 20, true);
+    near(at24.kills, 120, 'at the reference the row\'s cap');
+    near(at24.adena, 120 * Rewards.value({ id: '-10_12', npcEntries: [{ selfId: 380, count: 500 }, { selfId: 34, count: 500 }], rewards }, 24).adena,
+        'both species pay at the reference');
+    near(at20.kills, 50, 'two levels lower the cap of the spawns that bot may fight');
+    near(at20.adena, 50 * Rewards.value({ id: '-10_12', npcEntries: [{ selfId: 380, count: 500 }], rewards }, 20).adena,
+        'only the species that bot may fight pay');
+    assert.strictEqual(Table.value('-10_12', 'dps', 16, true), null, 'a gap where the bot may fight none: no row');
+} finally {
+    Table.useFile();
+    fs.rmSync(gateScratch, { recursive: true, force: true });
+}
+
+// The walk of the gap adds to the time of a kill (T106): the row measured the
+// walk to its reference's spawns (cap 600: 6 s a mob), the bot two levels
+// lower walks to fewer (cap 300: 12 s a mob). The level curve (0.75 of the
+// reference's kills at gap 2) moves the rest of a kill's time; the walk is
+// the gap's own.
+const walkScratch = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'spot-walk-'));
+try {
+    const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'spot_table.json'), 'utf8'));
+    fixture.spots[0][0] = '-10_12';
+    fixture.rowFields.push('pull', 'cap', 'mix', 'gate');
+    const write = (name, gate) => {
+        const copy = structuredClone(fixture);
+        for (const rows of copy.rows) for (const row of rows) if (row) row.push(1, 600, [380, 1], gate);
+        const file = path.join(walkScratch, name);
+        fs.writeFileSync(file, JSON.stringify(copy));
+        return file;
+    };
+    const besidesWalk = (3600 / 200 - 6) / 0.75;
+    Table.useFile(write('same.json', fixture.gaps.map(gap => gap < 0 ? 0 : 600 * 256 + 1)));
+    near(Table.value('-10_12', 'dps', 20, true).kills, 3600 / (besidesWalk + 6), 'the same walk: the curve moves the rest of the time');
+    Table.useFile(write('walk.json', fixture.gaps.map(gap => gap < 0 ? 0 : gap < 6 ? 300 * 256 + 1 : 600 * 256 + 1)));
+    near(Table.value('-10_12', 'dps', 24, true).kills, 200, 'at the reference the measured kills');
+    near(Table.value('-10_12', 'dps', 20, true).kills, 3600 / (besidesWalk + 12), 'the longer walk of the gap');
+    // The spawns' respawns cap the read (E69 at the read, T106 audit): the
+    // row's species gives back 100 mobs an hour, another species 500 more.
+    Table.useSpots([{ id: '-10_12', npcEntries: [{ selfId: 380, count: 1, production: 100 }, { selfId: 999, count: 5, production: 500 }] }]);
+    near(Table.value('-10_12', 'dps', 24, true).kills, 100, 'no more kills than the species it fights gives back');
+    Table.useSpots([]);
+} finally {
+    Table.useSpots([]);
+    Table.useFile();
+    fs.rmSync(walkScratch, { recursive: true, force: true });
+}
+
+// The admitted part of the spawns' production (the fight's soloShareMobs: a
+// group's production times its admitted share): a bot that takes 4 in 10 of
+// the pulls of both species keeps 0.4 of their 200 mobs an hour.
+const shareScratch = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'spot-share-'));
+try {
+    const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'spot_table.json'), 'utf8'));
+    fixture.spots[0][0] = '-10_12';
+    fixture.rowFields.push('pull', 'cap', 'mix', 'gate', 'gateShare');
+    for (const rows of fixture.rows) for (const row of rows) if (row) row.push(1, 3600, [380, .5, 34, .5],
+        fixture.gaps.map(() => 3600 * 256 + 3), fixture.gaps.map(() => 0.4));
+    const file = path.join(shareScratch, 'table.json');
+    fs.writeFileSync(file, JSON.stringify(fixture));
+    Table.useFile(file);
+    Table.useSpots([{ id: '-10_12', npcEntries: [{ selfId: 380, count: 1, production: 100 }, { selfId: 34, count: 1, production: 100 }] }]);
+    near(Table.production('-10_12', 'dps', 24, true), 80, 'the admitted part of the production');
+    near(Table.value('-10_12', 'dps', 24, true).kills, 80, 'the kills at most that part');
+} finally {
+    Table.useSpots([]);
+    Table.useFile();
+    fs.rmSync(shareScratch, { recursive: true, force: true });
+}
+
+// A spotId saved before the cut (a cell piece a spot took in, SpotIndex)
+// reads the spot that holds its field now.
+Table.useFile(path.join(__dirname, 'fixtures', 'spot_table.json'));
+Table.useSpots([{ id: 'S', joins: [{ id: 'S_piece', cell: 'S_piece' }] }, { id: 'T' }]);
+try {
+    assert.deepStrictEqual(Table.value('S_piece', 'dps', 24, true), Table.value('S', 'dps', 24, true), 'a piece\'s id reads its spot\'s row');
+    near(Table.production('S_piece', 'dps', 24, true) ?? 0, Table.production('S', 'dps', 24, true) ?? 0, 'and its production');
+    assert.strictEqual(Table.spotLevel('S_piece'), 18, 'and its level');
+    assert.strictEqual(Table.referenceLevel('S_piece', 'dps'), 24, 'and its reference level');
+    assert.strictEqual(Table.value('X_piece', 'dps', 24, true), null, 'an id no spot holds: no row');
+} finally {
+    Table.useSpots([]);
+    Table.useFile();
+}
+
+// The server's catalogue against the table's: one line per catalogue, the
+// hunting spots without a row set and the geodata of each side.
+{
+    const lines = [];
+    const saved = { warn: utils.infoWarn, success: utils.infoSuccess };
+    utils.infoWarn = (prefix, ...params) => lines.push([prefix, ...params]);
+    utils.infoSuccess = (prefix, ...params) => lines.push([prefix, ...params]);
+    try {
+        Table.useFile(path.join(__dirname, 'fixtures', 'spot_table.json'));
+        Table.useSpots([{ id: 'S' }, { id: 'Q' }, { id: 'R', raidBoss: true }]);
+        Table.value('S', 'dps', 24, true);
+        Table.value('S', 'dps', 20, true);
+        Table.production('Q', 'dps', 24, true);
+        const ours = lines.filter(([prefix]) => prefix === 'SpotTable');
+        assert.strictEqual(ours.length, 1, 'one line per catalogue, not per lookup');
+        assert.deepStrictEqual(ours[0].slice(2, 5), [1, 2, null], 'one of two hunting spots missing; the table names no geodata');
+        assert.strictEqual(ours[0][5], Table.geodataProfile(), 'the server\'s geodata');
+        Table.useSpots([{ id: 'S' }]);
+        Table.value('S', 'dps', 24, true);
+        assert.deepStrictEqual(lines.filter(([prefix]) => prefix === 'SpotTable').length, 2, 'a new catalogue: a new line');
+    } finally {
+        utils.infoWarn = saved.warn;
+        utils.infoSuccess = saved.success;
+        Table.useSpots([]);
+        Table.useFile();
+    }
+}
+
 // ---------------------------------------------------------------- the committed table
 const raw = JSON.parse(fs.readFileSync(Table.DEFAULT_FILE, 'utf8'));
 assert.strictEqual(raw.rows.length, raw.spots.length, 'one row set per spot');
@@ -91,13 +256,14 @@ assert.strictEqual(raw.rows.flat().filter(Boolean).length, raw.header.counts.hun
 assert(raw.roles.every((role) => Object.keys(raw.curves[role] || {}).length > 0), 'every role has curves');
 assert.strictEqual(raw.header.inputs.rate, 'x1', 'the file is at rate x1');
 // The reader applies the C4 exp level-gap penalty; the measured curves must not carry it too
-// (T43: a table measured with it read (5/6)^6 = 0.33 at gap 12 against the reference gap).
+// (T43: a table measured with it read (5/6)^6 = 0.33 at gap 12 against the reference gap;
+// the gaps now end at the deep-blue gap, so the farthest one is read).
 raw.roles.forEach((role) => {
-    const ref = raw.gaps.indexOf(raw.header.inputs.refGap), far = raw.gaps.indexOf(12);
+    const ref = raw.gaps.indexOf(raw.header.inputs.refGap), far = raw.gaps.length - 1;
     const ratios = Object.values(raw.curves[role]).map((curve) => curve.exp)
         .filter((exp) => exp && exp[far] != null && exp[ref] > 0).map((exp) => exp[far] / exp[ref]).sort((a, b) => a - b);
     const median = ratios[Math.floor(ratios.length / 2)];
-    assert(median > 0.8, `${role}: exp per kill at gap 12 keeps the reference level's exp (median ${median})`);
+    assert(median > 0.8, `${role}: exp per kill at gap ${raw.gaps[far]} keeps the reference level's exp (median ${median})`);
 });
 
 // A few spots of the committed table (rate x1). Bearded Keltir fields (level 2): every role hunts it;
@@ -111,16 +277,34 @@ assert(keltir && keltir.kills > 100 && keltir.kills <= 275.2 && keltir.exp > 0 &
 assert(Table.value('-15_42', 'dps', 5, false).kills <= keltir.kills, 'shots do not slow a dps');
 assert(Table.value('-15_42', 'dps', 12, true).kills >= keltir.kills, 'a higher dps kills at least as fast');
 assert(raw.roles.every((role) => Table.value('-15_42', role, 8, true)), 'every role hunts the newbie field');
-// Level 44 spot 7_34: the dps row was measured six levels up; far below the spot there is no solo hunt.
-assert.strictEqual(Table.referenceLevel('7_34', 'dps'), 50);
-assert(Table.value('7_34', 'dps', 50).exp > Table.value('-15_42', 'dps', 8).exp * 5, 'higher spots give much more exp');
-assert.strictEqual(Table.value('7_34', 'dps', 30), null, 'no solo hunt far below the spot\'s level');
+// Spot 11_6 (level 43 since T123's level mix): the dps row was measured refGap (six) levels up; far below
+// the spot there is no solo hunt. (7_34's pack is judged as one pull since T100: no solo row there.)
+assert.strictEqual(raw.header.inputs.refGap, 6);
+assert.strictEqual(Table.referenceLevel('11_6', 'dps'), Table.spotLevel('11_6') + 6);
+assert(Table.value('11_6', 'dps', 50).exp > Table.value('-15_42', 'dps', 8).exp * 5, 'higher spots give much more exp');
+assert.strictEqual(Table.value('11_6', 'dps', 30), null, 'no solo hunt far below the spot\'s level');
 // Seven Signs catacombs are not solo hunting grounds in the author's rules.
 assert(raw.roles.every((role) => Table.value('8_23:catacomb_of_the_heretics', role, 50) === null), 'catacombs: no solo row');
 useRate('x10');
 const keltirX10 = Table.value('-15_42', 'dps', 5, true);
 near(keltirX10.exp, keltir.exp * 10, 'the committed table scales exp with the rate');
 useRate('x1');
+// Spot 20_-30 (level 13): at gap 8 the gate opens to every spawn and the walk
+// to the next mob falls to nothing (cap 3600000); the bot still kills, at
+// most what the spawns give back (T106 review: the old walk swap went
+// negative there and dropped the spot).
+{
+    const offline = require('../data/Bots/spot-reward-npcs.json');
+    const [, entries] = offline.rows.find(row => row[0] === '20_-30');
+    Table.useSpots([{ id: '20_-30', npcEntries: entries.map(([selfId, count]) => ({ selfId, count, production: count * 6 })) }]);
+    try {
+        for (const line of ['9', '24', '37']) for (const level of [21, 22]) {
+            const row = Table.value('20_-30', line, level, true), production = Table.production('20_-30', line, level, true);
+            assert(row && row.kills > 0 && Number.isFinite(row.kills), `line ${line} at ${level} hunts 20_-30`);
+            assert(row.kills <= production + 1e-9, `line ${line} at ${level}: at most the production`);
+        }
+    } finally { Table.useSpots([]); }
+}
 
 
 // The value memo drops its oldest row at the cap, in insertion order, and a clear restarts the order at the
@@ -219,5 +403,52 @@ useRate('x1');
         assert(wide.includes('a_far') && !narrow.includes('a_far'), 'a level-8-lower spot is in the wide band only');
         assert.deepStrictEqual(narrow, wide.filter(id => id !== 'a_far'), 'the narrow band keeps the wide order');
     } finally { Table.useSpots([]); Table.useFile(); fs.rmSync(path.dirname(file), { recursive: true, force: true }); }
+}
+{
+    // Ranking by what a spot gives with the bots it holds (T123): a spot one
+    // bot farms at 150 kills an hour from spawns giving back 150 ranks below
+    // one of 100 kills an hour whose spawns give back 2000, though one bot alone
+    // earns more on the first; the rows keep the one bot's income.
+    const os = require('os');
+    const fixture = { header: { schema: 1, inputs: { bandLevels: 2, maxLevel: 78 } }, roles: ['dps'], shots: [1, 0],
+        gaps: [-4, -2, 0, 2, 4, 6, 8], rowFields: ['minGap', 'refGap', 'kph', 'busy', 'deaths', 'exp', 'sp', 'adena', 'loot', 'shots', 'potions'],
+        curveFields: ['kph', 'busy', 'deaths', 'exp', 'adena'],
+        spots: [['a_small', 24, 30, 2500, 1, 1, 1], ['b_big', 24, 30, 2500, 1, 1, 1]],
+        rows: [[[-4, 0, 200, 9, 0, 100, 5, 30, 20, 0, 0], null], [[-4, 0, 100, 9, 0, 100, 5, 30, 20, 0, 0], null]], curves: {} };
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'spot-table-')), 'held.json');
+    fs.writeFileSync(file, JSON.stringify(fixture));
+    const entries = production => [{ selfId: 776, count: 17, production: production * 0.75 }, { selfId: 418, count: 6, production: production * 0.25 }];
+    Table.useFile(file);
+    Table.useSpots([{ id: 'a_small', npcEntries: entries(150), rewards: { adenaMin: 40, adenaMax: 140 } },
+        { id: 'b_big', npcEntries: entries(2000), rewards: { adenaMin: 40, adenaMax: 140 } }]);
+    try {
+        const ranked = Table.rankedIncome('dps', 24, { shots: 0, potions: 0 });
+        assert.deepStrictEqual(ranked.map(row => row.spotId), ['b_big', 'a_small'], 'the spot that holds its bots ranks first');
+        assert(ranked[1].income > ranked[0].income, 'one bot alone earns more on the small spot');
+        near(ranked[1].kills, 150, 'the small spot\'s row: one bot\'s kills');
+        // The best spot of a role and level ranks the same way (one ranking), by exp and by income.
+        for (const metric of ['exp', 'income']) {
+            const best = Table.best('dps', 24, true, metric);
+            assert.strictEqual(best.spotId, 'b_big', `the best ${metric} spot is the one that holds its bots`);
+            near(best.kills, 100, `the best ${metric} row: one bot's kills`);
+        }
+    } finally { Table.useSpots([]); Table.useFile(); fs.rmSync(path.dirname(file), { recursive: true, force: true }); }
+}
+{
+    // One kills-per-hour answer (T127 D3): the hunt cycle's kph is value()'s
+    // kills, the production cap included; its cap is the cap the kills meet.
+    const offline = require('../data/Bots/spot-reward-npcs.json');
+    const spotId = Table.rankedSpotIds('dps', 24, { shots: 0, potions: 0 })[0];
+    const [, rows, adenaMin, adenaMax] = offline.rows.find(row => row[0] === spotId);
+    Table.useSpots([{ id: spotId, npcEntries: rows.map(([selfId, count]) => ({ selfId, count, production: count * 0.5 })),
+        rewards: { adenaMin, adenaMax } }]);
+    try {
+        const value = Table.value(spotId, 'dps', 24, true), cycle = Table.cycle(spotId, 'dps', 24, true);
+        const production = Table.production(spotId, 'dps', 24, true);
+        assert(value && cycle && production > 0, 'the spot has its row, its cycle and its production');
+        near(value.kills, production, 'the spawns cap the kills');
+        near(cycle.kph, value.kills, 'the cycle reads the same kills');
+        near(cycle.cap, production, 'its cap is the production');
+    } finally { Table.useSpots([]); }
 }
 console.log('Spot value table lookups, curves, caps, rates and the committed table passed');

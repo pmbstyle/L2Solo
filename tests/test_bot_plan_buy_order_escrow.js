@@ -19,7 +19,7 @@ DataCache.init();
 // only the wallet, dropped the target, the order was withdrawn with its
 // escrow refunded, and the same target came back: one order every ~6 min.
 // The bot holds a usable weapon: an unarmed bot would bridge a weapon first.
-const weapon = invoke('GameServer/Bot/AI/BotGear').planFor({ classId: 1, level: 30 }).items.find((item) => Number(item.slot) === 7);
+const weapon = invoke('GameServer/Bot/AI/BotGear').planFor({ classId: 1, level: 30 }).items.find((item) => [7, 14].includes(Number(item.slot)));
 const state = {
     // Market trips are valued from where the bot stands (d5fb26bd); a bot
     // without a location priced the kit at Aden instead of nearby Giran.

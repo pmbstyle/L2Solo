@@ -1,5 +1,6 @@
 const DiagnosticConfig = require('../Population/PopulationConfig');
 const SpotService    = invoke('GameServer/Bot/AI/SpotService');
+const SpotProfiles   = invoke('GameServer/Bot/Population/SpotProfiles');
 const BotBrainContext = invoke('GameServer/Bot/AI/BotBrainContext');
 const BotContextAssembler = invoke('GameServer/Bot/AI/BotContextAssembler');
 const BotConversationService = invoke('GameServer/Bot/AI/BotConversationService');
@@ -131,7 +132,7 @@ function candidateSpots(status) {
         return [];
     }
 
-    return indexed
+    return SpotProfiles.spotsNearLevel(indexed, status.level)
         .map((spot) => ({
             id: spot.id,
             name: spot.name,
@@ -141,7 +142,6 @@ function candidateSpots(status) {
             distance: Math.round(SpotService.distance2d(status.loc, spot.center))
         }))
         .filter((spot) => spot.density >= 3)
-        .filter((spot) => spot.minLevel <= status.level + 4 && spot.maxLevel >= status.level - 4)
         .sort((a, b) => {
             if (a.distance !== b.distance) return a.distance - b.distance;
             return b.density - a.density;

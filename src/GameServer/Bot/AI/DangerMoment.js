@@ -1,59 +1,16 @@
 'use strict';
 const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
-const TendencyRoll = invoke('GameServer/Bot/AI/TendencyRoll');
 const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
-const ColdRest = invoke('GameServer/Bot/Population/ColdRest');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
 const EscapePolicy = invoke('GameServer/Bot/AI/BotEscapePolicy');
+const DangerRule = invoke('GameServer/Bot/AI/DangerRule');
 
-// E70, §13.6 "it got dangerous": drink a potion, run to heal, sit or keep
-// fighting, each priced in the bot's hours. First choices, calibrated later
-// by the hot harness:
-// the survival margin 1.5 the target choice admits reads as a 0.15% lose
-// chance, 1.2 as 5%, an even race (margin 1) as 50%.
-const LOSE_SLOPE = 16;
-// Only a viable escape receives this discount; faster pursuers rule it out.
-const FLEE_EXPOSURE = 0.5;
-// One roll moves the bot's sense of the death price by up to +-50%.
-const ROLL_SPREAD = 0.5;
+// The hot adapter of DangerRule, for a live fight (E70): it reads the actor, the
+// mobs on it and the held economy.
 // Melee and nearby casters hitting the bot; farther mobs are not in this fight.
 const ATTACKER_RADIUS = 900;
-
-// The chance to lose the fight from the survival ratio: how many times the
-// enemies' remaining HP the bot deals before its own remaining HP runs out.
-function loseChance(survivalRatio) {
-    return survivalRatio > 0 ? 1 / (1 + survivalRatio ** LOSE_SLOPE) : 1;
-}
-
-// One decision for hot and cold, in hours. Inputs: own HP now and max, the
-// survival ratio at this HP (null = unknown), attacked (someone hits the bot),
-// the potion it would drink ({ heal, price } or null), hours to rest to full,
-// the hours the fight still needs (given up by running or sitting), the death price (EconomicValuation.deathHours), the price of money (hours
-// per adena), the trait weight on risk (EconomicValuation.riskWeight:
-// caution, resilience, frustration) and the decision's roll.
-// null leaves the caller's own rule in place, also when the price of money is
-// unknown: a free potion would be drunk whenever the last one wears off.
-function decide({ hp, maxHp, survivalRatio, attacked = true, canEscape = true, potion = null, restHours = 0, fightHours = 0,
-    deathHours, moneyPrice, riskWeight, roll = 0.5 } = {}) {
-    if (!Number.isFinite(survivalRatio) || !(maxHp > 0) || !(hp > 0)
-        || !(deathHours >= 0) || !Number.isFinite(moneyPrice) || moneyPrice < 0 || !(riskWeight >= 0)) return null;
-    const risk = deathHours * riskWeight * (1 + ROLL_SPREAD * (2 * roll - 1));
-    const lose = loseChance(survivalRatio);
-    const hours = { fight: lose * risk };
-    const heal = Math.min(Math.max(0, Number(potion?.heal) || 0), maxHp - hp);
-    if (heal > 0) {
-        hours.drink = Math.max(0, Number(potion.price) || 0) * moneyPrice
-            + loseChance(survivalRatio * (hp + heal) / hp) * risk;
-    }
-    const leave = Math.max(0, restHours) + Math.max(0, fightHours);
-    if (attacked && canEscape) hours.flee = lose * FLEE_EXPOSURE * risk + leave;
-    if (!attacked) hours.sit = leave;
-    let action = 'fight';
-    for (const option of Object.keys(hours)) if (hours[option] < hours[action]) action = option;
-    return { action, loseChance: lose, hours };
-}
 
 function npcHp(npc) { return Math.max(0, Number(npc.fetchHp?.() || 0)); }
 function npcPAtk(npc, view) {
@@ -89,18 +46,16 @@ function forActor(session, actor, target, options = {}) {
     if (!economy || !target) return null;
     const hp = Number(actor.fetchHp?.() || 0), maxHp = Number(actor.fetchMaxHp?.() || 0);
     const mp = Number(actor.fetchMp?.() || 0), maxMp = Number(actor.fetchMaxMp?.() || 0);
-    const profiles = (options.profiles || TargetMatchup.actorProfiles([actor])).map(profile => profile.soloDamageReceiver === false ? profile
-        : { ...profile, maxHp: Math.min(profile.maxHp, hp), maxMp: Math.min(profile.maxMp, mp) });
+    // A pet keeps its own HP (BotTargetMatchup.actorProfiles; it tanks first).
+    const profiles = TargetMatchup.atVitals(options.profiles || TargetMatchup.actorProfiles([actor]), hp, mp);
     const view = TargetMatchup.targetView(target);
     const attackers = options.attackers || attackersOf(actor, target);
     const atkSpd = Math.max(1, Number(view.atkSpd || 253));
     // The mobs on the bot are judged as one mob with their HP and attack summed (minimum.md #3).
     // An area skill hits each of them (F20: BotTargetMatchup reads `pull`).
+    // They are in the fight: no opening before they close in (engaged).
     const enemy = { ...view, maxHp: attackers.reduce((sum, npc) => sum + npcHp(npc), 0),
-        pAtk: attackers.reduce((sum, npc) => sum + npcPAtk(npc, view), 0) / atkSpd, atkSpd, pull: attackers.length };
-    const survival = TargetMatchup.soloSurvival(profiles, enemy);
-    // Damage per second of the same attack envelope as the survival ratio.
-    const damageRate = TargetMatchup.damageRate(profiles, enemy);
+        pAtk: attackers.reduce((sum, npc) => sum + npcPAtk(npc, view), 0) / atkSpd, atkSpd, pull: attackers.length, engaged: true };
     // A potion still working or a cast in flight leaves no bottle to drink now.
     const potion = options.potion === null || actor.state?.fetchCasts?.() || HealingPotionStock.activePotionHot(actor) ? null
         : HealingPotionStock.selectPotion(options.bag ? options.bag() : HealingPotionStock.actorInventory(actor), hp, maxHp, actor,
@@ -112,12 +67,9 @@ function forActor(session, actor, target, options = {}) {
     const moneyPrice = economy.moneyPrice > 0 ? economy.moneyPrice : packetPrice > 0 ? packetPrice : null;
     const targetId = Number(target.fetchId?.() ?? 0);
     if (moneyPrice === null) Diagnostics.count('danger_moment', 'no_price', 'all');
-    const restHours = ColdRest.estimateRestMs({ level: actor.fetchLevel?.(), stats: { classId: actor.fetchClassId?.() } },
-        { hp, maxHp, mp, maxMp }) / 3600000;
-    const moment = decide({ hp, maxHp, survivalRatio: survival.survivalRatio, attacked: options.attacked !== false,
-        canEscape: EscapePolicy.assess(session, actor, attackers).possible,
-        potion: heldPotion, restHours, fightHours: damageRate > 0 ? enemy.maxHp / damageRate / 3600 : 0, deathHours: economy.deathHours, moneyPrice, riskWeight: economy.riskWeight,
-        roll: TendencyRoll.roll('danger', actor.fetchId?.(), targetId) });
+    const moment = DangerRule.moment({ profiles, enemy, hp, maxHp, mp, maxMp, level: actor.fetchLevel?.(), classId: actor.fetchClassId?.(),
+        attacked: options.attacked !== false, canEscape: EscapePolicy.assess(session, actor, attackers).possible, potion: heldPotion,
+        deathHours: economy.deathHours, moneyPrice, riskWeight: economy.riskWeight, botId: actor.fetchId?.(), targetId });
     session.dangerMoment = moment ? { targetId, action: moment.action } : undefined;
     return moment;
 }
@@ -163,4 +115,4 @@ function take(session, actor, target, options = {}) {
     return counted(forActor(session, actor, target, { profiles, attackers, attacked: options.attacked, potion: null })?.action);
 }
 
-module.exports = { LOSE_SLOPE, FLEE_EXPOSURE, ROLL_SPREAD, ATTACKER_RADIUS, loseChance, decide, forActor, applies, take };
+module.exports = { ATTACKER_RADIUS, forActor, applies, take };

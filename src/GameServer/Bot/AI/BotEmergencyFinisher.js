@@ -8,8 +8,7 @@ const Utility = invoke('GameServer/Bot/AI/BotCombatUtility');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const RaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 
-const MAX_FINISH_MS = 4000;
-const DAMAGE_MARGIN = 0.70;
+const { FINISH_MS: MAX_FINISH_MS, FINISH_DAMAGE_MARGIN: DAMAGE_MARGIN, FINISH_HITS } = invoke('GameServer/Bot/AI/DangerRule');
 const THREAT_RADIUS = 2500;
 
 function stat(actor, name) {
@@ -18,12 +17,7 @@ function stat(actor, name) {
 }
 
 function physicalModifier(actor, target, skill = null) {
-    const trait = skill?.fetchSemantic?.()?.trait;
-    return Attack.incomingWeaponVulnerabilityModifier(target, {
-        bow: trait === 'bow' || Attack.prototype.isBowAttack(actor),
-        blunt: trait === 'blunt' || Attack.prototype.isBluntAttack(actor),
-        dagger: !!skill && (trait === 'dagger' || Attack.prototype.isDaggerAttack(actor))
-    }) * Attack.physicalUndeadModifier(actor, target) * Attack.physicalRaceModifier(actor, target);
+    return Attack.hitModifier(actor, target, { skill: !!skill, trait: skill?.fetchSemantic?.()?.trait || '' });
 }
 
 function evaluate(session, bot, target) {
@@ -52,7 +46,7 @@ function evaluate(session, bot, target) {
         AttackRange.isWithinRange(bot, target, AttackRange.fetchNormalAttackRange(bot))) {
         const damage = Utility.basicAttackDamageEstimate(bot, target) * physicalModifier(bot, target) * DAMAGE_MARGIN;
         const hits = damage > 0 ? Math.ceil(hp / damage) : Infinity;
-        if (hits <= 2) actions.push({ action: 'basic_attack', estimatedHits: hits,
+        if (hits <= FINISH_HITS) actions.push({ action: 'basic_attack', estimatedHits: hits,
             estimatedDamage: damage, finishMs: (hits + 1) * Formulas.calcMeleeAtkTime(speed), hpCost: 0 });
     }
     if (casting || Restrictions.canCast(bot)) {

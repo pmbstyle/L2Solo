@@ -608,7 +608,8 @@ function refusal(state, accepted, deps = {}, options = {}) {
         && !invoke('GameServer/Bot/Population/BackgroundResolver').travelRecord(state.stats.travel)) return 'travel_record'; // lazy: as canReuse before L114 (load order unchecked)
     // A goal change (main's goal revision moved since the build) is seen at
     // the next decision point. No revision on the card (restored after a
-    // restart) differs too: one rebuild.
+    // restart) differs too: one rebuild. The build reads the same revision for
+    // the held earning spot (EconomyContext.holdRead: a goal change searches).
     if (Number.isFinite(deps.goalRevision) && deps.goalRevision !== accepted.goalRevision) return 'goal';
     // options.collect: a build of the same step on this state follows a
     // refusal; the verdict collects and hands itself to it (forState).
@@ -642,7 +643,7 @@ function refreshAdvisory(state, accepted, deps = {}, options = {}) {
     economy.wallet = PurchaseFunding.budget(state, deps.buyOrderEscrow);
     economy.statsPacket = { wishFocus: state.stats.wishFocus, dormantWishes: state.stats.dormantWishes,
         decisionSeq: state.stats.decisionSeq, activityLeaf: state.stats.activityLeaf, money: state.stats.money,
-        stockTargets: state.stats.stockTargets, wishSections: accepted.baseline, wishDirty: 0,
+        stockTargets: state.stats.stockTargets, dangerPrice: state.stats.dangerPrice, wishSections: accepted.baseline, wishDirty: 0,
         wishAdvisory: accepted.saved || null };
     Object.assign(economy.network, { focus: state.stats.wishFocus, dormant: state.stats.dormantWishes,
         decisionSeq: state.stats.decisionSeq, activityLeaf: state.stats.activityLeaf });

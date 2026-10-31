@@ -13,6 +13,10 @@ const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const databasePath = path.join(process.cwd(), 'tmp', 'test-cold-potion-consumption.sqlite');
 const POTION = 1060; // Lesser Healing Potion
 const at = 1_750_000_000_000;
+// With max HP from the class template (Formulas.calcHp) a level 12 fighter
+// ends every admitted Brae Orc fight above the potion line; at level 11 the
+// pull gate still admits the fight and a heavy roll drops it below the line.
+const LEVEL = 11;
 
 function clean() {
     const history = databasePath.replace(/\.sqlite$/, '.history.sqlite');
@@ -28,7 +32,7 @@ function item(selfId, amount, name) {
 function fighter(state, hp) {
     const result = {
         ...state,
-        level: 12,
+        level: LEVEL,
         activity: 'hunting',
         vitals: { hp, maxHp: 500, mp: 200, maxMp: 200 },
         stats: {
@@ -45,8 +49,8 @@ function fighter(state, hp) {
         party: { role: 'dps' }
     };
     // Owned characters fight with their learned kit only (113e1791); the
-    // fighter carries the database-learned skills of a level 12 Human Fighter.
-    result.stats.coldCombat = ColdCombatProfile.legacySnapshot(result, ColdCombatProfile.skillRecordsFromTree(0, 12));
+    // fighter carries the database-learned skills of a Human Fighter of that level.
+    result.stats.coldCombat = ColdCombatProfile.legacySnapshot(result, ColdCombatProfile.skillRecordsFromTree(0, LEVEL));
     return result;
 }
 
@@ -96,7 +100,7 @@ async function physicalAmount(characterId, selfId) {
     await Database.setItem(id, item(POTION, 5, 'Lesser Healing Potion'));
     await Database.setItem(id, item(57, 100, 'Adena'));
     const base = await LifeState.upsertState({
-        characterId: id, accountName: 'bot_potion', name: 'PotionDrinker', level: 12, adena: 100,
+        characterId: id, accountName: 'bot_potion', name: 'PotionDrinker', level: LEVEL, adena: 100,
         phase: 'cold', activity: 'hunting', currentRegion: 'Gludio', spotId: spot.id,
         loc: { locX: -12000, locY: 122000, locZ: -3000 },
         inventory: LifeState.inventorySummaryFromItems(await Database.fetchItems(id)),
@@ -117,22 +121,37 @@ async function physicalAmount(characterId, selfId) {
     assert.strictEqual(JSON.parse(life.inventorySummary)[POTION].amount, 5 - drunk, 'the stored summary keeps the lower count');
     assert.strictEqual(await physicalAmount(id, POTION), 5 - drunk, 'the items table keeps the lower count');
 
-    // The party path is unchanged: its member results carry no solo potion
-    // count, so the commit leaves the member's stock as it was.
-    const members = [901, 902].map((characterId) => ({ ...fighter(base, 150), characterId, activity: 'grouped',
-        party: { partyId: 'potion-party', role: 'dps' } }));
-    const party = { partyId: 'potion-party', memberIds: [901, 902], leaderId: 901, spotId: spot.id, stats: {} };
-    const partyResult = Party.resolve({ party, members, spot, elapsedMs: 60000, timestamp: at, rng: seeded(7) });
+    // A party member's bottles are its own too (T141): each member result
+    // carries what that member drank, and the commit debits it from that
+    // member's stock alone.
+    const partyAt = (seed) => {
+        const members = [901, 902].map((characterId) => ({ ...fighter(base, 150), characterId, activity: 'grouped',
+            party: { partyId: 'potion-party', role: 'dps' } }));
+        const party = { partyId: 'potion-party', memberIds: [901, 902], leaderId: 901, spotId: spot.id, stats: {} };
+        return Party.resolve({ party, members, spot, elapsedMs: 60000, timestamp: at, rng: seeded(seed) });
+    };
+    let partyResult = null;
+    for (let seed = 1; seed < 400 && !partyResult; seed += 1) {
+        const round = partyAt(seed);
+        if (round.memberResults.some(member => member.result.debug.drunkPotions) && !round.debug?.deaths) partyResult = round;
+    }
+    assert(partyResult, 'a fixture party fight drank a potion');
     for (const member of partyResult.memberResults) {
-        assert.strictEqual(member.result.debug.drunkPotions, undefined, 'a party member result carries no solo potion count');
+        const bottles = Number(member.result.debug.drunkPotions?.[POTION] || 0);
         const memberProjection = await LifeState.prepareResolve(member.state, member.result,
             { persist: false, timestamp: at, projectClassProgression: true });
-        assert.strictEqual(memberProjection.inventory[POTION].amount, member.state.inventory[POTION].amount);
+        assert.strictEqual(memberProjection.inventory[POTION].amount, member.state.inventory[POTION].amount - bottles,
+            'the projection debits the bottles this member drank');
     }
+    // The bottle runs on past the fight, as a solo bot's: the next one waits for it.
+    const drinker = partyResult.memberResults.find(member => member.result.debug.drunkPotions);
+    assert(drinker.result.patch.stats.coldCombat.potionUntil > at, 'a party member keeps its bottle\'s lock');
+    assert.strictEqual(partyResult.memberResults.reduce((sum, member) => sum + Number(member.result.debug.drunkPotions?.[POTION] || 0), 0),
+        partyResult.debug.potionsUsed, 'the members\' bottles are the party\'s count');
 
     await Database.close();
     clean();
-    console.log('Cold potions: a solo resolve debits the potions it drank from the stored stock; party unchanged');
+    console.log('Cold potions: a solo resolve and a party member debit the potions they drank from the stored stock');
 })().catch((error) => {
     console.error(error);
     process.exit(1);

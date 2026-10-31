@@ -17,12 +17,12 @@ module.exports = function nativeStockWorld() {
     process.env.L2NODE_CONFIG_FILE = process.env.L2NODE_SHARED_CONFIG_FILE = config;
     let sourceActive = false;
 
-    function usePotionSpot() {
+    function usePotionSpot(spotId = '-10_30') {
         const table = invoke('GameServer/Bot/AI/SpotValueTable');
         const canonical = JSON.parse(fs.readFileSync(table.DEFAULT_FILE, 'utf8'));
-        const index = canonical.spots.findIndex(row => row[0] === '-10_30');
+        const index = canonical.spots.findIndex(row => row[0] === spotId);
         assert(index >= 0, 'the potion case uses an authored canonical spot');
-        const before = [false, true].map(shots => table.value('-10_30', 'dps', 30, shots));
+        const before = [false, true].map(shots => table.value(spotId, 'dps', 30, shots));
         const file = taskPath.join(directory, 'one-spot.json');
         // A unit world with one available spot, not a knowledge filter. Every
         // curve, field and value is retained; the spot and row share index 0.
@@ -37,7 +37,7 @@ module.exports = function nativeStockWorld() {
         sourceActive = true;
         invoke('GameServer/Bot/Economy/EconomyContext').reset();
         for (const [at, shots] of [false, true].entries())
-            assert.deepEqual(table.value('-10_30', 'dps', 30, shots), before[at], `native values are unchanged with shots=${shots}`);
+            assert.deepEqual(table.value(spotId, 'dps', 30, shots), before[at], `native values are unchanged with shots=${shots}`);
     }
 
     function town() {

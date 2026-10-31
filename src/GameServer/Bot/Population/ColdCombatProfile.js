@@ -4,9 +4,15 @@ const { fnv1a32 } = require('../Fnv1a');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const Formulas = invoke('GameServer/Formulas');
+const CombatantView = invoke('GameServer/Combat/CombatantView');
+const HitRules = invoke('GameServer/Combat/HitRules');
+const ShotStock = invoke('GameServer/Inventory/ShotStock');
+const AttackRange = invoke('GameServer/Actor/AttackRange');
 const { skillTreeEntries, learnedTreeRow, treeSkillLevel } = require('./ColdSkillTree');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const SkillRequirements = invoke('GameServer/Skills/SkillRequirements');
+const WeaponMask = invoke('GameServer/Skills/WeaponMask');
+const NpcTraits = invoke('GameServer/Npc/NpcTraits');
 const GameTime = invoke('GameServer/World/GameTime');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const C4ArmorSets = invoke('GameServer/Items/C4ArmorSets');
@@ -15,29 +21,19 @@ const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
 const BotPullEstimate = invoke('GameServer/Bot/AI/BotPullEstimate');
+const NpcCombatChoice = invoke('GameServer/Npc/NpcCombatChoice');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const RAID_MINIONS = require('../../../../data/Npcs/Minions/c4_raid_bosses.json');
 const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
 const HennaRules = invoke('GameServer/Henna/HennaRules');
+const C4WeaponSA = invoke('GameServer/Items/C4WeaponSA');
 
 // Rebuild persisted kits that could have been overwritten by an older resolve.
-const PROFILE_VERSION = 6;
+const PROFILE_VERSION = 7;
 const BASE_STATS = ['STR', 'DEX', 'CON', 'INT', 'WIT', 'MEN'];
 const npcCombatCache = new WeakMap();
 
-const WEAPON_MASK_BY_KIND = Object.freeze({
-    'Weapon.Sword': 4,
-    'Weapon.Blunt': 8,
-    'Weapon.Knife': 16,
-    'Weapon.Bow': 32,
-    'Weapon.Pole': 64,
-    'Weapon.Fist': 256,
-    'Weapon.Dual': 512,
-    'Weapon.DualFist': 1024,
-    'Weapon.GreatSword': 2048,
-    'Weapon.BigBlunt': 16384
-});
 
 function number(value, fallback = 0) {
     const resolved = Number(value);
@@ -141,7 +137,9 @@ function equipmentFromTemplates(items = [], spellcaster = false, fallback = {}) 
         : number(armorAt(10)?.stats?.pDef, spellcaster ? 15 : 31) + number(armorAt(11)?.stats?.pDef, spellcaster ? 8 : 18);
 
     return {
-        weaponKind: weapon?.template?.kind || fallback.weaponKind || '',
+        weaponKind: WeaponMask.weaponType(weapon?.template?.kind || fallback.weaponKind || '', weapon?.etc?.slot),
+        // The MP of one bow shot (user 10-29: bots pay it as players do).
+        bowMp: weapon?.template?.kind === 'Weapon.Bow' ? C4WeaponSA.expectedBowMp(weapon.selfId, weapon.etc?.mp) : 0,
         attackReuseDelay: number(weapon?.stats?.reuseDelay, 1500),
         pAtk: number(weapon?.stats?.pAtk, fallback.pAtk),
         pAtkRnd: number(weapon?.stats?.pAtkRnd, fallback.pAtkRnd),
@@ -186,8 +184,9 @@ function statSources(profile, timestamp, options = {}) {
         setKind: equipment.setKind || '',
         shield: number(equipment.shieldPDef) > 0
     };
+    // options.seated: a rest's sources (ColdRest); a fight's stand.
     const situation = {
-        hp: 1, maxHp: 1, moving: false, walking: false, seated: false,
+        hp: 1, maxHp: 1, moving: false, walking: false, seated: options.seated === true,
         get night() { return options.night ?? GameTime.isNight(timestamp); }
     };
     const sources = activeEffects(profile.effects, timestamp).map(effectStats);
@@ -241,6 +240,19 @@ function npcPassiveStatValues(actor, stat) {
         .filter(Number.isFinite);
 }
 
+// The stats an NPC's passives name: every weakness (*Vuln) and resist (*Resist)
+// a hit or an effect's land chance reads (HitRules.targetModifier, traitResistModifier).
+function npcPassiveTraitStats(actor) {
+    const keys = new Set(['bowWpnVuln', 'bluntWpnVuln', 'daggerWpnVuln',
+        ...[...HitRules.ELEMENTAL_DAMAGE_TRAITS].map((element) => `${element}Vuln`)]);
+    for (const skill of actor.fetchPassiveSkills() || []) {
+        if (skill?.fetchPassive?.() !== true) continue;
+        const semantic = skill.fetchSemantic?.() || C4SkillRules.resolve({ selfId: skill.fetchSelfId?.(), name: skill.fetchName?.(), level: skill.fetchLevel?.() });
+        for (const stat of Object.keys(semantic?.stats || {})) if (/(Vuln|Resist)$/.test(stat)) keys.add(stat);
+    }
+    return keys;
+}
+
 function npcPassiveMultiplier(actor, stat) {
     return npcPassiveStatValues(actor, stat).reduce((total, value) => total * value, 1);
 }
@@ -254,6 +266,18 @@ function adjustedNpcStat(base, actor, stat) {
         (number(base) * npcPassiveMultiplier(actor, `${stat}Mul`))
         + npcPassiveAdd(actor, `${stat}Add`)
     ));
+}
+
+// A cold monster's weakness multiplier of a stat (1 without one), and the
+// resist modifier of an effect trait (HitRules.traitResistModifier): the
+// cold fight, its monster side and the solo gate read them here.
+function npcVulnerability(mob, stat) {
+    const value = Number(mob?.vulnerabilities?.[stat]);
+    return Number.isFinite(value) ? Math.max(0, value) : 1;
+}
+function npcTraitResist(mob, trait) {
+    const family = HitRules.resistStats(trait);
+    return HitRules.traitResistModifier(Number(mob?.resists?.[family.resist]) || 0, npcVulnerability(mob, family.vulnerability));
 }
 
 function npcCombatStats(npc) {
@@ -274,15 +298,18 @@ function npcCombatStats(npc) {
     const level = Math.max(1, number(npc.template?.level, 1));
     const dex = number(npc.base?.dex, 1);
     const weapon = itemTemplate(npc.equipment?.weapon);
-    const vulnerabilities = {};
-    [
-        'bowWpnVuln', 'bluntWpnVuln', 'daggerWpnVuln',
-        'fireVuln', 'waterVuln', 'windVuln', 'earthVuln', 'holyVuln', 'darkVuln'
-    ].forEach((stat) => {
-        vulnerabilities[stat] = npcPassiveMultiplier(actor, stat);
-    });
+    const shield = Number(npc.equipment?.shield) ? itemTemplate(npc.equipment.shield) : null;
+    // Weaknesses (multipliers) and resists (percent) as the hot Npc's
+    // EffectStats reads them from its passives (boss passive 4045: 0.1 to sleep,
+    // root, stun and paralysis).
+    const vulnerabilities = {}, resists = {};
+    for (const stat of npcPassiveTraitStats(actor)) {
+        if (stat.endsWith('Vuln')) vulnerabilities[stat] = npcPassiveMultiplier(actor, stat);
+        else resists[stat] = npcPassiveAdd(actor, stat);
+    }
 
     const result = {
+        selfId: number(npc.selfId),
         level,
         maxHp: adjustedNpcStat(npc.vitals?.maxHp, actor, 'maxHp'),
         pAtk: adjustedNpcStat(npc.stats?.pAtk, actor, 'pAtk'),
@@ -299,10 +326,32 @@ function npcCombatStats(npc) {
             + npcPassiveAdd(actor, 'pEvasionRateAdd')),
         pAtkRnd: number(npc.stats?.pAtkRnd),
         critical: Math.max(0, number(npc.stats?.crit)),
+        // The hot Npc's numbers a hit and its skill choice read
+        // (CombatantView, NpcCombatChoice): MP, DEX, magic critical, shield,
+        // AI type and attack radius.
+        maxMp: Math.max(0, number(npc.vitals?.maxMp)),
+        // MP back per regen tick (Formulas.REGEN_TICK_MS), as the hot Npc's
+        // Automation.fetchRevMpAmount: its template revMp by its passives.
+        revMp: Math.max(0, number(npc.vitals?.revMp) * npcPassiveMultiplier(actor, 'regMp') + npcPassiveAdd(actor, 'regMpAdd')),
+        dex,
+        // A hot Npc has no backpack: its magic critical reads no weapon.
+        mCritRate: Formulas.magicCriticalRate({ wit: number(npc.base?.wit), weapon: false }),
+        shieldPDef: number(shield?.stats?.pDef ?? shield?.pDef),
+        shieldRate: shield || number(shield?.stats?.pDef) > 0 ? Formulas.DEFAULT_SHIELD_RATE : 0,
+        aiType: NpcCombatChoice.aiTypeOfModel(npc),
+        atkRadius: number(npc.stats?.atkRadius),
+        // The speed it closes in at (openingMs).
+        runSpd: number(npc.speed?.run),
         weaponKind: String(weapon?.template?.kind || ''),
         race: String(npc.traits?.race || '').toLowerCase(),
-        undead: npc.traits?.undead === true,
+        undead: NpcTraits.isUndead(npc.traits),
         vulnerabilities,
+        resists,
+        // Damage it sends back of each hit it takes (hot Attack.applyReflectedDamage); a
+        // self buff adds to it (ColdMobAction.buffColdMob).
+        reflectDam: npcPassiveAdd(actor, 'reflectDam'),
+        // A raid boss: no lethal strike lands on it (HitRules.lethalStrike).
+        boss: npc.template?.kind === 'Boss',
         rewardExp: Math.max(0, Formulas.calcAcquiredExp(level, number(npc.rewards?.exp))),
         rewardSp: Math.max(0, number(npc.rewards?.sp))
     };
@@ -397,6 +446,13 @@ function skillSnapshotsFromRecords(records = []) {
     }).filter(Boolean);
 }
 
+// A cold state's current class: the one main publishes (stats.classId, set on
+// every transfer, hot or cold), before the class its saved kit was captured
+// with; a class-only estimate carries just the kit's or the state's.
+function classIdOf(state = {}) {
+    return number(state.stats?.classId, number(state.stats?.coldCombat?.classId, number(state.classId)));
+}
+
 function legacySnapshot(state = {}, records = [], timestamp = Date.now()) {
     const existing = state.stats?.coldCombat || {};
     return {
@@ -404,7 +460,7 @@ function legacySnapshot(state = {}, records = [], timestamp = Date.now()) {
         version: PROFILE_VERSION,
         skillSource: 'database',
         capturedAt: number(existing.capturedAt, timestamp),
-        classId: number(existing.classId, number(state.stats?.classId, number(state.classId))),
+        classId: classIdOf(state),
         effects: existing.effects || [],
         skills: skillSnapshotsFromRecords(records)
     };
@@ -473,7 +529,9 @@ function capture(actor, timestamp = Date.now()) {
     const armors = backpack?.fetchEquippedArmors?.() || [];
     const armorKindAt = (slot) => armors.find((item) => Number(item.fetchSlot?.()) === slot)?.fetchKind?.();
     const equipment = {
-        weaponKind: backpack?.fetchTotalWeaponKind?.() || '',
+        weaponKind: WeaponMask.weaponType(backpack?.fetchTotalWeaponKind?.() || '', backpack?.fetchEquippedWeapon?.()?.fetchSlot?.()),
+        bowMp: backpack?.fetchTotalWeaponKind?.() === 'Weapon.Bow' ? C4WeaponSA.expectedBowMp(
+            backpack.fetchEquippedWeapon?.()?.fetchSelfId?.(), backpack.fetchEquippedWeapon?.()?.fetchConsumedMp?.()) : 0,
         attackReuseDelay: backpack?.fetchEquippedWeapon?.()?.fetchAttackReuseDelay?.() ?? 1500,
         pAtk: number(backpack?.fetchTotalWeaponPAtk?.(), number(actor.fetchPAtk?.())),
         pAtkRnd: number(backpack?.fetchTotalWeaponPAtkRnd?.()),
@@ -544,7 +602,7 @@ function savedSetEffects(state) {
 // The skills a cold profile carries, readable without building the profile.
 // An empty saved kit is still empty. Only class-only hypothetical estimates
 // (without a character owner) may use the eligibility tree.
-function skillsFor(state = {}, classId = number(state.stats?.coldCombat?.classId, number(state.stats?.classId, number(state.classId))),
+function skillsFor(state = {}, classId = classIdOf(state),
     level = Math.max(1, number(state.level, 1))) {
     const saved = state.stats?.coldCombat;
     return Array.isArray(saved?.skills) && saved.skillSource !== 'tree' && saved.skillSource !== 'unresolved' ? saved.skills
@@ -605,6 +663,30 @@ function fightProfile(state = {}, timestamp = Date.now(), options = {}) {
     return profile;
 }
 
+// A fight profile kept across the fights of one solo round (BackgroundResolver):
+// held { profile, effects, night, from, until } (this function's last answer)
+// stands while the state's saved effects are the list the profile was built
+// with and still holds, the night is the same and the time lies between its
+// build and the first effect expiry after it (fightSources' rule), its cp
+// brought to timestamp; otherwise a new one by build (the caller's
+// fightProfile). The kit is the round's (no gear or level changes between its
+// fights). Returns the holder.
+function heldFightProfile(state, timestamp, held = null, build = fightProfile) {
+    const effects = state.stats?.coldCombat?.effects;
+    if (held !== null && effects === held.effects && held.profile.effects === held.effects
+        && held.night === GameTime.isNight(timestamp) && timestamp >= held.from && timestamp < held.until) {
+        held.profile.cp = currentCp(state, held.profile, timestamp);
+        return held;
+    }
+    const profile = build(state, timestamp);
+    let until = Infinity;
+    for (const effect of profile.effects || []) {
+        const end = number(effect?.expiresAt);
+        if (end > timestamp && end < until) until = end;
+    }
+    return { profile, effects: profile.effects, night: GameTime.isNight(timestamp), from: timestamp, until };
+}
+
 // The saved kit of a bot that fights before any capture: the kit fields
 // capture writes, from its kit profile (copies: the stored one is shared),
 // the henna totals its base already counts (gatherKit adds only the delta),
@@ -634,7 +716,7 @@ function oldSeedRepair(snapshot) {
 function currentCp(state = {}, profile = {}, timestamp = Date.now()) {
     const saved = state.stats?.coldCombat;
     return Number.isFinite(saved?.cp) ? Math.min(profile.maxCp, Math.max(0, saved.cp)
-        + Math.floor(Math.max(0, timestamp - number(saved.cpAt, timestamp)) / 3000) * profile.cpRegen) : profile.maxCp;
+        + Math.floor(Math.max(0, timestamp - number(saved.cpAt, timestamp)) / Formulas.REGEN_TICK_MS) * profile.cpRegen) : profile.maxCp;
 }
 
 // Kit profile builds for the live read (combat_profile:build:all and its ms);
@@ -678,7 +760,7 @@ function kitSlot(state, timestamp, kit) {
 // with the henna delta, the henna totals (henna). No buff, no clock.
 function gatherKit(state, timestamp) {
     const saved = state.stats?.coldCombat;
-    const classId = number(saved?.classId, number(state.stats?.classId, number(state.classId)));
+    const classId = classIdOf(state);
     const template = classTemplate(classId);
     const level = Math.max(1, number(state.level, 1));
     const spellcaster = [10, 13, 14, 25, 26, 28, 38, 39, 40, 41, 49].includes(Formulas.getParentClassId(classId))
@@ -689,6 +771,9 @@ function gatherKit(state, timestamp) {
         version: 1,
         capturedAt: number(saved?.capturedAt, timestamp),
         classId,
+        // A bot's id (null for a player): its future second class's kit
+        // (BotRoles.kitClassId), such as a future summoner's pet.
+        characterId: BotRoles.botCharacterId(state),
         base: { ...(template.base || {}), ...(template.stats || {}), ...(saved?.base || {}) },
         equipment: kitEquipment(equipmentFromTemplates(equipped, spellcaster, template.stats || {}), equipped.length, saved?.equipment),
         // Set bonuses follow the current worn parts, including hypothetical swaps;
@@ -732,28 +817,22 @@ function profileNumbers(kitPart, effects, timestamp, sourceOptions) {
 }
 // The pass and its power terms (powerTerms).
 function numbersPass(kitPart, effects, timestamp, sourceOptions) {
-    const { classId, level, spellcaster } = kitPart;
-    const profile = { version: kitPart.version, capturedAt: kitPart.capturedAt, classId, base: kitPart.base,
-        equipment: kitPart.equipment, effects, skills: kitPart.skills };
+    const { classId, level } = kitPart;
+    const profile = { version: kitPart.version, capturedAt: kitPart.capturedAt, classId, characterId: kitPart.characterId,
+        base: kitPart.base, equipment: kitPart.equipment, effects, skills: kitPart.skills };
     // Resolve effects and passive requirements once for this calculation.
     const sources = statSources(profile, timestamp, sourceOptions);
     const equipment = profile.equipment;
     const terms = powerTerms(profile, level, timestamp, sources);
     const stats = terms.stats = effectiveStats(terms, profile.base);
-    const { dex, con, wit, men } = stats;
+    const { con, wit, men } = stats;
     const power = formulaPower(terms, equipment, profile.base, stats);
-    const classTransfer = level < 20 ? 0 : level < 40 ? 1 : 2;
-    const maxMp = ((Formulas.calcMp(level, spellcaster ? 1 : 0, classTransfer, men) + number(equipment.bonusMp))
+    const maxMp = ((Formulas.calcMp(level, classId, men) + number(equipment.bonusMp))
         * multiplier(profile, 'maxMpMul', timestamp, sources)) + add(profile, 'maxMpAdd', timestamp, sources);
     const maxCp = Math.max(0, Formulas.calcCp(level, classId, con)
         * multiplier(profile, 'maxCpMul', timestamp, sources) + add(profile, 'maxCpAdd', timestamp, sources));
     const cpRegen = Math.max(0, number(DataCache.revitalize?.hp?.[level]) * Formulas.calcLevelMod(level)
         * Formulas.calcBaseMod.CON(con) * multiplier(profile, 'regCp', timestamp, sources));
-    const accur = Formulas.calcAccur(level, dex, number(equipment.accur, number(profile.base.accur))) + add(profile, 'pAccuracyCombatAdd', timestamp, sources);
-    const evasion = Math.round((Formulas.calcEvasion(level, dex, number(equipment.evasion, number(profile.base.evasion)))
-        + add(profile, 'pEvasionRateAdd', timestamp, sources)) * multiplier(profile, 'pEvasionMul', timestamp, sources));
-    const critical = (Formulas.calcCritical(dex, number(equipment.critical, number(profile.base.critical)))
-        * multiplier(profile, 'pCritRateMul', timestamp, sources)) + add(profile, 'pCritRateAdd', timestamp, sources);
     const mCritRate = Formulas.magicCriticalRate({
         multiplier: multiplier(profile, 'mCritRateMul', timestamp, sources),
         add: add(profile, 'mCritRateAdd', timestamp, sources),
@@ -765,9 +844,15 @@ function numbersPass(kitPart, effects, timestamp, sourceOptions) {
         maxLoad: Math.max(0, Formulas.calcMaxLoad(con) * multiplier(profile, 'maxLoadMul', timestamp, sources)
             + add(profile, 'maxLoad', timestamp, sources)),
         maxCp, cpRegen, maxHp: power.maxHp, maxMp: Math.max(1, maxMp), pAtk: power.pAtk, mAtk: power.mAtk,
-        pDef: power.pDef, mDef: power.mDef, accur: Math.max(1, accur), evasion: Math.max(0, evasion),
-        critical: Math.max(0, critical), mCritRate, atkSpd: power.atkSpd, castSpd: power.castSpd,
-        weaponMask: (WEAPON_MASK_BY_KIND[equipment.weaponKind] || 0) | (number(equipment.shieldPDef) > 0 ? 1048576 : 0)
+        pDef: power.pDef, mDef: power.mDef, accur: power.accur, evasion: power.evasion,
+        critical: power.critical, mCritRate, atkSpd: power.atkSpd, castSpd: power.castSpd, con: power.con, men: power.men,
+        str: stats.str, dex: stats.dex,
+        // Run speed as the hot CalculateStats.setCollectiveTotalRunSpd: the
+        // template's by DEX, plus and times the effects (the solo walk, T106);
+        // 0 without a template run speed.
+        runSpd: Math.max(0, number(classTemplate(classId).speed?.run) && (Formulas.calcSpeed(stats.dex, number(classTemplate(classId).speed.run))
+            + add(profile, 'runSpdAdd', timestamp, sources)) * multiplier(profile, 'runSpdMul', timestamp, sources)),
+        weaponMask: (WeaponMask.MASK_BY_KIND[equipment.weaponKind] || 0) | (number(equipment.shieldPDef) > 0 ? 1048576 : 0)
     } };
 }
 
@@ -788,6 +873,11 @@ function powerTerms(profile, level, timestamp, sources) {
     }
     terms.pAtkSpdMul = multiplier(profile, 'pAtkSpdMul', timestamp, sources);
     terms.castSpdMul = multiplier(profile, 'castSpdMul', timestamp, sources);
+    terms.accurAdd = add(profile, 'pAccuracyCombatAdd', timestamp, sources);
+    terms.evasionAdd = add(profile, 'pEvasionRateAdd', timestamp, sources);
+    terms.evasionMul = multiplier(profile, 'pEvasionMul', timestamp, sources);
+    terms.critMul = multiplier(profile, 'pCritRateMul', timestamp, sources);
+    terms.critAdd = add(profile, 'pCritRateAdd', timestamp, sources);
     return terms;
 }
 // The six base stats after the effects: { str, dex, con, int, wit, men }.
@@ -810,7 +900,14 @@ function formulaPower(terms, equipment, base, stats) {
         pDef: Math.max(1, Math.round(Formulas.calcPDef(level, number(equipment.pDef, number(base.pDef))) * terms.pDefMul) + terms.pDefAdd),
         mDef: Math.max(1, Math.round(Formulas.calcMDef(level, stats.men, number(equipment.mDef, number(base.mDef))) * terms.mDefMul) + terms.mDefAdd),
         atkSpd: Math.max(1, Math.round(Formulas.calcAtkSpd(stats.dex, number(equipment.atkSpd, number(base.atkSpd))) * terms.pAtkSpdMul)),
-        castSpd: Math.max(1, Math.round(Formulas.calcCastSpd(stats.wit) * terms.castSpdMul))
+        castSpd: Math.max(1, Math.round(Formulas.calcCastSpd(stats.wit) * terms.castSpdMul)),
+        accur: Math.max(1, Formulas.calcAccur(level, stats.dex, number(equipment.accur, number(base.accur))) + terms.accurAdd),
+        evasion: Math.max(0, Math.round((Formulas.calcEvasion(level, stats.dex, number(equipment.evasion, number(base.evasion)))
+            + terms.evasionAdd) * terms.evasionMul)),
+        critical: Math.max(0, Formulas.calcCritical(stats.dex, number(equipment.critical, number(base.critical))) * terms.critMul
+            + terms.critAdd),
+        // The effective CON and MEN: the seated regeneration (ColdRest) of the kit.
+        con: stats.con, men: stats.men
     };
 }
 
@@ -819,7 +916,8 @@ function formulaPower(terms, equipment, base, stats) {
 // preparation slot); before = the kit profile; after(change) = the numbers
 // with the change:
 // - gear { free, wear }: the worn rows whose slot free(slot) answers true come
-//   off, wear ({ selfId, objectId, enchant, slot, template? } or null) goes on;
+//   off, wear ({ selfId, objectId, enchant, slot, template? }, a list of them,
+//   or null) goes on;
 // - { hennas }: the symbol list replaces the bot's;
 // - { skill: { selfId, level } }: the skill is learnt.
 // A gear or henna change returns the power numbers (formulaPower) only, the
@@ -859,12 +957,14 @@ function skillCandidate({ kitPart, profile }, skill, timestamp) {
 // effects) always takes the pass.
 // worn: the kit's worn rows prepared (prepareWorn), in kitPart.worn order.
 function gearCandidate(state, { kitPart, terms }, worn, { free, wear }, timestamp) {
-    const template = wear && (wear.template || itemTemplate(wear.selfId));
-    const added = template ? prepareWorn({ template, selfId: number(wear.selfId), objectId: number(wear.objectId, number(wear.selfId)),
-        enchant: number(wear.enchant), slot: number(wear.slot) }) : null;
-    const kept = [], changed = added ? [added] : [];
+    const added = [].concat(wear || []).map(one => {
+        const template = one.template || itemTemplate(one.selfId);
+        return template ? prepareWorn({ template, selfId: number(one.selfId), objectId: number(one.objectId, number(one.selfId)),
+            enchant: number(one.enchant), slot: number(one.slot) }) : null;
+    }).filter(Boolean);
+    const kept = [], changed = [...added];
     for (let index = 0; index < worn.length; index++) (free(kitPart.worn[index].slot) ? changed : kept).push(worn[index]);
-    const equipped = added ? [...kept, added] : kept;
+    const equipped = [...kept, ...added];
     const legacyEquipment = equipmentFromTemplates(equipped, kitPart.spellcaster, kitPart.classStats);
     const sameKit = equipped.length > 0 && hasInventory(state) && !changed.some(item => item.equipmentEffect)
         && sameGearConditions(legacyEquipment, kitPart.equipment, terms.armorKinds ??= armorKindsKey(kitPart.equipment.armorKinds))
@@ -923,6 +1023,21 @@ function partyMusicSkills(profile = {}) {
     });
 }
 
+// One normal attack of a fight profile (Formulas.normalAttackMs, the hot
+// Attack.js cycle), its buffs read at timestamp. Kept per profile object: a
+// fight profile is rebuilt whenever its numbers change. The 250 ms floor is
+// cold's own.
+const attackTimes = new WeakMap();
+function normalAttackMs(profile = {}, timestamp = Date.now()) {
+    let ms = attackTimes.get(profile);
+    if (ms !== undefined) return ms;
+    const bow = profile.equipment?.weaponKind === 'Weapon.Bow';
+    ms = Math.max(250, Formulas.normalAttackMs(profile.atkSpd, { bow, reuseDelay: profile.equipment?.attackReuseDelay,
+        reuseMul: bow ? multiplier(profile, 'atkReuseMul', timestamp) : 1 }));
+    attackTimes.set(profile, ms);
+    return ms;
+}
+
 function partyMusicMpCost(profile, skill, timestamp = Date.now()) {
     const semantic = C4SkillRules.resolveCached(skill);
     let cost = Math.max(0, number(skill.mp));
@@ -979,7 +1094,7 @@ function summonDetails(skill = {}) {
 }
 
 function summonSkills(profile = {}) {
-    if (!BotRoles.isSummoner(profile.classId)) return [];
+    if (!BotRoles.isSummoner(profile)) return [];
     return (profile.skills || [])
         .filter((skill) => !skill.passive)
         .filter((skill) => {
@@ -1017,6 +1132,56 @@ function spotSpawns(spot = {}, npcId) {
         : (spot.npcSelfIds || []).some(selfId => Number(selfId) === id);
 }
 
+// The one owner of "which monster of a spot a kill takes": the cold roll
+// (npcForSpot) draws from it and the planners' expectation
+// (SpotRewardExpectation.killShare) reads its chances. entries: the kill's
+// candidates (huntable, after the hunters' matchup filter: entry.match);
+// encounterEntries: the huntable ones before that filter. An untargeted
+// kill draws from entries by killWeight. A targeted kill
+// (options.preferredNpcId among entries: an active plan's next hunt,
+// PartyHuntingTarget.planTargetNpcId, or a material party) takes its
+// target, unless an aggressive other monster of the encounter engages first (interruption, 0.25 by default): a direct-drop
+// plan travels to the intended monster, but it is still a real hunting
+// ground, so the bot is not immune to the rest of the encounter table; an
+// interrupted kill draws from those aggressive others by killWeight.
+function killDraw(entries, encounterEntries, options = {}) {
+    const preferredNpcId = number(options.preferredNpcId);
+    const preferred = preferredNpcId > 0
+        ? entries.find((entry) => number(entry.selfId) === preferredNpcId) || null
+        : null;
+    const interrupters = preferred
+        ? encounterEntries.filter((entry) => number(entry.selfId) !== preferredNpcId
+            && ItemTemplateIndex.find(DataCache.npcs, entry.selfId)?.template?.hostile === true)
+        : [];
+    const interruption = Math.max(0, Math.min(1, number(options.aggressiveInterruptionChance, 0.25)));
+    return { preferred, interrupters, interruption, pool: interrupters.length ? interrupters : entries };
+}
+
+// An entry's weight in a kill draw: the mobs it gives per hour
+// (entry.production: its respawns, a day or night spawn only in its period,
+// SpotService.respawnsPerHour), its spawn count without respawn data, times
+// its squared matchup efficiency for the hunters (1 without a matchup), times
+// the share of its spawns whose pull a solo hunter survives
+// (BotTargetMatchup.speciesPulls).
+function killWeight(entry) {
+    const supply = entry.production > 0 ? entry.production : Math.max(1, number(entry.count, 1));
+    return supply * Math.min(1, entry.match?.efficiency ?? 1) ** 2 * (entry.match?.share ?? 1);
+}
+
+// Each entry's chance to be the kill of a draw (killDraw), as the roll
+// gives it: [{ entry, chance }], the chances sum to 1 (none for an empty
+// draw).
+function killChances(draw) {
+    const preferredChance = !draw.preferred ? 0
+        : draw.interrupters.length ? 1 - draw.interruption : 1;
+    const rest = 1 - preferredChance;
+    const total = draw.pool.reduce((sum, entry) => sum + killWeight(entry), 0);
+    // All weights 0: the roll takes the pool's first entry.
+    const chances = draw.pool.map((entry, index) => ({ entry,
+        chance: total > 0 ? rest * killWeight(entry) / total : index === 0 ? rest : 0 }));
+    return draw.preferred ? [{ entry: draw.preferred, chance: preferredChance }, ...chances] : chances;
+}
+
 function npcForSpot(spot = {}, rng = Math.random, options = {}) {
     const rawEntries = Array.isArray(spot.npcEntries) && spot.npcEntries.length ? spot.npcEntries : (spot.npcSelfIds || []).map((selfId) => ({ selfId, count: 1 }));
     let entries = rawEntries.filter((entry) => {
@@ -1033,12 +1198,14 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
     if (options.matchupProfiles?.length) {
         let resisted = 0;
         entries = entries.map(entry => {
-            // A solo pick reads the shared species verdict its route search
-            // read: the same evaluate and soloCanHunt for these profiles and
-            // safety options (resisted only names a pick without safety).
+            // A solo pick reads the shared spawn-group verdict its route search
+            // read: the same evaluate and soloCanHunt per pull size for these
+            // profiles and safety options; the pick takes only the pulls the
+            // hunter survives (resisted only names a pick without safety).
             if (options.soloSafety) {
-                const verdict = Matchup.speciesVerdict(options.matchupProfiles, entry.selfId, { ...options, pull: entry.pull });
-                return { ...entry, match: { eligible: verdict?.canHunt === true, efficiency: verdict?.efficiency } };
+                const verdict = Matchup.speciesPulls(options.matchupProfiles, entry, options);
+                return { ...entry, match: { eligible: verdict?.canHunt === true, efficiency: verdict?.efficiency,
+                    share: verdict?.share ?? 0, allowed: verdict?.allowed } };
             }
             const match = Matchup.evaluate(options.matchupProfiles, npcCombatStats(ItemTemplateIndex.find(DataCache.npcs, entry.selfId)));
             if (!match.eligible) resisted += 1;
@@ -1049,33 +1216,28 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
                 : resisted === encounterEntries.length ? 'target_resistance' : 'no_safe_solo_target' };
     }
     const pickEntry = (candidates) => {
-        const weight = entry => Math.max(1, number(entry.count, 1)) * Math.min(1, entry.match?.efficiency ?? 1) ** 2;
-        const total = candidates.reduce((sum, entry) => sum + weight(entry), 0);
+        const total = candidates.reduce((sum, entry) => sum + killWeight(entry), 0);
         let needle = rng() * total;
         return candidates.find((entry) => {
-            needle -= weight(entry);
+            needle -= killWeight(entry);
             return needle <= 0;
         }) || candidates[0];
     };
-    const preferredNpcId = number(options.preferredNpcId);
-    const preferred = preferredNpcId > 0
-        ? entries.find((entry) => number(entry.selfId) === preferredNpcId)
-        : null;
-    // A direct-drop plan travels to the intended monster, but it is still a
-    // real hunting ground. Nearby aggressive mobs can engage first instead of
-    // making the bot immune to the rest of the encounter table.
-    const aggressive = preferred
-        ? encounterEntries.filter((entry) => number(entry.selfId) !== preferredNpcId
-            && ItemTemplateIndex.find(DataCache.npcs, entry.selfId)?.template?.hostile === true)
-        : [];
-    const interruptionChance = Math.max(0, Math.min(1, number(options.aggressiveInterruptionChance, 0.25)));
-    const selected = preferred && (!aggressive.length || rng() >= interruptionChance)
+    // One draw with the hunt tables' (killDraw, killChances): a direct-drop
+    // plan travels to its monster, yet nearby aggressive mobs may engage first.
+    const draw = killDraw(entries, encounterEntries, options);
+    const { preferred } = draw;
+    const selected = preferred && (!draw.interrupters.length || rng() >= draw.interruption)
         ? preferred
-        : pickEntry(aggressive.length ? aggressive : entries);
+        : pickEntry(draw.pool);
     const npc = ItemTemplateIndex.find(DataCache.npcs, selected?.selfId);
     if (!npc) return null;
     const combat = npcCombatStats(npc);
     const explicitRaid = options.allowRaid === true && spot.raidBoss === true;
+    // A solo fight takes the whole pull of its spawn group (F20): one size of
+    // the group's mix, among the sizes the hunter survives when safety judged it.
+    const pull = options.pull && !explicitRaid
+        ? BotPullEstimate.rollPulls(selected.match?.allowed || BotPullEstimate.pullsOf(selected), rng) : 0;
     const minionRows = explicitRaid
         ? RAID_MINIONS.filter((row) => number(row.bossId) === number(npc.selfId))
         : [];
@@ -1095,8 +1257,8 @@ function npcForSpot(spot = {}, rng = Math.random, options = {}) {
         selfId: number(npc.selfId),
         aggressiveInterruption: !!preferred && selected !== preferred,
         ...combat,
-        // A solo fight takes the whole pull of its spawn group (F20).
-        ...(options.pull && !explicitRaid ? { pull: BotPullEstimate.rollPull(selected.pull, rng) } : {}),
+        // usualPull: the pull the verdict judged, the readiness after a win judges it too.
+        ...(pull ? { pull, usualPull: pull } : {}),
         ...(explicitRaid ? {
             // Cold mode represents the raid group as one bounded encounter.
             // Adds contribute part of their HP and incoming damage instead of
@@ -1171,6 +1333,167 @@ function kitHash(parts) {
 function kitEvents(state = {}) {
     return kitHash(combatView(state));
 }
+// The stat sources of a fighter (whose profile is the one read) at a hit's
+// time, held on the fighter for its fight (fightSources);
+// undefined without one, so statMultiplier builds them for that hit.
+function hitSources(fighter, timestamp) {
+    if (!fighter) return undefined;
+    fighter.statSources = fightSources(fighter.profile, timestamp, fighter.statSources || null);
+    return fighter.statSources.sources;
+}
+// A fighter's sum of one stat over its held sources (hitSources), kept on
+// that holder while it stands: a stat read per hit (absorbDam) is summed once.
+function hitStatAdd(fighter, stat, timestamp) {
+    const sources = hitSources(fighter, timestamp);
+    const held = fighter.statSources;
+    held.adds ||= {};
+    if (!(stat in held.adds)) held.adds[stat] = add(fighter.profile, stat, timestamp, sources);
+    return held.adds[stat];
+}
+
+// Cold adapters of CombatantView (HitRules, the hot Attack's rules), the
+// cold fight's and the solo gate's (BotTargetMatchup): a fight
+// profile as attacker and as defender, a monster (npcCombatStats or a pull
+// view of it) likewise. One view per object: a profile is built per fight.
+// Without a fighter both views of one profile read one build of its stat
+// sources (a gate's copy of a profile is viewed anew).
+const attackerViews = new WeakMap(), defenderViews = new WeakMap(), viewSources = new WeakMap();
+function profileViewSources(subject, timestamp, fighter) {
+    if (fighter) return hitSources(fighter, timestamp);
+    let sources = viewSources.get(subject);
+    if (!sources) viewSources.set(subject, sources = statSources(subject, timestamp));
+    return sources;
+}
+function attackerView(subject, timestamp = Date.now(), fighter = null) {
+    let view = attackerViews.get(subject);
+    if (view) return view;
+    if (subject.equipment) {
+        const sources = profileViewSources(subject, timestamp, fighter);
+        view = CombatantView.view({ pAtk: subject.pAtk, pAtkRnd: subject.equipment.pAtkRnd, mAtk: subject.mAtk,
+            critRate: subject.critical, mCritRate: subject.mCritRate, str: subject.str,
+            critDamageMul: multiplier(subject, 'pCritDamageMul', timestamp, sources),
+            critDamageAdd: add(subject, 'pCritDamageAdd', timestamp, sources) });
+    } else {
+        // A hot Npc's weapon hit has no spread (Attack.prepareNpcMeleeHit).
+        view = CombatantView.view({ pAtk: subject.pAtk, mAtk: subject.mAtk, critRate: subject.critical, mCritRate: subject.mCritRate });
+    }
+    attackerViews.set(subject, view);
+    return view;
+}
+function defenderView(subject, timestamp = Date.now(), fighter = null) {
+    let view = defenderViews.get(subject);
+    if (view) return view;
+    if (subject.equipment) {
+        const sources = profileViewSources(subject, timestamp, fighter);
+        view = CombatantView.view({ pDef: subject.pDef, mDef: subject.mDef, dex: subject.dex,
+            shieldPDef: Number(subject.equipment.shieldPDef || 0) * multiplier(subject, 'sDefMul', timestamp, sources)
+                + (Number(subject.equipment.shieldPDef) > 0 ? add(subject, 'sDefAdd', timestamp, sources) : 0),
+            shieldRate: Number(subject.equipment.shieldRate || 0) * multiplier(subject, 'rShldMul', timestamp, sources) });
+    } else {
+        view = CombatantView.view({ pDef: subject.pDef, mDef: subject.mDef, dex: subject.dex,
+            shieldPDef: subject.shieldPDef, shieldRate: subject.shieldRate });
+    }
+    defenderViews.set(subject, view);
+    return view;
+}
+
+// A monster object whose numbers changed mid-fight (a self buff) is viewed anew.
+function forgetViews(subject) {
+    attackerViews.delete(subject);
+    defenderViews.delete(subject);
+    viewSources.delete(subject);
+}
+
+function hitSucceeds(accuracy, evasion, rng) {
+    return rng() < Formulas.hitChance(accuracy, evasion);
+}
+
+// A normal attack's hit chance for planning: Formulas.hitChance when both
+// numbers are known, else 1 (a native target view carries neither).
+function expectedHitChance(accuracy, evasion) {
+    const known = value => value !== null && value !== undefined && Number.isFinite(Number(value));
+    return known(accuracy) && known(evasion) ? Formulas.hitChance(accuracy, evasion) : 1;
+}
+
+// A skill takes its C4 cast time, cut by a loaded spiritshot; a skill row
+// without a cast time falls back to 1000 ms (spell) or 600 ms (physical).
+// A normal attack: normalAttackMs (a bow draws and reloads).
+function actionDelayMs(profile, skill = null, spiritshot = false) {
+    if (skill?.spell) {
+        return Formulas.calcSkillHitTime(Number(skill.hitTime) || 1000, profile.castSpd, { magic: true, spiritshot });
+    }
+    if (skill) {
+        return Formulas.calcSkillHitTime(Number(skill.hitTime) || 600, profile.atkSpd);
+    }
+    return normalAttackMs(profile);
+}
+
+// A servitor's time between hits (SummonControl: a monster's melee cycle).
+function summonAttackMs(summon) {
+    return Math.max(250, Formulas.calcMeleeAtkTime(Number(summon?.atkSpd) || 253));
+}
+
+// The shot a bot loads in one cold fight, decided once from its inventory:
+// the kind and grade hot auto shots load (ShotStock.planForState), how many
+// the weapon takes per charge and how many charges the stock still covers.
+// Null when the bot holds none of that shot or its weapon takes none.
+function shotSupply(state, timestamp) {
+    const plan = ShotStock.combatPlanForState(state);
+    const key = String(plan.selfId);
+    const left = plan.perAction > 0 ? Math.floor(Number(state.inventory?.[key]?.amount || 0) / plan.perAction) : 0;
+    if (left <= 0 || ShotStock.usePolicy(state, { timestamp, plan }).usePerHour <= 0) return null;
+    return { key, timestamp, perAction: plan.perAction, left, soulshot: plan.kind === 'soulshot',
+        spiritshot: plan.kind !== 'soulshot', blessedSpiritshot: plan.kind === 'blessedSpiritshot' };
+}
+
+// The shot an action loads from a supply (shotSupply), by the hot rule
+// (ShotStock.actionShotKind): a spell a spiritshot, a physical skill a
+// soulshot unless its ssBoost is 0, a normal attack (no skill) a soulshot.
+// The supply when it holds that kind, otherwise null.
+function actionShot(shot, skill = null) {
+    if (!shot) return null;
+    let kind = ShotStock.actionShotKind(false);
+    if (skill) {
+        const semantic = C4SkillRules.resolveCached(skill);
+        kind = ShotStock.actionShotKind(semantic.isMagic ?? skill.spell === true, semantic.ssBoost);
+    }
+    if (kind === 'soulshot') return shot.soulshot ? shot : null;
+    return kind && shot.spiritshot ? shot : null;
+}
+
+// How long a bot that pulls a melee-only monster (ColdMobAction.meleeOnly)
+// hits before the monster closes in: the bot's reach beyond the monster's
+// over the monster's run speed (C4: a bow shoots from 700, a caster nukes
+// from its spells' cast range). 0 without a run speed; a fight the monster
+// opens (an aggressive interruption) gives none (the caller's).
+// How far the fighter strikes from: its weapon's range (a bow's with its
+// range bonus), a caster's longest spell. It opens a fight from there
+// (openingMs) and walks only that close to its next mob (soloWalkMs). Kept
+// per profile object, as normalAttackMs: the gate asks it per mob it weighs.
+const reaches = new WeakMap();
+function attackReach(profile = {}) {
+    let reach = reaches.get(profile);
+    if (reach === undefined) reaches.set(profile, reach = profileReach(profile));
+    return reach;
+}
+function profileReach(profile) {
+    const kind = profile.equipment?.weaponKind || '';
+    let reach = AttackRange.kindRange(kind, kind === 'Weapon.Bow' ? add(profile, 'pAtkRangeAdd', Date.now()) : 0);
+    if (BotRoles.usesCasterWeaponCombat(profile)) {
+        for (const skill of offensiveSkills(profile)) {
+            if (skill.spell) reach = Math.max(reach, number(C4SkillRules.resolveCached(skill).castRange ?? skill.distance));
+        }
+    }
+    return reach;
+}
+
+function openingMs(profile = {}, mob = {}) {
+    const speed = number(mob.runSpd);
+    // lazy: cycle ColdMobAction loads this module
+    if (!(speed > 0) || !invoke('GameServer/Bot/Population/ColdMobAction').meleeOnly(mob)) return 0;
+    return Math.max(0, attackReach(profile) - number(mob.atkRadius)) / speed * 1000;
+}
+
 // Drops the bot's kit profiles (both slots).
 function forgetBuild(characterId) {
     kitProfiles.delete(Number(characterId));
@@ -1179,9 +1502,14 @@ function forgetBuild(characterId) {
 function kitStoreSize() { return kitProfiles.size; }
 
 module.exports = {
-    PROFILE_VERSION, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor, buildCount, buildMs, withBuildSite,
-    fightProfile, currentCp, seedSnapshot, oldSeedRepair, candidateProfiles, fightSources, combatView, kitHash, skillsFor, forgetBuild, kitStoreSize,
-    isAttackSkill, offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect,
-    spotSpawns, npcForSpot, npcCombatStats, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
-    statMultiplier: multiplier, statAdd: add
+    PROFILE_VERSION, classIdOf, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor, buildCount, buildMs, withBuildSite,
+    fightProfile, heldFightProfile, currentCp, seedSnapshot, oldSeedRepair, candidateProfiles, fightSources, combatView, kitHash, skillsFor, forgetBuild, kitStoreSize,
+    isAttackSkill, offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect, normalAttackMs,
+    spotSpawns, npcForSpot, killDraw, killChances, npcCombatStats, npcVulnerability, npcTraitResist, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
+    statMultiplier: multiplier, statAdd: add, hitStatAdd, statSources,
+    // The cold fight's views, hit roll, action times, shots and opening (BackgroundResolver, the solo gate).
+    hitSources, attackerView, defenderView, forgetViews, hitSucceeds, expectedHitChance, actionDelayMs, summonAttackMs,
+    shotSupply, actionShot, openingMs, attackReach,
+    // The offline hunt tables (scripts/hunt-tables) sum a kit from their rows through the same numbers pass.
+    profileNumbers, equipmentFromTemplates
 };

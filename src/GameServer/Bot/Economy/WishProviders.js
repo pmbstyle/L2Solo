@@ -1,6 +1,6 @@
 'use strict';
 
-const { trait, stageHours, decisionHorizon, resale } = require('./EconomicValuation');
+const { trait, stageHours, decisionHorizon, resale, liveDeathHours } = require('./EconomicValuation');
 const { SELL } = require('../../AfkTrade/BoardIndex');
 const Sources = require('../../Items/ItemAcquisitionCatalog');
 const Diagnostics = require('./EconomyDiagnostics');
@@ -13,6 +13,7 @@ const DualSwords = require('../../Items/C4DualSwordCombinations');
 const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const DataCache = invoke('GameServer/DataCache');
+const { GRADES: GEAR_RANKS } = invoke('GameServer/Bot/AI/GearGradeRule');
 // A module read inside a hot function: require() walks the module path on
 // every call, so each path is resolved once here. The relative require keeps
 // the module's dependency boundary (tests pass their own require).
@@ -33,7 +34,6 @@ const GEAR_FINALISTS_PER_SLOT = 8;
 // review can hold as roots adds cost without a reachable choice.
 const WISH_ROOTS = 12;
 const PRODUCER_PRICED = WISH_ROOTS;
-const GEAR_RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
 // MVP-6 (PLAN "Admission and placement"): four gear roots, four admission
 // rounds (the initial evaluation plus three affected re-evaluations).
 const GEAR_ROOTS = 4;
@@ -1155,7 +1155,8 @@ function buildProjection(state, ctx, deps) {
         price: 0, paths: [{ activity: 'helping', targetId: friend.targetId, costHours: 1 }] });
     if (enemy) root({ key: `scores:${enemy.targetId}`, need: 'scores', object: { targetId: enemy.targetId },
         valueHours: positive(enemy.hostility ?? enemy.anger) * trait(ctx.persona, 'assertiveness'), price: 0,
-        paths: [{ activity: 'pvp', targetId: enemy.targetId, costHours: 1, riskHours: ctx.deathHours + ctx.karmaHours }] });
+        // A PvP death is a live one (it waits for its respawn).
+        paths: [{ activity: 'pvp', targetId: enemy.targetId, costHours: 1, riskHours: liveDeathHours(ctx.deathHours) + ctx.karmaHours }] });
     // Only known concrete items enter the small resale watch list. The
     // board is queried by item, never by copying every owner's offers.
     const known = new Set([...candidates.map(row => Number(row.item.selfId)), ...rows(state).map(row => Number(row.selfId))]);

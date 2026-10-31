@@ -78,7 +78,7 @@ function fighter(id, classId, level, gear, extra = {}) {
     if (extra.shots) {
         const selfId = ShotStock.planForState(state).selfId;
         inventory[selfId] = { selfId, amount: extra.shots };
-        state.spotId = { 2: '19_7', 12: '27_12', 16: '29_-3', 5: '21_-9' }[classId];
+        state.spotId = { 2: '11_25', 12: '11_-13', 5: '12_10' }[classId];
         assert(state.spotId, 'every shot fixture needs its verified native economic spot');
     }
     state.stats.coldCombat = ColdCombatProfile.legacySnapshot(state, ColdCombatProfile.skillRecordsFromTree(classId, level), TS);
@@ -122,12 +122,13 @@ const injuredBishop = fighter(1011, 16, 60, robe, { hpRatio: 0.5 });
 const injuredTyrant = fighter(1012, 48, 60, leather('Weapon.DualFist'), { potions: 20, hpRatio: 0.25 });
 // The same fighters holding the shot their weapon takes (S1).
 // Shot fighters stand at levels where their own hunt pays for shots on the Mobius table
-// (T43: B-grade Sorcerer 59, A-grade Bishop 70 and Paladin 72; at 60 their shots do not pay).
-const gladiatorShots = fighter(1013, 2, 60, chain('Weapon.Dual'), { potions: 5, shots: 5000 });
-const sorcererShots = fighter(1014, 12, 59, robeFull, { potions: 5, shots: 5000 });
-const bishopShots = fighter(1015, 16, 70, robe, { shots: 5000 });
-const injuredBishopShots = fighter(1016, 16, 70, robe, { hpRatio: 0.5, shots: 5000 });
-const paladinShots = fighter(1017, 5, 72, { ...chain('Weapon.Sword'), shield: true }, { role: 'tank', potions: 5, shots: 5000 });
+// (T43: B-grade Sorcerer 59 and A-grade Paladin 72; at 60 their shots do not pay).
+// T100: a Bishop's spot (spot table) no longer pays its spiritshots at any level.
+// T106 (class vitals, per-mob hunt tables): the Gladiator pays at 50 on 17_-2 (not at 52-69),
+// the Sorcerer at 60 on 11_-13, the Paladin at 50 on 15_-3 (no B-grade or higher level pays).
+const gladiatorShots = fighter(1013, 2, 50, chain('Weapon.Dual'), { potions: 5, shots: 5000 });
+const sorcererShots = fighter(1014, 12, 60, robeFull, { potions: 5, shots: 5000 });
+const paladinShots = fighter(1017, 5, 50, { ...chain('Weapon.Sword'), shield: true }, { role: 'tank', potions: 5, shots: 5000 });
 
 // ---------- solo fights ----------
 function soloOutcome(state, npcId, seed, fightLimitMs = 60000, maxActions = 400) {
@@ -135,7 +136,7 @@ function soloOutcome(state, npcId, seed, fightLimitMs = 60000, maxActions = 400)
     // An already engaged bot must finish even if it would now decline a new
     // voluntary fight. Pin the combat engine through its native saved encounter.
     const mob = ColdCombatProfile.npcForSpot(spot, () => 0.5, { preferredNpcId: npcId });
-    const encounter = PveEncounter.save(null, PveEncounter.key([state], spot, npcId), mob, mob.maxHp, TS,
+    const encounter = PveEncounter.save(null, PveEncounter.key([state], spot), mob, mob.maxHp, TS,
         { botReadyAt: 0, mobReadyAt: 0 });
     const engaged = { ...state, stats: { ...state.stats, pveEncounter: encounter } };
     const r = withSeed(seed, (rng) => resolveFight({ state: engaged, spot, pressure: {}, targetNpcId: npcId,
@@ -166,27 +167,33 @@ const SOLO = [
     ['gladiator times out', gladiator, 5135, 14, 4000, 400],
     ['paladin runs out of actions', paladin, 122, 15, 60000, 10],
     ['gladiator charges with soulshots', gladiatorShots, 5135, 2],
-    ['sorcerer with spiritshots', sorcererShots, 241, 1],
-    ['bishop with spiritshots', bishopShots, 583, 3]
+    ['sorcerer with spiritshots', sorcererShots, 241, 1]
 ];
+// T124: re-pinned where the new hot rules in the cold fight (a spell's level-fail roll
+// before its critical, the monster's spells rolling it too) moved the rolls.
 const SOLO_GOLDEN = {
-    'sorcerer wins without a futile self-heal': { won: true, died: false, hp: 733, mp: 2422, charges: 0, actions: 11, durationMs: 9895, skillUses: 5, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'gladiator charges': { won: true, died: false, hp: 1389, mp: 384, charges: 0, actions: 18, durationMs: 11315, skillUses: 10, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'bishop': { won: true, died: false, hp: 1014, mp: 2489, charges: 0, actions: 19, durationMs: 19877, skillUses: 7, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'warlock servitor, heals, potion': { won: true, died: false, hp: 651, mp: 2286, charges: 0, actions: 42, durationMs: 30366, skillUses: 8, shotActions: 0, heals: 4, musicUses: 0, summonUses: 1, summonActions: 14, potionsUsed: 1, mobHp: null, botReadyAt: null },
-    'necromancer corpse servitor': { won: true, died: false, hp: 1140, mp: 2432, charges: 0, actions: 4, durationMs: 3442, skillUses: 2, shotActions: 0, heals: 0, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'swordsinger songs': { won: true, died: false, hp: 1141, mp: 13, charges: 0, actions: 33, durationMs: 24336, skillUses: 6, shotActions: 0, heals: 0, musicUses: 6, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'tyrant': { won: true, died: false, hp: 1717, mp: 691, charges: 0, actions: 7, durationMs: 3655, skillUses: 4, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'paladin': { won: true, died: false, hp: 1490, mp: 643, charges: 0, actions: 23, durationMs: 20867, skillUses: 8, shotActions: 0, heals: 1, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'sorcerer 40 survives without a futile self-heal': { won: true, died: false, hp: 365, mp: 1533, charges: 0, actions: 15, durationMs: 14170, skillUses: 6, shotActions: 0, heals: 2, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'bladedancer dances': { won: true, died: false, hp: 604, mp: 13, charges: 0, actions: 35, durationMs: 26083, skillUses: 6, shotActions: 0, heals: 0, musicUses: 6, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'gladiator times out': { won: false, died: false, hp: 1579, mp: 679, charges: 0, actions: 6, durationMs: 4000, skillUses: 3, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 1306, botReadyAt: 216 },
-    'paladin runs out of actions': { won: false, died: false, hp: 1398, mp: 774, charges: 0, actions: 10, durationMs: 7518, skillUses: 2, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 534, botReadyAt: 1127 },
-    'gladiator charges with soulshots': { won: true, died: false, hp: 1453, mp: 487, charges: 1, actions: 15, durationMs: 9165, skillUses: 8, shotActions: 5, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'sorcerer with spiritshots': { won: true, died: false, hp: 818, mp: 2371, charges: 0, actions: 10, durationMs: 6925, skillUses: 5, shotActions: 5, heals: 1, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
-    'bishop with spiritshots': { won: true, died: false, hp: 1459, mp: 2935, charges: 0, actions: 11, durationMs: 9094, skillUses: 4, shotActions: 4, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null }
+    'sorcerer wins without a futile self-heal': { won: true, died: false, hp: 1975, mp: 2264, charges: 0, actions: 3, durationMs: 1291, skillUses: 2, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'gladiator charges': { won: true, died: false, hp: 3131, mp: 564, charges: 0, actions: 18, durationMs: 11315, skillUses: 10, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'bishop': { won: true, died: false, hp: 2023, mp: 2243, charges: 0, actions: 16, durationMs: 16435, skillUses: 6, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    // T135: the warlock heals its pet once (one more skill use, its MP), so the pet strikes twice more.
+    // T140: the mob hits whoever holds its hate, and the owner strikes only under the pet's hate.
+    'warlock servitor, heals, potion': { won: true, died: false, hp: 2058, mp: 2074, charges: 0, actions: 42, durationMs: 38677, skillUses: 4, shotActions: 0, heals: 0, musicUses: 0, summonUses: 1, summonActions: 21, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'necromancer corpse servitor': { won: true, died: false, hp: 1907, mp: 2171, charges: 0, actions: 3, durationMs: 1291, skillUses: 2, shotActions: 0, heals: 0, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    // T106: a Swordsinger heals itself with MP, so it sits for MP and its skills pay their rest (one cast fewer).
+    'swordsinger songs': { won: true, died: false, hp: 2739, mp: 927, charges: 0, actions: 22, durationMs: 14559, skillUses: 2, shotActions: 0, heals: 0, musicUses: 1, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'tyrant': { won: true, died: false, hp: 3713, mp: 785, charges: 0, actions: 10, durationMs: 5134, skillUses: 6, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    // T106: a Paladin heals itself with MP, so it sits for MP and its skills pay their rest (one cast fewer).
+    'paladin': { won: true, died: false, hp: 2717, mp: 864, charges: 0, actions: 22, durationMs: 17647, skillUses: 5, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'sorcerer 40 survives without a futile self-heal': { won: true, died: false, hp: 722, mp: 1108, charges: 0, actions: 11, durationMs: 6642, skillUses: 6, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'bladedancer dances': { won: true, died: false, hp: 2258, mp: 668, charges: 0, actions: 23, durationMs: 16085, skillUses: 4, shotActions: 0, heals: 0, musicUses: 3, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'gladiator times out': { won: false, died: false, hp: 3341, mp: 768, charges: 0, actions: 8, durationMs: 4000, skillUses: 5, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 1026, botReadyAt: 1723 },
+    'paladin runs out of actions': { won: false, died: false, hp: 2991, mp: 976, charges: 0, actions: 10, durationMs: 5573, skillUses: 1, shotActions: 0, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 529, botReadyAt: 925 },
+    'gladiator charges with soulshots': { won: true, died: false, hp: 1898, mp: 365, charges: 0, actions: 20, durationMs: 12927, skillUses: 10, shotActions: 7, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null },
+    'sorcerer with spiritshots': { won: true, died: false, hp: 1975, mp: 2294, charges: 0, actions: 1, durationMs: 0, skillUses: 1, shotActions: 1, heals: 0, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: null, botReadyAt: null }
 };
-const unsafeFreshPull = withSeed(1, rng => resolveFight({ state: sorcerer, spot: spotFor(241), pressure: {},
+// T100: the gate counts the Sorcerer 60's priced pick, which wins this fight
+// (the golden below); the Sorcerer 40 is still out of its depth.
+const unsafeFreshPull = withSeed(1, rng => resolveFight({ state: sorcerer40, spot: spotFor(241), pressure: {},
     targetNpcId: 241, rng, timestamp: TS, fightLimitMs: 60000, maxActions: 400 }));
 assert.deepStrictEqual({ avoided: unsafeFreshPull.avoided, reason: unsafeFreshPull.reason },
     { avoided: true, reason: 'no_safe_solo_target' }, 'a dangerous fresh solo target is still declined');
@@ -202,6 +209,76 @@ for (const [name, state, npcId, seed, limitMs, maxActions] of SOLO) {
     soloObserved.push([name, soloOutcome(state, npcId, seed, limitMs, maxActions)]);
 }
 for (const [name, actual] of soloObserved) assert.deepStrictEqual(actual, SOLO_GOLDEN[name], `solo: ${name}`);
+
+// The pet tanks by hate, the hot rule read cold (T140, PetTankRule): the mob
+// hits whoever holds its hate, and a solo owner strikes only under its pet's
+// hate. hate: the encounter's saved numbers.
+{
+    const fight = (owner, hate, seed = 4, fightLimitMs = 60000) => {
+        const spot = spotFor(239);
+        const mob = ColdCombatProfile.npcForSpot(spot, () => 0.5, { preferredNpcId: 239 });
+        const encounter = PveEncounter.save(null, PveEncounter.key([owner], spot), mob, mob.maxHp, TS, { botReadyAt: 0, mobReadyAt: 0, ...hate });
+        const engaged = { ...owner, stats: { ...owner.stats, pveEncounter: encounter } };
+        return withSeed(seed, (rng) => resolveFight({ state: engaged, spot, pressure: {}, targetNpcId: 239, rng, timestamp: TS, fightLimitMs, maxActions: 400 }));
+    };
+    // A pet out, as a saved one: a pet raised in the fight starts with no hate.
+    const out = (state, skills) => { const profile = ColdCombatProfile.profileFor(state, TS);
+        return { ...state, stats: { ...state.stats, coldCombat: { ...state.stats.coldCombat,
+            summon: { active: true, skillId: Number(skills(profile)[0].selfId), hp: 5000, maxHp: 5000, expiresAt: TS + 1e7 } } } }; };
+    const petOut = out(warlock, ColdCombatProfile.summonSkills);
+    const petHolds = fight(petOut, { petHate: 1e9 });
+    assert(petHolds.debug.petTaken > 0, 'the mob strikes the pet that holds it');
+    assert.equal(petHolds.debug.damageTaken, 0, 'the owner is untouched while its pet holds the mob');
+    assert(petHolds.debug.skillUses > 0, 'the owner strikes while its pet holds the mob');
+    assert(!petHolds.summon || petHolds.summon.hp < petHolds.summon.maxHp, 'the pet keeps the HP it lost');
+
+    const ownerHolds = fight(petOut, { ownerHate: 1e9 }, 4, 12000);
+    assert.equal(ownerHolds.debug.petTaken, 0, 'the mob stays on the owner that holds it');
+    assert(ownerHolds.debug.damageTaken > 0, 'the owner takes the blows');
+    assert(ownerHolds.debug.skillUses > 0, 'under a lead the pet cannot retake the owner fights on, not idle');
+    const sliced = fight(petOut, { ownerHate: 1e9 }, 4, 3000);
+    const close = fight(petOut, { ownerHate: 2, petHate: 1 }, 4, 3000);
+    assert(close.debug.skillUses < sliced.debug.skillUses, 'a lead the pet\'s next hit retakes: the owner holds its hit');
+    assert(sliced.encounter.ownerHate >= 1e9, 'a slice saves the hate');
+    const resumed = fight(petOut, { ownerHate: sliced.encounter.ownerHate, petHate: sliced.encounter.petHate }, 5, 3000);
+    assert.equal(resumed.debug.petTaken, 0, 'the saved hate holds across a slice');
+
+    // A pet dead in a slice takes the fight's hate record with it no more: the
+    // owner's stays, and the next pet starts under it.
+    const lastPet = { ...petOut, vitals: { ...petOut.vitals, mp: 0 }, stats: { ...petOut.stats, coldCombat: { ...petOut.stats.coldCombat,
+        summon: { ...petOut.stats.coldCombat.summon, hp: 1 } } } };
+    const petLost = fight(lastPet, { ownerHate: 5000, petHate: 1e9 }, 4, 3000);
+    assert.equal(petLost.debug.summonDeaths, 1, 'the mob kills the pet in the slice');
+    assert(petLost.encounter.ownerHate >= 5000, 'the owner\'s hate outlives its pet across the slice');
+
+    const opened = fight(petOut, {});
+    assert(fight(petOut, {}, 4, 3000).debug.skillUses < sliced.debug.skillUses, 'a mob no one hit: the owner waits for the pet\'s first hit');
+    assert(opened.debug.petTaken > 0, 'the pet\'s hit takes the mob');
+    assert(opened.debug.damageTaken < opened.debug.petTaken, 'the owner stays under the pet\'s hate: the mob stays on the pet');
+
+    // The same path for a necromancer's corpse servitor.
+    const necromancerPet = out(necromancer, ColdCombatProfile.corpseSummonSkills);
+    assert(fight(necromancerPet, {}, 4, 3000).debug.skillUses < fight(necromancerPet, { ownerHate: 1e9 }, 4, 3000).debug.skillUses,
+        'a necromancer waits for its pet too');
+}
+
+// A continued fight works on its own copy of the saved mob: the self buff the
+// mob casts reaches the save only with its slice (a retried step buffs once).
+{
+    const NpcSkills = invoke('GameServer/Npc/NpcSkills');
+    const buffer = DataCache.npcs.find((npc) => (npc.template?.type === 'L2Monster' || npc.template?.type === undefined)
+        && NpcSkills.combatSkillsFor({ fetchSelfId: () => npc.selfId }).some((skill) => skill.fetchTargetKind?.() === 'self'
+            && skill.fetchSemantic?.()?.effectType === 'buff' && Object.keys(skill.fetchSemantic().stats || {}).length > 0));
+    const spot = spotFor(buffer.selfId);
+    const mob = ColdCombatProfile.npcForSpot(spot, () => 0.5, { preferredNpcId: buffer.selfId });
+    const encounter = PveEncounter.save(null, PveEncounter.key([gladiator], spot), { ...mob, maxHp: 1e7 }, 1e7, TS,
+        { botReadyAt: 0, mobReadyAt: 0 });
+    const saved = structuredClone(encounter.mob);
+    const r = withSeed(3, (rng) => resolveFight({ state: { ...gladiator, stats: { ...gladiator.stats, pveEncounter: encounter } },
+        spot, pressure: {}, targetNpcId: buffer.selfId, rng, timestamp: TS, fightLimitMs: 30000, maxActions: 200 }));
+    assert(r.encounter?.mobFight?.buffs?.length > 0, 'the mob buffed itself in the slice');
+    assert.deepStrictEqual(encounter.mob, saved, 'the saved mob is untouched');
+}
 
 // ---------- party fights ----------
 function partyOutcome(members, npcId, seed) {
@@ -219,30 +296,31 @@ const PARTY = [
     ['casters and a dancer', [sorcerer, necromancer, bishop, bladedancer], 7538, 12],
     ['injured with potions', [injuredTyrant, gladiator, sorcerer40], 7538, 13],
     ['necromancer corpse servitor', [necromancer, bishop], 129, 16],
-    ['tank and healer with shots', [paladinShots, injuredBishopShots], 5135, 11]
+    ['tank with shots and healer', [paladinShots, injuredBishop], 5135, 11]
 ];
 // R2: without a tank the mob hits the most hated member (NpcHate), no longer a
 // member rolled per swing, so the tankless pins carry the top damage dealer's HP loss.
+// T106: the shot Paladin is a C-grade 50 now (the only band whose shots pay): with the
+// injured Bishop it no longer kills Grima inside the 15 s party round (both alive, mob at 715).
+// T124: the cold fight rolls the hot rules it lacked (a spell's level-fail roll, drains,
+// effects, damage over time): the fights that meet them, or roll after them, were re-pinned.
 const PARTY_GOLDEN = {
-    'tank, charges, healer, songs, servitor': { won: true, actions: 25, skillUses: 18, musicUses: 5, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0,
-        members: [[1008, 1340, 774, 4, 3, 0, 1, 0, 0],
-            [1002, 1734, 497, 7, 7, 0, 0, 0, 0],
-            [1011, 1290, 2565, 3, 3, 0, 0, 0, 0],
-            [1006, 1392, 223, 5, 5, 0, 0, 5, 0],
-            [1004, 1290, 2523, 1, 0, 0, 0, 0, 0]] },
-    'casters and a dancer': { won: true, actions: 9, skillUses: 7, musicUses: 2, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0,
-        members: [[1001, 1026, 2538, 2, 2, 0, 0, 0, 0],
-            [1005, 1290, 2432, 2, 2, 0, 0, 0, 0],
-            [1003, 1290, 2595, 1, 1, 0, 0, 0, 0],
-            [1010, 1324, 673, 2, 2, 0, 0, 2, 0]] },
-    'injured with potions': { won: true, actions: 12, skillUses: 9, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 1, mobHp: 0, help: 1,
-        members: [[1012, 1282, 765, 5, 4, 0, 1, 0, 0],
-            [1002, 1674, 679, 3, 3, 0, 0, 0, 0],
-            [1009, 821, 1659, 2, 2, 0, 2, 0, 0]] },
-    'necromancer corpse servitor': { won: true, actions: 5, skillUses: 3, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0,
-        members: [[1005, 1160, 2432, 2, 2, 0, 0, 0, 0],
-            [1003, 1290, 2595, 1, 1, 0, 0, 0, 0]] },
-    'tank and healer with shots': { won: true, actions: 15, skillUses: 7, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0, members: [[1017, 1742, 975, 5, 3, 3, 1, 0, 0], [1016, 1549, 2935, 4, 4, 4, 0, 0, 0]] }
+    'tank, charges, healer, songs, servitor': { won: true, actions: 22, skillUses: 13, musicUses: 4, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0, members: [[1008, 2933, 976, 5, 2, 0, 1, 0, 0],
+            [1002, 3481, 768, 6, 5, 0, 0, 0, 0],
+            [1011, 2112, 2311, 2, 2, 0, 0, 0, 0],
+            [1006, 2891, 586, 4, 4, 0, 0, 4, 0],
+            [1004, 2058, 2262, 1, 0, 0, 0, 0, 0]] },
+    'casters and a dancer': { won: true, actions: 13, skillUses: 10, musicUses: 2, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0, members: [[1001, 1519, 2179, 4, 4, 0, 0, 0, 0],
+            [1005, 1975, 2171, 2, 2, 0, 0, 0, 0],
+            [1003, 2200, 2311, 2, 2, 0, 0, 0, 0],
+            [1010, 2748, 856, 2, 2, 0, 0, 2, 0]] },
+    'injured with potions': { won: true, actions: 16, skillUses: 12, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 1, mobHp: 0, help: 0, members: [[1012, 2123, 842, 6, 5, 0, 1, 0, 0],
+            [1002, 3395, 768, 5, 5, 0, 0, 0, 0],
+            [1009, 1010, 1234, 2, 2, 0, 2, 0, 0]] },
+    'necromancer corpse servitor': { won: true, actions: 4, skillUses: 3, musicUses: 0, summonUses: 1, summonActions: 0, potionsUsed: 0, mobHp: 0, help: 0, members: [[1005, 1907, 2171, 2, 2, 0, 0, 0, 0],
+            [1003, 2200, 2334, 1, 1, 0, 0, 0, 0]] },
+    'tank with shots and healer': { won: false, actions: 22, skillUses: 7, musicUses: 0, summonUses: 0, summonActions: 0, potionsUsed: 0, mobHp: 715, help: 0, members: [[1017, 1793, 454, 8, 2, 5, 2, 0, 0],
+            [1011, 2198, 2183, 5, 5, 0, 1, 0, 0]] }
 };
 for (const [name, members, npcId, seed] of PARTY) {
     members.forEach(assertNativeHeldPolicy);
@@ -255,7 +333,7 @@ for (const [name, members, npcId, seed] of PARTY) {
 for (const [name, state, npcId, seed] of SOLO) {
     const spot = spotFor(npcId);
     const mob = ColdCombatProfile.npcForSpot(spot, () => 0.5, { preferredNpcId: npcId });
-    const encounter = PveEncounter.save(null, PveEncounter.key([state], spot, npcId), mob, mob.maxHp, TS,
+    const encounter = PveEncounter.save(null, PveEncounter.key([state], spot), mob, mob.maxHp, TS,
         { botReadyAt: 0, mobReadyAt: 0 });
     const member = { ...state, stats: { ...state.stats, role: 'tank', pveEncounter: encounter } };
     const solo = withSeed(seed, (rng) => resolveFight({ state: member, spot: spotFor(npcId), pressure: {}, targetNpcId: npcId,

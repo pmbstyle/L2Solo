@@ -45,6 +45,13 @@ function bowMpCost(weapon, rng = Math.random) {
     const cheap = definition(weapon)?.cheapShot;
     return cheap && rng() * 100 < cheap.chance ? Math.min(normal, cheap.mp) : normal;
 }
+// The mean MP of one shot of a bow (selfId, its normal cost): bowMpCost's
+// cheap-shot SA by its chance. The cold fight pays it per shot (T106).
+function expectedBowMp(selfId, normal) {
+    const mp = Math.max(0, Number(normal) || 0);
+    const cheap = catalog.weapons[Number(selfId)]?.cheapShot;
+    return cheap ? mp - (cheap.chance / 100) * (mp - Math.min(mp, cheap.mp)) : mp;
+}
 function soulshotCost(weapon, rng = Math.random) {
     const normal = Math.max(0, Number(weapon?.fetchSoulshot?.()) || 0);
     const miser = definition(weapon)?.miser;
@@ -127,5 +134,5 @@ function onCast(session, actor, target, trigger, { weapon = equipped(actor), out
     return runProc(session, actor, target, descriptor, attack, rng);
 }
 
-module.exports = { catalog, definition, equipped, effect, hasRisk, bowMpCost, soulshotCost, attackAngle,
+module.exports = { catalog, definition, equipped, effect, hasRisk, bowMpCost, expectedBowMp, soulshotCost, attackAngle,
     pvpMultiplier, criticalAnger, recoverHp, procSkill, onCritical, onCast };

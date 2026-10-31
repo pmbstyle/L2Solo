@@ -811,6 +811,13 @@ function joinPartyRecruits(party, members, recruits, joint) {
         });
 }
 
+// Developer diagnostics: a healer or buffer without solo ground
+// (PartyRequestPlanner.seeksParty) that a committed membership puts in a party.
+function countSeekersFound(members) {
+    const found = Config.developerDiagnostics ? members.filter(PartyRequestPlanner.seeksParty).length : 0;
+    if (found) Diagnostics.count('party_seek', PartyRequestPlanner.NO_SOLO_GROUND, 'found_party', found);
+}
+
 function commitPartyMembership(party, members = [], event = null, options = {}) {
     const selected = (members || []).filter(Boolean);
     if (!party || !selected.length) return Promise.resolve({ party: null, assigned: [], failed: selected });
@@ -834,8 +841,10 @@ function commitPartyMembership(party, members = [], event = null, options = {}) 
         || typeof LifeState.preparePartyAssignment !== 'function') {
         return BackgroundPartyState.createOrUpdate(party).then((savedParty) => {
             if (!savedParty) return { party: null, assigned: [], failed: selected, eventCommitted: false };
-            return assignPartyMembers(selected, savedParty)
-                .then(({ assigned, failed }) => ({ party: savedParty, assigned, failed, eventCommitted: false }));
+            return assignPartyMembers(selected, savedParty).then(({ assigned, failed }) => {
+                if (!failed.length) countSeekersFound(selected);
+                return { party: savedParty, assigned, failed, eventCommitted: false };
+            });
         });
     }
 
@@ -869,6 +878,7 @@ function commitPartyMembership(party, members = [], event = null, options = {}) 
         }
         const assigned = LifeState.acceptPartyAssignments(preparedMembers);
         assigned.forEach(() => Config.developerDiagnostics && Metrics.recordDbFlush());
+        countSeekersFound(selected);
         invoke('GameServer/Bot/AI/BotClanChat').onClanTask?.(committedParty, assigned);
         return { party: committedParty, assigned, failed: [], eventCommitted: !!event };
     }).catch((error) => {
@@ -2716,10 +2726,22 @@ const PopulationService = {
         const facts = new Map(candidates.map(state => {
             const objective = objectiveOf(state);
             return [state, { objective, key: partyObjectiveKeyForState(state, objective),
-                spotId: partyObjectiveSpotForState(state, objective) }];
+                spotId: partyObjectiveSpotForState(state, objective), seeking: PartyRequestPlanner.seeksParty(state) }];
         }));
+        // A healer or buffer without solo ground (PartyRequestPlanner.seeksParty)
+        // joins a party of its level wherever the party hunts: the party's spot
+        // is its own search's pick, ground the party hunts; the level range,
+        // the shared experience and the recruit check judge the roster as for
+        // any recruit. A clan, raid or material roster keeps its own members.
+        // The stored leader's level is read before any hydration, so a pass
+        // with a seeker hydrates only the parties of its level.
+        const openRoster = objective => !objective || !(objective.clanGoalKey || objective.sourceKind === 'raid'
+            || objective.fullRoster || objective.opportunisticRaid || CraftMaterialParty.isObjective(objective));
+        const ofLevel = (party, state) => Math.abs(Number(LifeState.cachedState(party.leaderId)?.level || 0)
+            - Number(state.level || 0)) <= PartyComposition.DEFAULT_LEVEL_RANGE;
         const matches = (party, state) => {
             const partyObjective = party.stats?.objective || null, fact = facts.get(state);
+            if (fact.seeking && openRoster(partyObjective) && ofLevel(party, state)) return true;
             return partyObjective
                 ? (fact.key === partyObjectiveGroupingKey(partyObjective)
                     || partyObjectivesShareRoute(partyObjective, fact.objective)

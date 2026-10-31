@@ -69,13 +69,29 @@ function limitStep(from, to, maxDistance) {
         locY: Math.round(from.locY + (to.locY - from.locY) * ratio), locZ: from.locZ };
 }
 
+function homeOf(npc) {
+    const home = npc.spawnDefinition?.spawn?.coords?.length ? npc.spawnOrigin || npc.spawnDefinition.spawn.coords[0] : null;
+    return home && [home.locX, home.locY, home.locZ].every(Number.isFinite) ? home : null;
+}
+
+// A monster that a fight left beyond its drift range (or outside its
+// territory) walks back home on every tick, not by the random-walk roll
+// (Mobius C4 AttackableAI.thinkActive: returnHome while it has no target or
+// its target is a dead player; AttackablesCampPlayerCorpses = False).
+function awayFromHome(npc, from = coords(npc)) {
+    const home = homeOf(npc);
+    if (home) return Math.hypot(from.locX - home.locX, from.locY - home.locY) > DRIFT_RANGE * 2;
+    const bounds = npc.spawnDefinition?.bounds;
+    return Array.isArray(bounds) && bounds.length >= 3 && !inside(from, bounds);
+}
+
 function destination(npc, random = Math.random) {
     const from = coords(npc);
     const { spawn, bounds } = npc.spawnDefinition;
     if (spawn.coords?.length) {
-        const home = npc.spawnOrigin || spawn.coords[0];
-        if (![home.locX, home.locY, home.locZ].every(Number.isFinite)) return null;
-        const outside = Math.hypot(from.locX - home.locX, from.locY - home.locY, from.locZ - home.locZ) > DRIFT_RANGE * 2;
+        const home = homeOf(npc);
+        if (!home) return null;
+        const outside = awayFromHome(npc, from);
         const to = outside ? home : {
             locX: home.locX + Math.floor(random() * DRIFT_RANGE * 2) - DRIFT_RANGE,
             locY: home.locY + Math.floor(random() * DRIFT_RANGE * 2) - DRIFT_RANGE
@@ -187,7 +203,7 @@ function tick(world, { random = Math.random } = {}) {
         if (!eligible(npc) || !actors.some(actor =>
             (actor.fetchLocX() - npc.fetchLocX()) ** 2 + (actor.fetchLocY() - npc.fetchLocY()) ** 2
                 <= CLIENT_VISIBILITY_RADIUS ** 2 && Math.abs(actor.fetchLocZ() - npc.fetchLocZ()) <= 400)) continue;
-        if (Math.floor(random() * WALK_RATE) !== 0) continue;
+        if (!awayFromHome(npc) && Math.floor(random() * WALK_RATE) !== 0) continue;
         // Reservoir sampling gives later sectors the same chance under load.
         // At most 32 short geo rays / new movements per shared one-second tick.
         rolled++;

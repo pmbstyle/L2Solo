@@ -23,6 +23,8 @@ const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const BotRangedCombatPositioning = invoke('GameServer/Bot/AI/BotRangedCombatPositioning');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
+const SoloSelfHeal = invoke('GameServer/Bot/AI/SoloSelfHeal');
+const BotClassPolicy = invoke('GameServer/Bot/AI/BotClassPolicy');
 const { performance } = require('perf_hooks');
 const ActorQueries = require('../World/ActorSpatialQueries');
 const BotTownTravel = invoke('GameServer/Bot/AI/BotTownTravel');
@@ -760,6 +762,11 @@ const BotAI = {
         if (HealingPotionStock.tryUseInCombat(session, bot, npc, { role, pvp: options.pvp === true })) {
             return true;
         }
+        // A solo bot on mobs heals itself by the rule hot and cold share (T107).
+        if (!options.pvp && BotClassPolicy.modeFor(bot, { session }) === 'solo_pve'
+            && SoloSelfHeal.tryInFight(session, bot, npc, Generics)) {
+            return true;
+        }
         if (!basicAttackOnly && trySpoil(session, bot, npc, Generics)) {
             return true;
         }
@@ -862,6 +869,11 @@ const BotAI = {
             return true;
         }
         const decision = offense?.ready || null;
+        // The pet tanks a solo fight: the chosen hit waits on its hate (PetTankRule).
+        if (SummonerTactics.ownerWaits(session, bot, npc, summonAction, decision?.skill)) {
+            session.lastCombatDecision = { action: 'summon_tanks', role, targetId: npc.fetchId(), at: Date.now() };
+            return true;
+        }
         if (decision) {
             session.lastCombatDecision = {
                 action: 'cast_skill',

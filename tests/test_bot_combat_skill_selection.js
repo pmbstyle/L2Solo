@@ -430,6 +430,42 @@ try {
     assert.strictEqual(summonerSession.lastCombatDecision.action, 'summon_servitor',
         'the hot summon action must be visible in combat telemetry');
 
+    // The pet tanks, as in C4 (user 10-29): with its servitor out, a hot
+    // summoner adds its own damage only while the mob is on the pet.
+    const pet = { fetchId: () => 77001, controlMode: 'attack', attackTargetId: 11041, fetchLocX: () => 390, fetchLocY: () => 0,
+        fetchMaxHp: () => 500, fetchHp: () => 500, state: {} };
+    const petOwner = bot(14, [], 100);
+    petOwner.fetchId = () => 11040;
+    petOwner.summon = pet;
+    // hates: the mob's table, by id. The pet's hate over any hit frees the owner.
+    const mobOn = (holder, hates = {}) => ({ ...npc(11041), fetchMostHated: () => holder,
+        getHating: actor => hates[actor.fetchId()] || 0 });
+    const waitSession = {};
+    BotAI.executeCombat(waitSession, petOwner, mobOn(pet, { 77001: 1 }), generics());
+    assert.strictEqual(waitSession.lastCombatDecision.action, 'summon_tanks', 'the owner holds a hit that would pass the pet\'s hate');
+    const freeSession = {};
+    BotAI.executeCombat(freeSession, petOwner, mobOn(pet, { 77001: 1e9 }), generics());
+    assert.notStrictEqual(freeSession.lastCombatDecision?.action, 'summon_tanks', 'the owner strikes under the pet\'s hate');
+    const retakenSession = {};
+    BotAI.executeCombat(retakenSession, petOwner, mobOn(petOwner, { 11040: 1e9 }), generics());
+    assert.notStrictEqual(retakenSession.lastCombatDecision?.action, 'summon_tanks', 'a lead the pet cannot soon retake: the owner under the mob fights');
+    const tank = { fetchId: () => 11050 };
+    const partySession = {};
+    BotAI.executeCombat(partySession, { ...petOwner, party: { partyId: 9 } }, mobOn(tank), generics());
+    assert.notStrictEqual(partySession.lastCombatDecision?.action, 'summon_tanks', 'in a party the tank holds the mob: the owner fights');
+    // The owner waits only for a pet that can take the mob (PetTankRule): a
+    // stopped pet ends the wait, whatever the hate says.
+    const owning = (pet2) => { const owner = { ...petOwner, summon: pet2 }; const session = {};
+        BotAI.executeCombat(session, owner, mobOn(pet2, { 77001: 1 }), generics()); return session.lastCombatDecision?.action; };
+    const debuffed = (key) => ({ effects: { [key]: { type: 'debuff', key, expiresAt: Date.now() + 1e9 } } });
+    const farPet = { ...pet, fetchLocX: () => 0, state: { fetchHits: () => false, inMotion: () => false } };
+    assert.notStrictEqual(owning({ ...pet, ...debuffed('stun') }), 'summon_tanks', 'a stunned pet takes nothing: the owner fights');
+    assert.notStrictEqual(owning({ ...farPet, ...debuffed('root') }), 'summon_tanks', 'a pet rooted short of the mob: the owner fights');
+    assert.notStrictEqual(owning(farPet), 'summon_tanks', 'a pet stopped short of the mob: the owner fights');
+    assert.strictEqual(owning({ ...pet, ...debuffed('root') }), 'summon_tanks', 'a rooted pet at the mob still strikes it: the owner waits');
+    assert.strictEqual(owning({ ...farPet, state: { fetchHits: () => false, inMotion: () => true } }), 'summon_tanks', 'a pet on its way: the owner waits');
+    assert.notStrictEqual(owning({ ...pet, fetchSummonSkillId: () => 301 }), 'summon_tanks', 'a pet that never attacks ends no wait: the owner fights');
+
     const necroCorpseSummon = skill(1154, {
         name: 'Summon Corrupted Man',
         mp: 70,

@@ -36,6 +36,21 @@ function message(type, msgId, payload = {}) {
         await new Promise((resolve) => setTimeout(resolve, 25));
     }
     await worker.terminate();
+    // The worker's EffectStore is a stub: every member the cold rules call
+    // must be on it (T136: PetHealRule.choose called impairments, a live fault).
+    const fs = require('fs');
+    const src = path.resolve(__dirname, '../src/GameServer');
+    const callers = [path.join(src, 'Bot/AI/PetHealRule.js'),
+        ...fs.readdirSync(path.join(src, 'Bot/Population')).map(file => path.join(src, 'Bot/Population', file))];
+    const workerSource = fs.readFileSync(workerPath, 'utf8');
+    const stub = workerSource.slice(workerSource.indexOf("['GameServer/Effects/EffectStore'"), workerSource.indexOf("['GameServer/Skills/ChargeLifecycle'"));
+    for (const file of callers.filter(file => file.endsWith('.js') && file !== workerPath)) {
+        const text = fs.readFileSync(file, 'utf8');
+        const local = text.match(/const (\w+)\s*=\s*invoke\('GameServer\/Effects\/EffectStore'\)/)?.[1];
+        if (!local) continue;
+        for (const [, member] of text.matchAll(new RegExp(`\\b${local}\\.(\\w+)`, 'g')))
+            assert(new RegExp(`\\b${member}\\s*:`).test(stub), `the worker's EffectStore stub lacks ${member} (${path.basename(file)})`);
+    }
     console.log('Cold worker dependency isolation and graceful drain checks passed');
 })().catch(async (error) => {
     console.error(error);

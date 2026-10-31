@@ -218,6 +218,23 @@ try {
     bowActor.backpack.deleteItem = (_s, _id, n, cb) => { arrows -= n; cb(); };
     assert.strictEqual(BowResources.consume(session(bowActor), bowActor, () => 0), true);
     assert.strictEqual(arrows, 0); assert.strictEqual(bowActor.mp, 0);
+    // A bot pays the MP of its shot but no arrow (user 10-29); without the MP it cannot shoot.
+    const botBow = actor(); allActors.push(botBow); equip(botBow, 275); botBow.mp = 10;
+    botBow.backpack.fetchItemFromSelfId = () => null;
+    const botSession = { ...session(botBow), botSession: true };
+    assert.strictEqual(BowResources.consume(botSession, botBow, () => 1), true, 'a bot shoots without arrows');
+    assert.strictEqual(botBow.mp, 6, 'and pays the Long Bow\'s 4 MP');
+    botBow.mp = 3;
+    assert.strictEqual(BowResources.consume(botSession, botBow, () => 1), false, 'not without the MP');
+    // The cold fight pays the same shot by its mean (the cheap-shot SA by its chance).
+    assert.strictEqual(SA.expectedBowMp(275, 4), 4);
+    const cheapEntry = Object.entries(SA.catalog.weapons).find(([, data]) => data.cheapShot);
+    const [cheapId, { cheapShot }] = cheapEntry;
+    assert.strictEqual(SA.expectedBowMp(cheapId, 10), 10 - cheapShot.chance / 100 * (10 - Math.min(10, cheapShot.mp)));
+    const Cold = invoke('GameServer/Bot/Population/ColdCombatProfile');
+    const archer = { characterId: 0, level: 30, stats: { classId: 22 },
+        inventory: { 275: { selfId: 275, amount: 1, equipped: true, slot: 14 } } };
+    assert.strictEqual(Cold.profileFor(archer, Date.now()).equipment.bowMp, 4, 'a cold archer\'s profile carries its shot MP');
     console.log(`Weapon SA checks passed: ${Object.keys(SA.catalog.weapons).length} catalog entries and every proc variant`);
 } finally {
     allActors.forEach(Ticker.clearAll);

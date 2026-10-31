@@ -1,8 +1,7 @@
-const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const ConsumableRestock = invoke('GameServer/Inventory/ConsumableRestock');
-const DataCache = invoke('GameServer/DataCache');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const StaticMerchantPricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
 const C4ItemSkills = invoke('GameServer/Items/C4ItemSkills');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 
@@ -23,10 +22,11 @@ const MELEE_USE_HP_RATIO = 0.35;
 const RANGED_USE_HP_RATIO = 0.25;
 const QUICK_USE_HP_RATIO = 0.12;
 const DESIRED_HP_RATIO = 0.65;
-
-function templateFor(selfId) {
-    return ItemTemplateIndex.find(DataCache.items, selfId) || null;
-}
+// A healing potion heals over time: seven ticks, one each 2 s (C4, skill 2032's
+// buff time); while it runs the bot drinks no other (activePotionHot).
+const HOT_TICKS = 7;
+const HOT_TICK_MS = 2000;
+const HOT_MS = HOT_TICKS * HOT_TICK_MS;
 
 function detailsFor(selfId) {
     return POTIONS.find((potion) => potion.selfId === Number(selfId)) || null;
@@ -53,11 +53,8 @@ function targetAmountFor(value) {
 function purchasePotionFor(value) {
     const level = Number(value?.fetchLevel?.() ?? value?.level ?? 1) || 1;
     const choice = PURCHASE_BY_LEVEL.find((entry) => level <= entry.maxLevel) || PURCHASE_BY_LEVEL[0];
-    const template = templateFor(choice.selfId);
-    return {
-        ...detailsFor(choice.selfId),
-        price: Math.max(0, Number(template?.template?.price || 0))
-    };
+    // The NPC's price at the current rate (x10: 660 for a 330 Healing Potion).
+    return { ...detailsFor(choice.selfId), price: StaticMerchantPricing.botBuyPrice(choice.selfId) };
 }
 
 // The shared operating reserve, read from a cold state or a hot actor.
@@ -217,7 +214,7 @@ function selectPotion(inventory, hp, maxHp, roleOrActor, options = {}) {
     const safeMaxHp = Math.max(1, Number(maxHp || hp || 1));
     const safeHp = Math.max(0, Number(hp || 0));
     const hpRatio = safeHp / safeMaxHp;
-    // The danger moment (E70, DangerMoment) chooses when; the fixed ratio stays for cold and PvP.
+    // The danger moment (E70, DangerRule) chooses when; the fixed ratio stays for a cold slice's turns and PvP.
     if (!options.dangerMoment && hpRatio > (options.pvp ? 0.65 : useThreshold(roleOrActor))) return null;
     const available = availablePotions(inventory, hpRatio, options);
     if (!available.length) return null;
@@ -244,6 +241,18 @@ function actorInventory(actor) {
     }));
 }
 
+// The hot act of drinking: the bottle from the bag, by the item's own skill
+// (its reuse). False when the bot cannot drink it now.
+function drinkFromBag(session, actor, potion, inventory) {
+    const item = inventory.find((entry) => entry.selfId === potion.selfId && entry.amount > 0);
+    if (!item?.objectId) return false;
+    const itemSkill = C4ItemSkills.resolve(potion.selfId);
+    const skill = itemSkill && actor.backpack.buildItemSkill?.(itemSkill);
+    if (!skill || actor.canUseSkill?.(skill) === false) return false;
+    actor.backpack.useItem(session, item.objectId);
+    return true;
+}
+
 function tryUseInCombat(session, actor, target, options = {}) {
     if (!session || !actor || !targetAlive(target) || actor.state?.fetchDead?.()) return null;
     const activeHot = activePotionHot(actor);
@@ -257,15 +266,7 @@ function tryUseInCombat(session, actor, target, options = {}) {
     // The danger moment passes the bag it already read this tick (options.inventory).
     const inventory = options.inventory || actorInventory(actor);
     const potion = selectPotion(inventory, actor.fetchHp?.(), actor.fetchMaxHp?.(), actor, { ...options, activeHot });
-    if (!potion) return null;
-    const item = inventory.find((entry) => entry.selfId === potion.selfId && entry.amount > 0);
-    if (!item?.objectId) return null;
-
-    const itemSkill = C4ItemSkills.resolve(potion.selfId);
-    const skill = itemSkill && actor.backpack.buildItemSkill?.(itemSkill);
-    if (!skill || actor.canUseSkill?.(skill) === false) return null;
-
-    actor.backpack.useItem(session, item.objectId);
+    if (!potion || !drinkFromBag(session, actor, potion, inventory)) return null;
     session.lastCombatDecision = {
         action: 'use_healing_potion',
         reason: options.dangerMoment ? 'danger_moment' : 'low_hp_active_combat',
@@ -280,16 +281,20 @@ function tryUseInCombat(session, actor, target, options = {}) {
     return potion;
 }
 
-function consumeColdPotion(inventory, hp, maxHp, roleOrActor) {
-    const potion = selectPotion(inventory, hp, maxHp, roleOrActor);
-    if (!potion) return null;
+// One bottle out of a cold inventory (keyed rows, changed in place). False without one.
+function debitColdPotion(inventory, potion) {
     const key = Object.keys(inventory || {}).find((entryKey) => (
         Number(inventory[entryKey]?.selfId ?? entryKey) === potion.selfId
         && Number(inventory[entryKey]?.amount || 0) > 0
     ));
-    if (key === undefined) return null;
+    if (key === undefined) return false;
     inventory[key] = { ...inventory[key], amount: Math.max(0, Number(inventory[key].amount || 0) - 1) };
-    return potion;
+    return true;
+}
+
+function consumeColdPotion(inventory, hp, maxHp, roleOrActor, options = {}) {
+    const potion = selectPotion(inventory, hp, maxHp, roleOrActor, options);
+    return potion && debitColdPotion(inventory, potion) ? potion : null;
 }
 
 function coldEffectFor(potion, usedAt = 0) {
@@ -300,10 +305,10 @@ function coldEffectFor(potion, usedAt = 0) {
     return {
         immediateHeal: 0,
         hot: {
-            heal: potion.heal / 7,
-            remaining: 7,
-            intervalMs: 2000,
-            nextAt: Number(usedAt || 0) + 2000
+            heal: potion.heal / HOT_TICKS,
+            remaining: HOT_TICKS,
+            intervalMs: HOT_TICK_MS,
+            nextAt: Number(usedAt || 0) + HOT_TICK_MS
         }
     };
 }
@@ -317,6 +322,7 @@ function coldPurchasePatch(state, options = {}) {
 module.exports = {
     DESIRED_HP_RATIO,
     HOT_EFFECT_KEYS,
+    HOT_MS,
     MELEE_USE_HP_RATIO,
     POTIONS,
     POTION_IDS,
@@ -328,6 +334,9 @@ module.exports = {
     coldEffectFor,
     coldPurchasePatch,
     consumeColdPotion,
+    debitColdPotion,
+    drinkFromBag,
+    heldAmount,
     operationalReserve,
     purchaseActorRestock,
     purchasePotionFor,

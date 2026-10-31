@@ -173,6 +173,15 @@ try {
     assert.strictEqual(BotHuntingGroundPolicy.evaluate(antharasGround, { level: 61 }, {
         equipment: fullKit('b')
     }).allowed, false, 'Antharas Lair solo entry must reject B-grade gear');
+    // T127: the fallback gate reads the one grade order (GearGradeRule): six
+    // levels over the ground and a full kit of the bot's own grade, above the ground's.
+    const darkRoom = { id: 'dark_room', name: 'Dark room', minLevel: 40, maxLevel: 46, tags: ['party_required'] };
+    assert.strictEqual(BotHuntingGroundPolicy.evaluate(darkRoom, { level: 52 }, { equipment: fullKit('B') }).allowed, true,
+        'a level-52 solo hunter in a full B kit may enter a level-46 party ground');
+    assert.strictEqual(BotHuntingGroundPolicy.evaluate(darkRoom, { level: 52 }, { equipment: fullKit('c') }).allowed, false,
+        'a C kit is the ground\'s own grade: no solo entry');
+    assert.strictEqual(BotHuntingGroundPolicy.evaluate(darkRoom, { level: 51 }, { equipment: fullKit('a') }).allowed, false,
+        'level 51 (C grade) is not six levels over the ground');
     const safeField = {
         id: 'safe_field',
         name: 'Ordinary level 55 field',

@@ -122,7 +122,9 @@ const nativeMargin = netProfit(recipe, exit.price, 27000, 0, nativeClock);
 const nativeOpportunity = Policy.opportunityFor(native.state, recipe, planFor, [exit], undefined, nativeClock);
 if (nativeMargin > 0) {
     assert(nativeOpportunity);
-    assert.strictEqual(nativeOpportunity.expectedProfit, nativeMargin, 'native-clock net margin uses the unchanged unit basket');
+    // The policy sums the same terms in its own order: equal up to rounding.
+    assert(Math.abs(nativeOpportunity.expectedProfit - nativeMargin) <= 1e-9 * Math.abs(nativeMargin),
+        `native-clock net margin uses the unchanged unit basket: ${nativeOpportunity.expectedProfit} vs ${nativeMargin}`);
     const r = nativeMargin / nativeClock.hourAdena / 27000;
     assert.strictEqual(Funding.spendable(native.state, 0, { r }), expectedSpendable(native.state, { r }),
         'the exact gain/cash ratio uses the same genuine native packet');

@@ -49,7 +49,8 @@ const coldSummoner = {
     stats: { classId: 14, role: 'mage', coldCombat: snapshot },
     party: { role: 'mage' }
 };
-const spot = { id: 'summon-carry', name: 'Summon carry', avgLevel: 40, density: 1, npcSelfIds: [], rewards: { exp: 10, sp: 2, adenaMin: 1, adenaMax: 1 }, mob: { hp: 100000, damage: 1 } };
+// Dense enough that the walk to a mob (T106) fits the 12 s round.
+const spot = { id: 'summon-carry', name: 'Summon carry', avgLevel: 40, density: 30, npcSelfIds: [], rewards: { exp: 10, sp: 2, adenaMin: 1, adenaMax: 1 }, mob: { hp: 100000, damage: 1 } };
 const result = BackgroundResolver.resolveSolo({ state: coldSummoner, spot, elapsedMs: 12000, timestamp, rng: () => 0.1 });
 assert.strictEqual(result.debug.summonUses || 0, 0, 'the servitor kept from the hot session is not recast');
 assert.strictEqual(result.patch.stats.coldCombat.summon.skillId, 1276);

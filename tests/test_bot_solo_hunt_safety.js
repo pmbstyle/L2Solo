@@ -28,21 +28,23 @@ assert(Match.soloSurvival(Match.stateProfiles({ level: 29 }), { ...target, maxHp
     'a partial route projection cannot manufacture a weak default build');
 assert(!Match.soloSurvival(Match.stateProfiles({ level: 29, stats: { classId: 12 } }), { ...target, maxHp: 10000 }).eligible,
     'a known unequipped mage is still subject to the safety check');
-const fragile = { ...mage, maxHp: 20 };
+const fragile = { ...mage, maxHp: 10 };
 const servitor = { role: 'dps', maxHp: 2000, pDef: 300, pAtk: 300, atkSpd: 300, skills: [] };
 assert(!Match.soloSurvival([fragile], target).eligible);
 assert(Match.soloSurvival([fragile, servitor], target).eligible, 'native profiles retain tanking allies');
-const withSummon = owner => Match.coldProfiles(owner, { stats: { coldCombat: {
-    summon: { ...servitor, active: true, hp: servitor.maxHp, expiresAt: at + 60000 }
+const withSummon = (owner, hp = servitor.maxHp) => Match.coldProfiles(owner, { stats: { coldCombat: {
+    summon: { ...servitor, active: true, hp, expiresAt: at + 60000 }
 } } }, at);
-assert(!Match.soloSurvival(withSummon(fragile), target).eligible,
-    'a cold summon cannot lend its HP and defense to a fragile owner');
+// The pet tanks first, as in C4 (user 10-29): a fragile owner hunts behind a
+// sound pet, not behind a pet with its HP nearly gone.
+assert(Match.soloSurvival(withSummon(fragile), target).eligible, 'a cold summon tanks for a fragile owner');
+assert(!Match.soloSurvival(withSummon(fragile, 1), target).eligible, 'a pet at 1 HP shields nothing');
 const durable = { ...mage, skills: [], maxHp: 150 };
 assert(!Match.soloSurvival([durable], target).eligible);
 assert(Match.soloSurvival(withSummon(durable), target).eligible,
     'summon damage still helps an owner survive a fight');
-// KankaRes's native rotation prefers Death Spike to the faster Aura Burn.
-// Admission must use that chosen rotation rather than an imaginary best DPS.
+// Admission uses the skill the fight picks. With T100's MP price a fresh
+// fight from full MP picks the best damage rate: the faster Aura Burn.
 const necro = { classId: 13, level: 45, role: 'mage', maxHp: 932, maxMp: 1489,
     pDef: 202, pAtk: 75.8, mAtk: 167.5, castSpd: 376, atkSpd: 383, weaponMask: 4,
     equipment: { weaponKind: 'Weapon.Sword' }, skills: [
@@ -52,12 +54,15 @@ const necro = { classId: 13, level: 45, role: 'mage', maxHp: 932, maxMp: 1489,
 const lizard = Cold.npcCombatStats(Data.npcs.find(row => row.selfId === 784));
 const nativeChoice = invoke('GameServer/Bot/Population/ColdClassPolicy').select(necro,
     { hp: necro.maxHp, mp: necro.maxMp, cooldowns: {}, time: at, mob: lizard });
-assert.equal(nativeChoice.skill.selfId, 1148);
-assert(Match.soloSurvival([necro], lizard).eligible, 'fixture: imaginary Aura Burn DPS admits this fight');
+assert.equal(nativeChoice.skill.selfId, 1172);
 const realRotation = Match.coldProfiles(necro, {}, at);
-assert(!Match.soloSurvival(realRotation, lizard).eligible, 'the slower native rotation rejects this fight');
+assert.deepStrictEqual(Object.entries(realRotation[0].soloAttackScores).sort((a, b) => b[1] - a[1])[0][0], '1172',
+    'the gate ranks the fight\'s pick first');
+assert(Match.soloSurvival(realRotation, lizard).eligible, 'the picked Aura Burn admits this fight');
+const frail = Match.coldProfiles({ ...necro, maxHp: 150 }, {}, at);
+assert(!Match.soloSurvival(frail, lizard).eligible, 'a frail caster is still refused');
 assert(Cold.npcForSpot({ npcEntries: [{ selfId: 784, count: 1 }] }, () => 0.5,
-    { matchupProfiles: realRotation, soloSafety: true }).avoided, 'the executor refuses the unsafe voluntary target');
+    { matchupProfiles: frail, soloSafety: true }).avoided, 'the executor refuses the unsafe voluntary target');
 // The fight reads fightProfile, the route profileFor: both give the fixture.
 const savedProfile = Cold.profileFor, savedFight = Cold.fightProfile, savedSpots = Spots.cache;
 try {
@@ -75,11 +80,17 @@ try {
         stats: { classId: 13, role: 'mage' } };
     const fight = invoke('GameServer/Bot/Population/BackgroundResolver').resolveSolo({
         state: fighter, spot: ground, elapsedMs: 60000, timestamp: at, rng: () => 0.5 });
-    assert.equal(fight.debug.heals, 0, 'a heal weaker than damage during its cast cannot replace the finishing attack');
-    assert.equal(fight.debug.wins, 1, 'the native rotation finishes the lizard');
+    // T107: between fights the bot may heal where that beats sitting (gapHeals); in the fight it must not.
+    assert.equal(fight.debug.heals - fight.debug.gapHeals, 0, 'a heal weaker than damage during its cast cannot replace the finishing attack');
+    // T100: the priced pick (Aura Burn) kills fast enough for more lizards
+    // within the minute; the remaining HP still admits them. T106: the walk
+    // between the six (10 s each) and T126's kill floor (each kill also costs
+    // its killing cast) hold the minute to three kills, and the last walk
+    // engages a fourth.
+    assert.equal(fight.debug.wins, 3, 'the native rotation finishes the lizards');
     assert.equal(fight.debug.died, false);
-    assert.equal(fight.debug.attemptedFights, 1, 'remaining HP must be checked before the next voluntary mob');
-    assert.equal(fight.patch.activity, 'resting');
+    assert.equal(fight.debug.attemptedFights, 4, 'remaining HP must be checked before the next voluntary mob');
+    assert.equal(fight.patch.activity, 'hunting', 'quick kills leave enough HP to keep hunting');
 } finally { Cold.profileFor = savedProfile; Cold.fightProfile = savedFight; Spots.cache = savedSpots; }
 
 // A wealthy reward forecast or a future gear target cannot admit a lethal
@@ -89,8 +100,8 @@ try {
     Cold.profileFor = Cold.fightProfile = () => mage;
     const safe = { id: 'safe-lower-farm', name: 'Mandragora field', minLevel: 25, maxLevel: 25,
         avgLevel: 25, density: 6, npcEntries: [{ selfId: 156, count: 6 }] };
-    const unsafe = { id: 'unsafe-level-farm', name: 'Patin field', minLevel: 29, maxLevel: 29,
-        avgLevel: 29, density: 6, npcEntries: [{ selfId: 608, count: 6 }] };
+    const unsafe = { id: 'unsafe-level-farm', name: 'Spartoi field', minLevel: 29, maxLevel: 29,
+        avgLevel: 29, density: 6, npcEntries: [{ selfId: 1142, count: 6 }] };
     Spots.cache = [safe, unsafe];
     const Route = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
     for (const clanLevel of [0, 1]) for (const grade of ['d', 'c', 'b', 'a', 's']) {
@@ -98,7 +109,7 @@ try {
             clanId: clanLevel ? 7 : 0, clanLevel, inventory: {},
             vitals: { hp: mage.maxHp, mp: mage.maxMp }, stats: { classId: 12, role: 'mage',
                 wishFocus: ['power:200:14', 1, 1000000], equipmentPlan: { status: 'active',
-                    strategy: 'direct_drop', grade, next: { spotId: unsafe.id, npcId: 608 } } } };
+                    strategy: 'direct_drop', grade, next: { spotId: unsafe.id, npcId: 1142 } } } };
         for (let sample = 0; sample < 3; sample++) for (const spot of Spots.cache) {
             hunter.stats.huntEfficiency = Efficiency.record(hunter, { spotId: spot.id, timestamp: at,
                 cycleMs: 60000, adena: spot === unsafe ? 100000 : 1000, costs: 100,
@@ -115,10 +126,10 @@ const bow = { role: 'archer', pAtk: 100, pDef: 100, maxHp: 1000, atkSpd: 300,
     weaponMask: 32, equipment: { weaponKind: 'Weapon.Bow' }, skills: [] };
 const resistedTarget = { ...target, vulnerabilities: { bowWpnVuln: 0.1 } };
 const bowRatio = Match.soloSurvival([bow], resistedTarget).survivalRatio;
-const safeBow = { ...bow, maxHp: bow.maxHp * 1.6 / bowRatio };
+const safeBow = { ...bow, maxHp: bow.maxHp * 1.1 * Match.SOLO_GATE_MARGIN / bowRatio };
 assert(!Match.evaluate([safeBow], resistedTarget).eligible, 'fixture: the ordinary resistance gate rejects efficiency 0.1');
 assert(Match.soloCanHunt([safeBow], resistedTarget).eligible, 'solo hunting accepts a resisted mob it safely survives');
-assert(!Match.soloCanHunt([{ ...safeBow, maxHp: safeBow.maxHp * 1.2 / 1.6 }], resistedTarget).eligible);
+assert(!Match.soloCanHunt([{ ...safeBow, maxHp: safeBow.maxHp * 0.8 / 1.1 }], resistedTarget).eligible);
 assert(!Match.soloCanHunt([safeBow], resistedTarget, { maxTargetLevel: 27, npcLevel: 29 }).eligible);
 assert.equal(Match.soloCanHunt([safeBow], resistedTarget, { maxTargetLevel: 27, npcLevel: 29 }).reason, 'recovery_level');
 assert(!Match.soloCanHunt([{ ...safeBow, maxHp: undefined }], resistedTarget).eligible,
@@ -173,7 +184,7 @@ const spot = (id, npcId, level, density) => ({ id, name: id, minLevel: level, ma
     density, tags: [], tagsAuthoritative: true, center: { locX: 50000, locY: 150000, locZ: -3000 },
     npcEntries: [{ selfId: npcId, count: density }], levelCounts: { [level]: density } });
 const easy = spot('easy', 156, 25, 8);
-const hard = spot('danger', 608, 29, 1000);
+const hard = spot('danger', 1142, 29, 1000);
 const original = Spots.cache;
 try {
     Spots.cache = [hard, easy];
@@ -220,7 +231,7 @@ try {
     assert.strictEqual(recover.materialize.exp, 0);
     assert(recover.nextResolveAt > at && recover.events.some(event => event.type === 'rest'));
     const inCombat = { ...hurt, stats: { ...hurt.stats, pveEncounter: Encounter.save(null,
-        Encounter.key([hurt], easy, 0), Cold.npcForSpot(), 1, at, { botReadyAt: 0, mobReadyAt: 10000 }) } };
+        Encounter.key([hurt], easy), Cold.npcForSpot(), 1, at, { botReadyAt: 0, mobReadyAt: 10000 }) } };
     const continued = Resolver.resolveSolo({ state: inCombat, spot: easy, elapsedMs: 0, timestamp: at, rng: () => 0.5 });
     assert(continued.debug.attemptedFights > 0, 'a pending fight cannot disappear into pre-fight recovery');
     Cold.npcForSpot = () => ({ ...target, level: 25, selfId: 156, aggressiveInterruption: true,

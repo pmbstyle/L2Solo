@@ -11,7 +11,7 @@ const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const HuntEfficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
-const { gradeForLevel } = invoke('GameServer/Bot/AI/GearGradeRule');
+const { GRADES: RANKS, rankOf: rankIndex, gradeForLevel } = invoke('GameServer/Bot/AI/GearGradeRule');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
 // Common materials have hundreds of sources. Retain only their sorted index
@@ -48,7 +48,6 @@ const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
 
-const RANKS = ['none', 'd', 'c', 'b', 'a', 's'];
 const { equipmentSlotKey, equipmentReplacementConflict } = BotEquipmentCompatibility;
 const ARMOR_SLOTS = new Set([6, 9, 10, 11, 12, 15]);
 const JEWEL_SLOTS = new Set([1, 2, 3, 4, 5]);
@@ -101,22 +100,16 @@ function isRealCatalogItem(item = {}) {
     // Catalog classification wins over old inventory/worker projections.
     if (item.template?.kind === 'Other.Quest'
         || catalogItem(selfId)?.template?.kind === 'Other.Quest') return false;
-    const name = String(item.template?.name || '').trim();
-    // A loaded row is not automatically a usable game item.  The datapack has
-    // legacy placeholder rows (for example, the D-grade weapon named "0").
-    // Do not let an anonymous or malformed catalog record become a bot goal,
-    // party-loot candidate, or equipped item just because its combat stats are
-    // otherwise present.
-    return Number.isInteger(selfId) && selfId > 0
-        && name.length > 0
-        && name !== '0'
-        && !/^_+$/.test(name);
+    // A loaded row is not automatically a usable game item: an anonymous
+    // placeholder (BotGear.isNamedItem) never becomes a bot goal, party-loot
+    // candidate, or equipped item just because its combat stats are present.
+    return Number.isInteger(selfId) && selfId > 0 && BotGear.isNamedItem({ template: { name: item.template?.name } });
 }
 
 function roleFor(state = {}) {
     if (BotRoles.isSpoiler(state)) return 'spoiler';
     return state.party?.role || state.stats?.role || BotRoles.inferRole({
-        fetchClassId: () => Number(state.stats?.classId || state.classId || 0)
+        classId: Number(state.stats?.classId || state.classId || 0), characterId: state.characterId
     }) || 'dps';
 }
 
@@ -203,11 +196,6 @@ function itemScore(item, role, classId) {
     if (BotEquipmentCompatibility.isWeaponSlot(slot)) return BotWeaponCompatibility.scoreWeapon(stats.pAtk, stats.mAtk, role, classId);
     if (JEWEL_SLOTS.has(slot)) return Number(stats.mDef || 0);
     return Number(stats.pDef || 0) + Number(item.etc?.mp || 0);
-}
-
-function rankIndex(rank) {
-    const index = RANKS.indexOf(String(rank || 'none').toLowerCase());
-    return index < 0 ? 0 : index;
 }
 
 function recoveryWake(state = {}) {

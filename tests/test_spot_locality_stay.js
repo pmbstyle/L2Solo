@@ -8,15 +8,15 @@ Data.init();
 
 // A level 6 orc mystic on its starter fists (no attack spell before level 7):
 // it survives level 1-2 keltirs, not the level 3-4 mobs mixed into the orc
-// starter fields (live numbers 2026-10-03: survival 1.21 and 0.89 against 1.5).
+// starter fields (survival 1.75 and 0.93 against the gate's 1.0, T132).
 const at = 1800000000000;
-const mystic = { classId: 49, level: 6, role: 'buffer', maxHp: 194, maxMp: 150,
+const mystic = { classId: 49, level: 6, role: 'buffer', maxHp: 140, maxMp: 150,
     pDef: 56, pAtk: 6, mAtk: 6, castSpd: 333, atkSpd: 325, weaponMask: 0,
     equipment: { weaponKind: 'Weapon.DualFist' }, skills: [] };
 const state = { characterId: 990108, level: 6, exp: Number(Data.experience[5]) + 1000, sp: 0, adena: 0,
     phase: 'cold', activity: 'hunting', spotId: 'dwarf-keltir', inventory: {}, timing: {},
     loc: { locX: 109648, locY: -174646, locZ: -391 },
-    vitals: { hp: 194, maxHp: 194, mp: 150, maxMp: 150 },
+    vitals: { hp: 140, maxHp: 140, mp: 150, maxMp: 150 },
     stats: { classId: 49, classProgressionClassId: 49, classProgressionLevel: 6, deaths: 0,
         starterRegion: 'orc', populationWave: 8 } };
 const BEARDED_KELTIR = 12082; // level 1
@@ -29,12 +29,13 @@ const spot = (id, center, entries) => ({ id, name: id,
     npcEntries: entries.map(([selfId, count]) => ({ selfId, count })),
     levelCounts: Object.fromEntries(entries.map(([, count, level]) => [level, count])) });
 // Two keltir fields in other races' regions, two orc fields: one with wolves
-// (fails survival), one with keltirs only (passes). Level 1-2 mobs keep the
-// fields inside the level 6 search window (max mob level >= level - 4).
-const dwarf = spot('dwarf-keltir', { locX: 109648, locY: -174646 }, [[BEARDED_KELTIR, 20, 1], [LONGTAIL_KELTIR, 2, 2]]);
-const darkElf = spot('dark-elf-keltir', { locX: 29715, locY: 7844 }, [[BEARDED_KELTIR, 16, 1], [LONGTAIL_KELTIR, 2, 2]]);
+// (fails survival), one with keltirs only (passes). Level 1-2 mobs half and
+// half keep the fields inside the level 6 search window (their level mix,
+// mean plus spread, reaches level - 4: SpotService.levelMix, T123).
+const dwarf = spot('dwarf-keltir', { locX: 109648, locY: -174646 }, [[BEARDED_KELTIR, 11, 1], [LONGTAIL_KELTIR, 11, 2]]);
+const darkElf = spot('dark-elf-keltir', { locX: 29715, locY: 7844 }, [[BEARDED_KELTIR, 9, 1], [LONGTAIL_KELTIR, 9, 2]]);
 const orcWolves = spot('orc-wolves', { locX: -49570, locY: -115635 }, [[BEARDED_KELTIR, 6, 1], [KASHA_WOLF, 10, 4]]);
-const orcKeltir = spot('orc-keltir', { locX: -52000, locY: -112000 }, [[BEARDED_KELTIR, 12, 1], [LONGTAIL_KELTIR, 2, 2]]);
+const orcKeltir = spot('orc-keltir', { locX: -52000, locY: -112000 }, [[BEARDED_KELTIR, 7, 1], [LONGTAIL_KELTIR, 7, 2]]);
 const options = { matchupProfiles: [mystic], timestamp: at };
 const target = Routes.targetLevelForState(state, options);
 

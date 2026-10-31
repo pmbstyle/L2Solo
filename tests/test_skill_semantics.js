@@ -166,7 +166,7 @@ assert.strictEqual(buffCaster.spiritshotLoaded, false,
     { id: 45, name: 'Divine Heal', levels: 9, target: 'self', lastPower: 219, lastMp: 107, healLevel: 9 },
     { id: 58, name: 'Elemental Heal', levels: 55, target: 'self', lastPower: 546, lastMp: 239, healLevel: 55 },
     { id: 69, name: 'Sacrifice', levels: 25, target: 'friendly', lastPower: 1170, lastMp: 0, lastHp: 1560, healLevel: 25 },
-    { id: 262, name: 'Holy Blessing', levels: 37, target: 'friendly', lastPower: 546, lastMp: 191, healLevel: 37 },
+    { id: 262, name: 'Holy Blessing', levels: 37, target: 'friendly', lastPower: 546, lastMp: 239, healLevel: 37 },
     { id: 1027, name: 'Group Heal', levels: 15, target: 'party', lastPower: 241, lastMp: 103, healLevel: 15 },
     { id: 1127, name: 'Servitor Heal', levels: 45, target: 'pet', lastPower: 936, lastMp: 120, healLevel: 45 },
     { id: 4080, name: 'Dark Heal', levels: 1, target: 'friendly', lastPower: 627, lastMp: 98, healLevel: 1 },
@@ -451,7 +451,7 @@ assert.strictEqual(resurrectionData.time.reuse, 120000, 'Resurrection should pre
 assert.strictEqual(resurrectionData.levels.length, 9, 'Resurrection should preserve sourced 9 base levels');
 assert.strictEqual(resurrectionData.levels[0].power, 0, 'Resurrection level 1 should preserve sourced resurrect power 0');
 assert.strictEqual(resurrectionData.levels[8].power, 70, 'Resurrection level 9 should preserve sourced resurrect power 70');
-assert.strictEqual(resurrectionData.levels[8].mp, 191, 'Resurrection level 9 MP should use sourced mpConsume 191');
+assert.strictEqual(resurrectionData.levels[8].mp, 239, 'Resurrection level 9 MP should be the C4 total 239 (initial + consume)');
 const resurrection = skill({ selfId: 1016, name: 'Resurrection', spell: true, power: 70, level: 9, distance: 400 });
 assert.strictEqual(resurrection.fetchSkillType(), C4SkillRules.RESURRECT, 'Resurrection should resolve as sourced RESURRECT semantics');
 assert.strictEqual(resurrection.fetchTargetKind(), 'corpse_player', 'Resurrection should preserve sourced TARGET_CORPSE_PLAYER semantics');
@@ -468,9 +468,9 @@ assert.strictEqual(massResurrectionData.time.hitTime, 10000, 'Mass Resurrection 
 assert.strictEqual(massResurrectionData.time.reuse, 600000, 'Mass Resurrection should preserve sourced reuseDelay 600000');
 assert.strictEqual(massResurrectionData.levels.length, 6, 'Mass Resurrection should preserve sourced 6 base levels');
 assert.strictEqual(massResurrectionData.levels[0].power, 0, 'Mass Resurrection level 1 should preserve sourced resurrect power 0');
-assert.strictEqual(massResurrectionData.levels[0].mp, 194, 'Mass Resurrection level 1 MP should use sourced mpConsume 194');
+assert.strictEqual(massResurrectionData.levels[0].mp, 243, 'Mass Resurrection level 1 MP should be the C4 total 243 (initial + consume)');
 assert.strictEqual(massResurrectionData.levels[5].power, 55, 'Mass Resurrection level 6 should preserve sourced resurrect power 55');
-assert.strictEqual(massResurrectionData.levels[5].mp, 353, 'Mass Resurrection level 6 MP should use sourced mpConsume 353');
+assert.strictEqual(massResurrectionData.levels[5].mp, 442, 'Mass Resurrection level 6 MP should be the C4 total 442 (initial + consume)');
 const massResurrection = skill({ selfId: 1254, name: 'Mass Resurrection', spell: true, power: 55, level: 6, distance: -1 });
 assert.strictEqual(massResurrection.fetchSkillType(), C4SkillRules.RESURRECT, 'Mass Resurrection should resolve as sourced RESURRECT semantics');
 assert.strictEqual(massResurrection.fetchTargetKind(), 'corpse_ally', 'Mass Resurrection should preserve sourced TARGET_CORPSE_ALLY semantics');
@@ -486,8 +486,8 @@ assert.strictEqual(returnData.template.distance, -1, 'Return should preserve sou
 assert.strictEqual(returnData.time.hitTime, 20000, 'Return should preserve sourced level 1 hitTime 20000 in active data');
 assert.strictEqual(returnData.time.reuse, 300000, 'Return should preserve sourced reuseDelay 300000');
 assert.strictEqual(returnData.levels.length, 2, 'Return should preserve sourced 2 base levels');
-assert.strictEqual(returnData.levels[0].mp, 84, 'Return level 1 MP should use sourced mpConsume 84');
-assert.strictEqual(returnData.levels[1].mp, 122, 'Return level 2 MP should use sourced mpConsume 122');
+assert.strictEqual(returnData.levels[0].mp, 105, 'Return level 1 MP should be the C4 total 105 (initial + consume)');
+assert.strictEqual(returnData.levels[1].mp, 153, 'Return level 2 MP should be the C4 total 153 (initial + consume)');
 const returnSkill = skill({ selfId: 1050, name: 'Return', spell: true, power: 1, level: 2, distance: -1 });
 assert.strictEqual(returnSkill.fetchSkillType(), C4SkillRules.RECALL, 'Return should resolve as sourced RECALL semantics');
 assert.strictEqual(returnSkill.fetchTargetKind(), 'self', 'Return should preserve sourced TARGET_SELF semantics');
@@ -501,8 +501,8 @@ assert.strictEqual(partyRecallData.template.distance, -1, 'Party Recall should p
 assert.strictEqual(partyRecallData.time.hitTime, 20000, 'Party Recall should preserve sourced level 1 hitTime 20000 in active data');
 assert.strictEqual(partyRecallData.time.reuse, 600000, 'Party Recall should preserve sourced reuseDelay 600000');
 assert.strictEqual(partyRecallData.levels.length, 2, 'Party Recall should preserve sourced 2 base levels');
-assert.strictEqual(partyRecallData.levels[0].mp, 205, 'Party Recall level 1 MP should use sourced mpConsume 205');
-assert.strictEqual(partyRecallData.levels[1].mp, 244, 'Party Recall level 2 MP should use sourced mpConsume 244');
+assert.strictEqual(partyRecallData.levels[0].mp, 257, 'Party Recall level 1 MP should be the C4 total 257 (initial + consume)');
+assert.strictEqual(partyRecallData.levels[1].mp, 305, 'Party Recall level 2 MP should be the C4 total 305 (initial + consume)');
 const partyRecall = skill({ selfId: 1255, name: 'Party Recall', spell: true, power: 1, level: 2, distance: -1 });
 assert.strictEqual(partyRecall.fetchSkillType(), C4SkillRules.RECALL, 'Party Recall should resolve as sourced RECALL semantics');
 assert.strictEqual(partyRecall.fetchTargetKind(), 'party', 'Party Recall should preserve sourced TARGET_PARTY semantics');
@@ -1213,7 +1213,7 @@ assert.strictEqual(peaceData.time.buff, 0, 'Peace should not invent a debuff dur
 assert.strictEqual(peaceData.levels.length, 15, 'Peace should preserve sourced 15 base levels');
 assert.strictEqual(peaceData.levels[0].power, 30, 'Peace level 1 should preserve sourced AGGREMOVE power 30');
 assert.strictEqual(peaceData.levels[14].power, 80, 'Peace level 15 should preserve sourced AGGREMOVE power 80');
-assert.strictEqual(peaceData.levels[14].mp, 55, 'Peace level 15 MP should use sourced mpConsume 55');
+assert.strictEqual(peaceData.levels[14].mp, 69, 'Peace level 15 MP should be the C4 total 69 (initial + consume)');
 const peace = skill({ selfId: 1075, name: 'Peace', spell: true, power: 80, level: 15, distance: 600 });
 const peaceOutcome = SkillEffects.execute(session(), caster, creature({ id: 1001075, hp: 100, maxHp: 100, level: 20, mDef: 50 }), peace, {
     magicSkill: true,
@@ -4227,7 +4227,7 @@ assert.strictEqual(summonQueenCatData.summon.expPenalty, 0.05, 'Summon Queen of 
 assert.strictEqual(summonQueenCatData.summon.itemConsumeSteps, 4, 'Summon Queen of Cat should preserve sourced summon crystal consume step mode');
 assert.strictEqual(summonQueenCatData.levels.length, 10, 'Summon Queen of Cat should preserve sourced 10 base levels');
 assert.strictEqual(summonQueenCatData.levels[0].mp, 70, 'Summon Queen of Cat level 1 MP should use sourced initial + consume total');
-assert.strictEqual(summonQueenCatData.levels[1].mp, 108, 'Summon Queen of Cat level 2 MP should preserve sourced initial + consume total');
+assert.strictEqual(summonQueenCatData.levels[1].mp, 78, 'Summon Queen of Cat level 2 MP is the l2hub C4 78 (Lisvus 108)');
 assert.strictEqual(summonQueenCatData.levels[0].itemId, 1459, 'Summon Queen of Cat should preserve sourced crystal item id');
 assert.strictEqual(summonQueenCatData.levels[0].itemCountOT, 1, 'Summon Queen of Cat level 1 should preserve sourced ongoing crystal count');
 assert.strictEqual(summonQueenCatData.levels[0].npcId, 13137, 'Summon Queen of Cat level 1 should preserve sourced npcId');
@@ -4248,7 +4248,7 @@ assert.strictEqual(summonSeraphimData.summon.expPenalty, 0.05, 'Summon Unicorn S
 assert.strictEqual(summonSeraphimData.summon.itemConsumeSteps, 4, 'Summon Unicorn Seraphim should preserve sourced summon crystal consume step mode');
 assert.strictEqual(summonSeraphimData.levels.length, 10, 'Summon Unicorn Seraphim should preserve sourced 10 base levels');
 assert.strictEqual(summonSeraphimData.levels[0].mp, 70, 'Summon Unicorn Seraphim level 1 MP should use sourced initial + consume total');
-assert.strictEqual(summonSeraphimData.levels[1].mp, 108, 'Summon Unicorn Seraphim level 2 MP should preserve sourced initial + consume total');
+assert.strictEqual(summonSeraphimData.levels[1].mp, 78, 'Summon Unicorn Seraphim level 2 MP is the l2hub C4 78 (Lisvus 108)');
 assert.strictEqual(summonSeraphimData.levels[0].itemId, 1459, 'Summon Unicorn Seraphim should preserve sourced crystal item id');
 assert.strictEqual(summonSeraphimData.levels[0].itemCountOT, 1, 'Summon Unicorn Seraphim level 1 should preserve sourced ongoing crystal count');
 assert.strictEqual(summonSeraphimData.levels[0].npcId, 13151, 'Summon Unicorn Seraphim level 1 should preserve sourced npcId');
@@ -4269,7 +4269,7 @@ assert.strictEqual(summonNightshadeData.summon.expPenalty, 0.05, 'Summon Nightsh
 assert.strictEqual(summonNightshadeData.summon.itemConsumeSteps, 4, 'Summon Nightshade should preserve sourced summon crystal consume step mode');
 assert.strictEqual(summonNightshadeData.levels.length, 10, 'Summon Nightshade should preserve sourced 10 base levels');
 assert.strictEqual(summonNightshadeData.levels[0].mp, 70, 'Summon Nightshade level 1 MP should use sourced initial + consume total');
-assert.strictEqual(summonNightshadeData.levels[1].mp, 108, 'Summon Nightshade level 2 MP should preserve sourced initial + consume total');
+assert.strictEqual(summonNightshadeData.levels[1].mp, 78, 'Summon Nightshade level 2 MP is the l2hub C4 78 (Lisvus 108)');
 assert.strictEqual(summonNightshadeData.levels[0].itemId, 1459, 'Summon Nightshade should preserve sourced crystal item id');
 assert.strictEqual(summonNightshadeData.levels[0].itemCountOT, 1, 'Summon Nightshade level 1 should preserve sourced ongoing crystal count');
 assert.strictEqual(summonNightshadeData.levels[0].npcId, 13165, 'Summon Nightshade level 1 should preserve sourced npcId');
@@ -4590,8 +4590,8 @@ assert.strictEqual(fearData.time.hitTime, 4000, 'Fear should preserve sourced hi
 assert.strictEqual(fearData.time.reuse, 20000, 'Fear should preserve sourced reuseDelay 20000');
 assert.strictEqual(fearData.time.buff, 30000, 'Fear should preserve sourced 5x6s Fear duration');
 assert.strictEqual(fearData.levels.length, 19, 'Fear should preserve sourced 19 base levels');
-assert.strictEqual(fearData.levels[0].mp, 12, 'Fear level 1 MP should use sourced mpConsume 12');
-assert.strictEqual(fearData.levels[18].mp, 55, 'Fear level 19 MP should use sourced mpConsume 55');
+assert.strictEqual(fearData.levels[0].mp, 15, 'Fear level 1 MP should be the C4 total 15 (initial + consume)');
+assert.strictEqual(fearData.levels[18].mp, 69, 'Fear level 19 MP should be the C4 total 69 (initial + consume)');
 const fear = skill({ selfId: 1092, name: 'Fear', spell: true, power: 1, level: 19, distance: 600, buff: 30000 });
 const classFearTarget = statActor();
 const classFearOutcome = SkillEffects.execute(session(), caster, classFearTarget, fear, {
@@ -4618,7 +4618,7 @@ assert.strictEqual(venomData.time.buff, 30000, 'Venom should preserve sourced 10
 assert.strictEqual(venomData.levels.length, 5, 'Venom should preserve sourced 5 base levels');
 assert.strictEqual(venomData.levels[0].power, 1, 'Venom level 1 should preserve sourced POISON power 1');
 assert.strictEqual(venomData.levels[4].power, 6, 'Venom level 5 should preserve sourced POISON power 6');
-assert.strictEqual(venomData.levels[4].mp, 38, 'Venom level 5 MP should use sourced mpConsume 38');
+assert.strictEqual(venomData.levels[4].mp, 48, 'Venom level 5 MP should be the C4 total 48 (initial + consume)');
 const venom = skill({ selfId: 1095, name: 'Venom', spell: true, power: 6, level: 5, distance: 600, buff: 30000 });
 const venomTarget = statActor();
 const venomOutcome = SkillEffects.execute(session(), caster, venomTarget, venom, {
@@ -4747,9 +4747,9 @@ assert.strictEqual(corpseBurstData.time.reuse, 20000, 'Corpse Burst should prese
 assert.strictEqual(corpseBurstData.time.buff, 0, 'Corpse Burst should not use a debuff duration');
 assert.strictEqual(corpseBurstData.levels.length, 15, 'Corpse Burst should preserve sourced 15 base levels');
 assert.strictEqual(corpseBurstData.levels[0].power, 31, 'Corpse Burst level 1 should preserve sourced power 31');
-assert.strictEqual(corpseBurstData.levels[0].mp, 33, 'Corpse Burst level 1 MP should use sourced mpConsume 33');
+assert.strictEqual(corpseBurstData.levels[0].mp, 42, 'Corpse Burst level 1 MP should be the C4 total 42 (initial + consume)');
 assert.strictEqual(corpseBurstData.levels[14].power, 54, 'Corpse Burst level 15 should preserve sourced power 54');
-assert.strictEqual(corpseBurstData.levels[14].mp, 55, 'Corpse Burst level 15 MP should use sourced mpConsume 55');
+assert.strictEqual(corpseBurstData.levels[14].mp, 69, 'Corpse Burst level 15 MP should be the C4 total 69 (initial + consume)');
 const corpseBurstTarget = creature({ id: 2001155, hp: 0, maxHp: 100, dead: true });
 corpseBurstTarget.fetchAttackable = () => true;
 const corpseBurst = skill({ selfId: 1155, name: 'Corpse Burst', spell: true, power: 54, level: 15, distance: 400 });
@@ -4782,9 +4782,9 @@ assert.strictEqual(forgetData.time.reuse, 20000, 'Forget should preserve sourced
 assert.strictEqual(forgetData.time.buff, 0, 'Forget should not use a debuff duration');
 assert.strictEqual(forgetData.levels.length, 13, 'Forget should preserve sourced 13 base levels');
 assert.strictEqual(forgetData.levels[0].power, 50, 'Forget level 1 should preserve sourced AGGREDUCE_CHAR power 50');
-assert.strictEqual(forgetData.levels[0].mp, 31, 'Forget level 1 MP should use sourced mpConsume 31');
+assert.strictEqual(forgetData.levels[0].mp, 39, 'Forget level 1 MP should be the C4 total 39 (initial + consume)');
 assert.strictEqual(forgetData.levels[12].power, 50, 'Forget level 13 should preserve sourced AGGREDUCE_CHAR power 50');
-assert.strictEqual(forgetData.levels[12].mp, 55, 'Forget level 13 MP should use sourced mpConsume 55');
+assert.strictEqual(forgetData.levels[12].mp, 69, 'Forget level 13 MP should be the C4 total 69 (initial + consume)');
 const forgetTarget = creature({ id: 2001156, hp: 100, maxHp: 100, level: 20 });
 const forget = skill({ selfId: 1156, name: 'Forget', spell: true, power: 50, level: 13, distance: 400 });
 const forgetOutcome = SkillEffects.execute(session(), caster, forgetTarget, forget, {
@@ -5043,9 +5043,9 @@ assert.strictEqual(prominenceData.time.reuse, 6000, 'Prominence should preserve 
 assert.strictEqual(prominenceData.time.buff, 0, 'Prominence should not use a debuff duration');
 assert.strictEqual(prominenceData.levels.length, 28, 'Prominence should preserve sourced 28 base levels');
 assert.strictEqual(prominenceData.levels[0].power, 49, 'Prominence level 1 should preserve sourced power 49');
-assert.strictEqual(prominenceData.levels[0].mp, 27, 'Prominence level 1 MP should use sourced mpConsume 27');
+assert.strictEqual(prominenceData.levels[0].mp, 34, 'Prominence level 1 MP should be the C4 total 34 (initial + consume)');
 assert.strictEqual(prominenceData.levels[27].power, 108, 'Prominence level 28 should preserve sourced power 108');
-assert.strictEqual(prominenceData.levels[27].mp, 55, 'Prominence level 28 MP should use sourced mpConsume 55');
+assert.strictEqual(prominenceData.levels[27].mp, 69, 'Prominence level 28 MP should be the C4 total 69 (initial + consume)');
 const prominence = skill({ selfId: 1230, name: 'Prominence', spell: true, power: 108, level: 28, distance: 900 });
 const prominenceOutcome = SkillEffects.execute(session(), caster, creature({ id: 2001230 }), prominence, {
     magicSkill: true,
@@ -5073,9 +5073,9 @@ assert.strictEqual(hydroBlastData.time.reuse, 6000, 'Hydro Blast should preserve
 assert.strictEqual(hydroBlastData.time.buff, 0, 'Hydro Blast should not use a debuff duration');
 assert.strictEqual(hydroBlastData.levels.length, 28, 'Hydro Blast should preserve sourced 28 base levels');
 assert.strictEqual(hydroBlastData.levels[0].power, 49, 'Hydro Blast level 1 should preserve sourced power 49');
-assert.strictEqual(hydroBlastData.levels[0].mp, 27, 'Hydro Blast level 1 MP should use sourced mpConsume 27');
+assert.strictEqual(hydroBlastData.levels[0].mp, 34, 'Hydro Blast level 1 MP should be the C4 total 34 (initial + consume)');
 assert.strictEqual(hydroBlastData.levels[27].power, 108, 'Hydro Blast level 28 should preserve sourced power 108');
-assert.strictEqual(hydroBlastData.levels[27].mp, 55, 'Hydro Blast level 28 MP should use sourced mpConsume 55');
+assert.strictEqual(hydroBlastData.levels[27].mp, 69, 'Hydro Blast level 28 MP should be the C4 total 69 (initial + consume)');
 const hydroBlast = skill({ selfId: 1235, name: 'Hydro Blast', spell: true, power: 108, level: 28, distance: 900 });
 const hydroBlastOutcome = SkillEffects.execute(session(), caster, creature({ id: 2001235 }), hydroBlast, {
     magicSkill: true,
@@ -5103,9 +5103,9 @@ assert.strictEqual(frostBoltData.time.reuse, 8000, 'Frost Bolt should preserve s
 assert.strictEqual(frostBoltData.time.buff, 120000, 'Frost Bolt should preserve sourced 120 second RunSpeedDown duration');
 assert.strictEqual(frostBoltData.levels.length, 19, 'Frost Bolt should preserve sourced 19 base levels');
 assert.strictEqual(frostBoltData.levels[0].power, 30, 'Frost Bolt level 1 should preserve sourced MDAM power 30');
-assert.strictEqual(frostBoltData.levels[0].mp, 27, 'Frost Bolt level 1 MP should use sourced mpConsume 27');
+assert.strictEqual(frostBoltData.levels[0].mp, 34, 'Frost Bolt level 1 MP should be the C4 total 34 (initial + consume)');
 assert.strictEqual(frostBoltData.levels[18].power, 65, 'Frost Bolt level 19 should preserve sourced MDAM power 65');
-assert.strictEqual(frostBoltData.levels[18].mp, 55, 'Frost Bolt level 19 MP should use sourced mpConsume 55');
+assert.strictEqual(frostBoltData.levels[18].mp, 69, 'Frost Bolt level 19 MP should be the C4 total 69 (initial + consume)');
 const frostBoltTarget = statActor();
 const frostBolt = skill({ selfId: 1236, name: 'Frost Bolt', spell: true, power: 65, level: 19, distance: 900, buff: 120000 });
 const frostBoltOutcome = SkillEffects.execute(session(), caster, frostBoltTarget, frostBolt, {
@@ -5138,9 +5138,9 @@ assert.strictEqual(iceDaggerData.time.reuse, 8000, 'Ice Dagger should preserve s
 assert.strictEqual(iceDaggerData.time.buff, 20000, 'Ice Dagger should preserve sourced 4x5s bleed duration');
 assert.strictEqual(iceDaggerData.levels.length, 17, 'Ice Dagger should preserve sourced 17 base levels');
 assert.strictEqual(iceDaggerData.levels[0].power, 28, 'Ice Dagger level 1 should preserve sourced MDAM power 28');
-assert.strictEqual(iceDaggerData.levels[0].mp, 30, 'Ice Dagger level 1 MP should use sourced mpConsume 30');
+assert.strictEqual(iceDaggerData.levels[0].mp, 38, 'Ice Dagger level 1 MP should be the C4 total 38 (initial + consume)');
 assert.strictEqual(iceDaggerData.levels[16].power, 54, 'Ice Dagger level 17 should preserve sourced MDAM power 54');
-assert.strictEqual(iceDaggerData.levels[16].mp, 57, 'Ice Dagger level 17 MP should use sourced mpConsume 57');
+assert.strictEqual(iceDaggerData.levels[16].mp, 72, 'Ice Dagger level 17 MP should be the C4 total 72 (initial + consume)');
 const iceDaggerTarget = statActor();
 const iceDagger = skill({ selfId: 1237, name: 'Ice Dagger', spell: true, power: 54, level: 17, distance: 900, buff: 20000 });
 const iceDaggerOutcome = SkillEffects.execute(session(), caster, iceDaggerTarget, iceDagger, {
@@ -5175,9 +5175,9 @@ assert.strictEqual(auraFlareData.time.reuse, 2500, 'Aura Flare should preserve s
 assert.strictEqual(auraFlareData.time.buff, 3000, 'Aura Flare should preserve sourced self-debuff duration');
 assert.strictEqual(auraFlareData.levels.length, 28, 'Aura Flare should preserve sourced 28 base levels');
 assert.strictEqual(auraFlareData.levels[0].power, 39, 'Aura Flare level 1 should preserve sourced power 39');
-assert.strictEqual(auraFlareData.levels[0].mp, 27, 'Aura Flare level 1 MP should use sourced mpConsume 27');
+assert.strictEqual(auraFlareData.levels[0].mp, 34, 'Aura Flare level 1 MP should be the C4 total 34 (initial + consume)');
 assert.strictEqual(auraFlareData.levels[27].power, 87, 'Aura Flare level 28 should preserve sourced power 87');
-assert.strictEqual(auraFlareData.levels[27].mp, 55, 'Aura Flare level 28 MP should use sourced mpConsume 55');
+assert.strictEqual(auraFlareData.levels[27].mp, 69, 'Aura Flare level 28 MP should be the C4 total 69 (initial + consume)');
 const auraFlareCaster = creature({ id: 2001231 });
 const auraFlare = skill({ selfId: 1231, name: 'Aura Flare', spell: true, power: 87, level: 28, distance: 150, buff: 3000 });
 const auraFlareOutcome = SkillEffects.execute(session(), auraFlareCaster, creature({ id: 2001232 }), auraFlare, {
@@ -5211,9 +5211,9 @@ assert.strictEqual(blazingSkinData.time.reuse, 6000, 'Blazing Skin should preser
 assert.strictEqual(blazingSkinData.time.buff, 1200000, 'Blazing Skin should preserve sourced 1200 second duration');
 assert.strictEqual(blazingSkinData.levels.length, 3, 'Blazing Skin should preserve sourced 3 base levels');
 assert.strictEqual(blazingSkinData.levels[0].power, 10, 'Blazing Skin level 1 should preserve sourced reflect power 10');
-assert.strictEqual(blazingSkinData.levels[0].mp, 28, 'Blazing Skin level 1 MP should use sourced mpConsume 28');
+assert.strictEqual(blazingSkinData.levels[0].mp, 35, 'Blazing Skin level 1 MP should be the C4 total 35 (initial + consume)');
 assert.strictEqual(blazingSkinData.levels[2].power, 20, 'Blazing Skin level 3 should preserve sourced reflect power 20');
-assert.strictEqual(blazingSkinData.levels[2].mp, 41, 'Blazing Skin level 3 MP should use sourced mpConsume 41');
+assert.strictEqual(blazingSkinData.levels[2].mp, 52, 'Blazing Skin level 3 MP should be the C4 total 52 (initial + consume)');
 const blazingSkinTarget = statActor();
 const blazingSkin = skill({ selfId: 1232, name: 'Blazing Skin', spell: true, power: 20, level: 3, distance: 400, buff: 1200000 });
 const blazingSkinOutcome = SkillEffects.execute(session(), caster, blazingSkinTarget, blazingSkin, {
@@ -5238,9 +5238,9 @@ assert.strictEqual(freezingSkinData.time.reuse, 6000, 'Freezing Skin should pres
 assert.strictEqual(freezingSkinData.time.buff, 1200000, 'Freezing Skin should preserve sourced 1200 second duration');
 assert.strictEqual(freezingSkinData.levels.length, 3, 'Freezing Skin should preserve sourced 3 base levels');
 assert.strictEqual(freezingSkinData.levels[0].power, 10, 'Freezing Skin level 1 should preserve sourced reflect power 10');
-assert.strictEqual(freezingSkinData.levels[0].mp, 28, 'Freezing Skin level 1 MP should use sourced mpConsume 28');
+assert.strictEqual(freezingSkinData.levels[0].mp, 35, 'Freezing Skin level 1 MP should be the C4 total 35 (initial + consume)');
 assert.strictEqual(freezingSkinData.levels[2].power, 20, 'Freezing Skin level 3 should preserve sourced reflect power 20');
-assert.strictEqual(freezingSkinData.levels[2].mp, 41, 'Freezing Skin level 3 MP should use sourced mpConsume 41');
+assert.strictEqual(freezingSkinData.levels[2].mp, 52, 'Freezing Skin level 3 MP should be the C4 total 52 (initial + consume)');
 const freezingSkinTarget = statActor();
 const freezingSkin = skill({ selfId: 1238, name: 'Freezing Skin', spell: true, power: 20, level: 3, distance: 400, buff: 1200000 });
 const freezingSkinOutcome = SkillEffects.execute(session(), caster, freezingSkinTarget, freezingSkin, {
@@ -5265,9 +5265,9 @@ assert.strictEqual(hurricaneData.time.reuse, 6000, 'Hurricane should preserve so
 assert.strictEqual(hurricaneData.time.buff, 0, 'Hurricane should not use a debuff duration');
 assert.strictEqual(hurricaneData.levels.length, 28, 'Hurricane should preserve sourced 28 base levels');
 assert.strictEqual(hurricaneData.levels[0].power, 49, 'Hurricane level 1 should preserve sourced power 49');
-assert.strictEqual(hurricaneData.levels[0].mp, 27, 'Hurricane level 1 MP should use sourced mpConsume 27');
+assert.strictEqual(hurricaneData.levels[0].mp, 34, 'Hurricane level 1 MP should be the C4 total 34 (initial + consume)');
 assert.strictEqual(hurricaneData.levels[27].power, 108, 'Hurricane level 28 should preserve sourced power 108');
-assert.strictEqual(hurricaneData.levels[27].mp, 55, 'Hurricane level 28 MP should use sourced mpConsume 55');
+assert.strictEqual(hurricaneData.levels[27].mp, 69, 'Hurricane level 28 MP should be the C4 total 69 (initial + consume)');
 const hurricane = skill({ selfId: 1239, name: 'Hurricane', spell: true, power: 108, level: 28, distance: 900 });
 const hurricaneOutcome = SkillEffects.execute(session(), caster, creature({ id: 2001239 }), hurricane, {
     magicSkill: true,
@@ -5295,9 +5295,9 @@ assert.strictEqual(freezingFlameData.time.reuse, 6000, 'Freezing Flame should pr
 assert.strictEqual(freezingFlameData.time.buff, 15000, 'Freezing Flame should preserve sourced DOT duration');
 assert.strictEqual(freezingFlameData.levels.length, 4, 'Freezing Flame should preserve sourced 4 base levels');
 assert.strictEqual(freezingFlameData.levels[0].power, 70, 'Freezing Flame level 1 should preserve sourced land rate power 70');
-assert.strictEqual(freezingFlameData.levels[0].mp, 42, 'Freezing Flame level 1 MP should use sourced mpConsume 42');
+assert.strictEqual(freezingFlameData.levels[0].mp, 53, 'Freezing Flame level 1 MP should be the C4 total 53 (initial + consume)');
 assert.strictEqual(freezingFlameData.levels[3].power, 70, 'Freezing Flame level 4 should preserve sourced land rate power 70');
-assert.strictEqual(freezingFlameData.levels[3].mp, 80, 'Freezing Flame level 4 MP should use sourced mpConsume 80');
+assert.strictEqual(freezingFlameData.levels[3].mp, 100, 'Freezing Flame level 4 MP should be the C4 total 100 (initial + consume)');
 const freezingFlameTarget = statActor();
 const freezingFlame = skill({ selfId: 1244, name: 'Freezing Flame', spell: true, power: 70, level: 4, distance: 900, buff: 15000 });
 const freezingFlameOutcome = SkillEffects.execute(session(), caster, freezingFlameTarget, freezingFlame, {
@@ -5326,9 +5326,9 @@ assert.strictEqual(decayData.time.reuse, 6000, 'Decay should preserve sourced re
 assert.strictEqual(decayData.time.buff, 15000, 'Decay should preserve sourced DOT duration');
 assert.strictEqual(decayData.levels.length, 4, 'Decay should preserve sourced 4 base levels');
 assert.strictEqual(decayData.levels[0].power, 70, 'Decay level 1 should preserve sourced land rate power 70');
-assert.strictEqual(decayData.levels[0].mp, 52, 'Decay level 1 MP should use sourced mpConsume 52');
+assert.strictEqual(decayData.levels[0].mp, 65, 'Decay level 1 MP should be the C4 total 65 (initial + consume)');
 assert.strictEqual(decayData.levels[3].power, 70, 'Decay level 4 should preserve sourced land rate power 70');
-assert.strictEqual(decayData.levels[3].mp, 82, 'Decay level 4 MP should use sourced mpConsume 82');
+assert.strictEqual(decayData.levels[3].mp, 103, 'Decay level 4 MP should be the C4 total 103 (initial + consume)');
 const decayTarget = statActor();
 const decay = skill({ selfId: 1233, name: 'Decay', spell: true, power: 70, level: 4, distance: 600, buff: 15000 });
 const decayOutcome = SkillEffects.execute(session(), caster, decayTarget, decay, {
@@ -5962,7 +5962,7 @@ assert.strictEqual(npcBleedData.template.distance, 40, 'NPC Bleed should preserv
 assert.strictEqual(npcBleedData.time.buff, 30000, 'NPC Bleed should preserve sourced 10x3s duration');
 assert.strictEqual(npcBleedData.levels.length, 12, 'NPC Bleed should preserve sourced 12 levels');
 assert.strictEqual(npcBleedData.levels[11].power, 10, 'NPC Bleed level 12 should preserve sourced power 10');
-assert.strictEqual(npcBleedData.levels[11].mp, 36, 'NPC Bleed level 12 should preserve sourced mpConsume 36');
+assert.strictEqual(npcBleedData.levels[11].mp, 95, 'NPC Bleed level 12 MP is the l2hub C4 95 (Lisvus 36)');
 const npcBleed = skill({ selfId: 4088, name: 'Bleed', spell: true, power: 10, level: 12, buff: 30000, distance: 40 });
 const npcBleedTarget = statActor();
 const npcBleedOutcome = SkillEffects.execute(session(npcBleedTarget), caster, npcBleedTarget, npcBleed, {
@@ -5990,7 +5990,7 @@ assert.strictEqual(siegeHammerData.template.name, 'Siege Hammer', 'Siege Hammer 
 assert.strictEqual(siegeHammerData.time.hitTime, 4800, 'Siege Hammer should preserve sourced hitTime 4800');
 assert.strictEqual(siegeHammerData.time.reuse, 5000, 'Siege Hammer should preserve sourced reuseDelay 5000');
 assert.strictEqual(siegeHammerData.levels[0].power, 266024, 'Siege Hammer should preserve sourced PDAM power 266024');
-assert.strictEqual(siegeHammerData.levels[0].mp, 150, 'Siege Hammer should preserve sourced mpConsume 150');
+assert.strictEqual(siegeHammerData.levels[0].mp, 0, 'Siege Hammer MP is the l2hub C4 0 (Lisvus 150)');
 const siegeHammer = skill({ selfId: 4079, name: 'Siege Hammer', spell: false, power: 266024, level: 1, distance: 600 });
 const siegeHammerOutcome = SkillEffects.execute(session(), caster, statActor(), siegeHammer, {
     magicSkill: false,
@@ -6964,7 +6964,7 @@ assert.strictEqual(
 const curseDiseaseData = activeSkills.find((entry) => entry.selfId === 1269);
 assert(curseDiseaseData, 'Curse Disease should be present in active skills data');
 assert.strictEqual(curseDiseaseData.levels.length, 9, 'Curse Disease active data should preserve sourced 9 levels');
-assert.strictEqual(curseDiseaseData.levels[8].mp, 55, 'Curse Disease active data should preserve sourced level 9 MP cost');
+assert.strictEqual(curseDiseaseData.levels[8].mp, 69, 'Curse Disease active data should preserve sourced level 9 MP cost');
 const diseaseTarget = statActor();
 const curseDisease = skill({ selfId: 1269, name: 'Curse Disease', spell: true, power: 80, level: 9, buff: 120000 });
 const curseDiseaseOutcome = SkillEffects.execute(session(), caster, diseaseTarget, curseDisease, {
@@ -6983,7 +6983,7 @@ assert.strictEqual(
 const vampiricRageData = activeSkills.find((entry) => entry.selfId === 1268);
 assert(vampiricRageData, 'Vampiric Rage should be present in active skills data');
 assert.strictEqual(vampiricRageData.levels.length, 4, 'Vampiric Rage active data should preserve sourced 4 levels');
-assert.strictEqual(vampiricRageData.levels[3].mp, 53, 'Vampiric Rage active data should preserve sourced level 4 MP cost');
+assert.strictEqual(vampiricRageData.levels[3].mp, 67, 'Vampiric Rage active data should preserve sourced level 4 MP cost');
 const vampiricTarget = statActor();
 vampiricTarget.hp = 900;
 vampiricTarget.maxHp = 1000;
@@ -7227,7 +7227,7 @@ assert.strictEqual(EffectStats.multiplier(blessedSoulTarget, 'maxMpMul'), 1.25, 
 calculateStats({}, blessedSoulTarget);
 assert.strictEqual(
     blessedSoulTarget.fetchMaxMp(),
-    Formulas.calcMp(20, 0, 0, 30) * 1.25,
+    Formulas.calcMp(20, 0, 30) * 1.25,
     'Blessed Soul level 4 should apply the sourced L2J maxMp multiplier'
 );
 

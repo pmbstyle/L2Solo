@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 process.env.L2NODE_PROGRESSION_RATE = 'x50';
 require('./helpers/databaseIsolation');
 require('../src/Global');
+// The author's fixed shot merchant sells shots here (off by default since T116).
+invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = false;
 invoke('GameServer/DataCache').init({ validate: false });
 const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Policy = require('../src/GameServer/Bot/Population/OpportunisticRaidPolicy');
@@ -19,6 +21,9 @@ const pool = fixture.members.map(row => ({ ...row, accountName: `bot_${row.chara
         skills: Combat.skillSnapshotsFromRecords(row.skills.map(([selfId, level]) => ({ selfId, level }))) } },
     inventory: Object.fromEntries(row.items.map(item => [item.selfId, item])) }));
 const byId = new Map(pool.map(state => [state.characterId, state]));
+// The Prophet at 50 like the other eight: at 46 its MP no longer carries the golem's
+// heals (T106 class kits and regen); the search, not the heal, is tested.
+byId.get(2006587).level = 50;
 const ids = roster => roster.map(s => s.characterId);
 const neutral = () => ({ ready: true, disposition: 'neutral', effective: { hostility: 0 } });
 const catalog = invoke('GameServer/RaidBoss/RaidBossSourceCatalog');
@@ -87,11 +92,14 @@ async function run() {
         assert.deepEqual(LIMITS, { rosters: 8, hydratedBots: 72, forecasts: 12, socialChecks: 288, sliceMs: 2, forecastCpuMs: 12 });
     } finally { service.stop(); }
     // These bosses have identical boss-only hints. The native forecast rejects
-    // Kraven's guards but admits the golem for exactly the same frozen nine.
+    // Kraven's guards (their damage outruns the healers' mana) but admits the
+    // golem for exactly the same frozen nine.
     const kraven = catalog.findById('raid:10418'), golem = catalog.findById('raid:10431');
-    assert(Policy.assessment(planned.proposals[0], kraven, { timestamp: at, fundSupplies: true })
-        .reasons.includes('raid_tank_survival'));
-    assert(Policy.assessment(planned.proposals[0], golem, { timestamp: at, fundSupplies: true }).ready);
+    const guardedFit = Policy.assessment(planned.proposals[0], kraven, { timestamp: at, fundSupplies: true });
+    const golemFit = Policy.assessment(planned.proposals[0], golem, { timestamp: at, fundSupplies: true });
+    assert(!guardedFit.ready && guardedFit.reasons.includes('raid_healing_mana'), JSON.stringify(guardedFit.reasons));
+    assert(guardedFit.healingRequired > golemFit.healingRequired, 'the guards are what the healers cannot carry');
+    assert(golemFit.ready, JSON.stringify(golemFit.reasons));
     targets.splice(0, targets.length, kraven, golem);
     reserved = null; forecasts.length = 0;
     for (const pass of [0, 1]) {

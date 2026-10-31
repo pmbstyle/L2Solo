@@ -189,7 +189,7 @@ function roleForState(state = {}) {
     if (state.party?.role) return state.party.role;
     if (state.stats?.routeRole) return state.stats.routeRole;
     if (state.stats?.role) return state.stats.role;
-    if (classId) return BotRoles.inferRole(classId);
+    if (classId) return BotRoles.inferRole({ classId, characterId: state.characterId });
     return 'dps';
 }
 
@@ -393,7 +393,7 @@ function scoreSpot(spot, state = {}, options = {}) {
     const huntingGroundPenalty = huntingGround.allowed ? 0 : 10000;
     const variation = stableVariation(spot, state);
     const economics = (options.spotEconomics || invoke('GameServer/Bot/Economy/SpotEconomics').create(state,
-        { timestamp: options.timestamp, mode: context.mode }))(spot);
+        { timestamp: options.timestamp, mode: context.mode, members: options.capacityStates }))(spot);
     const efficiencyAdjustment = economics ? economics.valueHours * 100 : 0;
     const targetMatchup = TargetMatchup.spotMatchup(spot, TargetMatchup.stateProfiles(state, { ...options, mode: context.mode }),
         safetyOptions(state, { ...options, mode: context.mode }));
@@ -444,7 +444,7 @@ function decorateSpot(spot, match) {
 function rankedSpots(spots, state = {}, options = {}) {
     options = { ...options, matchupProfiles: TargetMatchup.stateProfiles(state, { ...options, mode: modeForState(state, options) }),
         spotEconomics: options.spotEconomics || invoke('GameServer/Bot/Economy/SpotEconomics').create(state,
-            { timestamp: options.timestamp, mode: modeForState(state, options) }) };
+            { timestamp: options.timestamp, mode: modeForState(state, options), members: options.capacityStates }) };
     return (spots || [])
         .map((spot) => {
             const match = scoreSpot(spot, state, options);

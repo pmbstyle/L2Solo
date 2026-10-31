@@ -98,7 +98,8 @@ function pureCases() {
     const Market = invoke('GameServer/Bot/Economy/MarketOpportunity'), previous = Market.bestOffer;
     try {
         Market.bestOffer = () => ({ selfId: recipe.productId, price: 100, count: 1, sourceType: 'npc', town: 'Giran', available: true });
-        const paid = { ...unstocked, adena: 1000, inventory: { 57: { selfId: 57, amount: 1000 } } };
+        // Its wallet covers the outing's survival reserve (the table's shots and potions) and the price.
+        const paid = { ...unstocked, adena: 100000, inventory: { 57: { selfId: 57, amount: 100000 } } };
         const cheaper = Demand.economicPlan(Planner.planForMember, job, paid, [], [],
             { ...nativeOptions, economicMode: 'conditional', economicRequirements: req, recipeKnowledge: [] });
         assert.equal(cheaper.strategy, 'market'); assert(!cheaper.economicTeam, 'native alternative wins without recruitment privilege');

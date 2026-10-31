@@ -13,7 +13,8 @@ const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const original = Cold.npcForSpot;
 const at = Date.now();
 const spot = { id: 'shot-consumption', name: 'Shot check', minLevel: 12, maxLevel: 12, avgLevel: 12,
-    density: 1, rewards: { exp: 1000, sp: 10, adenaMin: 1, adenaMax: 1 } };
+    // Dense enough that the walk to a mob (T106) fits a short round.
+    density: 30, rewards: { exp: 1000, sp: 10, adenaMin: 1, adenaMax: 1 } };
 const base = { characterId: 901, name: 'Fighter', level: 12, phase: 'cold', activity: 'hunting',
     spotId: '-18_39',
     loc: { locX: 0, locY: 0, locZ: 0 },
@@ -79,7 +80,8 @@ function checkSpendingActions() {
     // T43 table: a level-12 healer's owned spiritshots no longer pay on its spot; a level-24 Cleric's do.
     const healerState = withSkills([heal], { ...wand, classId: 15, vitals: { hp: 100, mp: 100000, maxMp: 100000 } });
     healerState.level = healerState.stats.classProgressionLevel = 24;
-    const healer = fightAlone(healerState, { evasion: 1000, pAtk: 1 });
+    // A solo bot heals in a fight only while it is losing (SoloSelfHeal.inFight): the mob must land its hits.
+    const healer = fightAlone(healerState, { evasion: 1000, pAtk: 1, accur: 1000 });
     // A physical skill spends its soulshot at use, even when it misses.
     const skill = fightAlone(withSkills([powerStrike], { vitals: { mp: 100000, maxMp: 100000 } }), { evasion: 1000 });
     assert(skill.skillUses > 0 && skill.shotActions === skill.skillUses, 'a physical skill spends a shot hit or miss');
@@ -103,8 +105,9 @@ function checkDamageBonus() {
         'a soulshot doubles P.Atk, not the skill power');
     const nuke = { skill: { selfId: 1177, level: 1 }, magic: true, power: 50 };
     const plain = damage(nuke, null);
-    assert.strictEqual(plain, Formulas.calcMagicDamage(900, 50, 300), 'without a shot: the plain C4 spell damage');
-    assert.strictEqual(damage(nuke, spiritshot), Formulas.calcMagicDamage(900 * 2, 50, 300), 'a spiritshot doubles M.Atk');
+    // A hit lands whole damage, hot and cold (HitRules).
+    assert.strictEqual(plain, Math.round(Formulas.calcMagicDamage(900, 50, 300)), 'without a shot: the plain C4 spell damage');
+    assert.strictEqual(damage(nuke, spiritshot), Math.round(Formulas.calcMagicDamage(900 * 2, 50, 300)), 'a spiritshot doubles M.Atk');
     assert.strictEqual(damage(nuke, blessed), Formulas.calcMagicDamage(900 * 4, 50, 300), 'a blessed spiritshot: M.Atk x4');
     assert(Math.abs(damage(nuke, blessed) / plain - 2) < 1e-9, 'M.Atk x4 doubles a spell (damage grows with its root)');
 }

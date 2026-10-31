@@ -1,5 +1,46 @@
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Material = require('./CraftMaterialParty');
+const Diagnostics = require('../Economy/EconomyDiagnostics');
+const Roles = invoke('GameServer/Bot/AI/BotRoles');
+
+// No solo ground -> a party (decision 10-30, T106): a healer or buffer
+// (BotRoles) whose solo gate admits no spot near its level
+// (BotRoute.soloGroundMissing) seeks a party instead of farming grey ground
+// alone. Read by the worker's step (no card reuse for it: its request is
+// planned) and by the request below. search: the worker's route search
+// inputs (BotRoute.soloGroundMissing: the routed spot decides).
+const NO_SOLO_GROUND = 'no_solo_ground';
+function supportWithoutGround(state, spots, search = null) {
+    return (Roles.isHealer(state) || Roles.canBuff(state))
+        && invoke('GameServer/Bot/Population/BotRoute').soloGroundMissing(state, spots, search); // lazy: cycle BotRoute's chain loads this planner
+}
+
+// A bot whose open request is that seeking (main's party assembly reads it:
+// the persona's intent, the recruitment across parties).
+function seeksParty(state) {
+    const request = state?.stats?.partyRequest;
+    return request?.status === 'open' && request.reason === NO_SOLO_GROUND;
+}
+
+// The seeking objective: a party of its level meets at the spot a party
+// search finds for it (mode party: the level fit and the group's matchup,
+// not its solo gate), so it groups with the bots that hunt there
+// (objectiveKey = their spot key) and joins parties that hunt there. The
+// spot holds while the request is open or cools down; a reopened request
+// searches again. Null: no such seeker, or no spot.
+function seekObjective(state, previous, { spots, timestamp, search = null }) {
+    if (!supportWithoutGround(state, spots, search)) return null;
+    const held = previous?.reason === NO_SOLO_GROUND && (previous.status === 'open'
+        || previous.status === 'deferred' && Number(previous.deferredUntil || 0) > timestamp) ? previous.spotId : null;
+    // lazy: cycle SpotProfiles' chain loads this planner
+    const searched = held ? null : invoke('GameServer/Bot/Population/SpotProfiles').findForState({ ...state, spotId: null,
+        stats: Object.fromEntries(Object.entries(state.stats || {}).filter(([key]) => key !== 'equipmentPlan')) },
+    { profiles: spots, mode: 'party', timestamp, ...(search?.spotHunters ? { spotHunters: search.spotHunters } : {}) });
+    const spotId = held || searched?.id || null;
+    if (!spotId) return null;
+    return { status: 'open', priority: 'preferred', objectiveKey: `spot:${spotId}`, reason: NO_SOLO_GROUND,
+        spotId, npcId: null, itemId: null, targetId: null };
+}
 
 // How long an open party request may wait for a group, by its priority.
 function maxAgeMs(priority) {
@@ -101,7 +142,8 @@ function clanPartyObjectiveForState(state) {
 }
 
 // options: spots, economy (the bot's own economy, built in the background
-// thread; required, no build here) and memo (the bot's worker record).
+// thread; required, no build here), memo (the bot's worker record) and search
+// (the worker's route search inputs, supportWithoutGround).
 function partyRequestForPlan(state, plan, timestamp = Date.now(), options = {}) {
     const previous = state?.stats?.partyRequest;
     const supplyPause = Material.supplyPause(state, plan, { ...options, timestamp });
@@ -120,7 +162,8 @@ function partyRequestForPlan(state, plan, timestamp = Date.now(), options = {}) 
         && Number(previous.npcId) === Number(plan.next?.npcId || plan.targetNpcId)
         ? { ...previous, status: 'open' } : null;
     let objective = clanPartyObjectiveForState(state) || partyObjectiveForPlan(plan)
-        || Material.request(state, plan, { ...options, timestamp }) || sharedTarget;
+        || Material.request(state, plan, { ...options, timestamp }) || sharedTarget
+        || seekObjective(state, previous, { spots: options.spots, timestamp, search: options.search });
     if (objective?.priority === 'required' && objective.itemId && !objective.clanGoalKey && !objective.helpDeal) {
         const context = options.economy;
         const amount = Math.max(1, Math.floor(Number(objective.materialParty ? objective.amount : plan?.next?.amount || 1)));
@@ -167,6 +210,9 @@ function partyRequestForPlan(state, plan, timestamp = Date.now(), options = {}) 
         if (expired !== kept) return expired;
     }
 
+    if (objective.reason === NO_SOLO_GROUND && !(sameRequest && previous.status === 'open')) {
+        Diagnostics.count('party_seek', NO_SOLO_GROUND, 'seeking');
+    }
     return {
         ...objective,
         status: 'open',
@@ -196,6 +242,9 @@ function partyObjectiveForState(state) {
 }
 
 module.exports = {
+    NO_SOLO_GROUND,
+    supportWithoutGround,
+    seeksParty,
     maxAgeMs,
     cooldownMs,
     expire,

@@ -1,4 +1,5 @@
 const { isDeepStrictEqual } = require('node:util');
+const PveEncounter = require('./ColdPveEncounter');
 const DiagnosticConfig = require('./PopulationConfig');
 const CharacterStateSources = require('../../World/CharacterStateSources');
 const SparseNumericStorage = require('./SparseNumericStorage');
@@ -40,7 +41,7 @@ const ColdEconomyDecision = require('./ColdEconomyDecision');
 const BotErrands = require('./BotErrands');
 const PartyMarketBreak = require('./PartyMarketBreak');
 const { eligible: eligibleBuyer } = require('../Economy/MarketBuyerWaiters');
-const { SpotOccupancyIndex, stateKey } = require('./SpotOccupancyIndex');
+const { SpotOccupancyIndex, stateKey, huntersOn } = require('./SpotOccupancyIndex');
 const C4Unseal = require('../../Items/C4Unseal');
 const ClanEquipment = require('./ClanEquipmentPartyPolicy');
 
@@ -415,12 +416,20 @@ function isSchedulableKind(kind) {
     return kind !== 'inactive' && kind !== 'event_driven' && kind !== 'party_member';
 }
 
+function occupationWanted(state, plan) {
+    return state?.activity === 'hunting' && !state.stats?.pvpEncounter
+        && ['shopping', 'selling', 'crafting', 'improving'].includes(plan?.activityPick?.activity);
+}
+
+// A bot whose next act waits for its fight ends that fight and starts no other:
+// a trip (the plan's lastFight, PveEncounter.holdsTrip) or an occupation.
+function lastFight(state, plan) {
+    return plan?.lastFight === true || occupationWanted(state, plan);
+}
+
 function occupationRound(state, plan, timestamp) {
-    const activity = plan?.activityPick?.activity;
-    if (state?.activity !== 'hunting' || state.stats?.pvpEncounter
-        || !['shopping', 'selling', 'crafting', 'improving'].includes(activity)) return null;
-    const pending = state.stats?.pveEncounter;
-    if (pending && require('./ColdPveEncounter').read(pending, pending.key, timestamp)) return null;
+    if (!occupationWanted(state, plan) || PveEncounter.pending(state, timestamp)) return null;
+    const activity = plan.activityPick.activity;
     // The chosen occupation owns this round. Fighting before posting its
     // execution can spend the kit and replace a purchase with recovery.
     return { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
@@ -1440,10 +1449,11 @@ class ColdSimulationKernel {
             && Protocol.sameCommandCheckpoint(current.state, attempt.checkpoint);
     }
 
-    // The bots on a spot for its kill share (E69), from the occupancy index.
-    spotHunters(spot) {
-        if (!spot?.id) return 1;
-        return Math.max(1, this.occupancy.physicalCount(spot.id));
+    // The bots on a spot for its kill share (E69), from this kernel's
+    // occupancy index (SpotOccupancyIndex.huntersOn); with a state, that bot
+    // counted once (SpotEconomics' crowd share, deps.spotHunters).
+    spotHunters(spot, state = null) {
+        return huntersOn(this.occupancy, spot?.id, state);
     }
 
     async resolveCommand(characterId, attempt) {
@@ -1469,6 +1479,7 @@ class ColdSimulationKernel {
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 state: resolveState,
                 spot,
+                lastFight: lastFight(resolveState, lifecyclePlan),
                 spotHunters: this.spotHunters(spot),
                 pressure: pressureFor(current.state, this.pressureRow),
                 targetNpcId: Number(lifecyclePlan?.targetNpcId ||
@@ -1818,7 +1829,8 @@ class ColdSimulationKernel {
             const route = !meetingPending && !rescuing && this.partyRoute ? this.partyRoute({
                 leader: run.members.find(member => Number(member.characterId) === Number(run.party?.leaderId)) || run.members[0],
                 party: run.party, members: run.members, spot: run.spot, timestamp: startedAt }) : null;
-            if (route?.needed) {
+            const fightHoldsTrip = PveEncounter.holdsTrip(run.party, route, startedAt);
+            if (route?.needed && !fightHoldsTrip) {
                 const arrivalAt = startedAt + Math.max(1000, Number(route.travelMs) || HUNTING_TRAVEL_MS);
                 const travellingMembers = run.members.map((state) => (
                     beginHuntingTrip(state, route, startedAt)
@@ -1874,6 +1886,7 @@ class ColdSimulationKernel {
                 spot: run.spot,
                 pressure: run.pressure,
                 targetNpcId: run.targetNpcId,
+                lastFight: fightHoldsTrip,
                 elapsedMs: Math.max(1000, startedAt - lastResolvedAt),
                 rng: deterministicRandom(run.members[0] || {}),
                 timestamp: startedAt
@@ -2110,6 +2123,7 @@ class ColdSimulationKernel {
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 state: resolveState,
                 spot,
+                lastFight: lastFight(resolveState, lifecyclePlan),
                 spotHunters: this.spotHunters(spot),
                 pressure: pressureFor(active.state, this.pressureRow),
                 targetNpcId: Number(lifecyclePlan?.targetNpcId || lifecyclePlan?.acquisitionPlan?.next?.npcId ||

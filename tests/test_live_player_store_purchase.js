@@ -6,6 +6,8 @@ const fs = require('node:fs');
 const { DatabaseSync } = require('node:sqlite');
 require('../src/Global');
 fixture.assertConfigured(options.default);
+// The author's fixed shot merchant sells shots here (off by default since T116).
+invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = false;
 const DB = invoke('Database'), Data = invoke('GameServer/DataCache');
 const World = invoke('GameServer/World/World');
 const Market = invoke('GameServer/Bot/Economy/MarketOpportunity');

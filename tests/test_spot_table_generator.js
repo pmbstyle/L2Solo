@@ -5,8 +5,10 @@ const os = require('os');
 const path = require('path');
 
 // The spot table generator on two spots with short hunts: the same file with
-// one worker and with two, and every count in place. About half a minute
-// (the world spawn takes most of it).
+// one worker and with two, and every count in place; the server's spot
+// catalogue (T123) the same at every start, by night or day, whatever the
+// live random points, and the one the table keys. About a minute (the world
+// spawns take most of it).
 const root = path.resolve(__dirname, '..');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'spot-table-'));
 function generate(jobs) {
@@ -18,34 +20,135 @@ function generate(jobs) {
     return fs.readFileSync(out, 'utf8');
 }
 
+// The hunting spot ids of a server start: the world spawned in `periodMode`
+// with `random` as the live Math.random.
+function startIds(periodMode, random) {
+    require('../src/Global');
+    invoke('GameServer/DataCache').init();
+    const World = invoke('GameServer/World/World');
+    const SpotService = invoke('GameServer/Bot/AI/SpotService');
+    const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
+    const draw = Math.random;
+    const saved = { npc: World.npc, user: World.user };
+    Math.random = random;
+    try {
+        const world = { user: { sessions: [] },
+            npc: { spawns: [], grid: {}, nextId: 1000000, periodMode, periodRevision: 0, periodDefinitions: [],
+                raidBossRespawnTimers: new Map(), raidBossState: new Map(), gridKeys: new WeakMap() },
+            items: { spawns: [], nextId: 5000000 }, addNpcToGrid() {}, indexSpawnsInGrid() {} };
+        invoke('GameServer/World/Generics/SpawnNpcs').call(world);
+        World.npc = world.npc; World.user = world.user;
+        SpotService.reset(); SpotProfiles.reset();
+        return SpotProfiles.ensure().filter((spot) => spot.raidBoss !== true).map((spot) => spot.id).sort();
+    } finally {
+        Math.random = draw;
+        World.npc = saved.npc; World.user = saved.user;
+        SpotService.reset(); SpotProfiles.reset();
+    }
+}
+
 try {
+    let seed = 7;
+    const night = startIds('night', Math.random);
+    const day = startIds('day', () => (seed = seed * 48271 % 2147483647) / 2147483647);
+    assert.deepStrictEqual(day, night, 'two starts give the same spot ids');
     const one = generate(1);
     const two = generate(2);
     assert.strictEqual(one, two, 'the table does not depend on the number of workers');
     const table = JSON.parse(one);
     const roles = table.roles.length;
-    assert.strictEqual(roles, 8, 'eight combat roles');
-    assert.deepStrictEqual(table.shots, [1, 0]);
+    // A key per C4 class line (its second profession), the author's role names as aliases (user 10-29).
+    assert.strictEqual(roles, 31, 'a key per second-profession class line');
+    assert.strictEqual(table.header.inputs.roleLines.dps, '2');
+    assert.deepStrictEqual(table.header.inputs.roleClasses['3'], [0, 1, 3], 'a line holds its classes by profession stage');
+    assert.deepStrictEqual(table.shots, [1, 0, 2], 'shots, none, blessed spiritshot');
     assert.strictEqual(table.spots.length, 2);
     assert.strictEqual(table.header.counts.spots, 2);
-    assert.strictEqual(table.header.counts.rows, 2 * roles * 2);
+    assert.strictEqual(table.header.counts.rows, 2 * roles * 3);
     assert.strictEqual(table.rows.length, 2);
-    assert(table.rows.every((rows) => rows.length === roles * 2), 'a row per role and shots');
+    assert(table.rows.every((rows) => rows.length === roles * 3), 'a row per role and shots');
+    const dps = table.roles.indexOf(table.header.inputs.roleLines.dps);
+    assert(table.rows.every((rows) => rows[dps * 3 + 2] === null), 'no blessed spiritshot row for a soulshot class');
     assert(table.rows.flat().every((row) => row === null || row.length === table.rowFields.length), 'complete rows');
     assert.strictEqual(table.rows.flat().filter(Boolean).length, table.header.counts.huntableRows);
     assert(table.header.counts.huntableRows > 0, 'the first spots are huntable');
     assert(table.header.counts.catalogueSpots > 1500, 'the spawned world has its hunting spots');
+    assert.strictEqual(table.header.counts.catalogueSpots, night.length, 'the generator\'s catalogue is the server\'s');
+    assert.deepStrictEqual(table.spots.map((spot) => spot[0]), night.slice(0, 2), 'the table keys the server\'s spot ids');
     assert.strictEqual(table.header.inputs.rate, 'x1');
     assert(/^[0-9a-f]{7,}/.test(table.header.revision), 'the revision is recorded');
-    assert(table.spots.every((spot) => spot.length === 7 && spot[3] > 0 && spot[4] === 1 && spot[5] > 0 && spot[6] > 0),
-        'every spot has its level, density, kill cap, a pull of one monster and its loot response to the rate');
+    assert(table.spots.every((spot) => spot.length === 9 && spot[3] > 0 && spot[4] === 1 && spot[5] > 0 && spot[6] > 0
+        && spot[7] > 0 && spot[8] > 0),
+        'every spot has its level, density, kill cap, a pull of one monster, its loot response to the rate and its kills\' accuracy and evasion');
+    // Per-mob rows (user 10-29): mobs per fight, the cap of the spawns the bot may fight, the kills by species.
+    const field = name => table.rowFields.indexOf(name);
+    for (const row of table.rows.flat().filter(Boolean)) {
+        assert(row[field('pull')] >= 1 && row[field('cap')] > 0, 'a row has its pull and its own cap');
+        const mix = row[field('mix')];
+        assert(Array.isArray(mix) && mix.length >= 2 && mix.length % 2 === 0, 'a row has its kill mix');
+        const shares = mix.filter((_, at) => at % 2 === 1);
+        assert(Math.abs(shares.reduce((sum, share) => sum + share, 0) - 1) < 0.01, 'the mix shares make the kills');
+        // The gate per gap (T106): cap x 256 + the mix species that bot may fight, open at the reference.
+        const gate = row[field('gate')];
+        assert(Array.isArray(gate) && gate.length === table.gaps.length, 'a gate value per gap');
+        const reference = gate[table.gaps.findLastIndex(gap => gap <= row[field('refGap')])];
+        assert(reference > 0 && reference % 256 > 0 && reference % 256 < 1 << (mix.length / 2), 'the reference gap is open');
+        // The admitted part of the gate species' production per gap (the fight's soloShareMobs).
+        const share = row[field('gateShare')];
+        assert(Array.isArray(share) && share.length === table.gaps.length && share.every(part => part > 0 && part <= 1),
+            'a production share per gap');
+    }
+    // Gladiator and Warlord lines are one Warrior below 40: a row read there is measured once.
+    const gladiator = table.roles.indexOf('2'), warlord = table.roles.indexOf('3'), exp = field('exp');
+    table.rows.forEach((rows, spot) => {
+        const row = rows[gladiator * 3];
+        if (row && table.spots[spot][1] + row[field('refGap')] < 40) {
+            assert.strictEqual(rows[warlord * 3][exp], row[exp], 'lines of one class share its hunt');
+        }
+    });
+    // The kit surface (user 10-29): fight and damage-taken coefficients per
+    // line and band over the kit features, fitted from real fights in kits.
+    assert.deepStrictEqual(table.kitSurface.features, ['offence', 'pDefence', 'mDefence', 'hp']);
+    const surfaces = Object.entries(table.kitSurface.rows).flatMap(([line, byBand]) =>
+        Object.entries(byBand).map(([band, surface]) => [`${line}/${band}`, ...surface]));
+    assert(surfaces.length > 0, 'a band has its kit surface');
+    for (const [where, fight, taken, points] of surfaces) {
+        // taken null: a line that kills before contact in every kit (a bow below 40 too).
+        assert(fight.length === 4 && (taken === null || taken.length === 4) && points >= 8, 'four coefficients each, from enough kits');
+        // A summoner's blows are held under its pet's hate (PetTankRule): the pet sets the pace.
+        const line = where.split('/')[0];
+        const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+        if (table.header.inputs.roleClasses[line].some((classId) => BotRoles.isSummoner({ classId }))) continue;
+        assert(fight[0] < 0, `a stronger weapon shortens the fight of ${where}: ${fight}`);
+    }
     for (const role of Object.keys(table.curves)) {
         for (const curve of Object.values(table.curves[role])) {
             assert(table.curveFields.every((field) => curve[field].length === table.gaps.length), 'a curve value per gap');
             assert.strictEqual(curve.kph[table.gaps.indexOf(table.header.inputs.refGap)], 1, 'curves are relative to the reference gap');
         }
     }
-} finally {
+    // A split run's part pairs with the run of its own task list only.
+    (async () => {
+        const Generator = require('../scripts/generate-spot-table');
+        const parts = path.join(dir, 'parts');
+        fs.mkdirSync(parts);
+        const tasks = [{ kind: 'row', spotId: 'a', hours: 2 }, { kind: 'row', spotId: 'b', hours: 2 }];
+        const part = (tasksHash) => fs.writeFileSync(path.join(parts, 'rows-1.json'),
+            JSON.stringify({ phase: 'rows', total: 2, tasksHash, indices: [0, 1], results: ['A', 'B'] }));
+        part(Generator.tasksHash(tasks));
+        assert.deepStrictEqual(await Generator.phaseResults('rows', tasks, { phase: 'merge', parts }), ['A', 'B'], 'its own run\'s part');
+        part(Generator.tasksHash([tasks[1], tasks[0]]));
+        await assert.rejects(Generator.phaseResults('rows', tasks, { phase: 'merge', parts }), /another run/,
+            'a part of the same size from other spots is refused');
+    })().then(() => {
+        fs.rmSync(dir, { recursive: true, force: true });
+        console.log('Spot table generator determinism and counts passed');
+    }, (error) => {
+        fs.rmSync(dir, { recursive: true, force: true });
+        console.error(error);
+        process.exit(1);
+    });
+} catch (error) {
     fs.rmSync(dir, { recursive: true, force: true });
+    throw error;
 }
-console.log('Spot table generator determinism and counts passed');

@@ -47,25 +47,31 @@ try {
     close(highRate.spoil, 2 * (50 * .37 / 3) * landing, 'spoil quantity uses its penalized rate');
     assert.notEqual(highRate.drop, lo.drop * 50, 'an x1 reward curve cannot predict saturated high-rate loot');
 
-    // Same combat measurements, now backed by concrete native rewards.
+    // Same combat measurements, now backed by concrete native rewards. The table
+    // ends at the deep-blue gap where drops fall to 30% (user 10-29): level 27 on an 18 spot.
+    const at = 18 + Rates.DEEP_BLUE_LEVEL_GAP;
+    const tableRate = Rewards.value(blue, at, { spoilSkillLevel: 1 });
+    useRate('x1');
+    const tableLow = Rewards.value(blue, at);
+    useRate('x50');
     Table.useFile(path.join(__dirname, 'fixtures/spot_table.json'));
     Table.useSpots([blue, near]);
-    const row = Table.value('S', 'dps', 33);
-    close(row.adena, row.kills * highRate.adena, 'table keeps measured throughput but exact per-kill Adena');
-    close(row.loot, row.kills * highRate.drop, 'dps cannot receive spoil');
-    const trained = Table.value('S', 'spoiler', 33, true, { spoilSkillLevel: 1 });
-    const untrained = Table.value('S', 'spoiler', 33, true, { spoilSkillLevel: 0 });
-    close(trained.spoilLoot, trained.kills * highRate.spoil, 'table respects learned skill rank');
+    const row = Table.value('S', 'dps', at);
+    close(row.adena, row.kills * tableRate.adena, 'table keeps measured throughput but exact per-kill Adena');
+    close(row.loot, row.kills * tableRate.drop, 'dps cannot receive spoil');
+    const trained = Table.value('S', 'spoiler', at, true, { spoilSkillLevel: 1 });
+    const untrained = Table.value('S', 'spoiler', at, true, { spoilSkillLevel: 0 });
+    close(trained.spoilLoot, trained.kills * tableRate.spoil, 'table respects learned skill rank');
     assert.equal(untrained.spoilLoot, 0, 'skill rank is part of the table memo key');
     const nativeValue = Rewards.value;
     let forecasts = 0;
     try {
         Rewards.value = (...args) => { forecasts++; return nativeValue(...args); };
         Table.useFile(path.join(__dirname, 'fixtures/spot_table.json'));
-        Table.rankedIncome('dps', 33, { shots: 0, potions: 0 }, -100, true);
+        Table.rankedIncome('dps', at, { shots: 0, potions: 0 }, -100, true);
         const firstForecasts = forecasts;
         assert(firstForecasts > 0, 'the first price ranking builds native unpriced forecasts');
-        Table.rankedIncome('dps', 33, { shots: 1, potions: 0 }, -100, true);
+        Table.rankedIncome('dps', at, { shots: 1, potions: 0 }, -100, true);
         assert.equal(forecasts, firstForecasts,
             'a price-only ranking reuses unpriced spot forecasts rather than rebuilding rewards');
     } finally { Rewards.value = nativeValue; }
@@ -77,11 +83,11 @@ try {
         Hunt.consumablePrices = () => ({ shots: 0, potions: 0 });
         const spoiler = { characterId: 990190, level: 20, spotId: 'S', stats: { classId: 54, role: 'spoiler',
             coldCombat: { skills: [{ selfId: 254, level: 1 }] } } };
-        const fighter = { characterId: 990191, level: 33, spotId: 'S', stats: { classId: 0, role: 'dps' } };
+        const fighter = { characterId: 990191, level: at, spotId: 'S', stats: { classId: 0, role: 'dps' } };
         const prepared = Income.prepare([spoiler, fighter], { spots: [blue, near],
             party: { spotId: 'S', cohesion: 1 }, timestamp: 1791656778971 });
         const personal = prepared.rows.get(spoiler.characterId);
-        const partyYield = Rewards.value(blue, 33, { spoilSkillLevel: 1, spoilerLevel: 20 });
+        const partyYield = Rewards.value(blue, at, { spoilSkillLevel: 1, spoilerLevel: 20 });
         close(personal.income, personal.kills * ((partyYield.adena + partyYield.drop) / 2 + partyYield.spoil),
             'party spoil uses the older killer penalty and the actual spoiler skill, retaining personal spoil');
         const secondSpoiler = { ...spoiler, characterId: 990192 };
@@ -92,13 +98,13 @@ try {
             'only the first native party spoiler receives spoil; two spoilers do not duplicate income');
     } finally { Match.spotMatchup = savedMatch; Hunt.consumablePrices = savedCosts; }
     useRate('x1');
-    close(Table.value('S', 'dps', 33).loot, row.kills * lo.drop, 'rate change invalidates table value memo');
+    close(Table.value('S', 'dps', at).loot, row.kills * tableLow.drop, 'rate change invalidates table value memo');
     useRate('x50');
-    Table.rankedIncome('dps', 33, { shots: 0, potions: 0 }, -100, true);
+    Table.rankedIncome('dps', at, { shots: 0, potions: 0 }, -100, true);
     useRate('x1');
-    Table.best('dps', 33);
-    const reranked = Table.rankedIncome('dps', 33, { shots: 0, potions: 0 }, -100, true).find(row => row.spotId === 'S');
-    close(reranked.loot, reranked.kills * lo.drop,
+    Table.best('dps', at);
+    const reranked = Table.rankedIncome('dps', at, { shots: 0, potions: 0 }, -100, true).find(row => row.spotId === 'S');
+    close(reranked.loot, reranked.kills * tableLow.drop,
         'a best-row review after a rate change cannot retain an older priced or unpriced ranking');
     useRate('x50');
 
@@ -151,8 +157,8 @@ try {
     close(overridden.loot, overridden.kills * Rewards.value(actual[0], 18).drop,
         'actual period NPCs override the authored fallback');
     actual = [spot('-2_3', [{ selfId: higher, count: 1 }])];
-    const replaced = Table.value('-2_3', 'mage', 33, false);
-    close(replaced.loot, replaced.kills * Rewards.value(actual[0], 33).drop,
+    const replaced = Table.value('-2_3', 'mage', 18, false);
+    close(replaced.loot, replaced.kills * Rewards.value(actual[0], 18).drop,
         'replacing a same-size period catalog invalidates the outer money memo');
     const alias = spot('native-id-alias', [{ selfId: 5038, count: 1 }]);
     const namedAlias = { ...alias, npcNames: [Data.npcs.find(npc => npc.selfId === 5038).template.name] };

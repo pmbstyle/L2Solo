@@ -3,6 +3,8 @@ const assert = require('node:assert/strict'), fs = require('node:fs');
 require('./helpers/databaseIsolation');
 const fixture = require('./helpers/isolatedSocialDatabase')('raid-supplies');
 require('../src/Global'); fixture.assertConfigured(options.default);
+// The author's fixed shot merchant sells shots here (off by default since T116).
+invoke('GameServer/Bot/Population/PopulationConfig').staticShotsDisabled = false;
 process.on('exit', () => fs.rmSync(fixture.directory, { recursive: true, force: true }));
 const Data = invoke('GameServer/DataCache'); Data.init({ validate: false });
 const Life = invoke('GameServer/Bot/Population/BotLifeState');

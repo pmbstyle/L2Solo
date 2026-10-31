@@ -224,7 +224,8 @@ const spot = {
     id: 'gremlin_field',
     name: 'Gremlin field',
     avgLevel: 1,
-    density: 1,
+    // Dense enough that the walk to a mob (T106) fits a short round.
+    density: 30,
     npcSelfIds: [1],
     rewards: { exp: 10, sp: 2, adenaMin: 1, adenaMax: 1 },
     // Deliberately contradictory placeholders: the resolver must take the
@@ -288,7 +289,8 @@ const coldSummoner = {
 const coldSummonerResult = BackgroundResolver.resolveSolo({
     state: coldSummoner,
     spot: { ...spot, npcSelfIds: [], mob: { hp: 100000, damage: 1 } },
-    elapsedMs: 12000,
+    // T106: the shortest hunt cycle; the Warlock buffs itself and walks first.
+    elapsedMs: 30000,
     timestamp,
     rng: () => 0.1
 });
@@ -309,7 +311,8 @@ const coldNecromancerProfile = ColdCombatProfile.profileFor({
 }, timestamp);
 assert.strictEqual(BotRoles.isNecromancer(13), true, 'Necromancer must be recognized as a corpse-summoning class');
 assert.strictEqual(BotRoles.isNecromancer(95), true, 'Soultaker must inherit the Necromancer corpse-summoning role');
-assert(coldNecromancerProfile.maxMp > 1000, 'cold Necromancer profiles must use the spellcaster MP formula');
+const coldGladiatorProfile = ColdCombatProfile.profileFor({ classId: 2, level: 40, stats: { classId: 2 } }, timestamp);
+assert(coldNecromancerProfile.maxMp > 1.3 * coldGladiatorProfile.maxMp, 'cold Necromancer profiles must read the mystic class template MP');
 assert(ColdCombatProfile.corpseSummonSkills(coldNecromancerProfile).some((skill) => skill.selfId === 1154),
     'cold Necromancer profiles must retain corpse-target servitor skills');
 const coldNecromancer = {
@@ -324,7 +327,8 @@ const coldNecromancer = {
 const coldNecromancerResult = BackgroundResolver.resolveSolo({
     state: coldNecromancer,
     spot: { ...spot, npcSelfIds: [], mob: { hp: 1, damage: 1 } },
-    elapsedMs: 12000,
+    // T106: the shortest hunt cycle; the Necromancer buffs itself and walks first.
+    elapsedMs: 30000,
     timestamp,
     rng: () => 0.1
 });
@@ -354,6 +358,9 @@ assert.strictEqual(highLevelNecromancerResult.patch.stats.coldCombat.summon?.npc
 assert.strictEqual(highLevelNecromancerResult.patch.stats.coldCombat.summon?.pAtk, 1459,
     'cold Necromancer summons must use the sourced NPC attack value');
 
+// Without its pet heal: the summoner would heal the pet between fights
+// (PetHealRule), and this checks the refresh alone keeps the pet's HP.
+const PetHealRule = invoke('GameServer/Bot/AI/PetHealRule');
 const persistedWeakKai = {
     ...coldSummoner,
     characterId: 906,
@@ -361,6 +368,7 @@ const persistedWeakKai = {
         ...coldSummoner.stats,
         coldCombat: {
             ...coldSummoner.stats.coldCombat,
+            skills: (coldSummoner.stats.coldCombat.skills || []).filter(skill => !PetHealRule.isPetHeal(skill)),
             summon: {
                 active: true,
                 skillId: 1276,
@@ -382,8 +390,9 @@ const persistedWeakKaiResult = BackgroundResolver.resolveSolo({
 });
 assert(persistedWeakKaiResult.patch.stats.coldCombat.summon.pAtk >= 342,
     'an already active persisted Kai must refresh stale fallback combat stats');
-assert.strictEqual(persistedWeakKaiResult.patch.stats.coldCombat.summon.hp, 42,
-    'refreshing persisted summon stats must preserve current summon HP');
+// The round's regeneration aside (petRegen): the refresh does not fill the pet.
+const refreshedKai = persistedWeakKaiResult.patch.stats.coldCombat.summon;
+assert(refreshedKai.hp >= 42 && refreshedKai.hp < refreshedKai.maxHp, 'refreshing persisted summon stats must preserve current summon HP');
 const raidMixedSpot = {
     ...spot,
     npcEntries: [
@@ -433,6 +442,14 @@ assert.strictEqual(
     12,
     'a hostile NPC in the same spot must still be able to interrupt focused farming'
 );
+// T123: a kill draw weighs the mobs an entry gives per hour (its production:
+// a night spawn only by night), not its spawn count.
+{
+    const entries = [{ selfId: 1, count: 10, production: 1 }, { selfId: 12, count: 10, production: 3 }];
+    assert.strictEqual(ColdCombatProfile.npcForSpot({ ...spot, npcEntries: entries }, () => 0.3).selfId, 12,
+        'a draw past the first quarter takes the entry that gives three of four mobs');
+    assert.deepStrictEqual(ColdCombatProfile.killChances(ColdCombatProfile.killDraw(entries, entries)).map(row => row.chance), [0.25, 0.75]);
+}
 const focusedLoot = BackgroundDropResolver.rollForFight({
     spot: mixedSpot,
     killerLevel: fighter.level,
@@ -516,6 +533,28 @@ assert.strictEqual(strongSoloResult.materialize.exp, Math.round(2376 * expectedG
 assert.strictEqual(strongSoloResult.materialize.sp, Math.round(108 * expectedGapFactor * ProgressionRates.profile().sp));
 assert.strictEqual(strongSoloResult.materialize.adena, 0);
 
+// T126: with no walk between mobs (a crowded spot) each kill still costs its
+// killing action: the one-shot kills of a round fit in its time.
+{
+    const crowded = { ...gigantSpot, id: 'crowded_gigant_slave', spawnArea: 1, npcEntries: [{ selfId: 1187, count: 500 }] };
+    const dense = BackgroundResolver.resolveSolo({ state: strongColdHunter, spot: crowded, targetNpcId: 1187, elapsedMs: 12000, timestamp,
+        rng: () => 0.1 });
+    const swingMs = ColdCombatProfile.normalAttackMs(ColdCombatProfile.fightProfile(strongColdHunter, timestamp));
+    assert(dense.debug.wins >= 1 && dense.debug.wins <= Math.ceil(12000 / swingMs) + 1,
+        `one-shot kills cost their swing: ${dense.debug.wins} kills of ${swingMs} ms in 12 s`);
+}
+
+// T126: with a walk between mobs a one-shot kill still costs its killing action on top.
+{
+    const sparse = { ...gigantSpot, id: 'sparse_gigant_slave', npcEntries: [{ selfId: 1187, count: 20 }] };
+    const round = BackgroundResolver.resolveSolo({ state: strongColdHunter, spot: sparse, targetNpcId: 1187, elapsedMs: 60000, timestamp,
+        rng: () => 0.1 });
+    const swingMs = ColdCombatProfile.normalAttackMs(ColdCombatProfile.fightProfile(strongColdHunter, timestamp));
+    assert(round.debug.wins >= 1 && round.debug.walkedMs > 0, `the round walks and kills (${round.debug.wins}, ${round.debug.walkedMs} ms)`);
+    assert(round.debug.combatMs >= round.debug.walkedMs + round.debug.wins * swingMs,
+        `each kill costs its walk and its swing: ${round.debug.combatMs} ms for ${round.debug.wins} kills, ${round.debug.walkedMs} ms walked`);
+}
+
 for (const restUntil of [timestamp - 600000, timestamp + 600000]) {
     const scheduled = BackgroundResolver.resolveSolo({
         state: { ...strongColdHunter, stats: { ...strongColdHunter.stats, restUntil } },
@@ -556,8 +595,10 @@ assert(strongPartyResult.memberResults.every((entry) => entry.result.materialize
 
 const result = BackgroundResolver.resolveSolo({ state: fighter, spot, elapsedMs: 12000, timestamp, rng: () => 0.1 });
 assert(result.debug.combatActions > 0, 'cold combat must execute bounded combat actions');
-assert(result.debug.skillUses > 0, 'a usable learned skill must be cast during cold combat');
-assert(result.patch.stats.coldCombat.cooldowns[3] > timestamp, 'skill reuse must survive a cold resolve');
+const toughResult = BackgroundResolver.resolveSolo({ state: fighter, spot: { ...spot, npcSelfIds: [], mob: { hp: 100000, damage: 1 } },
+    elapsedMs: 12000, timestamp, rng: () => 0.1 });
+assert(toughResult.debug.skillUses > 0, 'a usable learned skill that pays its MP is cast during cold combat');
+assert(toughResult.patch.stats.coldCombat.cooldowns[3] > timestamp, 'skill reuse must survive a cold resolve');
 assert.strictEqual(result.patch.stats.coldCombat.charges, 2, 'unspent charges must survive a solo cold fight');
 assert.strictEqual(result.patch.stats.coldCombat.chargeExpiresAt, timestamp + 600000, 'a cold fight must preserve the original charge deadline');
 assert(result.patch.vitals.hp > 0, 'datapack Gremlin damage must be used instead of the synthetic spot damage');
@@ -569,7 +610,8 @@ const focusedResult = BackgroundResolver.resolveSolo({
     timestamp,
     rng: () => 0.9
 });
-assert.deepStrictEqual(focusedResult.debug.foughtNpcIds, [1], 'solo direct-drop farming must fight the requested NPC, not a random spot entry');
+assert(focusedResult.debug.foughtNpcIds.length > 0 && focusedResult.debug.foughtNpcIds.every((selfId) => selfId === 1),
+    'solo direct-drop farming must fight the requested NPC, not a random spot entry');
 
 const musicSpot = { ...spot, npcSelfIds: [], mob: { hp: 100000, damage: 1 } };
 // Level-75 solo actors must start ready; the old 1000-HP fixture represents
@@ -578,13 +620,15 @@ const readyMusician = (state, profile) => ({ ...state, vitals: {
     hp: profile.maxHp, maxHp: profile.maxHp, mp: profile.maxMp, maxMp: profile.maxMp
 } });
 const singerResult = BackgroundResolver.resolveSolo({ state: readyMusician(singer, singerProfile), spot: musicSpot, elapsedMs: 12000, timestamp, rng: () => 0.1 });
-assert(singerResult.debug.musicUses >= 2, 'cold solo combat must cast the Swordsinger songs it learned');
-assert(singerResult.patch.stats.coldCombat.effects.some((effect) => effect.id === 264),
-    'a cold solo song must persist on the singer after the fight');
+// T100 MP price: alone, a song is sung only when it raises the singer's own
+// damage enough to pay its MP. Song of Earth (264) and Song of Life (265)
+// only defend; Dance of Warrior (271) adds P.Atk, Dance of Inspiration (272)
+// only accuracy.
+assert.strictEqual(singerResult.debug.musicUses, 0, 'a solo Swordsinger does not sing songs that add no damage');
 const dancerResult = BackgroundResolver.resolveSolo({ state: readyMusician(dancer, dancerProfile), spot: musicSpot, elapsedMs: 12000, timestamp, rng: () => 0.1 });
-assert(dancerResult.debug.musicUses >= 2, 'cold solo combat must cast the Bladedancer dances it learned');
-assert(dancerResult.patch.stats.coldCombat.effects.some((effect) => effect.id === 271),
-    'a cold solo dance must persist on the dancer after the fight');
+assert.strictEqual(dancerResult.debug.musicUses, 1, 'a solo Bladedancer dances only the dance that pays');
+assert.deepStrictEqual(dancerResult.patch.stats.coldCombat.effects.filter((effect) => [271, 272].includes(effect.id))
+    .map((effect) => effect.id), [271], 'the paying solo dance persists on the dancer after the fight');
 
 const injuredTank = {
     ...fighter,
@@ -788,8 +832,10 @@ const coldController = {
     profile: { skills: [{ selfId: 1201, level: 1, passive: false, mp: 20 }] },
     vitals: { mp: 100 }
 };
-assert.strictEqual(BackgroundResolver.combat.coldRaidControlCapacity([coldController], coldRaidMob), 1,
-    'a cold raid party must recognize one available root/sleep/stun controller');
+// T124: a controller holds its land chance of a minion (HitRules.effectLandChance), not a whole one.
+const controlCapacity = BackgroundResolver.combat.coldRaidControlCapacity([coldController], coldRaidMob);
+assert(controlCapacity > 0 && controlCapacity < 1,
+    `a cold raid party must recognize one available root/sleep/stun controller by its land chance (${controlCapacity})`);
 assert.deepStrictEqual(
     BackgroundResolver.combat.coldRaidMinionPressure(coldRaidMob, 1300, 1),
     { activeMinions: 3, uncontrolledMinions: 2, pAtk: 200 },

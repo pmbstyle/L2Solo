@@ -8,11 +8,13 @@ const Routes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const Matchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const drain = iterator => { let step; do step = iterator.next(); while (!step.done); return step.value; };
 const timestamp = 1791825000000;
-// The native C-grade kit and source species from the stalled level-55 spoiler.
+// The native C-grade kit and source species from the stalled level-55 spoiler,
+// without its Chain Gaiters (381): the gargoyle's survival 0.85 sits under the
+// solo gate (1.0, T132), the wyrm's 0.11 far under it.
 const state = { characterId: 990003, level: 55, spotId: '17_20',
     vitals: { hp: 2500, mp: 700 }, stats: { race: 4, classId: 55,
         coldCombat: { classId: 55, skillSource: 'native', skills: [] } },
-    inventory: Object.fromEntries([161, 1149, 354, 381, 631, 2452, 2429, 852, 882, 914].map((id, index) => {
+    inventory: Object.fromEntries([161, 1149, 354, 631, 2452, 2429, 852, 882, 914].map((id, index) => {
         const item = Data.items.find(item => item.selfId === id);
         return [id, { selfId: id, amount: 1, equipped: true, equippedCount: 1,
             slot: Number(item.etc.slot), rank: item.etc.rank, kind: item.template.kind,

@@ -1171,26 +1171,28 @@ const World = {
         utils.infoSuccess('SpawnsGrid', 'Indexed %d npcs in 2D spatial grid', this.npc.spawns.length);
     },
 
+    // The NPCs within a 2D radius, from the 3x3 cells around the point (an
+    // NPC stays in the cell it was indexed in while it moves, so the ring of
+    // cells is kept at any radius). One pass, no copies: every aggro sweep,
+    // visibility refresh and hazard scan runs through it.
     fetchNpcsInRadius(locX, locY, radius) {
         const bgx = Math.floor(locX / NPC_GRID_SIZE);
         const bgy = Math.floor(locY / NPC_GRID_SIZE);
         const npcs = [];
-        
+
         for (let dx = -1; dx <= 1; dx++) {
             for (let dy = -1; dy <= 1; dy++) {
-                const key = `${bgx + dx}_${bgy + dy}`;
-                const sector = this.npc.grid[key];
-                if (sector) {
-                    npcs.push(...sector);
+                const sector = this.npc.grid[`${bgx + dx}_${bgy + dy}`];
+                if (!sector) continue;
+                for (let index = 0; index < sector.length; index++) {
+                    const npc = sector[index];
+                    const offX = locX - npc.fetchLocX();
+                    const offY = locY - npc.fetchLocY();
+                    if (Math.sqrt((offX ** 2) + (offY ** 2)) <= radius) npcs.push(npc);
                 }
             }
         }
-        
-        const SpeckMath = invoke('GameServer/SpeckMath');
-        const pt = new SpeckMath.Point(locX, locY);
-        return npcs.filter(npc => {
-            return new SpeckMath.Point(npc.fetchLocX(), npc.fetchLocY()).distance(pt) <= radius;
-        });
+        return npcs;
     },
 
     fetchNpc        : invoke(path.world + 'FetchNpc'),

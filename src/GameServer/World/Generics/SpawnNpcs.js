@@ -9,6 +9,7 @@ const NpcAggro = invoke('GameServer/Npc/NpcAggro');
 const RaidBossState = invoke('GameServer/World/RaidBossState');
 const MinionManager = invoke('GameServer/World/RaidBossMinionManager');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
+const TendencyRoll = invoke('GameServer/Bot/AI/TendencyRoll');
 
 const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
 
@@ -43,6 +44,36 @@ function createNpc(world, npc, coords, spawnDefinition = null) {
     NpcAggro.armSpawnGrace(instance);
     world.npc.spawns.push(instance);
     return instance;
+}
+
+// The spawns the spot catalogue counts (T123, SpotService.ensureIndexed):
+// one NPC per spawn definition of the game day, both periods, at its
+// datapack place (a territory's: a point drawn from a stream seeded by the
+// definition's place in the datapack), an ordinary group leader with its
+// minions drawn from the same stream (RaidBossMinionManager.catalogueMinions);
+// raid bosses never hunt. Never added to the world, the grid or a timer. The
+// catalogue, its spot ids (floors, joined fragments) and the generated spot
+// table (scripts/generate-spot-table.js) are the same at every start and in
+// the generator, whatever the period, the deaths or the live random points.
+function catalogueSpawns(world) {
+    const definitions = world?.npc?.definitions || [];
+    const spawns = [];
+    for (let at = 0; at < definitions.length; at++) {
+        const definition = definitions[at];
+        if (isRaidBossDefinition(definition)) continue;
+        const random = TendencyRoll.seeded(`spot-catalogue:${at}`);
+        const coords = utils.size(definition.spawn.coords) > 0 ? { ...definition.spawn.coords[0] }
+            : { ...territoryPoint(definition.bounds, random), head: 0 };
+        const leader = new Npc(-(spawns.length + 1), { ...utils.crushOb(definition.npc), ...coords });
+        leader.spawnDefinition = definition;
+        spawns.push(leader);
+        for (const minion of MinionManager.catalogueMinions(leader, random)) {
+            const instance = new Npc(-(spawns.length + 1), { ...utils.crushOb(minion.template), ...minion.coords });
+            Object.assign(instance, minion.link);
+            spawns.push(instance);
+        }
+    }
+    return spawns;
 }
 
 function spawnChildNpc(world, npc, coords, metadata = {}) {
@@ -80,12 +111,22 @@ function randomCoords(definition) {
         };
     }
 
+    return { ...territoryPoint(bounds), head: utils.randomNumber(65536) };
+}
+
+// A point of a territory, drawn by `random` (a seeded stream for the spot
+// catalogue, catalogueSpawns), on the ground under it.
+function territoryPoint(bounds, random = Math.random) {
     const polygon = bounds.map((bound) => [bound.locX, bound.locY]);
-    const pos = require('random-point-in-shape')(polygon);
+    const draw = Math.random;
+    let pos;
+    // random-point-in-shape draws by Math.random (synchronous: restored before any other code runs).
+    Math.random = random;
+    try { pos = require('random-point-in-shape')(polygon); } finally { Math.random = draw; }
     // A territory's maxZ is a layer hint, not the surface at every XY.
     // Keep explicit datapack coordinates above unchanged (towns/dungeon floors).
     const locZ = GeodataEngine.getHeight(pos[0], pos[1], bounds[0].maxZ);
-    return { locX: pos[0], locY: pos[1], locZ, head: utils.randomNumber(65536) };
+    return { locX: pos[0], locY: pos[1], locZ };
 }
 
 function isRaidBossDefinition(definition) {
@@ -241,6 +282,8 @@ function despawnQuestNpc(world, npc, sourceSession = null) {
 
 function spawnNpcs() {
     this.npc.periodDefinitions = [];
+    // Every definition, in datapack order (the spot catalogue's spawns, catalogueSpawns).
+    this.npc.definitions = [];
     // These templates are created only by the quest encounter handler. Keeping
     // C4's old shared duel spawns would duplicate a player's personal opponent.
     const exclusive = new Set(invoke('GameServer/Quest/QuestService').quests()
@@ -266,6 +309,7 @@ function spawnNpcs() {
                     spawn.coords.forEach((info) => {
                         const fixedDefinition = { ...definition, spawn: { ...spawn, coords: [info] } };
                         definitions++;
+                        this.npc.definitions.push(fixedDefinition);
                         if (isPeriodic(spawn)) this.npc.periodDefinitions.push(fixedDefinition);
                         if (isPeriodActive(spawn, this.npc.periodMode)) {
                             spawnDefinition(this, fixedDefinition, {
@@ -278,6 +322,7 @@ function spawnNpcs() {
                 else { // Random location within bounds
                     const randomDefinition = { ...definition };
                     definitions++;
+                    this.npc.definitions.push(randomDefinition);
                     if (isPeriodic(spawn)) this.npc.periodDefinitions.push(randomDefinition);
                     spawnNpc(this, randomDefinition);
                 }
@@ -296,6 +341,7 @@ module.exports.spawnChildNpc = spawnChildNpc;
 module.exports.despawnQuestNpc = despawnQuestNpc;
 module.exports.clearQuestSpawn = clearQuestSpawn;
 module.exports.notifyNearby = notifyNearby;
+module.exports.catalogueSpawns = catalogueSpawns;
 module.exports.isRaidBossDefinition = isRaidBossDefinition;
 module.exports.raidBossRespawnAt = raidBossRespawnAt;
 module.exports.scheduleRaidBossRespawn = scheduleRaidBossRespawn;

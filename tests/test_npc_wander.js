@@ -6,6 +6,9 @@ const Npc = invoke('GameServer/Npc/Npc');
 const Geo = invoke('GameServer/Geodata/GeodataEngine');
 const Aggro = invoke('GameServer/Npc/NpcAggro');
 const Effects = invoke('GameServer/Effects/EffectStore');
+const Formulas = invoke('GameServer/Formulas');
+const C4SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
+const SkillModel = invoke('GameServer/Model/Skill');
 const Restrictions = invoke('GameServer/Effects/EffectRestrictions');
 const World = invoke('GameServer/World/World');
 const NpcIndex = invoke('GameServer/World/NpcObjectIndex');
@@ -367,6 +370,88 @@ try {
         assert.equal(npc.state.fetchCombats(), true);
         assert.notEqual(npc.state.fetchTowards(), 'wander');
         stop(npc); delete world.npcAggroTicker;
+    });
+    check('a chase with no attack either way for 2 minutes ends: a hit refreshes it, hate alone does not', () => {
+        const npc = npcAt({ hostile: true }); const player = observer(1000); const world = worldFor([npc], [player]);
+        Geo.hasLineOfSight = () => true;
+        // The player runs at the mob's speed: it never comes into reach.
+        player.actor.fetchLocX = () => npc.fetchLocX() + 1000;
+        Object.assign(player.actor, { fetchLevel: () => 40, fetchRadius: () => 8, fetchHead: () => 0, effects: {} });
+        npc.enterCombatState(player, player.actor);
+        mock.timers.tick(1100); // The start timer opens the chase loop.
+        mock.timers.tick(99000);
+        npc.addDamageHate(player, player.actor, 1, 1);
+        mock.timers.tick(60000);
+        const ultimateDefense = new SkillModel({ selfId: 110, name: 'Ultimate Defense', level: 1, passive: false, spell: true,
+            distance: 0, target: 'self', hp: 0, mp: 0, power: 0, hitTime: 0, reuse: 0, buff: 30000 });
+        const cast = C4SkillEffects.execute(player, player.actor, player.actor, ultimateDefense,
+            { magicSkill: false, rng: () => 0, attack: { clearLoadedShot() {} } });
+        assert(cast.aggroPointsApplied > 0, 'the self-buff reached the mob as hate');
+        mock.timers.tick(59000);
+        assert.equal(npc.state.fetchCombats(), true, 'being attacked refreshes the 2 minutes');
+        mock.timers.tick(2000);
+        assert.equal(npc.state.fetchCombats(), false, 'no attack for 2 minutes: the chase ends');
+        assert.equal(npc.fetchMostHated(), null, 'its hate is dropped');
+        npc.model.locX = 2000;
+        world.user.sessions = [observer(2000)];
+        assert.equal(Wander.tick(world, { random: () => 0.99 }), 1, 'no random-walk roll for a mob away from home');
+        assert.equal(npc.state.fetchTowards(), 'wander');
+        const to = Wander.destination(npc, () => 0.99);
+        assert(to.locX < 2000 && to.locX >= 2000 - 401, 'it walks toward its spawn in bounded steps');
+        stop(npc);
+    });
+    check('a mob swinging at a target that never fights back stays in the fight past 2 minutes', () => {
+        const npc = npcAt({ hostile: true }); const player = observer(40); worldFor([npc], [player]);
+        Geo.hasLineOfSight = () => true;
+        player.actor.fetchRadius = () => 8;
+        const calcHitChance = Formulas.calcHitChance;
+        Formulas.calcHitChance = () => false;
+        try {
+            npc.enterCombatState(player, player.actor);
+            for (let i = 0; i < 1300; i++) mock.timers.tick(100);
+            assert.equal(npc.state.fetchCombats(), true);
+        } finally { Formulas.calcHitChance = calcHitChance; stop(npc); }
+    });
+    check('a mob casting at a target out of its reach stays in the chase past 2 minutes', () => {
+        const npc = npcAt({ hostile: true }); const player = observer(1000); worldFor([npc], [player]);
+        Geo.hasLineOfSight = () => true;
+        player.actor.fetchLocX = () => npc.fetchLocX() + 1000;
+        npc.canUseCombatSkillOn = () => true;
+        npc.attack.remoteHit = () => {};
+        npc.enterCombatState(player, player.actor);
+        mock.timers.tick(1100);
+        mock.timers.tick(99000);
+        npc.castSkill(player, player.actor, {});
+        mock.timers.tick(119000);
+        assert.equal(npc.state.fetchCombats(), true);
+        mock.timers.tick(2000);
+        assert.equal(npc.state.fetchCombats(), false);
+        stop(npc);
+    });
+    check('a rooted mob keeps its chase past 2 minutes and drops it when it can move', () => {
+        const npc = npcAt({ hostile: true }); const player = observer(1000); worldFor([npc], [player]);
+        Geo.hasLineOfSight = () => true;
+        player.actor.fetchLocX = () => npc.fetchLocX() + 1000;
+        npc.enterCombatState(player, player.actor);
+        mock.timers.tick(1100);
+        Effects.apply(npc, { key: 'root', id: 102, type: 'debuff', durationMs: 300000 });
+        mock.timers.tick(130000);
+        assert.equal(npc.state.fetchCombats(), true);
+        Effects.remove(npc, 'root');
+        mock.timers.tick(200);
+        assert.equal(npc.state.fetchCombats(), false);
+        stop(npc);
+    });
+    check('a territory mob outside walks in on every tick, one inside keeps the roll', () => {
+        const bounds = [[0, 0], [1000, 0], [1000, 1000], [0, 1000]].map(([locX, locY]) => ({ locX, locY }));
+        const inside = npcAt({ locX: 500, locY: 500 }), outside = npcAt({ locX: 2000, locY: 500 });
+        for (const npc of [inside, outside]) npc.spawnDefinition = { spawn: {}, bounds };
+        const world = worldFor([inside, outside], [observer(1500)]);
+        Geo.hasLineOfSight = () => true;
+        assert.equal(Wander.tick(world, { random: () => 0.99 }), 1);
+        assert.equal(outside.state.fetchTowards(), 'wander');
+        assert.notEqual(inside.state.fetchTowards(), 'wander');
+        stop(inside); stop(outside);
     });
     console.log(`NPC wander: ${assertions} scenario groups passed`);
 } finally {

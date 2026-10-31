@@ -105,7 +105,7 @@ function addDemand(result, score, reason) {
 function itemDemand(botSession, info) {
     const result = { score: 0, reasons: [] };
     const classId = botSession.actor.fetchClassId();
-    const role = BotRoles.inferRole(classId);
+    const role = BotRoles.inferRole(botSession.actor);
     const name = info.name.toLowerCase();
     const weaponType = info.kind.replace('Weapon.', '');
     const armorType = info.kind.replace('Armor.', '');

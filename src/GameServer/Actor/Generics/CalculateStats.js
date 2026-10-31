@@ -19,18 +19,9 @@ function setCollectiveTotalHp(actor) {
     actor.setHp(Math.min(actor.fetchHp(), actor.fetchMaxHp()));
 }
 
-function getClassTransfer(classId) {
-    const baseClasses = [0, 10, 18, 25, 31, 38, 44, 49, 53];
-    if (baseClasses.includes(classId)) return 0;
-    const firstProfClasses = [1, 4, 7, 11, 15, 19, 22, 26, 29, 32, 35, 39, 42, 45, 47, 50, 54, 56];
-    if (firstProfClasses.includes(classId)) return 1;
-    return 2;
-}
-
 function setCollectiveTotalMp(actor) {
-    const transfer = getClassTransfer(actor.fetchClassId());
     const men = effectiveBaseStat(actor, 'MEN', () => actor.fetchMen());
-    const base  = Formulas.calcMp(actor.fetchLevel(), actor.isSpellcaster(), transfer, men);
+    const base  = Formulas.calcMp(actor.fetchLevel(), actor.fetchClassId(), men);
     const bonus = actor.backpack.fetchTotalArmorBonusMp();
     actor.setMaxMp(((base + bonus) * EffectStats.multiplier(actor, 'maxMpMul')) + EffectStats.add(actor, 'maxMpAdd'));
     actor.setMp(Math.min(actor.fetchMp(), actor.fetchMaxMp()));

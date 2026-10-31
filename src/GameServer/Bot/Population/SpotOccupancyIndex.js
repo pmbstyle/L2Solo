@@ -116,13 +116,24 @@ class SpotOccupancyIndex {
 
     // How many bots the index has on a spot ('physical'): standingOnly leaves
     // out the bots still on their way there (indexed at their destination),
-    // excludeKeys the given state keys.
-    physicalCount(spotId, { excludeKeys = null, standingOnly = false } = {}) {
+    // excludeKeys the given state keys, excludeKey one (no set to build).
+    physicalCount(spotId, { excludeKeys = null, excludeKey = null, standingOnly = false } = {}) {
         let count = 0;
         for (const [key, state] of this.members(spotId, 'physical')) {
-            if (!(standingOnly && state?.activity === 'traveling') && !excludeKeys?.has(key)) count++;
+            if (!(standingOnly && state?.activity === 'traveling') && key !== excludeKey && !excludeKeys?.has(key)) count++;
         }
         return count;
+    }
+
+    // How many bots are indexed on a spot, one key left out (excludeKey), in
+    // O(1): the set's size, without members()' check of each record against
+    // the location index (the two are written together: LifeStateCache.set and
+    // delete, update and remove here). The hunters' count (huntersOn), read
+    // per spot a search scores.
+    physicalSize(spotId, excludeKey = null) {
+        const members = this.physical.get(spotId);
+        if (!members) return 0;
+        return members.size - (excludeKey !== null && members.has(excludeKey) ? 1 : 0);
     }
 
     // The spots with at least one bot indexed there (the status line's walk).
@@ -138,4 +149,17 @@ class SpotOccupancyIndex {
     }
 }
 
-module.exports = { SpotOccupancyIndex, stateKey, occupiedSpotId };
+// The hunters on a spot that share its production (E69, user 10-29), in the
+// index of the thread that asks (main's world index, a worker's kernel
+// index): the bots indexed there, those on their way included, at least one;
+// with a state, the others plus that bot, whether it stands there yet or
+// weighs a move there (SpotEconomics' crowd share). One count for the fight
+// (SpotProfiles.spotHunters, ColdSimulationKernel.spotHunters) and the spot
+// value.
+function huntersOn(index, spotId, state = null) {
+    if (!index || !spotId) return 1;
+    if (!state) return Math.max(1, index.physicalSize(spotId));
+    return index.physicalSize(spotId, stateKey(state)) + 1;
+}
+
+module.exports = { SpotOccupancyIndex, stateKey, occupiedSpotId, huntersOn };

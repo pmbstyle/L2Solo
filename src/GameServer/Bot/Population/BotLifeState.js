@@ -476,7 +476,7 @@ function hasEquippedTwoHandedWeapon(state = {}) {
 
 function hasIncompatibleShield(state = {}) {
     const classId = Number(state.stats?.classId || 0);
-    const role = state.stats?.role || BotRoles.inferRole(classId);
+    const role = state.stats?.role || BotRoles.inferRole({ classId, characterId: state.characterId });
     const twoHanded = hasEquippedTwoHandedWeapon(state);
     const incompatiblePlan = Number(state.stats?.equipmentPlan?.target?.slot || 0) === 8 && twoHanded;
     const incompatibleEquippedShield = Object.values(state.inventory || {}).some((item) => (
@@ -1226,7 +1226,7 @@ function applyClassProgression(state, profile = {}) {
         seed: state.characterId
     }).then((resolved) => {
         const classId = Number(resolved.classId || currentClassId);
-        const role = BotRoles.inferRole(classId);
+        const role = BotRoles.inferRole({ classId, characterId: state.characterId });
         const progressedState = {
             ...state,
             level,
@@ -1361,6 +1361,7 @@ function mergeSessionIntoLifeState(session, state, phase, reason = '', options =
             ...(state.timing || {}),
             activityStartedAt: timestamp,
             nextResolveAt: options.nextResolveAt ?? state.timing?.nextResolveAt ?? null,
+            lastResolvedAt: options.lastResolvedAt ?? state.timing?.lastResolvedAt ?? null,
             lastHotAt: phase === 'hot' ? timestamp : state.timing?.lastHotAt || null
         },
         stats: {
@@ -2103,7 +2104,9 @@ const BotLifeState = {
                 timing: {
                     ...(craftState.timing || {}),
                     activityStartedAt: now(),
-                    nextResolveAt: null
+                    nextResolveAt: null,
+                    // The hot time is lived: the first cold step starts now (T126).
+                    lastResolvedAt: now()
                 },
                 stats: { ...(craftState.stats || {}), ...membershipStats, pvpEnemies: BotEnemyMemory.snapshot(session), lastReason: reason },
                 inventory: parseJson(row.inventorySummary, {})
@@ -2119,7 +2122,9 @@ const BotLifeState = {
             const nextState = mergeSessionIntoLifeState(session, preserved, 'cold', reason, {
                 physicalLocation,
                 loc: preserved.loc,
-                nextResolveAt: now() + 30000 + Math.round(Math.random() * 90000)
+                nextResolveAt: now() + 30000 + Math.round(Math.random() * 90000),
+                // The hot time is lived: the first cold step's length starts now (T126).
+                lastResolvedAt: now()
             });
             session.coldLifeState = nextState;
             RefreshPartyMemberships([session], invoke);
@@ -2128,7 +2133,8 @@ const BotLifeState = {
 
         const row = {
             ...recordFromSession(session, 'cold', reason),
-            nextResolveAt: now() + 30000 + Math.round(Math.random() * 90000)
+            nextResolveAt: now() + 30000 + Math.round(Math.random() * 90000),
+            lastResolvedAt: now()
         };
         const characterId = row.characterId;
         const previous = pendingWrites.get(characterId) || Promise.resolve();
@@ -2705,8 +2711,9 @@ const BotLifeState = {
         // the input (shots/potions have separate counters), so carry only these
         // native cast-cost decreases before adding this round's loot.
         const summonClass = Number(state.stats?.classId || 0);
-        if (result.patch?.inventory && (BotRoles.isSummoner(summonClass) || BotRoles.isNecromancer(summonClass))) {
-            const summonProfile = { ...(result.patch.stats?.coldCombat || state.stats?.coldCombat || {}), classId: summonClass };
+        const summonProfile = result.patch?.inventory && { ...(result.patch.stats?.coldCombat || state.stats?.coldCombat || {}),
+            classId: summonClass, characterId: BotRoles.botCharacterId(state) };
+        if (summonProfile && (BotRoles.isSummoner(summonProfile) || BotRoles.isNecromancer(summonClass))) {
             const materialIds = new Set([...ColdCombatProfile.summonSkills(summonProfile),
                 ...ColdCombatProfile.corpseSummonSkills(summonProfile)]
                 .filter(skill => Number(skill.itemId) > 0 && Number(skill.itemCount) > 0)
@@ -2938,7 +2945,7 @@ const BotLifeState = {
 
         const prepared = progression.then((resolved) => {
             const classId = Number(resolved.classId || currentClassId);
-            const role = BotRoles.inferRole(classId);
+            const role = BotRoles.inferRole({ classId, characterId: nextState.characterId });
             const progressedState = {
                 ...nextState,
                 party: { ...(nextState.party || {}), role },

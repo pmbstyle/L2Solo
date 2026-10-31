@@ -4,6 +4,7 @@ const DataCache = invoke('GameServer/DataCache');
 const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
+const StaticMerchantPricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
 const MAX_SPOTS = 8;
 const MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
@@ -42,9 +43,12 @@ function lootValue(items = []) {
     }
     return value;
 }
+// A consumable's price to a bot: the NPC's price at the rate (else the
+// template's). One price for the table's costs and the bot's own samples.
+const botPrice = id => Math.max(0, Number(StaticMerchantPricing.botBuyPrice(id)) || 0);
 // Prices are independent of the wish network: callers may supply their
-// current quotes, otherwise native shop/template prices are the baseline.
-function consumablePrices(state, price = id => Number(ItemTemplateIndex.find(DataCache.items, id)?.template?.price || 0)) {
+// current quotes, otherwise the bot's price (botPrice).
+function consumablePrices(state, price = botPrice) {
     const shots = invoke('GameServer/Inventory/ShotStock').planForState(state);
     const potion = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state);
     return { shots: Math.max(0, Number(price(shots.selfId)) || 0), potions: Math.max(0, Number(price(potion.selfId)) || 0) };
@@ -53,13 +57,14 @@ function netIncome(row, costs) {
     return Number(row.adena || 0) + Number(row.loot || 0)
         - Number(row.shots || 0) * costs.shots - Number(row.potions || 0) * costs.potions;
 }
+// What a round's shots and potions cost the bot, at the price the table's
+// rows pay for them (consumablePrices: the plan's shot, each potion its own).
 function consumedCost(state, after) {
     if (!after) return 0;
     const shots = invoke('GameServer/Inventory/ShotStock').planForState(state);
     const ids = [shots.selfId, ...invoke('GameServer/Bot/AI/HealingPotionStock').POTION_IDS];
     return ids.reduce((total, id) => total + Math.max(0,
-        Number(state.inventory?.[id]?.amount || 0) - Number(after[id]?.amount || 0))
-        * Number(ItemTemplateIndex.find(DataCache.items, id)?.template?.price || 0), 0);
+        Number(state.inventory?.[id]?.amount || 0) - Number(after[id]?.amount || 0)) * botPrice(id), 0);
 }
 // One sample of a spot: cycleMs is the round's time on the spot, from its
 // start to the next round (the fights, the rest, the wait between rounds).
@@ -137,7 +142,10 @@ function recordRound(state, result, { spotId, exp = 0, timestamp = Date.now(), s
     // A death's price counts only when the round had a death: the economy
     // foundation (with its earning-spot search) is not built for a zero.
     const life = Valuation.progressStats(state, { timestamp, startedAt, kills: debug.wins, losses,
-        lossHours: losses > 0 ? invoke('GameServer/Bot/Economy/EconomyContext').basics(state, { timestamp }).deathHours : 0,
+        // The basics price a table row's death; a lived one also waited for its respawn.
+        // lazy: cycle EconomyContext loads this module
+        lossHours: losses > 0 ? Valuation.liveDeathHours(invoke('GameServer/Bot/Economy/EconomyContext')
+            .basics(state, { timestamp }).deathHours) : 0,
         risky: !!state.stats?.pvpIntent,
         persona: invoke('GameServer/Bot/AI/BotPersona').of(state), knowledgeEnabled: Learning.knowledgeEnabled() });
     if (!(Number(debug.combatMs) > 0 || Number(debug.fights) > 0)) return life;
@@ -213,7 +221,7 @@ function huntIncome(state, timestamp = Date.now(), mode, fits = null) {
     }
     const Table = invoke('GameServer/Bot/AI/SpotValueTable');
     const rewardOptions = { spoilSkillLevel: require('../Economy/SpotRewardExpectation').spoilSkillLevel(state) };
-    const tableRole = Roles.tableRoleFor(state);
+    const tableRole = Table.roleFor(state);
     const level = levelOf(state);
     const currentFits = !state.spotId || !fits || fits(state.spotId);
     const current = state.spotId && currentFits && Table.value(state.spotId, tableRole, level, true, rewardOptions);
@@ -250,10 +258,10 @@ function huntIncome(state, timestamp = Date.now(), mode, fits = null) {
 // Adena per hour of repeatable hunting, independent of wallet and wishes.
 function huntHour(hunt, state = {}) {
     if (Number(hunt?.perHour) > 0) return Number(hunt.perHour);
-    const tableRole = Roles.tableRoleFor(state);
     const costs = consumablePrices(state);
     const rewardOptions = { spoilSkillLevel: require('../Economy/SpotRewardExpectation').spoilSkillLevel(state) };
     const table = invoke('GameServer/Bot/AI/SpotValueTable');
+    const tableRole = table.roleFor(state);
     const row = table.rankedIncome(tableRole, levelOf(state), costs, -7, true, rewardOptions)[0]
         || table.rankedIncome(tableRole, levelOf(state), costs, -7, false, rewardOptions)[0];
     return Math.max(1, row ? netIncome(row, costs) : 0);
