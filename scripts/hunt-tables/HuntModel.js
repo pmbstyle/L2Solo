@@ -303,7 +303,7 @@ function mobHour(bot, mob, correction = null) {
             // Pet deaths per kill: the damage on it a kill brings past its
             // regeneration over the kill's wall time and rest (petRegen).
             const petRegen = (Number(pet.revHp) || 0) / (Formulas.REGEN_TICK_MS / 1000) * (fight + rest);
-            const petLoss = Math.max(0, petMix.perSecond * fight - petRegen);
+            const petLoss = Math.max(0, petMix.perSecond * Math.max(0, fight - opening) - petRegen);
             // The heals cover the loss up to one per reuse over the kill's time; the rest kills the pet.
             const cover = petHeal ? petHeal.amount * Math.max(1, (fight + rest) / petHeal.reuseSec) : 0;
             petHealSec = petHeal ? Math.min(petLoss, cover) / petHeal.amount * petHeal.castSec : 0;
