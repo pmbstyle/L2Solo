@@ -14,6 +14,8 @@ on:
 # GameTime reads the local clock (isNight): every job of a run in one zone.
 env:
   TZ: UTC
+  # The spot catalogue refuses to build without geodata (generate-spot-table.js buildCatalogue).
+  L2_TABLES_GEODATA: required
 
 jobs:
   plan:
