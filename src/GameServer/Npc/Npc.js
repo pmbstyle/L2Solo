@@ -16,10 +16,11 @@ const EffectTicker   = invoke('GameServer/Effects/EffectTicker');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const TownGuard = invoke('GameServer/Npc/TownGuard');
 const NpcHate = invoke('GameServer/Npc/NpcHate');
+const NpcWander = invoke('GameServer/Npc/NpcWander');
 const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool');
 const AttackHelper   = new Attack();
 // Dropped chases and mobs left out of combat still hating (sleep, stun, fake death).
-const hateStats = { outOfReach: 0, noPath: 0, idleWithHate: 0, attackTimeout: 0 };
+const hateStats = { outOfReach: 0, noPath: 0, idleWithHate: 0, attackTimeout: 0, homeTeleport: 0 };
 // A monster that neither attacked or cast nor was attacked for 2 minutes drops
 // the chase and its hate, then walks home (Mobius C4 AttackableAI
 // MAX_ATTACK_TIMEOUT = 1200 game ticks, refreshed by each of those, not by hate
@@ -102,6 +103,10 @@ class Npc extends NpcModel {
         if (this.fetchAttackable() && this.fetchTitle() === '') {
             this.setTitle('Lv ' + this.fetchLevel() + (this.fetchHostile() ? ' @' : ''));
         }
+    }
+
+    isSpoil() {
+        return this.model.spoil?.spoiled === true;
     }
 
     isConfusionTarget(actor) {
@@ -265,7 +270,7 @@ class Npc extends NpcModel {
             return true;
         }
 
-        if (this.state.fetchCombats()) this.abortCombatState(session);
+        if (this.state.fetchCombats()) this.endFight(session);
         return false;
     }
 
@@ -290,7 +295,7 @@ class Npc extends NpcModel {
             return true;
         }
 
-        invoke('GameServer/Npc/NpcWander').cancel(this, session);
+        NpcWander.cancel(this, session);
         this.switchCombatTarget(target);
         this.state.setCombats(true);
         this.combatActiveAt = Date.now();
@@ -304,7 +309,7 @@ class Npc extends NpcModel {
             this.timer.combatStart = undefined;
             const initialTarget = this.fetchCombatTarget();
             if (!this.state.fetchCombats() || !initialTarget) {
-                if (this.state.fetchCombats()) this.abortCombatState(session);
+                if (this.state.fetchCombats()) this.endFight(session);
                 return;
             }
 
@@ -327,7 +332,7 @@ class Npc extends NpcModel {
             this.timer.combat = setInterval(() => {
                 const actor = this.fetchCombatTarget();
                 if (!actor) {
-                    this.abortCombatState(session);
+                    this.endFight(session);
                     return;
                 }
 
@@ -348,7 +353,7 @@ class Npc extends NpcModel {
                 // combat here pins its target to the corpse indefinitely and
                 // makes party resurrection believe the fight never ended.
                 if (actor?.isDead?.() || actor?.state?.fetchDead?.() || actor?.fakeDeath) {
-                    this.abortCombatState(session);
+                    this.endFight(session);
                     return;
                 }
 
@@ -361,7 +366,7 @@ class Npc extends NpcModel {
 
                 if (EffectRestrictions.canMove(this) && Date.now() - this.combatActiveAt >= ATTACK_TIMEOUT_MS) {
                     hateStats.attackTimeout += 1;
-                    this.abortCombatState(session);
+                    this.endFight(session);
                     return;
                 }
 
@@ -771,6 +776,13 @@ class Npc extends NpcModel {
         }, actor, skill);
     }
 
+    // The fight is over: no target left, or the timeout. abortCombatState alone is
+    // no such thing: death, confusion and skills that clear hate go through it too.
+    endFight(session) {
+        this.abortCombatState(session);
+        if (NpcWander.leaveFight(this)) hateStats.homeTeleport += 1;
+    }
+
     abortCombatState(session, { preserveAggro = false } = {}) {
         delete this.confusionTarget;
         const wasMoving = this.state.inMotion();
@@ -857,7 +869,7 @@ class Npc extends NpcModel {
                 this.switchCombatTarget(replacement);
                 return true;
             }
-            this.abortCombatState(session);
+            this.endFight(session);
             return true;
         }
         return false;

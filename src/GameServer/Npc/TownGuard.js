@@ -14,7 +14,8 @@ function distanceSquared(first, second) {
 }
 
 function canEngage(guard, actor) {
-    if (!isTownGuard(guard) || !(Number(actor?.fetchKarma?.()) > 0) || guard.state?.fetchDead?.()) return false;
+    if (!isTownGuard(guard) || !(Number(actor?.fetchKarma?.()) > 0) || guard.state?.fetchDead?.()
+        || guard.state?.fetchCombats?.()) return false;
     if (distanceSquared(guard, actor) > AGGRO_RADIUS * AGGRO_RADIUS) return false;
     return GeodataEngine.hasLineOfSight(
         guard.fetchLocX(), guard.fetchLocY(), guard.fetchLocZ(),

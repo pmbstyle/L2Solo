@@ -5,6 +5,8 @@ const EffectStats = invoke('GameServer/Effects/EffectStats');
 const BOW_ATTACK_RANGE = 700;
 const MELEE_ATTACK_RANGE = 40;
 const POLEARM_ATTACK_RANGE = 66;
+// Talking to an NPC does not depend on the weapon (Mobius C4 PlayerAI.thinkInteract).
+const TALK_RANGE = 36;
 const npcRadiusMaxima = new WeakMap();
 
 function equippedWeapon(actor) {
@@ -112,6 +114,7 @@ module.exports = {
     BOW_ATTACK_RANGE,
     MELEE_ATTACK_RANGE,
     POLEARM_ATTACK_RANGE,
+    TALK_RANGE,
     collisionRadius,
     effectiveRange,
     distance2d,

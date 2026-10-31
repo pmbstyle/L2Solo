@@ -7,6 +7,7 @@ const NpcObjectIndex = require('../../World/NpcObjectIndex');
 
 const PARTY_REWARD_RADIUS = 2500;
 const PendingSweep = invoke('GameServer/Bot/AI/PendingSweep');
+const SpoilSweep = invoke('GameServer/Npc/SpoilSweep');
 const SWEEP_RETRY_DELAY_MS = 250;
 const SWEEP_RETRY_WINDOW_MS = 25000;
 
@@ -95,7 +96,7 @@ function clearSweepRetry(spoilerSession, retries, npcId) {
 function autoSweepSpoiledCorpse(npc, Generics) {
     const spoil = npc?.model?.spoil;
     const spoilerId = Number(spoil?.spoilerId || 0);
-    if (!spoil?.spoiled || spoil.swept || !spoilerId) return false;
+    if (!SpoilSweep.isSweepable(npc) || !spoilerId) return false;
 
     const spoilerSession = (World.user?.sessions || []).find((candidate) => (
         String(candidate?.accountId || '').startsWith('bot_')

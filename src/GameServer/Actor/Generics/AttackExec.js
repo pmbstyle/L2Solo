@@ -25,11 +25,11 @@ function attackExec(session, actor, data) {
         return true;
     }
 
-    function scheduleAttack(target, callback) {
+    function scheduleAttack(target, callback, range = attackRange) {
         // A cast or swing may start while target lookup or travel is pending.
         // Queue the original request, including its PvP permission flags.
         if (!canStartAttack()) return;
-        actor.automation.scheduleAction(session, actor, target, attackRange, () => {
+        actor.automation.scheduleAction(session, actor, target, range, () => {
             if (canStartAttack()) callback();
         }, { collisionAware: true, action: 'attack' });
     }
@@ -42,7 +42,7 @@ function attackExec(session, actor, data) {
             else {
                 World.npcTalk(session, npc);
             }
-        });
+        }, canAttackNpc(npc, data) ? attackRange : AttackRange.TALK_RANGE);
     }).catch(() => {
         World.fetchUser(data.id).then((user) => {
             scheduleAttack(user, () => {

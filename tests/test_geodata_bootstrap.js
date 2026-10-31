@@ -99,6 +99,23 @@ async function main() {
     }
     const backups = async target => (await fs.promises.readdir(path.dirname(target)))
         .filter(name => name.startsWith(path.basename(target) + '.backup-'));
+    // The stamp reads size and mtime: a coarse clock must not hide a fixture's edit.
+    async function tamper(filename, value) {
+        await fs.promises.writeFile(filename, value);
+        const later = new Date(Date.now() + 5000);
+        await fs.promises.utimes(filename, later, later);
+    }
+    // Hashing is the only createReadStream in the bootstrap.
+    async function hashedDuring(run) {
+        const createReadStream = fs.createReadStream, hashed = [];
+        fs.createReadStream = (filename, ...rest) => {
+            hashed.push(path.basename(String(filename)));
+            return createReadStream.call(fs, filename, ...rest);
+        };
+        try { await run(); } finally { fs.createReadStream = createReadStream; }
+        return hashed;
+    }
+    const pinnedFiles = Object.keys(files);
     try {
         const current = path.join(testRoot, 'current');
         await writePack(current);
@@ -133,7 +150,7 @@ async function main() {
         assert(!(await install(old)).downloaded);
         assert.strictEqual(requests, beforeRequests, 'a second start must not download again');
 
-        await fs.promises.writeFile(path.join(old, '20_22.l2j'), 'Alpha');
+        await tamper(path.join(old, '20_22.l2j'), 'Alpha');
         assert.strictEqual((await inspectDirectory(old)).reason, 'region checksum mismatch');
         assert((await install(old)).downloaded, 'same-size corruption must repair from the pinned release');
         await assertPack(old);
@@ -160,7 +177,7 @@ async function main() {
         const geometryTarget = path.join(testRoot, 'geometry-asset');
         const geometryRelease = { ...release, manifest: withAsset, url: `${url}/geometry.zip`, sha256: hash(served['/geometry.zip']) };
         await install(geometryTarget, { release: geometryRelease });
-        await fs.promises.writeFile(path.join(geometryTarget, 'npc-interaction-geometry.json'), 'Ray');
+        await tamper(path.join(geometryTarget, 'npc-interaction-geometry.json'), 'Ray');
         assert.strictEqual((await inspectDirectory(geometryTarget)).reason, 'interaction geometry checksum mismatch');
         assert((await install(geometryTarget, { release: geometryRelease })).downloaded);
         served['/geometry-missing.zip'] = archiveFor(files, withAsset);
@@ -288,6 +305,99 @@ async function main() {
         await assert.rejects(() => install(path.join(testRoot, 'no-source'), { release: { schemaVersion: 1, manifest } }),
             /configure a verified geodata release archive/);
 
+        // A pack that passed a full verify is not hashed again until a stamped file moves.
+        const stamped = path.join(testRoot, 'stamped');
+        await writePack(stamped);
+        const startRequests = requests;
+        let lines = [];
+        const logged = { logger: line => lines.push(line) };
+        assert.deepStrictEqual((await hashedDuring(() => install(stamped, logged))).sort(), pinnedFiles,
+            'a pack installed before stamps gets one full verify');
+        assert(lines.includes('Verifying geodata (2 regions)...'), lines.join('\n'));
+        assert(lines.some(line => line.startsWith('geodata verified')), lines.join('\n'));
+        lines = [];
+        assert.deepStrictEqual(await hashedDuring(() => install(stamped, logged)), [], 'an unchanged pack is not hashed');
+        assert(!lines.some(line => line.startsWith('Verifying')), lines.join('\n'));
+        const touched = new Date(Date.now() + 5000);
+        await fs.promises.utimes(path.join(stamped, '20_22.l2j'), touched, touched);
+        assert.deepStrictEqual((await hashedDuring(() => install(stamped))).sort(), pinnedFiles, 'a moved mtime hashes again');
+        assert.deepStrictEqual(await hashedDuring(() => install(stamped)), [], 'a good pack is stamped again');
+        await fs.promises.rm(path.join(stamped, MANIFEST_NAME));
+        assert.deepStrictEqual((await hashedDuring(() => install(stamped))).sort(), pinnedFiles, 'the server reads the manifest copy');
+        assert(fs.existsSync(path.join(stamped, MANIFEST_NAME)));
+        assert.strictEqual(requests, startRequests, 'none of those starts may download');
+        await tamper(path.join(stamped, '22_22.l2j'), 'BRAVO!');
+        assert((await install(stamped)).downloaded, 'a changed file of the same size is replaced');
+        await assertPack(stamped);
+        await fs.promises.writeFile(path.join(stamped, '22_22.l2j'), 'short');
+        assert((await install(stamped)).downloaded, 'a changed size is replaced');
+        await assertPack(stamped);
+        assert.deepStrictEqual(await hashedDuring(() => install(stamped)), [], 'an install stamps the pack it publishes');
+
+        // A pack is accepted by content: the pinned manifest decides, not the local copy.
+        const pinnedProfile = async directory => JSON.parse(await fs.promises.readFile(path.join(directory, MANIFEST_NAME), 'utf8')).profile;
+        const handUnpacked = path.join(testRoot, 'hand-unpacked');
+        await writePack(handUnpacked, files, null);
+        const bareRequests = requests;
+        assert(!(await install(handUnpacked)).downloaded, 'a pack with no manifest file needs no download');
+        assert.strictEqual(await pinnedProfile(handUnpacked), manifest.profile, 'the pinned manifest goes into place');
+        assert.deepStrictEqual(await hashedDuring(() => install(handUnpacked)), [], 'the next start is clean');
+        const otherManifest = path.join(testRoot, 'other-manifest');
+        await writePack(otherManifest, files, { ...manifest, profile: 'older-name' });
+        assert(!(await install(otherManifest)).downloaded, 'a differing local manifest over the right files needs no download');
+        assert.strictEqual(await pinnedProfile(otherManifest), manifest.profile);
+        const extraRegion = path.join(testRoot, 'extra-region');
+        await writePack(extraRegion, { ...files, '15_21.l2j': 'excluded' });
+        lines = [];
+        assert(!(await install(extraRegion, logged)).downloaded, 'an extra region is no reason to download');
+        assert(lines.some(line => line.startsWith('warning:') && line.includes('15_21.l2j')), lines.join('\n'));
+        assert.strictEqual(await fs.promises.readFile(path.join(extraRegion, '15_21.l2j'), 'utf8'), 'excluded');
+        lines = [];
+        assert.deepStrictEqual(await hashedDuring(() => install(extraRegion, logged)), []);
+        assert(lines.some(line => line.startsWith('warning:')), 'the warning stays while the file stays');
+        assert.strictEqual(requests, bareRequests, 'accepted packs must not contact the mirror');
+        const wrongRegion = path.join(testRoot, 'wrong-region');
+        await writePack(wrongRegion, { ...files, '20_22.l2j': 'ALPHA' }, null);
+        assert((await install(wrongRegion)).downloaded, 'a wrong pinned file still downloads');
+        await assertPack(wrongRegion);
+        const shortPack = path.join(testRoot, 'short-pack');
+        await writePack(shortPack, { '20_22.l2j': files['20_22.l2j'] }, null);
+        assert.deepStrictEqual((await hashedDuring(async () => {
+            assert((await install(shortPack)).downloaded, 'a missing pinned file still downloads');
+        })).filter(name => name === '20_22.l2j').length, 1, 'only the published pack is hashed, not the partial one');
+        await assertPack(shortPack);
+        served['/bare.zip'] = createStoredZip(Object.fromEntries(Object.entries(files).map(([key, value]) => [`Geodata/${key}`, value])));
+        const bareArchive = path.join(testRoot, 'bare-archive');
+        await install(bareArchive, { release: { ...release, url: `${url}/bare.zip`, sha256: hash(served['/bare.zip']) } });
+        assert.strictEqual(await pinnedProfile(bareArchive), manifest.profile, 'an archive without a manifest gets the pinned one');
+        assert.deepStrictEqual(await hashedDuring(() => install(bareArchive)), []);
+
+        // Extract progress, and what a killed run left behind.
+        lines = [];
+        const deadStaging = path.join(testRoot, '.Geodata.installing-2147483647-1-dead');
+        const liveStaging = path.join(testRoot, `.Geodata.installing-${process.pid}-1-live`);
+        const deadArchive = path.join(options.tempDirectory, 'geodata-2147483647-1-dead.zip');
+        await fs.promises.mkdir(path.join(deadStaging, 'Geodata'), { recursive: true });
+        await fs.promises.mkdir(liveStaging);
+        await fs.promises.writeFile(deadArchive, 'partial');
+        await install(path.join(testRoot, 'after-kill'), logged);
+        assert(lines.some(line => /^extract 100% \(3\/3 entries\)$/.test(line)), lines.join('\n'));
+        assert(!fs.existsSync(deadStaging) && !fs.existsSync(deadArchive), 'a killed run leaves nothing for the next start');
+        assert(fs.existsSync(liveStaging), 'a live owner keeps its staging');
+        await fs.promises.rm(liveStaging, { recursive: true });
+
+        const held = path.join(testRoot, 'held');
+        await writePack(held);
+        const heldLock = path.join(testRoot, '.held.install-lock');
+        await fs.promises.mkdir(heldLock);
+        await fs.promises.writeFile(path.join(heldLock, 'owner.json'), JSON.stringify({ pid: process.pid }));
+        lines = [];
+        await install(held, { logger: line => {
+            lines.push(line);
+            if (line.startsWith('waiting')) fs.rmSync(heldLock, { recursive: true, force: true });
+        } });
+        assert(lines.some(line => line.startsWith('waiting') && line.includes(`pid ${process.pid}`)), lines.join('\n'));
+
         // Run the real pre-server wrapper in a disposable checkout. Its child
         // must only start after the old pack has been replaced and leased.
         const project = path.join(testRoot, 'wrapper');
@@ -336,7 +446,7 @@ async function main() {
             const leaseFiles = fs.readdirSync(path.join(project, 'data/.Geodata.users'));
             assert(leaseFiles.some(name => JSON.parse(fs.readFileSync(path.join(project, 'data/.Geodata.users', name))).pid === childPid));
             await assert.rejects(() => install(path.join(project, 'data/Geodata'), {
-                release: { ...release, manifest: { ...manifest, profile: 'replacement' } }
+                release: { ...release, manifest: manifestFor(oldManifestFiles, 'replacement') }
             }), /Stop every server/);
             await assertPack(path.join(project, 'data/Geodata'));
         } finally {

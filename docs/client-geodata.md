@@ -6,7 +6,7 @@ The client has 142 numbered maps. Map `15_21` places its terrain in `15_20` and 
 
 ## Installation
 
-Start normally in the launcher, or run `npm run geodata` to prepare the files. The starter compares the installed manifest and every region against `scripts/geodata-release.json`. An old pack is outdated even when its own manifest is internally consistent. Missing files, extra regions and same-size corruption also trigger replacement.
+Start normally in the launcher, or run `npm run geodata` to prepare the files. The starter checks every pinned region against `scripts/geodata-release.json` once, then trusts a stamp of names, sizes and times until a file changes. The local manifest file need not match: a pack is judged by its content, and an extra region is a warning. An old pack is outdated even when its own manifest is internally consistent. Missing files, extra regions and same-size corruption also trigger replacement.
 
 The release ZIP is downloaded and checked by SHA-256, then extracted into a separate directory and checked against the pinned manifest. Only then is the previous directory renamed to `Geodata.backup-*` and the new directory installed. Failed downloads or verification leave the old pack untouched. A failed installation restores it; an interrupted swap is recovered on the next start. Concurrent starts serialize installation. Directory aliases resolve to one physical path, including dangling links during a swap. The wrapper transfers its lease to the actual NodeL2 process before permitting game initialization; the game process keeps it until exit, even if the wrapper dies. A different release cannot replace those files while NodeL2 is alive. The lease directory remains present across concurrent stops and starts.
 

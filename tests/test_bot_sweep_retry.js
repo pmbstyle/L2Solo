@@ -30,6 +30,7 @@ const sweeper = {
 const session = { accountId: 'bot_sweep_retry', actor: sweeper };
 const corpse = {
     fetchId: () => 22003,
+    fetchSelfId: () => 777,
     fetchAttackable: () => true,
     isDead: () => true,
     state: { fetchDead: () => true },
@@ -38,6 +39,7 @@ const corpse = {
 const secondCorpse = {
     ...corpse,
     fetchId: () => 22004,
+    fetchSelfId: () => 777,
     model: { spoil: { spoiled: true, swept: false, spoilerId: 22002 } }
 };
 const generics = {
@@ -50,6 +52,7 @@ const pendingTimers = [];
 
 try {
     World.user = { sessions: [session] };
+    invoke('GameServer/DataCache').fetchNpcRewardsFromSelfId = (_selfId, callback) => callback({ spoils: [{ items: [{}] }] });
     global.setTimeout = (callback, delay) => {
         const timer = { callback, delay, unref() {} };
         pendingTimers.push(timer);

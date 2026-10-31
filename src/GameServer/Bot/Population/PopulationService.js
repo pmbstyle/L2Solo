@@ -509,17 +509,19 @@ async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
                 const detached = await LifeState.leaveParty({ ...member, stats: { ...member.stats,
                     partyIncomeDecision: incomeDeparture } }, 'better_solo_income', { ownerHandoff: true });
                 if (detached) {
-                    const retained = currentMembers.filter(member => member.characterId !== detached.characterId);
+                    const retained = retainedMembers(party, detached.characterId);
                     if (retained.length < Config.partyMinSize) {
                         const dissolved = await dissolveBackgroundParty(party, 'better_solo_income', retained.length);
                         return { party: dissolved.party || party, reviewed, departed: detached, dissolved: true };
                     }
-                    const leader = retained.find(member => member.characterId === party.leaderId) || PartyComposition.chooseLeader(retained);
-                    const updated = await BackgroundPartyState.createOrUpdate({ ...party,
-                        leaderId: leader.characterId, memberIds: retained.map(member => member.characterId),
+                    const leaderId = leaderIdForMembers(party, retained);
+                    const nextParty = { ...party,
+                        leaderId, memberIds: retained.map(member => member.characterId),
                         roleCoverage: PartyComposition.roleCoverage(retained), stats: { ...party.stats, ...joint,
                             memberGoals: retained.map(invoke('GameServer/Bot/Population/PartyGoalPolicy').declaration),
-                            agreement: party.stats?.agreement ? { ...party.stats.agreement, memberIds: retained.map(member => member.characterId) } : null } });
+                            agreement: party.stats?.agreement ? { ...party.stats.agreement, memberIds: retained.map(member => member.characterId) } : null } };
+                    await syncPartyLeader(retained, nextParty, leaderId);
+                    const updated = await BackgroundPartyState.createOrUpdate(nextParty);
                     return { party: updated || party, reviewed, departed: detached };
                 }
             }
@@ -534,28 +536,30 @@ async function reconcileWorkerPartyGoals(party, timestamp = Date.now()) {
     }
     party = BackgroundPartyState.find(party.partyId) || party;
     if (party.status !== 'active') return { party, reviewed, departed, dissolved: party.status === 'dissolved' };
-    const activeMembers = party.memberIds.filter(id => Number(id) !== Number(departed.characterId))
-        .map(id => LifeState.cachedState(id)).filter(Boolean);
-    if (activeMembers.length < Config.partyMinSize && !departed.stats?.partyMarketReturn) {
+    const activeMembers = retainedMembers(party, departed.characterId);
+    // A return token keeps no party below the minimum: the row refuses that
+    // roster (prepareCommit), which left the rest attached to a stale row. A
+    // returning bot finds its party gone and waits (resumePartyMarketBreak).
+    if (activeMembers.length < Config.partyMinSize) {
         const dissolved = await dissolveBackgroundParty(party, 'market_break', activeMembers.length);
         return { party: dissolved.party || party, reviewed, departed, dissolved: true };
     }
 
-    const leader = activeMembers.find((member) => Number(member.characterId) === Number(party.leaderId))
-        || PartyComposition.chooseLeader(activeMembers)
-        || activeMembers[0];
-    const updatedParty = await BackgroundPartyState.createOrUpdate({
+    const leaderId = leaderIdForMembers(party, activeMembers);
+    const nextParty = {
         ...party,
-        leaderId: Number(leader.characterId),
+        leaderId,
         memberIds: activeMembers.map((member) => Number(member.characterId)),
         roleCoverage: PartyComposition.roleCoverage(activeMembers),
         stats: {
             ...(party.stats || {}),
             lastMarketBreakAt: timestamp,
             ...PartyMarketBreak.stats(party, departed)
-        },
-        updatedAt: timestamp
-    }, { preserveWarOperation: !!departed.stats?.partyMarketReturn?.warOperationId });
+        }
+    };
+    await syncPartyLeader(activeMembers, nextParty, leaderId);
+    const updatedParty = await BackgroundPartyState.createOrUpdate(nextParty,
+        { preserveWarOperation: !!departed.stats?.partyMarketReturn?.warOperationId });
     return { party: updatedParty || party, reviewed, departed, dissolved: false };
 }
 
@@ -1022,6 +1026,15 @@ async function createBackgroundParty(members = [], objectiveOverride = null, opt
             return savedParty;
         });
     });
+}
+
+// The members a party keeps after a departure, the owner's newest copies
+// (syncPartyLeader writes a member whole). One who left meanwhile is not
+// written back in.
+function retainedMembers(party, departedId) {
+    return (party.memberIds || []).filter(id => Number(id) !== Number(departedId))
+        .map(id => LifeState.cachedState(id))
+        .filter(member => member && DecisionSections.partyIdOf(member) === String(party.partyId));
 }
 
 function syncPartyLeader(members = [], party, leaderId) {

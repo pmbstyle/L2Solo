@@ -18,6 +18,7 @@ const BackgroundJobRegistry = invoke('GameServer/Bot/Population/BackgroundJobReg
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const NpcDecay = invoke('GameServer/World/Generics/NpcDecay');
 const Npc = invoke('GameServer/Npc/Npc');
+const Attack = invoke('GameServer/Actor/Attack');
 const PvpEncounterRuntime = invoke('GameServer/Bot/Population/PvpEncounterRuntime');
 const { heapRecord, heapsLine } = require('./WorkerHeapTelemetry');
 const { performance } = require('node:perf_hooks');
@@ -138,10 +139,12 @@ const PopulationStatus = {
         return h ? ` incomeHold=${h.kept || 0}/${h.none || 0},${h.unrouted || 0},${h.renewed || 0},${h.moved || 0},${h.event || 0},${h.goal || 0};party${h.partyKept || 0}/${h.partyMissed || 0}` : '';
     },
 
-    // Mobs that forgot a chase (out of reach / no path / 2 min without an attack) and mobs left out of combat still hating.
+    // Mobs that forgot a chase (out of reach / no path / 2 min without an attack), mobs left out of
+    // combat still hating, mobs sent home unseen, and player swings lost to a stale position.
     npcHateText() {
         const hate = Npc.hateStats();
-        return `npcHate=${hate.outOfReach}o/${hate.noPath}n/${hate.idleWithHate}i/${hate.attackTimeout}t`;
+        return `npcHate=${hate.outOfReach}o/${hate.noPath}n/${hate.idleWithHate}i/${hate.attackTimeout}t/${hate.homeTeleport}h`
+            + ` lostSwings=${Attack.lostSwings()}`;
     },
 
     summary() {

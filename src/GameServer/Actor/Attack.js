@@ -19,7 +19,14 @@ const HotPartyCastTracker = invoke('GameServer/Bot/AI/HotPartyCastTracker');
 
 const { weaponMaskFor } = invoke('GameServer/Skills/WeaponMask');
 
+// Player swings drawn at a still target that was out of range at impact.
+let lostSwings = 0;
+
 class Attack {
+    static lostSwings() {
+        return lostSwings;
+    }
+
     constructor() {
         this.timers = new Set();
         this.bowReloading = false;
@@ -99,6 +106,16 @@ class Attack {
         );
         session?.dataSendToMe?.(ServerResponse.actionFailed());
         return true;
+    }
+
+    // The client drew this swing, so it holds a position for the target that the
+    // server does not: send the real one, or every next swing is lost the same way.
+    resyncLostSwing(session, target) {
+        if (session?.botSession || target?.state?.inMotion?.()) return;
+        lostSwings += 1;
+        session.dataSendToMe?.(ServerResponse.stopMove(target.fetchId(), {
+            locX: target.fetchLocX(), locY: target.fetchLocY(), locZ: target.fetchLocZ(), head: target.fetchHead?.() || 0
+        }));
     }
 
     meleeHit(session, creature) {
@@ -233,7 +250,10 @@ class Attack {
                 if (target?.state?.fetchDead?.() || target?.isDead?.()) return;
                 // Check every melee victim again at impact, including polearm
                 // secondary targets. Already-launched arrows keep travelling.
-                if (!rangedAttack && !AttackRange.isWithinRange(actor, target, attackRange)) return;
+                if (!rangedAttack && !AttackRange.isWithinRange(actor, target, attackRange)) {
+                    if (index === 0) this.resyncLostSwing(session, target);
+                    return;
+                }
                 if (!invoke('GameServer/Clan/ClanRaidRoster').beforeOffensiveEffect(session, actor, target, raidParty)) return;
 
                 if (!entry.hitLanded || entry.hit.damage <= 0) this.recordPlayerAggression(session, actor, target);

@@ -245,6 +245,30 @@ function fixture(kind = 'Weapon.Sword', targetX = 40, entity = 'npc') {
         assert.equal(replaced.count(0x60), 0, 'a retired actor cannot resume an async attack');
         checks++;
 
+        // Talking does not depend on the weapon; a bow must not talk from its attack range.
+        const talkNpcTalk = World.npcTalk;
+        let talked = 0;
+        World.npcTalk = () => { talked++; };
+        const far = make('Weapon.Bow', 500);
+        far.target.fetchAttackable = () => false;
+        far.sendClick(0x04); await drain();
+        assert.equal(talked, 0, 'a bow does not open a dialog from far away');
+        const close = make('Weapon.Bow', 30);
+        close.target.fetchAttackable = () => false;
+        close.sendClick(0x04); await drain();
+        assert.equal(talked, 1, 'a close NPC talks with any weapon');
+        World.npcTalk = talkNpcTalk;
+        checks++;
+
+        // A swing that finds a still target out of range at impact corrects the client.
+        const lost = make('Weapon.Sword', 40);
+        lost.sendClick(0x04); await drain();
+        lost.target.fetchLocX = () => 500;
+        lost.swingTimers[0].callback(); await drain();
+        assert(lost.packets.some(packet => packet[0] === 0x47 && packet.readInt32LE(1) === lost.target.fetchId()
+            && packet.readInt32LE(5) === 500), 'the target position goes to the client');
+        checks++;
+
         console.log(`Player click control: ${checks} command ordering, chase acknowledgement and bow reload checks passed`);
     } finally {
         fixtures.forEach(f => f.actor.automation.abortAll(f.actor, { notifyClient: false }));

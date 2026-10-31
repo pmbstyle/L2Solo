@@ -11,6 +11,8 @@ os.tmpdir = () => scratch;
 const { createWorld, enableQuestSpawns, Service, DataCache } = require('./helpers/c4QuestHarness');
 const H = invoke('GameServer/Quest/SecondProfessionQuest');
 const Quest = invoke('GameServer/Quest/quests/Q216_TrialOfGuildsman');
+const Scavenger = invoke('GameServer/Quest/quests/Q417_PathToScavenger');
+const Npc = invoke('GameServer/Npc/Npc');
 const Spoil = invoke('GameServer/Npc/SpoilSweep');
 const Skill = invoke('GameServer/Model/Skill');
 
@@ -58,6 +60,19 @@ async function run() {
         await Service.onSkillSee(session, target, skill);
         assert.equal(await world.amount(710061, 3136), 5, 'duplicate callback grants no second reward');
         console.log('Q216: failed/foreign Spoil grants nothing; landed own Spoil grants five beads once');
+
+        // The Honey Bear has an empty spoil list: Spoil still lands, and the kill pays the quest.
+        const scavenger = Service.stateFor(session, Scavenger);
+        await H.step(scavenger, 1, { status: 'started', gives: [[1653, 1]] });
+        const bear = Object.assign(npc(790063), { fetchSelfId: () => 5058, isSpoil: Npc.prototype.isSpoil });
+        runtime.npc.spawns.push(bear);
+        await Scavenger.onKill(scavenger, bear);
+        assert.equal(await world.amount(710061, 1655), 0, 'an unspoiled Honey Bear pays nothing');
+        Spoil.castSpoil(session, session.actor, bear, skill);
+        await session.questMutationTail;
+        assert.equal(bear.isSpoil(), true, 'Spoil lands on a monster with no spoil list');
+        await Scavenger.onKill(scavenger, bear);
+        assert.equal(await world.amount(710061, 1655), 1, 'a spoiled Honey Bear pays one Honey Jar');
     } finally {
         Math.random = random;
         os.tmpdir = tmpdir;

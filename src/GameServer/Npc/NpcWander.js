@@ -69,6 +69,29 @@ function limitStep(from, to, maxDistance) {
         locY: Math.round(from.locY + (to.locY - from.locY) * ratio), locZ: from.locZ };
 }
 
+// Real players only: bots do not watch monsters, so one out of a player's view
+// can go home at once, and one a player watches walks.
+function realObservers(world) {
+    return (world.user?.sessions || []).filter(session => session.actor?.fetchIsOnline?.() === true
+        && session.accountId && !String(session.accountId).startsWith('bot_')
+        && session.constructor?.name !== 'BotSession');
+}
+
+function inView(actor, npc) {
+    return (actor.fetchLocX() - npc.fetchLocX()) ** 2 + (actor.fetchLocY() - npc.fetchLocY()) ** 2
+        <= CLIENT_VISIBILITY_RADIUS ** 2 && Math.abs(actor.fetchLocZ() - npc.fetchLocZ()) <= 400;
+}
+
+function sendToWatchers(npc, observers, packet) {
+    for (const session of observers) {
+        const actor = session.actor;
+        if (actor?.fetchIsOnline?.() !== true || typeof session.dataSendToMe !== 'function') continue;
+        if (session.knownNpcIds && !session.knownNpcIds.has(npc.fetchId())) continue;
+        if ((actor.fetchLocX() - npc.fetchLocX()) ** 2 + (actor.fetchLocY() - npc.fetchLocY()) ** 2
+            <= CLIENT_VISIBILITY_RADIUS ** 2) session.dataSendToMe(packet);
+    }
+}
+
 function homeOf(npc) {
     const home = npc.spawnDefinition?.spawn?.coords?.length ? npc.spawnOrigin || npc.spawnDefinition.spawn.coords[0] : null;
     return home && [home.locX, home.locY, home.locZ].every(Number.isFinite) ? home : null;
@@ -121,6 +144,30 @@ function destination(npc, random = Math.random) {
     return null;
 }
 
+function teleportHome(npc, world, observers) {
+    // A leader does not leave its minions: nothing else brings them back.
+    if (npc.minionState) return false;
+    const origin = npc.spawnOrigin;
+    const home = homeOf(npc) || (origin && [origin.locX, origin.locY, origin.locZ].every(Number.isFinite) ? origin : null);
+    if (!home) return false;
+    const to = { locX: home.locX, locY: home.locY, locZ: home.locZ };
+    sendToWatchers(npc, observers, Response.teleportToLocation(npc.fetchId(), { ...to, head: npc.fetchHead() }));
+    npc.setLocXYZ(to);
+    if (world.npc?.gridKeys?.has(npc)) world.addNpcToGrid(npc);
+    // A player near home never knew this monster.
+    invoke('GameServer/World/Generics/SpawnNpcs').notifyNearby(world, npc); // lazy: cycle SpawnNpcs loads Npc, which loads this file.
+    return true;
+}
+
+// A monster that left a fight away from home with no real player in view is
+// back at once: nobody sees it, and no tick walks a mob no player is near.
+function leaveFight(npc, world = invoke('GameServer/World/World')) { // lazy: cycle World loads Npc, which loads this file.
+    if (!eligible(npc) || !Restrictions.canMove(npc) || !awayFromHome(npc)) return false;
+    const observers = realObservers(world);
+    if (observers.some(session => inView(session.actor, npc))) return false;
+    return teleportHome(npc, world, observers);
+}
+
 function start(npc, world, observers, random = Math.random) {
     if (!eligible(npc) || !Restrictions.canMove(npc) || !Restrictions.canUseBasicAction(npc)
         || npc.fetchMostHated?.()) return false;
@@ -130,23 +177,19 @@ function start(npc, world, observers, random = Math.random) {
     if (!Number.isFinite(speed) || speed <= 0) return false;
     const from = coords(npc);
     const to = destination(npc, random);
-    if (!to || Math.hypot(to.locX - from.locX, to.locY - from.locY) < 16) return false;
+    // A way home that is blocked ends in a teleport (Mobius C4 sends a monster
+    // back that way): this never queues pathfinding work for an idle monster.
+    const blocked = () => awayFromHome(npc, from) && teleportHome(npc, world, observers);
+    if (!to) return blocked();
+    if (Math.hypot(to.locX - from.locX, to.locY - from.locY) < 16) return false;
     // Cosmetic movement fails closed in uncovered regions. This never loads
-    // regions or queues pathfinding work on behalf of an idle monster.
-    if (!Geodata.hasGeo(from.locX, from.locY) || !Geodata.hasGeo(to.locX, to.locY)) return false;
+    // regions on behalf of an idle monster.
+    if (!Geodata.hasGeo(from.locX, from.locY) || !Geodata.hasGeo(to.locX, to.locY)) return blocked();
     to.locZ = Geodata.getHeight(to.locX, to.locY, from.locZ);
     if (!Number.isFinite(to.locZ) || !Geodata.hasLineOfSight(
-        from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ)) return false;
+        from.locX, from.locY, from.locZ, to.locX, to.locY, to.locZ)) return blocked();
 
-    const transport = { dataSendToMeAndOthers(packet) {
-        for (const session of observers) {
-            const actor = session.actor;
-            if (actor?.fetchIsOnline?.() !== true || typeof session.dataSendToMe !== 'function') continue;
-            if (session.knownNpcIds && !session.knownNpcIds.has(npc.fetchId())) continue;
-            if ((actor.fetchLocX() - npc.fetchLocX()) ** 2 + (actor.fetchLocY() - npc.fetchLocY()) ** 2
-                <= CLIENT_VISIBILITY_RADIUS ** 2) session.dataSendToMe(packet);
-        }
-    } };
+    const transport = { dataSendToMeAndOthers(packet) { sendToWatchers(npc, observers, packet); } };
     const wasRunning = npc.fetchStateRun();
     npc.setStateRun(false);
     if (wasRunning) transport.dataSendToMeAndOthers(Response.walkAndRun(npc.fetchId(), false));
@@ -181,9 +224,7 @@ function tick(world, { random = Math.random } = {}) {
     for (const npc of active) if (npc.state.fetchTowards() !== 'wander'
         || !world.npc.gridKeys?.has(npc)) active.delete(npc);
     if (active.size >= MAX_ACTIVE_WALKS) return 0;
-    const observers = (world.user?.sessions || []).filter(session => session.actor?.fetchIsOnline?.() === true
-        && session.accountId && !String(session.accountId).startsWith('bot_')
-        && session.constructor?.name !== 'BotSession');
+    const observers = realObservers(world);
     if (!observers.length) return 0;
     // Union the nine sectors around each observer. Crowded areas are scanned
     // once, without touching npc.spawns or multiplying work by nearby bots.
@@ -200,9 +241,7 @@ function tick(world, { random = Math.random } = {}) {
     let rolled = 0;
     const requests = [];
     for (const [key, actors] of cells) for (const npc of world.npc.grid[key] || []) {
-        if (!eligible(npc) || !actors.some(actor =>
-            (actor.fetchLocX() - npc.fetchLocX()) ** 2 + (actor.fetchLocY() - npc.fetchLocY()) ** 2
-                <= CLIENT_VISIBILITY_RADIUS ** 2 && Math.abs(actor.fetchLocZ() - npc.fetchLocZ()) <= 400)) continue;
+        if (!eligible(npc) || !actors.some(actor => inView(actor, npc))) continue;
         if (!awayFromHome(npc) && Math.floor(random() * WALK_RATE) !== 0) continue;
         // Reservoir sampling gives later sectors the same chance under load.
         // At most 32 short geo rays / new movements per shared one-second tick.
@@ -216,4 +255,4 @@ function tick(world, { random = Math.random } = {}) {
     return requests.reduce((count, npc) => count + Number(start(npc, world, observers, random)), 0);
 }
 
-module.exports = { tick, eligible, destination, start, cancel, WALK_RATE, DRIFT_RANGE, MAX_GEO_CHECKS, MAX_ACTIVE_WALKS };
+module.exports = { tick, eligible, destination, start, leaveFight, cancel, WALK_RATE, DRIFT_RANGE, MAX_GEO_CHECKS, MAX_ACTIVE_WALKS };

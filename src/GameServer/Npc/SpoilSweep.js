@@ -108,8 +108,14 @@ function spoilRecipientSession(session, npc, selfId) {
     return session;
 }
 
+// Spoil lands on any live monster, an empty spoil list included: Path of the
+// Scavenger reads it on the Honey Bear, which has none. Only Sweep needs a list.
+function canSpoil(npc) {
+    return !!npc?.fetchAttackable?.() && !npc.isDead?.() && !npc.model?.spoil?.spoiled;
+}
+
 function markSpoiled(session, actor, npc, skill, { announce = false, festival = false } = {}) {
-    if (!npc?.fetchAttackable?.() || npc.isDead?.() || !hasSpoils(npc) || npc.model?.spoil?.spoiled) return false;
+    if (!canSpoil(npc)) return false;
 
     npc.model = npc.model || {};
     npc.model.spoil = {
@@ -168,7 +174,7 @@ const SpoilSweep = {
     },
 
     trySpoilCrush(session, actor, npc, skill, rng = Math.random) {
-        if (!npc?.fetchAttackable?.() || npc.isDead?.() || !hasSpoils(npc) || npc.model?.spoil?.spoiled) return false;
+        if (!canSpoil(npc)) return false;
         if (!spoilLands(actor, npc, skill, rng)) return false;
         return markSpoiled(session, actor, npc, skill, { announce: true });
     },
@@ -185,14 +191,14 @@ const SpoilSweep = {
     castSpoilTargets(session, actor, targets, skill) {
         const eligible = [...new Map((targets || []).filter(Boolean)
             .map((npc) => [npc.fetchId?.(), npc]))].map(([, npc]) => npc)
-            .filter((npc) => npc.fetchAttackable?.() && !npc.isDead?.() && hasSpoils(npc) && !npc.model?.spoil?.spoiled);
+            .filter(canSpoil);
         if (eligible.length === 0) {
             session.dataSendToMe(ServerResponse.actionFailed());
             return;
         }
 
         castUtilitySkill(session, actor, eligible[0], skill, () => {
-            const spoiled = eligible.filter((npc) => !npc.isDead?.() && !npc.model?.spoil?.spoiled);
+            const spoiled = eligible.filter(canSpoil);
             if (spoiled.length === 0) {
                 session.dataSendToMe(ServerResponse.actionFailed());
                 return;

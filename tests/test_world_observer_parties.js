@@ -28,6 +28,14 @@ try {
     const background = Observer.compactHotBot({ id: 43, level: 20, party: { id: 'autonomous', leader: { id: 44 }, role: 'healer' } });
     assert.strictEqual(background.party.id, 'autonomous');
 } finally { World.user = originalUser; }
+const member = (id, name, leaderId, leaderName) => ({ id, name, kind: 'bot', level: 20,
+    party: { id: 'stale', leaderId, leader: { id: leaderId, name: leaderName } } });
+const [handed] = Pages.groupParties([member(1, 'Kept', 9, 'Departed'), member(2, 'Named', 2, 'Named')]);
+assert.strictEqual(handed.leader.name, 'Named', 'the leader comes from a member of the group, whichever copy is read first');
+assert.strictEqual(handed.name, 'Named');
+const [leaderless] = Pages.groupParties([member(1, 'Kept', 9, 'Departed')]);
+assert.strictEqual(leaderless.leader, undefined, 'a leader outside the group leads nothing here');
+assert.strictEqual(leaderless.name, 'Adventuring party', 'no stale name of a departed leader');
 console.log('Observer party identities: player leaders, companions, autonomous parties and solo players passed');
 const Atlas = require('../src/WorldObserver/public/mapAtlas');
 const Areas = invoke('GameServer/World/WorldAreaCatalog');
