@@ -140,11 +140,11 @@ const PopulationStatus = {
     },
 
     // Mobs that forgot a chase (out of reach / no path / 2 min without an attack), mobs left out of
-    // combat still hating, mobs sent home unseen, and player swings lost to a stale position.
+    // combat still hating, mobs sent home unseen, and melee swings kept on a target that stepped away.
     npcHateText() {
         const hate = Npc.hateStats();
         return `npcHate=${hate.outOfReach}o/${hate.noPath}n/${hate.idleWithHate}i/${hate.attackTimeout}t/${hate.homeTeleport}h`
-            + ` lostSwings=${Attack.lostSwings()}`;
+            + ` keptSwings=${Attack.keptSwings()}`;
     },
 
     summary() {

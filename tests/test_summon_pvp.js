@@ -52,10 +52,19 @@ function actor(id, x = 0) {
         assert.deepStrictEqual(damage, [{ victim: target, amount: 10, source: summon }]);
 
         timers.length = 0;
+        const standing = target.x;
         Control.attackTick(session, summon, target);
-        target.x = 1000;
+        target.x = 200;
         timers.shift()();
-        assert.strictEqual(damage.length, 1, 'a target escaping before impact cannot take remote melee damage');
+        assert.strictEqual(damage.length, 2, 'a target walking away takes the started swing');
+        target.x = standing;
+
+        timers.length = 0;
+        damage.length = 1;
+        Control.attackTick(session, summon, target);
+        target.x = 7000;
+        timers.shift()();
+        assert.strictEqual(damage.length, 1, 'a target that left the view takes no damage');
         timers.shift()();
         assert.strictEqual(moves.length, 1, 'the next swing must chase the moving target');
         target.x = 40;

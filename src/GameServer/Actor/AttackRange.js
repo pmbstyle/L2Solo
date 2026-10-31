@@ -1,6 +1,7 @@
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
+const { CLIENT_VISIBILITY_RADIUS } = require('../World/WorldConstants');
 
 const BOW_ATTACK_RANGE = 700;
 const MELEE_ATTACK_RANGE = 40;
@@ -90,6 +91,12 @@ function isWithinRange(source, target, attackRange) {
     return distance2d(source, target) <= effectiveRange(source, target, attackRange);
 }
 
+// Range decides whether a swing starts; a started swing lands unless its target
+// left the attacker's view (Lisvus L2Character.onHitTimer: knowsObject, no range).
+function lostFromView(source, target) {
+    return distance2d(source, target) >= CLIENT_VISIBILITY_RADIUS;
+}
+
 function maxKnownTargetRadius() {
     const npcs = DataCache.npcs;
     if (!Array.isArray(npcs)) {
@@ -121,6 +128,7 @@ module.exports = {
     fetchNormalAttackRange,
     kindRange,
     isWithinRange,
+    lostFromView,
     maxKnownTargetRadius,
     targetQueryRadius,
     weaponKind,

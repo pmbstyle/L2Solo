@@ -74,14 +74,33 @@ try {
     far.timers[0]();
     assert.strictEqual(far.damage.length, 1, 'attacks resume once the actor has actually caught up');
 
+    const keptBefore = Attack.keptSwings();
     const escaping = fixture();
     escaping.attack.meleeHit(escaping.session, escaping.target);
-    escaping.target.x = 1000;
+    escaping.target.x = 200;
     escaping.timers[0]();
-    assert.strictEqual(escaping.damage.length, 0, 'a target escaping during the swing must not take melee damage');
+    assert.strictEqual(escaping.damage.length, 1, 'a target walking away during the swing takes the started swing');
+    assert.strictEqual(Attack.keptSwings(), keptBefore + 1, 'the kept swing is counted for the live read');
     escaping.timers[1]();
     assert.strictEqual(escaping.chases.length, 1, 'the next swing must approach instead of attacking from afar');
     assert.strictEqual(escaping.actor.state.hits, false);
+
+    const missedAway = fixture();
+    missedAway.attack.prepareMeleeHit = () => ({ damage: 0, flags: 0 });
+    Formulas.calcHitChance = () => false;
+    missedAway.attack.meleeHit(missedAway.session, missedAway.target);
+    missedAway.target.x = 200;
+    const shownBefore = missedAway.packets.length;
+    missedAway.timers[0]();
+    Formulas.calcHitChance = () => true;
+    assert.strictEqual(missedAway.damage.length, 0);
+    assert.strictEqual(missedAway.packets.length, shownBefore + 1, 'a miss on a target walking away is shown to the player');
+
+    const teleported = fixture();
+    teleported.attack.meleeHit(teleported.session, teleported.target);
+    teleported.target.x = 7000;
+    teleported.timers[0]();
+    assert.strictEqual(teleported.damage.length, 0, 'a target that left the view takes no melee damage');
 
     const between = fixture('Weapon.DualFist', 56);
     assert(AttackRange.isWithinRange(between.actor, between.target, 40), 'both collision radii count at the boundary');
@@ -96,10 +115,10 @@ try {
     const secondary = { ...pole.target, x: 50, fetchId: () => 2000003 };
     pole.attack.resolveMeleeTargets = () => [pole.target, secondary];
     pole.attack.meleeHit(pole.session, pole.target);
-    secondary.x = 1000;
+    secondary.x = 7000;
     pole.timers[0]();
     assert.deepStrictEqual(pole.damage.map(entry => entry.victim.fetchId()), [pole.target.fetchId()],
-        'polearm secondary targets must also remain in melee range at impact');
+        'a polearm secondary target that left the view takes no damage');
 
     const bow = fixture('Weapon.Bow', 600);
     bow.attack.meleeHit(bow.session, bow.target);

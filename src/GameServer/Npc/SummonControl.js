@@ -361,7 +361,7 @@ function attackTick(session, summon, target) {
         if (summon.controlMode !== 'attack' || summon.isDead?.()
             || target.isDead?.() || target.state?.fetchDead?.() === true) return;
         if (!isValidEnemyTarget(session.actor, target) || !Restrictions.canAttack(summon) ||
-            !AttackRange.isWithinRange(summon, target, range)) return;
+            AttackRange.lostFromView(summon, target)) return;
         if (hitLanded) {
             if (target.fetchKind) invoke(path.npc).receivedHit(session, summon, target, hit.damage);
             else invoke(path.actor).receivedHit(session, target, hit.damage, { source: summon });

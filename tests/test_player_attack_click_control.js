@@ -260,15 +260,6 @@ function fixture(kind = 'Weapon.Sword', targetX = 40, entity = 'npc') {
         World.npcTalk = talkNpcTalk;
         checks++;
 
-        // A swing that finds a still target out of range at impact corrects the client.
-        const lost = make('Weapon.Sword', 40);
-        lost.sendClick(0x04); await drain();
-        lost.target.fetchLocX = () => 500;
-        lost.swingTimers[0].callback(); await drain();
-        assert(lost.packets.some(packet => packet[0] === 0x47 && packet.readInt32LE(1) === lost.target.fetchId()
-            && packet.readInt32LE(5) === 500), 'the target position goes to the client');
-        checks++;
-
         console.log(`Player click control: ${checks} command ordering, chase acknowledgement and bow reload checks passed`);
     } finally {
         fixtures.forEach(f => f.actor.automation.abortAll(f.actor, { notifyClient: false }));
