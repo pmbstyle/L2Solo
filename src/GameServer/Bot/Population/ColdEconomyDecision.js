@@ -591,6 +591,8 @@ function refusal(state, accepted, deps = {}, options = {}) {
     // lazy: cycle EconomyContext constructs and validates these cards.
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     if (state.stats?.wishDirty) return 'wish_dirty';
+    // The window search moved the earning spot (EconomyContext.incomeMoved): rebuild on it.
+    if (Economy.incomeMoved(state)) return 'income_moved';
     const echo = Sections.decisionRefusal(state, accepted.decisionSeq, accepted.activityLeaf, accepted.focus);
     if (echo) return echo;
     // A card without a leaf reuses only as a completed (null) activity its

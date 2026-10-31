@@ -292,6 +292,8 @@ function heldBuildVerdict(state, proof, deps = {}, options = {}) {
     // sections before the echo.
     const dirty = Number(state.stats?.wishDirty) || 0;
     if (dirty && refuse('wish_dirty', dirty) && !collect) return out;
+    // The earning spot's window search chose another spot (decision 10-30, holdRead): the held spot "failing".
+    if (incomeMoved(state) && refuse('income_moved', ['occupation']) && !collect) return out;
     const echo = Sections.decisionRefusal(state, ...proof.decision);
     // Collecting past raised bits: every raise (DecisionEvents markSections,
     // raiseSections) bumps decisionSeq with its bits, so a moved sequence is
@@ -900,59 +902,75 @@ function incomeRouteFor(state, deps, timestamp, price, keep) {
     // rebuilds its foundation (a section event, deps.searchIncome; the
     // income drift is the soft point's observation event) or no held spot
     // searches afresh, any other read judges only the held spot.
-    const held = deps.searchIncome ? null : heldIncomeRoute(state, { ...deps, timestamp, required, price: read });
+    const hold = deps.searchIncome ? null : holdRead(state, { ...deps, timestamp, required, price: read });
     if (deps.searchIncome) holdStats.event += 1;
-    const route = held || IncomeRoute.select(state, { ...deps, timestamp, required, price: read });
-    const plan = held && cache.get(actorKeyOf(state, deps)).plan;
+    const route = hold ? hold.route : IncomeRoute.select(state, { ...deps, timestamp, required, price: read });
+    // searched: the route is a full search's (an event build reuses only such a record).
     const record = { state, timestamp, spots: deps.spots, mode: deps.mode, maxChecks: deps.maxChecks, required, reads, route,
-        searched: !held, routeAt: !route ? null : held ? plan.routeAt : timestamp,
-        routeIncome: !route ? null : held ? plan.routeIncome : Number(route.row?.income) || 0,
-        heldRoute: route || null };
+        searched: !hold || hold.searched, routeAt: !route ? null : hold && !hold.searched ? hold.routeAt : timestamp,
+        heldRoute: slimRoute(route) };
     keep?.(record);
     return record;
+}
+// What a held build keeps of a route: its spot and income row, not the
+// search's matchup profiles (their verdict caches would live with the plan).
+function slimRoute(route) {
+    return route ? { spot: route.spot, row: route.row } : null;
 }
 // The held build's earning spot is searched again at most every 30 game
 // minutes (forState rebuilds its foundation after the window).
 const HOLD_MS = 30 * GameTime.GAME_MINUTE_MS;
 // Held-spot reads by verdict (the worker status line): kept, no held build,
 // a held build without a route, renewed (the window's search chose the held
-// spot again), moved (it chose another), an event search; party: the party
-// comparison's solo side.
+// spot again), moved (it chose another, or none: each read until the
+// rebuild), an event search; party: the party comparison's solo side.
 const holdStats = { kept: 0, none: 0, unrouted: 0, renewed: 0, moved: 0, event: 0, partyKept: 0, partyMissed: 0 };
 function incomeHoldStats() { return { ...holdStats }; }
-// The one hold (decision 10-30): the route the bot's held build chose
-// (spot, income row, matchup profiles), kept as chosen: no search and no
-// matchup per read (10-31: re-judging the held spot per read cost more than
-// the ranking it saved). What would change the verdict is a section event
-// (level, kit, death, goal, gear need, party: forState rebuilds the
-// foundation and searches, deps.searchIncome) or the income drift (the
-// observation event). Once the window (HOLD_MS) has passed, one full search:
-// the held spot again renews the window in place (the build stays held);
-// another spot marks the build (routeMoved) so forState rebuilds its
-// foundation on it. Null without a held route. The economy's income route
-// (incomeRouteFor) and the party comparison's solo side
-// (PartyIncomeComparison.soloRoute, options.party) read it.
-function heldIncomeRoute(state, options) {
+// The one hold (decision 10-30): the route the bot's held build chose (its
+// spot and income row), kept as chosen: no search and no matchup per read
+// (10-31: re-judging the held spot per read cost more than the ranking it
+// saved). What would change the verdict is a section event (level, kit,
+// death, goal, gear need, party: forState rebuilds the foundation and
+// searches, deps.searchIncome) or the income drift (the observation event).
+// Once the window (HOLD_MS) has passed, one full search: the held spot again
+// renews the window in place; another spot (or none) moves the hold: the
+// reads return that search's answer and the held build and its card refuse
+// (incomeMoved) so the next decision point rebuilds the foundation on it.
+// Returns { route, searched, routeAt }, or null without a held route (the
+// caller searches).
+function holdRead(state, options) {
     const plan = cache.get(`character:${Number(state.characterId) || 0}`)?.plan;
     const route = plan?.heldRoute;
     const why = !plan ? 'none' : !Number.isFinite(plan.routeAt) || !route || String(route.spot?.id) !== String(plan.bestSpotId) ? 'unrouted' : '';
     if (why) { holdStats[options.party ? 'partyMissed' : why] += 1; return null; }
+    if (plan.routeMoved) {
+        holdStats[options.party ? 'partyKept' : 'moved'] += 1;
+        return { route: plan.movedRoute, searched: true, routeAt: plan.routeAt };
+    }
     const timestamp = Number(options.timestamp) || Date.now();
-    // Moved: the build is rebuilt on its new spot (forState); until then the economy searches.
-    if (plan.routeMoved && !options.party) return null;
     if (options.party || timestamp - plan.routeAt < HOLD_MS) {
         holdStats[options.party ? 'partyKept' : 'kept'] += 1;
-        return route;
+        return { route, searched: false, routeAt: plan.routeAt };
     }
     const found = IncomeRoute.select(state, options);
     if (found && String(found.spot.id) === String(plan.bestSpotId)) {
-        Object.assign(plan, { routeAt: timestamp, heldRoute: found });
+        Object.assign(plan, { routeAt: timestamp, heldRoute: slimRoute(found) });
         holdStats.renewed += 1;
     } else {
-        plan.routeMoved = true;
+        Object.assign(plan, { routeMoved: true, movedRoute: slimRoute(found) });
         holdStats.moved += 1;
     }
-    return found;
+    return { route: found, searched: true, routeAt: timestamp };
+}
+// The held route as the party comparison's solo side reads it
+// (PartyIncomeComparison.soloRoute, options.party), or null.
+function heldIncomeRoute(state, options) {
+    return holdRead(state, options)?.route || null;
+}
+// The held build's window search moved off its spot (holdRead): its
+// foundation must be rebuilt (heldBuildVerdict and the card's refusal).
+function incomeMoved(state) {
+    return cache.get(`character:${Number(state?.characterId) || 0}`)?.plan?.routeMoved === true;
 }
 // The bot's own fit for the spot of its hunting leaf (docs/architecture.md §2
 // route): the route's one test, BotRoute.leafFitReader, as a yes or no per
@@ -1058,7 +1076,7 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
     const reserve = escapeCost + kit.reduce((sum, row) => sum + row.survivalMissing * row.unitPrice, 0);
     return { tableRole, hunt, hourAdena: Hunt.huntHour(hunt, state), survivalReserve: reserve, kitCost, kit: kitData,
         lostGearHours, bestSpotId, deathHours, bestTable, stock,
-        routeAt: income.routeAt, routeIncome: income.routeIncome, heldRoute: income.heldRoute,
+        routeAt: income.routeAt, heldRoute: income.heldRoute,
         riskWeight: Valuation.riskWeight(state, persona),
         expectedDeathHours: positive(bestTable?.deaths) * deathHours,
         karmaHours: Valuation.karmaHours(state, { ...hunt, lostGearHours, deathsPerHour: positive(bestTable?.deaths) }) };
@@ -1068,7 +1086,7 @@ function foundationFromPlan(state, plan, deps, price) {
         () => plan.kit.scrollHours ??= scrollHoursFor(state, deps.spots, plan.bestSpotId));
     return { hunt: plan.hunt, hourAdena: plan.hourAdena, survivalReserve: plan.survivalReserve,
         kit: plan.kit, stock, kitCost, lostGearHours: plan.lostGearHours, bestSpotId: plan.bestSpotId,
-        routeAt: plan.routeAt, routeIncome: plan.routeIncome, heldRoute: plan.heldRoute,
+        routeAt: plan.routeAt, heldRoute: plan.heldRoute,
         deathHours: plan.deathHours, riskWeight: plan.riskWeight,
         expectedDeathHours: plan.expectedDeathHours, karmaHours: plan.karmaHours };
 }
@@ -1197,7 +1215,7 @@ function forState(state = {}, deps = {}) {
     // (they expire by time), exp, persona, market trades, craft station,
     // the equipment plan and the crafter's MP.
     // A held earning spot the window's search moved off (heldIncomeRoute) rebuilds the foundation on the new one.
-    const keptBase = held && !(mask & Sections.COMPUTED.foundation) && !held.plan.routeMoved ? held.plan : null;
+    const keptBase = held && !(mask & Sections.COMPUTED.foundation) && !incomeMoved(state) ? held.plan : null;
     const keptSources = held?.sourceSections && !(mask & Sections.COMPUTED.sources) ? held : null;
     // The source walk's per-spot ground verdict, outside the memo's size cap:
     // its own section rule (GearAcquisitionPlanner.sourceGround).
@@ -1274,7 +1292,7 @@ function forState(state = {}, deps = {}) {
     // one): its solo matchup profiles serve the providers' source route reader.
     let incomeRecord = null;
     const base = keptBase ? foundationFromPlan(state, keptBase, deps, price)
-        : foundation(state, { ...deps, searchIncome: !!held && (!!(mask & Sections.COMPUTED.foundation) || held.plan.routeMoved === true) },
+        : foundation(state, { ...deps, searchIncome: !!held && (!!(mask & Sections.COMPUTED.foundation) || incomeMoved(state)) },
             persona, timestamp, price,
             record => { incomeRecord = record; });
     // These facts still belong to the reused foundation: its items stay read.
@@ -1584,7 +1602,7 @@ function planOf(context, base, { key, tripHour, projection = null, knowledgeEnab
         if (node.key.startsWith('stock:') && !stockRoots.has(node.key)) stockRoots.set(node.key, node.object?.itemId);
     return { pending: !projection, key, actorKey: context.actorKey, timestamp: context.timestamp,
         gearThreatMask: context.gearThreatMask, persona: context.persona, hunt: context.hunt,
-        riskWeight: context.riskWeight, bestSpotId: context.bestSpotId, routeAt: base.routeAt, routeIncome: base.routeIncome, heldRoute: base.heldRoute || null,
+        riskWeight: context.riskWeight, bestSpotId: context.bestSpotId, routeAt: base.routeAt, heldRoute: base.heldRoute || null,
         deathHours: context.deathHours,
         lostGearHours: context.lostGearHours, karmaHours: context.karmaHours, expectedDeathHours: context.expectedDeathHours,
         survivalReserve: context.survivalReserve, kit: base.kit, hourAdena: context.hourAdena, workshop: context.workshop,
@@ -1927,5 +1945,5 @@ function reset() {
 }
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
-module.exports = { incomeHoldStats, heldIncomeRoute, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, stockFor, keptTargets, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
+module.exports = { incomeHoldStats, heldIncomeRoute, incomeMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, stockFor, keptTargets, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
     craftIncome };
