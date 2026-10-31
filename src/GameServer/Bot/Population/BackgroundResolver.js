@@ -212,7 +212,9 @@ function resolveRest(state, elapsedMs, timestamp, options = {}) {
         ? Math.max(estimateRestMs(state, vitals, options), scheduledRemainingMs, petReady ? 0 : petRestMs(combat, summon, vitals, timestamp))
         : 0;
     const resting = recoveryNeeded;
-    const restUntil = resting ? timestamp + remainingMs : null;
+    // ARCH-NOTE: Native checkpoints require integer milliseconds. A pet's regen
+    // and a potion's ms are fractions; ceil the deadline so a rest never ends early.
+    const restUntil = resting ? Math.ceil(timestamp + remainingMs) : null;
 
     return {
         patch: {
@@ -2733,7 +2735,7 @@ const BackgroundResolver = {
                     patch.activity = 'resting';
                     const drinkMs = drinkToRest(roundProfile, true, coldPetView(roundProfile, patch.stats.coldCombat?.summon, patch.vitals,
                         patch.stats.coldCombat?.cooldowns, timestamp + combatMs));
-                    patch.stats.restUntil = timestamp + Math.max(estimateRestMs(fightState, patch.vitals), drinkMs);
+                    patch.stats.restUntil = Math.ceil(timestamp + Math.max(estimateRestMs(fightState, patch.vitals), drinkMs));
                     events.push({ type: 'rest', weight: 2,
                         summary: `${state.name || 'Bot'} sat down before another fight near ${spot.name}`,
                         meta: { spotId: spot.id, reason: result.reason } });
@@ -2851,8 +2853,8 @@ const BackgroundResolver = {
                 patch.activity = 'resting';
                 patch.stats = {
                     ...(patch.stats || state.stats || {}),
-                    restUntil: timestamp + Math.round(result.runMs || 0) + Math.max(estimateRestMs(fightState, patch.vitals), drinkMs,
-                        RestPolicy.petRested(petView) ? 0 : petRestMs(fightProfile, summonLeft, patch.vitals, timestamp + combatMs))
+                    restUntil: Math.ceil(timestamp + Math.round(result.runMs || 0) + Math.max(estimateRestMs(fightState, patch.vitals), drinkMs,
+                        RestPolicy.petRested(petView) ? 0 : petRestMs(fightProfile, summonLeft, patch.vitals, timestamp + combatMs)))
                 };
                 events.push({
                     type: 'rest',

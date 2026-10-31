@@ -1114,6 +1114,27 @@ function shiftDueTimesByDowntime() {
     });
 }
 
+// Clocks are whole milliseconds (the command checkpoint and the native write
+// fence refuse a fraction). A row saved before the rest deadlines were ceiled
+// can hold one, and a bot with a fractional clock takes no command.
+function wholeClocks() {
+    const whole = (column) => `${column} = CAST(ROUND(${column}) AS INTEGER)`;
+    const fractional = (value) => `${value} <> CAST(${value} AS INTEGER)`;
+    const columns = ['activityStartedAt', 'nextResolveAt', 'lastResolvedAt', 'lastHotAt', 'updatedAt'];
+    const restUntil = `json_extract(statsJson, '$.restUntil')`;
+    return Database.execute([
+        `UPDATE ${TABLE} SET ${columns.map(whole).join(', ')},
+            statsJson = CASE WHEN ${fractional(restUntil)}
+                THEN json_set(statsJson, '$.restUntil', CAST(ROUND(${restUntil}) AS INTEGER)) ELSE statsJson END
+        WHERE ${[...columns, restUntil].map(fractional).join(' OR ')}`,
+    []
+    ]).then((result) => {
+        const repaired = Number(result?.affectedRows || 0);
+        if (repaired) utils.infoWarn('BotLife', 'cold hydrate: whole clocks on %d rows', repaired);
+        return repaired;
+    });
+}
+
 function hydrateCache() {
     return Database.execute([
         `SELECT states.*, (SELECT json_group_array(json_object('slot', slot, 'symbolId', symbolId))
@@ -1803,6 +1824,7 @@ const BotLifeState = {
         initStarted = true;
 
         initPromise = Database.execute(['SELECT 1', []], 'schema:bot-life')
+            .then(() => wholeClocks())
             .then(() => shiftDueTimesByDowntime())
             .then(() => Database.fetchBotMarketCounts()).then((rows) => {
                 marketCounts.clear();

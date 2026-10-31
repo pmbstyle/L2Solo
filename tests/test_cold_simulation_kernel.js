@@ -1521,6 +1521,30 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         assert.strictEqual(planKernel.reviewsSkipped, 2);
     }
 
+    // A bot whose state the command checkpoint refuses (a fractional clock)
+    // keeps its turn: once its kind no longer needs a command, it steps.
+    {
+        const at = 1800000000000;
+        let clock = at, hallNeeded = true, steps = 0;
+        const refusedKernel = new ColdSimulationKernel({ now: () => clock, maxInFlight: 8, maxBatch: 8, hallNeeded: () => hallNeeded,
+            resolveSolo: async () => {
+                steps += 1;
+                return { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: clock + 30000 };
+            }, emit: () => true });
+        refusedKernel.upsert({ state: { characterId: 2001000, name: 'Fraction', level: 20, phase: 'cold', activity: 'hunting', stats: {},
+            inventory: {}, simulation: { revision: 3 }, updatedAt: at - 90000,
+            timing: { activityStartedAt: at - 89999.5, nextResolveAt: at - 60000, lastResolvedAt: at - 90000 } } });
+        refusedKernel.tick();
+        await new Promise(resolve => setTimeout(resolve, 20));
+        assert.strictEqual(steps, 0, 'no step while the bot waits for a command it cannot begin');
+        assert.strictEqual(refusedKernel.snapshot().checkpointsRefused, 1, 'the health line counts the refused checkpoint');
+        hallNeeded = false;
+        clock += 30001;
+        refusedKernel.tick();
+        await new Promise(resolve => setTimeout(resolve, 20));
+        assert.strictEqual(steps, 1, 'the refused bot is still queued and steps');
+    }
+
     // A party run with no member result (no spot): the whole roster commits
     // the party row, fenced on the revision the run read, with the resolver's
     // next due and a goal review; every member stays in flight until the ACK.

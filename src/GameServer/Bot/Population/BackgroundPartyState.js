@@ -258,6 +258,22 @@ function shiftDueTimesByDowntime() {
     });
 }
 
+// Whole milliseconds, as BotLifeState.wholeClocks: the party fence refuses a
+// fraction, so a row saved with one would refuse its whole group.
+function wholeClocks() {
+    const whole = (column) => `${column} = CAST(ROUND(${column}) AS INTEGER)`;
+    const columns = ['startedAt', 'nextResolveAt', 'updatedAt'];
+    return Database.execute([
+        `UPDATE ${TABLE} SET ${columns.map(whole).join(', ')}, revision = revision + 1
+        WHERE ${columns.map((column) => `${column} <> CAST(${column} AS INTEGER)`).join(' OR ')}`,
+    []
+    ]).then((result) => {
+        const repaired = Number(result?.affectedRows || 0);
+        if (repaired) utils.infoWarn('BotParty', 'cold hydrate: whole clocks on %d parties', repaired);
+        return repaired;
+    });
+}
+
 function rowFromParty(party) {
     const current = cache.get(String(party.partyId))?.stats;
     if (Number(current?.clanGoalInvalidationVersion || 0) > Number(party.stats?.clanGoalInvalidationVersion || 0)) {
@@ -296,6 +312,7 @@ const BackgroundPartyState = {
 
         initPromise = Database.execute(['SELECT 1', []], 'schema:bot-parties')
             .then(() => Database.execute([`UPDATE ${TABLE} SET status = 'active', nextResolveAt = ?, updatedAt = ?, revision = revision + 1 WHERE status = 'hot'`, [now() + 30000, now()]], 'bot-party:startup-recovery'))
+            .then(() => wholeClocks())
             .then(() => shiftDueTimesByDowntime())
             .then(() => this.loadActive()).then(() => {
             initialized = true;

@@ -723,6 +723,7 @@ class ColdSimulationKernel {
         // Reviews a commit ack named that found no command slot (always counted:
         // the plan is re-planned at the bot's next step, its buff or training waits).
         this.reviewsSkipped = 0;
+        this.checkpointsRefused = 0;
         // Ok commit acks with numbers only whose state this thread could not
         // rebuild (no proposal kept, a bad number): always counted.
         this.ackUnbuilt = 0;
@@ -1332,7 +1333,12 @@ class ColdSimulationKernel {
                     continue;
                 }
                 const attempt = this.beginCommand(id);
-                if (!attempt) continue;
+                if (!attempt) {
+                    // Its token is spent and no ACK will return it: back on the
+                    // heap, or this bot stays unstepped until its next upsert.
+                    if (!this.stopping && !this.busy(id)) this.schedule(id, current.version, this.now() + STEP_STALL_MS, 'command');
+                    continue;
+                }
                 commandsSelected += 1;
                 DiagnosticConfig.developerDiagnostics && (this.stats.commands += 1);
                 this.resolveChain = this.resolveChain.then(nextTurn).then(() => this.resolveCommand(id, attempt));
@@ -1419,7 +1425,10 @@ class ColdSimulationKernel {
             || this.stopping || !current || current.state.phase !== 'cold' || this.busy(id)
             || this.inFlight.size + this.commanding.size >= this.maxInFlight) return null;
         const checkpoint = Protocol.commandCheckpoint(current.state);
-        if (!checkpoint) return null;
+        if (!checkpoint) {
+            this.checkpointsRefused += 1;
+            return null;
+        }
         const attempt = { startedAt: this.now(), commandId: `${kind}:${id}:${this.nextCommandRequest++}`,
             kind, checkpoint, version: current.version, sent: false };
         if (kind === 'lifecycle' && this.buyerWakeups.delete(id)) attempt.marketWakeup = true;
@@ -1686,7 +1695,7 @@ class ColdSimulationKernel {
         // never earlier (resolveStep); its ids keep the real start
         // (run.startedAt), its rows' write stamp the real now (resolveStartedAt).
         const resolveStartedAt = this.now();
-        const startedAt = Math.max(resolveStartedAt, run.dueAt || 0);
+        const startedAt = Math.ceil(Math.max(resolveStartedAt, run.dueAt || 0));
         let raidStepId = null;
         let published = false, handled = false;
         try {
@@ -2121,8 +2130,9 @@ class ColdSimulationKernel {
         try {
             // Resolved as of its due, never earlier: a step started its lead
             // early lives the same round as one started on time. The row's
-            // write stamp (updatedAt) stays the real start.
-            const timestamp = Math.max(startedAt, active.dueAt || 0);
+            // write stamp (updatedAt) stays the real start. Whole: a due read from
+            // the stats can hold a fraction, and every clock of the step comes from here.
+            const timestamp = Math.ceil(Math.max(startedAt, active.dueAt || 0));
             const elapsedMs = active.state.timing?.lastResolvedAt
                 ? Math.max(1000, timestamp - Number(active.state.timing.lastResolvedAt))
                 : 60000;
@@ -2577,6 +2587,7 @@ class ColdSimulationKernel {
             commanding: this.commanding.size,
             commandingAgeMs: this.commanding.size ? Math.max(0, now - oldestCommandAt) : 0,
             reviewsSkipped: this.reviewsSkipped,
+            checkpointsRefused: this.checkpointsRefused,
             ackUnbuilt: this.ackUnbuilt,
             stepLeadMs: Math.round(this.stepLeadMs),
             maxInFlight: this.maxInFlight,

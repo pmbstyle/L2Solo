@@ -111,6 +111,14 @@ function world() {
         assert.strictEqual(row.updatedAt, T - 1000, 'the row write stamp is the real start, never the future due');
         assert.deepStrictEqual(await tickAt(T + 1), [], 'a step started early is not started again at its due');
 
+        // A due read from a saved fraction: the step is stamped whole, so the
+        // bot's clocks still pass the command checkpoint.
+        const F = gap() + 0.5;
+        kernel.upsert({ state: soloState(5, F) });
+        assert.deepStrictEqual(await tickAt(F - 1000.5), [5], 'a fractional due starts on its lead');
+        assert.strictEqual(resolvedAt.get(5), Math.ceil(F), 'the step time is whole milliseconds, never before the due');
+        commit(5, 1500, F - 1000.5);
+
         // Fast commits afterwards: the lead falls back slowly, not at once.
         for (let i = 0; i < 3; i++) await round(1, FLUSH_MS);
         const U = gap();

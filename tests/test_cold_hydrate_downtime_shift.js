@@ -76,11 +76,20 @@ async function run() {
     // but keeps its old due time, which must still move by the downtime.
     const staleHot = [9600417, 'DowntimeStaleHot', lastWrite - 120000, lastWrite];
     await bot(...staleHot, 'hot');
+    // A row saved with fractional clocks: a command checkpoint refuses it, so the bot would take no command.
+    const fractional = [9600418, 'DowntimeFraction', lastWrite + 0.5, lastWrite];
+    await bot(...fractional);
+    await Database.execute([`UPDATE bot_life_state SET activityStartedAt = activityStartedAt + 0.7, lastResolvedAt = lastResolvedAt + 0.7,
+        updatedAt = updatedAt + 0.5, statsJson = json_set(statsJson, '$.restUntil', ?) WHERE characterId = ?`, [lastWrite + 0.5, fractional[0]]]);
     const party = { nextResolveAt: lastWrite - 5000, updatedAt: lastWrite - 20000 };
     await Database.execute([`INSERT INTO bot_background_parties (partyId,leaderId,memberIdsJson,spotId,startedAt,
         nextResolveAt,cohesion,risk,status,roleCoverageJson,statsJson,updatedAt)
         VALUES (?,?,?,NULL,?,?,0.65,0.25,'active','{}','{}',?)`,
         [PARTY, 9600415, JSON.stringify([9600415, 9600416]), lastWrite - 600000, party.nextResolveAt, party.updatedAt]]);
+    await Database.execute([`INSERT INTO bot_background_parties (partyId,leaderId,memberIdsJson,spotId,startedAt,
+        nextResolveAt,cohesion,risk,status,roleCoverageJson,statsJson,updatedAt)
+        VALUES ('fractional-party',9600419,?,NULL,?,?,0.65,0.25,'active','{}','{}',?)`,
+        [JSON.stringify([9600419, 9600420]), lastWrite - 600000.5, lastWrite + 0.5, lastWrite - 20000.5]]);
     const beforeBoot = Date.now();
     await boot();
     // The pause the boot applied: from the last write to the shift, so it holds
@@ -111,10 +120,16 @@ async function run() {
     }
     const [hotRow] = await Database.execute(['SELECT * FROM bot_life_state WHERE characterId=?', [staleHot[0]]]);
     const hotState = Life.cachedState(staleHot[0]);
+    const wholeState = Life.cachedState(fractional[0]);
+    assert(Protocol.commandCheckpoint(wholeState), 'whole clocks: a row saved with fractions takes commands again');
+    assert(Number.isSafeInteger(wholeState.stats.restUntil), 'whole clocks: the rest deadline in the stats too');
     assert.equal(hotRow.phase, 'cold', 'stale hot: recovered as cold');
     assert.equal(Number(hotRow.nextResolveAt), staleHot[2] + pause, 'stale hot: row due time moves by the downtime');
     assert.equal(hotState.timing.nextResolveAt, staleHot[2] + pause, 'stale hot: cached due time moves by the downtime');
     assert.equal(Number(hotRow.lastResolvedAt), staleHot[3] - 1000 + pause, 'stale hot: lastResolvedAt moves by the downtime');
+    const [wholeParty] = await Database.execute(['SELECT * FROM bot_background_parties WHERE partyId=?', ['fractional-party']]);
+    assert(['startedAt', 'nextResolveAt', 'updatedAt'].every((key) => Number.isSafeInteger(Number(wholeParty[key]))),
+        'whole clocks: the party fence reads whole milliseconds');
     const cachedParty = Party.find(PARTY);
     const [partyRow] = await Database.execute(['SELECT * FROM bot_background_parties WHERE partyId=?', [PARTY]]);
     assert.equal(cachedParty.nextResolveAt, party.nextResolveAt + pause, 'party: cached due time');

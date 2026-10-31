@@ -575,6 +575,13 @@ const injuredHunt = BackgroundResolver.resolveSolo({
 assert.strictEqual(injuredHunt.patch.activity, 'resting', 'an injured hunter still needs real recovery');
 assert(injuredHunt.patch.stats.restUntil > timestamp, 'new recovery must replace an expired deadline');
 assert.strictEqual(injuredHunt.nextResolveAt, injuredHunt.patch.stats.restUntil);
+const fractionalStep = BackgroundResolver.resolveSolo({
+    state: { ...strongColdHunter, vitals: { ...strongColdHunter.vitals, hp: 100 },
+        stats: { ...strongColdHunter.stats, restUntil: timestamp - 1 } },
+    spot: gigantSpot, targetNpcId: 1187, elapsedMs: 12000, timestamp: timestamp + 0.5, rng: () => 0.1
+});
+assert.strictEqual(fractionalStep.patch.activity, 'resting');
+assert(Number.isSafeInteger(fractionalStep.patch.stats.restUntil), 'a post-fight rest deadline is whole milliseconds');
 
 const strongPartyResult = BackgroundPartyResolver.resolve({
     party: { partyId: 'strong_type_party', cohesion: 1, risk: 0, roleCoverage: {}, stats: {} },
