@@ -6590,7 +6590,12 @@ const Database = {
 
     withMutationAdmission(beforeWrite, work) {
         if (typeof beforeWrite !== 'function' || typeof work !== 'function') throw new TypeError('invalid_mutation_admission');
-        return mutationAdmission.run(beforeWrite, () => Promise.resolve().then(work));
+        // The guard ends with its scope. What the scope left running (a trade
+        // meeting waiting for two workers, a timer it armed) inherits the store
+        // and answers to its own checks, not to a command that has ended.
+        let open = true;
+        const guard = () => (open ? beforeWrite() : undefined);
+        return mutationAdmission.run(guard, () => Promise.resolve().then(work)).finally(() => { open = false; });
     },
 
     cooperatively(work, sliceMs = 12) {

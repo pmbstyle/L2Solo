@@ -517,6 +517,7 @@ const tests = [
     'tests/test_cold_exchange_wait_once.js',
     'tests/test_e314_sale_visit_shot_pending.js',
     'tests/test_meeting_stage_last.js',
+    'tests/test_meeting_outlives_command.js',
     'tests/test_cold_safe_enchant.js',
     'tests/test_bot_static_buyer_sale.js',
     'tests/test_bot_market_town_routing.js',
