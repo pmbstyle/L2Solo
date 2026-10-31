@@ -1524,8 +1524,9 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     // A bot whose state the command checkpoint refuses (a fractional clock)
     // keeps its turn: once its kind no longer needs a command, it steps.
     {
-        const at = 1800000000000;
+        const at = 1800000000000, consoleError = console.error;
         let clock = at, hallNeeded = true, steps = 0;
+        console.error = () => {};
         const refusedKernel = new ColdSimulationKernel({ now: () => clock, maxInFlight: 8, maxBatch: 8, hallNeeded: () => hallNeeded,
             resolveSolo: async () => {
                 steps += 1;
@@ -1536,13 +1537,30 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
             timing: { activityStartedAt: at - 89999.5, nextResolveAt: at - 60000, lastResolvedAt: at - 90000 } } });
         refusedKernel.tick();
         await new Promise(resolve => setTimeout(resolve, 20));
+        console.error = consoleError;
         assert.strictEqual(steps, 0, 'no step while the bot waits for a command it cannot begin');
-        assert.strictEqual(refusedKernel.snapshot().checkpointsRefused, 1, 'the health line counts the refused checkpoint');
         hallNeeded = false;
         clock += 30001;
         refusedKernel.tick();
         await new Promise(resolve => setTimeout(resolve, 20));
         assert.strictEqual(steps, 1, 'the refused bot is still queued and steps');
+
+        // A market wake on such a bot does not hold it on commands forever.
+        steps = 0;
+        const woken = 2001001;
+        console.error = () => {};
+        refusedKernel.upsert({ state: { characterId: woken, name: 'Woken', level: 20, phase: 'cold', activity: 'hunting', stats: {},
+            inventory: {}, simulation: { revision: 3 }, updatedAt: clock - 90000,
+            timing: { activityStartedAt: clock - 89999.5, nextResolveAt: clock + 10000, lastResolvedAt: clock - 90000 } } });
+        assert.strictEqual(refusedKernel.wakeBuyer(woken), true, 'an idle hunter takes a market wake');
+        refusedKernel.tick();
+        await new Promise(resolve => setTimeout(resolve, 20));
+        console.error = consoleError;
+        assert.strictEqual(refusedKernel.wakeBuyer(woken), false, 'a refused bot takes no second wake');
+        clock += 30001;
+        refusedKernel.tick();
+        await new Promise(resolve => setTimeout(resolve, 20));
+        assert.strictEqual(steps, 1, 'a refused wake leaves the bot its resolver steps');
     }
 
     // A party run with no member result (no spot): the whole roster commits

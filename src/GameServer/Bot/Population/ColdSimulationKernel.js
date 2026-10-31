@@ -724,6 +724,7 @@ class ColdSimulationKernel {
         // the plan is re-planned at the bot's next step, its buff or training waits).
         this.reviewsSkipped = 0;
         this.checkpointsRefused = 0;
+        this.checkpointErrors = new Set();
         // Ok commit acks with numbers only whose state this thread could not
         // rebuild (no proposal kept, a bad number): always counted.
         this.ackUnbuilt = 0;
@@ -1121,7 +1122,10 @@ class ColdSimulationKernel {
 
     wakeBuyer(characterId, timestamp = this.now()) {
         const id = Number(characterId);
-        if (this.stopping || !eligibleBuyer(this.states.get(id)?.state) || this.buyerWakeups.has(id)) return false;
+        // A bot its checkpoint refused takes no wake: each would replace the
+        // queued turn that leaves it its resolver steps.
+        if (this.stopping || !eligibleBuyer(this.states.get(id)?.state) || this.buyerWakeups.has(id)
+            || this.checkpointErrors.has(id)) return false;
         this.buyerWakeups.add(id);
         if (!this.busy(id)) this.requeue(id, timestamp);
         return true;
@@ -1426,7 +1430,7 @@ class ColdSimulationKernel {
             || this.inFlight.size + this.commanding.size >= this.maxInFlight) return null;
         const checkpoint = Protocol.commandCheckpoint(current.state);
         if (!checkpoint) {
-            this.checkpointsRefused += 1;
+            this.refuseCheckpoint(id, current.state);
             return null;
         }
         const attempt = { startedAt: this.now(), commandId: `${kind}:${id}:${this.nextCommandRequest++}`,
@@ -1435,6 +1439,17 @@ class ColdSimulationKernel {
         this.commandStartedAt.set(id, attempt);
         this.commanding.add(id);
         return attempt;
+    }
+
+    // A state the checkpoint refuses (a fractional clock) is its writer's bug: an
+    // error line, so a deploy read fails on it instead of a bot going quiet. A
+    // market wake would hold the bot on commands; its resolver steps still run.
+    refuseCheckpoint(id, state) {
+        this.checkpointsRefused += 1;
+        this.buyerWakeups.delete(id);
+        if (this.checkpointErrors.has(id) || this.checkpointErrors.size >= 32) return;
+        this.checkpointErrors.add(id);
+        console.error(`ColdSimulationKernel :: Error: command checkpoint refused bot ${id} ${state.activity}: ${JSON.stringify(state.timing)} updatedAt ${state.updatedAt}`);
     }
 
     cancelCommand(characterId, attempt) {

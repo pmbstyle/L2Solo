@@ -88,8 +88,8 @@ async function run() {
         [PARTY, 9600415, JSON.stringify([9600415, 9600416]), lastWrite - 600000, party.nextResolveAt, party.updatedAt]]);
     await Database.execute([`INSERT INTO bot_background_parties (partyId,leaderId,memberIdsJson,spotId,startedAt,
         nextResolveAt,cohesion,risk,status,roleCoverageJson,statsJson,updatedAt)
-        VALUES ('fractional-party',9600419,?,NULL,?,?,0.65,0.25,'active','{}','{}',?)`,
-        [JSON.stringify([9600419, 9600420]), lastWrite - 600000.5, lastWrite + 0.5, lastWrite - 20000.5]]);
+        VALUES ('fractional-party',9600419,?,NULL,?,?,0.65,0.25,'active','{}',?,?)`,
+        [JSON.stringify([9600419, 9600420]), lastWrite - 600000.5, lastWrite + 0.5, JSON.stringify({ restUntil: lastWrite + 0.5 }), lastWrite - 20000.5]]);
     const beforeBoot = Date.now();
     await boot();
     // The pause the boot applied: from the last write to the shift, so it holds
@@ -130,6 +130,7 @@ async function run() {
     const [wholeParty] = await Database.execute(['SELECT * FROM bot_background_parties WHERE partyId=?', ['fractional-party']]);
     assert(['startedAt', 'nextResolveAt', 'updatedAt'].every((key) => Number.isSafeInteger(Number(wholeParty[key]))),
         'whole clocks: the party fence reads whole milliseconds');
+    assert(Number.isSafeInteger(JSON.parse(wholeParty.statsJson).restUntil), 'whole clocks: the party rest deadline too');
     const cachedParty = Party.find(PARTY);
     const [partyRow] = await Database.execute(['SELECT * FROM bot_background_parties WHERE partyId=?', [PARTY]]);
     assert.equal(cachedParty.nextResolveAt, party.nextResolveAt + pause, 'party: cached due time');

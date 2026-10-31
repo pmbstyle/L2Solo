@@ -8,6 +8,7 @@ const Spots = invoke('GameServer/Bot/Population/SpotProfiles');
 const Risk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const Efficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
+const Protocol = invoke('GameServer/Bot/Population/ColdSimulationProtocol');
 Data.init();
 
 const at = 1800000000000;
@@ -234,6 +235,11 @@ try {
         Encounter.key([hurt], easy), Cold.npcForSpot(), 1, at, { botReadyAt: 0, mobReadyAt: 10000 }) } };
     const continued = Resolver.resolveSolo({ state: inCombat, spot: easy, elapsedMs: 0, timestamp: at, rng: () => 0.5 });
     assert(continued.debug.attemptedFights > 0, 'a pending fight cannot disappear into pre-fight recovery');
+    // The rest after a fight, from a step time with a saved fraction: still whole.
+    const postFight = Resolver.resolveSolo({ state: { ...inCombat, vitals: { ...inCombat.vitals, hp: 20, mp: 0 } },
+        spot: easy, elapsedMs: 0, timestamp: at + 0.5, rng: () => 0.5 });
+    assert(postFight.events.some(event => event.summary.includes('sat down to recover')), 'the fight left it hurt');
+    assert(Number.isSafeInteger(postFight.patch.stats.restUntil), `a post-fight rest deadline is whole milliseconds (${postFight.patch.stats.restUntil})`);
     Cold.npcForSpot = () => ({ ...target, level: 25, selfId: 156, aggressiveInterruption: true,
         accur: 100, evasion: 0, critical: 0 });
     const defense = Resolver.resolveSolo({ state: hurt, spot: easy, elapsedMs: 0, timestamp: at, rng: () => 0.5 });
@@ -241,6 +247,28 @@ try {
 } finally { Cold.profileFor = originalProfile; Cold.fightProfile = originalFight; Cold.npcForSpot = originalNpc; }
 
 async function run() {
+    // The rule behind every clock: a bot's life through the real resolver and
+    // projection leaves a state each command checkpoint accepts: a writer on this
+    // path that adds a fraction fails here. Pet and potion fractions have their
+    // own tests at the deadlines (test_rest_potion, test_bot_cold_combat).
+    Cold.profileFor = Cold.fightProfile = () => ({ ...mage, accur: 100, evasion: 0, critical: 0, effects: [] });
+    Cold.npcForSpot = () => ({ ...target, level: 25, selfId: 156, accur: 100, evasion: 0, critical: 0 });
+    try {
+        let life = { ...state, spotId: easy.id, simulation: { revision: 1 }, updatedAt: at, vitals: { ...state.vitals, hp: 60, mp: 0 },
+            timing: { activityStartedAt: at - 30000, lastResolvedAt: at - 30000, nextResolveAt: at } };
+        const activities = new Set();
+        let timestamp = at;
+        for (let step = 0; step < 30; step++) {
+            const result = Resolver.resolveSolo({ state: life, spot: easy, elapsedMs: 30000, timestamp, rng: () => 0.5 });
+            life = { ...await Life.prepareResolve(life, result, { timestamp, writtenAt: timestamp, persist: false, projectClassProgression: true }),
+                simulation: { revision: 1 } };
+            activities.add(life.activity);
+            assert(Protocol.commandCheckpoint(life), `step ${step} (${life.activity}) leaves clocks a checkpoint refuses: ${JSON.stringify(life.timing)}`);
+            timestamp = life.timing.nextResolveAt;
+        }
+        assert(activities.has('resting') && activities.has('hunting'), `the chain lives both (${[...activities]})`);
+    } finally { Cold.profileFor = originalProfile; Cold.fightProfile = originalFight; Cold.npcForSpot = originalNpc; }
+
     let stalled = { ...state, stats: { ...state.stats, spotRisk: recoveredRisk } };
     for (let i = 0; i < 3; i++) {
         stalled = await Life.prepareResolve(stalled, {
