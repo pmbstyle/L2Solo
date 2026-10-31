@@ -121,6 +121,7 @@ const tests = [
     'tests/test_bot_hunt_efficiency.js',
     'tests/test_leaf_fit.js',
     'tests/test_personal_gear_progression.js',
+    'tests/test_held_earning_spot.js',
     'tests/test_weapon_grade_progression.js',
     'tests/test_clan_personal_surplus.js',
     'tests/test_c_grade_preparation.js',
