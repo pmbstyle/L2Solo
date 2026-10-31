@@ -1,27 +1,31 @@
 // How many mobs come when one is hit (E72, F20; design 13.8, 13.12): the
 // target, its same-clan helpers inside its help radius (SocialAggro), the
 // aggressive mobs within the aggro radius (NpcAggro) and a leader's minion
-// group. One answer for hot target choice and cold fights. The table is, per
-// spawn group (a spot's npc entry), the share of its spawns by pull size (and
-// their mean), computed once from the spawns at start; mobs of a neighbouring
-// spot cell are not counted.
+// group. One answer for hot target choice and cold fights: a hot bot counts the
+// mobs it sees (SpotService.livePull); a cold one rolls a size from the table,
+// per spawn group (a spot's npc entry) the share of its spawns by pull size
+// (and their mean), computed once from the spawns at start; mobs of a
+// neighbouring spot cell are not counted. BotTargetMatchup.pullVerdict judges
+// either.
 // Pure: the cold worker loads this module without the live world.
 const AggroRange = invoke('GameServer/Npc/NpcAggroRange');
 
 // The record of a live npc for pullSize.
 function record(npc) {
     return {
+        id: npc.fetchId?.(),
         selfId: Number(npc.fetchSelfId?.() || 0),
         clan: String(npc.fetchClanName?.() || '').trim(),
         helpRadius: Math.max(0, Number(npc.fetchClanHelpRadius?.()) || 0),
         hostile: npc.fetchHostile?.() === true,
-        // Minions come through their leader's group (minionJoiners).
+        // Minions come through their leader's group (minionJoiners, liveMinions).
         minion: !!npc.minionLeader,
+        leader: npc.minionLeader?.fetchId?.(),
         x: npc.fetchLocX(), y: npc.fetchLocY(), z: npc.fetchLocZ()
     };
 }
 
-// Records: { selfId, clan, helpRadius, hostile, minion, x, y, z }.
+// Records: { id, leader (a live one's), selfId, clan, helpRadius, hostile, minion, x, y, z }.
 // rules: { assistZ, aggroRadius, aggroZ } from SocialAggro and NpcAggro;
 // an aggressive NPC joins within its own C4 range (NpcAggroRange, T114),
 // rules.aggroRadius for one without.
@@ -29,7 +33,7 @@ function pullSize(target, neighbours = [], rules = {}, minions = 0) {
     const helpRadius = Number(target.helpRadius) || 0;
     let joiners = 0;
     for (const npc of neighbours) {
-        if (npc === target || npc.minion) continue;
+        if (npc === target || npc.minion || (npc.id !== undefined && (npc.id === target.id || npc.id === target.leader))) continue;
         const dx = npc.x - target.x, dy = npc.y - target.y;
         const dz = Math.abs(npc.z - target.z);
         const distanceSq = dx * dx + dy * dy;
@@ -41,6 +45,54 @@ function pullSize(target, neighbours = [], rules = {}, minions = 0) {
         if (helps || aggro) joiners++;
     }
     return 1 + joiners + Math.max(0, Number(minions) || 0);
+}
+
+// A live target's group among records: its minions, or the minion's leader
+// and the rest of its group (minionJoiners, as the bot sees them).
+function liveMinions(target, records) {
+    const leader = target.leader ?? target.id;
+    let count = 0;
+    for (const npc of records) if (npc.id !== target.id && (npc.leader === leader || npc.id === leader)) count++;
+    return count;
+}
+
+// One scan's records for many reads: a read walks the cells its pull can reach
+// and its minion group, so a scan costs its records once plus, per candidate,
+// the mobs in reach, not candidates x records. A cell is the widest reach of
+// the scan, so the 3 x 3 cells round a target hold every joiner.
+function packIndex(records, rules) {
+    let reach = 1;
+    for (const npc of records) reach = Math.max(reach, npc.helpRadius, AggroRange.of(npc.selfId, rules.aggroRadius));
+    const cells = new Map(), groups = new Map();
+    const push = (map, key, npc) => {
+        const list = map.get(key);
+        if (list) list.push(npc);
+        else map.set(key, [npc]);
+    };
+    for (const npc of records) {
+        push(cells, cellKey(npc.x, npc.y, reach), npc);
+        push(groups, npc.leader ?? npc.id, npc);
+    }
+    return { records, rules, reach, cells, groups };
+}
+
+function cellKey(x, y, reach) {
+    return Math.floor(x / reach) * 0x400000 + Math.floor(y / reach);
+}
+
+// pullSize of one target against an indexed scan. A target outside the scan may
+// reach past its cells: it reads the whole scan.
+function packPull(target, pack) {
+    const { reach, cells } = pack;
+    let near = pack.records;
+    if (target.helpRadius <= reach) {
+        near = [];
+        for (let dx = -reach; dx <= reach; dx += reach) for (let dy = -reach; dy <= reach; dy += reach) {
+            const list = cells.get(cellKey(target.x + dx, target.y + dy, reach));
+            if (list) near.push(...list);
+        }
+    }
+    return pullSize(target, near, pack.rules, liveMinions(target, pack.groups.get(target.leader ?? target.id) || []));
 }
 
 // Lisvus minion rows (RaidBossMinionManager.groupsByBoss): a leader brings the
@@ -85,12 +137,6 @@ function annotate(spots, rules, joiners = new Map()) {
         delete spot.records;
     }
     return { entries, pulls };
-}
-
-function entryPull(spot, selfId) {
-    const id = Number(selfId);
-    const entry = spot?.npcEntries?.find(item => Number(item.selfId) === id);
-    return Number(entry?.pull) > 1 ? Number(entry.pull) : 1;
 }
 
 // The mobs of a pull of k that hit the fighter, on average over the fight:
@@ -148,4 +194,4 @@ function rollPulls(pulls, rng) {
     return pulls[pulls.length - 1][0];
 }
 
-module.exports = { record, pullSize, minionJoiners, annotate, entryPull, packFactor, pullView, repack, packOf, pullsOf, rollPulls };
+module.exports = { record, pullSize, liveMinions, packIndex, packPull, minionJoiners, annotate, packFactor, pullView, repack, packOf, pullsOf, rollPulls };

@@ -30,7 +30,7 @@ const BotRaidSafety   = invoke('GameServer/Bot/AI/BotRaidSafety');
 const HotActorLodPolicy = invoke('GameServer/Bot/AI/HotActorLodPolicy');
 const BotRangedCombatPositioning = invoke('GameServer/Bot/AI/BotRangedCombatPositioning');
 const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
-const BotPullEstimate = invoke('GameServer/Bot/AI/BotPullEstimate');
+const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
 const TownNpcApproach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const CompanionNavigationRecovery = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
@@ -225,6 +225,8 @@ function findPreferredMonster(session, bot, radius, options = {}) {
         .filter((npc) => BotHuntingTargetPolicy.canHunt(npc))
         .filter((npc) => npc.fetchAttackable() && !npc.isDead());
     const nearbyNpcs = limitTargetCandidates(session, bot, eligibleNearbyNpcs);
+    // The bot stands before each mob and its pack: this scan's idle mobs are all a pull can bring.
+    const pack = SpotService.idlePack(allNearbyNpcs);
     const claimedIds = options.claimedIds || claimedTargetIds(session);
     // The spot a point is part of (its cell piece and floor, T123), else its cell.
     const spotIdAt = (actor, spot = SpotService.findCurrentSpot(botLocation(actor))) => spot?.id
@@ -245,16 +247,16 @@ function findPreferredMonster(session, bot, radius, options = {}) {
     const candidates = nearbyNpcs
         .map((npc) => {
             const claimed = claimedIds.has(Number(npc.fetchId()));
-            // One spot read per NPC: its id and its pull table.
-            const npcSpot = SpotService.findCurrentSpot(botLocation(npc));
-            const npcSpotId = spotIdAt(npc, npcSpot);
+            const npcSpotId = spotIdAt(npc);
             // The target's helpers, aggressive neighbours and minions come with it.
-            const pull = SpotService.pullSizeFor(npc, npcSpot);
+            const pull = SpotService.livePull(npc, pack);
             const matchupTarget = TargetMatchup.targetView(npc, matchupStats);
             const targetMatchup = TargetMatchup.evaluate(matchupProfiles, matchupTarget);
             if (isSoloHunter(session) && partyActors.length <= 1) {
-                const canHunt = TargetMatchup.soloCanHunt(matchupProfiles, BotPullEstimate.pullView(matchupTarget, pull));
+                const canHunt = TargetMatchup.pullVerdict(matchupProfiles, matchupTarget, pull);
                 Object.assign(targetMatchup, canHunt);
+                // hot_pull:refused: the pulls a hot hunter turns down, by what stood before it (the cold pick's no_safe_solo_target).
+                if (!canHunt.eligible) Diagnostics.count('hot_pull', 'refused', pull > 1 ? 'pack' : 'lone');
             }
             const scoreContext = {
                 attackable: npc.fetchAttackable(),

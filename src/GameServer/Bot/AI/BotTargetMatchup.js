@@ -352,8 +352,9 @@ function evaluate(profiles, target, attacksOf = channels) {
 // the bot lives its HP over the target's mean action damage
 // (ColdMobAction.incomingPerSecond: hits, criticals, skills), plus the
 // opening it strikes before a melee monster closes in
-// (ColdCombatProfile.openingMs); a servitor still to be raised strikes, and
-// its owner acts, only after the summon's cast. Each attacker deals its best attack over that
+// (ColdCombatProfile.openingMs; none on a mob already in the fight,
+// target.engaged); a servitor still to be raised strikes, and its owner acts,
+// only after the summon's cast. Each attacker deals its best attack over that
 // time; areaShare: the share of that damage by area skills, which keeps a
 // pull's mobs standing together (Pull.repack).
 // How long the bot's side outlives a mob view (user 10-29: the pet tanks, as
@@ -407,7 +408,7 @@ function soloSurvival(profiles, target, minimum = SOLO_GATE_MARGIN, attacksOf = 
         return { eligible: true, survivalRatio: null };
     }
     const Cold = coldCombatProfile(), Mob = coldMobAction();
-    const openingSeconds = Cold.openingMs(receivers[0], target) / 1000;
+    const openingSeconds = target.engaged === true ? 0 : Cold.openingMs(receivers[0], target) / 1000;
     const castSeconds = Math.max(0, ...profiles.map(profile => number(profile.summonCastMs, 0))) / 1000;
     const lists = profiles.map(profile => soloChannels(profile, target, attacksOf));
     const pair = soloPair(profiles);
@@ -472,6 +473,16 @@ function soloCanHunt(profiles, target, { maxTargetLevel, npcLevel, attacksOf = c
         return { ...survival, eligible: false, reason: 'recovery_level' };
     }
     return survival.survivalRatio === null ? { ...evaluate(profiles, target, attacksOf), survivalRatio: null } : survival;
+}
+
+// The one judgement of a pull, hot and cold (BotPullEstimate): the mob with
+// the size that comes with it, as one fight. A cold fight judges each size of
+// its spawn group (entryVerdict), a hot bot the pack before it.
+function pullVerdict(profiles, target, size, options = {}) {
+    return soloCanHunt(profiles, Pull.pullView(target, wholePull(size)), options);
+}
+function wholePull(size) {
+    return Math.max(1, Math.round(Number(size) || 1));
 }
 
 // An optimistic damage bound, not another survival gate. Compile skills once
@@ -585,16 +596,17 @@ function optionVerdicts(profiles, options) {
     return verdicts;
 }
 
-// pull: the spot's mean pull of the species; the fight meets a whole pull
-// (resolveFight: BotPullEstimate.pullView), so the verdict judges it.
+// pull: one size of the species' pulls on the spot; the fight meets a whole
+// pull (resolveFight: BotPullEstimate.pullView), so the verdict judges it.
 function npcVerdict(verdicts, selfId, options, pull = 1) {
-    const size = Math.max(1, Math.round(Number(pull) || 1));
+    const size = wholePull(pull);
     const key = size > 1 ? `${selfId}:${size}` : selfId;
     if (verdicts.has(key)) return verdicts.get(key);
     const npc = npcTemplate(selfId);
     let verdict = null;
     if (npc && huntingTargetPolicy().canHunt(npc)) {
-        const target = Pull.pullView(coldCombatProfile().npcCombatStats(npc), size);
+        const stats = coldCombatProfile().npcCombatStats(npc);
+        const target = Pull.pullView(stats, size);
         // One attack list per profile against this species: the efficiency and
         // the solo survival read the same channels (pure in profile and target).
         const lists = new Map();
@@ -602,7 +614,7 @@ function npcVerdict(verdicts, selfId, options, pull = 1) {
             if (!list) lists.set(profile, list = channels(profile, target)); return list; };
         const match = evaluate(options.profiles, target, attacksOf);
         const withinRecoveryLevel = !options.maxTargetLevel || Number(npc.template?.level || 0) <= options.maxTargetLevel;
-        const canHunt = options.soloSafety ? soloCanHunt(options.profiles, target,
+        const canHunt = options.soloSafety ? pullVerdict(options.profiles, stats, size,
             { maxTargetLevel: options.maxTargetLevel, npcLevel: Number(npc.template?.level || 0), attacksOf }).eligible
             : match.eligible && withinRecoveryLevel;
         verdict = Object.freeze({ efficiency: match.efficiency, canHunt });
@@ -681,4 +693,4 @@ function damageRate(profiles, target = {}) {
 }
 
 module.exports = { MIN_EFFICIENCY, SOLO_GATE_MARGIN, actorProfiles, coldProfiles, servitorProfile, profileKey, targetView, skillModifier, channels, damageRate, attackRate, spellRate, incomingRate,
-    profileStats, skillStats, evaluate, soloSurvival, soloCanHunt, soloSpotUpperBound, stateProfiles, spotMatchup, speciesPulls, expectedHit, actorHit };
+    profileStats, skillStats, evaluate, soloSurvival, soloCanHunt, pullVerdict, soloSpotUpperBound, stateProfiles, spotMatchup, speciesPulls, expectedHit, actorHit };

@@ -176,7 +176,27 @@ try {
     assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), null,
         'easier targets still require line of sight');
 
-    const crowded = [1, 2, 3, 4, 5].map(n => candidate(920000 + n, n * 100));
+    // One pull rule (T140): a hot hunter judges the mob and the pack it stands
+    // before, not a spot's mean. The same species alone is a fight it takes.
+    const full = Matchup.soloSurvival(Matchup.actorProfiles([hunter]), Matchup.targetView(neutralNpc)).survivalRatio;
+    const scale = 1.5 / full;
+    const lean = { ...hunter, fetchMaxHp: () => hunter.fetchMaxHp() * scale };
+    const packMate = (id, x) => Object.assign(candidate(id, x), { fetchHostile: () => false, fetchClanName: () => 'pack', fetchClanHelpRadius: () => 600 });
+    const pack = [1, 2, 3, 4, 5, 6].map(n => packMate(930000 + n, 300 + n));
+    const stray = Object.assign(candidate(930010, 1400), { fetchHostile: () => false, fetchClanName: () => '' });
+    Geo.hasLineOfSight = () => true;
+    World.fetchNpcsInRadius = () => [...pack, stray];
+    assert.strictEqual(Hunting.findPreferredMonster({ actor: lean, plan: 'hunting' }, lean, 2500), stray,
+        'the pack is refused, the lone mob of its species taken');
+    World.fetchNpcsInRadius = () => [pack[0]];
+    assert.strictEqual(Hunting.findPreferredMonster({ actor: lean, plan: 'hunting' }, lean, 2500), pack[0],
+        'the same mob with its pack gone is a fight');
+    const engagedMate = Object.assign(packMate(930011, 301), { fetchDestId: () => 77 });
+    World.fetchNpcsInRadius = () => [pack[0], engagedMate];
+    assert.strictEqual(Hunting.findPreferredMonster({ actor: lean, plan: 'hunting' }, lean, 2500), pack[0],
+        'a mob on another target does not join the pull');
+
+    const crowded = [1, 2, 3, 4, 5].map(n => Object.assign(candidate(920000 + n, n * 100), { fetchHostile: () => false, fetchClanName: () => '' }));
     World.fetchNpcsInRadius = () => crowded;
     const checked = [];
     Geo.hasLineOfSight = (_x, _y, _z, x) => { checked.push(x); return x === 500; };

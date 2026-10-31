@@ -54,9 +54,15 @@ assert.strictEqual(spot.npcEntries[1].pulls, undefined);
 assert.deepStrictEqual(spot.npcEntries[2].pulls, [[3, 1]]);
 assert.strictEqual(spot.records, undefined, 'the spawn records are dropped once the table is built');
 assert.deepStrictEqual(size, { entries: 3, pulls: 2 });
-assert.strictEqual(Pull.entryPull(spot, 30), 3);
-assert.strictEqual(Pull.entryPull(spot, 20), 1);
-assert.strictEqual(Pull.entryPull(null, 30), 1);
+
+// A live target's group, as the bot sees it: a leader its minions; a minion its leader and the others.
+const live = { id: 1, x: 0, y: 0, z: 0 }, minionA = { id: 2, leader: 1, minion: true, x: 9, y: 0, z: 0 }, minionB = { id: 3, leader: 1, minion: true, x: 9, y: 0, z: 0 };
+const stranger = { id: 4, x: 9000, y: 0, z: 0 };
+assert.strictEqual(Pull.liveMinions(live, [live, minionA, minionB, stranger]), 2);
+assert.strictEqual(Pull.liveMinions(minionA, [live, minionA, minionB, stranger]), 2);
+assert.strictEqual(Pull.liveMinions(stranger, [live, minionA, minionB, stranger]), 0);
+assert.strictEqual(Pull.pullSize(minionA, [live, minionA, minionB], {}, Pull.liveMinions(minionA, [live, minionA, minionB])), 3,
+    'a minion brings its leader once');
 
 // A pull of k is one mob with k times the HP and the mean attack of the mobs still standing:
 // (k + 1) / 2 felled one by one, all k worn down together by area skills.
@@ -203,5 +209,22 @@ assert.strictEqual(margin('area', 1), margin(null, 1), 'one mob: area and single
 // A pull of three: the area spell counts three times, and the three mobs it
 // wears down together all hit (pack 3 instead of 2): 3 x 2 / 3.
 assert(Math.abs(margin('aura', 3) / margin(null, 3) - 2) < 1e-9, 'a pull of three: three hits, three mobs standing');
+
+// One scan read by many candidates (packIndex, packPull): the same answer as
+// the whole scan, while a read walks only the cells in reach.
+{
+    let seed = 11;
+    const roll = (n) => (seed = (seed * 16807) % 2147483647) % n;
+    const scan = Array.from({ length: 400 }, (_, id) => ({ id, selfId: 20000 + roll(50), x: roll(9000) - 4500, y: roll(9000) - 4500, z: roll(300),
+        clan: id % 3 ? 'ant' : '', helpRadius: id % 3 ? 300 : 0, hostile: id % 2 === 0, leader: id > 380 ? 380 : undefined, minion: id > 380 }));
+    const pack = Pull.packIndex(scan, rules);
+    const whole = (target, records) => Pull.pullSize(target, records, rules, Pull.liveMinions(target, records));
+    for (const target of scan) assert.strictEqual(Pull.packPull(target, pack), whole(target, scan), `mob ${target.id} of the scan`);
+    const outside = { id: 'outside', selfId: 20000, x: 0, y: 0, z: 0, clan: 'ant', helpRadius: pack.reach + 1000, hostile: false };
+    assert.strictEqual(Pull.packPull(outside, pack), whole(outside, scan), 'a target reaching past its cells reads the whole scan');
+    const far = Pull.packIndex([mob(0, { id: 1, selfId: 20000 }), mob(5000, { id: 2, selfId: 20000, hostile: true })], rules);
+    assert.strictEqual(far.cells.size, 2, 'mobs apart stand in cells apart');
+    assert.strictEqual(Pull.packPull(mob(0, { id: 1, selfId: 20000 }), far), 1, 'a mob out of reach stays out');
+}
 
 console.log('Bot pull estimate checks passed');

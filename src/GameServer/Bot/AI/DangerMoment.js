@@ -101,8 +101,9 @@ function forActor(session, actor, target, options = {}) {
     const atkSpd = Math.max(1, Number(view.atkSpd || 253));
     // The mobs on the bot are judged as one mob with their HP and attack summed (minimum.md #3).
     // An area skill hits each of them (F20: BotTargetMatchup reads `pull`).
+    // They are in the fight: no opening before they close in (engaged).
     const enemy = { ...view, maxHp: attackers.reduce((sum, npc) => sum + npcHp(npc), 0),
-        pAtk: attackers.reduce((sum, npc) => sum + npcPAtk(npc, view), 0) / atkSpd, atkSpd, pull: attackers.length };
+        pAtk: attackers.reduce((sum, npc) => sum + npcPAtk(npc, view), 0) / atkSpd, atkSpd, pull: attackers.length, engaged: true };
     const survival = TargetMatchup.soloSurvival(profiles, enemy);
     // Damage per second of the same attack envelope as the survival ratio.
     const damageRate = TargetMatchup.damageRate(profiles, enemy);

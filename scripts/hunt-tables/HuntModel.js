@@ -241,7 +241,7 @@ function mobHour(bot, mob, correction = null) {
     // A pull the rotation's area skills wear down together hits as more mobs.
     const view = Pull.pullView(target, pull, Number(rot.areaShare) || 0);
     // The gate judges the pull the fight meets (BotTargetMatchup.npcVerdict).
-    if (!Matchup.soloCanHunt(profiles, Pull.pullView(target, Math.round(pull))).eligible) return null;
+    if (!Matchup.pullVerdict(profiles, target, pull).eligible) return null;
     const terms = damageTerms(rot, profile, target.evasion);
     const shot = bot.shots ? rot.shotMul : 1;
     // Area skills strike every mob of the pull (resolveFight): the measured
