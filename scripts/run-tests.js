@@ -632,6 +632,7 @@ const tests = [
     'tests/test_cold_pvp_kill_commit.js',
     'tests/test_bot_errand_flags.js',
     'tests/test_cold_simulation_kernel.js',
+    'tests/test_cold_integer_timing.js',
     'tests/test_cold_step_lead.js',
     'tests/test_cold_proposal_batch_bytes.js',
     'tests/test_cold_proposal_compact.js',

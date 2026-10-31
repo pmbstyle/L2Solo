@@ -198,7 +198,7 @@ function lineState(selfId, ctx, { price, storeType = SELL, worth = 0, fills = 0,
     return {
         price: Math.round(price),
         seenCounter: counter.deals,
-        seenAt: ctx.timestamp,
+        seenAt: Math.ceil(ctx.timestamp),
         seenItem: MarketCounters.itemDeals(selfId).deals,
         rival: ctx.board?.first(selfId, storeType, { excludeOwner: ctx.characterId, enchant })?.price || 0,
         worth: storeType === BUY ? Number(worth) || 0 : 0,
