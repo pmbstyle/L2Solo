@@ -150,7 +150,7 @@ function* prepareNative(state, economy, options) {
         const buyState = { ...state, adena: Funding.budget(state, options.buyOrderEscrow || 0) };
         money = BuyAds.goalMoney(state, goal, options.buyOrderEscrow || 0, economy);
         let lines = BuyAds.linesFor(buyState, goal, { ...options, economy,
-            townFor: items => Town.buyAdTown(state, items, own),
+            townFor: items => Town.buyAdTown(state, items, own, { findSpot: options.findSpot }),
             watchList: economy.watchList || [], money });
         lines = BuyAds.keepRetainedBids(state, own, lines, economy.network?.moneyPrice, options.buyOrderEscrow || 0);
         // The native activity selected the priority. A buy may replace a sale
