@@ -585,7 +585,7 @@ function clearTarget(session, bot, targetId, retryCooldown = false) {
 // Low MP sends only a bot that rests for mana away from a fight; a melee
 // bot keeps swinging, as it keeps hunting with low MP.
 function needsEmergencyRetreat(bot) {
-    return RestPolicy.needsRest(bot,
+    return RestPolicy.needsRetreat(bot,
         bot.fetchHp() / Math.max(1, bot.fetchMaxHp()),
         bot.fetchMp() / Math.max(1, bot.fetchMaxMp()));
 }

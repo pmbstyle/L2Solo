@@ -6,6 +6,7 @@ const DataCache = invoke('GameServer/DataCache');
 const Formulas = invoke('GameServer/Formulas');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const ColdSummonProfile = invoke('GameServer/Bot/Population/ColdSummonProfile');
 const ColdKillRewards = invoke('GameServer/Bot/Population/ColdKillRewards');
 const ColdClassPolicy = invoke('GameServer/Bot/Population/ColdClassPolicy');
 const SoloSelfHeal = invoke('GameServer/Bot/AI/SoloSelfHeal');
@@ -135,8 +136,9 @@ function needsRest(state, vitals, options = {}) {
 // owner, at these vitals, heal it now or once a reuse ends. Null without one.
 function coldPetView(profile, summon, vitals, cooldowns = {}, at = Date.now()) {
     if (!profile || !summon?.active || Number(summon.expiresAt || Infinity) <= at) return null;
+    const pet = fullPet(profile, summon);
     return PetHealRule.restView(ColdClassPolicy.actorFor(profile, { hp: vitals.hp, mp: vitals.mp, cooldowns, time: at }),
-        summon.hp, summon.maxHp);
+        pet.hp, pet.maxHp);
 }
 
 // A state's pet as the rest rule reads it, from its stored kit profile (party rests).
@@ -192,7 +194,7 @@ function resolveRest(state, elapsedMs, timestamp, options = {}) {
     const requireMana = requiresManaRecovery(state, options);
     const mpReady = !requireMana || vitals.mp / Math.max(1, vitals.maxMp) >= 0.95;
     // The pet rests too (RestPolicy.petRested): one its owner cannot heal waits to be whole.
-    const rested = petRegen(state, elapsedMs);
+    const rested = petRegen(state, elapsedMs, combat);
     const summon = rested.stats?.coldCombat?.summon;
     const petView = coldPetView(combat, summon, vitals, rested.stats?.coldCombat?.cooldowns, timestamp);
     const petReady = RestPolicy.petRested(petView);
@@ -1084,24 +1086,18 @@ function startColdPotion(fighter, time) {
 }
 
 function summonNpcStats(fighter, details) {
-    return invoke('GameServer/Bot/Population/ColdSummonProfile')(fighter.profile, details);
+    return ColdSummonProfile(fighter.profile, details);
 }
 
 function persistedSummon(fighter, timestamp) {
     const saved = fighter.state.stats?.coldCombat?.summon;
     if (!saved?.active || Number(saved.expiresAt || 0) <= timestamp) return null;
-    const skill = (fighter.profile.skills || []).find((candidate) => Number(candidate.selfId) === Number(saved.skillId));
-    const details = ColdCombatProfile.summonDetails(skill || saved);
-    const npcStats = summonNpcStats(fighter, details);
-    const savedHp = Number(saved.hp || 0);
-    return {
-        ...saved,
-        ...npcStats,
-        skillId: Number(saved.skillId || skill?.selfId || 0),
-        expiresAt: Number(saved.expiresAt),
-        hp: Math.min(npcStats.maxHp, Math.max(1, savedHp || npcStats.maxHp)),
-        maxHp: npcStats.maxHp
-    };
+    return ColdSummonProfile.savedSummon(fighter.profile, saved);
+}
+
+// A saved pet with its numbers (a hot-to-cold snapshot has none yet).
+function fullPet(profile, saved) {
+    return ColdSummonProfile.fullSummon(profile, saved);
 }
 
 // The fighter's living pet as the mob's target (coldMobAction's { profile,
@@ -1138,10 +1134,12 @@ function strikeSide(fighter, mob, mobFight, options) {
 }
 
 // A saved pet's HP after elapsedMs out of a fight (its template's revHp per
-// regen tick); the state unchanged without a wounded pet.
-function petRegen(state, elapsedMs) {
-    const summon = state.stats?.coldCombat?.summon;
-    if (!summon?.active || !(Number(summon.hp) > 0) || !(Number(summon.hp) < Number(summon.maxHp))) return state;
+// regen tick); the state unchanged without a wounded pet. profile: its owner's.
+function petRegen(state, elapsedMs, profile) {
+    const saved = state.stats?.coldCombat?.summon;
+    if (!saved?.active || !(Number(saved.hp) > 0)) return state;
+    const summon = fullPet(profile, saved);
+    if (!(Number(summon.hp) < Number(summon.maxHp))) return state;
     const hp = Math.min(Number(summon.maxHp), Number(summon.hp) + Number(summon.revHp || 0) * Math.max(0, elapsedMs) / Formulas.REGEN_TICK_MS);
     return { ...state, stats: { ...state.stats, coldCombat: { ...state.stats.coldCombat, summon: { ...summon, hp } } } };
 }
@@ -2276,7 +2274,8 @@ const BackgroundResolver = {
             return resolveRest(state, elapsedMs, timestamp);
         }
 
-        const floor = SurvivalFloor.forState(state, timestamp);
+        // The floor is a between-fights read too: a pending fight goes on first.
+        const floor = state.stats?.pveEncounter ? null : SurvivalFloor.forState(state, timestamp);
         if (floor?.action === 'rest') {
             const resting = resolveRest(state, 0, timestamp, { requireMana: true });
             resting.debug.reason = 'survival_no_mp';
@@ -2371,7 +2370,7 @@ const BackgroundResolver = {
             // A prior recovery deadline must not reschedule a new hunt in the
             // past. A fight that needs recovery below assigns a fresh deadline.
             // The pet heals between fights as the owner does (petRegen).
-            stats: { ...((continuing ? state : petRegen(state, elapsedMs)).stats || {}), restUntil: null, pveEncounter: continuing },
+            stats: { ...((continuing ? state : petRegen(state, elapsedMs, roundProfile)).stats || {}), restUntil: null, pveEncounter: continuing },
             spotId: spot.id
         };
 
@@ -2550,11 +2549,13 @@ const BackgroundResolver = {
             const mpPct = patch.vitals.mp / Math.max(1, patch.vitals.maxMp || patch.vitals.mp || 1);
             const summonLeft = patch.stats.coldCombat?.summon;
             const petView = coldPetView(result.profile, summonLeft, patch.vitals, patch.stats.coldCombat?.cooldowns, timestamp + combatMs);
-            if (needsRest(fightState, patch.vitals, { pet: petView })) {
+            // A rest is a between-fights choice, as HuntingState's (its guard
+            // !encounterActionInFlight): a fight the round cut goes on in the
+            // next round, whatever the bot's HP and MP; only a kill, a death
+            // or the slice bound below ends it.
+            if (!patch.stats.pveEncounter && needsRest(fightState, patch.vitals, { pet: petView })) {
                 // cold_fight:pet:rest: a rest its pet sent it to (the live read).
                 if (Diagnostics.active() && !RestPolicy.petRested(petView)) Diagnostics.count('cold_fight', 'pet', 'rest');
-                if (patch.stats.pveEncounter) completedFights += 1;
-                patch.stats.pveEncounter = null;
                 patch.activity = 'resting';
                 patch.stats = {
                     ...(patch.stats || state.stats || {}),

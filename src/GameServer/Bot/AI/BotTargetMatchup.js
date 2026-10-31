@@ -100,15 +100,16 @@ function servitorProfile(profile, state = {}, timestamp = Date.now()) {
     const summon = state.stats?.coldCombat?.summon;
     const Cold = coldCombatProfile();
     const healed = () => petHealFields(profile, state.vitals?.mp);
+    // lazy: worker ColdSummonProfile loads ColdCombatProfile, resolved on first use (coldCombatProfile).
+    const Summon = () => invoke('GameServer/Bot/Population/ColdSummonProfile');
     if (summon?.active && number(summon.hp, summon.maxHp) > 0 && summon.expiresAt > timestamp) {
-        return { ...summon, role: 'dps', skills: [], soloDamageReceiver: false, servitor: true, ...healed() };
+        return { ...Summon().fullSummon(profile, summon), role: 'dps', skills: [], soloDamageReceiver: false, servitor: true, ...healed() };
     }
     if (!Roles.isSummoner(profile)) return null;
     const skill = Cold.summonSkills(profile).find(s => s.reuseReady !== false
         && number(s.mp, 0) <= number(state.vitals?.mp, profile.maxMp)
         && number(state.stats?.coldCombat?.cooldowns?.[s.selfId], 0) <= timestamp);
-    // lazy: worker ColdSummonProfile loads ColdCombatProfile, resolved on first use (coldCombatProfile).
-    return skill ? { ...invoke('GameServer/Bot/Population/ColdSummonProfile')(profile, Cold.summonDetails(skill)),
+    return skill ? { ...Summon()(profile, Cold.summonDetails(skill)),
         role: 'dps', skills: [], soloDamageReceiver: false, servitor: true, summonCastMs: Cold.actionDelayMs(profile, skill),
         ...healed() } : null;
 }

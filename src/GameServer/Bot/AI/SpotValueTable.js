@@ -38,8 +38,12 @@ let file = DEFAULT_FILE;
 const bestRows = new Map();
 const incomeRows = new Map();
 const incomeBases = new Map();
-// Four doubles and one index per cell: at most 9 MiB per thread.
-const MAX_INCOME_BASE_CELLS = 262144;
+// Four doubles and one index per cell, in typed arrays outside the V8 heap:
+// at most 19 MiB per thread. The bound is cells, what the memory is; measured
+// (T139, one key per class line x level x shots): 388947 cells held, no drop
+// at a scratch 1M bound. An entry cap of 256, from the role keys, read ~100%
+// misses, 14 ms a read against 0.126.
+const MAX_INCOME_BASE_CELLS = 524288;
 let incomeBaseCells = 0;
 // Cache use for the cold worker heartbeat (L104); counted only with developer diagnostics.
 // memoEvictions, incomeEvictions, baseEvictions count the oldest-row drops at their caps; resets the
@@ -98,12 +102,13 @@ function checkCatalog(spots) {
         if (!t.spotIndex.has(String(spot.id))) missing++;
     }
     const tableGeodata = t.header.inputs?.geodata ?? null, serverGeodata = geodataProfile();
-    const line = `${missing}|${hunting}|${tableGeodata}|${serverGeodata}`;
+    const revision = t.header.revision ?? null;
+    const line = `${revision}|${missing}|${hunting}|${tableGeodata}|${serverGeodata}`;
     if (line === catalogLine) return;
     catalogLine = line;
     const log = global.utils?.[missing || tableGeodata !== serverGeodata ? 'infoWarn' : 'infoSuccess'];
-    log?.('SpotTable', '%d of %d catalogue spots missing from the spot table; geodata: table %s, server %s',
-        missing, hunting, tableGeodata, serverGeodata);
+    log?.('SpotTable', '%d of %d catalogue spots missing from the spot table; geodata: table %s, server %s; table revision %s',
+        missing, hunting, tableGeodata, serverGeodata, revision);
 }
 
 // The profile of the geodata pack the server stands on (its manifest's, the
@@ -262,12 +267,14 @@ function shotKey(shots) {
 // packed they are typed arrays with the same values. cells[spot * width +
 // cell]: the row's index or -1; numbers: its fields at index * fields (mix and
 // gate NaN; a null field 0, as it read in arithmetic, a null stacks NaN, read
-// as unknown); gates: its gate per gap; mix: [selfId, share, ...] from
+// as unknown); gates: its gate per gap; gateShares: its admitted share per
+// gap (null for a table before the column); mix: [selfId, share, ...] from
 // mixStart[index] to mixStart[index + 1]. A row is a view of its numbers
 // (tableRow): row[field] reads as before; rowMix and gateAt read its index.
 function packRows(raw) {
     const fields = raw.rowFields.length, gaps = raw.gaps.length;
     const mixField = raw.rowFields.indexOf('mix'), gateField = raw.rowFields.indexOf('gate');
+    const gateShareField = raw.rowFields.indexOf('gateShare');
     const stacksField = raw.rowFields.indexOf('stacks');
     const width = raw.rows.reduce((most, cells) => Math.max(most, cells?.length || 0), 0);
     let count = 0, mixLength = 0;
@@ -278,6 +285,7 @@ function packRows(raw) {
     const cells = new Int32Array(raw.rows.length * width).fill(-1);
     const numbers = new Float64Array(count * fields).fill(NaN);
     const gates = gateField >= 0 ? new Float64Array(count * gaps) : null;
+    const gateShares = gateShareField >= 0 ? new Float64Array(count * gaps) : null;
     const hasGate = new Uint8Array(count);
     const mix = new Float64Array(mixLength), mixStart = new Int32Array(count + 1);
     let index = 0, at = 0;
@@ -285,19 +293,22 @@ function packRows(raw) {
         if (!row) return;
         cells[spot * width + cell] = index;
         for (let field = 0; field < fields; field++) {
-            if (field === mixField || field === gateField || row[field] === undefined) continue;
+            if (field === mixField || field === gateField || field === gateShareField || row[field] === undefined) continue;
             numbers[index * fields + field] = row[field] === null ? (field === stacksField ? NaN : 0) : row[field];
         }
         if (gates && Array.isArray(row[gateField])) {
             hasGate[index] = 1;
             for (let gap = 0; gap < gaps; gap++) gates[index * gaps + gap] = Number(row[gateField][gap]) || 0;
         }
+        if (gateShares && Array.isArray(row[gateShareField])) {
+            for (let gap = 0; gap < gaps; gap++) gateShares[index * gaps + gap] = Number(row[gateShareField][gap]) || 0;
+        }
         mixStart[index] = at;
         if (mixField >= 0 && Array.isArray(row[mixField])) for (const value of row[mixField]) mix[at++] = value;
         index += 1;
     }));
     mixStart[count] = at;
-    return { width, fields, gaps, cells, numbers, gates, hasGate, mix, mixStart };
+    return { width, fields, gaps, cells, numbers, gates, gateShares, hasGate, mix, mixStart };
 }
 
 // The row of a spot's cell (spot index s, cell r * shots + shots slot), or null.
@@ -368,7 +379,8 @@ function load() {
             // Per-mob rows (pull, cap, mix); a table before them counts fights.
             pull: raw.rowFields.indexOf('pull'), cap: raw.rowFields.indexOf('cap'), mix: raw.rowFields.indexOf('mix'),
             // The gate per curve gap (cap and admitted mix); a table before it reads the reference's.
-            gate: raw.rowFields.indexOf('gate'),
+            // gateShare: per gap, the admitted part of the masked species' production; a table before it 1.
+            gate: raw.rowFields.indexOf('gate'), gateShare: raw.rowFields.indexOf('gateShare'),
             hpLost: raw.rowFields.indexOf('hpLost'), mpLost: raw.rowFields.indexOf('mpLost')
         }
     };
@@ -468,10 +480,12 @@ function rowMix(t, row) {
 }
 
 // A row's gate at a bot's level gap (the generator's gapGate, measured at the
-// curve gaps; combat reads it at or above the row's minGap): { cap, mask } at
-// the nearest gap at or below it, mask the bits of the mix species the bot
-// may fight alone there; null when it may fight none; undefined for a table
-// before the gate (the reference's cap and mix).
+// curve gaps; combat reads it at or above the row's minGap): { cap, mask,
+// share } at the nearest gap at or below it, mask the bits of the mix species
+// the bot may fight alone there, share the part of those species' production
+// it may fight (a pack species it takes in 4 of 10 pulls gives 0.4 of its
+// own; 1 for a table before the column); null when it may fight none;
+// undefined for a table before the gate (the reference's cap and mix).
 function gateAt(t, row, gap) {
     if (t.f.gate < 0 || !row) return undefined;
     const index = rowIndex(t, row);
@@ -482,8 +496,11 @@ function gateAt(t, row, gap) {
     // Between a closed gap and an open one, the row's own minGap already
     // says the bot hunts: the open one's.
     let value = Number(gate[i]) || 0;
-    if (!value && gap > t.gaps[i] && i + 1 < t.gaps.length) value = Number(gate[i + 1]) || 0;
-    return value > 0 ? { cap: Math.floor(value / 256), mask: value % 256 } : null;
+    if (!value && gap > t.gaps[i] && i + 1 < t.gaps.length) value = Number(gate[++i]) || 0;
+    if (!(value > 0)) return null;
+    const held = t.rows.gateShares?.[index * t.rows.gaps + i];
+    const share = held > 0 ? Math.min(1, held) : 1;
+    return { cap: Math.floor(value / 256), mask: value % 256, share };
 }
 const ALL_SPECIES = 255;
 
@@ -508,7 +525,14 @@ function boundedGet(cache, key) {
 }
 function boundedSet(cache, key, held) {
     cache.set(key, held);
-    if (cache.size > SPOT_CACHE_LIMIT) cache.delete(cache.keys().next().value);
+    if (cache.size <= SPOT_CACHE_LIMIT) return;
+    // One walk drops a batch: a first-key read per drop walks every slot the
+    // LRU's moves left empty (the ARCH-NOTE at valueMemoOrder).
+    let drops = SPOT_CACHE_LIMIT >> 3;
+    for (const oldest of cache.keys()) {
+        cache.delete(oldest);
+        if (--drops === 0) break;
+    }
 }
 function maskedMixKey(mix, mask, shares) {
     let key = '';
@@ -569,10 +593,7 @@ function productionCap(t, row, spotId, mask = ALL_SPECIES) {
 // (productionCap) times the part of it it may fight, as
 // BackgroundResolver.soloShareMobs counts each spawn group's production times
 // its admitted share. gate: gateAt's; its share, the admitted part, is 1
-// where the table does not measure it. Today's tables do not (the field is on
-// branch t106dev-spots, T128): a pack species taken in some pulls only counts
-// whole here, while the fight counts its admitted share. Null without
-// production data.
+// for a table before the column. Null without production data.
 function gapProduction(t, row, spotId, gate) {
     const spawns = productionCap(t, row, spotId, gate?.mask ?? ALL_SPECIES);
     return spawns === null ? null : spawns * (gate?.share ?? 1);
@@ -605,12 +626,18 @@ function killGapFactor(t, row, level, spotLevel, mask = ALL_SPECIES) {
 
 // A row's kills per hour at the bot's gap with the walk of that gap: the
 // row measured the walk to its reference's admitted spawns (a cap is 3600 /
-// the walk per mob, BackgroundResolver.soloWalkMs); the bot of the gap walks
-// to its own (T106). Without a gate, the kills as measured.
-function walked(t, row, refGap, gate, kills) {
+// the walk per mob, BackgroundResolver.soloWalkMs) inside its hour; the bot
+// of the gap walks to its own (T106). The level curve (measured: the row's
+// kills at the gap) moves the rest of a kill's time, the fight, the rest and
+// the deaths; a walk to a mob takes the same time at any level. Without a
+// gate, the kills as measured.
+function walked(t, row, refGap, gate, measured) {
     const reference = gate && gateAt(t, row, refGap);
-    if (!reference || !(kills > 0) || !(gate.cap > 0) || !(reference.cap > 0)) return kills;
-    return 3600 / (3600 / kills + 3600 / gate.cap - 3600 / reference.cap);
+    if (!reference || !(measured > 0) || !(gate.cap > 0) || !(reference.cap > 0)) return measured;
+    const kph = row[t.f.kph];
+    // Seconds per mob besides the walk, at the reference, then at the gap.
+    const rest = Math.max(0, 3600 / kph - 3600 / reference.cap) * kph / measured;
+    return 3600 / (rest + 3600 / gate.cap);
 }
 
 // The mobs per hour a row's kills may reach: its cap at the bot's gap (gate),
@@ -902,8 +929,8 @@ function rankIncome(t, rates, role, level, costs, minGap, shots, skill) {
             count++;
         }
         basis = { indexes: indexes.slice(0, count), values: values.slice(0, count * 3), shares: shares.slice(0, count) };
-        while (incomeBases.size && (incomeBases.size >= 256 || incomeBaseCells + count > MAX_INCOME_BASE_CELLS)) {
-            const oldest = incomeBases.keys().next().value;
+        for (const oldest of incomeBases.keys()) {
+            if (incomeBaseCells + count <= MAX_INCOME_BASE_CELLS) break;
             incomeBaseCells -= incomeBases.get(oldest).indexes.length;
             incomeBases.delete(oldest);
             DiagnosticConfig.developerDiagnostics && (stats.baseEvictions += 1);

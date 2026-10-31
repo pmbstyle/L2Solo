@@ -106,9 +106,11 @@ const SHOTS = [1, 0, 2];
 // (the reader prices the kill and its level gap by it, user 10-29); gate:
 // per GAPS, cap x 256 + the bits of the mix species the bot of that level
 // may fight alone (0: none), so a row read below its reference keeps only
-// what that bot fights (gapGate).
+// what that bot fights (gapGate); gateShare: per GAPS, the part of those
+// species' production the bot may fight (BackgroundResolver.soloShareMobs:
+// each spawn group's production times its admitted share).
 const ROW_FIELDS = ['minGap', 'refGap', 'kph', 'busy', 'deaths', 'exp', 'sp', 'adena', 'loot', 'shots', 'potions', 'stacks',
-    'fight', 'rest', 'taken', 'spellTaken', 'hpLost', 'mpLost', 'pull', 'cap', 'mix', 'gate'];
+    'fight', 'rest', 'taken', 'spellTaken', 'hpLost', 'mpLost', 'pull', 'cap', 'mix', 'gate', 'gateShare'];
 const MIX_SPECIES = 8;
 // Loot has no curve of its own: one rare drop in an hour of a curve spot
 // would swing it; it follows the adena curve (same drop groups, same
@@ -151,14 +153,18 @@ function shareOf(tasks, shard) {
 }
 
 // A phase's results in task order: measured here (its share written to --out
-// for a split run, null returned), or read from the parts of --parts.
+// for a split run, null returned), or read from the parts of --parts. A part
+// keeps the hash of its run's task list (tasksHash): a part of another run
+// (another catalogue, other rows behind the curve picks) is refused, not
+// paired by index.
 async function phaseResults(phase, tasks, options, catalogueFile) {
+    const signature = tasksHash(tasks);
     if (options.phase === phase || options.phase === 'all') {
         const share = shareOf(tasks, options.shard);
         const results = await runPool(catalogueFile, share.map(({ task }) => task), options.jobs);
         if (options.phase === 'all') return results;
         fs.mkdirSync(path.dirname(options.out), { recursive: true });
-        fs.writeFileSync(options.out, `${JSON.stringify({ phase, total: tasks.length, indices: share.map(({ index }) => index), results })}\n`);
+        fs.writeFileSync(options.out, `${JSON.stringify({ phase, total: tasks.length, tasksHash: signature, indices: share.map(({ index }) => index), results })}\n`);
         process.stderr.write(`wrote ${phase} part ${options.shard?.join('/') || '1/1'}: ${share.length} of ${tasks.length} tasks\n`);
         return null;
     }
@@ -168,6 +174,7 @@ async function phaseResults(phase, tasks, options, catalogueFile) {
         const part = JSON.parse(fs.readFileSync(path.join(options.parts, name), 'utf8'));
         if (part.phase !== phase) continue;
         if (part.total !== tasks.length) throw new Error(`${name}: ${part.total} ${phase} tasks, this run has ${tasks.length}`);
+        if (part.tasksHash !== signature) throw new Error(`${name}: ${phase} tasks of another run (hash ${part.tasksHash}, this run ${signature})`);
         part.indices.forEach((index, at) => {
             if (results[index] === undefined) found += 1;
             results[index] = part.results[at];
@@ -175,6 +182,12 @@ async function phaseResults(phase, tasks, options, catalogueFile) {
     }
     if (found !== tasks.length) throw new Error(`${phase} parts hold ${found} of ${tasks.length} tasks`);
     return results;
+}
+
+// The hash of a phase's task list: each task's kind, spot, point key (a
+// curve or kit point) and hours, in order.
+function tasksHash(tasks) {
+    return hash(tasks.map((task) => `${task.kind}|${task.spotId}|${task.point || ''}|${task.hours}`).join('\n'));
 }
 
 // ARCH-NOTE: full regeneration exceeded the FX-E9 tolerance for XP/SP,
@@ -518,21 +531,36 @@ function gateBot(role, level, shots) {
     return held;
 }
 
-// A row's gate at one bot level: the cap (fightCap of the spawns the bot
-// of that level may fight, times the row's pull) x 256 + the bits of the mix
-// species it may fight (BackgroundResolver.admittedShares); 0 where it may
-// fight none.
+// A row's gate at one bot level: [gate, share], gate the cap (fightCap of
+// the spawns the bot of that level may fight, times the row's pull) x 256 +
+// the bits of the mix species it may fight (BackgroundResolver.admittedShares),
+// 0 where it may fight none; share the part of the production of those
+// species' spawns it may fight (each spawn group's production times its
+// admitted share, over their production: SpotValueTable takes the masked
+// species' whole production times it), 1 without shares or production.
 function gapGate(spot, role, shots, botLevel, species, pull) {
-    if (botLevel < 1 || botLevel > MAX_LEVEL) return 0;
+    if (botLevel < 1 || botLevel > MAX_LEVEL) return [0, 1];
     const { bot, profiles, runSpd, reach } = gateBot(role, botLevel, shots);
     const shares = sim.BR.admittedShares({ ...bot, spotId: spot.id }, spot, START, profiles);
     const admitted = new Set();
     for (const [entry, share] of shares || []) if (share > 0) admitted.add(Number(entry.selfId));
     let mask = 0;
-    species.forEach((selfId, index) => { if (!shares || admitted.has(selfId)) mask |= 1 << index; });
+    const masked = new Set();
+    species.forEach((selfId, index) => {
+        if (shares && !admitted.has(selfId)) return;
+        mask |= 1 << index;
+        masked.add(selfId);
+    });
     const density = sim.BR.admittedDensity(spot, shares);
-    if (!mask || !(density > 0)) return 0;
-    return Math.max(1, Math.round(fightCap(density, runSpd || undefined, spot.spawnArea || undefined, reach) * pull)) * 256 + mask;
+    if (!mask || !(density > 0)) return [0, 1];
+    let whole = 0, taken = 0;
+    for (const [entry, share] of shares || []) {
+        if (!masked.has(Number(entry.selfId)) || !Number.isFinite(entry.production)) continue;
+        whole += entry.production;
+        taken += entry.production * share;
+    }
+    const part = whole > 0 ? Math.max(0.001, Math.min(1, Math.round(taken / whole * 1000) / 1000)) : 1;
+    return [Math.max(1, Math.round(fightCap(density, runSpd || undefined, spot.spawnArea || undefined, reach) * pull)) * 256 + mask, part];
 }
 
 // A row: the lowest level gap at which the role finds a safe target, then the
@@ -577,9 +605,10 @@ function lineRow(spot, role, level, shots, hours, once) {
         .spoilSkillLevel({ level: refLevel, stats: { classId: classFor(role, refLevel) } }) > 0;
     const species = [];
     for (let i = 0; i < measured.mix.length; i += 2) species.push(measured.mix[i]);
-    const gate = GAPS.map((gap) => once(`gate|${at(level + gap)}|${species}|${measured.pull}`,
+    const gates = GAPS.map((gap) => once(`gate|${at(level + gap)}|${species}|${measured.pull}`,
         () => gapGate(spot, role, shots, level + gap, species, measured.pull)));
-    return { minGap, refGap: refLevel - level, ...measured, spoils, gate };
+    return { minGap, refGap: refLevel - level, ...measured, spoils, gate: gates.map(([gate]) => gate),
+        gateShare: gates.map(([, share]) => share) };
 }
 
 // A curve point: the role on one spot at one gap, shots on.
@@ -769,7 +798,7 @@ function poolRowLoot(rows) {
 }
 
 function packRow(row) {
-    return row ? ROW_FIELDS.map((field) => field === 'mix' || field === 'gate' ? row[field] : round(row[field])) : null;
+    return row ? ROW_FIELDS.map((field) => field === 'mix' || field === 'gate' || field === 'gateShare' ? row[field] : round(row[field])) : null;
 }
 
 // Per role and band: for each gap the sum over the band's curve spots of the
@@ -847,7 +876,7 @@ function spotMob(spot) {
     const rows = entries.flatMap((entry) => {
         const npc = ItemTemplateIndex.find(DataCache.npcs, entry.selfId);
         return !npc || !Policy.canHunt(npc) || RaidSafety.isProtectedRaidEntity(npc) ? []
-            : [{ selfId: Number(entry.selfId), count: Math.max(1, Number(entry.count) || 1), npc }];
+            : [{ selfId: Number(entry.selfId), count: Math.max(1, Number(entry.count) || 1), production: entry.production, npc }];
     });
     let share = 0, accur = 0, evasion = 0;
     for (const { entry, chance } of Profile.killChances(Profile.killDraw(rows, rows))) {
@@ -1055,4 +1084,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { hunt, perKill, countNewStacks, runPool, mergeStacks, buildCatalogue, rewardCatalog, loadSimulation, classFor, lineClassFor, botFor };
+module.exports = { hunt, perKill, countNewStacks, runPool, phaseResults, tasksHash, mergeStacks, buildCatalogue, rewardCatalog, loadSimulation, classFor, lineClassFor, botFor };

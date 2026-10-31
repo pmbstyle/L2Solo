@@ -18,7 +18,7 @@ function stillMoving(session, bot) {
 }
 
 function needsRecovery(session, bot) {
-    return RestPolicy.needsRest(bot,
+    return RestPolicy.needsRetreat(bot,
         bot.fetchHp() / Math.max(1, bot.fetchMaxHp()),
         bot.fetchMp() / Math.max(1, bot.fetchMaxMp()),
         { locked: !!session.recoveryLocked });

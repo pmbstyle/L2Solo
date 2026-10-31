@@ -52,6 +52,30 @@ try {
     } } }, spot, elapsedMs: 12000, timestamp: start + 60000, rng: () => .5 });
     assert.strictEqual(exhausted.patch.stats.pveEncounter, null, 'an unwinnable fight cannot continue forever');
     assert.strictEqual(exhausted.debug.fights, 1);
+    // A fight the round cut with the bot's HP below the rest line goes on: the
+    // mob does not vanish, no fight is counted, and the next round picks it up.
+    const hurt = Solo.resolveSolo({ state: { ...base, vitals: { ...base.vitals, hp: 100 }, stats: { ...base.stats, pveEncounter: first } },
+        spot, elapsedMs: 12000, timestamp: start + 60000, rng: () => .5 });
+    assert.strictEqual(hurt.patch.activity, 'hunting', 'a bot in a live fight does not sit down');
+    assert(hurt.patch.stats.pveEncounter?.hp > 0 && hurt.patch.stats.pveEncounter.hp < first.hp, 'the same mob stays pending, with the damage done');
+    assert.strictEqual(hurt.debug.pendingFight, true);
+    assert.strictEqual(hurt.debug.fights, 0, 'a cut fight is not a finished one');
+    assert.strictEqual(hurt.patch.stats.restUntil, null);
+    // The same bot once its mob is dead sits down.
+    const killed = Solo.resolveSolo({ state: { ...base, vitals: { ...base.vitals, hp: 100 },
+        stats: { ...base.stats, pveEncounter: { ...first, hp: 1 } } }, spot, elapsedMs: 12000, timestamp: start + 60000, rng: () => .5 });
+    assert.strictEqual(killed.debug.wins, 1);
+    assert.strictEqual(killed.patch.activity, 'resting', 'the rest comes after the kill');
+    assert.strictEqual(killed.patch.stats.pveEncounter, null);
+    // A mage out of MP for any cast: the survival floor waits for the fight's end too.
+    const mageMob = { ...first.mob, hp: 1e6 };
+    const caster = { ...base, vitals: { ...base.vitals, mp: 0 }, stats: { ...base.stats, classId: 10, coldCombat: { ...base.stats.coldCombat, classId: 10,
+        skills: [{ selfId: 1177, level: 1, mp: 10, passive: false }] } } };
+    const casting = Solo.resolveSolo({ state: { ...caster, stats: { ...caster.stats, pveEncounter:
+        Encounter.save(null, Encounter.key([caster], spot, 0), mageMob, 1e6, start + 50000, { botReadyAt: 0, mobReadyAt: 0 }) } },
+    spot, elapsedMs: 12000, timestamp: start + 60000, rng: () => .5 });
+    assert(casting.patch.stats.pveEncounter?.hp > 0, 'the fight of a mage out of MP stays pending');
+    assert.strictEqual(casting.patch.activity, 'hunting');
     const rest = Solo.resolveSolo({ state: { ...base, activity: 'resting', stats: { ...base.stats, pveEncounter: first } },
         spot, elapsedMs: 60000, timestamp: start + 60000, rng: () => .5 });
     assert.strictEqual(rest.patch.stats.pveEncounter, null, 'rest abandons the encounter');

@@ -41,4 +41,28 @@ function summonNpcStats(profile, details) {
     };
 }
 
-module.exports = summonNpcStats;
+// A saved pet with its numbers, as the first fight reads it: the saved HP and
+// life over its template's stats at the owner's skill level. The hot-to-cold
+// snapshot saves no more than skill, HP and life (ColdCombatProfile.summonSnapshot),
+// a fight's save its own copy.
+function savedSummon(profile, saved) {
+    const skill = (profile.skills || []).find((candidate) => Number(candidate.selfId) === Number(saved.skillId));
+    const npcStats = summonNpcStats(profile, ColdCombatProfile.summonDetails(skill || saved));
+    const savedHp = Number(saved.hp || 0);
+    return {
+        ...saved,
+        ...npcStats,
+        skillId: Number(saved.skillId || skill?.selfId || 0),
+        expiresAt: Number(saved.expiresAt),
+        hp: Math.min(npcStats.maxHp, Math.max(1, savedHp || npcStats.maxHp)),
+        maxHp: npcStats.maxHp
+    };
+}
+
+// The pet a reader outside the fight sees (the solo gate, the rest rule, its
+// regen): a save that has its numbers as it is, a snapshot with them.
+function fullSummon(profile, saved) {
+    return saved.pDef > 0 ? saved : savedSummon(profile, saved);
+}
+
+module.exports = Object.assign(summonNpcStats, { savedSummon, fullSummon });

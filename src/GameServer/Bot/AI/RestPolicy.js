@@ -27,6 +27,15 @@ function sitsForMana(subject, party = false) {
     return restsForMana(subject, party) || (!party && healsWithMana(subject));
 }
 
+// Does a rest under way last until MP is back? Alone by sitsForMana; a party
+// member keeps the author's wake line (T107: the mana rule is solo only), the
+// role's own mana rule as FollowingState's botRecovering reads it. A tank or a
+// music fighter sits for MP at a party's low line (needsRest) but gets up at
+// whole HP and follows: Recharge and the leader's camp see to the rest.
+function restWaitsForMana(subject, party = false) {
+    return party ? restsForMana(subject) : sitsForMana(subject);
+}
+
 // Game data, once per class and level: does the class line know a self heal
 // it casts again and again for MP (SoloSelfHeal.selfHeal: no HP gate such as
 // Revival's, not a buff that also heals such as Battle Roar)?
@@ -59,8 +68,18 @@ function healsWithMana(subject) {
 // for it, silenced) sends the owner to rest as its own HP would; a heal on
 // its reuse does not (the bot walks on and casts it when ready).
 function needsRest(subject, hpRatio, mpRatio, options = {}) {
+    return belowLines(subject, hpRatio, mpRatio, options, sitsForMana);
+}
+// The retreat rule: does a bot leave a live fight (or stay out of it after a
+// flight)? Low HP sends anyone, low MP only a bot of the role's own mana rule.
+// A melee self-healer sits for MP between fights (sitsForMana) but keeps
+// swinging at low MP in a fight, as any melee bot does; it does not run as a mage.
+function needsRetreat(subject, hpRatio, mpRatio, options = {}) {
+    return belowLines(subject, hpRatio, mpRatio, options, restsForMana);
+}
+function belowLines(subject, hpRatio, mpRatio, options, manaRule) {
     const limits = options.locked ? THRESHOLDS.locked : options.party ? THRESHOLDS.party : THRESHOLDS.solo;
-    return hpRatio < limits.hp || (mpRatio < limits.mp && sitsForMana(subject, options.party === true))
+    return hpRatio < limits.hp || (mpRatio < limits.mp && manaRule(subject, options.party === true))
         || petNeedsRest(options.pet, limits.hp);
 }
 function petNeedsRest(pet, line = THRESHOLDS.solo.hp) {
@@ -93,4 +112,4 @@ function sitsToRest(seated, standing, missingHp, missingMp, mana) {
     return ticks(seated) <= ticks(standing);
 }
 
-module.exports = { THRESHOLDS, restsForMana, sitsForMana, needsRest, petRested, raidReady, sitsToRest };
+module.exports = { THRESHOLDS, restsForMana, sitsForMana, restWaitsForMana, needsRest, needsRetreat, petRested, raidReady, sitsToRest };

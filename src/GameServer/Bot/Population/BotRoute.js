@@ -313,7 +313,10 @@ function soloGroundMissing(state, spots, search = null) {
     const { owner, timestamp = Date.now(), hasRoom = null, spotHunters = null } = search;
     const chosen = owner.route || choose(state, SpotService.standingSpot(state, spots), null, [],
         { spots, timestamp, frame: frameFor(state, null, [], timestamp, hasRoom, spotHunters) });
-    if (!owner.route && chosen) owner.route = chosen;
+    // No search now (choose: a bot on a rest, a trip, a duty): no verdict. Only
+    // a search that found nothing, { spotId: null }, means no ground.
+    if (chosen === null) return false;
+    if (!owner.route) owner.route = chosen;
     const routed = chosen?.spotId ? SpotIndex.spotById(spots, chosen.spotId) : null;
     return !routed || routed.raidBoss === true || !SpotService.isSuitable(routed, level);
 }

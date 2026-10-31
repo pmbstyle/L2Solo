@@ -81,6 +81,11 @@ try {
     assert.equal(RestPolicy.needsRest(bot(2, 60), 0.9, 0.1), false, 'a Gladiator does not');
     assert.equal(RestPolicy.needsRest(bot(3, 76), 0.9, 0.1), false, 'a Warlord does not');
     assert.equal(RestPolicy.needsRest(paladin, 0.9, 0.1, { party: true }), true, 'a tank sits for MP in a party anyway');
+    // The retreat rule is not the rest rule: at low MP the melee self-healer keeps
+    // swinging, a caster leaves the fight, and low HP sends anyone away.
+    assert.equal(RestPolicy.needsRetreat(paladin, 0.9, 0.1), false, 'a Paladin at 10% MP stays in the fight');
+    assert.equal(RestPolicy.needsRetreat(bot(10, 40), 0.9, 0.1), true, 'a mage at 10% MP retreats');
+    assert.equal(RestPolicy.needsRetreat(paladin, 0.3, 0.9), true, 'a Paladin at 30% HP retreats');
     // Its next fight's readiness keeps the MP reserve a caster keeps (RestPolicy.sitsForMana).
     Cold.npcForSpot = () => ({ level: 40, maxHp: 1, pAtk: 1, pAtkRnd: 0, pDef: 1, mDef: 1, accur: 1,
         evasion: 0, critical: 0, atkSpd: 253 });

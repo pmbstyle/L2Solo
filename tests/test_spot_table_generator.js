@@ -93,6 +93,10 @@ try {
         assert(Array.isArray(gate) && gate.length === table.gaps.length, 'a gate value per gap');
         const reference = gate[table.gaps.findLastIndex(gap => gap <= row[field('refGap')])];
         assert(reference > 0 && reference % 256 > 0 && reference % 256 < 1 << (mix.length / 2), 'the reference gap is open');
+        // The admitted part of the gate species' production per gap (the fight's soloShareMobs).
+        const share = row[field('gateShare')];
+        assert(Array.isArray(share) && share.length === table.gaps.length && share.every(part => part > 0 && part <= 1),
+            'a production share per gap');
     }
     // Gladiator and Warlord lines are one Warrior below 40: a row read there is measured once.
     const gladiator = table.roles.indexOf('2'), warlord = table.roles.indexOf('3'), exp = field('exp');
@@ -118,7 +122,28 @@ try {
             assert.strictEqual(curve.kph[table.gaps.indexOf(table.header.inputs.refGap)], 1, 'curves are relative to the reference gap');
         }
     }
-} finally {
+    // A split run's part pairs with the run of its own task list only.
+    (async () => {
+        const Generator = require('../scripts/generate-spot-table');
+        const parts = path.join(dir, 'parts');
+        fs.mkdirSync(parts);
+        const tasks = [{ kind: 'row', spotId: 'a', hours: 2 }, { kind: 'row', spotId: 'b', hours: 2 }];
+        const part = (tasksHash) => fs.writeFileSync(path.join(parts, 'rows-1.json'),
+            JSON.stringify({ phase: 'rows', total: 2, tasksHash, indices: [0, 1], results: ['A', 'B'] }));
+        part(Generator.tasksHash(tasks));
+        assert.deepStrictEqual(await Generator.phaseResults('rows', tasks, { phase: 'merge', parts }), ['A', 'B'], 'its own run\'s part');
+        part(Generator.tasksHash([tasks[1], tasks[0]]));
+        await assert.rejects(Generator.phaseResults('rows', tasks, { phase: 'merge', parts }), /another run/,
+            'a part of the same size from other spots is refused');
+    })().then(() => {
+        fs.rmSync(dir, { recursive: true, force: true });
+        console.log('Spot table generator determinism and counts passed');
+    }, (error) => {
+        fs.rmSync(dir, { recursive: true, force: true });
+        console.error(error);
+        process.exit(1);
+    });
+} catch (error) {
     fs.rmSync(dir, { recursive: true, force: true });
+    throw error;
 }
-console.log('Spot table generator determinism and counts passed');
