@@ -9,11 +9,6 @@ const HOUR_MS = 3600000;
 const REVIEW_MS = 5 * 60000;
 const MAX_SOLO_CHECKS = 12;
 const soloChoices = new WeakMap();
-// Party formation hydrates fresh row copies every call, so the per-object hold
-// above never spans calls; this one holds the same choice for an unchanged row.
-const soloHolds = new Map();
-const SOLO_HOLD_LIMIT = 4096;
-const soloHoldCounts = { hits: 0, misses: 0 };
 const positive = value => Math.max(0, Number(value) || 0);
 const rosterKey = members => members.map(member => Number(member.characterId)).sort((a, b) => a - b).join(',');
 const adventurer = state => invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(state);
@@ -69,17 +64,10 @@ function soloRoute(state, spots, timestamp, peers = []) {
     const standalone = soloState(state);
     let held = soloChoices.get(state);
     if (!held || held.spots !== spots || timestamp < held.at || timestamp - held.at >= REVIEW_MS) {
-        const input = rowInput(state);
-        const byId = input && soloHolds.get(Number(state.characterId));
-        if (byId && byId.input === input && byId.spots === spots && timestamp >= byId.at && timestamp - byId.at < REVIEW_MS) {
-            held = { spots, at: byId.at, choice: byId.choice };
-            soloHoldCounts.hits += 1;
-        } else {
-            held = { spots, at: timestamp, choice: Route.select(standalone,
-                { spots, timestamp, required: true, mode: 'solo', maxChecks: MAX_SOLO_CHECKS }) };
-            if (input) soloHoldCounts.misses += 1;
-            if (input) holdById(Number(state.characterId), { input, spots, at: timestamp, choice: held.choice }, timestamp);
-        }
+        // The spot the bot's held build earns at (decision 10-30) first; a full search when it fails.
+        const options = { spots, timestamp, required: true, mode: 'solo', maxChecks: MAX_SOLO_CHECKS };
+        const kept = invoke('GameServer/Bot/Economy/EconomyContext').heldIncomeRoute(standalone, { ...options, party: true }); // lazy: EconomyContext reads this module
+        held = { spots, at: timestamp, choice: kept || Route.select(standalone, options) };
         soloChoices.set(state, held);
     }
     const choice = held.choice;
@@ -112,23 +100,6 @@ function soloRoute(state, spots, timestamp, peers = []) {
 }
 
 // Cold rows only: every write to a far row moves its revision.
-function rowInput(state) {
-    if (state.phase !== 'cold' || !(Number(state.simulation?.revision) > 0) || !(Number(state.characterId) > 0)) return null;
-    return Number(state.simulation.revision);
-}
-let soloHoldSpots = null;
-function holdById(characterId, entry, timestamp) {
-    // A rebuilt spot table (SpotProfiles.reset) voids every hold; keep no old table reachable from here.
-    if (entry.spots !== soloHoldSpots) { soloHolds.clear(); soloHoldSpots = entry.spots; }
-    // Delete before set: the Map order follows `at`, so the oldest entry is the front.
-    soloHolds.delete(characterId);
-    soloHolds.set(characterId, entry);
-    for (const [id, held] of soloHolds) {
-        if (soloHolds.size <= SOLO_HOLD_LIMIT && timestamp - held.at < REVIEW_MS) break;
-        soloHolds.delete(id);
-    }
-}
-const soloHoldStats = () => ({ ...soloHoldCounts, size: soloHolds.size });
 
 function withEffects(state, effects) {
     const Loadout = invoke('GameServer/Bot/AI/PartyBuffLoadout');
@@ -320,4 +291,4 @@ function compare(state, peers, options = {}) {
     return { ...answer, at: prepared.timestamp, soloSource: solo?.source || null, partySource: party?.source || null };
 }
 
-module.exports = { soloHoldStats, compare, prepare, evaluate, soloRoute, itemHours, soloItemRouteHours, rosterKey, REVIEW_MS, MAX_SOLO_CHECKS };
+module.exports = { compare, prepare, evaluate, soloRoute, itemHours, soloItemRouteHours, rosterKey, REVIEW_MS, MAX_SOLO_CHECKS };

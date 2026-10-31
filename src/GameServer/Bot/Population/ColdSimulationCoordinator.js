@@ -2358,7 +2358,6 @@ class ColdSimulationCoordinator {
             reviews: { ...this.reviews, refused: { ...this.reviews.refused } },
             heldAcks: this.heldAcks.size,
             ackState: { ...this.ackState },
-            soloHolds: invoke('GameServer/Bot/Population/PartyIncomeComparison').soloHoldStats(),
             nearDecisions: { ...this.nearDecisions },
             competitionActions: Config.developerDiagnostics ? this.competitionActions.snapshot() : null,
             economyDecisions: Config.developerDiagnostics ? { hits: this.economyDecisions.hits, misses: this.economyDecisions.misses, held: this.economyDecisions.byId.size } : null,
