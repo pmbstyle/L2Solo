@@ -153,11 +153,11 @@ const PopulationStatus = {
 
     // moments=<builds>/<no moment>/<acted>/<goal>: economy builds since the worker started and those no player's
     // moment asked for (T174, PlayerMoment), of them the ones that sent the bot elsewhere and the ones that only
-    // renamed its goal; noMoment: per first refusal <why>:<count>:<acted>:<goal>; at: the builds per moment.
+    // renamed its goal; noMoment: per first refusal <why>:<count>:<acted>:<goal>; at: the same per moment.
     momentsText(m) {
         if (!m) return '';
         const rows = Object.entries(m.why).sort((a, b) => b[1][0] - a[1][0]).map(([why, row]) => `${why}:${row.join(':')}`);
-        const at = Object.entries(m.moments).sort((a, b) => b[1] - a[1]).map(([name, count]) => `${name}:${count}`);
+        const at = Object.entries(m.moments).sort((a, b) => b[1][0] - a[1][0]).map(([name, row]) => `${name}:${row.join(':')}`);
         return ` moments=${m.builds}/${m.skipped}/${m.acted}/${m.goal} noMoment=${rows.join(',') || '-'} at=${at.join(',') || '-'}`;
     },
 

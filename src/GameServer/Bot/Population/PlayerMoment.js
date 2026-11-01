@@ -5,7 +5,7 @@
 // its moment or by none, and what a build with none decided is counted, so the gate
 // is judged on live numbers before it exists.
 const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
-const ColdSoloWindow = invoke('GameServer/Bot/Population/ColdSoloWindow');
+const ColdEconomyPlan = invoke('GameServer/Bot/Population/ColdEconomyPlan');
 
 // In town a player reads money, bag and market at once.
 const TOWN = new Set(['shopping', 'crafting', 'merchant']);
@@ -40,26 +40,32 @@ function whyOf(state, refused) {
 
 // What a build left the bot doing, per bot, to compare the next build with.
 const seen = new Map();
+const added = (rows, name, kind) => {
+    const row = rows[name] ||= [0, 0, 0];
+    row[0]++;
+    if (kind) row[kind]++;
+};
 function settle(stats, state, plan, { baseline, leaf, refused, nativeHolds, board }) {
     const facts = plan.statsPacket?.wishSections;
     // A served build or a view of an incoming bot made no decision.
     if (!facts || facts.at === baseline?.at) return;
-    const id = Number(state.characterId), before = seen.get(id);
-    const now = { key: ColdSoloWindow.planKey(plan), focus: plan.economy?.network?.focus?.[0] ?? null,
-        target: Number(plan.acquisitionPlan?.target?.selfId) || 0 };
+    const id = Number(state.characterId), before = seen.get(id), pick = plan.activityPick;
+    const now = { doing: pick?.activity ?? null, spot: pick?.spotId ?? null, npc: pick?.npcId ?? null,
+        focus: plan.economy?.network?.focus?.[0] ?? null, target: Number(plan.acquisitionPlan?.target?.selfId) || 0 };
     seen.set(id, now);
-    stats.builds++;
+    // 1 acted: the step sends the bot elsewhere or posts an act. 2 goal: it keeps
+    // doing the same while its plan names another mob or target. Rest and travel
+    // are the bot's own: only what the decision chose is compared.
+    const kind = !before ? 0 : before.doing !== now.doing || before.spot !== now.spot || ColdEconomyPlan.acts(plan.economyPlan) ? 1
+        : before.npc !== now.npc || before.focus !== now.focus || before.target !== now.target ? 2 : 0;
     const why = whyOf(state, refused);
     const moment = momentOf(state, baseline, facts, { board, leaf, why, nativeHolds });
-    if (moment !== null) { stats.moments[moment] = (stats.moments[moment] || 0) + 1; return; }
+    stats.builds++;
+    if (moment !== null) { added(stats.moments, moment, kind); return; }
     stats.skipped++;
-    const row = stats.why[why] ||= [0, 0, 0];
-    row[0]++;
-    if (!before) return;
-    // Acted: the step would have sent the bot elsewhere. Goal: it keeps doing the
-    // same while its plan names another target.
-    if (ColdSoloWindow.planMoved(plan, before.key, state)) { stats.acted++; row[1]++; }
-    else if (before.focus !== now.focus || before.target !== now.target) { stats.goal++; row[2]++; }
+    if (kind === 1) stats.acted++;
+    if (kind === 2) stats.goal++;
+    added(stats.why, why, kind);
 }
 
 module.exports = { momentOf, createStats, settle };
