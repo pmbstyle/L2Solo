@@ -10,7 +10,7 @@ const Production = require('./ProductionPolicy');
 // known route. Reserved shop stock is public authority. A conditional ad
 // needs the buyer's already prepared executable purchase; an advertised
 // count alone cannot promise another owner's stock or consent.
-function cap(selfId, ctx, { units = 1, town, money, enchant = 0 } = {}) {
+function cap(selfId, ctx, { units = 1, town, money, enchant = 0, proof = null, proofMoney = 0 } = {}) {
     if (!Number.isSafeInteger(units) || units < 1 || !(money >= 0)
         || typeof ctx.travelDetails !== 'function' || !Number.isFinite(ctx.hour) || ctx.hour < 0) return Infinity;
     const routeFor = where => {
@@ -49,6 +49,23 @@ function cap(selfId, ctx, { units = 1, town, money, enchant = 0 } = {}) {
     for (const [where, entry] of groups) {
         const route = routeFor(where);
         if (!route || route.fees > money) continue;
+        // A backed alternative with no longer trip and a lower combined cash
+        // cost dominates this meeting. If the meeting is funded later, the
+        // same-item alternative is funded too, even when all cash is reserved.
+        // Conditional stock cannot provide this independent proof.
+        if (proof && route.hours <= meeting.hours && route.fees <= proofMoney) {
+            const guaranteed = fill(entry.lines.filter(line => line.custodyPolicy !== 1), units,
+                { npcPrice: entry.npcPrice, money: proofMoney - route.fees });
+            if (guaranteed.units === units) {
+                const limit = Math.max(0, Math.floor((guaranteed.cost + route.fees - meeting.fees) / units));
+                if (limit < proof.ceiling) {
+                    proof.ceiling = limit;
+                    proof.required = guaranteed.cost + route.fees + Number(proof.otherCost || 0);
+                    proof.offers = guaranteed.lines.map(({ line, count }) =>
+                        [Number(line.recordId), Number(line.lineId), Number(line.revision), count, Number(line.price)]);
+                }
+            }
+        }
         const purchase = fill(entry.lines, units, { npcPrice: entry.npcPrice, money: money - route.fees });
         if (purchase.units !== units) continue;
         // Subtract routes before monetising: identical trips cancel exactly,
@@ -87,9 +104,20 @@ function assertMeetingPurchase(lines, payer, town, ctx, money = ctx.adena) {
         throw Error('trade_meeting_route');
     const total = [...purchases.values()].reduce((sum, purchase) => sum + purchase.cost, 0);
     for (const purchase of purchases.values()) {
+        const proof = { ceiling: Infinity, otherCost: total - purchase.cost };
         const ceiling = cap(purchase.selfId, ctx, { ...purchase, town,
-            money: Math.max(0, money - (total - purchase.cost)) });
-        if (purchase.cost > ceiling * purchase.units) throw Error('trade_meeting_purchase_price_changed');
+            money: Math.max(0, money - (total - purchase.cost)), proof,
+            proofMoney: Math.max(0, Number(ctx.proofMoney || 0) - (total - purchase.cost)) });
+        if (purchase.cost > ceiling * purchase.units) {
+            const error = Error('trade_meeting_purchase_price_changed');
+            error.purchase = purchase;
+            error.independentPriceProof = purchase.cost > proof.ceiling * purchase.units;
+            if (error.independentPriceProof) {
+                error.fundingDominance = true;
+                error.priceWitness = proof.offers;
+            }
+            throw error;
+        }
     }
 }
 module.exports = { cap, forLine, cashCap, assertMeetingPurchase };

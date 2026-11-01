@@ -52,6 +52,21 @@ try {
     const craft = Gear.planFor(supplied, { ...routeOptions, spots: normalSpots });
     assert.equal(craft.strategy, 'craft', JSON.stringify(craft));
     assert(Number.isFinite(craft.expectedEffort) && craft.expectedEffort > 0);
+    const alternate = invoke('GameServer/Items/C4RecipeItems').resolveVariantsByProductId(recipe.productId)
+        .find(row => row.recipeId !== recipe.recipeId);
+    assert(alternate, 'the B armour has a second native recipe variant');
+    const stale = { ...supplied, stats: { ...supplied.stats, equipmentPlan: { ...craft,
+        recipeId: alternate.recipeId, target: { selfId: 2390, slot: 15 } } } };
+    const corrected = planForMember(stale, normalSpots, [], { throwOnError: true,
+        strategicTarget: { itemId: 2390, slot: 15 }, craftRecipes: [recipe], allowedRecipeIds: [recipe.recipeId] });
+    assert.equal(corrected.target?.selfId, 2390, 'an unavailable recipe variant keeps the equipment goal');
+    assert.equal(corrected.recipeId, recipe.recipeId, 'the clan chooses the offered recipe variant');
+    const stationFirst = planForMember(stale, normalSpots, [], { throwOnError: true,
+        strategicTarget: { itemId: 2390, slot: 15 }, craftRecipes: [recipe, alternate],
+        allowedRecipeIds: [recipe.recipeId, alternate.recipeId],
+        craftProviders: { [alternate.recipeId]: { characterId: 7000002, known: false } } });
+    assert.equal(stationFirst.recipeId, recipe.recipeId,
+        'a station recipe wins over an unlearned clan recipe even when both are technically available');
     const compared = Gear.planFor(supplied, { ...routeOptions, spots: [...normalSpots, raid] });
     assert.equal(compared.strategy, 'direct_drop', JSON.stringify(compared));
     assert.equal(compared.next.raidBoss, true);

@@ -753,6 +753,17 @@ async function run() {
         'the same public quote becomes legal immediately after the supplier leaves the party');
         assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
             { economy: admissionEconomy }), true, 'a held context cannot retain a refusal after source-owner membership changes');
+        supplier = { characterId: 990101, phase: 'cold', activity: 'hunting', adena: 1000000,
+            loc: { locX: -44600, locY: -112400, locZ: -240 }, stats: { money: [1000, .001, 0, 500] } };
+        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
+            { economy: admissionEconomy }), false, 'the owner cannot spend protected money on the route');
+        const fareRefusedReads = indexedReads;
+        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
+            { economy: admissionEconomy }), false);
+        assert.strictEqual(indexedReads, fareRefusedReads, 'unchanged fare refusal is cached');
+        supplier = { ...supplier, stats: { money: [1000, .001, 0, 0] } };
+        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
+            { economy: admissionEconomy }), true, 'the held refusal expires when the same seller can afford its route');
         const missingRequest = { selfId: 9999999, amount: 1, town: 'Dion', npc: false, r: .1 };
         assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, missingRequest, { economy: admissionEconomy }), false);
         const missingReads = indexedReads;

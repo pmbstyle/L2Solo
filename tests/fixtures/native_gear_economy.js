@@ -43,6 +43,10 @@ module.exports = function nativeGearEconomy({ characterId, timestamp = Date.now(
         && member.inventory[entry.selfId].amount === 1
         && lookup.offersFor(entry.selfId).length > 0);
     assert(missing, 'the native D kit has a single-slot wearable sold by canonical NPCs');
+    // The bot holds its potion stock: this gear-only lookup sells no potions, so an
+    // unfunded potion stock (the spot table's potion use) would outrank the gear wish.
+    const potions = review(member, { timestamp, spots, lookup }).stock('potions');
+    member.inventory[potions.itemId] = { selfId: potions.itemId, amount: potions.target, stackable: true };
     delete member.inventory[missing.selfId];
     const economy = review(member, { timestamp, spots, lookup });
     const activity = economy.network.activity;

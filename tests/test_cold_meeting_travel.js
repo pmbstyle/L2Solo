@@ -21,6 +21,7 @@ const database = {
 global.utils = { infoWarn: (...args) => { throw Error(args.join(' ')); } };
 global.invoke = name => ({
     Database: database,
+    'GameServer/Bot/Economy/MeetingPriceRefusals': { clear() {} },
     'GameServer/Bot/Population/BotLifeState': { cachedState: id => id === 1 ? state : { ...state, characterId: 2, stats: { travel: {} } },
         acceptLifecycleRow: () => {}, subscribeChanges: fn => { lifeListener = fn; return () => {}; },
         subscribeMarketReviewChanges: fn => { marketListener = fn; return () => { marketListener = null; }; } },

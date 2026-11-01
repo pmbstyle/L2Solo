@@ -371,7 +371,7 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     {
         let combats = 0;
         const refused = recordingKernel({ now: () => 5000,
-            resolveSolo: input => { combats++; return resolver(input); },
+            resolveSolo: input => { combats++; assert.equal(input.lastFight, false, 'a refused decision allows new fights'); return resolver(input); },
             planLifecycle: ({ state: current }) => ({ plannedState: current, activityPick: { activity: 'shopping' },
                 economyPlan: { travel: 'power:1:1', sell: [], withdraw: [] }, statsPacket: { activityLeaf: 7 } }),
             projectResolve: current => current, emit: () => {} });

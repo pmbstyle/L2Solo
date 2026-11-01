@@ -438,7 +438,6 @@ function buildProjection(state, ctx, deps) {
     // incoming units once), native commands and labour hours. Held inputs are
     // valued by the network at their exit value, never here.
     const craftPath = (recipe, id, depth = 0, ownOnly = false) => {
-        if (!Sources.allowsRecipe(recipe)) return null;
         const dual = recipe?.kind === 'dual_sword_combine';
         const ownCapable = recipe && (dual || invoke('GameServer/Bot/Economy/CraftShopService').canCraft(state, recipe));
         const earlyCustomer = !ownCapable && state.level < 40 && Progression.personal(state) && !preparation;
@@ -448,8 +447,10 @@ function buildProjection(state, ctx, deps) {
             || Number(need('../../Item/ItemTemplateIndex').find(DataCache.items, Number(id))?.etc?.slot) > 0)) return null;
         const own = ownCapable ? Profit.craftFacts(recipe, { batches: 1, ...craftLabour() }) : null;
         let workshop = !ownOnly && recipe && deps.workshops ? knownWorkshop(recipe, state, ctx, deps) : null;
-        if (workshop && own?.status === 'ready' && knownRecipes.has(Number(recipe.recipeId))
+        const ownAllowed = Sources.allowsRecipe(recipe);
+        if (workshop && ownAllowed && own?.status === 'ready' && knownRecipes.has(Number(recipe.recipeId))
             && own.labourHours * Number(ctx.hourAdena || ctx.hunt?.perHour || 0) <= workshop.cost) workshop = null;
+        if (!ownAllowed && !(workshop?.publicStation && Sources.allowsRecipe(recipe, { station: true }))) return null;
         if (recipe && (ownCapable || workshop) && nodes.length + recipe.materials.length < 36) {
             const learned = !!workshop || dual || knownRecipes.has(Number(recipe.recipeId));
             ctx.nodeInputs?.bag(recipe.recipeItemId);
@@ -464,7 +465,8 @@ function buildProjection(state, ctx, deps) {
             }
             if (!scrollAvailable) scrollAvailable = Sources.hasNonRaidSource(recipe.recipeItemId);
             if (!scrollAvailable) return null;
-            const facts = workshop ? Profit.craftFacts(recipe, { batches: 1, executor: 'workshop',
+            const inputs = workshop?.publicStation ? require('../../Crafting/StationRecipe').forStation(recipe) : recipe;
+            const facts = workshop ? Profit.craftFacts(inputs, { batches: 1, executor: 'workshop',
                 capacityBatches: workshop.capacityBatches, fee: workshop.price, recipeInput: 0 })
                 : Profit.craftFacts(recipe, { batches: 1, ...craftLabour(),
                     recipeInput: learned ? 0 : recipe.recipeItemId });
@@ -480,12 +482,24 @@ function buildProjection(state, ctx, deps) {
                 if (!key) return null;
                 grossRequirements.push({ key, amount, ...(facts.once.has(selfId) ? { once: true } : {}) });
             }
+            // Equipment recipes put their unique part first after the recipe
+            // scroll. Keep the complete input tree for costing and bids, but
+            // start acquisition with that part and any required scroll.
+            const product = need('../../Item/ItemTemplateIndex').find(DataCache.items, Number(id));
+            const part = recipe.type === 'dwarven' && GEAR_RANKS.indexOf(product?.etc?.rank) >= 3
+                && Number(product?.etc?.slot) > 0
+                ? recipe.materials.find(row => Number(row.selfId) !== Number(recipe.recipeItemId)) : null;
+            const partItem = part && need('../../Item/ItemTemplateIndex').find(DataCache.items, Number(part.selfId));
+            const keyInputs = partItem?.template?.kind === 'Other.Material'
+                ? grossRequirements.filter(row => row.key === `item:${Number(part.selfId)}`
+                    || row.key === `item:${Number(recipe.recipeItemId)}`).map(row => row.key) : [];
             return { kind: 'craft', activity: 'crafting', itemId: Number(id), recipeId: recipe.recipeId,
                 ...(workshop ? { workshop, price: facts.fee, town: workshop.townName,
                     tripHours: workshop.tripHours, tripFees: workshop.tripFees,
                     executable: workshop.capacityBatches > 0, availableUnits: workshop.capacityBatches * facts.productCount, quoted: true } : {}),
                 requiresRecipeLearning: !learned, successProbability: facts.successProbability, perCommand: facts.perCommand,
-                costHours: cycleHours, productCount: facts.productCount, grossRequirements };
+                costHours: cycleHours, productCount: facts.productCount, grossRequirements,
+                ...(keyInputs.length ? { keyInputs } : {}) };
         }
         return null;
     };
@@ -604,8 +618,12 @@ function buildProjection(state, ctx, deps) {
             exitValue = step.value;
         }
         const template = need('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(id));
-        if (GEAR_RANKS.indexOf(template?.etc?.rank) >= 3 && Number(template?.etc?.slot) > 0)
-            for (const path of paths) path.acquisitionOrder = ['craft', 'mammon_unseal'].includes(path.kind) ? 1 : path.kind === 'buy' ? 2 : 3;
+        if (GEAR_RANKS.indexOf(template?.etc?.rank) >= 3 && Number(template?.etc?.slot) > 0) {
+            // A real affordable listing wins while the item is being prepared.
+            // An absent or unaffordable listing must not stall the craft.
+            for (const path of paths) path.acquisitionOrder = path.kind === 'buy' && observed ? 1
+                : ['craft', 'mammon_unseal'].includes(path.kind) ? 2 : path.kind === 'buy' ? 3 : 4;
+        }
         const node = { key, object: Number(id), price: price(id), ...(exitValue === undefined ? {} : { exitValue }), paths: paths.slice(0, 4) };
         descriptors.set(key, node);
         if (local) descriptorInputs.set(key, { items: [...local.items], bag: [...local.bag] });
@@ -650,7 +668,7 @@ function buildProjection(state, ctx, deps) {
                 && Number(row.recipeId) === Number(recipe.recipeId) && Number(row.at) + 30 * 60 * 1000 > timestamp);
         const batches = Number(setup?.batches);
         return Number.isSafeInteger(batches) && batches > 0
-            ? Math.min(need('./WealthCraftPolicy').MAX_BATCHES, batches) : 1;
+            ? Math.min(need('./WealthCraftPolicy').MAX_BATCHES, batches) : null;
     };
     const serviceCraft = invoke('GameServer/Bot/Economy/CraftShopService');
     if (ctx.board && ctx.hourAdena > 0 && serviceCraft.isServiceCrafter(state)
@@ -696,13 +714,23 @@ function buildProjection(state, ctx, deps) {
             if (!Number.isSafeInteger(oldUnits) || oldUnits < 0) continue;
             const material = String(ItemTemplates.find(items, id)?.template?.kind || '').startsWith('Other.Material');
             const shot = need('./ShotTradeDemand').isShot(id);
-            let best = exitCeiling(ctx.board.list(id, 3), ownSales, 0);
-            if (material) best = exitCeiling(deps.fixedProductionOffersFor?.(id) || [], ownSales, best);
+            const publicBids = ctx.board.list(id, 3);
+            const fixedBids = material ? deps.fixedProductionOffersFor?.(id) || [] : [];
+            let best = exitCeiling(publicBids, ownSales, 0);
+            if (material) best = exitCeiling(fixedBids, ownSales, best);
             if (shot && need('./ShotTradeDemand').forecast(id, null, timestamp)) best = Math.max(best, positive(price(id)));
             if (!(best > 0)) continue;
-            const earningPreference = shot ? Number(recipe.recipeItemId) === investmentId ? 2 : 1 : 0;
+            // A finite setup retains priority through recipe and material
+            // purchases. Ordinary shots and materials compete on finite value.
+            const earningPreference = shot && productionBatches(recipe) ? 2 : 0;
+            const demand = material ? [...publicBids.slice(0, 5), ...fixedBids.slice(0, 5)]
+                .reduce((max, offer) => offer.type !== 'static' && usableExit(offer, ownSales)
+                    ? Math.max(max, Number(offer.count || 0)) : max, 0) : 0;
+            const capacity = Math.max(1, Math.floor(Number(state.vitals?.mp || 0) / Math.max(1, Number(recipe.mpCost || 0))));
+            const lots = productionBatches(recipe) || (demand > oldUnits
+                ? Math.min(need('./WealthCraftPolicy').MAX_BATCHES, capacity, Math.ceil((demand - oldUnits) / count)) : 1);
             admitted.push({ recipe, count, id, ownSales, oldUnits, material, shot, earningPreference, known: knownRecipes.has(Number(recipe.recipeId)),
-                ceiling: positive(count * Math.max(best, positive(ctx.buyback(id))) * Number(recipe.successRate ?? 100) / 100) });
+                ceiling: positive(count * lots * Math.max(best, positive(ctx.buyback(id))) * Number(recipe.successRate ?? 100) / 100) });
         }
         // E303: the priced producers cap of 12.
         if (Diagnostics.active()) {
@@ -723,8 +751,16 @@ function buildProjection(state, ctx, deps) {
         const fixedOffers = material ? (deps.fixedProductionOffersFor?.(id) || []).slice(0, 5) : [];
         const listingOffers = shot ? need('./WealthCraftPolicy').drain(need('./ShotSalePolicy').exits(state, recipe, {
             board: ctx.board, timestamp, trip: ctx.trip, npcOffersFor: ctx.npcOffersFor, existing: oldUnits })) : [];
-        const batches = productionBatches(recipe), units = count * batches;
         for (const source of [...publicOffers, ...fixedOffers, ...listingOffers]) {
+            const preparedBatches = productionBatches(recipe);
+            // Compare a real bounded material lot to a shot lot. A single
+            // material unit systematically lost to a 476-shot recipe even
+            // when the board needed hundreds of intermediates.
+            const demand = source.type === 'static' ? 0 : Math.max(0, Number(source.count || 0) - oldUnits);
+            const capacity = Math.max(1, Math.floor(Number(state.vitals?.mp || 0) / Math.max(1, Number(recipe.mpCost || 0))));
+            const batches = preparedBatches || (material && demand > 0
+                ? Math.min(need('./WealthCraftPolicy').MAX_BATCHES, capacity, Math.ceil(demand / count)) : 1);
+            const units = count * batches;
             const offer = source.forQuantity ? source.forQuantity(batches) : source;
             if (!offer) continue;
             if (!usableExit(offer, ownSales)) continue;
@@ -1306,6 +1342,7 @@ function personalCraftPlan(state, context, { allowStock = false } = {}) {
             if (Number(recipe.productId) === Number(unseal?.sourceId || targetId)) finalRecipe = recipe;
             components[recipe.productId] = Number(recipe.recipeId);
             providers[recipe.recipeId] = { workshop: true, characterId: Number(plan.workshop.characterId),
+                ...(plan.workshop.publicStation ? { publicStation: true } : {}),
                 price: Number(plan.workshop.price),
                 loc: plan.workshop.loc, townName: plan.workshop.townName, known: true };
         }
@@ -1335,7 +1372,9 @@ function personalCraftPlan(state, context, { allowStock = false } = {}) {
             selfId: Number(leaf.itemId || leaf.object), sourceKind: leaf.kind } } : {}),
         recipeId: Number(finalRecipe?.recipeId) || null,
         outputAmount: Number(wish.object?.amount || 1) + (stock ? Math.max(0, Number(state.inventory?.[targetId]?.amount) || 0) : 0),
-        materials: finalRecipe ? finalRecipe.materials.map(row => ({ ...row })) : [{ selfId: unseal.sourceId, amount: 1 }],
+        materials: finalRecipe ? (providers[finalRecipe.recipeId]?.publicStation
+            ? require('../../Crafting/StationRecipe').forStation(finalRecipe) : finalRecipe).materials.map(row => ({ ...row }))
+            : [{ selfId: unseal.sourceId, amount: 1 }],
         ...(unseal ? { unseal: { ...unseal } } : {}), craftProviders: providers,
         ...(crystalInputs.size ? { crystalPreparation: { exchange: crystalExchange,
             materials: [...(crystalExchange?.materials || []).map(row => ({ ...row })),

@@ -37,7 +37,9 @@ const scenarios = {
     102: { plan: partyPlan, request, planned: { spotId: other.id, npcId: 321 }, resting: true },
     103: { plan: partyPlan, request: null, planned: { spotId: other.id, npcId: 321 } },
     104: { plan: partyPlan, request, planned: null },
-    105: { plan: soloPlan, request, planned: { spotId: other.id, npcId: 321 } }
+    105: { plan: soloPlan, request, planned: { spotId: other.id, npcId: 321 } },
+    106: { plan: { ...soloPlan, inputPreparation: { recipeId: 447, target: { selfId: 148 } } },
+        request: null, planned: null }
 };
 
 const probeSource = `
@@ -51,6 +53,8 @@ invoke('GameServer/Bot/AI/GearPlanSelection').selectAcquisitionPlan = (state) =>
 });
 invoke('GameServer/Bot/Population/PartyRequestPlanner').partyRequestForPlan = (state) => scenario(state).request || null;
 invoke('GameServer/Bot/AI/GearAcquisitionPlanner').safeFallbackForPlan = (state) => scenario(state).planned || null;
+invoke('GameServer/Bot/Economy/WishProviders').personalCraftPlan = (state) => state.characterId === 106
+    ? { status: 'active', strategy: 'craft', recipeId: 362, target: { selfId: 2384 } } : null;
 `;
 
 (async () => {
@@ -138,6 +142,8 @@ invoke('GameServer/Bot/AI/GearAcquisitionPlanner').safeFallbackForPlan = (state)
 
         assert.strictEqual(planned(105).spotId, scenarios[105].planned.spotId,
             'a required request waits even when the plan is solo-safe');
+        assert.strictEqual(planned(106).stats.equipmentPlan.inputPreparation.recipeId, 447,
+            'the worker must not replace the selected plan with a bare wish that drops the retained project');
     } finally {
         await worker.terminate();
     }

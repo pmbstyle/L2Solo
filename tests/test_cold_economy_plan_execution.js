@@ -182,6 +182,11 @@ function stub(object, key, value) { const previous = object[key]; restores.push(
         { reviewGoal: false, step: work => work() });
         assert.equal(Afk.ownerRecords(id).find(row => row.id === standing.id).lines[0].price, 95,
             'a native shopping decision corrects an old bid independently of the current buy watch');
+        await Market.executePlan(Life.cachedState(id), { sell: [], withdraw: [], travel: null,
+            bidLimits: [[bid.id, standing.id, standing.revision, bid.count, bid.price, 95]] },
+        { reviewGoal: false, step: work => work() });
+        assert.equal(Afk.ownerRecords(id).find(row => row.id === standing.id).lines[0].price, 95,
+            'a correction already applied by the postcommit review does not invalidate the remaining plan');
         await assert.rejects(Market.executePlan(Life.cachedState(id), { sell: [], withdraw: [], travel: null,
             bidLimits: [[bid.id, standing.id, standing.revision, bid.count, bid.price, 90]] },
         { reviewGoal: false, step: work => work() }), /afk_trade_shop_changed/,
@@ -228,6 +233,41 @@ function stub(object, key, value) { const previous = object[key]; restores.push(
             { preparedState: actual, step: work => work() });
         assert.equal((await Database.fetchAfkTradeShops(id)).filter(row => row.kind === 'buy_ad').length, 0,
             'a freshly prepared complete-empty batch closes obsolete unaccepted ads');
+        const Recipes = invoke('GameServer/Items/C4RecipeItems'), recipe = Recipes.resolveByRecipeId(457);
+        const part = recipe.materials.find(row => Number(row.selfId) !== Number(recipe.recipeItemId));
+        const Index = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
+        stub(Index, 'ready', () => true); stub(Index, 'inventory', () => ({}));
+        stub(invoke('GameServer/Bot/AI/GearAcquisitionPlanner'), 'considerable', () => true);
+        state = await Life.upsertState({ ...Life.cachedState(id), activity: 'hunting', stats: { ...Life.cachedState(id).stats,
+            money: [10000, .0001, 0, 0, .001, 2000, part.selfId], equipmentPlan: {
+                status: 'deferred', strategy: 'none', reason: 'wish_focus', recipeId: recipe.recipeId,
+                target: { selfId: recipe.productId, slot: 14 }, heldInputs: {},
+                craftProviders: { [recipe.recipeId]: { publicStation: true } }
+            } } }, 'retained_craft_bid_fixture');
+        await Market.executePlan(state, { sell: [], withdraw: [], buyAds: [[part.selfId, 2, 100]], travel: null },
+            { step: work => work() });
+        assert(Afk.ownerRecords(id).some(row => row.storeType === 3 && row.lines.some(line => line.selfId === part.selfId)),
+            'the real board publishes the part bid');
+        state = Life.cachedState(id);
+        await Market.executePlan(state, { sell: [], withdraw: [], buyAds: [], travel: null },
+            { preparedState: state, step: work => work() });
+        assert(Afk.ownerRecords(id).some(row => row.storeType === 3 && row.lines.some(line => line.selfId === part.selfId)),
+            'a current but incomplete worker batch cannot erase a still-funded retained craft bid');
+        state = Life.cachedState(id);
+        const Trade = invoke('GameServer/Bot/Economy/TradeIntent');
+        const newNeed = Trade.encode({ itemId: 1864, amount: 1, price: 100, key: 'resale:1864', recipeId: 0,
+            valueHours: .01, valueRate: .001 });
+        await Market.executePlan(state, { sell: [], withdraw: [], buyAds: [newNeed], travel: null },
+            { preparedState: state, step: work => work() });
+        const both = Afk.ownerRecords(id).filter(row => row.storeType === 3).flatMap(row => row.lines.map(line => line.selfId));
+        assert(both.includes(part.selfId) && both.includes(1864),
+            'a new current bid is published alongside the still-needed retained bid');
+        state = await Life.upsertState({ ...Life.cachedState(id), stats: { ...Life.cachedState(id).stats,
+            equipmentPlan: { ...Life.cachedState(id).stats.equipmentPlan, reason: 'cancelled' } } }, 'cancel_retained_craft');
+        await Market.executePlan(state, { sell: [], withdraw: [], buyAds: [], travel: null },
+            { preparedState: state, step: work => work() });
+        assert(!Afk.ownerRecords(id).some(row => row.storeType === 3 && row.lines.some(line => line.selfId === part.selfId)),
+            'cancelling the project permits the old order to close');
         console.log('test_cold_economy_plan_execution: review command runs the committed plan; stale review refused; ack ok');
     } finally { for (const restore of restores.reverse()) restore(); await world.close(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

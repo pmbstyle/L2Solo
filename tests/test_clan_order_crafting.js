@@ -142,6 +142,42 @@ async function main() {
         const assigned = await OrderService.resolveClan(await projection());
         assert.strictEqual(assigned.assignment.ok, true);
         const customerId = assigned.goal.plan.craft.customerId;
+        const waitingCustomer = await LifeState.findByCharacterId(customerId);
+        const dwarfBeforeMove = await LifeState.findByCharacterId(5300006);
+        const initialTrip = Cold.beginTravel(waitingCustomer);
+        assert(initialTrip, 'the explicit clan order may visit an available crafter in town');
+        const arrived = await LifeState.upsertState({ ...initialTrip, loc: initialTrip.stats.travel.to,
+            activity: 'crafting', stats: { ...initialTrip.stats, travel: null } }, 'test_moving_crafter_arrival');
+        await LifeState.upsertState({ ...dwarfBeforeMove, loc: { locX: 185475, locY: 47733, locZ: -5968 },
+            activity: 'hunting' }, 'test_crafter_left_town');
+        const moved = await Cold.craft(arrived);
+        assert.strictEqual(moved.reason, 'clan_crafter_moved');
+        assert.notStrictEqual(moved.state.activity, 'traveling', 'a moved crafter must not trigger a chase');
+        assert.deepStrictEqual(moved.state.stats.equipmentPlan, arrived.stats.equipmentPlan, 'the craft project survives');
+        assert.strictEqual(Cold.beginTravel({ ...moved.state, activity: 'hunting' }), null,
+            'a moved crafter has a bounded retry delay');
+        assert.strictEqual(Cold.beginTravel({ ...arrived, activity: 'hunting' }), null,
+            'a field hunter is not a town craft service');
+        await LifeState.upsertState({ ...await LifeState.findByCharacterId(5300006),
+            loc: dwarfBeforeMove.loc, activity: dwarfBeforeMove.activity }, 'test_crafter_returned');
+        const alternativeState = { ...arrived, stats: { ...arrived.stats, equipmentPlan: {
+            ...arrived.stats.equipmentPlan, clanGoal: { clanId: 6300001 } } } };
+        assert(!Cold.stationForRecipe(recipe.recipeId, alternativeState).clan,
+            'automatic clan goals prefer a public station for the same recipe');
+        assert(!Cold.recipeForState(alternativeState, recipe).materials.some(row => row.selfId === recipe.recipeItemId),
+            'a station alternative does not require a learning scroll');
+        const farAway = { ...alternativeState, adena: 1000000,
+            inventory: { ...alternativeState.inventory, 57: { selfId: 57, amount: 1000000 } },
+            loc: { locX: 185475, locY: 47733, locZ: -5968 } };
+        const redirect = await Cold.craft(farAway);
+        assert.strictEqual(redirect.reason, 'craft_station_changed');
+        assert.strictEqual(redirect.state.activity, 'traveling', 'a changed service must be reached before crafting');
+        assert.deepStrictEqual(redirect.state.stats.travel.to, Cold.stationForRecipe(recipe.recipeId, farAway).loc);
+        const personalState = { ...alternativeState, stats: { ...alternativeState.stats,
+            equipmentPlan: { ...alternativeState.stats.equipmentPlan, clanGoal: null } } };
+        assert(!Cold.stationForRecipe(recipe.recipeId, personalState).clan,
+            'a personal goal is never restricted to a clan crafter');
+        await LifeState.upsertState({ ...arrived, activity: 'hunting', stats: { ...arrived.stats, travel: null } }, 'test_resume_order');
         const first = await travelAndCraft(customerId);
         assert.strictEqual(first.crafted, true, first.error || first.reason);
         assert((await Database.fetchCharacterRecipes(5300006)).some(row => row.recipeId === recipe.recipeId), 'the actual clan dwarf must learn the scroll');

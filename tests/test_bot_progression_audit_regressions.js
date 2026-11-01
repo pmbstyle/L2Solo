@@ -131,8 +131,10 @@ assert(decorated.warehouseMaterials.some(m => m.selfId === 2060 && m.amount === 
 const supplied = { ...beneficiary, stats: { ...beneficiary.stats, equipmentPlan: decorated },
     inventory: Object.fromEntries(decorated.warehouseMaterials.map(m => [m.selfId, m])) };
 assert.strictEqual(Craft.beginTravel(beneficiary), null, 'the original stranded plan has nothing to craft');
-assert.strictEqual(Craft.beginTravel(supplied).stats.travel.stationId, 'clan_crafter_99',
-    'the planned warehouse handoff actually unlocks component crafting at the assigned clan crafter');
+assert.strictEqual(Craft.beginTravel(supplied).stats.travel.stationId, Craft.stationForRecipe(component.recipeId, supplied).id,
+    'the planned warehouse handoff unlocks component crafting at the published alternative station');
+assert(!Craft.stationForRecipe(component.recipeId, supplied).clan,
+    'automatic clan equipment uses the stationary public service instead of chasing a field crafter');
 const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 assert.strictEqual(Disposition.reservedCraftAmounts(supplied)[2060], 8,
     'materials withdrawn for dual-sword components must remain reserved until crafting');
@@ -250,7 +252,7 @@ async function checkMissingSpotRecovery() {
         });
         assert(craftResult.ok);
         assert.strictEqual(savedReason, 'cold_craft_travel');
-        assert.strictEqual(craftResult.state.stats.travel.stationId, 'clan_crafter_99');
+        assert.strictEqual(craftResult.state.stats.travel.stationId, Craft.stationForRecipe(component.recipeId, supplied).id);
         assert.strictEqual(craftResult.state.stats.travel.reason, 'component_craft',
             'a stale worker hunt must not overwrite an executable component craft trip');
         assert.strictEqual(craftResult.state.timing.nextResolveAt, craftResult.state.stats.travel.arrivalAt);

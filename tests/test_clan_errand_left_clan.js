@@ -34,7 +34,12 @@ async function stateFor(clanId, errand, packet = PACKET) {
 const stock = async (id, itemId) => (await Database.fetchItems(id)).filter(row => Number(row.selfId) === Number(itemId))
     .reduce((sum, row) => sum + Number(row.amount), 0);
 const wallet = id => stock(id, 57);
-const errandGoal = async id => assert(await GoalState.set(id, { type: 'market_errand', status: 'active', priority: 80 }), 'goal set');
+const errandGoal = async state => {
+    const errand = Errands.pending(state)[0];
+    assert(await GoalState.set(state.characterId, { type: 'market_errand', status: 'active', priority: 80,
+        target: { itemId: errand.selfId, amount: errand.amount },
+        plan: { purpose: errand.purpose, marketTown: errand.town } }), 'goal set');
+};
 const goalStatus = id => GoalState.snapshot(id)?.current?.status;
 
 (async () => {
@@ -73,7 +78,7 @@ const goalStatus = id => GoalState.snapshot(id)?.current?.status;
 
         // Ex-member (clanId 0): no purchase, errand gone, the clan credit refunded.
         const left = await stateFor(0, clanErrand());
-        await errandGoal(left.characterId);
+        await errandGoal(left);
         const dropped = await Market.tryPurchase(left, { type: 'market_errand' });
         assert.equal(dropped.purchased, false);
         assert.equal(Errands.pending(dropped.state).length, 0, 'the errand is gone');

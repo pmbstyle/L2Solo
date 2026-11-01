@@ -88,6 +88,44 @@ async function run() {
         materials: [{ selfId: 1458, amount: 353 }] };
     const pausedCraft = Selection.deferredWishPlan(incompleteCraft, {}, state());
     assert.equal(pausedCraft.heldInputs[1458], 20, 'deferral captures the already collected inputs');
+    const marketPlan = Selection.withMarketCraftPreparation(state(), incompleteCraft,
+        { strategy: 'market', status: 'active', target: incompleteCraft.target });
+    assert.equal(marketPlan.inputPreparation.heldInputs[1458], 20, 'a tentative finished-item purchase keeps collected ingredients');
+    assert.equal(count(state(1458, { equipmentPlan: marketPlan })), 0,
+        'a failed or pending purchase cannot expose those ingredients for sale');
+    const recheckedMarket = Selection.withMarketCraftPreparation(state(), marketPlan,
+        { strategy: 'market', status: 'active', target: incompleteCraft.target });
+    assert.equal(recheckedMarket.inputPreparation.heldInputs[1458], 20, 'a market review retains the same prepared inputs');
+    const olderCraft = { ...pausedCraft, target: { selfId: 129, slot: 7 }, heldInputs: { 1458: 10 } };
+    const currentCraft = { ...incompleteCraft, inputPreparation: olderCraft };
+    const doubleState = state(1458, { equipmentPlan: currentCraft });
+    const selector = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+    const originalConsiderable = selector.considerable;
+    selector.considerable = () => true;
+    try {
+        const pending = Selection.withMarketCraftPreparation(doubleState, currentCraft,
+            { strategy: 'market', status: 'active', target: currentCraft.target });
+        assert.equal(pending.inputPreparation.heldInputs[1458], 10, 'the current project captures only its unreserved share');
+        assert.equal(pending.inputPreparation.inputPreparation.heldInputs[1458], 10, 'the older project retains its share');
+        assert.equal(Disposition.retainedEquipmentAmounts({ ...doubleState, stats: { ...doubleState.stats, equipmentPlan: pending } })[1458], 20,
+            'both retained projects protect their captured inputs');
+        const resumedOlder = Selection.withRetainedCraftPreparation(doubleState, currentCraft,
+            { strategy: 'craft', status: 'active', target: olderCraft.target, recipeId: olderCraft.recipeId });
+        assert.equal(resumedOlder.inputPreparation.target.selfId, currentCraft.target.selfId,
+            'switching back retains the project just paused');
+        assert(!resumedOlder.inputPreparation.inputPreparation,
+            'the resumed project is removed from the retained chain and cannot reserve its inputs twice');
+    } finally { selector.considerable = originalConsiderable; }
+    const switched = Selection.withRetainedCraftPreparation(state(), incompleteCraft,
+        { strategy: 'direct_drop', status: 'active', target: { selfId: 129, slot: 7 } });
+    assert.equal(switched.inputPreparation.heldInputs[1458], 20, 'a different equipment objective retains the prepared craft');
+    assert.equal(count(state(1458, { equipmentPlan: switched })), 0, 'switching targets cannot sell its ingredients');
+    const unsourced = Selection.withRetainedCraftPreparation(state(), { ...incompleteCraft, status: 'blocked', next: null },
+        { strategy: 'direct_drop', status: 'active', target: { selfId: 129, slot: 7 } });
+    assert(unsourced.inputPreparation, 'an unfarmable craft remains a purchase project behind a different objective');
+    assert(Selection.withRetainedCraftPreparation(state(), incompleteCraft,
+        { strategy: 'craft', status: 'ready_to_craft', target: { selfId: 129, slot: 7 } }).inputPreparation,
+    'a ready temporary craft cannot discard the earlier project');
     const productionStock = state(1458, { equipmentPlan: pausedCraft });
     productionStock.inventory[1458].amount += 11;
     assert.equal(count(productionStock), 11, 'new production inputs stay free of the paused gear reserve');
@@ -185,11 +223,11 @@ async function run() {
     /economy_material_protected/, 'the native publication refuses a stale proposal that would escrow production materials');
     assert.equal(Native.amount(await Database.fetchItems(sellerId), 1458), 20);
     await Life.upsertState({ ...Life.snapshot(sellerId), stats: { ...producing.stats, shotCraft: null } }, 'fixture_production_finished');
-    async function accept(amount, token) {
+    async function accept(amount, token, purpose = { key: 'resale:1458', recipeId: 0 }) {
         const old = (await Database.fetchAfkTradeShops(buyerId)).filter(row => row.kind === 'buy_ad');
         await Database.replaceBoardRecords(buyerId, 'buy_ad', [{ storeType: 3, town: 'Giran',
             lines: [{ selfId: 1458, name: 'Crystal: D-Grade', count: amount, price: 10, stackable: true,
-                intent: { itemId: 1458, amount, price: 10, key: 'resale:1458', recipeId: 0,
+                intent: { itemId: 1458, amount, price: 10, ...purpose,
                     valueHours: 2, valueRate: 100 } }] }],
         { expected: Object.fromEntries(old.map(row => [row.id, row.revision])) });
         const ad = (await Database.fetchAfkTradeShops(buyerId)).find(row => row.kind === 'buy_ad');
@@ -225,6 +263,25 @@ async function run() {
     assert.equal(offers.reduce((sum, row) => sum + row.count, 0), 8);
     assert.equal(Native.amount(await Database.fetchItems(buyerId), 57), 9920,
         'publishing a crystal quote creates no adena');
+    // A delayed craft purchase must record the reserve in the same physical
+    // meeting transaction, including across the cold lifecycle snapshot.
+    const buyer = Life.cachedState(buyerId);
+    await Life.upsertState({ ...buyer, stats: { ...buyer.stats, equipmentPlan: {
+        strategy: 'direct_drop', status: 'active', target: { selfId: 129, slot: 7 },
+        inputPreparation: { status: 'deferred', strategy: 'none', reason: 'wish_focus', recipeId: 192,
+            target: { selfId: 90, slot: 7 }, heldInputs: { 1458: 4 },
+            inputPreparation: { ...pausedCraft, heldInputs: { 1458: 1 } } }
+    } } }, 'fixture_retained_purchase');
+    await Database.setItem(sellerId, { selfId: 1458, name: 'Crystal: D-Grade', amount: 2, stackable: true });
+    await Life.syncExternalInventory(sellerId, 'fixture_new_surplus');
+    const retainedMeeting = await accept(2, 'retained-craft-purchase', { key: 'power:76:7', recipeId: 1 });
+    adopt(retainedMeeting);
+    adopt(await Database.arriveTradeMeeting(retainedMeeting.meeting.id));
+    const receipt = (await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=?', [buyerId]]))[0];
+    assert.equal(JSON.parse(receipt.statsJson).equipmentPlan.inputPreparation.inputPreparation.heldInputs[1458], 3,
+        'the retained kit owns the two received units immediately and durably');
+    assert.equal(JSON.parse(receipt.statsJson).equipmentPlan.inputPreparation.heldInputs[1458], 4,
+        'the newer project does not claim the older project’s purchase');
     console.log('Crystal surplus: market-only sales, full board, review, reservations, native publication and settlement passed');
 }
 run().then(() => process.exit(0)).catch(error => { console.error(error); process.exit(1); });

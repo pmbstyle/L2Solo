@@ -20,6 +20,25 @@ for (const bytes of [undefined, null, -1, NaN, '12']) {
         'message_too_large', `an unusable size (${String(bytes)}) falls back to measuring`);
 }
 
+// The result alone used to fit the 550-byte estimate, while the live epoch
+// and generated message ID made the complete meeting packet exceed 768.
+const meetingEpoch = 'cold-worker:41311:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+const row = { kind: 'meeting', characterId: 2007221, commandId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    pageIndex: -1, ok: false, reason: 'trade_meeting_purchase_price_changed', priceEvidence: { padding: 'x'.repeat(335) } };
+const tooLarge = Protocol.envelope('command_ack', meetingEpoch, { results: [row] });
+assert(Protocol.byteLength(row) <= 550 && Protocol.byteLength(tooLarge) > 768);
+assert.strictEqual(Protocol.validateEnvelope(tooLarge, 'worker', { workerEpoch: meetingEpoch }).reason, 'invalid_meeting_command');
+const fallback = { source: 'current' };
+const compact = Protocol.fitMeetingAck(tooLarge, fallback);
+assert.deepStrictEqual(compact.payload.results[0].priceEvidence, fallback);
+assert(Protocol.validateEnvelope(compact, 'worker', { workerEpoch: meetingEpoch }).ok);
+const plain = Protocol.fitMeetingAck(tooLarge, { padding: 'x'.repeat(1000) });
+assert.strictEqual(plain.payload.results[0].priceEvidence, undefined);
+assert.strictEqual(plain.payload.results[0].reason, row.reason);
+assert(Protocol.validateEnvelope(plain, 'worker', { workerEpoch: meetingEpoch }).ok);
+assert.strictEqual(Protocol.fitMeetingAck(compact), compact, 'a fitting proof remains unchanged');
+assert.strictEqual(tooLarge.payload.results[0], row, 'fitting does not mutate the prepared result');
+
 // Page sizes counted while paging bound the final envelope, including a
 // message ID generated at send time.
 const rows = Array.from({ length: 130 }, (_, id) => ({ id, text: 'мир🙂'.repeat(900) }));

@@ -14,8 +14,19 @@ const Production = require('./ProductionPolicy');
 const Workshops = require('./CraftWorkshopService');
 
 const NATIVE_TRAVEL_MS = ColdTrip.AUTHOR_TRIP_MS;
+const CLAN_CRAFTER_RETRY_MS = 5 * 60 * 1000;
 
 const isStationService = state => CraftShopService.isStationService(state);
+
+// Automatic clan equipment can use the same published station as a personal
+// project. Keep explicit clan orders and a dwarf crafting for himself on their
+// existing native path; changing the executor there changes the transaction.
+function clanStationAlternative(recipeId, state, provider) {
+    const goal = state?.stats?.equipmentPlan?.clanGoal;
+    if (!provider || provider.workshop || !goal?.clanId || goal.orderId
+        || Number(provider.characterId) === Number(state.characterId) || Production.buyersDisabled()) return null;
+    return CraftShopService.publishedStationRecipes().stationByRecipeId.get(Number(recipeId)) || null;
+}
 
 function stationForRecipe(recipeId, state = null) {
     const combination = C4DualSwordCombinations.resolveByRecipeId(recipeId);
@@ -29,10 +40,13 @@ function stationForRecipe(recipeId, state = null) {
         return { id: `workshop_${provider.characterId}`, characterId: provider.characterId,
             playerWorkshop: selected.playerWorkshop === true,
             loc: selected.state.loc, townName: selected.state.currentRegion, workshop: true,
+            publicStation: CraftShopService.isStationService(selected.state),
             recipeId: Number(recipeId), price: selected.price, entryPrice: selected.entryPrice,
             revision: Number(selected.state.simulation?.revision || 0),
             capacityBatches: Math.min(64, Math.floor(Number(selected.state.vitals?.mp || 0) / Math.max(1, Number(selected.recipe.mpCost || 0)))) };
     }
+    const alternative = clanStationAlternative(recipeId, state, provider);
+    if (alternative) return alternative;
     if (provider && state.stats.equipmentPlan.clanGoal?.clanId
         && (!Production.buyersDisabled() || state.stats.equipmentPlan.clanGoal.orderId)) return {
         id: `clan_crafter_${provider.characterId}`, characterId: provider.characterId,
@@ -54,7 +68,16 @@ function componentFor(state, selfId) {
 
 function recipeForState(state, recipe) {
     const provider = state?.stats?.equipmentPlan?.craftProviders?.[recipe?.recipeId];
-    if (!recipe || !provider || provider.known || provider.workshop) return recipe;
+    if (!recipe) return recipe;
+    if (clanStationAlternative(recipe.recipeId, state, provider))
+        return require('../../Crafting/StationRecipe').forStation(recipe);
+    // Plans saved before the public-station flag was introduced can resume
+    // immediately. The indexed live owner, not the old plan, proves the kind.
+    if (provider?.workshop && provider.publicStation === undefined) {
+        const selected = Workshops.lookup(provider.characterId, recipe.recipeId, state);
+        if (selected && CraftShopService.isStationService(selected.state))
+            return require('../../Crafting/StationRecipe').forStation(recipe);
+    }
     return ClanCrafting.recipeForProvider(recipe, provider);
 }
 
@@ -72,10 +95,17 @@ function readyRecipeFor(state, recipe, visited = new Set()) {
     const plan = state?.stats?.equipmentPlan;
     if (!visited.size && !plan?.clanGoal && Number(plan?.recipeId) === Number(recipe.recipeId)
         && requiredCraftCount(recipe, recipe, state) === 0) return null;
+    if (!visited.size && Number(plan?.recipeId) === Number(recipe.recipeId)) {
+        const target = ItemTemplateIndex.find(DataCache.items, Number(plan.target?.selfId));
+        if (['b', 'a', 's'].includes(String(target?.etc?.rank || '').toLowerCase())) {
+            const keys = require('./CraftWarehousePolicy').keyInputs(state, recipe);
+            if (keys.some(row => Number(state.inventory?.[row.selfId]?.amount || 0) < Number(row.amount))) return null;
+        }
+    }
     const nextVisited = new Set(visited).add(Number(recipe.recipeId));
     if (hasMaterials(state, recipe)) return recipe;
 
-    for (const [id, amount] of Profit.requirements(recipe) || []) {
+    for (const [id, amount] of Profit.requirements(recipeForState(state, recipe)) || []) {
         const owned = Number(state?.inventory?.[id]?.amount || 0);
         if (owned >= amount) continue;
         const component = componentFor(state, id);
@@ -95,6 +125,22 @@ function beginTravel(state, timestamp = Date.now()) {
     let recipe = readyRecipeFor(state, finalRecipe);
     const station = stationForRecipe(recipe?.recipeId, state);
     if (!recipe || !station) return null;
+    if (station.clan && Number(station.characterId) !== Number(state.characterId)) {
+        const retry = state.stats?.clanCraftRetry;
+        if (Number(retry?.characterId) === Number(station.characterId)
+            && Number(retry?.recipeId) === Number(recipe.recipeId) && Number(retry?.until) > timestamp) return null;
+        const crafter = LifeState.cachedState(station.characterId);
+        if (!crafter || crafter.phase !== 'cold' || crafter.partyId || crafter.party?.partyId
+            || crafter.stats?.tradeMeeting || ['dead', 'respawning', 'traveling', 'fighting'].includes(crafter.activity)) return null;
+        // A field hunter is not a stationary service. Wait for a town visit,
+        // or craft immediately if the two characters are already together.
+        const distance = Math.hypot(Number(state.loc?.locX) - Number(crafter.loc?.locX),
+            Number(state.loc?.locY) - Number(crafter.loc?.locY));
+        const town = invoke('GameServer/Bot/AI/TownTransitPolicy').townAt(crafter.loc);
+        if (!Number.isFinite(distance) || distance > 1200 && !town) return null;
+        station.loc = crafter.loc;
+        station.townName = town || state.currentRegion;
+    }
     const nearestTown = TownRespawn.getClosestTown(state.loc?.locX, state.loc?.locY, state.loc?.locZ);
     return ColdTrip.toTown(state, {
         to: { ...station.loc },
@@ -125,6 +171,19 @@ function returnTrip(state, from, craftReturn, reason, timestamp) {
         arrivalEvent: 'returned_to_spot',
         reason
     }, timestamp, { extraStats: { craftReturn: null } });
+}
+
+// A finished component can unlock the next warehouse stage in the same town.
+// Keep the original field return, and let the ordinary town visit withdraw it.
+function waitForWarehouseStage(state, craftReturn, timestamp = Date.now()) {
+    if (!craftReturn?.loc || state?.stats?.equipmentPlan?.clanGoal) return null;
+    const Index = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
+    if (!Index.ready() || !Index.hasItems(state)) return null;
+    const stage = require('./CraftWarehousePolicy').stage(state, Object.values(Index.inventory(state)));
+    if (!stage?.requests.length) return null;
+    return { ...state, activity: 'shopping', stats: { ...state.stats, travel: null, craftReturn: null,
+        marketReturn: state.stats?.marketReturn || craftReturn },
+    timing: { ...(state.timing || {}), nextResolveAt: timestamp + 1000 } };
 }
 
 function materialRows(items, recipe, multiplier = 1) {
@@ -162,7 +221,7 @@ function requiredCraftCount(finalRecipe, recipe, state, requestedOutput = null, 
     if (crafts === null) return 0;
     if (Number(finalRecipe.recipeId) === Number(recipe.recipeId)) return crafts;
     const nextVisited = new Set(visited).add(Number(finalRecipe.recipeId));
-    for (const [id, amount] of Profit.requirements(finalRecipe) || []) {
+    for (const [id, amount] of Profit.requirements(recipeForState(state, finalRecipe)) || []) {
         const component = componentFor(state, id);
         if (!component) continue;
         const owned = Number(state?.inventory?.[id]?.amount || 0);
@@ -241,6 +300,15 @@ async function craft(state, random = Math.random) {
         return combineDualSword(state, recipe, station);
     }
 
+    // A saved clan trip may now select a fixed station, and consecutive
+    // components may use different stations. Always reach the selected service
+    // before executing; never turn a provider change into a remote craft.
+    if (!station.clan && station.loc && Math.hypot(Number(state.loc?.locX) - Number(station.loc.locX),
+        Number(state.loc?.locY) - Number(station.loc.locY)) > 1200) {
+        const travel = beginTravel(state);
+        return { state: travel || state, crafted: false, reason: 'craft_station_changed' };
+    }
+
     const account = crafterAccount(station);
     const characters = station.clan || station.workshop ? [{ id: station.characterId }] : await Database.fetchCharacters(account);
     const crafter = characters[0];
@@ -259,9 +327,13 @@ async function craft(state, random = Math.random) {
         }
         if (Math.hypot(Number(state.loc?.locX) - Number(crafterState.loc?.locX),
             Number(state.loc?.locY) - Number(crafterState.loc?.locY)) > 1200) {
-            const moved = { ...state, stats: { ...state.stats, equipmentPlan: { ...plan,
-                craftProviders: { ...plan.craftProviders, [recipe.recipeId]: { ...plan.craftProviders[recipe.recipeId], loc: crafterState.loc } } } } };
-            return { state: beginTravel(moved) || state, crafted: false, reason: 'clan_crafter_moved' };
+            // Do not chase an actor whose location changes during the trip.
+            // Preserve the project and let normal activity resume before a
+            // bounded retry, rather than generating another immediate trip.
+            return { state: { ...state, stats: { ...state.stats, clanCraftRetry: {
+                characterId: Number(crafter.id), recipeId: Number(recipe.recipeId),
+                until: Date.now() + CLAN_CRAFTER_RETRY_MS } } },
+            crafted: false, reason: 'clan_crafter_moved' };
         }
         const known = await Database.fetchCharacterRecipes(crafter.id);
         learning = !known.some(row => Number(row.recipeId) === Number(recipe.recipeId));
@@ -274,6 +346,7 @@ async function craft(state, random = Math.random) {
         : station.clan ? { price: 0 } : profile.entries.find((candidate) => Number(candidate.recipeId) === Number(recipe.recipeId));
     const template = ItemTemplateIndex.find(DataCache.items, recipe.productId);
     const stationService = !station.clan && !station.workshop && isStationService(crafterState);
+    if (stationService || station.publicStation) recipe = require('../../Crafting/StationRecipe').forStation(recipe);
     const crafterMp = Number(crafterState.vitals?.mp || 0);
     if (!entry || !template || (!stationService && crafterMp < Number(recipe.mpCost || 0))) {
         return { state, crafted: false, reason: 'station_unavailable' };
@@ -398,8 +471,10 @@ async function craft(state, random = Math.random) {
         && !!nextReadyRecipe
         && !C4DualSwordCombinations.isCombination(nextReadyRecipe);
     const returnAfterComponent = componentCraft && !continueCrafting && craftReturn?.loc;
+    const warehouseStage = returnAfterComponent ? waitForWarehouseStage(refreshed, craftReturn, timestamp) : null;
     const settled = unsealTravel || (continueCrafting
         ? { ...refreshed, activity: 'crafting' }
+        : warehouseStage ? warehouseStage
         : returnAfterComponent
             ? returnTrip(refreshed, state.loc || station.loc, craftReturn, 'component_craft_return', timestamp)
             : needsUnseal && craftReturn?.loc
@@ -419,4 +494,4 @@ async function craft(state, random = Math.random) {
     };
 }
 
-module.exports = { NATIVE_TRAVEL_MS, isStationService, stationForRecipe, crafterAccount, hasMaterials, hasNonSupplementalMaterials, hasCombinationIngredients, readyRecipeFor, supplementMaterials, craftableBatchCount, requiredCraftCount, beginTravel, craft };
+module.exports = { NATIVE_TRAVEL_MS, isStationService, stationForRecipe, crafterAccount, recipeForState, hasMaterials, hasNonSupplementalMaterials, hasCombinationIngredients, readyRecipeFor, waitForWarehouseStage, supplementMaterials, craftableBatchCount, requiredCraftCount, beginTravel, craft };

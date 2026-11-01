@@ -80,6 +80,7 @@ const network = load('WishNetwork.js', name => {
     if (name === 'node:worker_threads') return require('node:worker_threads');
     if (name === './EconomyDiagnostics') return { active: () => false };
     if (name === './PurchaseFunding') return require('../src/GameServer/Bot/Economy/PurchaseFunding');
+    if (name === './WealthCraftPolicy') return require('../src/GameServer/Bot/Economy/WealthCraftPolicy');
     if (name === './CompactBytes') return require('../src/GameServer/Bot/Economy/CompactBytes');
     if (name === './EconomicValuation') return valuation;
     if (name.endsWith('TendencyRoll')) return tendency;
@@ -95,6 +96,7 @@ const provider = load('WishProviders.js' , name => {
     if (name === '../../Items/SoulCrystalProgression') return adapters['GameServer/Items/SoulCrystalProgression'];
     if (name === '../../Items/C4DualSwordCombinations') return adapters['GameServer/Items/C4DualSwordCombinations'];
     if (name === './PurchaseFunding') return require('../src/GameServer/Bot/Economy/PurchaseFunding');
+    if (name === './WealthCraftPolicy') return require('../src/GameServer/Bot/Economy/WealthCraftPolicy');
     // Admitted synthetic origins (a missing recipe is never admitted, as in the real
     // catalogue) and the shared equipment rule (82e5323c, d300b1b7).
     if (name.endsWith('ItemAcquisitionCatalog')) return { revision: () => 1, hasSource: () => true, hasNonRaidSource: () => true,
@@ -342,3 +344,9 @@ assert.notEqual(unfundedFixed.result.activity?.activity, 'shopping', 'an unfunde
 state.adena = 1000; item.template.kind = 'Armor.Chest';
 assert(!prepare({ deps: fixedDeps }).projection.roots.includes('resale:101'), 'fixed material buyers do not buy arbitrary equipment');
 console.log('PASS supported fixed buyer -> finite recipe/material queue, disabled/funding/material controls');
+state.adena = 1000; state.vitals = { mp: 4 }; item.template.kind = 'Other.Material';
+put(20, 101, 10, 100, 3);
+const materialDemand = prepare({ deps: beginnerDeps });
+assert.equal(materialDemand.projection.nodes.find(row => row.key === 'resale:101')?.object.amount, 4,
+    'real intermediate demand proposes a finite lot limited by the crafter’s MP');
+board.remove(20);

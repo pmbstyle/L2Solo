@@ -11,6 +11,7 @@ const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+const Warehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
 
 const originals = {
     cachedState: LifeState.cachedState,
@@ -22,7 +23,8 @@ const originals = {
     snapshotGoal: GoalService.snapshot,
     reviewGoal: GoalService.review,
     beginMarketTravel: GoalExecutor.beginMarketTravel,
-    inventoryCleanupNeed: ItemDisposition.inventoryCleanupNeed
+    inventoryCleanupNeed: ItemDisposition.inventoryCleanupNeed,
+    beginCraftReturn: Warehouse.beginCraftReturn
 };
 
 (async () => {
@@ -106,6 +108,16 @@ const originals = {
     assert.deepStrictEqual(savedParty.memberIds, [1, 3], 'the durable party roster must drop the market-break member');
     assert.strictEqual(savedParty.leaderId, 1);
     assert.strictEqual(savedParty.stats.lastMarketBreakAt, now);
+    departed.length = 0; savedParty = null;
+    members[1].vitals = { hp: 100 };
+    Warehouse.beginCraftReturn = (member, timestamp, opts) => member.characterId === 2 && opts.allowParty
+        ? { ...member, activity: 'traveling', stats: { ...member.stats, marketReturn: { loc: member.loc },
+            travel: { reason: 'craft_warehouse', arrivalAt: timestamp + 1000 } } } : null;
+    const warehouseBreak = await PopulationService.reconcileWorkerPartyGoals(party, now);
+    assert.deepStrictEqual(departed, [{ characterId: 2, reason: 'craft_warehouse' }]);
+    assert.strictEqual(warehouseBreak.departed.stats.partyMarketReturn.cleanupReason, 'craft_warehouse');
+    assert.strictEqual(savedParty.stats.marketAbsences[2].partyId, party.partyId, 'the party keeps its return reservation');
+    Warehouse.beginCraftReturn = originals.beginCraftReturn;
     party.stats.objective = { status: 'open', priority: 'required', clanGoalKey: 'clan:1:gear',
         clanId: 1, minPartySize: 3 };
     departed.length = 0;
@@ -189,4 +201,5 @@ const originals = {
     GoalService.review = originals.reviewGoal;
     GoalExecutor.beginMarketTravel = originals.beginMarketTravel;
     ItemDisposition.inventoryCleanupNeed = originals.inventoryCleanupNeed;
+    Warehouse.beginCraftReturn = originals.beginCraftReturn;
 });

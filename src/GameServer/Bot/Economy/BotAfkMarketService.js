@@ -438,21 +438,32 @@ async function reconcileBuyAds(state, goal, candidates) {
     // a buy side never borrows the first watched item as a guessed target.
     const side = desiredSide(goal);
     const lines = linesOf(ads);
+    const retained = new Set(require('./TradeIntent').retainedProjectIntents(state, { moneyPrice: 1 }, () => 1)
+        .map(row => Number(row.itemId)));
+    const withdrawUnrelated = async () => {
+        if (!retained.size) return withdrawBuyAds(ownerId, null, state);
+        let current = state, changed = corrected;
+        for (const id of new Set(lines.map(line => Number(line.selfId)).filter(id => !retained.has(id)))) {
+            const result = await withdrawBuyAds(ownerId, id, current);
+            current = result.state || current; changed ||= result.changed;
+        }
+        return { state: current, changed };
+    };
     if (side !== AfkTrade.BUY) {
         if (!ads.length || (!side && standingBuyNeed(state, lines, candidates))) return { state, changed: corrected };
         if (state.phase !== 'cold') return { state, changed: false };
-        return withdrawBuyAds(ownerId, null, state);
+        return withdrawUnrelated();
     }
     if (!canTradeRemotely(state, goal)) {
         if (!ads.length || state.phase !== 'cold') return { state, changed: false };
-        return withdrawBuyAds(ownerId, null, state);
+        return withdrawUnrelated();
     }
     // Keep the raw wallet for the item check: a precomputed cap must not subtract R twice.
     const escrow = buyOrderEscrow(ownerId);
     const wanted = buyLines({ ...state, adena: PurchaseFunding.budget(state, escrow) }, goal,
         { money: BuyAdPolicy.goalMoney(state, goal, escrow) });
     const town = buyAdTown(state, ads, wanted);
-    if (!wanted.length) return ads.length ? withdrawBuyAds(ownerId, null, state) : { state, changed: false };
+    if (!wanted.length) return ads.length ? withdrawUnrelated() : { state, changed: false };
     let published;
     try {
         published = await publishBuyAds(ownerId, ads, wanted, town, null, desiredSide(goal));
@@ -780,6 +791,10 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
             const [lineId, recordId, revision, count, price, ceiling] = row;
             const ad = ads.find(record => record.id === recordId);
             const line = ad?.lines.find(candidate => candidate.id === lineId);
+            // The postcommit board review can apply the same correction
+            // before this prepared plan arrives. Its newer record is already
+            // within the limit; do not abort unrelated work or write it again.
+            if (!line || Number(line.price) <= ceiling) continue;
             if (!line?.pricing || ad.revision !== revision || line.count !== count || line.price !== price)
                 throw Error('afk_trade_shop_changed');
             const move = { lineId, recordId, selfId: line.selfId, expectedRevision: revision,
@@ -787,6 +802,7 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
             if (!ceiling) withdrawals.push(move);
             else reprices.push({ ...move, price: ceiling, pricing: { ...line.pricing, price: ceiling } });
         }
+        if (!reprices.length && !withdrawals.length) return { state };
         const result = await AfkTrade.repriceBotLines(ownerId, reprices, { withdrawals,
             ...(authority.phase === 'cold' ? { coldAuthority: authority } : { hotAuthority: authority }) });
         if (result.skipped) throw Error('afk_trade_shop_changed');
@@ -954,6 +970,7 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         // this does not choose a new price or rebuild the worker's wishes.
         const budgetState = { ...state, adena: PurchaseFunding.budget(state, escrow) };
         const owned = AfkTrade.boardIndex().ownerLines(ownerId);
+        wanted = BuyAdPolicy.keepRetainedBids(state, owned, wanted, Number(state.stats?.money?.[1]), escrow);
         let town = buyAdTown(state, ads, wanted);
         for (let pass = 0; pass <= MAX_LINES + BoardRules.BOT_RECORDS.buy_ad; pass++) {
             wanted = BuyAdPolicy.retainedLines(budgetState, wanted, owned, town);

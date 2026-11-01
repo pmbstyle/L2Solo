@@ -154,7 +154,7 @@ async function cases() {
         [LifeState, 'refreshInventory', async (state) => state]
     ];
     out.craft_component_return = await withStubs(crafterStubs(componentItems, 'resource_core'), async () => digest((await ColdCraftingService.craft(hunter({
-        activity: 'crafting', loc: { locX: 83396, locY: 147904, locZ: -3400 }, inventory: componentInventory,
+        activity: 'crafting', loc: ColdCraftingService.stationForRecipe(componentRecipe.recipeId).loc, inventory: componentInventory,
         stats: { classId: 2, equipmentPlan: { status: 'ready_to_craft', strategy: 'craft', recipeId: finalRecipe.recipeId }, craftReturn }
     }))).state));
 
@@ -163,7 +163,7 @@ async function cases() {
     finalItems.push({ id: 99, selfId: 57, amount: 500000 });
     const finalInventory = { ...WALLET, ...Object.fromEntries(finalItems.map((item) => [item.selfId, { ...item }])) };
     out.craft_equipment_return = await withStubs(crafterStubs(finalItems, 'd_weapons'), async () => digest((await ColdCraftingService.craft(hunter({
-        activity: 'crafting', loc: { locX: 83396, locY: 147904, locZ: -3400 }, inventory: finalInventory,
+        activity: 'crafting', loc: ColdCraftingService.stationForRecipe(finalRecipe.recipeId).loc, inventory: finalInventory,
         stats: { classId: 2, equipmentPlan: { status: 'ready_to_craft', strategy: 'craft', recipeId: finalRecipe.recipeId }, craftReturn }
     }))).state));
 

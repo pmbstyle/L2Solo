@@ -46,6 +46,11 @@ assert(result.allowsRecipe(input.recipes[0]));
 assert(!result.allowsRecipe({ ...input.recipes[0], recipeItemId: 2 }), 'recipe id collision cannot forge a supported scroll');
 assert(!result.allowsRecipe({ ...input.recipes[0], materials: [{ selfId: 2, amount: 1 }] }), 'recipe id collision cannot forge materials');
 assert(!result.allowsRecipe(input.recipes[1]), 'a sourced product does not authorise an unsupported recipe');
+const station = Catalog.build({ ...input, stationRecipeIds: [2] });
+assert(!station.allowsRecipe(input.recipes[1]), 'a station cannot grant a dwarf an unreachable scroll');
+assert(station.allowsRecipe(input.recipes[1], { station: true }), 'the published station needs only its physical materials');
+assert(!station.allowsRecipe({ ...input.recipes[1], materials: [{ selfId: 2, amount: 1 }] }, { station: true }),
+    'station admission does not admit a forged recipe');
 assert(result.allowsRecipe(input.recipes[5]), 'exchange does not need a nonexistent recipe scroll');
 const creationRecipe = { type: 'blacksmith_exchange', recipeId: 8, productId: 27,
     productCount: 1, successRate: 100, materials: [{ selfId: 20, amount: 1 }] };
@@ -68,6 +73,10 @@ Data.init();
 assert(!Object.keys(require.cache).some(path => /\/src\/Database(?:\/|\.js$)/.test(path)),
     'static startup catalog does not load the database or quest execution in workers');
 const native = Catalog.prepare();
+const phoenix = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(622);
+assert(!Catalog.hasSource(6334) && !Catalog.allowsRecipe(phoenix));
+assert(Catalog.allowsRecipe(phoenix, { station: true }) && Catalog.hasSource(6325),
+    'the actual Phoenix Ring station recipe works without a source for its scroll');
 assert.equal(Catalog.prepare(), native, 'unchanged inputs reuse prepared table');
 for (const row of Data.newbieItems) for (const grant of row.items) {
     assert(Catalog.hasSource(grant.selfId), `native creation class ${row.classId} item ${grant.selfId}`);

@@ -45,7 +45,36 @@ module.exports.personalShotProbe = async id => {
     delete state.inventory[167];
     state.inventory[228] = { selfId: 228, amount: 1, equipped: true, slot: 7 };
     const oldGradeSale = await kernel.prepareMeeting(id, request(1463, 710082));
-    return { rejected, ordinarySale: ordinarySale.token, oldGradeSale: oldGradeSale.token,
+    // A seller with a funded goal cannot pay a gatekeeper fare from money
+    // protected for that goal. Native acceptance applies that rule even when
+    // the seller's physical wallet is ample.
+    const entry = kernel.states.get(id);
+    entry.state = { ...state, stats: { ...state.stats, money: [1000, .001, 0, 500] } };
+    occupationPlanner.cancel(id);
+    const distant = request(1869, 710080);
+    distant.town = 'Orc Village'; distant.point = { locX: -44600, locY: -112400, locZ: -240 };
+    let unfundedFare;
+    try { await kernel.prepareMeeting(id, distant); unfundedFare = 'accepted'; }
+    catch (error) { unfundedFare = error.message; }
+    occupationPlanner.cancel(id);
+    const freeFare = await kernel.prepareMeeting(id, request(1869, 710080));
+    // A conditional held SELL line may also answer a selected foreign WTB.
+    // The fresh worker check must preserve that choice while still reading the
+    // current bid and the seller's actual unreserved stack.
+    boardIndex.put({ id: 710090, kind: 'buy_ad', storeType: 3, ownerId: id + 1,
+        botOwned: true, town: 'Giran', revision: 1, custodyPolicy: 1,
+        lines: [{ lineId: 710091, selfId: 1869, enchant: 0, count: 5, price: 10000 }] });
+    const selectedSale = request(1869, 710090);
+    selectedSale.lines[0].price = 10000;
+    const choice = invoke('GameServer/Bot/Economy/PriceDecision'), previousChoice = choice.chooseByValue;
+    let heldSale;
+    try {
+        choice.chooseByValue = options => options.find(row => row.action === 'keep') || null;
+        occupationPlanner.cancel(id);
+        heldSale = await kernel.prepareMeeting(id, selectedSale);
+    } finally { choice.chooseByValue = previousChoice; }
+    return { rejected, ordinarySale: ordinarySale.token, oldGradeSale: oldGradeSale.token, unfundedFare, freeFare: freeFare.token,
+        heldSale: heldSale.token,
         forbiddenLoaded: Object.keys(require.cache).filter(key => /\/Database\.js$|\/Network\/|\/World\/World\.js$/.test(key)) };
 };`;
 const wrapper = String.raw`
@@ -93,6 +122,10 @@ parentPort.on('message', message => {
             'the real Orc worker rejects both an old own SELL quote and a new WTB answer for current D shots');
         assert.equal(response.value.ordinarySale, 'personal-shot-710080');
         assert.equal(response.value.oldGradeSale, 'personal-shot-710082', 'a C weapon releases the old D ammunition');
+        assert.equal(response.value.unfundedFare, 'trade_meeting_funding', 'seller preparation applies the same protected-funds rule as native acceptance');
+        assert.equal(response.value.freeFare, 'personal-shot-710080', 'a free local meeting remains available');
+        assert.equal(response.value.heldSale, 'personal-shot-710090',
+            'a previously selected WTB can consume free stock already advertised in a conditional SELL ad');
         assert.deepEqual(response.value.forbiddenLoaded, []);
         console.log('PASS native Orc meeting rejects personal D shots through SELL and WTB, permits materials and old grades');
     } finally { await worker.terminate(); }

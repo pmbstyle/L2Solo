@@ -117,6 +117,15 @@ function departure(party, member, travel, now, given = undefined, current = null
     return { ...travel, stats: { ...travel.stats, partyMarketReturn: token,
         lastPartyMarketBreak: token, clanPartyObjective: war ? member.stats?.clanPartyObjective || null : token.objective } };
 }
+// A personal warehouse visit is a short ordinary-party absence. The same
+// return ticket and membership handoff as market errands restores the roster.
+function warehouseDeparture(party, member, travel, now = Date.now()) {
+    if (warDuty(party) || clanDuty(party) || party?.stats?.objective?.sourceKind === 'raid'
+        || party?.stats?.objective?.raidBoss || pending(party, now).length) return null;
+    const token = { partyId: party.partyId, characterId: member.characterId, until: now + RESERVATION_MS,
+        objective: { ...(party.stats?.objective || {}) }, startedAt: now, cleanupReason: 'craft_warehouse' };
+    return { ...travel, stats: { ...travel.stats, partyMarketReturn: token, lastPartyMarketBreak: token } };
+}
 function stats(party, departed) {
     const token = departed?.stats?.partyMarketReturn;
     return token ? { marketAbsences: { ...party.stats?.marketAbsences, [departed.characterId]: token } } : {};
@@ -126,5 +135,5 @@ function ready(state) {
         && !state.stats?.travel && !state.stats?.marketReturn
         && ['hunting', 'party_wait', 'grouped'].includes(state.activity);
 }
-module.exports = { cleanupNeed, forcedCleanupNeed, withoutStartedTrip, clanDuty, warDuty, warSupplyGoal, warSupplyPurchaseBlocker, pending, sessionReady, memberNeed,
+module.exports = { cleanupNeed, forcedCleanupNeed, withoutStartedTrip, clanDuty, warDuty, warSupplyGoal, warSupplyPurchaseBlocker, pending, sessionReady, memberNeed, warehouseDeparture,
     allowed, goal, departure, stats, ready };

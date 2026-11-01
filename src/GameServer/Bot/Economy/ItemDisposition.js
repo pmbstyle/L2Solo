@@ -333,8 +333,9 @@ function reservedCraftAmounts(state, plan = equipmentInputPlan(state)) {
             reserved[selfId] = Number(reserved[selfId] || 0) + required;
             const owned = Number(state.inventory?.[selfId]?.amount ?? material.owned ?? 0);
             const missing = Math.max(0, required - owned);
-            const component = missing > 0 ? C4RecipeItems.resolveByProductId(selfId) : null;
-            if (component) reserve(component.materials,
+            const component = missing > 0 ? C4RecipeItems.resolveByRecipeId(plan.componentRecipes?.[selfId])
+                || C4RecipeItems.resolveByProductId(selfId) : null;
+            if (component) reserve(ClanCrafting.recipeForProvider(component, plan.craftProviders?.[component.recipeId]).materials,
                 Math.ceil(missing / Math.max(1, Number(component.productCount || 1))), new Set(visited).add(selfId));
         }
     };
@@ -403,15 +404,20 @@ function saleReservations(state, reserved = reservedEquipmentAmounts(state), tim
     return result;
 }
 
-// A lower-grade bridge can replace the executable goal while its later kit
-// still owns collected inputs. Only one retained personal goal is permitted.
+// Each paused project owns its captured share, including older projects in
+// the chain. Do not let a newer project sell or consume that share.
 function retainedEquipmentAmounts(state) {
     const owner = state?.stats?.equipmentPlan;
-    const retained = owner?.inputPreparation;
-    if (!retained || owner.reason === 'cancelled') return {};
-    const plan = equipmentInputPlan(state, retained);
-    if (plan?.strategy === 'none' || plan?.status !== 'active') return {};
-    return equipmentMaterialAmounts(state, retained);
+    if (owner?.reason === 'cancelled') return {};
+    const result = {}, seen = new Set();
+    for (let retained = owner?.inputPreparation; retained && !seen.has(retained); retained = retained.inputPreparation) {
+        seen.add(retained);
+        const plan = equipmentInputPlan(state, retained);
+        if (plan?.strategy === 'none' || plan?.status !== 'active') continue;
+        for (const [id, amount] of Object.entries(equipmentMaterialAmounts(state, retained)))
+            result[id] = Number(result[id] || 0) + Number(amount || 0);
+    }
+    return result;
 }
 
 function reservedUpgradeAmounts(state) {
@@ -714,7 +720,46 @@ function isWarehouseCandidate(item, template = templateFor(item?.selfId)) {
 function warehouseCandidates(state) {
     // Personal surplus finances equipment. Craft inputs and accepted native
     // obligations are already protected by reservations, not spare storage.
-    if (invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(state)) return [];
+    if (invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(state)) {
+        const retained = retainedEquipmentAmounts(state);
+        const Policy = require('./CraftWarehousePolicy');
+        const active = Policy.planFor(state);
+        if (!active && !Object.keys(retained).length) return [];
+        const Warehouse = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
+        if (!Warehouse.ready()) return [];
+        const stored = Warehouse.inventory(state);
+        const primary = equipmentMaterialAmounts(state, state.stats?.equipmentPlan);
+        const production = productionInputAmounts(state);
+        const clan = invoke('GameServer/Clan/ClanSupplyPolicy').reservedAmounts(state);
+        const rows = [];
+        // Keep a ready stage in the bag. Otherwise park the active kit's
+        // collected materials; key parts stay with the bot during the first stage.
+        if (active && !Policy.stage(state, [])) {
+            const stock = Policy.available(state, Object.values(stored));
+            const combined = { ...state, inventory: stock.combined };
+            const demand = equipmentMaterialAmounts(combined, active.plan);
+            const keys = new Set(Policy.keyInputs(state, active.recipe).map(row => Number(row.selfId)));
+            for (const [id, needed] of Object.entries(demand)) {
+                const item = state.inventory?.[id];
+                if (!item || item.equipped || keys.has(Number(id)) || !(isWarehouseCandidate(item) || isGradeCrystal(item))) continue;
+                const free = Number(stock.bag[id] || 0);
+                const amount = Math.min(free, Math.max(0, Number(needed) - Number(stock.warehouse[id] || 0)));
+                if (amount > 0) rows.push({ ...item, amount, equipped: false, equippedCount: 0,
+                    equippedSlots: [], slot: 0, craftDepositTarget: Number(active.plan.target.selfId), craftDepositKind: 'active' });
+            }
+        }
+        for (const [id, held] of Object.entries(retained)) {
+            const item = state.inventory?.[id];
+            if (!item || item.equipped || !(isWarehouseCandidate(item) || isGradeCrystal(item))) continue;
+            const other = Number(primary[id] || 0) + Number(production[id] || 0) + Number(clan[id] || 0);
+            const free = invoke('GameServer/Bot/Economy/WealthCraftDecision').freeAmount(state, item, { [id]: other });
+            const amount = Math.min(free, Math.max(0, Number(held) - Number(stored[id]?.amount || 0)));
+            if (amount > 0 && !rows.some(row => Number(row.selfId) === Number(id)))
+                rows.push({ ...item, amount, equipped: false, equippedCount: 0, equippedSlots: [], slot: 0,
+                    craftDepositTarget: Number(state.stats?.equipmentPlan?.inputPreparation?.target?.selfId || 0), craftDepositKind: 'retained' });
+        }
+        return rows;
+    }
     const reserved = saleReservations(state);
     return Object.values(state?.inventory || {}).flatMap((item) => {
         const equipped = Math.max(0, Number(item.equippedCount ?? (item.equipped ? 1 : 0)) || 0);

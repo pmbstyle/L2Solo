@@ -75,7 +75,7 @@ async function coldVisits() {
         inventory: { ...warrior.inventory, [stock.itemId]: { selfId: stock.itemId, amount: stock.target },
             736: { selfId: 736, amount: 10 },
             [native.stock('potions').itemId]: { selfId: native.stock('potions').itemId,
-                amount: Math.ceil(native.stock('potions').usePerHour * 24) } },
+                amount: native.stock('potions').target } },
         stats: { ...warrior.stats, playedHours: 10 } };
     state = await ColdMarket.finishTownErrands(state); assert.deepEqual(state.stats.visitEvery, [10, 0]);
     state = await ColdMarket.finishTownErrands({ ...state, stats: { ...state.stats, playedHours: 13 } });

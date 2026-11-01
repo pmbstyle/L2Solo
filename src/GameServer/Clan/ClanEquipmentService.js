@@ -616,8 +616,9 @@ async function craftingOptions(clan) {
         const crafter = eligible.find(member => knownByMember.get(memberId(member))?.has(Number(recipe.recipeId))) || eligible[0];
         if (!crafter) continue;
         const known = knownByMember.get(memberId(crafter))?.has(Number(recipe.recipeId)) || false;
-        // Prefer a public service over teaching an unknown recipe unnecessarily.
-        if (!known && published.has(Number(recipe.recipeId))) continue;
+        // A public station is fixed in town and needs no learning scroll.
+        // Keep a clan provider only for recipes the stations do not offer.
+        if (published.has(Number(recipe.recipeId))) continue;
         providers[recipe.recipeId] = { characterId: memberId(crafter), known,
             recipeItemId: Number(recipe.recipeItemId), loc: crafter.loc || { locX: 83400, locY: 148600, locZ: -3400 } };
         published.set(Number(recipe.recipeId), recipe);

@@ -43,7 +43,8 @@ function bestSellOffer(index, selfId, options = {}) {
 // rest, within `money`: { lines: [{ line, count, price }], npc (units from the NPC),
 // units, cost }. One rule for the purchase of a stack (a shot restock,
 // materials): ShotStock.restockPlan and cheapestTown.
-function fill(lines, amount, { npcPrice = 0, money = Infinity, maxPrice = Infinity, excludeOwner = 0, accept = null } = {}) {
+function fill(lines, amount, { npcPrice = 0, money = Infinity, maxPrice = Infinity, excludeOwner = 0,
+    accept = null, acceptFill = null } = {}) {
     let left = Math.max(0, Math.floor(Number(amount) || 0));
     let budget = Math.max(0, Number(money));
     const taken = [];
@@ -56,6 +57,9 @@ function fill(lines, amount, { npcPrice = 0, money = Infinity, maxPrice = Infini
         if (!(price > 0) || price > maxPrice || (npcPrice > 0 && price > npcPrice) || !(Number(line.count) > 0)) continue;
         const count = Math.min(left, Number(line.count), Math.floor(budget / price));
         if (count <= 0) break;
+        // Some admission evidence covers this exact fill, not the whole
+        // quoted stack or a different remainder after earlier lines.
+        if (acceptFill && !acceptFill(line, count)) continue;
         taken.push({ line, count, price });
         left -= count;
         budget -= count * price;
@@ -134,7 +138,7 @@ function betterOffer(best, options, amount, town, trip, price, lines) {
     const money = options.moneyForTown ? options.moneyForTown(town, price, lines) : options.money ?? Infinity;
     const filled = fill(lines, amount, {
         npcPrice: price, money, maxPrice: options.maxPrice ?? Infinity,
-        excludeOwner: options.excludeOwner, accept: options.accept
+        excludeOwner: options.excludeOwner, accept: options.accept, acceptFill: options.acceptFill
     });
     if (!filled.units) return best;
     const landed = filled.cost + trip;
@@ -188,7 +192,7 @@ function cheapestIn(table, amount) {
     amount = Math.max(1, Math.floor(Number(amount) || 1));
     const cut = options.quoteDepth > 0 ? noteQuoteCut(table.listed, options.quoteDepth) : false;
     let memo = null;
-    if (!options.moneyForTown) {
+    if (!options.moneyForTown && !options.acceptFill) {
         memo = table.byAmount ||= new Map();
         if (options.accept) {
             const lines = table.acceptLines ||= table.rows.flatMap(row => row.lines);

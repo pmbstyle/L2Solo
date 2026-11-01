@@ -193,18 +193,20 @@ function noPlan(reason, state) {
 }
 
 function* prepare(state, { board, timestamp, read = () => {}, readScope = () => {}, stock = null, economy = null,
-    routeRows = null, routeKey = null } = {}) {
+    routeRows = null, routeKey = null, targetRecipe = null } = {}) {
     const packet = state.stats?.money;
     if (!board) return noPlan('no_board', state);
     if (!Array.isArray(packet) || packet.length < 4) return noPlan('no_money_packet', state);
     if (!(packet[0] > 0)) return noPlan('no_hour_value', state);
     if (!(packet[1] > 0)) return noPlan('no_money_price', state);
-    const admission = recipeIndex(board);
+    const admission = targetRecipe ? null : recipeIndex(board);
     const craftLevel = invoke('GameServer/Bot/Economy/CraftShopService').craftLevelFor(state);
-    readScope(admission.scopeFor(craftLevel));
+    if (admission) readScope(admission.scopeFor(craftLevel));
     const reserved = yield* reservations(state);
     if (!reserved) return noPlan('unknown_reservations', state);
-    const preparedFeasibility = yield* feasibility(state, { board, read }, reserved);
+    const preparedFeasibility = targetRecipe ? null : yield* feasibility(state, { board, read }, reserved);
+    const targetItems = targetRecipe ? new Set([Number(targetRecipe.productId), Number(targetRecipe.recipeItemId),
+        ...(targetRecipe.materials || []).map(row => Number(row.selfId))]) : null;
     const ownStock = new Map(), routes = [];
     const key = EconomicTrip.key(state);
     const directRows = routeKey === key && Array.isArray(routeRows) && routeRows.length === EconomicTrip.towns.length
@@ -228,7 +230,9 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
     trip.details = town => routes[townOrdinal.get(town)] || { known: false, hours: NaN, fees: NaN };
     context.trip = trip;
     for (const key in state.inventory || {}) {
-        const id = Number(state.inventory[key].selfId || key); read(id);
+        const id = Number(state.inventory[key].selfId || key);
+        if (targetItems && !targetItems.has(id)) { yield 'stock'; continue; }
+        read(id);
         const value = yield* exitValue(state, id, board);
         let amount = invoke('GameServer/Bot/Economy/WealthCraftDecision').freeAmount(state, state.inventory[key], reserved);
         if (Number(stock?.itemId) === id) amount = Math.max(0, amount - Math.min(amount,
@@ -322,7 +326,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
         }
     };
     return { context, feasibility: preparedFeasibility, options: { reserved, ownStock, prepareExits, preparePurchase, prepareTrip: ensureTrip, gearRowsFor,
-        unknownRecipes: () => admission.rowsFor(craftLevel),
+        unknownRecipes: () => admission ? admission.rowsFor(craftLevel) : [],
         ownLines: board?.ownerLines(Number(state.characterId)) || [] } };
 }
 

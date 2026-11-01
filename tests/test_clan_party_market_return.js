@@ -45,6 +45,20 @@ Risk.backoffForStates = () => { throw new Error('must not apply solo bans to a c
     assert.strictEqual(saved.activity, 'party_wait');
     assert.strictEqual(saved.stats.partyRequest.clanGoalKey, objective.clanGoalKey);
     assert.strictEqual(saved.stats.partyMarketReturn, null);
+    const warehouseObjective = { objectiveKey: 'ordinary-hunt', status: 'open' };
+    const warehouseToken = { ...token, objective: warehouseObjective, cleanupReason: 'craft_warehouse' };
+    const warehouseArrival = { ...arrived, stats: { partyMarketReturn: warehouseToken } };
+    party = { ...party, status: 'active', memberIds: [1, 2], stats: {
+        objective: warehouseObjective, marketAbsences: { 3: warehouseToken } } };
+    const warehouseReturned = await Service.resolveColdState(warehouseArrival);
+    assert.strictEqual(warehouseReturned.reason, 'returned_to_clan_party');
+    assert.deepStrictEqual(party.memberIds, [1, 2, 3], 'the ordinary warehouse absence rejoins its party');
+    assert(!assigned.at(-1).state.stats.clanPartyObjective, 'an ordinary return creates no clan duty');
+    party.status = 'dissolved';
+    const warehouseSolo = await Service.resolveColdState(warehouseArrival);
+    assert.strictEqual(warehouseSolo.reason, 'craft_warehouse_party_unavailable');
+    assert.strictEqual(saved.activity, 'hunting', 'a lost party cannot strand a personal craft in party_wait');
+    assert.strictEqual(saved.stats.partyMarketReturn, null);
     const warToken = { ...token, objective: {}, warOperationId: 'active-war', supplyItemId: 1463 };
     const warArrival = { ...arrived, stats: { partyMarketReturn: warToken } };
     party = { ...party, status: 'active', memberIds: [1, 2, 4, 5, 6, 7, 8, 9], stats: {

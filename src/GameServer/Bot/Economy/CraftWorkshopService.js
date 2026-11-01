@@ -91,7 +91,7 @@ function publicScopeDigest(scope) {
 }
 function candidateRow(row) {
     return { characterId: row[0], recipeId: row[1], price: row[2], entryPrice: row[2],
-        townName: row[3], loc: { locX: row[4], locY: row[5], locZ: row[6] }, capacityBatches: row[7] };
+        townName: row[3], loc: { locX: row[4], locY: row[5], locZ: row[6] }, capacityBatches: row[7], publicStation: row[8] === 1 };
 }
 const inputOwners = new Map();
 const ownerInputs = new Map();
@@ -295,7 +295,9 @@ async function craft(ownerId, recipeId, customerId, { expectedPrice = null, expe
             || expectedRevision !== null && Number(expectedRevision) !== Number(crafter.simulation?.revision || 0)) {
             throw new Error('workshop price changed');
         }
-        const materials = Profit.materials(await database.fetchItems(customerId, 'workshop_craft'), recipe, batches);
+        const inputs = invoke('GameServer/Bot/Economy/CraftShopService').isStationService(crafter)
+            ? require('../../Crafting/StationRecipe').forStation(recipe) : recipe;
+        const materials = Profit.materials(await database.fetchItems(customerId, 'workshop_craft'), inputs, batches);
         if (!materials) throw new Error('workshop materials missing');
         const template = invoke('GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, recipe.productId);
         if (!template) throw new Error('workshop product missing');
@@ -443,7 +445,8 @@ function buildPublicRecipeRows(ownerId) {
         if (!state || !entry || !recipe || ![state.loc?.locX, state.loc?.locY, state.loc?.locZ].every(Number.isFinite)) continue;
         const capacity = Math.min(64, Math.floor(Number(state.vitals?.mp || 0) / Math.max(1, Number(recipe.mpCost || 0))));
         result.push([id, recipeId, Number(entry.price),
-            state.currentRegion, state.loc.locX, state.loc.locY, state.loc.locZ, capacityBucket(capacity)]);
+            state.currentRegion, state.loc.locX, state.loc.locY, state.loc.locZ, capacityBucket(capacity),
+            invoke('GameServer/Bot/Economy/CraftShopService').isStationService(state) ? 1 : 0]);
     }
     return result;
 }

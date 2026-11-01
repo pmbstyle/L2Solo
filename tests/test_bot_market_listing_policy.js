@@ -205,6 +205,32 @@ assert.strictEqual(distantTinySale.decisions[0].reason, 'expected_value',
     'the travel loss is decided by shared valuation, not lot admission');
 assert.strictEqual(tinyStock.inventory[1865].amount, 2, 'comparing trips never moves the physical lot');
 
+// Skaptis: the same physical stack already has a conditional SELL ad, and
+// the planner selected a buyer for it. Consent must see the same held-line
+// context and recheck the chosen bid without rolling the choice again.
+bidBoard.put({ id: 950010, kind: 'sell_ad', storeType: 1, custodyPolicy: 1, ownerId: tinyStock.characterId,
+    town: 'Giran', lines: [{ lineId: 950011, selfId: 1865, count: 2, price: 12000, enchant: 0 }] });
+const beforeConsent = tinySale(0, 0);
+assert.equal(beforeConsent.answers.length, 0, 'a plain review keeps the standing line rather than answering the bid');
+const sameTown = () => 0; sameTown.details = () => ({ known: true, fees: 0, hours: 0 });
+const selectedInput = MarketListingPolicy.ownSaleInputs(tinyStock, bidBoard.ownerLines(tinyStock.characterId),
+    options({ board: bidBoard, tripCost: sameTown, keptAmounts: {}, preparedReservations: {},
+        selectedAnswer: { selfId: 1865, enchant: 0, recordId: 950001 } }));
+const PricingDecision = invoke('GameServer/Bot/Economy/PriceDecision'), originalChoice = PricingDecision.chooseByValue;
+try {
+    PricingDecision.chooseByValue = choices => choices.find(option => option.action === 'keep') || null;
+    const consent = MarketListingPolicy.evaluate(selectedInput.state, selectedInput.options);
+    assert.equal(consent.answers[0]?.line.recordId, 950001,
+        'fresh consent keeps the already selected profitable bid even when another roll would keep the item');
+    const expensive = () => 30000; expensive.details = () => ({ known: true, fees: 30000, hours: 1 });
+    const changed = MarketListingPolicy.evaluate(selectedInput.state, { ...selectedInput.options, tripCost: expensive });
+    assert.equal(changed.answers.length, 0, 'a newly unprofitable route still rejects the selected sale');
+    bidBoard.put({ id: 950020, kind: 'buy_ad', storeType: 3, ownerId: 950021,
+        town: 'Giran', lines: [{ lineId: 950022, selfId: 1865, count: 2, price: 20000, enchant: 0 }] });
+    const better = MarketListingPolicy.evaluate(selectedInput.state, selectedInput.options);
+    assert.equal(better.answers.length, 0, 'a different better bid cannot authorize the old selected buyer');
+} finally { PricingDecision.chooseByValue = originalChoice; }
+
 // No supported finite item demand exists. The public first price is not an
 // owner-blind recipe willingness or an observed listing lifetime.
 const withoutMarket = MarketListingPolicy.evaluate(state, options());

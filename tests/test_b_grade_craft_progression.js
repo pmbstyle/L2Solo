@@ -25,7 +25,7 @@ function equipped(inventory, selfId, slot) {
         equippedCount: slots.length, equippedSlots: slots, slot };
 }
 
-function verify(recipeId, missing = false, slot = 14, classId = 3, targetId = null) {
+function verify(recipeId, missing = false, slot = 14, classId = 3, targetId = null, finishedOffer = false) {
     const recipe = Recipes.resolveByRecipeId(recipeId);
     targetId ||= recipe.productId;
     const variants = Recipes.resolveVariantsByProductId(recipe.productId);
@@ -57,7 +57,8 @@ function verify(recipeId, missing = false, slot = 14, classId = 3, targetId = nu
         }
         equipped(state.inventory, rows[0].selfId, otherSlot);
     }
-    for (const material of recipe.materials) state.inventory[material.selfId] = { selfId: material.selfId, amount: material.amount };
+    for (const material of recipe.materials) if (material.selfId !== recipe.recipeItemId)
+        state.inventory[material.selfId] = { selfId: material.selfId, amount: material.amount };
     for (const id of [invoke('GameServer/Inventory/ShotStock').planForState(state).selfId, 1061, 736])
         state.inventory[id] = { selfId: id, amount: 100000 };
     const fragment = recipe.materials[1];
@@ -68,9 +69,11 @@ function verify(recipeId, missing = false, slot = 14, classId = 3, targetId = nu
         board.put({ id: 77, ownerId: 990411, storeType: 1, kind: 'shop', town: 'Giran',
             lines: [{ lineId: 78, selfId: fragment.selfId, count: 1, price: 1, enchant: 0 }] });
     }
+    if (finishedOffer) board.put({ id: 79, ownerId: 990413, storeType: 1, kind: 'shop', town: 'Giran',
+        lines: [{ lineId: 80, selfId: targetId, count: 1, price: finishedOffer === true ? 1 : finishedOffer, enchant: 0 }] });
     const fee = Shops.productPrice(recipe);
     const service = { characterId: 990412, recipeId, price: fee, entryPrice: fee,
-        capacityBatches: 1, townName: 'Giran', loc: station.loc };
+        capacityBatches: 1, townName: 'Giran', loc: station.loc, publicStation: true };
     const context = Economy.forState(state, { timestamp, board, spots: [], npcOffersFor: () => [],
         workshop: null, knownRecipes: [], withNodes: true, knowledgeEnabled: false,
         routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
@@ -86,11 +89,30 @@ function verify(recipeId, missing = false, slot = 14, classId = 3, targetId = nu
     }
     const leaf = context.network.activity;
     assert.equal(leaf?.rootKey, `power:${targetId}:${slot}`, 'native network accepts the B equipment goal');
+    if (finishedOffer === true) {
+        assert.equal(leaf.activity, 'shopping');
+        assert.equal(leaf.itemId, targetId, 'an affordable finished item wins over acquiring another ingredient');
+        const prior = readyFixtures.get(recipeId)?.plan;
+        if (prior) {
+            const previous = { ...prior, status: 'active', strategy: 'craft' };
+            const resumed = { ...state, stats: { ...state.stats, equipmentPlan: previous } };
+            const chosen = invoke('GameServer/Bot/AI/GearPlanSelection').selectAcquisitionPlan(resumed, previous, {
+                preparedEconomy: context, spots: [], timestamp,
+                planningOptions: { findMarketOffer: item => Number(item.selfId) === targetId
+                    ? { price: 1, count: 1, town: 'Giran', sourceType: 'afk_bot_store' } : null }
+            }).acquisitionPlan;
+            assert.equal(chosen.strategy, 'market', 'an in-progress craft switches to the real finished-item offer');
+            assert(chosen.inputPreparation, 'the pending purchase retains the unfinished craft inputs');
+        }
+        return { recipeId, targetId, finishedOffer };
+    }
     assert.equal(leaf.activity, missing ? 'shopping' : 'crafting');
     assert.equal(missing ? leaf.itemId : leaf.recipeId, missing ? fragment.selfId : recipeId);
     const plan = Providers.personalCraftPlan(state, context);
     assert.equal(plan?.recipeId, recipeId);
     assert.equal(plan.craftProviders[recipeId].characterId, service.characterId);
+    assert.equal(plan.craftProviders[recipeId].publicStation, true);
+    assert(!plan.materials.some(row => row.selfId === recipe.recipeItemId), 'station plans do not require the recipe scroll');
     assert.equal(plan.target.selfId, targetId);
     if (targetId !== recipe.productId) {
         assert.deepEqual(plan.unseal, { sourceId: recipe.productId, productId: targetId });
@@ -186,8 +208,9 @@ async function verifyNativeCrafts() {
             }
             else assert.equal(buyer.stats.equipmentPlan.target.selfId, plan.unseal.productId,
                 'the base receipt must retain the final unsealed goal');
-            for (const material of recipe.materials)
+            for (const material of recipe.materials.filter(row => row.selfId !== recipe.recipeItemId))
                 assert.equal(physical.filter(row => row.selfId === material.selfId).reduce((n, row) => n + row.amount, 0), 0);
+            assert(!physical.some(row => row.selfId === recipe.recipeItemId), 'station completed the craft without a scroll');
             assert.equal(buyer.adena, before - provider.price, 'the buyer pays exactly the quoted service fee');
             assert.equal((await Database.fetchItems(owner.characterId)).find(row => row.selfId === 57).amount,
                 ownerBefore + provider.price, 'the station receives the paid fee in its physical wallet');
@@ -317,6 +340,61 @@ const results = [...cases, ...unsealCases].flatMap(([recipeId, slot = 14, classI
 // A chosen paperdoll variant is authoritative even when another armour style
 // would be the default for an incidental, unplanned Mammon visit.
 results.push(verify(430, false, 9, 9, 5710));
+results.push(verify(457, true, 14, 3, null, true));
+results.push(verify(457, true, 14, 3, null, 200000000));
+if (isMainThread) {
+    const { state: original, plan } = readyFixtures.get(457);
+    const state = structuredClone(original), recipe = Recipes.resolveByRecipeId(plan.recipeId);
+    const part = recipe.materials.find(row => row.selfId !== recipe.recipeItemId);
+    const template = Data.items.find(item => item.selfId === part.selfId);
+    const Index = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
+    const Trade = invoke('GameServer/Bot/Economy/TradeIntent');
+    const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+    const paused = { ...plan, status: 'deferred', strategy: 'none', reason: 'wish_focus', heldInputs: {} };
+    state.stats.equipmentPlan = { status: 'active', strategy: 'direct_drop', target: { selfId: 76, slot: 7 }, inputPreparation: paused };
+    delete state.inventory[part.selfId];
+    let stored = 0;
+    Index.useRowSource(() => Index.prepareRow([state.characterId, 1, stored ? [[part.selfId, stored, 0]] : []]), () => true);
+    try {
+        const network = { quantityPrepared: true, queue: [], moneyPrice: 0.001 };
+        const bids = () => Trade.project(state, network, null, () => 100, 8);
+        assert.equal(bids().find(row => row.itemId === part.selfId)?.amount, part.amount,
+            'an alternative goal retains the exact missing key-part purchase');
+        assert(!bids().some(row => row.itemId === recipe.recipeItemId), 'a public station never bids for a scroll');
+        stored = 2; state.acceptedIncoming = { [part.selfId]: 1 };
+        assert.equal(bids().find(row => row.itemId === part.selfId)?.amount, part.amount - 3,
+            'stored and already incoming units are not ordered twice');
+        assert(Trade.meetingPurchase(network, bids(), { selfId: part.selfId, count: 1, price: 100, town: 'Giran' }),
+            'a fresh meeting accepts the retained project need');
+        stored = 0; delete state.acceptedIncoming;
+        state.inventory[part.selfId] = { selfId: part.selfId, amount: 3, kind: template.template.kind,
+            name: template.template.name, stackable: template.etc.stackable };
+        paused.heldInputs[part.selfId] = 3;
+        assert.equal(Disposition.warehouseCandidates(state).find(row => row.selfId === part.selfId)?.amount, 3,
+            'a paused kit may deposit its reserved pieces during a town visit');
+        stored = 3;
+        assert(!Disposition.warehouseCandidates(state).some(row => row.selfId === part.selfId),
+            'the same retained allocation is never deposited twice');
+        delete state.inventory[part.selfId];
+        state.stats.equipmentPlan = { ...plan, status: 'active', strategy: 'craft' };
+        const deferred = invoke('GameServer/Bot/AI/GearPlanSelection').deferredWishPlan(state.stats.equipmentPlan, {}, state);
+        assert.equal(deferred.heldInputs[part.selfId], 3, 'deferral retains the pieces already in the warehouse');
+        const deferredState = { ...state, stats: { ...state.stats, equipmentPlan: deferred } };
+        assert(invoke('GameServer/Bot/Economy/CraftWarehousePolicy').planFor(deferredState),
+            'a paused equipment wish keeps its warehouse ownership and can resume');
+        state.stats.craftWarehouseDepositTarget = plan.target.selfId;
+        const Warehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
+        const returnTrip = Warehouse.beginCraftReturn(state, timestamp);
+        assert.equal(returnTrip?.stats.travel.reason, 'craft_warehouse', 'the resumed kit returns for its stored inputs');
+        assert.equal(returnTrip.stats.travel.arrivalActivity, 'shopping');
+        assert(!Warehouse.beginCraftReturn({ ...state, stats: { ...state.stats,
+            craftWarehouseVisit: returnTrip.stats.craftWarehouseVisit } }, timestamp), 'a failed visit does not loop with unchanged warehouse stock');
+        delete state.stats.equipmentPlan.inputPreparation;
+        assert(bids().some(row => row.itemId === part.selfId), 'an active B craft retains its own missing-piece need');
+        state.stats.equipmentPlan = { ...state.stats.equipmentPlan, status: 'cancelled' };
+        assert.equal(bids().length, 0, 'an abandoned project has no purchase consent');
+    } finally { Index.useRowSource(); }
+}
 {
     const Sources = invoke('GameServer/Bot/Population/ColdOccupationSources'); Sources.initialise();
     const { state: original, plan, station } = readyFixtures.get(457);

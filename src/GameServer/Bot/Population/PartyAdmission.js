@@ -69,6 +69,9 @@ function personalOfferAllowed(offer, ownState, otherState, ownSession = null, ot
     if (ownSession === null && ownState?.characterId) ownSession = tradeSessionFor(ownState.characterId);
     if (otherState === undefined) otherState = tradeStateFor(otherId);
     if (otherSession === null) otherSession = tradeSessionFor(otherId);
-    return partyTradeAllowed('trade', ownState, ownSession) && partyTradeAllowed('trade', otherState, otherSession);
+    const seller = Number(offer.storeType) === 3 ? ownState : otherState;
+    return partyTradeAllowed('trade', ownState, ownSession) && partyTradeAllowed('trade', otherState, otherSession)
+        && require('../../AfkTrade/MeetingFare').sellerCanReach(offer, seller);
 }
-module.exports = { PartyAdmission, priority, partyTradeAllowed, personalOfferAllowed, configureTradeAdmission };
+module.exports = { PartyAdmission, priority, partyTradeAllowed, personalOfferAllowed, configureTradeAdmission,
+    counterpartyState: id => tradeStateFor(Number(id)) };
