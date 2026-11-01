@@ -107,6 +107,7 @@ const DecisionEvents = require('../AI/DecisionEvents');
 const SavedStats = require('../SavedStats');
 const { stateKey } = require('./SpotOccupancyIndex');
 const DecisionSections = invoke('GameServer/Bot/Economy/DecisionSections');
+const PlayerMoment = invoke('GameServer/Bot/Population/PlayerMoment');
 const PartyWaitFallback = invoke('GameServer/Bot/Population/PartyWaitFallback');
 const Protocol = require('./ColdSimulationProtocol');
 const ColdEconomyDecision = require('./ColdEconomyDecision');
@@ -1680,6 +1681,7 @@ function startKernel(config = {}) {
                 ...(economyDecision ? { economyDecision } : {})
             };
         },
+        momentStats: config.coldMomentShadow === true ? PlayerMoment.createStats() : null,
         soloWindow: config.coldSoloWindow !== true && config.coldSoloWindowShadow !== true ? null : {
             on: config.coldSoloWindow === true,
             // One round of a window: the step's projection without its soft
@@ -1772,9 +1774,9 @@ function startKernel(config = {}) {
             // the existing planner; no new choice is made from a thin card.
             // A refused card's verdict serves the build below, which reads
             // this state, or a copy of it with a wish-focus plan deferred.
-            const prepared = {};
+            const prepared = {}, refused = [], heldLeaf = record?.wishAdvisory?.card?.activity ?? null;
             let refreshed = previousPlan === originalPlan && solo && nativeHolds && planHolds()
-                ? ColdEconomyDecision.refreshAdvisory(state, record?.wishAdvisory, deps, { prepared, collect: !wishFocus }) : null;
+                ? ColdEconomyDecision.refreshAdvisory(state, record?.wishAdvisory, deps, { prepared, collect: !wishFocus, why: refused }) : null;
             // A compact advisory contains no quantitative project needs.
             // The bounded clan-market review needs the full current graph.
             if (refreshed && (craftBidReview || clanMarketReviewDue(state, timestamp))) refreshed = null;
@@ -1885,7 +1887,7 @@ function startKernel(config = {}) {
                 : ColdEconomyDecision.advisory(economy, seen, preparationState.activity, deps);
             rememberWishAdvisory(kernel.states.get(Number(state.characterId)), advice, seen, deps);
             if (nullReuse && economyDiagnostics.active()) economyDiagnostics.count('advisory', 'reuse', 'lifecycle');
-            return {
+            const stepPlan = {
                 ...(preparedOccupation?.economyPlan || nullReuse && refreshed?.economyPlan
                     ? { economyPlan: preparedOccupation?.economyPlan || refreshed.economyPlan } : {}),
                 statsPacket,
@@ -1905,6 +1907,9 @@ function startKernel(config = {}) {
                 route,
                 lastFight
             };
+            if (kernel.momentStats && !refreshed) PlayerMoment.settle(kernel.momentStats, state, stepPlan,
+                { baseline: state.stats?.wishSections, leaf: heldLeaf, refused: refused[0], nativeHolds, board: deps.board });
+            return stepPlan;
         },
         emit: send,
         maxBatch: config.maxBatch,

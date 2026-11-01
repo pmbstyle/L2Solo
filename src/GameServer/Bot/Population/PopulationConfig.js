@@ -76,6 +76,8 @@ const DEFAULTS = {
     // skipped of 25, 47% of them with another plan; both stay off.
     coldSoloWindow: false,
     coldSoloWindowShadow: false,
+    // T174: counts the builds no player's moment asks for and what they decided (PlayerMoment).
+    coldMomentShadow: false,
     // Protect the player-facing loop immediately and keep it protected for a
     // short window after disconnect/relog. SimPlayer/BotSession instances do
     // not contribute to this signal.
@@ -281,6 +283,7 @@ const ENV_KEYS = {
     coldWorkerHeapSnapshot: 'BOT_POPULATION_COLD_WORKER_HEAP_SNAPSHOT',
     coldSoloWindow: 'BOT_POPULATION_COLD_SOLO_WINDOW',
     coldSoloWindowShadow: 'BOT_POPULATION_COLD_SOLO_WINDOW_SHADOW',
+    coldMomentShadow: 'BOT_POPULATION_COLD_MOMENT_SHADOW',
     playerProtectionGraceMs: 'BOT_POPULATION_PLAYER_PROTECTION_GRACE_MS',
     schedulerLagThrottleMs: 'BOT_POPULATION_SCHEDULER_LAG_THROTTLE_MS',
     schedulerLagAbortMs: 'BOT_POPULATION_SCHEDULER_LAG_ABORT_MS',

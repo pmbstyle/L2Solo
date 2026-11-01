@@ -137,7 +137,7 @@ const PopulationStatus = {
             + ` geo=${mb(geodata.loadedBytes)}MB/${geodata.loadedRegions} geoViews=${mb(geodata.attachedBytes)}+${mb(worker.geodata?.attachedBytes)}MB`
             + ` geoRaw=${geodata.rawRegions || 0} geoIndexOnly=${geodata.indexOnlyRegions || 0}`
             + ` geoHeightReads=${geodata.heightFileReads || 0}+${worker.geodata?.heightFileReads || 0} ${this.npcHateText()}`
-            + this.incomeHoldText(worker.incomeHold) + this.soloWindowText(worker.soloWindow);
+            + this.incomeHoldText(worker.incomeHold) + this.soloWindowText(worker.soloWindow) + this.momentsText(worker.moments);
     },
 
     // huntSteps=<steps per hunting bot-hour>/<rounds per step>: solo hunting steps since the worker
@@ -149,6 +149,16 @@ const PopulationStatus = {
         const ended = Object.entries(w.ended || {}).map(([why, count]) => `${why}:${count}`).join(',') || '-';
         return ` huntSteps=${rate}/${w.steps > 0 ? (w.rounds / w.steps).toFixed(1) : '-'}/${w.on ? 'on' : 'shadow'}`
             + ` windowEnd=${ended} skip=${w.skipped}/${w.rebuilt}/${w.moved}`;
+    },
+
+    // moments=<builds>/<no moment>/<acted>/<goal>: economy builds since the worker started and those no player's
+    // moment asked for (T174, PlayerMoment), of them the ones that sent the bot elsewhere and the ones that only
+    // renamed its goal; noMoment: per first refusal <why>:<count>:<acted>:<goal>; at: the builds per moment.
+    momentsText(m) {
+        if (!m) return '';
+        const rows = Object.entries(m.why).sort((a, b) => b[1][0] - a[1][0]).map(([why, row]) => `${why}:${row.join(':')}`);
+        const at = Object.entries(m.moments).sort((a, b) => b[1] - a[1]).map(([name, count]) => `${name}:${count}`);
+        return ` moments=${m.builds}/${m.skipped}/${m.acted}/${m.goal} noMoment=${rows.join(',') || '-'} at=${at.join(',') || '-'}`;
     },
 
     // incomeHold=<kept>/<none>,<unrouted>,<renewed>,<moved>,<event>,<goal>;party<kept>/<missed>: held earning

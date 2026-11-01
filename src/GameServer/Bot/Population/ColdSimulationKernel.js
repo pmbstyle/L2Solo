@@ -650,6 +650,7 @@ class ColdSimulationKernel {
         // deadline(state, timestamp), readers(plan) }. Off: the shadow, today's
         // steps counting what the window would skip (windowShadow).
         this.soloWindow = options.soloWindow || null;
+        this.momentStats = options.momentStats || null;
         // Always on, read by the health line (PopulationStatus.soloWindowText):
         // solo hunting steps, their rounds and hunt time (steps per hunting
         // bot-hour = 3.6e6 * steps / huntMs); what ended each; the shadow's
@@ -2768,6 +2769,7 @@ class ColdSimulationKernel {
             ackUnbuilt: this.ackUnbuilt,
             stepLeadMs: Math.round(this.stepLeadMs),
             soloWindow: { ...this.soloWindowStats, on: this.soloWindow?.on === true },
+            moments: this.momentStats || null,
             maxInFlight: this.maxInFlight,
             maxAtomicPartySize: this.maxAtomicPartySize,
             paused: this.paused,

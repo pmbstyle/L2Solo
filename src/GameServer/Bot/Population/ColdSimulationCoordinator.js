@@ -881,6 +881,7 @@ class ColdSimulationCoordinator {
             coldHonestTravel: Config.coldHonestTravel,
             coldSoloWindow: Config.coldSoloWindow === true,
             coldSoloWindowShadow: Config.coldSoloWindowShadow === true,
+            coldMomentShadow: Config.coldMomentShadow === true,
             pvpAggression: Config.pvpAggression,
             maxBatch: Math.max(1, Math.min(64, Number(Config.coldWorkerBatchSize) || 64)),
             maxInFlight: this.desiredWorkerPressure().maxInFlight,
