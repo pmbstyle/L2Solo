@@ -380,7 +380,7 @@ function sameResult(before, after) {
 // use the same path facts, quantity reader and root valuation (MVP-6); its
 // scratch maps die with the caller's build.
 function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, wallet = 0, survivalReserve = 0,
-    diagnostic = false, detail = false, trace = null, captureReadyCraft = false }) {
+    diagnostic = false, detail = false, trace = null, captureReadyCraft = false, unitEfforts = new Map() }) {
     const byKey = new Map();
     for (const node of nodes) {
         if (typeof node?.key !== 'string' || !node.key || byKey.has(node.key)
@@ -432,6 +432,23 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
             actualCashFees: nonnegative(path.actualCashFees), riskHours: nonnegative(path.riskHours) }]);
         return value.known ? -value.valueHours : Infinity;
     };
+    // ARCH-NOTE: PERF one unit effort per path; a caller solving many roots
+    // over the same descriptors at one price of time shares the map.
+    const unitEffort = path => {
+        let effort = unitEfforts.get(path);
+        if (effort === undefined) { effort = priceOf(path, 0); unitEfforts.set(path, effort); }
+        return effort;
+    };
+    // ARCH-NOTE: PERF a path's plan is built only for the chosen paths: most
+    // solved alternatives lose the sort below.
+    const planOf = choice => {
+        const plan = { ...choice.path, ...choice.facts };
+        if (choice.proof) {
+            Object.defineProperty(plan, 'readyCraftProof', { configurable: true, value: choice.proof });
+            proofPlans.push(plan);
+        }
+        return plan;
+    };
     // MVP-2: an attempt is valued until success only when every consumed
     // input has a supported repeatable path; held stock alone is not one.
     const repeatables = new Map();
@@ -477,7 +494,8 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
             // Held units are worth their exit value (Q1 A); nodes built
             // without that reader (groups, clan) keep their own price.
             ownValue = owned * nonnegative(Number.isFinite(node.exitValue) ? node.exitValue : node.price);
-            allocation.used.set(itemId, prior + owned + incomingHeld);
+            // ARCH-NOTE: PERF only a real claim enters the map: every path copies it.
+            if (owned + incomingHeld > 0) allocation.used.set(itemId, prior + owned + incomingHeld);
             if (!amount) {
                 visiting.delete(key);
                 return { kind: 'owned', requestedAmount: requested, missingAmount: 0, awaitingIncoming: incomingHeld > 0,
@@ -487,7 +505,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
                     effort: ownValue > 0 ? ownValue * adenaToHours : 0 };
             }
         }
-        const choices = [], alternativeUse = new Map(allocation?.used || []);
+        const choices = [], alternativeUse = allocation ? new Map(allocation.used) : null;
         const paths = node.paths?.length ? node.paths : [{ kind: 'owned', activity: null,
             price: node.price, costHours: node.costHours, riskHours: node.riskHours }];
         if (diagnostic) Diagnostics.count('network', 'path_request', 'known_input', paths.length);
@@ -510,7 +528,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
                 ? Math.ceil(amount / Number(path.productCount || 1)) : allocation ? amount : 1;
             if (!Number.isSafeInteger(units) || units <= 0) continue;
             // ARCH-NOTE: PERF path-only facts, once per path (both evaluations read them).
-            const unitEffort = allocation ? priceOf(path, 0) : priceOf(path);
+            const effortPerUnit = allocation ? unitEffort(path) : priceOf(path);
             const inputs = allocation ? path.grossRequirements || path.requirements || [] : path.requirements || path.grossRequirements || [];
             const leaf = Array.isArray(inputs) && inputs.length === 0;
             // Forecast the complete output first. A native batch limit only
@@ -519,7 +537,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
                 // ARCH-NOTE: PERF a path without inputs solves no child: it claims no stock, so the
                 // claims need no copy and no merge back.
                 const local = allocation && !leaf ? { rootKey: allocation.rootKey, used: new Map(allocation.used) } : null;
-                let price = nonnegative(path.price) * units, effort = unitEffort * units,
+                let price = nonnegative(path.price) * units, effort = effortPerUnit * units,
                     available = true, height = 0, awaitingIncoming = !command && incomingHeld > 0;
                 if (allocation && !command && ownValue > 0) effort += ownValue * adenaToHours;
                 let executable = path.executable !== false;
@@ -594,19 +612,18 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
                 price += tripValue(tripEntries, 'fees'); effort += tripEffort(tripEntries); hours += tripValue(tripEntries, 'hours');
                 if (available && local && !command) for (const [id, count] of local.used) alternativeUse.set(id, Math.max(alternativeUse.get(id) || 0, count));
                 if (available) {
-                    const result = { ...path, executable, supported, resolved, branches, quoted, tripEntries,
+                    const facts = { executable, supported, resolved, branches, quoted, tripEntries,
                         successProbability: probability, attemptProbability: successProbability, untilSuccess,
                         ...(allocation ? { requestedAmount: requested, missingAmount: amount, batches: units, awaitingIncoming } : {}),
                         basePrice, baseEffort, baseHours, price, effort, hours, requirements, height };
+                    let proof = null;
                     if (inputFacts?.length && inputFacts.length === inputs.length && outputStock
                         && executable && !awaitingIncoming && !requirements.length
                         && inputFacts.every(([, , , toOrder, toExecute]) => toOrder === 0 && toExecute === 0)
                         && new Set(inputFacts.map(row => row[0])).size === inputFacts.length) {
-                        Object.defineProperty(result, 'readyCraftProof', { configurable: true, value: { output: outputStock,
-                            inputs: inputFacts.map(([id, required]) => [id, required]) } });
-                        proofPlans.push(result);
+                        proof = { output: outputStock, inputs: inputFacts.map(([id, required]) => [id, required]) };
                     }
-                    return result;
+                    return { path, facts, proof };
                 } else if (diagnostic) Diagnostics.count('network', 'path_refused', 'missing_requirement');
                 return null;
             };
@@ -625,8 +642,9 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
                 // Incoming stock contributes to the forecast, never this test.
                 const commandUnits = Math.min(units, Number(path.batchLimit || Infinity), physicalBatches || Infinity);
                 if (Number.isSafeInteger(commandUnits) && commandUnits > 0 && commandUnits < units) {
-                    choice.execution = evaluate(commandUnits, true);
-                    if (choice.execution) choice.execution.availableUnits = Math.min(Number(path.availableUnits ?? Infinity),
+                    const execution = evaluate(commandUnits, true);
+                    choice.facts.execution = execution && planOf(execution);
+                    if (execution) choice.facts.execution.availableUnits = Math.min(Number(path.availableUnits ?? Infinity),
                         commandUnits * Number(path.productCount || 1));
                 }
             }
@@ -636,29 +654,32 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
         // then effort. Finite production plans its cheapest future source:
         // an unsupported purchase keeps the trial's queue place and WTB row
         // without cash, never a costlier step now.
-        const completionHours = choice => choice.hours + (adenaToHours > 0
-            ? Math.max(0, choice.price - Math.max(0, wallet - survivalReserve)) * adenaToHours : choice.price > wallet ? Infinity : 0);
-        const order = choice => choice.acquisitionOrder === 1 && choice.kind === 'buy'
-            && choice.price > Math.max(0, wallet - survivalReserve) ? 3 : nonnegative(choice.acquisitionOrder);
-        const acquisitionOrder = (a, b) => a.supported && a.resolved && b.supported && b.resolved
+        const completionHours = facts => facts.hours + (adenaToHours > 0
+            ? Math.max(0, facts.price - Math.max(0, wallet - survivalReserve)) * adenaToHours : facts.price > wallet ? Infinity : 0);
+        const order = ({ path, facts }) => path.acquisitionOrder === 1 && path.kind === 'buy'
+            && facts.price > Math.max(0, wallet - survivalReserve) ? 3 : nonnegative(path.acquisitionOrder);
+        const acquisitionOrder = (a, b) => a.facts.supported && a.facts.resolved && b.facts.supported && b.facts.resolved
             ? order(a) - order(b) : 0;
-        choices.sort((a, b) => acquisitionOrder(a, b) || (completionFirst
-            ? Number(b.supported) - Number(a.supported) || completionHours(a) - completionHours(b) || a.effort - b.effort
-            : planning
-            ? a.effort - b.effort || Number(b.supported) - Number(a.supported) || Number(b.executable) - Number(a.executable) || a.price - b.price
-            : Number(b.executable) - Number(a.executable) || Number(b.supported) - Number(a.supported) || a.effort - b.effort || a.price - b.price));
-        const best = choices[0] || null;
+        choices.sort((one, other) => {
+            const a = one.facts, b = other.facts;
+            return acquisitionOrder(one, other) || (completionFirst
+                ? Number(b.supported) - Number(a.supported) || completionHours(a) - completionHours(b) || a.effort - b.effort
+                : planning
+                ? a.effort - b.effort || Number(b.supported) - Number(a.supported) || Number(b.executable) - Number(a.executable) || a.price - b.price
+                : Number(b.executable) - Number(a.executable) || Number(b.supported) - Number(a.supported) || a.effort - b.effort || a.price - b.price);
+        });
+        const chosen = choices[0], best = chosen ? planOf(chosen) : null;
         if (allocation && best) {
-            const transformation = choices.find(choice => choice.kind === 'craft');
-            if (transformation && transformation !== best) best.intentionPath = transformation;
+            const transformation = choices.find(choice => choice.path.kind === 'craft');
+            if (transformation && transformation !== chosen) best.intentionPath = planOf(transformation);
         }
         if (diagnostic) Diagnostics.count('network', 'path_evaluated', 'known_available', choices.length);
-        if (detail) for (const choice of choices) Diagnostics.push({ ...trace,
-            phase: 'wish_alternative', reason: choice === best ? 'selected_path' : 'evaluated_path',
+        if (detail) for (const row of choices) { const choice = { ...row.path, ...row.facts }; Diagnostics.push({ ...trace,
+            phase: 'wish_alternative', reason: row === chosen ? 'selected_path' : 'evaluated_path',
             wishKey: key, source: choice.sourceType || choice.kind || choice.activity || 'requirement',
             town: choice.town, npcId: choice.npcId, item: choice.itemId,
             recipeId: choice.recipeId, quote: choice.price, tripHours: choice.tripHours,
-            tripFees: choice.tripFees, requested: choice.amount });
+            tripFees: choice.tripFees, requested: choice.amount }); }
         if (detail && best?.kind === 'craft') for (const requirement of best.requirements) Diagnostics.push({ ...trace,
             phase: 'craft_requirement', reason: 'selected_recipe_input', source: 'craft_input',
             wishKey: requirement.key, recipeId: best.recipeId, requested: requirement.amount,
