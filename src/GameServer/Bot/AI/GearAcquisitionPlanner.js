@@ -1308,15 +1308,17 @@ function sourceMinLevelGap(economicLower) {
     return economicLower ? -15 : BotTargetScorer.MIN_LEVEL_GAP;
 }
 
-function isPlanSourceViableForState(state = {}, plan = {}) {
+function isPlanSourceViableForState(state = {}, plan = {}, options = {}) {
     if (!isPlanSourceEligible(plan)) return false;
     if (plan?.next?.sourceKind === 'raid' || plan?.next?.raidBoss === true) return true;
     const npcId = Number(plan?.next?.npcId || 0);
     if (!npcId) return true;
     const npc = catalogNpc(npcId);
-    return sourceWithinVoluntaryHuntBand(state, {
+    if (!sourceWithinVoluntaryHuntBand(state, {
         npcLevel: Number(npc?.template?.level || npc?.level || 0)
-    });
+    })) return false;
+    const allowed = options.spots && soloPlanSourceReader(state, plan, options.spots, options);
+    return !allowed || allowed(SpotIndex.spotById(options.spots, plan.next.spotId), npcId);
 }
 
 function directPlanFailure(state = {}, plan = {}, timestamp = Date.now()) {
@@ -1806,8 +1808,10 @@ function bestSourceForState(sources = [], state = {}, options = {}) {
         .filter((source) => !sourceIsExcluded(source, options))
         .filter((source) => sourceWithinVoluntaryHuntBand(state, source));
     const safeSources = allowedSources.filter((source) => soloSafeForSource(state, source));
-    // A full source is met at arrival, not skipped here (ARCH-08-b).
-    return options.clanCrafting ? allowedSources[0] || null : safeSources[0] || allowedSources[0] || null;
+    // A route caller can refuse ground, targets or full camps before choosing
+    // the first source. Keep walking the ordered sources after a refusal.
+    const pick = rows => options.sourceAllowed ? rows.find(options.sourceAllowed) || null : rows[0] || null;
+    return options.clanCrafting ? pick(allowedSources) : pick(safeSources) || pick(allowedSources);
 }
 
 function itemIdForPlan(plan = {}) {
@@ -1821,13 +1825,35 @@ function plannedMaterialAcquired(state, plan) {
         && Number(state.inventory?.[plan.next.itemId]?.amount || 0) >= Number(plan.next.requiredTotal);
 }
 
+// Ordinary solo acquisition and routing must choose the same executable
+// source: its field, target and room. Group objectives retain their own
+// admission and recruitment rules, including explicit clan raids.
+function soloPlanSourceReader(state, plan, spots, options = {}) {
+    if (plan?.status !== 'active' || !['direct_drop', 'craft'].includes(plan.strategy)
+        || !plan.next?.spotId || !plan.next?.npcId || state.party?.partyId || state.partyId
+        || ['party', 'duo'].includes(LevelingRoutes.modeForState(state, options))
+        || plan.requiresParty || plan.partyNeed && plan.partyNeed !== 'solo_ok'
+        || options.clanCrafting || plan.next.sourceKind === 'raid' || plan.next.raidBoss) return null;
+    const allowed = sourceRouteReader(state, { ...options, spots });
+    const Profiles = invoke('GameServer/Bot/Population/SpotProfiles');
+    return (spot, npcId) => !!spot && allowed(spot, npcId)
+        && (String(state.spotId) === String(spot.id)
+            && !['shopping', 'merchant', 'crafting', 'traveling'].includes(state.activity)
+            || (options.hasRoom ? options.hasRoom(spot.id)
+                : Profiles.spotHunters(spot, state) <= LevelingRoutes.roomForSpot(spot)));
+}
+
 function bestSourceForPlan(state = {}, plan = {}, spots = [], options = {}) {
     if (!acquisitionTargetAllowed(state, plan)) return null;
     if (levelingRecoveryFor(state, plan, options.timestamp)) return null;
     if (plan?.status !== 'active' || plannedMaterialAcquired(state, plan)) return null;
     const itemId = itemIdForPlan(plan);
     if (!itemId) return null;
-    return bestSourceForState(sourceForItem(itemId, spots, state, options), state, options);
+    const allowed = soloPlanSourceReader(state, plan, spots, options);
+    const sourceAllowed = options.sourceAllowed;
+    return bestSourceForState(sourceForItem(itemId, spots, state, options), state, allowed ? { ...options,
+        sourceAllowed: source => allowed(SpotIndex.spotById(spots, source.spotId), source.npcId)
+            && (!sourceAllowed || sourceAllowed(source)) } : options);
 }
 
 function safeFallbackForPlan(state = {}, plan = {}, spots = [], options = {}) {
@@ -2167,7 +2193,7 @@ function sourceRouteReader(state, options = {}) {
         if (!LevelingRoutes.isSpotAllowedForState(spot, state, { ...soloOptions, matchupProfiles: profiles })) return 'matchup';
         return null;
     };
-    return spot => {
+    return (spot, npcId = 0) => {
         const at = SpotIndex.ordinalFor(spots, spot), shift = (at & 3) << 1;
         let cell = at < 0 ? 0 : cells[at >> 2] >> shift & 3;
         if (shadow && cell && !shadow.has(at)) {
@@ -2189,7 +2215,19 @@ function sourceRouteReader(state, options = {}) {
             cell = refused ? GROUND_REFUSED : GROUND_ALLOWED;
             if (at >= 0) { cells[at >> 2] |= cell << shift; shadow?.add(at); }
         }
-        return cell === GROUND_ALLOWED;
+        if (cell !== GROUND_ALLOWED) return false;
+        if (!npcId) return true;
+        // A safe field may contain a species whose every pull the native
+        // fight refuses. That species cannot supply this item, even when
+        // the other mobs make the field's overall safety fraction pass.
+        const entry = spot.npcEntries?.length
+            ? spot.npcEntries.find(row => Number(row.selfId) === Number(npcId))
+            : spot.npcSelfIds?.some(id => Number(id) === Number(npcId)) ? { selfId: npcId, count: 1 } : null;
+        if (!entry) return false;
+        profiles ||= BotTargetMatchup.stateProfiles(state, soloOptions);
+        if (!profiles.length) return true;
+        return BotTargetMatchup.speciesPulls(profiles, entry,
+            { soloSafety: true, maxTargetLevel: targetLevel || null })?.canHunt === true;
     };
 }
 
@@ -2331,7 +2369,7 @@ function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
                     if (readyOnly) continue;
                     reason = 'party_needed';
                 }
-                if (!reason && !routeAllowed(spot)) reason = 'route_ineligible';
+                if (!reason && !routeAllowed(spot, Number(entry.reward.selfId))) reason = 'route_ineligible';
             }
             let row = null, perHour = 0, trip = null, town = null;
             if (!reason) {

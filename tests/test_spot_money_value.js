@@ -119,6 +119,12 @@ try {
     const upper = Match.soloSpotUpperBound(options.matchupProfiles);
     assert(oracle.every(spot => upper(spot)), 'cheap bound must retain every exact-safe camp');
     assert(Match.soloSpotUpperBound([{ survivalKnown: false }])(catalogue[0]), 'unknown kits remain neutral');
+    const unplaced = { ...fighter, spotId: null, loc: {} };
+    assert.equal(Spots.findForState(unplaced, { ...options, hasRoom: () => false }), null,
+        'the weak-kit fallback cannot send an unplaced bot to a full camp');
+    const other = Spots.findForState(unplaced, { ...options, hasRoom: id => id !== picked.id });
+    assert(other && other.id !== picked.id, 'a full easy camp is skipped for another surviving camp');
+    assert(savedGate(other, unplaced, options), 'the alternative still passes native combat admission');
     console.log(`PASS full catalogue: ${world.npc.spawns.length} spawns, near=${near.length}, `
         + `fallback=${fallbackChecks}, picked=${picked.id} at ${picked.avgLevel}`);
 } finally {

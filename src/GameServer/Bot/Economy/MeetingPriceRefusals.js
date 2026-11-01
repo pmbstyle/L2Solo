@@ -53,6 +53,27 @@ function admissionFingerprint(board, scope) {
     return fingerprint(inputs);
 }
 
+// Build the retained check outside a preparation's generator/catch scope.
+// A callback created there also keeps its input, error and economic graph
+// alive. Only the bounded proof and these shared source readers may survive.
+function sourceCheck(board, evidence, { meetingRevisionOf, workshopDigest }) {
+    const item = { selfId: Number(evidence.purchase.selfId), enchant: Number(evidence.purchase.enchant || 0) };
+    const scopes = [...evidence.scopes], items = evidence.items ? [...evidence.items] : null;
+    const offers = evidence.offers?.map(row => [...row]);
+    const source = evidence.source, npcAllowed = evidence.npcAllowed;
+    const fundingDominance = evidence.fundingDominance === true;
+    const admissionScope = evidence.admissionScope, admission = evidence.admission ?? null;
+    return () => (offers !== undefined
+        ? fundingDominance && scopes.length === 0 && witnessCurrent(board, offers, item)
+        : fingerprint(items
+            ? [items.map(id => [id, board.itemFingerprint(id)]),
+                scopes.map(scope => [scope, meetingRevisionOf(scope), workshopDigest(scope)])]
+            : scopes.map(scope => [scope, board.groupFingerprint(scope),
+                meetingRevisionOf(scope), workshopDigest(scope)])) === source)
+        && invoke('GameServer/Bot/Economy/ProductionPolicy').allowsNpcShot(item.selfId) === npcAllowed
+        && admissionFingerprint(board, admissionScope) === admission;
+}
+
 function stableRoute(state) {
     return JSON.stringify([state?.phase, invoke('GameServer/Bot/Economy/EconomicTrip').key(state), state?.stats?.tradeMeeting || null]);
 }
@@ -94,4 +115,4 @@ function rejects(line, units, buyer) {
     return true;
 }
 function clear() { refused.clear(); }
-module.exports = { remember, rejects, clear, admissionFingerprint, fingerprint, witnessCurrent };
+module.exports = { remember, rejects, clear, sourceCheck, admissionFingerprint, fingerprint, witnessCurrent };

@@ -37,7 +37,7 @@ function staticExits(recipe, template) {
     }
     return result;
 }
-function exitsFor(state, recipe, template, trip, options) {
+function exitsFor(state, recipe, template, trip, options, existingOutput) {
     const result = [];
     for (const offer of options.offersFor?.(recipe.productId, 3, state.characterId) || []) {
         const exit = { type: 'afk', conditional: !!offer.conditional, price: Number(offer.price), count: Number(offer.count), offer,
@@ -46,6 +46,10 @@ function exitsFor(state, recipe, template, trip, options) {
     }
     for (const exit of (options.staticExits || staticExits)(recipe, template)) result.push({ ...exit,
         trip: Number(exit.trip ?? trip(exit.town)), tripDetails: exit.tripDetails || trip.details?.(exit.town) });
+    if (options.board) result.push(...Policy.drain(require('./ProductionSalePolicy').exits(state, recipe, {
+        board: options.board, timestamp: options.timestamp, trip,
+        npcOffersFor: id => require('../Population/ColdOccupationSources').npcOffersFor(id),
+        existing: existingOutput })));
     return result;
 }
 function eligible(state, { ownLines = [], now = Date.now() } = {}) {
@@ -135,8 +139,11 @@ function* decisionSearch(state, knownRecipes, context, options, mode) {
         // Keep an explicitly selected legacy job eligible for meeting rechecks.
         if (mode === 'action' && String(template.template?.kind || '').startsWith('Other.Shot')
             && (!options.onlyRecipeId || !learned.has(id))) continue;
+        const existingOutput = Number(ownStock.get(Number(recipe.productId))?.count || 0)
+            + Number(outputStock.get(Number(recipe.productId)) || 0)
+            + Number(state.acceptedIncoming?.[recipe.productId] || 0);
         const exits = options.prepareExits ? yield* options.prepareExits(state, recipe, template, trip)
-            : exitsFor(state, recipe, template, trip, options);
+            : exitsFor(state, recipe, template, trip, options, existingOutput);
         if (!options.prepareExits) yield 'exits';
         for (const exit of exits) {
             for (const price of outputPrices.get(Number(recipe.productId)) || []) {
@@ -151,9 +158,7 @@ function* decisionSearch(state, knownRecipes, context, options, mode) {
                 recipeStock: ownStock.get(Number(recipe.recipeItemId)),
                 ...(options.preparePurchase ? { preparePurchase: (itemId, missing) => options.preparePurchase(state, itemId, missing,
                     { npc: Number(itemId) !== Number(recipe.recipeItemId), cost: trip }) } : {}) } : {}),
-            existingOutput: Number(ownStock.get(Number(recipe.productId))?.count || 0)
-                + Number(outputStock.get(Number(recipe.productId)) || 0)
-                + Number(state.acceptedIncoming?.[recipe.productId] || 0) };
+            existingOutput };
         const candidate = yield* Policy.searchQuantity({ state: budgetState, recipe,
             planFor: (id, missing) => options.planPurchase?.(state, id, missing, { npc: true, cost: trip }),
             exits, ownedFor, context: recipeContext, mode });

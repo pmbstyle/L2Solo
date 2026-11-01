@@ -232,6 +232,12 @@ async function requestMeeting(session, bot, meeting, side) {
     const point = { locX: meeting.locX, locY: meeting.locY, locZ: meeting.locZ };
     const position = () => ({ locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() });
     const valid = () => session.meetingTravel === token && !bot.isDead() && !hasCombatThreat(session, bot);
+    const cancelRoute = async reason => {
+        session.meetingTravel = undefined;
+        const cancelled = await Database.cancelTradeMeeting(meeting.id, reason);
+        for (const row of Object.values(cancelled?.coldLifeRows || {})) Life.acceptLifecycleRow(row);
+        TradeMeetings.wake(bot.fetchId());
+    };
     const pay = async (legId, fee, scroll) => {
         const latest = await Database.fetchTradeMeeting(meeting.id);
         if (!valid() || latest?.state !== 'accepted') return null;
@@ -249,12 +255,15 @@ async function requestMeeting(session, bot, meeting, side) {
     };
     const hop = async () => {
         if (!valid()) { session.meetingTravel = undefined; return; }
-        if (String(JSON.parse(meeting[`route${suffix}`]).method).startsWith('meeting:')) { finish(); return; }
+        if (JSON.parse(meeting[`route${suffix}`]).method === 'walk') { finish(); return; }
         const native = Routes.between(position(), point), step = native.route?.steps?.[0];
+        if (!native.route) { await cancelRoute('route_unavailable'); return; }
         if (!step) { finish(); return; }
         const latest = await Database.fetchTradeMeeting(meeting.id);
         const held = JSON.parse(latest?.[`leg${suffix}`] || 'null');
-        if (step.fee > Number(latest?.[`routeReserve${suffix}`]) && !held?.legId?.startsWith('gk:')) { finish(); return; }
+        if (native.route.fee > Number(latest?.[`routeReserve${suffix}`]) && !held?.legId?.startsWith('gk:')) {
+            await cancelRoute('route_unfunded'); return;
+        }
         const gatekeeper = require('../../World/NpcObjectIndex').nearTemplate(invoke('GameServer/World/World'),
             step.npcId, native.start.locX, native.start.locY, 1200);
         if (!gatekeeper) throw Error('trade_meeting_gatekeeper_unavailable');
@@ -308,9 +317,7 @@ async function requestMeeting(session, bot, meeting, side) {
     } catch (error) {
         session.meetingTravel = undefined;
         if (error.message === 'trade_meeting_gatekeeper_unavailable') {
-            const cancelled = await Database.cancelTradeMeeting(meeting.id, 'route_unavailable');
-            for (const row of Object.values(cancelled?.coldLifeRows || {})) Life.acceptLifecycleRow(row);
-            TradeMeetings.wake(bot.fetchId());
+            await cancelRoute('route_unavailable');
             return;
         }
         throw error;

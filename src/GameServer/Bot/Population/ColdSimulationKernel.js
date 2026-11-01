@@ -1033,7 +1033,7 @@ class ColdSimulationKernel {
         const token = this.nextScheduleToken++;
         const current = this.states.get(id);
         const heapEntry = { characterId: id, version: Number(version),
-            dueAt: Number(dueAt || this.now()), scheduleToken: token,
+            dueAt: Math.ceil(Number(dueAt || this.now())), scheduleToken: token,
             playerWaiting: playerWaitingTransition(current?.state, kind, this),
             meetingTravel: meetingTravelTransition(current?.state, kind, this), lead };
         this.scheduleTokens.set(id, { token, version: Number(version), dueAt: heapEntry.dueAt, heapEntry });
@@ -1330,7 +1330,12 @@ class ColdSimulationKernel {
                     continue;
                 }
                 const attempt = this.beginCommand(id);
-                if (!attempt) continue;
+                if (!attempt) {
+                    // Consuming a wake must never leave a retained owner
+                    // without a schedule when its command cannot start.
+                    this.requeue(id, timestamp + 1000);
+                    continue;
+                }
                 commandsSelected += 1;
                 DiagnosticConfig.developerDiagnostics && (this.stats.commands += 1);
                 this.resolveChain = this.resolveChain.then(nextTurn).then(() => this.resolveCommand(id, attempt));
@@ -1687,7 +1692,7 @@ class ColdSimulationKernel {
         // never earlier (resolveStep); its ids keep the real start
         // (run.startedAt), its rows' write stamp the real now (resolveStartedAt).
         const resolveStartedAt = this.now();
-        const startedAt = Math.max(resolveStartedAt, run.dueAt || 0);
+        const startedAt = Math.ceil(Math.max(resolveStartedAt, run.dueAt || 0));
         let raidStepId = null;
         let published = false, handled = false;
         try {
@@ -2123,7 +2128,7 @@ class ColdSimulationKernel {
             // Resolved as of its due, never earlier: a step started its lead
             // early lives the same round as one started on time. The row's
             // write stamp (updatedAt) stays the real start.
-            const timestamp = Math.max(startedAt, active.dueAt || 0);
+            const timestamp = Math.ceil(Math.max(startedAt, active.dueAt || 0));
             const elapsedMs = active.state.timing?.lastResolvedAt
                 ? Math.max(1000, timestamp - Number(active.state.timing.lastResolvedAt))
                 : 60000;

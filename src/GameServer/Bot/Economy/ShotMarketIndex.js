@@ -98,7 +98,10 @@ class ShotMarketIndex {
     }
     offersFor(itemId, side = 1, excludedOwner = 0) {
         const result = [];
-        for (const line of this.board()?.list(Number(itemId), Number(side)) || []) {
+        const board = this.board();
+        const lines = Number(side) === 3 ? require('./PriceDecision').productionBids(board, itemId)
+            : board?.list(Number(itemId), Number(side)) || [];
+        for (const line of lines) {
             if (!excludedOwner || Number(line.ownerId) !== Number(excludedOwner)) result.push(offerFields(line));
         }
         return result;

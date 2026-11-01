@@ -21,17 +21,46 @@ wire.packPayload = (type, payload) => {
     return { ...packed, results: [{ ...row, priceEvidence: { ...row.priceEvidence, padding: 'x'.repeat(500) } }] };
 };
 const refusals = invoke('GameServer/Bot/Economy/MeetingPriceRefusals'), remember = refusals.remember;
+require('node:v8').setFlagsFromString('--expose-gc');
+const collect = require('node:vm').runInNewContext('gc'), economicBuilds = [];
+let proofMode = 'dominance';
+const alternative = invoke('GameServer/Bot/Economy/BidPurchaseAlternative'), checkPurchase = alternative.assertMeetingPurchase;
+alternative.assertMeetingPurchase = (...args) => {
+    try { return checkPurchase(...args); }
+    catch (error) { if (proofMode !== 'dominance') delete error.independentPriceProof; throw error; }
+};
+parentPort.on('message', async message => {
+    if (message.priceProofMode) {
+        proofMode = message.priceProofMode;
+        parentPort.postMessage({ proofMode });
+    }
+    if (message.memoryProbe) {
+        // WeakRef targets remain alive through the turn that creates them.
+        // Collect only after preparation callbacks and their generators unwind.
+        for (let at = 0; at < 6; at++) {
+            await new Promise(resolve => setImmediate(resolve)); collect();
+        }
+        parentPort.postMessage({ memoryProbe: message.memoryProbe,
+            liveBuilds: economicBuilds.filter(ref => ref.deref()).length });
+    }
+});
 refusals.remember = (state, board, request, purchase, current, options) => {
     remember(state, board, request, purchase, current, options);
     const quote = board.records.get(request.lines[0].adId)?.[0];
     parentPort.postMessage({ priceMemo: quote && refusals.rejects(quote, purchase.units, state), token: request.token });
 };
-invoke('GameServer/Bot/Economy/EconomyContext').forState = (state, options) => (options.onSourceScope?.('recipe-production:0'),
-    [1463, 1867, 2109, 413, 1870].forEach(id => options.onSourceRead?.(id)), {
+invoke('GameServer/Bot/Economy/EconomyContext').forState = (state, options) => {
+    options.onSourceScope?.('recipe-production:0');
+    const reads = proofMode === 'broad' ? Array.from({ length: 70 }, (_, at) => at + 1) : [1463, 1867, 2109, 413, 1870];
+    reads.forEach(id => options.onSourceRead?.(id));
+    const economy = {
     network: { quantityPrepared: true, queue: [] }, projection: {}, hourAdena: 1000, worth: () => 34454032, price: () => 34454032,
     trip: invoke('GameServer/Bot/Economy/EconomicTrip').preparedReader(options.routeRows, { hourAdena: 1000 }),
     kitCost: () => 0
-});
+    };
+    economicBuilds.push(new WeakRef(economy));
+    return economy;
+};
 invoke('GameServer/Bot/Economy/TradeIntent').project = () => [{
     itemId: 413, amount: 2, worth: 34454032, key: 'resale:413', valueHours: 20, valueRate: 100
 }];
@@ -126,6 +155,25 @@ invoke('GameServer/Bot/Economy/PurchaseFunding').spendable = (_state, _escrow, o
         assert.equal(oversized.payload.results[0].priceEvidence, undefined,
             'the refusal is delivered when its advisory evidence does not fit');
         assert(Buffer.byteLength(JSON.stringify(oversized)) <= 768, 'the complete meeting envelope fits');
+        const probeMemory = async name => {
+            worker.postMessage({ ...Protocol.envelope('snapshot_page', epoch, { rows: [] }), memoryProbe: name });
+            const result = await until(message => message.memoryProbe === name);
+            assert.equal(result.liveBuilds, 0, 'retained price refusals must release completed economic graphs');
+        };
+        await probeMemory('dominance-refusals');
+        for (const mode of ['exact', 'broad']) {
+            worker.postMessage({ ...Protocol.envelope('snapshot_page', epoch, { rows: [] }), priceProofMode: mode });
+            await until(message => message.proofMode === mode);
+            const token = mode + '-purchase-proof'; prepare(request(token, 188565));
+            const result = await until(message => message.type === 'command_ack'
+                && message.payload.results?.some(row => row.commandId === token));
+            const evidence = result.payload.results[0].priceEvidence;
+            assert.equal(result.payload.results[0].reason, 'trade_meeting_purchase_price_changed');
+            assert(evidence && (mode === 'exact' ? evidence.items?.length > 0 : evidence.items === undefined),
+                'the real worker exercises both scoped proof forms');
+            await until(message => message.token === token && message.priceMemo === true);
+            await probeMemory(mode + '-refusals');
+        }
         prepare(request('affordable-purchase', 80000));
         await until(message => message.type === 'command_request'
             && message.payload.requests?.some(row => row.commandId === 'affordable-purchase'));
