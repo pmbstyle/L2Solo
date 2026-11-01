@@ -197,7 +197,7 @@ https://l2solo.com/files/geodata-c4-client-20261027.zip
 
 or
 
-https://drive.google.com/file/d/1P6ZCuSfCPS381zQLTXuce6wbiWc7BL50/view?usp=sharing
+https://drive.google.com/file/d/1nIsV6wthb_hO6o1lPGGK8GVZf7GFlC0h/view?usp=sharing
 
 Use **Saved Games** while the server is stopped to save a full copy of your world database. This is only needed if you want to roll back to the saved server state. Server data itself always saves and updates in real time.
 
