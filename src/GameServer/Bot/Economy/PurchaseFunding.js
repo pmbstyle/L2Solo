@@ -85,6 +85,12 @@ function clanCredit(state, own = null) {
 // Lazy (a load cycle), once: spendable runs per offer and a require per call stats the path.
 let raidSupplyPolicy = null;
 const raidSupply = () => (raidSupplyPolicy ||= require('../Population/RaidSupplyPolicy'));
+// The rate of an item's own row in the money packet; undefined without one.
+function itemRate(packet, itemId) {
+    if (!Array.isArray(packet)) return undefined;
+    for (let i = 4; i + 2 < packet.length; i += 3) if (packet[i + 2] === Number(itemId)) return packet[i];
+    return undefined;
+}
 function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
     const raid = raidSupply().purchaseBudget(state, options);
     if (raid !== null) return raid;
@@ -110,9 +116,7 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
     }
     else {
         let r = Number(options.r ?? 0);
-        if (options.itemId && options.r === undefined) {
-            for (let i = 4; i + 2 < packet.length; i += 3) if (packet[i + 2] === Number(options.itemId)) { r = packet[i]; break; }
-        }
+        if (options.itemId && options.r === undefined) r = itemRate(packet, options.itemId) ?? r;
         // Worth buying is value per Adena at the price really paid: a quote
         // above the planner's estimate lowers it by the same factor (E187).
         // The queue's own order still decides which money is held for others.
@@ -123,6 +127,12 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
     if (Array.isArray(packet) && packet.length >= 4 && !options.upperBound && options.valueHours !== undefined) {
         reason = 'finite_value';
         queueBudget = Math.min(worth(packet, options.valueHours), budgetFor(packet, wallet, 0, packet[1], capture));
+    }
+    // A side purchase (T177) carries its own value per Adena and takes only the
+    // money no queue row holds.
+    if (Array.isArray(packet) && packet.length >= 4 && !options.upperBound && options.side !== undefined) {
+        reason = 'side';
+        queueBudget = options.side >= packet[1] ? budgetFor(packet, wallet, 0, -Infinity, capture) : 0;
     }
     const available = Math.min(wallet, queueBudget + Math.min(wallet, nonnegative(options.survivalCost)));
     if (Diagnostics.active()) Diagnostics.count('funding', available > 0 ? 'allowed' : 'refused', reason);
@@ -143,8 +153,8 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
 function quoteScale(estimate, quote) {
     return Number(estimate) > 0 && Number(quote) > 0 ? Number(estimate) / Number(quote) : 1;
 }
-function stockAllowance(state, wish, itemId, survivalCost, scale = 1) {
-    return spendable(state, 0, { ...stockTerms(wish, itemId, survivalCost), quoteScale: scale });
+function stockAllowance(state, wish, itemId, survivalCost, scale = 1, extra = null) {
+    return spendable(state, 0, { ...stockTerms(wish, itemId, survivalCost), quoteScale: scale, ...extra });
 }
 // A stock purchase's terms, the same for the planner and the native writer:
 // the kit's survival tranche and its stock wish's rank (else its packet row).
@@ -163,6 +173,7 @@ function nativeTerms(options = {}, itemId = 0) {
     if (Number.isFinite(Number(options.r)) || options.r === Infinity) terms.r = Number(options.r);
     if (options.valueHours !== undefined && Number.isFinite(Number(options.valueHours))) terms.valueHours = Math.max(0, Number(options.valueHours));
     if (options.survivalCost !== undefined && Number.isFinite(Number(options.survivalCost))) terms.survivalCost = Math.max(0, Number(options.survivalCost));
+    if (options.side !== undefined && Number.isFinite(Number(options.side))) terms.side = Math.max(0, Number(options.side));
     if (options.free === true) terms.free = true;
     if (options.clanPart !== undefined && Number.isFinite(Number(options.clanPart)) && Number(options.clanPart) >= 0) terms.clanPart = Number(options.clanPart);
     return terms;
@@ -221,5 +232,5 @@ function packetFor(network, hour, reserve) {
     return packet;
 }
 function tripEscrow(plan, escrow = 0) { return plan?.market?.sourceType === 'npc' ? escrow : 0; }
-module.exports = { budget, operatingReserve, shortfall, surplus, spendable, clanCredit, stockAllowance, quoteScale, forOpportunity, nativeTerms, companionTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, leafRatio, goalTerms, stockTerms,
+module.exports = { itemRate, budget, operatingReserve, shortfall, surplus, spendable, clanCredit, stockAllowance, quoteScale, forOpportunity, nativeTerms, companionTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, leafRatio, goalTerms, stockTerms,
     summary: () => Diagnostics.active() ? ({ moneyPacketMissing }) : ({ enabled: false }), resetCounters: () => { moneyPacketMissing = 0; } };

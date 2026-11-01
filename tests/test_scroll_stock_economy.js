@@ -29,8 +29,11 @@ const town = Routes.landingTown(origin);
 const withScroll = Trip.townPlan({ loc: origin, inventory: { 736: { amount: 1 } }, stats: {} }, town);
 const withoutScroll = Trip.townPlan({ loc: origin, inventory: {}, stats: {} }, town);
 assert.equal(stock.benefitHours, 9 * (withoutScroll.durationMs - withScroll.durationMs) / 3600000);
-assert.equal(rich.context.network.queue.find(row => row.key === 'stock:scrolls').object.amount, 9);
-assert(rich.state.stats.money.includes(736), 'extra scrolls enter the existing money queue');
+assert(invoke('GameServer/Bot/AI/PersonalGearProgression').assess(rich.state).required, 'the test bot has a kit gap');
+// A scroll waits for the visit's restock and never takes the bot off its kit (T177).
+assert(!String(rich.context.network.focus?.[0]).startsWith('stock:'), 'no scroll does not take the focus off the kit');
+assert.equal(rich.context.network.queue.some(row => row.key === 'stock:scrolls'), false);
+assert.equal(rich.state.stats.money.includes(736), false, 'side scrolls take no row in the money queue');
 assert.equal(units(rich.state), 10, 'a useful funded stock buys all ten at the quoted NPC price');
 assert.equal(Scrolls.restockPlan(rich.state, { unitPrice: price, context: rich.context }).amount, 10);
 assert.equal(units(published(state(0, price)).state), 1, 'poor bot retains exactly one mandatory escape');
@@ -61,6 +64,15 @@ assert(Math.abs(remote.itemUsefulness(736) - rich.context.itemUsefulness(736)) <
     'existing worker packet preserves scroll usefulness without a new protocol kind');
 assert.equal(Scrolls.restockPlan(rich.state, { unitPrice: price, context: remote }).amount, 10,
     'main-thread remote bot spends the same published optional-scroll funding');
+const one = published(state(1));
+assert.equal(units(one.state), 9, 'one scroll held: the side purchase still tops it up');
+const withPacket = ({ state: input }, money) => ({ ...input, stats: { ...input.stats, money } });
+const priced = published(state(1, 300000)).state.stats.money[1];
+assert.equal(units(withPacket(published(state(1, 300000)), [50000, priced, 0, 0, priced, 300000, 999])), 0,
+    'a funded kit row at the money price is held from spare scrolls');
+assert.equal(units(withPacket(published(state(0, 300000)), [50000, priced, 0, 0, priced, 300000, 999])), 1,
+    'a bot paying for its kit still buys the one mandatory escape');
+assert.equal(units(withPacket(one, [50000, 1000, 0, 0])), 0, 'a scroll worth less than its price stays on the shelf');
 Economy.reset();
 console.log('scroll stock → optional wish → one money queue → quoted NPC basket checks passed');
 process.exit(0);

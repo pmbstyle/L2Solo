@@ -10,12 +10,13 @@ const notRunTests = new Map([
     ['tests/test_finite_market_income.js', 'new red 2026-10-14: AssertionError: a stored shop town is read as its town name'],
     ['tests/test_gear_intermediate_candidates.js', 'new red 2026-10-14: AssertionError: same event reuses the decision and held roll'],
     ['tests/test_npc_purchase_consumers.js', 'E195: base red, first error: AssertionError: cold caller propagates activation after the committed NPC await'],
-    ['tests/test_scroll_stock_economy.js', 'E202: base red, first error: AssertionError: strictEqual 1 !== 9'],
     ['tests/test_task4_b5_hot_cold_same.js', 'new red 2026-10-14: AssertionError: cold publishes one buy ad'],
     ['tests/test_task4_survival_tranche.js', 'new red 2026-10-14: AssertionError: the tranche funds a shot bid'],
 ]);
 
 const tests = [
+    'tests/test_scroll_stock_economy.js',
+    'tests/test_wish_focus_supply.js',
     'tests/test_active_craft_warehouse.js',
     'tests/test_personal_craft_selection.js',
     'tests/test_player_moment.js',

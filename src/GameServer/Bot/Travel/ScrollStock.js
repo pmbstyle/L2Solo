@@ -37,7 +37,13 @@ function restockPlan(value, options = {}) {
     const desired = Math.max(0, TARGET_AMOUNT - currentAmount);
     const wish = context.network?.queue?.find(row => Number(row.object?.itemId) === Number(SCROLL.selfId));
     const fundedState = context.statsPacket ? { ...state, stats: { ...state.stats, money: context.statsPacket.money } } : state;
-    const allowance = Funding.stockAllowance(fundedState, wish, SCROLL.selfId, context.kitCost(SCROLL.selfId, unitPrice), Funding.quoteScale(context.stock('scrolls').unitPrice, unitPrice));
+    const stock = context.stock('scrolls');
+    // No row in the money queue (the kit comes first): the time a scroll saves
+    // buys it from the money the queue does not hold.
+    const funding = wish || !(unitPrice > 0) || Funding.itemRate(fundedState.stats?.money, SCROLL.selfId) !== undefined
+        ? {} : { side: stock.benefitPerUnit / unitPrice };
+    const allowance = Funding.stockAllowance(fundedState, wish, SCROLL.selfId, context.kitCost(SCROLL.selfId, unitPrice),
+        Funding.quoteScale(stock.unitPrice, unitPrice), funding);
     const affordable = unitPrice > 0 ? Math.floor(allowance / unitPrice) : 0;
     const amount = Math.min(desired, affordable);
     return {
@@ -47,6 +53,7 @@ function restockPlan(value, options = {}) {
         currentAmount,
         amount,
         unitPrice,
+        funding,
         cost: amount * unitPrice,
         adena,
         reserve,

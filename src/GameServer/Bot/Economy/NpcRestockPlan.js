@@ -109,7 +109,7 @@ function collect(state, options = {}) {
         if (offer) {
             const context = economics();
             const plan = Scrolls.restockPlan(current, { unitPrice: offer.price, context });
-            add(736, plan.amount, offer, {}, { survivalCost: context.kitCost(736, offer.price) });
+            add(736, plan.amount, offer, plan.funding, { survivalCost: context.kitCost(736, offer.price) });
         }
     }
     for (const extra of (options.extras || []).slice(0, LIMIT)) {
