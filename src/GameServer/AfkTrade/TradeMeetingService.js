@@ -549,7 +549,14 @@ function reset() {
 function wake(id) {
     if (!enrolled.has(Number(id))) return;
     queue.add(Number(id));
-    if (!draining) { draining = true; setImmediate(drain); }
+    if (!draining) scheduleDrain();
+}
+function scheduleDrain() {
+    draining = true;
+    // A lifecycle notification can come from a short-lived worker command.
+    // Accepted custody has its own native checks; its queued arrival/receipt
+    // must outlive the notifying command's async-local write admission.
+    setImmediate(() => db().withoutMutationAdmission(drain));
 }
 async function processOwner(id) {
     for (const meetingId of [...(enrolled.get(id) || [])].slice(0, MAX_COMMITMENTS)) await processMeeting(id, meetingId);
@@ -676,7 +683,7 @@ async function drain() {
             const id = queue.values().next().value; queue.delete(id);
             try { await processOwner(id); } catch (error) { utils.infoWarn('AfkTrade', 'meeting owner %d: %s', id, error.message); }
         }
-    } finally { draining = false; if (queue.size) { draining = true; setImmediate(drain); } }
+    } finally { draining = false; if (queue.size) scheduleDrain(); }
 }
 async function init() {
     unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.(); enrolled.clear(); clearWaiters(); travelNotices.clear(); queue.clear();
