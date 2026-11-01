@@ -214,17 +214,19 @@ try {
 const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const Encounter = invoke('GameServer/Bot/Population/ColdPveEncounter');
 const Readiness = invoke('GameServer/Bot/AI/BotEncounterReadiness');
-assert(!Readiness.evaluate({ hp: 500, maxHp: 1000, mp: 1000, maxMp: 1000, level: 40,
-    manaDependent: true }, { level: 35, maxHp: 1000 }).ready);
-assert(Readiness.evaluate({ hp: 500, maxHp: 1000, mp: 0, maxMp: 1000, level: 40,
-    manaDependent: false }, { level: 35, hp: 10, maxHp: 1000 }).ready,
-    'a physical finisher does not need mana or a full-target HP reserve');
+// A fight is admitted by what the bot has now against this mob, not by a share of its HP.
+const readied = [{ ...mage, accur: 100, evasion: 0, critical: 0, effects: [] }];
+const weakMob = { ...target, level: 25, maxHp: 50, pAtk: 1, accur: 100, evasion: 0, critical: 0 };
+const hardMob = { ...target, level: 25, accur: 100, evasion: 0, critical: 0 };
+assert(Readiness.evaluate(Readiness.atVitals(readied, mage.maxHp * 0.4, mage.maxMp * 0.3), weakMob).ready,
+    'a bot at 40% HP and 30% MP takes a mob it beats with that');
+assert(!Readiness.evaluate(Readiness.atVitals(readied, 1, 0), hardMob).ready, 'a bot that cannot cover the mob sits');
 const originalProfile = Cold.profileFor, originalFight = Cold.fightProfile;
 const originalNpc = Cold.npcForSpot;
 try {
     Cold.profileFor = Cold.fightProfile = () => ({ ...mage, accur: 100, evasion: 0, critical: 0, effects: [] });
     Cold.npcForSpot = () => ({ ...target, level: 25, selfId: 156, accur: 100, evasion: 0, critical: 0 });
-    const hurt = { ...state, spotId: easy.id, vitals: { ...state.vitals, hp: 260, mp: 300 } };
+    const hurt = { ...state, spotId: easy.id, vitals: { ...state.vitals, hp: 150, mp: 300 } };
     const recover = Resolver.resolveSolo({ state: hurt, spot: easy, elapsedMs: 0, timestamp: at, rng: () => 0.5 });
     assert.strictEqual(recover.patch.activity, 'resting', 'cold solo hunters recover before starting another fight');
     assert.strictEqual(recover.patch.stats.lastReason, 'solo_recovery_needed');

@@ -398,14 +398,18 @@ let prematureAttacks = 0;
 let reserveSeated = false;
 const reserveBot = actor(2000017);
 reserveBot.fetchHp = () => 60;
+reserveBot.fetchPDef = () => 40;
+reserveBot.fetchPAtk = () => 100;
 reserveBot.state.fetchSeated = () => reserveSeated;
 reserveBot.state.setSeated = (value) => { reserveSeated = value; };
 const fullHealthNpc = {
     ...threatNpc,
     fetchId: () => 1104,
     fetchLevel: () => 5,
-    fetchHp: () => 100,
-    fetchMaxHp: () => 100
+    fetchHp: () => 140,
+    fetchMaxHp: () => 140,
+    fetchPAtk: () => 40,
+    fetchPDef: () => 100
 };
 const reserveSession = {
     accountId: 'bot_encounter_reserve',
@@ -425,12 +429,14 @@ assert.strictEqual(reserveSession.plan, 'resting',
     'a solo hunter without enough HP reserve for a fresh equal-level mob must recover before pulling');
 assert.strictEqual(reserveSeated, true, 'pre-encounter recovery should seat the safe idle hunter');
 assert.strictEqual(prematureAttacks, 0, 'pre-encounter readiness must block the opening attack');
-assert.strictEqual(reserveSession.lastDecision.reason, 'hp_reserve', 'the blocked pull should expose its resource reason');
+assert.strictEqual(reserveSession.lastDecision.reason, 'no_reserve', 'the blocked pull should expose its reason');
 
 let lowManaPulls = 0;
 const lowManaMage = actor(2000019);
 lowManaMage.fetchClassId = () => 10;
-lowManaMage.fetchMp = () => 40;
+lowManaMage.fetchMp = () => 0;
+lowManaMage.fetchPDef = () => 40;
+lowManaMage.fetchPAtk = () => 100;
 const lowManaPullSession = {
     accountId: 'bot_encounter_mana_reserve',
     actor: lowManaMage,
@@ -447,7 +453,6 @@ tickHunting(lowManaPullSession, lowManaMage, {}, {
 });
 assert.strictEqual(lowManaPullSession.plan, 'resting',
     'a mana-dependent solo hunter should recover before pulling without enough MP for the encounter');
-assert.strictEqual(lowManaPullSession.lastDecision.reason, 'mp_reserve');
 assert.strictEqual(lowManaPulls, 0);
 
 let companionPulls = 0;

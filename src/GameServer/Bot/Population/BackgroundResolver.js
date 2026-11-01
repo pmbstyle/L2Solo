@@ -1720,24 +1720,21 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
     // together keeps its mobs standing together (BotPullEstimate.pullView).
     let areaShare = 0, petNear = null;
     if (!pending && !picked.aggressiveInterruption) {
-        const readiness = EncounterReadiness.evaluate({
-            hp: state.vitals?.hp ?? bot.maxHp, maxHp: bot.maxHp,
-            mp: state.vitals?.mp ?? bot.maxMp, maxMp: bot.maxMp, level: bot.level,
-            manaDependent: RestPolicy.sitsForMana(state)
-        }, picked);
         // A full-health route verdict cannot admit the next mob after a win
         // depleted the owner. Keep the same damage margin with the HP/MP that
         // remain now; pending fights and aggressive interruptions still run.
         // The pet is the one beside the bot now (TargetMatchup.servitorProfile:
         // alive with the HP it has left, or one to raise), not the round's.
-        const remaining = TargetMatchup.ownersAtVitals(matchupProfiles, state.vitals?.hp ?? Infinity, state.vitals?.mp ?? Infinity);
         petNear = TargetMatchup.servitorProfile(bot, state, timestamp);
-        if (petNear) remaining.push(petNear);
         // One mob carries no pull: channels count area skills by target.pull.
         const usual = BotPullEstimate.pullView({ ...picked, pull: 1 }, Number(picked.usualPull) || 1);
-        const survival = TargetMatchup.soloSurvival(remaining, usual);
-        areaShare = Number(survival.areaShare) || 0;
-        if (!readiness.ready || !survival.eligible) {
+        const readiness = EncounterReadiness.evaluate(EncounterReadiness.atVitals(matchupProfiles,
+            state.vitals?.hp ?? Infinity, state.vitals?.mp ?? Infinity, petNear), usual);
+        areaShare = Number(readiness.survival.areaShare) || 0;
+        // Below its rest line a bot sits whatever the mob, as it would after a fight.
+        const now = { hp: state.vitals?.hp ?? bot.maxHp, maxHp: bot.maxHp, mp: state.vitals?.mp ?? bot.maxMp, maxMp: bot.maxMp };
+        const combat = state.stats?.coldCombat;
+        if (!readiness.ready || needsRest(state, now, { pet: coldPetView(bot, combat?.summon, now, combat?.cooldowns, timestamp) })) {
             return { avoided: true, needsRest: true, reason: 'solo_recovery_needed' };
         }
     }

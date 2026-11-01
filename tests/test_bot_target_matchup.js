@@ -157,6 +157,11 @@ try {
     assert.strictEqual(Hunting.findPreferredMonster(tiredSession, tiredHunter, 2500,
         { ...recovery, readyOnly: true }), null, 'easier recovery must wait for HP before the next fight');
     assert.strictEqual(tiredSession.lastEncounterReadiness.ready, false);
+    // A pet beside its owner keeps its own HP: the owner's vitals do not cut it.
+    const pet = { ...hunter, summon: undefined, fetchHp: () => 5000, fetchMaxHp: () => 5000 };
+    const remaining = Hunting.readinessProfiles({ ...hunter, fetchHp: () => 1, summon: pet }).remaining;
+    assert.strictEqual(remaining.at(-1).servitor, true, 'a summoner is judged with its pet');
+    assert.strictEqual(remaining.at(-1).maxHp, 5000);
     World.fetchNpcsInRadius = () => [easier, hidden];
     assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), hidden,
         'an ordinary eligible target wins before easier-ground recovery');

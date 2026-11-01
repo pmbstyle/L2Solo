@@ -290,7 +290,6 @@ function findPreferredMonster(session, bot, radius, options = {}) {
             return {
                 npc,
                 evaluation: BotTargetScorer.score(scoreContext),
-                readiness: options.readyOnly ? encounterReadiness(bot, npc) : null,
                 scoreContext,
                 claimed
             };
@@ -318,9 +317,7 @@ function findPreferredMonster(session, bot, radius, options = {}) {
     }
     // Prefer a fight we can finish, but retain a visible unready candidate
     // so the caller can recover instead of wandering while exhausted.
-    const ordered = options.readyOnly
-        ? [...ranked.filter(candidate => candidate.readiness.ready), ...ranked.filter(candidate => !candidate.readiness.ready)]
-        : ranked;
+    const ordered = options.readyOnly ? readyRanked(bot, ranked) : ranked;
     const scan = HuntingVisibility.select(session, 'solo', bot, ordered, candidate => candidate.npc);
     session.huntTargetScanPending = scan.pending;
     session.huntingTargetScan = { at: Date.now(), loc: botLocation(bot), radius,
@@ -359,11 +356,27 @@ function liveCurrentNpcTarget(session, bot, radius = session.huntingSearchRadius
     return targetDistance(bot, target) <= radius ? target : null;
 }
 
-function encounterReadiness(bot, target) {
-    return EncounterReadiness.evaluate({
-        hp: bot.fetchHp(), maxHp: bot.fetchMaxHp(), mp: bot.fetchMp(), maxMp: bot.fetchMaxMp(),
-        level: bot.fetchLevel(), manaDependent: RestPolicy.sitsForMana(bot)
-    }, { hp: target?.fetchHp?.(), maxHp: target?.fetchMaxHp?.(), level: target?.fetchLevel?.() });
+// What the bot has now, once per scan; a pet keeps its own HP (actorProfiles).
+function readinessProfiles(bot) {
+    const profiles = TargetMatchup.actorProfiles([bot]);
+    return { stats: TargetMatchup.profileStats(profiles), remaining: EncounterReadiness.atVitals(profiles, bot.fetchHp(), bot.fetchMp(),
+        profiles.find(profile => profile.servitor === true)) };
+}
+// A mob the bot would take as it stands: a wounded one asks what is left of it.
+function encounterReadiness(bot, target, own = readinessProfiles(bot)) {
+    const view = TargetMatchup.targetView(target, own.stats);
+    return EncounterReadiness.evaluate(own.remaining, { ...view, maxHp: target.fetchHp?.() ?? view.maxHp });
+}
+// The scan's fights: a visibility check reads the first few, so readiness stops there.
+function readyRanked(bot, ranked) {
+    const own = readinessProfiles(bot), checks = HuntingVisibility.CHECKS_PER_SCAN;
+    const ready = [], refused = [];
+    for (const candidate of ranked) {
+        if (ready.length >= checks) break;
+        candidate.readiness = encounterReadiness(bot, candidate.npc, own);
+        (candidate.readiness.ready ? ready : refused).push(candidate);
+    }
+    return [...ready, ...refused];
 }
 
 function rememberEncounterReadiness(session, target, readiness) {
@@ -635,6 +648,7 @@ module.exports = {
     sellTripDue,
     pauseSelling,
     findPreferredMonster,
+    readinessProfiles,
     limitTargetCandidates,
     claimedTargetIds,
     tick(session, bot, Generics, BotAI) {
