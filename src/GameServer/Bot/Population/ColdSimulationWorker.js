@@ -1535,7 +1535,7 @@ function startKernel(config = {}) {
                 ...(economyDecision ? { economyDecision } : {})
             };
         },
-        soloWindow: {
+        soloWindow: config.coldSoloWindow !== true && config.coldSoloWindowShadow !== true ? null : {
             on: config.coldSoloWindow === true,
             // One round of a window: the step's projection without its soft
             // point and what follows it (ColdSoloWindow, the window's end has them).

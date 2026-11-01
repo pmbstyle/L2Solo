@@ -70,10 +70,12 @@ const DEFAULTS = {
     // Diagnostics: the cold worker writes one heap snapshot per server boot as its heap nears
     // coldWorkerHeapMb (into tmp/heap/ of the server root). Off by default; restart to apply.
     coldWorkerHeapSnapshot: false,
-    // T120: a hunting solo step runs on to its next event (ColdSoloWindow). Off:
-    // the shadow, today's steps counting what a window would skip (design rules,
-    // Recompute); the line goes with the shadow's outcome.
+    // T120: a hunting solo step runs on to its next event (ColdSoloWindow).
+    // The shadow counts what a window would skip on today's steps (design rules,
+    // Recompute) at one more projection per hunting step. Read 11-01: 2.4 steps/s
+    // skipped of 25, 47% of them with another plan; both stay off.
     coldSoloWindow: false,
+    coldSoloWindowShadow: false,
     // Protect the player-facing loop immediately and keep it protected for a
     // short window after disconnect/relog. SimPlayer/BotSession instances do
     // not contribute to this signal.
@@ -278,6 +280,7 @@ const ENV_KEYS = {
     coldWorkerYoungMb: 'BOT_POPULATION_COLD_WORKER_YOUNG_MB',
     coldWorkerHeapSnapshot: 'BOT_POPULATION_COLD_WORKER_HEAP_SNAPSHOT',
     coldSoloWindow: 'BOT_POPULATION_COLD_SOLO_WINDOW',
+    coldSoloWindowShadow: 'BOT_POPULATION_COLD_SOLO_WINDOW_SHADOW',
     playerProtectionGraceMs: 'BOT_POPULATION_PLAYER_PROTECTION_GRACE_MS',
     schedulerLagThrottleMs: 'BOT_POPULATION_SCHEDULER_LAG_THROTTLE_MS',
     schedulerLagAbortMs: 'BOT_POPULATION_SCHEDULER_LAG_ABORT_MS',
