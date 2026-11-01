@@ -21,6 +21,7 @@ assert.equal(moved({ supply: 9 }), 'supply', 'out of shots, potions or the scrol
 assert.equal(moved({ bag: 9 }), 'bag', 'a full bag');
 assert.equal(moved({}, { leaf, why: 'check:offer' }), 'goal_failed', 'the held goal failed');
 assert.equal(moved({}, { leaf, nativeHolds: false }), 'native', 'the native plan failed or woke');
+assert.equal(moved({}, { leaf, why: 'goal' }), 'goal_moved', 'main moved the goal');
 assert.equal(Moment.momentOf({ ...hunter, activity: 'shopping' }, facts, facts), 'town', 'in town it reads everything');
 assert.equal(Moment.momentOf({ ...hunter, partyId: 'bgp_1' }, facts, facts), 'party');
 assert.equal(Moment.momentOf(hunter, null, facts), 'first');

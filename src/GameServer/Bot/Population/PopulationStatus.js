@@ -151,14 +151,15 @@ const PopulationStatus = {
             + ` windowEnd=${ended} skip=${w.skipped}/${w.rebuilt}/${w.moved}`;
     },
 
-    // moments=<builds>/<no moment>/<acted>/<goal>: economy builds since the worker started and those no player's
-    // moment asked for (T174, PlayerMoment), of them the ones that sent the bot elsewhere and the ones that only
-    // renamed its goal; noMoment: per first refusal <why>:<count>:<acted>:<goal>; at: the same per moment.
+    // moments=<builds>/<no moment>/<elsewhere>/<goal>/<posted>: economy builds since the worker started and those
+    // no player's moment asked for (T174, PlayerMoment), of them the ones that sent the bot elsewhere, renamed its
+    // goal, or posted an act from where it stands; noMoment: per first refusal <why>:<count>:<elsewhere>:<goal>:
+    // <posted>; at: the same per moment.
     momentsText(m) {
         if (!m) return '';
         const rows = Object.entries(m.why).sort((a, b) => b[1][0] - a[1][0]).map(([why, row]) => `${why}:${row.join(':')}`);
         const at = Object.entries(m.moments).sort((a, b) => b[1][0] - a[1][0]).map(([name, row]) => `${name}:${row.join(':')}`);
-        return ` moments=${m.builds}/${m.skipped}/${m.acted}/${m.goal} noMoment=${rows.join(',') || '-'} at=${at.join(',') || '-'}`;
+        return ` moments=${m.builds}/${m.skipped}/${m.elsewhere}/${m.goal}/${m.posted} noMoment=${rows.join(',') || '-'} at=${at.join(',') || '-'}`;
     },
 
     // incomeHold=<kept>/<none>,<unrouted>,<renewed>,<moved>,<event>,<goal>;party<kept>/<missed>: held earning
