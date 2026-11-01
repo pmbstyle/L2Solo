@@ -308,7 +308,8 @@ function moneyQueue(wishes, wallet, survivalReserve = 0, floor = 0) {
         // An unsupported wish keeps its place and interest, never the money.
         if (!fundable(wish)) {
             wish.funded = false;
-            if (wish.progressionPriority > 0 && !awaitingKit) awaitingKit = wish;
+            // Kit before stock: stock nobody can supply is not what the money waits for (T178).
+            if (wish.progressionPriority > 0 && (!awaitingKit || awaitingKit.key.startsWith('stock:') && !wish.key.startsWith('stock:'))) awaitingKit = wish;
             continue;
         }
         // The first gap holds the marginal price of money. Smaller desires
@@ -873,9 +874,13 @@ class WishNetwork {
             for (const wish of wishes) if (wish.progressionFunding && !readyGear) wish.progressionPriority = gearPriority;
             wishes = wishes.filter(wish => wish.progressionPriority >= gearPriority);
         }
-        const activePriority = Math.max(0, ...wishes.map(wish => wish.progressionPriority));
-        if (activePriority) wishes = wishes.filter(wish => wish.progressionPriority === activePriority);
-        const focusWishes = wishes.filter(wish => wish.progressionPriority === activePriority);
+        // Stock nobody can supply keeps its queue place and its bid. No visit closes it,
+        // so it takes the bot off nothing while something else can be done (user 11-01, T178).
+        const unsupplied = wish => wish.key.startsWith('stock:') && !fundable(wish);
+        const doable = wishes.filter(wish => !unsupplied(wish));
+        const activePriority = Math.max(0, ...(doable.length ? doable : wishes).map(wish => wish.progressionPriority));
+        if (activePriority) wishes = wishes.filter(wish => wish.progressionPriority === activePriority || unsupplied(wish));
+        const focusWishes = (doable.length ? doable : wishes).filter(wish => wish.progressionPriority === activePriority);
         const loyalty = Math.min(1, nonnegative(persona.traits?.commitment ?? 0.5));
         const score = wish => wish.valueHours / Math.max(1 / 3600, wish.effort);
         // Only an event (reconsider: the caller's raised sections or due soft changes)
@@ -898,7 +903,7 @@ class WishNetwork {
             dormant.length = Math.min(dormant.length, 4);
         }
         const weighted = wishes.map(wish => ({ ...wish,
-            valueHours: wish.valueHours * (wish === focused ? 1 : 1 - loyalty) }));
+            valueHours: wish.valueHours * (wish === focused || unsupplied(wish) ? 1 : 1 - loyalty) }));
         const { queue, moneyPrice, available, gap } = moneyQueue(weighted, wallet, survivalReserve, hourAdena > 0 ? 1 / hourAdena : 0);
         const fundingReason = wish => wish.funded ? 'funded' : wish === gap ? 'first_funding_gap'
             : wish.supported === false ? 'unsupported_path' : wish.resolved === false ? 'unresolved_path'
@@ -982,7 +987,8 @@ class WishNetwork {
         // A step that spends no money stays available toward an unsupported
         // wish (farming its material); only money waits for a step now.
         const unfundable = new Set(queue.filter(wish => !fundable(wish)).map(wish => wish.key));
-        const candidates = [...leaves.values()].filter(leaf => wishes.find(wish => wish.key === leaf.rootKey)?.progressionPriority === activePriority)
+        const candidates = [...leaves.values()].filter(leaf => wishes.find(wish => wish.key === leaf.rootKey)?.progressionPriority === activePriority
+                || leaf.funding && leaf.rootKey === unfunded?.key)
             .filter(leaf => leaf.funding || !queue.some(wish => wish.key === leaf.rootKey)
             || funded.has(leaf.rootKey) || leaf.price === 0 && (leaf.rootKey === unfunded?.key || unfundable.has(leaf.rootKey)));
         // A cheap intermediate material cannot claim the whole upgrade's
