@@ -196,6 +196,7 @@ const routeRequests = new Map();
 const publicWorkshopIndex = new (require('../Economy/PublicWorkshopIndex').PublicWorkshopIndex)();
 const publicWorkshopKeys = new Map(), workshopRevisions = new Map(), workshopDigests = new Map(), workshopScopeDigests = new Map();
 const digestToken = value => value ? `${value.xor}:${value.sum}:${value.count}` : '0:0:0';
+function refusalWorkshopDigest(scope) { return digestToken(workshopScopeDigests.get(scope)); }
 // A known empty workshop in the one shape the context key and the decision
 // packing read; a missing field would key a different planning input.
 const noWorkshop = () => ({ known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0 });
@@ -445,8 +446,8 @@ const occupationPlanner = new ColdOccupationPlanner({
                             updatedAt: Number(input.state.updatedAt || 0), scopes: [], offers: error.priceWitness, npcAllowed,
                             fundingDominance: true };
                         refusals.remember(slot.input.sourceState, input.board, request, error.purchase,
-                            () => refusals.witnessCurrent(input.board, error.priceWitness, error.purchase)
-                                && invoke('GameServer/Bot/Economy/ProductionPolicy').allowsNpcShot(itemId) === npcAllowed,
+                            refusals.sourceCheck(input.board, error.priceEvidence, {
+                                meetingRevisionOf: MarketCounters.meetingRevisionOf, workshopDigest: refusalWorkshopDigest }),
                             { fundingDominance: true });
                         throw error;
                     }
@@ -474,12 +475,8 @@ const occupationPlanner = new ColdOccupationPlanner({
                     error.priceEvidence = exact ? { ...base, items, source } : broad;
                     if (exact) error.priceFallback = broad;
                     refusals.remember(input.sourceState || input.state, input.board, request, error.purchase,
-                        () => (exact ? refusals.fingerprint(exactTokens()) === source
-                            : tokens.every(([scope, board, market, workshop]) => boardIndex.groupFingerprint(scope) === board
-                                && MarketCounters.meetingRevisionOf(scope) === market
-                                && digestToken(workshopScopeDigests.get(scope)) === workshop))
-                            && invoke('GameServer/Bot/Economy/ProductionPolicy').allowsNpcShot(itemId) === npcAllowed
-                            && refusals.admissionFingerprint(boardIndex, admissionScope) === admission);
+                        refusals.sourceCheck(input.board, error.priceEvidence, {
+                            meetingRevisionOf: MarketCounters.meetingRevisionOf, workshopDigest: refusalWorkshopDigest }));
                 }
                 throw error;
             }

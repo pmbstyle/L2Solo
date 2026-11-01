@@ -70,6 +70,7 @@ const tests = [
     'tests/test_bot_market_price_alignment.js',
     'tests/test_wtb_purchase_alternatives.js',
     'tests/test_wtb_meeting_worker.js',
+    'tests/test_meeting_price_sources.js',
     'tests/test_trade_meeting_plan_return.js',
     'tests/test_clan_hall_auctions.js',
     'tests/test_clan_hall_progression_reserve.js',
