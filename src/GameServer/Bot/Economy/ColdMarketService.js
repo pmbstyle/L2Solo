@@ -541,9 +541,14 @@ async function buyHere(state, plan, options = {}) {
                 extras: [{ selfId: plan.selfId, amount: rest, offer, funding: purchaseTerms(current, plan, spent),
                     goal: options.goal, errand: options.errand, autoEquip: options.autoEquip === true }] });
             if (baskets[0]) {
-                const receipt = await require('./NpcPurchaseBasket').purchase(current, baskets[0]);
-                const line = receipt.lines.find(row => Number(row.selfId) === Number(plan.selfId));
-                bought = receipt.ok ? { ...receipt, units: Number(line?.amount || 0),
+                const Basket = require('./NpcPurchaseBasket'); // lazy: optional, a purchase only
+                const receipt = await Basket.purchase(current, baskets[0]).catch(error => {
+                    if (!Basket.finalRefusal(error)) throw error;
+                    utils.infoWarn('BotMarket', 'goal purchase refused for %s: %s', current.characterId, error.message);
+                    return null;
+                });
+                const line = receipt?.lines.find(row => Number(row.selfId) === Number(plan.selfId));
+                bought = receipt?.ok ? { ...receipt, units: Number(line?.amount || 0),
                     spent: Number(line?.amount || 0) * npcPrice } : null;
             }
         } else bought = await buyNpcStack(current, plan.selfId, rest, npcPrice, purchaseTerms(current, plan, spent),

@@ -50,7 +50,10 @@ function collect(state, options = {}) {
     };
     const baskets = new Map();
     let order = 0;
+    const PartyBreak = invoke('GameServer/Bot/Population/PartyMarketBreak'); // lazy: optional, war trips only
     const add = (selfId, amount, offer, terms = {}, attribution = {}) => {
+        // A war supply trip buys its supply alone: the writer refuses the whole basket otherwise.
+        if (PartyBreak.warSupplyPurchaseBlocker(state, selfId)) return;
         if (order >= LIMIT || !offer || offer.town !== town || !(amount > 0)
             || options.seller && sellerKey(offer) !== sellerKey(options.seller)) return;
         const price = Number(offer.price);
@@ -130,8 +133,15 @@ function collect(state, options = {}) {
 async function purchase(state, options = {}) {
     let current = state;
     const receipts = [];
+    const Basket = require('./NpcPurchaseBasket'); // lazy: optional, a purchase only
     for (const basket of collect(state, options)) {
-        const bought = await require('./NpcPurchaseBasket').purchase(current, basket);
+        let bought;
+        try { bought = await Basket.purchase(current, basket); }
+        catch (error) {
+            if (!Basket.finalRefusal(error)) throw error;
+            utils.infoWarn('BotMarket', 'restock refused for %s: %s', state.characterId, error.message);
+            break;
+        }
         receipts.push(bought);
         current = bought.state || current;
         if (bought.hot) break;

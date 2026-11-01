@@ -24,6 +24,13 @@ function refusalReason(error) {
         default: return 'native_error';
     }
 }
+// A refusal the next pass cannot change: the plan and the writer disagree, or the
+// seller moved. It ends this purchase, never the visit; the rest clears by itself.
+const PASSING = new Set(['economy_owner_changed', 'economy_intent_changed', 'economy_sequence_changed',
+    'economy_operation_in_flight', 'economy_admission_pressure', 'native_error']);
+function finalRefusal(error) {
+    return !PASSING.has(refusalReason(error));
+}
 function sellerFacts(seller) {
     return Object.freeze({ sourceId: Number(seller?.sourceId), town: seller?.town });
 }
@@ -155,4 +162,4 @@ async function purchaseForActor(actor, options = {}) {
     return result;
 }
 
-module.exports = { MAX_LINES, sellerFor, acceptResult, purchase, purchaseForActor };
+module.exports = { MAX_LINES, sellerFor, acceptResult, purchase, purchaseForActor, finalRefusal };

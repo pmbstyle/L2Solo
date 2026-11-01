@@ -225,8 +225,20 @@ async function run() {
     state = { ...state, level: 30 };
     const packet = Economy.forState(state).statsPacket;
     state = await Life.upsertState({ ...state, stats: { ...state.stats, ...packet } }, 'basket_fixture');
-    assert((await invoke('GameServer/Bot/Economy/NpcRestockPlan').purchase(state, { town: 'Dion', shots: false, potions: false })) != null);
-    assert.equal(await amount(9543, 736), 10, 'a planned side purchase commits, it never stalls the visit');
+    const Restock = invoke('GameServer/Bot/Economy/NpcRestockPlan');
+    assert.equal((await Restock.purchase(state, { town: 'Dion', shots: false, potions: false })).receipts.length, 1);
+    assert.equal(await amount(9543, 736), 10, 'a planned side purchase commits through the writer');
+    // A refusal the next pass cannot change ends the purchase, never the visit.
+    const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
+    state = await seed(9544, 1000000, { classId: 1, money: null, townVisit: { town: 'Dion', startedAt: Date.now() },
+        marketReturn: { loc: { locX: 12000, locY: 90000, locZ: -3000 } } });
+    const left = await Market.finishTownErrands({ ...state, level: 30 });
+    assert.equal(left.stats.townVisit.completed, true, 'a refused basket ends the visit, the bot leaves town');
+    // A war supply trip plans its supply alone; any other line would refuse the whole basket.
+    state = await seed(9545, 1000000, { classId: 1, partyMarketReturn: { warOperationId: 'war', supplyItemId: 2509, until: Date.now() + 900000 },
+        marketReturn: { loc: { locX: 12000, locY: 90000, locZ: -3000 } } });
+    assert.equal(Restock.collect({ ...state, level: 30 }, { town: 'Dion', shots: false }).flatMap(row => row.lines)
+        .filter(line => line.selfId !== 2509).length, 0, 'no scroll or potion joins a war supply basket');
     state = await seed(9529, 10000000);
     const fullStack = await Basket.purchase(state, { seller, lines: [
         { selfId: 2509, amount: 16481, unitPrice: 18 }, { selfId: 1785, amount: 10001, unitPrice: 300 }] });
