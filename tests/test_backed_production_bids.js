@@ -28,6 +28,8 @@ const originalBoard = Afk.boardIndex;
     for (let i = 0; i < 40; i++) records.push(record(911000 + i, 3, 1,
         [{ selfId: 1464, count: 1, price: 1000000000 + i }]));
     const buyer = record(912000, 3, 0, [{ selfId: 1464, count: 962, price: 500 }]);
+    // Isolate direct backed discovery from the separate multi-buyer path.
+    for (const row of records) row.ownerId = buyer.ownerId;
     const supplier = record(912001, 1, 0, [
         { selfId: 1805, count: 1, price: 30000 }, { selfId: 2495, count: 1, price: 121162 },
         { selfId: 1785, count: 30, price: 1 }]);
@@ -89,6 +91,7 @@ const originalBoard = Afk.boardIndex;
         [{ selfId: equipmentRecipe.productId, count: 1, price: 1000000000 + i }]));
     const equipmentBuyer = record(915000, 3, 0,
         [{ selfId: equipmentRecipe.productId, count: 1, price: 900000000 }]);
+    for (const row of equipmentRows) row.ownerId = equipmentBuyer.ownerId;
     equipmentRows.push(equipmentBuyer, record(915001, 1, 0,
         equipmentRecipe.materials.map(row => ({ selfId: row.selfId, count: row.amount, price: 1 }))));
     for (const row of equipmentRows) board.put(row);

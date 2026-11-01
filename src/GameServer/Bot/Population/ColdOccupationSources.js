@@ -11,7 +11,7 @@ const Production = require('../Economy/ProductionPolicy');
 const { personalOfferAllowed } = require('./PartyAdmission');
 const Price = require('../Economy/PriceDecision');
 const OfferQuery = require('../Economy/OfferQuery');
-const ShotSalePolicy = require('../Economy/ShotSalePolicy');
+const ShotSalePolicy = require('../Economy/ProductionSalePolicy');
 const { QUOTE_DEPTH } = Price;
 const EMPTY = Object.freeze([]);
 let fixedBuy, npcOfferView, mpRates, townByName, townOrdinal, gearByRank;

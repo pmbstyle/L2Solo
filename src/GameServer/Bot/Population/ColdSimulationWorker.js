@@ -541,7 +541,8 @@ const occupationPlanner = new ColdOccupationPlanner({
             if (value && cursor.selectedValueHours > 0) {
                 const offer = value.exit?.offer;
                 const exit = offer ? [Number(offer.recordId), Number(offer.lineId), Number(value.exit.price), Number(offer.revision)]
-                    : value.exit?.staticId > 0 ? [0, Number(value.exit.staticId), Number(value.exit.price), 0] : null;
+                    : value.exit?.staticId > 0 ? [0, Number(value.exit.staticId), Number(value.exit.price), 0]
+                        : invoke('GameServer/Bot/Economy/ShotCraftPolicy').selectionFor(value)?.exit || null;
                 selected = { wealth: { recipeId: Number(value.recipe.recipeId), batches: Number(value.batches || 1),
                     ...(value.learning ? { scroll: (() => {
                         const purchase = value.basket.purchases.find(row => Number(row.selfId) === Number(value.recipe.recipeItemId));

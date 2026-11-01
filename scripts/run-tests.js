@@ -1081,6 +1081,8 @@ const tests = [
     'tests/test_shot_crystal_residual.js',
     'tests/test_production_bid_quotes.js',
     'tests/test_backed_production_bids.js',
+    'tests/test_buy_interest_index.js',
+    'tests/test_aggregate_production_demand.js',
     'tests/test_trade_intent.js',
     'tests/test_selected_purchase_meeting.js',
     'tests/test_meeting_survival_transport.js',

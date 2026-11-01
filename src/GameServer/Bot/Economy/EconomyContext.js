@@ -676,7 +676,10 @@ function watchedBoard(board, watch) {
     return Object.assign(Object.create(board), {
         first: (selfId, ...rest) => { watch(selfId); return board.first(selfId, ...rest); },
         list: (selfId, ...rest) => { watch(selfId); return board.list(selfId, ...rest); },
-        ...(board.heads ? { heads: (selfId, ...rest) => { watch(selfId); return board.heads(selfId, ...rest); } } : {})
+        ...(board.heads ? { heads: (selfId, ...rest) => { watch(selfId); return board.heads(selfId, ...rest); } } : {}),
+        ...(board.demandSnapshot ? { demandSnapshot: (selfId, ...rest) => {
+            watch(selfId); return board.demandSnapshot(selfId, ...rest);
+        }, demandTowns: selfId => { watch(selfId); return board.demandTowns(selfId); } } : {})
     });
 }
 // The decision's watch list, read by the soft point (DecisionSections

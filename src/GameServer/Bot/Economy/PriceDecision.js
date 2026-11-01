@@ -241,6 +241,24 @@ function marketFor(selfId, { board = null, ownerId = 0, town = null, units = 1, 
     };
 }
 
+function demandAtPrice(belief, market, trader, price) {
+    const sources = market.demand?.alternatives || [market.demand || market];
+    const result = [];
+    for (const source of sources) {
+        const row = source.atPrice ? source.atPrice(price) : source;
+        if (!row || !Number.isFinite(row.applicableUnits) || row.applicableUnits < 0) continue;
+        const conditional = row.conditionalUnits;
+        const willingUnits = conditional === undefined
+            ? willingUnitsAt(belief, trader, { price, applicableUnits: row.applicableUnits,
+                landed: price + market.ownTrip, npcLanded: market.npcLanded })
+            : row.backedUnits + willingUnitsAt(belief, trader, { price, applicableUnits: conditional,
+                landed: price + market.ownTrip, npcLanded: market.npcLanded });
+        if (Number.isFinite(willingUnits) && willingUnits >= 0) result.push({ source,
+            applicableUnits: row.applicableUnits, willingUnits, delayHours: Number(source.delayHours || 0) });
+    }
+    return result;
+}
+
 // The near-best roll: options within 2% of the best value share one roll by
 // how far above that line they are.
 function nearBest(candidates, rollKey) {
@@ -281,16 +299,23 @@ function chooseAsk(belief, market, trader, rollKey, current = 0) {
         for (const rival of market.rivals) if (rival.landed < landed) ahead += rival.units;
         // Finite rival stock occurs only in A. The infinite NPC alternative
         // keeps the existing perception assessment, never a second rival share.
-        const outcome = saleOutcome({ units: market.units, applicableUnits: market.applicableUnits,
-            willingUnits: willingUnitsAt(belief, trader, { price, applicableUnits: market.applicableUnits,
-                landed, npcLanded: market.npcLanded }), cheaperUnits: ahead, price,
-            residualUnitValue: market.buyback, delayHours: market.delayHours, discountRate: trader.wait });
-        if (!outcome.known) return null;
-        const discount = Math.exp(-trader.wait * market.delayHours);
-        return { price, value: market.units > 0 ? (outcome.sold * saleUtility(price, reference, trader.caution) * discount
-            + outcome.residual * npcValue) / market.units : 0,
-        money: market.units > 0 ? (outcome.receipts + outcome.residualValue) / market.units : 0,
-        sold: outcome.sold, residual: outcome.residual, known: true };
+        let best = null;
+        for (const demand of demandAtPrice(belief, market, trader, price)) {
+            const outcome = saleOutcome({ units: market.units, applicableUnits: demand.applicableUnits,
+                willingUnits: demand.willingUnits, cheaperUnits: ahead, price,
+                residualUnitValue: market.buyback, delayHours: demand.delayHours, discountRate: trader.wait });
+            if (!outcome.known) continue;
+            const discount = Math.exp(-trader.wait * demand.delayHours);
+            const candidate = { price, value: market.units > 0 ? (outcome.sold * saleUtility(price, reference, trader.caution) * discount
+                + outcome.residual * npcValue) / market.units : 0,
+                money: market.units > 0 ? (outcome.receipts + outcome.residualValue) / market.units : 0,
+                sold: outcome.sold, residual: outcome.residual, known: true,
+                ...(market.demand?.atPrice || market.demand?.alternatives ? { demandOrigin: demand.source.origin,
+                    demandRevision: demand.source.authority.revision, applicableUnits: demand.applicableUnits,
+                    willingUnits: demand.willingUnits, delayHours: demand.delayHours } : {}) };
+            if (!best || candidate.value > best.value) best = candidate;
+        }
+        return best;
     };
     const candidates = [];
     for (const z of GRID) {
@@ -423,5 +448,5 @@ function chooseSlots(candidates, slots, seed) {
     return chosen;
 }
 
-module.exports = { GRID, NEAR_BEST, PERCEPTION, waitRate, traderOf, phi, saleUtility, purchaseCost, marketFor, saleOutcome, willingUnitsAt, prospectiveExit, QUOTE_DEPTH, productionBids, cheaperAsks, exitCompetition, bidSale,
+module.exports = { GRID, NEAR_BEST, PERCEPTION, waitRate, traderOf, phi, saleUtility, purchaseCost, marketFor, demandAtPrice, saleOutcome, willingUnitsAt, prospectiveExit, QUOTE_DEPTH, productionBids, cheaperAsks, exitCompetition, bidSale,
     chooseAsk, chooseBid, chooseByValue, chooseByWeight, chooseSlots };

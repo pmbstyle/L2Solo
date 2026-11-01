@@ -38,7 +38,8 @@ function selectionFor(route) {
     const exit = offer ? [Number(offer.recordId), Number(offer.lineId), Number(route.exit.price),
         Number(offer.revision ?? offer.expectedRevision)] : route.exit?.type === 'use'
         ? [-1, Number(route.exit.ownUseUnits), Number(route.exit.ownUseUnitHours), ownReserve]
-        : route.exit?.type === 'listing' ? [-2, townCode(route.exit.town), Number(route.exit.price),
+        : route.exit?.type === 'listing' ? [route.exit.forecast.origin === 'public_buy_interest' ? -3 : -2,
+            townCode(route.exit.town), Number(route.exit.price),
             Number(route.exit.forecast.authority.revision)] : null;
     const source = route.gear;
     let gear = null;
@@ -553,7 +554,8 @@ function unpackKnown(ids = []) {
 // the remaining 69 B; exact public revisions let native rechecks recover the
 // unchanged price/record from the same bounded indexed view.
 function packStep(step) {
-    const sparseExit = row => !row ? [] : row[0] === -2 ? [-Number(row[1]), Number(row[2]), Number(row[3])]
+    const sparseExit = row => !row ? [] : row[0] === -2 || row[0] === -3
+        ? [-Number(row[1]), Number(row[2]), (row[0] === -3 ? -1 : 1) * Number(row[3])]
         : row[0] > 0 || row[0] == null ? [Number(row[1]), Number(row[3])]
         : row[0] === -1 ? [0, Number(row[1]), Number(row[2]), Number(row[3])]
             : [-Number(row[1]), Number(row[2])];
@@ -584,7 +586,8 @@ function unpackStep(step) {
             const exit = row[2], gear = row[3];
             if (exit.length === 2) result.exit = exit[0] > 0 ? [null, Number(exit[0]), null, Number(exit[1])]
                 : [0, -Number(exit[0]), Number(exit[1]), 0];
-            else if (exit.length === 3 && exit[0] < 0) result.exit = [-2, -Number(exit[0]), Number(exit[1]), Number(exit[2])];
+            else if (exit.length === 3 && exit[0] < 0) result.exit = [exit[2] < 0 ? -3 : -2,
+                -Number(exit[0]), Number(exit[1]), Math.abs(Number(exit[2]))];
             else if (exit.length === 4 && exit[0] === 0) result.exit = [-1, Number(exit[1]), Number(exit[2]), Number(exit[3])];
             if (Array.isArray(gear) && gear.length >= 2) result.gear = gear[1] === 0
                 ? [Number(gear[0]), 0, null, Number(gear[2]), null, Number(gear[3])]

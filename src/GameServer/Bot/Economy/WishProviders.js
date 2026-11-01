@@ -749,8 +749,8 @@ function buildProjection(state, ctx, deps) {
         const asks = ctx.board.list(id, SELL);
         const publicOffers = ctx.board.list(id, 3).slice(0, 5);
         const fixedOffers = material ? (deps.fixedProductionOffersFor?.(id) || []).slice(0, 5) : [];
-        const listingOffers = shot ? need('./WealthCraftPolicy').drain(need('./ShotSalePolicy').exits(state, recipe, {
-            board: ctx.board, timestamp, trip: ctx.trip, npcOffersFor: ctx.npcOffersFor, existing: oldUnits })) : [];
+        const listingOffers = need('./WealthCraftPolicy').drain(need('./ProductionSalePolicy').exits(state, recipe, {
+            board: ctx.board, timestamp, trip: ctx.trip, npcOffersFor: ctx.npcOffersFor, existing: oldUnits }));
         for (const source of [...publicOffers, ...fixedOffers, ...listingOffers]) {
             const preparedBatches = productionBatches(recipe);
             // Compare a real bounded material lot to a shot lot. A single

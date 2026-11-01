@@ -76,9 +76,10 @@ function recheck(state, selected) {
             exit = { type: 'afk', conditional: line.custodyPolicy === 1, price: Number(line.price), count: Number(line.count), town: line.town, offer: Fields.offerFields(line) };
         } else if (recordId === -1 && Number.isSafeInteger(lineId) && lineId > 0 && price > 0 && revision >= 0) {
             exit = { type: 'use', price: 0, count: 0, ownUseUnits: lineId, ownUseUnitHours: price, residualUnitValue: 0 };
-        } else if (recordId === -2 && Number.isSafeInteger(lineId) && price > 0 && revision > 0) {
+        } else if ((recordId === -2 || recordId === -3) && Number.isSafeInteger(lineId) && price > 0 && revision > 0) {
             exit = require('./ShotSalePolicy').exit(state, Number(recipe.productId), { board,
                 town: Policy.townForCode(lineId), trip, current: price, lot: Number(recipe.productCount),
+                origin: recordId === -3 ? 'public_buy_interest' : 'public_item_trades',
                 productionUnits: batches * Number(recipe.productCount),
                 reserve: Math.max(0, Number(selected.ownReserve || 0) - Number(state.inventory?.[recipe.productId]?.amount || 0)
                     - Number(state.acceptedIncoming?.[recipe.productId] || 0)),
@@ -89,7 +90,10 @@ function recheck(state, selected) {
             // A forecast has no accepted price authority. Reprice it against
             // current evidence and revalue the selected physical quantity;
             // public bids above still require their exact line and revision.
-            if (!exit || exit.forecast.authority.revision < revision) return null;
+            // Public interest is a forecast, not an accepted order. Other
+            // buyers may change while the worker runs: the fresh curve and
+            // fixed-quantity valuation below decide whether this lot pays.
+            if (!exit || recordId === -2 && exit.forecast.authority.revision < revision) return null;
         }
     } else {
         const rows = Price.productionBids(board, recipe.productId);
