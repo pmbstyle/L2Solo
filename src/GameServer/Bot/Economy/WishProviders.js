@@ -916,7 +916,7 @@ function buildProjection(state, ctx, deps) {
     blocks?.lap('benefits');
     const admission = { candidates: 0, evaluations: 0, maxScratch: 0, rounds: 0, pending: [], admitted: [] };
     const solverOptions = { hourAdena: ctx.hourAdena, riskWeight: ctx.riskWeight, stockFor: ctx.stockFor || null,
-        wallet: ctx.wallet ?? positive(state.adena), survivalReserve: ctx.survivalReserve, unitEfforts: new Map() };
+        wallet: ctx.wallet ?? positive(state.adena), survivalReserve: ctx.survivalReserve, scratch: Network.buildScratch(true) };
     // A rare piece's status value is part of its gear root from the start,
     // so admission scores the value the network later reads.
     const rare = candidates.find(row => row.item && (ctx.board?.list(row.item.selfId, SELL)?.length || 0) <= 1);

@@ -379,8 +379,15 @@ function sameResult(before, after) {
 // One solver per node set. build() and the provider's candidate admission
 // use the same path facts, quantity reader and root valuation (MVP-6); its
 // scratch maps die with the caller's build.
+// ARCH-NOTE: PERF what the solvers of one build share over its descriptors, at
+// one price of time; it dies with the build. `subtrees` keeps the plans of
+// item subtrees that met no stock, so a shared recipe branch is solved once
+// and not per candidate.
+function buildScratch(subtrees = false) {
+    return { unitEfforts: new Map(), trips: new Map(), tripRows: [], subtrees: subtrees ? new Map() : null };
+}
 function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, wallet = 0, survivalReserve = 0,
-    diagnostic = false, detail = false, trace = null, captureReadyCraft = false, unitEfforts = new Map() }) {
+    diagnostic = false, detail = false, trace = null, captureReadyCraft = false, scratch = buildScratch() }) {
     const byKey = new Map();
     for (const node of nodes) {
         if (typeof node?.key !== 'string' || !node.key || byKey.has(node.key)
@@ -403,7 +410,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
     // One route per member and town for the basket. Scratch descriptions
     // die with this build; plans retain bounded entry indices only. Group
     // members visiting the same town do not share each other's paid trips.
-    const trips = new Map(), tripRows = [];
+    const { unitEfforts, trips, tripRows, subtrees } = scratch;
     const tripKey = path => `${path.tripScope || ''}|${path.town}`;
     for (const node of nodes) for (const path of node.paths || []) {
         if (travels(path) && !trips.has(tripKey(path))) {
@@ -432,8 +439,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
             actualCashFees: nonnegative(path.actualCashFees), riskHours: nonnegative(path.riskHours) }]);
         return value.known ? -value.valueHours : Infinity;
     };
-    // ARCH-NOTE: PERF one unit effort per path; a caller solving many roots
-    // over the same descriptors at one price of time shares the map.
+    // ARCH-NOTE: PERF one unit effort per path.
     const unitEffort = path => {
         let effort = unitEfforts.get(path);
         if (effort === undefined) { effort = priceOf(path, 0); unitEfforts.set(path, effort); }
@@ -462,6 +468,34 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
         repeatables.set(key, result);
         return result;
     };
+    // Every stock read since the solver began and how many found stock: a
+    // subtree whose reads found none owes nothing to the claims or the root.
+    const stockReads = [];
+    let heldReads = 0;
+    const readStock = (id, rootKey) => {
+        const stock = stockFor(id, rootKey) || {};
+        if (subtrees) {
+            stockReads.push(id);
+            if (nonnegative(stock.owned) > 0 || nonnegative(stock.incoming) > 0) heldReads++;
+        }
+        return stock;
+    };
+    // A kept subtree serves only a root that also holds none of its items
+    // (stock can differ per root); its reads repeat for the root's own
+    // quantity inputs.
+    const keptSubtree = (node, depth, requested, planning, completionFirst, rootKey) => {
+        const kept = subtrees.get(node)?.find(row => row.depth === depth && row.requested === requested
+            && row.planning === planning && row.completionFirst === completionFirst);
+        if (!kept) return null;
+        const held = heldReads;
+        for (const id of kept.items) {
+            // A branch this root's arena lacks or is inside of keeps its own refusal.
+            if (!byKey.has(`item:${id}`) || visiting.has(`item:${id}`)) return null;
+            readStock(id, rootKey);
+            if (heldReads > held) return null;
+        }
+        return kept;
+    };
     const solve = (key, depth = 0, requested = 1, allocation = null, planning = false, completionFirst = false, stockFacts = null) => {
         if (visiting.has(key)) throw new TypeError('cyclic_wish_network');
         const node = byKey.get(key);
@@ -475,11 +509,17 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
             if (diagnostic) Diagnostics.count('network', 'node_hit', 'same_build');
             return memo.get(memoKey);
         }
-        visiting.add(key);
         const itemId = key.startsWith('item:') ? Number(key.slice(5)) : 0;
+        const keeping = !!(subtrees && allocation && itemId) && !captureReadyCraft;
+        if (keeping) {
+            const kept = keptSubtree(node, depth, requested, planning, completionFirst, allocation.rootKey);
+            if (kept) return kept.plan;
+        }
+        const readsAt = stockReads.length, heldAt = heldReads;
+        visiting.add(key);
         let amount = requested, ownValue = 0, incomingHeld = 0, outputStock = null;
         if (allocation && itemId) {
-            const stock = stockFor(itemId, allocation.rootKey) || {};
+            const stock = readStock(itemId, allocation.rootKey);
             const prior = allocation.used.get(itemId) || 0;
             const remaining = remainingQuantity({ required: requested,
                 freePhysical: Math.max(0, nonnegative(stock.owned) - prior),
@@ -685,6 +725,10 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
             wishKey: requirement.key, recipeId: best.recipeId, requested: requirement.amount,
             item: requirement.key.startsWith('item:') ? Number(requirement.key.slice(5)) : undefined });
         visiting.delete(key);
+        if (keeping && heldReads === heldAt && stockReads.length - readsAt > 1) {
+            const row = { depth, requested, planning, completionFirst, plan: best, items: [...new Set(stockReads.slice(readsAt))] };
+            if (subtrees.has(node)) subtrees.get(node).push(row); else subtrees.set(node, [row]);
+        }
         if (allocation) allocation.used = alternativeUse;
         else { memo.set(memoKey, best); if (!planning) plans.set(key, best); }
         return best;
@@ -1065,4 +1109,4 @@ class WishNetwork {
     }
 }
 
-module.exports = { WishNetwork, createSolver, createQuantityInputs, quantityInputsHold, eachQuantityRow, packQuantityInputs, unpackQuantityInputs, admitRoots, moneyQueue, remainingQuantity, craftMaterialLoss, fundable, cashCharge, remember, NEEDS, MAX_NODES, MAX_ROOTS, MAX_DEPTH, ACTOR_LIMIT, QUANTITY_INPUT_LIMIT, QUANTITY_INPUT_BYTES };
+module.exports = { WishNetwork, buildScratch, createSolver, createQuantityInputs, quantityInputsHold, eachQuantityRow, packQuantityInputs, unpackQuantityInputs, admitRoots, moneyQueue, remainingQuantity, craftMaterialLoss, fundable, cashCharge, remember, NEEDS, MAX_NODES, MAX_ROOTS, MAX_DEPTH, ACTOR_LIMIT, QUANTITY_INPUT_LIMIT, QUANTITY_INPUT_BYTES };
