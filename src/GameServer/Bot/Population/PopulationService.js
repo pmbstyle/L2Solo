@@ -3668,6 +3668,7 @@ const PopulationService = {
             const reason = ColdSimulationCoordinator.overdueReason(bot.characterId);
             // What the bot carries that makes the worker hold it on purpose.
             const held = LifeState.cachedState(bot.characterId);
+            Database.traceRevisions(bot.characterId);
             ColdSimulationCoordinator.traceBot(bot.characterId, { at, activity: bot.activity, nextResolveAt: held?.timing?.nextResolveAt,
                 lastResolvedAt: held?.timing?.lastResolvedAt, updatedAt: held?.updatedAt, revision: held?.simulation?.revision });
             const carried = ['pvpEncounter', 'pveEncounter', 'tradeMeeting', 'travel', 'constPartySession']

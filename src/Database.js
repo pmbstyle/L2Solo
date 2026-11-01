@@ -7,6 +7,20 @@ const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 const { AsyncLocalStorage } = require('node:async_hooks');
 const mutationAdmission = new AsyncLocalStorage();
+// Bots the overdue line named: who moves their revision, with the caller (a
+// worker step begun before the move is refused). Four bots, 60 lines each.
+const revisionTrace = new Map();
+function traceRevisionWrite(sql, params) {
+    if (!revisionTrace.size || !sql.includes('simulationRevision')) return;
+    const id = params.find(value => revisionTrace.has(Number(value)));
+    if (id === undefined) return;
+    const left = revisionTrace.get(Number(id));
+    if (left <= 0) return;
+    revisionTrace.set(Number(id), left - 1);
+    console.info('Database :: overdue revision %s', JSON.stringify({ id: Number(id), at: Date.now(),
+        sql: sql.replace(/\s+/g, ' ').slice(0, 70), by: new Error().stack.split('\n').slice(3, 9)
+            .map(line => line.trim().replace(/^at /, '').replace(/\(?\/.*\/src\//, '(')) }));
+}
 function checkMutationAdmission() {
     const guard = mutationAdmission.getStore();
     if (guard && guard() !== undefined) throw new TypeError('invalid_mutation_admission');
@@ -314,6 +328,7 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
 
 function run(sql, params = [], operation, readOverride = null, onTiming = null) {
     const read = readOverride === null ? isReadStatement(sql) : !!readOverride;
+    if (!read) traceRevisionWrite(sql, params);
     return enqueue(() => {
         if (!connection) throw new Error(`SQLite is not initialized (${operation || operationName(sql)})`);
         // Read integers as BigInts before existing Number normalization.
@@ -1952,6 +1967,7 @@ function all(sql, params = []) {
 
 function write(sql, params = []) {
     checkMutationAdmission();
+    traceRevisionWrite(sql, params);
     const result = Statements.prepare(connection, sql).run(...params);
     return { affectedRows: Number(result.changes || 0), insertId: Number(result.lastInsertRowid || 0) };
 }
@@ -6549,6 +6565,10 @@ const Database = {
             return true;
         });
         return closePromise;
+    },
+
+    traceRevisions(characterId) {
+        if (revisionTrace.size < 4 && !revisionTrace.has(characterId)) revisionTrace.set(characterId, 60);
     },
 
     registerCharacterWriteFlush(flush) {
