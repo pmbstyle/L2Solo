@@ -196,6 +196,27 @@ const routeRequests = new Map();
 const publicWorkshopIndex = new (require('../Economy/PublicWorkshopIndex').PublicWorkshopIndex)();
 const publicWorkshopKeys = new Map(), workshopRevisions = new Map(), workshopDigests = new Map(), workshopScopeDigests = new Map();
 const digestToken = value => value ? `${value.xor}:${value.sum}:${value.count}` : '0:0:0';
+// A remembered refusal outlives its meeting preparation. Its check is built out
+// here, over plain values: a closure inside the preparation shares that scope and
+// would pin the step's whole economy context for the life of the entry.
+function witnessRefusalHolds(board, offers, purchase, itemId, npcAllowed) {
+    const refusals = invoke('GameServer/Bot/Economy/MeetingPriceRefusals');
+    return () => refusals.witnessCurrent(board, offers, purchase)
+        && invoke('GameServer/Bot/Economy/ProductionPolicy').allowsNpcShot(itemId) === npcAllowed;
+}
+function exactRefusalTokens(items, scopes) {
+    return [items.map(id => [id, boardIndex.itemFingerprint(id)]),
+        scopes.map(scope => [scope, MarketCounters.meetingRevisionOf(scope), digestToken(workshopScopeDigests.get(scope))])];
+}
+function sourceRefusalHolds({ exact, items, scopes, source, tokens, itemId, npcAllowed, admissionScope, admission }) {
+    const refusals = invoke('GameServer/Bot/Economy/MeetingPriceRefusals');
+    return () => (exact ? refusals.fingerprint(exactRefusalTokens(items, scopes)) === source
+        : tokens.every(([scope, board, market, workshop]) => boardIndex.groupFingerprint(scope) === board
+            && MarketCounters.meetingRevisionOf(scope) === market
+            && digestToken(workshopScopeDigests.get(scope)) === workshop))
+        && invoke('GameServer/Bot/Economy/ProductionPolicy').allowsNpcShot(itemId) === npcAllowed
+        && refusals.admissionFingerprint(boardIndex, admissionScope) === admission;
+}
 // A known empty workshop in the one shape the context key and the decision
 // packing read; a missing field would key a different planning input.
 const noWorkshop = () => ({ known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0 });
@@ -445,8 +466,7 @@ const occupationPlanner = new ColdOccupationPlanner({
                             updatedAt: Number(input.state.updatedAt || 0), scopes: [], offers: error.priceWitness, npcAllowed,
                             fundingDominance: true };
                         refusals.remember(slot.input.sourceState, input.board, request, error.purchase,
-                            () => refusals.witnessCurrent(input.board, error.priceWitness, error.purchase)
-                                && invoke('GameServer/Bot/Economy/ProductionPolicy').allowsNpcShot(itemId) === npcAllowed,
+                            witnessRefusalHolds(input.board, error.priceWitness, error.purchase, itemId, npcAllowed),
                             { fundingDominance: true });
                         throw error;
                     }
@@ -466,20 +486,13 @@ const occupationPlanner = new ColdOccupationPlanner({
                         updatedAt: Number(input.state.updatedAt || 0), scopes, npcAllowed, admissionScope, admission };
                     const broad = { ...base, source: refusals.fingerprint(tokens) };
                     const items = [...input.exactReads.keys()];
-                    const exactTokens = () => [items.map(id => [id, boardIndex.itemFingerprint(id)]),
-                        scopes.map(scope => [scope, MarketCounters.meetingRevisionOf(scope), digestToken(workshopScopeDigests.get(scope))])];
                     const exact = items.length > 0 && items.length <= 60
                         && [...input.exactReads].every(([id, token]) => boardIndex.itemFingerprint(id) === token);
-                    const source = exact ? refusals.fingerprint(exactTokens()) : broad.source;
+                    const source = exact ? refusals.fingerprint(exactRefusalTokens(items, scopes)) : broad.source;
                     error.priceEvidence = exact ? { ...base, items, source } : broad;
                     if (exact) error.priceFallback = broad;
                     refusals.remember(input.sourceState || input.state, input.board, request, error.purchase,
-                        () => (exact ? refusals.fingerprint(exactTokens()) === source
-                            : tokens.every(([scope, board, market, workshop]) => boardIndex.groupFingerprint(scope) === board
-                                && MarketCounters.meetingRevisionOf(scope) === market
-                                && digestToken(workshopScopeDigests.get(scope)) === workshop))
-                            && invoke('GameServer/Bot/Economy/ProductionPolicy').allowsNpcShot(itemId) === npcAllowed
-                            && refusals.admissionFingerprint(boardIndex, admissionScope) === admission);
+                        sourceRefusalHolds({ exact, items, scopes, source, tokens, itemId, npcAllowed, admissionScope, admission }));
                 }
                 throw error;
             }
@@ -627,7 +640,7 @@ const occupationPlanner = new ColdOccupationPlanner({
         }
         // The action result is the existing compact native plan. Its derived
         // network is needed while preparing it, never by the completed cache.
-        if (input.mode === 'action' || input.mode === 'showcase') input.economy = null;
+        if (input.mode === 'action' || input.mode === 'showcase' || input.mode === 'craft_market') input.economy = null;
         const owner = kernel?.states.get(id);
         if (shuttingDown || owner?.state !== input.sourceState) return;
         if (meta.stale) {
@@ -1860,6 +1873,9 @@ function startKernel(config = {}) {
                     ? await occupationFor(routedState, timestamp, { economy }, 'action') : null;
             if (!preparedOccupation?.economyPlan && !(nullReuse && refreshed?.economyPlan))
                 preparedOccupation = await clanMarketPlan(routedState, economy, timestamp);
+            // The review stands aside for a plan of its own: it counts as done, or
+            // the bot would rebuild on every step while that plan waits.
+            else if (record && clanMarketReviewDue(routedState, timestamp)) record.clanMarketReviewAt = timestamp;
             if (!preparedOccupation?.economyPlan && craftBidReview && routedState.activity === 'hunting')
                 preparedOccupation = await occupationFor(routedState, timestamp, { economy }, 'craft_market');
             const seen = { ...routedState, stats: { ...routedState.stats, ...statsPacket } };
