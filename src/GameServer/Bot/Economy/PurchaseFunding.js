@@ -82,8 +82,11 @@ function clanCredit(state, own = null) {
     }
     return held;
 }
+// Lazy (a load cycle), once: spendable runs per offer and a require per call stats the path.
+let raidSupplyPolicy = null;
+const raidSupply = () => (raidSupplyPolicy ||= require('../Population/RaidSupplyPolicy'));
 function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
-    const raid = require('../Population/RaidSupplyPolicy').purchaseBudget(state, options);
+    const raid = raidSupply().purchaseBudget(state, options);
     if (raid !== null) return raid;
     // A purchase that carries a clanPart (native terms) is its clan errand's own.
     const own = options.ownClanErrand || (options.free === true && options.clanPart !== undefined && options.itemId
