@@ -207,6 +207,26 @@ async function run() {
     await assert.rejects(Basket.purchase(state, { seller, lines: [{ selfId: 736, amount: 1,
         unitPrice: 480, funding: { free: true, clanPart: 300, survivalCost: 150, valueHours: .8 } }] }), /funding_changed/);
     assert.equal(await amount(9528, 57), 1000, 'the shared and native value-hours/clan precedence matches exactly');
+    // A side purchase (T177) passes the native writer on the money no row holds.
+    state = await seed(9540, 1100, { money: [1000, .001, 100, 0, .1, 500, 999] });
+    assert((await Basket.purchase(state, { seller, lines: [{ selfId: 736, amount: 1, unitPrice: 480,
+        funding: { side: .002 } }] })).ok);
+    assert.equal(await amount(9540, 736), 1);
+    state = await seed(9541, 1000, { money: [1000, .001, 100, 0, .1, 500, 999] });
+    await assert.rejects(Basket.purchase(state, { seller, lines: [{ selfId: 736, amount: 1, unitPrice: 480,
+        funding: { side: .002 } }] }), /funding_changed/, 'the queue row keeps its money');
+    state = await seed(9542, 5000, { money: [1000, .001, 100, 0] });
+    await assert.rejects(Basket.purchase(state, { seller, lines: [{ selfId: 736, amount: 1, unitPrice: 480,
+        funding: { side: .0001 } }] }), /funding_changed/, 'a scroll worth less than its price is refused');
+    // The whole road: the plan a visit makes commits, the bot leaves with its scrolls.
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    Economy.configure({ spots: [], knowledgeEnabled: false });
+    state = await seed(9543, 1000000, { classId: 1, marketReturn: { loc: { locX: 12000, locY: 90000, locZ: -3000 } } });
+    state = { ...state, level: 30 };
+    const packet = Economy.forState(state).statsPacket;
+    state = await Life.upsertState({ ...state, stats: { ...state.stats, ...packet } }, 'basket_fixture');
+    assert((await invoke('GameServer/Bot/Economy/NpcRestockPlan').purchase(state, { town: 'Dion', shots: false, potions: false })) != null);
+    assert.equal(await amount(9543, 736), 10, 'a planned side purchase commits, it never stalls the visit');
     state = await seed(9529, 10000000);
     const fullStack = await Basket.purchase(state, { seller, lines: [
         { selfId: 2509, amount: 16481, unitPrice: 18 }, { selfId: 1785, amount: 10001, unitPrice: 300 }] });
