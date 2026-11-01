@@ -7,11 +7,31 @@ const Selection = invoke('GameServer/Bot/AI/GearPlanSelection');
 const spots = require('./helpers/wishSectionSpots')();
 const timestamp = 1800000000000;
 const state = { characterId: 92089, level: 30, inventory: {}, stats: { classId: 0, role: 'dps' } };
+// A retained source must be executable by the native solo fight as well as
+// level-eligible. This memo test starts with a working kit and shot stock.
+const Cold = invoke('GameServer/Bot/Population/ColdCombatProfile');
+for (const item of invoke('GameServer/Bot/AI/BotGear').planFor({ classId: 0, level: 30 }).items) {
+    const slots = [...(state.inventory[item.selfId]?.equippedSlots || []), item.slot];
+    state.inventory[item.selfId] = { ...item, amount: slots.length, equipped: true,
+        equippedCount: slots.length, equippedSlots: slots };
+}
+state.inventory[1463] = { selfId: 1463, amount: 1000 };
+// Leave an actual upgrade from the Sergeant's loot: D-grade Scale Gaiters.
+for (const [id, item] of Object.entries(state.inventory)) {
+    if (Number(item.slot) === 11) delete state.inventory[id];
+}
+state.inventory[32] = { selfId: 32, amount: 1, equipped: true, equippedCount: 1, slot: 11, equippedSlots: [11] };
+state.stats.coldCombat = Cold.legacySnapshot(state, Cold.skillRecordsFromTree(0, 30), timestamp);
+const combat = Cold.profileFor(state, timestamp);
+state.vitals = { hp: combat.maxHp, mp: combat.maxMp };
 let target, source;
+const owned = Object.values(state.inventory).filter(row => row.equipped)
+    .map(row => ({ ...Data.items.find(item => item.selfId === row.selfId), ...row }));
 for (const item of Data.items) {
-    if (!Planner.considerable(item, state) || !Planner.isSlotUpgrade(item, [], Planner.roleFor(state), state.stats.classId)) continue;
+    if (!Planner.considerable(item, state) || !Planner.isSlotUpgrade(item, owned, Planner.roleFor(state), state.stats.classId)) continue;
     const route = Planner.sourceForItem(item.selfId, spots, state)
-        .find(row => Planner.isPlanSourceViableForState(state, { next: row }));
+        .find(row => Planner.isPlanSourceViableForState(state,
+            { status: 'active', strategy: 'direct_drop', next: row }, { spots, timestamp }));
     if (route) { target = item; source = route; break; }
 }
 assert(source, 'the catalogue supplies a real upgrade and eligible route');

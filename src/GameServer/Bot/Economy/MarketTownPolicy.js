@@ -77,7 +77,7 @@ function targetTownForItems(state, items = [], options = {}) {
 
 // The prepared bid and its native publication use the same meeting town.
 // Retain the oldest matching buy ad, unless karma closes that town.
-function buyAdTown(state, items, owned = []) {
+function buyAdTown(state, items, owned = [], options = {}) {
     let standing = null;
     for (const line of owned) {
         if (!['buy_ad', 'shop'].includes(line.kind) || line.storeType !== 3 || !(line.count > 0)
@@ -85,7 +85,7 @@ function buyAdTown(state, items, owned = []) {
         if (!standing || line.recordId < standing.recordId) standing = line;
     }
     return standing && Karma.townFor(state.stats?.karma, standing.town) === standing.town
-        ? standing.town : targetTownForItems(state, items);
+        ? standing.town : targetTownForItems(state, items, options);
 }
 
 // One bounded town choice over the actual offered stock. Category counters

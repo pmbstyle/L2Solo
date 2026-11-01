@@ -416,20 +416,34 @@ function isSchedulableKind(kind) {
     return kind !== 'inactive' && kind !== 'event_driven' && kind !== 'party_member';
 }
 
-function occupationWanted(state, plan) {
+// Whether a step's economy plan has anything for main to carry out.
+function planActs(plan) {
+    return !!plan && !!(plan.take || plan.travel || plan.shot || plan.sell?.length || plan.withdraw?.length || plan.buyAds?.length);
+}
+
+// The decision an occupation round is held for: the leaf the bot chose.
+function occupationDecision(state, plan) {
+    return `${plan.activityPick.activity}:${plan.statsPacket?.activityLeaf ?? state.stats?.activityLeaf}`;
+}
+
+function occupationWanted(state, plan, record) {
     return state?.activity === 'hunting' && !state.stats?.pvpEncounter
-        && ['shopping', 'selling', 'crafting', 'improving'].includes(plan?.activityPick?.activity);
+        && ['shopping', 'selling', 'crafting', 'improving'].includes(plan?.activityPick?.activity)
+        && planActs(plan.economyPlan) && record?.heldOccupation !== occupationDecision(state, plan);
 }
 
 // A bot whose next act waits for its fight ends that fight and starts no other:
-// a trip (the plan's lastFight, PveEncounter.holdsTrip) or an occupation.
-function lastFight(state, plan) {
-    return plan?.lastFight === true || occupationWanted(state, plan);
+// a trip (the plan's lastFight, PveEncounter.holdsTrip) or an actionable occupation.
+function lastFight(state, plan, record) {
+    return plan?.lastFight === true || occupationWanted(state, plan, record);
 }
 
-function occupationRound(state, plan, timestamp) {
-    if (!occupationWanted(state, plan) || PveEncounter.pending(state, timestamp)) return null;
+function occupationRound(state, plan, timestamp, record) {
+    if (!occupationWanted(state, plan, record) || PveEncounter.pending(state, timestamp)) return null;
     const activity = plan.activityPick.activity;
+    // A chosen occupation holds one round per decision with a plan to post.
+    // Main may refuse it and keep the state; later rounds must keep hunting.
+    if (record) record.heldOccupation = occupationDecision(state, plan);
     // The chosen occupation owns this round. Fighting before posting its
     // execution can spend the kit and replace a purchase with recovery.
     return { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] },
@@ -1019,7 +1033,7 @@ class ColdSimulationKernel {
         const token = this.nextScheduleToken++;
         const current = this.states.get(id);
         const heapEntry = { characterId: id, version: Number(version),
-            dueAt: Number(dueAt || this.now()), scheduleToken: token,
+            dueAt: Math.ceil(Number(dueAt || this.now())), scheduleToken: token,
             playerWaiting: playerWaitingTransition(current?.state, kind, this),
             meetingTravel: meetingTravelTransition(current?.state, kind, this), lead };
         this.scheduleTokens.set(id, { token, version: Number(version), dueAt: heapEntry.dueAt, heapEntry });
@@ -1316,7 +1330,12 @@ class ColdSimulationKernel {
                     continue;
                 }
                 const attempt = this.beginCommand(id);
-                if (!attempt) continue;
+                if (!attempt) {
+                    // Consuming a wake must never leave a retained owner
+                    // without a schedule when its command cannot start.
+                    this.requeue(id, timestamp + 1000);
+                    continue;
+                }
                 commandsSelected += 1;
                 DiagnosticConfig.developerDiagnostics && (this.stats.commands += 1);
                 this.resolveChain = this.resolveChain.then(nextTurn).then(() => this.resolveCommand(id, attempt));
@@ -1475,11 +1494,11 @@ class ColdSimulationKernel {
             const spot = this.spotOf(current.state);
             const result = hallVisit
                 ? { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 30000 }
-                : occupationRound(resolveState, lifecyclePlan, timestamp) || await this.resolveSolo({
+                : occupationRound(resolveState, lifecyclePlan, timestamp, this.states.get(id)) || await this.resolveSolo({
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 state: resolveState,
                 spot,
-                lastFight: lastFight(resolveState, lifecyclePlan),
+                lastFight: lastFight(resolveState, lifecyclePlan, this.states.get(id)),
                 spotHunters: this.spotHunters(spot),
                 pressure: pressureFor(current.state, this.pressureRow),
                 targetNpcId: Number(lifecyclePlan?.targetNpcId ||
@@ -1673,7 +1692,7 @@ class ColdSimulationKernel {
         // never earlier (resolveStep); its ids keep the real start
         // (run.startedAt), its rows' write stamp the real now (resolveStartedAt).
         const resolveStartedAt = this.now();
-        const startedAt = Math.max(resolveStartedAt, run.dueAt || 0);
+        const startedAt = Math.ceil(Math.max(resolveStartedAt, run.dueAt || 0));
         let raidStepId = null;
         let published = false, handled = false;
         try {
@@ -2109,7 +2128,7 @@ class ColdSimulationKernel {
             // Resolved as of its due, never earlier: a step started its lead
             // early lives the same round as one started on time. The row's
             // write stamp (updatedAt) stays the real start.
-            const timestamp = Math.max(startedAt, active.dueAt || 0);
+            const timestamp = Math.ceil(Math.max(startedAt, active.dueAt || 0));
             const elapsedMs = active.state.timing?.lastResolvedAt
                 ? Math.max(1000, timestamp - Number(active.state.timing.lastResolvedAt))
                 : 60000;
@@ -2119,11 +2138,11 @@ class ColdSimulationKernel {
             if (!this.resolverSourceCurrent(source)) return;
             const resolveState = lifecyclePlan?.plannedState || active.state;
             const spot = resolveState.activity === 'traveling' ? null : lifecyclePlan?.spot || this.spotOf(active.state);
-            const result = occupationRound(resolveState, lifecyclePlan, timestamp) || await this.resolveSolo({
+            const result = occupationRound(resolveState, lifecyclePlan, timestamp, this.states.get(Number(characterId))) || await this.resolveSolo({
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 state: resolveState,
                 spot,
-                lastFight: lastFight(resolveState, lifecyclePlan),
+                lastFight: lastFight(resolveState, lifecyclePlan, this.states.get(Number(characterId))),
                 spotHunters: this.spotHunters(spot),
                 pressure: pressureFor(active.state, this.pressureRow),
                 targetNpcId: Number(lifecyclePlan?.targetNpcId || lifecyclePlan?.acquisitionPlan?.next?.npcId ||

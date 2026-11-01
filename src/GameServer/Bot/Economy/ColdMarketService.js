@@ -352,7 +352,18 @@ function planPurchase(state, selfId, amount, options = {}) {
             Diagnostics.count('cap', 'quote_use', 'cut');
             Diagnostics.count('cap', 'quote_use', 'dropped', source.lines.length - 5);
         }
-        const quotes = (source.lines || []).slice(0, 5).map(entry => entry.line);
+        const quotes = (source.lines || []).slice(0, 5).map(entry => {
+            const quoted = entry.line;
+            if (!options.refreshSource) return quoted;
+            // Earlier inputs bought from this shop may have advanced its
+            // revision. Rebind only the same physical line at the same price
+            // and custody; never broaden the producer's accepted sources.
+            return board.records.get(Number(quoted.recordId))?.find(line =>
+                line.lineId === Number(quoted.lineId) && line.storeType === quoted.storeType
+                && line.ownerId === Number(quoted.ownerId) && line.selfId === Number(selfId)
+                && line.price === Number(quoted.price) && line.enchant === Number(quoted.enchant || 0)
+                && line.custodyPolicy === Number(quoted.custodyPolicy || 0));
+        }).filter(Boolean);
         let npcPrice = 0;
         if (npc && Number.isSafeInteger(Number(source.npc)) && Number(source.npc) > 0) {
             const lineCost = (source.lines || []).slice(0, 5).reduce((sum, entry) => sum + Number(entry.price) * Number(entry.count), 0);

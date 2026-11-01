@@ -81,6 +81,20 @@ function world() {
 
 (async () => {
     {
+        // Recovery and potion durations can contain sub-millisecond parts.
+        // A scheduled round waits until the next whole ms and publishes an
+        // integer checkpoint usable by the following trade command.
+        const { kernel, resolvedAt, tickAt, commit } = world();
+        const T = 100000;
+        kernel.upsert({ state: soloState(1, T + .125) });
+        assert.deepStrictEqual(await tickAt(T), [], 'fractional deadlines never execute early');
+        assert.deepStrictEqual(await tickAt(T + 1), [1]);
+        assert.strictEqual(resolvedAt.get(1), T + 1);
+        const row = commit(1, 1500, T + 1);
+        assert.strictEqual(row.timing.lastResolvedAt, T + 1);
+        assert.strictEqual(row.timing.nextResolveAt, T + 1 + ROUND_MS);
+    }
+    {
         // No ack measured yet: the lead is 0 and a bot starts at its due, as before.
         const { kernel, resolvedAt, tickAt, commit } = world();
         const T = 100000;

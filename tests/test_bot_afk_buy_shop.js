@@ -32,6 +32,24 @@ async function bot(id, town = 'Giran', loc = POINT) {
         stats: { generatedCold: true, money: [36000, 0, 0, 0] }, timing: {} }, 'buy_shop_fixture');
 }
 
+// A no-grade bid in the cold worker, which has no world: its town reads the
+// hunting spot through the plan's findSpot.
+async function noGradeBidTown() {
+    await bot(9113);
+    const hunter = await Life.upsertState({ ...Life.snapshot(9113), activity: 'hunting', spotId: 'held-spot',
+        stats: { ...Life.snapshot(9113).stats, money: [36000, 1 / 36000, 0, 0] } }, 'buy_shop_hunt');
+    const economy = { ...Decision.economyFor(hunter), network: { activity: null },
+        watchList: [{ key: 'power:48:9', itemId: 48, amount: 1, worth: 1000, kind: 'gear' }] };
+    const Spots = invoke('GameServer/Bot/AI/SpotService'), findById = Spots.findById;
+    let worldReads = 0;
+    Spots.findById = function (id) { worldReads++; return findById.call(this, id); };
+    try {
+        Plan.decide(hunter, economy, { board: Afk.boardIndex(), now: Date.now(), decisionPoint: 'no_grade_bid', npcOffersFor: () => [],
+            findSpot: () => ({ center: POINT }) });
+    } finally { Spots.findById = findById; }
+    assert.equal(worldReads, 0, 'the plan reads spots through findSpot, never the world index');
+}
+
 async function autonomousSale() {
     await bot(9110);
     await apply(9110, [[79, 1, 100], [1864, 5, 100000]]);
@@ -219,6 +237,7 @@ async function run() {
     assert.equal(captured.watch.length, 8, 'hot/cold decision cards retain the overflow needs');
     assert.equal(captured.activity.itemId, 79, 'the extended watch does not corrupt activity offsets');
     assert(captured.data.byteLength < Decision.MAX_BYTES);
+    await noGradeBidTown();
     await bot(9112);
     const Policy = invoke('GameServer/Bot/Economy/BuyAdPolicy');
     const Pricing = invoke('GameServer/Bot/Economy/MarketPricing');

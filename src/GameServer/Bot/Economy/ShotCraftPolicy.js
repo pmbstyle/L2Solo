@@ -38,7 +38,8 @@ function selectionFor(route) {
     const exit = offer ? [Number(offer.recordId), Number(offer.lineId), Number(route.exit.price),
         Number(offer.revision ?? offer.expectedRevision)] : route.exit?.type === 'use'
         ? [-1, Number(route.exit.ownUseUnits), Number(route.exit.ownUseUnitHours), ownReserve]
-        : route.exit?.type === 'listing' ? [-2, townCode(route.exit.town), Number(route.exit.price),
+        : route.exit?.type === 'listing' ? [route.exit.forecast.origin === 'public_buy_interest' ? -3 : -2,
+            townCode(route.exit.town), Number(route.exit.price),
             Number(route.exit.forecast.authority.revision)] : null;
     const source = route.gear;
     let gear = null;
@@ -324,6 +325,7 @@ function* recipeShotSearch(state, recipe, context, options = {}) {
     };
     const templateOf = id => options.itemTemplate?.(id) || invoke('GameServer/Item/ItemTemplateIndex')
         .find(invoke('GameServer/DataCache').items, Number(id));
+    const crystalResidualPrice = require('../../Items/NpcSellRules').npcBuyPrice(templateOf(crystalId)?.template?.price);
     const gearKind = template => /^(Weapon|Armor)\./.test(String(template?.template?.kind || ''));
     // Null edges and own lines never pass consider; only the rest are held,
     // as the row and its score once a batch has scored it.
@@ -383,7 +385,11 @@ function* recipeShotSearch(state, recipe, context, options = {}) {
         const take = (gear, scored) => {
             best = { town: gear.town, units: missing, whole: true,
                 cost: scored.cash, ownedValue: scored.ownedValue, landed: scored.cash + scored.travel, tripDetails: scored.details,
-                processingHours: scored.processingHours, extraMp: scored.mp, repeatable: false, residualValue: 0, gear,
+                // The whole gear purchase is cash up front. Crystals not used
+                // by this lot remain physical assets at the native NPC floor;
+                // public bids and hoped-for later shot sales add no value here.
+                processingHours: scored.processingHours, extraMp: scored.mp, repeatable: false,
+                residualValue: Math.max(0, Number(gear.crystals) - missing) * crystalResidualPrice, gear,
                 score: scored.score, ownedInputs: gear.ownedInputs };
         };
         const consider = function* (gear) {
@@ -466,7 +472,7 @@ function* recipeShotSearch(state, recipe, context, options = {}) {
             - Number(state.acceptedIncoming?.[recipe.productId] || 0)) : 0;
     const selected = yield* Basket.searchQuantity({ state: { ...state,
         adena: PurchaseFunding.spendable(state, 0, { upperBound: true }) }, recipe, exits, ownedFor: ownFor,
-        planFor: () => null, context: { ...context, existingOutput: ownedOutput + postedOutput
+        planFor: () => null, context: { ...context, requireOutputBenefit: true, existingOutput: ownedOutput + postedOutput
             + (options.ownIncludesIncoming ? 0 : Number(state.acceptedIncoming?.[recipe.productId] || 0)),
             outputReserve, reservedOutputUnitHours: Number(personal?.benefitHours || 0) / Math.max(1, Number(personal?.target || 0)), preparePurchase } });
     if (!selected) return null;
@@ -548,7 +554,8 @@ function unpackKnown(ids = []) {
 // the remaining 69 B; exact public revisions let native rechecks recover the
 // unchanged price/record from the same bounded indexed view.
 function packStep(step) {
-    const sparseExit = row => !row ? [] : row[0] === -2 ? [-Number(row[1]), Number(row[2]), Number(row[3])]
+    const sparseExit = row => !row ? [] : row[0] === -2 || row[0] === -3
+        ? [-Number(row[1]), Number(row[2]), (row[0] === -3 ? -1 : 1) * Number(row[3])]
         : row[0] > 0 || row[0] == null ? [Number(row[1]), Number(row[3])]
         : row[0] === -1 ? [0, Number(row[1]), Number(row[2]), Number(row[3])]
             : [-Number(row[1]), Number(row[2])];
@@ -579,7 +586,8 @@ function unpackStep(step) {
             const exit = row[2], gear = row[3];
             if (exit.length === 2) result.exit = exit[0] > 0 ? [null, Number(exit[0]), null, Number(exit[1])]
                 : [0, -Number(exit[0]), Number(exit[1]), 0];
-            else if (exit.length === 3 && exit[0] < 0) result.exit = [-2, -Number(exit[0]), Number(exit[1]), Number(exit[2])];
+            else if (exit.length === 3 && exit[0] < 0) result.exit = [exit[2] < 0 ? -3 : -2,
+                -Number(exit[0]), Number(exit[1]), Math.abs(Number(exit[2]))];
             else if (exit.length === 4 && exit[0] === 0) result.exit = [-1, Number(exit[1]), Number(exit[2]), Number(exit[3])];
             if (Array.isArray(gear) && gear.length >= 2) result.gear = gear[1] === 0
                 ? [Number(gear[0]), 0, null, Number(gear[2]), null, Number(gear[3])]
