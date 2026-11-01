@@ -15,7 +15,7 @@
 // only a delay), commitment the patience on the discount. Buying mirrors it.
 const TendencyRoll = require('../AI/TendencyRoll');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
-const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
+const { SELL, BUY, compareLines } = require('../../AfkTrade/BoardIndex');
 const DataCache = invoke('GameServer/DataCache');
 const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
@@ -124,6 +124,18 @@ function prospectiveExit(state, exit, { board, persona, timestamp = Date.now(), 
 
 // The asks of one board list a trader inspects.
 const QUOTE_DEPTH = 5;
+
+// The producer and its native recheck inspect the same bounded union: the
+// best public prices and the best escrow-backed prices. Both lists are
+// maintained by the board, so a long run of conditional ads costs no scan.
+function productionBids(board, selfId) {
+    const rows = board?.list(Number(selfId), BUY).slice(0, QUOTE_DEPTH) || [];
+    const backed = board?.backedBids?.(Number(selfId)) || [];
+    for (let at = 0; at < Math.min(QUOTE_DEPTH, backed.length); at++) {
+        if (!rows.includes(backed[at])) rows.push(backed[at]);
+    }
+    return rows.sort(compareLines);
+}
 
 // The cheaper competition a seller meets at a bid price: of the first
 // QUOTE_DEPTH asks of the whole board list (the seller's own included, as
@@ -411,5 +423,5 @@ function chooseSlots(candidates, slots, seed) {
     return chosen;
 }
 
-module.exports = { GRID, NEAR_BEST, PERCEPTION, waitRate, traderOf, phi, saleUtility, purchaseCost, marketFor, saleOutcome, willingUnitsAt, prospectiveExit, QUOTE_DEPTH, cheaperAsks, exitCompetition, bidSale,
+module.exports = { GRID, NEAR_BEST, PERCEPTION, waitRate, traderOf, phi, saleUtility, purchaseCost, marketFor, saleOutcome, willingUnitsAt, prospectiveExit, QUOTE_DEPTH, productionBids, cheaperAsks, exitCompetition, bidSale,
     chooseAsk, chooseBid, chooseByValue, chooseByWeight, chooseSlots };

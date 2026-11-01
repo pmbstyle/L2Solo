@@ -341,6 +341,63 @@ async function images(ids) {
             'the producer physically buys its own crystals before acquiring ore and crafting');
         assert.equal(cCrafter.stats.shotCraft.preparing, undefined, 'completed production clears its preparation facts');
         console.log('PASS physical C recipe purchase/learning, input allocation and C shot production');
+
+        // A whole native bootstrap through the hidden backed bid: no initial
+        // C scroll knowledge, crystals or shots; the exact shield must be
+        // bought, crystallized and paid for before either output can exist.
+        for (const record of Afk.ownerRecords(cConsumer.characterId))
+            await Afk.closeBotRecord(cConsumer.characterId, record.id);
+        for (const record of Afk.ownerRecords(supplier.characterId))
+            await Afk.closeBotRecord(supplier.characterId, record.id);
+        for (let i = 0; i < 6; i++) {
+            const noise = await seed([cash(1000000010)], { name: 'CInterest' });
+            await Life.upsertState({ ...noise, stats: { ...noise.stats,
+                money: [1000, .001, 0, 0, .002, 1000000010, 1464] } }, 'c_conditional_interest_funding');
+            await Afk.publishBot(noise.characterId, { kind: 'buy_ad', storeType: Afk.BUY, town: 'Giran',
+                lines: [{ selfId: 1464, count: 1, price: 1000000000 + i, stackable: true }] });
+        }
+        const paidBuyer = await seed([cash(1000000)], { name: 'CPaidBuyer' });
+        await Afk.publishBot(paidBuyer.characterId, { kind: 'shop', storeType: Afk.BUY, town: 'Giran',
+            lines: [{ selfId: 1464, count: 962, price: 500, stackable: true }] });
+        const gearSupplier = await seed([cash(1000000), { selfId: 1805, amount: 1 },
+            { selfId: 2495, amount: 1 }, { selfId: 1785, amount: 30 }], { name: 'CBootstrapInputs' });
+        await sell(gearSupplier, 1805, 30000);
+        await sell(Life.cachedState(gearSupplier.characterId), 2495, 121162);
+        await sell(Life.cachedState(gearSupplier.characterId), 1785, 1, 30);
+        let bootstrap = await seed([cash(1000000)], { classId: 57, level: 49, name: 'CBootstrap' });
+        await Database.setSkill({ selfId: 248, name: 'Crystallize', level: 2, passive: false }, bootstrap.characterId);
+        bootstrap = await Life.upsertState({ ...bootstrap, vitals: { ...bootstrap.vitals, mp: 140 },
+            stats: { ...bootstrap.stats, money: [1000, .001, 0, 0] } }, 'c_bootstrap_funded');
+        const investment = Shots.recipeTarget(bootstrap, Shots.marketSnapshot(now), [], 21);
+        assert(investment, 'a backed shop below six conditional bids supports the physical C investment');
+        assert.equal(investment.route.exit.offer.sourceId, paidBuyer.characterId);
+        bootstrap = await Shots.execute(bootstrap, { recipeTarget: 21,
+            recipeRoute: Policy.selectionFor(investment.route) }, now + 180000);
+        assert((await Database.fetchCharacterRecipes(bootstrap.characterId)).some(row => Number(row.recipeId) === 21));
+        bootstrap = await Life.upsertState({ ...bootstrap,
+            stats: { ...bootstrap.stats, money: [1000, .001, 0, 0] } }, 'c_bootstrap_recipe_paid');
+        const bootstrapLot = Shots.craftCandidate(bootstrap, cRecipe, Shots.marketSnapshot(now));
+        assert(bootstrapLot);
+        assert.equal(bootstrapLot.batches, 2);
+        assert.equal(bootstrapLot.gear.selfId, 2495);
+        bootstrap = await Shots.execute(bootstrap,
+            Policy.unpackStep(Policy.packStep({ craft: Policy.selectionFor(bootstrapLot) })), now + 240000);
+        const physical = await Database.fetchItems(bootstrap.characterId);
+        assert.equal(held(physical, 1805), 0);
+        assert.equal(held(physical, 2495), 0);
+        assert.equal(held(physical, 1785), 0);
+        assert.equal(held(physical, 1459), 51, 'the valued residual is really in the crafter bag');
+        assert.equal(held(physical, 1464), 952);
+        assert.equal(held(physical, 57), 1000000 - 30000 - 121162 - 30);
+        const paidOffer = Afk.offers(1464, Afk.BUY).find(row => row.sourceId === paidBuyer.characterId);
+        const bootstrapProduct = physical.find(row => row.selfId === 1464);
+        const bootstrapSale = await Afk.sellToShop(bootstrap.characterId, paidOffer.store, 1464, 952,
+            { objectId: bootstrapProduct.id, lineId: paidOffer.lineId, expectedPrice: paidOffer.price,
+                expectedRevision: paidOffer.expectedRevision, coldState: bootstrap });
+        assert(!bootstrapSale.pending);
+        assert.equal(held(await Database.fetchItems(paidBuyer.characterId), 1464), 952);
+        assert.equal(held(await Database.fetchItems(bootstrap.characterId), 57), 1000000 - 30000 - 121162 - 30 + 952 * 500);
+        console.log('PASS native backed C bootstrap: recipe, shield purchase, 51 residual crystals, 952 shots and paid sale');
     } finally {
         if (originals) {Afk.buyFromShop = originals.buy;Database.purchaseNpcInventoryItem = originals.npc;
             Database.purchaseNpcInventoryBasket = originals.basket;

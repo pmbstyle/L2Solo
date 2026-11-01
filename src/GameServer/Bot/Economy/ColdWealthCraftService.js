@@ -63,7 +63,7 @@ function recheck(state, step = {}, knownRecipes = Workshops.cachedRecipes(state.
         const [recordId, lineId, price, revision] = step.exit.map(Number);
         const compact = step.exit[0] == null && step.exit[2] == null;
         if (recordId > 0 || compact) {
-            const line = compact ? board.list(recipe.productId, AfkTrade.BUY).slice(0, 5)
+            const line = compact ? Price.productionBids(board, recipe.productId)
                 .find(row => Number(row.lineId) === lineId) : board.records.get(recordId)?.find(row => Number(row.lineId) === lineId);
             if (!line || line.storeType !== AfkTrade.BUY || line.revision !== revision || !compact && line.price !== price || line.count <= 0
                 || line.ownerId === Number(state.characterId) || line.selfId !== Number(recipe.productId)
@@ -77,8 +77,8 @@ function recheck(state, step = {}, knownRecipes = Workshops.cachedRecipes(state.
     } else {
         // Legacy compact packets are accepted only through a bounded current
         // indexed look. New packets preserve the selected quote identity.
-        const lines = board.list(recipe.productId, AfkTrade.BUY);
-        for (let at = 0; at < Math.min(5, lines.length); at++) {
+        const lines = Price.productionBids(board, recipe.productId);
+        for (let at = 0; at < lines.length; at++) {
             const line = lines[at];
             if (line.ownerId !== Number(state.characterId) && line.count > 0 && personalOfferAllowed(line, state)) {
                 exit = { type: 'afk', conditional: line.custodyPolicy === 1, price: line.price, count: line.count, town: line.town,
@@ -163,7 +163,10 @@ function chooseOpportunity(state, knownRecipes, context = Profit.contextFor(stat
     return require('./WealthCraftDecision').chooseOpportunity(state, knownRecipes, context, {
         board: AfkTrade.boardIndex(), timestamp: context.timestamp,
         planPurchase: (...args) => invoke('GameServer/Bot/Economy/ColdMarketService').planPurchase(...args),
-        offersFor: (id, side, characterId) => AfkTrade.offers(id, side, { characterId }), staticExits
+        offersFor: (id, side, characterId) => Number(side) === AfkTrade.BUY
+            ? Price.productionBids(AfkTrade.boardIndex(), id).filter(line => line.ownerId !== Number(characterId))
+                .map(line => require('../../AfkTrade/BoardIndex').offerFields(line))
+            : AfkTrade.offers(id, side, { characterId }), staticExits
     });
 }
 

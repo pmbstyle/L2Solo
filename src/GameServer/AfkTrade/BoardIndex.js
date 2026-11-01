@@ -148,6 +148,9 @@ class BoardIndex {
         this.groupFingerprints = new Map();
         // storeType -> itemId -> { all: [line], towns: Map(town -> [line]) }
         this.sides = new Map([[SELL, new Map()], [BUY, new Map()]]);
+        // References to backed BUY lines only: conditional ads cannot hide
+        // reserved shop demand behind an arbitrarily long higher-price head.
+        this.backedBuys = new Map();
         // side -> town (null for unplaced, '*' for all) -> sorted item ids.
         // Updated with line-list creation/removal; about 8 B per indexed id.
         this.townItems = new Map([[SELL, new Map()], [BUY, new Map()]]);
@@ -170,6 +173,7 @@ class BoardIndex {
         this.itemIdFingerprints.clear();
         this.groupFingerprints.clear();
         this.sides.forEach((items) => items.clear());
+        this.backedBuys.clear();
         this.townItems.forEach((towns) => towns.clear());
         this.records.clear();
         this.owners.clear();
@@ -343,6 +347,11 @@ class BoardIndex {
             }
             insert(item.all, line);
             insert(town, line);
+            if (storeType === BUY && line.custodyPolicy !== 1) {
+                let backed = this.backedBuys.get(line.selfId);
+                if (!backed) { backed = []; this.backedBuys.set(line.selfId, backed); }
+                insert(backed, line);
+            }
             indexed.push(line);
             this.fingerprintLine(line, 1);
             this.countGroup(line, 1);
@@ -366,6 +375,13 @@ class BoardIndex {
         owned?.delete(id);
         if (owned && !owned.size) this.owners.delete(indexed[0].ownerId);
         for (const line of indexed) {
+            if (line.storeType === BUY && line.custodyPolicy !== 1) {
+                const backed = this.backedBuys.get(line.selfId);
+                if (backed) {
+                    removeFrom(backed, line);
+                    if (!backed.length) this.backedBuys.delete(line.selfId);
+                }
+            }
             this.fingerprintLine(line, -1);
             this.countGroup(line, -1);
             this.countPricedOwner(line, -1);
@@ -488,6 +504,10 @@ class BoardIndex {
             return line;
         }
         return null;
+    }
+
+    backedBids(selfId) {
+        return this.backedBuys.get(Number(selfId)) || EMPTY;
     }
 
     // The best line of each town the caller accepts (BoardIndex order), skipping

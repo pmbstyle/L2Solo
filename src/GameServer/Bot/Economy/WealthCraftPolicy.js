@@ -149,6 +149,8 @@ function* evaluatePrepared({ state, recipe, batches = 1, basket, exit, ownedFor 
     const ownUse = Math.min(Math.max(0, full.residual - without.residual), Math.max(0, Number(exit.ownUseUnits || 0)));
     const ownBenefit = ownUse * Number(exit.ownUseUnitHours || 0)
         + reservedOutput * Number(context.reservedOutputUnitHours || 0);
+    // Valuable leftover inputs alone need not justify manufacturing output.
+    if (context.requireOutputBenefit === true && !(full.sold > without.sold || ownBenefit > 0)) return null;
     const base = { cashNow: basket.cashCost, ownInputOpportunityValue: basket.ownedValue,
         actualCashFees: basket.actualCashFees + exitFees,
         foregoneBenefitHours: mpHours + activeHours + basket.travelHours + exitHours

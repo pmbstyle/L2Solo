@@ -324,6 +324,7 @@ function* recipeShotSearch(state, recipe, context, options = {}) {
     };
     const templateOf = id => options.itemTemplate?.(id) || invoke('GameServer/Item/ItemTemplateIndex')
         .find(invoke('GameServer/DataCache').items, Number(id));
+    const crystalResidualPrice = require('../../Items/NpcSellRules').npcBuyPrice(templateOf(crystalId)?.template?.price);
     const gearKind = template => /^(Weapon|Armor)\./.test(String(template?.template?.kind || ''));
     // Null edges and own lines never pass consider; only the rest are held,
     // as the row and its score once a batch has scored it.
@@ -383,7 +384,11 @@ function* recipeShotSearch(state, recipe, context, options = {}) {
         const take = (gear, scored) => {
             best = { town: gear.town, units: missing, whole: true,
                 cost: scored.cash, ownedValue: scored.ownedValue, landed: scored.cash + scored.travel, tripDetails: scored.details,
-                processingHours: scored.processingHours, extraMp: scored.mp, repeatable: false, residualValue: 0, gear,
+                // The whole gear purchase is cash up front. Crystals not used
+                // by this lot remain physical assets at the native NPC floor;
+                // public bids and hoped-for later shot sales add no value here.
+                processingHours: scored.processingHours, extraMp: scored.mp, repeatable: false,
+                residualValue: Math.max(0, Number(gear.crystals) - missing) * crystalResidualPrice, gear,
                 score: scored.score, ownedInputs: gear.ownedInputs };
         };
         const consider = function* (gear) {
@@ -466,7 +471,7 @@ function* recipeShotSearch(state, recipe, context, options = {}) {
             - Number(state.acceptedIncoming?.[recipe.productId] || 0)) : 0;
     const selected = yield* Basket.searchQuantity({ state: { ...state,
         adena: PurchaseFunding.spendable(state, 0, { upperBound: true }) }, recipe, exits, ownedFor: ownFor,
-        planFor: () => null, context: { ...context, existingOutput: ownedOutput + postedOutput
+        planFor: () => null, context: { ...context, requireOutputBenefit: true, existingOutput: ownedOutput + postedOutput
             + (options.ownIncludesIncoming ? 0 : Number(state.acceptedIncoming?.[recipe.productId] || 0)),
             outputReserve, reservedOutputUnitHours: Number(personal?.benefitHours || 0) / Math.max(1, Number(personal?.target || 0)), preparePurchase } });
     if (!selected) return null;

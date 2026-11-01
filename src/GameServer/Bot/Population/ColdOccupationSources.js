@@ -226,9 +226,8 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
         ownStock.set(id, { count: amount, unitValue: value }); yield 'stock';
     }
     const prepareExits = function* (owner, recipe, template) {
-        const result = []; read(recipe.productId); let count = 0;
-        for (const line of board?.list(recipe.productId, 3) || []) {
-            if (count++ === QUOTE_DEPTH) break;
+        const result = []; read(recipe.productId);
+        for (const line of Price.productionBids(board, recipe.productId)) {
             if (Number(line.ownerId) === Number(owner.characterId) || Number(line.enchant || 0)
                 || !personalOfferAllowed(line, owner)) { yield 'quote'; continue; }
             const details = yield* ensureTrip(line.town);
