@@ -296,6 +296,28 @@ async function run() {
         assert(Economy.restoreEventProof(bytes, accepted), 'fixture: the generation is back');
         Economy.forget(native.characterId);
     }
+    // Away from town a bag count is no moment (T174): loot keeps a far bot's decision on the
+    // field, a bot in town or near a player reads it at once.
+    {
+        const T = Date.now(), native = { ...base, characterId: 990025,
+            inventory: { ...base.inventory, 1864: { selfId: 1864, amount: 50 } } };
+        const deps = () => ({ timestamp: T, memoryIdentity: 'fixture-memory', sourceReady: true });
+        const held = Economy.forState(native, deps());
+        const packet = held.statsPacket, published = { ...native, stats: { ...native.stats, ...packet } };
+        const proof = held.eventProof();
+        assert(proof?.liquidation.rows.some(row => row[0] === 1864), 'fixture: the loot is a sale input');
+        const looted = { ...published, inventory: { ...published.inventory, 1865: { selfId: 1865, amount: 5 } } };
+        const refusal = state => {
+            const why = [];
+            const holds = Economy.eventProofHolds(state, proof, deps(), { baseline: packet.wishSections,
+                leaf: held.network.activity, timestamp: T, why });
+            return holds ? '' : why[0];
+        };
+        assert.equal(refusal(looted), '', 'loot on the field keeps the decision');
+        assert.equal(refusal({ ...looted, phase: 'hot' }), 'liquidation', 'near a player it is read at once');
+        assert.equal(refusal({ ...looted, party: { partyId: 'bgp_x_17', role: 'dd', leaderId: 17 } }) === '', false, 'a party member reads it');
+        Economy.forget(native.characterId);
+    }
     // The sections mask decides which held piece a rebuild reuses: a source
     // raise keeps the foundation (hunt, kit) and rebuilds the source walk; a
     // build raise rebuilds both. A rebuild's money bounds are its own weighing's,

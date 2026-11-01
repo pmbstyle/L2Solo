@@ -362,8 +362,18 @@ function heldBuildVerdict(state, proof, deps = {}, options = {}) {
         return isReserved(id) && current.owned + current.incoming >= row[3] + row[4] ? { owned: row[3], incoming: row[4] } : current;
     };
     const moved = [];
+    // A solo hunt is not re-weighed for a bag count (T174): it joins the next
+    // build's sections and refuses nothing. Every other leaf is working on the
+    // bag: a trip buys what is missing, a crystallization ends on the count.
+    const away = state.phase === 'cold' && FIELD_ACTIVITIES.has(state.activity)
+        && options.leaf?.activity === 'hunting' && !Sections.partyIdOf(state);
+    const bagMoved = (name, names) => {
+        if (!away) return refuse(name, names);
+        out.touchedSections |= Sections.sectionMask(names);
+        return null;
+    };
     if (!quantityInputsHold(proof.quantities, { ...Providers.quantityReaders(state), stockFor }, stockAmount, ownRow, moved)
-        && (moved.length ? refuse('quantity', ['sources', 'money']) && !collect : refuse('unproved'))) return out;
+        && (moved.length ? bagMoved('quantity', ['sources', 'money']) && !collect : refuse('unproved'))) return out;
     const liquidation = Providers.liquidationInputs(state, proof.liquidation?.basis);
     // The leaf's own item and a craft's reserved inputs are not sales: their
     // count moves with the leaf's progress, held above by the quantity check.
@@ -385,7 +395,7 @@ function heldBuildVerdict(state, proof, deps = {}, options = {}) {
                 && count - original[1] === positive(state.inventory?.[id]?.amount) - band[3];
         });
     if ((!sameSales || changedLoot && !choiceBagValueHolds(state, proof.bands, baseline, proof.hourAdena))
-        && refuse('liquidation', ['sources', 'money']) && !collect) return out;
+        && bagMoved('liquidation', ['sources', 'money']) && !collect) return out;
     // The leaf's own check (LEAF_CHECKS): a check:<name> refusal names its sections.
     const failed = leafCheck(state, leaf, deps, { heldUnits, current: null, prepared: { liquidation: liquidation.candidates } });
     if (failed && refuse(failed.reason, failed.sections) && !collect) return out;

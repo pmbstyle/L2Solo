@@ -124,15 +124,18 @@ const GoalState = {
         return cache.get(Number(characterId)) || null;
     },
 
-    // The goal's content without its review clock: equal while a 60 s review
-    // keeps the same goal, so a reader can tell a due review from a new goal.
+    // The goal's content without its review clock and what drifts with prices
+    // (costs, value rates): equal while a review keeps the same goal, so a reader
+    // can tell a due review from a new goal.
     // 0 = no goal. A 32-bit digest: stable across restarts, not a save field.
     revision(characterId) {
         const snapshot = cache.get(Number(characterId));
         if (!snapshot?.current) return 0;
         let revision = revisions.get(snapshot);
         if (revision === undefined) {
-            const content = { ...snapshot.current, createdAt: 0, reviewedAt: 0, nextReviewAt: 0 };
+            const goal = snapshot.current;
+            const content = { ...goal, createdAt: 0, reviewedAt: 0, nextReviewAt: 0,
+                target: { ...goal.target, adena: 0 }, plan: { ...goal.plan, estimatedCost: 0, valueHours: 0, valueRate: 0, reserve: 0 } };
             revision = fnv1a32(JSON.stringify(content)) || 1;
             revisions.set(snapshot, revision);
         }
