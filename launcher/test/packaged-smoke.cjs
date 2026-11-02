@@ -54,6 +54,10 @@ app.whenReady().then(async () => {
         assert.equal(controller.state.population, null);
         assert.equal(fs.readFileSync(path.join(root, 'tmp/drained'), 'utf8'), 'yes');
         console.log('Packaged application smoke passed: ASAR helpers, bundled Node, world backups, wipe, database lock, geodata, start/stop.');
-    } finally { await controller.stop(); fs.rmSync(temporary, { recursive: true, force: true }); }
+    } finally {
+        await controller.stop();
+        await controller.releasePromise;
+        await fs.promises.rm(temporary, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    }
     app.quit();
 }).catch(error => { console.error(error); app.exit(1); });
