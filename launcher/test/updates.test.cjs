@@ -177,7 +177,7 @@ test('preview publication targets the tested commit and never changes the stable
         return '';
     };
     await publishRelease({ tag: packages.launcherTag, directory: item.root, packageRoot: packages.root, ghClient,
-        fetcher: async () => Response.json([]) });
+        sourceCommit: packages.sourceCommit, fetcher: async () => Response.json([]) });
     const create = calls.find(args => args[1] === 'create'), edit = calls.at(-1);
     assert.ok(create.includes('--prerelease')); assert.ok(create.includes('--latest=false'));
     assert.equal(create[create.indexOf('--target') + 1], packages.sourceCommit);
@@ -185,12 +185,12 @@ test('preview publication targets the tested commit and never changes the stable
     assert.ok(edit.includes('--prerelease=true')); assert.ok(edit.includes('--latest=false'));
     assert.match(fs.readFileSync(edit[edit.indexOf('--notes-file') + 1], 'utf8'), /Preview build from develop/);
     await publishRelease({ tag: packages.launcherTag, directory: item.root, packageRoot: packages.root,
-        fetcher: item.fetcher, ghClient: args => {
+        sourceCommit: packages.sourceCommit, fetcher: item.fetcher, ghClient: args => {
             assert.equal(args[1], 'view', 'Retry must never replace a published preview launcher');
             return JSON.stringify({ isDraft: false, isPrerelease: true, targetCommitish: packages.sourceCommit });
         } });
     await assert.rejects(publishRelease({ tag: packages.launcherTag, directory: item.root, packageRoot: packages.root,
-        fetcher: item.fetcher, ghClient: () => JSON.stringify({ isDraft: false, isPrerelease: true, targetCommitish: 'b'.repeat(40) }) }), /source commit/);
+        sourceCommit: packages.sourceCommit, fetcher: item.fetcher, ghClient: () => JSON.stringify({ isDraft: false, isPrerelease: true, targetCommitish: 'b'.repeat(40) }) }), /source commit/);
 });
 
 test('server release reuses the exact compatible installers and leaves launcher update metadata canonical', async () => {
