@@ -290,7 +290,7 @@ test('a first installation interrupted before file deployment remains attached o
     await put(root, '.l2solo/staging-interrupted.zip', 'partial download');
     const restarted = new Controller({ userData: app.userData, nodePath: process.execPath });
     await restarted.initialize();
-    assert.equal(restarted.state.root, fs.realpathSync(root));
+    assert.equal(restarted.state.root, await fs.promises.realpath(root));
     assert.equal(restarted.state.installed, false);
     assert.equal(restarted.state.error, null);
 });
