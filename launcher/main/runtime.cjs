@@ -10,13 +10,13 @@ const { pipeline } = require('node:stream/promises');
 const extract = require('extract-zip');
 const tar = require('tar');
 const { readJson, writeJson, sha256 } = require('./files.cjs');
-const { versionPattern } = require('./releases.cjs');
+const { stableVersionPattern } = require('./releases.cjs');
 
 const executable = platform => platform === 'win32' ? 'node.exe' : 'node';
 function targetFor(version, platform = process.platform, arch = process.arch) {
-    if (!versionPattern.test(version) || Number(version.split('.')[0]) < 22
+    if (!stableVersionPattern.test(version) || Number(version.split('.')[0]) < 22
         || !['darwin', 'linux', 'win32'].includes(platform) || !['x64', 'arm64'].includes(arch)) throw new Error('Unsupported server Node.js runtime.');
-    const basename = `node-v${version}-${platform}-${arch}`;
+    const basename = `node-v${version}-${platform === 'win32' ? 'win' : platform}-${arch}`;
     return { version, platform, arch, basename, archive: `${basename}.${platform === 'win32' ? 'zip' : 'tar.gz'}` };
 }
 async function probe(nodePath, version) {

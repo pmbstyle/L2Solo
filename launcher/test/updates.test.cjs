@@ -11,7 +11,7 @@ const { fork } = require('node:child_process');
 const net = require('node:net');
 const archiver = require('archiver');
 const { Controller } = require('../main/controller.cjs');
-const { RuntimeManager, prepareRuntime } = require('../main/runtime.cjs');
+const { RuntimeManager, prepareRuntime, targetFor } = require('../main/runtime.cjs');
 const { ReleaseCatalog } = require('../main/release-catalog.cjs');
 const { LauncherUpdates, validateFeed } = require('../main/launcher-updates.cjs');
 const { assetUrl, listReleases, selectRelease, latestRelease, launcherRelease, validateManifest, validateLauncherManifest, channelOf, newerVersion } = require('../main/releases.cjs');
@@ -256,6 +256,13 @@ test('release publisher exposes a complete draft only after every asset is uploa
         } }), /missing or unexpected assets/);
 });
 
+test('Node runtime targets use official platform archive names and stable runtime versions', () => {
+    assert.equal(targetFor('22.23.0', 'win32', 'x64').archive, 'node-v22.23.0-win-x64.zip');
+    assert.equal(targetFor('22.23.0', 'darwin', 'arm64').archive, 'node-v22.23.0-darwin-arm64.tar.gz');
+    assert.equal(targetFor('22.23.0', 'linux', 'x64').archive, 'node-v22.23.0-linux-x64.tar.gz');
+    assert.throws(() => targetFor('22.23.0-preview.1'), /Unsupported/);
+});
+
 test('private Node runtime survives application changes, repairs corruption and never needs system installation', async () => {
     const userData = directory('runtime-profile');
     const runtime = new RuntimeManager({ userData, bundledNode: process.execPath, defaultVersion: process.versions.node,
@@ -274,7 +281,7 @@ test('private Node runtime survives application changes, repairs corruption and 
     let requests = 0;
     await assert.rejects(prepareRuntime(directory('invalid-runtime'), { version: '22.23.0', fetcher: async url => {
         requests++;
-        return new Response(url.endsWith('SHASUMS256.txt') ? `${'0'.repeat(64)}  node-v22.23.0-${process.platform}-${process.arch}.${process.platform === 'win32' ? 'zip' : 'tar.gz'}\n` : 'corrupt archive');
+        return new Response(url.endsWith('SHASUMS256.txt') ? `${'0'.repeat(64)}  ${targetFor('22.23.0').archive}\n` : 'corrupt archive');
     } }), /checksum mismatch/);
     assert.equal(requests, 2);
 });
