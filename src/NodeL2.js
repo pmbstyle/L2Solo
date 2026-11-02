@@ -1,9 +1,30 @@
 require('./Global');
 
-const { acquireDatabaseAccess } = require('../scripts/database-access');
-const releaseDatabaseAccess = acquireDatabaseAccess(require('path').resolve(
-    __dirname, '..', options.default.Database?.path || 'tmp/nodel2.sqlite'
-));
+const { acquireDatabaseAccess, verifyUpdateDatabasePaths, rejectUpdateBeforeMigrations, beginUpdateMigrations } = require('../scripts/database-access');
+const startupRoot = require('path').resolve(__dirname, '..');
+const expectedUpdateDatabases = process.env.L2NODE_UPDATE_TRIAL === '1' && process.env.L2NODE_UPDATE_DATABASES
+    ? JSON.parse(process.env.L2NODE_UPDATE_DATABASES) : null;
+const configuredDatabase = { ...options.default.Database };
+let releaseDatabaseAccess;
+try {
+    if (expectedUpdateDatabases) {
+        const [world, history] = verifyUpdateDatabasePaths(startupRoot, configuredDatabase, expectedUpdateDatabases);
+        // Keep the checked physical pair even if an INI file or directory alias
+        // changes while the remaining startup modules load.
+        options.default.Database ||= {};
+        options.default.Database.path = world;
+        options.default.Database.historyPath = history;
+    }
+    releaseDatabaseAccess = acquireDatabaseAccess(require('path').resolve(startupRoot, options.default.Database?.path || 'tmp/nodel2.sqlite'));
+    if (expectedUpdateDatabases) {
+        verifyUpdateDatabasePaths(startupRoot, configuredDatabase, expectedUpdateDatabases);
+        beginUpdateMigrations(startupRoot, expectedUpdateDatabases);
+    }
+} catch (error) {
+    releaseDatabaseAccess?.();
+    if (expectedUpdateDatabases) rejectUpdateBeforeMigrations(startupRoot, expectedUpdateDatabases);
+    throw error;
+}
 process.once('exit', releaseDatabaseAccess);
 
 const LangfuseTracing = invoke('GameServer/Bot/AI/LangfuseTracing');
@@ -26,6 +47,16 @@ const CharacterWriteQueue = invoke('GameServer/Persistence/CharacterWriteQueue')
 const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool');
 
 let shuttingDown = false;
+let updateVerified = process.env.L2NODE_UPDATE_TRIAL !== '1';
+let acceptUpdate;
+function sessionFactory(Session) {
+    return socket => {
+        // Ports must bind successfully before an update is accepted, but no
+        // player may enter the world until its rollback journal is committed.
+        if (!updateVerified) { socket.destroy(); return { dataReceive() {}, error() {} }; }
+        return new Session(socket);
+    };
+}
 function shutdown(signal) {
     if (shuttingDown) return;
     shuttingDown = true;
@@ -60,7 +91,9 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('message', (message) => {
     if (message?.type === 'shutdown') shutdown(message.reason || 'IPC');
+    if (message?.type === 'launcher:update-commit') { updateVerified = true; acceptUpdate?.(); }
 });
+process.on('disconnect', () => { if (!updateVerified) shutdown('update_launcher_disconnected'); });
 
 console.info('\n\
     + ================================== \n\
@@ -117,15 +150,35 @@ Database.init(() => {
         invoke('GameServer/Knowledge/RecipeCatalog').warmup();
         invoke('GameServer/World/Generics/NativeKnowledgeBase').warmup();
 
-        new Server('AuthServer', options.default.AuthServer, (socket) => {
-            return new AuthSession(socket);
-        });
+        new Server('AuthServer', options.default.AuthServer, sessionFactory(AuthSession));
 
-        new Server('GameServer', options.default.GameServer, (socket) => {
-            return new GameSession(socket);
-        });
+        new Server('GameServer', options.default.GameServer, sessionFactory(GameSession));
 
         BotManager.init();
+        if (process.env.L2NODE_UPDATE_TRIAL === '1' && process.connected) {
+            process.send({ type: 'launcher:initialized' }, () => {});
+            await new Promise(resolve => { if (updateVerified) resolve(); else acceptUpdate = resolve; });
+        }
+        if (process.env.L2NODE_LAUNCHER_STATUS === '1' && process.send) {
+            const { population } = require('../scripts/launcher-population');
+            const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+            const Identity = invoke('GameServer/Bot/AI/BotServiceIdentity');
+            const PlayerActivity = invoke('GameServer/Bot/Population/PlayerActivitySignal');
+            const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
+            const report = () => {
+                if (shuttingDown || !process.connected) return;
+                process.send({ type: 'launcher:population', ...population({
+                    states: LifeState.populationSeedStates(), botSessions: BotManager.sessions || [],
+                    playerSessions: World.user?.sessions || [], isStaticService: Identity.isStaticService,
+                    isRealPlayerSession: PlayerActivity.isRealPlayerSession,
+                    botCapacity: PopulationConfig.enabled ? PopulationConfig.maxPlayingPopulation : 0
+                }) }, () => {});
+            };
+            report();
+            const statusTimer = setInterval(report, 2000);
+            statusTimer.unref();
+            process.once('disconnect', () => clearInterval(statusTimer));
+        }
         WorldObserver.init();
         DevConsole.init();
         if (process.env.L2NODE_HOT_LOAD_TEST === '1') {

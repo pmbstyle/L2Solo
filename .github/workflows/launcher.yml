@@ -4,10 +4,17 @@ on:
   pull_request:
     paths:
       - 'launcher/**'
+      - 'package.json'
+      - 'src/NodeL2.js'
+      - 'src/Server.js'
+      - 'scripts/launcher-population.js'
       - 'scripts/geodata-bootstrap.js'
       - 'scripts/run-server.js'
+      - 'scripts/database-access.js'
+      - 'release-notes/**'
       - '.github/workflows/launcher.yml'
       - '.github/workflows/release.yml'
+      - '.github/workflows/preview.yml'
   workflow_dispatch:
 
 permissions:

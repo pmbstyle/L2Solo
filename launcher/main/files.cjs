@@ -25,6 +25,17 @@ async function sha256(file) {
     return hash.digest('hex');
 }
 
+function canonicalPath(file) {
+    const absolute = path.resolve(file);
+    try { return fs.realpathSync(absolute); }
+    catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+        const parent = path.dirname(absolute);
+        if (parent === absolute) throw error;
+        return path.join(canonicalPath(parent), path.basename(absolute));
+    }
+}
+
 function managedPath(name) {
     if (typeof name !== 'string' || !name || name.includes('\\') || name.includes(':')
         || name.startsWith('/') || name.split('/').some(part => !part || part === '.' || part === '..')
@@ -61,4 +72,4 @@ async function acquireLock(root, nodePath = process.execPath) {
         'Another launcher is using this installation. Close it before continuing.');
 }
 
-module.exports = { readJson, writeJson, sha256, managedPath, safeDestination, acquireLock };
+module.exports = { readJson, writeJson, sha256, canonicalPath, managedPath, safeDestination, acquireLock };

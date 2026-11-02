@@ -1,13 +1,15 @@
 'use strict';
 
 const api = window.launcher;
+document.body.dataset.platform = api?.platform || '';
 const $ = id => document.getElementById(id);
 let state = { installed: false, root: null, phase: 'stopped', busy: false, logs: [], progress: { percent: 0 } };
 let sections = [], selectedSection = 'Quick setup', currentView = 'home', settingsRoot = null, actionPending = false, lastError = null;
 const dirty = new Map();
-const names = { General: 'Rates & gameplay', BotPopulation: 'Bot population', AI: 'Custom AI provider', OpenRouter: 'OpenRouter',
+let renderedBackups = '';
+const names = { General: 'Rates & gameplay', BotPopulation: 'Bot population', AI: 'AI',
     WorldObserver: 'World Observer', GameServer: 'Game server', AuthServer: 'Login server', Database: 'Database',
-    ClanSimulation: 'Clan simulation', ClanWars: 'Clan wars', Enchant: 'Enchanting', Langfuse: 'AI observability' };
+    ClanSimulation: 'Clan simulation', ClanWars: 'Clan wars', Enchant: 'Enchanting' };
 const labels = { progressionPreset: 'Progression preset', expRate: 'Experience multiplier', spRate: 'Skill point multiplier',
     adenaRate: 'Adena multiplier', dropChanceRate: 'Drop multiplier', spoilRate: 'Spoil multiplier', maxLevel: 'Maximum level',
     maxPlayingPopulation: 'Maximum bot population', pvpAggression: 'PvP aggression', knowledgeErrorsEnabled: 'Bots learn from mistakes',
@@ -15,19 +17,6 @@ const labels = { progressionPreset: 'Progression preset', expRate: 'Experience m
     partyRouterModel: 'Party routing model', maxConcurrentRequests: 'Concurrent AI requests', advertisedHostname: 'Client connection address',
     hostname: 'Listen address', port: 'Port', maxOnline: 'Maximum players', pvp: 'PvP server', enabled: 'Enabled',
     path: 'World database path', reasoningEffort: 'Reasoning effort', completionLimitParam: 'Completion limit parameter' };
-const descriptions = {
-    progressionPreset: 'Scales XP, SP, adena, drops and spoil together. Individual multipliers apply on top.',
-    maxPlayingPopulation: 'Target population for the living world. Larger worlds need more memory and CPU.',
-    pvpAggression: '0 is peaceful, 0.5 is balanced, 1 is the most aggressive. Self-defense remains enabled.',
-    knowledgeErrorsEnabled: 'Bots remember their own mistakes and use experience to make better decisions.',
-    coldHonestTravel: 'Travel for background bots includes running, gatekeeper hops and scroll cast time.',
-    apiUrl: 'Full OpenAI-compatible chat completions URL. Local HTTP endpoints are supported.',
-    apiKey: 'Stored in your private config/local.ini on this computer.',
-    advertisedHostname: 'IP address sent to the game client. Leave empty for automatic local/LAN detection.',
-    path: 'Relative paths are resolved from your selected server folder.',
-    spRate: 'Base multiplier before the progression preset. Defaults to the experience multiplier.',
-    spoilRate: 'Base multiplier before the progression preset. Defaults to the drop multiplier.'
-};
 const humanize = key => labels[key] || key.replace(/([A-Z])/g, ' $1').replace(/^./, char => char.toUpperCase());
 
 function element(tag, className, text) {
@@ -56,44 +45,62 @@ function render(next) {
     const ready = state.installed && state.geodata?.valid;
     const percent = Math.max(0, Math.min(100, Math.floor(state.progress?.percent || 0)));
     $('status-pill').classList.toggle('online', state.phase === 'running');
+    $('status-pill').classList.toggle('transitioning', ['starting', 'stopping'].includes(state.phase));
+    document.querySelector('.server-panel').classList.toggle('running', state.phase === 'running');
     $('status-pill').lastElementChild.textContent = { stopped: 'Server offline', starting: 'Starting server', running: 'Server online', stopping: 'Saving & stopping' }[state.phase];
     $('installation-path').textContent = state.root || 'No installation folder selected';
     $('installation-path').title = state.root || '';
     $('reveal-folder').hidden = !state.root;
-    $('manage-folder').textContent = state.root ? 'Change folder ↗' : 'Choose folder ↗';
+    $('manage-folder').textContent = state.root ? 'Change folder' : 'Choose folder';
     $('manage-folder').disabled = locked || running;
-    $('server-subtitle').textContent = state.installed ? 'Your world is ready when you are.' : state.root ? 'The latest stable release will be installed here.' : 'Give your world a place to call home.';
-    $('server-version').textContent = state.version || 'Not installed';
+    $('server-subtitle').textContent = state.developerMode ? 'Developer checkout · managed updates disabled' : state.updatePending ? 'Update installed · start to verify' : state.installed ? 'Local server · Chronicle 4' : state.root ? 'Ready to install the latest stable release.' : 'Select a server folder to get started.';
+    $('server-version').textContent = state.version?.split(' ·')[0] || 'Not installed';
     $('server-version').title = state.version || '';
     $('geodata-status').textContent = state.geodata?.valid ? 'Verified · Chronicle 4' : state.installed ? 'Needs verification' : 'Not installed';
     $('geodata-status').style.color = state.geodata?.valid ? 'var(--green)' : '';
-    $('server-status').textContent = state.busy ? 'Preparing files' : { starting: 'Starting…', running: 'Online', stopping: 'Saving world…', stopped: ready ? 'Ready to play' : state.installed ? 'Setup required' : 'Waiting for setup' }[state.phase];
+    $('server-status').textContent = state.busy ? { backup: 'Managing backup…', wipe: 'Wiping data…', settings: 'Saving settings…', files: 'Preparing files…' }[state.operation] || 'Working…' : { starting: 'Starting…', running: 'Online', stopping: 'Saving world…', stopped: ready ? 'Stopped · ready' : state.installed ? 'Setup required' : 'Waiting for setup' }[state.phase];
     $('primary-action').classList.toggle('stop', running);
+    $('primary-action').classList.toggle('working', state.busy && state.operation === 'files' || ['starting', 'stopping'].includes(state.phase));
     $('primary-action').disabled = locked || state.phase === 'stopping';
     $('primary-action').firstElementChild.textContent = running ? '■' : '▶';
-    $('primary-label').textContent = locked ? 'Preparing…' : running ? state.phase === 'stopping' ? 'Stopping…' : 'Stop server' : !state.root ? 'Set up server' : !state.installed ? 'Install server' : !ready ? 'Prepare server' : 'Start server';
-    $('progress-label').textContent = state.progress?.label || 'Choose a home for your world';
+    $('primary-label').textContent = state.busy && state.operation === 'files' ? 'Preparing…' : running ? state.phase === 'stopping' ? 'Stopping…' : state.phase === 'starting' ? 'Starting…' : 'Stop server' : !state.root ? 'Set up server' : !state.installed ? 'Install server' : !ready ? 'Prepare server' : 'Start server';
+    $('server-hint').textContent = state.connection ? `Login server: ${state.connection.address}` : 'Install or connect an existing server.';
+    renderPopulation();
+    $('progress-label').textContent = state.progress?.label || 'Choose a server folder';
     $('progress-percent').textContent = `${percent}%`;
     $('download-progress').value = percent;
+    $('download-area').hidden = !state.busy || state.operation !== 'files';
     $('progress-indicator').classList.toggle('active', state.busy);
     $('download-detail').textContent = state.progress?.total ? `${formatBytes(state.progress.bytes)} / ${formatBytes(state.progress.total)}`
-        : ready ? 'Server files and geodata are ready. Your adventure awaits.' : 'Server files and geodata are managed for you.';
+        : ready ? 'Server files and geodata verified.' : 'Preparing server files and geodata.';
     $('observer-button').disabled = state.phase !== 'running';
-    $('home-check').disabled = locked;
     $('updates-check').disabled = locked;
     $('repair-geodata').disabled = locked || running || !state.installed;
-    $('install-update').disabled = locked || running || !state.latest || state.latest.launcherUpdateRequired;
-    $('install-update').textContent = state.latest?.updateAvailable && state.installed ? 'Update server' : state.installed ? 'Verify server files' : 'Install latest release';
-    $('update-dot').hidden = !state.latest?.updateAvailable || !state.installed;
+    const serverDownload = state.serverDownload?.tag === state.latest?.tag ? state.serverDownload : null;
+    $('install-update').disabled = locked || !state.latest || state.latest.launcherUpdateRequired || state.developerMode || state.updatePending
+        || serverDownload?.status === 'downloading' || running && (!state.latest.updateAvailable || serverDownload?.status === 'ready');
+    $('install-update').textContent = serverDownload?.status === 'downloading' ? `Downloading… ${Math.floor(serverDownload.percent || 0)}%`
+        : running && state.latest?.updateAvailable ? serverDownload?.status === 'ready' ? 'Stop server to apply' : 'Download server update'
+            : state.latest?.updateAvailable && state.installed ? 'Update server' : state.installed ? 'Verify server files' : 'Install latest release';
+    $('update-dot').hidden = !(state.latest?.updateAvailable && state.installed || ['available', 'downloaded'].includes(state.launcherUpdate?.status));
+    renderLauncherUpdate(locked);
+    $('channel-label').textContent = state.releaseChannel === 'preview' ? 'PREVIEW' : 'BETA';
+    $('preview-notice').hidden = state.releaseChannel !== 'preview';
     if (state.latest) {
         $('update-title').textContent = !state.installed ? `${state.latest.tag} is ready to install` : state.latest.updateAvailable ? `${state.latest.tag} is available` : 'Your server is up to date';
-        $('update-description').textContent = !state.installed ? 'Choose a folder and start a new adventure.' : state.latest.updateAvailable ? `Installed: ${state.version}. Your world and local settings will be preserved.` : `Installed: ${state.latest.tag}. You can verify release files at any time.`;
+        $('update-description').textContent = !state.installed ? 'Choose a folder to install the server.' : state.latest.updateAvailable ? `Installed: ${state.version?.split(' ·')[0]}. Your database and settings will be preserved.` : `Installed: ${state.latest.tag}. You can verify release files at any time.`;
         $('release-tag').textContent = state.latest.tag;
         $('release-notes').textContent = state.latest.notes || 'No release notes were provided.';
         $('release-date').textContent = date(state.latest.publishedAt);
         $('release-link').hidden = false;
-        if (state.latest.launcherUpdateRequired) $('update-description').textContent = 'Install the matching launcher from GitHub Releases before updating this server.';
+        if (state.latest.launcherUpdateRequired) $('update-description').textContent = 'Update the launcher above before installing this server release.';
+        if (state.updatePending) $('update-description').textContent = 'Start the server to verify this update. World and history snapshots will be restored if startup fails.';
+        if (state.developerMode) $('update-description').textContent = 'Update this Git checkout with your development tools, or choose a separate folder for a managed installation.';
+        if (serverDownload?.status === 'downloading') $('update-description').textContent = `${serverDownload.label || 'Downloading server release'}… The running world is unaffected.`;
+        if (serverDownload?.status === 'ready') $('update-description').textContent = `${serverDownload.tag} is downloaded and verified. Stop the server to install it.`;
+        if (serverDownload?.error) $('update-description').textContent = serverDownload.error;
     }
+    if (state.updateCheckError) $('update-description').textContent = state.updateCheckError;
     $('console-status').textContent = `SERVER ${state.phase.toUpperCase()}`;
     const output = state.logs.map(entry => `${new Date(entry.at).toLocaleTimeString('en-GB')}  ${entry.line}`).join('\n');
     if (output && $('console-output').textContent !== output) {
@@ -102,17 +109,157 @@ function render(next) {
     }
     $('save-settings').disabled = !dirty.size || locked || running;
     $('settings-notice').textContent = running ? 'Stop your server before saving settings. Your edits are kept here until you save.' : dirty.size ? `${dirty.size} unsaved change${dirty.size === 1 ? '' : 's'}. Changes apply on the next server start.` : 'Changes apply the next time you start the server.';
+    renderWorld(locked, running);
+    renderActivity();
+    renderUptime();
     if (state.launcherVersion) $('launcher-version').textContent = state.launcherVersion;
     if (state.root !== settingsRoot && sections.length) { sections = []; dirty.clear(); settingsRoot = null; }
 }
-function formatBytes(bytes) { return `${(bytes / 1024 ** 2).toFixed(1)} MB`; }
+function renderLauncherUpdate(locked) {
+    const update = state.launcherUpdate || { status: 'idle', currentVersion: state.launcherVersion };
+    $('launcher-notes-panel').hidden = !update.notes;
+    $('launcher-release-notes').textContent = update.notes || '';
+    const busy = ['checking', 'downloading', 'installing'].includes(update.status);
+    $('launcher-update-title').textContent = update.availableVersion && ['available', 'downloading', 'downloaded', 'installing'].includes(update.status)
+        ? `Launcher ${update.availableVersion} ${update.status === 'downloaded' ? 'is ready' : 'is available'}` : `L2Solo Launcher ${update.currentVersion || ''}`;
+    $('launcher-update-description').textContent = update.error || ({ idle: 'Check for application updates.', checking: 'Checking GitHub Releases…',
+        current: 'Your launcher is up to date.', available: update.supported ? 'Download in the background. The server can keep running.'
+            : api?.platform === 'darwin' ? 'Download the DMG, then quit the launcher and replace the app. Your server folder and settings are kept.' : 'Download the installer from GitHub to update this build.',
+        downloading: `Downloading… ${Math.floor(update.percent || 0)}%`, downloaded: 'Ready to install. Restarting the launcher will save and stop the server first.',
+        installing: 'Stopping the server and restarting the launcher…' }[update.status] || 'Check for updates to try again.');
+    $('launcher-update-action').textContent = update.status === 'downloaded' ? 'Update & restart' : ['available', 'downloading'].includes(update.status)
+        ? update.supported ? update.status === 'downloading' ? 'Downloading…' : 'Download update' : api?.platform === 'darwin' ? 'Download DMG ↗' : 'Download installer ↗' : 'Check for updates';
+    $('launcher-update-action').disabled = busy || locked;
+    $('launcher-update-progress').hidden = update.status !== 'downloading';
+    $('launcher-update-progress').value = update.percent || 0;
+}
+function formatBytes(bytes) { return bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : `${(bytes / 1024 ** 2).toFixed(1)} MB`; }
 function date(value) { const parsed = new Date(value); return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }); }
+function renderUptime() {
+    const seconds = state.startedAt ? Math.max(0, Math.floor((Date.now() - state.startedAt) / 1000)) : null;
+    $('server-uptime').textContent = seconds === null ? '—' : `${Math.floor(seconds / 3600)}:${String(Math.floor(seconds / 60) % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+function renderPopulation() {
+    const population = state.population;
+    $('population-area').hidden = state.phase !== 'running';
+    const fresh = population && Date.now() - population.updatedAt < 10000;
+    $('population-counts').textContent = fresh ? 'Bot population' : 'Waiting for population…';
+    $('population-capacity').textContent = fresh ? `${population.bots.toLocaleString()} / ${population.capacity.toLocaleString()}` : '—';
+    $('population-players').textContent = fresh ? `Players online: ${population.players.toLocaleString()}` : 'Players online: —';
+    $('population-progress').max = fresh ? Math.max(1, population.capacity) : 1;
+    $('population-progress').value = fresh ? population.bots : 0;
+    $('population-progress').setAttribute('aria-valuetext', fresh ? `${population.bots} of ${population.capacity} dynamic bots` : 'Bot population unavailable');
+}
+function settingValueHint(value, unit) {
+    const n = Number(value);
+    if (!String(value).trim() || !Number.isFinite(n) || n < 0) return '';
+    const number = value => value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+    if (unit === 'bytes') {
+        const scale = n >= 1024 ** 3 ? [1024 ** 3, 'GiB'] : n >= 1024 ** 2 ? [1024 ** 2, 'MiB'] : n >= 1024 ? [1024, 'KiB'] : [1, 'B'];
+        return `${number(n / scale[0])} ${scale[1]} · bytes`;
+    }
+    if (unit === 'ms' || unit === 'seconds') {
+        const seconds = unit === 'ms' ? n / 1000 : n;
+        const scale = seconds >= 86400 ? [86400, 'days'] : seconds >= 3600 ? [3600, 'h'] : seconds >= 60 ? [60, 'min'] : seconds >= 1 ? [1, 's'] : [0.001, 'ms'];
+        return `${number(seconds / scale[0])} ${scale[1]} · ${unit === 'ms' ? 'milliseconds' : 'seconds'}`;
+    }
+    return '';
+}
+function renderActivity() {
+    const entries = (state.logs || []).slice(-4);
+    $('recent-activity').replaceChildren();
+    if (!entries.length) $('recent-activity').append(element('p', 'muted', 'No server activity yet.'));
+    for (const entry of entries) {
+        const row = element('div', 'activity-line');
+        row.append(element('time', '', new Date(entry.at).toLocaleTimeString('en-GB')), element('span', '', entry.line));
+        $('recent-activity').append(row);
+    }
+}
+function renderWorld(locked, running) {
+    const world = state.world;
+    const backups = world?.backups || [];
+    const available = state.installed && world?.supported && !locked && !running && !state.updatePending;
+    const canCreate = available && world.databaseExists;
+    $('quick-backup').disabled = !canCreate;
+    $('create-backup').disabled = !canCreate;
+    $('quick-backup').lastChild.textContent = state.operation === 'backup' ? ' Working…' : ' Create backup';
+    $('create-backup').lastChild.textContent = state.operation === 'backup' ? ' Working…' : ' Create backup';
+    $('backup-name').disabled = !canCreate;
+    $('backups-folder').disabled = !state.installed;
+    $('refresh-backups').disabled = locked || !state.installed;
+    $('backup-notice').textContent = !state.installed ? 'Select an installed server to manage its world data.'
+        : world && !world.supported ? 'Update this server to enable backups and world management.'
+            : running ? 'Stop the server before creating, restoring or deleting backups and wiping data.'
+                : !world?.databaseExists ? 'No world database yet. Start and stop the server to create one, or restore a backup.'
+                    : 'Backups include the world database and its history. Server settings are kept separately.';
+    $('latest-backup').textContent = backups[0]?.name || 'No backups yet';
+    $('backup-summary-detail').textContent = backups[0] ? `${date(backups[0].createdAt)} · ${formatBytes(backups[0].sizeBytes)} · ${backups.length} saved`
+        : running ? 'Stop the server to create a world backup.' : 'Back up the world database and its history.';
+    $('backup-count').textContent = backups.length;
+    const key = JSON.stringify([state.root, backups]);
+    if (renderedBackups !== key) {
+        renderedBackups = key;
+        $('backup-list').replaceChildren();
+        if (!backups.length) $('backup-list').append(element('p', 'empty-state', 'No backups yet.'));
+        for (const backup of backups) {
+            const row = element('div', 'backup-row');
+            const description = element('div');
+            description.append(element('strong', '', backup.name), element('small', '', `${new Date(backup.createdAt).toLocaleString()} · ${formatBytes(backup.sizeBytes)}`));
+            const actions = element('div', 'backup-actions');
+            for (const action of ['load', 'delete']) {
+                const button = element('button', action === 'load' ? 'quiet-button' : 'text-button', action === 'load' ? 'Restore' : 'Delete');
+                button.dataset.backupAction = action;
+                button.setAttribute('aria-label', `${action === 'load' ? 'Restore' : 'Delete'} ${backup.name}`);
+                button.addEventListener('click', () => run(async () => {
+                    const restore = action === 'load';
+                    if (!await confirmAction(restore ? 'Restore backup?' : 'Delete backup?', restore
+                        ? `Restore “${backup.name}”? This replaces the current world and its history. Create a backup first if you want to keep the current world.`
+                        : `Permanently delete “${backup.name}”? The current world will stay unchanged.`, restore ? 'Restore backup' : 'Delete backup')) return;
+                    render(await api.backup(action, { id: backup.id, confirmed: true }));
+                    toast(restore ? 'World restored from backup.' : 'Backup deleted.');
+                }));
+                actions.append(button);
+            }
+            row.append(description, actions);
+            $('backup-list').append(row);
+        }
+    }
+    for (const button of document.querySelectorAll('[data-backup-action]')) button.disabled = !available;
+    const phrase = `WIPE ${$('wipe-scope').value.toUpperCase()}`;
+    $('wipe-phrase').textContent = phrase;
+    $('wipe-confirmation').placeholder = phrase;
+    $('wipe-scope').disabled = !canCreate;
+    $('wipe-confirmation').disabled = !canCreate;
+    $('wipe-button').disabled = !canCreate || $('wipe-confirmation').value.trim() !== phrase;
+    $('wipe-button').textContent = state.operation === 'wipe' ? 'Wiping…' : 'Wipe selected data';
+}
+function confirmAction(title, description, label) {
+    const dialog = $('confirm-dialog');
+    $('confirm-title').textContent = title;
+    $('confirm-description').textContent = description;
+    $('confirm-action').textContent = label;
+    dialog.returnValue = 'cancel';
+    return new Promise(resolve => {
+        dialog.addEventListener('close', () => resolve(dialog.returnValue === 'confirm'), { once: true });
+        dialog.showModal();
+    });
+}
+async function createBackup(name) {
+    render(await api.backup('create', { name }));
+    $('backup-name').value = '';
+    toast('World backup created.');
+}
 
 async function showView(view) {
     currentView = view;
     for (const node of document.querySelectorAll('.view')) node.hidden = node.id !== `view-${view}`;
-    for (const node of document.querySelectorAll('.nav-item')) node.classList.toggle('active', node.dataset.view === view);
-    $('page-name').textContent = { home: 'Overview', settings: 'Server settings', updates: 'Updates', console: 'Console' }[view];
+    for (const node of document.querySelectorAll('.nav-item')) {
+        node.classList.toggle('active', node.dataset.view === view);
+        node.setAttribute('aria-current', node.dataset.view === view ? 'page' : 'false');
+    }
+    $('page-name').textContent = { home: 'Home', backups: 'Backups & data', settings: 'Server settings', updates: 'Updates', console: 'Console' }[view];
+    document.querySelector('main').scrollTop = 0;
+    if (view === 'backups' && state.installed) render(await api.world());
     if (view === 'settings') {
         $('settings-empty').hidden = state.installed;
         $('settings-workspace').hidden = !state.installed;
@@ -140,16 +287,19 @@ function renderFields() {
     const search = $('settings-search').value.trim().toLowerCase();
     const target = $('settings-fields');
     target.replaceChildren();
-    const customAI = sections.find(section => section.id === 'AI')?.active;
     for (const section of sections) {
-        let fields = section.fields.filter(field => search ? `${section.id} ${field.key} ${humanize(field.key)}`.toLowerCase().includes(search)
-            : selectedSection === 'Quick setup' ? field.featured && ['General', 'BotPopulation', customAI ? 'AI' : 'OpenRouter', 'WorldObserver'].includes(section.id)
+        let fields = section.fields.filter(field => search ? `${section.id} ${field.key} ${humanize(field.key)} ${field.description || ''}`.toLowerCase().includes(search)
+            : selectedSection === 'Quick setup' ? field.featured && ['General', 'BotPopulation', 'AI', 'WorldObserver'].includes(section.id)
                 : section.id === selectedSection);
         if (!fields.length) continue;
-        fields = fields.slice().sort((a, b) => (a.order < 0 ? 999 : a.order) - (b.order < 0 ? 999 : b.order));
+        fields = fields.slice().sort((a, b) => a.order - b.order || a.key.localeCompare(b.key));
         const group = element('div', 'settings-group');
         group.append(element('h3', '', names[section.id] || section.id));
+        const showSubgroups = new Set(fields.map(field => field.group)).size > 1;
+        let previousGroup = null;
         for (const field of fields) {
+            if (showSubgroups && previousGroup !== field.group) group.append(element('h4', 'settings-subheading', field.group));
+            previousGroup = field.group;
             const key = `${section.id}.${field.key}`;
             const value = dirty.get(key)?.value ?? field.value;
             const row = element('div', 'field-row');
@@ -157,8 +307,9 @@ function renderFields() {
             const label = element('label', '', humanize(field.key));
             label.htmlFor = `setting-${key}`;
             text.append(label);
-            if (descriptions[field.key]) text.append(element('small', '', descriptions[field.key]));
-            else if (field.key === 'enabled' && section.id === 'AI') text.append(element('small', '', 'Custom AI settings take priority over OpenRouter once configured.'));
+            const description = element('small', '', field.description);
+            description.id = `help-${key}`;
+            text.append(description);
             let input;
             if (field.type === 'select') {
                 input = element('select');
@@ -183,13 +334,20 @@ function renderFields() {
                 else input.value = value;
             }
             input.id = `setting-${key}`;
+            input.setAttribute('aria-describedby', description.id);
+            const hint = field.unit ? element('small', 'field-value-hint', settingValueHint(value, field.unit)) : null;
             input.addEventListener('input', () => {
                 const next = field.type === 'boolean' ? String(input.checked) : input.value;
+                if (hint) hint.textContent = settingValueHint(next, field.unit);
                 if (next === field.value) dirty.delete(key);
                 else dirty.set(key, { section: section.id, key: field.key, value: next });
                 render();
             });
-            row.append(text, input);
+            if (hint) {
+                const control = element('div', 'field-control');
+                control.append(input, hint);
+                row.append(text, control);
+            } else row.append(text, input);
             group.append(row);
         }
         target.append(group);
@@ -204,14 +362,9 @@ async function chooseFolder() {
     render(selected);
     if (before !== state.root) { sections = []; dirty.clear(); settingsRoot = null; }
     if (state.root && !state.installed) render(await api.install());
-    else if (state.root && before !== state.root) {
-        // Attaching an existing installation reconciles release files and geodata.
-        // With no published release, the attached server remains usable.
-        try { render(await api.install()); }
-        catch (cause) { if (!state.geodata?.valid) render(await api.repair()); error(cause.message); }
-    }
+    else if (state.root && before !== state.root && !state.geodata?.valid) render(await api.repair());
 }
-async function checkUpdates() { render(await api.checkUpdates()); toast(state.latest.updateAvailable ? `${state.latest.tag} is available.` : 'Your server is up to date.'); }
+async function checkUpdates() { render(await api.checkUpdates()); toast(state.latest?.updateAvailable ? `${state.latest.tag} is available.` : 'Update check complete.'); }
 async function primaryAction() {
     if (state.phase !== 'stopped') render(await api.stop());
     else if (!state.root) await chooseFolder();
@@ -221,12 +374,13 @@ async function primaryAction() {
 }
 function renderNews(data) {
     $('news-grid').replaceChildren();
-    $('news-preview').hidden = !data.preview;
+    $('news-section').hidden = data.preview || !data.articles.length;
+    if (data.preview) return;
     for (const article of data.articles.slice(0, 3)) {
         const card = element('button', 'news-card');
         card.append(element('span', 'news-category', article.category), element('h4', '', article.title), element('p', '', article.excerpt));
         const bottom = element('div', 'news-card-bottom');
-        bottom.append(element('span', '', data.preview ? 'Preview story' : date(article.publishedAt)), element('span', '', '↗'));
+        bottom.append(element('span', '', date(article.publishedAt)), element('span', '', '↗'));
         card.append(bottom);
         card.addEventListener('click', () => run(() => api.openLink(article.url)));
         $('news-grid').append(card);
@@ -238,9 +392,20 @@ $('primary-action').addEventListener('click', () => run(primaryAction));
 $('manage-folder').addEventListener('click', () => run(chooseFolder));
 $('reveal-folder').addEventListener('click', () => run(() => api.openFolder()));
 $('updates-folder').addEventListener('click', () => run(() => api.openFolder()));
-$('home-check').addEventListener('click', () => run(checkUpdates));
 $('updates-check').addEventListener('click', () => run(checkUpdates));
+$('launcher-update-action').addEventListener('click', () => run(async () => {
+    const update = state.launcherUpdate;
+    if (update?.status === 'downloaded') {
+        if (dirty.size && !await confirmAction('Unsaved settings', 'Your unsaved settings will be discarded when the launcher restarts.', 'Continue')) return;
+        if (!await confirmAction('Update launcher?', 'Save and stop the server, then install the downloaded launcher update and restart the application?', 'Update & restart')) return;
+        render(await api.installLauncherUpdate());
+    } else if (update?.status === 'available') {
+        if (update.supported) render(await api.downloadLauncherUpdate());
+        else await api.openLauncherRelease();
+    } else await checkUpdates();
+}));
 $('install-update').addEventListener('click', () => run(async () => {
+    if (state.phase !== 'stopped') { render(await api.downloadServerUpdate()); return; }
     if (!state.root) await chooseFolder(); else render(await api.install());
     if (currentView === 'settings') await loadSettings();
 }));
@@ -253,6 +418,26 @@ $('save-settings').addEventListener('click', () => run(async () => {
     dirty.clear(); renderSettingsNav(); renderFields(); toast('Settings saved. They will apply on the next server start.');
 }));
 $('dismiss-error').addEventListener('click', () => { $('error-banner').hidden = true; });
+$('quick-backup').addEventListener('click', () => run(() => createBackup()));
+$('backup-form').addEventListener('submit', event => { event.preventDefault(); if (!$('create-backup').disabled) run(() => createBackup($('backup-name').value)); });
+$('refresh-backups').addEventListener('click', () => run(async () => { render(await api.world()); }));
+$('backups-folder').addEventListener('click', () => run(() => api.openBackups()));
+$('wipe-scope').addEventListener('change', () => { $('wipe-confirmation').value = ''; $('wipe-result').textContent = ''; render(); });
+$('wipe-confirmation').addEventListener('input', () => render());
+$('wipe-form').addEventListener('submit', event => {
+    event.preventDefault();
+    if ($('wipe-button').disabled) return;
+    const scope = $('wipe-scope').value, confirmation = $('wipe-confirmation').value.trim();
+    run(async () => {
+        if (!await confirmAction('Wipe world data?', `Permanently remove ${scope === 'all' ? 'the entire world' : scope === 'bots' ? 'all bots and their data' : 'all players and their data'}? Your backups will be kept.`, 'Wipe data')) return;
+        render(await api.wipe(scope, confirmation));
+        $('wipe-confirmation').value = '';
+        const result = state.world.result;
+        $('wipe-result').textContent = `Removed ${result.characters} characters and ${result.accounts} accounts.`;
+        toast('Selected world data wiped.');
+    });
+});
+setInterval(() => { renderUptime(); renderPopulation(); }, 1000);
 if (api) {
     api.onState(render);
     api.state().then(next => { render(next); if (next.error) error(next.error); }).catch(cause => error(cause.message));

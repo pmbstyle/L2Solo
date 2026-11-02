@@ -7,7 +7,7 @@ const root = path.resolve(__dirname, '..');
 const dist = path.join(root, 'dist');
 let resources;
 for (const entry of fs.readdirSync(dist, { withFileTypes: true }).filter(entry => entry.isDirectory())) {
-    for (const candidate of [path.join(dist, entry.name, 'resources'), path.join(dist, entry.name, 'L2Solo Launcher.app/Contents/Resources')]) {
+    for (const candidate of [path.join(dist, entry.name, 'resources'), path.join(dist, entry.name, `${require('../package.json').build.productName}.app/Contents/Resources`)]) {
         const metadata = path.join(candidate, 'runtime/runtime.json');
         if (!fs.existsSync(metadata) || !fs.existsSync(path.join(candidate, 'app.asar'))) continue;
         const runtime = JSON.parse(fs.readFileSync(metadata, 'utf8'));

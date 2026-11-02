@@ -11,10 +11,38 @@ const { readConfig } = require('./config.cjs');
 const markerPath = root => path.join(root, '.l2solo', 'installation.json');
 const journalPath = root => path.join(root, '.l2solo', 'transaction.json');
 
-async function recover(root, log = () => {}) {
+function needsDatabaseRollback(journal) {
+    if (!journal?.databaseBackup || ['committed', 'rejected'].includes(journal.phase)) return false;
+    return journal.startupProtocolVersion === 2 ? ['migrating', 'recovering'].includes(journal.phase) : true;
+}
+
+async function verifyLegacyRecovery(journal) {
+    for (const file of journal.databaseBackup.files) {
+        const filename = file.canonicalPath || file.path;
+        let stat;
+        try { stat = await fs.promises.stat(filename, { bigint: true }); }
+        catch (error) { if (error.code !== 'ENOENT') throw error; }
+        if (file.existed !== Boolean(stat) || file.identity && (file.identity.device !== String(stat?.dev) || file.identity.inode !== String(stat?.ino))
+            || file.existed && !file.identity && await sha256(filename) !== file.sha256) {
+            throw new Error('The databases changed outside the legacy update. Automatic recovery stopped without changing files; keep the current databases and pending snapshot.');
+        }
+    }
+}
+
+async function recover(root, log = () => {}, { restoreDatabases, keepPending = false } = {}) {
     const journal = await readJson(journalPath(root));
     if (!journal) return;
     if (!/^[a-f0-9-]{36}$/.test(journal.id) || !Array.isArray(journal.operations)) throw new Error('Invalid installation recovery journal.');
+    if (journal.phase === 'committed') { await fs.promises.rm(journalPath(root)); return; }
+    if (journal.phase === 'awaiting-start' && keepPending) return;
+    const restoreWorld = needsDatabaseRollback(journal);
+    if (restoreWorld && !restoreDatabases) throw new Error('Database recovery is required before this update can continue.');
+    if (restoreWorld && journal.phase !== 'recovering') {
+        if (journal.startupProtocolVersion !== 2) await verifyLegacyRecovery(journal);
+        // Once recovery starts, replacement inodes belong to this rollback;
+        // resuming a partially restored pair must repeat the same operation.
+        await writeJson(journalPath(root), { ...journal, phase: 'recovering' });
+    }
     const backup = path.join(root, '.l2solo', 'backups', journal.id);
     log('Recovering an interrupted server update…');
     for (const operation of journal.operations) {
@@ -25,10 +53,20 @@ async function recover(root, log = () => {}) {
             await fs.promises.copyFile(original, destination);
         } else await fs.promises.rm(destination, { force: true });
     }
+    if (restoreWorld) await restoreDatabases(journal);
     if (journal.previous) await writeJson(markerPath(root), journal.previous);
     else await fs.promises.rm(markerPath(root), { force: true });
     await fs.promises.rm(journalPath(root));
     log('Previous server files restored.');
+}
+
+async function commitRelease(root) {
+    const journal = await readJson(journalPath(root));
+    if (!journal) return;
+    // Persist acceptance before opening the game ports to players. Recovery
+    // must never restore an older world after new gameplay has been accepted.
+    await writeJson(journalPath(root), { ...journal, phase: 'committed' });
+    await fs.promises.rm(journalPath(root)).catch(() => {});
 }
 
 async function extractRelease(archive, stage, manifest) {
@@ -56,10 +94,38 @@ async function extractRelease(archive, stage, manifest) {
     }
 }
 
-async function applyRelease(root, stage, manifest, progress = () => {}) {
+async function stageRelease(cache, release, progress = () => {}, fetcher = fetch) {
+    validateManifest(release.manifest, release.tag);
+    await fs.promises.mkdir(cache, { recursive: true });
+    const complete = path.join(cache, release.manifest.archive.sha256);
+    try {
+        for (const file of release.manifest.files) {
+            const filename = await safeDestination(complete, file.path);
+            if ((await fs.promises.stat(filename)).size !== file.bytes || await sha256(filename) !== file.sha256) throw new Error('Cached server file checksum mismatch.');
+        }
+        return complete;
+    } catch { /* An incomplete or damaged download is replaced, never applied. */ }
+    const stage = await fs.promises.mkdtemp(path.join(cache, '.download-'));
+    const archive = `${stage}.zip`;
+    try {
+        await download(release.archiveUrl, archive, release.manifest.archive, (ratio, bytes, total) =>
+            progress({ label: 'Downloading server release', percent: ratio * 90, bytes, total }), fetcher);
+        progress({ label: 'Verifying server download', percent: 92 });
+        await extractRelease(archive, stage, release.manifest);
+        await fs.promises.rm(complete, { recursive: true, force: true });
+        await fs.promises.rename(stage, complete);
+        progress({ label: 'Server update downloaded', percent: 100 });
+        return complete;
+    } finally {
+        await fs.promises.rm(stage, { recursive: true, force: true });
+        await fs.promises.rm(archive, { force: true });
+    }
+}
+
+async function applyRelease(root, stage, manifest, progress = () => {}, options = {}) {
     validateManifest(manifest, manifest.tag);
     const previous = await readJson(markerPath(root));
-    const config = fs.existsSync(path.join(root, 'config/default.ini')) ? readConfig(root) : {};
+    const config = fs.existsSync(path.join(root, 'config/default.ini')) ? readConfig(root) : readConfig(stage);
     const databasePath = path.resolve(root, config.Database?.path || 'tmp/nodel2.sqlite');
     if (previous) validateManifest(previous, previous.tag);
     const operations = [];
@@ -92,7 +158,10 @@ async function applyRelease(root, stage, manifest, progress = () => {}) {
     }
     // Persist the full rollback plan before the first modification. Recovery is
     // idempotent, including a process interruption during recovery itself.
-    await writeJson(journalPath(root), { id, previous, operations, databasePath });
+    const databaseBackup = options.trial && operations.length ? await options.snapshotDatabases(id,
+        { databasePath, historyPath: config.Database?.historyPath || '', maximumSchemaVersion: manifest.databaseSchemaVersion }) : null;
+    await writeJson(journalPath(root), { id, previous, operations, databasePath, databaseBackup,
+        startupProtocolVersion: manifest.startupProtocolVersion || 1, phase: 'applying' });
     try {
         let complete = 0;
         for (const operation of operations) {
@@ -105,15 +174,18 @@ async function applyRelease(root, stage, manifest, progress = () => {}) {
             progress(++complete / operations.length);
         }
         await writeJson(markerPath(root), { ...manifest, installedAt: new Date().toISOString() });
-        await fs.promises.rm(journalPath(root));
+        if (options.trial && operations.length) {
+            const journal = await readJson(journalPath(root));
+            await writeJson(journalPath(root), { ...journal, phase: 'awaiting-start' });
+        } else await commitRelease(root);
     } catch (error) {
-        await recover(root);
+        await recover(root, () => {}, options);
         throw error;
     }
     return { changedFiles: operations.length, backup: operations.some(operation => operation.existed) ? backup : null };
 }
 
-async function installRelease(root, release, progress, fetcher = fetch) {
+async function installRelease(root, release, progress, fetcher = fetch, options = {}) {
     const stage = path.join(root, '.l2solo', `staging-${crypto.randomUUID()}`);
     const archive = `${stage}.zip`;
     try {
@@ -125,7 +197,11 @@ async function installRelease(root, release, progress, fetcher = fetch) {
                 if ((await fs.promises.stat(destination)).size !== file.bytes || await sha256(destination) !== file.sha256) { current = false; break; }
             } catch (error) { if (error.code === 'ENOENT') { current = false; break; } throw error; }
         }
-        if (current) return await applyRelease(root, stage, release.manifest);
+        if (current) return await applyRelease(root, stage, release.manifest, () => {}, options);
+        if (options.cacheDirectory) {
+            const prepared = await stageRelease(options.cacheDirectory, release, value => progress({ ...value, percent: 4 + value.percent * 0.5 }), fetcher);
+            return await applyRelease(root, prepared, release.manifest, ratio => progress({ label: 'Installing server files', percent: 62 + ratio * 12 }), options);
+        }
         progress({ label: 'Downloading server release', percent: 4 });
         await download(release.archiveUrl, archive, release.manifest.archive, (ratio, bytes, total) => {
             progress({ label: 'Downloading server release', percent: 4 + ratio * 50, bytes, total });
@@ -134,11 +210,11 @@ async function installRelease(root, release, progress, fetcher = fetch) {
         await fs.promises.mkdir(stage);
         await extractRelease(archive, stage, release.manifest);
         progress({ label: 'Installing server files', percent: 62 });
-        return await applyRelease(root, stage, release.manifest, ratio => progress({ label: 'Installing server files', percent: 62 + ratio * 12 }));
+        return await applyRelease(root, stage, release.manifest, ratio => progress({ label: 'Installing server files', percent: 62 + ratio * 12 }), options);
     } finally {
         await fs.promises.rm(stage, { recursive: true, force: true });
         await fs.promises.rm(archive, { force: true });
     }
 }
 
-module.exports = { markerPath, recover, applyRelease, extractRelease, installRelease };
+module.exports = { markerPath, journalPath, recover, commitRelease, needsDatabaseRollback, applyRelease, extractRelease, stageRelease, installRelease };

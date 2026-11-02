@@ -15,6 +15,7 @@ const { assetUrl, validateManifest, latestRelease, download } = require('../main
 const { applyRelease, extractRelease, markerPath, recover } = require('../main/installer.cjs');
 const { Controller } = require('../main/controller.cjs');
 const { news } = require('../main/news.cjs');
+const { help, settingHelp } = require('../main/settings-help.cjs');
 
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'l2solo-launcher-test-'));
 after(() => fs.rmSync(temporary, { recursive: true, force: true, maxRetries: 10 }));
@@ -155,10 +156,65 @@ test('settings preserve comments, unknown overrides and secrets while validating
     assert.equal(readConfig(root).BotPopulation.maxPlayingPopulation, '500');
     assert.equal(readConfig(root).AI, undefined, 'viewing settings must not shadow OpenRouter with an empty AI section');
     for (const change of [ { section: 'General', key: 'maxLevel', value: '79' }, { section: 'BotPopulation', key: 'maxPlayingPopulation', value: '-1' },
-        { section: 'OpenRouter', key: 'apiKey', value: 'key\n[Database]\npath=other' }, { section: 'General', key: 'missing', value: '1' } ]) {
+        { section: 'AI', key: 'apiKey', value: 'key\n[Database]\npath=other' }, { section: 'General', key: 'missing', value: '1' } ]) {
         await assert.rejects(saveSettings(root, [change]));
         assert.equal(await fs.promises.readFile(path.join(root, 'config/local.ini'), 'utf8'), raw);
     }
+});
+
+test('every bundled launcher setting has scoped help, with units and comment fallback for server extensions', async () => {
+    const root = await installed();
+    await put(root, 'config/default.ini', await fs.promises.readFile(path.resolve(__dirname, '../../config/default.ini'), 'utf8'));
+    const groups = settings(root);
+    for (const group of groups) for (const field of group.fields) {
+        assert.ok(help[group.id]?.[field.key], `Missing explanation: ${group.id}.${field.key}`);
+        assert.ok(field.description.length > 20);
+    }
+    const description = section => groups.find(group => group.id === section).fields.find(field => field.key === 'enabled').description;
+    assert.notEqual(description('AI'), description('ClanSimulation'));
+    assert.notEqual(description('AI'), description('WorldObserver'));
+    assert.equal(settingHelp('Database', 'checkpointIntervalMs').unit, 'ms');
+    assert.equal(settingHelp('Database', 'checkpointMinWalBytes').unit, 'bytes');
+    await fs.promises.appendFile(path.join(root, 'config/default.ini'), '\n[Extension]\n; Controls the test extension service.\ncustomEnabled = true\n');
+    const extended = settings(root).find(group => group.id === 'Extension');
+    assert.equal(extended.fields[0].description, 'Controls the test extension service.');
+});
+
+test('presentation hides the requested settings, groups related fields and preserves all hidden INI values', async () => {
+    const root = await installed();
+    const defaults = await fs.promises.readFile(path.resolve(__dirname, '../../config/default.ini'), 'utf8');
+    await put(root, 'config/default.ini', defaults);
+    const original = '; Hidden settings remain configured here\n[BotPopulation]\nenabled = false\ndeveloperDiagnostics = true\ndirectorEnabled = false\nmaxPlayingPopulation = 1700\n[Database]\npath = tmp/world.sqlite\nhistoryPath = tmp/custom-history.sqlite\ncheckpointIntervalMs = 7777\ncustomPrivateOption = keep-me\n[General]\nprotocol = 656\n[GameServer]\nid = 23\nmaxOnline = 250\npvp = true\n[AuthServer]\nprotocol = 0xc621\nblowfishKey = local-test-key\n[Enchant]\ncrystalWeaponChance = 12\n[ClanSimulation]\nbloodMarkItemId = 1419\nactionLeaseMs = 3456\n[ClanWars]\nreviewMs = 12345\nintelTtlMs = 56789\n';
+    await put(root, 'config/local.ini', original);
+    const groups = settings(root);
+    const fields = section => groups.find(group => group.id === section).fields;
+    const keys = section => fields(section).map(field => field.key);
+    assert.deepEqual(keys('BotPopulation'), ['maxPlayingPopulation','starterBotsPerRace','generatedColdBatchSize','generatedColdSeedDelayMs',
+        'pvpAggression','knowledgeErrorsEnabled','coldHonestTravel','ambientScenesEnabled','ambientSceneCooldownMs','ambientPairCooldownMs','ambientSceneTtlMs','devLogPlayerChat','debug']);
+    assert.deepEqual(keys('General'), ['maxLevel','progressionPreset','expRate','spRate','adenaRate','dropChanceRate','spoilRate','newbieRewardPolicy','pkDeathDropChance','showMonsterLevel']);
+    assert.deepEqual(keys('GameServer'), ['hostname','port','advertisedHostname','playerWarehouseSlots']);
+    assert.deepEqual(keys('AuthServer'), ['hostname','port','autoCreate']);
+    assert.deepEqual(keys('Database'), ['path']);
+    assert.deepEqual(keys('Enchant'), ['weaponChance','blessedWeaponChance','maxWeapon','armorChance','blessedArmorChance','maxArmor',
+        'accessoryChance','blessedAccessoryChance','maxAccessory','safeMax','safeMaxFull']);
+    assert.deepEqual(keys('ClanWars'), ['enabled','hostilityThreshold','minHarmEpisodes','quietWithdrawMs','redeclareCooldownMs',
+        'minMembers','maxMembers','maxActiveOperations','operationMs','operationCooldownMs','lossWindowMs','counterattackCooldownMs']);
+    for (const key of ['maxBotMemberShare','bloodMarkItemId','bloodMarkSourceNpcId','strategyRetryMs','actionBatchSize','actionLeaseMs','actionRetryMs']) {
+        assert.equal(keys('ClanSimulation').includes(key), false, key);
+    }
+    assert.deepEqual([...new Set(fields('BotPopulation').map(field => field.group))], ['Population & seeding','Behavior & travel','Social scenes','Logging']);
+    assert.deepEqual([...new Set(fields('Enchant').map(field => field.group))], ['Weapons','Armour','Jewellery','Safe enchant levels']);
+    const before = readConfig(root);
+    assert.equal(await fs.promises.readFile(path.join(root, 'config/local.ini'), 'utf8'), original, 'reading the presentation must not rewrite INI files');
+    await saveSettings(root, [{section:'BotPopulation',key:'maxPlayingPopulation',value:'1600'}]);
+    const saved = original.replace('maxPlayingPopulation = 1700', 'maxPlayingPopulation = 1600');
+    assert.equal(await fs.promises.readFile(path.join(root, 'config/local.ini'), 'utf8'), saved);
+    assert.equal(await fs.promises.readFile(path.join(root, 'config/default.ini'), 'utf8'), defaults);
+    const after = readConfig(root);
+    before.BotPopulation.maxPlayingPopulation = '1600';
+    assert.deepEqual(after, before, 'hidden values must remain readable by the runtime configuration loader');
+    await assert.rejects(saveSettings(root, [{section:'Database',key:'historyPath',value:'tmp/other.sqlite'}]), /Unknown server setting/);
+    assert.equal(await fs.promises.readFile(path.join(root, 'config/local.ini'), 'utf8'), saved);
 });
 
 test('enum settings publish selectable choices and reject unsupported values without changing the INI', async () => {
@@ -166,40 +222,56 @@ test('enum settings publish selectable choices and reject unsupported values wit
     await put(root, 'config/default.ini', await fs.promises.readFile(path.resolve(__dirname, '../../config/default.ini'), 'utf8'));
     await put(root, 'config/local.ini', '[OpenRouter]\nreasoningEffort = legacy-value\n[Future]\nreasoningEffort = custom-value\n');
     const field = (section, key) => settings(root).find(group => group.id === section).fields.find(field => field.key === key);
-    for (const section of ['AI', 'OpenRouter']) {
+    for (const section of ['AI']) {
         assert.equal(field(section, 'reasoningEffort').type, 'select');
         assert.deepEqual(field(section, 'reasoningEffort').options, ['off', 'low', 'medium', 'high']);
         assert.deepEqual(field(section, 'completionLimitParam').options, ['max_tokens', 'max_completion_tokens']);
     }
-    assert.equal(field('OpenRouter', 'reasoningEffort').value, 'legacy-value', 'reading an unknown value must not silently replace it');
+    assert.equal(field('AI', 'reasoningEffort').value, 'legacy-value', 'reading an unknown value must not silently replace it');
     assert.equal(field('Future', 'reasoningEffort').type, 'text', 'enum definitions must be scoped to their sections');
-    assert.equal(field('OpenRouter', 'model').type, 'text');
-    assert.equal(field('OpenRouter', 'enabled').type, 'boolean');
+    assert.equal(field('AI', 'model').type, 'text');
+    assert.equal(field('AI', 'enabled').type, 'boolean');
+    assert.equal(settings(root).some(section => ['OpenRouter', 'Langfuse'].includes(section.id)), false);
     assert.deepEqual(field('General', 'progressionPreset').options, ['x1', 'x10', 'x50']);
     assert.deepEqual(field('General', 'newbieRewardPolicy').options, ['strict', 'grant', 'always']);
-    assert.deepEqual(field('OpenRouter', 'providerSort').options, ['', 'price', 'throughput', 'latency']);
     await saveSettings(root, [
-        { section: 'OpenRouter', key: 'reasoningEffort', value: 'high' },
-        { section: 'OpenRouter', key: 'completionLimitParam', value: 'max_completion_tokens' },
-        { section: 'OpenRouter', key: 'providerSort', value: '' },
-        { section: 'General', key: 'newbieRewardPolicy', value: 'grant' },
-        { section: 'AI', key: 'reasoningEffort', value: 'medium' }
+        { section: 'AI', key: 'reasoningEffort', value: 'high' },
+        { section: 'AI', key: 'completionLimitParam', value: 'max_completion_tokens' },
+        { section: 'General', key: 'newbieRewardPolicy', value: 'grant' }
     ]);
-    assert.equal(readConfig(root).OpenRouter.reasoningEffort, 'high');
-    assert.equal(readConfig(root).OpenRouter.providerSort, '');
-    assert.equal(readConfig(root).AI.reasoningEffort, 'medium');
+    assert.equal(readConfig(root).OpenRouter.reasoningEffort, 'legacy-value');
+    assert.equal(readConfig(root).AI.reasoningEffort, 'high');
+    assert.equal(readConfig(root).AI.providerSort, 'price', 'hidden legacy routing must survive migration');
     const raw = await fs.promises.readFile(path.join(root, 'config/local.ini'), 'utf8');
     for (const change of [
-        { section: 'OpenRouter', key: 'reasoningEffort', value: 'xhigh' },
+        { section: 'AI', key: 'reasoningEffort', value: 'xhigh' },
         { section: 'AI', key: 'reasoningEffort', value: 'false' },
         { section: 'AI', key: 'completionLimitParam', value: 'max_output_tokens' },
         { section: 'General', key: 'progressionPreset', value: 'x100' },
-        { section: 'General', key: 'newbieRewardPolicy', value: 'unknown' },
-        { section: 'OpenRouter', key: 'providerSort', value: 'unknown' }
+        { section: 'General', key: 'newbieRewardPolicy', value: 'unknown' }
     ]) {
         await assert.rejects(saveSettings(root, [change]), /Choose one of/);
         assert.equal(await fs.promises.readFile(path.join(root, 'config/local.ini'), 'utf8'), raw);
     }
+});
+
+test('unified AI preserves the configured provider during migration and keeps custom AI independent of legacy settings', async () => {
+    const root = await installed();
+    await put(root, 'config/local.ini', '[OpenRouter]\nenabled=true\napiKey=keep-secret\nmodel=legacy-model\nproviderOrder=OpenAI\n[Langfuse]\nenabled=true\n');
+    const ai = () => Object.fromEntries(settings(root).find(section => section.id === 'AI').fields.map(field => [field.key,field.value]));
+    assert.equal(ai().model, 'legacy-model');
+    assert.equal(ai().apiUrl, 'https://openrouter.ai/api/v1/chat/completions');
+    assert.equal(readConfig(root).AI, undefined);
+    await saveSettings(root, [{section:'AI',key:'apiUrl',value:'http://127.0.0.1:1234/v1/chat/completions'}]);
+    assert.equal(readConfig(root).AI.apiKey, 'keep-secret');
+    assert.equal(readConfig(root).AI.enabled, 'true');
+    assert.equal(readConfig(root).AI.model, 'legacy-model');
+    assert.equal(readConfig(root).AI.providerOrder, 'OpenAI');
+    assert.equal(readConfig(root).Langfuse.enabled, 'true', 'hiding developer settings must not erase them');
+    await put(root, 'config/local.ini', '[AI]\napiUrl=http://localhost:9000/v1/chat/completions\nmodel=local-model\n');
+    assert.equal(ai().model, 'local-model');
+    assert.equal(ai().apiKey, '', 'custom AI must not inherit the legacy provider secret');
+    await assert.rejects(saveSettings(root,[{section:'Langfuse',key:'enabled',value:'false'}]),/Unknown server setting/);
 });
 
 test('folder attachment rejects unrelated folders and leaves them untouched', async () => {
@@ -280,7 +352,7 @@ test('controller downloads and installs a release end to end with progress and r
         { name: 'l2solo-release.json', browser_download_url: assetUrl(item.manifest.tag, 'l2solo-release.json') },
         { name: item.manifest.archive.name, size: bytes.length, digest: `sha256:${item.manifest.archive.sha256}`, browser_download_url: assetUrl(item.manifest.tag, item.manifest.archive.name) }
     ] };
-    const fetcher = async url => url.includes('/api.github.com/') ? Response.json(release)
+    const fetcher = async url => url.includes('/api.github.com/') ? Response.json([release])
         : url.endsWith('/l2solo-release.json') ? Response.json(item.manifest) : new Response(bytes);
     const app = new Controller({ userData: directory('install-profile'), nodePath: process.execPath, fetcher });
     const root = directory('fresh-world');
@@ -300,9 +372,9 @@ test('controller downloads and installs a release end to end with progress and r
 
 test('release discovery handles unpublished tags and untrusted asset URLs', async () => {
     await assert.rejects(latestRelease(async () => new Response('', { status: 404 })), /No stable release/);
-    await assert.rejects(latestRelease(async () => Response.json({ tag_name: 'v0.1.0', assets: [
+    await assert.rejects(latestRelease(async () => Response.json([{ tag_name: 'v0.1.0', assets: [
         { name: 'l2solo-release.json', browser_download_url: 'https://attacker.example/manifest' }
-    ] })), /does not contain launcher/);
+    ] }])), /does not contain launcher/);
 });
 
 test('news falls back to clearly marked preview and never accepts arbitrary executable links', async () => {

@@ -3,14 +3,15 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
+const { settingHelp } = require('./settings-help.cjs');
+const { sectionOrder, fieldVisible, fieldLayout } = require('./settings-layout.cjs');
 
 const featured = {
     General: ['progressionPreset', 'maxLevel', 'expRate', 'spRate', 'adenaRate', 'dropChanceRate', 'spoilRate'],
-    BotPopulation: ['enabled', 'maxPlayingPopulation', 'pvpAggression', 'knowledgeErrorsEnabled', 'coldHonestTravel'],
+    BotPopulation: ['maxPlayingPopulation', 'pvpAggression', 'knowledgeErrorsEnabled', 'coldHonestTravel'],
     AI: ['enabled', 'apiUrl', 'apiKey', 'model', 'partyRouterModel', 'maxConcurrentRequests'],
-    OpenRouter: ['enabled', 'apiUrl', 'apiKey', 'model', 'partyRouterModel', 'maxConcurrentRequests'],
     WorldObserver: ['enabled', 'hostname', 'port'],
-    GameServer: ['hostname', 'advertisedHostname', 'port', 'maxOnline', 'pvp']
+    GameServer: ['hostname', 'advertisedHostname', 'port']
 };
 const extras = {
     General: { spRate: '1', spoilRate: '1' },
@@ -22,11 +23,16 @@ const enumOptions = {
     'General.progressionPreset': ['x1', 'x10', 'x50'],
     'General.newbieRewardPolicy': ['strict', 'grant', 'always']
 };
-for (const section of ['AI', 'OpenRouter']) {
+for (const section of ['AI']) {
     enumOptions[`${section}.reasoningEffort`] = ['off', 'low', 'medium', 'high'];
     enumOptions[`${section}.completionLimitParam`] = ['max_tokens', 'max_completion_tokens'];
     // https://openrouter.ai/docs/guides/routing/provider-selection
     enumOptions[`${section}.providerSort`] = ['', 'price', 'throughput', 'latency'];
+}
+
+function aiConfig(config) {
+    return { ...extras.AI, ...(config.AI || { apiUrl: 'https://openrouter.ai/api/v1/chat/completions',
+        completionLimitParam: 'max_completion_tokens', strictSchema: 'false', ...config.OpenRouter }) };
 }
 
 function parseIni(raw) {
@@ -54,20 +60,33 @@ function readConfig(root) {
 
 function settings(root) {
     const config = readConfig(root);
+    const comments = {};
+    let commentSection = '', pendingComments = [];
+    for (const line of fs.readFileSync(path.join(root, 'config/default.ini'), 'utf8').split(/\r?\n/)) {
+        const text = line.trim();
+        if (/^[;#]/.test(text)) { pendingComments.push(text.replace(/^[;#]\s?/, '')); continue; }
+        const heading = text.match(/^\[(\w+)\]$/);
+        if (heading) commentSection = heading[1];
+        const pair = text.match(/^(\w+)\s*=/);
+        if (pair && pendingComments.length) comments[`${commentSection}.${pair[1]}`] = pendingComments.join(' ').slice(0, 1200);
+        pendingComments = [];
+    }
     const sections = { ...config };
-    if (!sections.AI) sections.AI = {}; // Custom provider is opt-in; merely viewing it must not shadow OpenRouter.
-    const order = ['General', 'BotPopulation', config.AI ? 'AI' : 'OpenRouter', 'GameServer', 'AuthServer', 'WorldObserver'];
-    return Object.entries(sections).sort(([a], [b]) => (order.includes(a) ? order.indexOf(a) : 99) - (order.includes(b) ? order.indexOf(b) : 99)).map(([section, values]) => ({
-        id: section, active: section === 'AI' ? Boolean(config.AI) : section === 'OpenRouter' ? !config.AI : true,
-        fields: Object.entries({ ...extras[section], ...values }).map(([key, value]) => ({
+    sections.AI = Object.fromEntries(Object.entries(aiConfig(config)).filter(([key]) => Object.hasOwn(extras.AI, key)));
+    delete sections.OpenRouter;
+    delete sections.Langfuse;
+    return Object.entries(sections).sort(([a], [b]) => (sectionOrder.includes(a) ? sectionOrder.indexOf(a) : 99) - (sectionOrder.includes(b) ? sectionOrder.indexOf(b) : 99)).map(([section, values]) => ({
+        id: section, active: true,
+        fields: Object.entries({ ...extras[section], ...values }).filter(([key]) => fieldVisible(section, key)).map(([key, value]) => ({
             key, value: String(section === 'General' && values[key] === undefined && key === 'spRate' ? values.expRate || '1'
                 : section === 'General' && values[key] === undefined && key === 'spoilRate' ? values.dropChanceRate || '1' : value),
+            ...settingHelp(section, key, comments[`${section}.${key}`]),
             type: enumOptions[`${section}.${key}`] ? 'select' : /^(true|false)$/i.test(String(value)) ? 'boolean' : /key|secret|password/i.test(key) ? 'password' : 'text',
             options: enumOptions[`${section}.${key}`]?.slice(),
-            order: featured[section]?.indexOf(key) ?? -1,
+            ...fieldLayout(section, key),
             featured: featured[section]?.includes(key) || false
-        }))
-    }));
+        })).sort((a, b) => a.order - b.order || a.key.localeCompare(b.key))
+    })).filter(section => section.fields.length);
 }
 
 function validate(section, key, value) {
@@ -102,6 +121,13 @@ async function saveSettings(root, changes) {
         }
         if (field.type === 'boolean' && !['true', 'false'].includes(change.value)) throw new Error('Expected true or false.');
     }
+    const config = readConfig(root);
+    // Creating [AI] changes provider precedence. Carry the complete legacy
+    // configuration across before applying edits, including hidden routing keys.
+    const writes = changes.some(change => change.section === 'AI') && !config.AI
+        ? [...new Map([...Object.entries(aiConfig(config)).map(([key, value]) => ({ section: 'AI', key, value })), ...changes]
+            .map(change => [`${change.section}.${change.key}`, change])).values()]
+        : changes;
     const filename = path.join(root, 'config/local.ini');
     try { if ((await fs.promises.lstat(filename)).isSymbolicLink()) throw new Error('config/local.ini must not be a symbolic link when editing settings.'); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
@@ -109,7 +135,7 @@ async function saveSettings(root, changes) {
     try { raw = await fs.promises.readFile(filename, 'utf8'); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     const lines = raw.split(/\r?\n/);
-    const pending = new Map(changes.map(change => [`${change.section}.${change.key}`, change]));
+    const pending = new Map(writes.map(change => [`${change.section}.${change.key}`, change]));
     let section = '';
     // Update every duplicate assignment so a later duplicate cannot undo the edit.
     for (let index = 0; index < lines.length; index++) {
@@ -119,7 +145,7 @@ async function saveSettings(root, changes) {
         const change = pair && pending.get(`${section}.${pair[1]}`);
         if (change) lines[index] = `${change.key} = ${change.value}`;
     }
-    for (const change of changes) {
+    for (const change of writes) {
         let active = '', found = false;
         for (const line of lines) {
             const heading = line.trim().match(/^\[(\w+)\]$/);

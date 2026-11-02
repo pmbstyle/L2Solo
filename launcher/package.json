@@ -1,10 +1,14 @@
 {
   "name": "l2solo-launcher",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Install, configure and run your L2Solo world",
   "homepage": "https://l2solo.com",
-  "repository": { "type": "git", "url": "https://github.com/pmbstyle/L2Solo.git", "directory": "launcher" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pmbstyle/L2Solo.git",
+    "directory": "launcher"
+  },
   "author": "L2Solo",
   "license": "SEE LICENSE IN LICENSE",
   "main": "main/index.cjs",
@@ -16,30 +20,89 @@
     "runtime": "node scripts/prepare-runtime.cjs",
     "release:server": "node scripts/package-server.cjs",
     "dist": "electron-builder --publish never",
-    "pack": "electron-builder --dir --publish never"
+    "pack": "electron-builder --dir --publish never",
+    "release:launcher": "node scripts/launcher-assets.cjs",
+    "release:publish": "node scripts/publish-release.cjs"
   },
   "dependencies": {
-    "extract-zip": "2.0.1"
+    "electron-updater": "6.8.12",
+    "extract-zip": "2.0.1",
+    "js-yaml": "4.1.1",
+    "tar": "7.5.14"
   },
   "devDependencies": {
     "archiver": "7.0.1",
     "electron": "45.2.1",
-    "electron-builder": "26.18.0",
-    "tar": "7.5.14"
+    "electron-builder": "26.18.0"
   },
   "build": {
+    "forceCodeSigning": false,
     "appId": "com.l2solo.launcher",
     "productName": "L2Solo Launcher",
     "icon": "assets/logo.png",
     "artifactName": "L2Solo-Launcher-${version}-${os}-${arch}.${ext}",
-    "directories": { "output": "dist", "buildResources": "assets" },
-    "files": ["main/**", "renderer/**", "assets/**", "package.json", "LICENSE"],
-    "asarUnpack": ["main/db-guard.cjs", "main/geodata.cjs"],
-    "extraResources": [{ "from": "runtime", "to": "runtime" }],
-    "mac": { "category": "public.app-category.games", "target": ["dmg", "zip"] },
-    "win": { "target": ["nsis", "portable"] },
-    "nsis": { "artifactName": "L2Solo-Launcher-${version}-windows-${arch}-Setup.${ext}", "oneClick": false, "allowToChangeInstallationDirectory": true, "deleteAppDataOnUninstall": false },
-    "portable": { "artifactName": "L2Solo-Launcher-${version}-windows-${arch}-Portable.${ext}" },
-    "linux": { "category": "Game", "target": ["AppImage", "deb"], "maintainer": "pmbstyle" }
-  }
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "main/**",
+      "renderer/**",
+      "assets/**",
+      "package.json",
+      "LICENSE"
+    ],
+    "asarUnpack": [
+      "main/db-guard.cjs",
+      "main/geodata.cjs",
+      "main/world-data.cjs",
+      "main/update-data.cjs"
+    ],
+    "extraResources": [
+      {
+        "from": "runtime",
+        "to": "runtime"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.games",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "hardenedRuntime": true,
+      "identity": "-",
+      "notarize": false,
+      "timestamp": "none"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "artifactName": "L2Solo-Launcher-${version}-windows-${arch}-Setup.${ext}",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "portable": {
+      "artifactName": "L2Solo-Launcher-${version}-windows-${arch}-Portable.${ext}"
+    },
+    "linux": {
+      "category": "Game",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "maintainer": "pmbstyle"
+    },
+    "publish": {
+      "provider": "generic",
+      "url": "https://github.com/pmbstyle/L2Solo/releases/download/launcher-v${version}/",
+      "channel": "latest"
+    }
+  },
+  "serverRuntimeVersion": "22.23.0"
 }

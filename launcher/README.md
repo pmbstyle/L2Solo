@@ -1,6 +1,18 @@
 # L2Solo desktop launcher
 
+Pushes to `develop` build and publish a separate Preview application and matching server prereleases after CI passes. Preview uses its own profile, server folder and update feed; stable releases require a tag whose source is in `main`. Release descriptions come from the reviewed `release-notes/server.md` and `release-notes/launcher.md` files. See [release operations](docs/releases.md) for the preview-to-stable workflow and installed update checks.
+
 Electron desktop application for installing, updating, configuring and running a local L2Solo server. The interface is English and follows World Observer's dark green and gold palette. The supplied L2Solo emblem is bundled locally.
+
+The compact desktop shell puts server status, uptime, start/stop, World Observer, the latest backup and recent activity on Home. Server operations use the green and gold surface; there are no promotional banners or placeholder news on Home. Navigation, buttons, dialogs and running states have subtle animations that respect the system's reduced-motion setting.
+
+Home shows the login address with the AuthServer port. `GameServer.advertisedHostname` takes precedence; otherwise the launcher uses a concrete AuthServer listen address or a local IPv4 address. While running, a population bar receives counts from the server every two seconds, independently of World Observer and developer diagnostics. The bar shows dynamic bots against their configured target across hot/warm/cold states once, excluding static services. Online players have a separate counter and do not affect the bar or its target. Missing or stale reports are shown as unavailable rather than as zero population.
+
+Every visible bundled setting has a section-specific explanation below its label. Time and byte fields also show readable equivalents next to the raw value, and settings search includes the explanations. The global notice describes when saved changes take effect. Settings added by another server version can use their default-INI comments as help; undocumented custom keys are identified as such rather than given invented behavior.
+
+The settings presentation groups related fields and orders sections from gameplay and simulation to provider, network and database settings. Low-level bot scheduling, diagnostics, raid admission, activation, database maintenance, protocol and selected clan/enchanting internals are hidden from the desktop controls, Quick setup and search. Database exposes only the world database path. This is a presentation filter: the server continues reading all values from `default.ini` and `local.ini`, and saving visible fields preserves hidden overrides and comments.
+
+Server settings expose one generic **AI** section for any OpenAI-compatible URL, including OpenRouter. Existing OpenRouter settings are displayed there until the first AI edit migrates the complete configuration to `[AI]`, preserving credentials, models and routing options. Reading settings or saving unrelated fields does not migrate them. Langfuse developer settings stay in the configuration file and are not exposed in the launcher.
 
 ## Development
 
@@ -13,7 +25,7 @@ npm --prefix launcher run runtime
 npm run launcher
 ```
 
-`runtime` downloads official Node.js 22.23.0 for the current OS/architecture, verifies it against Node.js's HTTPS checksum list, includes its license, and proves that `node:sqlite` loads. The installed app includes this runtime: users need neither Git, npm nor a separate Node.js installation. Server code runs under the bundled Node, outside Electron's Node ABI.
+`runtime` downloads official Node.js 22.23.0 for the current OS/architecture, verifies it against Node.js's HTTPS checksum list, includes its license, and proves that `node:sqlite` loads. The installed app includes this runtime: users need neither Git, npm nor a separate Node.js installation. Server code runs under its selected private Node runtime, outside Electron's Node ABI.
 
 The original browser launcher remains available through `npm start`.
 
@@ -31,70 +43,48 @@ npm --prefix launcher run dist
 
 `test:packaged` loads the actual built ASAR and uses its bundled Node.js plus unpacked helpers to check database locks, geodata verification and graceful start/stop against a temporary server fixture. Both desktop workflows run this check after packaging.
 
-For a desktop UI smoke test, set `L2SOLO_SMOKE_DIR` to an **empty temporary directory** and run the development launcher. The test uses an isolated profile and a disposable server fixture, exercises navigation, INI editing, start/stop and console streaming, writes screenshots plus `result.json`, then exits. Development-only screenshot capture is also available through `L2SOLO_SCREENSHOT` (absolute PNG path). Neither hook runs in a packaged application.
+For a desktop UI smoke test, set `L2SOLO_SMOKE_DIR` to an **empty temporary directory** and run the development launcher. The test uses an isolated profile and a disposable server fixture, exercises navigation, backup creation/restoration/deletion, wipe confirmation and cancellation, INI editing, start/stop and console streaming, writes screenshots plus `result.json`, then exits. Development-only screenshot capture is also available through `L2SOLO_SCREENSHOT` (absolute PNG path). Neither hook runs in a packaged application.
 
 ## Installation and updates
 
-1. Choose an empty folder or an existing L2Solo server.
-2. Resolve the latest **published, stable GitHub Release**, tagged `vX.Y.Z`.
-3. Read `l2solo-release.json`; verify compatibility with the launcher and the release's archive metadata.
-4. Compare installed file checksums. If everything matches, skip the server download. Otherwise download the release archive, verify its SHA-256, extract to staging, and verify every file's size and SHA-256.
-5. Back up replaced files, persist a rollback journal, then update only changed release files. Remove obsolete files only if they still match the previous release. Preserve untracked additions.
-6. Verify/install the release's C4 geodata using the existing manifest, archive checksum, per-region hashes, usage leases and whole-directory rollback mechanism.
+The installed application needs no Git, npm or global Node.js. It seeds a private runtime cache from its bundled Node.js, then selects the exact version required by the server manifest. Missing or damaged runtimes are downloaded from nodejs.org and verified against its HTTPS checksum list. Cached binaries are checked by hash and by loading `node:sqlite`; existing versions survive application updates. No runtime is replaced inside a running server or the application bundle.
 
-Closing the window while preparation is active is blocked. Closing it with the server running first requests a graceful shutdown, including the existing database drain. A lost launcher IPC connection also stops its server wrapper. A forced process kill is the last fallback after the normal shutdown timeout.
+Choose an empty folder to install, or attach an existing server without automatically replacing its code. A folder containing `.git` is a developer checkout: starting, settings and world tools remain available, while archive updates are disabled. Use a separate folder for a managed installation.
 
-The main process owns file, network and process operations. The sandboxed renderer receives a narrow preload API; news is rendered as text, with external links restricted to the project, GitHub and community domains.
+Server releases use `server-vX.Y.Z`; launcher releases use `launcher-vA.B.C`. Discovery filters published stable releases by component and compares their versions independently. Legacy server tags `vX.Y.Z` and schema-1 manifests remain readable. The repository-wide Latest pointer is not used for component discovery. An installation pins its selected release, compatibility requirement and runtime for the whole operation; background checks may discover a newer release without changing that selection. Checks share a four-hour cached release list, run in the background on startup and periodically, and can be refreshed manually. Offline checks never block an already installed server from starting.
 
-No published release is required to attach and start an existing server. Update discovery reports the absence of a release explicitly. The installation remains attached and geodata can still be repaired. Automatic reconciliation runs when the user selects a folder; reopening the launcher verifies the attached installation without automatically replacing its server code.
+The server archive includes production dependencies, defaults and static content. If installed file hashes match, no archive is downloaded. Otherwise the full ZIP is downloaded and every archive entry and payload is verified. Downloads can run while the server is playing; applying an update requires a stopped server. Completed downloads are cached in the application profile and reused during installation. Geodata is verified and distributed separately.
 
-Startup also checks for updates in the background. A failed background check leaves the installed server usable; the manual check shows the error when requested.
+An imported world with a newer migration version than the target release is rejected before code changes. A schema-2 update snapshots the stopped world and matching history databases, saves replaced code and writes a recovery journal before changing release files. Obsolete files are removed only when unchanged from their previous release. Local settings, databases, manual saves, geodata, user additions and `.git` are excluded from release ownership.
 
-## Files owned by the user
+Before the first start, the launcher rechecks both database paths and physical file identities against the snapshot. Manual INI path changes or replaced database files leave the update pending and refuse startup until the original pair is restored. The server repeats the check under the access lock, uses the verified physical pair and records migration authorization before opening either database. A refusal or crash before this authorization restores only code and leaves world data unchanged, including after a launcher restart. The first start after an update is a trial. Database migrations and world initialization run and both login/game ports must bind. Player connections are rejected until the launcher commits the update. A crash, timeout or interrupted trial after migration authorization restores the previous files and both databases. An installed update that has not started yet survives an application restart and remains pending. Once the launcher commits and admits players, it never automatically restores an older world. Restoring manual backups, wiping data and changing database paths are blocked while verification is pending. Legacy pending updates stop recovery if their database identity cannot be verified; keep the journal and snapshots when this happens. Old schema-1 releases retain their original file-only recovery behavior.
 
-The launcher preserves `config/local.ini`, the database (including a custom configured path), `tmp/`, saved games, geodata, `.git`, and files outside the release manifest. Local settings are updated in place with comments and unrelated overrides retained. New API keys are written with private file permissions. Settings are saved while the launcher-managed server is stopped and apply on its next start.
+The operation journal and snapshots are in `.l2solo/`; pending recovery always holds the per-world access lock. Snapshot files in `.l2solo/backups/<operation>/databases` are service recovery copies, separate from manual `tmp/saves` backups. Treat them as private world data. If recovery reports an error, retain that folder and resolve the error before starting the server directly. A direct start of an unverified managed release is rejected by the server wrapper.
 
-Release files come only from Git's tracked `src`, `scripts`, `database`, static `data`, configuration defaults, package metadata and documentation. Production dependencies are installed into the archive at build time. Archives cannot include local configuration, SQLite databases, geodata, symlinks or files outside those roots. Existing symlinks along release destinations must be moved before an update.
+The Updates view has separate launcher and server controls. Launcher updates use `electron-updater` with architecture-specific metadata from a canonical launcher release. Downloads do not stop the world and closing the application does not automatically install them. **Update & restart** becomes available after current file/database operations finish. It gracefully stops the server, waits for its database drain, then invokes the native updater. macOS uses free ad-hoc signing and the manual DMG route: the update button downloads the matching DMG; quit the launcher and replace the app to finish. Development builds, Windows portable builds and Linux DEB installations also use the matching manual installer route. Installed Windows NSIS and Linux AppImage builds retain in-app updates.
 
-Per-installation and per-world SQLite access locks prevent conflicting launchers and updates to a running world, including one started outside this app. OS locks release after a crash. The update journal is recovered before the next update/start. File backups stay in `.l2solo/backups/`; the current installation manifest is `.l2solo/installation.json`. These are server-file backups, **not a replacement for world/database backups**. The server's own schema migrations remain responsible for database compatibility.
+The main process owns network, process and file operations. The sandboxed renderer has a narrow preload API. Server helpers run outside Electron's Node ABI. Closing the application during file/database operations is blocked; closing with an active server first drains it. Logs appear in Console and `tmp/logs/desktop-server.log`. Uninstalling the launcher does not remove the server directory or application profile.
 
-Logs are visible in Console (last 250 messages) and appended to `tmp/logs/desktop-server.log`. The application profile remembers the selected folder. Uninstalling the launcher does not remove the selected server or the application profile.
+## World backups and wipe
 
-## Tagged release workflow
+**Backups & data** uses the existing server's saved-game implementation, shown as backups in the desktop app. Backups live in the selected server's `tmp/saves`, so existing browser-launcher saves are available there too. A backup includes the world database and its matching history database, including custom `Database.path` and `Database.historyPath` settings. It does not include server configuration or geodata.
 
-The server and launcher currently share version `0.1.0`. For each release, update both package versions and lockfiles, merge the changes, then create and push the matching tag:
+Creating, restoring and deleting backups requires a stopped server. Restore replaces the current world and history; restore and delete show confirmation dialogs. Backups are manual: the app does not create an extra snapshot automatically before restore or wipe. Create one first if you want to keep the current world.
 
-```sh
-git tag v0.1.0
-git push origin v0.1.0
-```
+The collapsed wipe panel supports **bots**, **players**, and **entire world**. The user must type the matching `WIPE BOTS`, `WIPE PLAYERS`, or `WIPE ALL` phrase and confirm the action. A wipe keeps saved backups. Main-process checks and the server's database access lock reject world operations while this launcher, another launcher, or a participating server holds the world. All database operations run under the bundled server Node.js. An older installation without the world-management scripts must be updated before these controls become available.
 
-`.github/workflows/release.yml` runs the existing server test suite in 12 shards, runs launcher tests, builds the server archive, and builds installers on native runners:
+## Component release workflow
 
-| Platform | Architecture | Artifacts |
-| --- | --- | --- |
-| Windows | x64 | NSIS installer, portable executable |
-| Linux | x64 | AppImage, Debian package |
-| macOS | Intel x64, Apple Silicon arm64 | DMG, ZIP |
+See [the release runbook](docs/releases.md) for bootstrap order, tags, artifacts, signing and verification.
 
-The final job publishes one complete GitHub Release only after all builds and tests pass. A failed job leaves the tag unpublished; rerun the workflow after addressing the failure. The manifest rejects a mismatch between the tag and package versions. Branch pushes do not publish releases.
+Server and launcher versions are independent. A server tag builds/tests the server and attaches the exact installers from the newest published compatible launcher release. It never rebuilds or re-signs an unchanged launcher. A launcher tag builds native installers, architecture-specific updater feeds and blockmaps. One launcher version always identifies one immutable set of binaries.
 
-The server archive is `L2Solo-Server-vX.Y.Z.zip`, accompanied by `l2solo-release.json` with `schemaVersion`, `tag`, `minimumLauncherVersion`, archive name/size/SHA-256, and every installed file's path/size/SHA-256. Keep schema version 1 compatible with older launchers or raise the minimum launcher version. A launcher that is too old directs the user to the release installer.
+The publish job assembles and verifies all assets in a draft, then makes the complete release public. Failed or incomplete jobs do not publish it. An existing published version cannot be overwritten. Only server releases move GitHub's public Latest pointer; both component catalogs are independent of that pointer.
 
-CI also runs desktop packaging checks for launcher PRs. Local tests do not prove Windows/Linux installer behavior; the corresponding CI jobs provide that check.
-
-### Signing
-
-Without signing secrets, CI produces unsigned Windows builds and ad-hoc macOS builds without notarization. Public distribution can therefore show OS trust prompts. Configure certificates before a public launch:
-
-- `MAC_CSC_LINK`, `MAC_CSC_KEY_PASSWORD`: macOS Developer ID certificate and password.
-- `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`: notarization credentials.
-- `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD`: Windows signing certificate and password.
-
-Linux does not use those signing credentials. Launcher updates currently use the matching downloaded installer; background self-update is not implemented.
+Releases require no paid certificates or signing secrets. Windows installers are unsigned; macOS builds use free ad-hoc signing without Apple notarization. macOS launcher updates use DMG replacement while server updates stay in the application. Windows and macOS may show operating-system trust prompts when installing or opening downloaded builds. A successful local build does not prove native Windows/Linux installer behavior or completion of GitHub CI.
 
 ## Website news API
 
-The launcher requests `GET https://l2solo.com/api/launcher/news`. The response contract is shown in [docs/news.example.json](docs/news.example.json): a versioned JSON object containing article IDs, category, title, excerpt, timestamp and HTTPS URL. No HTML or executable content is consumed. Return the latest articles first; Overview displays the first three.
+The launcher requests `GET https://l2solo.com/api/launcher/news`. The response contract is shown in [docs/news.example.json](docs/news.example.json): a versioned JSON object containing article IDs, category, title, excerpt, timestamp and HTTPS URL. No HTML or executable content is consumed. Return the latest articles first; Updates displays the first three.
 
-Until that endpoint exists, or when it is unavailable, the launcher displays bundled example stories with a visible **PREVIEW** label. Server update information comes from real GitHub Releases; no server version or update is invented. The website endpoint itself is outside this repository's implementation.
+Real articles appear in the Updates view. Until that endpoint exists, or when it is unavailable, the news section stays hidden rather than displaying bundled example stories. Server update information comes from real GitHub Releases; no server version or update is invented. The website endpoint itself is outside this repository's implementation.
