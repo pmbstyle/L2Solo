@@ -16,6 +16,8 @@ const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const Party = invoke('GameServer/Bot/Population/PartyIncomeComparison');
 const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Route = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
+const Sources = invoke('GameServer/Bot/Population/ColdOccupationSources');
+const Trip = invoke('GameServer/Bot/Economy/EconomicTrip');
 const GameTime = invoke('GameServer/World/GameTime');
 const started = 1791335800000;
 const time = minutes => started + minutes * GameTime.GAME_MINUTE_MS;
@@ -205,19 +207,24 @@ function verify() {
     // The bot's own build leaves the search's economic band (a complete kit, a
     // stock focus): no route. The rebuild keeps that focus: re-weighed, it could
     // flip back and ask the next search, a rebuild per step.
+    // Stock nobody sells takes no focus (T178), so this bot needs a seller: the
+    // worker's real supply, the towns' NPC shops and the routes to them (main
+    // alone builds with an unknown route, and an unknown route is no offer).
     {
+        Sources.initialise();
+        const supplied = { npcOffersFor: Sources.npcOffersFor, routeRows: Trip.prepared };
         let bot = null;
         for (let id = 990210; !bot && id < 990240; id++) {
-            const held = heldBot(id, {}, { complete: true });
+            const held = heldBot(id, supplied, { complete: true });
             if (/^stock:/.test(held.state.stats.wishFocus?.[0])) bot = held;
         }
         assert(bot, 'fixture: a build that chose a stock focus');
         const { state } = bot, focus = state.stats.wishFocus[0];
-        const left = count(() => Economy.forState(state, deps(1)));
+        const left = count(() => Economy.forState(state, deps(1, supplied)));
         assert(left.searches >= 1, 'the goal change searches');
         assert.notEqual(left.result.hunt.source, 'route', 'the bot leaves the route chosen for the old focus');
         assert.equal(left.result.statsPacket.wishFocus[0], focus, 'the rebuild re-weighs nothing');
-        const next = count(() => Economy.forState(published(state, left.result), deps(2)));
+        const next = count(() => Economy.forState(published(state, left.result), deps(2, supplied)));
         assert.equal(next.result.plan, left.result.plan, 'the next read serves it');
         assert.equal(next.searches, 0, 'with no search');
     }
