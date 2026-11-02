@@ -202,40 +202,31 @@ assert.equal(admittedFill.lines[0].line.ownerId, 2, 'fill streams caller admissi
 const admittedTown = Query.cheapestTown(leftContent, 1867, { amount: 1, accept: line => line.recordId !== 81 });
 assert.equal(admittedTown.lines[0].line.recordId, 82, 'town selection passes caller admission into the same fill');
 
-// E303: a cut call left short is sampled one in 64 when its caller opts in and priced again over the whole list;
-// `lost` counts those it fills (developer diagnostics only, the result itself unchanged).
-const Config = require('../src/GameServer/Bot/Population/PopulationConfig');
-const Diagnostics = require('../src/GameServer/Bot/Economy/EconomyDiagnostics');
+// The asks are read until one town holds the amount; the same read for planner and recheck.
 const deep = new BoardIndex();
 for (let id = 1; id <= 6; id++) deep.put(record(900 + id, {}, [{ selfId: 77, price: 10 + id }]));
-const diagnostics = Config.developerDiagnostics;
-Config.developerDiagnostics = true;
-try {
-    const counts = () => Diagnostics.metrics().counts;
-    const before = { ...counts() };
-    for (let call = 0; call < 64; call++) assert.equal(Query.cheapestTown(deep, 77, { amount: 6, quoteDepth: 5 }).whole, false);
-    assert.equal(counts()['cap:quotes:sampled'] || 0, before['cap:quotes:sampled'] || 0, 'no sample without the opt-in');
-    for (let call = 0; call < 64; call++) {
-        const capped = Query.cheapestTown(deep, 77, { amount: 6, quoteDepth: 5, sampleWhole: true });
-        assert.equal(capped.units, 5, 'the cap still prices only the first five asks');
-        assert.equal(capped.whole, false);
-    }
-    const delta = key => (counts()[key] || 0) - (before[key] || 0);
-    assert.equal(delta('cap:quotes:short'), 128);
-    assert.equal(delta('cap:quotes:sampled'), 1, 'one opted-in short call in 64 is sampled');
-    assert.equal(delta('cap:quotes:lost'), 1, 'the whole list fills the sampled call');
-    // A craft purchase table (one board read for many amounts) counts the cap per priced amount, not per build.
-    const checks = () => (counts()['cap:quotes:check'] || 0);
-    const checksBefore = checks();
-    const table = Query.townTable(deep, 77, { quoteDepth: 5 });
-    assert.equal(checks() - checksBefore, 0, 'building a table counts no check');
-    for (const amount of [1, 5, 6]) Query.cheapestIn(table, amount);
-    assert.equal(checks() - checksBefore, 3, 'one check per priced amount');
-    assert.equal(Query.cheapestTown(deep, 77, { amount: 6 }).whole, true);
-    // With diagnostics off an opted-in call never pays for the whole-list rerun.
-    Config.developerDiagnostics = false;
-    let accepted = 0;
-    for (let call = 0; call < 128; call++) Query.cheapestTown(deep, 77, { amount: 6, quoteDepth: 5, sampleWhole: true, accept: () => ++accepted > 0 });
-    assert.equal(accepted, 128 * 5, 'no rerun over the whole list while diagnostics are off');
-} finally { Config.developerDiagnostics = diagnostics; }
+assert.equal(Query.cheapestTown(deep, 77, { amount: 6, quoteDepth: 5 }).whole, true, 'asks are read until the amount is met');
+assert.equal(Query.cheapestTown(deep, 77, { amount: 6, quoteDepth: 5, accept: line => line.price !== 11 }).whole, false, 'a refused ask holds nothing');
+const planned = Query.townTable(deep, 77, { quoteDepth: 5 });
+assert.deepEqual(Query.cheapestIn(planned, 6).lines.map(row => row.line.price), Query.cheapestTown(deep, 77, { amount: 6, quoteDepth: 5 }).lines.map(row => row.line.price));
+assert.equal(Query.cheapestIn(planned, 6).whole, true, 'the table reads past the depth for its amount');
+assert.equal(Query.cheapestIn(planned, 5).lines.length, 5);
+// A flip on a line only a deep read reached drops the memo.
+let refused = 0;
+const flipping = Query.townTable(deep, 77, { quoteDepth: 5, accept: line => line.price !== refused });
+assert.equal(Query.cheapestIn(flipping, 6).whole, true);
+refused = 16;
+assert.equal(Query.cheapestIn(flipping, 6).whole, false, 'the table answers the refused sixth line');
+assert.equal(Query.topPrice({ npc: 2, npcPrice: 30, lines: [{ price: 10 }, { price: 20 }] }), 30, 'the cap is the dearest unit, not the mean');
+// A town the query does not name, a refused stack or an NPC out of reach does not end the read.
+const split = new BoardIndex();
+for (let id = 1; id <= 8; id++) split.put(record(800 + id, {}, [{ selfId: 78, price: 20 + id }]));
+const giran = () => Query.cheapestTown(split, 78, { amount: 8, quoteDepth: 5, towns: ['Giran'] });
+assert.equal(giran().whole, true);
+split.put(record(810, { town: 'Oren' }, [{ selfId: 78, price: 1, count: 8 }]));
+assert.equal(giran().whole, true, 'a stack in another town leaves the named town readable');
+assert.equal(Query.cheapestTown(split, 78, { amount: 8, quoteDepth: 5, towns: ['Giran'], npcOffers: [{ town: 'Oren', price: 1 }] }).units, 8);
+assert.equal(Query.cheapestTown(split, 78, { amount: 8, quoteDepth: 5, towns: ['Giran'], accept: line => line.price !== 21 }).whole, false, 'nothing else holds it');
+assert.equal(Query.cheapestTown(split, 78, { amount: 8, quoteDepth: 5, accept: line => line.price !== 1 }).whole, true, 'a refused stack does not count');
+assert.equal(Query.cheapestTown(split, 78, { amount: 8, quoteDepth: 5, maxPrice: 40, towns: ['Giran'], npcOffers: [{ town: 'Giran', price: 90 }] }).units, 8);
 console.log('PASS test_board_index');

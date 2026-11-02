@@ -459,8 +459,29 @@ function reservedUpgradeAmounts(state) {
     return reserved;
 }
 
-function reservedEquipmentAmounts(state, options = {}) {
+// One build asks this several times of one state, which does not move during
+// it: the outermost build opens the scope and no answer outlives it. A held
+// answer is shared, its readers do not write to it.
+const NO_OPTIONS = Object.freeze({});
+let reservationScope = null;
+function withReservations(fn) {
+    if (reservationScope) return fn();
+    reservationScope = new WeakMap();
+    try {
+        return fn();
+    } finally {
+        reservationScope = null;
+    }
+}
+
+function reservedEquipmentAmounts(state, options = NO_OPTIONS) {
     if (!state) return {};
+    if (!reservationScope || options !== NO_OPTIONS) return computeReservedEquipment(state, options);
+    let held = reservationScope.get(state);
+    if (!held) reservationScope.set(state, held = computeReservedEquipment(state, options));
+    return held;
+}
+function computeReservedEquipment(state, options) {
     const exchange = equipmentInputPlan(state);
     const inputs = equipmentMaterialAmounts(state, state.stats?.equipmentPlan, options);
     const upgrades = reservedUpgradeAmounts(state);
@@ -816,6 +837,7 @@ module.exports = {
     reservedCombinationAmounts,
     reservedCraftAmounts,
     reservedEquipmentAmounts,
+    withReservations,
     equipmentMaterialAmounts,
     collectedEquipmentInputs,
     productionInputAmounts,

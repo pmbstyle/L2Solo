@@ -6,6 +6,7 @@
 // is judged on live numbers before it exists.
 const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
 const ColdEconomyPlan = invoke('GameServer/Bot/Population/ColdEconomyPlan');
+const Equipment = invoke('GameServer/Bot/AI/BotEquipmentCompatibility');
 
 // In town a player reads money, bag and market at once.
 const TOWN = new Set(['shopping', 'crafting', 'merchant']);
@@ -30,7 +31,35 @@ function momentOf(state, baseline, facts, { board = null, leaf = null, why = '',
 }
 
 function createStats() {
-    return { builds: 0, skipped: 0, elsewhere: 0, goal: 0, posted: 0, moments: {}, why: {} };
+    return { builds: 0, skipped: 0, elsewhere: 0, goal: 0, posted: 0, moments: {}, why: {},
+        // What the queue's economy refreshes are worth: asked, full builds, built
+        // on a state whose next step rebuilds anyway, dropped stale, plans sent, sent acts.
+        refresh: { asked: 0, built: 0, dirty: 0, stale: 0, sent: 0, acts: 0 },
+        pause: { waited: 0, elsewhere: 0, goal: 0, posted: 0, pauses: 0, merged: 0, waitMs: 0, newRoots: 0, newGoals: 0 } };
+}
+
+// Decision 11-02, the shadow of pauses: a change waits until the bot enters the
+// right state. These go at once; every other build outside a rest would wait,
+// and the builds that waited are one build at the pause.
+// Decision 11-02, the shadow of a quiet build: one that would wait counts only
+// the gear families the last build held. fresh 1: a family this build holds and
+// the last one did not, such a build would not see it. 2: that family is its goal.
+const AT_ONCE = new Set(['first', 'party', 'native', 'goal_failed', 'goal_moved', 'dead', 'town', 'occupation', 'supply', 'bag']);
+const waiting = new Map();
+function settlePause(pause, id, state, moment, kind, at, fresh) {
+    const held = waiting.get(id);
+    if (AT_ONCE.has(moment) || state.activity === 'resting') {
+        if (held) { pause.pauses++; pause.merged += held.builds; pause.waitMs += Math.max(0, at - held.at); waiting.delete(id); }
+        return;
+    }
+    pause.waited++;
+    if (kind === 1) pause.elsewhere++;
+    if (kind === 2) pause.goal++;
+    if (kind === 3) pause.posted++;
+    if (fresh === 1) pause.newRoots++;
+    if (fresh === 2) pause.newGoals++;
+    if (held) held.builds++;
+    else waiting.set(id, { builds: 1, at });
 }
 
 // The first refusal's name; a raised event names its sections (the soft causes share
@@ -40,6 +69,11 @@ function whyOf(state, refused) {
     return `wish_dirty+${Sections.sectionNames(Number(state.stats?.wishDirty) || 0).join('+')}`;
 }
 
+// power:<item>:<slot>: the weapon slots are one family, as at the gear admission.
+function gearFamily(key) {
+    const slot = /^power:\d+:(\d+)/.exec(String(key))?.[1];
+    return slot === undefined ? null : Equipment.isWeaponSlot(Number(slot)) ? 'weapon' : slot;
+}
 // What a build left the bot doing, per bot, to compare the next build with.
 const seen = new Map();
 const added = (rows, name, kind) => {
@@ -53,8 +87,12 @@ function settle(stats, state, plan, { baseline, leaf, refused, nativeHolds, boar
     if (!facts || facts.at === baseline?.at) return;
     const id = Number(state.characterId), before = seen.get(id), pick = plan.activityPick;
     const now = { doing: pick?.activity ?? null, spot: pick?.spotId ?? null, npc: pick?.npcId ?? null,
-        focus: plan.economy?.network?.focus?.[0] ?? null, target: Number(plan.acquisitionPlan?.target?.selfId) || 0 };
+        focus: plan.economy?.network?.focus?.[0] ?? null, target: Number(plan.acquisitionPlan?.target?.selfId) || 0,
+        gear: new Set((plan.economy?.network?.queue || []).map(row => gearFamily(row.key)).filter(Boolean)) };
     seen.set(id, now);
+    const goal = gearFamily(now.focus);
+    const fresh = !before ? 0 : goal && goal !== gearFamily(before.focus) && !before.gear.has(goal) ? 2
+        : [...now.gear].some(family => !before.gear.has(family)) ? 1 : 0;
     // 1 elsewhere: the decision sends the bot to another activity or spot. 3 posted:
     // it stays and posts an act (a line, a sale), which can wait for town. 2 goal: it
     // stays while its plan names another mob or target. Rest and travel are the
@@ -65,6 +103,7 @@ function settle(stats, state, plan, { baseline, leaf, refused, nativeHolds, boar
     const why = whyOf(state, refused);
     const moment = momentOf(state, baseline, facts, { board, leaf, why, nativeHolds });
     stats.builds++;
+    settlePause(stats.pause, id, state, moment, kind, Number(facts.at) || 0, fresh);
     if (moment !== null) { added(stats.moments, moment, kind); return; }
     stats.skipped++;
     if (kind === 1) stats.elsewhere++;

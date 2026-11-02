@@ -2119,8 +2119,8 @@ function writeReadySourceFact(fact, kind, spotId, npcId, itemId, units, expected
 // The spot exclusions (step-counted marks, no section) are never kept.
 const GROUND_ALLOWED = 1, GROUND_REFUSED = 2;
 function sourceGround(spots = [], kept = null) {
-    return kept?.spots === spots ? kept : { spots, length: -1, economicHunt: null, targetLevel: -1, grouped: null,
-        solo: null, cells: null };
+    return kept?.spots === spots ? kept : { spots, length: -1, targetLevel: -1, grouped: null,
+        solo: null, cells: null, economicCells: null };
 }
 // Diagnostics only: one reused reader in 64 also checks its kept cells
 // against a fresh verdict (source_route:ground:checked|disagree).
@@ -2145,13 +2145,19 @@ function sourceRouteReader(state, options = {}) {
     const solo = profiles && BotTargetMatchup.profileKey(profiles);
     const ground = options.ground || sourceGround(options.spots || []);
     const spots = ground.spots;
+    // The level clause reads the economic hunt, which turns with the bot's
+    // focus: each side keeps its own cells, so the turn moves neither.
     const reused = ground.cells !== null && ground.length === spots.length
-        && ground.economicHunt === economicHunt && ground.targetLevel === targetLevel
-        && ground.grouped === grouped && ground.solo === solo;
-    if (!reused) Object.assign(ground, { length: spots.length, economicHunt, targetLevel, grouped, solo,
-        cells: new Uint8Array((spots.length + 3) >> 2) });
-    const cells = ground.cells, diagnostic = Diagnostics.active();
+        && ground.targetLevel === targetLevel && ground.grouped === grouped && ground.solo === solo;
+    // Diagnostics: what moved the kept cells.
+    const moved = Diagnostics.active() && !reused ? ground.cells === null ? 'first'
+        : ground.targetLevel !== targetLevel ? 'target_level' : ground.grouped !== grouped ? 'grouped' : ground.solo !== solo ? 'kit' : 'spots' : '';
+    if (!reused) Object.assign(ground, { length: spots.length, targetLevel, grouped, solo,
+        cells: new Uint8Array((spots.length + 3) >> 2), economicCells: null });
+    const cells = economicHunt ? ground.economicCells ||= new Uint8Array(ground.cells.length) : ground.cells;
+    const diagnostic = Diagnostics.active();
     if (diagnostic && options.ground) Diagnostics.count('source_route', 'ground', reused ? 'reuse' : 'build');
+    if (diagnostic && options.ground && !reused) Diagnostics.count('source_route', 'ground_moved', moved);
     // A sampled reader notes the ordinals it checked or filled itself.
     const shadow = diagnostic && reused && (Diagnostics.enabled(state.characterId) || (++groundShadows & 63) === 0)
         ? new Set() : null;

@@ -78,6 +78,8 @@ const DEFAULTS = {
     coldSoloWindowShadow: false,
     // T174: counts the builds no player's moment asks for and what they decided (PlayerMoment).
     coldMomentShadow: false,
+    // T174: away on a solo hunt the money drift and the income raise no decision.
+    coldMomentGate: false,
     // Protect the player-facing loop immediately and keep it protected for a
     // short window after disconnect/relog. SimPlayer/BotSession instances do
     // not contribute to this signal.
@@ -284,6 +286,7 @@ const ENV_KEYS = {
     coldSoloWindow: 'BOT_POPULATION_COLD_SOLO_WINDOW',
     coldSoloWindowShadow: 'BOT_POPULATION_COLD_SOLO_WINDOW_SHADOW',
     coldMomentShadow: 'BOT_POPULATION_COLD_MOMENT_SHADOW',
+    coldMomentGate: 'BOT_POPULATION_COLD_MOMENT_GATE',
     playerProtectionGraceMs: 'BOT_POPULATION_PLAYER_PROTECTION_GRACE_MS',
     schedulerLagThrottleMs: 'BOT_POPULATION_SCHEDULER_LAG_THROTTLE_MS',
     schedulerLagAbortMs: 'BOT_POPULATION_SCHEDULER_LAG_ABORT_MS',

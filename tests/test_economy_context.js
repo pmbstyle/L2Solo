@@ -346,7 +346,6 @@ async function run() {
             assert.notEqual(sources.plan, held.plan, 'a raised source section rebuilds');
             assert.equal(sources.plan.hunt, held.plan.hunt, 'a source raise keeps the foundation hunt');
             assert.equal(sources.plan.kit, held.plan.kit, 'a source raise keeps the foundation kit');
-            assert.equal(delta(before, 'source_memo:miss:sections'), 1, 'a source raise rebuilds the source walk');
             assert.equal(delta(before, 'source_route:ground:reuse'), 1, 'a source raise keeps the ground verdict');
             assert.equal(delta(before, 'context:foundation:kept'), 1, 'the kept foundation is counted');
             assert.notDeepEqual(sources.statsPacket.wishSections.cashBounds, stale.cashBounds,
@@ -363,7 +362,6 @@ async function run() {
             before = counts();
             const build = Economy.forState(raised(again, 'build'), { timestamp: T });
             assert.notEqual(build.plan.hunt, again.plan.hunt, 'a build raise rebuilds the foundation');
-            assert.equal(delta(before, 'source_memo:miss:sections'), 1, 'a build raise rebuilds the source walk');
             assert.equal(delta(before, 'source_route:ground:build'), 1, 'a build raise rebuilds the ground verdict');
             assert.equal(delta(before, 'context:foundation:built'), 1, 'the rebuilt foundation is counted');
             // No held entry (a deploy, an eviction) and nothing raised: every
@@ -623,8 +621,8 @@ async function run() {
         assert(sources.has(990001) && !sources.has(990002), 'only the kept scope subscribes its sources');
     } finally { ScopedProviders.build = build; }
     console.log('PASS candidate read scopes');
-    // The build's memos (inventory row keys, the kit fact, the bag tokens)
-    // end with it: a row changed after the build reads fresh.
+    // The build's memos (inventory row keys, the kit fact) end with it: a row
+    // changed after the build reads fresh.
     // A nested build of another bot leaves the outer build's keys exact.
     {
         const T = Date.now(), deps = { timestamp: T }, Sections = invoke('GameServer/Bot/Economy/DecisionSections');
@@ -632,29 +630,24 @@ async function run() {
         const worn = Object.keys(fixture.inventory).find(id => fixture.inventory[id].equipped);
         const state = { ...fixture, inventory: { ...fixture.inventory, [worn]: { ...fixture.inventory[worn] } } };
         const kitBefore = Sections.kit(state);
-        const bagRead = ctx => { const local = ctx.nodeInputs.begin(); ctx.nodeInputs.bag(worn); ctx.nodeInputs.end();
-            return local.bag.get(Number(worn)); };
-        let outer = null, nested = null, bagDuring = null;
+        let outer = null, nested = null;
         try {
             ScopedProviders.build = (subject, ctx, buildDeps) => {
                 if (subject === state && outer === null) {
-                    outer = ctx; bagDuring = bagRead(ctx);
+                    outer = ctx;
                     Economy.forState(equippedFixture(1311, 1, 32, 30000), deps);
-                    nested = [Sections.kit(state), bagRead(ctx)];
+                    nested = Sections.kit(state);
                 }
                 return build(subject, ctx, buildDeps);
             };
             Economy.forState(state, deps);
         } finally { ScopedProviders.build = build; }
         assert(outer, 'the build reached its providers');
-        assert.deepEqual(nested, [kitBefore, bagDuring],
-            'a nested build of another bot leaves the outer build\'s keys');
+        assert.equal(nested, kitBefore, 'a nested build of another bot leaves the outer build\'s keys');
         state.inventory[worn].enchant = 3;
         const fresh = structuredClone(state);
         assert.equal(Sections.kit(state), Sections.kit(fresh), 'the kit reads the changed row');
         assert.notEqual(Sections.kit(state), kitBefore);
-        assert.equal(bagRead(outer), JSON.stringify([state.inventory[worn], 0]), 'a late bag read reads the changed row');
-        assert.notEqual(bagRead(outer), bagDuring);
         Economy.forget(state.characterId);
     }
     console.log('PASS build memos end with the build / nested build');

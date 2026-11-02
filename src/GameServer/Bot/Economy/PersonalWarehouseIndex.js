@@ -96,8 +96,10 @@ module.exports = { init, inventory, LIMIT, prepareRow,
         return row ? row[CONTENT_IDENTITY] ?? null : EMPTY_IDENTITY;
     },
     saleState(state) {
-        const stored = inventory(state), bag = { ...state.inventory };
-        for (const [id, item] of Object.entries(stored)) {
+        const stored = inventory(state), rows = Object.entries(stored);
+        if (!rows.length) return state;
+        const bag = { ...state.inventory };
+        for (const [id, item] of rows) {
             const held = bag[id];
             bag[id] = { ...item, ...held, amount: Number(held?.amount || 0) + item.amount,
                 ...(item.instances ? { instances: [...(held?.instances || (held ? [{ id: 0, amount: held.amount,

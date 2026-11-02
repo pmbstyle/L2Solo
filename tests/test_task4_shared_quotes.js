@@ -18,13 +18,13 @@ assert.equal(OfferQuery.cheapestTown(index, 7, { amount: 3 }).town, 'Giran');
 // Only the first lines a trader inspects: same as the board here (the stack is first).
 const depth = OfferQuery.cheapestTown(index, 7, { amount: 3, quoteDepth: 5, excludeOwner: 9 });
 assert.equal(depth.town, 'Giran'); assert.equal(depth.whole, true);
-// The 6th line is never seen: without the stack Giran holds 2 inspected lines.
+// The read stops once one town holds the amount.
 sells.shift(); sells.push(line('Giran', 1.5, 50)); sells.sort((a, b) => a.price - b.price);
 sells.push(line('Giran', 20, 50));
 const capped = OfferQuery.cheapestTown(index, 7, { amount: 3, quoteDepth: 5, excludeOwner: 9 });
 assert.equal(capped.units, 3); assert.equal(capped.town, 'Giran');
 const narrow = OfferQuery.cheapestTown(index, 7, { amount: 60, quoteDepth: 5, excludeOwner: 9 });
-assert.equal(narrow.whole, false, 'a line past the inspected depth never fills the order');
+assert.equal(narrow.whole, true, 'asks past the depth are read until one town holds the order');
 // A town of an uninspected line is not a candidate; the NPC shop is.
 const npc = OfferQuery.cheapestTown(index, 7, { amount: 2, quoteDepth: 1, npcOffers: [{ town: 'Oren', price: 1 }] });
 assert.equal(npc.town, 'Oren'); assert.equal(npc.npc, 2);

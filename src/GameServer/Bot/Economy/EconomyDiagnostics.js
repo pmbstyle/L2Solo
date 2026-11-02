@@ -215,9 +215,4 @@ function create({ config = Config, thread = isMainThread ? 'main' : 'worker',
         noteDropped(amount) { if (active() && Number.isSafeInteger(amount) && amount > 0) lose('upstream', amount); },
         connect(send) { if (!detail()) return false; transport = send; pump(); return true; } };
 }
-// One size scale for serialized economy payloads (source memo, retained projection).
-function sizeBucket(bytes) {
-    return bytes < 2048 ? 'lt2k' : bytes < 4096 ? '2_4k' : bytes <= 8192 ? '4_8k' : bytes <= 16384 ? '8_16k'
-        : bytes <= 32768 ? '16_32k' : 'over32k';
-}
-module.exports = { ...create(), create, LIMITS, sizeBucket };
+module.exports = { ...create(), create, LIMITS };

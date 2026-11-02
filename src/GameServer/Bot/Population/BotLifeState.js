@@ -2921,7 +2921,7 @@ const BotLifeState = {
         // round): money, income and the watched market against the bot's own
         // error; raised with the round's hard events in one bump.
         const soft = !isMainThread && typeof options.softInputFor === 'function'
-            ? DecisionSections.softEvents(nextState, nextState.stats.wishSections, options.softInputFor(nextState, timestamp)) : [];
+            ? DecisionSections.softEvents(nextState, nextState.stats.wishSections, options.softInputFor(nextState, timestamp), options.leaf ?? null) : [];
         // checkSections: the sections a failed cheap check of this step raised
         // before its projection (the worker's room at arrival), in the same bump.
         DecisionEvents.raiseSections(state, nextState, hard, soft, options.checkSections || []);

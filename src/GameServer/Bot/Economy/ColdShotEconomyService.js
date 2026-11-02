@@ -117,7 +117,7 @@ function recheck(state, selected) {
         const onlyTown = id === gearId && sourceCode === -3 ? hintedTown : null;
         const npcOffers = query.npc === true && Production.allowsNpcShot(id) ? Source.npcOffersFor(id) : [];
         const best = OfferQuery.cheapestTown(board, id, { amount, cost: trip, excludeOwner: state.characterId,
-            quoteDepth: Price.QUOTE_DEPTH, sampleWhole: true, towns: onlyTown ? [onlyTown] : null, npcOffers,
+            quoteDepth: Price.QUOTE_DEPTH, towns: onlyTown ? [onlyTown] : null, npcOffers,
             accept: line => !Number(line.enchant || 0) && personalOfferAllowed(line, state) });
         return best?.whole ? { ...best, tripDetails: trip.details?.(best.town), selfId: Number(id) } : null;
     };
@@ -196,10 +196,8 @@ async function obtainRecipe(state, selected, now) {
     }
     const affordableOffer = () => {
         if (selected.scrollQuote) return Number(selected.scrollQuote.price) <= maxSpend ? selected.scrollQuote : null;
-        const rows = AfkTrade.boardIndex().list(itemId, AfkTrade.SELL);
-        for (let at = 0; at < Math.min(5, rows.length); at++) if (rows[at].ownerId !== Number(state.characterId)
-            && rows[at].price > 0 && rows[at].price <= maxSpend && rows[at].count > 0) return rows[at];
-        return null;
+        return AfkTrade.boardIndex().list(itemId, AfkTrade.SELL).find(row => row.ownerId !== Number(state.characterId)
+            && row.price > 0 && row.price <= maxSpend && row.count > 0) || null;
     };
     if (Number(state.inventory?.[itemId]?.amount || 0) > 0) {
         return await LifeState.learnCraftableRecipes(state, { recipeIds: [Number(recipe.recipeId)] }) || state;
@@ -254,12 +252,15 @@ function consumeMaterials(state, materials) {
 // ready }: ready once the bot holds the amount.
 const hotState = state => LifeState.hotRow(state.characterId) || (state.phase === 'hot' ? state : null);
 
+// A held plan is bought up to its dearest unit, whatever cap came with it.
+const planCap = (plan, price) => plan ? OfferQuery.topPrice(plan) || price : price;
+
 async function buyMaterial(state, selfId, amount, maxPrice = Infinity, npc = true, r = 0, sourcePlan = null) {
     const hot = hotState(state);
     if (hot) return { state: hot, ready: false, hot: true };
     const missing = amount - availableMaterial(state, selfId);
     if (missing <= 0) return { state, ready: true };
-    const bought = await ColdMarket().acquire(state, selfId, missing, { maxPrice, npc, purpose: 'craft_input',
+    const bought = await ColdMarket().acquire(state, selfId, missing, { maxPrice: planCap(sourcePlan, maxPrice), npc, purpose: 'craft_input',
         r, money: PurchaseFunding.spendable(state, 0, { r }), quoteDepth: 5,
         ...(sourcePlan ? { sourcePlan, towns: [sourcePlan.town] } : {}) });
     return { state: bought.state, ready: bought.bought && !bought.hot && availableMaterial(bought.state, selfId) >= amount };
@@ -284,7 +285,7 @@ async function obtainCrystals(state, candidate, batches) {
     if (gear.source === 'craft') {
         const requirements = gear.inputs.map(input => {
             const sourcePlan = gear.purchases?.find(row => row.selfId === Number(input.selfId));
-            return { selfId: input.selfId, amount: input.amount, options: { maxPrice: input.maxPrice,
+            return { selfId: input.selfId, amount: input.amount, options: { maxPrice: planCap(sourcePlan, input.maxPrice),
                 npc: true, purpose: 'craft_input', r: candidate.r,
                 money: PurchaseFunding.spendable(state, 0, { r: candidate.r }), quoteDepth: 5,
                 ...(sourcePlan ? { sourcePlan, towns: [sourcePlan.town] } : {}) } };
@@ -294,7 +295,7 @@ async function obtainCrystals(state, candidate, batches) {
         const existing = requirements.find(row => Number(row.selfId) === oreId);
         if (existing) existing.amount += Number(candidate.ore.amount) * batches;
         else requirements.push({ selfId: oreId, amount: Number(candidate.ore.amount) * batches,
-            options: { maxPrice: candidate.orePrice, npc: true, purpose: 'craft_input', r: candidate.r,
+            options: { maxPrice: planCap(oreSource, candidate.orePrice), npc: true, purpose: 'craft_input', r: candidate.r,
                 money: PurchaseFunding.spendable(state, 0, { r: candidate.r }), quoteDepth: 5,
                 ...(oreSource ? { sourcePlan: oreSource, towns: [oreSource.town] } : {}) } });
         const next = await ColdMarket().acquireMaterials(state, requirements);
@@ -446,11 +447,8 @@ async function execute(state, step, now = Date.now()) {
         if (known) return state;
         const board = AfkTrade.boardIndex(), scrollId = Number(recipe.recipeItemId);
         const asks = board.list(scrollId, AfkTrade.SELL), bids = board.list(scrollId, AfkTrade.BUY);
-        let ask = null, sale = null;
-        for (let at = 0; at < Math.min(5, asks.length); at++) {
-            const line = asks[at];
-            if (line.ownerId !== Number(state.characterId) && !Number(line.enchant || 0) && (!ask || line.price < ask.price)) ask = line;
-        }
+        let sale = null;
+        const ask = asks.find(line => line.ownerId !== Number(state.characterId) && !Number(line.enchant || 0)) || null;
         for (let at = 0; at < Math.min(5, bids.length); at++) if (bids[at].ownerId !== Number(state.characterId)
             && (!sale || bids[at].price > sale.price)) sale = bids[at];
         const decision = require('./WealthCraftDecision').recipePaths(state, recipe, { route: candidate, sale,

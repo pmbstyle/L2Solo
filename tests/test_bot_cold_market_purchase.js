@@ -728,6 +728,13 @@ async function run() {
             lines: [{ line: selectedBoard.list(1864, Afk.SELL, 'Dion')[0], count: 1, price: 1 }] };
         assert.strictEqual(ColdMarketService.planPurchase(state, 1864, 1,
             { npc: false, sourcePlan: staleSource, cost: () => 0 }), null, 'a held worker source is admitted again before travel');
+        // A plan read past the first asks reaches the purchase whole.
+        for (let at = 0; at < 8; at++) selectedBoard.put({ id: 990020 + at, ownerId: 990120 + at, storeType: Afk.SELL, kind: 'shop',
+            town: 'Giran', revision: 1, lines: [{ lineId: 9900200 + at, selfId: 1865, count: 1, price: 5 + at }] });
+        const deepPlan = ColdMarketService.planPurchase(state, 1865, 8, { npc: false, cost: () => 0, quoteDepth: 5 });
+        assert.strictEqual(deepPlan?.whole, true, 'the asks are read until the amount is met');
+        assert.strictEqual(ColdMarketService.planPurchase(state, 1865, 8,
+            { npc: false, sourcePlan: { ...deepPlan, selfId: 1865 }, cost: () => 0 })?.units, 8, 'a held plan of eight lines is bought whole');
         const npcTown = MarketOpportunity.npcOffersAll(1785)[0];
         selectedBoard.put({ id: 990003, ownerId: 990101, storeType: Afk.SELL, custodyPolicy: 1,
             kind: 'sell_ad', town: npcTown.town, revision: 1, lines: [{ lineId: 9900030, selfId: 1785, count: 1, price: 1 }] });

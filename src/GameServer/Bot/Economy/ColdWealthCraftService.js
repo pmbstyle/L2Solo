@@ -50,7 +50,7 @@ function recheck(state, step = {}, knownRecipes = Workshops.cachedRecipes(state.
         const owned = require('./WealthCraftDecision').freeAmount(state, state.inventory?.[recipe.recipeItemId] || {});
         if (!owned) {
             if (step.scroll.length !== 2) return null;
-            scrollQuote = board.list(recipe.recipeItemId, AfkTrade.SELL).slice(0, 5).find(row =>
+            scrollQuote = board.list(recipe.recipeItemId, AfkTrade.SELL).find(row =>
                 Number(row.lineId) === Number(step.scroll[0]) && Number(row.revision) === Number(step.scroll[1])
                 && Number(row.ownerId) !== Number(state.characterId) && Number(row.count) >= 1
                 && Number(row.price) > 0 && !Number(row.enchant || 0) && personalOfferAllowed(row, state));
@@ -122,7 +122,7 @@ function recheck(state, step = {}, knownRecipes = Workshops.cachedRecipes(state.
                 lines: [{ line: scrollQuote, count: 1, price: Number(scrollQuote.price) }], npc: 0 };
         }
         const best = OfferQuery.cheapestTown(board, id, { amount, cost: trip, excludeOwner: state.characterId,
-            quoteDepth: Price.QUOTE_DEPTH, sampleWhole: true, accept: line => !Number(line.enchant || 0) && personalOfferAllowed(line, state),
+            quoteDepth: Price.QUOTE_DEPTH, accept: line => !Number(line.enchant || 0) && personalOfferAllowed(line, state),
             npcOffers: ProductionPolicy.allowsNpcShot(id) ? Sources().npcOffersFor(id) : [] });
         return best?.whole ? { ...best, tripDetails: trip.details?.(best.town), quoteDepth: Price.QUOTE_DEPTH } : null;
     };

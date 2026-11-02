@@ -228,6 +228,14 @@ function verify() {
         assert.equal(next.result.plan, left.result.plan, 'the next read serves it');
         assert.equal(next.searches, 0, 'with no search');
     }
+    // A solo hunt needs no bag rows: a read list past its bound leaves a hunter its proof.
+    {
+        const { built, state } = heldBot(990250);
+        const plan = { ...built.plan, quantityInputs: null };
+        assert(Economy.captureEventProof(state, deps(0), { plan }), 'a hunter keeps its proof');
+        const shopping = { ...plan, network: { ...plan.network, activity: { activity: 'shopping', itemId: 1 } } };
+        assert.equal(Economy.captureEventProof(state, deps(0), { plan: shopping }), null, 'a bot working on its bag does not');
+    }
     Economy.reset();
     console.log(`PASS held earning spot: window on every path, goal change, moved hold, held null ${isMainThread ? 'main' : 'worker'}`);
 }

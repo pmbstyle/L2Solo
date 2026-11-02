@@ -651,6 +651,7 @@ class ColdSimulationKernel {
         // steps counting what the window would skip (windowShadow).
         this.soloWindow = options.soloWindow || null;
         this.momentStats = options.momentStats || null;
+        this.momentGate = options.momentGate === true;
         // Always on, read by the health line (PopulationStatus.soloWindowText):
         // solo hunting steps, their rounds and hunt time (steps per hunting
         // bot-hour = 3.6e6 * steps / huntMs); what ended each; the shadow's
@@ -2770,6 +2771,9 @@ class ColdSimulationKernel {
             stepLeadMs: Math.round(this.stepLeadMs),
             soloWindow: { ...this.soloWindowStats, on: this.soloWindow?.on === true },
             moments: this.momentStats || null,
+            proofOverflows: invoke('GameServer/Bot/Economy/WishNetwork').proofOverflowCount(), // lazy: the kernel's boot order
+            nodeCapBuilds: invoke('GameServer/Bot/Economy/WishProviders').nodeCapBuildCount(), // lazy: the kernel's boot order
+            asksPastDepth: invoke('GameServer/Bot/Economy/OfferQuery').pastDepthCount(), // lazy: the kernel's boot order
             maxInFlight: this.maxInFlight,
             maxAtomicPartySize: this.maxAtomicPartySize,
             paused: this.paused,

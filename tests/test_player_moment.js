@@ -32,5 +32,21 @@ board.put({ id: 1, ownerId: 99, storeType: 1, kind: 'shop', town: 'Giran', lines
     revision: 1, available: true, executable: true }] });
 assert.equal(Moment.momentOf(hunter, { ...facts, marketWatch: [[1458, 1, 1000, 0.1]] }, facts, { board, leaf }), 'market');
 assert.equal(Moment.momentOf(hunter, { ...facts, marketWatch: [[1459, 1, 1000, 0.1]] }, facts, { board, leaf }), null, 'an item it does not watch is silent');
+// Away on a solo hunt only the next wish within reach raises money; in reach of town the drift does too.
+const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+const moneyBaseline = { wallet: 1000, moneyError: 100, cashBounds: [0, 5000], funding: 0 };
+const hunting = adena => ({ characterId: 7, phase: 'cold', activity: 'hunting', adena, stats: {} });
+const soft = (state, leafNow, momentGate = true) => Sections.softEvents(state, moneyBaseline, { buyOrderEscrow: 0, momentGate, timestamp: 1 }, leafNow);
+assert(!soft(hunting(1500), leaf).includes('money'), 'a drift away on the hunt is no event');
+assert(soft(hunting(6000), leaf).includes('money'), 'the next wish in reach is');
+assert(soft(hunting(1500), { activity: 'shopping', town: 'Giran' }).includes('money'), 'a bot on its way to shop reads its money');
+assert(soft({ ...hunting(1500), partyId: 'bgp_1' }, leaf).includes('money'), 'a party member keeps the drift');
+assert(soft(hunting(1500), leaf, false).includes('money'), 'the gate off changes nothing');
+assert(soft(hunting(1500), { ...leaf, funding: true }).includes('money'), 'a hunt for money reads its money');
+const incomeMoved = (leafNow, momentGate = true) => Sections.softEvents(hunting(1000), { ...moneyBaseline, share: 0.5, incomeError: 0 },
+    { buyOrderEscrow: 0, momentGate, timestamp: 1 }, leafNow);
+assert.deepEqual(incomeMoved(leaf), [], 'nor does the income reach it on the hunt');
+assert(incomeMoved(leaf, false).includes('occupation'), 'the gate off keeps the income');
+assert(incomeMoved({ ...leaf, funding: true }).includes('occupation'), 'a hunt for money reads its income');
 console.log('player moment ok');
 process.exit(0);

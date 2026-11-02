@@ -85,7 +85,6 @@ function sectionMask(names) {
 const FOUNDATION = sectionMask(['build', 'combat', 'supply', 'occupation', 'relations']);
 const COMPUTED = Object.freeze({
     foundation: FOUNDATION,
-    sources: sectionMask(['build', 'relations', 'occupation', 'sources', 'money']),
     weighing: sectionMask(SECTIONS),
     route: sectionMask(['build', 'relations', 'occupation', 'sources']),
     // The source walk's per-spot ground verdict (GearAcquisitionPlanner.sourceGround):
@@ -306,7 +305,12 @@ function snapshot(state, context, cashBounds, moneyError = -1, mode, money = nul
 // mirror, null: not ready, the market part waits), buyOrderEscrow, memory (a
 // reader of the bot's memory rows, called only when the bond is compared),
 // timestamp (the step's) }.
-function softEvents(state, baseline, input) {
+// A solo bot on its hunt, away from town (T174): what it hears there is its own
+// next wish coming within reach and WTB/WTS on what it watches. The money drift
+// and the income stay in its state and its next build reads them. A hunt for
+// money is not one: its wallet is what it hunts for, and a seller at a fair
+// price crosses no watch.
+function softEvents(state, baseline, input, leaf = null) {
     if (!baseline) return NONE;
     let sections = NONE;
     // Diagnostics only: soft:step:far counts the soft points, soft:raise:<source>
@@ -318,9 +322,10 @@ function softEvents(state, baseline, input) {
         sections = sections === NONE ? [...names] : [...new Set([...sections, ...names])];
         if (diagnostic) Diagnostics.count('soft', 'raise', source);
     };
-    if (meaningfulMoney(state, baseline, input.buyOrderEscrow)) add('money');
+    const away = input.momentGate === true && leaf?.funding !== true && awayHunt(state, leaf);
+    if (away ? moneyBound(state, baseline, input.buyOrderEscrow) : meaningfulMoney(state, baseline, input.buyOrderEscrow)) add('money');
     const bondNow = () => Providers.relationBond(state, { memory: input.memory?.() ?? null });
-    if (observationChanged(state, baseline, input.timestamp, undefined, bondNow)) add('observation');
+    if (!away && observationChanged(state, baseline, input.timestamp, undefined, bondNow)) add('observation');
     if (input.board && marketCrossed(input.board, baseline.marketWatch, Number(state.characterId))) add('market');
     return sections;
 }
@@ -381,6 +386,10 @@ function stockIds(shotPlan, potion) {
 // projection: EconomyContext).
 function partyIdOf(state) {
     return String(state.party?.partyId || state.partyId || '');
+}
+const FIELD_ACTIVITIES = new Set(['hunting', 'resting', 'traveling']);
+function awayHunt(state, leaf) {
+    return state.phase === 'cold' && FIELD_ACTIVITIES.has(state.activity) && leaf?.activity === 'hunting' && !partyIdOf(state);
 }
 // The far reader: the raw values of a saved state. recipes: the known recipe
 // ids the build reads (WishProviders.recipeIds), null when the caller holds
@@ -529,5 +538,5 @@ function factEvents(previousFact, current, funding = false, facts = null, planne
 function kitMoved(before, after) {
     return (before?.stats?.wishSections?.build ?? null) !== (after?.stats?.wishSections?.build ?? null);
 }
-module.exports = { SECTIONS, COMPUTED, FACT_SECTIONS, sectionBit, sectionMask, sectionNames, kit, kitMoved, moneyChanged, moneyBound, observationChanged, incomeError,
+module.exports = { FIELD_ACTIVITIES, awayHunt, SECTIONS, COMPUTED, FACT_SECTIONS, sectionBit, sectionMask, sectionNames, kit, kitMoved, moneyChanged, moneyBound, observationChanged, incomeError,
     MARKET_WATCH, softEvents, marketCrossed, carrySectionBaseline, baselineIdentity, sample, sampleRows, packSample, observationBaselineValid, bounds, snapshot, semanticFacts, factsOf, relationTargetIds, events, factEvents, occupationPlanned, hash, isEmptyWishPlan, decisionRefusal, partyIdOf };

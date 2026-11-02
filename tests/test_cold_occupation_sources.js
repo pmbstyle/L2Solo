@@ -63,8 +63,15 @@ const prepared = drain(Sources.prepare(owner, { board, timestamp: 1000, read: id
 assert(prepared && read.has(1864));
 assert.equal(prepared.options.ownStock.get(1864).count, 100);
 const bounded = drain(prepared.options.preparePurchase(owner, 1864, 6, { npc: false }));
-assert.equal(bounded.value.units, 5, 'native purchase view admits only the first five indexed rows');
-assert.equal(bounded.value.whole, false);
+assert.equal(bounded.value.units, 6, 'the purchase view reads the asks until the amount is met');
+assert.equal(bounded.value.whole, true);
+assert.equal(drain(prepared.options.preparePurchase(owner, 1864, 7, { npc: false })).value.whole, false);
+// The stack past the first asks is in a town no first ask names: its trip is known too.
+for (let at = 0; at < 5; at++) board.put({ id: 210 + at, ownerId: 410 + at, storeType: 1, kind: 'sell_ad', town: 'Giran', revision: 1,
+    lines: [{ lineId: 310 + at, selfId: 1866, count: 1, price: 100 + at }] });
+board.put({ id: 216, ownerId: 416, storeType: 1, kind: 'sell_ad', town: 'Dion', revision: 1, lines: [{ lineId: 316, selfId: 1866, count: 8, price: 200 }] });
+const elsewhere = drain(Sources.prepare(owner, { board, timestamp: 1000, read: () => {} })).value;
+assert.equal(drain(elsewhere.options.preparePurchase(owner, 1866, 8, { npc: false })).value.town, 'Dion');
 assert.equal(drain(prepared.options.preparePurchase(owner, 1785, 1, { npc: false })).value, null);
 const npc = drain(prepared.options.preparePurchase(owner, 1785, 1, { npc: true })).value;
 assert(npc.whole && npc.npc === 1 && npc.repeatable && npc.town);

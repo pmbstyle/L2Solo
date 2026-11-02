@@ -39,12 +39,6 @@ const PRODUCER_PRICED = WISH_ROOTS;
 const GEAR_ROOTS = 4;
 const GEAR_ROUNDS = 4;
 const SOLVER_LIMITS = new Set(['missing_wish_requirement', 'cyclic_wish_network', 'invalid_wish_node', 'wish_network_depth']);
-function nominationBasis(state) {
-    const focus = String(state.stats?.wishFocus?.[0] || '').match(/^power:(\d+):/);
-    const supply = state.stats?.equipmentPlan?.clanGoal?.clanId && need('./ClanCrystalSupply').requirement(state);
-    return Object.freeze([Number(state.stats?.equipmentPlan?.target?.selfId || 0), Number(focus?.[1] || 0),
-        ...(supply ? [supply.plan.clanGoal.goalKey, supply.selfId, supply.amount] : [])]);
-}
 function gearCandidates(state, ctx = null, wornFor = wornReader(state), acquisitionAllowed = null, progression = null, exchanges = null) {
     const Data = invoke('GameServer/DataCache');
     const revision = Sources.revision();
@@ -55,7 +49,8 @@ function gearCandidates(state, ctx = null, wornFor = wornReader(state), acquisit
         ? Planner.gradeForLevel(state.level) : Progression.acquisitionRankFor(state, progression || undefined));
     const result = new Map();
     const budget = Math.max(0, Number(ctx?.wallet ?? Funding.budget(state)) - Number(ctx?.survivalReserve || 0));
-    const [target, held] = ctx?.nominationBasis || nominationBasis(state);
+    const target = Number(state.stats?.equipmentPlan?.target?.selfId || 0);
+    const held = Number(String(state.stats?.wishFocus?.[0] || '').match(/^power:(\d+):/)?.[1] || 0);
     const slotKits = new Map(kits);
     for (const [first, second] of [[1, 2], [4, 5]]) if (slotKits.has(first) && !slotKits.has(second)) slotKits.set(second, slotKits.get(first));
     for (const [slot, kit] of slotKits) {
@@ -256,6 +251,10 @@ function build(state, ctx, deps = {}) {
     }
     return result;
 }
+// The real graph's item cap (`NODE_CAP`) and the builds that met it: a recipe or
+// material dropped there is gone from the tree of every candidate sharing it.
+const NODE_CAP = 36;
+let nodeCapBuilds = 0;
 function buildProjection(state, ctx, deps) {
     // Diagnostics only: wall time per block (provider:<block>); a lazy source
     // closure counts in the block that calls it. Null while diagnostics are off.
@@ -297,18 +296,13 @@ function buildProjection(state, ctx, deps) {
     // identical nodes. ARCH-NOTE: dies at return; at most the 64-node cap
     // per target, no owner store.
     // Sources are plain descriptors, independent of the wallet-dependent
-    // arena admission below. Only the previous final cut (<=40 nodes) is
-    // kept, in EconomyContext's held build entry while no source section is
-    // raised. A missing/evicted descriptor is calculated normally; this never
-    // limits alternatives.
-    const keptSources = (deps.sourceSections?.nodes || []).filter(row => (!quantityInputs
-        || !(row.inputs.bag || []).some(([id]) => id === -1)) && ctx.nodeInputs?.holds(row.inputs));
-    const descriptors = new Map(keptSources.map(row => [row.node.key, row.node]));
-    const descriptorInputs = new Map(keptSources.map(row => [row.node.key, row.inputs]));
+    // arena admission below.
+    const descriptors = new Map();
+    const descriptorInputs = new Map();
     // The read scope of the candidate whose arena built each descriptor;
     // only scopes with a descriptor in the final cut become inputs.
     const builtBy = new Map();
-    let readScope = null;
+    let readScope = null, nodeCapped = false;
     const include = key => {
         if (nodeKeys.has(key)) return;
         const node = descriptors.get(key);
@@ -451,7 +445,8 @@ function buildProjection(state, ctx, deps) {
         if (workshop && ownAllowed && own?.status === 'ready' && knownRecipes.has(Number(recipe.recipeId))
             && own.labourHours * Number(ctx.hourAdena || ctx.hunt?.perHour || 0) <= workshop.cost) workshop = null;
         if (!ownAllowed && !(workshop?.publicStation && Sources.allowsRecipe(recipe, { station: true }))) return null;
-        if (recipe && (ownCapable || workshop) && nodes.length + recipe.materials.length < 36) {
+        if (recipe && (ownCapable || workshop) && nodes.length + recipe.materials.length >= NODE_CAP) nodeCapped = true;
+        if (recipe && (ownCapable || workshop) && nodes.length + recipe.materials.length < NODE_CAP) {
             const learned = !!workshop || dual || knownRecipes.has(Number(recipe.recipeId));
             ctx.nodeInputs?.bag(recipe.recipeItemId);
             let scrollAvailable = learned || hasFree(recipe.recipeItemId);
@@ -507,7 +502,8 @@ function buildProjection(state, ctx, deps) {
         if (!Sources.hasSource(id)) return null;
         const key = `item:${id}`;
         if (nodeKeys.has(key)) return key;
-        if (depth >= (crystalSupply ? 6 : 3) || nodes.length >= 36 || preparingItems.has(key)) return null;
+        if (depth >= (crystalSupply ? 6 : 3) || preparingItems.has(key)) return null;
+        if (nodes.length >= NODE_CAP) { nodeCapped = true; return null; }
         // A memoized subgraph enters the real graph under the same 36-node
         // cap as a fresh build: its whole missing closure is counted first.
         // A candidate's scratch arena copies it whole, so its witness reads
@@ -518,9 +514,7 @@ function buildProjection(state, ctx, deps) {
                 ctx.nodeInputs.keep(inputs);
                 // Descriptor reuse must not erase the bag dependencies that
                 // its original native construction recorded before pruning.
-                if (quantityInputs) for (const [inputId] of inputs.bag || []) {
-                    if (inputId !== -1) { present(inputId); hasFree(inputId); }
-                }
+                if (quantityInputs) for (const inputId of inputs.bag) { present(inputId); hasFree(inputId); }
                 if (scratch && readScope) builtBy.set(key, readScope);
             }
             const missing = new Set();
@@ -533,7 +527,7 @@ function buildProjection(state, ctx, deps) {
                 }
             };
             collect(key);
-            if (!scratch && nodes.length + missing.size > 36) return null;
+            if (!scratch && nodes.length + missing.size > NODE_CAP) { nodeCapped = true; return null; }
             include(key); return key;
         }
         const local = ctx.nodeInputs?.begin();
@@ -1246,27 +1240,11 @@ function buildProjection(state, ctx, deps) {
         Diagnostics.count('provider', 'admission', 'round', admission.rounds);
         Diagnostics.count('provider', 'admission', 'gear_root', admittedGear.length);
         for (const row of admission.pending) Diagnostics.count('provider', 'admission_pending', row.reason);
-        // On a source memo hit: descriptors offered, kept by their input fence, and built anew.
-        if (deps.sourceSections) {
-            Diagnostics.count('source_memo', 'descriptors', 'offered', deps.sourceSections.nodes?.length || 0);
-            Diagnostics.count('source_memo', 'descriptors', 'kept', keptSources.length);
-            Diagnostics.count('source_memo', 'descriptors', 'built', descriptorInputs.size - keptSources.length);
-        }
     }
     const keptNodes = nodes.filter(node => cut.kept.has(node.key));
-    let sourceSections = null, sourceBytes = -1;
-    // structuredClone rejects an extension that supplied a function/closure;
-    // such an input falls back to calculation instead of retaining a caller.
-    try {
-        const candidate = { nodes: keptNodes.filter(node => node.key.startsWith('item:') && descriptorInputs.has(node.key))
-            .map(node => ({ node, inputs: descriptorInputs.get(node.key) })) };
-        sourceBytes = Buffer.byteLength(JSON.stringify(candidate));
-        if (sourceBytes <= 8192) sourceSections = structuredClone(candidate);
-    } catch (_) { /* An uncloneable candidate falls back to calculation. */ }
-    if (Diagnostics.active()) Diagnostics.count('source_memo', 'size', sourceBytes < 0 ? 'unmeasured'
-        : sourceBytes > 8192 || sourceSections ? Diagnostics.sizeBucket(sourceBytes) : 'uncloneable');
+    if (nodeCapped) nodeCapBuilds++;
     blocks?.lap('tail'); blocks?.done();
-    return { nodes: keptNodes, roots: cut.roots, values, moneyPaths, horizon, admission, sourceSections, sourceGround };
+    return { nodes: keptNodes, roots: cut.roots, values, moneyPaths, horizon, admission, sourceGround };
 }
 // Only public recipe rows and a prepared route can prove a usable service.
 // This bounded indexed read is shared by visible and distant bots. No private
@@ -1443,4 +1421,4 @@ function unpackLiquidationInputs(read) {
     const rows = Object.freeze(read.list(() => Object.freeze([read.uint(), read.number()])));
     return Object.freeze({ basis: Object.freeze({ shots, potions, excluded }), rows });
 }
-module.exports = { GEAR_FINALISTS_PER_SLOT, PRODUCER_PRICED, nominationBasis, recipeIds, quantityReaders, relationTargets, relationBond, knownWorkshop, personalCraftPlan, liquidationCandidates, liquidationInputs, packLiquidationInputs, unpackLiquidationInputs, build, gearCandidates, gearGain, skillGain, attackRate, rotationRate, worn };
+module.exports = { nodeCapBuildCount: () => nodeCapBuilds, GEAR_FINALISTS_PER_SLOT, PRODUCER_PRICED, recipeIds, quantityReaders, relationTargets, relationBond, knownWorkshop, personalCraftPlan, liquidationCandidates, liquidationInputs, packLiquidationInputs, unpackLiquidationInputs, build, gearCandidates, gearGain, skillGain, attackRate, rotationRate, worn };

@@ -151,6 +151,12 @@ function unpackQuantityInputs(value) {
     if (!eachQuantityRow(value, row => { rows.push(Object.freeze(row)); })) return null;
     return Object.freeze({ version: 1, rows: Object.freeze(rows) });
 }
+// The proof of a read list a holder does not need (a solo hunt, EconomyContext).
+const NO_QUANTITIES = packQuantityInputs({ version: 1, rows: [] });
+// Builds whose proof overflowed, since the thread started: outside a solo hunt
+// such a build holds no card and the bot rebuilds on each step (the health
+// line's proofOver=).
+let proofOverflows = 0;
 function createQuantityInputs() {
     const rows = [], seen = new Map(), shared = new Map();
     // invalid: '' or the first reason the proof is void (diagnostics name it).
@@ -211,6 +217,7 @@ function createQuantityInputs() {
                 finished = true;
                 if (!invalid) packed = packQuantityInputs({ version: 1, rows });
                 if (!invalid && !packed) invalid = 'bytes';
+                if (invalid === 'rows' || invalid === 'bytes') proofOverflows++;
                 // Diagnostics: why a completed build has no quantity proof.
                 if (invalid && Diagnostics.active()) Diagnostics.count('context', 'quantity_invalid', invalid);
                 seen.clear(); shared.clear(); rows.length = 0;
@@ -1125,4 +1132,4 @@ class WishNetwork {
     }
 }
 
-module.exports = { WishNetwork, buildScratch, createSolver, createQuantityInputs, quantityInputsHold, eachQuantityRow, packQuantityInputs, unpackQuantityInputs, admitRoots, moneyQueue, remainingQuantity, craftMaterialLoss, fundable, cashCharge, remember, NEEDS, MAX_NODES, MAX_ROOTS, MAX_DEPTH, ACTOR_LIMIT, QUANTITY_INPUT_LIMIT, QUANTITY_INPUT_BYTES };
+module.exports = { WishNetwork, NO_QUANTITIES, proofOverflowCount: () => proofOverflows, buildScratch, createSolver, createQuantityInputs, quantityInputsHold, eachQuantityRow, packQuantityInputs, unpackQuantityInputs, admitRoots, moneyQueue, remainingQuantity, craftMaterialLoss, fundable, cashCharge, remember, NEEDS, MAX_NODES, MAX_ROOTS, MAX_DEPTH, ACTOR_LIMIT, QUANTITY_INPUT_LIMIT, QUANTITY_INPUT_BYTES };

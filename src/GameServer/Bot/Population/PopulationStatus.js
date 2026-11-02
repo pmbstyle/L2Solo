@@ -137,7 +137,7 @@ const PopulationStatus = {
             + ` geo=${mb(geodata.loadedBytes)}MB/${geodata.loadedRegions} geoViews=${mb(geodata.attachedBytes)}+${mb(worker.geodata?.attachedBytes)}MB`
             + ` geoRaw=${geodata.rawRegions || 0} geoIndexOnly=${geodata.indexOnlyRegions || 0}`
             + ` geoHeightReads=${geodata.heightFileReads || 0}+${worker.geodata?.heightFileReads || 0} ${this.npcHateText()}`
-            + this.incomeHoldText(worker.incomeHold) + this.soloWindowText(worker.soloWindow) + this.momentsText(worker.moments);
+            + this.incomeHoldText(worker.incomeHold) + (worker.proofOverflows === undefined ? '' : ` proofOver=${worker.proofOverflows} nodeCap=${worker.nodeCapBuilds} asksDeep=${worker.asksPastDepth}`) + this.soloWindowText(worker.soloWindow) + this.momentsText(worker.moments);
     },
 
     // huntSteps=<steps per hunting bot-hour>/<rounds per step>: solo hunting steps since the worker
@@ -159,7 +159,10 @@ const PopulationStatus = {
         if (!m) return '';
         const rows = Object.entries(m.why).sort((a, b) => b[1][0] - a[1][0]).map(([why, row]) => `${why}:${row.join(':')}`);
         const at = Object.entries(m.moments).sort((a, b) => b[1][0] - a[1][0]).map(([name, row]) => `${name}:${row.join(':')}`);
-        return ` moments=${m.builds}/${m.skipped}/${m.elsewhere}/${m.goal}/${m.posted} noMoment=${rows.join(',') || '-'} at=${at.join(',') || '-'}`;
+        const p = m.pause;
+        // pauses=<would wait>/<elsewhere>/<goal>/<posted>/<pauses>/<merged builds>/<mean wait s>/<new gear roots>/<new gear goals>
+        const r = m.refresh;
+        return ` refresh=${r.asked}/${r.built}/${r.dirty}/${r.stale}/${r.sent}/${r.acts} pauses=${p.waited}/${p.elsewhere}/${p.goal}/${p.posted}/${p.pauses}/${p.merged}/${p.pauses ? Math.round(p.waitMs / p.pauses / 1000) : 0}/${p.newRoots}/${p.newGoals} moments=${m.builds}/${m.skipped}/${m.elsewhere}/${m.goal}/${m.posted} noMoment=${rows.join(',') || '-'} at=${at.join(',') || '-'}`;
     },
 
     // incomeHold=<kept>/<none>,<unrouted>,<renewed>,<moved>,<event>,<goal>;party<kept>/<missed>: held earning

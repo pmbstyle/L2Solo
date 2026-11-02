@@ -519,6 +519,10 @@ const occupationPlanner = new ColdOccupationPlanner({
                 caller: `economy_${input.mode}`, trigger: 'native_own_action' });
             // The shared money packet is derived from this same graph. Use it
             // in preparation only; the native writer owns physical funding.
+            if (input.mode === 'refresh' && kernel?.momentStats) {
+                kernel.momentStats.refresh.built++;
+                if (Number(input.state.stats?.wishDirty)) kernel.momentStats.refresh.dirty++;
+            }
             input.state = { ...input.state, stats: { ...input.state.stats, ...input.economy.statsPacket } };
             input.stock = input.economy.stock('shots');
             yield 'candidate';
@@ -612,7 +616,8 @@ const occupationPlanner = new ColdOccupationPlanner({
             occupationPlanner.release(id); return;
         }
         if (input.mode === 'refresh') {
-            const entry = kernel?.states.get(id);
+            const entry = kernel?.states.get(id), refreshes = kernel?.momentStats?.refresh;
+            if (refreshes && meta.stale) refreshes.stale++;
             // The plan was already sent; a source change does not re-request
             // a refresh for the same native state (the next state does).
             if (meta.stale && entry?.state === input.sourceState && entry.economyPending) {
@@ -625,6 +630,10 @@ const occupationPlanner = new ColdOccupationPlanner({
                 if (input.pending && hash === entry.economyPlanHash) { entry.economyPending = 0; input.economy = null; return; }
                 entry.economyPlanHash = hash;
                 entry.economyPending = workshop.economyPlan.d || 0;
+                if (refreshes) {
+                    refreshes.sent++;
+                    if (ColdEconomyPlan.acts(workshop.economyPlan)) refreshes.acts++;
+                }
                 send('ready', { phase: 'economy_plan_ready', characterId: id,
                     authority: EconomyCommit.authority(input.state), economyPlan: workshop.economyPlan,
                     economyDecision: workshop.economyDecision });
@@ -773,7 +782,10 @@ function occupationOwnerChanged(id, refresh = false) {
     if (!entry || entry.state.phase !== 'hot' && !refresh) return;
     // One economy refresh per native state object.
     if (refresh && refreshedStates.has(entry.state)) return;
-    if (refresh) { refreshedStates.add(entry.state); economyDiagnostics.count('occupation', 'refresh', 'main_state'); }
+    if (refresh) {
+        refreshedStates.add(entry.state); economyDiagnostics.count('occupation', 'refresh', 'main_state');
+        if (kernel.momentStats) kernel.momentStats.refresh.asked++;
+    }
     const routeKey = EconomicTrip.key(entry.state);
     occupationPlanner.request(id, { state: entry.state, sourceState: entry.state, assetsKey: assetsKey(entry.state),
         timestamp: Date.now(), mode: refresh ? 'refresh' : 'near', pending: entry.economyPending || 0,
@@ -819,7 +831,7 @@ const escrowFor = characterId => escrowByOwner.get(Number(characterId)) || 0;
 // BotLifeState.prepareResolve, and a near bot's post): the board mirror (null
 // until ready), the escrow and the bot's memory rows, read only when its bond
 // is compared.
-const softInputFor = (characterId, timestamp) => ({ board: boardReady(), buyOrderEscrow: escrowFor(characterId), timestamp,
+const softInputFor = (characterId, timestamp) => ({ board: boardReady(), buyOrderEscrow: escrowFor(characterId), timestamp, momentGate: kernel.momentGate,
     memory: () => kernel.interactionMemory.relationRows(Number(characterId)) });
 // A near bot's post (BotLifeState.notifyNearFacts) against the row before
 // it, on the posted row before it is stored: the raise main named (once per
@@ -1682,6 +1694,7 @@ function startKernel(config = {}) {
             };
         },
         momentStats: config.coldMomentShadow === true ? PlayerMoment.createStats() : null,
+        momentGate: config.coldMomentGate === true,
         soloWindow: config.coldSoloWindow !== true && config.coldSoloWindowShadow !== true ? null : {
             on: config.coldSoloWindow === true,
             // One round of a window: the step's projection without its soft
