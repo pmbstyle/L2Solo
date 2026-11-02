@@ -88,6 +88,8 @@ Manual world backups remain separate. The updater snapshot is not an autosave sc
 
 ## Validation before public rollout
 
+Dependency checks must include advisory comments, not only a passing CI badge. The launcher pins `tar` 7.5.22 and `js-yaml` 4.3.2. `extract-zip` 2.0.1 still has unpatched [symlink traversal](https://github.com/advisories/GHSA-jmr9-qjv8-65gv) and [duplicate-entry overwrite](https://github.com/advisories/GHSA-7pqw-9j4j-h8q3) advisories, so `npm audit` continues to report it. Both launcher extraction paths reject symlink entries before the library creates them and use private staging directories. Regression tests cover a symlink followed by a regular file with the same name and verify that an outside sentinel remains unchanged. Keep these guards unless the extraction library is replaced with equivalent protection.
+
 Local automated checks:
 
 ```sh

@@ -127,14 +127,18 @@ test('archive extraction rejects a valid archive with corrupted payload checksum
 test('archive extraction rejects symlink entries before they can escape staging', async () => {
     const item = await fixture();
     const archive = path.join(directory('symlink-archive'), 'release.zip');
+    const sentinel = path.join(directory('outside-staging'), 'sentinel.txt');
+    await fs.promises.writeFile(sentinel, 'original');
     await new Promise((resolve, reject) => {
         const zip = archiver('zip');
         const stream = fs.createWriteStream(archive);
         stream.on('close', resolve); zip.on('error', reject); zip.pipe(stream);
-        zip.symlink('src/escape', '../../outside');
+        zip.symlink('src/NodeL2.js', sentinel);
+        zip.append('overwritten', { name: 'src/NodeL2.js' });
         zip.finalize().catch(reject);
     });
     await assert.rejects(extractRelease(archive, directory('symlink-unpack'), item.manifest), /symbolic links/);
+    assert.equal(await fs.promises.readFile(sentinel, 'utf8'), 'original');
 });
 
 test('download rejects checksum errors before installation', async () => {

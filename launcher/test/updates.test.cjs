@@ -263,6 +263,24 @@ test('Node runtime targets use official platform archive names and stable runtim
     assert.throws(() => targetFor('22.23.0-preview.1'), /Unsupported/);
 });
 
+test('Windows runtime ZIP rejects a symlink followed by a duplicate file without writing outside staging', async () => {
+    const root = directory('runtime-symlink'), archive = path.join(root, 'runtime.zip');
+    const sentinel = path.join(root, 'outside.txt');
+    put(root, 'outside.txt', 'original');
+    const target = targetFor('22.23.0', 'win32', 'x64');
+    await new Promise((resolve, reject) => {
+        const zip = archiver('zip'), output = fs.createWriteStream(archive);
+        output.on('close', resolve); output.on('error', reject); zip.on('error', reject); zip.pipe(output);
+        zip.symlink(`${target.basename}/node.exe`, sentinel);
+        zip.append('overwritten', { name: `${target.basename}/node.exe` });
+        zip.finalize().catch(reject);
+    });
+    const bytes = fs.readFileSync(archive), checksum = await sha256(archive);
+    await assert.rejects(prepareRuntime(path.join(root, 'output'), { version: '22.23.0', platform: 'win32', arch: 'x64',
+        fetcher: async url => new Response(url.endsWith('SHASUMS256.txt') ? `${checksum}  ${target.archive}\n` : bytes) }), /Unsafe Node.js archive entry/);
+    assert.equal(fs.readFileSync(sentinel, 'utf8'), 'original');
+});
+
 test('private Node runtime survives application changes, repairs corruption and never needs system installation', async () => {
     const userData = directory('runtime-profile');
     const runtime = new RuntimeManager({ userData, bundledNode: process.execPath, defaultVersion: process.versions.node,
