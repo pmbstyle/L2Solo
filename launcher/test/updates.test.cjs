@@ -228,11 +228,50 @@ test('preview publication targets the tested commit and never changes the stable
     assert.match(fs.readFileSync(edit[edit.indexOf('--notes-file') + 1], 'utf8'), /Preview build from develop/);
     await publishRelease({ tag: packages.launcherTag, directory: item.root, packageRoot: packages.root,
         sourceCommit: packages.sourceCommit, fetcher: item.fetcher, ghClient: args => {
+            if (args[0] === 'api') return JSON.stringify(item.release);
             assert.equal(args[1], 'view', 'Retry must never replace a published preview launcher');
             return JSON.stringify({ isDraft: false, isPrerelease: true, targetCommitish: packages.sourceCommit });
         } });
     await assert.rejects(publishRelease({ tag: packages.launcherTag, directory: item.root, packageRoot: packages.root,
         sourceCommit: packages.sourceCommit, fetcher: item.fetcher, ghClient: () => JSON.stringify({ isDraft: false, isPrerelease: true, targetCommitish: 'b'.repeat(40) }) }), /source commit/);
+});
+
+test('preview server publication discovers its exact launcher even when the anonymous release list is stale', async () => {
+    const packages = previewPackages(12), item = await launcherFixture(packages.launcherVersion);
+    const server = await serverFixture(oldScript, packages.serverTag, 2, { minimumLauncherVersion: packages.launcherVersion });
+    const root = directory('preview-server-publication'), uploaded = [], calls = [];
+    put(root, 'l2solo-release.json', JSON.stringify(server.manifest));
+    put(root, server.manifest.archive.name, Buffer.from(await (await server.fetcher(assetUrl(server.manifest.tag, server.manifest.archive.name))).arrayBuffer()));
+    const ghClient = args => {
+        calls.push(args);
+        if (args[0] === 'api') {
+            assert.equal(args[1], `repos/pmbstyle/L2Solo/releases/tags/${packages.launcherTag}`);
+            return JSON.stringify(item.release);
+        }
+        if (args[1] === 'view') {
+            if (args.at(-1) === 'assets') return JSON.stringify({ assets: uploaded });
+            throw new Error('release not found');
+        }
+        if (args[1] === 'upload') uploaded.push({ name: path.basename(args[3]), size: fs.statSync(args[3]).size });
+        return '';
+    };
+    await publishRelease({ tag: packages.serverTag, directory: root, packageRoot: packages.root, sourceCommit: packages.sourceCommit,
+        ghClient, fetcher: async url => {
+            assert.ok(!url.includes('api.github.com'), 'Preview publication must not depend on the cached release list');
+            return item.fetcher(url);
+        } });
+    assert.equal(calls.filter(args => args[0] === 'api').length, 1);
+    assert.ok(calls.at(-1).includes('--prerelease=true')); assert.ok(calls.at(-1).includes('--latest=false'));
+    assert.deepEqual((await readJson(path.join(root, 'l2solo-release.json'))).launcher, { version: item.manifest.version, tag: item.manifest.tag });
+    for (const name of Object.values(item.manifest.installers).flat()) assert.equal(await sha256(path.join(root, name)), await sha256(path.join(item.root, name)));
+    for (const invalid of [{ ...item.release, draft: true }, { ...item.release, tag_name: 'launcher-v0.2.0-preview.99' }]) {
+        await assert.rejects(publishRelease({ tag: packages.serverTag, directory: root, packageRoot: packages.root, sourceCommit: packages.sourceCommit,
+            fetcher: item.fetcher, ghClient: args => {
+                if (args[0] === 'api') return JSON.stringify(invalid);
+                if (args[1] === 'view') throw new Error('release not found');
+                throw new Error('Must not publish a server with an unavailable companion release');
+            } }), /has not finished publication/);
+    }
 });
 
 test('server release reuses the exact compatible installers and leaves launcher update metadata canonical', async () => {
