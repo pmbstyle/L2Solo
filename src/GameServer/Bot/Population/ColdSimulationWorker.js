@@ -295,7 +295,7 @@ const occupationPlanner = new ColdOccupationPlanner({
             if (itemId > 0 && !exactReads.has(itemId)) exactReads.set(itemId, boardIndex.itemFingerprint(itemId));
             read(itemId);
         } : read;
-        return { state: input.state, board: boardReady(), timestamp: input.timestamp, read: readItem, readScope, exactReads,
+        return { source: input, state: input.state, board: boardReady(), timestamp: input.timestamp, read: readItem, readScope, exactReads,
             knownRecipes: book || input.state.stats?.workshop?.entries || [], knownShotRecipes: input.knownShotRecipes || [],
             recipesKnown: book !== null || Array.isArray(input.state.stats?.workshop?.entries), bookKnown: book !== null,
             buyOrderEscrow: input.buyOrderEscrow, stock: input.stock || null, economy: input.economy || null,
@@ -510,19 +510,24 @@ const occupationPlanner = new ColdOccupationPlanner({
         // (mode near) build the economy on the same inputs.
         if (input.mode === 'refresh' || input.mode === 'near') {
             const routeRows = input.routeRows = input.routeRows || (yield* EconomicTrip.prepare(input.state));
-            input.economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(input.state, {
+            // A board move restarts a refresh of the same state: its plan reads the board
+            // again, its build stands, a bot in the field does not weigh for a price.
+            input.economy = input.source.builtRefresh || EconomyContext.forState(input.state, {
                 board: input.board, routeRows, workshops: workshopsFor,
                 timestamp: input.timestamp, onSourceRead: input.read, onSourceScope: input.readScope, knownRecipes: input.knownRecipes, npcOffersFor: OccupationSources.npcOffersFor,
                 buyOrderEscrow: input.buyOrderEscrow, workshop: noWorkshop(),
                 // A refresh keeps no context; a near post is held and its clean repeat hits the verdict.
                 ...(input.mode === 'refresh' ? { rememberContext: false } : {}),
                 caller: `economy_${input.mode}`, trigger: 'native_own_action' });
+            if (input.mode === 'refresh' && !input.source.builtRefresh) {
+                if (DecisionSections.FIELD_ACTIVITIES.has(input.state.activity)) input.source.builtRefresh = input.economy;
+                if (kernel?.momentStats) {
+                    kernel.momentStats.refresh.built++;
+                    if (Number(input.state.stats?.wishDirty)) kernel.momentStats.refresh.dirty++;
+                }
+            }
             // The shared money packet is derived from this same graph. Use it
             // in preparation only; the native writer owns physical funding.
-            if (input.mode === 'refresh' && kernel?.momentStats) {
-                kernel.momentStats.refresh.built++;
-                if (Number(input.state.stats?.wishDirty)) kernel.momentStats.refresh.dirty++;
-            }
             input.state = { ...input.state, stats: { ...input.state.stats, ...input.economy.statsPacket } };
             input.stock = input.economy.stock('shots');
             yield 'candidate';
@@ -616,6 +621,7 @@ const occupationPlanner = new ColdOccupationPlanner({
             occupationPlanner.release(id); return;
         }
         if (input.mode === 'refresh') {
+            input.builtRefresh = null;
             const entry = kernel?.states.get(id), refreshes = kernel?.momentStats?.refresh;
             if (refreshes && meta.stale) refreshes.stale++;
             // The plan was already sent; a source change does not re-request

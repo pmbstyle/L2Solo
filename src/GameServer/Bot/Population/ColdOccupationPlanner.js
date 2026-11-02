@@ -143,6 +143,9 @@ class ColdOccupationPlanner {
         this.kick();
     }
     markReset(entry) {
+        // A source table was replaced, no board move: a build kept on the input
+        // may have read it empty (ColdSimulationWorker, refresh).
+        entry.input.builtRefresh = null;
         entry.dirty = true; entry.cursor[14] = 2; DiagnosticConfig.developerDiagnostics && (this.stats.invalidations++);
         if (entry.done) this.publish(entry.id, entry.input, unknownWorkshop(), { stale: true });
     }
