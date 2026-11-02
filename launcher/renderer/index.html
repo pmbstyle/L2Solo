@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <title>L2Solo Launcher</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="app.js" defer></script>
+</head>
+<body>
+    <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v10H3Z"/><path d="M9 20v-7h6v7"/></symbol>
+        <symbol id="i-backup" viewBox="0 0 24 24"><path d="M4 8h16v12H4zM3 4h18v4H3zM9 12h6"/></symbol>
+        <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h16M4 17h16M9 4v6m6 4v6"/></symbol>
+        <symbol id="i-updates" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 6a8 8 0 0 1 13 3M18 18a8 8 0 0 1-13-3"/></symbol>
+        <symbol id="i-console" viewBox="0 0 24 24"><path d="m4 6 6 6-6 6m9 0h7"/></symbol>
+        <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6h7l2 3h9v11H3z"/></symbol>
+        <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6m0-6L10 14M10 4H4v16h16v-6"/></symbol>
+        <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
+    </svg>
+    <header class="topbar"><div class="breadcrumb">L2Solo <span>/</span> <strong id="page-name">Home</strong></div><span id="status-pill" class="status-pill"><i></i><span>Server offline</span></span></header>
+    <aside class="sidebar">
+        <div class="brand"><img src="assets/logo.png" alt="L2Solo emblem"><div>L2SOLO<span>Server manager</span></div></div>
+        <nav aria-label="Main navigation">
+            <button class="nav-item active" data-view="home"><svg><use href="#i-home"/></svg> Home</button>
+            <button class="nav-item" data-view="backups"><svg><use href="#i-backup"/></svg> Backups &amp; data</button>
+            <button class="nav-item" data-view="settings"><svg><use href="#i-settings"/></svg> Server settings</button>
+            <button class="nav-item" data-view="updates"><svg><use href="#i-updates"/></svg> Updates<span id="update-dot" class="notification" hidden></span></button>
+            <button class="nav-item" data-view="console"><svg><use href="#i-console"/></svg> Console</button>
+        </nav>
+        <div class="sidebar-bottom">
+            <div class="sidebar-links"><button data-link="https://l2solo.com">Website <span>↗</span></button><button data-link="https://discord.gg/dXsQ8SJA7k">Community <span>↗</span></button></div>
+            <div class="app-version">Version <span id="launcher-version">0.2.0</span><span id="channel-label" class="alpha-label">BETA</span></div>
+        </div>
+    </aside>
+    <main>
+        <div id="error-banner" class="error-banner" role="alert" hidden><span id="error-message"></span><button id="dismiss-error" aria-label="Dismiss error">×</button></div>
+        <section id="view-home" class="view">
+            <div class="page-heading"><h1>Server</h1><button class="quiet-button" data-view="settings"><svg><use href="#i-settings"/></svg> Settings</button></div>
+            <div class="server-panel">
+                <div class="server-panel-top"><div class="server-title"><img class="server-logo" src="assets/logo.png" alt=""><div><h2>L2Solo server</h2><span id="server-subtitle">Select a server folder to get started.</span></div></div><div class="folder-actions"><button class="text-button" id="reveal-folder" hidden><svg><use href="#i-folder"/></svg> Open folder</button><button class="text-button muted" id="manage-folder">Choose folder</button></div></div>
+                <div class="installation-path"><span id="installation-path">No installation folder selected</span></div>
+                <div class="server-facts"><div><span>VERSION</span><strong id="server-version">Not installed</strong></div><div><span>GEODATA</span><strong id="geodata-status">Not installed</strong></div><div><span>STATUS</span><strong id="server-status">Waiting for setup</strong></div><div><span>UPTIME</span><strong id="server-uptime">—</strong></div></div>
+                <div id="population-area" class="population-area" hidden><div class="population-label"><span id="population-counts">Waiting for population…</span><span id="population-capacity">—</span></div><progress id="population-progress" max="1" value="0" aria-label="Dynamic bot population"></progress><div id="population-players" class="population-players">Players online: —</div></div>
+                <div class="server-controls"><span id="server-hint" class="muted">Install or connect an existing server.</span><div class="server-actions"><button class="quiet-button" id="observer-button" disabled><svg><use href="#i-eye"/></svg> World Observer</button><button id="primary-action" class="primary-button"><span class="play-icon">▶</span><span id="primary-label">Set up server</span></button></div></div>
+                <div id="download-area" class="download-area" hidden><div class="download-label"><span><i id="progress-indicator"></i><span id="progress-label">Choose a server folder</span></span><span id="progress-percent">0%</span></div><progress id="download-progress" max="100" value="0" aria-label="Installation progress"></progress><div id="download-detail" class="download-meta"></div></div>
+            </div>
+            <div class="dashboard-grid">
+                <div class="plain-panel backup-summary"><div class="section-heading"><h2>World backups</h2><button class="text-button" data-view="backups">Manage <span>↗</span></button></div><strong id="latest-backup">No backups yet</strong><p id="backup-summary-detail" class="muted">Back up the world database and its history.</p><button id="quick-backup" class="quiet-button"><svg><use href="#i-backup"/></svg> Create backup</button></div>
+                <div class="plain-panel activity-panel"><div class="section-heading"><h2>Recent activity</h2><button class="text-button" data-view="console">Console <span>↗</span></button></div><div id="recent-activity" class="recent-activity"><p class="muted">No server activity yet.</p></div></div>
+            </div>
+        </section>
+        <section id="view-backups" class="view" hidden>
+            <div class="page-heading"><h1>Backups &amp; data</h1><button id="backups-folder" class="quiet-button"><svg><use href="#i-folder"/></svg> Open backups folder</button></div>
+            <p id="backup-notice" class="settings-notice">Stop the server before creating or restoring a backup.</p>
+            <div class="plain-panel"><form id="backup-form" class="backup-form"><label for="backup-name">New world backup<input id="backup-name" maxlength="120" placeholder="Backup name (optional)" autocomplete="off"></label><button id="create-backup" class="primary-button compact" type="submit"><svg><use href="#i-backup"/></svg> Create backup</button></form><div class="section-heading backup-list-heading"><h2>Saved backups <span id="backup-count" class="count-badge">0</span></h2><button id="refresh-backups" class="text-button"><svg><use href="#i-updates"/></svg> Refresh</button></div><div id="backup-list" class="backup-list" aria-live="polite"><p class="empty-state">No backups yet.</p></div></div>
+            <details class="danger-panel"><summary>Wipe world data <span>Destructive action</span></summary><form id="wipe-form" class="wipe-content"><p>Remove bots, players, or the entire world. Create a backup first if you want to restore it later.</p><div class="wipe-fields"><label for="wipe-scope">Data to remove<select id="wipe-scope"><option value="bots">Bots only</option><option value="players">Players only</option><option value="all">Entire world</option></select></label><label for="wipe-confirmation">Type <strong id="wipe-phrase">WIPE BOTS</strong> to confirm<input id="wipe-confirmation" autocomplete="off" spellcheck="false" placeholder="WIPE BOTS"></label><button id="wipe-button" type="submit" class="danger-button" disabled>Wipe selected data</button></div><p id="wipe-result" class="muted" role="status"></p></form></details>
+        </section>
+        <section id="view-settings" class="view" hidden>
+            <div class="page-heading"><h1>Server settings</h1><button id="save-settings" class="primary-button compact" disabled>Save changes</button></div>
+            <div id="settings-empty" class="empty-panel"><h2>No server selected</h2><p>Connect or install a server to edit its settings.</p><button class="quiet-button" data-view="home">Go to Home</button></div>
+            <div id="settings-workspace" class="settings-workspace" hidden><aside><label class="search-box"><input id="settings-search" placeholder="Find a setting…" aria-label="Search settings"></label><nav id="settings-nav" aria-label="Settings sections"></nav></aside><div><div id="settings-notice" class="settings-notice">Changes apply on the next server start.</div><div id="settings-fields"></div></div></div>
+        </section>
+        <section id="view-updates" class="view" hidden>
+            <div class="page-heading"><h1>Updates</h1><button id="updates-check" class="quiet-button"><svg><use href="#i-updates"/></svg> Check for updates</button></div>
+            <p id="preview-notice" class="settings-notice" hidden>Preview channel · Test builds from develop. Use a separate test world.</p>
+            <details id="launcher-notes-panel" class="plain-panel" hidden><summary>Launcher release notes</summary><pre id="launcher-release-notes" class="release-notes"></pre></details>
+            <div class="update-summary"><div><span class="eyebrow">LAUNCHER</span><h2 id="launcher-update-title">L2Solo Launcher</h2><p id="launcher-update-description">Checking for application updates.</p><progress id="launcher-update-progress" max="100" value="0" aria-label="Launcher update download" hidden></progress></div><button id="launcher-update-action" class="quiet-button" disabled>Check for updates</button></div>
+            <div class="update-summary"><div><span class="eyebrow">SERVER · STABLE</span><h2 id="update-title">Check for updates</h2><p id="update-description">Server releases are downloaded from GitHub.</p></div><button id="install-update" class="primary-button compact" disabled>Install latest release</button></div>
+            <div class="two-columns"><div class="plain-panel"><div class="section-heading"><h2>Release notes</h2><span id="release-tag" class="small-tag">—</span></div><p id="release-date" class="muted"></p><pre id="release-notes">Check for updates to load release notes.</pre><button id="release-link" class="text-button" hidden>View on GitHub ↗</button></div><div class="plain-panel maintenance"><h2>Geodata</h2><p>Verify and replace missing or damaged geodata.</p><button id="repair-geodata" class="quiet-button" disabled>Verify &amp; repair</button><hr><h2>Server files</h2><p>Updates preserve your world database, backups and local settings.</p><button id="updates-folder" class="text-button">Open server folder ↗</button></div></div>
+            <div id="news-section" hidden><div class="section-heading"><h2>News &amp; Updates</h2><button class="text-button" data-link="https://l2solo.com">All news ↗</button></div><div id="news-grid" class="news-grid"></div></div>
+        </section>
+        <section id="view-console" class="view" hidden>
+            <div class="page-heading"><h1>Console</h1><label class="auto-scroll"><input type="checkbox" id="auto-scroll" checked> Follow logs</label></div>
+            <div class="console-toolbar"><span id="console-status">SERVER OFFLINE</span><span>Last 250 messages · tmp/logs/desktop-server.log</span></div><pre id="console-output" tabindex="0">Server output will appear here.</pre>
+        </section>
+    </main>
+    <dialog id="confirm-dialog" aria-labelledby="confirm-title"><form method="dialog"><h2 id="confirm-title">Confirm action</h2><p id="confirm-description"></p><div class="dialog-actions"><button class="quiet-button" value="cancel" autofocus>Cancel</button><button id="confirm-action" class="danger-button" value="confirm">Confirm</button></div></form></dialog>
+    <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

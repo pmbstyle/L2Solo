@@ -174,6 +174,12 @@ You will need:
 
 ## Quick Start
 
+### Desktop launcher
+
+The Electron launcher installs the latest tagged server release, verifies C4 geodata, edits server settings and starts/stops your world. Windows, Linux and macOS installers are built by the tagged release workflow. See [the desktop launcher guide](launcher/README.md) for development, release artifacts and the website news API contract.
+
+### From source
+
 ```bash
 git clone https://github.com/pmbstyle/L2Solo.git
 cd L2Solo

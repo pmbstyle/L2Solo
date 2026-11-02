@@ -161,7 +161,7 @@ function openDownload(url, redirects = 5) {
     });
 }
 
-async function downloadArchive(url, destination, logger) {
+async function downloadArchive(url, destination, logger, onProgress) {
     const response = await openDownload(url);
     const expectedBytes = Number(response.headers['content-length'] || 0);
     const hash = crypto.createHash('sha256');
@@ -173,6 +173,7 @@ async function downloadArchive(url, destination, logger) {
         transform(chunk, encoding, callback) {
             hash.update(chunk);
             receivedBytes += chunk.length;
+            onProgress?.({ bytes: receivedBytes, total: expectedBytes });
             if (expectedBytes > 0) {
                 const percent = Math.floor(receivedBytes / expectedBytes * 100);
                 if (percent >= lastReportedPercent + 10 || percent === 100) {
@@ -189,6 +190,9 @@ async function downloadArchive(url, destination, logger) {
 }
 
 function assertSafeArchiveEntry(entry) {
+    if (((entry.externalFileAttributes >>> 16) & 0xf000) === 0xa000) {
+        throw new Error('Geodata archives must not contain symbolic links');
+    }
     const name = String(entry.fileName || '').replace(/\\/g, '/');
     const segments = name.split('/');
     if (!name || name.startsWith('/') || /^[a-zA-Z]:/.test(name) || segments.includes('..')) {
@@ -419,7 +423,7 @@ async function ensureGeodata(options = {}) {
             }
             logger(`${existing.exists ? 'updating' : 'installing'} geodata${existing.reason ? `: ${existing.reason}` : ''}`);
             await fs.promises.mkdir(tempDirectory, { recursive: true });
-            const downloaded = await downloadArchive(url, archivePath, logger);
+            const downloaded = await downloadArchive(url, archivePath, logger, options.onProgress);
             if (downloaded.sha256 !== expectedSha256) {
                 throw new Error(`Geodata checksum mismatch: expected ${expectedSha256}, received ${downloaded.sha256}`);
             }

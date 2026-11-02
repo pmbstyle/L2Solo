@@ -1,0 +1,174 @@
+name: Component release
+
+on:
+  push:
+    tags: ['server-v*', 'launcher-v*', '!*-preview.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-22.04
+    outputs:
+      component: ${{ steps.plan.outputs.component }}
+      version: ${{ steps.plan.outputs.version }}
+      runtime: ${{ steps.plan.outputs.runtime }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require stable release source on main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor HEAD origin/main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - id: plan
+        run: node launcher/scripts/release-plan.cjs
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+
+  server-tests:
+    needs: plan
+    if: needs.plan.outputs.component == 'server'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ needs.plan.outputs.runtime }}
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+        if: matrix.shard == 1
+      - run: npm test -- --keep-going --shard=${{ matrix.shard }}/12
+        env:
+          L2NODE_TEST_TIMEOUT_MS: 180000
+
+  server:
+    needs: plan
+    if: needs.plan.outputs.component == 'server'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ needs.plan.outputs.runtime }}
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
+      - run: npm ci
+        working-directory: launcher
+      - run: npm test
+        working-directory: launcher
+      - run: npm run release:server
+        working-directory: launcher
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_SOURCE_SHA: ${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-release
+          path: launcher/dist/server/*
+          if-no-files-found: error
+
+  desktop:
+    needs: plan
+    if: needs.plan.outputs.component == 'launcher'
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x64
+          - os: windows-latest
+            arch: x64
+          - os: macos-15-intel
+            arch: x64
+          - os: macos-15
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    defaults:
+      run:
+        working-directory: launcher
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ needs.plan.outputs.runtime }}
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: npm run runtime
+      - name: Build Linux launcher
+        if: runner.os == 'Linux'
+        run: npm run dist -- --x64 --config.publish.channel=latest-x64 --config.publish.url=https://github.com/pmbstyle/L2Solo/releases/download/${{ github.ref_name }}/
+      - name: Build Windows launcher without a signing certificate
+        if: runner.os == 'Windows'
+        run: npm run dist -- --x64 --config.publish.channel=latest-x64 --config.publish.url=https://github.com/pmbstyle/L2Solo/releases/download/${{ github.ref_name }}/
+      - name: Build macOS launcher with free ad-hoc signing
+        if: runner.os == 'macOS'
+        run: npm run dist -- --${{ matrix.arch }} --config.publish.channel=latest-${{ matrix.arch }} --config.publish.url=https://github.com/pmbstyle/L2Solo/releases/download/${{ github.ref_name }}/
+      - run: xvfb-run -a npm run test:packaged
+        if: runner.os == 'Linux'
+      - run: npm run test:packaged
+        if: runner.os != 'Linux'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            launcher/dist/*.exe
+            launcher/dist/*.dmg
+            launcher/dist/*.zip
+            launcher/dist/*.AppImage
+            launcher/dist/*.deb
+            launcher/dist/*.blockmap
+            launcher/dist/latest*.yml
+          if-no-files-found: error
+
+  publish:
+    needs: [plan, server-tests, server, desktop]
+    if: >-
+      always() && needs.plan.result == 'success' &&
+      (needs.server-tests.result == 'success' || needs.server-tests.result == 'skipped') &&
+      (needs.server.result == 'success' || needs.server.result == 'skipped') &&
+      (needs.desktop.result == 'success' || needs.desktop.result == 'skipped')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
+      - run: npm ci --ignore-scripts
+        working-directory: launcher
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - name: Verify artifacts, attach installers and publish complete release
+        run: node launcher/scripts/publish-release.cjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_ASSETS: ${{ github.workspace }}/release-assets
+          RELEASE_SOURCE_SHA: ${{ github.sha }}

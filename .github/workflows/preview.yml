@@ -1,0 +1,175 @@
+name: Preview release
+
+on:
+  push:
+    branches: [develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-develop
+  cancel-in-progress: false
+
+env:
+  PREVIEW_SEQUENCE: ${{ github.run_number }}
+  RELEASE_SOURCE_SHA: ${{ github.sha }}
+
+jobs:
+  plan:
+    if: github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-22.04
+    outputs:
+      serverTag: ${{ steps.preview.outputs.serverTag }}
+      launcherTag: ${{ steps.preview.outputs.launcherTag }}
+      runtime: ${{ steps.preview.outputs.runtime }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.0'
+      - id: preview
+        run: node launcher/scripts/prepare-preview.cjs
+
+  server-tests:
+    needs: plan
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ needs.plan.outputs.runtime }}
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+        if: matrix.shard == 1
+      - run: npm test -- --keep-going --shard=${{ matrix.shard }}/12
+        env:
+          L2NODE_TEST_TIMEOUT_MS: 180000
+
+  server:
+    needs: plan
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: launcher
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ needs.plan.outputs.runtime }}
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: node scripts/prepare-preview.cjs
+      - run: npm run release:server
+        env:
+          RELEASE_TAG: ${{ needs.plan.outputs.serverTag }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: preview-server
+          path: launcher/dist/server/*
+          if-no-files-found: error
+
+  desktop:
+    needs: plan
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x64
+          - os: windows-latest
+            arch: x64
+          - os: macos-15-intel
+            arch: x64
+          - os: macos-15
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    defaults:
+      run:
+        working-directory: launcher
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ needs.plan.outputs.runtime }}
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
+      - run: npm ci
+      - run: npm test
+      - run: node scripts/prepare-preview.cjs
+      - run: npm run runtime
+      - name: Build preview installers
+        run: npm run dist -- --${{ matrix.arch }} --config.publish.channel=preview-${{ matrix.arch }} --config.publish.url=https://github.com/pmbstyle/L2Solo/releases/download/${{ needs.plan.outputs.launcherTag }}/
+      - run: xvfb-run -a npm run test:packaged
+        if: runner.os == 'Linux'
+      - run: npm run test:packaged
+        if: runner.os != 'Linux'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: preview-launcher-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            launcher/dist/*.exe
+            launcher/dist/*.dmg
+            launcher/dist/*.zip
+            launcher/dist/*.AppImage
+            launcher/dist/*.deb
+            launcher/dist/*.blockmap
+            launcher/dist/preview*.yml
+          if-no-files-found: error
+
+  publish:
+    needs: [plan, server-tests, server, desktop]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - name: Require preview release credentials
+        env:
+          GH_TOKEN: ${{ secrets.PREVIEW_RELEASE_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo '::error::Add PREVIEW_RELEASE_TOKEN with Contents write and Workflows write for this repository. Build artifacts remain available from this workflow.'
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ needs.plan.outputs.runtime }}
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
+      - run: npm ci --ignore-scripts
+        working-directory: launcher
+      - run: node launcher/scripts/prepare-preview.cjs
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: preview-launcher-*
+          path: release-assets/launcher
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: preview-server
+          path: release-assets/server
+      - name: Publish complete preview launcher
+        run: node launcher/scripts/publish-release.cjs
+        env:
+          GH_TOKEN: ${{ secrets.PREVIEW_RELEASE_TOKEN }}
+          RELEASE_TAG: ${{ needs.plan.outputs.launcherTag }}
+          RELEASE_ASSETS: ${{ github.workspace }}/release-assets/launcher
+      - name: Publish complete preview server with matching installers
+        run: node launcher/scripts/publish-release.cjs
+        env:
+          GH_TOKEN: ${{ secrets.PREVIEW_RELEASE_TOKEN }}
+          RELEASE_TAG: ${{ needs.plan.outputs.serverTag }}
+          RELEASE_ASSETS: ${{ github.workspace }}/release-assets/server
