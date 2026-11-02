@@ -146,4 +146,26 @@ assert.equal(craftMaterialLoss(readyProof, physical(30)), 'unchanged', 'later ca
     const unstable = createQuantityInputs(); unstable.physical(1, 0); unstable.physical(1, 1);
     assert.equal(unstable.finish(), null, 'inconsistent within-build owner answers cannot be certified');
 }
+// Many candidates walking one tree read one free stock: the proof still fits and still sees it move.
+{
+    const scoped = (ownRoot, ownItem) => {
+        const quantities = createQuantityInputs();
+        for (let root = 1; root <= 60; root++) for (let id = 500; id < 540; id++)
+            quantities.stock(id, `power:${root}:6`, { owned: id === 501 ? 7 : 0, incoming: 0 }, '');
+        return quantities.finish(ownRoot, ownItem);
+    };
+    const read = (moved = 501, owned = 7) => ({ stockFor: id => ({ owned: id === moved ? owned : id === 501 ? 7 : 0, incoming: 0 }) });
+    const proof = scoped();
+    assert(proof instanceof Uint8Array, 'sixty candidates over forty items keep a proof');
+    assert.equal(quantityInputsHold(proof, read()), true);
+    assert.equal(quantityInputsHold(proof, read(501, 6)), false, 'a moved item refuses as it did per root');
+    assert.equal(quantityInputsHold(proof, read(539, 1)), false);
+    const leafRoot = 'power:1:6', skipOwn = row => row[1] === leafRoot && row[2] === 501;
+    const onlyOwn = createQuantityInputs();
+    onlyOwn.stock(501, leafRoot, { owned: 7, incoming: 0 }, '');
+    assert.equal(quantityInputsHold(onlyOwn.finish(leafRoot, 501), read(501, 9), null, skipOwn), true,
+        "the leaf's own item moves with its progress");
+    assert.equal(quantityInputsHold(scoped(leafRoot, 501), read(501, 9), null, skipOwn), false,
+        "another root's input on the leaf's item still refuses");
+}
 console.log('Canonical wish quantities: whole batches, own/incoming stock, native readiness, basket cost and shared root allocation passed');

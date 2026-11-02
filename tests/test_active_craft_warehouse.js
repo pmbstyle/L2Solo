@@ -50,6 +50,17 @@ try {
         'the exact craft accounts for stored units without treating them as executable');
     assert.deepEqual(stockFor(1864, 'resale:1890'), { owned: 0, incoming: 0 },
         'production cannot consume the equipment kit from its warehouse');
+    // A proof row under a root's scope reads what that root reads.
+    for (const root of ['power:300:14', 'power:301:14', 'resale:1890']) for (const id of [1864, 1869, 4113, 9999])
+        assert.deepEqual(stockFor(id, stockFor.scope(root, id)), stockFor(id, root), `${root} on ${id}`);
+    const unplanned = invoke('GameServer/Bot/Economy/EconomyContext').stockReader(
+        { ...state, stats: { ...state.stats, equipmentPlan: null } }, () => 0);
+    const { createQuantityInputs, quantityInputsHold } = invoke('GameServer/Bot/Economy/WishNetwork');
+    const quantities = createQuantityInputs();
+    for (const root of ['power:300:14', 'power:301:14'])
+        quantities.stock(1864, root, unplanned(1864, root), unplanned.scope(root, 1864));
+    assert.equal(quantityInputsHold(quantities.finish(), { stockFor }), false,
+        'a craft plan adopted after the build makes its root read the warehouse: the proof sees it');
     const protectedStock = { ...state, inventory: { ...state.inventory,
         1864: { ...state.inventory[1864], reservedAmount: 5 } } };
     const available = Policy.available(protectedStock, Object.values(Index.inventory(state)));

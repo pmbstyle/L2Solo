@@ -1444,7 +1444,7 @@ function forState(state = {}, deps = {}) {
     // build; the projection is read lazily once it exists (stock roots).
     context.wallet = Funding.budget(state, deps.buyOrderEscrow);
     const nativeStock = stockReader(state, rootKey => context.projection?.nodes.find(node => node.key === rootKey)?.object?.itemId);
-    context.stockFor = (id, rootKey) => quantityInputs.stock(id, rootKey, nativeStock(id, rootKey));
+    context.stockFor = (id, rootKey) => quantityInputs.stock(id, rootKey, nativeStock(id, rootKey), nativeStock.scope(rootKey, id));
     context.completionKey = Crystallization.completionKey(state, quantityInputs);
     const extra = [...extensions.values()].flatMap(provider => provider(state, context) || []);
     const sourceSections = keptSources ? held.sourceSections : null;
@@ -1692,7 +1692,8 @@ function planOf(context, base, { key, tripHour, projection = null, knowledgeEnab
         network: compactNetwork(context.network), moneyPrice: context.moneyPrice, gapHorizonHours: context.gapHorizonHours,
         watchList: context.watchList, intentPending: context.intentPending, statsPacket: context.statsPacket,
         wallet: context.wallet, horizonHours: context.horizonHours, values: projection?.values, stockRoots, knowledgeEnabled,
-        quantityInputs: projection ? context.quantityInputs?.finish() : null, nominationBasis: context.nominationBasis,
+        quantityInputs: projection ? context.quantityInputs?.finish(context.network?.activity?.rootKey ?? null,
+            ColdEconomyDecision.ownItem(context.network?.activity)) : null, nominationBasis: context.nominationBasis,
         liquidationInputs: context.liquidationInputs,
         prices: planPrices(prices, base.kit, context), gearPlanMemo: undefined };
 }
@@ -1709,12 +1710,24 @@ function stockReader(state, rootItem) {
     const active = Warehouse.ready() && Warehouse.hasItems(state) && require('./CraftWarehousePolicy').planFor(state);
     const bank = active ? require('./CraftWarehousePolicy').available(state, Object.values(Warehouse.inventory(state))).warehouse : null;
     const bankRoot = active && `power:${Number(active.plan.target.selfId)}:${Number(active.plan.target.slot)}`;
-    return (id, rootKey) => ({ owned: supply?.key === rootKey ? require('./ClanCrystalSupply').stock(state, id)
+    // lazy: optional clan supply
+    const read = (id, rootKey) => ({ owned: supply?.key === rootKey ? require('./ClanCrystalSupply').stock(state, id)
         : rootKey.startsWith('stock:') && rootItem(rootKey) === id
         ? positive(state.inventory?.[id]?.amount) : invoke('GameServer/Bot/Economy/WealthCraftDecision').freeAmount(state, state.inventory?.[id] || {},
             rootKey.startsWith('resale:') ? productionReserved ||= invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(state) : reserved),
     incoming: positive(state.acceptedIncoming?.[id]) + (rootKey === bankRoot && Number(id) !== Number(active.plan.target.selfId)
         ? positive(bank?.[id]) : 0) });
+    // The root whose answer on this item stands for this root's, so a proof
+    // keeps one row. A root with stock of its own stands for itself, as does
+    // every root on a stored item: a craft plan can make any of them the bank
+    // root, with no event, while the build's proof holds.
+    let stored;
+    read.scope = (rootKey, id) => {
+        stored ??= Warehouse.ready() && Warehouse.hasItems(state) ? Warehouse.inventory(state) : {};
+        return rootKey === supply?.key || rootKey.startsWith('stock:') || stored[id] ? rootKey
+            : rootKey.startsWith('resale:') ? 'resale:' : '';
+    };
+    return read;
 }
 function valueReaders(state, network, values, persona, knowledgeEnabled, kitCost, money) {
     const itemUsefulness = id => invoke('GameServer/Bot/Population/ColdEconomyDecision').personalUsefulness(

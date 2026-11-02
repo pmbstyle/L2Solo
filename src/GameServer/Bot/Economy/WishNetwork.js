@@ -152,7 +152,7 @@ function unpackQuantityInputs(value) {
     return Object.freeze({ version: 1, rows: Object.freeze(rows) });
 }
 function createQuantityInputs() {
-    const rows = [], seen = new Map();
+    const rows = [], seen = new Map(), shared = new Map();
     // invalid: '' or the first reason the proof is void (diagnostics name it).
     let invalid = '', finished = false, packed = null;
     const record = row => {
@@ -174,10 +174,20 @@ function createQuantityInputs() {
         return value;
     };
     return {
-        stock(id, rootKey, value) {
+        // scope: the root that stands for every root reading this same stock
+        // (EconomyContext.stockReader): one row for all of them, however many
+        // candidates walk the item.
+        stock(id, rootKey, value, scope = rootKey) {
             if (typeof rootKey !== 'string' || !Number.isSafeInteger(Number(id)) || Number(id) <= 0
                 || !Number.isFinite(nonnegative(value?.owned)) || !Number.isFinite(nonnegative(value?.incoming))) invalid ||= 'value';
-            record(['stock', String(rootKey), Number(id), nonnegative(value?.owned), nonnegative(value?.incoming)]);
+            const row = ['stock', String(scope), Number(id), nonnegative(value?.owned), nonnegative(value?.incoming)];
+            if (scope === rootKey) { record(row); return value; }
+            const key = `${row[1]}:${row[2]}`, held = shared.get(key);
+            if (!held) shared.set(key, { row, roots: new Set([rootKey]) });
+            else {
+                held.roots.add(rootKey);
+                if (held.row[3] !== row[3] || held.row[4] !== row[4]) invalid ||= 'conflict';
+            }
             return value;
         },
         stockPhysical(rootKey, id, value) {
@@ -189,15 +199,21 @@ function createQuantityInputs() {
         physical: scalar('physical'), present: scalar('present'), freePresent: scalar('freePresent'),
         incoming: scalar('incoming'), free: scalar('free'), crystalFree: scalar('crystalFree'),
         unsupported() { invalid ||= 'unsupported'; },
-        // The packed proof (eachQuantityRow reads it) or null.
-        finish() {
+        // The packed proof (eachQuantityRow reads it) or null. A leaf's own item
+        // keeps its root's row apart: that row moves with the leaf's progress,
+        // another root's on the item is an input.
+        finish(ownRoot = null, ownItem = null) {
             if (!finished) {
+                for (const { row, roots } of shared.values()) {
+                    if (row[2] === ownItem && roots.delete(ownRoot)) record(['stock', ownRoot, ...row.slice(2)]);
+                    if (roots.size) record(row);
+                }
                 finished = true;
                 if (!invalid) packed = packQuantityInputs({ version: 1, rows });
                 if (!invalid && !packed) invalid = 'bytes';
                 // Diagnostics: why a completed build has no quantity proof.
                 if (invalid && Diagnostics.active()) Diagnostics.count('context', 'quantity_invalid', invalid);
-                seen.clear(); rows.length = 0;
+                seen.clear(); shared.clear(); rows.length = 0;
             }
             return packed;
         }
