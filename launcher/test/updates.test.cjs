@@ -17,7 +17,7 @@ const { LauncherUpdates, validateFeed } = require('../main/launcher-updates.cjs'
 const { assetUrl, listReleases, selectRelease, latestRelease, launcherRelease, validateManifest, validateLauncherManifest, channelOf, newerVersion } = require('../main/releases.cjs');
 const { applyRelease, markerPath, journalPath, recover } = require('../main/installer.cjs');
 const { writeJson, readJson, sha256, canonicalPath } = require('../main/files.cjs');
-const { collect, feeds, feedsForChannel } = require('../scripts/launcher-assets.cjs');
+const { collect, verifyTarget, feeds, feedsForChannel } = require('../scripts/launcher-assets.cjs');
 const { publish: publishRelease, serverInstallers } = require('../scripts/publish-release.cjs');
 const { plan } = require('../scripts/release-plan.cjs');
 const { prepare: preparePreview } = require('../scripts/prepare-preview.cjs');
@@ -34,10 +34,10 @@ async function waitFor(condition) {
 }
 async function launcherFixture(version = '1.3.0', sourceCommit = 'a'.repeat(40)) {
     const root = directory('launcher-assets');
-    const artifacts = ['mac-arm64.dmg', 'mac-arm64.zip', 'mac-x64.dmg', 'mac-x64.zip', 'linux-x64.AppImage', 'linux-x64.deb', 'windows-x64-Setup.exe', 'windows-x64-Portable.exe'];
+    const artifacts = ['mac-arm64.dmg', 'mac-arm64.zip', 'mac-x64.dmg', 'mac-x64.zip', 'linux-x86_64.AppImage', 'linux-amd64.deb', 'windows-x64-Setup.exe', 'windows-x64-Portable.exe'];
     for (const suffix of artifacts) put(root, `L2Solo-Launcher-${version}-${suffix}`, `original signed installer ${version} ${suffix}`);
     for (const [target, filename] of Object.entries(feedsForChannel(channelOf(version)))) {
-        const suffix = { 'darwin-arm64': 'mac-arm64.zip', 'darwin-x64': 'mac-x64.zip', 'linux-x64': 'linux-x64.AppImage', 'win32-x64': 'windows-x64-Setup.exe' }[target];
+        const suffix = { 'darwin-arm64': 'mac-arm64.zip', 'darwin-x64': 'mac-x64.zip', 'linux-x64': 'linux-x86_64.AppImage', 'win32-x64': 'windows-x64-Setup.exe' }[target];
         const name = `L2Solo-Launcher-${version}-${suffix}`;
         const bytes = fs.readFileSync(path.join(root, name));
         put(root, filename, JSON.stringify({ version, files: [{ url: name, size: bytes.length, sha512: crypto.createHash('sha512').update(bytes).digest('base64') }] }));
@@ -50,6 +50,48 @@ async function launcherFixture(version = '1.3.0', sourceCommit = 'a'.repeat(40))
     return { root, manifest, release, fetcher: async url => url.includes('api.github.com') ? Response.json([release])
         : new Response(fs.readFileSync(path.join(root, new URL(url).pathname.split('/').pop()))) };
 }
+
+test('native Linux installer names remain unchanged in stable and preview manifests and downloads', async () => {
+    for (const version of ['1.3.0', '1.3.0-preview.1']) {
+        const item = await launcherFixture(version);
+        const expected = [`L2Solo-Launcher-${version}-linux-x86_64.AppImage`, `L2Solo-Launcher-${version}-linux-amd64.deb`];
+        assert.deepEqual(item.manifest.installers['linux-x64'], expected);
+        assert.deepEqual(await verifyTarget(item.root, version, 'linux-x64'), expected);
+        const info = JSON.parse(fs.readFileSync(path.join(item.root, item.manifest.feeds['linux-x64']), 'utf8'));
+        assert.equal(info.files[0].url, expected[0]);
+        for (const name of expected) assert.equal(await sha256(path.join(item.root, name)), item.manifest.assets.find(asset => asset.name === name).sha256);
+    }
+});
+
+test('native artifact verification works before aggregation and rejects missing files and wrong platform feeds', async () => {
+    const item = await launcherFixture(), root = directory('native-linux-artifacts'), target = 'linux-x64';
+    for (const name of [...item.manifest.installers[target], item.manifest.feeds[target]]) put(root, name, fs.readFileSync(path.join(item.root, name)));
+    assert.deepEqual(await verifyTarget(root, '1.3.0', target), item.manifest.installers[target]);
+    const appImage = path.join(root, item.manifest.installers[target][0]);
+    fs.renameSync(appImage, `${appImage}.missing`);
+    await assert.rejects(verifyTarget(root, '1.3.0', target), /Missing installer/);
+    fs.renameSync(`${appImage}.missing`, appImage);
+    fs.appendFileSync(appImage, 'corrupt');
+    await assert.rejects(verifyTarget(root, '1.3.0', target), /does not match/);
+    const feed = item.manifest.feeds[target];
+    fs.copyFileSync(path.join(item.root, item.manifest.feeds['darwin-arm64']), path.join(item.root, feed));
+    await assert.rejects(verifyTarget(item.root, '1.3.0', target), /must reference/);
+});
+
+test('legacy Linux x64 aliases remain supported but duplicate format candidates are rejected', async () => {
+    const item = await launcherFixture();
+    const appImage = item.manifest.installers['linux-x64'][0], deb = item.manifest.installers['linux-x64'][1];
+    const legacyAppImage = appImage.replace('x86_64', 'x64'), legacyDeb = deb.replace('amd64', 'x64');
+    fs.copyFileSync(path.join(item.root, appImage), path.join(item.root, legacyAppImage));
+    await assert.rejects(collect(item.root, '1.3.0'), /Ambiguous installer/);
+    fs.unlinkSync(path.join(item.root, appImage));
+    fs.renameSync(path.join(item.root, deb), path.join(item.root, legacyDeb));
+    const file = path.join(item.root, item.manifest.feeds['linux-x64']), info = JSON.parse(fs.readFileSync(file, 'utf8'));
+    info.files[0].url = legacyAppImage;
+    put(item.root, item.manifest.feeds['linux-x64'], JSON.stringify(info));
+    const manifest = await collect(item.root, '1.3.0');
+    assert.deepEqual(manifest.installers['linux-x64'], [legacyAppImage, legacyDeb]);
+});
 
 test('component discovery ignores repository Latest, drafts and prereleases and compares versions numerically', async () => {
     const items = [
@@ -362,8 +404,8 @@ test('certificate-free builds keep automatic NSIS/AppImage updates and route por
     const cases = [
         { platform: 'win32', portable: false, supported: true, suffix: 'windows-x64-Setup.exe' },
         { platform: 'win32', portable: true, supported: false, suffix: 'windows-x64-Portable.exe' },
-        { platform: 'linux', appImage: true, supported: true, suffix: 'linux-x64.AppImage' },
-        { platform: 'linux', appImage: false, supported: false, suffix: 'linux-x64.deb' }
+        { platform: 'linux', appImage: true, supported: true, suffix: 'linux-x86_64.AppImage' },
+        { platform: 'linux', appImage: false, supported: false, suffix: 'linux-amd64.deb' }
     ];
     for (const entry of cases) {
         const controller = { state: {}, publish() {} };

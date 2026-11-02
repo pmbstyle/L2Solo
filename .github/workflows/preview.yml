@@ -88,12 +88,16 @@ jobs:
         include:
           - os: ubuntu-22.04
             arch: x64
+            target: linux-x64
           - os: windows-latest
             arch: x64
+            target: win32-x64
           - os: macos-15-intel
             arch: x64
+            target: darwin-x64
           - os: macos-15
             arch: arm64
+            target: darwin-arm64
     runs-on: ${{ matrix.os }}
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
@@ -113,6 +117,8 @@ jobs:
       - run: npm run runtime
       - name: Build preview installers
         run: npm run dist -- --${{ matrix.arch }} --config.publish.channel=preview-${{ matrix.arch }} --config.publish.url=https://github.com/pmbstyle/L2Solo/releases/download/${{ needs.plan.outputs.launcherTag }}/
+      - name: Verify native installers and update feed
+        run: node scripts/launcher-assets.cjs --target=${{ matrix.target }}
       - run: xvfb-run -a npm run test:packaged
         if: runner.os == 'Linux'
       - run: npm run test:packaged
