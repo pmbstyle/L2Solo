@@ -121,9 +121,13 @@ const originalBoard = Afk.boardIndex;
     const protectedCandidate = Wealth.recheck(protectedState, protectedStep, [{ recipeId: 79 }]);
     assert(protectedCandidate, 'main and worker exclude equipped/protected output from unsold stock');
     assert.equal(protectedCandidate.expectedSold, 1);
-    assert.equal(Wealth.recheck({ ...protectedState, inventory: { [equipment.productId]: {
-        selfId: equipment.productId, amount: 2 } } }, protectedStep, [{ recipeId: 79 }]), null,
-    'two genuinely free items already fill both buyers before a new lot');
+    // One reservation reading (ItemDisposition, T189): the bot's own kit keeps one
+    // unequipped piece of its chest, so only the rest is unsold stock.
+    const loose = amount => ({ ...protectedState, inventory: { [equipment.productId]: { selfId: equipment.productId, amount } } });
+    assert.equal(Wealth.recheck(loose(2), protectedStep, [{ recipeId: 79 }])?.expectedSold, 1,
+        'of two loose pieces the kit keeps one: one buyer is left for a new lot');
+    assert.equal(Wealth.recheck(loose(3), protectedStep, [{ recipeId: 79 }]), null,
+        'two genuinely free items already fill both buyers before a new lot');
     // History and today's requests may describe the same customers. At one
     // price they remain alternative finite forecasts, never summed.
     board.clear();

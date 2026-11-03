@@ -44,9 +44,12 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
         stub(ShotPolicy, 'unpackStep', () => ({ wealth: { recipeId: RECIPE, batches: 1 } }));
         let rechecks = 0, skill = [], executes = 0, writes = 0, race = null;
         const realRecheck = Wealth.recheck, realUpsert = Life.upsertState, realAdmit = Database.withMutationAdmission;
-        stub(Wealth, 'recheck', (...args) => { rechecks++; return realRecheck.apply(Wealth, args); });
-        // The recipe check reads the craft skill first; record its answers.
-        stub(CraftShop, 'canCraft', (state, row) => { const ok = Craft.canCraft(state, row); if (Number(row?.recipeId) === RECIPE) skill.push(ok); return ok; });
+        // The recipe check reads the craft skill first; record its first answer per
+        // recheck (the build's own search reads it again on the same state, T189).
+        let asked = false;
+        stub(Wealth, 'recheck', (...args) => { rechecks++; asked = true; return realRecheck.apply(Wealth, args); });
+        stub(CraftShop, 'canCraft', (state, row) => { const ok = Craft.canCraft(state, row);
+            if (asked && Number(row?.recipeId) === RECIPE) { skill.push(ok); asked = false; } return ok; });
         stub(Wealth, 'execute', async state => { executes++; return { state }; });
         stub(Life, 'upsertState', async (...args) => { writes++; return realUpsert.apply(Life, args); });
         stub(Database, 'withMutationAdmission', async (before, work) => {
