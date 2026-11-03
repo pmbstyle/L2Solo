@@ -27,6 +27,18 @@ async function run() {
     assert(!Break.sessionReady(party, { ...members[2], inventory: { 166: { selfId: 166, amount: 1, equipped: true, slot: 7 } } },
         gearGoal, now, config), 'an already equipped D weapon is not a required kit gap');
     assert(!Break.sessionReady(party, members[2], null, now, config), 'ordinary errands retain the session limit');
+    const bow = invoke('GameServer/DataCache').items.find(item => item.template?.kind === 'Weapon.Bow' && item.etc?.rank === 'd');
+    const overloadedArcher = { ...members[0], level: 52, phase: 'cold', stats: { classId: 24, marketSellRetryAfter: now + 1800000 },
+        inventory: { [bow.selfId]: { selfId: bow.selfId, amount: 1, equipped: true, equippedCount: 1, slot: 14 },
+            1341: { selfId: 1341, amount: 11000, stackable: true, kind: 'Other.Arrow' } } };
+    assert.equal(Break.memberNeed(party, overloadedArcher, now).reason, 'inventory_overweight');
+    assert(Break.sessionReady(party, overloadedArcher, null, now, config), 'excess arrow weight bypasses the ordinary party session timer');
+    const arrowGoal = Break.goal(party, overloadedArcher, gearGoal, now);
+    assert.equal(arrowGoal.type, 'sell_inventory', 'the selected gear wish cannot hide an actionable arrow unload');
+    assert.equal(arrowGoal.target.cleanupReason, 'inventory_overweight');
+    const raid = { ...party, stats: { ...party.stats, objective: { sourceKind: 'raid' } } };
+    assert(!Break.sessionReady(raid, overloadedArcher, null, now, config), 'arrow cleanup does not add an early raid absence');
+    assert.equal(Break.goal(raid, overloadedArcher, gearGoal, now), gearGoal);
     assert(Break.sessionReady({ ...party, stats: { formedAt: now - config.partyMarketBreakMinSessionMs - 1,
         fightsResolved: config.partyMarketBreakMinFights, lastMarketBreakAt: 0 } }, members[2], null, now, config),
     'ordinary shopping remains available after the existing session and fight thresholds');

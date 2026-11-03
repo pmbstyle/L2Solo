@@ -376,6 +376,9 @@ async function buyFromStore(actor, store, selfId, qty, options = {}) {
         ? (World.user?.sessions || []).find(session => Number(session.actor?.fetchId?.()) === Number(store.ownerId))
         : null;
     return withTradeQueues(store, selfId, [actor, liveSeller?.actor], async () => {
+        const Arrows = require('../Inventory/ArrowStock');
+        if (isBotActor(actor) && Arrows.isArrow({ selfId }) && Arrows.purchaseAmount(actor, selfId, qty) < qty)
+            throw Error('arrow_stock_limit');
         if (store.kind === 'player') return PrivateStoreTrade.buy(actor, liveSeller, store, selfId, qty, options);
         store.activePurchases = Math.max(0, Number(store.activePurchases || 0)) + 1;
         try {

@@ -521,6 +521,8 @@ function marketPurchaseBlocker(state = {}, offer = {}, qty = 1) {
     const count = Number(qty);
     const template = itemTemplate(selfId);
     if (!template || !Number.isSafeInteger(count) || count <= 0) return null;
+    const Arrows = require('../../Inventory/ArrowStock');
+    if (Arrows.isArrow({ selfId }) && Arrows.purchaseAmount(state, selfId, count) < count) return 'arrow_stock_limit';
     const slot = Number(template.etc?.slot || 0);
     if (slot <= 0) return null;
 
@@ -3550,6 +3552,7 @@ const BotLifeState = {
     applyNpcLiquidation(state, candidates = []) {
         if (!state || !Array.isArray(candidates) || !candidates.length) return Promise.resolve(state);
         const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+        const Arrows = require('../../Inventory/ArrowStock');
         const reserved = Disposition.reservedEquipmentAmounts(state);
         const inventory = { ...(state.inventory || {}) };
         let payout = 0;
@@ -3559,15 +3562,24 @@ const BotLifeState = {
             const existing = inventory[String(selfId)];
             if (!existing || selfId === 57 || Disposition.isGradeCrystal(candidate)
                 || invoke('GameServer/Items/C4BeginnerShots').isRestricted(selfId)) return;
-            const free = Disposition.saleFreeAmount(state, existing, reserved);
+            const free = Math.min(Disposition.saleFreeAmount(state, existing, reserved), Arrows.isArrow(candidate)
+                ? Number(Arrows.saleAmounts({ ...state, inventory }).get(selfId) || 0) : Infinity);
             const equippedCount = Math.max(0, Number(existing?.equippedCount ?? (existing?.equipped ? 1 : 0)));
+            const selectedIds = Array.isArray(candidate.objectIds) ? new Set(candidate.objectIds.map(Number)) : null;
+            const instances = Array.isArray(existing.instances) && existing.instances.length
+                ? existing.instances.filter(instance => !instance.equipped
+                    && Number(instance.enchant || 0) === Number(candidate.enchant || 0)
+                    && (!selectedIds || selectedIds.has(Number(instance.id)))) : null;
             const amount = Math.min(
                 Math.max(0, Number(existing?.amount || 0) - equippedCount),
-                Math.max(0, Number(candidate.count || 0)), free
+                Math.max(0, Number(candidate.count || 0)), free,
+                instances ? instances.length : Number(existing.amount || 0)
             );
             const price = Math.max(0, Number(candidate.npcPrice || 0));
             if (!selfId || !Number.isFinite(amount) || !Number.isFinite(price) || amount <= 0 || price <= 0) return;
-            inventory[String(selfId)] = { ...existing, amount: Number(existing.amount) - amount };
+            const removed = instances ? new Set(instances.slice(0, amount)) : null;
+            inventory[String(selfId)] = { ...existing, amount: Number(existing.amount) - amount,
+                ...(removed ? { instances: existing.instances.filter(instance => !removed.has(instance)) } : {}) };
             payout += amount * price;
             sold.push([selfId, amount, price]);
         });

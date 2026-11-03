@@ -15,6 +15,7 @@ const options = { board, now: 1800000000000, stockQuotes: true, tripCost: trip,
     economy: { hourAdena: 10000, moneyPrice: .001, worth: () => 0, trip, board },
     persona: { traits: { caution: 0 }, understanding: .3 }, npcOffersFor: () => [],
     keptAmounts: {}, preparedReservations: {}, kept: new Map([['1869:0', 237]]),
+    keptCounts: new Map([['1869:0', 2]]),
     conditionalKept: new Set(['1869:0']) };
 const original = Rolls.roll;
 try {

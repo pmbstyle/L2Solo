@@ -10,6 +10,7 @@ const { CRYSTAL_IDS } = invoke('GameServer/Items/C4EnchantRules');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const ClanSimulationConfig = invoke('GameServer/Clan/ClanSimulationConfig');
 const InventoryLimits = require('../../Inventory/InventoryLimits');
+const ArrowStock = require('../../Inventory/ArrowStock');
 
 const SELLABLE_KINDS = ['Weapon.', 'Armor.', 'Other.Material', 'Other.Shot'];
 const NPC_ONLY_KINDS = ['Other.Recipe', 'Other.Spellbook'];
@@ -151,8 +152,8 @@ function isGradeCrystal(item) {
     return CRYSTALS.has(Number(item?.selfId));
 }
 
-// Consumables a bot sells to the NPC beyond what its class keeps: arrows (a
-// bot's bow spends none, Actor/BowResources), scrolls other than enchant
+// Consumables a bot sells to the NPC beyond its working stock: wrong-grade
+// and surplus arrows, scrolls other than enchant
 // scrolls (the Scrolls of Escape a bot reads for town trips are reserved up to
 // their restock target in saleCandidates; no bot reads a scroll of
 // resurrection, a party revival casts without an item), potions (the healing
@@ -185,6 +186,7 @@ function isSpareConsumable(item, template = templateFor(item?.selfId)) {
 
 function isNpcOnlyItem(item, template = templateFor(item?.selfId), state = null) {
     if (isQuestItem(item, template)) return false;
+    if (ArrowStock.isArrow(item)) return true;
     if (isStarterEquipment(item, template)) return true;
     if (isEquipmentItem(item, template)) return false;
     if (isSkillBookItem(item, template)
@@ -622,12 +624,14 @@ function saleCandidates(state, options = {}) {
     for (const [selfId, amount] of Object.entries(kept)) {
         reserved[selfId] = Math.max(Number(reserved[selfId] || 0), amount + Number(clan[selfId] || 0));
     }
+    const arrowSales = ArrowStock.saleAmounts(state);
     const candidatesFor = (item) => {
         const selfId = Number(item?.selfId || 0);
         // Prepared reserves can describe only the bag while this projection
         // also includes warehouse or escrow stock. Personal shots stay owned.
         if (invoke('GameServer/Inventory/ShotStock').isPersonalShot(state, selfId)) return [];
-        const sellableAmount = saleFreeAmount(state, item, reserved);
+        const sellableAmount = Math.min(saleFreeAmount(state, item, reserved),
+            ArrowStock.isArrow(item) ? Number(arrowSales.get(selfId) || 0) : Infinity);
         if (!selfId || selfId === 57 || BeginnerShots.isRestricted(selfId) || sellableAmount <= 0) return [];
 
         const template = templateFor(selfId);
@@ -719,11 +723,18 @@ function npcLiquidationCandidates(state, options = {}) {
     }));
 }
 
+function unusedArrowCandidates(state) {
+    if (!ArrowStock.unused(state).length) return [];
+    return saleCandidates(state, { unlimited: true, keptAmounts: {} })
+        .filter(ArrowStock.isArrow)
+        .map(item => ({ ...item, npcPrice: NpcSellRules.npcBuyPrice(item.basePrice) }));
+}
+
 // Materials remain useful for future crafting/trading regardless of their NPC
 // value. Gear is worth retaining only once it has crossed out of the starter
 // trash band, leaving cheap no-grade drops for liquidation.
 function isWarehouseCandidate(item, template = templateFor(item?.selfId)) {
-    if (isQuestItem(item, template)) return false;
+    if (isQuestItem(item, template) || ArrowStock.isArrow(item)) return false;
     const selfId = Number(item?.selfId || 0);
     const amount = Number(item?.amount || 0);
     const kind = item?.kind || template?.template?.kind || '';
@@ -832,6 +843,7 @@ module.exports = {
     skillBookSlotCount,
     isWarehouseCandidate,
     npcLiquidationCandidates,
+    unusedArrowCandidates,
     priceFor,
     protectedStarterLootAmount,
     recipeDisposition,

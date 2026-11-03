@@ -10,6 +10,9 @@ function reader(state, ctx, deps, { npcOnly = false, town = null } = {}) {
     // expand geometry or treat an unprepared trip as free.
     const cost = deps.tripCost || ctx.trip;
     return id => {
+        const Arrows = require('../../Inventory/ArrowStock');
+        const capacity = Arrows.isArrow({ selfId: id }) ? Arrows.purchaseAmount(state, id, Number.MAX_SAFE_INTEGER) : Infinity;
+        if (capacity <= 0) return null;
         if (typeof cost !== 'function' || typeof cost.details !== 'function') return null;
         const others = Production.allowsNpcShot(id) ? (deps.npcOffersFor?.(id) || [])
             .filter(offer => (!npcOnly || offer.sourceType === 'npc') && (!town || offer.town === town)).slice(0, 17) : [];
@@ -26,7 +29,7 @@ function reader(state, ctx, deps, { npcOnly = false, town = null } = {}) {
         if (!offer) return null;
         const route = cost.details?.(offer.town);
         if (!route?.known || !Number.isFinite(route.hours) || !Number.isFinite(route.fees)) return null;
-        return { price: Number(offer.price), unitPrice: Number(offer.price), availableUnits: unlimited(offer) ? Infinity : Number(offer.count),
+        return { price: Number(offer.price), unitPrice: Number(offer.price), availableUnits: Math.min(capacity, unlimited(offer) ? Infinity : Number(offer.count)),
             town: offer.town, sourceType: unlimited(offer) ? offer.sourceType : 'afk', quoted: true,
             tripHours: route?.hours || 0, tripFees: route?.fees || 0 };
     };

@@ -312,7 +312,8 @@ for (const listing of sale.listings) {
 
 // A line the bot has keeps its slot and its price; the free slots go by the roll.
 const kept = new Map([[items[0], 4321], [items[1], 4322]]);
-const review = MarketListingPolicy.evaluate(state, suppliedOptions({ kept, slots: 3 }));
+const review = MarketListingPolicy.evaluate(state, suppliedOptions({ kept,
+    keptCounts: new Map([[items[0], 100], [items[1], 100]]), slots: 3 }));
 assert.deepStrictEqual(review.listings.filter((item) => kept.has(item.selfId)).map((item) => [item.selfId, item.price])
     .sort((a, b) => a[0] - b[0]), [[items[0], 4321], [items[1], 4322]]);
 assert.strictEqual(review.listings.length, 3, 'one free slot left');

@@ -140,6 +140,9 @@ function buyOffer(state, offer, options = {}) {
     if (warBlocker) return Promise.resolve({ purchased: false, blocked: true, reason: warBlocker });
     if (!options.economyCommand && !MarketOpportunity.botCanBuy(offer)) return Promise.resolve({ purchased: false, blocked: true, reason: 'configured_supply_retired' });
     const qty = Math.max(1, Math.floor(Number(options.qty) || 1));
+    const Arrows = require('../../Inventory/ArrowStock');
+    if (Arrows.isArrow(offer) && Arrows.purchaseAmount(state, offer.selfId, qty) < qty)
+        return Promise.resolve({ purchased: false, blocked: true, reason: 'arrow_stock_limit' });
     const blocker = options.economyCommand ? null : LifeState.marketPurchaseBlocker(state, offer, qty);
     if (blocker) { if (Diagnostics.active()) purchaseObservation(state, offer.selfId, qty, undefined, 'purchase_refusal', blocker);
         return Promise.resolve({ purchased: false, blocked: true, reason: blocker }); }

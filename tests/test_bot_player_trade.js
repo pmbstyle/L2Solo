@@ -129,6 +129,17 @@ const botTellCalls = [];
         assert.strictEqual(BotTradeService.offerBotItem(bot, 1000, 1).ok, true);
         await tradeDone(player, Buffer.from([0x17, 1, 0, 0, 0]));
         assert.strictEqual(botTellCalls.at(-1).text, 'You need more inventory space to receive these items.');
+        const heavy = new Item(9901, { selfId: 1835, name: 'Soulshots', kind: 'Other.Shot',
+            amount: 20, mass: 4, stackable: true, equipped: false });
+        player.actor.backpack.items = [heavy];
+        bot.actor.backpack.items = [];
+        bot.actor.fetchMaxLoad = () => 79;
+        assert(BotTradeService.startPlayerTrade(player, bot).ok);
+        assert(BotTradeService.addItem(player, 9901, 20).ok);
+        await tradeDone(player, Buffer.from([0x17, 1, 0, 0, 0]));
+        assert.strictEqual(botTellCalls.at(-1).text, 'These items would overload me. Reduce the trade amounts.');
+        assert.strictEqual(heavy.fetchAmount(), 20, 'weight refusal keeps the sender items');
+        assert.strictEqual(bot.actor.backpack.items.length, 0, 'weight refusal awards nothing');
         console.log('Bot player trade packet checks passed');
     } finally {
         Database.transferInventoryBetweenCharacters = original.transfer;
