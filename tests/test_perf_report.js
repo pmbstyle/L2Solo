@@ -44,7 +44,7 @@ jsonl('timeline-20261103.jsonl', [
         players: 2, packets: 1200, bytes: 2 * 30 * 1024 * 10, seconds: 30, moves: 2 },
     { type: 'player', t: iso(end + 30000), scheduleMs: [999], handlerMs: [999], errors: 0, hot: 99 },
     { type: 'summary', t: iso(start + 30000), main: { memory: { heapUsed: 100 * MB, rss: 300 * MB }, processCpuMs: { user: 9000, system: 1000 } },
-        population: { metrics: { delta: { coldOwnerHandoffs: 3 }, transitions: { activation: { count: 3, avgMs: 100, p95Ms: 180, maxMs: 200 },
+        population: { metrics: { delta: { coldOwnerHandoffs: 3, activations: 3, cooldowns: 1 }, transitions: { activation: { count: 3, avgMs: 100, p95Ms: 180, maxMs: 200 },
             cooldown: { count: 1, avgMs: 40, p95Ms: 40, maxMs: 40 } } } },
         coldQueue: { overdue: 1 }, heaps: { main: { usedMb: 100 } }, recorder: { costMs: 60, inspectorMs: 0 } },
     { type: 'summary', t: iso(end), main: { memory: { heapUsed: 120 * MB, rss: 310 * MB }, processCpuMs: { user: 14000, system: 0 } },

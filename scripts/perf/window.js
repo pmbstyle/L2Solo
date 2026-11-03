@@ -99,25 +99,18 @@ async function hold(server, dir, ms, label) {
     }
 }
 
-async function capture(dir, kind) {
-    const file = path.join(dir, 'request.json');
+// A capture through the recorder's request file; resolves when the recorder wrote request.done.json
+// (every thread it asked has written), whatever the number of threads.
+async function capture(dir, kind, server) {
+    const file = path.join(dir, 'request.json'), done = path.join(dir, 'request.done.json');
+    fs.rmSync(done, { force: true });
     fs.writeFileSync(file, `${JSON.stringify({ kind })}\n`);
-    for (let waited = 0; waited < 20000 && fs.existsSync(file); waited += 500) await sleep(500);
-    if (fs.existsSync(file)) throw new Error(`the recorder did not take capture ${kind}`);
+    for (let waited = 0; waited < 90000 && !fs.existsSync(done) && server.alive(); waited += 500) await sleep(500);
+    if (!fs.existsSync(done)) throw new Error(`the recorder did not finish capture ${kind}`);
 }
 
-const heapLines = (dir) => {
-    const boot = fs.readdirSync(dir).find(name => /^\d{8}-\d{6}$/.test(name));
-    const file = boot && path.join(dir, boot, 'heap.jsonl');
-    return file && fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).length : 0;
-};
-
-// Heap dumps of every sampled thread at a window's edge; waits until they are written.
-async function dumpHeaps(dir, server) {
-    const before = heapLines(dir);
-    await capture(dir, 'heap');
-    for (let waited = 0; waited < 60000 && heapLines(dir) < before + 2 && server.alive(); waited += 1000) await sleep(1000);
-}
+// Heap dumps of every sampled thread at a window's edge.
+const dumpHeaps = (dir, server) => capture(dir, 'heap', server);
 
 async function prepare(flags) {
     geodataDir();
@@ -158,9 +151,9 @@ async function run(flags) {
     fs.mkdirSync(dir, { recursive: true });
     const save = await SavedGames.run({ operation: 'load', databasePath: path.join(dir, 'world.sqlite'), savesDir: savesDir(flags), id: flags.save });
     const bots = botCounts(path.join(dir, 'world.sqlite'));
-    // Every chunk kept (keepProfileMs 1): the report adds up where the window's CPU went. Heap dumps
+    // Every chunk kept (keepProfileMs 0): the report adds up where the window's CPU went. Heap dumps
     // only at the window's edges.
-    writeIni(dir, { live: true, dir, keepProfileMs: 1, keepProfiles: 100000, heapEveryMinutes: 100000 });
+    writeIni(dir, { live: true, dir, keepProfileMs: 0, keepProfiles: 100000, heapEveryMinutes: 100000 });
     const meta = { sha, dirty, scenario, save: { id: flags.save, name: save.name }, bots, warmupMinutes: warmup,
         windowMinutes: minutes, diagnostics, crowd, node: process.version, startedAt: new Date().toISOString() };
     fs.writeFileSync(path.join(dir, 'run.json'), `${JSON.stringify(meta, null, 2)}\n`);

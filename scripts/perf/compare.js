@@ -73,12 +73,15 @@ function rows(a, b) {
 }
 
 // Functions whose share of the thread's profiled CPU moved most (percentage points).
+// A function missing from one run's list is below that list's last share, not at 0: it counts at
+// that floor, shown as "<=", so falling off a list is not read as a move.
 function moved(x = [], y = [], count) {
-    const share = new Map();
-    for (const row of x) share.set(row.fn, [row.pct, 0]);
-    for (const row of y) share.set(row.fn, [share.get(row.fn)?.[0] || 0, row.pct]);
-    return [...share].map(([fn, [before, after]]) => ({ fn, before, after, change: round(after - before) }))
-        .filter(row => row.change !== 0).sort((p, q) => Math.abs(q.change) - Math.abs(p.change)).slice(0, count);
+    const floor = (list) => (list.length ? list.at(-1).pct : 0);
+    const before = new Map(x.map(row => [row.fn, row.pct])), after = new Map(y.map(row => [row.fn, row.pct]));
+    return [...new Set([...before.keys(), ...after.keys()])].map((fn) => {
+        const a = before.has(fn) ? before.get(fn) : floor(x), b = after.has(fn) ? after.get(fn) : floor(y);
+        return { fn, before: before.has(fn) ? a : `<=${a}`, after: after.has(fn) ? b : `<=${b}`, change: round(b - a) };
+    }).filter(row => row.change !== 0).sort((p, q) => Math.abs(q.change) - Math.abs(p.change)).slice(0, count);
 }
 
 function compare(dirA, dirB, { top = 8 } = {}) {
@@ -87,7 +90,9 @@ function compare(dirA, dirB, { top = 8 } = {}) {
     console.log(`A ${name(a)}\nB ${name(b)}`);
     const differs = [['save', a.run.save.id, b.run.save.id], ['scenario', a.run.scenario, b.run.scenario],
         ['window minutes', a.run.windowMinutes, b.run.windowMinutes], ['warm-up minutes', a.run.warmupMinutes, b.run.warmupMinutes],
-        ['diagnostics', a.run.diagnostics, b.run.diagnostics]].filter(([, x, y]) => x !== y);
+        ['diagnostics', a.run.diagnostics, b.run.diagnostics],
+        ['players', JSON.stringify(a.run.crowd || null), JSON.stringify(b.run.crowd || null)],
+        ['players in the window', a.player?.players ?? 0, b.player?.players ?? 0]].filter(([, x, y]) => x !== y);
     for (const [what, x, y] of differs) console.log(`  not comparable: ${what} ${x} vs ${y}`);
     const table = rows(a, b);
     const width = Math.max(...table.map(([label]) => label.length));

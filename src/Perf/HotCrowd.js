@@ -23,6 +23,7 @@ const PROBE_MS = 50;
 const FLUSH_MS = 30000;
 // Bots are grouped in cells this wide to find the crowds.
 const CELL = 3000;
+const SPAWN_TIMEOUT_MS = 120000;
 
 const envNumber = (name, fallback, min, max) => {
     const value = Number(process.env[name]);
@@ -92,7 +93,7 @@ const HotCrowd = {
         const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
         const Config = invoke('GameServer/Bot/Population/PopulationConfig');
         const BotManager = invoke('GameServer/Bot/BotManager');
-        this.stops = crowdLocations(LifeState.allStates(100000), Math.max(this.count, this.routeStops),
+        this.stops = crowdLocations(LifeState.everyState(), Math.max(this.count, this.routeStops),
             2 * Number(Config.activationRadius || 9000));
         if (!this.stops.length) {
             utils.infoWarn('Perf', 'hot scenario: no cold hunting bot to stand by');
@@ -105,14 +106,21 @@ const HotCrowd = {
         for (let index = 0; index < this.count; index++) {
             const stop = this.stops[index % this.stops.length];
             const account = `${ACCOUNT}${index + 1}`;
+            // provisionAndSpawn reports nothing back; the wait below gives up and says so.
             BotManager.provisionAndSpawn({ username: account, name: `PerfPlayer${index + 1}`, race: 0, sex: 0, classId: 0,
                 face: 0, hair: 0, hairColor: 0, plan: 'hunting', fullNewbieBlessing: false,
                 locX: stop.locX, locY: stop.locY, locZ: stop.locZ }, index);
         }
+        const deadline = Date.now() + SPAWN_TIMEOUT_MS;
         const wait = setInterval(() => {
             const sources = BotManager.sessions.filter(session => session?.actor && String(session.accountId).startsWith(ACCOUNT));
-            if (sources.length < this.count) return;
+            if (sources.length < this.count && Date.now() < deadline) return;
             clearInterval(wait);
+            if (sources.length < this.count) {
+                utils.infoWarn('Perf', 'hot scenario: %d of %d player(s) spawned in %d s; going on with them', sources.length,
+                    this.count, SPAWN_TIMEOUT_MS / 1000);
+                if (!sources.length) return;
+            }
             sources.sort((a, b) => a.accountId.localeCompare(b.accountId, 'en', { numeric: true })).forEach(source => this.attach(source));
             this.probe();
             if (this.routeStops > 1) setInterval(() => this.move(), this.routeMs).unref?.();
@@ -124,10 +132,7 @@ const HotCrowd = {
     attach(source) {
         const BotManager = invoke('GameServer/Bot/BotManager');
         const Session = invoke('GameServer/Session');
-        source.aiActive = false;
-        if (source.aiTimeout) clearTimeout(source.aiTimeout);
-        source.aiTimeout = null;
-        invoke('GameServer/Bot/AI/HotAiDispatcher').cancel(source);
+        invoke('GameServer/Bot/BotAI').stop(source);
         BotManager.sessions = BotManager.sessions.filter(session => session !== source);
         const player = new Session(countingSocket());
         player.accountId = source.accountId;
@@ -141,12 +146,20 @@ const HotCrowd = {
         this.players.push(player);
     },
 
+    // A player killed at a crowd revives where it fell (as a real one would, back from town) before
+    // it moves on: a dead actor cannot teleport, and the route would stop with nobody noticing.
     move() {
         this.step += 1;
-        this.moves = (this.moves || 0) + this.players.length;
+        const Generics = invoke(path.actor);
         this.players.forEach((player, index) => {
+            if (player.actor.isDead()) {
+                this.deaths = (this.deaths || 0) + 1;
+                Generics.revive(player, player.actor, { delayMs: 0, restoreFullVitals: true });
+            }
             const stop = this.stops[(index + this.step) % this.stops.length];
-            invoke(path.actor).teleportTo(player, player.actor, { locX: stop.locX, locY: stop.locY, locZ: stop.locZ, head: 0 });
+            if (Generics.teleportTo(player, player.actor, { locX: stop.locX, locY: stop.locY, locZ: stop.locZ, head: 0 }) !== false) {
+                this.moves = (this.moves || 0) + 1;
+            } else this.failedMoves = (this.failedMoves || 0) + 1;
         });
     },
 
@@ -174,13 +187,16 @@ const HotCrowd = {
             const packets = this.players.reduce((sum, player) => sum + player.socket.packets, 0);
             const bytes = this.players.reduce((sum, player) => sum + player.socket.bytes, 0);
             Recorder.note('player', { scheduleMs: schedule, handlerMs: handler, errors, hot: LifeState.counts().hot,
-                players: this.players.length, packets: packets - sent.packets, bytes: bytes - sent.bytes,
-                seconds: FLUSH_MS / 1000, moves: this.moves || 0 });
+                players: this.players.length, wanted: this.count, packets: packets - sent.packets, bytes: bytes - sent.bytes,
+                seconds: FLUSH_MS / 1000, moves: this.moves || 0, failedMoves: this.failedMoves || 0, deaths: this.deaths || 0,
+                dead: this.players.filter(player => player.actor.isDead()).length });
             sent = { packets, bytes };
             schedule = [];
             handler = [];
             errors = 0;
             this.moves = 0;
+            this.failedMoves = 0;
+            this.deaths = 0;
         }, FLUSH_MS).unref?.();
     }
 };

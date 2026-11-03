@@ -59,11 +59,6 @@ function add(map, rows) {
 const top = (map, count, total) => [...map].sort((a, b) => b[1] - a[1]).slice(0, count)
     .map(([fn, ms]) => ({ fn, ms: round(ms), pct: total > 0 ? round(100 * ms / total, 1) : 0 }));
 
-function p95(values) {
-    if (!values.length) return 0;
-    const sorted = [...values].sort((a, b) => a - b);
-    return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
-}
 
 // One thread over the window: chunks that started in it, their kept profiles added up (each
 // without the samples it shares with the chunk before), the code that held its long turns.
@@ -79,10 +74,11 @@ function threadSummary(data, label, start, end) {
         if (line.instance !== instance) lastEnd = 0;
         instance = line.instance;
         const file = line.profile && path.join(data.bootDir, line.profile);
-        if (!file || !fs.existsSync(file)) { lastEnd = 0; continue; }
+        // A chunk without its file still ends where the next one's overlap begins.
+        if (!file || !fs.existsSync(file)) { lastEnd = line.endTime || 0; continue; }
         const { profile } = CpuProfile.parse(fs.readFileSync(file, 'utf8'));
         const a = CpuProfile.analyze(profile, { top: Infinity, since: lastEnd });
-        lastEnd = profile.endTime || 0;
+        lastEnd = profile.endTime || line.endTime || 0;
         profiled += a.busyMs;
         add(self, a.self);
         add(files, a.files);
@@ -98,10 +94,10 @@ function threadSummary(data, label, start, end) {
         gcPct: ms ? round(100 * gc / ms, 1) : 0,
         longTurnsPerMin: ms ? round(chunks.reduce((sum, line) => sum + line.longTurns, 0) / (ms / 60000), 1) : 0,
         longestMs: round(Math.max(0, ...chunks.map(line => line.longestMs))),
-        chunkLongestP95Ms: round(p95(chunks.map(line => line.longestMs))),
+        chunkLongestP95Ms: round(quantiles(chunks.map(line => line.longestMs))?.p95Ms || 0),
         instances: new Set(chunks.map(line => line.instance)).size,
         longTurnCode: top(held, 10, 0).map(({ fn, ms: total }) => ({ fn, ms: total })),
-        cpuSelf: top(self, 15, profiled),
+        cpuSelf: top(self, 60, profiled),
         cpuFiles: top(files, 10, profiled),
         cpuParts: top(parts, SUBSYSTEMS.length + 1, profiled).map(({ fn, ms: total, pct }) => ({ part: fn, ms: total, pct }))
     };
@@ -131,26 +127,28 @@ function playerSummary(lines) {
     const seconds = sum('seconds'), players = Math.max(1, ...lines.map(line => line.players || 1));
     return { schedule, handler, errors: sum('errors'),
         hotAvg: hot.length ? round(hot.reduce((a, b) => a + b, 0) / hot.length) : 0, hotMax: Math.max(0, ...hot),
-        players, moves: sum('moves'),
+        players, wanted: Math.max(players, ...lines.map(line => line.wanted || 0)), moves: sum('moves'),
+        failedMoves: sum('failedMoves'), deaths: sum('deaths'),
         // What the server sent each player: the crowd's broadcasts a client has to take.
         packetsPerSecond: seconds ? round(sum('packets') / seconds / players, 1) : 0,
         kbPerSecond: seconds ? round(sum('bytes') / 1024 / seconds / players, 1) : 0,
         limits: PLAYER_LIMITS, over };
 }
 
-// cold <-> hot transitions over the window (PopulationMetrics, with developerDiagnostics): how many,
-// and how long one took. p95 and max are the worst of the 30 s windows.
+// cold <-> hot transitions over the window (PopulationMetrics, with developerDiagnostics): how many
+// (the counters, uncapped) and how long one took (the timed samples, at most 200 per 30 s window, so
+// avg is of those; p95 and max are the worst of the 30 s windows).
 function transitionsSummary(lines) {
     const metrics = lines.map(line => line.population?.metrics).filter(Boolean);
     if (!metrics.length) return null;
-    const of = (kind) => {
+    const delta = (key) => metrics.reduce((sum, m) => sum + (Number(m.delta?.[key]) || 0), 0);
+    const of = (kind, counter) => {
         const windows = metrics.map(m => m.transitions?.[kind]).filter(t => t?.count);
-        const count = windows.reduce((sum, t) => sum + t.count, 0);
-        return { count, avgMs: count ? round(windows.reduce((sum, t) => sum + t.avgMs * t.count, 0) / count) : 0,
+        const timed = windows.reduce((sum, t) => sum + t.count, 0);
+        return { count: delta(counter), avgMs: timed ? round(windows.reduce((sum, t) => sum + t.avgMs * t.count, 0) / timed) : 0,
             p95Ms: Math.max(0, ...windows.map(t => t.p95Ms)), maxMs: Math.max(0, ...windows.map(t => t.maxMs)) };
     };
-    const delta = (key) => metrics.reduce((sum, m) => sum + (Number(m.delta?.[key]) || 0), 0);
-    return { activation: of('activation'), cooldown: of('cooldown'), handoffs: delta('coldOwnerHandoffs') };
+    return { activation: of('activation', 'activations'), cooldown: of('cooldown', 'cooldowns'), handoffs: delta('coldOwnerHandoffs') };
 }
 
 function range(values) {
@@ -205,12 +203,15 @@ function print(s) {
         console.log(`\nplayer (${p.schedule.samples} probes, hot bots avg ${p.hotAvg} max ${p.hotMax}): ${p.over.length ? `OVER: ${p.over.join(', ')}` : 'within limits'}`);
         console.log(`  waited for the loop: ${q(p.schedule)}`);
         console.log(`  position handler:    ${q(p.handler)}${p.errors ? `, ${p.errors} errors` : ''}`);
-        console.log(`  sent to each of ${p.players} player(s): ${p.packetsPerSecond} packets/s, ${p.kbPerSecond} KB/s; ${p.moves} teleport(s)`);
+        console.log(`  sent to each of ${p.players} player(s): ${p.packetsPerSecond} packets/s, ${p.kbPerSecond} KB/s; ${p.moves} teleport(s)`
+            + `${p.failedMoves ? `, ${p.failedMoves} failed` : ''}${p.deaths ? `, ${p.deaths} death(s) revived` : ''}`
+            + `${p.wanted > p.players ? `; only ${p.players} of ${p.wanted} player(s) spawned` : ''}`);
     }
     if (s.transitions) {
         const t = s.transitions, line = (x) => `${x.count} (avg ${x.avgMs} / p95 ${x.p95Ms} / max ${x.maxMs} ms)`;
         console.log(`\ntransitions: cold -> hot ${line(t.activation)}; hot -> cold ${line(t.cooldown)}; handoffs ${t.handoffs}`);
     } else if (s.run.scenario === 'hot') console.log('\ntransitions: none recorded (run with --diagnostics)');
+    if (s.run.scenario === 'hot' && !s.player) console.log('\nplayer: none in the window: the hot scenario did not start (server.log, "hot scenario")');
     for (const [label, t] of Object.entries(s.threads)) {
         console.log(`\n${label}: busy ${t.busyPct} %, gc ${t.gcPct} %, long turns ${t.longTurnsPerMin}/min,`
             + ` longest ${t.longestMs} ms (p95 of chunk longest ${t.chunkLongestP95Ms} ms)${t.instances > 1 ? `, ${t.instances} instances` : ''}`);

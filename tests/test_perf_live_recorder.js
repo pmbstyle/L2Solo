@@ -86,6 +86,8 @@ const BUSY = 'function stepBots() { let x = 0; const t = Date.now(); while (Date
         await recorder.tick();
         await recorder.writes;
         assert.equal(fs.existsSync(path.join(dir, 'request.json')), false);
+        assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'request.done.json'), 'utf8')).kind, 'cpu',
+            'a request is marked done once its captures are written');
         const forced = spikeLines(boot).filter(row => row.forced);
         assert.deepEqual(forced.map(row => row.thread).sort(), ['main', 'perf-test-busy']);
         assert.equal(fs.readdirSync(path.join(boot, 'cpu')).length, 2, 'keepProfiles caps the raw profiles');

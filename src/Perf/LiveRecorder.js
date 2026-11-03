@@ -44,7 +44,8 @@ function settings(config = {}) {
         cpuThreads: String(config.cpuThreads ?? 'main,l2node-cold-simulation').split(',').map(s => s.trim()).filter(Boolean),
         cpuChunkSeconds: number(config.cpuChunkSeconds, 60, 1),
         longTurnMs: number(config.longTurnMs, 50, 1),
-        keepProfileMs: number(config.keepProfileMs, 200, 1),
+        // 0 keeps every chunk (window runs add up the whole window).
+        keepProfileMs: number(config.keepProfileMs, 200, 0),
         keepProfiles: number(config.keepProfiles, 300, 0),
         heapThreads: String(config.heapThreads ?? 'main,l2node-cold-simulation').split(',').map(s => s.trim()).filter(Boolean),
         heapSampleKb: number(config.heapSampleKb, 128, 1),
@@ -198,7 +199,11 @@ class LiveRecorder {
             const jobs = ready.filter(state => asked(state, 'cpu') || state.startedAt <= due)
                 .map(state => this.rotate(state, asked(state, 'cpu')));
             this.ticking = false;
-            return Promise.all([...jobs, ...heapJobs, ...snapshot]);
+            const all = Promise.all([...jobs, ...heapJobs, ...snapshot]);
+            // request.done.json once every capture of a request is written: a window run waits for it
+            // at its edges instead of guessing how many threads answer.
+            return request ? all.then(() => fs.promises.writeFile(path.join(this.settings.dir, 'request.done.json'),
+                `${JSON.stringify({ ...request, doneAt: new Date().toISOString() })}\n`)) : all;
         }).catch(error => this.warn('tick', error)).finally(() => { this.ticking = false; });
     }
 
@@ -247,14 +252,19 @@ class LiveRecorder {
             if (this.profiled.has(thread.threadId)) this.warn(`cpu chunk of ${thread.label}`, error);
             return;
         }
+        if (!this.running) return;
         const prefix = path.join(this.bootDir, 'cpu', `${stampOf(new Date(startedAt))}-${fileLabel(thread)}`);
         let reply;
         try {
-            reply = await this.analyzeChunk({ text: typeof text === 'string' ? text : JSON.stringify(text), since: state.lastEnd,
+            // Node's handles give the text; the copy into the chunk thread is main's, counted as cost.
+            const began = performance.now();
+            const pending = this.analyzeChunk({ text: String(text), since: state.lastEnd,
                 longTurnMs: this.settings.longTurnMs, keepProfileMs: this.settings.keepProfileMs, forced: !!forced, prefix,
                 keepUnparsed: !state.unparsedKept });
+            this.costMs += performance.now() - began;
+            reply = await pending;
         } catch (error) {
-            this.warn(`cpu chunk of ${thread.label}`, error);
+            if (this.running) this.warn(`cpu chunk of ${thread.label}`, error);
             return;
         }
         if (reply.error) {
@@ -268,7 +278,10 @@ class LiveRecorder {
         const at = new Date(startedAt).toISOString();
         const kept = file && path.relative(this.bootDir, file).split(path.sep).join('/');
         this.append({ type: 'cpu', t: at, thread: thread.label, instance: thread.threadId, ms: a.durationMs, busyMs: a.busyMs,
-            gcMs: a.gcMs, longestMs: a.longest?.ms || 0, longTurns: a.longTurns, runs: a.runs, profile: kept });
+            gcMs: a.gcMs, longestMs: a.longest?.ms || 0, longTurns: a.longTurns, runs: a.runs, profile: kept,
+            // The profile clock at the chunk's end: the report leaves the next chunk's overlap out
+            // even when this chunk's file was not kept.
+            endTime: reply.endTime || 0 });
         if (a.longTurns > 0 || forced) {
             this.appendTo(`spikes-${dayOf(new Date(startedAt))}.jsonl`, { t: new Date(startedAt + (a.longest?.atMs || 0)).toISOString(), chunk: at,
                 thread: thread.label, ms: a.longest?.ms || 0, longTurns: a.longTurns, long: a.long.slice(0, 5),
@@ -288,6 +301,7 @@ class LiveRecorder {
     // the process alive.
     analyzeChunk(message) {
         const chunks = this.chunks;
+        if (!this.running) return Promise.reject(new Error('recorder stopped'));
         if (!chunks.worker) {
             const worker = new Worker(path.join(__dirname, 'ChunkWorker.js'), { name: 'perf-chunks' });
             worker.unref();
