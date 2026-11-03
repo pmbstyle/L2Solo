@@ -1138,9 +1138,9 @@ class ColdSimulationCoordinator {
         if (!state?.characterId || !this.worker || !this.ready) {
             return { ok: false, reason: 'worker_not_ready' };
         }
-        if (this.snapshotInFlightInitial && options.critical !== true) {
-            return { ok: false, reason: 'full_snapshot_in_progress' };
-        }
+        // A full snapshot carries the rows it read at its start; a row saved
+        // after that (a bot seeded beside the worker's boot) is queued like any
+        // other and goes out after the snapshot (startSnapshotJob drains it).
         const result = this.snapshotQueue.mark(state, options);
         if (result.ok && result.entry.critical && !this.snapshotInFlightInitial) {
             this.flushCriticalSnapshots().catch((error) => this.recordError(error));
