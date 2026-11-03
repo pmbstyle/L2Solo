@@ -8,7 +8,7 @@ const { sectionOrder, fieldVisible, fieldLayout } = require('./settings-layout.c
 
 const featured = {
     General: ['progressionPreset', 'maxLevel', 'expRate', 'spRate', 'adenaRate', 'dropChanceRate', 'spoilRate'],
-    BotPopulation: ['maxPlayingPopulation', 'pvpAggression', 'knowledgeErrorsEnabled', 'coldHonestTravel'],
+    BotPopulation: ['maxPlayingPopulation', 'pvpAggression', 'knowledgeErrorsEnabled'],
     AI: ['enabled', 'apiUrl', 'apiKey', 'model', 'partyRouterModel', 'maxConcurrentRequests'],
     WorldObserver: ['enabled', 'hostname', 'port'],
     GameServer: ['hostname', 'advertisedHostname', 'port']

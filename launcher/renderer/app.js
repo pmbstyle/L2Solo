@@ -17,7 +17,7 @@ const names = { General: 'Rates & gameplay', BotPopulation: 'Bot population', AI
 const labels = { progressionPreset: 'Progression preset', expRate: 'Experience multiplier', spRate: 'Skill point multiplier',
     adenaRate: 'Adena multiplier', dropChanceRate: 'Drop multiplier', spoilRate: 'Spoil multiplier', maxLevel: 'Maximum level',
     maxPlayingPopulation: 'Maximum bot population', pvpAggression: 'PvP aggression', knowledgeErrorsEnabled: 'Bots learn from mistakes',
-    coldHonestTravel: 'Realistic background travel', apiUrl: 'API endpoint', apiKey: 'API key', model: 'Model',
+    apiUrl: 'API endpoint', apiKey: 'API key', model: 'Model',
     partyRouterModel: 'Party routing model', maxConcurrentRequests: 'Concurrent AI requests', advertisedHostname: 'Client connection address',
     hostname: 'Listen address', port: 'Port', maxOnline: 'Maximum players', pvp: 'PvP server', enabled: 'Enabled',
     path: 'World database path', reasoningEffort: 'Reasoning effort', completionLimitParam: 'Completion limit parameter' };
