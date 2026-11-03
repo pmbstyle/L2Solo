@@ -10,6 +10,8 @@ const { LiveRecorder } = require('../src/Perf/LiveRecorder');
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 const lines = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map(JSON.parse) : []);
+const spikeLines = (boot) => fs.readdirSync(boot).filter(name => /^spikes-\d{8}\.jsonl$/.test(name)).sort()
+    .flatMap(name => lines(path.join(boot, name)));
 // A worker that blocks its loop 120 ms every 300 ms: long turns the recorder has to find and name.
 const BUSY = 'function stepBots() { let x = 0; const t = Date.now(); while (Date.now() - t < 120) x += Math.sqrt(x + 1); return x; }'
     + ' setInterval(stepBots, 300);';
@@ -45,7 +47,7 @@ const BUSY = 'function stepBots() { let x = 0; const t = Date.now(); while (Date
             assert.ok(line.longestMs >= 100 && line.longestMs < 400, `worker longest run ${line.longestMs}: ${JSON.stringify(worker)}`);
             assert.ok(line.longTurns >= 2, 'a 120 ms block every 300 ms gives several long turns a chunk');
         }
-        const spikes = lines(path.join(boot, 'spikes.jsonl')).filter(row => row.thread === 'perf-test-busy');
+        const spikes = spikeLines(boot).filter(row => row.thread === 'perf-test-busy');
         assert.equal(spikes.length, 2);
         // The second chunk starts after stepBots is optimized: a restarted profiler would charge its
         // time to the timer (listOnTimeout); overlapping chunks keep the name.
@@ -68,7 +70,7 @@ const BUSY = 'function stepBots() { let x = 0; const t = Date.now(); while (Date
         await recorder.tick();
         await recorder.writes;
         assert.equal(fs.existsSync(path.join(dir, 'request.json')), false);
-        const forced = lines(path.join(boot, 'spikes.jsonl')).filter(row => row.forced);
+        const forced = spikeLines(boot).filter(row => row.forced);
         assert.deepEqual(forced.map(row => row.thread).sort(), ['main', 'perf-test-busy']);
         assert.equal(fs.readdirSync(path.join(boot, 'cpu')).length, 2, 'keepProfiles caps the raw profiles');
 

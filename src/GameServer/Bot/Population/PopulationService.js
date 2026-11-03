@@ -3699,12 +3699,10 @@ const PopulationService = {
     logSummary(reason = 'summary') {
         // Without diagnostics only the cheap cold-queue scan runs, for the line below.
         const summary = Config.developerDiagnostics ? this.summary() : { enabled: false, coldQueue: LifeState.coldDueSummary() };
+        const coordinator = summary.line ? null : ColdSimulationCoordinator.snapshot();
         if (summary.line) console.info('BotPopulation :: %s %s', reason, summary.line);
-        else {
-            const coordinator = ColdSimulationCoordinator.snapshot();
-            console.info('BotPopulation :: %s %s %s', reason, Status.goalText(summary.coldQueue, coordinator), Status.nearText(coordinator));
-        }
-        invoke('Perf/LiveRecorder').recordSummary(reason, summary, () => ColdSimulationCoordinator.snapshot());
+        else console.info('BotPopulation :: %s %s %s', reason, Status.goalText(summary.coldQueue, coordinator), Status.nearText(coordinator));
+        invoke('Perf/LiveRecorder').recordSummary(reason, summary, () => coordinator || ColdSimulationCoordinator.snapshot());
         // A bot due for over a minute is not normal (user 2026-10-17): name it
         // and say why it waits, one line per summary.
         const queue = summary.coldQueue || {};

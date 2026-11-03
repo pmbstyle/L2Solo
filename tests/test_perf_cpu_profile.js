@@ -50,6 +50,14 @@ assert.deepEqual(a.files.map(row => row.fn), ['src/GameServer/World/World.js', '
 assert.equal(CpuProfile.sourceOf(url('src/NodeL2.js')), 'src/NodeL2.js');
 assert.equal(CpuProfile.sourceOf('node:internal/timers'), 'node:internal/timers');
 
+// The next chunk overlaps this one up to +3 ms: those samples are left out, so the 5 ms run counts
+// once (here: its last 2 ms only).
+const tail = CpuProfile.analyze(profile, { longTurnMs: 2, since: profile.startTime + 3000 });
+assert.equal(tail.durationMs, 6);
+assert.equal(tail.busyMs, 3);
+assert.equal(tail.runs, 2);
+assert.equal(tail.longest.ms, 2);
+
 const empty = CpuProfile.analyze({ nodes: [], samples: [], timeDeltas: [], startTime: 0, endTime: 0 });
 assert.equal(empty.longest, null);
 assert.equal(empty.runs, 0);

@@ -29,6 +29,19 @@ function parse(argv) {
 
 const liveDir = () => settings(options.default.Perf || {}).dir;
 
+function numberFlag(flags, name, fallback, min) {
+    if (flags[name] === undefined) return fallback;
+    const value = Number(flags[name]);
+    if (!Number.isFinite(value) || value < min) throw new Error(`Use --${name}=<number from ${min}>`);
+    return value;
+}
+
+// timeline-<day>.jsonl / spikes-<day>.jsonl of a boot, in day order.
+function dayLines(dir, kind) {
+    return fs.readdirSync(dir).filter(name => new RegExp(`^${kind}-\\d{8}\\.jsonl$`).test(name)).sort()
+        .flatMap(name => readLines(path.join(dir, name)));
+}
+
 function boots() {
     const dir = liveDir();
     if (!fs.existsSync(dir)) return [];
@@ -59,7 +72,7 @@ function printBoots() {
     })();
     for (const name of boots()) {
         const dir = path.join(liveDir(), name);
-        const spikes = readLines(path.join(dir, 'spikes.jsonl')).length;
+        const spikes = dayLines(dir, 'spikes').length;
         const profiles = fs.existsSync(path.join(dir, 'cpu')) ? fs.readdirSync(path.join(dir, 'cpu')).length : 0;
         console.log(`${name}  spikes=${spikes} profiles=${profiles}${current?.boot === name ? `  (last started, pid ${current.pid})` : ''}`);
     }
@@ -67,9 +80,9 @@ function printBoots() {
 
 function printSpikes(flags) {
     const dir = bootDir(flags);
-    let rows = readLines(path.join(dir, 'spikes.jsonl'));
+    let rows = dayLines(dir, 'spikes');
     if (flags.thread) rows = rows.filter(row => row.thread === flags.thread);
-    const count = Number(flags.top || 20);
+    const count = numberFlag(flags, 'top', 20, 1);
     rows = flags.sort === 'ms' ? rows.sort((a, b) => b.ms - a.ms).slice(0, count) : rows.slice(-count);
     console.log(`${path.basename(dir)}: ${rows.length} spike minute(s)${flags.thread ? ` of ${flags.thread}` : ''}`);
     for (const row of rows) {
@@ -86,9 +99,8 @@ function bucketOf(iso, minutes) {
 }
 
 function printTimeline(flags) {
-    const dir = bootDir(flags), minutes = Number(flags.every || 60);
-    const lines = fs.readdirSync(dir).filter(name => /^timeline-\d{8}\.jsonl$/.test(name)).sort()
-        .flatMap(name => readLines(path.join(dir, name)));
+    const dir = bootDir(flags), minutes = numberFlag(flags, 'every', 60, 1);
+    const lines = dayLines(dir, 'timeline');
     const buckets = new Map(), threads = new Set();
     const bucket = (iso) => {
         const key = bucketOf(iso, minutes);
@@ -131,7 +143,7 @@ async function capture(words) {
     for (let waited = 0; waited < 15000; waited += 500) {
         await new Promise(resolve => setTimeout(resolve, 500));
         if (!fs.existsSync(file)) {
-            console.log('taken: the current chunk of each profiled thread is saved (perf.js spikes shows it)');
+            console.log('taken: each profiled thread that is up saves its current chunk (perf.js spikes; the server log says when none is)');
             return;
         }
     }
@@ -142,7 +154,7 @@ async function capture(words) {
 function analyzeFile(words, flags) {
     const file = words[1];
     if (!file) throw new Error('Use: perf.js analyze <file.cpuprofile>');
-    const a = CpuProfile.analyze(JSON.parse(fs.readFileSync(file, 'utf8')), { longTurnMs: Number(flags.long || 50), top: 15 });
+    const a = CpuProfile.analyze(JSON.parse(fs.readFileSync(file, 'utf8')), { longTurnMs: numberFlag(flags, 'long', 50, 1), top: 15 });
     const pct = (part) => `${Math.round(100 * part / (a.durationMs || 1))}%`;
     console.log(`${path.basename(file)}: ${Math.round(a.durationMs)} ms, busy ${pct(a.busyMs)}, gc ${pct(a.gcMs)}, ${a.runs} busy runs, ${a.longTurns} long`);
     console.log('\nself time (whole profile):');

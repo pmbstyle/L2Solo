@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const v8 = require('v8');
 const { performance } = require('perf_hooks');
+const { Worker } = require('worker_threads');
 const Threads = require('./Threads');
 const CpuProfile = require('./CpuProfile');
 
@@ -11,17 +12,20 @@ const CpuProfile = require('./CpuProfile');
 // Without live it registers nothing and starts no timer. With it, per boot folder:
 // - timeline-<day>.jsonl: a "summary" line per population summary (logSummary, every 30 s) and a
 //   "cpu" line per profiled thread per chunk (busy and GC time, longest busy run, long turns);
-// - spikes.jsonl: a chunk whose longest busy run reached longTurnMs, with the code that held it;
+// - spikes-<day>.jsonl: a chunk whose longest busy run reached longTurnMs, with the code that held it;
 // - cpu/*.cpuprofile: the raw chunk when its longest run reached keepProfileMs, or on request
 //   (scripts/perf.js capture cpu), for Chrome DevTools.
 // Rare spikes are the reason for chunks: a profile that always runs has the minute of a spike at
 // 3 a.m. without anyone asking for it. Chunks overlap (the next profile starts before the last
 // one stops): a profiler that stops forgets the names of optimized code, and every later chunk
-// would charge its time to the timer that called it.
+// would charge its time to the timer that called it. The samples a chunk shares with the last one
+// are left out of its numbers, so a run in the overlap counts once.
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const TICK_MS = 5000;
+const PRUNE_MS = 3600000;
 const BOOT_DIR = /^\d{8}-\d{6}$/;
+const DAY_FILE = /^(?:timeline|spikes)-(\d{8})\.jsonl$/;
 
 function settings(config = {}) {
     const number = (value, fallback, min) => (Number.isFinite(Number(value)) && Number(value) >= min ? Number(value) : fallback);
@@ -53,6 +57,10 @@ class LiveRecorder {
     start(config = options.default.Perf || {}) {
         const s = settings(config);
         if (!s.live || this.running) return false;
+        if (typeof v8.startCpuProfile !== 'function' || typeof Worker.prototype.startCpuProfile !== 'function') {
+            utils.infoWarn('Perf', 'live recorder off: Node %s has no v8.startCpuProfile / Worker#startCpuProfile', process.version);
+            return false;
+        }
         try {
             this.settings = s;
             this.bootDir = path.join(s.dir, stampOf(new Date()));
@@ -62,10 +70,10 @@ class LiveRecorder {
             this.profiled = new Map();
             this.profiles = [];
             this.writes = Promise.resolve();
-            this.busy = false;
+            this.ticking = false;
             this.costMs = 0;
             this.cpuMark = process.cpuUsage();
-            this.eluMark = performance.eventLoopUtilization();
+            this.prunedAt = Date.now();
             this.running = true;
             this.threads = new Threads();
             this.threads.start({ onReady: thread => this.attach(thread), onExit: thread => this.profiled.delete(thread.threadId) });
@@ -77,6 +85,8 @@ class LiveRecorder {
             return true;
         } catch (error) {
             this.running = false;
+            clearInterval(this.timer);
+            this.threads?.stop();
             this.warn('start', error);
             return false;
         }
@@ -103,9 +113,10 @@ class LiveRecorder {
 
     attach(thread) {
         if (!this.running || !this.wanted(thread)) return;
-        const state = { thread, handle: null, startedAt: Date.now() };
+        const state = { thread, handle: null, startedAt: Date.now(), rotating: false, lastEnd: 0 };
         this.profiled.set(thread.threadId, state);
         startProfile(thread).then(handle => {
+            if (this.profiled.get(thread.threadId) !== state) return handle.stop();
             state.handle = handle;
             state.startedAt = Date.now();
         }).catch(error => {
@@ -114,15 +125,23 @@ class LiveRecorder {
         });
     }
 
+    // Each thread rotates on its own: a worker stuck in a long step (its profiler answers on its own
+    // loop) holds only its chunk, not main's or a capture. The promise is for tests.
     tick() {
-        if (!this.running || this.busy) return Promise.resolve();
-        this.busy = true;
-        return this.takeRequest().then(async (request) => {
+        if (!this.running || this.ticking) return Promise.resolve();
+        this.ticking = true;
+        return this.takeRequest().then((request) => {
             const due = Date.now() - this.settings.cpuChunkSeconds * 1000, forced = request?.kind === 'cpu';
-            for (const state of [...this.profiled.values()]) {
-                if (state.handle && (forced || state.startedAt <= due)) await this.rotate(state, forced);
+            const ready = [...this.profiled.values()].filter(state => state.handle && !state.rotating);
+            if (forced && !ready.length) utils.infoWarn('Perf', 'capture cpu: no profiled thread is up');
+            if (Date.now() - this.prunedAt >= PRUNE_MS) {
+                this.prunedAt = Date.now();
+                this.prune().catch(error => this.warn('prune', error));
             }
-        }).catch(error => this.warn('tick', error)).finally(() => { this.busy = false; });
+            const jobs = ready.filter(state => forced || state.startedAt <= due).map(state => this.rotate(state, forced));
+            this.ticking = false;
+            return Promise.all(jobs);
+        }).catch(error => this.warn('tick', error)).finally(() => { this.ticking = false; });
     }
 
     // scripts/perf.js capture writes request.json; taken once, then removed.
@@ -144,10 +163,24 @@ class LiveRecorder {
     }
 
     async rotate(state, forced) {
+        state.rotating = true;
+        try {
+            await this.rotateChunk(state, forced);
+        } finally {
+            state.rotating = false;
+        }
+    }
+
+    async rotateChunk(state, forced) {
         const { thread } = state, startedAt = state.startedAt, last = state.handle;
         let text;
         try {
-            state.handle = await startProfile(thread);
+            const next = await startProfile(thread);
+            if (this.profiled.get(thread.threadId) !== state) {
+                await Promise.allSettled([next.stop(), last.stop()]);
+                return;
+            }
+            state.handle = next;
             state.startedAt = Date.now();
             const began = performance.now();
             text = await last.stop();
@@ -157,7 +190,9 @@ class LiveRecorder {
             return;
         }
         const began = performance.now();
-        const a = CpuProfile.analyze(typeof text === 'string' ? JSON.parse(text) : text, { longTurnMs: this.settings.longTurnMs });
+        const profile = typeof text === 'string' ? JSON.parse(text) : text;
+        const a = CpuProfile.analyze(profile, { longTurnMs: this.settings.longTurnMs, since: state.lastEnd });
+        state.lastEnd = profile.endTime || state.lastEnd;
         this.costMs += performance.now() - began;
         const keep = forced || (a.longest?.ms || 0) >= this.settings.keepProfileMs;
         const file = keep ? path.join(this.bootDir, 'cpu',
@@ -166,7 +201,7 @@ class LiveRecorder {
         this.append({ type: 'cpu', t: at, thread: thread.label, ms: a.durationMs, busyMs: a.busyMs, gcMs: a.gcMs,
             longestMs: a.longest?.ms || 0, longTurns: a.longTurns, runs: a.runs });
         if (a.longTurns > 0 || forced) {
-            this.appendTo('spikes.jsonl', { t: new Date(startedAt + (a.longest?.atMs || 0)).toISOString(), chunk: at,
+            this.appendTo(`spikes-${dayOf(new Date(startedAt))}.jsonl`, { t: new Date(startedAt + (a.longest?.atMs || 0)).toISOString(), chunk: at,
                 thread: thread.label, ms: a.longest?.ms || 0, longTurns: a.longTurns, long: a.long.slice(0, 5),
                 code: a.longest?.code || [], self: a.longest?.self || [], gcMs: a.gcMs, busyMs: a.busyMs,
                 profile: file && path.relative(this.bootDir, file).split(path.sep).join('/'), forced: !!forced });
@@ -186,14 +221,15 @@ class LiveRecorder {
     recordSummary(reason, summary, coordinatorSnapshot) {
         if (!this.running) return Promise.resolve();
         const began = performance.now();
-        const cpu = process.cpuUsage(this.cpuMark), elu = performance.eventLoopUtilization(this.eluMark);
+        const cpu = process.cpuUsage(this.cpuMark);
         this.cpuMark = process.cpuUsage();
-        this.eluMark = performance.eventLoopUtilization();
-        // The console line repeats the object as text.
+        // The console line repeats the object as text; coldQueue goes to its own field. Main's busy
+        // share is in the cpu lines (the profile), not a second event-loop utilization window.
         const population = { ...summary };
         delete population.line;
+        delete population.coldQueue;
         const record = { type: 'summary', t: new Date().toISOString(), reason,
-            main: { memory: process.memoryUsage(), elu: Math.round(elu.utilization * 1000) / 1000,
+            main: { memory: process.memoryUsage(),
                 processCpuMs: { user: Math.round(cpu.user / 1000), system: Math.round(cpu.system / 1000) } },
             coldQueue: summary?.coldQueue || null,
             coordinator: coordinatorSnapshot ? coordinatorSnapshot() : null,
@@ -204,7 +240,8 @@ class LiveRecorder {
             .catch(error => this.warn('summary', error));
     }
 
-    // used/total MB of every thread's V8 heap, workers that diagnostics do not ask included.
+    // used/total MB of every thread's V8 heap now, read from main: WorkerHeapTelemetry reports the
+    // heap after GC from inside a thread, and with diagnostics off only the cold worker's.
     async heaps() {
         const rows = await Promise.all(this.threads.all().map(thread =>
             Promise.resolve().then(() => (thread.worker ? thread.worker.getHeapStatistics() : v8.getHeapStatistics()))
@@ -228,14 +265,19 @@ class LiveRecorder {
         return this.writes;
     }
 
-    // Boot folders older than keepDays go; the folder of this boot stays.
+    // Older than keepDays: other boot folders, and this boot's day files (a server up for weeks).
+    // Raw profiles are capped by keepProfiles instead.
     async prune() {
-        const limit = Date.now() - this.settings.keepDays * 86400000;
+        const limit = Date.now() - this.settings.keepDays * 86400000, oldestDay = dayOf(new Date(limit));
         for (const name of await fs.promises.readdir(this.settings.dir)) {
             const dir = path.join(this.settings.dir, name);
             if (!BOOT_DIR.test(name) || dir === this.bootDir) continue;
             const stat = await fs.promises.stat(dir);
             if (stat.isDirectory() && stat.mtimeMs < limit) await fs.promises.rm(dir, { recursive: true, force: true });
+        }
+        for (const name of await fs.promises.readdir(this.bootDir)) {
+            const day = DAY_FILE.exec(name)?.[1];
+            if (day && day < oldestDay) await fs.promises.rm(path.join(this.bootDir, name), { force: true });
         }
     }
 }

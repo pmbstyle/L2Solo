@@ -84,13 +84,15 @@ function attribute(run, samples, ms, tree, count) {
 }
 
 // longTurnMs: a busy run at least this long is a long turn. top: rows per list. keep: long turns
-// listed with their time (the longest is also attributed).
-function analyze(profile, { longTurnMs = 50, top: count = 8, keep = 20 } = {}) {
+// listed with their time (the longest is also attributed). since: samples up to this time (profile
+// clock, us) are left out: the part an overlapping chunk shares with the one before it.
+function analyze(profile, { longTurnMs = 50, top: count = 8, keep = 20, since = 0 } = {}) {
     const tree = index(profile), samples = profile.samples || [];
     const { at, ms } = timings(profile);
     const self = new Map(), files = new Map(), runs = [];
     let busyMs = 0, idleMs = 0, gcMs = 0, programMs = 0, run = null;
     for (let i = 0; i < samples.length; i++) {
+        if (at[i] <= since) continue;
         const node = tree.nodes.get(samples[i]) || { name: '?' };
         if (node.name === IDLE) {
             idleMs += ms[i];
@@ -112,7 +114,7 @@ function analyze(profile, { longTurnMs = 50, top: count = 8, keep = 20 } = {}) {
     const longest = runs.reduce((best, r) => (!best || r.ms > best.ms ? r : best), null);
     const round = (value) => Math.round(value * 10) / 10;
     return {
-        durationMs: round(((profile.endTime || 0) - (profile.startTime || 0)) / 1000),
+        durationMs: round(Math.max(0, (profile.endTime || 0) - Math.max(profile.startTime || 0, since)) / 1000),
         busyMs: round(busyMs), idleMs: round(idleMs), gcMs: round(gcMs), programMs: round(programMs),
         runs: runs.length,
         longTurns: long.length,
