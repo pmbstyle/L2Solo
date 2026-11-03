@@ -30,8 +30,10 @@ class Server {
         const parameters = { name: name, callback: callback };
 
         // Create a new listening `Server`
-        require('net').createServer(this.onSocket.bind(parameters)).listen(optn.port, optn.hostname, () => {
+        const listener = require('net').createServer(this.onSocket.bind(parameters));
+        listener.listen(optn.port, optn.hostname, () => {
             utils.infoSuccess(name, 'successful init for %s:%d', optn.hostname, optn.port);
+            if (process.env.L2NODE_UPDATE_TRIAL === '1' && process.connected) process.send({ type: 'launcher:listening', service: name, port: listener.address().port }, () => {});
         });
     }
 
