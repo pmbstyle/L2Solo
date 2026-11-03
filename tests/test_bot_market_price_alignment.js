@@ -107,13 +107,14 @@ function publicPrice(id, buyer, context) {
 }
 
 // E1: an SoE plus the actual missing one-hour kit, not a wallet percentage.
+// The kit at its NPC list price (survivalPrice), the price the reserve holds it at.
 function kitReserve(buyer, context) {
-    const escape = context.price(736) * Math.max(0, 1 - Number(buyer.inventory?.[736]?.amount || 0));
+    const escape = context.stock('scrolls').survivalPrice * Math.max(0, 1 - Number(buyer.inventory?.[736]?.amount || 0));
     return ['shots', 'potions'].reduce((sum, kind) => {
         const stock = context.stock(kind);
         const held = Number(buyer.inventory?.[stock.itemId]?.amount || 0);
         // Whole units since 080f085b: the survival stock is ceil(use per hour).
-        return sum + Math.max(0, Math.ceil(stock.usePerHour) - held) * stock.unitPrice;
+        return sum + Math.max(0, Math.ceil(stock.usePerHour) - held) * stock.survivalPrice;
     }, escape);
 }
 

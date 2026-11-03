@@ -28,8 +28,12 @@ assert(Match.soloSurvival([mage], { ...target, maxHp: Math.floor(damage) }).elig
     'damage of the target HP is enough');
 assert(!Match.soloSurvival([mage], { ...target, maxHp: Math.ceil(damage) + 1 }).eligible,
     'damage under the target HP is not enough');
-assert(Match.soloCanHunt([mage], { ...target, maxHp: Math.floor(damage / 1.2) }).eligible,
-    'a target the old 1.5 margin refused (ratio 1.2) is a solo hunt now');
+// The route's solo gate is the bot's readiness at full HP and MP (BotEncounterReadiness):
+// it must end the fight above its potion line, with the margin of the fight's length.
+assert(Match.soloCanHunt([mage], { ...target, maxHp: Math.floor(damage / 3) }).eligible,
+    'a fight it ends well above its potion line is a solo hunt');
+assert(!Match.soloCanHunt([mage], { ...target, maxHp: Math.floor(damage / 1.2) }).eligible,
+    'a race won at ratio 1.2 from full HP ends below the potion line (a quarter of the bar): no solo hunt');
 
 // A mixed spot needs at least 60% of its spawn weight solo-safe.
 const SAFE_NPC = 156;

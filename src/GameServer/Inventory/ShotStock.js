@@ -544,7 +544,7 @@ function restockPlan(value, options = {}) {
     // The wish's rank at the price each source asks (E187): the board lines
     // at the cheapest line's price, the NPC remainder at the NPC's.
     const allowanceAt = price => PurchaseFunding.stockAllowance(fundedState, wish, plan.selfId,
-        context.kitCost(plan.selfId, price), PurchaseFunding.quoteScale(stock.unitPrice, price));
+        PurchaseFunding.survivalTranche(context, plan.selfId, price), PurchaseFunding.quoteScale(stock.unitPrice, price));
     const allowance = allowanceAt(npcPrice);
     const maxPrice = npcPrice > 0 ? npcPrice - 1 : invoke('GameServer/Bot/Population/ColdEconomyDecision').economyFor(state).worth(plan.selfId);
     // The players' lines cheaper than the NPC, cheapest first, then the NPC:
@@ -560,7 +560,7 @@ function restockPlan(value, options = {}) {
     const filled = invoke('GameServer/Bot/Economy/OfferQuery').fill(offers, left, { money, maxPrice });
     // Each line carries the terms it was budgeted with to the native writer.
     const shops = filled.lines.map(({ line, count, price }) => ({ offer: line, price, amount: count, cost: count * price,
-        funding: PurchaseFunding.stockTerms(wish, plan.selfId, context.kitCost(plan.selfId, price)) }));
+        funding: PurchaseFunding.stockTerms(wish, plan.selfId, PurchaseFunding.survivalTranche(context, plan.selfId, price)) }));
     const shopAmount = shops.reduce((sum, line) => sum + line.amount, 0);
     const shopCost = shops.reduce((sum, line) => sum + line.cost, 0);
     const npcBudget = Math.min(allowance, free);

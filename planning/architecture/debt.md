@@ -49,6 +49,11 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    runtime (TBL-2, TBL-3); one rebuild run reads old inputs (TBL-4); a full copy per thread (TBL-7); the generator
    patches live owners and copies the potion stock rule (TBL-8).
 
+11. **Bot prices of a purchase disagree on who sells.** `StaticMerchantPricing.cheapestPurchase(id, { forBot: true })`
+   (and `botBuyPrice`, `botPurchasePrice`, the hunt model's consumable prices) counts the configured city stores for every
+   item, while a bot buys only shots there (`MarketOpportunity.botCanBuy`): a Scroll of Escape reads 300 (a city store)
+   against an NPC's 400-600. The survival kit reads the NPC list (`botNpcListPrice`).
+
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets[6]`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so
 a rich bot there has a null activity (T178): a test expecting "one leaf" from such a scene breaks the same way. Known

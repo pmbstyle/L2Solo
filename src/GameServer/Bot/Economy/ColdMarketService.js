@@ -230,7 +230,7 @@ function tripFrom(state, timestamp = Date.now()) {
 function fundingTerms(options = {}) {
     const terms = {};
     if (typeof options.raidPreparationId === 'string') terms.raidPreparationId = options.raidPreparationId;
-    for (const name of ['r', 'valueHours', 'survivalCost']) {
+    for (const name of ['r', 'valueHours', 'survivalCost', 'survivalShare']) {
         if (options[name] !== undefined && options[name] !== null && Number.isFinite(Number(options[name]))) {
             terms[name] = Number(options[name]);
         }
@@ -280,7 +280,9 @@ function purchaseMoney(state, plan, spent = 0, price = plan.npcPrice) {
         // missing survival kit, never the former general purchasing cap.
         if (plan.purpose === 'shots' || (terms.r === undefined && terms.valueHours === undefined)) {
             const context = plan.economy?.kitCost ? plan.economy : invoke('GameServer/Bot/Economy/EconomyContext').basics(state);
-            options.survivalCost = context.kitCost(plan.selfId, Number(price) || null);
+            const survival = PurchaseFunding.stockTerms(null, plan.selfId, PurchaseFunding.survivalTranche(context, plan.selfId, Number(price) || null));
+            options.survivalCost = survival.survivalCost;
+            if (survival.survivalShare !== undefined) options.survivalShare = survival.survivalShare;
             // The stock wish's rank at the price paid, not the estimate (E187).
             if (plan.purpose === 'shots' && terms.r === undefined) {
                 options.quoteScale = PurchaseFunding.quoteScale(context.price?.(plan.selfId), Number(price));
@@ -296,7 +298,10 @@ function purchaseTerms(state, plan, spent = 0) {
     if (plan.purpose === 'clan') return { ...terms, free: true,
         clanPart: Math.min(PurchaseFunding.budget(state), Math.max(0, Number(plan.tag?.clanPart || 0) - spent)) };
     if (plan.purpose === 'shots' || (terms.r === undefined && terms.valueHours === undefined)) {
-        terms.survivalCost = invoke('GameServer/Bot/Economy/EconomyContext').basics(state).kitCost(plan.selfId, Number(plan.npcPrice) || null);
+        const survival = PurchaseFunding.stockTerms(null, plan.selfId, PurchaseFunding.survivalTranche(
+            invoke('GameServer/Bot/Economy/EconomyContext').basics(state), plan.selfId, Number(plan.npcPrice) || null));
+        terms.survivalCost = survival.survivalCost;
+        if (survival.survivalShare !== undefined) terms.survivalShare = survival.survivalShare;
     }
     return terms;
 }

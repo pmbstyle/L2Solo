@@ -140,6 +140,29 @@ function priceFor(store, line, { viewerId = 0, actor = null, enchant = 0 } = {})
     return ask ? Math.max(price, Number(ask.price)) : price;
 }
 
+// An NPC shop's list price of an item for a bot: the cheapest line any NPC
+// sells it to bots at (the configured city stores excluded: a bot buys only
+// shots there, MarketOpportunity.botCanBuy); a town's quote is this or its
+// tax above it. Infinity where no NPC sells it to bots. Kept per item while
+// the rate and the shot rule it was read under stand (static between them):
+// one Map read per ask, keyed by the item ids asked (the kits' few; at most
+// every item). The survival kit's price (EconomyContext.survivalPrice).
+let listPrices = new Map(), listInputs = null;
+function botNpcListPrice(selfId) {
+    refreshNpcOffers();
+    const Production = require('./ProductionPolicy'), shots = Production.shotsDisabled(), id = Number(selfId);
+    if (!listInputs || listInputs.npcRate !== npcRate || listInputs.shots !== shots) {
+        listPrices = new Map();
+        listInputs = { npcRate, shots };
+    }
+    let price = listPrices.get(id);
+    if (price !== undefined) return price;
+    price = Infinity;
+    if (Production.allowsNpcShot(id)) for (const line of npcOffers.get(id) || []) price = Math.min(price, Number(line.price ?? basePrice(id)));
+    listPrices.set(id, price > 0 ? price : Infinity);
+    return listPrices.get(id);
+}
+
 // What a bot pays an NPC for an item at the current rate, else (no NPC sells
 // it) its template price: the baseline consumable price of the hunt model.
 function botBuyPrice(id) {
@@ -147,5 +170,5 @@ function botBuyPrice(id) {
     return Number.isFinite(npc) ? npc : Math.max(0, Number(ItemTemplateIndex.find(DataCache.items, id)?.template?.price || 0));
 }
 
-module.exports = { BUYBACK_RATIO, botPriceFor, buyQuote, cheapestPurchase, botPurchasePrice: id => cheapestPurchase(id, { forBot: true }), botBuyPrice,
+module.exports = { BUYBACK_RATIO, botPriceFor, buyQuote, cheapestPurchase, botPurchasePrice: id => cheapestPurchase(id, { forBot: true }), botNpcListPrice, botBuyPrice,
     priceFor, sellersOf };

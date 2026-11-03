@@ -29,23 +29,25 @@ const sturdier = { ...before, con: before.con + 1 };
 assert(reader.gain(before, sturdier) > 0, 'one more CON shortens the rest: it adds hunt income');
 const symbol = invoke('GameServer/Henna/HennaRules').availableForClass(1).find(row => row.CON > 0 && row.STR < 0);
 assert(reader.gain(before, after({ hennas: [symbol.id] })) < 0, 'CON +1 STR -3 costs a fighter more than it saves');
+// The table's rows patched (fields of each cycle row) for one reader. A
+// reader is kept per state: a copy of the bot reads the patched rows.
+const Table = require('../src/GameServer/Bot/AI/SpotValueTable');
+const realCycle = Table.cycle;
+const patched = (state, fields) => {
+    Table.cycle = (...args) => { const row = realCycle(...args); return row && { ...row, ...fields(row) }; };
+    try { return HuntCycle.reader({ ...state }, ctx); } finally { Table.cycle = realCycle; }
+};
 // Healing potions save the rest their heal would take, where the spot's
-// fights drink them (a level-50 gladiator's best spots; on the T123 tables
-// a level-70 gladiator's best spot no longer drinks them).
+// fights drink them (a level-50 gladiator whose fights drink one bottle in
+// twenty kills), and nothing where they drink none.
 const drinker = bot(2, 50);
 const drinks = Profile.candidateProfiles(drinker, timestamp).before;
-assert(HuntCycle.reader(drinker, ctx).potionGain(drinks, 336) > 0, 'healing potions save rest');
-assert.equal(reader.potionGain(before, 336), 0, 'no potion worth where the fights drink none');
+assert(patched(drinker, () => ({ potions: 0.05 })).potionGain(drinks, 336) > 0, 'healing potions save rest');
+assert.equal(patched(fighter, () => ({ potions: 0 })).potionGain(before, 336), 0, 'no potion worth where the fights drink none');
 // T108: mobs hit and cast; the table measures the part of the damage from
 // spells (spellTaken). On rows where all of it is spells M.Def saves rest and
 // P.Def nothing; where none of it is, the other way round.
-const Table = require('../src/GameServer/Bot/AI/SpotValueTable');
-const realCycle = Table.cycle;
-const withSpells = part => {
-    Table.cycle = (...args) => { const row = realCycle(...args); return row && { ...row, spellTaken: row.taken * part }; };
-    // A reader is kept per state: a copy of the fighter reads the patched rows.
-    try { return HuntCycle.reader({ ...fighter }, ctx); } finally { Table.cycle = realCycle; }
-};
+const withSpells = part => patched(fighter, row => ({ spellTaken: row.taken * part }));
 const thicker = key => ({ ...before, [key]: before[key] * 1.5 });
 const casters = withSpells(1), hitters = withSpells(0);
 // The defence-by-damage-kind asserts wait for T128: the kit surface's M.Def

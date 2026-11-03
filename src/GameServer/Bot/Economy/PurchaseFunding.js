@@ -134,7 +134,13 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
         reason = 'side';
         queueBudget = options.side >= packet[1] ? budgetFor(packet, wallet, 0, -Infinity, capture) : 0;
     }
-    const available = Math.min(wallet, queueBudget + Math.min(wallet, nonnegative(options.survivalCost)));
+    // The survival tranche: what the reserve holds for the kit (survivalShare,
+    // EconomyContext.kitCost at its list price) counts beside the queue's money;
+    // the counter's quote above it (a town's tax) comes from that money, or,
+    // when it falls short, from the wallet: the kit itself is never refused.
+    const survivalCost = nonnegative(options.survivalCost);
+    const survivalShare = Math.min(survivalCost, nonnegative(options.survivalShare ?? options.survivalCost));
+    const available = Math.min(wallet, Math.max(queueBudget + Math.min(wallet, survivalShare), survivalCost));
     if (Diagnostics.active()) Diagnostics.count('funding', available > 0 ? 'allowed' : 'refused', reason);
     if (selected) Diagnostics.push({ owner: Number(state.characterId), phase: 'funding', caller: options.caller || 'spendable', reason,
         item: Number(options.itemId), wallet: nonnegative(state.adena ?? state.inventory?.[57]?.amount),
@@ -153,13 +159,21 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
 function quoteScale(estimate, quote) {
     return Number(estimate) > 0 && Number(quote) > 0 ? Number(estimate) / Number(quote) : 1;
 }
-function stockAllowance(state, wish, itemId, survivalCost, scale = 1, extra = null) {
-    return spendable(state, 0, { ...stockTerms(wish, itemId, survivalCost), quoteScale: scale, ...extra });
+function stockAllowance(state, wish, itemId, survival, scale = 1, extra = null) {
+    return spendable(state, 0, { ...stockTerms(wish, itemId, survival), quoteScale: scale, ...extra });
+}
+// A kit item's survival tranche at a counter's quote: { cost } its missing
+// units at the quote, { share } what the reserve holds for them (one economy's kitCost).
+function survivalTranche(economy, itemId, quote = null) {
+    return { cost: economy.kitCost(itemId, quote), share: economy.kitCost(itemId) };
 }
 // A stock purchase's terms, the same for the planner and the native writer:
 // the kit's survival tranche and its stock wish's rank (else its packet row).
-function stockTerms(wish, itemId, survivalCost) {
-    return { itemId, survivalCost, ...(wish ? { r: significant(wish.ratio) } : {}) };
+// survival: survivalTranche's, or a number (cost and share alike).
+function stockTerms(wish, itemId, survival) {
+    const cost = typeof survival === 'object' && survival ? survival.cost : survival;
+    const share = typeof survival === 'object' && survival ? survival.share : survival;
+    return { itemId, survivalCost: cost, ...(share !== cost ? { survivalShare: share } : {}), ...(wish ? { r: significant(wish.ratio) } : {}) };
 }
 function forOpportunity(state, opportunity, escrow = 0) {
     if (!opportunity?.known || !Number.isFinite(opportunity.valueHours) || opportunity.valueHours <= 0
@@ -173,6 +187,7 @@ function nativeTerms(options = {}, itemId = 0) {
     if (Number.isFinite(Number(options.r)) || options.r === Infinity) terms.r = Number(options.r);
     if (options.valueHours !== undefined && Number.isFinite(Number(options.valueHours))) terms.valueHours = Math.max(0, Number(options.valueHours));
     if (options.survivalCost !== undefined && Number.isFinite(Number(options.survivalCost))) terms.survivalCost = Math.max(0, Number(options.survivalCost));
+    if (options.survivalShare !== undefined && Number.isFinite(Number(options.survivalShare))) terms.survivalShare = Math.max(0, Number(options.survivalShare));
     if (options.side !== undefined && Number.isFinite(Number(options.side))) terms.side = Math.max(0, Number(options.side));
     if (options.free === true) terms.free = true;
     if (options.clanPart !== undefined && Number.isFinite(Number(options.clanPart)) && Number(options.clanPart) >= 0) terms.clanPart = Number(options.clanPart);
@@ -238,5 +253,5 @@ function packetFor(network, hour, reserve) {
     return packet;
 }
 function tripEscrow(plan, escrow = 0) { return plan?.market?.sourceType === 'npc' ? escrow : 0; }
-module.exports = { itemRate, budget, operatingReserve, shortfall, surplus, spendable, clanCredit, stockAllowance, quoteScale, forOpportunity, nativeTerms, companionTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, leafRatio, stampRatio, goalTerms, stockTerms,
+module.exports = { itemRate, budget, operatingReserve, shortfall, surplus, spendable, clanCredit, stockAllowance, survivalTranche, quoteScale, forOpportunity, nativeTerms, companionTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, leafRatio, stampRatio, goalTerms, stockTerms,
     summary: () => Diagnostics.active() ? ({ moneyPacketMissing }) : ({ enabled: false }), resetCounters: () => { moneyPacketMissing = 0; } };

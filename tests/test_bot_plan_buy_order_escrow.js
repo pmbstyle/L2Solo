@@ -27,13 +27,17 @@ const state = {
     inventory: { [weapon.selfId]: { selfId: Number(weapon.selfId), amount: 1, equippedCount: 1, equipped: 1 } },
     stats: { classId: 1, build: { grade: 'd', classId: 1, level: 30 }, equipment: [] }
 };
-const posting = GearAcquisitionPlanner.staticNpcUpgradePlan({ ...state, adena: 120000 });
+// Wallets are its survival reserve (the kit the table's use asks for) plus the free
+// money the case turns on: 113,000 to post, 93,000 for the reserve case below.
+const kitReserve = GearAcquisitionPlanner.operationalAdenaReserve({ ...state, adena: 0 });
+const WALLET = kitReserve + 113000, KIT_WALLET = kitReserve + 93000;
+const posting = GearAcquisitionPlanner.staticNpcUpgradePlan({ ...state, adena: WALLET });
 assert.strictEqual(posting?.strategy, 'market', 'the fixture must plan an NPC-kit purchase');
 const price = Number(posting.market.price);
 const target = posting.target.name;
-assert(price > 0 && price < 120000, 'the fixture target must be affordable before posting');
+assert(price > 0 && price < WALLET, 'the fixture target must be affordable before posting');
 
-const afterPosting = { ...state, adena: 120000 - price };
+const afterPosting = { ...state, adena: WALLET - price };
 assert.notStrictEqual(GearAcquisitionPlanner.staticNpcUpgradePlan(afterPosting)?.target?.name, target,
     'the wallet alone no longer covers the target once its bid sits in escrow');
 assert.strictEqual(GearAcquisitionPlanner.staticNpcUpgradePlan(afterPosting, { buyOrderEscrow: price })?.target?.name,
@@ -42,18 +46,18 @@ assert.strictEqual(GearAcquisitionPlanner.planFor(afterPosting, { spots: [], buy
     target, 'the full plan keeps the target while its order is open');
 
 // The reserve is kept from the same budget: posting an order must not free
-// spendable Adena. At 100k the reserve (10%) holds the bot on Iron Plate
-// Gaiters; a reserve from the wallet alone let the posted order switch the
+// spendable Adena. With 93,000 above its reserve the bot stays on a cheaper
+// piece; a reserve from the wallet alone let the posted order switch the
 // plan to the Ring Mail Breastplate that the reserve forbids.
-const kit = GearAcquisitionPlanner.staticNpcUpgradePlan({ ...state, adena: 100000 });
+const kit = GearAcquisitionPlanner.staticNpcUpgradePlan({ ...state, adena: KIT_WALLET });
 const kitPrice = Number(kit?.market?.price);
 assert(kitPrice > 0, 'the fixture must plan an NPC-kit purchase at 100k');
-const kitAfterPosting = GearAcquisitionPlanner.staticNpcUpgradePlan({ ...state, adena: 100000 - kitPrice },
+const kitAfterPosting = GearAcquisitionPlanner.staticNpcUpgradePlan({ ...state, adena: KIT_WALLET - kitPrice },
     { buyOrderEscrow: kitPrice });
 assert.strictEqual(kitAfterPosting?.target?.name, kit.target.name, 'posting the order keeps the target');
 assert.strictEqual(kitAfterPosting.market.reserve, kit.market.reserve, 'posting the order keeps the reserve');
-assert.strictEqual(GearAcquisitionPlanner.operationalAdenaReserve({ ...state, adena: 100000 - kitPrice },
-    kitPrice), GearAcquisitionPlanner.operationalAdenaReserve({ ...state, adena: 100000 }));
+assert.strictEqual(GearAcquisitionPlanner.operationalAdenaReserve({ ...state, adena: KIT_WALLET - kitPrice },
+    kitPrice), GearAcquisitionPlanner.operationalAdenaReserve({ ...state, adena: KIT_WALLET }));
 
 const originalProjection = AfkTrade.ownerRecords;
 try {
@@ -70,7 +74,7 @@ try {
 const reserve = Number(posting.market.reserve);
 const walletAfterBid = { ...state, adena: reserve };
 assert.strictEqual(GearAcquisitionPlanner.fundedMarketPlanForTarget(walletAfterBid, posting.target.selfId), null);
-assert(GearAcquisitionPlanner.fundedMarketPlanForTarget({ ...state, adena: 120000 - price }, posting.target.selfId,
+assert(GearAcquisitionPlanner.fundedMarketPlanForTarget({ ...state, adena: WALLET - price }, posting.target.selfId,
     { buyOrderEscrow: price }), 'the funded re-price counts the escrow');
 const weaponState = { ...walletAfterBid, stats: { ...state.stats, equipmentPlan: { ...posting, target: { ...posting.target, slot: 7 } } } };
 const { lifecycleKind } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');

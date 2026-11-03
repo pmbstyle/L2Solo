@@ -408,7 +408,9 @@ const fullHealthNpc = {
     fetchLevel: () => 5,
     fetchHp: () => 140,
     fetchMaxHp: () => 140,
-    fetchPAtk: () => 40,
+    // A mob the bot takes whole (its route gate admits it at full HP) but not at 60 HP:
+    // that fight would end below its potion line (BotEncounterReadiness).
+    fetchPAtk: () => 10,
     fetchPDef: () => 100
 };
 const reserveSession = {

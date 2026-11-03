@@ -875,6 +875,16 @@ function scrollSavingHours(state, origin) {
 // stock(kind) and kitCost(id) over the kit data of one review: the build and
 // every later view of its plan answer from the same numbers. Prices go
 // through the caller's price reader, so each read joins the review's inputs.
+// The survival kit is priced at the NPC's list price (StaticMerchantPricing.
+// botNpcListPrice, kept per item), not the bot's estimate: the reserve holds
+// that, and a restock's survival tranche spends that share (kitCost) at any
+// counter; a town's tax above it, as any optional unit, is paid from the
+// money above the reserve at its stock wish's rank (PurchaseFunding.
+// stockAllowance, quoteScale). The estimate where no NPC sells the item.
+function survivalPrice(id, price) {
+    const list = Number(invoke('GameServer/Bot/Economy/StaticMerchantPricing').botNpcListPrice(id));
+    return Number.isFinite(list) && list > 0 ? list : price(id);
+}
 function kitReader(data, price, scrollUseHours) {
     const stock = kind => {
         if (kind === 'scrolls') {
@@ -884,7 +894,7 @@ function kitReader(data, price, scrollUseHours) {
             const benefitPerUnit = current < target ? scrollUseHours() : 0;
             return { itemId: 736, usePerHour: 0, current, hours: Infinity, targetHours: data.targetHours, target,
                 survivalTarget, survivalMissing: Math.max(0, survivalTarget - current), missing,
-                unitPrice: price(736), benefitPerUnit, benefitHours: missing * benefitPerUnit, needed: current < target };
+                unitPrice: price(736), survivalPrice: survivalPrice(736, price), benefitPerUnit, benefitHours: missing * benefitPerUnit, needed: current < target };
         }
         const shots = kind === 'shots';
         const row = shots ? data.shots : data.potions;
@@ -906,21 +916,22 @@ function kitReader(data, price, scrollUseHours) {
         return { itemId: Number(itemId), usePerHour: use, ...(shots ? { ownedUsePerHour: row.ownedUsePerHour, beginnerCurrent: row.beginnerCurrent,
                 beginnerUsePerHour: row.beginnerUsePerHour, paidUsePerHour: row.paidUsePerHour } : {}),
             current, hours: use > 0 ? current / use : Infinity,
-            targetHours: data.targetHours, target, survivalTarget, missing, survivalMissing, unitPrice: price(itemId), benefitPerUnit, benefitHours,
+            targetHours: data.targetHours, target, survivalTarget, missing, survivalMissing, unitPrice: price(itemId),
+            survivalPrice: survivalPrice(itemId, price), benefitPerUnit, benefitHours,
             needed: use > 0 && current < survivalTarget };
     };
     const kit = [stock('shots'), stock('potions')];
-    const escapeCost = data.closed ? 0 : price(736) * Math.max(0, 1 - data.scrolls);
-    // A known executable quote pays whole missing units once. The personal
-    // price estimate still values an unseen option; it must not underfund
-    // a concrete merchant's mandatory stock and trigger repeated tiny fills.
+    const escapeCost = data.closed ? 0 : survivalPrice(736, price) * Math.max(0, 1 - data.scrolls);
+    // The kit's survival tranche: without a quote the reserve's own share
+    // (its list price); with a known executable quote its whole missing units
+    // at that quote, once (PurchaseFunding.survivalTranche: the counter counts
+    // the share beside the queue's money and never refuses the kit itself).
     const kitCost = (id, unitPrice = null) => {
         const quoted = Number.isFinite(unitPrice) && unitPrice > 0;
         if (Number(id) === 736 && data.closed) return 0;
         if (Number(id) === 736) return quoted ? unitPrice * Math.max(0, 1 - data.scrolls) : escapeCost;
         return kit.filter(row => row.itemId === Number(id)).reduce((sum, row) => sum
-            + row.survivalMissing
-                * (quoted ? unitPrice : row.unitPrice), 0);
+            + row.survivalMissing * (quoted ? unitPrice : row.survivalPrice), 0);
     };
     return { stock, kitCost, kit, escapeCost };
 }
@@ -1183,7 +1194,7 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
             canRestock: true, benefit: positive(bestTable?.deaths) * deathHours, restUse: potionRest.use, restHours: potionRest.hours } };
     const { stock, kitCost, kit, escapeCost } = kitReader(kitData, price,
         () => kitData.scrollHours ??= scrollHoursFor(state, deps.spots, bestSpotId));
-    const reserve = escapeCost + kit.reduce((sum, row) => sum + row.survivalMissing * row.unitPrice, 0);
+    const reserve = escapeCost + kit.reduce((sum, row) => sum + row.survivalMissing * row.survivalPrice, 0);
     // The rest bottles the wallet pays now: a stock it cannot pay would stand
     // first in the money queue, its gap (WishNetwork.moneyQueue), and hold back
     // every wish below it. The rule pays them back within the outing.

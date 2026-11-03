@@ -57,8 +57,10 @@ function collect(state, options = {}) {
         if (order >= LIMIT || !offer || offer.town !== town || !(amount > 0)
             || options.seller && sellerKey(offer) !== sellerKey(options.seller)) return;
         const price = Number(offer.price);
-        const funding = { ...terms, itemId: Number(selfId),
-            survivalCost: attribution.survivalCost ?? (survivalIds.has(Number(selfId)) ? economics().kitCost(selfId, price) : 0) };
+        const survival = attribution.survival ?? (attribution.survivalCost !== undefined ? null
+            : survivalIds.has(Number(selfId)) ? Funding.survivalTranche(economics(), selfId, price) : null);
+        const funding = { ...terms, itemId: Number(selfId), ...(survival
+            ? Funding.stockTerms(null, Number(selfId), survival) : { survivalCost: attribution.survivalCost ?? 0 }) };
         const cap = attribution.money == null ? Infinity : Math.max(0, Number(attribution.money));
         const template = require('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(selfId));
         const maximum = template?.etc?.stackable ? Number.MAX_SAFE_INTEGER : 10000;
@@ -103,7 +105,7 @@ function collect(state, options = {}) {
         if (offer) {
             const context = economics();
             const plan = Potions.restockPlan(current, { potion, unitPrice: offer.price, context });
-            add(potion.selfId, plan.amount, offer, {}, { survivalCost: context.kitCost(potion.selfId, offer.price) });
+            add(potion.selfId, plan.amount, offer, {}, { survival: Funding.survivalTranche(context, potion.selfId, offer.price) });
         }
     }
     if (options.scrolls !== false) {
@@ -112,7 +114,7 @@ function collect(state, options = {}) {
         if (offer) {
             const context = economics();
             const plan = Scrolls.restockPlan(current, { unitPrice: offer.price, context });
-            add(736, plan.amount, offer, plan.funding, { survivalCost: context.kitCost(736, offer.price) });
+            add(736, plan.amount, offer, plan.funding, { survival: Funding.survivalTranche(context, 736, offer.price) });
         }
     }
     for (const extra of (options.extras || []).slice(0, LIMIT)) {
@@ -124,7 +126,7 @@ function collect(state, options = {}) {
         if (offer) {
             const context = economics();
             const plan = Shot.restockPlan(current, { plan: shot, unitPrice: offer.price, potionUnitPrice: 0, context });
-            add(shot.selfId, plan.npcAmount, offer, {}, { survivalCost: context.kitCost(shot.selfId, offer.price) });
+            add(shot.selfId, plan.npcAmount, offer, {}, { survival: Funding.survivalTranche(context, shot.selfId, offer.price) });
         }
     }
     if (Diagnostics.active()) Diagnostics.duration('npc_plan', performance.now() - started);

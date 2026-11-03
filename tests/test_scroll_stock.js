@@ -35,8 +35,11 @@ assert.strictEqual(ScrollStock.restockPlan(cold(TARGET), { unitPrice: price }).n
 const reserve = HealingPotionStock.operationalReserve(cold(0, 7600));
 const poor = ScrollStock.restockPlan(cold(0, reserve + price), { unitPrice: price });
 assert.strictEqual(poor.amount, 1, 'the consumables reserve is kept: one scroll above it');
-assert.strictEqual(ScrollStock.restockPlan(cold(0, reserve), { unitPrice: price }).affordable, false,
-    'nothing is bought from the reserve');
+// The reserve holds the escape scroll at its NPC list price: a wallet of the reserve alone
+// buys only that mandatory scroll (at the town's quote, when it holds that much), none of the
+// optional nine.
+assert.strictEqual(ScrollStock.restockPlan(cold(0, reserve), { unitPrice: price }).amount, reserve >= price ? 1 : 0,
+    'from the reserve only its own escape scroll is bought');
 
 const patch = ScrollStock.coldPurchasePatch(cold(0), { unitPrice: price });
 assert.strictEqual(patch.inventory[736].amount, TARGET);

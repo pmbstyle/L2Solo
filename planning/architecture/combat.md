@@ -71,6 +71,7 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
 | Effects store / stat sums | `EffectStore` + `EffectStats` |
 | Skill reuse | **none** — proposed `Skills/SkillReuse` (CMB-1) |
 | MP cost | **none** — proposed in `Skills/` (CMB-2) |
+| MP an offensive skill must leave (a solo healer keeps its heals' share) | `Bot/AI/BotClassPolicy.offensiveMpReserve`: the pick (`BotCombatUtility`, hot and cold) and the solo gate's damage budget (`BotTargetMatchup.spendableMp`) |
 | Stat assembly | **none** (CMB-8) |
 | PvP flag, PvP/PK classification and tally, CP shield | `PvpRules` (hot `PvpFlag.attack`, `ReceivedHit`; cold `ColdPvpResolver`, `Database` cold commit) |
 | PK drop | `PkDropPolicy` (hot `PkDeathDrop`, cold `Database` commit, `EconomicValuation`) |

@@ -85,6 +85,7 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
 | Which offer to buy | `OfferQuery.bestSellOffer` + `OfferOrder` |
 | Trip cost | `OfferOrder.tripCost` → `EconomicTrip` |
 | Spendable money | `PurchaseFunding` |
+| Survival kit price and reserve (shots, potions, escape scroll) | `EconomyContext.kitReader`: the reserve holds the kit at the NPC list price (`StaticMerchantPricing.botNpcListPrice`, the bot's estimate where no NPC sells it). A restock counter (`PurchaseFunding.survivalTranche` → `spendable`) counts that share beside the queue's money; a town's tax above it comes from that money, and when that falls short the kit at the quote is still paid from the wallet (never refused) |
 | Whether a road pays for a funded required kit piece or survival stock (visit, trip, tier) | `EconomicValuation.roadCarried` (read by `visitPays`/`tripPays`; step marked `required` by `WishNetwork`) |
 | What to sell / list / NPC-sell | `MarketListingPolicy.evaluate` / `npcSaleForActor` |
 | Bid lines | `BuyAdPolicy.linesFor/bidFor` |

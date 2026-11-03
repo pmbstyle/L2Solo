@@ -417,8 +417,10 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         equipmentPlan: { strategy: 'craft', status: 'ready_to_craft' } } })), 'command',
     'ready crafting still uses the main-thread crafting workflow');
     assert.strictEqual(lifecycleKind(state(2, { stats: { equipmentPlan: { strategy: 'market' } } })), 'resolver');
+    // A wallet of 1000 above its survival reserve (the kit the table's use asks for) funds the piece.
+    const fundedWallet = invoke('GameServer/Bot/Economy/PurchaseFunding').operatingReserve(state(2)) + 1000;
     assert.strictEqual(lifecycleKind(state(2, {
-        adena: 1000,
+        adena: fundedWallet,
         stats: { equipmentPlan: { strategy: 'market', market: { price: 500, reserve: 100 } } }
     })), 'command');
     assert.strictEqual(lifecycleKind(state(2, { party: { partyId: 'party' } }), leading({ partyId: 'party', leaderId: 2 })), 'party');

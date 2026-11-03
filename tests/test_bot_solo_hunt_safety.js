@@ -67,7 +67,8 @@ assert(Cold.npcForSpot({ npcEntries: [{ selfId: 784, count: 1 }] }, () => 0.5,
 // The fight reads fightProfile, the route profileFor: both give the fixture.
 const savedProfile = Cold.profileFor, savedFight = Cold.fightProfile, savedSpots = Spots.cache;
 try {
-    const owned = { ...necro, accur: 100, evasion: 0, critical: 0, mCritRate: 0,
+    // Enough HP that the next lizard still ends above its potion line (BotEncounterReadiness).
+    const owned = { ...necro, maxHp: 1400, accur: 100, evasion: 0, critical: 0, mCritRate: 0,
         equipment: { ...necro.equipment, pAtkRnd: 0 }, effects: [], skills: [...necro.skills,
             { selfId: 1220, level: 1, passive: false, spell: true, power: 44, mp: 22, hitTime: 4000, reuse: 6000 },
             { selfId: 1015, level: 3, passive: false, spell: true, power: 107, mp: 32, hitTime: 2000, reuse: 3000 }
@@ -77,7 +78,7 @@ try {
         npcEntries: [{ selfId: 1639, count: 6 }], npcSelfIds: [1639] };
     Spots.cache = [ground];
     const fighter = { characterId: 990005, level: 45, activity: 'hunting', spotId: ground.id, inventory: {},
-        vitals: { hp: necro.maxHp, maxHp: necro.maxHp, mp: necro.maxMp, maxMp: necro.maxMp },
+        vitals: { hp: owned.maxHp, maxHp: owned.maxHp, mp: necro.maxMp, maxMp: necro.maxMp },
         stats: { classId: 13, role: 'mage' } };
     const fight = invoke('GameServer/Bot/Population/BackgroundResolver').resolveSolo({
         state: fighter, spot: ground, elapsedMs: 60000, timestamp: at, rng: () => 0.5 });
@@ -127,14 +128,56 @@ const bow = { role: 'archer', pAtk: 100, pDef: 100, maxHp: 1000, atkSpd: 300,
     weaponMask: 32, equipment: { weaponKind: 'Weapon.Bow' }, skills: [] };
 const resistedTarget = { ...target, vulnerabilities: { bowWpnVuln: 0.1 } };
 const bowRatio = Match.soloSurvival([bow], resistedTarget).survivalRatio;
-const safeBow = { ...bow, maxHp: bow.maxHp * 1.1 * Match.SOLO_GATE_MARGIN / bowRatio };
+// Safe: the resisted mob takes minutes to kill, and a long fight must be outlasted
+// above the potion line with the margin of its length (BotEncounterReadiness). The
+// bow grows from an even race in 5 % steps to the first HP the gate admits, so
+// safeBow sits at most 5 % above the margin's lower edge.
+let safeBow = { ...bow, maxHp: bow.maxHp * Match.SOLO_GATE_MARGIN / bowRatio };
+for (let step = 0; step < 200 && !Match.soloCanHunt([safeBow], resistedTarget).eligible; step++) {
+    safeBow = { ...safeBow, maxHp: safeBow.maxHp * 1.05 };
+}
 assert(!Match.evaluate([safeBow], resistedTarget).eligible, 'fixture: the ordinary resistance gate rejects efficiency 0.1');
 assert(Match.soloCanHunt([safeBow], resistedTarget).eligible, 'solo hunting accepts a resisted mob it safely survives');
-assert(!Match.soloCanHunt([{ ...safeBow, maxHp: safeBow.maxHp * 0.8 / 1.1 }], resistedTarget).eligible);
+assert(Match.soloSurvival([{ ...safeBow, maxHp: safeBow.maxHp * 0.8 }], resistedTarget).survivalRatio > 1,
+    'fixture: a fifth less HP still wins the race');
+assert(!Match.soloCanHunt([{ ...safeBow, maxHp: safeBow.maxHp * 0.8 }], resistedTarget).eligible,
+    'a fifth less HP would end the long fight below the potion line: refused');
+assert(Match.soloCanHunt([{ ...safeBow, maxHp: safeBow.maxHp * 2 }], resistedTarget).eligible, 'more HP is never refused');
 assert(!Match.soloCanHunt([safeBow], resistedTarget, { maxTargetLevel: 27, npcLevel: 29 }).eligible);
 assert.equal(Match.soloCanHunt([safeBow], resistedTarget, { maxTargetLevel: 27, npcLevel: 29 }).reason, 'recovery_level');
 assert(!Match.soloCanHunt([{ ...safeBow, maxHp: undefined }], resistedTarget).eligible,
     'an unknown kit still uses the ordinary resistance gate');
+assert.equal(Match.soloCanHunt([{ ...safeBow, maxHp: safeBow.maxHp * 0.8 }], resistedTarget).reason,
+    'insufficient_survival_margin', 'a refused fight says why');
+
+// More HP never refuses a fight less HP takes (BotEncounterReadiness reads the time
+// the attacks take to deal the mob's HP, not the side's life over its ratio). From
+// the first HP admitted (5 % steps), every step up to eight times is admitted too,
+// and a huge bar. attacksOf: synthetic attacks, so only the fight-time rule is read.
+const alwaysAdmitted = (label, make, mob, attacksOf) => {
+    let first = null;
+    for (let step = 0; step < 300 && first === null; step++) {
+        const hp = 50 * 1.05 ** step;
+        if (Match.soloCanHunt(make(hp), mob, { attacksOf }).eligible) first = hp;
+    }
+    assert(first !== null, `${label}: some HP admits the fight`);
+    for (let hp = first; hp <= first * 8; hp *= 1.05) {
+        assert(Match.soloCanHunt(make(hp), mob, { attacksOf }).eligible, `${label}: ${Math.round(hp)} HP (first ${Math.round(first)}) admitted`);
+    }
+    assert(Match.soloCanHunt(make(100000), mob, { attacksOf }).eligible, `${label}: a huge bar admitted`);
+};
+// A summoner held under its pet's hate whose own MP budget (900) limits it: the
+// pet falls early, the owner then spends its budget.
+const warlock = hp => [{ classId: 14, role: 'mage', level: 40, maxHp: hp, maxMp: 1000, pDef: 300, mDef: 300, skills: [] },
+    { role: 'dps', servitor: true, soloDamageReceiver: false, maxHp: 120, pDef: 80, mDef: 80, pAtk: 100, atkSpd: 280, skills: [] }];
+alwaysAdmitted('a summoner on its budget', warlock, target, profile => profile.servitor === true
+    ? [{ weight: 15, hit: 15, modifier: 1, normal: true }]
+    : [{ weight: 50, hit: 50, modifier: 1, damageBudget: 900 }]);
+// A fast budgeted skill (50/s, 500 of damage) and a slow free hit (20/s): with
+// more HP the hit deals more by the side's end, the skill still ends the fight first.
+const gladiator = hp => [{ classId: 2, role: 'dps', level: 40, maxHp: hp, maxMp: 1000, pDef: 300, mDef: 300, skills: [] }];
+alwaysAdmitted('a budgeted skill beside a free hit', gladiator, { ...target, maxHp: 450 }, () => [
+    { weight: 50, hit: 100, modifier: 1, damageBudget: 500 }, { weight: 20, hit: 20, modifier: 1, normal: true }]);
 
 const exp = Number(Data.experience[28]) + 100000;
 const state = { characterId: 990003, level: 29, exp, sp: 0, adena: 0,

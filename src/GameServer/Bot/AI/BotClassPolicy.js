@@ -69,6 +69,20 @@ function profileFor(actor, context = {}) {
     };
 }
 
+// The share of the MP bar an offensive skill must leave behind (BotCombatUtility's
+// pick, hot and cold, and the damage budget the solo gate counts on,
+// BotTargetMatchup): a support keeps its heals, a fighter a little; a mage
+// spends its whole bar. classProfile: profileFor's.
+function reserveRatio(role) {
+    if (role === 'healer' || role === 'buffer') return 0.45;
+    if (role === 'mage') return 0.18;
+    return 0.10;
+}
+function offensiveMpReserve(classProfile, role, pvp = false) {
+    if (role === 'mage') return 0;
+    return classProfile.supported ? classProfile.manaReserve : (pvp ? 0 : reserveRatio(role));
+}
+
 function offensivePreference(actor, target, skill, context = {}) {
     const profile = context.classProfile || profileFor(actor, context);
     const reasons = [`class_mode:${profile.mode}`, `class_purpose:${profile.purpose}`];
@@ -102,4 +116,4 @@ function buffUseful(actor, effect) {
     return null;
 }
 
-module.exports = { classIdOf, hasSkill, modeFor, profileFor, offensivePreference, buffUseful };
+module.exports = { classIdOf, hasSkill, modeFor, profileFor, reserveRatio, offensiveMpReserve, offensivePreference, buffUseful };

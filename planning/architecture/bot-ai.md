@@ -35,6 +35,7 @@ deterministic brain; the LLM acts only on explicit player communication.
 | Solo hunting spot | Worker leaf `spotId`: `Population/BotRoute.choose`/`leafChoice` over `LevelingRoutes.scoreSpot`/`bestSpot` with `SpotEconomics` income (decided, AI-2); values from the spot table, [tables.md](tables.md) |
 | Party target | `Population/PartyHuntingTarget` |
 | Rest thresholds | `AI/RestPolicy` |
+| Solo fight admission: start the next mob, and the route's solo gate (the same rule at full HP and MP) | `AI/BotEncounterReadiness` (hot `HuntingState`, cold `BackgroundResolver.resolveFight`, route `BotTargetMatchup.soloCanHunt`): the fight must end above the potion line (`HealingPotionStock.useThreshold`), with a margin that grows with its length; attacks count only the MP above `BotClassPolicy.offensiveMpReserve` |
 | Party heal line | `AI/PartyHealPolicy` (`HEAL_BELOW`, `score`): cold `BackgroundResolver`, hot `BotPvpTactics.support` |
 | Party admission | `AI/BotAvailability` |
 | Player command meaning | `BotAgentTools` (decided, AI-1; the regex path, labelled legacy, still has its own meaning) |

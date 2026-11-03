@@ -111,6 +111,10 @@ async function run() {
         && row.lines.some(line => line.selfId === 1785)), 'weapon shop and grocer never become one seller');
 
     state = await seed(9619, 50000, {}, [{ selfId: 736, name: 'Scroll of Escape', amount: 10 }]);
+    // Its healing potions at the stock's own target, whatever use the table gives them: the goal alone pays.
+    const potions = invoke('GameServer/Bot/Economy/EconomyContext').stockFor(state, 'potions');
+    await DB.setItem(9619, { selfId: potions.itemId, name: 'Lesser Healing Potion', amount: potions.target });
+    state = await Life.upsertState({ ...state, inventory: Life.inventorySummaryFromItems(await DB.fetchItems(9619)) }, 'consumer_potions');
     const Goals = invoke('GameServer/Bot/Goals/GoalState');
     const goal = (await Goals.set(9619, { type: 'buy_craft_material', status: 'active', target: { itemId: 1785, amount: 6, adena: first.price },
         plan: { expectedBenefit: 'market_buy_craft_material', marketTown: 'Dion', purpose: 'craft_input', r: 1 } })).current;
@@ -313,14 +317,21 @@ async function run() {
         shoppingTarget: { town: 'Dion' }, dataSendToOthers() {}, dataSendToMe() {} };
     actor.session = session;
     const timeouts = [], timer = global.setTimeout;
+    // Its spiritshots pay whatever the table says (the grocer's no-grade ones, beside the
+    // scrolls): two needs of one NPC, as the coalescing below asks.
+    const ShotStock = invoke('GameServer/Inventory/ShotStock'), realPlan = ShotStock.planForState, realUse = ShotStock.usePolicy;
+    ShotStock.planForState = (shotState, shotOptions = {}) => realPlan(shotState, { blessed: false, ...shotOptions });
+    ShotStock.usePolicy = (shotState, prepared = {}) => ({ ...realUse(shotState, prepared), usePerHour: 1000, paidUsePerHour: 1000, purchaseUsePerHour: 1000 });
     try {
-        global.setTimeout = (callback, delay, ...args) => {
-            if (delay === 4000 || delay === 5000) { timeouts.push({ callback, delay }); return {}; }
-            return timer(callback, delay, ...args);
-        };
-        invoke('GameServer/Bot/AI/States/ShoppingState').scheduleRestock(session, actor, {}, { getClosestTown: () => ({ name: 'Dion' }) });
-    } finally { global.setTimeout = timer; }
-    await timeouts.find(row => row.delay === 4000).callback();
+        try {
+            global.setTimeout = (callback, delay, ...args) => {
+                if (delay === 4000 || delay === 5000) { timeouts.push({ callback, delay }); return {}; }
+                return timer(callback, delay, ...args);
+            };
+            invoke('GameServer/Bot/AI/States/ShoppingState').scheduleRestock(session, actor, {}, { getClosestTown: () => ({ name: 'Dion' }) });
+        } finally { global.setTimeout = timer; }
+        await timeouts.find(row => row.delay === 4000).callback();
+    } finally { ShotStock.planForState = realPlan; ShotStock.usePolicy = realUse; }
     const hot = captured.filter(row => row.id === 9614);
     assert.equal(hot.length, 1, 'scheduled visible-bot restock reaches one SQL basket');
     assert(hot[0].lines.length >= 2, 'current consumable needs of the same NPC coalesce');

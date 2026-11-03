@@ -162,16 +162,16 @@ async function run() {
         Economy.forget(rich.characterId);
     }
     const reserve = warriorContext.survivalReserve, warriorStock = warriorContext.stock('shots');
-    assert(reserve >= warriorStock.usePerHour * warriorStock.unitPrice,
-        'the protected wallet covers one hunting hour at the bot’s current price estimate');
+    assert(reserve >= warriorStock.usePerHour * warriorStock.survivalPrice,
+        'the protected wallet covers one hunting hour at the merchant’s price');
     assert(reserve < warrior.adena, 'this native fixture still has money beyond its mandatory kit');
     assert.equal(reserve, warriorContext.kitCost(warriorStock.itemId)
         + warriorContext.kitCost(warriorContext.stock('potions').itemId) + warriorContext.kitCost(736));
     const escapeBag = amount => ({ ...warrior, inventory: { ...warrior.inventory, 736: { selfId: 736, amount } } });
     assert.equal(Economy.basics(escapeBag(1), kitDeps).survivalReserve, reserve - warriorContext.kitCost(736));
     assert.equal(Economy.basics(escapeBag(2), kitDeps).survivalReserve, Economy.basics(escapeBag(1), kitDeps).survivalReserve);
-    // One hour of the table's 1261.5/h (T43 table).
-    assert(warriorContext.purchaseBudget(warriorStock.itemId) >= 1261 * warriorStock.unitPrice);
+    // One hour of the table's shot use (T43).
+    assert(warriorContext.purchaseBudget(warriorStock.itemId) >= Math.floor(warriorStock.usePerHour) * warriorStock.unitPrice);
     assert(warriorContext.purchaseBudget(warriorStock.itemId) <= warrior.adena);
     assert(warriorContext.purchaseBudget(1) <= warrior.adena - reserve);
     assert(warriorContext.statsPacket.money.length >= 4 && warriorContext.statsPacket.money.length <= 28);
@@ -200,7 +200,7 @@ async function run() {
         [warriorStock.itemId]: { selfId: warriorStock.itemId, amount: Math.ceil(warriorStock.usePerHour) },
         [warriorPotions.itemId]: { selfId: warriorPotions.itemId, amount: warriorPotions.survivalTarget } } };
     assert.equal(Economy.basics(stocked, kitDeps).kitCost(warriorStock.itemId), 0);
-    assert.equal(Economy.basics(stocked, kitDeps).survivalReserve, warriorContext.price(736),
+    assert.equal(Economy.basics(stocked, kitDeps).survivalReserve, warriorContext.kitCost(736),
         'own one-hour shot stock releases its wallet reserve and retains the escape scroll');
     const criminal = Economy.basics({ ...warrior, stats: { ...warrior.stats, karma: 100 } }, kitDeps);
     assert.equal(criminal.kitCost(736), 0);

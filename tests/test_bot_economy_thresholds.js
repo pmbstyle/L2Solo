@@ -25,9 +25,10 @@ function reserveInputs(state) {
     const stocks = ['shots', 'potions'].map(kind => {
         const stock = base.stock(kind);
         return { selfId: stock.itemId, perHour: stock.usePerHour,
-            held: Number(state.inventory?.[stock.itemId]?.amount || 0), unitPrice: base.price(stock.itemId) };
+            held: Number(state.inventory?.[stock.itemId]?.amount || 0), unitPrice: stock.survivalPrice };
     });
-    const escape = { held: Number(state.inventory?.[736]?.amount || 0), unitPrice: base.price(736),
+    // The kit at the merchant's price, the one the counter's survival tranche pays.
+    const escape = { held: Number(state.inventory?.[736]?.amount || 0), unitPrice: base.stock('scrolls').survivalPrice,
         usable: !Karma.closesTowns(state.stats?.karma) };
     // A fractional hourly use is bought as whole units (24512a44): the survival
     // stock is ceil(use per hour), so both purchase tranches stay executable.

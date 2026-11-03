@@ -34,15 +34,17 @@ require('../src/Global');
 invoke('GameServer/DataCache').init();
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Table = invoke('GameServer/Bot/AI/SpotValueTable');
+// A frozen slice of a spot table (81e24715's: the Gladiator line's ten best
+// earners for this bot), so a table rebuild cannot take the fixture's picks
+// apart or together; both threads read it.
+Table.useFile(require('node:path').join(__dirname, 'fixtures', 'leaf_fit_spot_table.json'));
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const Gear = invoke('GameServer/Bot/AI/BotGear');
 const at = Date.now();
 
 // A level-37 human fighter wearing its level-20 baseline kit; its hunt comes
-// from the shared table. The level is the table's: on the T143 tables (of
-// 1616da214) 31 lost the fixture (the first fitting earner is the fitting
-// spot with the most exp); 37 holds all three picks apart.
+// from the fixture table, which holds all three picks apart.
 const inventory = {};
 Gear.planFor({ classId: 1, level: 20 }).items.forEach((item, index) => {
     inventory[index + 1] = { selfId: Number(item.selfId), amount: 1, equipped: true, equippedSlots: [Number(item.slot)] };
