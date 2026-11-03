@@ -86,6 +86,20 @@ async function main() {
     assert(duel.started);
     assert.deepStrictEqual(run(JSON.parse(original)), duel);
     assert.strictEqual(JSON.stringify(sides), original);
+    // C4 (Lisvus updatePvPStatus, onKillUpdatePvPKarma): hitting a character
+    // with karma flags nobody and killing it is PvP; a killer with karma gets
+    // nothing for a flagged victim.
+    const strong = state(3), weak = { ...state(1), vitals: { ...state(1).vitals, hp: 900 } };
+    const withStats = (s, stats) => ({ ...s, stats: { ...s.stats, ...stats } });
+    const killFight = (killer, victim) => Pvp.resolve({ sides: [{ principal: killer, members: [killer] },
+        { principal: victim, members: [victim] }], roles: new Map(), timestamp: at, rng: seeded('c4-kill'), personaFor, openingSide: 0 });
+    const redVictim = killFight(strong, withStats(weak, { karma: 500 }));
+    assert.deepStrictEqual(redVictim.fighters.find(f => f.id === strong.characterId).kills.map(k => k.outcome), ['pvp'],
+        'killing a character with karma is PvP');
+    assert.strictEqual(redVictim.updates.get(strong.characterId).stats.coldPvp.flagUntil, 0, 'hitting a character with karma does not flag');
+    const redKiller = killFight(withStats(strong, { karma: 500 }), withStats(weak, { coldPvp: { flagUntil: at + 10000 } }));
+    assert.deepStrictEqual(redKiller.fighters.find(f => f.id === strong.characterId).kills.map(k => k.outcome), ['none'],
+        'a killer with karma gets nothing for a flagged victim');
     // Exercise mode propagation through the real resolver, including the MP
     // spent by its first completed action rather than only selector metadata.
     function modeFighter(classId, skillId, skillLevel) {

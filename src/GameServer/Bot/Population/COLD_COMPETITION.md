@@ -353,8 +353,9 @@ control, summon or consumable simulation.
 
 Only actual attackers produce `attacked` episodes; the casualty also remembers
 `killed`. Resource grievances retain their existing directed attribution. A
-completed attack marks the attacker for this simulated encounter; killing an
-unflagged, karma-free opponent is PK, otherwise it increments PvP. Character
+completed attack on an opponent without karma flags the attacker for this
+simulated encounter; the kill's PvP/PK/karma outcome is the C4 rule shared with
+hot (`PvpRules.killOutcome`, applied at the commit by `PvpRules.tallyAfterKill`). Character
 counters and native karma awards, life-state health/resources, death, cooldowns,
 party deadlines and memory commit atomically. No XP or ground loot is invented.
 Death clears buffs, charges and the summon; a 90-second recovery delay precedes

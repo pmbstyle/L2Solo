@@ -142,4 +142,13 @@ ReceivedHit(hitSession({ fetchId: () => 3000001, fetchKind: () => 'Monster' }), 
 assert.strictEqual(npcHitVictim.fetchCp(), 30, 'NPC damage should not consume player CP');
 assert.strictEqual(npcHitVictim.fetchHp(), 80, 'NPC damage should still reduce HP directly');
 
+// C4 PcStatus.reduceHp: a summon or pet is playable, its damage goes to CP first.
+for (const servitor of [{ fetchId: () => 1000001, fetchKind: () => 'Monster', fetchIsSummon: () => true },
+    { fetchId: () => 1000002, fetchKind: () => 'Pet', fetchIsSummon: () => true, fetchIsPet: () => true }]) {
+    const summonHitVictim = combatActor({ hp: 100, cp: 30 });
+    ReceivedHit(hitSession({ fetchId: () => 2000001 }), summonHitVictim, 40, { source: servitor });
+    assert.deepStrictEqual([summonHitVictim.fetchCp(), summonHitVictim.fetchHp()], [0, 90],
+        'summon and pet damage consumes CP before HP');
+}
+
 console.log('CP stat checks passed');

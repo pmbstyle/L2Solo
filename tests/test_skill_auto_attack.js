@@ -129,6 +129,7 @@ async function request(f, options = {}) {
         patch(SkillEffects, 'execute', () => current.outcome);
         patch(invoke('GameServer/Automation'), 'needsGeodataApproach', () => false);
         patch(Companion, 'startQueuedGroundPickup', () => false);
+        patch(invoke('GameServer/Actor/PvpFlag'), 'mark', (_session, flagged) => { flagged.pvpFlagged = true; });
 
         await scenario(3, async f => {
             await request(f);
@@ -207,6 +208,7 @@ async function request(f, options = {}) {
                 await request(f, { ctrl: flag === 0 });
                 f.finish();
                 assert.equal(f.swings().length, 1, 'an authorized PvP opener must continue on the same player');
+                assert(f.actor.pvpFlagged, 'C4: an attack on a character without karma flags the attacker');
             });
         }
         await scenario(3, async f => {

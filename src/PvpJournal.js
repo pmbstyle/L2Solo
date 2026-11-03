@@ -55,7 +55,7 @@ function coldConflict({ key, revenge, reason, spotId, npcId, partyIds, sideSizes
         sideSizes: sideSizes.join(':'),
         losingSide: losingSide === null || losingSide === undefined ? null : Number(losingSide),
         kills: kills.length,
-        pkKills: kills.filter((kill) => !kill.pvp).length,
+        pkKills: kills.filter((kill) => kill.outcome === 'pk').length,
         durationMs: Math.max(0, Math.round(Number(durationMs) || 0)),
         actions: Number(actions || 0),
         playerInvolved: 0,
@@ -63,8 +63,9 @@ function coldConflict({ key, revenge, reason, spotId, npcId, partyIds, sideSizes
     });
 }
 
-// A hot kill of a character (ReceivedHit), with the karma before the kill.
-function hotKill({ attacker, victim, pk, attackerKarma, playerInvolved, at }) {
+// A hot kill of a character (ReceivedHit.creditKill), with the karma before
+// the kill; outcome is PvpRules.killOutcome's.
+function hotKill({ attacker, victim, outcome, attackerKarma, playerInvolved, at }) {
     record({
         at,
         source: 'hot',
@@ -74,7 +75,7 @@ function hotKill({ attacker, victim, pk, attackerKarma, playerInvolved, at }) {
         spotId: null,
         npcId: null,
         matchup: null,
-        outcome: pk ? 'pk' : 'pvp',
+        outcome,
         pvp: 1,
         initiatorId: attacker.fetchId(),
         initiatorLevel: Number(attacker.fetchLevel() || 0),
@@ -87,7 +88,7 @@ function hotKill({ attacker, victim, pk, attackerKarma, playerInvolved, at }) {
         sideSizes: '1:1',
         losingSide: 1,
         kills: 1,
-        pkKills: pk ? 1 : 0,
+        pkKills: outcome === 'pk' ? 1 : 0,
         durationMs: 0,
         actions: 0,
         playerInvolved: playerInvolved ? 1 : 0,

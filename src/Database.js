@@ -34,6 +34,7 @@ const CheckpointCoordinator = require('./DatabaseCheckpointCoordinator');
 const HistoryStore = require('./HistoryStore');
 const History = require('./HistoryDatabase');
 const { XP_DIVIDER: KARMA_XP_DIVIDER } = require('./GameServer/Karma');
+const PvpRules = require('./GameServer/PvpRules');
 const InteractionMemoryPolicy = require('./GameServer/Social/InteractionMemoryPolicy');
 const ClanNameCatalog = require('./GameServer/Clan/ClanNameCatalog');
 const BoardRules = require('./GameServer/AfkTrade/BoardRules');
@@ -3030,15 +3031,10 @@ function applyColdPhysicalStateUnsafe(characterId, physical = {}, parts = null) 
         const current = one('SELECT level, pvp, pk, karma FROM characters WHERE id = ?', [characterId]);
         for (const kill of physical.pvpKills) {
             if (!Number.isSafeInteger(kill.victimId) || kill.victimId === characterId
-                || !Number.isSafeInteger(kill.victimLevel) || kill.victimLevel < 1 || typeof kill.pvp !== 'boolean') {
+                || !Number.isSafeInteger(kill.victimLevel) || kill.victimLevel < 1 || !PvpRules.KILL_OUTCOMES.includes(kill.outcome)) {
                 throw Error('cold PvP: invalid kill');
             }
-            if (kill.pvp) current.pvp++;
-            else {
-                current.karma += require('./GameServer/Karma').pkKillKarma({ fetchPk: () => current.pk,
-                    fetchLevel: () => current.level }, { fetchLevel: () => kill.victimLevel });
-                current.pk++;
-            }
+            Object.assign(current, PvpRules.tallyAfterKill(current, kill.outcome, kill.victimLevel));
         }
         write('UPDATE characters SET pvp = ?, pk = ?, karma = ? WHERE id = ?',
             [current.pvp, current.pk, current.karma, characterId]);

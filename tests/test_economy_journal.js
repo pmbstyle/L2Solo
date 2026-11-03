@@ -155,11 +155,11 @@ function sumBy(rows, keyOf) {
         key: 'test-conflict', revenge: false, reason: 'contest', spotId: 'spot-1', npcId: 20001,
         partyIds: [null, 'party-2'], sideSizes: [1, 2], outcome: 'pvp_killed', fought: true,
         principals: [fighter(ownerId, 30), fighter(customerId, 28, 120)],
-        losingSide: 1, kills: [{ victimId: customerId, pvp: true }, { victimId: 9, pvp: false }],
+        losingSide: 1, kills: [{ victimId: customerId, outcome: 'pvp' }, { victimId: 9, outcome: 'pk' }],
         durationMs: 4200, actions: 12, personaFor: () => ({ archetype: 'brawler' }), at: Date.now()
     });
     const actor = (id, level, karma) => ({ fetchId: () => id, fetchLevel: () => level, fetchKarma: () => karma });
-    PvpJournal.hotKill({ attacker: actor(ownerId, 30, 0), victim: actor(customerId, 29, 0), pk: true,
+    PvpJournal.hotKill({ attacker: actor(ownerId, 30, 0), victim: actor(customerId, 29, 0), outcome: 'pk',
         attackerKarma: 0, playerInvolved: true, at: Date.now() });
     await Database.flushJournals();
     const [hot] = await Database.readHistory(["SELECT * FROM pvp_conflicts WHERE source = 'hot'"], 'test:pvp-hot');

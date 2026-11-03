@@ -13,7 +13,7 @@ let director, clock = at, traits = { assertiveness: 1, commitment: 1, ambition: 
 const aggressive = { ...traits }, cautious = { assertiveness: 0, commitment: 0.2, ambition: 0, caution: 1 };
 const actor = (id, clanId) => ({ fetchId: () => id, fetchClanId: () => clanId, fetchLevel: () => 40, fetchKarma: () => 0 });
 const casualty = (victimId, stamp = at) => Journal.hotKill({ attacker: actor(51, 20), victim: actor(victimId, 10),
-    pk: false, attackerKarma: 0, playerInvolved: true, at: stamp });
+    outcome: 'pvp', attackerKarma: 0, playerInvolved: true, at: stamp });
 const command = (own, enemy, action) => War.transition(actor(own === 10 ? 1 : 51, own), enemy, action, { announce: false });
 const resetReview = () => { const p = director.plans.get(10); if (p) p.nextReviewAt = 0; };
 async function run() {

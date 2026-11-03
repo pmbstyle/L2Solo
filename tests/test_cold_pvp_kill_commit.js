@@ -16,7 +16,8 @@ options.default.Database.path = path.relative(process.cwd(), databasePath);
 Database.init();
 
 // An off-screen PvP kill is recorded on the killer in its cold commit:
-// pvp +1 for a PvP kill, pk +1 and PK karma otherwise; at most 18 kills.
+// pvp +1 for a PvP kill, pk +1 and PK karma for a PK kill, nothing for a red
+// killer's kill of a flagged bot (PvpRules.killOutcome); at most 18 kills.
 async function createProbe(index) {
     const accountName = `pvp_probe_${index}`;
     const name = `PvpProbe${index}`;
@@ -71,22 +72,23 @@ const counters = async (id) => {
     const [killer, victim, other] = await Promise.all([1, 2, 3].map(createProbe));
     const before = await counters(killer.characterId);
     const committed = await commitKills(killer, [
-        { victimId: victim.characterId, victimLevel: 20, pvp: true },
-        { victimId: other.characterId, victimLevel: 20, pvp: false }
+        { victimId: victim.characterId, victimLevel: 20, outcome: 'pvp' },
+        { victimId: other.characterId, victimLevel: 20, outcome: 'pk' },
+        { victimId: other.characterId, victimLevel: 20, outcome: 'none' }
     ], 2000);
     assert.strictEqual(committed.ok, true, committed.reason);
     const expectedKarma = before.karma + Karma.pkKillKarma({ fetchPk: () => before.pk, fetchLevel: () => 20 },
         { fetchLevel: () => 20 });
     assert.deepStrictEqual(await counters(killer.characterId),
         { pvp: before.pvp + 1, pk: before.pk + 1, karma: expectedKarma },
-        'a PvP kill counts as pvp; a kill of a non-flagged bot counts as pk with PK karma');
+        'a PvP kill counts as pvp; a PK kill counts as pk with PK karma; a kill with no outcome counts nothing');
     assert(expectedKarma > before.karma, 'a PK kill must add karma');
     const [lifeRow] = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId = ?', [killer.characterId]]);
     assert.strictEqual(JSON.parse(lifeRow.statsJson).karma, expectedKarma, 'cold state sees the same karma');
     assert.deepStrictEqual(await counters(victim.characterId), await counters(other.characterId),
         'the victims\' counters do not change');
 
-    const tooMany = Array.from({ length: 19 }, () => ({ victimId: victim.characterId, victimLevel: 20, pvp: true }));
+    const tooMany = Array.from({ length: 19 }, () => ({ victimId: victim.characterId, victimLevel: 20, outcome: 'pvp' }));
     await assert.rejects(commitKills(LifeState.cachedState(killer.characterId), tooMany, 4000),
         /too many kills/, 'more than 18 kills in one commit fails the batch');
     assert.deepStrictEqual(await counters(killer.characterId),

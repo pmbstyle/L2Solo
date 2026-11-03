@@ -204,6 +204,8 @@ class Attack {
             }))
         }), actor);
         actor.state.setHits(true);
+        // C4 flags at the swing, before it is known to land.
+        invoke('GameServer/Actor/PvpFlag').attack(session, actor, creature);
 
         this.queueTimer(() => {
             const releaseBowMovement = () => {
@@ -521,7 +523,11 @@ class Attack {
     applyRemoteCastEffect(session, actor, target, skill, { corpseAreaCast, raidParty, shotState, magicSkill, selfEffectOnly, castWeapon, openingPayment }) {
         if ((skill.fetchTargetKind?.() === 'enemy' || corpseAreaCast)
             && !invoke('GameServer/Clan/ClanRaidRoster').beforeOffensiveEffect(session, actor, target, raidParty, openingPayment)) return;
-        if (skill.fetchTargetKind?.() === 'enemy') invoke('GameServer/Bot/AI/BotMobCompetition').record(actor, target);
+        if (skill.fetchTargetKind?.() === 'enemy') {
+            invoke('GameServer/Bot/AI/BotMobCompetition').record(actor, target);
+            // C4 flags at an offensive skill's landing, resisted or not.
+            invoke('GameServer/Actor/PvpFlag').attack(session, actor, target);
+        }
         this.restoreShotState(actor, shotState);
         const outcome = SkillEffects.execute(session, actor, target, skill, {
             attack: this,
@@ -530,8 +536,7 @@ class Attack {
             chargeCount: actor.activeSkillChargeCount
         });
         // A hostile control/debuff is aggression even without HP
-        // damage (and even if resisted). Use the same flag and party
-        // wake path as a hit, after native target/cast validation.
+        // damage (and even if resisted): the same party wake as a hit.
         if (!(outcome.damage > 0) && skill.fetchTargetKind?.() === 'enemy') this.recordPlayerAggression(session, actor, target);
         // Chat confirmations are emitted only after the authoritative
         // skill result exists. A queued, interrupted, resisted, or
@@ -1369,16 +1374,12 @@ class Attack {
         return true;
     }
 
+    // A miss or a harmless hostile skill on a character still wakes its
+    // party (a landed hit does it in ReceivedHit). The flag is PvpFlag.attack.
     recordPlayerAggression(session, actor, target) {
-        const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
-        const attacker = Threats.character(actor);
-        const attackerSession = attacker === actor ? session : attacker?.session;
-        if (attacker && attackerSession && target && !target.fetchKind && attacker !== target &&
-            Threats.record(target, actor)) {
-            invoke('GameServer/Actor/PvpFlag').mark(attackerSession, attacker);
-            return true;
-        }
-        return false;
+        const attacker = invoke('GameServer/Bot/AI/BotPvpThreats').character(actor);
+        return !!(attacker && target && !target.fetchKind && attacker !== target &&
+            invoke('GameServer/Bot/AI/BotPvpThreats').record(target, actor));
     }
 
     hit(session, actor, creature, hit, context = {}) {
@@ -1405,9 +1406,6 @@ class Attack {
                 }
                 return;
             }
-
-            // Flag the attacker when hitting another player/bot
-            invoke('GameServer/Actor/PvpFlag').mark(session, actor);
 
             invoke(path.actor).receivedHit(session, creature, hit, { source: actor });
         }

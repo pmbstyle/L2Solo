@@ -5,10 +5,11 @@ const Control = invoke('GameServer/Npc/SummonControl');
 const Attack = invoke('GameServer/Actor/Attack');
 const Formulas = invoke('GameServer/Formulas');
 const Response = invoke('GameServer/Network/Response');
+const PvpFlag = invoke('GameServer/Actor/PvpFlag');
 const Actors = invoke(path.actor), Npcs = invoke(path.npc);
 const original = { user: World.user, npc: World.fetchNpc, fetchUser: World.fetchUser,
     hit: Actors.receivedHit, npcHit: Npcs.receivedHit, chance: Formulas.calcHitChance,
-    prepare: Attack.prototype.prepareNpcMeleeHit, attack: Response.attack, peace: utils.isInPeaceZone };
+    prepare: Attack.prototype.prepareNpcMeleeHit, attack: Response.attack, peace: utils.isInPeaceZone, mark: PvpFlag.mark };
 function actor(id, x = 0) {
     const a = { id, x, flag: 1, effects: {}, fetchId: () => id, fetchLocX() { return this.x; },
         fetchLocY: () => 0, fetchLocZ: () => 0, fetchRadius: () => 8, fetchHead: () => 0,
@@ -43,11 +44,14 @@ function actor(id, x = 0) {
         Formulas.calcHitChance = () => true;
         Attack.prototype.prepareNpcMeleeHit = () => ({ damage: 10, flags: 0 });
         Response.attack = () => Buffer.alloc(0);
+        const flags = [];
+        PvpFlag.mark = (_s, flagged) => flags.push(flagged.id);
         Control.attack(session, owner, summon);
         await new Promise(setImmediate);
         assert.strictEqual(rejected, 0, 'the real attack command accepts a flagged character outside an arena');
         assert.strictEqual(moves.length, 1);
         moves.shift()();
+        assert.deepStrictEqual(flags, [owner.id], 'C4: the summon\'s swing flags its owner when it starts');
         timers.shift()();
         assert.deepStrictEqual(damage, [{ victim: target, amount: 10, source: summon }]);
 
@@ -109,6 +113,6 @@ function actor(id, x = 0) {
         World.user = original.user; World.fetchNpc = original.npc; World.fetchUser = original.fetchUser;
         Actors.receivedHit = original.hit; Npcs.receivedHit = original.npcHit;
         Formulas.calcHitChance = original.chance; Attack.prototype.prepareNpcMeleeHit = original.prepare;
-        Response.attack = original.attack; utils.isInPeaceZone = original.peace;
+        Response.attack = original.attack; utils.isInPeaceZone = original.peace; PvpFlag.mark = original.mark;
     }
 })().catch(error => { console.error(error); process.exitCode = 1; });
