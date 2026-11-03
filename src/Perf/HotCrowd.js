@@ -13,8 +13,10 @@ const { performance } = require('perf_hooks');
 //   cold <-> hot transitions a moving player causes, all through the window;
 // - a probe on the first player: every 50 ms their position packet goes through ValidatePosition,
 //   timing how late the timer fired (the event loop the packet waited for) and the handler.
-// Every 30 s a "player" line goes to the live recorder's timeline: probe samples, packets and bytes
-// the players were sent, moves, hot bots.
+// A player is the server's own Session on a socket that only counts what is written to it, so every
+// per-player cost of the real path runs: packing, character / NPC / ground-item visibility, the bots'
+// broadcasts written to the player's socket. Every 30 s a "player" line goes to the live recorder's
+// timeline: probe samples, packets and bytes written to the players' sockets, moves, hot bots.
 
 const ACCOUNT = 'perf_player';
 const PROBE_MS = 50;
@@ -27,25 +29,11 @@ const envNumber = (name, fallback, min, max) => {
     return Number.isFinite(value) ? Math.max(min, Math.min(max, Math.floor(value))) : fallback;
 };
 
-function packetBytes(packet) {
-    if (Buffer.isBuffer(packet)) return packet.length;
-    if (packet?.buffer && Buffer.isBuffer(packet.buffer)) return packet.buffer.length;
-    return Number(packet?.length || 0);
-}
-
-class PlayerSession {
-    constructor(accountId, actor) {
-        this.accountId = accountId;
-        this.actor = actor;
-        this.packets = 0;
-        this.bytes = 0;
-    }
-
-    fetchAccountId() { return this.accountId; }
-    sent(packet) { this.packets += 1; this.bytes += packetBytes(packet); }
-    dataSendToMe(packet) { this.sent(packet); }
-    dataSendToOthers(packet) { this.sent(packet); }
-    dataSendToMeAndOthers(packet) { this.sent(packet); }
+// The client end of a player: takes the packed packets the server writes and counts them.
+function countingSocket() {
+    return { packets: 0, bytes: 0, remoteAddress: '127.0.0.1',
+        write(buffer) { this.packets += 1; this.bytes += buffer?.length || 0; return true; },
+        on() { return this; }, once() { return this; }, end() {}, destroy() {}, setNoDelay() {} };
 }
 
 function positionPacket(actor, sequence) {
@@ -131,15 +119,23 @@ const HotCrowd = {
         }, 500);
     },
 
-    // A spawned character leaves the bot sessions (no AI of its own) and enters the world as a user.
+    // A spawned character leaves the bot sessions (no AI of its own) and enters the world as a user,
+    // set up as Session.setActor sets a logged-in one (the actor is the spawned one).
     attach(source) {
         const BotManager = invoke('GameServer/Bot/BotManager');
+        const Session = invoke('GameServer/Session');
         source.aiActive = false;
         if (source.aiTimeout) clearTimeout(source.aiTimeout);
         source.aiTimeout = null;
         invoke('GameServer/Bot/AI/HotAiDispatcher').cancel(source);
         BotManager.sessions = BotManager.sessions.filter(session => session !== source);
-        const player = new PlayerSession(source.accountId, source.actor);
+        const player = new Session(countingSocket());
+        player.accountId = source.accountId;
+        player.actor = source.actor;
+        player.questStates = new Map();
+        player.questStatesLoaded = false;
+        player.activeNpcTalk = null;
+        invoke('GameServer/World/Generics/NativeUiSession').reset(player);
         source.actor.session = player;
         invoke('GameServer/World/World').insertUser(player);
         this.players.push(player);
@@ -175,8 +171,8 @@ const HotCrowd = {
             handler.push(round(performance.now() - began));
         }, PROBE_MS).unref?.();
         setInterval(() => {
-            const packets = this.players.reduce((sum, player) => sum + player.packets, 0);
-            const bytes = this.players.reduce((sum, player) => sum + player.bytes, 0);
+            const packets = this.players.reduce((sum, player) => sum + player.socket.packets, 0);
+            const bytes = this.players.reduce((sum, player) => sum + player.socket.bytes, 0);
             Recorder.note('player', { scheduleMs: schedule, handlerMs: handler, errors, hot: LifeState.counts().hot,
                 players: this.players.length, packets: packets - sent.packets, bytes: bytes - sent.bytes,
                 seconds: FLUSH_MS / 1000, moves: this.moves || 0 });
