@@ -134,6 +134,25 @@ async function run() {
     warrior.stats.persona = { ...warrior.stats.persona, understanding: .5 };
     const kitDeps = { knowledgeEnabled: true };
     const warriorContext = Economy.forState(warrior, kitDeps);
+    // Decision 11-02: a quiet build weighs only the gear the bot follows and keeps
+    // what it follows; a move of the kit or of the goal weighs everything.
+    {
+        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+        const rich = { ...base, characterId: 1301, level: 46, adena: 3000000, inventory: {},
+            stats: { ...base.stats, classId: 2, exp: Data.experience[45] + 1 } };
+        const dirty = name => ({ ...rich, stats: { ...rich.stats, wishDirty: Sections.sectionBit(name) } });
+        Economy.forState(rich, { ...kitDeps, goalRevision: 1 });
+        const full = Economy.forState(dirty('money'), { ...kitDeps, goalRevision: 1 });
+        const quiet = Economy.forState(dirty('money'), { ...kitDeps, goalRevision: 1, quietGear: true });
+        const weighed = context => context.projection.admission.candidates;
+        assert(weighed(quiet) < weighed(full), `a quiet build weighs fewer candidates: ${weighed(quiet)} of ${weighed(full)}`);
+        assert.deepEqual(quiet.projection.roots, full.projection.roots, 'and keeps every root the bot follows');
+        assert.deepEqual(quiet.network.focus, full.network.focus, 'and its goal');
+        assert.equal(weighed(Economy.forState(dirty('build'), { ...kitDeps, goalRevision: 1, quietGear: true })), weighed(full),
+            'a kit move is a real review');
+        assert.equal(weighed(Economy.forState(dirty('money'), { ...kitDeps, goalRevision: 2, quietGear: true })), weighed(full),
+            'a goal main moved too');
+    }
     const reserve = warriorContext.survivalReserve, warriorStock = warriorContext.stock('shots');
     assert(reserve >= warriorStock.usePerHour * warriorStock.unitPrice,
         'the protected wallet covers one hunting hour at the bot’s current price estimate');

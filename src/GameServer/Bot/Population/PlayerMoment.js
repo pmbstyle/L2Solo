@@ -16,18 +16,30 @@ const TOWN = new Set(['shopping', 'crafting', 'merchant']);
 // planned move is none (the held leaf's: occupationPlanned, a flight or a recall
 // stays a fact), a goal that failed is its own moment, and away from town the
 // market reaches the bot only as WTB/WTS on what it watches.
+function goalMoment(why) {
+    if (/^(events:)?check:/.test(why)) return 'goal_failed';
+    // Main moved the bot's goal (an order, a party or clan call): no choice of its own.
+    return why === 'goal' ? 'goal_moved' : null;
+}
 function momentOf(state, baseline, facts, { board = null, leaf = null, why = '', nativeHolds = true } = {}) {
     if (!baseline) return 'first';
     if (state.partyId || state.party?.partyId) return 'party';
     if (TOWN.has(state.activity)) return 'town';
     if (!nativeHolds) return 'native';
-    if (/^(events:)?check:/.test(why)) return 'goal_failed';
-    // Main moved the bot's goal (an order, a party or clan call): no choice of its own.
-    if (why === 'goal') return 'goal_moved';
+    const goal = goalMoment(why);
+    if (goal) return goal;
     const names = [];
     Sections.factEvents(name => baseline[name], facts, false, names, Sections.occupationPlanned(state, leaf));
     if (names.length) return names[0];
     return board && Sections.marketCrossed(board, baseline.marketWatch, Number(state.characterId)) ? 'market' : null;
+}
+
+// Decision 11-02: a bot at work weighs only the gear it follows; every candidate
+// waits for a real review (the build's own: EconomyContext heldGear). why: what
+// refused the held card; none: no card stood, as at a first build or a market review.
+const AT_WORK = new Set(['hunting', 'traveling']);
+function quiet(state, why) {
+    return !!why && AT_WORK.has(state.activity) && !Sections.partyIdOf(state) && !goalMoment(why);
 }
 
 function createStats() {
@@ -48,6 +60,9 @@ const AT_ONCE = new Set(['first', 'party', 'native', 'goal_failed', 'goal_moved'
 const waiting = new Map();
 function settlePause(pause, id, state, moment, kind, at, fresh) {
     const held = waiting.get(id);
+    // Over every build: at a review, what the quiet builds before it did not see.
+    if (fresh === 1) pause.newRoots++;
+    if (fresh === 2) pause.newGoals++;
     if (AT_ONCE.has(moment) || state.activity === 'resting') {
         if (held) { pause.pauses++; pause.merged += held.builds; pause.waitMs += Math.max(0, at - held.at); waiting.delete(id); }
         return;
@@ -56,8 +71,6 @@ function settlePause(pause, id, state, moment, kind, at, fresh) {
     if (kind === 1) pause.elsewhere++;
     if (kind === 2) pause.goal++;
     if (kind === 3) pause.posted++;
-    if (fresh === 1) pause.newRoots++;
-    if (fresh === 2) pause.newGoals++;
     if (held) held.builds++;
     else waiting.set(id, { builds: 1, at });
 }
@@ -112,4 +125,4 @@ function settle(stats, state, plan, { baseline, leaf, refused, nativeHolds, boar
     added(stats.why, why, kind);
 }
 
-module.exports = { momentOf, createStats, settle };
+module.exports = { momentOf, quiet, createStats, settle };

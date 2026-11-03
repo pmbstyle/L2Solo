@@ -144,7 +144,7 @@ function retainedProjectIntents(state, network, worth, board = null, routeDetail
             if (!Number.isSafeInteger(amount) || !amount) continue;
             let estimate = Number(worth(id)) || Number(invoke('GameServer/Bot/Economy/MarketCounters').firstPrice(id));
             if (board?.list) {
-                const allowed = require('../Population/PartyAdmission').personalOfferAllowed;
+                const allowed = invoke('GameServer/Bot/Population/PartyAdmission').personalOfferAllowed;
                 const offers = board.list(id, 1), money = offers.length && routeDetails
                     ? Funding.spendable(state, 0, { r: Funding.significant(rate) }) : 0;
                 let quote = null;

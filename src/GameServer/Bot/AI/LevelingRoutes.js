@@ -499,6 +499,15 @@ function spotAllowedReaderFor(state = {}, options = {}) {
     };
 }
 
+// spotAllowedReaderFor for a spot a solo bot picks ahead as an item's source:
+// the same verdict the source walk reads (BotTargetMatchup.readyProfiles).
+// Staying on a spot keeps reading this moment.
+function readySpotReaderFor(state = {}, options = {}) {
+    const profiles = TargetMatchup.stateProfiles(state, { ...options, mode: modeForState(state, options) });
+    return spotAllowedReaderFor(state, { ...options,
+        matchupProfiles: TargetMatchup.readyProfiles(profiles, state, options.timestamp ?? Date.now()) });
+}
+
 // The matchup's safety options for the state: solo safety outside a party
 // or duo, and the recovery's lower target level while it has a penalty.
 function safetyOptions(state, options = {}) {
@@ -519,6 +528,7 @@ module.exports = {
     isSpotAllowedForState,
     safetyOptions,
     spotAllowedReaderFor,
+    readySpotReaderFor,
     scoreSpot,
     routeMatchFor,
     rankedSpots,

@@ -1,3 +1,5 @@
+const MeetingFare = require('../../AfkTrade/MeetingFare');
+
 // All formation paths share this admission budget. Historical origin labels
 // never grant slots or protect a party; reservations include in-flight commits.
 class PartyAdmission {
@@ -71,7 +73,7 @@ function personalOfferAllowed(offer, ownState, otherState, ownSession = null, ot
     if (otherSession === null) otherSession = tradeSessionFor(otherId);
     const seller = Number(offer.storeType) === 3 ? ownState : otherState;
     return partyTradeAllowed('trade', ownState, ownSession) && partyTradeAllowed('trade', otherState, otherSession)
-        && require('../../AfkTrade/MeetingFare').sellerCanReach(offer, seller);
+        && MeetingFare.sellerCanReach(offer, seller);
 }
 module.exports = { PartyAdmission, priority, partyTradeAllowed, personalOfferAllowed, configureTradeAdmission,
     counterpartyState: id => tradeStateFor(Number(id)) };

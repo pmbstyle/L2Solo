@@ -90,6 +90,9 @@ const COMPUTED = Object.freeze({
     // The source walk's per-spot ground verdict (GearAcquisitionPlanner.sourceGround):
     // level and kit matchup; its other reads are checked beside it.
     sourceGround: sectionMask(['build']),
+    // What makes a build weigh every gear candidate whatever the moment: the
+    // bot's kit, what gear gives it, a death (PlayerMoment.quiet).
+    gearReview: sectionMask(['build', 'benefits', 'combat']),
     // The crafter's workshop (its best recipe and income per hour, the
     // occupation planner's answer), kept with the held build: the planner
     // reads the money packet (stats.money: hour adena, trip value, craft
@@ -538,5 +541,5 @@ function factEvents(previousFact, current, funding = false, facts = null, planne
 function kitMoved(before, after) {
     return (before?.stats?.wishSections?.build ?? null) !== (after?.stats?.wishSections?.build ?? null);
 }
-module.exports = { FIELD_ACTIVITIES, awayHunt, SECTIONS, COMPUTED, FACT_SECTIONS, sectionBit, sectionMask, sectionNames, kit, kitMoved, moneyChanged, moneyBound, observationChanged, incomeError,
+module.exports = { FIELD_ACTIVITIES, partyIdOf, awayHunt, SECTIONS, COMPUTED, FACT_SECTIONS, sectionBit, sectionMask, sectionNames, kit, kitMoved, moneyChanged, moneyBound, observationChanged, incomeError,
     MARKET_WATCH, softEvents, marketCrossed, carrySectionBaseline, baselineIdentity, sample, sampleRows, packSample, observationBaselineValid, bounds, snapshot, semanticFacts, factsOf, relationTargetIds, events, factEvents, occupationPlanned, hash, isEmptyWishPlan, decisionRefusal, partyIdOf };

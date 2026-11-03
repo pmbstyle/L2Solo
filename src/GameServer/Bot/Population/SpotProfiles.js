@@ -306,9 +306,10 @@ const SpotProfiles = {
         if (acquisitionPlan?.status === 'active') {
             const sourceRoute = soloSearch ? GearAcquisitionPlanner.sourceRouteReader(state,
                 { timestamp, spots: profiles, matchupProfiles: routeOptions.matchupProfiles }) : null;
+            const plannedGround = soloSearch ? LevelingRoutes.readySpotReaderFor(state, routeOptions) : homeAllowed;
             const plannedAllowed = (planned, npcId) => {
                 if (!planned || excludedSpotIds.has(String(planned.id)) || full(planned)
-                    || !homeAllowed(planned)) return false;
+                    || !plannedGround(planned)) return false;
                 const hasLevelBounds = Number.isFinite(Number(planned.minLevel))
                     && Number.isFinite(Number(planned.maxLevel));
                 const economicSource = EquipmentIncomeRoute.economicHunt(state)

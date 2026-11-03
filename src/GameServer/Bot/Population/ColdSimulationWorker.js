@@ -501,7 +501,8 @@ const occupationPlanner = new ColdOccupationPlanner({
                 timestamp: input.timestamp, onSourceRead: input.read, onSourceScope: input.readScope, knownRecipes: input.knownRecipes, npcOffersFor: OccupationSources.npcOffersFor,
                 buyOrderEscrow: input.buyOrderEscrow, workshop: noWorkshop(),
                 // A refresh keeps no context; a near post is held and its clean repeat hits the verdict.
-                ...(input.mode === 'refresh' ? { rememberContext: false } : {}),
+                ...(input.mode === 'refresh' ? { rememberContext: false,
+                    quietGear: kernel?.momentGate === true && PlayerMoment.quiet(input.state, 'refresh') } : {}),
                 caller: `economy_${input.mode}`, trigger: 'native_own_action' });
             if (input.mode === 'refresh' && !input.source.builtRefresh) {
                 if (DecisionSections.FIELD_ACTIVITIES.has(input.state.activity)) input.source.builtRefresh = input.economy;
@@ -1137,11 +1138,22 @@ function heldAtStep(plan) {
 function nativeFactsHold(replan) {
     return !replan.failure && !replan.invalidSource && !replan.levelingRecovery;
 }
+// A plan's source is judged when it or the bot's level moves: a kit moves the
+// build facts, and that build judges it (GearPlanSelection). A matchup read on
+// every step of every hunter answers what already stands.
+function planSourceHolds(state, plan, timestamp) {
+    if (plan?.status !== 'active') return true;
+    const record = kernel?.states.get(Number(state.characterId));
+    const source = `${plan.next?.spotId}:${plan.next?.npcId}:${state.level}`;
+    if (record?.planSource === source) return true;
+    if (!GearAcquisitionPlanner.isPlanSourceViableForState(state, plan, { spots: planningSpots, timestamp })) return false;
+    if (record) record.planSource = source;
+    return true;
+}
 // The existing native plan verdict. It grants no economy command or social
 // interaction.
 function nativePlanHolds(state, previousPlan, nativeReplan, timestamp, onFinalize = null) {
-    if (previousPlan?.status === 'active' && !GearAcquisitionPlanner.isPlanSourceViableForState(state, previousPlan,
-        { spots: planningSpots, timestamp })) return false;
+    if (!planSourceHolds(state, previousPlan, timestamp)) return false;
     const wishFocus = previousPlan?.status === 'deferred' && previousPlan.strategy === 'none'
         && previousPlan.next == null && previousPlan.reason === 'wish_focus';
     const wishHolds = (wishFocus || previousPlan?.source === 'wish_network')
@@ -1795,6 +1807,7 @@ function startKernel(config = {}) {
             // consumed wake/expiry does not invalidate it again on publication.
             const preparationState = wishFocus && !refreshed ? { ...state, stats: { ...state.stats,
                 equipmentPlan: GearPlanSelection.deferredWishPlan(previousPlan, nativeReplan, state, timestamp) } } : state;
+            if (!refreshed) deps.quietGear = kernel.momentGate === true && PlayerMoment.quiet(state, refused[0]);
             // Both reuses (the card's leaf, a null intention) read the card's
             // workshop. A build keeps the held one while its verdict, judged
             // here on the state the build reads and handed to it

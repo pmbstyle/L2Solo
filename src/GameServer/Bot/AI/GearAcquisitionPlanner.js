@@ -1835,12 +1835,11 @@ function soloPlanSourceReader(state, plan, spots, options = {}) {
         || plan.requiresParty || plan.partyNeed && plan.partyNeed !== 'solo_ok'
         || options.clanCrafting || plan.next.sourceKind === 'raid' || plan.next.raidBoss) return null;
     const allowed = sourceRouteReader(state, { ...options, spots });
-    const Profiles = invoke('GameServer/Bot/Population/SpotProfiles');
+    // The crowd is read at arrival (design rules): only the spot search asks for room.
     return (spot, npcId) => !!spot && allowed(spot, npcId)
-        && (String(state.spotId) === String(spot.id)
+        && (!options.hasRoom || String(state.spotId) === String(spot.id)
             && !['shopping', 'merchant', 'crafting', 'traveling'].includes(state.activity)
-            || (options.hasRoom ? options.hasRoom(spot.id)
-                : Profiles.spotHunters(spot, state) <= LevelingRoutes.roomForSpot(spot)));
+            || options.hasRoom(spot.id));
 }
 
 function bestSourceForPlan(state = {}, plan = {}, spots = [], options = {}) {
@@ -2141,12 +2140,15 @@ function writeReadySourceFact(fact, kind, spotId, npcId, itemId, units, expected
 // bot's wish focus), the matchup's highest target level (LevelingRoutes
 // safetyOptions: the recovery penalty, whose clean wins move no section, and
 // the route mode), the party ground flag (BotHuntingGroundPolicy) and the
-// solo profile key (BotTargetMatchup.profileKey: alive, the summon beside it).
+// solo profile key (BotTargetMatchup.profileKey: alive, the summon beside it,
+// the kind of shot), read with the bot ready (BotTargetMatchup.readyProfiles).
 // The spot exclusions (step-counted marks, no section) are never kept.
 const GROUND_ALLOWED = 1, GROUND_REFUSED = 2;
+// Kept verdicts dropped because shots ended or came back (the health line).
+let sourceShotFlips = 0;
 function sourceGround(spots = [], kept = null) {
     return kept?.spots === spots ? kept : { spots, length: -1, targetLevel: -1, grouped: null,
-        solo: null, cells: null, economicCells: null };
+        solo: null, cells: null, economicCells: null, species: null };
 }
 // Diagnostics only: one reused reader in 64 also checks its kept cells
 // against a fresh verdict (source_route:ground:checked|disagree).
@@ -2155,6 +2157,24 @@ let groundShadows = 0;
 // source_route:ground:reuse|build); without one a call-local record over
 // options.spots. options.matchupProfiles: the state's solo profiles at this
 // timestamp, when the caller already read them (the build's income route).
+// Each (spot, species) of a spot list has one ordinal: a kept ground holds two
+// bits per pair, shared by no bot, indexed by this one table per list.
+const SPECIES_SPOT_SHIFT = 2 ** 20;
+const speciesIndexes = new WeakMap();
+function speciesPairs(spots) {
+    let index = speciesIndexes.get(spots);
+    if (!index) {
+        index = new Map();
+        spots.forEach((spot, at) => {
+            for (const id of spot.npcEntries?.length ? spot.npcEntries.map(row => row.selfId) : spot.npcSelfIds || [])
+                if (!index.has(at * SPECIES_SPOT_SHIFT + Number(id))) index.set(at * SPECIES_SPOT_SHIFT + Number(id), index.size);
+        });
+        speciesIndexes.set(spots, index);
+    }
+    return index;
+}
+const speciesPair = (spots, at, npcId) => speciesPairs(spots).get(at * SPECIES_SPOT_SHIFT + Number(npcId));
+
 function sourceRouteReader(state, options = {}) {
     const timestamp = options.timestamp ?? Date.now();
     const excluded = SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp);
@@ -2167,7 +2187,11 @@ function sourceRouteReader(state, options = {}) {
     const level = Number(state.level || 1);
     // The solo profiles, read once per reader: up front for a kept record
     // (their key is one of its copies), else at the first matchup clause.
-    let profiles = options.matchupProfiles || (options.ground ? BotTargetMatchup.stateProfiles(state, soloOptions) : null);
+    // A source is a spot picked ahead: the bot's side reads ready, so a
+    // fight's HP and MP move no verdict and shots only when they end or return.
+    const readProfiles = () => BotTargetMatchup.readyProfiles(
+        options.matchupProfiles || BotTargetMatchup.stateProfiles(state, soloOptions), state, timestamp);
+    let profiles = options.matchupProfiles || options.ground ? readProfiles() : null;
     const solo = profiles && BotTargetMatchup.profileKey(profiles);
     const ground = options.ground || sourceGround(options.spots || []);
     const spots = ground.spots;
@@ -2178,8 +2202,10 @@ function sourceRouteReader(state, options = {}) {
     // Diagnostics: what moved the kept cells.
     const moved = Diagnostics.active() && !reused ? ground.cells === null ? 'first'
         : ground.targetLevel !== targetLevel ? 'target_level' : ground.grouped !== grouped ? 'grouped' : ground.solo !== solo ? 'kit' : 'spots' : '';
+    if (!reused && ground.cells !== null && ground.solo >= 0 && solo >= 0
+        && BotTargetMatchup.shotKindOfKey(ground.solo) !== BotTargetMatchup.shotKindOfKey(solo)) sourceShotFlips++;
     if (!reused) Object.assign(ground, { length: spots.length, targetLevel, grouped, solo,
-        cells: new Uint8Array((spots.length + 3) >> 2), economicCells: null });
+        cells: new Uint8Array((spots.length + 3) >> 2), economicCells: null, species: null });
     const cells = economicHunt ? ground.economicCells ||= new Uint8Array(ground.cells.length) : ground.cells;
     const diagnostic = Diagnostics.active();
     if (diagnostic && options.ground) Diagnostics.count('source_route', 'ground', reused ? 'reuse' : 'build');
@@ -2195,7 +2221,7 @@ function sourceRouteReader(state, options = {}) {
         if (spot.raidBoss === true) return 'raid';
         if (!Spots.isSuitable(spot, level, soloOptions)
             && !(economicHunt && Number(spot.avgLevel || spot.minLevel || 1) >= level - 15)) return 'level';
-        profiles ||= BotTargetMatchup.stateProfiles(state, soloOptions);
+        profiles ||= readProfiles();
         if (!LevelingRoutes.isSpotAllowedForState(spot, state, { ...soloOptions, matchupProfiles: profiles })) return 'matchup';
         return null;
     };
@@ -2230,10 +2256,25 @@ function sourceRouteReader(state, options = {}) {
             ? spot.npcEntries.find(row => Number(row.selfId) === Number(npcId))
             : spot.npcSelfIds?.some(id => Number(id) === Number(npcId)) ? { selfId: npcId, count: 1 } : null;
         if (!entry) return false;
-        profiles ||= BotTargetMatchup.stateProfiles(state, soloOptions);
-        if (!profiles.length) return true;
-        return BotTargetMatchup.speciesPulls(profiles, entry,
+        const verdict = () => BotTargetMatchup.speciesPulls(profiles, entry,
             { soloSafety: true, maxTargetLevel: targetLevel || null })?.canHunt === true;
+        const pair = options.ground && at >= 0 ? speciesPair(spots, at, npcId) : undefined;
+        if (pair !== undefined) {
+            ground.species ||= new Uint8Array((speciesPairs(spots).size + 3) >> 2);
+            const known = ground.species[pair >> 2] >> ((pair & 3) << 1) & 3;
+            if (known) {
+                if (shadow) {
+                    Diagnostics.count('source_route', 'species', 'checked');
+                    if ((verdict() ? GROUND_ALLOWED : GROUND_REFUSED) !== known) Diagnostics.count('source_route', 'species', 'disagree');
+                }
+                return known === GROUND_ALLOWED;
+            }
+        }
+        profiles ||= readProfiles();
+        if (!profiles.length) return true;
+        const can = verdict();
+        if (pair !== undefined) ground.species[pair >> 2] |= (can ? GROUND_ALLOWED : GROUND_REFUSED) << ((pair & 3) << 1);
+        return can;
     };
 }
 
@@ -3135,6 +3176,7 @@ module.exports.sourceYieldReaderFor = sourceYieldReaderFor;
 module.exports.sourceFacts = sourceFacts;
 module.exports.sourceRouteReader = sourceRouteReader;
 module.exports.sourceGround = sourceGround;
+module.exports.sourceShotFlipCount = () => sourceShotFlips;
 
 // Only the exports that judge a bot against several sources share readiness.
 for (const name of ['preferredTarget', 'preferredDropTarget', 'preferredNoGradeTarget', 'staticNpcUpgradePlan',

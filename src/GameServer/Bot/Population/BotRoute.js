@@ -193,7 +193,7 @@ function leafFitReader(state, { spots, timestamp, frame = null }) {
         if (!spot) return 'missing';
         if (spot.raidBoss === true) return 'raid';
         if (frame.excludedSpotIds.has(String(spot.id))) return 'excluded';
-        allowed ||= LevelingRoutes.spotAllowedReaderFor(state, frame.solo());
+        allowed ||= LevelingRoutes.readySpotReaderFor(state, frame.solo());
         return allowed(spot) && (SpotService.isSuitable(spot, level, frame.options)
             || EquipmentIncomeRoute.economicHunt(state) && Number(spot.avgLevel || spot.minLevel || 1) >= level - 15)
             ? 'fit' : 'unfit';

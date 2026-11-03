@@ -133,15 +133,22 @@ function coldProfiles(profile, state = {}, timestamp = Date.now(), options = {})
     return profiles;
 }
 
+// The kind of shot a fight loads: 0 none, 1 soulshot, 2 spiritshot, 3 blessed.
+function shotKind(shot) {
+    return !shot ? 0 : shot.blessedSpiritshot ? 3 : shot.spiritshot ? 2 : 1;
+}
+
 // What of a bot's solo profile array (stateProfiles) moves with no build
-// section: whether the bot is alive (a dead bot has no profiles) and the
-// summon beside it (coldProfiles: its live cold summon, or the servitor a
-// summoner can cast now). -1 dead, 0 alone, else the summon's npc id (1 for
-// a live summon whose profile names none, the hot path's actorProfile).
+// section: whether the bot is alive (a dead bot has no profiles), the summon
+// beside it (coldProfiles: its live cold summon, or the servitor a summoner
+// can cast now) and the kind of shot it holds. -1 dead, else the summon's npc
+// id (0 alone, 1 for a live summon whose profile names none, the hot path's
+// actorProfile) over the shot kind in the low two bits.
 function profileKey(profiles) {
     if (!profiles.length) return -1;
-    return profiles.length > 1 ? Number(profiles[1].npcId) || 1 : 0;
+    return (profiles.length > 1 ? Number(profiles[1].npcId) || 1 : 0) * 4 + shotKind(profiles[0].shot);
 }
+const shotKindOfKey = key => key & 3;
 
 // The weakness stats a kit's hits read (HitRules.targetModifier): its weapon's
 // and each skill's.
@@ -384,6 +391,23 @@ function ownerReceivers(profiles) {
 function atVitals(profiles, hp, mp) {
     return profiles.map(profile => profile.soloDamageReceiver === false || profile.servitor === true ? profile
         : { ...profile, maxHp: Math.min(profile.maxHp, hp), maxMp: Math.min(profile.maxMp, mp) });
+}
+// A bot's solo profiles for a spot it picks ahead, not for the fight of this
+// moment: its pet up at full HP and its own MP full, so the summoner has a pet
+// (no cooldown, cast MP or cast time stands in the way), with the shots it
+// holds now (the array can be an older search's, EquipmentIncomeRoute).
+function readyProfiles(profiles, state, timestamp) {
+    const owner = profiles[0];
+    if (!owner || !state.inventory) return profiles;
+    const shot = coldCombatProfile().shotSupply(state, timestamp);
+    const summon = state.stats?.coldCombat?.summon;
+    if (profiles.length === 1 && !summon?.active && !Roles.isSummoner(owner)) {
+        return shotKind(owner.shot) === shotKind(shot) ? profiles : [{ ...owner, shot }];
+    }
+    const ready = coldProfiles(owner, { inventory: state.inventory, vitals: {},
+        stats: { coldCombat: { summon: summon && { ...summon, hp: summon.maxHp } } } }, timestamp, { shot });
+    if (ready[1]) ready[1].summonCastMs = 0;
+    return ready;
 }
 // The bot's side with no pet, at the HP and MP it has left.
 function ownersAtVitals(profiles, hp, mp) {
@@ -701,5 +725,5 @@ function damageRate(profiles, target = {}) {
     return rates.reduce((sum, rate) => sum + rate, 0);
 }
 
-module.exports = { MIN_EFFICIENCY, SOLO_GATE_MARGIN, actorProfiles, coldProfiles, servitorProfile, profileKey, targetView, skillModifier, channels, damageRate, attackRate, spellRate, incomingRate,
+module.exports = { MIN_EFFICIENCY, SOLO_GATE_MARGIN, actorProfiles, coldProfiles, servitorProfile, profileKey, shotKindOfKey, readyProfiles, targetView, skillModifier, channels, damageRate, attackRate, spellRate, incomingRate,
     profileStats, skillStats, evaluate, atVitals, ownersAtVitals, soloSurvival, soloCanHunt, pullVerdict, soloSpotUpperBound, stateProfiles, spotMatchup, speciesPulls, expectedHit, actorHit };

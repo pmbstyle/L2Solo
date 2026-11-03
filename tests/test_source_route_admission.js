@@ -111,4 +111,60 @@ try {
     assert.equal(allowed(dead), true, 'a dead bot has no profiles, so its kit refuses nothing');
     assert.equal(allowed(state), false, 'alive again, the kit refuses it');
 }
+// A source is a spot picked ahead, judged with the bot ready. Shots ending or
+// coming back move the kept verdict, the spot's and the species', both ways;
+// a shot spent does not touch it.
+{
+    const shots = amount => ({ ...state, inventory: { ...state.inventory, 1464: { selfId: 1464, amount } } });
+    const escort = { ...spot, id: '99_98', npcEntries: [{ selfId: 720, level: 55, count: 4 }], npcSelfIds: [720] };
+    const mixed = { ...spot, id: '99_99', npcEntries: [{ selfId: 5185, level: 53, count: 10 }, { selfId: 720, level: 55, count: 2 }],
+        npcSelfIds: [5185, 720] };
+    const spots = [escort, mixed], kept = Planner.sourceGround(spots);
+    const reader = bot => Planner.sourceRouteReader(bot, { timestamp, ground: Planner.sourceGround(spots, kept) });
+    assert.equal(reader(shots(5000))(escort), true, 'with shots the bot can hunt the spot');
+    assert.equal(reader(shots(5000))(mixed, 720), true, 'and the species');
+    assert.equal(reader(shots(4000))(escort), true, 'a spent shot leaves the answer');
+    assert.equal(reader(state)(escort), false, 'shots gone: the spot is refused within the held build');
+    assert.equal(reader(state)(mixed, 720), false, 'and the species');
+    assert.equal(reader(shots(5000))(escort), true, 'shots back: the spot opens again');
+    assert.equal(reader(shots(5000))(mixed, 720), true, 'and the species');
+}
+// A pet's wound and the owner's MP do not move a source; the fight's own read keeps them.
+{
+    const pet = hp => ({ active: true, npcId: 12077, hp, maxHp: 5000, expiresAt: timestamp + 1e7, pDef: 400, mDef: 300,
+        pAtk: 400, atkSpd: 300, accur: 80, evasion: 40, level: 55, critical: 40, dex: 30, skillId: 0 });
+    const withPet = hp => ({ ...state, stats: { ...state.stats, coldCombat: { ...state.stats.coldCombat, summon: pet(hp) } } });
+    const mixed = { ...spot, id: '99_97', npcEntries: [{ selfId: 5185, level: 53, count: 10 }, { selfId: 136, level: 50, count: 2 }],
+        npcSelfIds: [5185, 136] };
+    const pulls = bot => Matchup.speciesPulls(Matchup.stateProfiles(bot, { timestamp, mode: 'solo' }), { selfId: 136, count: 1 },
+        { soloSafety: true, maxTargetLevel: null })?.canHunt === true;
+    assert.equal(pulls(withPet(5000)), true, 'fixture: the fight takes the species with a healthy pet');
+    assert.equal(pulls(withPet(200)), false, 'the fight of this moment refuses it with a wounded pet');
+    const fresh = bot => Planner.sourceRouteReader(bot, { timestamp, spots: [mixed] })(mixed, 136);
+    assert.equal(fresh(withPet(200)), fresh(withPet(5000)), 'a wounded pet does not change the source');
+    assert.equal(fresh(withPet(5000)), true, 'the source stands');
+}
+// A summoner reads ready too: its pet is up whether it stands beside the bot,
+// has run out, or the bot has no MP to call it; one kept ground gives one answer.
+{
+    const Cold = invoke('GameServer/Bot/Population/ColdCombatProfile');
+    const warlock = { ...state, characterId: 990004, stats: { race: 0, classId: 14 } };
+    warlock.stats.coldCombat = Cold.legacySnapshot(warlock, Cold.skillRecordsFromTree(14, 55), timestamp);
+    const [pet] = Matchup.stateProfiles(warlock, { timestamp, mode: 'solo' }).slice(1);
+    assert(pet, 'fixture: the summoner can cast its pet');
+    const live = { ...pet, active: true, hp: pet.maxHp, expiresAt: timestamp + 600000 };
+    const beside = { ...warlock, stats: { ...warlock.stats, coldCombat: { ...warlock.stats.coldCombat, summon: live } } };
+    const drained = { ...warlock, vitals: { ...warlock.vitals, mp: 0 } };
+    const species = Data.npcs.filter(npc => Number(npc.template?.level) >= 45 && Number(npc.template?.level) <= 62 && npc.selfId < 7000);
+    const field = { ...spot, id: '99_96', npcEntries: species.map(npc => ({ selfId: npc.selfId, level: Number(npc.template.level), count: 1 })),
+        npcSelfIds: species.map(npc => npc.selfId) };
+    const answers = (bot, kept) => {
+        const read = Planner.sourceRouteReader(bot, { timestamp, ground: Planner.sourceGround([field], kept) });
+        return species.map(npc => read(field, npc.selfId));
+    };
+    const first = answers(drained, Planner.sourceGround([field]));
+    assert(first.includes(true) && first.includes(false), 'fixture: the species split');
+    assert.deepEqual(answers(beside, Planner.sourceGround([field])), first, 'a pet beside the bot and none at no MP read the same');
+    assert.deepEqual(answers(warlock, Planner.sourceGround([field])), first, 'and a pet the bot can call now');
+}
 console.log('test_source_route_admission: ok');

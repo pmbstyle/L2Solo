@@ -143,9 +143,15 @@ function recruitment(party, members, { spots, timestamp = Date.now() } = {}) {
             || { ...PartyIncomeComparison.evaluate(), at: timestamp, soloSource: null, partySource: null }) })) };
 }
 
+// One look per member per share-out: every item of a drop asked a full decision
+// of every member. The bag moves only when the member is given something
+// (PartyAgreement.allocate replaces the projected bag).
+const looked = new WeakMap();
 function itemNeed(state, item, projected) {
-    const current = { ...state, inventory: projected?.get(Number(state.characterId)) || state.inventory };
-    return positive(ColdEconomyDecision.economyFor(current).itemUsefulness(Number(item.selfId)));
+    const bag = projected?.get(Number(state.characterId)) || state.inventory;
+    let economy = looked.get(bag);
+    if (!economy) looked.set(bag, economy = ColdEconomyDecision.economyFor({ ...state, inventory: bag }));
+    return positive(economy.itemUsefulness(Number(item.selfId)));
 }
 
 module.exports = { declaration, pending, joint, participation, groupContext, decide, verdictFree, formingMembers, formingVerdict,

@@ -194,7 +194,10 @@ async function verifyNativeCrafts() {
             if (plan.unseal) buyer = await Life.upsertState({ ...buyer, stats: { ...buyer.stats,
                 craftReturn: returnTo, marketReturn: returnTo,
                 partyMarketReturn: { partyId: 'fixture_party_return', until: Date.now() + 900000 } } }, 'b_unseal_return_ticket');
-            const result = await Craft.craft(buyer, () => 0);
+            // A clan goal's reserve binds what a member sells, not its own craft plan.
+            const Supply = invoke('GameServer/Clan/ClanSupplyPolicy'), clanReserve = Supply.reservedAmounts;
+            Supply.reservedAmounts = () => ({ [reservedId]: 999 });
+            const result = await Craft.craft(buyer, () => 0).finally(() => { Supply.reservedAmounts = clanReserve; });
             assert.equal(result.crafted, true, `${recipeId}: ${result.reason} ${result.error || ''}`);
             buyer = await Life.upsertState(result.state, 'b_craft_receipt');
             const physical = await Database.fetchItems(buyer.characterId);

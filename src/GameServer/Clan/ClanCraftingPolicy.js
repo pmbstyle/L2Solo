@@ -1,6 +1,7 @@
 // Shared by the planning worker and the runtime. No live-world dependencies.
 const Recipes = invoke('GameServer/Items/C4RecipeItems');
 const DualSwords = invoke('GameServer/Items/C4DualSwordCombinations');
+const StationRecipe = invoke('GameServer/Crafting/StationRecipe');
 
 const RESOURCE_IDS = new Set([
     ...Array.from({ length: 32 }, (_, index) => 1864 + index),
@@ -39,7 +40,7 @@ function craftStock(inventory = {}, rows = []) {
 }
 
 function recipeForProvider(recipe, provider, batches = 1) {
-    if (!provider || provider.publicStation) return require('../Crafting/StationRecipe').forStation(recipe);
+    if (!provider || provider.publicStation) return StationRecipe.forStation(recipe);
     if (provider.known || provider.workshop) return recipe;
     const materials = recipe.materials.map(row => ({ ...row }));
     const scroll = materials.find(row => Number(row.selfId) === Number(recipe.recipeItemId));

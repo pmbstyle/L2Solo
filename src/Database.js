@@ -2533,10 +2533,12 @@ function prepareCraftReservationsUnsafe(step, recipe) {
         && !unsealSource
         && Number(plan.componentRecipes?.[recipe.productId]) === Number(recipe.recipeId);
     if (!final && !component) return;
+    // A bot's own craft spends its own bag: a clan goal's reserve binds what the
+    // bot sells or trades, not this plan (docs/game-decisions.md, 11-02).
     step.reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts({
         level: Number(step.row.level), phase: step.row.phase, stats,
         inventory: jsonObject(step.row.inventorySummary)
-    }, { craft: false });
+    }, { craft: false, clan: false });
 }
 
 function checkEconomyMaterialProtectionUnsafe(characterId, step, selfId, used, sale = false) {

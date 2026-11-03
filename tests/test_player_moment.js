@@ -22,6 +22,15 @@ assert.equal(moved({ bag: 9 }), 'bag', 'a full bag');
 assert.equal(moved({}, { leaf, why: 'check:offer' }), 'goal_failed', 'the held goal failed');
 assert.equal(moved({}, { leaf, nativeHolds: false }), 'native', 'the native plan failed or woke');
 assert.equal(moved({}, { leaf, why: 'goal' }), 'goal_moved', 'main moved the goal');
+// A bot at work weighs only the gear it follows; a real review weighs every candidate.
+assert.equal(Moment.quiet(hunter, 'wish_dirty'), true, 'a soft event on the spot');
+assert.equal(Moment.quiet({ ...hunter, activity: 'traveling' }, 'refresh'), true, 'and on the road');
+assert.equal(Moment.quiet({ ...hunter, activity: 'resting' }, 'wish_dirty'), false, 'a rest is a review');
+assert.equal(Moment.quiet({ ...hunter, activity: 'shopping' }, 'wish_dirty'), false, 'so is the town');
+assert.equal(Moment.quiet({ ...hunter, partyId: 3 }, 'wish_dirty'), false, 'and a party');
+assert.equal(Moment.quiet(hunter, 'check:offer'), false, 'a failed goal chooses again');
+assert.equal(Moment.quiet(hunter, 'goal'), false, 'a goal main moved too');
+assert.equal(Moment.quiet(hunter, undefined), false, 'no card stood: no held build to follow');
 assert.equal(Moment.momentOf({ ...hunter, activity: 'shopping' }, facts, facts), 'town', 'in town it reads everything');
 assert.equal(Moment.momentOf({ ...hunter, partyId: 'bgp_1' }, facts, facts), 'party');
 assert.equal(Moment.momentOf(hunter, null, facts), 'first');

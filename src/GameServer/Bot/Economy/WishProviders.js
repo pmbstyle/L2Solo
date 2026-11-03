@@ -68,6 +68,7 @@ function gearCandidates(state, ctx = null, wornFor = wornReader(state), acquisit
         const better = (a, b) => !b || a.ratio > b.ratio || a.ratio === b.ratio && cheaper(a, b);
         for (const at of allowed) {
             const item = kit.itemAt(at);
+            if (ctx.heldGear && !ctx.heldGear.has(Number(item.selfId))) continue;
             if (progression?.required && !Progression.priority(item, slot, progression)) continue;
             if (acquisitionAllowed && !acquisitionAllowed(item.selfId)) continue;
             const price = Number(ctx.price(item.selfId));
@@ -460,7 +461,7 @@ function buildProjection(state, ctx, deps) {
             }
             if (!scrollAvailable) scrollAvailable = Sources.hasNonRaidSource(recipe.recipeItemId);
             if (!scrollAvailable) return null;
-            const inputs = workshop?.publicStation ? require('../../Crafting/StationRecipe').forStation(recipe) : recipe;
+            const inputs = workshop?.publicStation ? need('../../Crafting/StationRecipe').forStation(recipe) : recipe;
             const facts = workshop ? Profit.craftFacts(inputs, { batches: 1, executor: 'workshop',
                 capacityBatches: workshop.capacityBatches, fee: workshop.price, recipeInput: 0 })
                 : Profit.craftFacts(recipe, { batches: 1, ...craftLabour(),
@@ -914,6 +915,7 @@ function buildProjection(state, ctx, deps) {
     // A rare piece's status value is part of its gear root from the start,
     // so admission scores the value the network later reads.
     const rare = candidates.find(row => row.item && (ctx.board?.list(row.item.selfId, SELL)?.length || 0) <= 1);
+    admission.rare = rare ? Number(rare.item.selfId) : 0;
     const real = nodes, realKeys = nodeKeys, gear = [];
     for (const candidate of candidates) {
         nodes = []; nodeKeys = new Set(); scratch = true; readScope = ctx.readScope?.open() || null;
@@ -1353,7 +1355,7 @@ function personalCraftPlan(state, context, { allowStock = false } = {}) {
         recipeId: Number(finalRecipe?.recipeId) || null,
         outputAmount: Number(wish.object?.amount || 1) + (stock ? Math.max(0, Number(state.inventory?.[targetId]?.amount) || 0) : 0),
         materials: finalRecipe ? (providers[finalRecipe.recipeId]?.publicStation
-            ? require('../../Crafting/StationRecipe').forStation(finalRecipe) : finalRecipe).materials.map(row => ({ ...row }))
+            ? need('../../Crafting/StationRecipe').forStation(finalRecipe) : finalRecipe).materials.map(row => ({ ...row }))
             : [{ selfId: unseal.sourceId, amount: 1 }],
         ...(unseal ? { unseal: { ...unseal } } : {}), craftProviders: providers,
         ...(crystalInputs.size ? { crystalPreparation: { exchange: crystalExchange,

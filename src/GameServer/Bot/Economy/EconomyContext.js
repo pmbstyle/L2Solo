@@ -261,6 +261,7 @@ function heldBuildVerdict(state, proof, deps = {}, options = {}) {
     const refuse = (reason, names, quiet = false) => {
         const first = !out.reason;
         out.reason ||= reason;
+        if (reason.startsWith('check:')) out.goalFailed = true;
         if (!names) {
             if (collect) out.touchedSections = Sections.COMPUTED.weighing;
             return out;
@@ -1266,6 +1267,19 @@ function verdictMask(state, cardVerdict, heldVerdict) {
 function forState(state = {}, deps = {}) {
     return Disposition.withReservations(() => buildForState(state, deps));
 }
+// The items a bot at work follows (a quiet build's gear): what the last build's
+// roots name, free ones too, its rare piece; the focus and the plan's target
+// stand for themselves. A review weighs every candidate again.
+let quietGearBuilds = 0;
+const rootItem = key => Number(/^(?:power|status|resale):(\d+)/.exec(String(key))?.[1]) || 0;
+function rootItems(projection) {
+    return Int32Array.from(new Set([...projection.roots.map(rootItem), Number(projection.admission.rare) || 0].filter(Boolean)));
+}
+function followedGear(state, held) {
+    const ids = new Set(held.gearFollowed);
+    for (const id of [rootItem(state.stats?.wishFocus?.[0]), Number(state.stats?.equipmentPlan?.target?.selfId)]) if (id) ids.add(id);
+    return ids;
+}
 function buildForState(state, deps) {
     const diagnostic = Diagnostics.active();
     const inputSequence = Number(state.stats?.decisionSeq || 0);
@@ -1315,6 +1329,12 @@ function buildForState(state, deps) {
     // The source walk's per-spot ground verdict: its own section rule
     // (GearAcquisitionPlanner.sourceGround).
     const keptGround = !(mask & Sections.COMPUTED.sourceGround) ? held?.sourceGround || null : null;
+    // A quiet build weighs only the gear the bot follows (decision 11-02): a
+    // failed or moved goal is a real review, whatever raised this build.
+    const heldGear = deps.quietGear === true && held?.gearFollowed && !eventVerdict.goalFailed
+        && (!Number.isFinite(deps.goalRevision) || deps.goalRevision === held.goalRevision)
+        && !(mask & Sections.COMPUTED.gearReview) ? followedGear(state, held) : null;
+    if (heldGear) quietGearBuilds++;
     const started = diagnostic ? performance.now() : 0;
     // The build's cause, one of a few names (its duration layer). An
     // input-name mismatch is named as a dependency change; it does not claim
@@ -1375,7 +1395,7 @@ function buildForState(state, deps) {
     // These facts still belong to the reused foundation: its items stay read.
     if (keptBase) for (const id of held.readIds) read(id);
     const quantityInputs = createQuantityInputs();
-    const context = { inputKey: key, actorKey, state, timestamp, gearThreatMask: gearThreat.mask, persona, board, hunt: base.hunt, price, buyback,
+    const context = { inputKey: key, actorKey, state, timestamp, gearThreatMask: gearThreat.mask, heldGear, persona, board, hunt: base.hunt, price, buyback,
         quantityInputs,
         ...(keptBase ? { horizonHours: keptBase.horizonHours } : {}),
         riskWeight: base.riskWeight, bestSpotId: base.bestSpotId, deathHours: base.deathHours, lostGearHours: base.lostGearHours,
@@ -1568,6 +1588,7 @@ function buildForState(state, deps) {
             heldUnits: own === null ? undefined : ColdEconomyDecision.heldFor(state, own),
             craftReservations: leaf?.activity === 'crafting' ? CraftInputReservations.heldCraftRows(state, plan.network.craftNeeds) : undefined,
             readIds: Int32Array.from(readIds), plan, stateRef: new WeakRef(state), gearThreat,
+            gearFollowed: rootItems(context.projection), goalRevision: deps.goalRevision,
             activity: state.activity,
             sourceGround: retainedGround, mp: Number(state.vitals?.mp),
             projection: (isMainThread || Sections.partyIdOf(state)) ? projection : null }, RETAIN_LIMIT);
@@ -2042,5 +2063,5 @@ function reset() {
 }
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
-module.exports = { incomeHoldStats, holdEndsAt, heldIncomeRoute, incomeMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, stockFor, stockReader, keptTargets, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
+module.exports = { quietGearBuildCount: () => quietGearBuilds, incomeHoldStats, holdEndsAt, heldIncomeRoute, incomeMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, stockFor, stockReader, keptTargets, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
     craftIncome };

@@ -73,8 +73,8 @@ function allocate(memberResults, agreement, { rng = Math.random, needScore = () 
         const reward = { ...distributedItem }; delete reward.partySpoil;
         recipient.result.materialize.items.push(reward);
         const inventory = projected.get(Number(recipient.state.characterId));
-        inventory[item.selfId] = { ...inventory[item.selfId], ...item,
-            amount: positive(inventory[item.selfId]?.amount) + positive(distributedItem.amount) };
+        projected.set(Number(recipient.state.characterId), { ...inventory, [item.selfId]: { ...inventory[item.selfId], ...item,
+            amount: positive(inventory[item.selfId]?.amount) + positive(distributedItem.amount) } });
         if (Number(recipient.state.characterId) !== Number(source.state.characterId)) {
             transfers.push({ from: source.state, to: recipient.state, item: distributedItem });
         }
