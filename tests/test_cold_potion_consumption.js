@@ -10,12 +10,11 @@ const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const Solo = invoke('GameServer/Bot/Population/BackgroundResolver');
 const Party = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const Pricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
 const databasePath = path.join(process.cwd(), 'tmp', 'test-cold-potion-consumption.sqlite');
 const POTION = 1060; // Lesser Healing Potion
 const at = 1_750_000_000_000;
-// With max HP from the class template (Formulas.calcHp) a level 12 fighter
-// ends every admitted Brae Orc fight above the potion line; at level 11 the
-// pull gate still admits the fight and a heavy roll drops it below the line.
+// Max HP comes from the class template (Formulas.calcHp): 323 at level 11.
 const LEVEL = 11;
 
 function clean() {
@@ -67,15 +66,22 @@ function seeded(seed) {
 const spot = { id: 'potion_field', name: 'Potion field', avgLevel: 14, density: 3, npcSelfIds: [396],
     rewards: { exp: 10, sp: 2, adenaMin: 1, adenaMax: 1 }, mob: { hp: 1, damage: 1 } };
 
-// A solo fight against a real datapack mob (Brae Orc Fighter) that drinks a
-// potion and survives; the seed sweep is deterministic.
-function soloFightWithPotion(base) {
+// A solo round that drinks: the bot comes back below its rest line to a mob it
+// hunts at full health (Walking Fungus, level 8), and its hour is worth a
+// bottle a second (money[0]), so it drinks to save the rest instead of sitting
+// through it (RestPotion, T141). A fight that would end below the potion line
+// is no longer taken (BotEncounterReadiness), so no admitted fight is relied
+// on to go wrong; the seed sweep is deterministic.
+const restSpot = { ...spot, avgLevel: 8, npcSelfIds: [175] };
+function soloRoundWithPotion(base) {
+    const hour = 3600 * Pricing.botBuyPrice(POTION);
     for (let seed = 1; seed < 400; seed += 1) {
-        const state = fighter(base, 344);
-        const result = Solo.resolveSolo({ state, spot, elapsedMs: 60000, timestamp: at, rng: seeded(seed) });
+        const state = fighter(base, 100);
+        state.stats.money = [hour, 1 / hour, 0, 0];
+        const result = Solo.resolveSolo({ state, spot: restSpot, elapsedMs: 60000, timestamp: at, rng: seeded(seed) });
         if (Number(result.debug?.potionsUsed || 0) > 0 && !result.debug?.died) return { state, result };
     }
-    throw new Error('no fixture fight drank a potion');
+    throw new Error('no fixture round drank a potion');
 }
 
 async function physicalAmount(characterId, selfId) {
@@ -107,7 +113,7 @@ async function physicalAmount(characterId, selfId) {
         vitals: { hp: 500, maxHp: 500, mp: 200, maxMp: 200 }, stats: { generatedCold: true }, timing: {}
     }, 'test_potion_seed');
 
-    const { state, result } = soloFightWithPotion(base);
+    const { state, result } = soloRoundWithPotion(base);
     const drunk = Number(result.debug.potionsUsed);
     assert.deepStrictEqual(result.debug.drunkPotions, { [POTION]: drunk }, 'the resolver reports the bottles it drank by item');
     assert.strictEqual(state.inventory[POTION].amount, 5, 'the resolver drinks from its own copy');

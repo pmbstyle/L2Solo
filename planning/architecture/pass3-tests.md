@@ -18,9 +18,9 @@ Checked at 5771494a (2026-11-03).
 
 `test_skill_semantics.js`: asserts finish at 0.7 s, then 30 s idle on 3 ref'd timeouts (source not found).
 
-## First deletion batch (safe: behaviour pinned elsewhere or code dead) — 21 files, ~65 s CI
+## First deletion batch (safe: behaviour pinned elsewhere or code dead) — 20 files, ~65 s CI
 
-test_static_gear_worker, test_gear_plan_memo, test_gear_plan_selection_sections, test_economy_basics_dependencies,
+test_static_gear_worker, test_gear_plan_memo, test_economy_basics_dependencies,
 test_craft_station_catalog, test_craft_material_party_events, test_bot_afk_listing_failure, test_market_lot_policy,
 test_n79_price_prior, test_spot_index, test_spot_matchup_memo, test_species_verdict_at_read,
 test_walkback_catalog_cache, test_quest_cure_fever_items, test_bot_tool_pending_audit, test_bot_wtb_recovery_floor,

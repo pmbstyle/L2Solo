@@ -237,6 +237,9 @@ function setup() {
         assert(Date.now() < seededDeadline, 'a bot seeded during the full snapshot must reach the worker');
         await new Promise(resolve => setTimeout(resolve, 20));
     }
+    // The page is posted before its job settles (it yields to the loop first);
+    // the job's lease must not complete inside the next fixture's governor.
+    await seededDuringFull.coordinator.snapshotInFlight;
     {
         const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
         const kernel = new ColdSimulationKernel({ now: () => 2000, resolveSolo: () => null });

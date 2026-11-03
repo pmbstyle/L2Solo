@@ -14,7 +14,9 @@ const BotRoute = invoke('GameServer/Bot/Population/BotRoute');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const timestamp = 1793485080000;
 const inventory = {};
-for (const [id, slots] of [[3, [7]], [23, [10]], [32, [11]], [37, [12]], [43, [6]], [50, [9]],
+// A Falchion, not the starter Broadsword: a level 24 knight with the latter does not
+// take the source's level 25-27 mobs (BotEncounterReadiness: a fight ends above the potion line).
+for (const [id, slots] of [[68, [7]], [23, [10]], [32, [11]], [37, [12]], [43, [6]], [50, [9]],
     [114, [1]], [115, [2]], [876, [4, 5]], [907, [3]], [945, [8]]]) {
     inventory[id] = { selfId: id, amount: slots.length, equipped: true,
         equippedCount: slots.length, equippedSlots: slots, slot: slots[0] };

@@ -11,11 +11,14 @@ const Selection = invoke('GameServer/Bot/AI/GearPlanSelection');
 const Spots = invoke('GameServer/Bot/Population/SpotProfiles');
 const timestamp = 1793485080000;
 const inventory = {};
-for (const [id, slots] of [[43, [6]], [50, [9]], [274, [14]], [390, [10]], [412, [11]],
+// A Light Crossbow and D-grade shots: with the Strengthened Bow the archer does not
+// take an Ol Mahum Raider (BotEncounterReadiness: a fight ends above the potion line).
+for (const [id, slots] of [[43, [6]], [50, [9]], [280, [14]], [390, [10]], [412, [11]],
     [847, [1, 2]], [890, [4, 5]], [907, [3]], [1122, [12]]]) {
     inventory[id] = { selfId: id, amount: slots.length, equipped: true,
         equippedCount: slots.length, equippedSlots: slots, slot: slots[0] };
 }
+inventory[1463] = { selfId: 1463, amount: 1000 };
 const key = 'power:45:6';
 const base = { characterId: 990501, phase: 'cold', activity: 'hunting', level: 29,
     stats: { classId: 35, role: 'archer', wishFocus: [key, 1, 100000] },
