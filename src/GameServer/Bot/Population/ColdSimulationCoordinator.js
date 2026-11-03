@@ -256,6 +256,10 @@ class ColdSimulationCoordinator {
         // commandDbErrors: commands that failed on the database or a pending
         // write, not on the bot (sharedCommandFailure); the first is logged.
         this.refusals = { commitRefused: {}, staleCommand: 0, commandDbErrors: 0 };
+        // Worker faults main sees itself, counted always (cheap): protocol/size faults (no bot or party
+        // in the message) and the last fault of any kind. A bot's own faults are counted in the worker
+        // (ColdSimulationKernel.fault: backoff, quarantine) and merged in snapshot().
+        this.failures = { protocolFaults: 0, faultsByStage: {}, lastFault: null };
         // Review commands answered (always counted, like the refusals): how many
         // came, how they ended (refused by reason) and which steps they carried.
         this.reviews = { sent: 0, ok: 0, refused: {}, plan: 0, buff: 0, training: 0 };
@@ -879,6 +883,12 @@ class ColdSimulationCoordinator {
                     payload.partyId ? ` party ${payload.partyId} ${payload.stage}`
                         : payload.characterId ? ` bot ${payload.characterId} ${payload.stage}` : '',
                     payload.reason || 'unknown', payload.stack ? `\n${payload.stack}` : '');
+            }
+            this.failures.lastFault = { reason: payload.reason || 'unknown', stage: payload.stage || null,
+                characterId: payload.characterId ?? null, partyId: payload.partyId ?? null, at: Date.now() };
+            if (payload.characterId == null && payload.partyId == null) {
+                this.failures.protocolFaults += 1;
+                this.failures.faultsByStage[payload.stage || 'unknown'] = (this.failures.faultsByStage[payload.stage || 'unknown'] || 0) + 1;
             }
             break;
         default:
@@ -2392,6 +2402,17 @@ class ColdSimulationCoordinator {
         return `${max > 0 && occupied >= max ? 'worker_full' : 'unclaimed'}:${occupied}/${max || '-'}${holder}`;
     }
 
+    // One failures record (perf report, status line, scripted players): the worker's bot faults
+    // from its heartbeat plus main's protocol faults and database command errors.
+    failureSnapshot() {
+        const worker = this.lastWorkerSnapshot?.failures || {};
+        const faultsByStage = { ...(worker.faultsByStage || {}) };
+        for (const [stage, count] of Object.entries(this.failures.faultsByStage)) faultsByStage[stage] = (faultsByStage[stage] || 0) + count;
+        return { workerFaults: Number(worker.workerFaults || 0) + this.failures.protocolFaults, faultsByStage,
+            lastFault: this.failures.lastFault, faultBackoff: Number(worker.faultBackoff || 0),
+            faultQuarantined: Number(worker.faultQuarantined || 0), commandDbErrors: this.refusals.commandDbErrors };
+    }
+
     snapshot() {
         return {
             ...(Config.developerDiagnostics ? this.counters : { diagnosticsEnabled: false }),
@@ -2403,6 +2424,7 @@ class ColdSimulationCoordinator {
             worker: { ...this.lastWorkerSnapshot },
             refusals: { commitRefused: { ...this.refusals.commitRefused },
                 staleCommand: this.refusals.staleCommand, commandDbErrors: this.refusals.commandDbErrors },
+            failures: this.failureSnapshot(),
             reviews: { ...this.reviews, refused: { ...this.reviews.refused } },
             heldAcks: this.heldAcks.size,
             ackState: { ...this.ackState },

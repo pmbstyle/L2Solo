@@ -1,5 +1,8 @@
 require('./Global');
 
+// [Perf] live: started before any worker, so the boot is recorded too; without it nothing runs.
+invoke('Perf/LiveRecorder').start();
+
 const { acquireDatabaseAccess, verifyUpdateDatabasePaths, rejectUpdateBeforeMigrations, beginUpdateMigrations } = require('../scripts/database-access');
 const startupRoot = require('path').resolve(__dirname, '..');
 const expectedUpdateDatabases = process.env.L2NODE_UPDATE_TRIAL === '1' && process.env.L2NODE_UPDATE_DATABASES
@@ -286,9 +289,8 @@ async function startServer() {
         }
         WorldObserver.init();
         DevConsole.init();
-        if (process.env.L2NODE_HOT_LOAD_TEST === '1') {
-            invoke('GameServer/Bot/LoadTest/HotBotLoadTest').start();
-        }
+        // A window run's hot scenario (scripts/perf/window.js); nothing without L2NODE_PERF_SCENARIO=hot.
+        invoke('Perf/HotCrowd').start();
         started = true;
     });
 }

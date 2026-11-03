@@ -63,22 +63,34 @@ function heapsLine(heaps) {
         ? `${heap.used}/${heap.total}/${heap.external}/${heap.limit}/${heap.afterGc ?? '-'}/${heap.afterGcMax ?? '-'}/${heap.late ?? '-'}` : '-'}`).join(',');
 }
 // The major-GC observer of this isolate; every thread that reports v8Heap starts it once when developer
-// diagnostics are on, and heapRecord() reads its window.
+// diagnostics are on, the perf live recorder starts it on main, and heapRecord() reads its window. Each
+// observe() gets its own handle on the one observer; it stops when the last handle is closed, so
+// PopulationMetrics stopping does not end the recorder's window.
 let active = null;
 function observe() {
-    if (active) return active;
-    const window = new MajorGcHeap();
-    const observer = new PerformanceObserver(list => {
-        for (const entry of list.getEntries()) {
-            if (entry.detail.kind !== constants.NODE_PERFORMANCE_GC_MAJOR) continue;
-            const at = entry.startTime + entry.duration;
-            if (performance.now() - at > LATE_MS) { window.late++; continue; }
-            window.record(process.memoryUsage().heapUsed, at);
-        }
-    });
-    observer.observe({ entryTypes: ['gc'] });
-    const handle = { window, snapshot: at => ({ ...window.snapshot(at), v8Heap: heapRecord(at) }),
-        close: () => { observer.disconnect(); if (active === handle) active = null; } };
-    return (active = handle);
+    if (!active) {
+        const window = new MajorGcHeap();
+        const observer = new PerformanceObserver(list => {
+            for (const entry of list.getEntries()) {
+                if (entry.detail.kind !== constants.NODE_PERFORMANCE_GC_MAJOR) continue;
+                const at = entry.startTime + entry.duration;
+                if (performance.now() - at > LATE_MS) { window.late++; continue; }
+                window.record(process.memoryUsage().heapUsed, at);
+            }
+        });
+        observer.observe({ entryTypes: ['gc'] });
+        active = { window, observer, handles: 0 };
+    }
+    const shared = active;
+    shared.handles += 1;
+    let open = true;
+    return { window: shared.window, snapshot: at => ({ ...shared.window.snapshot(at), v8Heap: heapRecord(at) }),
+        close: () => {
+            if (!open) return;
+            open = false;
+            if (--shared.handles > 0) return;
+            shared.observer.disconnect();
+            if (active === shared) active = null;
+        } };
 }
 module.exports = { MAX_SAMPLES, WINDOW_MS, LATE_MS, MajorGcHeap, observe, heapRecord, heapsLine };

@@ -15,6 +15,15 @@ const notRunTests = new Map([
 ]);
 
 const tests = [
+    'tests/test_perf_cpu_profile.js',
+    'tests/test_perf_live_recorder.js',
+    'tests/test_perf_heap_profile.js',
+    'tests/test_perf_report.js',
+    'tests/test_perf_compare.js',
+    'tests/test_perf_hot_crowd.js',
+    'tests/test_perf_player_client.js',
+    'tests/test_worker_heap_telemetry_handles.js',
+    'tests/test_server_packet_names.js',
     'tests/test_scroll_stock_economy.js',
     'tests/test_wish_focus_supply.js',
     'tests/test_wish_goal_loyalty.js',

@@ -89,6 +89,7 @@ function restoreColdAfterActivationFailure(state) {
 
 const HotActivation = {
     activate(stateOrName, reason = 'activation', options = {}) {
+        const transitionStartedAt = Date.now();
         const loadState = typeof stateOrName === 'string'
             ? LifeState.findByName(stateOrName)
             : Promise.resolve(stateOrName);
@@ -247,7 +248,7 @@ const HotActivation = {
                         activationDistance(placement, options),
                         (options.recoverOnActivation || options.readyOnActivation) ? 'yes' : 'no'
                     );
-                    Metrics.recordActivation();
+                    Metrics.recordActivation(Date.now() - transitionStartedAt);
                     return { ok: true, state, reason };
                 }));
             }).catch((error) => {

@@ -57,6 +57,7 @@ function capture(session, state, phase, e) {
     return next;
 }
 async function activate(e, reason = 'near_player', options = {}) {
+    const transitionStartedAt = Date.now();
     if (Runtime.pending.has(e.key)) return { ok: false, reason: 'encounter_transition_pending' };
     Runtime.pending.add(e.key);
     let reserved = false, states = [], original = [];
@@ -99,7 +100,7 @@ async function activate(e, reason = 'near_player', options = {}) {
         states = await transition(e, states, roster.map(s => capture(s, states.find(n => n.characterId === id(s)), 'hot', e)), 'hot', reason);
         publish(e, roster, states);
         Runtime.register(e);
-        states.forEach(() => invoke('GameServer/Bot/Population/PopulationMetrics').recordActivation());
+        states.forEach(() => invoke('GameServer/Bot/Population/PopulationMetrics').recordActivation(Date.now() - transitionStartedAt));
         return { ok: true, count: states.length, states, encounter: e, reason };
     } catch (error) {
         discard(roster);
@@ -124,6 +125,7 @@ function cooldownEligible(e, roster, options) {
         && Threats.context(s).threats.every(t => ids.includes(Number(t.actor.fetchId()))));
 }
 async function cooldown(e, reason = 'policy', options = {}) {
+    const transitionStartedAt = Date.now();
     if (Runtime.pending.has(e.key)) return { ok: false, reason: 'encounter_transition_pending' };
     Runtime.pending.add(e.key);
     const roster = Runtime.sessions(e);
@@ -162,7 +164,7 @@ async function cooldown(e, reason = 'policy', options = {}) {
         // Expiry during handoff still needs the normal finalization path:
         // clear the persisted outcome and count completion exactly once.
         Runtime.register(resumed || e);
-        saved.forEach(() => invoke('GameServer/Bot/Population/PopulationMetrics').recordCooldown());
+        saved.forEach(() => invoke('GameServer/Bot/Population/PopulationMetrics').recordCooldown(Date.now() - transitionStartedAt));
         return { ok: true, count: saved.length, states: saved, encounter: resumed };
     } catch (error) {
         if (stopped && !committed) roster.filter(s => s?.actor).forEach(s => {

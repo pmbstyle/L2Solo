@@ -122,7 +122,7 @@ const PopulationStatus = {
     },
 
     goalText(queue = {}, coordinator) {
-        const worker = coordinator?.worker || {}, mb = bytes => bytes ? Math.round(bytes / 1024 / 1024) : '-';
+        const worker = coordinator?.worker || {}, failures = coordinator?.failures || {}, mb = bytes => bytes ? Math.round(bytes / 1024 / 1024) : '-';
         const mainElu = performance.eventLoopUtilization(mainEluMark);
         mainEluMark = performance.eventLoopUtilization();
         const pvp = PvpEncounterRuntime.passPeak();
@@ -135,8 +135,8 @@ const PopulationStatus = {
         // commandDbErrors: commands that failed on the database, not the bot (a plain retry).
         return `coldDue=${queue.overdue || 0} coldDueAll=${queue.due || 0} coldDueAge=${Math.round((queue.oldestAgeMs || 0) / 1000)}s`
             + ` noCheckpoint=${worker.checkpointsRefused || 0} stepsRefused=${worker.stepsRefused || 0}`
-            + ` botFaults=${worker.failures?.faultBackoff || 0}/${worker.failures?.faultQuarantined || 0}/${worker.failures?.workerFaults || 0}`
-            + ` commandDbErrors=${coordinator?.refusals?.commandDbErrors || 0}`
+            + ` botFaults=${failures.faultBackoff || 0}/${failures.faultQuarantined || 0}/${failures.workerFaults || 0}`
+            + ` commandDbErrors=${failures.commandDbErrors || 0}`
             + ` ${this.workerBusyText()} mainElu=${mainElu.utilization.toFixed(2)} workerHeapGc=${mb(worker.heapAfterGc)}/${mb(worker.heapAfterGcMax10)}MB`
             + ` stepLead=${worker.stepLeadMs || 0}ms pvp=${pvp.live}/${pvp.steps}/${pvp.ms}ms/${pvp.left}`
             + ` geo=${mb(geodata.loadedBytes)}MB/${geodata.loadedRegions} geoViews=${mb(geodata.attachedBytes)}+${mb(worker.geodata?.attachedBytes)}MB`
@@ -177,6 +177,30 @@ const PopulationStatus = {
         return `npcHate=${hate.outOfReach}o/${hate.noPath}n/${hate.idleWithHate}i/${hate.attackTimeout}t/${home.unseen}h/${home.blocked}b`
             + ` keptSwings=${Attack.keptSwings()} lostView=${AttackRange.lostFromViewCount()}`
             + ` spoilNoList=${SpoilSweep.sparedSpoils()}`;
+    },
+
+    // What a long recording needs every 30 s, diagnostics on or off, each from its owner (the same
+    // readings the status line prints): bots, players, main's lag, the database queue and checkpoint,
+    // the path pool, geodata, main's heap (after GC once WorkerHeapTelemetry observes), repairs and
+    // background jobs. src/Perf/LiveRecorder stores it (PopulationService.logSummary).
+    vitals() {
+        const database = invoke('Database').stats();
+        const paths = PathfindingWorkerPool.stats();
+        const jobs = BackgroundJobRegistry.snapshot();
+        const pick = (object, keys) => Object.fromEntries(keys.filter(key => object?.[key] !== undefined).map(key => [key, object[key]]));
+        return {
+            bots: LifeState.counts(),
+            players: invoke('GameServer/Bot/Population/PopulationService').realPlayerSessions().length,
+            lag: { nowMs: Math.round(Metrics.currentEventLoopLag()), sustainedMs: Math.round(Metrics.sustainedEventLoopLag()) },
+            database: { ...pick(database, ['path', 'historyPath', 'pending', 'maxPending', 'failures', 'avgWaitMs', 'avgRunMs', 'operations']),
+                checkpoint: pick(database.checkpoint, ['inFlight', 'last', 'lastReset']) },
+            pathWorkers: pick(paths, ['workers', 'busy', 'queue', 'companionBusy', 'companionQueue', 'inFlight']),
+            geodata: GeodataEngine.storageStats(),
+            mainHeap: heapRecord(),
+            safetyRepairs: Metrics.lastSafetyRepairs || null,
+            jobs: jobs.enabled === false ? null : { ...pick(jobs, ['registered', 'inFlight']), jobs: Object.fromEntries(Object.entries(jobs.jobs || {})
+                .map(([name, job]) => [name, pick(job, ['inFlight', 'started', 'completed', 'deferred', 'errors', 'lastStartedAt', 'lastCompletedAt'])])) }
+        };
     },
 
     summary() {

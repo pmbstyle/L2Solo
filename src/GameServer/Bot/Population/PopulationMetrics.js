@@ -108,6 +108,8 @@ const PopulationMetrics = {
         companionPathDurationsMs: [],
         activationFloorDurationsMs: [],
         activationFloorReasons: new DiagnosticMetricMap(),
+        activationDurationsMs: [],
+        cooldownDurationsMs: [],
         skippedResolveReasons: new DiagnosticMetricMap(),
         coldOwnerCommitDurationsMs: [],
         coldOwnerLegacyReasons: new DiagnosticMetricMap(),
@@ -250,14 +252,25 @@ const PopulationMetrics = {
         this.interval.skippedResolveReasons.set(key, Number(this.interval.skippedResolveReasons.get(key) || 0) + 1);
     },
 
-    recordActivation() {
+    // durationMs: the whole transition of one bot (solo, party or PvP group: each member gets the
+    // group's time): cold -> hot from activate() to the spawned session, hot -> cold until the
+    // session is gone. The player waits on the first; the second is main-thread work as they leave.
+    recordActivation(durationMs) {
         if (!Config.developerDiagnostics) return;
         this.counters.activations += 1;
+        this.pushTransition('activationDurationsMs', durationMs);
     },
 
-    recordCooldown() {
+    recordCooldown(durationMs) {
         if (!Config.developerDiagnostics) return;
         this.counters.cooldowns += 1;
+        this.pushTransition('cooldownDurationsMs', durationMs);
+    },
+
+    pushTransition(key, durationMs) {
+        if (!Number.isFinite(durationMs)) return;
+        this.interval[key].push(Math.max(0, durationMs));
+        if (this.interval[key].length > Config.resolveSampleLimit) this.interval[key].shift();
     },
 
     recordPartySafetyRepair() {
@@ -488,6 +501,7 @@ const PopulationMetrics = {
         const actorPathStats = stats(this.interval.actorPathDurationsMs);
         const companionPathStats = stats(this.interval.companionPathDurationsMs);
         const activationFloorStats = stats(this.interval.activationFloorDurationsMs);
+        const transitions = { activation: stats(this.interval.activationDurationsMs), cooldown: stats(this.interval.cooldownDurationsMs) };
         const coldOwnerCommitStats = stats(this.interval.coldOwnerCommitDurationsMs);
         const partyFormationStages = Object.fromEntries(Array.from(this.interval.partyFormationStageDurationsMs.entries())
             .map(([stage, values]) => [stage, stats(values)]));
@@ -503,6 +517,8 @@ const PopulationMetrics = {
         this.interval.actorPathDurationsMs = [];
         this.interval.companionPathDurationsMs = [];
         this.interval.activationFloorDurationsMs = [];
+        this.interval.activationDurationsMs = [];
+        this.interval.cooldownDurationsMs = [];
         this.interval.coldOwnerCommitDurationsMs = [];
         this.interval.activationFloorReasons = new DiagnosticMetricMap();
         this.interval.coldOwnerLegacyReasons = new DiagnosticMetricMap();
@@ -529,6 +545,7 @@ const PopulationMetrics = {
                 ...activationFloorStats,
                 reasons: activationFloorReasons
             },
+            transitions,
             coldOwner: {
                 commit: coldOwnerCommitStats,
                 legacyReasons: coldOwnerLegacyReasons,
