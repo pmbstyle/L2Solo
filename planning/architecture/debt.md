@@ -2,7 +2,7 @@
 
 Checked at 516f6ef9 (2026-11-03).
 
-Index across areas; details and evidence in each area file (ids: AI, POP, ECO, CMB, WOR, PER).
+Index across areas; details and evidence in each area file (ids: AI, POP, ECO, CMB, WOR, PER, TBL).
 Add a line when you find a tail you do not fix. Remove it when it is paid.
 
 ## Themes
@@ -46,14 +46,55 @@ Add a line when you find a tail you do not fix. Remove it when it is paid.
    newer cast; fix = those paths call `attack.abortCast`. Not C4 yet: the "already casting" gate blocks instant items
    (potions) during any cast (Lisvus `ItemSkills.castInstantly` allows them); a stunned/sleeping player can start an SoE
    (Lisvus refuses on `isAllSkillsDisabled`). Both refuse before spending, so no item is lost.
+10. **Bot tables: silent staleness and work nobody reads** ([tables.md](tables.md), lines below). No check that a table
+   matches the code it measured (TBL-1); a kit surface and 9 hunt tables built on every rebuild, read by nothing at
+   runtime (TBL-2, TBL-3); one rebuild run reads old inputs (TBL-4); a full copy per thread (TBL-7); the generator
+   patches live owners and copies the potion stock rule (TBL-8).
 
-**Known broken on t106dev, now `ivan/next-release` (not architecture):** `tests/test_aggregate_production_demand.js`
-fails before and after the 2026-11-03 cleanup ("two genuinely free items already fill both buyers before a new lot", `expectedProfit` differs).
-Also failing on HEAD before the honest-travel change, while listed as live: `test_bot_equipment_transition_recovery`,
-`test_party_companion_rest_follow`, `test_producer_preparation`, `test_task4_arrival_step` ("invoke is not defined"),
-`test_wish_purchase_supply`, `test_bot_hunting_visibility` (fails already at 9f27b7fa), `test_bot_wtb_standing_order`, `test_task4_b5_role_change`.
+**Tests (2026-11-03):** the red files listed as live were fixed in 88cdf8ce and 98b78484 (each now pins the
+T178/T189 rule or the C4 rule it predated; `test_bot_hunting_visibility` was a real regression of 46ba53a1).
+Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
+`stockTargets[6]`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock,
+so since T178 a rich bot there has a null activity: a test expecting "one leaf" from such a scene breaks the same way.
 Known red in `notRunTests`: `test_beginner_shot_policy`, `test_finite_market_income`,
 `test_gear_intermediate_candidates`, `test_task4_survival_tranche`.
+
+## Bot tables (TBL, checked at be97733e)
+
+**P** = player impact, **S** = server impact (roadmap.md). Evidence and the assessment: [tables.md](tables.md).
+
+- **TBL-1 No staleness check against the code** (P mid, S low; high value, small cost). The header's `revision` is only
+  logged (`SpotValueTable.checkCatalog`); a table built before a combat, rest, gear or potion change is used silently
+  and bots choose spots and stock by the old fight. Hunt-table `fingerprints` are written, read by nobody. Fix:
+  fingerprint the src paths the generator exercises (tables.md "When to rebuild"), compare in `npm run check` and log at
+  the first read.
+- **TBL-2 Kit surface measured, never read** (P mid, S none at runtime; CI ~60 % of the curves phase). Only
+  `HuntCycle.reader` reads `SpotValueTable.kitSurface`, and nothing in `src/` calls it. So the gear a bot really wears
+  never moves the table's numbers until its own hunt samples exist: a weak or a strong kit chooses spots by the author's
+  kit. Decide: wire `HuntCycle` into gear and spot decisions, or drop the kit points, `HuntCycle.reader` and its tests.
+- **TBL-3 Hunt tables rebuilt and committed, no runtime reader** (P none, S none; CI ~11 min, 2.4 MB churn per rebuild,
+  4 tests). They also copy the catalogue, mob and henna data. Decide with TBL-2: wire the hunt model, or build them on
+  demand (`tables/hunt`), not in `all`.
+- **TBL-4 One `all` run reads old inputs** (P low, S none). The kit surface reads the committed `data/Bots/hunt/gear.json`; hunt
+  `mobs`/`spots` read the committed `data/Bots/spot-reward-npcs.json`; their fingerprints the committed `data/Bots/spot-table.json`. After a
+  catalogue or gear change the tables disagree until a second run. Order the jobs or drop the coupling (TBL-2/3).
+- **TBL-5 Unread columns** (P none, S low; cheap). Row `adena`, `loot` (money is read live, `SpotRewardExpectation.value`),
+  curve `adena`, spot column 4 (always 1); the generator still pools and prices loot for them (`poolRowLoot`).
+- **TBL-6 Compat paths for old table shapes** (P none, S none; cheap). Loader branches for tables before `roleLines`,
+  `gate`, `gateShare`, cycle columns, `mix`, `stacks` (`spot[3] * spot[4]`), and the generator's `mergeStacks`. None
+  applies to the committed table: delete with their tests.
+- **TBL-7 A full copy per thread, slow first read** (P low, S mid now, high at 5-10k). Main and the cold worker each
+  parse 23 MB of JSON at their first lookup (~0.3 s, ~100 MB transient heap; on main a stall) and hold ~36 MB of
+  Float64 arrays (values have 4 digits; 3 of 23 columns are NaN placeholders). Float32 without placeholders halves it;
+  one `SharedArrayBuffer` copy or a binary pack built by the generator removes the parse and the second copy.
+- **TBL-8 The generator patches live owners** (P mid, S none). In its child it replaces `SurvivalFloor.forState` (no
+  unload trip: loot-heavy spots look better than live), `ShotStock.usePolicy` (always shots) and `MobExperience.rewards`
+  (no level-gap penalty), and re-implements the potion stock rule in `hunt`. A change to those owners does not reach the
+  table and nothing says so. Owners should take the variant as an explicit input (pure rule), the generator pass it.
+- **TBL-9 Reward catalogue without a header** (P none, S low). `data/Bots/spot-reward-npcs.json` has no revision or spot count; a
+  probe run's merge writes a 12-spot one to the default path (its artifact), which nobody could tell from the real one.
+- **TBL-10 Small** (S low). `rankedSpotIds` re-sorts its basis on every call; the income basis scans spots down to 15
+  levels below the bot while `combat` refuses anything beyond 9 (`ProgressionRates.DEEP_BLUE_LEVEL_GAP`).
 
 ## Agreed order (2026-11-03)
 

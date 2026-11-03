@@ -16,7 +16,7 @@ Scope: `Bot/Population`, `Bot/Travel`, `BotManager`, `BotSession`, worker protoc
 | `ColdSimulationCoordinator` | Main side of the worker: spawn, page snapshots/tables, commit proposals, commands, fences, watchdog, restart | `start` |
 | `ColdSimulationWorker` | Worker entry; replaces `invoke` with a forbidden-module guard + stubs; holds `planLifecycle` and `projectResolve` inline | `handle` |
 | `ColdSimulationKernel` | Worker scheduler: due heap, `lifecycleKind` (module function), `resolveStep` (+ solo hunt window `huntWindow` / `ColdSoloWindow`), `resolvePartyStep`, `proposal_batch`, stall recovery `recoverStalled`, per-bot fault backoff/quarantine `fault` (6e521123) | `tick` |
-| `BackgroundResolver` / `BackgroundPartyResolver` | Pure cold fight/rest/travel round, solo / party | `resolveSolo`, `resolve` |
+| `BackgroundResolver` / `BackgroundPartyResolver` | Pure cold fight/rest/travel round, solo / party; the spot table measures `resolveSolo` offline ([tables.md](tables.md): a change here needs a rebuild) | `resolveSolo`, `resolve` |
 | `ColdSimulationProtocol` | Message whitelists, envelope validation | `validateEnvelope` |
 | `ColdTableChannel` / `TableMirror` | Versioned main → worker table replication (13 tables; `pressure` deleted cf1a5d70) | `TableChannel.register` |
 | `ColdSimulationOwner` + `ColdCommitQueue` | Commit of worker proposals: CAS on `simulation.revision`; `handoffToMain` for activation | `flushBatch` |

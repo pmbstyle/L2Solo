@@ -27,6 +27,7 @@ says the commit it was last checked at.
 | Combat, skills, actors | [combat.md](combat.md) | `Combat/HitRules`, `Formulas`, `Actor/Attack`, `C4SkillRules`/`C4SkillEffects`, `EffectStore` |
 | World, movement, runtime | [world.md](world.md) | `World`, `GeodataEngine`, `MoveTo`, `Automation`, `Session`, `SpotService` |
 | Persistence, clans, quests, progression | [persistence.md](persistence.md) | `Database`, `CharacterWriteQueue`, `bot_life_state`, migrations, history DB |
+| Bot tables (precomputed) | [tables.md](tables.md) | `data/Bots/spot-table.json` read by `SpotValueTable` (spot choice, hour value, shots, potions), `data/Bots/spot-reward-npcs.json`, hunt tables `data/Bots/hunt/*` and `scripts/fight-table` (offline only), Tables workflow, when to rebuild |
 | Measurement (CPU, lag, memory, e2e) | `scripts/perf.js`, `src/Perf/*` (no map file) | `LiveRecorder` (the one recorder, `[Perf] live`; `Threads`, `CpuProfile`, `HeapProfile`, `ChunkWorker`), window runs `scripts/perf/{window,report,compare}.js` on a launcher save, players `HotCrowd` (hot scenario), scripted client `PlayerClient` + `PlayerScript` running `tests/e2e/*.js` through client packets; numbers come from `PopulationMetrics`/`logSummary` and `ColdSimulationCoordinator.failureSnapshot`, the recorder adds no counter |
 
 ## The shape in one screen
@@ -50,4 +51,7 @@ says the commit it was last checked at.
   without World instead of throwing. ~40 `isMainThread` branches.
 - A worker step or command that throws is held off and quarantined (POP-1, `FAULT_*` in limits.md); an `afterCommit`
   throw outside a named step is only counted (POP-2).
-- Cited but missing: `docs/architecture.md` (`BotRoute.js`, `EconomyContext.js`), `docs/t189-plan.md` (T189 commit).
+- Cited but missing: `docs/architecture.md` (`BotRoute.js`, `EconomyContext.js`), `docs/t189-plan.md` (T189 commit),
+  `docs/game-decisions.md` (`scripts/fight-table`, `ShotStock`).
+- A precomputed table is not checked against the code it measured: after a change listed in tables.md "When to
+  rebuild", rebuild it (TBL-1).

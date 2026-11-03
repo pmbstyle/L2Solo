@@ -32,7 +32,7 @@ deterministic brain; the LLM acts only on explicit player communication.
 |---|---|
 | Activity choice, hot and cold | Worker economy build (`WishNetwork` leaf, `ColdEconomyDecision`); hot reads `DecisionEvents.held` — "the body's target search cannot invent a new job" |
 | When to re-decide | `DecisionEvents.raiseDecision` + `Reaction.js` (where a far bot stands) |
-| Solo hunting spot | Worker leaf `spotId`: `Population/BotRoute.choose`/`leafChoice` over `LevelingRoutes.scoreSpot`/`bestSpot` with `SpotEconomics` income (decided, AI-2) |
+| Solo hunting spot | Worker leaf `spotId`: `Population/BotRoute.choose`/`leafChoice` over `LevelingRoutes.scoreSpot`/`bestSpot` with `SpotEconomics` income (decided, AI-2); values from the spot table, [tables.md](tables.md) |
 | Party target | `Population/PartyHuntingTarget` |
 | Rest thresholds | `AI/RestPolicy` |
 | Party heal line | `AI/PartyHealPolicy` (`HEAL_BELOW`, `score`): cold `BackgroundResolver`, hot `BotPvpTactics.support` |

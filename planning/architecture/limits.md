@@ -208,6 +208,25 @@ handler the player is disconnected).
 | Chatter budget | 256 entries; area 45 s, speaker 120 s, topic 300 s, range 2000 | BotChatterBudget ~3 | cooldowns forgotten, repeats | none |
 | Global / clan chat | global: 18 s world-wide (×1-1.75, `globalChatMinIntervalMs`), topic 120 s (death 15 min), speaker 10 min; clan: 10 min per event, 12 pending per clan, 64 clans, TTL 2 min | `Bot/Population/BotGlobalChat` ~9, ~50, BotClanChat ~8 | suppressed | none |
 
+## Bot tables ([tables.md](tables.md), checked at be97733e)
+
+| Limit | Value | Where | When hit | Observable |
+|---|---|---|---|---|
+| Table levels | lines measured up to 78 (`MAX_LEVEL`, generator and `scripts/hunt-tables/common.js`); a bot of 79-80 reads 78 | `generate-spot-table.js`, `SpotValueTable` `combat` (`header.inputs.maxLevel`) | clamped | none |
+| Deep-blue cut | a spot more than 9 levels below the bot has no value (`ProgressionRates.DEEP_BLUE_LEVEL_GAP`); curves stop at gap 10 | `SpotValueTable` `combat`, generator `GAPS` | never ranked, never chosen by table readers (ours, user 10-29, not C4) | none |
+| Missing spot | a live catalogue spot without a table row has no value | `SpotValueTable.checkCatalog` | never chosen by table readers | log (one line per catalogue) |
+| Income ranking | spots from 15 below to 8 above the bot (`BASIS_MIN_GAP`), first 64 by held income | `SpotValueTable` `rankIncome` | the rest never offered | none |
+| Shortlists | 128 (`incomeRows`), oldest out | `SpotValueTable.rankedIncome` | re-sorted from the basis | dD `incomeEvictions` |
+| Value memo | 32768 rows (`MAX_VALUE_MEMO`), ring | `SpotValueTable` `memoValue` | oldest row recomputed | dD `memoEvictions` |
+| Income bases | 524288 cells, ~19 MiB per thread (`MAX_INCOME_BASE_CELLS`) | `SpotValueTable` `rankIncome` | oldest basis dropped, rescanned | dD `baseEvictions` |
+| Spot caches | 8192 entries (`SPOT_CACHE_LIMIT`), drop 1/8 at once | `SpotValueTable` `killSpot`, `productionCap` | recomputed | none |
+| Reward caches | 16384 NPC values, 32768 spot values (`MAX_NPC_VALUES`, `MAX_SPOT_VALUES`) | `SpotRewardExpectation` | oldest dropped | none |
+| Kill mix | 8 species per row (`MIX_SPECIES`; the gate mask is 8 bits) | generator `killMix`, `gapGate` | a spot's 9th and later species neither priced nor gated | none |
+| Level curves | ≤ 3 spots per line and 2-level band (`CURVE_SPOTS`), gaps −4..10 step 2; reference at +6 (`REF_GAP`) | generator | a band without spots takes the nearest band's curve, a gap without points its neighbour's | header `inputs` |
+| Hunt hours | rows 2 h, curves and kit points 1 h (`--hours`, `--curve-hours`); probe 0.25 h, 12 spots | generator, `tables.yml` | noise of rare deaths and drops | header `inputs` |
+| CI jobs | 12 shards × 4 children; 150 min per spot shard, 30 min merge, 240 min hunt | `.github/workflows/tables.yml` | run fails | CI |
+| Hunt model | ceilings: mob level ≤ 85, death chance < 0.5; corrections: 17 classes, gaps −2/2/5/8, 0.5 h; rotation: MP phase ≤ 180 s, dry 60 s, 12 s slices | `scripts/hunt-tables/{ceilings,corrections,rotation}.js` | offline only | header `inputs` |
+
 ## Measurement (perf tool, `[Perf]` in `config/default.ini`)
 
 | Limit | Value | Where | When hit | Observable |

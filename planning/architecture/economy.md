@@ -43,6 +43,10 @@ and the HTML shop bypasses `BuyBotShop`/`BuyMerchantItem`/`SellToMerchantItem` a
 - **Crafting for trade:** decisions in the worker (`WealthCraftDecision`, `ShotCraftPolicy`, `CraftProfitPolicy`,
   `ProductionSalePolicy`); execution on main (`ColdWealthCraftService`, `ColdShotEconomyService`,
   `HotWealthCraftService`, `ColdCraftingService`); `CraftShopService`, `CraftWorkshopService`.
+- **Hour value and spot income:** `BotHuntEfficiency.huntIncome`/`huntHour` (the bot's own hunt samples, else the
+  precomputed spot table through `SpotValueTable`), `SpotEconomics.create` (crowding, calibration) — what every trip,
+  purchase and wish prices an hour with; shots / potions pay (`ShotStock.usePolicy`, `EconomyContext.foundation`).
+  Money of a kill is live (`SpotRewardExpectation.value`). See [tables.md](tables.md).
 - **Observability:** `EconomyDiagnostics`, `MarketTelemetry`, `CraftTelemetry`, `MarketSnapshot`, `src/EconomyJournal`,
   `src/MarketTradeOverview*`, `src/MarketEconomyOverview`.
 

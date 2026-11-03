@@ -44,8 +44,9 @@ Scope: `Actor`, `Skills`, `Effects`, `Combat`, `Npc`, `RaidBoss`, `Pets`, `Formu
 - **Cold fight (worker):** `BackgroundResolver.resolveFight` (solo), `resolvePartyFight` (party/raid), shared
   `coldBotTurn`/`attackDamage`; mob `ColdMobAction`; PvP `ColdPvpResolver`; rewards `ColdKillRewards` →
   `BackgroundDropResolver`; death `DeathExperience.applyColdDeath` (called by `BotLifeState.prepareResolve` and
-  `ColdPvpResolver`); town restart in `BackgroundResolver` at `Formulas.respawnHp`. Hunt tables
-  (`scripts/hunt-tables`) drive `resolveFight` directly.
+  `ColdPvpResolver`); town restart in `BackgroundResolver` at `Formulas.respawnHp`. The spot table and the hunt tables
+  measure this fight offline (`resolveSolo`, `resolveFight`; [tables.md](tables.md)): a change here goes stale in them
+  until a rebuild (tables.md "When to rebuild").
 
 **Shared hot and cold:** HitRules, Formulas, C4SkillRules, NpcCombatChoice, NpcHate, NpcAggroRange,
 ProgressionRates, MobExperience, OverhitReward, DeathExperience, PkDropPolicy, Karma.pkKillKarma, PvpRules,
