@@ -1708,8 +1708,7 @@ function startKernel(config = {}) {
             };
         },
         momentStats: config.coldMomentShadow === true ? PlayerMoment.createStats() : null,
-        soloWindow: config.coldSoloWindow !== true && config.coldSoloWindowShadow !== true ? null : {
-            on: config.coldSoloWindow === true,
+        soloWindow: {
             // One round of a window: the step's projection without its soft
             // point and what follows it (ColdSoloWindow, the window's end has them).
             projectRound: (state, result, timestamp, plan, writtenAt) => LifeStateProjector.prepareResolve(state, result,
@@ -1925,8 +1924,6 @@ function startKernel(config = {}) {
                     ? { economyPlan: preparedOccupation?.economyPlan || refreshed.economyPlan } : {}),
                 statsPacket,
                 economy,
-                // The shadow of a hunt window counts it (ColdSimulationKernel.shadowStep).
-                rebuilt: !nullReuse,
                 activityPick: economy.network.activity ? { activity: economy.network.activity.activity,
                     spotId: economy.network.activity.spotId, npcId: economy.network.activity.npcId } : null,
                 economyDecision: heldDecision || ColdEconomyDecision.capture({ ...economy, workshop: deps.workshop }, routedState),

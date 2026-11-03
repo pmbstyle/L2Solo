@@ -41,8 +41,8 @@ async function hunter(overrides = {}) {
 }
 
 // The step's decision: hold the hunt, as a held card does. `plan` overrides it.
-// on: true a window, false its shadow, null no window at all (the steps as they were).
-function world({ on, plan = null, deadlineMs = HOLD_MS, planHolds = () => true, ground = spot, leaf = {}, stock = () => null, onRound = () => {} }) {
+// windowed: false, a kernel without the worker's window readers: a round a step.
+function world({ windowed = true, plan = null, deadlineMs = HOLD_MS, planHolds = () => true, ground = spot, leaf = {}, stock = () => null, onRound = () => {} }) {
     const clock = { at: 0 };
     const proposals = [];
     const activity = { activity: 'hunting', spotId: spot.id, ...leaf };
@@ -56,7 +56,7 @@ function world({ on, plan = null, deadlineMs = HOLD_MS, planHolds = () => true, 
         spotOf: () => ground,
         planLifecycle: ({ state }) => plan ? plan(state, held(state)) : held(state),
         projectResolve: (state, result, timestamp, lifecyclePlan, writtenAt) => project(state, result, timestamp, writtenAt),
-        soloWindow: on === null ? null : { on,
+        soloWindow: !windowed ? null : {
             projectRound: (state, result, timestamp, lifecyclePlan, writtenAt) => { onRound(kernel); return project(state, result, timestamp, writtenAt); },
             deadline: (state, timestamp) => timestamp + deadlineMs,
             readers: () => ({ edges: (before, after) => Plan.edges(before, after, { stockFor: (state, kind) => stock(kind) }),
@@ -95,21 +95,18 @@ const roundsOf = state => state.stats.stepCount;
     {
         // The done_when: one window gives what today's steps give over the same
         // rounds, with the same seeds and no event between them, fight by fight.
-        const windowed = world({ on: true });
+        const windowed = world({});
         windowed.kernel.upsert({ state: await hunter() });
         const { state: window, proposal } = await windowed.step();
         const rounds = roundsOf(window);
         assert(rounds >= 2, `a window of more than one round (${rounds})`);
         assert.equal(await windowed.step(window.timing.nextResolveAt - 6000), null, 'no step before the window\'s next due');
-        // As the steps were, and in the shadow that counts beside them.
-        for (const on of [null, false]) {
-            const stepped = world({ on });
-            stepped.kernel.upsert({ state: await hunter() });
-            let row;
-            for (let i = 0; i < rounds; i++) row = (await stepped.step()).state;
-            assert(row.stats.fightsWon > 0, 'the bot fought');
-            assert.deepStrictEqual(saved(window), saved(row), `one window equals its rounds as steps (on: ${on})`);
-        }
+        const stepped = world({ windowed: false });
+        stepped.kernel.upsert({ state: await hunter() });
+        let row;
+        for (let i = 0; i < rounds; i++) row = (await stepped.step()).state;
+        assert(row.stats.fightsWon > 0, 'the bot fought');
+        assert.deepStrictEqual(saved(window), saved(row), 'one window equals its rounds as steps');
         assert(window.timing.nextResolveAt > T + 30000 * (rounds - 1), 'the next due is past the rounds it holds');
         const hunts = proposal.result.events.filter(event => event.type === 'hunt').length;
         assert(hunts >= 2, `every round's hunt event rides the one commit (${hunts})`);
@@ -117,7 +114,7 @@ const roundsOf = state => state.stats.stepCount;
 
     {
         // No event before the plan's deadline: the window stops at the round past it.
-        const { kernel, step } = world({ on: true, deadlineMs: 60000 });
+        const { kernel, step } = world({ deadlineMs: 60000 });
         kernel.upsert({ state: await hunter() });
         const { state } = await step();
         assert(state.timing.nextResolveAt >= T + 60000, 'it runs up to the deadline');
@@ -126,7 +123,7 @@ const roundsOf = state => state.stats.stepCount;
 
     {
         // A rest ends the window at the round that sat down.
-        const { kernel, step } = world({ on: true, deadlineMs: 1e7 });
+        const { kernel, step } = world({ deadlineMs: 1e7 });
         kernel.upsert({ state: await hunter() });
         const { state } = await step();
         assert.equal(state.activity, 'resting', 'the fights wore the bot out');
@@ -136,7 +133,7 @@ const roundsOf = state => state.stats.stepCount;
     {
         // A level ends it at the round that reached it.
         const next = Number(Data.experience[18]);
-        const { kernel, step } = world({ on: true, deadlineMs: 1e7, ground: earning });
+        const { kernel, step } = world({ deadlineMs: 1e7, ground: earning });
         kernel.upsert({ state: await hunter({ exp: next - 1 }) });
         const { state } = await step();
         assert.equal(state.level, 19);
@@ -145,7 +142,7 @@ const roundsOf = state => state.stats.stepCount;
 
     {
         // The money bound: the first adena past the next wish's price ends it.
-        const { kernel, step } = world({ on: true, deadlineMs: 1e7 });
+        const { kernel, step } = world({ deadlineMs: 1e7 });
         const bound = await hunter();
         bound.stats.wishSections = { ...bound.stats.wishSections, cashBounds: [-1, bound.adena + 1], wallet: bound.adena, moneyError: -1 };
         kernel.upsert({ state: bound });
@@ -156,7 +153,7 @@ const roundsOf = state => state.stats.stepCount;
 
     {
         // Supplies: a stock passes the decision's keep (edges, either way).
-        const { kernel, step } = world({ on: true, deadlineMs: 1e7, stock: kind => kind === 'shots' ? { itemId: 57, keep: 101 } : null });
+        const { kernel, step } = world({ deadlineMs: 1e7, stock: kind => kind === 'shots' ? { itemId: 57, keep: 101 } : null });
         kernel.upsert({ state: await hunter() });
         const { state } = await step();
         assert(state.adena >= 101, 'the stock passed its keep');
@@ -167,7 +164,7 @@ const roundsOf = state => state.stats.stepCount;
         // A material hunt's order done: the held leaf fails its execution check
         // (LEAF_CHECKS), the window ends though no fact moved.
         const drop = 57;
-        const { kernel, step } = world({ on: true, deadlineMs: 1e7, leaf: { itemId: drop, amount: 1 } });
+        const { kernel, step } = world({ deadlineMs: 1e7, leaf: { itemId: drop, amount: 1 } });
         kernel.upsert({ state: await hunter() });
         const { state } = await step();
         assert(state.adena > 100, 'the hunt brought its order');
@@ -176,7 +173,7 @@ const roundsOf = state => state.stats.stepCount;
 
     {
         // A native fact the plan reads failed: the window ends at that round.
-        const { kernel, step } = world({ on: true, deadlineMs: 1e7, planHolds: () => false });
+        const { kernel, step } = world({ deadlineMs: 1e7, planHolds: () => false });
         kernel.upsert({ state: await hunter() });
         const { state } = await step();
         assert.equal(roundsOf(state), 1);
@@ -184,7 +181,7 @@ const roundsOf = state => state.stats.stepCount;
 
     {
         // A plan that acts keeps its one round.
-        const { kernel, step } = world({ on: true, plan: (state, plan) => ({ ...plan, economyPlan: { take: [1] } }) });
+        const { kernel, step } = world({ plan: (state, plan) => ({ ...plan, economyPlan: { take: [1] } }) });
         kernel.upsert({ state: await hunter() });
         const { state } = await step();
         assert.equal(roundsOf(state), 1, 'an acting plan holds no window');
@@ -194,7 +191,7 @@ const roundsOf = state => state.stats.stepCount;
         // A step woken inside a window goes on from the bot's own clock, one
         // round, whoever moved lastResolvedAt: a command's or a hot session's
         // write leaves the window's end, the time is not hunted again.
-        const { kernel, step } = world({ on: true, deadlineMs: 150000, ground: fieldOf(6) });
+        const { kernel, step } = world({ deadlineMs: 150000, ground: fieldOf(6) });
         kernel.upsert({ state: await hunter() });
         const { state: window } = await step();
         assert.equal(window.activity, 'hunting');
@@ -213,7 +210,7 @@ const roundsOf = state => state.stats.stepCount;
     {
         // A bot taken from the worker between two rounds of a window leaves no proposal.
         let rounds = 0, fenced = null;
-        const { clock, kernel } = world({ on: true, onRound: held => { if (++rounds === 2) fenced = held.fence(901); } });
+        const { clock, kernel } = world({ onRound: held => { if (++rounds === 2) fenced = held.fence(901); } });
         kernel.upsert({ state: await hunter() });
         clock.at = T;
         kernel.tick();

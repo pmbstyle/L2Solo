@@ -64,12 +64,6 @@ const DEFAULTS = {
     // Diagnostics: the cold worker writes one heap snapshot per server boot as its heap nears
     // coldWorkerHeapMb (into tmp/heap/ of the server root). Off by default; restart to apply.
     coldWorkerHeapSnapshot: false,
-    // T120: a hunting solo step runs on to its next event (ColdSoloWindow).
-    // The shadow counts what a window would skip on today's steps (design rules,
-    // Recompute) at one more projection per hunting step. Read 11-01: 2.4 steps/s
-    // skipped of 25, 47% of them with another plan; both stay off.
-    coldSoloWindow: false,
-    coldSoloWindowShadow: false,
     // T174: counts the builds no player's moment asks for and what they decided (PlayerMoment).
     coldMomentShadow: false,
     // T174: away on a solo hunt the money drift and the income raise no decision.
@@ -248,8 +242,6 @@ const ENV_KEYS = {
     coldWorkerHeapMb: 'BOT_POPULATION_COLD_WORKER_HEAP_MB',
     coldWorkerYoungMb: 'BOT_POPULATION_COLD_WORKER_YOUNG_MB',
     coldWorkerHeapSnapshot: 'BOT_POPULATION_COLD_WORKER_HEAP_SNAPSHOT',
-    coldSoloWindow: 'BOT_POPULATION_COLD_SOLO_WINDOW',
-    coldSoloWindowShadow: 'BOT_POPULATION_COLD_SOLO_WINDOW_SHADOW',
     coldMomentShadow: 'BOT_POPULATION_COLD_MOMENT_SHADOW',
     coldMomentGate: 'BOT_POPULATION_COLD_MOMENT_GATE',
     playerProtectionGraceMs: 'BOT_POPULATION_PLAYER_PROTECTION_GRACE_MS',

@@ -12,6 +12,8 @@ const PROPOSAL_PAYLOAD_LIMIT_BYTES = 240 * 1024;
 // A step not answered by a commit ack this long after its start is requeued
 // (a party by its leader); a late ack then misses its proposal and is dropped.
 const STEP_STALL_MS = 30000;
+// A solo hunt window's most rounds (typically 3-10 inside its ~300 s hold).
+const MAX_WINDOW_ROUNDS = 32;
 // Ready resolver promises chained back to back ran a tick's whole batch as one task (T41 profile
 // 10-26: up to 1.3 s with no turn; the heartbeat, the flush and main's acks waited behind it). Each
 // queued step and command starts on its own turn: same work, no long task.
@@ -646,18 +648,15 @@ class ColdSimulationKernel {
             ? options.equipmentBridgeReason : null;
         this.projectResolve = typeof options.projectResolve === 'function' ? options.projectResolve : null;
         // A hunting solo step's window (T120, ColdSoloWindow), the worker's:
-        // { on, projectRound(state, result, timestamp, plan, writtenAt),
-        // deadline(state, timestamp), readers(plan) }. Off: the shadow, today's
-        // steps counting what the window would skip (windowShadow).
+        // { projectRound(state, result, timestamp, plan, writtenAt),
+        // deadline(state, timestamp), readers(plan) }. A kernel built without
+        // them (a test of another rule) has no window: a step is its one round.
         this.soloWindow = options.soloWindow || null;
         this.momentStats = options.momentStats || null;
-        // Always on, read by the health line (PopulationStatus.soloWindowText):
-        // solo hunting steps, their rounds and hunt time (steps per hunting
-        // bot-hour = 3.6e6 * steps / huntMs); what ended each; the shadow's
-        // steps a window would have skipped, those that rebuilt, those with another plan.
-        this.soloWindowStats = { steps: 0, rounds: 0, huntMs: 0, ended: {}, skipped: 0, rebuilt: 0, moved: 0 };
-        // The shadow: a bot's plan key and deadline while its next step would be skipped.
-        this.windowShadow = new Map();
+        // Read by the health line (PopulationStatus.soloWindowText): solo
+        // hunting steps, their rounds and hunt time (steps per hunting
+        // bot-hour = 3.6e6 * steps / huntMs); what ended each window.
+        this.soloWindowStats = { steps: 0, rounds: 0, huntMs: 0, ended: {} };
         // The room check at a party's arrival (the worker's partyArrival):
         // { party, members } with the "was full" mark, or null.
         this.partyArrival = typeof options.partyArrival === 'function' ? options.partyArrival : null;
@@ -1034,7 +1033,6 @@ class ColdSimulationKernel {
         this.buyerEvents?.remove(id);
         this.buyerWakeups.delete(id);
         this.lookSeen.delete(id);
-        this.windowShadow.delete(id);
         this.decisionEvents?.ownerRemoved(id, previousRecord, current);
         this.versions.set(id, Number(this.versions.get(id) || 0) + 1);
         this.heap.remove(this.scheduleTokens.get(id)?.heapEntry);
@@ -1246,8 +1244,6 @@ class ColdSimulationKernel {
             }
             const kind = this.buyerWakeups.has(id) && eligibleBuyer(current.state)
                 ? 'command' : lifecycleKind(current.state, this);
-            // A step a window would have held off: it asks more than a round.
-            if (kind !== 'resolver' && this.windowShadow.has(id)) this.shadowStep(id, null, current.state, null, true);
             if (kind === 'resolver') {
                 // The step starts from the kernel's own copy at once.
                 this.inFlight.set(id, { state: current.state, startedAt: this.now(), dueAt: Number(entry.dueAt) });
@@ -2228,9 +2224,8 @@ class ColdSimulationKernel {
             });
             if (!this.resolverSourceCurrent(source)) return;
             const first = { state: resolveState, result, timestamp };
-            const window = this.soloWindow && ColdSoloWindow.opens(resolveState, lifecyclePlan, result, timestamp,
-                startedAt + STEP_LEAD_MAX_MS) ? this.soloWindow : null;
-            const round = window?.on ? await this.huntWindow(source, first, lifecyclePlan, roundOptions, startedAt) : first;
+            const round = this.soloWindow && ColdSoloWindow.opens(resolveState, lifecyclePlan, result, timestamp,
+                startedAt + STEP_LEAD_MAX_MS) ? await this.huntWindow(source, first, lifecyclePlan, roundOptions, startedAt) : first;
             if (!round || !this.resolverSourceCurrent(source)) return;
             // The step's one decision (its economy, worker-local) travels
             // through the round: the projection asks no second one.
@@ -2239,10 +2234,7 @@ class ColdSimulationKernel {
                 : null;
             if (!this.resolverSourceCurrent(source)) return;
             const projectedState = projection?.state || projection;
-            const shadowed = this.shadowStep(characterId, lifecyclePlan, resolveState, projection?.economyPlan);
-            this.countHuntStep(first, round, window && !window.on
-                ? await this.shadowEnd(characterId, first, lifecyclePlan, startedAt, shadowed?.until) : round.ended);
-            if (!this.resolverSourceCurrent(source)) return;
+            this.countHuntStep(first, round);
             // The forced cleanup on the fight's result, over a trip this step
             // started (main starts the cleanup trip).
             const cleanupNeed = projectedState && !require('./RaidSupplyPolicy').held(active.state, timestamp) ? PartyMarketBreak.forcedCleanupNeed(
@@ -2310,7 +2302,11 @@ class ColdSimulationKernel {
         for (;;) {
             const after = await projectRound(round.state, round.result, round.timestamp, plan, writtenAt);
             if (!this.resolverSourceCurrent(source)) return null;
-            const ended = ColdSoloWindow.endOf(round.state, after, round.result, until, readers);
+            // Two guards bound the loop whatever endOf decides: a round cap and a
+            // round that does not move the clock (limits.md; counted in windowEnd).
+            const ended = ColdSoloWindow.endOf(round.state, after, round.result, until, readers)
+                || (rounds >= MAX_WINDOW_ROUNDS ? 'round_cap' : '')
+                || (Math.ceil(Number(after.timing?.nextResolveAt)) > round.timestamp ? '' : 'stalled');
             if (ended) {
                 // huntedThrough (ColdSoloWindow): the last round's start, the end of the credited hunt.
                 const result = { ...round.result, ...(soulCrystals.length ? { soulCrystals } : {}),
@@ -2331,43 +2327,17 @@ class ColdSimulationKernel {
 
     // The health line's count of a solo hunting step: rounds and hunt time over
     // its window, what ended it (none when no window opened).
-    countHuntStep(first, round, ended) {
+    countHuntStep(first, round) {
         const stats = this.soloWindowStats;
         if (!ColdSoloWindow.huntingRound(first.result) || first.state.party?.partyId || first.state.partyId) return;
         stats.steps += 1;
         stats.rounds += round.rounds || 1;
         stats.huntMs += Math.max(0, Number(round.result.nextResolveAt) - first.timestamp);
-        if (ended) stats.ended[ended] = (stats.ended[ended] || 0) + 1;
+        if (round.ended) stats.ended[round.ended] = (stats.ended[round.ended] || 0) + 1;
     }
 
     windowReaders(plan) {
         return { ...this.soloWindow.readers(plan), kind: after => lifecycleKind(after, this) };
-    }
-
-    // The shadow (design rules, Recompute): a step the window would have
-    // skipped counts, with whether its plan rebuilt and whether it gave what a
-    // window would have delayed: another plan, or an act after its round
-    // (action). A command step is such a move by itself (left). Returns the
-    // bot's open window ({ key, until }), gone from the map.
-    shadowStep(characterId, plan, state, action = null, left = false) {
-        const id = Number(characterId), open = this.windowShadow.get(id);
-        if (!open) return null;
-        this.windowShadow.delete(id);
-        const stats = this.soloWindowStats;
-        stats.skipped += 1;
-        if (plan?.rebuilt) stats.rebuilt += 1;
-        if (left || ColdEconomyPlan.acts(action) || ColdSoloWindow.planMoved(plan, open.key, state)) stats.moved += 1;
-        return open;
-    }
-
-    // The shadow's end of a step's window, by the live rule on the step's own
-    // round (projected as a window's, without its soft events): one that runs
-    // on leaves the next step skipped. until: the deadline of the window it continues.
-    async shadowEnd(characterId, first, plan, writtenAt, until = this.soloWindow.deadline(first.state, first.timestamp)) {
-        const after = await this.soloWindow.projectRound(first.state, first.result, first.timestamp, plan, writtenAt);
-        const ended = ColdSoloWindow.endOf(first.state, after, first.result, until, this.windowReaders(plan));
-        if (!ended) this.windowShadow.set(Number(characterId), { key: ColdSoloWindow.planKey(plan), until });
-        return ended;
     }
 
     flush(priority = null, force = false, options = {}) {
@@ -2760,7 +2730,7 @@ class ColdSimulationKernel {
             stepsRefused: this.stepsRefused,
             ackUnbuilt: this.ackUnbuilt,
             stepLeadMs: Math.round(this.stepLeadMs),
-            soloWindow: { ...this.soloWindowStats, on: this.soloWindow?.on === true },
+            soloWindow: this.soloWindowStats,
             moments: this.momentStats || null,
             proofOverflows: invoke('GameServer/Bot/Economy/WishNetwork').proofOverflowCount(), // lazy: the kernel's boot order
             nodeCapBuilds: invoke('GameServer/Bot/Economy/WishProviders').nodeCapBuildCount(), // lazy: the kernel's boot order

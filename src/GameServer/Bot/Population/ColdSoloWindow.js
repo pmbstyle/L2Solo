@@ -28,8 +28,7 @@ function stepElapsedMs(state, timestamp) {
 }
 
 // A plan the rounds change only through endOf: it keeps the bot hunting, acts on
-// nothing, waits for no fight and asks no party. Read by the window's open and,
-// for a step a window would have skipped, by the shadow.
+// nothing, waits for no fight and asks no party.
 function planHunts(plan) {
     return !plan?.lastFight && !plan?.partyRequest && !plan?.replanFailure
         && (!plan?.activityPick || plan.activityPick.activity === 'hunting')
@@ -86,14 +85,4 @@ function sumDebug(total, debug = {}) {
     return sum;
 }
 
-// What a step's plan would have changed in a window that skipped it (the
-// shadow's compare): the leaf and the target the window ran on, a trip, an act.
-function planKey(plan) {
-    const pick = plan?.activityPick;
-    return `${pick?.activity ?? ''}:${pick?.spotId ?? ''}:${pick?.npcId ?? ''}:${Number(plan?.targetNpcId) || 0}`;
-}
-function planMoved(plan, key, state) {
-    return planKey(plan) !== key || (plan?.plannedState || state).activity !== 'hunting' || !planHunts(plan);
-}
-
-module.exports = { ownClock, stepElapsedMs, opens, huntingRound, endOf, sumDebug, planKey, planMoved };
+module.exports = { ownClock, stepElapsedMs, opens, huntingRound, endOf, sumDebug };

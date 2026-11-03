@@ -141,14 +141,12 @@ const PopulationStatus = {
     },
 
     // huntSteps=<steps per hunting bot-hour>/<rounds per step>: solo hunting steps since the worker
-    // started (T120, ColdSoloWindow), <on|shadow>; end: what ended the windows; skip=<steps>/<rebuilt>/<moved>:
-    // the shadow's steps a window would skip, those that rebuilt, those whose plan moved.
+    // started (T120, ColdSoloWindow); windowEnd: what ended the windows.
     soloWindowText(w) {
         if (!w) return '';
         const rate = w.huntMs > 0 ? (3.6e6 * w.steps / w.huntMs).toFixed(1) : '-';
         const ended = Object.entries(w.ended || {}).map(([why, count]) => `${why}:${count}`).join(',') || '-';
-        return ` huntSteps=${rate}/${w.steps > 0 ? (w.rounds / w.steps).toFixed(1) : '-'}/${w.on ? 'on' : 'shadow'}`
-            + ` windowEnd=${ended} skip=${w.skipped}/${w.rebuilt}/${w.moved}`;
+        return ` huntSteps=${rate}/${w.steps > 0 ? (w.rounds / w.steps).toFixed(1) : '-'} windowEnd=${ended}`;
     },
 
     // doors=<caller>:<built>:<served>:<left to the step>:<read as held>:<moved down its agenda>: every door since the worker started.
