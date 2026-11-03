@@ -296,7 +296,7 @@ function planForKind(kind, rank = 'none') {
 // A hot bot's shot: the one its cold state takes (planForState), Blessed
 // Spiritshot by the same choice (choosesBlessed) over the actor's bag, so
 // hot auto shots enable the shot the worker's stock names. A player keeps
-// its class's shot (the login top-up, EnterWorld -> ensureActorStock).
+// its class's shot (bought or crafted; a new character starts with CreateNewChar.awardBaseShots).
 function planForActor(actor) {
     const classId = actorClassId(actor), rank = weaponRankFromActor(actor);
     if (!classWantsSpiritshots(classId)) return planForKind('soulshot', rank);

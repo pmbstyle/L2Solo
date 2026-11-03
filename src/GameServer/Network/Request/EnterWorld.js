@@ -1,6 +1,5 @@
 const ServerResponse = invoke('GameServer/Network/Response');
 const Database       = invoke('Database');
-const ShotStock      = invoke('GameServer/Inventory/ShotStock');
 const ClanService    = invoke('GameServer/Clan/ClanService');
 const GameTime       = invoke('GameServer/World/GameTime');
 
@@ -51,10 +50,9 @@ function enterWorld(session, buffer) {
             .catch((error) => utils.infoWarn('AfkTrade', 'notification delivery failed: %s', error.message));
     };
 
-    const ready = ShotStock.ensureActorStock(session.actor, { targetAmount: ShotStock.DEFAULT_TARGET_AMOUNT })
-        .catch((err) => {
-            utils.infoWarn('Character', 'starter shot stock failed for %s: %s', session.actor.fetchName(), err.message);
-        }).then(continueEnter);
+    // A player's shots are the starter stock of a new character (CreateNewChar.awardBaseShots); a
+    // login does not top them up.
+    const ready = Promise.resolve().then(continueEnter);
     const tracked = ready.finally(() => {
         if (session.enterWorldReady === tracked) session.enterWorldReady = null;
     });
