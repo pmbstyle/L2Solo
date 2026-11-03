@@ -1,5 +1,6 @@
 const DataCache = invoke('GameServer/DataCache');
 const ProgressionCap = invoke('GameServer/Progression/ProgressionCap');
+const Karma = invoke('GameServer/Karma');
 // ARCH-NOTE: C1/E3 pure loss/restoration valuation is also read by the clan
 // worker. Resolve the database only for the existing queued persistence path
 // so those reads preserve the worker's forbidden-dependency guard.
@@ -58,6 +59,16 @@ function calculateLoss(actor, context = {}, table = DataCache.experience) {
         expLost,
         expAfterDeath
     };
+}
+
+// Lisvus deathPenalty -> PcStat.addExp(-lost): the EXP a death takes washes
+// karma as gained EXP does (Karma.karmaLostForExperience), not inside a PvP
+// zone. Hot (applyDeathPenalty) and cold (applyColdDeath, its record's
+// karmaLost applied by the cold commit) read this one call.
+function karmaLost(subject, expLost, context = {}) {
+    if (context.pvpZone) return 0;
+    const karma = Number(subject?.fetchKarma?.() ?? subject?.stats?.karma ?? subject?.karma ?? 0);
+    return Karma.karmaLostForExperience({ fetchKarma: () => karma }, expLost);
 }
 
 function calculateRestoration(actor, deathRecord, context = {}) {
@@ -122,6 +133,7 @@ function applyDeathPenalty(session, actor, context = {}) {
         return { ...result, duplicate: false, persistence };
     }
     const level = ProgressionCap.levelForExperience(result.expAfterDeath, result.level);
+    const washed = karmaLost(actor, result.expLost, context);
     const record = {
         characterId,
         level,
@@ -130,9 +142,16 @@ function applyDeathPenalty(session, actor, context = {}) {
         expAfterDeath: result.expAfterDeath,
         deathContext: deathContext(context),
         penaltyAppliedAt: appliedAt,
-        pendingRestoration: true
+        pendingRestoration: true,
+        ...(washed > 0 ? { karmaLost: washed, karma: Number(actor.fetchKarma()) - washed } : {})
     };
     actor.deathExperience = record;
+    if (washed > 0) {
+        actor.setKarma(record.karma);
+        const response = invoke('GameServer/Network/Response');
+        session?.dataSendToOthers?.(response.charInfo(actor), actor);
+        session?.dataSendToOthers?.(response.relationChanged(actor), actor);
+    }
     synchronizeActor(session, actor, record.expAfterDeath, level);
     const persistence = queue(characterId, () => persistenceDatabase().applyCharacterDeathExperience(record)).then((stored) => {
         if (stored?.duplicate) {
@@ -189,20 +208,27 @@ function applyColdDeath(state, context = {}) {
     if (current?.pendingRestoration) return { state, result: { ...current, duplicate: true } };
     const result = calculateLoss(state, context);
     if (!result.eligible) return { state, result };
+    const washed = karmaLost(state, result.expLost, context);
+    // The commit caps the wash by the karma held then, after this fight's own
+    // kills raised it (a bot that PKs and dies in one cold fight), as hot does.
+    const wash = context.pvpZone ? 0 : Karma.karmaWashForExperience(result.expLost);
     const record = {
         expBeforeDeath: result.expBeforeDeath,
         expLost: result.expLost,
         expAfterDeath: result.expAfterDeath,
         penaltyAppliedAt: Number(context.timestamp || Date.now()),
         pendingRestoration: true,
-        deathContext: deathContext(context)
+        deathContext: deathContext(context),
+        // The cold commit takes it off characters.karma once, with the new death.
+        ...(wash > 0 && result.expLost > 0 ? { karmaLost: wash } : {})
     };
     return {
         state: {
             ...state,
             exp: result.expAfterDeath,
             level: ProgressionCap.levelForExperience(result.expAfterDeath, result.level),
-            stats: { ...(state.stats || {}), deathExperience: record }
+            stats: { ...(state.stats || {}), deathExperience: record,
+                ...(washed > 0 ? { karma: Math.max(0, Number(state.stats?.karma || 0) - washed) } : {}) }
         },
         result: { ...result, deathRecord: record }
     };

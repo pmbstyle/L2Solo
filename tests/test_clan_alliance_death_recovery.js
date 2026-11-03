@@ -32,9 +32,9 @@ function actor(id, x = 10000) {
         fetchLocX: () => a.x, fetchLocY: () => a.y, fetchLocZ: () => a.z,
         fetchHp: () => a.hp, fetchMaxHp: () => 100, fetchMp: () => a.mp, fetchMaxMp: () => 50,
         isDead: () => a.state.dead,
-        fillupVitals() { a.hp = 100; a.mp = 50; }, clearDestId() {}, unselect() {}, destructor() {},
+        setHp(v) { a.hp = v; }, clearDestId() {}, unselect() {}, destructor() {},
         attack: { abortCast() {}, clearTimers() {} },
-        automation: { abortAll() {}, stopReplenish() {}, replenishVitals() { assert.fail('must restore vitals immediately'); } },
+        automation: { abortAll() {}, replenishVitals() {} },
         state: { dead: false, casts: false, hits: false, seated: false,
             setDead(v) { this.dead = v; }, setCasts(v) { this.casts = v; }, setHits(v) { this.hits = v; },
             fetchCasts() { return this.casts; }, fetchSeated() { return this.seated; }, setSeated(v) { this.seated = v; },
@@ -67,6 +67,7 @@ const world = {
 const mocks = {
     Database: {}, 'GameServer/World/World': world,
     'GameServer/Bot/Population/BotLifeState': invoke('GameServer/Bot/Population/BotLifeState'),
+    'GameServer/Formulas': invoke('GameServer/Formulas'),
     'GameServer/Bot/Economy/EconomyContext': invoke('GameServer/Bot/Economy/EconomyContext'),
     'GameServer/Bot/Economy/EconomicValuation': invoke('GameServer/Bot/Economy/EconomicValuation'),
     'GameServer/Bot/BotManager': { botPartySay: (s, message) => { lifecycle.push('report'); return true; } },
@@ -134,8 +135,8 @@ assert.deepStrictEqual(lifecycle, ['die', 'report'], 'the client receives death 
 advance(0);
 assert.strictEqual(courier.actor.isDead(), false, 'courier revives without advancing the death wait timer');
 assert.deepStrictEqual(packets.map(p => p.type), ['die', 'revive', 'stand', 'teleport']);
-assert.strictEqual(courier.actor.hp, 100);
-assert.strictEqual(courier.actor.mp, 50);
+assert.strictEqual(courier.actor.hp, 70, 'the restart gives the C4 70% of max HP');
+assert.strictEqual(courier.actor.mp, 50, 'the restart leaves MP as death left it');
 assert.strictEqual(courier.spotRelocation, undefined);
 assert.strictEqual(courier.incomingThreatId, undefined);
 assert.strictEqual(courier.deathTimerStart, undefined);

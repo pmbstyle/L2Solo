@@ -48,9 +48,17 @@ async function main() {
         const bag = item(19, 'Armor.Shield'), armor = item(20, 'Armor.Chest', true), weapon = item(21, 'Weapon.Sword', true);
         const rolls = [0, 0.9, 0, 0.9];
         assert.deepEqual(Drops.rollPlan({ karma: 1, pk: 6, inventory: [bag, armor, weapon] }, () => rolls.shift()), [armor]);
-        near(Drops.expectedValue({ karma: 1, pk: 6, inventory: [bag, armor] }, id => id === 19 ? 10 : 100), 13.2);
+        // C4 (Lisvus onDieDropItem): one KarmaRateDrop roll (70 %, General.pkDeathDropChance), then each item on its own chance.
+        const rate = Drops.dropChance();
+        assert.deepEqual(Drops.rollPlan({ karma: 1, pk: 6, inventory: [bag, armor, weapon] }, () => 0.75), [], 'a failed drop roll drops nothing');
+        assert.deepEqual(Drops.rollPlan({ karma: 1, pk: 6, inventory: [bag, armor, weapon] }, () => 0), [bag, armor, weapon],
+            'every item rolls its own chance, no stop after the first that stays');
+        near(Drops.expectedValue({ karma: 1, pk: 6, inventory: [bag, armor] }, id => id === 19 ? 10 : 100), rate * (10 * 0.5 + 100 * 0.4));
         assert.equal(Drops.rollPlan({ karma: 1, pk: 6, inventory: Array.from({ length: 20 }, () => bag) }, () => 0).length, 10);
-        assert.equal(Drops.expectedValue({ karma: 1, pk: 5, inventory: [bag] }, () => 100), 0);
+        near(Drops.expectedValue({ karma: 1, pk: 6, inventory: Array.from({ length: 11 }, () => bag) }, () => 1),
+            rate * (11 * 0.5 - 0.5 * 0.5 ** 10), 'the eleventh item drops only when fewer than ten did');
+        assert(Drops.expectedValue({ karma: 1, pk: 5, inventory: [bag] }, () => 100) > 0, 'C4 MinimumPKRequiredToDrop is 5');
+        assert.equal(Drops.expectedValue({ karma: 1, pk: 4, inventory: [bag] }, () => 100), 0);
         for (const protectedItem of [item(57, 'Etc.Adena'), item(5575, 'Etc.Adena'), item(10, 'Weapon.Sword'),
             item(6611, 'Weapon.Sword'), item(300, 'Other.Quest'), { ...bag, shadow: true }]) assert.equal(Drops.eligible(protectedItem), false);
         for (const selfId of [5789, 5790]) {

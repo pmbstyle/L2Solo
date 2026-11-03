@@ -237,7 +237,9 @@ async function main() {
     assert(recovery.memberResults.every(r => r.result.materialize.exp === 0));
     assert.strictEqual(recovery.memberResults[0].result.patch.vitals, undefined, 'dead member remains dead until recovery');
     const revived = Resolver.resolveDeathRecovery(state(1), state(1).stats.coldPvp.recoverUntil);
-    assert(revived.patch.vitals.hp > 0 && revived.patch.stats.coldPvp.recoverUntil === 0);
+    assert(revived.patch.stats.coldPvp.recoverUntil === 0);
+    assert.deepStrictEqual([revived.patch.vitals.hp, revived.patch.vitals.mp], [Math.round(revived.patch.vitals.maxHp * 0.7),
+        Math.min(revived.patch.vitals.maxMp, state(1).vitals.mp)], 'a cold respawn, as hot: 70% HP, MP as death left it');
 
     // A flagged target awards PvP, not karma, through the same SQL transaction.
     const flagged = { ...state(4), stats: { ...state(4).stats, coldPvp: { flagUntil: at + 10000 } } };

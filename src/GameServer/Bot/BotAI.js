@@ -594,7 +594,7 @@ const BotAI = {
                 // respawns must complete before applying the new town location.
                 const hallRuntime = invoke('GameServer/ClanHall/Runtime');
                 const recoveryHall = invoke('GameServer/ClanHall/BotVisit').restartHall(session, bot);
-                Generics.revive(session, bot, { delayMs: 0, restoreFullVitals: true,
+                Generics.revive(session, bot, { delayMs: 0,
                     restoreExpPercent: recoveryHall ? hallRuntime.expRestore(bot) : null,
                     recoveryReason: recoveryHall ? 'restart_to_clan_hall' : 'restart_to_town' });
                 raiseDecision(session, 'revived');

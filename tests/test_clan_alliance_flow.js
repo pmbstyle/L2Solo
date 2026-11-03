@@ -39,13 +39,13 @@ function actor(id, selfId, x) {
         fetchId: () => id, fetchSelfId: () => selfId, fetchName: () => `Actor${id}`,
         fetchClanId: () => 1, fetchIsOnline() { return this.online; }, fetchLevel: () => 1,
         fetchLocX() { return this.x; }, fetchLocY() { return this.y; }, fetchLocZ() { return this.z; },
-        isDead() { return this.dead; }, fillupVitals() {}, fetchHp: () => 500, fetchMaxHp: () => 500,
+        isDead() { return this.dead; }, setHp() {}, fetchHp: () => 500, fetchMaxHp: () => 500,
         fetchMp: () => 250, fetchMaxMp: () => 250, setSp(value) { this.sp = value; },
         state: { casts: false, hits: false, seated: false, setDead(v) { this.owner.dead = v; },
             fetchCasts() { return this.casts; }, setCasts(v) { this.casts = v; },
             fetchHits() { return this.hits; }, setHits(v) { this.hits = v; },
             fetchSeated() { return this.seated; }, setSeated(v) { this.seated = v; } },
-        attack: { abortCast() {}, clearTimers() {} }, automation: { abortAll() {}, stopReplenish() {} }, unselect() {},
+        attack: { abortCast() {}, clearTimers() {} }, automation: { abortAll() {}, replenishVitals() {} }, unselect() {},
         backpack: { items: [], fetchItems() { return this.items; },
             fetchItemFromSelfId(id) { return this.items.find(i => i.fetchSelfId() === id); },
             insertItem(id, selfId, { amount }) { this.items.push({ amount, fetchId: () => id,
@@ -74,6 +74,7 @@ const world = { user: { sessions }, npc: { spawns: [...npcs.values()] },
 function place(a, loc) { a.x = loc.locX; a.y = loc.locY; a.z = loc.locZ; }
 function despawn(npc) { world.npc.spawns = world.npc.spawns.filter(n => n !== npc); }
 const mocks = {
+    'GameServer/Formulas': invoke('GameServer/Formulas'),
     Database: { fetchClanAllianceQuest: id => Database.fetchClanAllianceQuest(id, now),
         fetchItems: (...args) => {
             if (pendingSacrificeId) {
@@ -170,7 +171,7 @@ async function resurrectOfferings() {
     await cycle(60000);
     assert(couriers.every(s => s.actor.dead), 'ritual deaths wait for actual resurrection');
     assert(state().members.every(m => !m.herb && !m.loyaltyDelivered));
-    for (const s of couriers) mocks['GameServer/Actor/Generics/Revive'](s, s.actor, { delayMs: 2500, restoreFullVitals: true });
+    for (const s of couriers) mocks['GameServer/Actor/Generics/Revive'](s, s.actor, { delayMs: 2500 });
     await cycle(2500);
 }
 async function main() {

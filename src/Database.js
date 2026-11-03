@@ -3000,7 +3000,7 @@ function applySoulCrystalStepsUnsafe(characterId, steps, guard = () => {}) {
     }
 }
 
-function applyColdPhysicalStateUnsafe(characterId, physical = {}, parts = null) {
+function applyColdPhysicalStateUnsafe(characterId, physical = {}, parts = null, deathRecord = null) {
     const before = one('SELECT level,exp,sp,hp,maxHp,mp,maxMp,classId FROM characters WHERE id = ?', [characterId]);
     const classId = Number.isFinite(Number(physical.classId)) ? Number(physical.classId) : null;
     const values = {
@@ -3041,12 +3041,24 @@ function applyColdPhysicalStateUnsafe(characterId, physical = {}, parts = null) 
         write("UPDATE bot_life_state SET statsJson = json_set(statsJson, '$.karma', ?, '$.pk', ?) WHERE characterId = ?",
             [current.karma, current.pk, characterId]);
     }
-    // A PvP tally and a PK death drop (tried on the step that ends at 0 HP; it
-    // returns its death sequence only when it wrote) rewrite this bot's life
-    // state after the commit's UPDATE.
+    // A PvP tally, a PK death drop (tried on the step that ends at 0 HP; it
+    // returns its death sequence only when it wrote) and a death's karma wash
+    // rewrite this bot's life state after the commit's UPDATE.
     const dropped = Number(before?.hp) > 0 && Number(physical.hp) <= 0 ? dropPkDeathItemsUnsafe(characterId) : null;
+    // A new cold death's EXP loss washes karma (DeathExperience.applyColdDeath
+    // names how much), after the drop read the karma it died with.
+    // The wash is capped by the karma held now, after this commit's own kills.
+    const washed = Number(deathRecord?.karmaLost) > 0 && deathRecord.pendingRestoration
+        && Number(one('SELECT karma FROM characters WHERE id = ?', [characterId])?.karma) > 0
+        && !(Number(one('SELECT penaltyAppliedAt FROM character_death_experience WHERE characterId = ?',
+            [characterId])?.penaltyAppliedAt) >= Number(deathRecord.penaltyAppliedAt));
+    if (washed) {
+        write('UPDATE characters SET karma = MAX(0, karma - ?) WHERE id = ?', [Number(deathRecord.karmaLost), characterId]);
+        write("UPDATE bot_life_state SET statsJson = json_set(statsJson, '$.karma', (SELECT karma FROM characters WHERE id = ?)) WHERE characterId = ?",
+            [characterId, characterId]);
+    }
     return { drops: dropped?.drops || [],
-        rewrote: dropped?.deathSequence !== undefined || physical.pvpKills?.length > 0 };
+        rewrote: dropped?.deathSequence !== undefined || physical.pvpKills?.length > 0 || washed };
 }
 
 // The row is already moved when this runs: by the commit's own UPDATE, or by
@@ -6007,7 +6019,7 @@ const Database = {
             parts?.lap('row_write');
             const physical = request.physical || null;
             EconomyJournal.detail(request.journalReason || 'resolve');
-            const { drops: pkDrops, rewrote } = physical ? applyColdPhysicalStateUnsafe(characterId, physical, parts) : { drops: [], rewrote: false };
+            const { drops: pkDrops, rewrote } = physical ? applyColdPhysicalStateUnsafe(characterId, physical, parts, request.stats?.deathExperience) : { drops: [], rewrote: false };
             parts?.lap('physical');
             // What deals and closed records left for the bot on the board while
             // the worker held it reaches its bag with this save.

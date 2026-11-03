@@ -459,8 +459,13 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
     if (!combatLegal(target) || (!incoming && Threats.distance(owner.actor, target) > 2000)) target = null;
     if (!incoming && target && !HuntingVisibility.canSee(owner.actor, target)) target = null;
     if (!target && !incoming) {
+        // A member under the party's rest line sits the party down; it rests
+        // until every member is past the "rest until" line (RestPolicy locked,
+        // as a cold party and a hot solo bot do), not just past the trigger.
+        const recovering = owner.backgroundPartyRecovery === party.partyId;
         const low = members.some(s => RestPolicy.needsRest(s.actor, ratio(s.actor.fetchHp(), s.actor.fetchMaxHp()),
-            ratio(s.actor.fetchMp(), s.actor.fetchMaxMp()), { party: true, pet: SummonerTactics.petRestView(s.actor) }));
+            ratio(s.actor.fetchMp(), s.actor.fetchMaxMp()), { party: true, locked: recovering, pet: SummonerTactics.petRestView(s.actor) }));
+        owner.backgroundPartyRecovery = low ? party.partyId : undefined;
         if (low) {
             Tactics.stop(session, bot);
             session.currentTargetId = undefined;

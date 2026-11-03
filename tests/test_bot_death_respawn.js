@@ -82,14 +82,9 @@ const respawningBot = {
     hp: 0,
     mp: 0,
     fetchId: () => 200001,
-    fillupVitals() {
-        this.hp = 100;
-        this.mp = 100;
-    },
-    automation: {
-        stopReplenish() {},
-        replenishVitals() { throw new Error('bot town respawn must not wait for gradual regeneration'); }
-    },
+    fetchMaxHp: () => 100,
+    setHp(value) { this.hp = value; },
+    automation: { replenishVitals() {} },
     state: {
         dead: true,
         setDead(value) { this.dead = value; }
@@ -98,9 +93,10 @@ const respawningBot = {
 const respawnPackets = [];
 revive({
     dataSendToMeAndOthers(packet) { respawnPackets.push(packet); }
-}, respawningBot, { delayMs: 0, restoreFullVitals: true });
+}, respawningBot, { delayMs: 0 });
 assert.strictEqual(respawningBot.state.dead, false, 'bot must be alive before its immediate town teleport');
-assert.strictEqual(respawningBot.hp, 100, 'bot town respawn should restore HP before teleport validation');
+assert.strictEqual(respawningBot.hp, 70, 'a bot town respawn gives the C4 70% of max HP before teleport validation');
+assert.strictEqual(respawningBot.mp, 0, 'a bot town respawn does not restore MP');
 assert.strictEqual(respawnPackets.length, 2, 'bot town respawn should send revive and stand-up packets synchronously');
 
 const recoveryLeader = {

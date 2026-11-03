@@ -51,7 +51,7 @@ function recoverDeadCourier(session) {
     session.clanAllianceRecovering = false;
     session.clanAllianceRefreshAt = 0;
     session.clanAllianceRespawnUntil = Date.now() + 1200;
-    invoke('GameServer/Actor/Generics/Revive')(session, actor, { delayMs: 0, restoreFullVitals: true });
+    invoke('GameServer/Actor/Generics/Revive')(session, actor, { delayMs: 0 });
     invoke('GameServer/Actor/Generics/TeleportTo')(session, actor, destination, { urgentWakeup: true });
     report(session, 'quest_restart', 'I restarted in town. Continuing my quest assignment.');
     return true;

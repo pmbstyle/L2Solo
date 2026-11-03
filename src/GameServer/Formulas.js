@@ -24,6 +24,10 @@ const Formulas = {
     DEFAULT_PERFECT_SHIELD_BLOCK_RATE: 0,
     // A player's HP and MP regain one tick every 3 s (Automation.replenishVitals).
     REGEN_TICK_MS: 3000,
+    // Lisvus L2Character.doRevive (RespawnRestoreHPMultiplier 0.7): every
+    // revival, a restart or a resurrection, sets HP to 70 % of max; MP and CP
+    // stay as death left them. Hot Revive and cold resolveDeathRecovery.
+    respawnHp: (maxHp) => Math.max(1, Math.round((Number(maxHp) || 0) * 0.7)),
 
     calcBaseMod: (() => {
         function func(start, end, base, multiplier) {

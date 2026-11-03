@@ -33,11 +33,9 @@ function consume(session, data) {
         : hallRestart || TownRespawn.restartCoords(actor);
     const Generics = invoke(path.actor);
 
-    // Restart is a complete respawn, unlike a gradual resurrection skill.
-    // Make the actor alive before TeleportTo checks HP/dead state.
+    // Revive (C4 doRevive: 70 % HP) before TeleportTo checks HP/dead state.
     Generics.revive(session, actor, {
         delayMs: 0,
-        restoreFullVitals: true,
         restoreExpPercent: hallRestart && !arenaDeath ? hallRuntime.expRestore(actor) : null,
         recoveryReason: hallRestart && !arenaDeath ? 'restart_to_clan_hall' : 'restart_to_town'
     });

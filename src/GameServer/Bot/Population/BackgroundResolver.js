@@ -330,14 +330,16 @@ function resolveDeathRecovery(state, timestamp = Date.now()) {
     const combat = botCombatStats(state, timestamp);
     const respawnDelayMs = pvpRecovery ? 1000 : 90000;
 
+    // The town restart, as hot Revive: 70 % HP (Formulas.respawnHp), MP and
+    // CP as death left them.
     return {
         patch: {
             activity: 'resting',
             clearDeathExperience: 'restart_to_town',
             vitals: {
-                hp: combat.maxHp,
+                hp: Formulas.respawnHp(combat.maxHp),
                 maxHp: combat.maxHp,
-                mp: combat.maxMp,
+                mp: Math.max(0, Math.min(combat.maxMp, Number(state.vitals?.mp) || 0)),
                 maxMp: combat.maxMp
             },
             stats: {
@@ -347,7 +349,9 @@ function resolveDeathRecovery(state, timestamp = Date.now()) {
                 restUntil: timestamp + respawnDelayMs,
                 coldCombat: {
                     ...(state.stats?.coldCombat || {}),
-                    ...(pvpRecovery ? { cp: combat.maxCp, cpAt: timestamp, effects: [] } : {}),
+                    ...(pvpRecovery ? { effects: [] } : {}),
+                    // No CP regained while dead: it regenerates from the respawn.
+                    ...(Number.isFinite(state.stats?.coldCombat?.cp) ? { cpAt: timestamp } : {}),
                     charges: 0,
                     chargeExpiresAt: null,
                     summon: null

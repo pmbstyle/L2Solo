@@ -20,8 +20,8 @@ const state = {
 const result = BackgroundResolver.resolveSolo({ state, spot: null, elapsedMs: 60000 });
 
 assert.strictEqual(result.patch.activity, 'resting', 'a dead cold bot must recover before returning to the hunt');
-assert.strictEqual(result.patch.vitals.hp, result.patch.vitals.maxHp, 'background respawn restores HP');
-assert.strictEqual(result.patch.vitals.mp, result.patch.vitals.maxMp, 'background respawn restores MP');
+assert.strictEqual(result.patch.vitals.hp, Math.round(result.patch.vitals.maxHp * 0.7), 'C4 doRevive: a respawn gives 70% of max HP');
+assert.strictEqual(result.patch.vitals.mp, 0, 'C4 doRevive: a respawn does not restore MP');
 assert(result.nextResolveAt >= Date.now() + 85000, 'background respawn includes a recovery delay');
 assert.strictEqual(result.events[0].type, 'respawn');
 assert.strictEqual(result.materialize.exp, 0, 'recovery must not award combat XP');

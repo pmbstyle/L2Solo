@@ -2,6 +2,7 @@
 // atomically even when gratitude is on cooldown or memory is not loaded.
 const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Rules = invoke('GameServer/Skills/C4SkillRules');
+const Formulas = invoke('GameServer/Formulas');
 const ColdHelp = require('../../Social/ColdCombatHelpMemory');
 const RECOVERY_MS = 15000;
 const distance = (a, b) => Math.hypot(a.loc?.locX - b.loc?.locX, a.loc?.locY - b.loc?.locY, a.loc?.locZ - b.loc?.locZ);
@@ -48,8 +49,8 @@ function resolve({ party, members, timestamp: at, episodeId, assessRelationship 
             stats: { ...caster.stats, restUntil: until, coldCombat: { ...caster.stats?.coldCombat,
                 cooldowns: { ...caster.stats?.coldCombat?.cooldowns, [skill.selfId]: at + Number(skill.reuse || 0) } } }
         });
-        patches.set(dead.characterId, { activity: 'resting', restoreExpPercent: Number(skill.power || 0), vitals: { ...dead.vitals, hp: 1 },
-            stats: { ...dead.stats, restUntil: until, lastResurrectAt: at,
+        patches.set(dead.characterId, { activity: 'resting', restoreExpPercent: Number(skill.power || 0), vitals: { ...dead.vitals, hp: Formulas.respawnHp(dead.vitals.maxHp) },
+            stats: { ...dead.stats, restUntil: until,
                 coldPvp: { ...dead.stats?.coldPvp, recoverUntil: 0, flagUntil: 0 },
                 coldCombat: { ...dead.stats?.coldCombat, effects: [], cp: 0, cpAt: at, charges: 0, chargeExpiresAt: null, summon: null } } });
         return result('party_resurrected', patches, until,
