@@ -267,8 +267,9 @@ class LiveRecorder {
         const file = keep ? path.join(this.bootDir, 'cpu',
             `${stampOf(new Date(startedAt))}-${fileLabel(thread)}-${Math.round(a.longest?.ms || 0)}ms.cpuprofile`) : null;
         const at = new Date(startedAt).toISOString();
-        this.append({ type: 'cpu', t: at, thread: thread.label, ms: a.durationMs, busyMs: a.busyMs, gcMs: a.gcMs,
-            longestMs: a.longest?.ms || 0, longTurns: a.longTurns, runs: a.runs });
+        this.append({ type: 'cpu', t: at, thread: thread.label, instance: thread.threadId, ms: a.durationMs, busyMs: a.busyMs,
+            gcMs: a.gcMs, longestMs: a.longest?.ms || 0, longTurns: a.longTurns, runs: a.runs,
+            profile: file && path.relative(this.bootDir, file).split(path.sep).join('/') });
         if (a.longTurns > 0 || forced) {
             this.appendTo(`spikes-${dayOf(new Date(startedAt))}.jsonl`, { t: new Date(startedAt + (a.longest?.atMs || 0)).toISOString(), chunk: at,
                 thread: thread.label, ms: a.longest?.ms || 0, longTurns: a.longTurns, long: a.long.slice(0, 5),

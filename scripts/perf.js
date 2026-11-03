@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 
-// Reads what the live recorder ([Perf] live, src/Perf/LiveRecorder.js) writes, and asks a running
-// server for a capture. Offline: nothing here touches the game.
+// Reads what the live recorder ([Perf] live, src/Perf/LiveRecorder.js) writes, asks a running
+// server for a capture, and runs the recorder on a fixed world for a bounded window (scripts/perf/).
+// Live:
 //   node scripts/perf.js boots
 //   node scripts/perf.js spikes [--boot=<name>] [--thread=main] [--top=20] [--sort=ms]
 //   node scripts/perf.js timeline [--boot=<name>] [--every=60]   (minutes per row)
@@ -10,6 +11,11 @@
 //   node scripts/perf.js heap <a.heapprofile> <b.heapprofile> [--top=15]
 //   node scripts/perf.js capture cpu | heap | snapshot [--thread=main]
 //   node scripts/perf.js analyze <file.cpuprofile> [--long=50]
+// Window (before / after a change, on a launcher save):
+//   node scripts/perf.js saves [--saves=<dir>]
+//   node scripts/perf.js prepare [--minutes=60] [--name=<save name>]     (grows a world, saves it)
+//   node scripts/perf.js run --save=<id> [--scenario=cold] [--warmup=5] [--minutes=10] [--diagnostics] [--keep-world]
+//   node scripts/perf.js report [<run folder>]
 
 const fs = require('fs');
 const path = require('path');
@@ -17,6 +23,9 @@ require('../src/Global');
 const { settings } = require('../src/Perf/LiveRecorder');
 const CpuProfile = require('../src/Perf/CpuProfile');
 const HeapProfile = require('../src/Perf/HeapProfile');
+const SavedGames = require('./saved-games');
+const Window = require('./perf/window');
+const Report = require('./perf/report');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -212,6 +221,23 @@ function analyzeFile(words, flags) {
     for (const f of a.longest.self) console.log(`  ${ms(f.ms)}  ${f.fn}`);
 }
 
+async function printSaves(flags) {
+    const saves = await SavedGames.list(Window.savesDir(flags));
+    if (!saves.length) console.log(`no saves in ${path.relative(ROOT, Window.savesDir(flags))} (perf.js prepare, or the launcher's Save)`);
+    for (const save of saves) console.log(`${save.id}  ${save.createdAt.slice(0, 16)}  ${Math.round(save.sizeBytes / 1048576)} MB  ${save.name}`);
+}
+
+// The run folder: given, or the newest under tmp/perf/runs.
+function runDir(words) {
+    if (words[1]) return path.resolve(words[1]);
+    const runs = path.join(Window.PERF_DIR, 'runs');
+    const newest = fs.existsSync(runs) ? fs.readdirSync(runs).map(name => path.join(runs, name))
+        .filter(dir => fs.existsSync(path.join(dir, 'run.json')))
+        .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0] : null;
+    if (!newest) throw new Error('no run yet: node scripts/perf.js run --save=<id>');
+    return newest;
+}
+
 async function main() {
     const { words, flags } = parse(process.argv.slice(2));
     const command = words[0];
@@ -221,7 +247,12 @@ async function main() {
     if (command === 'heap') return printHeap(words, flags);
     if (command === 'capture') return capture(words, flags);
     if (command === 'analyze') return analyzeFile(words, flags);
-    console.log('Use: perf.js boots | spikes | timeline | heap [a b] | capture cpu|heap|snapshot | analyze <file.cpuprofile>');
+    if (command === 'saves') return printSaves(flags);
+    if (command === 'prepare') return Window.prepare(flags);
+    if (command === 'run') return Report.report(await Window.run(flags));
+    if (command === 'report') return Report.report(runDir(words));
+    console.log('Use: perf.js boots | spikes | timeline | heap [a b] | capture cpu|heap|snapshot | analyze <file>'
+        + ' | saves | prepare | run --save=<id> | report [<run>]');
     process.exitCode = command ? 1 : 0;
 }
 
