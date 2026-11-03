@@ -93,7 +93,7 @@ function attribute(run, samples, ms, tree, count) {
 function analyze(profile, { longTurnMs = 50, top: count = 8, keep = 20, since = 0 } = {}) {
     const tree = index(profile), samples = profile.samples || [];
     const { at, ms } = timings(profile);
-    const self = new Map(), files = new Map(), runs = [];
+    const self = new Map(), files = new Map(), owners = new Map(), runs = [];
     let busyMs = 0, idleMs = 0, gcMs = 0, programMs = 0, run = null;
     for (let i = 0; i < samples.length; i++) {
         if (at[i] <= since) continue;
@@ -109,6 +109,9 @@ function analyze(profile, { longTurnMs = 50, top: count = 8, keep = 20, since = 
         if (node.name === PROGRAM) programMs += ms[i];
         if (node.name !== ROOT_NODE) add(self, node.key || node.name, ms[i]);
         if (node.project) add(files, node.source, ms[i]);
+        // The owner: the nearest project frame on the stack, so SQLite's native run() or a
+        // JSON.stringify counts for the code that called it; without one, the frame itself.
+        if (node.name !== ROOT_NODE) add(owners, tree.projectStack(samples[i])[0] || node.key || node.name, ms[i]);
         if (!run) run = { from: i, to: i, ms: 0, atMs: (at[i] - (profile.startTime || 0)) / 1000 };
         run.to = i;
         run.ms += ms[i];
@@ -127,7 +130,8 @@ function analyze(profile, { longTurnMs = 50, top: count = 8, keep = 20, since = 
         long: long.sort((a, b) => b.ms - a.ms).slice(0, keep)
             .map(r => ({ atMs: Math.round(r.atMs), ms: round(r.ms) })),
         self: top(self, count),
-        files: top(files, count)
+        files: top(files, count),
+        owners: top(owners, count)
     };
 }
 

@@ -190,6 +190,30 @@ const PopulationStatus = {
             + ` spoilNoList=${SpoilSweep.sparedSpoils()}`;
     },
 
+    // What a long recording needs every 30 s, diagnostics on or off, each from its owner (the same
+    // readings the status line prints): bots, players, main's lag, the database queue and checkpoint,
+    // the path pool, geodata, main's heap (after GC once WorkerHeapTelemetry observes), repairs and
+    // background jobs. src/Perf/LiveRecorder stores it (PopulationService.logSummary).
+    vitals() {
+        const database = invoke('Database').stats();
+        const paths = PathfindingWorkerPool.stats();
+        const jobs = BackgroundJobRegistry.snapshot();
+        const pick = (object, keys) => Object.fromEntries(keys.filter(key => object?.[key] !== undefined).map(key => [key, object[key]]));
+        return {
+            bots: LifeState.counts(),
+            players: invoke('GameServer/Bot/Population/PopulationService').realPlayerSessions().length,
+            lag: { nowMs: Math.round(Metrics.currentEventLoopLag()), sustainedMs: Math.round(Metrics.sustainedEventLoopLag()) },
+            database: { ...pick(database, ['path', 'historyPath', 'pending', 'maxPending', 'failures', 'avgWaitMs', 'avgRunMs', 'operations']),
+                checkpoint: pick(database.checkpoint, ['inFlight', 'last', 'lastReset']) },
+            pathWorkers: pick(paths, ['workers', 'busy', 'queue', 'companionBusy', 'companionQueue', 'inFlight']),
+            geodata: GeodataEngine.storageStats(),
+            mainHeap: heapRecord(),
+            safetyRepairs: Metrics.lastSafetyRepairs || null,
+            jobs: jobs.enabled === false ? null : { ...pick(jobs, ['registered', 'inFlight']), jobs: Object.fromEntries(Object.entries(jobs.jobs || {})
+                .map(([name, job]) => [name, pick(job, ['inFlight', 'started', 'completed', 'deferred', 'errors', 'lastStartedAt', 'lastCompletedAt'])])) }
+        };
+    },
+
     summary() {
         if (!Config.developerDiagnostics) return { enabled: false };
         const counts = this.counts();

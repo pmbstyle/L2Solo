@@ -47,6 +47,11 @@ assert.deepEqual(a.longest.code, [
 assert.equal(a.longest.self[0].fn, 'heavy src/GameServer/World/World.js:21');
 assert.ok(a.longest.self.some(row => row.fn === '(garbage collector)'), 'self time keeps GC and native frames');
 assert.deepEqual(a.files.map(row => row.fn), ['src/GameServer/World/World.js', 'src/GameServer/Bot/AI/BotAI.js']);
+assert.deepEqual(a.owners, [
+    { fn: 'heavy src/GameServer/World/World.js:21', ms: 3 },
+    { fn: 'tick src/GameServer/Bot/AI/BotAI.js:11', ms: 2 },
+    { fn: '(garbage collector)', ms: 1 }
+], 'each sample counts for its nearest project frame; one with none (GC) for itself');
 assert.equal(CpuProfile.sourceOf(url('src/NodeL2.js')), 'src/NodeL2.js');
 assert.equal(CpuProfile.sourceOf('node:internal/timers'), 'node:internal/timers');
 

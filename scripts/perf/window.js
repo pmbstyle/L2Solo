@@ -153,7 +153,7 @@ async function run(flags) {
     const bots = botCounts(path.join(dir, 'world.sqlite'));
     // Every chunk kept (keepProfileMs 0): the report adds up where the window's CPU went. Heap dumps
     // only at the window's edges.
-    writeIni(dir, { live: true, dir, keepProfileMs: 0, keepProfiles: 100000, heapEveryMinutes: 100000 });
+    writeIni(dir, { live: true, dir, keepProfileMs: 0, keepProfilesPerDay: 100000, heapEveryMinutes: 100000 });
     const meta = { sha, dirty, scenario, save: { id: flags.save, name: save.name }, bots, warmupMinutes: warmup,
         windowMinutes: minutes, diagnostics, crowd, node: process.version, startedAt: new Date().toISOString() };
     fs.writeFileSync(path.join(dir, 'run.json'), `${JSON.stringify(meta, null, 2)}\n`);

@@ -119,7 +119,8 @@ function printTimeline(flags) {
     const buckets = new Map(), threads = new Set();
     const bucket = (iso) => {
         const key = bucketOf(iso, minutes);
-        if (!buckets.has(key)) buckets.set(key, { cpu: {}, heapMb: {}, rssMb: 0, coldDue: 0, workerGcMb: 0 });
+        if (!buckets.has(key)) buckets.set(key, { cpu: {}, heapMb: {}, rssMb: 0, coldDue: 0, workerGcMb: 0, hot: 0, players: 0,
+            dbQueue: 0, walMb: 0, commitQueue: 0, faults: null, faultsEnd: 0, mainGcMb: 0, pageFaults: 0, restarts: 0 });
         return buckets.get(key);
     };
     for (const line of lines) {
@@ -134,17 +135,31 @@ function printTimeline(flags) {
             for (const [label, heap] of Object.entries(line.heaps || {})) b.heapMb[label] = Math.max(b.heapMb[label] || 0, heap.usedMb);
             b.coldDue = Math.max(b.coldDue, line.coldQueue?.overdue || 0);
             b.workerGcMb = Math.max(b.workerGcMb, Math.round((line.coordinator?.worker?.heapAfterGc || 0) / 1048576));
+            b.hot = Math.max(b.hot, line.vitals?.bots?.hot || 0);
+            b.players = Math.max(b.players, line.vitals?.players || 0);
+            b.dbQueue = Math.max(b.dbQueue, line.vitals?.database?.pending || 0);
+            b.walMb = Math.max(b.walMb, line.files?.walMb || 0);
+            b.commitQueue = Math.max(b.commitQueue, line.coordinator?.queue?.depth || 0);
+            const faults = line.coordinator?.failures?.workerFaults;
+            if (Number.isFinite(faults)) { b.faults ??= faults; b.faultsEnd = faults; }
+            b.mainGcMb = Math.max(b.mainGcMb, line.vitals?.mainHeap?.afterGc || 0);
+            b.pageFaults += line.machine?.majorPageFaults || 0;
+        } else if (line.type === 'thread' && line.event === 'exit') {
+            b.restarts += 1;
         }
     }
     const pct = (part, whole) => (whole > 0 ? `${Math.round(100 * part / whole)}%` : '-');
-    console.log(`${path.basename(dir)}: ${minutes} min per row. cpu <thread>=busy/gc/longest ms/long turns; heap = max used MB`);
+    console.log(`${path.basename(dir)}: ${minutes} min per row. cpu <thread>=busy/gc/longest ms/long turns; heap = max used MB;`
+        + ' dbQ/commitQ = queue max; faults = worker faults in the row; mainGc = main heap after GC MB; pf = major page faults');
     for (const [key, b] of buckets) {
         const cpu = [...threads].map(t => {
             const c = b.cpu[t];
             return c ? `${t}=${pct(c.busy, c.ms)}/${pct(c.gc, c.ms)}/${Math.round(c.longest)}/${c.long}` : null;
         }).filter(Boolean).join(' ');
         const heaps = Object.entries(b.heapMb).map(([label, used]) => `${label}:${used}`).join(' ');
-        console.log(`${time(key)}  ${cpu}  rss=${b.rssMb} coldGc=${b.workerGcMb} coldDue=${b.coldDue}  heap ${heaps}`);
+        console.log(`${time(key)}  ${cpu}  hot=${b.hot} players=${b.players} rss=${b.rssMb} mainGc=${b.mainGcMb} coldGc=${b.workerGcMb}`
+            + ` coldDue=${b.coldDue} dbQ=${b.dbQueue} wal=${b.walMb} commitQ=${b.commitQueue} faults=${b.faults === null ? '-' : b.faultsEnd - b.faults}`
+            + ` pf=${b.pageFaults}${b.restarts ? ` exits=${b.restarts}` : ''}  heap ${heaps}`);
     }
 }
 

@@ -89,6 +89,9 @@ class ColdCommitQueue {
         this.stepSamples = {};
         this.flushReasons = {};
         this.lastBatchReason = null;
+        // Counted always (cheap): an afterCommit that throws (economy review, training, events) does
+        // not fail the commit, and its error was kept only on the result (POP-2).
+        this.failures = { afterCommitErrors: 0, lastAfterCommitError: null };
         this.counters = {
             enqueued: 0,
             coalesced: 0,
@@ -461,6 +464,8 @@ class ColdCommitQueue {
                             // world notification must never become a rejected ACK.
                             DiagnosticConfig.developerDiagnostics && (this.counters.errors += 1);
                             result.afterCommitError = error?.message || 'after_commit_error';
+                            this.failures.afterCommitErrors += 1;
+                            this.failures.lastAfterCommitError = { reason: result.afterCommitError, at: Date.now() };
                         } finally {
                             if (DiagnosticConfig.developerDiagnostics) afterCommitMs += this.now() - afterStartedAt;
                         }
@@ -571,6 +576,7 @@ class ColdCommitQueue {
             oldestMs: this.size() ? Math.max(0, now - oldestAt) : 0,
             paused: this.paused,
             flushing: this.flushing,
+            failures: { ...this.failures },
             ...(DiagnosticConfig.developerDiagnostics ? {
             flushReasons: { ...this.flushReasons },
             stages: Object.fromEntries(Object.entries(this.stageSamples).map(([stage, samples]) => [stage, {

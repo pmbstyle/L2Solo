@@ -19,7 +19,7 @@ const round = (value, digits = 1) => Math.round(value * 10 ** digits) / 10 ** di
 // 2026-11-03) moved cores and busy shares 3-4 %, long turns a minute 10-16 %, heap at the end
 // 9-16 %, the sampled growth up to 50 % and the single longest turn 30-90 %. A change inside these
 // (with some margin) is marked "noise": it needs more runs, or a longer window, to mean anything.
-const NOISE = [[/% cpu/, 0.15], [/cores|busy %/, 0.06], [/activation|cooldown/, 0.3], [/packets|KB/, 0.2], [/gc %/, 0.3], [/long turns\/min/, 0.2], [/heap end|rss/, 0.2],
+const NOISE = [[/% cpu/, 0.15], [/WAL|db queue|commit queue|page faults/, 0.3], [/cores|busy %/, 0.06], [/activation|cooldown/, 0.3], [/packets|KB/, 0.2], [/gc %/, 0.3], [/long turns\/min/, 0.2], [/heap end|rss/, 0.2],
     [/sampled growth/, 0.6], [/longest|player .* max/, 1], [/player /, 0.3]];
 
 function delta(label, a, b) {
@@ -59,6 +59,17 @@ function rows(a, b) {
             const x = a.transitions?.[kind], y = b.transitions?.[kind];
             out.push([`${kind}s`, x?.count, y?.count], [`${kind} avg ms`, x?.avgMs, y?.avgMs], [`${kind} p95 ms`, x?.p95Ms, y?.p95Ms]);
         }
+    }
+    if (a.context || b.context) {
+        const ca = a.context || {}, cb = b.context || {};
+        out.push(['db queue max', ca.database?.pendingMax, cb.database?.pendingMax],
+            ['WAL end MB', ca.database?.walMb?.end, cb.database?.walMb?.end],
+            ['commit queue depth max', ca.commitQueue?.depthMax, cb.commitQueue?.depthMax],
+            ['commit queue oldest max ms', ca.commitQueue?.oldestMaxMs, cb.commitQueue?.oldestMaxMs],
+            ['worker faults', ca.failures?.workerFaults, cb.failures?.workerFaults],
+            ['afterCommit errors', ca.failures?.afterCommitErrors, cb.failures?.afterCommitErrors],
+            ['main heap after GC end MB', ca.memory?.mainHeapAfterGcMb?.end, cb.memory?.mainHeapAfterGcMb?.end],
+            ['major page faults', ca.memory?.majorPageFaults, cb.memory?.majorPageFaults]);
     }
     out.push(['main heap end MB', a.memory.mainHeapUsedMb?.end, b.memory.mainHeapUsedMb?.end],
         ['rss max MB', a.memory.rssMb?.max, b.memory.rssMb?.max]);

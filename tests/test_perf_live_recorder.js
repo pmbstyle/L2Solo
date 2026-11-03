@@ -29,7 +29,7 @@ const BUSY = 'function stepBots() { let x = 0; const t = Date.now(); while (Date
         assert.deepEqual(fs.readdirSync(dir), []);
 
         assert.equal(recorder.start({ live: true, dir, cpuThreads: 'main,perf-test-busy', cpuChunkSeconds: 1,
-            longTurnMs: 50, keepProfileMs: 100, keepProfiles: 2, heapThreads: 'main,perf-test-leak', heapSampleKb: 32,
+            longTurnMs: 50, keepProfileMs: 100, keepProfilesPerDay: 2, heapThreads: 'main,perf-test-leak', heapSampleKb: 32,
             keepHeapProfiles: 2 }), true);
         const current = JSON.parse(fs.readFileSync(path.join(dir, 'current.json'), 'utf8'));
         assert.equal(current.pid, process.pid);
@@ -90,7 +90,7 @@ const BUSY = 'function stepBots() { let x = 0; const t = Date.now(); while (Date
             'a request is marked done once its captures are written');
         const forced = spikeLines(boot).filter(row => row.forced);
         assert.deepEqual(forced.map(row => row.thread).sort(), ['main', 'perf-test-busy']);
-        assert.equal(fs.readdirSync(path.join(boot, 'cpu')).length, 2, 'keepProfiles caps the raw profiles');
+        assert.equal(fs.readdirSync(path.join(boot, 'cpu')).length, 4, 'the 2 worst chunks of the day and the 2 captured ones');
 
         // capture heap, three times: each heap thread's sampler is read without a reset, so the
         // leaking worker's live memory grows from file to file and the diff names the function.

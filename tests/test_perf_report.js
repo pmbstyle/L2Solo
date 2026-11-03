@@ -44,10 +44,20 @@ jsonl('timeline-20261103.jsonl', [
         players: 2, packets: 1200, bytes: 2 * 30 * 1024 * 10, seconds: 30, moves: 2 },
     { type: 'player', t: iso(end + 30000), scheduleMs: [999], handlerMs: [999], errors: 0, hot: 99 },
     { type: 'summary', t: iso(start + 30000), main: { memory: { heapUsed: 100 * MB, rss: 300 * MB }, processCpuMs: { user: 9000, system: 1000 } },
+        vitals: { bots: { hot: 2, cold: 5 }, players: 1, lag: { sustainedMs: 10 }, database: { pending: 3, checkpoint: { last: { at: 1 } } },
+            mainHeap: { afterGc: 50 } },
+        files: { walMb: 4, worldMb: 20 }, machine: { freeMemMb: 900, majorPageFaults: 2 },
+        coordinator: { queue: { depth: 2, bytes: 2048, oldestMs: 100, paused: false, failures: { afterCommitErrors: 0 } },
+            failures: { workerFaults: 1, faultBots: 1 } },
         population: { metrics: { delta: { coldOwnerHandoffs: 3, activations: 3, cooldowns: 1 }, transitions: { activation: { count: 3, avgMs: 100, p95Ms: 180, maxMs: 200 },
             cooldown: { count: 1, avgMs: 40, p95Ms: 40, maxMs: 40 } } } },
         coldQueue: { overdue: 1 }, heaps: { main: { usedMb: 100 } }, recorder: { costMs: 60, inspectorMs: 0 } },
     { type: 'summary', t: iso(end), main: { memory: { heapUsed: 120 * MB, rss: 310 * MB }, processCpuMs: { user: 14000, system: 0 } },
+        vitals: { bots: { hot: 4, cold: 3 }, players: 1, lag: { sustainedMs: 30 }, database: { pending: 7, checkpoint: { last: { at: 2 } } },
+            mainHeap: { afterGc: 55 } },
+        files: { walMb: 9, worldMb: 20 }, machine: { freeMemMb: 700, majorPageFaults: 5 },
+        coordinator: { queue: { depth: 5, bytes: 4096, oldestMs: 900, paused: true, failures: { afterCommitErrors: 2 } },
+            failures: { workerFaults: 4, faultBots: 2, lastFault: { stage: 'solo_project', reason: 'boom' } } },
         coldQueue: { overdue: 3 }, heaps: { main: { usedMb: 120 } }, recorder: { costMs: 60, inspectorMs: 0 } }
 ]);
 jsonl('spikes-20261103.jsonl', [
@@ -89,6 +99,18 @@ try {
         cooldown: { count: 1, avgMs: 40, p95Ms: 40, maxMs: 40 }, handoffs: 3 });
     assert.deepEqual(main.cpuParts, [{ part: 'world, actors, combat', ms: 60, pct: 100 }], 'World.js counts as world');
     assert.deepEqual(s.player.over, ['schedule p99 200 > 120 ms', 'schedule max 200 > 150 ms']);
+    const c = s.context;
+    assert.deepEqual(c.load, { hotAvg: 3, coldAvg: 4, playersMax: 1, lagSustainedMaxMs: 30 });
+    assert.equal(c.database.pendingMax, 7);
+    assert.deepEqual(c.database.walMb, { start: 4, end: 9, max: 9 });
+    assert.equal(c.database.checkpoints, 1, 'the last checkpoint changed once in the window');
+    assert.deepEqual(c.commitQueue, { depthMax: 5, bytesMaxKb: 4, oldestMaxMs: 900, pausedShare: 0.5 });
+    assert.equal(c.failures.workerFaults, 3, 'faults in the window, not since boot');
+    assert.equal(c.failures.afterCommitErrors, 2);
+    assert.equal(c.failures.lastFault.reason, 'boom');
+    assert.deepEqual(c.memory.mainHeapAfterGcMb, { start: 50, end: 55, max: 55 });
+    assert.equal(c.memory.freeMemMinMb, 700);
+    assert.equal(c.memory.majorPageFaults, 7);
     assert.deepEqual(s.memory.mainHeapUsedMb, { start: 100, end: 120, max: 120 });
     assert.deepEqual(s.memory.heaps.main, { start: 100, end: 120, max: 120 });
     assert.deepEqual(s.memory.growth.main.self, [{ fn: 'keep src/GameServer/World/World.js:5', mb: 15 }]);

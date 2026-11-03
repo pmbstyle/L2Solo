@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const v8 = require('v8');
 const { performance } = require('perf_hooks');
@@ -46,7 +47,9 @@ function settings(config = {}) {
         longTurnMs: number(config.longTurnMs, 50, 1),
         // 0 keeps every chunk (window runs add up the whole window).
         keepProfileMs: number(config.keepProfileMs, 200, 0),
-        keepProfiles: number(config.keepProfiles, 300, 0),
+        // Raw chunks kept per day: the worst (longest busy run) ones, and every captured one; a spike at
+        // 3 a.m. outlives a busy afternoon.
+        keepProfilesPerDay: number(config.keepProfilesPerDay, 100, 0),
         heapThreads: String(config.heapThreads ?? 'main,l2node-cold-simulation').split(',').map(s => s.trim()).filter(Boolean),
         heapSampleKb: number(config.heapSampleKb, 128, 1),
         heapEveryMinutes: number(config.heapEveryMinutes, 60, 1),
@@ -86,6 +89,10 @@ class LiveRecorder {
             this.profiled = new Map();
             this.heaped = new Map();
             this.profiles = [];
+            this.eluMarks = new Map();
+            this.resourceMark = process.resourceUsage();
+            // Main's heap after major GC (WorkerHeapTelemetry), as the cold worker already has it.
+            invoke('GameServer/Bot/Population/WorkerHeapTelemetry').observe();
             this.writes = Promise.resolve();
             this.ticking = false;
             this.costMs = 0;
@@ -94,6 +101,8 @@ class LiveRecorder {
             this.running = true;
             this.threads = new Threads();
             this.threads.start({ onReady: thread => this.attach(thread), onExit: (thread) => {
+                this.note('thread', { event: 'exit', thread: thread.label, instance: thread.threadId });
+                this.eluMarks.delete(thread.threadId);
                 this.profiled.delete(thread.threadId);
                 const heap = this.heaped.get(thread.threadId);
                 this.heaped.delete(thread.threadId);
@@ -139,6 +148,8 @@ class LiveRecorder {
 
     attach(thread) {
         if (!this.running) return;
+        // A worker restart shows in the timeline as an exit and a start of the same name.
+        this.note('thread', { event: 'start', thread: thread.label, instance: thread.threadId });
         if (this.wanted(thread, this.settings.heapThreads)) this.attachHeap(thread);
         if (!this.wanted(thread, this.settings.cpuThreads)) return;
         const state = { thread, handle: null, startedAt: Date.now(), rotating: false, lastEnd: 0 };
@@ -289,12 +300,18 @@ class LiveRecorder {
                 profile: kept, forced: !!forced });
         }
         if (!file) return;
-        this.profiles.push(file);
-        while (this.profiles.length > this.settings.keepProfiles) {
-            const old = this.profiles.shift();
-            this.write(() => fs.promises.rm(old, { force: true }));
-        }
+        this.keepProfile({ file, day: dayOf(new Date(startedAt)), ms: a.longest?.ms || 0, forced: !!forced });
         if (forced) utils.infoSuccess('Perf', 'captured cpu of %s: %s', thread.label, path.relative(ROOT, file));
+    }
+
+    // Per day, the keepProfilesPerDay chunks with the longest busy run stay, and every captured one.
+    keepProfile(entry) {
+        this.profiles.push(entry);
+        const day = this.profiles.filter(row => row.day === entry.day && !row.forced);
+        if (day.length <= this.settings.keepProfilesPerDay) return;
+        const least = day.reduce((low, row) => (row.ms < low.ms ? row : low));
+        this.profiles = this.profiles.filter(row => row !== least);
+        this.write(() => fs.promises.rm(least.file, { force: true }));
     }
 
     // The chunk thread (ChunkWorker), started on first use and again after it dies; it does not keep
@@ -386,7 +403,7 @@ class LiveRecorder {
 
     // Called by PopulationService.logSummary with what it already built; the coordinator snapshot
     // is a function so nothing is copied with the recorder off.
-    recordSummary(reason, summary, coordinatorSnapshot) {
+    recordSummary(reason, summary, coordinatorSnapshot, vitals) {
         if (!this.running) return Promise.resolve();
         const began = performance.now();
         const cpu = process.cpuUsage(this.cpuMark);
@@ -401,22 +418,58 @@ class LiveRecorder {
                 processCpuMs: { user: Math.round(cpu.user / 1000), system: Math.round(cpu.system / 1000) } },
             coldQueue: summary?.coldQueue || null,
             coordinator: coordinatorSnapshot ? coordinatorSnapshot() : null,
+            vitals: vitals ? vitals() : null,
             population: summary?.enabled === false ? null : population,
+            machine: this.machine(),
             recorder: { costMs: Math.round(this.costMs), inspectorMs: Math.round(this.threads.syncMs), profiles: this.profiles.length } };
         this.costMs = performance.now() - began;
         this.threads.syncMs = 0;
-        return this.heaps().then(heaps => this.append({ ...record, heaps }))
+        return Promise.all([this.heaps(), this.files(record.vitals?.database)])
+            .then(([heaps, files]) => this.append({ ...record, heaps, files }))
             .catch(error => this.warn('summary', error));
     }
 
-    // used/total MB of every thread's V8 heap now, read from main: WorkerHeapTelemetry reports the
-    // heap after GC from inside a thread, and with diagnostics off only the cold worker's.
+    // What the machine did since the last line: free memory, page faults (a major one reads the disk:
+    // swapping shows here before it shows as busy time blamed on random code), file I/O, switches.
+    machine() {
+        const now = process.resourceUsage(), last = this.resourceMark;
+        this.resourceMark = now;
+        const delta = (key) => now[key] - (last?.[key] || 0);
+        return { freeMemMb: mb(os.freemem()), totalMemMb: mb(os.totalmem()), majorPageFaults: delta('majorPageFault'),
+            minorPageFaults: delta('minorPageFault'), fsReads: delta('fsRead'), fsWrites: delta('fsWrite'),
+            involuntarySwitches: delta('involuntaryContextSwitches') };
+    }
+
+    // World, WAL and history file sizes in MB (a WAL that only grows stalls a checkpoint later).
+    async files(database) {
+        if (!database?.path) return null;
+        const size = (file) => fs.promises.stat(file).then(stat => Math.round(stat.size / 1048576 * 10) / 10).catch(() => 0);
+        const [world, wal, history, historyWal] = await Promise.all([size(database.path), size(`${database.path}-wal`),
+            database.historyPath ? size(database.historyPath) : 0, database.historyPath ? size(`${database.historyPath}-wal`) : 0]);
+        return { worldMb: world, walMb: wal, historyMb: history, historyWalMb: historyWal };
+    }
+
+    // used/total MB of every thread's V8 heap now, read from main (WorkerHeapTelemetry reports the
+    // heap after GC from inside a thread), and each thread's event-loop utilization since the last line.
+    // A CPU-profiled thread's ELU reads high (the profiler inflates it): `profiled` says which.
     async heaps() {
         const rows = await Promise.all(this.threads.all().map(thread =>
             Promise.resolve().then(() => (thread.worker ? thread.worker.getHeapStatistics() : v8.getHeapStatistics()))
-                .then(heap => [thread.label, { usedMb: mb(heap.used_heap_size), totalMb: mb(heap.total_heap_size) }])
+                .then(heap => [thread.label, { usedMb: mb(heap.used_heap_size), totalMb: mb(heap.total_heap_size),
+                    ...this.elu(thread) }])
                 .catch(() => null)));
         return Object.fromEntries(rows.filter(Boolean));
+    }
+
+    elu(thread) {
+        const source = thread.worker ? thread.worker.performance : performance;
+        if (typeof source?.eventLoopUtilization !== 'function') return {};
+        const mark = this.eluMarks.get(thread.threadId);
+        const now = source.eventLoopUtilization();
+        this.eluMarks.set(thread.threadId, now);
+        if (!mark) return {};
+        const window = source.eventLoopUtilization(now, mark);
+        return { elu: Math.round(window.utilization * 1000) / 1000, profiled: this.profiled.has(thread.threadId) };
     }
 
     // A line another measurement adds to the timeline (src/Perf/HotCrowd: the player probe).
@@ -441,7 +494,7 @@ class LiveRecorder {
     }
 
     // Older than keepDays: other boot folders, and this boot's day files (a server up for weeks).
-    // Raw profiles are capped by keepProfiles instead.
+    // Raw profiles: the worst keepProfilesPerDay a day (keepProfile), and older days go below.
     async prune() {
         const limit = Date.now() - this.settings.keepDays * 86400000, oldestDay = dayOf(new Date(limit));
         for (const name of await fs.promises.readdir(this.settings.dir)) {
@@ -454,6 +507,9 @@ class LiveRecorder {
             const day = DAY_FILE.exec(name)?.[1];
             if (day && day < oldestDay) await fs.promises.rm(path.join(this.bootDir, name), { force: true });
         }
+        const old = this.profiles.filter(row => row.day < oldestDay);
+        this.profiles = this.profiles.filter(row => row.day >= oldestDay);
+        for (const row of old) await fs.promises.rm(row.file, { force: true });
     }
 }
 

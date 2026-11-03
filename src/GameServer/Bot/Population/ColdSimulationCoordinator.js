@@ -241,6 +241,10 @@ class ColdSimulationCoordinator {
         // counted always (cheap): the live read of how often a main write
         // lands under a step or leaves the cached copy behind the row.
         this.refusals = { commitRefused: {}, staleCommand: 0 };
+        // Worker faults, counted always (cheap): a step that throws is requeued at its due time
+        // (POP-1), so one broken bot faults again and again; faultBots counts the bots, at most 1000.
+        this.failures = { workerFaults: 0, faultsByStage: {}, lastFault: null };
+        this.faultBots = new Set();
         // Review commands answered (always counted, like the refusals): how many
         // came, how they ended (refused by reason) and which steps they carried.
         this.reviews = { sent: 0, ok: 0, refused: {}, plan: 0, buff: 0, training: 0 };
@@ -855,6 +859,11 @@ class ColdSimulationCoordinator {
             break;
         case 'fault':
             DiagnosticConfig.developerDiagnostics && (this.counters.workerErrors += 1);
+            this.failures.workerFaults += 1;
+            this.failures.faultsByStage[payload.stage || 'unknown'] = (this.failures.faultsByStage[payload.stage || 'unknown'] || 0) + 1;
+            this.failures.lastFault = { reason: payload.reason || 'unknown', stage: payload.stage || null,
+                characterId: payload.characterId ?? null, at: Date.now() };
+            if (payload.characterId != null && this.faultBots.size < 1000) this.faultBots.add(Number(payload.characterId));
             utils.infoWarn('ColdWorker', 'worker fault: %s%s', payload.reason || 'unknown', payload.stack ? `\n${payload.stack}` : '');
             break;
         default:
@@ -2374,6 +2383,7 @@ class ColdSimulationCoordinator {
             worker: { ...this.lastWorkerSnapshot },
             refusals: { commitRefused: { ...this.refusals.commitRefused },
                 staleCommand: this.refusals.staleCommand },
+            failures: { ...this.failures, faultsByStage: { ...this.failures.faultsByStage }, faultBots: this.faultBots.size },
             reviews: { ...this.reviews, refused: { ...this.reviews.refused } },
             heldAcks: this.heldAcks.size,
             ackState: { ...this.ackState },
