@@ -14,6 +14,13 @@ const AWAY = 14000;
 module.exports = {
     name: 'cold-hot-cold',
     players: 1,
+    // The code this scenario plays (planning/architecture/e2e.md): a change there runs it.
+    areas: ['GameServer/Bot/Population/PopulationService.js', 'GameServer/Bot/Population/HotActivation.js',
+        'GameServer/Bot/Population/Cooldown.js', 'GameServer/Bot/Population/ActivationPlacement.js',
+        'GameServer/Bot/Population/BotLifeState.js', 'GameServer/Bot/Population/ColdSimulationCoordinator.js',
+        'GameServer/Bot/Population/PopulationConfig.js', 'GameServer/World/CharacterVisibility.js',
+        'GameServer/Actor/Generics/TeleportTo.js'],
+    needs: { towns: ['Gludio'] },
     place() {
         return invoke('GameServer/World/TownRespawn').getClosestTown(GLUDIO.locX, GLUDIO.locY, GLUDIO.locZ) || GLUDIO;
     },

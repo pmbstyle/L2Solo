@@ -11,6 +11,14 @@ const GLUDIO = { locX: -12736, locY: 122816, locZ: -3112 };
 module.exports = {
     name: 'gatekeeper',
     players: 1,
+    // The code this scenario plays (planning/architecture/e2e.md): a change there runs it.
+    areas: ['GameServer/Network/Request/MoveToLocation.js', 'GameServer/Network/Request/Action.js',
+        'GameServer/Actor/Generics/Select.js', 'GameServer/World/Generics/NpcTalk.js',
+        'GameServer/World/Generics/NpcTalkResponse.js', 'GameServer/World/Generics/NpcBypasses/GatekeeperTeleport.js',
+        'GameServer/World/C4GatekeeperTeleports.js', 'GameServer/World/Generics/NpcBypasses/AdminGiveAdena.js',
+        'GameServer/Actor/Generics/TeleportTo.js'],
+    // Data it names: Adena, the town it starts in.
+    needs: { items: [57], towns: ['Gludio'] },
     // The town's restart point: TownRespawn keeps it 50 from the gatekeeper.
     place() {
         return invoke('GameServer/World/TownRespawn').getClosestTown(GLUDIO.locX, GLUDIO.locY, GLUDIO.locZ) || GLUDIO;
