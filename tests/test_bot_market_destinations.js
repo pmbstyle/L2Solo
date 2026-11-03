@@ -17,7 +17,7 @@ for (const town of Object.values(Towns.towns)) {
     const travel = Executor.beginMarketTravel(state, goal(town.name), 1000);
     assert(travel, `${town.name} must have a purchase destination`);
     assert.strictEqual(travel.stats.travel.townName, town.name, 'purchase towns must never silently become Giran');
-    const arrival = Resolver.resolveSolo({ state: travel, timestamp: 26000 });
+    const arrival = Resolver.resolveSolo({ state: travel, timestamp: travel.stats.travel.arrivalAt });
     assert.strictEqual(arrival.patch.activity, 'shopping');
     assert.strictEqual(arrival.patch.currentRegion, town.name);
     // Durable cold positions use whole map units; the selected purchase

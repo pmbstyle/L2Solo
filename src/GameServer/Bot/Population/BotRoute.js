@@ -267,7 +267,7 @@ function record(state, chosen, party, partyMembers = [], { spots, currentSpot = 
         spotId: selected.id,
         regionName: selected.name || state.currentRegion || 'Hunting Ground',
         // The routed bot's trip time; a party's members all take it.
-        travelMs: ColdTrip.spotTripMs(state, destinations[String(state.characterId)] || selected.center),
+        travelMs: ColdTrip.spotPlan(state, destinations[String(state.characterId)] || selected.center).durationMs,
         reason: partyRoute
             ? 'party_spot_replan'
             : unsafe ? 'unsafe_ground_evacuation'

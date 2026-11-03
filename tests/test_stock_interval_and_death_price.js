@@ -10,7 +10,6 @@ const Providers = invoke('GameServer/Bot/Economy/WishProviders');
 const Table = invoke('GameServer/Bot/AI/SpotValueTable');
 const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const Valuation = invoke('GameServer/Bot/Economy/EconomicValuation');
-const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Events = invoke('GameServer/Bot/AI/DecisionEvents');
 const Visit = require('../src/GameServer/Bot/Economy/TownVisitInterval');
 const Walk = require('../src/GameServer/Bot/Economy/WalkBack');
@@ -129,13 +128,13 @@ assert.equal(poorContext.survivalReserve, noShotReserve);
     assert(intent?.amount >= own.survivalMissing && intent.valueHours > 0, 'a meeting can certify the survival tranche');
 }
 
-const plan = Trip.spotPlan, honest = Config.coldHonestTravel;
+const plan = Trip.spotPlan;
 try {
     const center = { locX: 88000, locY: 151904, locZ: -3400 };
     const probe = [{ id: 'return-probe', center }];
     let calls = 0;
     Trip.spotPlan = (...args) => { calls++; return plan(...args); };
-    Walk.reset(); Config.coldHonestTravel = true;
+    Walk.reset();
     const walk = Walk.hours('return-probe', warrior, probe);
     assert(walk > 0);
     assert.equal(calls, 1);
@@ -144,8 +143,6 @@ try {
     const expOnly = Valuation.deathHours(warrior, { expPerHour: native.hunt.expPerHour, walkBackHours: 0 });
     const returned = Valuation.deathHours(warrior, { expPerHour: native.hunt.expPerHour, walkBackHours: walk });
     assert(Math.abs(returned - expOnly - walk) < 1e-12);
-    Config.coldHonestTravel = false;
-    assert.equal(Walk.hours('return-probe', warrior, probe), 25 / 3600);
     assert.equal(Walk.hours('return-probe', { stats: { karma: 100 } }, probe),
         Trip.runMs(Routes.landingTown(center), center) / 3600000);
     assert.equal(Walk.hours(null, warrior, probe), 0);
@@ -155,6 +152,6 @@ try {
     for (let i = 0; i < 100; i++) Economy.basics(warrior, deps);
     assert.equal(calls, spots.length);
     console.log(`Stock/death: native ${Math.round(use)}/h, profitable-shot gate, town clocks, cached ${spots.length} return routes in ${Walk.summary().buildMs.toFixed(1)} ms passed`);
-} finally { Trip.spotPlan = plan; Config.coldHonestTravel = honest; Walk.reset(); }
+} finally { Trip.spotPlan = plan; Walk.reset(); }
 coldVisits().then(() => { assert.equal(invoke('Database').isReady(), false); console.log('Cold visit end interval writer passed'); })
     .catch(error => { console.error(error); process.exitCode = 1; });

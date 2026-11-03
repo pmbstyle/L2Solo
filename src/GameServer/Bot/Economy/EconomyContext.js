@@ -850,20 +850,17 @@ function pricing(state, persona, board, timestamp, deps, read = () => {}, prices
 // Price future carried scroll uses only if a review needs extra stock.
 // Resolve the known hunt through the existing catalogue index; a merchant
 // location during a town visit is never a future hunting origin.
-// Below karma that closes towns the saving reads only the origin, the static
-// town and gatekeeper tables and the travel mode (ColdTrip.honest), so a hunt
-// spot's answer is kept on its catalogue object per travel mode: the two
-// route solves run once per spot, not in every build.
+// Below karma that closes towns the saving reads only the origin and the static
+// town and gatekeeper tables, so a hunt spot's answer is kept on its catalogue
+// object: the two route solves run once per spot, not in every build.
 const spotScrollHours = new WeakMap();
 function scrollHoursFor(state, spots, bestSpotId) {
     if (invoke('GameServer/Karma').closesTowns(state.stats?.karma)) return 0;
     const spot = SpotIndex.spotById(spots, bestSpotId);
     if (!spot?.center) return scrollSavingHours(state, state.stats?.marketReturn?.loc || (state.activity === 'hunting' ? state.loc : null));
-    const honest = ColdTrip.honest();
-    const held = spotScrollHours.get(spot);
-    if (held?.honest === honest) return held.hours;
+    if (spotScrollHours.has(spot)) return spotScrollHours.get(spot);
     const hours = scrollSavingHours(state, spot.center);
-    spotScrollHours.set(spot, { honest, hours });
+    spotScrollHours.set(spot, hours);
     return hours;
 }
 function scrollSavingHours(state, origin) {

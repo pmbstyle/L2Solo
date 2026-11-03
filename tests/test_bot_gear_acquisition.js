@@ -955,7 +955,6 @@ const travel = ColdCraftingService.beginTravel({
 assert.strictEqual(travel.stats.travel.stationId, station.id, 'ready materials must route the bot to the station that publishes its recipe');
 assert.strictEqual(travel.stats.travel.arrivalActivity, 'crafting', 'arrival must enter the cold manufacture state');
 assert.strictEqual(travel.stats.travel.method, 'soe_gatekeeper', 'a remote craft station visit must use SoE and the Giran gatekeeper rather than map-walking');
-assert.strictEqual(travel.stats.travel.arrivalAt - travel.stats.travel.startedAt, ColdCraftingService.NATIVE_TRAVEL_MS, 'craft station transit must remain a short native-travel sequence');
 assert.strictEqual(travel.stats.craftReturn.spotId, null, 'craft travel must preserve the previous hunting destination for the return trip');
 const readyPlan = GearAcquisitionPlanner.planFor({ ...mage, inventory: readyInventory }, { spots: [] });
 assert.strictEqual(readyPlan.status, 'ready_to_craft', 'a complete material list must become a station visit, not a blocked farming plan');

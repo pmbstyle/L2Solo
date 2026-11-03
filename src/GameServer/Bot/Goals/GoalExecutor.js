@@ -14,9 +14,6 @@ const CombinedErrands = require('../Population/CombinedErrandPolicy');
 // Other errands are excluded by the activity check and the goal planner.
 const MARKET_TRIP_BUSY_FLAGS = ['partyMarketReturn'];
 
-const MARKET_TRAVEL_MS = ColdTrip.AUTHOR_TRIP_MS;
-const GATEKEEPER_SPOT_TRAVEL_MS = ColdTrip.AUTHOR_TRIP_MS;
-
 function marketTown(name = 'Giran') {
     const town = Object.values(TownRespawn.towns).find((candidate) => candidate.name === name);
     return TownPathfinder.towns.find((town) => town.name === name)
@@ -198,4 +195,4 @@ function finishVisit(state, timestamp, options) {
     }, timestamp, { extraStats: clanReturn ? { shopTown: null } : { partyMarketReturn: null, shopTown: null } });
 }
 
-module.exports = { MARKET_TRAVEL_MS, GATEKEEPER_SPOT_TRAVEL_MS, beginMarketTravel, finishMarketVisit, marketTownForSale: MarketTownPolicy.targetTownForSale };
+module.exports = { beginMarketTravel, finishMarketVisit, marketTownForSale: MarketTownPolicy.targetTownForSale };

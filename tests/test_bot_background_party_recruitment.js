@@ -441,7 +441,9 @@ async function run() {
             }
         }
     };
-    const blockedTravel = await HotActivation.activate(travelingState, 'remote_invite', {
+    // A player's invite takes a traveller off its trip (design 5.9); a
+    // nearby player alone does not.
+    const blockedTravel = await HotActivation.activate(travelingState, 'near_player', {
         keepStoreLocation: true
     });
     assert.strictEqual(blockedTravel.reason, 'in_transit', 'ordinary activation must not interrupt background travel');
@@ -456,6 +458,9 @@ async function run() {
         interruptBackgroundActivity: true
     });
     assert.strictEqual(summonedTravel.ok, true, 'a const summon must interrupt background travel and activate the bot');
+    const invitedTravel = await HotActivation.activate({ ...travelingState, characterId: 91099, name: 'TravelingInviteProbe', accountName: 'bot_traveling_invite' },
+        'remote_invite', { keepStoreLocation: true });
+    assert.strictEqual(invitedTravel.ok, true, `a player's invite takes a traveller off its trip (design 5.9): ${invitedTravel.reason}`);
     assert.strictEqual(summonedState.activity, 'hunting', 'the interrupted travel must not survive into hot AI state');
     assert.strictEqual(summonedState.stats.travel, null, 'the stale background route must be cleared before the bot spawns');
 

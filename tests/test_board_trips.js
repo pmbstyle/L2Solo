@@ -29,18 +29,16 @@ function hunter(extra = {}) {
 
 // 1. A trip costs the way there and back (item 8): the town leg the trip
 // builder plans plus the return to the spot, at the bot's hour, and the fee.
-for (const honest of [false, true]) {
-    Config.coldHonestTravel = honest;
+{
     const state = hunter();
     const hour = Efficiency.hourValue(state, Date.now()).perHour;
     const giran = town('Giran');
     const plan = ColdTrip.townPlan(state, giran);
-    const back = ColdTrip.spotTripMs({ ...state, loc: ColdTrip.point(giran) }, SPOT);
+    const back = ColdTrip.spotPlan({ ...state, loc: ColdTrip.point(giran) }, SPOT).durationMs;
     assert(back > 0);
     const expected = Math.round((plan.durationMs + back) / HOUR_MS * hour) + plan.route.fee;
-    assert.strictEqual(OfferOrder.tripCost(state)('Giran'), expected, `round trip, honest travel ${honest}`);
+    assert.strictEqual(OfferOrder.tripCost(state)('Giran'), expected, 'round trip');
 }
-Config.coldHonestTravel = false;
 // The author's fixed shot merchant supplies the trips (off by default since T116).
 Config.staticShotsDisabled = false;
 

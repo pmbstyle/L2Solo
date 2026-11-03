@@ -2250,7 +2250,7 @@ const BotLifeState = {
         return Promise.resolve(cache.near(loc, safeRadius, safeLimit));
     },
 
-    // Cold walkers near a point (honest travel): LifeStateCache.walkersNear.
+    // Cold walkers near a point (ColdTrip): LifeStateCache.walkersNear.
     walkersNear(loc, radius, at = now()) {
         if (!initialized || !loc) return [];
         return cache.walkersNear(loc, Math.max(1, Number(radius) || CLIENT_VISIBILITY_RADIUS), at);

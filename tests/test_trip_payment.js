@@ -46,23 +46,20 @@ function cold({ scrolls = 2, adena = 50000, loc = DION_FIELD } = {}) {
 
 const toGiran = (state) => ColdTrip.toTown(state, { to: { ...GIRAN_CENTER }, townName: 'Giran', arrivalActivity: 'shopping' }, T);
 
-// With a scroll from a field: the scroll and the Dion-Giran fee, the author's 25 s.
+// With a scroll from a field: the scroll and the Dion-Giran fee.
 const paid = toGiran(cold());
 assert.strictEqual(paid.stats.travel.method, 'soe_gatekeeper');
 assert.strictEqual(paid.inventory[736].amount, 1, 'one Scroll of Escape is read');
 assert.strictEqual(paid.adena, 50000 - 8100, 'the Dion to Giran gatekeeper fee is paid');
 assert.strictEqual(paid.inventory[57].amount, 50000 - 8100, 'the stored Adena row follows');
 assert.deepStrictEqual(paid.stats.travel.paid, { scroll: 736, fee: 8100 });
-assert.strictEqual(paid.stats.travel.arrivalAt - T, ColdTrip.AUTHOR_TRIP_MS, 'switch off: the author\'s 25 s transit');
 
 // Without a scroll the bot walks to Dion and pays the fee; it pays in time.
 const walked = toGiran(cold({ scrolls: 0 }));
 assert.strictEqual(walked.stats.travel.method, 'walk_gatekeeper');
 assert.strictEqual(walked.adena, 50000 - 8100);
 assert.deepStrictEqual(walked.stats.travel.paid, { fee: 8100 });
-assert.strictEqual(walked.stats.travel.arrivalAt - T, ColdTrip.authorWalkMs(DION_FIELD, DION),
-    'the walk to the town takes the author\'s walking time');
-assert.ok(walked.stats.travel.arrivalAt - T > ColdTrip.AUTHOR_TRIP_MS, 'walking costs more time than the scroll');
+assert.ok(walked.stats.travel.arrivalAt > paid.stats.travel.arrivalAt, 'walking costs more time than the scroll');
 
 // In Dion already: no scroll, only the fee.
 const local = toGiran(cold({ loc: { locX: DION.locX + 300, locY: DION.locY, locZ: DION.locZ } }));

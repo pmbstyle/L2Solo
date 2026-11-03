@@ -112,11 +112,11 @@ const HotActivation = {
                 && options.interruptBackgroundActivity !== true) {
                 return { ok: false, reason: 'pk_encounter_only', state };
             }
-            // With honest travel a traveller a player invites or calls leaves its
-            // trip, as a hunter leaves its spot (design 5.9).
+            // A traveller a player invites or calls leaves its trip, as a hunter
+            // leaves its spot (design 5.9).
             const leavesTrip = options.interruptBackgroundActivity === true
                 || (['remote_invite', 'party_invite', 'remote_chat_come'].includes(reason)
-                    && invoke('GameServer/Bot/Population/ColdTrip').travellerAnswers(state));
+                    && state.activity === 'traveling');
             if (state.activity === 'traveling' && !leavesTrip) {
                 return { ok: false, reason: 'in_transit', state };
             }

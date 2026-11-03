@@ -37,7 +37,6 @@ assert.strictEqual(started.activity, 'traveling');
 assert.strictEqual(started.stats.travel.townName, 'Giran');
 assert.strictEqual(started.stats.travel.method, 'soe_gatekeeper');
 assert(started.stats.travel.viaTown, 'market travel should first use SoE to the regional town');
-assert.strictEqual(started.stats.travel.arrivalAt - started.stats.travel.startedAt, GoalExecutor.MARKET_TRAVEL_MS);
 assert.strictEqual(started.timing.nextResolveAt, started.stats.travel.arrivalAt, 'travel must sleep until its arrival event');
 
 const nativeMidway = {
@@ -102,7 +101,6 @@ assert.strictEqual(returning.activity, 'traveling');
 assert.strictEqual(returning.stats.travel.reason, 'return_after_market');
 assert.strictEqual(returning.stats.travel.arrivalActivity, 'hunting');
 assert.strictEqual(returning.stats.travel.method, 'gatekeeper_spot', 'returning from Giran must use the destination gatekeeper instead of walking across the world');
-assert.strictEqual(returning.stats.travel.arrivalAt - returning.stats.travel.startedAt, GoalExecutor.GATEKEEPER_SPOT_TRAVEL_MS);
 assert.strictEqual(returning.timing.nextResolveAt, returning.stats.travel.arrivalAt, 'return travel must sleep until its arrival event');
 
 const ignoringRemoteLead = GoalExecutor.finishMarketVisit({

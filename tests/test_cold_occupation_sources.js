@@ -6,7 +6,6 @@ const Data = invoke('GameServer/DataCache'); Data.init();
 const Sources = require('../src/GameServer/Bot/Population/ColdOccupationSources');
 const Trip = require('../src/GameServer/Bot/Population/ColdTrip');
 const Towns = require('../src/GameServer/World/TownRespawn');
-const Config = require('../src/GameServer/Bot/Population/PopulationConfig');
 const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
 Sources.initialise();
 function drain(iterator) {
@@ -40,19 +39,15 @@ const state = { characterId: 900004, phase: 'cold', activity: 'hunting', level: 
     adena: 1000000, loc: { locX: 117000, locY: 76000, locZ: -2800 }, currentRegion: "Hunter's Village",
     inventory: { 736: { selfId: 736, amount: 1 }, 1864: { selfId: 1864, amount: 100 } },
     stats: { classId: 57, money: [1000, .001, 0, 0] } };
-const savedHonest = Config.coldHonestTravel;
-try {
-    for (const honest of [false, true]) {
-        Config.coldHonestTravel = honest;
-        const streamed = drain(Sources.tripDetails(state, 'Giran'));
-        const destination = Towns.towns.giran_town;
-        const forward = Trip.townPlan(state, destination);
-        const back = Trip.spotTripMs({ ...state, loc: Trip.point(destination) }, state.loc);
-        assert.equal(streamed.value.hours, (forward.durationMs + back) / 3600000);
-        assert.equal(streamed.value.fees, forward.route.fee);
-        if (honest) assert(streamed.stages.filter(stage => stage === 'edge').length >= Sources.catalogCounts().teleportEdges);
-    }
-} finally { Config.coldHonestTravel = savedHonest; }
+{
+    const streamed = drain(Sources.tripDetails(state, 'Giran'));
+    const destination = Towns.towns.giran_town;
+    const forward = Trip.townPlan(state, destination);
+    const back = Trip.spotPlan({ ...state, loc: Trip.point(destination) }, state.loc).durationMs;
+    assert.equal(streamed.value.hours, (forward.durationMs + back) / 3600000);
+    assert.equal(streamed.value.fees, forward.route.fee);
+    assert(streamed.stages.filter(stage => stage === 'edge').length >= Sources.catalogCounts().teleportEdges);
+}
 const board = new BoardIndex();
 for (let at = 0; at < 6; at++) board.put({ id: 200 + at, ownerId: 400 + at, storeType: 1,
     kind: 'sell_ad', town: 'Giran', revision: 1,

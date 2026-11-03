@@ -17,7 +17,7 @@ const dependencies = {
     'GameServer/Social/InteractionMemoryRuntime': { assess: () => ({ ready: true }) },
     'GameServer/Clan/ClanService': { findById: id => id === 77 ? { members } : null },
     // Travel affects the diagnostic location only.
-    'GameServer/Bot/Population/ColdTrip': { travellerAnswers: () => false, positionAt: state => state.loc }
+    'GameServer/Bot/Population/ColdTrip': { positionAt: state => state.loc }
 };
 const context = {
     module: { exports: {} },

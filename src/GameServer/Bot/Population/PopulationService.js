@@ -104,7 +104,7 @@ function hasFiniteCoordinate(value) {
         && Number.isFinite(Number(value));
 }
 
-// A walker a player comes near (honest travel, ColdTrip) shows itself at the
+// A walker a player comes near (ColdTrip) shows itself at the
 // teleport point it ran from or at the spot edge it runs to, whichever is
 // nearer its place on the road, never on the straight line between them; the
 // author's hot movement takes over from there. At the spot edge the trip is
@@ -2127,9 +2127,7 @@ const PopulationService = {
                                 }
                             })
                         ), Promise.resolve());
-                        return Config.coldHonestTravel === true
-                            ? shown.then(() => this.showWalkersNear(loc, activated, ambientActivated))
-                            : shown;
+                        return shown.then(() => this.showWalkersNear(loc, activated, ambientActivated));
                     });
             });
         });

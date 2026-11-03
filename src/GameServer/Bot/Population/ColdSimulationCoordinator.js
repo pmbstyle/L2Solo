@@ -880,7 +880,6 @@ class ColdSimulationCoordinator {
         return {
             developerDiagnostics: Config.developerDiagnostics === true,
             ...(Config.developerDiagnostics && Config.economyDiagnostics ? { economyDiagnostics: true, economyDiagnosticsBotIds: EconomyDiagnostics.ownerIds() } : {}),
-            coldHonestTravel: Config.coldHonestTravel,
             coldSoloWindow: Config.coldSoloWindow === true,
             coldSoloWindowShadow: Config.coldSoloWindowShadow === true,
             coldMomentShadow: Config.coldMomentShadow === true,

@@ -258,7 +258,6 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.strictEqual(travelState.activity, 'traveling', 'an outleveled solo bot must enter a finite travel state');
     assert.strictEqual(travelState.spotId, 'starter-field', 'the old spot remains current until arrival');
     assert.strictEqual(travelState.stats.travel.spotId, 'mid-level-field');
-    assert.strictEqual(travelState.stats.travel.arrivalAt, 30000);
 
     const deathPressureRoute = {
         ...route,
@@ -293,7 +292,7 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
                 arrivalActivity: 'grouped'
             }
         }
-    }, 30000);
+    }, travelState.stats.travel.arrivalAt);
     assert.strictEqual(arrivedPartyMember.activity, 'grouped', 'party travel must arrive as a grouped member');
     assert.strictEqual(arrivedPartyMember.spotId, 'mid-level-field');
     assert.deepStrictEqual(arrivedPartyMember.loc, route.to);

@@ -37,9 +37,7 @@ function hours(spotId, state = {}, spots = invoke('GameServer/Bot/AI/SpotService
     const entry = table(spots).get(String(spotId));
     if (!entry) { if (DiagnosticConfig.developerDiagnostics) missing++; return 0; }
     if (Karma.closesTowns(state.stats?.karma)) return Trip.runMs(entry.from, entry.to) / 3600000;
-    // ARCH-NOTE: the default world uses the authored 25-second trip; price
-    // the actual downtime rather than charging a walk it does not perform.
-    return (Trip.honest() ? entry.ms : Trip.AUTHOR_TRIP_MS) / 3600000;
+    return entry.ms / 3600000;
 }
 // About how long a bot's trip from `from` to a spot takes, read per candidate
 // of a search in O(1): the run there, or the way a bot takes to a far spot, the

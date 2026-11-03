@@ -1537,7 +1537,6 @@ function wakeLoopIfSooner() {
 
 function startKernel(config = {}) {
     if (kernel) return;
-    if (typeof config.coldHonestTravel === 'boolean') Config.coldHonestTravel = config.coldHonestTravel;
     Config.developerDiagnostics = config.developerDiagnostics === true;
     Config.economyDiagnostics = Config.developerDiagnostics && config.economyDiagnostics === true;
     // Busy share and heap after GC are two of the goal's three numbers (read with diagnostics off): always on, one

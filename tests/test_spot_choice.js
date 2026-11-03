@@ -14,7 +14,6 @@ const Gear = invoke('GameServer/Bot/AI/BotGear');
 const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Table = invoke('GameServer/Bot/AI/SpotValueTable');
 const Spots = invoke('GameServer/Bot/Population/SpotProfiles');
-const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const { SpotOccupancyIndex } = invoke('GameServer/Bot/Population/SpotOccupancyIndex');
 const started = 1791335800000;
 
@@ -74,17 +73,13 @@ const chosen = (state, spots) => search(state, spots)?.spot.id;
 // A far spot a gatekeeper reaches is priced by that trip, not by a run across
 // the world: it beats a poorer spot next door. On foot it would not.
 {
-    const honest = Config.coldHonestTravel;
-    Config.coldHonestTravel = true;
-    try {
-        // Near Dion, 90000 from Gludin; a Gludin neighbour pays 3/4 of it.
-        const spots = [at('home', -80000), at('next', -79000), at('far', 15664, 142979)];
-        const samples = [['home', 0.5, 0.15], ['next', 0.75, 0.225], ['far', 1, 0.3]];
-        const state = hunter(990303, spots, samples, [36000, 1 / 36000, 0, 0]);
-        assert.equal(chosen(state, spots), 'far', 'the trip by gatekeeper is short');
-        const onFoot = { ...state, stats: { ...state.stats, karma: 100 } };
-        assert.equal(chosen(onFoot, spots), 'next', 'a bot with karma walks there');
-    } finally { Config.coldHonestTravel = honest; }
+    // Near Dion, 90000 from Gludin; a Gludin neighbour pays 3/4 of it.
+    const spots = [at('home', -80000), at('next', -79000), at('far', 15664, 142979)];
+    const samples = [['home', 0.5, 0.15], ['next', 0.75, 0.225], ['far', 1, 0.3]];
+    const state = hunter(990303, spots, samples, [36000, 1 / 36000, 0, 0]);
+    assert.equal(chosen(state, spots), 'far', 'the trip by gatekeeper is short');
+    const onFoot = { ...state, stats: { ...state.stats, karma: 100 } };
+    assert.equal(chosen(onFoot, spots), 'next', 'a bot with karma walks there');
 }
 
 // The best spot is full of other bots: the next best, and no refused trip.
