@@ -54,6 +54,11 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    item, while a bot buys only shots there (`MarketOpportunity.botCanBuy`): a Scroll of Escape reads 300 (a city store)
    against an NPC's 400-600. The survival kit reads the NPC list (`botNpcListPrice`).
 
+12. **Readiness edge (theoretical).** `BotTargetMatchup.soloSurvival`: an attack with no MP cost and a 0 vulnerability
+   modifier gives a NaN budget, which makes the envelope refuse a fight another attack wins (no 0 damage weakness in the
+   data today). The fight-time bisection (25 envelope evaluations per verdict, ~0.1-0.2 ms per hot scan) can become
+   one evaluation at F = 30(√(1 + (seconds − 3)/15) − 1) if it shows in a profile.
+
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets[6]`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so
 a rich bot there has a null activity (T178): a test expecting "one leaf" from such a scene breaks the same way. Known
