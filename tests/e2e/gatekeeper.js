@@ -16,7 +16,8 @@ module.exports = {
         return invoke('GameServer/World/TownRespawn').getClosestTown(GLUDIO.locX, GLUDIO.locY, GLUDIO.locZ) || GLUDIO;
     },
 
-    async run({ player, step, within, npcHtml, bypasses, carries, world, setup }) {
+    async run({ player, step, within, npcHtml, bypasses, carries, objectIdAt, world, setup }) {
+        const mine = (entry) => objectIdAt(entry, 3) === player.actor.fetchId();
         const keeper = await step('a gatekeeper is near the player', () => within(10000, () =>
             world.npcsNear(player.loc(), 1500, npc => /gatekeeper/i.test(String(npc.fetchTitle?.() || '')))[0],
         { what: 'a gatekeeper within 1500' }));
@@ -55,7 +56,9 @@ module.exports = {
             await player.bypass(teleportLink);
             await within(8000, () => player.received.some(entry => entry.at >= since && carries(entry, 'not have enough Adena')),
                 { what: 'the "not enough Adena" line' });
-            if (player.received.some(entry => entry.at >= since && entry.name === 'TeleportToLocation')) throw new Error('teleported without paying');
+            // A teleport after a payment lands from a callback; give one the time to show.
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            if (player.received.some(entry => entry.at >= since && entry.name === 'TeleportToLocation' && mine(entry))) throw new Error('teleported without paying');
             if (Math.hypot(player.loc().locX - from.locX, player.loc().locY - from.locY) > 300) throw new Error('moved without paying');
         });
 
@@ -63,14 +66,16 @@ module.exports = {
             const since = Date.now();
             await setup.giveAdena(player, 100000);
             await player.packet('ItemsList', { since, timeoutMs: 5000 });
+            await within(5000, () => player.adena() >= 100000, { what: '100000 Adena in the backpack' });
         });
 
         await step('the teleport moves the player far away', async () => {
-            const since = Date.now(), from = player.loc();
+            const since = Date.now(), from = player.loc(), paid = player.adena();
             await player.bypass(teleportLink);
-            await player.packet('TeleportToLocation', { since, timeoutMs: 10000 });
+            await player.packet('TeleportToLocation', { since, timeoutMs: 10000, match: mine });
             await within(10000, () => Math.hypot(player.loc().locX - from.locX, player.loc().locY - from.locY) > 3000,
                 { what: 'the player more than 3000 away' });
+            if (!(player.adena() < paid)) throw new Error(`the teleport cost nothing (${paid} Adena before and after)`);
         });
     }
 };
