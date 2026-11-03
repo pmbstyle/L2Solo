@@ -81,7 +81,14 @@ const HotCrowd = {
         this.started = true;
         // script: an end-to-end scenario (src/Perf/PlayerScript) plays the player(s) instead of standing.
         this.script = scenario === 'script' ? invoke('Perf/PlayerScript').load(process.env.L2NODE_PERF_SCRIPT) : null;
-        this.count = this.script ? Math.max(1, Number(this.script.players || 1)) : envNumber('L2NODE_PERF_PLAYERS', 1, 1, 20);
+        const players = Number(this.script?.players ?? process.env.L2NODE_PERF_PLAYERS);
+        this.count = Number.isFinite(players) ? Math.max(1, Math.min(20, Math.floor(players))) : 1;
+        // The runner asks for the script when its window opens (request kind "script"); the request is
+        // done when the script is, so the window is the script's.
+        if (this.script) {
+            this.attached = new Promise(resolve => { this.onAttached = resolve; });
+            invoke('Perf/LiveRecorder').on('script', () => this.attached.then(() => invoke('Perf/PlayerScript').run(this.script, this.players)));
+        }
         this.routeStops = envNumber('L2NODE_PERF_ROUTE', 0, 0, 50);
         this.routeMs = envNumber('L2NODE_PERF_ROUTE_MINUTES', 3, 1, 120) * 60000;
         const timer = setInterval(() => {
@@ -105,7 +112,7 @@ const HotCrowd = {
         }
         utils.infoSuccess('Perf', 'hot scenario: %d player(s), %d place(s)%s: %s', this.count, this.stops.length,
             this.routeStops ? `, moving every ${this.routeMs / 60000} min` : '',
-            this.stops.map(stop => `${stop.locX},${stop.locY} (${stop.bots} cold hunters)`).join('; '));
+            this.stops.map(stop => `${stop.locX},${stop.locY}${stop.bots ? ` (${stop.bots} cold hunters)` : ''}`).join('; '));
         this.step = 0;
         for (let index = 0; index < this.count; index++) {
             const stop = this.stops[index % this.stops.length];
@@ -123,15 +130,12 @@ const HotCrowd = {
             if (sources.length < this.count) {
                 utils.infoWarn('Perf', 'hot scenario: %d of %d player(s) spawned in %d s; going on with them', sources.length,
                     this.count, SPAWN_TIMEOUT_MS / 1000);
-                if (!sources.length) return;
+                if (!sources.length) return this.onAttached?.();
             }
             sources.sort((a, b) => a.accountId.localeCompare(b.accountId, 'en', { numeric: true })).forEach(source => this.attach(source));
             this.probe();
-            if (this.script) {
-                // The spawned character's world packets (UserInfo, the area) are sent before the script acts.
-                setTimeout(() => invoke('Perf/PlayerScript').run(this.script, this.players)
-                    .catch(error => utils.infoWarn('Perf', 'e2e %s failed: %s', this.script.name, error.message)), 3000);
-            }
+            // The spawned character's world packets (UserInfo, the area) are sent before the script acts.
+            if (this.script) setTimeout(() => this.onAttached(), 3000);
             if (this.routeStops > 1) setInterval(() => this.move(), this.routeMs).unref?.();
         }, 500);
     },

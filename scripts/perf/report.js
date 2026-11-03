@@ -157,15 +157,21 @@ function transitionsSummary(lines) {
 // The live server's context over the window (PopulationStatus.vitals, the recorder's files and
 // machine readings): load, the database and its WAL, the commit queue, failures and repairs.
 function contextSummary(summaries, timeline, start, end) {
+    // Counters that only grow are taken from the last line before the window to the last one in it.
+    const before = timeline.filter(line => line.type === 'summary' && Date.parse(line.t) <= start).at(-1);
+    const grown = (read) => {
+        const inside = summaries.map(read).filter(Number.isFinite);
+        if (!inside.length) return 0;
+        const base = before ? read(before) : NaN;
+        return inside.at(-1) - (Number.isFinite(base) ? base : inside[0]);
+    };
     const vitals = summaries.map(line => line.vitals).filter(Boolean);
     const values = (read) => summaries.map(read).filter(Number.isFinite);
     const avg = (list) => (list.length ? round(list.reduce((a, b) => a + b, 0) / list.length, 1) : null);
     const max = (list) => (list.length ? Math.max(...list) : null);
     const min = (list) => (list.length ? Math.min(...list) : null);
-    const delta = (list) => (list.length > 1 ? list.at(-1) - list[0] : 0);
     const queue = summaries.map(line => line.coordinator?.queue).filter(Boolean);
     const failures = summaries.map(line => line.coordinator?.failures).filter(Boolean);
-    const afterCommit = queue.map(q => q.failures?.afterCommitErrors).filter(Number.isFinite);
     // Database operations by time spent (cumulative counters, diagnostics on): the window's share.
     const ops = vitals.map(v => v.database?.operations).filter(Boolean);
     const operations = ops.length > 1 ? Object.entries(ops.at(-1)).map(([name, after]) => {
@@ -174,7 +180,15 @@ function contextSummary(summaries, timeline, start, end) {
             waitMs: Math.round((after.waitMs || 0) - (before.waitMs || 0)) };
     }).filter(row => row.count > 0).sort((a, b) => b.runMs - a.runMs).slice(0, 8) : [];
     const checkpoints = new Set(vitals.map(v => v.database?.checkpoint?.last && JSON.stringify(v.database.checkpoint.last)).filter(Boolean));
-    const threadMarks = timeline.filter(line => line.type === 'thread' && Date.parse(line.t) >= start && Date.parse(line.t) <= end);
+    // A restart is a start of a thread whose same name exited before (a shutdown's exits are not).
+    const exited = new Set(), restarts = [];
+    for (const mark of timeline.filter(line => line.type === 'thread' && Date.parse(line.t) <= end)) {
+        if (mark.event === 'exit') exited.add(mark.thread);
+        else if (exited.has(mark.thread)) {
+            exited.delete(mark.thread);
+            if (Date.parse(mark.t) >= start) restarts.push(mark.thread);
+        }
+    }
     if (!vitals.length && !queue.length) return null;
     return {
         load: { hotAvg: avg(values(line => line.vitals?.bots?.hot)), coldAvg: avg(values(line => line.vitals?.bots?.cold)),
@@ -184,14 +198,14 @@ function contextSummary(summaries, timeline, start, end) {
             historyWalMb: range(values(line => line.files?.historyWalMb)), checkpoints: Math.max(0, checkpoints.size - 1), operations },
         commitQueue: { depthMax: max(queue.map(q => q.depth)), bytesMaxKb: max(queue.map(q => Math.round((q.bytes || 0) / 1024))),
             oldestMaxMs: max(queue.map(q => q.oldestMs)), pausedShare: queue.length ? round(queue.filter(q => q.paused).length / queue.length, 2) : 0 },
-        failures: { workerFaults: delta(failures.map(f => f.workerFaults || 0)), faultBots: max(failures.map(f => f.faultBots || 0)),
-            lastFault: failures.at(-1)?.lastFault || null, afterCommitErrors: delta(afterCommit),
+        failures: { workerFaults: grown(line => line.coordinator?.failures?.workerFaults), faultBots: max(failures.map(f => f.faultBots || 0)),
+            lastFault: failures.at(-1)?.lastFault || null, afterCommitErrors: grown(line => line.coordinator?.queue?.failures?.afterCommitErrors),
             safetyRepairs: vitals.at(-1)?.safetyRepairs || null, pathQueueMax: max(values(line => line.vitals?.pathWorkers?.queue)),
-            threadStarts: threadMarks.filter(m => m.event === 'start').length, threadExits: threadMarks.filter(m => m.event === 'exit').map(m => m.thread) },
+            restarts },
         memory: { mainHeapAfterGcMb: range(values(line => line.vitals?.mainHeap?.afterGc)),
             geodataMb: range(values(line => Math.round((line.vitals?.geodata?.loadedBytes || 0) / MB) || NaN)),
             freeMemMinMb: min(values(line => line.machine?.freeMemMb)),
-            majorPageFaults: values(line => line.machine?.majorPageFaults).reduce((a, b) => a + b, 0) }
+            majorPageFaults: grown(line => line.machine?.majorPageFaults) }
     };
 }
 
@@ -295,7 +309,7 @@ function print(s) {
         console.log(`commit queue: depth max ${q.depthMax ?? '-'}, ${q.bytesMaxKb ?? '-'} KB, oldest ${q.oldestMaxMs ?? '-'} ms, paused ${Math.round(100 * q.pausedShare)} % of lines`);
         console.log(`failures: worker faults ${f.workerFaults} (${f.faultBots ?? 0} bots${f.lastFault ? `; last ${f.lastFault.stage}: ${f.lastFault.reason}` : ''}),`
             + ` afterCommit errors ${f.afterCommitErrors}, safety repairs ${JSON.stringify(f.safetyRepairs)}, path queue max ${f.pathQueueMax ?? '-'}`
-            + `${f.threadExits.length ? `, threads exited: ${f.threadExits.join(', ')}` : ''}`);
+            + `${f.restarts.length ? `, restarted: ${f.restarts.join(', ')}` : ''}`);
     }
     const m = s.memory, line = (v) => (v ? `${v.start}->${v.end} MB (max ${v.max})` : '-');
     console.log(`\nmemory: main heap ${line(m.mainHeapUsedMb)}, rss ${line(m.rssMb)}`);

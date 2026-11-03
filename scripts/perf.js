@@ -117,11 +117,12 @@ function bucketOf(iso, minutes) {
 function printTimeline(flags) {
     const dir = bootDir(flags), minutes = numberFlag(flags, 'every', 60, 1);
     const lines = dayLines(dir, 'timeline');
-    const buckets = new Map(), threads = new Set();
+    const buckets = new Map(), threads = new Set(), exited = new Set();
+    let lastFaults = null, lastPageFaults = null;
     const bucket = (iso) => {
         const key = bucketOf(iso, minutes);
         if (!buckets.has(key)) buckets.set(key, { cpu: {}, heapMb: {}, rssMb: 0, coldDue: 0, workerGcMb: 0, hot: 0, players: 0,
-            dbQueue: 0, walMb: 0, commitQueue: 0, faults: null, faultsEnd: 0, mainGcMb: 0, pageFaults: 0, restarts: 0 });
+            dbQueue: 0, walMb: 0, commitQueue: 0, faults: null, mainGcMb: 0, pageFaults: 0, restarts: 0 });
         return buckets.get(key);
     };
     for (const line of lines) {
@@ -141,12 +142,22 @@ function printTimeline(flags) {
             b.dbQueue = Math.max(b.dbQueue, line.vitals?.database?.pending || 0);
             b.walMb = Math.max(b.walMb, line.files?.walMb || 0);
             b.commitQueue = Math.max(b.commitQueue, line.coordinator?.queue?.depth || 0);
+            // Totals since start: each line adds its difference from the line before (across rows).
             const faults = line.coordinator?.failures?.workerFaults;
-            if (Number.isFinite(faults)) { b.faults ??= faults; b.faultsEnd = faults; }
+            if (Number.isFinite(faults)) {
+                b.faults = (b.faults || 0) + (lastFaults === null ? 0 : Math.max(0, faults - lastFaults));
+                lastFaults = faults;
+            }
+            const pages = line.machine?.majorPageFaults;
+            if (Number.isFinite(pages)) {
+                b.pageFaults += lastPageFaults === null ? 0 : Math.max(0, pages - lastPageFaults);
+                lastPageFaults = pages;
+            }
             b.mainGcMb = Math.max(b.mainGcMb, line.vitals?.mainHeap?.afterGc || 0);
-            b.pageFaults += line.machine?.majorPageFaults || 0;
-        } else if (line.type === 'thread' && line.event === 'exit') {
-            b.restarts += 1;
+        } else if (line.type === 'thread') {
+            // A restart: a start of a name that exited before (a shutdown's exits are not).
+            if (line.event === 'exit') exited.add(line.thread);
+            else if (exited.delete(line.thread)) b.restarts += 1;
         }
     }
     const pct = (part, whole) => (whole > 0 ? `${Math.round(100 * part / whole)}%` : '-');
@@ -159,8 +170,8 @@ function printTimeline(flags) {
         }).filter(Boolean).join(' ');
         const heaps = Object.entries(b.heapMb).map(([label, used]) => `${label}:${used}`).join(' ');
         console.log(`${time(key)}  ${cpu}  hot=${b.hot} players=${b.players} rss=${b.rssMb} mainGc=${b.mainGcMb} coldGc=${b.workerGcMb}`
-            + ` coldDue=${b.coldDue} dbQ=${b.dbQueue} wal=${b.walMb} commitQ=${b.commitQueue} faults=${b.faults === null ? '-' : b.faultsEnd - b.faults}`
-            + ` pf=${b.pageFaults}${b.restarts ? ` exits=${b.restarts}` : ''}  heap ${heaps}`);
+            + ` coldDue=${b.coldDue} dbQ=${b.dbQueue} wal=${b.walMb} commitQ=${b.commitQueue} faults=${b.faults === null ? '-' : b.faults}`
+            + ` pf=${b.pageFaults}${b.restarts ? ` restarts=${b.restarts}` : ''}  heap ${heaps}`);
     }
 }
 

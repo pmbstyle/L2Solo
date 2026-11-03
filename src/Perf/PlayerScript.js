@@ -8,7 +8,7 @@ const { PlayerClient, npcHtml, bypasses, carries, within } = require('./PlayerCl
 // failed, with the server packets around a failure); "e2e-done" closes the scenario. A script module:
 //   module.exports = { name, players: 1, place(ctx) -> { locX, locY, locZ } | null, async run(ctx) }
 // ctx: { players: [PlayerClient], player, step(name, fn), within, npcHtml, bypasses, carries,
-//        world: { npcsNear }, setup: { giveAdena } }.
+//        world: { npcsNear, bots, botsNear, crowd, failures }, setup: { giveAdena, teleport } }.
 // Steps act through client packets only; `setup` prepares a player the way the game's own owner of that
 // grant does (the GM's give-adena), for what a test needs but a level-1 character does not have.
 
@@ -22,6 +22,26 @@ const world = {
         return invoke('GameServer/World/World').fetchNpcsInRadius(loc.locX, loc.locY, radius).filter(filter)
             .map(npc => ({ npc, distance: Math.hypot(npc.fetchLocX() - loc.locX, npc.fetchLocY() - loc.locY) }))
             .sort((a, b) => a.distance - b.distance).map(row => row.npc);
+    },
+
+    // Every bot's life state (BotLifeState, the cold truth and the hot rows), and those near a place.
+    bots() {
+        return invoke('GameServer/Bot/Population/BotLifeState').everyState();
+    },
+
+    botsNear(loc, radius) {
+        return this.bots().filter(state => state.loc && Math.hypot(state.loc.locX - loc.locX, state.loc.locY - loc.locY) <= radius);
+    },
+
+    // The fullest place of cold hunters (HotCrowd's own choice of a crowd).
+    crowd() {
+        return invoke('Perf/HotCrowd').crowdLocations(this.bots(), 1)[0] || null;
+    },
+
+    // The cold worker's fault and the commit queue's afterCommit error counts (always on).
+    failures() {
+        const snapshot = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').snapshot();
+        return { workerFaults: snapshot.failures?.workerFaults || 0, afterCommitErrors: snapshot.queue?.failures?.afterCommitErrors || 0 };
     }
 };
 
@@ -29,6 +49,12 @@ const setup = {
     async giveAdena(client, amount) {
         await invoke('GameServer/World/Generics/NpcBypasses/AdminGiveAdena')(client.session,
             ['admin_give_adena', client.actor.fetchName(), String(amount)]);
+    },
+
+    // Travel: the gatekeeper's teleport (tests/e2e/gatekeeper.js checks that one through its window).
+    teleport(client, loc) {
+        // global.path: this file's own require('path') hides the project's path map.
+        return invoke(global.path.actor).teleportTo(client.session, client.actor, { locX: loc.locX, locY: loc.locY, locZ: loc.locZ, head: 0 });
     }
 };
 
@@ -53,6 +79,7 @@ async function run(script, sessions) {
     };
     const ctx = { players, player: players[0], step, within, npcHtml, bypasses, carries, world, setup };
     try {
+        if (!players.length) throw new Error('no player spawned (server.log: "hot scenario")');
         await script.run(ctx);
     } catch (error) {
         if (!error.stepFailed) {

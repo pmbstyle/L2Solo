@@ -99,27 +99,14 @@ async function hold(server, dir, ms, label) {
     }
 }
 
-// A script run's window: until the script notes e2e-done, at most `ms`.
-async function holdUntilScriptDone(server, dir, ms) {
-    const done = () => {
-        const boot = fs.readdirSync(dir).find(name => /^\d{8}-\d{6}$/.test(name));
-        return !!boot && fs.readdirSync(path.join(dir, boot)).filter(name => name.startsWith('timeline-'))
-            .some(name => fs.readFileSync(path.join(dir, boot, name), 'utf8').includes('"type":"e2e-done"'));
-    };
-    for (const end = Date.now() + ms; Date.now() < end && !done();) {
-        if (!server.alive()) throw new Error(`the server exited during the script:\n${logTail(dir)}`);
-        await sleep(2000);
-    }
-}
-
 // A capture through the recorder's request file; resolves when the recorder wrote request.done.json
 // (every thread it asked has written), whatever the number of threads.
-async function capture(dir, kind, server) {
+async function capture(dir, kind, server, timeoutMs = 90000) {
     const file = path.join(dir, 'request.json'), done = path.join(dir, 'request.done.json');
     fs.rmSync(done, { force: true });
     fs.writeFileSync(file, `${JSON.stringify({ kind })}\n`);
-    for (let waited = 0; waited < 90000 && !fs.existsSync(done) && server.alive(); waited += 500) await sleep(500);
-    if (!fs.existsSync(done)) throw new Error(`the recorder did not finish capture ${kind}`);
+    for (let waited = 0; waited < timeoutMs && !fs.existsSync(done) && server.alive(); waited += 500) await sleep(500);
+    if (!fs.existsSync(done)) throw new Error(`the recorder did not finish ${kind} in ${Math.round(timeoutMs / 1000)} s`);
 }
 
 // Heap dumps of every sampled thread at a window's edge.
@@ -159,7 +146,7 @@ async function run(flags) {
     // The transition counters and timings live in PopulationMetrics behind developerDiagnostics: on
     // by default for hot (--diagnostics=false turns it off), off for cold.
     const diagnostics = flags.diagnostics === undefined ? scenario === 'hot' : flags.diagnostics !== 'false';
-    const crowd = scenario === 'hot' && !script ? { players: Number(flags.players || 1), route: Number(flags.route || 0),
+    const crowd = scenario === 'hot' ? { players: Number(flags.players || 1), route: Number(flags.route || 0),
         routeMinutes: Number(flags['route-minutes'] || 3) } : null;
     const { sha, dirty } = commit();
     const name = script ? `script-${path.basename(script, '.js')}` : scenario;
@@ -186,7 +173,9 @@ async function run(flags) {
         await dumpHeaps(dir, server);
         meta.windowStart = new Date().toISOString();
         say('window open');
-        if (script) await holdUntilScriptDone(server, dir, minutes * 60000);
+        // A script plays inside the window: the runner asks for it now and the window closes when it is
+        // done (at most --minutes).
+        if (script) await capture(dir, 'script', server, minutes * 60000).catch(error => say(`script: ${error.message}`));
         else await hold(server, dir, minutes * 60000, 'the window');
         meta.windowEnd = new Date().toISOString();
         await dumpHeaps(dir, server);

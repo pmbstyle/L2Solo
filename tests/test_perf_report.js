@@ -110,7 +110,7 @@ try {
     assert.equal(c.failures.lastFault.reason, 'boom');
     assert.deepEqual(c.memory.mainHeapAfterGcMb, { start: 50, end: 55, max: 55 });
     assert.equal(c.memory.freeMemMinMb, 700);
-    assert.equal(c.memory.majorPageFaults, 7);
+    assert.equal(c.memory.majorPageFaults, 3, 'totals since start: the last line in the window minus the first');
     assert.deepEqual(s.memory.mainHeapUsedMb, { start: 100, end: 120, max: 120 });
     assert.deepEqual(s.memory.heaps.main, { start: 100, end: 120, max: 120 });
     assert.deepEqual(s.memory.growth.main.self, [{ fn: 'keep src/GameServer/World/World.js:5', mb: 15 }]);

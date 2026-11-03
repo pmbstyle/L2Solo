@@ -90,9 +90,9 @@ class LiveRecorder {
             this.heaped = new Map();
             this.profiles = [];
             this.eluMarks = new Map();
-            this.resourceMark = process.resourceUsage();
             // Main's heap after major GC (WorkerHeapTelemetry), as the cold worker already has it.
-            invoke('GameServer/Bot/Population/WorkerHeapTelemetry').observe();
+            this.heapWindow = invoke('GameServer/Bot/Population/WorkerHeapTelemetry').observe();
+            this.handlers = new Map();
             this.writes = Promise.resolve();
             this.ticking = false;
             this.costMs = 0;
@@ -133,6 +133,7 @@ class LiveRecorder {
         this.profiled.clear();
         this.heaped.clear();
         await this.chunks.worker?.terminate();
+        this.heapWindow?.close();
         this.threads.stop();
         return this.writes;
     }
@@ -203,6 +204,9 @@ class LiveRecorder {
             const heapJobs = sampling.filter(state => !state.dumping && (asked(state, 'heap') || state.dumpedAt <= heapDue))
                 .map(state => this.dumpHeap(state, asked(state, 'heap')));
             const snapshot = request?.kind === 'snapshot' ? [this.snapshot(String(request.thread || 'main'))] : [];
+            // A request another measurement answers (HotCrowd: the script scenario's start); done when it is.
+            const handler = request && this.handlers.get(request.kind);
+            if (handler) snapshot.push(Promise.resolve().then(() => handler(request)).catch(error => this.warn(`request ${request.kind}`, error)));
             if (Date.now() - this.prunedAt >= PRUNE_MS) {
                 this.prunedAt = Date.now();
                 this.prune().catch(error => this.warn('prune', error));
@@ -418,7 +422,7 @@ class LiveRecorder {
                 processCpuMs: { user: Math.round(cpu.user / 1000), system: Math.round(cpu.system / 1000) } },
             coldQueue: summary?.coldQueue || null,
             coordinator: coordinatorSnapshot ? coordinatorSnapshot() : null,
-            vitals: vitals ? vitals() : null,
+            vitals: this.vitals(vitals),
             population: summary?.enabled === false ? null : population,
             machine: this.machine(),
             recorder: { costMs: Math.round(this.costMs), inspectorMs: Math.round(this.threads.syncMs), profiles: this.profiles.length } };
@@ -429,15 +433,26 @@ class LiveRecorder {
             .catch(error => this.warn('summary', error));
     }
 
-    // What the machine did since the last line: free memory, page faults (a major one reads the disk:
-    // swapping shows here before it shows as busy time blamed on random code), file I/O, switches.
+    // The status owner's readings; a reader that throws costs the line its vitals, never logSummary.
+    vitals(read) {
+        if (!read) return null;
+        try {
+            return read();
+        } catch (error) {
+            if (!this.vitalsFailed) this.warn('vitals', error);
+            this.vitalsFailed = true;
+            return null;
+        }
+    }
+
+    // The machine: free memory, and the process's totals since start (a reader takes differences
+    // between lines): page faults (a major one reads the disk: swapping shows here before it shows as
+    // busy time blamed on random code), file I/O, involuntary switches.
     machine() {
-        const now = process.resourceUsage(), last = this.resourceMark;
-        this.resourceMark = now;
-        const delta = (key) => now[key] - (last?.[key] || 0);
-        return { freeMemMb: mb(os.freemem()), totalMemMb: mb(os.totalmem()), majorPageFaults: delta('majorPageFault'),
-            minorPageFaults: delta('minorPageFault'), fsReads: delta('fsRead'), fsWrites: delta('fsWrite'),
-            involuntarySwitches: delta('involuntaryContextSwitches') };
+        const now = process.resourceUsage();
+        return { freeMemMb: mb(os.freemem()), totalMemMb: mb(os.totalmem()), majorPageFaults: now.majorPageFault,
+            minorPageFaults: now.minorPageFault, fsReads: now.fsRead, fsWrites: now.fsWrite,
+            involuntarySwitches: now.involuntaryContextSwitches };
     }
 
     // World, WAL and history file sizes in MB (a WAL that only grows stalls a checkpoint later).
@@ -470,6 +485,11 @@ class LiveRecorder {
         if (!mark) return {};
         const window = source.eventLoopUtilization(now, mark);
         return { elu: Math.round(window.utilization * 1000) / 1000, profiled: this.profiled.has(thread.threadId) };
+    }
+
+    // A request kind another measurement answers: request.done.json waits for its promise.
+    on(kind, handler) {
+        if (this.running) this.handlers.set(kind, handler);
     }
 
     // A line another measurement adds to the timeline (src/Perf/HotCrowd: the player probe).
