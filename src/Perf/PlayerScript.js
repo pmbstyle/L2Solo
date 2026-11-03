@@ -3,7 +3,7 @@
 const path = require('path');
 const { npcHtml, bypasses, carries, objectIdAt, within } = require('./PlayerClient');
 
-// Runs an end-to-end scenario (tests/e2e/*.js, planning/e2e-player/plan.md) with the hot scenario's
+// Runs an end-to-end scenario (tests/e2e/*.js; run with scripts/perf.js --scenario=script) with the hot scenario's
 // player(s): each `step` is timed and noted in the live recorder's timeline as an "e2e" line (passed or
 // failed, with the server packets around a failure); "e2e-done" closes the scenario. A script module:
 //   module.exports = { name, players: 1, place(ctx) -> { locX, locY, locZ } | null, async run(ctx) }
