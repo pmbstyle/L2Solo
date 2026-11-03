@@ -55,8 +55,22 @@ const GeodataEngine = require('../../Geodata/GeodataEngine');
 // excluded from JSON/wire sizing and cannot be supplied by a Worker message.
 const PROPOSAL_SOURCE = Symbol('cold-proposal-source');
 const CLAN_BEFORE = Symbol('cold-clan-before');
-function wait(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+// A command error that is not the bot's (the write queue it waits on failed).
+const SHARED_FAILURE = Symbol('cold-command-shared-failure');
+// Not the bot's fault: the database (busy, locked, any SQLite error) or a write
+// it waited on. Quarantining every commanding bot for it would stall the world
+// for minutes after a short outage, so it is a plain retry counted once on main.
+function sharedCommandFailure(error) {
+    return !!error?.[SHARED_FAILURE] || error?.code === 'ERR_SQLITE_ERROR'
+        || /SQLITE_BUSY|database is locked/i.test(String(error?.message || ''));
+}
+// The promise, or `timedOut` after ms. The timer is cleared when the race
+// settles: a pending one kept the process (shutdown, every cold-worker test)
+// alive the full ms after the awaited work had ended.
+function within(promise, ms, timedOut = undefined) {
+    let timer = null;
+    return Promise.race([promise, new Promise((resolve) => { timer = setTimeout(() => resolve(timedOut), ms); })])
+        .finally(() => clearTimeout(timer));
 }
 
 // Longest stretch the initial full snapshot builds rows without yielding.
@@ -239,7 +253,9 @@ class ColdSimulationCoordinator {
         // Refused commits by reason and stale_command answers,
         // counted always (cheap): the live read of how often a main write
         // lands under a step or leaves the cached copy behind the row.
-        this.refusals = { commitRefused: {}, staleCommand: 0 };
+        // commandDbErrors: commands that failed on the database or a pending
+        // write, not on the bot (sharedCommandFailure); the first is logged.
+        this.refusals = { commitRefused: {}, staleCommand: 0, commandDbErrors: 0 };
         // Review commands answered (always counted, like the refusals): how many
         // came, how they ended (refused by reason) and which steps they carried.
         this.reviews = { sent: 0, ok: 0, refused: {}, plan: 0, buff: 0, training: 0 };
@@ -853,7 +869,17 @@ class ColdSimulationCoordinator {
             break;
         case 'fault':
             DiagnosticConfig.developerDiagnostics && (this.counters.workerErrors += 1);
-            utils.infoWarn('ColdWorker', 'worker fault: %s%s', payload.reason || 'unknown', payload.stack ? `\n${payload.stack}` : '');
+            // A bot's fault comes once per message (with its stack) and once on
+            // entering quarantine (ColdSimulationKernel.fault); repeats are counted there.
+            if (payload.quarantined) {
+                utils.infoWarn('ColdWorker', '%s quarantined for %d min after %d faults in a row (%s): %s',
+                    payload.partyId ? `party ${payload.partyId}` : `bot ${payload.characterId}`, Math.round(Number(payload.holdMs || 0) / 60000), payload.faults, payload.stage, payload.reason);
+            } else {
+                utils.infoWarn('ColdWorker', 'worker fault%s: %s%s',
+                    payload.partyId ? ` party ${payload.partyId} ${payload.stage}`
+                        : payload.characterId ? ` bot ${payload.characterId} ${payload.stage}` : '',
+                    payload.reason || 'unknown', payload.stack ? `\n${payload.stack}` : '');
+            }
             break;
         default:
             break;
@@ -1942,7 +1968,17 @@ class ColdSimulationCoordinator {
                     if (!sourceCurrent()) return;
                     DiagnosticConfig.developerDiagnostics && (this.counters.commandErrors += 1);
                     const state = LifeState.cachedState(request.characterId);
-                    results.push({ ...identity, ok: false, reason: error?.message || 'command_error', retryAfterMs: 5000,
+                    const shared = sharedCommandFailure(error);
+                    if (shared && !this.refusals.commandDbErrors++) {
+                        utils.infoWarn('ColdWorker', 'command failed on the database (counted from now on as commandDbErrors): %s',
+                            error?.stack || error);
+                    }
+                    // A command's own throw: the worker's fault tracker holds the bot
+                    // off (backoff, then quarantine) and sends the first stack back
+                    // to be logged here. A shared failure is a plain retry.
+                    results.push({ ...identity, ok: false, reason: error?.message || 'command_error',
+                        ...(shared ? { retryAfterMs: 5000 }
+                            : { fault: { stack: String(error?.stack || '').split('\n').slice(0, 10).join('\n').slice(0, 2000) } }),
                         ...(state ? { state } : {}) });
                 }
                 await yieldToLoop();
@@ -1984,7 +2020,9 @@ class ColdSimulationCoordinator {
     // lifetime. Own this entire promise and admit the computation only
     // after the existing writer has settled against the current cache.
     async admitWorkerCommand(identity, sourceCurrent) {
-        await LifeState.settleWrites([identity.characterId]);
+        await LifeState.settleWrites([identity.characterId]).catch((error) => {
+            throw Object.assign(error instanceof Error ? error : Error(String(error)), { [SHARED_FAILURE]: true });
+        });
         if (!sourceCurrent()) return { refused: { ok: false, reason: 'stale_worker_source' } };
         const state = LifeState.cachedState(identity.characterId);
         const refusal = reason => ({ refused: { ok: false, reason, retryAfterMs: 1000, ...(state ? { state } : {}) } });
@@ -2120,7 +2158,7 @@ class ColdSimulationCoordinator {
             // A proposal can arrive before the fence reply, including in it.
             captureCommitAcks();
             const command = this.commandInflight.get(id);
-            if (command) await Promise.race([command.catch(() => null), wait(timeoutMs)]);
+            if (command) await within(command.catch(() => null), timeoutMs);
             await this.queue.flushCharacter(id);
             await Promise.all(commitAcks);
             return { ok: true, reason: 'fenced', ...fenced, economyDecision: takeDecision() };
@@ -2302,22 +2340,20 @@ class ColdSimulationCoordinator {
         this.historyCleanupTimer = null;
         this.restartTimer = null;
         this.pauseReasons.clear();
-        await Promise.race([this.snapshotInFlight || Promise.resolve(), wait(10000)]).catch(() => null);
-        await Promise.race([this.criticalSnapshotInFlight || Promise.resolve(), wait(10000)]).catch(() => null);
+        await within(this.snapshotInFlight || Promise.resolve(), 10000).catch(() => null);
+        await within(this.criticalSnapshotInFlight || Promise.resolve(), 10000).catch(() => null);
         let drained = null;
         if (worker && this.worker === worker && this.workerEpoch === epoch) {
             const msgId = this.post('shutdown', { deadlineAt: Date.now() + 10000 });
             if (msgId) {
-                drained = await Promise.race([
-                    new Promise((resolve, reject) => this.waiters.set(msgId, { resolve, reject })),
-                    wait(10000).then(() => null)
-                ]).catch(() => null);
+                drained = await within(new Promise((resolve, reject) => this.waiters.set(msgId, { resolve, reject })),
+                    10000, null).catch(() => null);
             }
         }
         const queue = await this.queue.drain(10000);
-        await Promise.race([Promise.allSettled([...this.heldAcks.values()].map((held) => held.ack)), wait(10000)]);
-        await Promise.race([this.commandTail.catch(() => null), wait(10000)]);
-        await Promise.race([this.historyCleanupInFlight || Promise.resolve(), wait(10000)]).catch(() => null);
+        await within(Promise.allSettled([...this.heldAcks.values()].map((held) => held.ack)), 10000);
+        await within(this.commandTail.catch(() => null), 10000);
+        await within(this.historyCleanupInFlight || Promise.resolve(), 10000).catch(() => null);
         this.historyCleanupInFlight = null;
         if (worker) await worker.terminate().catch(() => null);
         Metrics.clearColdSafetyEpoch(epoch);
@@ -2366,7 +2402,7 @@ class ColdSimulationCoordinator {
             heartbeatAgeMs: this.worker ? Math.max(0, Date.now() - this.lastHeartbeatAt) : null,
             worker: { ...this.lastWorkerSnapshot },
             refusals: { commitRefused: { ...this.refusals.commitRefused },
-                staleCommand: this.refusals.staleCommand },
+                staleCommand: this.refusals.staleCommand, commandDbErrors: this.refusals.commandDbErrors },
             reviews: { ...this.reviews, refused: { ...this.reviews.refused } },
             heldAcks: this.heldAcks.size,
             ackState: { ...this.ackState },

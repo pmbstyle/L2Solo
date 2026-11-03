@@ -1349,6 +1349,57 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.strictEqual(errorKernel.scheduleTokens.get(30).dueAt, now + 1000, 'a resolver error requeues the bot');
     assert.strictEqual(errorKernel.snapshot().errors, 1);
 
+    {
+        // A deterministic throw is not retried at every due: the bot waits 1 s,
+        // 5 s, 30 s, 2 min, then from the fifth fault in a row 10 min at a time
+        // (logged once with its stack and once on quarantine, repeats only
+        // counted), until a step of it commits; then a new fault waits 1 s again.
+        let clock = 10000, failing = true, revision = 3;
+        const tries = [], faults = [];
+        const faultKernel = recordingKernel({
+            resolveSolo: input => {
+                tries.push(clock);
+                if (failing) throw new Error('synthetic_deterministic_error');
+                return resolver(input);
+            },
+            emit: (type, payload) => { if (type === 'fault') faults.push(payload); },
+            now: () => clock
+        });
+        faultKernel.upsert(standOn(faultKernel, { state: state(31) }, { id: 'spot' }));
+        // Until `ms` passed or the bot tried `untilTries` times.
+        const runFor = async (ms, untilTries = Infinity) => {
+            for (const end = clock + ms; clock < end && tries.length < untilTries; clock += 500) {
+                faultKernel.tick();
+                await faultKernel.resolveChain;
+                // Main changes the bot every 10 s (a new revision, due long ago):
+                // that brings no early retry.
+                if (clock % 10000 === 0 && !faultKernel.busy(31)) faultKernel.upsert({ state: {
+                    ...faultKernel.states.get(31).state, simulation: { revision: ++revision } } });
+            }
+        };
+        await runFor(20 * 60 * 1000);
+        assert.deepStrictEqual(tries.slice(1).map((at, index) => at - tries[index]), [1000, 5000, 30000, 120000, 600000],
+            'faults in a row back off, then quarantine the bot for 10 min');
+        assert.strictEqual(faults.length, 2, 'the first fault and the quarantine are logged, repeats only counted');
+        assert.match(faults[0].stack, /synthetic_deterministic_error/);
+        assert.deepStrictEqual(faults[1], { reason: 'synthetic_deterministic_error',
+            stage: 'solo_project', characterId: 31, quarantined: true, faults: 5, holdMs: 600000 });
+        assert.deepStrictEqual(faultKernel.heartbeatSnapshot().failures,
+            { workerFaults: 6, faultsByStage: { solo_project: 6 }, faultBackoff: 0, faultQuarantined: 1 });
+        failing = false;
+        const before = tries.length;
+        await runFor(20 * 60 * 1000, before + 1);
+        assert.strictEqual(tries.at(-1) - tries.at(-2), 600000, 'a quarantined bot tries once per 10 min');
+        faultKernel.flush(null, true);
+        commitAck(faultKernel, { results: [{ ok: true, characterId: 31, state: { ...faultKernel.states.get(31).state,
+            simulation: { revision: ++revision }, timing: { lastResolvedAt: clock, nextResolveAt: clock + 30000 } } }] });
+        const { faultBackoff, faultQuarantined } = faultKernel.heartbeatSnapshot().failures;
+        assert.deepStrictEqual([faultBackoff, faultQuarantined], [0, 0], 'a committed step clears the bot\'s faults');
+        failing = true;
+        await runFor(60 * 1000, tries.length + 2);
+        assert.strictEqual(tries.at(-1) - tries.at(-2), 1000, 'after a success a new fault waits 1 s again');
+    }
+
     // The bot's look at its board lines (group E) leaves the worker with its
     // proposal: the main thread applies the new asks after the commit.
     const marketMessages = [];

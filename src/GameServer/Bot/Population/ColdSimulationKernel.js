@@ -12,6 +12,17 @@ const PROPOSAL_PAYLOAD_LIMIT_BYTES = 240 * 1024;
 // A step not answered by a commit ack this long after its start is requeued
 // (a party by its leader); a late ack then misses its proposal and is dropped.
 const STEP_STALL_MS = 30000;
+// A bot whose step or command throws again and again (a deterministic bug in
+// its state or a rule) is held off, not retried at every due: its next try
+// waits 1 s, 5 s, 30 s, then 2 min per fault in a row, and from the fifth it
+// is quarantined for 10 min at a time until a step or command of it succeeds.
+// The first fault of each message is logged with its stack, entering
+// quarantine once; repeats are only counted (status `botFaults`).
+const FAULT_BACKOFF_MS = [1000, 5000, 30000, 120000];
+const FAULT_QUARANTINE_AFTER = 5;
+const FAULT_QUARANTINE_MS = 10 * 60 * 1000;
+// Distinct messages logged per failing bot; others are only counted.
+const FAULT_LOGGED_MESSAGES = 4;
 // A solo hunt window's most rounds (typically 3-10 inside its ~300 s hold).
 const MAX_WINDOW_ROUNDS = 32;
 // Ready resolver promises chained back to back ran a tick's whole batch as one task (T41 profile
@@ -739,6 +750,12 @@ class ColdSimulationKernel {
         // Ok commit acks with numbers only whose state this thread could not
         // rebuild (no proposal kept, a bad number): always counted.
         this.ackUnbuilt = 0;
+        // Failing bots and parties only (FAULT_*): bot id, or `party:<id>` for a
+        // party run (whoever leads it) -> { count, holdUntil, logged messages }.
+        this.faults = new Map();
+        // Every bot fault, repeats included, counted always (only on a fault):
+        // main sees only the logged ones (fault).
+        this.failures = { workerFaults: 0, faultsByStage: {} };
         this.paused = false;
         this.stopping = false;
         this.resolveChain = Promise.resolve();
@@ -812,6 +829,7 @@ class ColdSimulationKernel {
     }
 
     partyRemove(partyId) {
+        this.clearFault(`party:${partyId}`);
         const previous = this.partyUnindex(partyId);
         if (previous) this.refreshLeaderSchedule(previous.leaderId);
         return previous;
@@ -1037,6 +1055,7 @@ class ColdSimulationKernel {
         this.scheduleTokens.delete(id);
         this.commanding.delete(id);
         this.commandStartedAt.delete(id);
+        this.faults.delete(id);
     }
 
     // kind: the lifecycleKind of the stored state when the caller has just read it.
@@ -1048,6 +1067,12 @@ class ColdSimulationKernel {
         this.heap.remove(this.scheduleTokens.get(id)?.heapEntry);
         const token = this.nextScheduleToken++;
         const current = this.states.get(id);
+        // A failing bot's hold (fault) wins over every other wake: a catalog
+        // refresh, a buyer wake or a deadline does not retry it early.
+        // Against the entry's start: a round with a lead starts that much early.
+        const holdUntil = this.faults.size ? Number(this.faults.get(id)?.holdUntil || 0) : 0;
+        const due = Number(dueAt || this.now());
+        if (holdUntil > (lead ? due - this.stepLeadMs : due)) { dueAt = Math.max(due, holdUntil); lead = false; }
         const heapEntry = { characterId: id, version: Number(version),
             dueAt: Math.ceil(Number(dueAt || this.now())), scheduleToken: token,
             playerWaiting: playerWaitingTransition(current?.state, kind, this),
@@ -1250,6 +1275,12 @@ class ColdSimulationKernel {
                 // The party row (the 'parties' table) without its two
                 // published fields, which the run keeps beside it.
                 const row = this.leaderParty(id);
+                // A party run's hold (fault) holds whoever leads it now.
+                const partyHold = this.faults.size ? Number(this.faults.get(`party:${row?.partyId}`)?.holdUntil || 0) : 0;
+                if (partyHold > timestamp) {
+                    this.requeue(id, partyHold);
+                    continue;
+                }
                 const { raidOwner = null, requirementRefresh = false, ...party } = row || {};
                 const declaredMemberIds = Array.isArray(row?.memberIds) && row.memberIds.length
                     ? row.memberIds
@@ -1608,7 +1639,7 @@ class ColdSimulationKernel {
             DiagnosticConfig.developerDiagnostics && (this.stats.errors += 1);
             this.cancelCommand(id, attempt);
             if (attempt.marketWakeup) this.buyerWakeups.add(id);
-            this.requeue(id, this.now() + 5000);
+            this.requeue(id, this.fault(id, error || 'command_error', 'command'));
         }
     }
 
@@ -2168,12 +2199,16 @@ class ColdSimulationKernel {
             for (const source of sources) {
                 if (raidStepId && this.dirty.get(source.id)?.raidStepId === raidStepId) this.dirty.delete(source.id);
             }
+            // A raid step waiting for its boss is no fault: the leader comes
+            // back in a second. A throw holds the party's run off, by party
+            // id: a new leader does not skip it, a member left solo is free.
+            let retryAt = this.now() + 1000;
             if (error?.message !== 'raid_step_pending') {
                 DiagnosticConfig.developerDiagnostics && (this.stats.errors += 1);
-                this.emit('fault', { reason: error?.message || 'party_resolver_error', stage: 'party_project' });
+                retryAt = this.fault(`party:${partyId}`, error || 'party_resolver_error', 'party_project');
             }
             this.abandonSteps(run.purpose.memberIds);
-            this.requeue(run.purpose.leaderId, this.now() + 1000);
+            this.requeue(run.purpose.leaderId, retryAt);
         } finally {
             if (raidStepId && !published) require('./ColdRaidEncounter').abort(raidStepId);
             if (this.partyRuns.get(String(partyId)) === run) this.partyRuns.delete(String(partyId));
@@ -2267,7 +2302,8 @@ class ColdSimulationKernel {
             if (!this.resolverSourceCurrent(source)) return;
             handled = true;
             DiagnosticConfig.developerDiagnostics && (this.stats.errors += 1);
-            this.emit('fault', { reason: error?.message || 'resolver_error', stage: 'solo_project', characterId: Number(characterId) });
+            // Held off by its faults in a row (schedule reads the hold).
+            this.fault(characterId, error || 'resolver_error', 'solo_project');
             this.abandonSteps([characterId]);
             this.requeueAtDue(characterId);
         } finally {
@@ -2499,6 +2535,11 @@ class ColdSimulationKernel {
             if (this.states.get(id)?.state.phase !== 'cold') return;
             if (active.pendingRaidStepId) require('./ColdRaidEncounter').acknowledge(active.pendingRaidStepId, id, result.ok);
             this.inFlight.delete(id);
+            // A committed step ends the bot's (its party run's) faults in a row.
+            if (result.ok) {
+                this.clearFault(id);
+                if (active.partyId) this.clearFault(`party:${active.partyId}`);
+            }
             // A committed step's start -> ack time sets the lead, excluding
             // main's wait for its future events: that wait is the lead's own
             // output, not work. A party's shared start and wait are one sample.
@@ -2613,6 +2654,12 @@ class ColdSimulationKernel {
         this.cancelCommand(id, attempt);
         // A refused review did not run its plan; main asks for a refresh.
         if (attempt.kind === 'review' && payload.ok === false && attempt.economyPlan) this.forgetSentPlan(id);
+        // A command that threw on main (payload.fault, its stack) is held off as
+        // a throw here is (fault); before the upsert, so its schedule keeps the hold.
+        if (payload.ok) this.clearFault(id);
+        const retryAt = payload.fault && payload.ok === false
+            ? this.fault(id, { message: payload.reason, stack: payload.fault.stack }, 'main_command')
+            : this.now() + Math.max(1000, Number(payload.retryAfterMs) || 5000);
         let output = payload.state;
         if (output) {
             const outputCheckpoint = Protocol.commandCheckpoint(output), latest = Protocol.commandCheckpoint(current.state);
@@ -2632,11 +2679,52 @@ class ColdSimulationKernel {
             // Rejected commands often return the unchanged overdue state. Do
             // not let that timestamp immediately re-enter the head of the queue.
             if ((payload.ok === false || Number(payload.retryAfterMs) > 0) && this.scheduleTokens.has(id)) {
-                this.requeue(id, Math.max(this.scheduleTokens.get(id).dueAt,
-                    this.now() + Math.max(1000, Number(payload.retryAfterMs) || 5000)));
+                this.requeue(id, Math.max(this.scheduleTokens.get(id).dueAt, retryAt));
             }
-        } else this.requeue(id, this.now() + Math.max(1000, Number(payload.retryAfterMs) || 5000));
+        } else this.requeue(id, retryAt);
         return true;
+    }
+
+    // A step or command of this bot (key: its id) or a party run (`party:<id>`)
+    // threw (here or, sent back in its command ack, on main): when it may try
+    // again (FAULT_*). Faults in a row count whatever their message (a message
+    // with an id in it must not reset the backoff); only a success clears them
+    // (clearFault). Returns the hold's end.
+    fault(key, error, stage) {
+        const party = String(key).startsWith('party:');
+        const id = party ? String(key) : Number(key), message = String(error?.message || error || stage);
+        const who = party ? { partyId: id.slice(6) } : { characterId: id };
+        let entry = this.faults.get(id);
+        if (!entry) this.faults.set(id, entry = { count: 0, holdUntil: 0, logged: [] });
+        entry.count += 1;
+        this.failures.workerFaults += 1;
+        this.failures.faultsByStage[stage] = (this.failures.faultsByStage[stage] || 0) + 1;
+        const quarantined = entry.count >= FAULT_QUARANTINE_AFTER;
+        entry.holdUntil = this.now() + (quarantined ? FAULT_QUARANTINE_MS
+            : FAULT_BACKOFF_MS[Math.min(entry.count, FAULT_BACKOFF_MS.length) - 1]);
+        if (!entry.logged.includes(message) && entry.logged.length < FAULT_LOGGED_MESSAGES) {
+            entry.logged.push(message);
+            this.emit('fault', { reason: message, stage, ...who,
+                stack: String(error?.stack || '').split('\n').slice(0, 10).join('\n').slice(0, 2000) || null });
+        }
+        if (entry.count === FAULT_QUARANTINE_AFTER) {
+            this.emit('fault', { reason: message, stage, ...who, quarantined: true,
+                faults: entry.count, holdMs: FAULT_QUARANTINE_MS });
+        }
+        return entry.holdUntil;
+    }
+
+    faultCounts() {
+        let faultBackoff = 0, faultQuarantined = 0;
+        for (const entry of this.faults.values()) {
+            if (entry.count >= FAULT_QUARANTINE_AFTER) faultQuarantined += 1;
+            else faultBackoff += 1;
+        }
+        return { faultBackoff, faultQuarantined };
+    }
+
+    clearFault(key) {
+        if (this.faults.size) this.faults.delete(String(key).startsWith('party:') ? String(key) : Number(key));
     }
 
     // At the kept copy's own due (a leader's: its party row's), never sooner
@@ -2727,6 +2815,9 @@ class ColdSimulationKernel {
             checkpointsRefused: this.checkpointsRefused,
             stepsRefused: this.stepsRefused,
             ackUnbuilt: this.ackUnbuilt,
+            // Bot faults (FAULT_*): all of them by stage, and the failing bots
+            // held off by a backoff / quarantined.
+            failures: { ...this.failures, faultsByStage: { ...this.failures.faultsByStage }, ...this.faultCounts() },
             stepLeadMs: Math.round(this.stepLeadMs),
             soloWindow: this.soloWindowStats,
             proofOverflows: invoke('GameServer/Bot/Economy/WishNetwork').proofOverflowCount(), // lazy: the kernel's boot order

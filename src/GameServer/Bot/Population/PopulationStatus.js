@@ -130,8 +130,13 @@ const PopulationStatus = {
         // noCheckpoint: commands a bot could not begin, its state refused by the
         // command checkpoint (a fractional clock); 0 in a healthy world.
         // stepsRefused: steps main sent back since the start (the row moved).
+        // botFaults=<backing off>/<quarantined>/<faults since start>: bots whose steps or
+        // commands throw, held off until one succeeds (ColdSimulationKernel FAULT_*); 0/0/0 when healthy.
+        // commandDbErrors: commands that failed on the database, not the bot (a plain retry).
         return `coldDue=${queue.overdue || 0} coldDueAll=${queue.due || 0} coldDueAge=${Math.round((queue.oldestAgeMs || 0) / 1000)}s`
             + ` noCheckpoint=${worker.checkpointsRefused || 0} stepsRefused=${worker.stepsRefused || 0}`
+            + ` botFaults=${worker.failures?.faultBackoff || 0}/${worker.failures?.faultQuarantined || 0}/${worker.failures?.workerFaults || 0}`
+            + ` commandDbErrors=${coordinator?.refusals?.commandDbErrors || 0}`
             + ` ${this.workerBusyText()} mainElu=${mainElu.utilization.toFixed(2)} workerHeapGc=${mb(worker.heapAfterGc)}/${mb(worker.heapAfterGcMax10)}MB`
             + ` stepLead=${worker.stepLeadMs || 0}ms pvp=${pvp.live}/${pvp.steps}/${pvp.ms}ms/${pvp.left}`
             + ` geo=${mb(geodata.loadedBytes)}MB/${geodata.loadedRegions} geoViews=${mb(geodata.attachedBytes)}+${mb(worker.geodata?.attachedBytes)}MB`
