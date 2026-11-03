@@ -417,12 +417,23 @@ try {
     DataCache.npcSpawns = originalSpawns;
     assert.strictEqual(Pricing.npcPrice(npcItem), 899800, 'NPC price cache must refresh when spawns reload');
 
+    // The cold worker prices every NPC-sold item as main does, not only the gear
+    // it plans to buy: Soul Ore's NPC price is a crafted D soulshot's cost
+    // (FirstPrice), and without it the worker fell back to the buy-back.
+    const shopIds = [...new Set(invoke('GameServer/World/Generics/NpcShopBuyLists').allEntries().map(row => Number(row.selfId)))];
+    const mainPrices = shopIds.map(selfId => Pricing.npcPrice({ selfId }));
+    assert(shopIds.includes(1785) && Number.isFinite(Pricing.npcPrice({ selfId: 1785 })), 'Soul Ore has an NPC price on main');
+    const coldCatalog = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').npcPlanningCatalogRows();
+
     const originalInvoke = global.invoke;
     global.invoke = (name) => {
         assert(!name.startsWith('GameServer/World/'), 'snapshot pricing must not load live world dependencies');
         return originalInvoke(name);
     };
     try {
+        Pricing.useNpcOfferSnapshot(coldCatalog);
+        assert.deepStrictEqual(shopIds.map(selfId => Pricing.npcPrice({ selfId })), mainPrices,
+            'the cold worker reads the NPC price main reads, for a craft input as for gear');
         Pricing.useNpcOfferSnapshot([{ selfId: 178, price: 490800 }, { selfId: 178, price: 449900 }]);
         DataCache.npcSpawns = [];
         assert.strictEqual(Pricing.referencePrice(npcItem), 449900, 'worker snapshots must use the same cheapest NPC price');

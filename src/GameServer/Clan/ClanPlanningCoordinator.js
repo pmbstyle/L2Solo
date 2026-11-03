@@ -286,15 +286,10 @@ async function buildStaticMarket(recipes) {
         if (i % 8 === 7) await yieldLoop();
     }
     const shopEntries = NpcShopBuyLists.allEntries().map(({ selfId }) => ({ selfId }));
-    const wearableIds = new Set(items.map(item => Number(item.selfId)));
-    const npcPriceRows = [];
-    // FirstPrice also needs native NPC floors for crafting inputs and
-    // consumables. Scalar quotes do not add sources to MarketOpportunity.
-    for (const selfId of new Set(shopEntries.map(entry => Number(entry.selfId)))) {
-        if (wearableIds.has(selfId)) continue;
-        const price = BotMarketPricing.npcPrice({ selfId });
-        if (Number.isFinite(price) && price > 0) npcPriceRows.push({ selfId, price });
-    }
+    // The worker prices with main's whole NPC table (gear, craft inputs,
+    // consumables), the one the cold worker gets too. Scalar quotes do not add
+    // sources to MarketOpportunity.
+    const npcPriceRows = BotMarketPricing.npcPriceRows();
     return { npcOffers, npcPriceRows, towns: MarketOpportunity.TOWN_NPC_SELLERS, shopEntries };
 }
 

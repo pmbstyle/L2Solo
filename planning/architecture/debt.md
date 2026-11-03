@@ -59,6 +59,9 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    data today). The fight-time bisection (25 envelope evaluations per verdict, ~0.1-0.2 ms per hot scan) can become
    one evaluation at F = 30(√(1 + (seconds − 3)/15) − 1) if it shows in a profile.
 
+13. **`BotMarketPricing.useNpcOfferSnapshot(null)`** sets an empty price map instead of returning to main's live prices,
+   so afterwards every price reads as none (only `test_first_price` ~104 passes null).
+
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets[6]`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so
 a rich bot there has a null activity (T178): a test expecting "one leaf" from such a scene breaks the same way. Known

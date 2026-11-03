@@ -15,6 +15,7 @@ const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const DataCache = invoke('GameServer/DataCache');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
+const BotMarketPricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const ClanSocial = invoke('GameServer/Clan/ClanSocialRuntime');
@@ -86,12 +87,17 @@ function recipeKnowledgeFor(state) {
 
 const yieldToLoop = require('../../EventLoopTurn');
 
+// The worker's npc_offers catalogue: the town offers the gear planner buys from
+// (ColdNpcPlanningCatalog) and main's NPC price table (BotMarketPricing.npcPriceRows,
+// rows without a town), from which the worker prices every NPC-sold item as main
+// does: a craft input's cost (FirstPrice) as much as gear. An offer never undercuts
+// the table (same sellers, same rows), so the worker's cheapest is main's.
 function npcPlanningCatalogRows() {
-    return ColdNpcPlanningCatalog.buildRows({
+    return Object.freeze([...ColdNpcPlanningCatalog.buildRows({
         items: DataCache.items || [],
         townNpcSellers: TownNpcCatalog.sellersByTown(),
         fetchForNpc: (npcSelfId) => NpcShopBuyLists.fetchForNpc(npcSelfId)
-    });
+    }), ...BotMarketPricing.npcPriceRows()]);
 }
 
 const HEAP_SNAPSHOT_DIR = path.join(__dirname, '..', '..', '..', '..', 'tmp', 'heap');
