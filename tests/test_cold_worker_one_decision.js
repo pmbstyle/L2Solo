@@ -98,6 +98,19 @@ module.exports.goalProbe = async (id) => {
         return { same, held, refusal, moved };
     } finally { Economy.forState = original; }
 };
+// A refresh of a dirty bot waits for its step, whose build it would repeat, and
+// runs on that step's output.
+module.exports.refreshProbe = async id => {
+    kernel.momentGate = true;
+    const asked = () => occupationPlanner.waiting.has(id) || occupationPlanner.slots.has(id);
+    const record = stats => { const entry = kernel.states.get(id);
+        return { ...entry, economyPending: 1, state: { ...entry.state, phase: 'cold', stats: { ...entry.state.stats, ...stats } } }; };
+    occupationPlanner.cancel(id);
+    kernel.states.set(id, record({ wishDirty: 1 }));
+    const waited = !asked();
+    kernel.states.set(id, record({ wishDirty: 0 }), 'commit');
+    return { waited, ran: asked() };
+};
 // A party member's step (no decision before its round): a level gained in
 // its round moves its kit, which its party step reads to open a re-plan; a
 // quiet step moves nothing.
@@ -134,7 +147,7 @@ const loaded = new Module(workerData.workerPath, module);
 loaded.filename = workerData.workerPath; loaded.paths = Module._nodeModulePaths(path.dirname(workerData.workerPath));
 loaded._compile(fs.readFileSync(workerData.workerPath, 'utf8') + workerData.observer, workerData.workerPath);
 parentPort.on('message', message => {
-    const probe = ['stepProbe', 'goalProbe', 'kitProbe', 'occupationProbe'].find(name => message[name]);
+    const probe = ['stepProbe', 'goalProbe', 'kitProbe', 'occupationProbe', 'refreshProbe'].find(name => message[name]);
     if (!probe) return;
     loaded.exports[probe](message[probe]).then(value => parentPort.postMessage({ probeId: message.msgId, value }))
         .catch(error => parentPort.postMessage({ probeId: message.msgId, error: error.stack }));
@@ -213,6 +226,9 @@ parentPort.on('message', message => {
         assert.equal(kit.levels[1], kit.levels[0] + 1, 'the fixture member levels up in its round');
         assert.equal(kit.quiet, false, 'a quiet party member step moves no kit');
         assert.equal(kit.levelUp, true, 'a level gained in a party round is a kit event for the party step');
+        worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'refresh'), refreshProbe: id });
+        const refreshResponse = await wait(message => message.probeId === 'refresh'); if (refreshResponse.error) throw Error(refreshResponse.error);
+        assert.deepEqual(refreshResponse.value, { waited: true, ran: true }, 'a dirty bot refreshes after its step, not beside it');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'occupation'), occupationProbe: id });
         const occupationResponse = await wait(message => message.probeId === 'occupation');
         if (occupationResponse.error) throw Error(occupationResponse.error);

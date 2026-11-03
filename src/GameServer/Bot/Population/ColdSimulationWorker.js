@@ -769,9 +769,17 @@ const standingSpot = state => SpotService.standingSpot(state, planningSpots);
 // A far bot's economy refresh, or a near bot's decision on its post (mode
 // near): the raise it consumed (raiseSeq) and the route rows of its last
 // decision while its route key holds.
-function occupationOwnerChanged(id, refresh = false) {
+function occupationOwnerChanged(id, refresh = false, afterStep = false) {
     const entry = kernel?.states.get(Number(id));
     if (!entry || entry.state.phase !== 'hot' && !refresh) return;
+    // A dirty bot's next step builds this same decision: the refresh runs after
+    // it, on that step's held build, not as a second build beside it.
+    if (refresh && !afterStep && kernel.momentGate === true && entry.state.phase === 'cold'
+        && Number(entry.state.stats?.wishDirty)) {
+        entry.refreshWaits = true;
+        return;
+    }
+    if (refresh) entry.refreshWaits = false;
     // One economy refresh per native state object.
     if (refresh && refreshedStates.has(entry.state)) return;
     if (refresh) {
@@ -1970,7 +1978,8 @@ function startKernel(config = {}) {
                 // commit or review; economyPending stays for main's next refresh.
                 if (ownOutput && entry.economyPending) economyDiagnostics.count('occupation', 'refresh',
                     ownOutput === 'review' ? 'own_review_skipped' : 'own_commit_skipped');
-                occupationOwnerChanged(id, !ownOutput && Boolean(entry.economyPending));
+                const afterStep = !!ownOutput && entry.refreshWaits === true;
+                occupationOwnerChanged(id, (!ownOutput || afterStep) && Boolean(entry.economyPending), afterStep);
             }
         }
         return result;
