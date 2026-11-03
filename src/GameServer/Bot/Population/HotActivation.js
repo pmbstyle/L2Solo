@@ -206,7 +206,6 @@ const HotActivation = {
                 return recipesReady.then(() => Promise.resolve(BotManager.loadAndSpawnBot(state.accountName, {
                         name: state.name,
                         homeRegion: state.homeRegion,
-                        newbieAnchor: !!state.stats?.newbieAnchor,
                         plan,
                         backgroundActivity: state.activity || 'hunting',
                         currentSpot: spotSnapshot(placement.spot),

@@ -38,7 +38,6 @@ const CraftMaterialParty = require('./CraftMaterialParty');
 const PartySpotRiskPolicy = require('./PartySpotRiskPolicy');
 const PartyHuntingTarget = require('./PartyHuntingTarget');
 const PurchaseFunding = require('../Economy/PurchaseFunding');
-const { pressureFor } = require('./PopulationPressure');
 const EconomyDiagnostics = require('../Economy/EconomyDiagnostics');
 const ColdEconomyDecision = require('./ColdEconomyDecision');
 const BotErrands = require('./BotErrands');
@@ -689,11 +688,10 @@ class ColdSimulationKernel {
         this.states = new RetainedStateMap(CharacterStateSources.attachKernel(options.stateSources || CharacterStateSources.standalone()), options.shotIndex, this.now);
         this.occupancy = new SpotOccupancyIndex({ locationIndex: this.states.locationIndex });
         this.interactionMemory = new (require('../../Social/InteractionMemory'))();
-        // Worker tables the steps read (partyPut, pressureRow): party rows by
-        // party id, each member's party id, the director's one pressure row.
+        // Worker tables the steps read (partyPut): party rows by party id,
+        // each member's party id.
         this.parties = new Map();
         this.partyByMember = new Map();
-        this.pressureRow = null;
         // The adena a bot's buy orders hold (the worker sums its board rows).
         this.escrowOf = typeof options.buyOrderEscrow === 'function' ? options.buyOrderEscrow : () => 0;
         // The clan hall rule over the bot's hall row (the worker's 'clan_halls'),
@@ -1341,7 +1339,6 @@ class ColdSimulationKernel {
                     party,
                     members: partyMembers,
                     spot: this.raidSpot(this.spotOf(current.state)),
-                    pressure: pressureFor(current.state, this.pressureRow),
                     targetNpcId: Number(PartyHuntingTarget.npcId(party, current.state,
                         memberId => this.states.get(Number(memberId))?.state) || 0),
                     invalidReason: purpose.invalidReason
@@ -1580,7 +1577,6 @@ class ColdSimulationKernel {
                 spot,
                 lastFight: lastFight(resolveState, lifecyclePlan, this.states.get(id)),
                 spotHunters: this.spotHunters(spot),
-                pressure: pressureFor(current.state, this.pressureRow),
                 targetNpcId: Number(lifecyclePlan?.targetNpcId ||
                     (lifecyclePlan?.activityPick?.activity === 'hunting' ? lifecyclePlan.activityPick.npcId : 0) || 0),
                 elapsedMs,
@@ -1983,7 +1979,6 @@ class ColdSimulationKernel {
                 raidOwner: run.raidOwner || null,
                 members: run.members,
                 spot: run.spot,
-                pressure: run.pressure,
                 targetNpcId: run.targetNpcId,
                 lastFight: fightHoldsTrip,
                 elapsedMs: Math.max(1000, startedAt - lastResolvedAt),
@@ -2223,7 +2218,6 @@ class ColdSimulationKernel {
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
                 spot,
                 spotHunters: this.spotHunters(spot),
-                pressure: pressureFor(active.state, this.pressureRow),
                 targetNpcId: Number(lifecyclePlan?.targetNpcId || lifecyclePlan?.acquisitionPlan?.next?.npcId ||
                     (lifecyclePlan?.activityPick?.activity === 'hunting' ? lifecyclePlan.activityPick.npcId : 0) || 0)
             };

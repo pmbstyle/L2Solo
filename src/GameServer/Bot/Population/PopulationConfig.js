@@ -21,7 +21,6 @@ const DEFAULTS = {
     opportunisticRaidShotReserve: 1.3,
     opportunisticRaidExpeditionMs: 45 * 60000,
     phasePolicyEnabled: true,
-    directorEnabled: false,
     summaryIntervalMs: 30000,
     schedulerIntervalMs: 5000,
     // Cold simulation is invisible to players. Keep its total throughput
@@ -118,7 +117,6 @@ const DEFAULTS = {
     // replan/review cadence, not a period during which the bot is blocked.
     partyWaitReplanMs: 5 * 60 * 1000,
     phasePolicyIntervalMs: 10000,
-    directorIntervalMs: 30000,
     // Start with every level-one hunting sector. Waves open every five levels
     // at x1-x10, or every ten levels at x50 and above. This is a cap for
     // generated adventurers only; shop services are not part of it.
@@ -197,12 +195,6 @@ const DEFAULTS = {
     activationFloorGeoChecksPerScan: 24,
     activationFloorCacheMs: 30000,
     activationFloorCacheLimit: 2048,
-    directorTargetBandRadius: 2,
-    directorMaxCatchUpMultiplier: 1.35,
-    directorSlowdownMultiplier: 0.85,
-    newbieAnchorMaxLevel: 5,
-    newbieAnchorExpMultiplier: 0.2,
-    newbieAnchorFloorRatio: 0.12,
     globalChatEnabled: true,
     clanChatEnabled: true,
     clanChatMinIntervalMs: 15000,
@@ -240,7 +232,6 @@ const ENV_KEYS = {
     backgroundResolverEnabled: 'BOT_BACKGROUND_RESOLVER_ENABLED',
     backgroundPartyEnabled: 'BOT_BACKGROUND_PARTY_ENABLED',
     phasePolicyEnabled: 'BOT_POPULATION_PHASE_POLICY_ENABLED',
-    directorEnabled: 'BOT_POPULATION_DIRECTOR_ENABLED',
     maxPlayingPopulation: 'BOT_POPULATION_MAX_PLAYING',
     starterBotsPerRace: 'BOT_POPULATION_STARTER_BOTS_PER_RACE',
     generatedColdBatchSize: 'BOT_POPULATION_BATCH_SIZE',

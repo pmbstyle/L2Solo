@@ -1689,7 +1689,7 @@ function countHitRule(rule) {
 // inventory copy they spend from (with the shot supply drawn from it), the
 // fight profile while it holds (ColdCombatProfile.heldFightProfile) and its
 // hits' stat sources; each fight leaves its own there.
-function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp = Date.now(), roundAt = timestamp, fightLimitMs = 12000, maxActions = 48,
+function resolveFight({ state, spot, targetNpcId = 0, rng, timestamp = Date.now(), roundAt = timestamp, fightLimitMs = 12000, maxActions = 48,
     roundProfiles = null, round = null }) {
     const fightState = mutableCombatState(state, round);
     let bot;
@@ -1972,7 +1972,6 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         exp: rewards.progression.reduce((sum, item) => sum + item.exp, 0),
         sp: rewards.progression.reduce((sum, item) => sum + item.sp, 0)
     }, {
-        expMultiplier: Number(pressure?.expMultiplier || 1),
         rates: ProgressionRates.profile(),
         profile: soloFighter.profile,
         timestamp
@@ -2441,7 +2440,7 @@ const BackgroundResolver = {
     resolveFight,
     // spotHunters: the bots on the spot, from the caller's occupancy (E69).
     // lastFight: the bot's next act waits for the engaged fight: the round starts no new one (PveEncounter.holdsTrip).
-    resolveSolo({ state, spot, pressure = {}, targetNpcId = 0, lastFight = false, elapsedMs = 60000, spotHunters = 1, rng = Math.random, timestamp = Date.now() }) {
+    resolveSolo({ state, spot, targetNpcId = 0, lastFight = false, elapsedMs = 60000, spotHunters = 1, rng = Math.random, timestamp = Date.now() }) {
         if (!state) {
             return {
                 patch: {},
@@ -2745,7 +2744,7 @@ const BackgroundResolver = {
                 inventory: patch.inventory || state.inventory,
                 stats: { ...(state.stats || {}), ...(patch.stats || {}) }
             };
-            const result = countedBuilds('fight', 'solo', resolveFight, { state: fightState, spot, pressure, targetNpcId, rng,
+            const result = countedBuilds('fight', 'solo', resolveFight, { state: fightState, spot, targetNpcId, rng,
                 timestamp: timestamp + combatMs, roundAt: timestamp, fightLimitMs: Math.max(1, combatBudgetMs - combatMs),
                 maxActions: actionBudget - combatActions, roundProfiles: profiles, round });
             if (result.avoided) {

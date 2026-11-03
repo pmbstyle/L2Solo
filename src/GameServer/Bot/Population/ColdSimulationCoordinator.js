@@ -463,7 +463,7 @@ class ColdSimulationCoordinator {
         const entries = type === 'snapshot_page' ? payload.rows
             : ['commit_ack', 'command_ack'].includes(type) ? payload.results : [];
         // Table changes reach the worker before the states that read them
-        // (parties, memory, goals, pressure, recipes, the board's escrow).
+        // (parties, memory, goals, recipes, the board's escrow).
         if (entries?.length) this.tableChannel.flush();
         const packed = StateWire.packPayload(type, payload);
         if (packed !== payload) { payload = packed; bytes = null; }

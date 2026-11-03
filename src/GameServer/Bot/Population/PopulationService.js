@@ -17,7 +17,6 @@ const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver'
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const HotActivation = invoke('GameServer/Bot/Population/HotActivation');
 const Cooldown = invoke('GameServer/Bot/Population/Cooldown');
-const Director = invoke('GameServer/Bot/Population/PopulationDirector');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
 const GeneratedColdSeeder = invoke('GameServer/Bot/Population/GeneratedColdSeeder');
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
@@ -1141,7 +1140,6 @@ const PopulationService = {
             .catch(error => utils.infoWarn('ClanReview', 'startup: %s', error.message));
         LifeEvents.init();
         BackgroundPartyState.init();
-        Director.init();
         this.initialized = true;
         utils.infoSuccess('BotPopulation', 'population service initialized');
         return this.lifeReadyPromise;
@@ -1235,7 +1233,6 @@ const PopulationService = {
         this.scheduleGeneratedColdSeed(Config.generatedColdSeedDelayMs);
         this.schedulePersonaBackfill();
 
-        Director.start();
     },
 
     stop() {
@@ -1301,7 +1298,6 @@ const PopulationService = {
             this.personaBackfillTimer = null;
         }
         this.personaBackfillRunning = false;
-        Director.stop();
         Metrics.stopEventLoopMonitor();
         this.started = false;
         return coldStop;
@@ -3106,7 +3102,6 @@ const PopulationService = {
             state: effectiveState,
             spot,
             spotHunters: SpotProfiles.spotHunters(spot),
-            pressure: Director.pressureForState(state),
             targetNpcId: partyRouteWaiting
                 ? Number(partyFallback?.npcId || 0)
                 : directDropTargetNpcId(acquisitionPlan),
@@ -3176,7 +3171,6 @@ const PopulationService = {
         const result = precomputedResult || BackgroundResolver.resolveSolo({
             state: requestLifecycleState,
             spot: null,
-            pressure: Director.pressureForState(state),
             elapsedMs,
             timestamp: startedAt
         });

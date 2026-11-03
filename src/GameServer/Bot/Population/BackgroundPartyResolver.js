@@ -54,8 +54,7 @@ function estimateFightCount({ party, members, spot, elapsedMs }) {
     return Math.max(1, Math.min(baseWindows, Math.round(baseWindows * densityFactor * cohesionFactor)));
 }
 
-function distributeRewards({ members, spot, wins, defeatedNpcIds = [], overhitContexts = [], pressure, rng, timestamp }) {
-    const expMultiplier = Number(pressure?.expMultiplier || 1);
+function distributeRewards({ members, spot, wins, defeatedNpcIds = [], overhitContexts = [], rng, timestamp }) {
     const rates = ProgressionRates.profile();
     const levels = members.map((state) => Number(state.level || 1));
     const profiles = members.map((state) => ColdCombatProfile.fightProfile(state, timestamp));
@@ -76,7 +75,7 @@ function distributeRewards({ members, spot, wins, defeatedNpcIds = [], overhitCo
     rewards.progression.forEach((kill) => {
         PartyRewardMath.sharesForLevels(levels, kill.exp, kill.sp).forEach((share) => {
             const gained = ColdKillRewards.scaledProgression(share, {
-                expMultiplier, rates, profile: profiles[share.index], timestamp
+                rates, profile: profiles[share.index], timestamp
             });
             memberProgression[share.index].exp += gained.exp;
             memberProgression[share.index].sp += gained.sp;
@@ -149,7 +148,7 @@ const BackgroundPartyResolver = {
     },
 
     // lastFight: the party's next act waits for the engaged fight: it starts no new one (PveEncounter.holdsTrip).
-    resolve({ party, members, spot, pressure = {}, targetNpcId = 0, lastFight = false, elapsedMs = 60000, rng = Math.random, timestamp = Date.now(),
+    resolve({ party, members, spot, targetNpcId = 0, lastFight = false, elapsedMs = 60000, rng = Math.random, timestamp = Date.now(),
         episodeId = null, assessRelationship = null, raidOwner = null }) {
         const meeting = BackgroundPartyResolver.resolveMeetingLifecycle({ party, members, timestamp, episodeId, assessRelationship });
         if (meeting) return meeting;
@@ -529,7 +528,7 @@ const BackgroundPartyResolver = {
             losses += 1;
         }
 
-        const rewards = distributeRewards({ members, spot, wins, defeatedNpcIds, overhitContexts, pressure, rng, timestamp });
+        const rewards = distributeRewards({ members, spot, wins, defeatedNpcIds, overhitContexts, rng, timestamp });
         const memberResults = [];
         const events = [];
         let deaths = 0;

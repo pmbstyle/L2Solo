@@ -879,8 +879,8 @@ tables.watch('board', {
         if (ownerId) pruneLookSeen(ownerId);
     }
 });
-// Parties, memory and pressure are main's tables the kernel keeps
-// (ColdSimulationKernel.partyPut, InteractionMemory.accept, pressureFor).
+// Parties and memory are main's tables the kernel keeps
+// (ColdSimulationKernel.partyPut, InteractionMemory.accept).
 // A party's competition side is read through its leader: a row that changes
 // leaders moves both the old and the new leader's candidate.
 tables.watch('parties', {
@@ -909,11 +909,6 @@ tables.watch('clan_wars', {
     put: (_key, row) => kernel?.interactionMemory.clanWars.accept(row),
     remove() {}
 }, { retain: false });
-tables.watch('pressure', {
-    reset: () => { if (kernel) kernel.pressureRow = null; },
-    put: (_key, row) => { if (kernel) kernel.pressureRow = row; },
-    remove: () => { if (kernel) kernel.pressureRow = null; }
-});
 // The market counters come from the main thread's 'market' table.
 MarketCounters.useTable(() => tables.rows('market'));
 MarketCounters.useSpots(() => planningSpots);

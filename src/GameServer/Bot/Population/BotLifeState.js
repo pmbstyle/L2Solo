@@ -197,10 +197,6 @@ function levelBand(level) {
     return `${Math.max(1, value - 2)}-${value + 2}`;
 }
 
-function targetLevelBandForSession(session, level) {
-    if (session.newbieAnchor) return `1-${Config.newbieAnchorMaxLevel}`;
-    return levelBand(level);
-}
 
 function itemTemplate(selfId) {
     return ItemTemplateIndex.find(DataCache.items, selfId) || null;
@@ -771,7 +767,6 @@ function recordFromSession(session, phase, reason = '') {
                 expiresAt: Number(session.companionShopping.expiresAt || 0) || null
             }
             : null,
-        newbieAnchor: !!session.newbieAnchor,
         lastReason: reason
     };
 
@@ -801,7 +796,7 @@ function recordFromSession(session, phase, reason = '') {
         maxHp: vitals.maxHp,
         mp: vitals.mp,
         maxMp: vitals.maxMp,
-        targetLevelBand: targetLevelBandForSession(session, actor.fetchLevel()),
+        targetLevelBand: levelBand(actor.fetchLevel()),
         deathCount: 0,
         partyId: null,
         inventorySummary: safeJson(inventory),
