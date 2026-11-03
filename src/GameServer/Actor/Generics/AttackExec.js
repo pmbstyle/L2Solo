@@ -55,14 +55,6 @@ function attackExec(session, actor, data) {
                     }
                     actor.attack.meleeHit(session, user);
                 }
-                else {
-                    const BotManager = invoke('GameServer/Bot/BotManager');
-                    const botSession = BotManager.sessions.find(s => s.actor && s.actor.fetchId() === user.fetchId());
-                    if (botSession && botSession.plan === 'merchant') {
-                        const BotMerchant = invoke('GameServer/Bot/BotMerchant');
-                        BotMerchant.talk(session, user);
-                    }
-                }
             });
         }).catch((err) => {
             utils.infoWarn('GameServer', 'Attack -> ' + err);
