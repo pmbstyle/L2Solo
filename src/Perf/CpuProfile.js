@@ -24,13 +24,17 @@ function sourceOf(url) {
 const isProject = (source) => !!source && !source.startsWith('node:') && !path.isAbsolute(source)
     && !source.includes('node_modules/');
 
+// A call frame as the reports name it: "<function> <file>:<line>" (shared with HeapProfile).
+function frameOf(callFrame = {}) {
+    const source = sourceOf(callFrame.url), name = callFrame.functionName || '(anonymous)';
+    return { name, source, project: isProject(source),
+        key: source ? `${name} ${source}:${(callFrame.lineNumber ?? -1) + 1}` : name };
+}
+
 function index(profile) {
     const nodes = new Map(), parent = new Map();
     for (const node of profile.nodes || []) {
-        const frame = node.callFrame || {}, source = sourceOf(frame.url);
-        const name = frame.functionName || '(anonymous)';
-        nodes.set(node.id, { name, source, project: isProject(source),
-            key: source ? `${name} ${source}:${(frame.lineNumber ?? -1) + 1}` : name });
+        nodes.set(node.id, frameOf(node.callFrame));
         for (const child of node.children || []) parent.set(child, node.id);
     }
     const stacks = new Map();
@@ -152,4 +156,4 @@ function repairText(text) {
     }
 }
 
-module.exports = { analyze, sourceOf, repairText };
+module.exports = { analyze, sourceOf, frameOf, repairText };

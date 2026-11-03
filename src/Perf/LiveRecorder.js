@@ -5,8 +5,10 @@ const path = require('path');
 const v8 = require('v8');
 const { performance } = require('perf_hooks');
 const { Worker } = require('worker_threads');
+const { pipeline } = require('stream/promises');
 const Threads = require('./Threads');
 const CpuProfile = require('./CpuProfile');
+const HeapProfile = require('./HeapProfile');
 
 // Live recorder for a server that runs for days ([Perf] live, planning/perf-tooling/plan.md).
 // Without live it registers nothing and starts no timer. With it, per boot folder:
@@ -14,7 +16,11 @@ const CpuProfile = require('./CpuProfile');
 //   "cpu" line per profiled thread per chunk (busy and GC time, longest busy run, long turns);
 // - spikes-<day>.jsonl: a chunk whose longest busy run reached longTurnMs, with the code that held it;
 // - cpu/*.cpuprofile: the raw chunk when its longest run reached keepProfileMs, or on request
-//   (scripts/perf.js capture cpu), for Chrome DevTools.
+//   (scripts/perf.js capture cpu), for Chrome DevTools;
+// - heap/*.heapprofile: the sampling heap profile of each heap thread every heapEveryMinutes (and on
+//   capture heap), with a "heap" timeline line; the sampler is never reset, so two files diff into
+//   what the code kept in between (perf.js heap). The first file of a boot is the baseline and
+//   stays; heap/*.heapsnapshot only on capture snapshot.
 // Rare spikes are the reason for chunks: a profile that always runs has the minute of a spike at
 // 3 a.m. without anyone asking for it. Chunks overlap (the next profile starts before the last
 // one stops): a profiler that stops forgets the names of optimized code, and every later chunk
@@ -37,6 +43,10 @@ function settings(config = {}) {
         longTurnMs: number(config.longTurnMs, 50, 1),
         keepProfileMs: number(config.keepProfileMs, 200, 1),
         keepProfiles: number(config.keepProfiles, 300, 0),
+        heapThreads: String(config.heapThreads ?? 'main,l2node-cold-simulation').split(',').map(s => s.trim()).filter(Boolean),
+        heapSampleKb: number(config.heapSampleKb, 128, 1),
+        heapEveryMinutes: number(config.heapEveryMinutes, 60, 1),
+        keepHeapProfiles: number(config.keepHeapProfiles, 100, 2),
         keepDays: number(config.keepDays, 14, 1)
     };
 }
@@ -45,6 +55,7 @@ const pad = (value) => String(value).padStart(2, '0');
 const dayOf = (date) => `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`;
 const stampOf = (date) => `${dayOf(date)}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
 const mb = (bytes) => Math.round(bytes / 1048576);
+const fileLabel = (thread) => thread.label.replace(/[^\w.-]+/g, '_');
 
 // A profile handle of a thread: main's is synchronous, a worker's answers through its Worker.
 const startProfile = (thread) => (thread.worker ? thread.worker.startCpuProfile() : Promise.resolve(v8.startCpuProfile()));
@@ -65,9 +76,11 @@ class LiveRecorder {
             this.settings = s;
             this.bootDir = path.join(s.dir, stampOf(new Date()));
             fs.mkdirSync(path.join(this.bootDir, 'cpu'), { recursive: true });
+            fs.mkdirSync(path.join(this.bootDir, 'heap'), { recursive: true });
             fs.writeFileSync(path.join(s.dir, 'current.json'), `${JSON.stringify({
                 boot: path.basename(this.bootDir), pid: process.pid, startedAt: new Date().toISOString() })}\n`);
             this.profiled = new Map();
+            this.heaped = new Map();
             this.profiles = [];
             this.writes = Promise.resolve();
             this.ticking = false;
@@ -76,12 +89,15 @@ class LiveRecorder {
             this.prunedAt = Date.now();
             this.running = true;
             this.threads = new Threads();
-            this.threads.start({ onReady: thread => this.attach(thread), onExit: thread => this.profiled.delete(thread.threadId) });
+            this.threads.start({ onReady: thread => this.attach(thread), onExit: (thread) => {
+                this.profiled.delete(thread.threadId);
+                this.heaped.delete(thread.threadId);
+            } });
             this.timer = setInterval(() => this.tick(), TICK_MS);
             this.timer.unref?.();
             this.prune().catch(error => this.warn('prune', error));
-            utils.infoSuccess('Perf', 'live recorder on: %s (cpu of %s, %d s chunks)',
-                path.relative(ROOT, this.bootDir), s.cpuThreads.join(','), s.cpuChunkSeconds);
+            utils.infoSuccess('Perf', 'live recorder on: %s (cpu of %s, %d s chunks; heap of %s, every %d min)',
+                path.relative(ROOT, this.bootDir), s.cpuThreads.join(','), s.cpuChunkSeconds, s.heapThreads.join(','), s.heapEveryMinutes);
             return true;
         } catch (error) {
             this.running = false;
@@ -98,6 +114,7 @@ class LiveRecorder {
         clearInterval(this.timer);
         await Promise.all([...this.profiled.values()].map(state => Promise.resolve().then(() => state.handle?.stop()).catch(() => null)));
         this.profiled.clear();
+        this.heaped.clear();
         this.threads.stop();
         return this.writes;
     }
@@ -107,12 +124,14 @@ class LiveRecorder {
     }
 
     // A path worker gets "#<id>" when its file is shared; the setting names the file.
-    wanted(thread) {
-        return this.settings.cpuThreads.includes(thread.label.replace(/#\d+$/, ''));
+    wanted(thread, list) {
+        return list.includes(thread.label.replace(/#\d+$/, ''));
     }
 
     attach(thread) {
-        if (!this.running || !this.wanted(thread)) return;
+        if (!this.running) return;
+        if (this.wanted(thread, this.settings.heapThreads)) this.attachHeap(thread);
+        if (!this.wanted(thread, this.settings.cpuThreads)) return;
         const state = { thread, handle: null, startedAt: Date.now(), rotating: false, lastEnd: 0 };
         this.profiled.set(thread.threadId, state);
         startProfile(thread).then(handle => {
@@ -125,6 +144,19 @@ class LiveRecorder {
         });
     }
 
+    attachHeap(thread) {
+        const state = { thread, sampling: false, dumping: false, dumpedAt: Date.now(), files: [] };
+        this.heaped.set(thread.threadId, state);
+        this.threads.post(thread, 'HeapProfiler.startSampling', { samplingInterval: this.settings.heapSampleKb * 1024 })
+            .then(() => {
+                state.sampling = true;
+                state.dumpedAt = Date.now();
+            }).catch(error => {
+                this.heaped.delete(thread.threadId);
+                if (this.running) this.warn(`heap sampling of ${thread.label}`, error);
+            });
+    }
+
     // Each thread rotates on its own: a worker stuck in a long step (its profiler answers on its own
     // loop) holds only its chunk, not main's or a capture. The promise is for tests.
     tick() {
@@ -134,13 +166,18 @@ class LiveRecorder {
             const due = Date.now() - this.settings.cpuChunkSeconds * 1000, forced = request?.kind === 'cpu';
             const ready = [...this.profiled.values()].filter(state => state.handle && !state.rotating);
             if (forced && !ready.length) utils.infoWarn('Perf', 'capture cpu: no profiled thread is up');
+            const heapDue = Date.now() - this.settings.heapEveryMinutes * 60000, heapForced = request?.kind === 'heap';
+            const sampling = [...this.heaped.values()].filter(state => state.sampling && !state.dumping);
+            if (heapForced && !sampling.length) utils.infoWarn('Perf', 'capture heap: no sampled thread is up');
+            const heapJobs = sampling.filter(state => heapForced || state.dumpedAt <= heapDue).map(state => this.dumpHeap(state, heapForced));
+            const snapshot = request?.kind === 'snapshot' ? [this.snapshot(String(request.thread || 'main'))] : [];
             if (Date.now() - this.prunedAt >= PRUNE_MS) {
                 this.prunedAt = Date.now();
                 this.prune().catch(error => this.warn('prune', error));
             }
             const jobs = ready.filter(state => forced || state.startedAt <= due).map(state => this.rotate(state, forced));
             this.ticking = false;
-            return Promise.all(jobs);
+            return Promise.all([...jobs, ...heapJobs, ...snapshot]);
         }).catch(error => this.warn('tick', error)).finally(() => { this.ticking = false; });
     }
 
@@ -198,7 +235,7 @@ class LiveRecorder {
             // Text Node wrote that repairText cannot fix: kept once per thread and boot for a report.
             if (!state.unparsedKept) {
                 state.unparsedKept = true;
-                const file = path.join(this.bootDir, 'cpu', `${stampOf(new Date(startedAt))}-${thread.label.replace(/[^\w.-]+/g, '_')}.unparsed.txt`);
+                const file = path.join(this.bootDir, 'cpu', `${stampOf(new Date(startedAt))}-${fileLabel(thread)}.unparsed.txt`);
                 this.write(() => fs.promises.writeFile(file, text));
                 this.warn(`cpu chunk of ${thread.label} (text kept in ${path.relative(ROOT, file)})`, error);
             } else this.warn(`cpu chunk of ${thread.label}`, error);
@@ -209,7 +246,7 @@ class LiveRecorder {
         this.costMs += performance.now() - began;
         const keep = forced || (a.longest?.ms || 0) >= this.settings.keepProfileMs;
         const file = keep ? path.join(this.bootDir, 'cpu',
-            `${stampOf(new Date(startedAt))}-${thread.label.replace(/[^\w.-]+/g, '_')}-${Math.round(a.longest?.ms || 0)}ms.cpuprofile`) : null;
+            `${stampOf(new Date(startedAt))}-${fileLabel(thread)}-${Math.round(a.longest?.ms || 0)}ms.cpuprofile`) : null;
         const at = new Date(startedAt).toISOString();
         this.append({ type: 'cpu', t: at, thread: thread.label, ms: a.durationMs, busyMs: a.busyMs, gcMs: a.gcMs,
             longestMs: a.longest?.ms || 0, longTurns: a.longTurns, runs: a.runs });
@@ -227,6 +264,57 @@ class LiveRecorder {
             this.write(() => fs.promises.rm(old, { force: true }));
         }
         if (forced) utils.infoSuccess('Perf', 'captured cpu of %s: %s', thread.label, path.relative(ROOT, file));
+    }
+
+    async dumpHeap(state, forced) {
+        const { thread } = state;
+        state.dumping = true;
+        try {
+            const { profile } = await this.threads.post(thread, 'HeapProfiler.getSamplingProfile');
+            const began = performance.now();
+            const summary = HeapProfile.summarize(profile, { top: 5 });
+            const text = JSON.stringify(profile);
+            this.costMs += performance.now() - began;
+            const at = new Date();
+            // Milliseconds in the name: two captures in one second must not share a file (the
+            // second would replace the baseline, and pruning would then delete it).
+            const file = path.join(this.bootDir, 'heap',
+                `${stampOf(at)}.${String(at.getMilliseconds()).padStart(3, '0')}-${fileLabel(thread)}.heapprofile`);
+            this.write(() => fs.promises.writeFile(file, text));
+            this.append({ type: 'heap', t: at.toISOString(), thread: thread.label, liveMb: summary.liveMb,
+                self: summary.self, code: summary.code, profile: path.relative(this.bootDir, file).split(path.sep).join('/'),
+                forced: !!forced });
+            // The first file is the baseline every later one is compared with: it stays.
+            state.files.push(file);
+            while (state.files.length > this.settings.keepHeapProfiles) {
+                const old = state.files.splice(1, 1)[0];
+                this.write(() => fs.promises.rm(old, { force: true }));
+            }
+            if (forced) utils.infoSuccess('Perf', 'captured heap of %s: %s', thread.label, path.relative(ROOT, file));
+        } catch (error) {
+            if (this.heaped.has(thread.threadId)) this.warn(`heap profile of ${thread.label}`, error);
+        } finally {
+            state.dumpedAt = Date.now();
+            state.dumping = false;
+        }
+    }
+
+    // A full heap snapshot, only on request: main's blocks main for seconds and needs about the heap's
+    // size again in memory; a worker's is written by the worker and streamed here.
+    async snapshot(label) {
+        const thread = this.threads.all().find(row => row.label === label);
+        if (!thread) {
+            utils.infoWarn('Perf', 'capture snapshot: no thread %s (threads: %s)', label, this.threads.all().map(row => row.label).join(','));
+            return;
+        }
+        const file = path.join(this.bootDir, 'heap', `${stampOf(new Date())}-${fileLabel(thread)}.heapsnapshot`);
+        try {
+            if (thread.worker) await pipeline(await thread.worker.getHeapSnapshot(), fs.createWriteStream(file));
+            else v8.writeHeapSnapshot(file);
+            utils.infoSuccess('Perf', 'captured heap snapshot of %s: %s', thread.label, path.relative(ROOT, file));
+        } catch (error) {
+            this.warn(`heap snapshot of ${thread.label}`, error);
+        }
     }
 
     // Called by PopulationService.logSummary with what it already built; the coordinator snapshot
@@ -247,8 +335,9 @@ class LiveRecorder {
             coldQueue: summary?.coldQueue || null,
             coordinator: coordinatorSnapshot ? coordinatorSnapshot() : null,
             population: summary?.enabled === false ? null : population,
-            recorder: { costMs: Math.round(this.costMs), profiles: this.profiles.length } };
+            recorder: { costMs: Math.round(this.costMs), inspectorMs: Math.round(this.threads.syncMs), profiles: this.profiles.length } };
         this.costMs = performance.now() - began;
+        this.threads.syncMs = 0;
         return this.heaps().then(heaps => this.append({ ...record, heaps }))
             .catch(error => this.warn('summary', error));
     }

@@ -6,7 +6,9 @@
 //   node scripts/perf.js boots
 //   node scripts/perf.js spikes [--boot=<name>] [--thread=main] [--top=20] [--sort=ms]
 //   node scripts/perf.js timeline [--boot=<name>] [--every=60]   (minutes per row)
-//   node scripts/perf.js capture cpu
+//   node scripts/perf.js heap [--boot=<name>] [--thread=main] [--top=15]   (first vs last dump per thread)
+//   node scripts/perf.js heap <a.heapprofile> <b.heapprofile> [--top=15]
+//   node scripts/perf.js capture cpu | heap | snapshot [--thread=main]
 //   node scripts/perf.js analyze <file.cpuprofile> [--long=50]
 
 const fs = require('fs');
@@ -14,6 +16,7 @@ const path = require('path');
 require('../src/Global');
 const { settings } = require('../src/Perf/LiveRecorder');
 const CpuProfile = require('../src/Perf/CpuProfile');
+const HeapProfile = require('../src/Perf/HeapProfile');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -134,21 +137,58 @@ function printTimeline(flags) {
 }
 
 // The recorder takes the request within 5 s; no pickup means no live server reads this folder.
-async function capture(words) {
+const TAKEN = {
+    cpu: 'each profiled thread that is up saves its current chunk (perf.js spikes)',
+    heap: 'each sampled thread writes its heap profile now (perf.js heap)',
+    snapshot: 'the thread writes a full .heapsnapshot into heap/ (main stops for seconds and needs its heap size again in memory)'
+};
+
+async function capture(words, flags) {
     const kind = words[1];
-    if (kind !== 'cpu') throw new Error('Use: perf.js capture cpu');
+    if (!TAKEN[kind]) throw new Error('Use: perf.js capture cpu | heap | snapshot [--thread=main]');
     const file = path.join(liveDir(), 'request.json');
     fs.mkdirSync(liveDir(), { recursive: true });
-    fs.writeFileSync(file, `${JSON.stringify({ kind, at: new Date().toISOString() })}\n`);
+    fs.writeFileSync(file, `${JSON.stringify({ kind, thread: flags.thread || 'main', at: new Date().toISOString() })}\n`);
     for (let waited = 0; waited < 15000; waited += 500) {
         await new Promise(resolve => setTimeout(resolve, 500));
         if (!fs.existsSync(file)) {
-            console.log('taken: each profiled thread that is up saves its current chunk (perf.js spikes; the server log says when none is)');
+            console.log(`taken: ${TAKEN[kind]}; the server log says when nothing was there to capture`);
             return;
         }
     }
     fs.rmSync(file, { force: true });
     throw new Error('no live recorder took the request in 15 s (is the server up with [Perf] live = true?)');
+}
+
+function printGrowth(title, d, count) {
+    console.log(`\n${title}: sampled live ${d.beforeMb} -> ${d.afterMb} MB`);
+    console.log('  grew where allocated (self):');
+    for (const row of d.self.slice(0, count)) console.log(`  ${String(row.mb).padStart(7)} MB  ${row.fn}`);
+    console.log('  grew under project code (including callees):');
+    for (const row of d.code.slice(0, count)) console.log(`  ${String(row.mb).padStart(7)} MB  ${row.fn}`);
+}
+
+const readHeap = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
+
+// Without files: each sampled thread of a boot, its dumps over time, and what grew from the first
+// (the baseline the recorder keeps) to the last.
+function printHeap(words, flags) {
+    const count = numberFlag(flags, 'top', 15, 1);
+    if (words[1] && words[2]) return printGrowth(`${path.basename(words[1])} -> ${path.basename(words[2])}`,
+        HeapProfile.diff(readHeap(words[1]), readHeap(words[2])), count);
+    const dir = bootDir(flags);
+    const dumps = dayLines(dir, 'timeline').filter(line => line.type === 'heap' && (!flags.thread || line.thread === flags.thread));
+    const byThread = new Map();
+    for (const line of dumps) byThread.set(line.thread, [...(byThread.get(line.thread) || []), line]);
+    if (!byThread.size) console.log(`${path.basename(dir)}: no heap dumps yet (every [Perf] heapEveryMinutes, or perf.js capture heap)`);
+    for (const [thread, lines] of byThread) {
+        console.log(`\n${path.basename(dir)} ${thread}: ${lines.map(line => `${time(line.t).slice(11, 16)} ${line.liveMb}MB`).join('  ')}`);
+        const files = lines.filter(line => line.profile && fs.existsSync(path.join(dir, line.profile)));
+        if (files.length < 2) continue;
+        const first = files[0], last = files.at(-1);
+        printGrowth(`${thread} ${time(first.t)} -> ${time(last.t)}`,
+            HeapProfile.diff(readHeap(path.join(dir, first.profile)), readHeap(path.join(dir, last.profile))), count);
+    }
 }
 
 function analyzeFile(words, flags) {
@@ -174,9 +214,10 @@ async function main() {
     if (command === 'boots') return printBoots();
     if (command === 'spikes') return printSpikes(flags);
     if (command === 'timeline') return printTimeline(flags);
-    if (command === 'capture') return capture(words);
+    if (command === 'heap') return printHeap(words, flags);
+    if (command === 'capture') return capture(words, flags);
     if (command === 'analyze') return analyzeFile(words, flags);
-    console.log('Use: perf.js boots | spikes | timeline | capture cpu | analyze <file.cpuprofile>');
+    console.log('Use: perf.js boots | spikes | timeline | heap [a b] | capture cpu|heap|snapshot | analyze <file.cpuprofile>');
     process.exitCode = command ? 1 : 0;
 }
 
