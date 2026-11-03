@@ -16,6 +16,7 @@ const PartyRisk = require('../src/GameServer/Bot/Population/PartySpotRiskPolicy'
 const Risk = require('../src/GameServer/Bot/Population/SpotRiskPolicy');
 const Wait = require('../src/GameServer/Bot/Population/ColdCompetitionWait');
 const Kernel = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
+const ColdTrip = require('../src/GameServer/Bot/Population/ColdTrip');
 const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-retreat-'));
 options.default.Database.path = path.join(dir, 'test.sqlite');
@@ -23,12 +24,15 @@ const at = Date.now(), state = id => Life.cachedState(id);
 const range = (start, count) => Array.from({ length: count }, (_, i) => start + i);
 const oldEpisode = { key: 'old-pvp', at: at - 700000, outcome: 'pvp_fighting', role: 'attack', endedAt: at - 600000, conflictUntil: at + 60000 };
 const destination = { locX: 3000, locY: 1000, locZ: 0 };
+// The retreat takes the honest trip time from the origin (ColdTrip), which BotRoute
+// hands a party as its one travelMs.
+const arrival = at + ColdTrip.spotPlan({ loc: { locX: 0, locY: 0, locZ: 0 } }, destination).durationMs;
 const base = { life: Life, owner: Owner, parties: Party, memory: Memory, now: () => at,
     participantAllowed: () => true, contestContextAllowed: () => true,
     retreatRoute: (members, party) => {
         assert(Risk.excludedSpotIdsForStates(members, at).has('test'));
         return { needed: true, mode: party ? 'party' : 'solo', spotId: 'other', regionName: 'Other field',
-            reason: 'competition_avoid', cause: 'competition_avoid', travelMs: 30000, to: destination };
+            reason: 'competition_avoid', cause: 'competition_avoid', travelMs: arrival - at, to: destination };
     } };
 async function createParty(ids) {
     const p = Party.prepareCommit({ partyId: `p${ids[0]}`, leaderId: ids[0], memberIds: ids,
@@ -85,17 +89,20 @@ async function run() {
             const s = state(id);
             assert.strictEqual(s.activity, 'traveling');
             assert.strictEqual(s.loc.locX, 0, 'departure does not teleport to the new spot');
-            assert.strictEqual(s.stats.travel.arrivalAt, at + 30000);
+            assert.strictEqual(s.stats.travel.arrivalAt, arrival);
             assert.strictEqual(s.stats.coldCompetition.avoid.untilStep, Risk.stepCount(s) + AVOID_STEPS,
                 'each member avoids the spot for ten of its own steps');
             const progress = Resolver.resolveSolo({ state: s, timestamp: at + 15000 });
             assert.strictEqual(progress.materialize.exp, 0, 'travel time cannot produce catch-up kills');
-            assert.strictEqual(progress.patch.loc.locX, 0, 'ordinary gatekeeper transit remains at origin until arrival');
-            const arrived = actorIds.length > 1 ? Kernel.finishPartyRouteTravelState(s, at + 30000)
-                : Resolver.resolveSolo({ state: s, timestamp: at + 30000 }).patch;
+            // The party travels as one gatekeeper transit and stays at the origin until it
+            // arrives; a solo bot walks the short retreat and is on its way halfway.
+            if (actorIds.length > 1) assert.strictEqual(progress.patch.loc.locX, 0, 'party transit remains at origin until arrival');
+            else assert(progress.patch.loc.locX > 0 && progress.patch.loc.locX < destination.locX, 'a solo walker is on its run');
+            const arrived = actorIds.length > 1 ? Kernel.finishPartyRouteTravelState(s, arrival)
+                : Resolver.resolveSolo({ state: s, timestamp: arrival }).patch;
             assert.strictEqual(arrived.spotId, 'other');
             assert.deepStrictEqual(arrived.loc, destination);
-            assert(Risk.excludedSpotIdsForStates([s], at + 30000).has('test'));
+            assert(Risk.excludedSpotIdsForStates([s], arrival).has('test'));
             const later = { ...s, stats: { ...s.stats, stepCount: Risk.stepCount(s) + AVOID_STEPS } };
             assert(!Risk.excludedSpotIdsForStates([later]).has('test'), 'social avoidance expires without escalating death backoff');
             assert.strictEqual(Memory.snapshot(id).relations.length, 0);
@@ -106,7 +113,7 @@ async function run() {
             assert.strictEqual(party.stats.coldCompetition.endedAt, undefined);
             assert.strictEqual(party.stats.coldCompetition.conflictUntil, oldEpisode.conflictUntil);
             assert.strictEqual(party.spotId, 'other');
-            assert.strictEqual(party.stats.travel.arrivalAt, at + 30000);
+            assert.strictEqual(party.stats.travel.arrivalAt, arrival);
             assert(PartyRisk.excludedSpotIds(party).has('test'), 'the party avoids the spot');
             const later = { ...party, stats: { ...party.stats, partySpotRisk: { ...party.stats.partySpotRisk,
                 partyId: party.partyId, rounds: PartyRisk.rounds(party) + AVOID_STEPS } } };

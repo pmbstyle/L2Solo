@@ -1,6 +1,5 @@
 const SurvivalFloor = require('./SurvivalFloor');
 const BotErrands = require('./BotErrands');
-const Network = invoke('GameServer/Bot/Economy/WishNetwork');
 // The bag's need to go sell, one rule for the clan break, the solo forced
 // cleanup and the cold worker's step: the native slot/weight floor first
 // (its bag part only), else the author's cleanup thresholds. { reason, slots, limit } or null.
@@ -70,7 +69,7 @@ function sessionReady(party, member, goal, now, config) {
             const Progression = invoke('GameServer/Bot/AI/PersonalGearProgression');
             const assessment = Progression.assess(member);
             const item = invoke('GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, goal.target?.itemId);
-            const slot = Network.rootSlot(goal.plan.wishKey) || Number(goal.target?.itemSlot);
+            const slot = invoke('GameServer/Bot/Economy/WishNetwork').rootSlot(goal.plan.wishKey) || Number(goal.target?.itemSlot);
             if (item && assessment.required && Progression.priority(item, slot, assessment)) return true;
         }
     }

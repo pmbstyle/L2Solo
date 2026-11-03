@@ -21,6 +21,12 @@ const BUSY = 'function stepBots() { let x = 0; const t = Date.now(); while (Date
     + ' setInterval(stepBots, 300);';
 
 (async () => {
+    // On a Node without the CPU profiler (Node 22, which the server supports) the recorder turns
+    // itself off with a warning: there is nothing to record or check.
+    if (typeof require('v8').startCpuProfile !== 'function' || typeof Worker.prototype.startCpuProfile !== 'function') {
+        console.log(`test_perf_live_recorder skipped: Node ${process.version} has no v8.startCpuProfile / Worker#startCpuProfile`);
+        return;
+    }
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'perf-live-'));
     const recorder = new LiveRecorder();
     const workers = [];

@@ -35,7 +35,7 @@ function fixture(kind = 'Weapon.DualFist', targetX = 40) {
         } }
     };
     if (kind === 'Weapon.Bow') {
-        actor.backpack = new Backpack({ items: [], paperdoll: {} });
+        actor.backpack = new Backpack({ id: 2000001, items: [], paperdoll: {} });
         actor.backpack.items = [
             new Item(1, { selfId: 14, kind, rank: 'none', mp: 2, equipped: true, slot: 14 }),
             new Item(2, { selfId: 17, kind: 'Other.Arrow', amount: 2, stackable: true })

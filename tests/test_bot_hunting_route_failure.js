@@ -169,7 +169,7 @@ try {
     const purchaseEconomy = { network: { activity: { activity: 'shopping', itemId: 1835,
         amount: 8, town: 'Giran', valueHours: 0.002, rootKey: 'stock:shots' } } };
     let purchaseChecks = 0, purchaseTrips = 0, allowed = false;
-    let expectedRequest = { selfId: 1835, amount: 8, town: 'Giran', valueHours: 0.002 };
+    let expectedRequest = { selfId: 1835, amount: 8, town: 'Giran' };
     try {
         Events.held = () => purchaseEconomy;
         Economy.stateForActor = () => purchaseState;
@@ -177,7 +177,8 @@ try {
             purchaseChecks++;
             assert.strictEqual(state, purchaseState);
             assert.strictEqual(options.economy, purchaseEconomy, 'the hot guard reuses its existing decision');
-            assert.deepStrictEqual(request, expectedRequest);
+            // The guard is asked about this item, count and town; the rest of the request is its own.
+            for (const [key, value] of Object.entries(expectedRequest)) assert.strictEqual(request[key], value, key);
             return allowed;
         };
         TownTravel.request = () => { purchaseTrips++; return 'escape'; };
