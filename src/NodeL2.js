@@ -1,5 +1,8 @@
 require('./Global');
 
+// [Perf] live: started before any worker, so the boot is recorded too; without it nothing runs.
+invoke('Perf/LiveRecorder').start();
+
 const { acquireDatabaseAccess } = require('../scripts/database-access');
 const releaseDatabaseAccess = acquireDatabaseAccess(require('path').resolve(
     __dirname, '..', options.default.Database?.path || 'tmp/nodel2.sqlite'

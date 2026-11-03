@@ -3704,6 +3704,7 @@ const PopulationService = {
             const coordinator = ColdSimulationCoordinator.snapshot();
             console.info('BotPopulation :: %s %s %s', reason, Status.goalText(summary.coldQueue, coordinator), Status.nearText(coordinator));
         }
+        invoke('Perf/LiveRecorder').recordSummary(reason, summary, () => ColdSimulationCoordinator.snapshot());
         // A bot due for over a minute is not normal (user 2026-10-17): name it
         // and say why it waits, one line per summary.
         const queue = summary.coldQueue || {};
