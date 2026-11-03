@@ -73,8 +73,8 @@ Known red in `notRunTests`: `test_beginner_shot_policy`, `test_finite_market_inc
   never moves the table's numbers until its own hunt samples exist: a weak or a strong kit chooses spots by the author's
   kit. Decide: wire `HuntCycle` into gear and spot decisions, or drop the kit points, `HuntCycle.reader` and its tests.
 - **TBL-3 Hunt tables rebuilt and committed, no runtime reader** (P none, S none; CI ~11 min, 2.4 MB churn per rebuild,
-  4 tests). They also copy the catalogue, mob and henna data. Decide with TBL-2: wire the hunt model, or build them on
-  demand (`tables/hunt`), not in `all`.
+  4 tests). They also copy the catalogue, mob and henna data. Decided 2026-11-03: keep building in `all`; planned
+  consumers are gear progression and the market's demand estimate (Planned features). The debt is the missing reader.
 - **TBL-4 One `all` run reads old inputs** (P low, S none). The kit surface reads the committed `data/Bots/hunt/gear.json`; hunt
   `mobs`/`spots` read the committed `data/Bots/spot-reward-npcs.json`; their fingerprints the committed `data/Bots/spot-table.json`. After a
   catalogue or gear change the tables disagree until a second run. Order the jobs or drop the coupling (TBL-2/3).
@@ -116,8 +116,10 @@ hot/cold transition (POP-4), start-up repairs removed after their cause is found
 
 ## Planned features
 
-- Cold walker visible on its road: [../cold-walker-route/plan.md](../cold-walker-route/plan.md).
-- Recompute only the link a change touches: [../incremental-decision/plan.md](../incremental-decision/plan.md).
+- Cold walker visible on its road (plan local to the maintainer's sessions, not in the repo yet).
+- Recompute only the link a change touches (plan local, not in the repo yet).
+- Gear progression and the market's demand estimate from the hunt tables (current and future bots by class and level
+  band: gear, hennas, consumables), see tables.md "Assessment" (TBL-3).
 
 ## Decisions only the maintainer can make
 

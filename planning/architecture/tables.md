@@ -193,19 +193,20 @@ committed. `scripts/hunt-cycle-check.js`: `HuntCycle` against the generator's hu
 **Reward catalogue — keep, or merge into the spot table.** Small, read live only as a fallback. Give it a header
 (revision, spot count) or write its rows inside the spot table; low value, low cost.
 
-**Hunt tables — decide: wire in or stop rebuilding.** Serve no runtime decision today. Meant for gear progression
-(which kit takes which mobs, `ceilings`; what each piece adds, `rotation` + `classes` + `gear`) by a formula instead of
-one reference kit per line. Cost now: ~11 min CI per `all` (parallel, little wall time), 2.4 MB of committed churn
-per rebuild, 4 tests, and second copies of the catalogue, mob and henna data. Keeping them current costs little; their
-value comes only when a runtime decision reads them, which is a large plan (replace the reference-kit scaling, then
-the kit surface). Until then: `tables/hunt` on demand, not in `all`, and the spot table's kit points off.
+**Hunt tables — keep, planned consumers (decided 2026-11-03).** Serve no runtime decision today. Planned for two:
+gear progression (which kit takes which mobs, `ceilings`; what each piece adds, `rotation` + `classes` + `gear`) by a
+formula instead of one reference kit per line, and the market's demand estimate: what the current bots and the bots
+still to come (by class and level band) will need — gear pieces, hennas, consumables — so supply and prices can be
+planned ahead instead of reacting to wants already posted. They stay in `all`, so they are current when a consumer
+arrives; the cost is ~11 min parallel CI per `all`, 2.4 MB committed churn per rebuild, 4 tests, and second copies of
+the catalogue, mob and henna data (TBL-3). The kit surface stays too (gear progression reads it via `HuntCycle.reader`).
 
 **Fight table — offline research; keep out of `data/`.** No runtime reader; rebuild only when studying the model.
 
 ## Open questions
 
-1. Kit surface and hunt tables: wire the hunt model into gear decisions (which plan?), or stop building them by
-   default and drop `HuntCycle.reader`?
+1. Kit surface and hunt tables: decided 2026-11-03, keep building; planned for gear progression and the market's
+   demand estimate (above).
 2. Is "never value a spot more than 9 levels below the bot" (deep-blue cut in `SpotValueTable` `combat`) the stated
    design? It is ours (user 10-29), not C4.
 3. Where should a staleness fingerprint fail: `npm run check` (author), the first read (log), or both?
