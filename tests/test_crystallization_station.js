@@ -30,7 +30,7 @@ function sessionFor(id) {
         fetchLocX: () => actor.x, fetchLocY: () => Station.loc.locY, fetchLocZ: () => Station.loc.locZ,
         x: Station.loc.locX, fetchPrivateStoreType: () => 0, isDead: () => false,
         state: { fetchCombats: () => false, fetchHits: () => false, fetchCasts: () => false },
-        backpack: new Backpack({ items: [], paperdoll: {} }), statusUpdateVitals() { this.loadUpdated = true; } };
+        backpack: new Backpack({ id, items: [], paperdoll: {} }), statusUpdateVitals() { this.loadUpdated = true; } };
     return { actor, packets: [], activeNpcTalk: { selfId: Station.npcId, objectId: npc.fetchId() },
         dataSendToMe(packet) { this.packets.push(packet); } };
 }

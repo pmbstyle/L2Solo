@@ -91,7 +91,7 @@ class World {
             isDead: () => false,
             fillupVitals() { this.hp = this.maxHp; this.mp = this.maxMp; },
             skillset: { skills: [], fetchSkills() { return this.skills; }, awardSkills: async () => [] },
-            backpack: new Backpack({ items: carried, paperdoll })
+            backpack: new Backpack({ id, items: carried, paperdoll })
         };
         const session = { actor, packets: [],
             dataSendToMe(packet) { this.packets.push(packet); },

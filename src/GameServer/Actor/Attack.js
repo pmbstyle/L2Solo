@@ -1421,8 +1421,13 @@ class Attack {
         }
     }
 
+    // C4 (Lisvus L2Character.breakCast): damage breaks only a magic cast.
+    // Physical skills and item casts such as Scroll of Escape, resurrection
+    // scrolls and Sowing (not spells) are not interrupted by hits.
     tryBreakCast(creature, damage, rng = Math.random) {
         if (!creature?.state?.fetchCasts?.()) return false;
+        const cast = creature.attack?.activeCast;
+        if (!cast?.skill || !this.isMagicSkill(cast.skill)) return false;
         const chance = Formulas.calcCastBreakChance({
             damage,
             men: creature.fetchMen?.(),

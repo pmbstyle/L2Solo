@@ -578,7 +578,9 @@ function applyGetPlayer(actor, target, rng = Math.random, updatePosition = null)
 
     target.clearDestId?.();
     target.automation?.abortAll?.(target);
-    target.state?.setCasts?.(false);
+    // A pulled character's cast ends with the move (Lisvus teleToLocation
+    // aborts the cast): its timer is cleared too, so it cannot land later.
+    target.attack?.abortCast?.(targetSession, target);
     target.unselect?.();
     targetSession.currentTargetId = undefined;
     targetSession.dataSendToMeAndOthers?.(

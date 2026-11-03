@@ -116,6 +116,9 @@ function sessionFor(backpack, options = {}) {
         fetchEvalScore: () => 0,
         isDead: () => false,
         statusUpdateVitals() {},
+        // Item-skill casts run on the caster's attack timers; these tests
+        // drive them through the patched global setTimeout.
+        attack: { queueTimer: (callback, delay) => setTimeout(callback, delay) },
         state: {
             fetchCasts: () => casts,
             setCasts(value) { casts = value; }
@@ -617,6 +620,76 @@ assert.deepStrictEqual(
     'a generic Scroll of Escape used inside Elven Ruins should teleport to Talking Island'
 );
 
+// A Scroll of Escape is spent when it is used (C4: Lisvus ScrollOfEscape
+// destroys it before the cast) and saved for the bag owner. A hit does not
+// break its 20 s cast (not a spell). A disconnect, or a Restart into another
+// character, during the cast must not crash the server or recall anyone.
+(() => {
+    const Attack = invoke('GameServer/Actor/Attack');
+    const CharacterWriteQueue = invoke('GameServer/Persistence/CharacterWriteQueue');
+    const realSetTimeout = global.setTimeout, realClearTimeout = global.clearTimeout;
+    const realInvoke = global.invoke, realItemAmount = CharacterWriteQueue.itemAmount;
+    const timers = [], recalled = [], writes = [];
+    const caster = (id) => {
+        const backpack = new Backpack({ id, paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+        backpack.items = [item(40, { selfId: 736, kind: 'Other.Scroll', amount: 2 })];
+        const session = sessionFor(backpack, dionFields);
+        session.actor.fetchId = () => id;
+        session.actor.fetchMen = () => 25;
+        session.actor.attack = new Attack();
+        return session;
+    };
+    const scrolls = (bag) => bag.fetchItemFromSelfId(736).fetchAmount();
+    // Timers run when the cast time passes, unless cleared before.
+    const elapse = () => timers.splice(0).forEach((timer) => { if (!timer.cleared) timer.fn(); });
+    global.setTimeout = (fn, ms) => { const timer = { fn, ms, cleared: false }; timers.push(timer); return timer; };
+    global.clearTimeout = (timer) => { if (timer) timer.cleared = true; };
+    global.invoke = (module) => module === 'GameServer/Actor/Generics/TeleportTo'
+        ? (_session, actor) => { recalled.push(actor.fetchId()); }
+        : realInvoke(module);
+    CharacterWriteQueue.itemAmount = (characterId, itemId, amount) => writes.push([characterId, itemId, amount]);
+    try {
+        const landed = caster(2000101);
+        landed.actor.backpack.useItem(landed, 40);
+        assert.strictEqual(timers[0].ms, 20000, 'Scroll of Escape casts for its 20 s hit time');
+        assert.strictEqual(scrolls(landed.actor.backpack), 1, 'Scroll of Escape is spent when used');
+        assert.deepStrictEqual(writes, [[2000101, 40, 1]], 'the spent scroll is saved for the bag owner');
+        // A heavy hit that always breaks a spell (roll 0).
+        new Attack().tryBreakCast(landed.actor, 100000, () => 0);
+        elapse();
+        assert.deepStrictEqual(recalled, [2000101], 'a hit does not break the Scroll of Escape cast');
+
+        recalled.length = 0; writes.length = 0;
+        const quitter = caster(2000102);
+        const quitterBag = quitter.actor.backpack;
+        quitterBag.useItem(quitter, 40);
+        // Session.error destroys the actor and clears session.actor.
+        quitter.actor.attack.destructor();
+        quitter.actor = null;
+        assert.doesNotThrow(elapse, 'a disconnect during the cast must not crash the server');
+        assert.deepStrictEqual(recalled, [], 'a disconnect cancels the recall');
+        assert.strictEqual(scrolls(quitterBag), 1, 'a cancelled Scroll of Escape stays spent (C4)');
+
+        writes.length = 0;
+        const restarted = caster(2000103);
+        const firstBag = restarted.actor.backpack;
+        firstBag.useItem(restarted, 40);
+        // Restart destroys the actor, then another character is picked.
+        restarted.actor.attack.destructor();
+        const next = caster(2000104);
+        restarted.actor = next.actor;
+        elapse();
+        assert.deepStrictEqual(recalled, [], 'a cast from the previous character recalls nobody');
+        assert.strictEqual(scrolls(next.actor.backpack), 2, 'the next character keeps its scroll');
+        assert.deepStrictEqual(writes, [[2000103, 40, 1]], 'only the character who used the scroll is charged');
+    } finally {
+        global.setTimeout = realSetTimeout;
+        global.clearTimeout = realClearTimeout;
+        global.invoke = realInvoke;
+        CharacterWriteQueue.itemAmount = realItemAmount;
+    }
+})();
+
 const l2DayResurrection = blessedEscapeBackpack.buildItemSkill(C4ItemSkills.resolve(3959));
 assert(l2DayResurrection, 'L2Day Blessed Scroll of Resurrection should resolve to an item skill');
 assert.strictEqual(l2DayResurrection.fetchSelfId(), 2062, 'L2Day Blessed Scroll of Resurrection should use sourced skill 2062');
@@ -926,6 +999,40 @@ assert.strictEqual(harvesting.fetchSemantic().effectRange, 100, 'Harvester shoul
 assert.strictEqual(ManorData.sowSuccessChance(5016, 10, 10), 90, 'Dark Coda should use sourced normal 90% sow base chance');
 assert.strictEqual(ManorData.sowSuccessChance(5650, 10, 10), 20, 'Alternative Dark Coda should use sourced 20% sow base chance');
 assert.strictEqual(ManorData.harvestSuccessChance(10, 10), 100, 'Harvest should use sourced 100% base chance near target level');
+
+// A sow cancelled mid-cast (a stun clears the caster's cast timers) leaves
+// the mob sowable: the next sow on it lands and spends one seed.
+(() => {
+    const Attack = invoke('GameServer/Actor/Attack');
+    const realSetTimeout = global.setTimeout, realClearTimeout = global.clearTimeout, realRandom = Math.random;
+    const timers = [];
+    global.setTimeout = (fn) => { const timer = { fn, cleared: false }; timers.push(timer); return timer; };
+    global.clearTimeout = (timer) => { if (timer) timer.cleared = true; };
+    Math.random = () => 0;
+    try {
+        const target = manorNpc({ id: 3000203, level: 10, locX: 10 });
+        World.npc = { spawns: [target] };
+        const bag = new Backpack({ paperdoll: Array.from({ length: 16 }, () => ({})), items: [] });
+        bag.items = [item(33, { selfId: 5016, kind: 'Other.Seed', amount: 2 })];
+        const session = sessionFor(bag, { destId: target.fetchId(), level: 10, mp: 20 });
+        session.actor.attack = new Attack();
+        bag.useItem(session, 33);
+        // What a stun does to the caster (EffectRestrictions).
+        session.actor.attack.clearTimers();
+        session.actor.state.setCasts(false);
+        assert.strictEqual(timers.pop().cleared, true, 'a stun cancels the sow cast');
+        bag.useItem(session, 33);
+        const resow = timers.pop();
+        assert(resow && !resow.cleared, 'a sow cancelled by a stun does not lock the mob against a new sow');
+        resow.fn();
+        assert.strictEqual(target.model.manor.seeded, true, 'the new sow lands on the mob');
+        assert.strictEqual(bag.fetchItemFromSelfId(5016).fetchAmount(), 1, 'only the sow that landed spends a seed');
+    } finally {
+        global.setTimeout = realSetTimeout;
+        global.clearTimeout = realClearTimeout;
+        Math.random = realRandom;
+    }
+})();
 
 const originalManorSetTimeout = global.setTimeout;
 const originalManorRandom = Math.random;

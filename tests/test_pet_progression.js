@@ -134,7 +134,7 @@ async function main() {
     seed.close();
     options.default.Database.path = dbPath;
     Database.init(); read = new DatabaseSync(dbPath);
-    session = sessionFor(new Backpack({ items: [], paperdoll: Array.from({length:16},()=>({})) }));
+    session = sessionFor(new Backpack({ id: 2000001, items: [], paperdoll: Array.from({length:16},()=>({})) }));
     const actor = session.actor, pack = actor.backpack;
     actor.session = session;
     World.user = { sessions: [session] };

@@ -51,7 +51,9 @@ class Server {
             // A throwing handler used to take the whole process with it, so a
             // malformed packet only ever costs the connection that sent it.
             // A handler that fails later, through the Promise it returns, is
-            // dropped the same way: an unobserved rejection ends the server.
+            // dropped the same way, not left to the process backstop
+            // (NodeL2), which only counts it while the client stays on a
+            // half-handled packet.
             const drop = (err) => {
                 utils.infoWarn(this.name, 'dropped a packet from %s:%d: %s', socket.remoteAddress, socket.remotePort, err?.stack || err?.message || err);
                 socket.destroy();

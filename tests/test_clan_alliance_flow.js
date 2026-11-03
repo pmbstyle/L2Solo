@@ -232,6 +232,7 @@ async function main() {
             .then(() => { medicineBag.items = medicineBag.items.filter(i => i.fetchId() !== id); done(); });
     };
     medicineBag.applySelfItemSkill = Backpack.prototype.applySelfItemSkill;
+    medicineBag.castItemSkill = Backpack.prototype.castItemSkill;
     assert(Backpack.prototype.useSkillItem.call(medicineBag, leader, medicine.fetchId(), invoke('GameServer/Items/C4ItemSkills').resolve(3889)));
     await consumed;
     assert(!leader.actor.effects.clan_alliance_poison, 'using the medicine removes Poison of Death');

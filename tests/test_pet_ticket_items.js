@@ -26,7 +26,7 @@ async function main() {
     Database.init();
     read = new DatabaseSync(dbPath);
     const packets = [];
-    const session = { actor: { backpack: new Backpack({ items: [], paperdoll: [] }), fetchId: () => 2000001, fetchLevel: () => 50,
+    const session = { actor: { backpack: new Backpack({ id: 2000001, items: [], paperdoll: [] }), fetchId: () => 2000001, fetchLevel: () => 50,
         fetchName: () => 'QuestTester', fetchLocX: () => 0, fetchLocY: () => 0, fetchLocZ: () => 0, fetchHead: () => 0,
         fetchRadius: () => 10, fetchPvpFlag: () => 0, fetchKarma: () => 0, isDead: () => false,
         state: { fetchHits: () => false, fetchDead: () => false } }, dataSendToMe: packet => packets.push(packet), dataSendToMeAndOthers() {} };

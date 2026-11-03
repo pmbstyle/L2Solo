@@ -37,7 +37,7 @@ async function sessionFor(id) {
         fetchLocX: () => 0, fetchLocY: () => 0, fetchLocZ: () => 0,
         fetchMp: () => mp, setMp: value => { mp = value; },
         state: { fetchCasts: () => casts, setCasts: value => { casts = value; }, setHits() {} },
-        backpack: new Backpack({ items: await Database.fetchItems(id), paperdoll: {} })
+        backpack: new Backpack({ id, items: await Database.fetchItems(id), paperdoll: {} })
     };
     const session = { actor, packets: [], fetchAccountId: () => `soul_growth_${id}`, dataSendToMe(p) { this.packets.push(p); }, dataSendToMeAndOthers(p) { this.packets.push(p); } };
     await QuestService.ensureLoaded(session);

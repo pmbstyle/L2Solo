@@ -46,7 +46,7 @@ async function run() {
     await Database.setItem(id,{selfId:5290,name:'Sealed Dark Crystal Gloves',amount:1,enchant:7,slot:9});
     await Database.setItem(id,{selfId:57,name:'Adena',amount:123,slot:0});
     const rows = await Database.fetchItems(id);
-    const backpack = new Backpack({items:rows,paperdoll:Object.fromEntries(Array.from({length:16},(_,i)=>[i,{}]))});
+    const backpack = new Backpack({id,items:rows,paperdoll:Object.fromEntries(Array.from({length:16},(_,i)=>[i,{}]))});
     const actor = {backpack,fetchId:()=>id,fetchName:()=> 'MammonTest',fetchLevel:()=>76,fetchClassId:()=>2,
         fetchLocX:()=>Mammon.loc.locX,fetchLocY:()=>Mammon.loc.locY,fetchLocZ:()=>Mammon.loc.locZ,
         isDead:()=>false,state:{fetchCombats:()=>false,fetchHits:()=>false,fetchCasts:()=>false,fetchTowards:()=>false}};
