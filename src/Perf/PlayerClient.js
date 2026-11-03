@@ -20,8 +20,8 @@ class PlayerClient {
         const write = socket.write.bind(socket);
         socket.write = (buffer) => {
             const opcode = buffer?.[2] ?? -1;
-            // The trace table names part of the packets; the rest go by their opcode.
-            const named = Session.serverPacketName(opcode);
+            // Named by the Network/Response file that sends it; one without a name goes by its opcode.
+            const named = Session.serverPacketName(opcode, opcode === 0xfe && buffer.length > 4 ? buffer.readUInt16LE(3) : undefined);
             const entry = { name: named === 'Unknown' ? `0x${opcode.toString(16).padStart(2, '0')}` : named, opcode, at: Date.now(), buffer };
             this.received.push(entry);
             if (this.received.length > KEEP) this.received.shift();

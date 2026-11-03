@@ -30,7 +30,7 @@ module.exports = {
         const window = await step('two clicks open its window', async () => {
             const since = Date.now();
             await player.action(keeper.fetchId());
-            await player.packet('MyTargetSelected', { since, timeoutMs: 5000 });
+            await player.packet('DestSelected', { since, timeoutMs: 5000 });
             await player.action(keeper.fetchId());
             return npcHtml(await player.packet('NpcHtml', { since, timeoutMs: 10000 }));
         });
