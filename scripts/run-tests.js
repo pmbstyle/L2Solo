@@ -1556,9 +1556,31 @@ const defaultConfigTests = new Set([
         process.exit(1);
     }
 }
-const selectedTests = tests.filter((testFile) => geodataOnly
+// --only=a,b (or --only=@list.txt: names by comma, space or line, # comments)
+// runs just those files, in that order, each as the suite runs it; a name is
+// tests/test_x.js, test_x.js, test_x or x (.github/workflows/tests.yml).
+const onlyArg = process.argv.find((arg) => arg.startsWith('--only='));
+let onlyTests = null;
+if (onlyArg) {
+    let text = onlyArg.slice('--only='.length);
+    if (text.startsWith('@')) text = fs.readFileSync(text.slice(1), 'utf8').replace(/#.*$/gm, '');
+    const names = text.split(/[\s,]+/).filter(Boolean)
+        .map((name) => `tests/${path.basename(name).replace(/^(test_)?/, 'test_').replace(/(\.js)?$/, '.js')}`);
+    const listed = new Set(tests);
+    const unknown = names.filter((testFile) => !listed.has(testFile));
+    if (!names.length || unknown.length) {
+        console.error(names.length ? `--only: not in the suite:\n${unknown.map((f) => `  ${f}${notRunTests.has(f) ? ` (notRunTests: ${notRunTests.get(f)})` : ''}`).join('\n')}`
+            : '--only: no test files given');
+        process.exit(2);
+    }
+    onlyTests = [...new Set(names)];
+}
+const selectedTests = onlyTests || tests.filter((testFile) => geodataOnly
     ? geodataTests.has(testFile) || optionalGeodataTests.has(testFile)
     : !geodataTests.has(testFile));
+// A geodata test always runs on the raw map (only --only picks one without
+// --geodata); the optional ones read it with --geodata.
+const rawGeodata = (testFile) => geodataOnly || geodataTests.has(testFile);
 // --shard=K/N keeps every N-th file starting at K, so CI can run N parts on
 // separate machines at once; the interleave spreads the slow files evenly.
 const shardArg = process.argv.find((arg) => arg.startsWith('--shard='));
@@ -1575,6 +1597,11 @@ if (process.argv.includes('--list')) {
     selectedTests.forEach((testFile) => console.log(testFile));
     process.exit(0);
 }
+// --needs-geodata: whether a selected file reads the raw map (CI fetches it then).
+if (process.argv.includes('--needs-geodata')) {
+    console.log(selectedTests.some(rawGeodata) ? 'true' : 'false');
+    process.exit(0);
+}
 
 fs.mkdirSync('tmp', { recursive: true });
 const keepGoing = process.argv.includes('--keep-going');
@@ -1584,7 +1611,7 @@ const timeoutMs = Number(process.env.L2NODE_TEST_TIMEOUT_MS) > 0 ? Number(proces
 const failedTests = [];
 for (const testFile of selectedTests) {
     console.log(`\n> node ${testFile}`);
-    const env = { ...process.env, L2NODE_SKIP_RAW_GEODATA_TESTS: geodataOnly ? '0' : '1' };
+    const env = { ...process.env, L2NODE_SKIP_RAW_GEODATA_TESTS: rawGeodata(testFile) ? '0' : '1' };
     if (defaultConfigTests.has(testFile)) {
         env.L2NODE_CONFIG_FILE = 'config/default.ini';
         delete env.L2NODE_SHARED_CONFIG_FILE;

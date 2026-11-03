@@ -152,6 +152,12 @@ committed. `scripts/hunt-cycle-check.js`: `HuntCycle` against the generator's hu
 - `probe`: 12 spots, 0.25 h rows and curves, spot jobs only. For comparing a run on CI with the same run elsewhere
   (determinism, timing). Never copy its artifacts into `data/`: the server would warn 1591 of 1603 spots missing and
   value only 12, and the next hunt build would read a 12-spot reward catalogue.
+- `pick` / `pick-full`: `tables/pick/<name>/<spot ids>[/<class lines>]` (ids by comma, `:` in an id written `@`;
+  `pick`: 0.25 h like `probe`, `pick-full`: the table's 2 h / 1 h), generator `--spot-ids=` / `--lines=`. Only those
+  spots' rows and curves, on the same 12 + 12 shards; artifact `spot-pick` (`spot-pick.json`, header `inputs.spotIds`),
+  no reward catalogue. At full hours and all lines a row equals the full table's row (seeded per spot, class, level;
+  `--lines` changes loot, pooled over the lines measured); curves and kit surface come from the picked spots only,
+  not the full table's curve spots. For checking a few spots, never for `data/`.
 - One `all` run reads the committed tables as inputs: the kit surface reads the old `data/Bots/hunt/gear.json`; hunt `mobs`/`spots`
   read the old `data/Bots/spot-reward-npcs.json`. After a catalogue or gear change, a second run is needed for them to agree.
 

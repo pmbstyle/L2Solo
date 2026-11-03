@@ -224,8 +224,9 @@ handler the player is disconnected).
 | Reward caches | 16384 NPC values, 32768 spot values (`MAX_NPC_VALUES`, `MAX_SPOT_VALUES`) | `SpotRewardExpectation` | oldest dropped | none |
 | Kill mix | 8 species per row (`MIX_SPECIES`; the gate mask is 8 bits) | generator `killMix`, `gapGate` | a spot's 9th and later species neither priced nor gated | none |
 | Level curves | ≤ 3 spots per line and 2-level band (`CURVE_SPOTS`), gaps −4..10 step 2; reference at +6 (`REF_GAP`) | generator | a band without spots takes the nearest band's curve, a gap without points its neighbour's | header `inputs` |
-| Hunt hours | rows 2 h, curves and kit points 1 h (`--hours`, `--curve-hours`); probe 0.25 h, 12 spots | generator, `tables.yml` | noise of rare deaths and drops | header `inputs` |
+| Hunt hours | rows 2 h, curves and kit points 1 h (`--hours`, `--curve-hours`); probe 0.25 h, 12 spots; pick 0.25 h, its spots (the ids fit one branch name, ~250 bytes) | generator, `tables.yml` | noise of rare deaths and drops | header `inputs` |
 | CI jobs | 12 shards × 4 children; 150 min per spot shard, 30 min merge, 240 min hunt | `.github/workflows/tables.yml` | run fails | CI |
+| Picked tests | 8 files a shard, at most 12 shards (more files: more a shard); 180 s per file, 30 min per shard (as PR checks) | `.github/workflows/tests.yml`, `run-tests.js --only` | the file fails / the shard fails | CI log `TIMEOUT` |
 | Hunt model | ceilings: mob level ≤ 85, death chance < 0.5; corrections: 17 classes, gaps −2/2/5/8, 0.5 h; rotation: MP phase ≤ 180 s, dry 60 s, 12 s slices | `scripts/hunt-tables/{ceilings,corrections,rotation}.js` | offline only | header `inputs` |
 
 ## Measurement (perf tool, `[Perf]` in `config/default.ini`)
