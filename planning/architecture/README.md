@@ -1,6 +1,6 @@
 # Architecture map
 
-Checked at 516f6ef9 (2026-11-03).
+Checked at 5771494a (2026-11-03).
 
 What exists, who owns each rule, which path is canonical. First survey: t106dev (now `ivan/next-release`) @ 9f27b7fa,
 2026-11-03, six read-only passes. Line numbers drift; search by name.
@@ -8,15 +8,16 @@ What exists, who owns each rule, which path is canonical. First survey: t106dev 
 Read the file of the area you touch before changing it. Debt across areas and the order to pay it: [debt.md](debt.md).
 Limits: [limits.md](limits.md). C4 check: [c4-check.md](c4-check.md). Second pass by symptom (verify before acting):
 `pass2-*.md` — dead branches, dormant features, fields, logic bugs, rule numbers, silent failures. Third pass:
-`pass3-*.md` — client entry points, per-step cost, purity, races, tests. The pass files are dated surveys: rows are
-marked when a commit fixes them, the survey is not redone.
+`pass3-*.md` — client entry points, per-step cost, purity, races, tests. The pass files are dated surveys: a row is
+deleted when a commit fixes it, the survey is not redone; a survey with nothing open left is deleted.
 
-**How the map is kept.** A change that settles an owner, removes a path, pays a debt item or adds or changes a limit
-updates the touched entry in the same commit; review checks it (a change that should have moved the map and did not
-is a finding). Before each release: `node planning/architecture/check.js` (lists every quoted code name that is no
+**How the map is kept.** Open work and current state only: a paid debt item is deleted, an area line is rewritten to
+the new state; history is git (`git log -S <id>`). A change that settles an owner, removes a path, pays a debt item or
+adds or changes a limit updates the touched entry in the same commit; review checks it (a change that should have
+moved the map and did not is a finding). Before each release: `node planning/architecture/check.js` (lists every quoted code name that is no
 longer in `src/`, `scripts/`, `tests/`, `config/`, `database/` or `launcher/main`; a name followed by "(proposed)" or
 "(C4" and lines recording removed code are skipped), then a refresh scoped by `git diff <Checked at sha>..HEAD`:
-update only the touched entries, move paid items out, set "Checked at" to the release head. Each file's first line
+update only the touched entries, delete paid items, set "Checked at" to the release head. Each file's first line
 says the commit it was last checked at.
 
 | Area | File | Core |
@@ -49,7 +50,7 @@ says the commit it was last checked at.
 - `Cold*` in Economy is usually a main-thread service; the worker planner is `Population/ColdEconomyPlan`.
 - Worker guard wraps only `invoke()`; relative `require()` and lazy invokes slip through. `SpotService` returns `[]`
   without World instead of throwing. ~40 `isMainThread` branches.
-- A worker step or command that throws is held off and quarantined (POP-1, `FAULT_*` in limits.md); an `afterCommit`
+- A worker step or command that throws is held off and quarantined (`ColdSimulationKernel.fault`, `FAULT_*` in limits.md); an `afterCommit`
   throw outside a named step is only counted (POP-2).
 - Cited but missing: `docs/architecture.md` (`BotRoute.js`, `EconomyContext.js`), `docs/t189-plan.md` (T189 commit),
   `docs/game-decisions.md` (`scripts/fight-table`, `ShotStock`).

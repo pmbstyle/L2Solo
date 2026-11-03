@@ -1,6 +1,6 @@
 # Second pass: one rule written as a number in several places (2026-11-03, t106dev)
 
-Checked at 516f6ef9 (2026-11-03).
+Checked at 5771494a (2026-11-03).
 
 Verified on the main checkout (t106dev + uncommitted). Known (skipped): AI-4, CMB-5, CMB-18, WOR-6, WOR-9, AI-11, WOR-7,
 CMB-1/2/6/17, POP-8, ECO-2/4. Paths relative to `src/GameServer/`.

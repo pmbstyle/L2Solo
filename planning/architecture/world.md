@@ -1,6 +1,6 @@
 # World, movement, runtime loop
 
-Checked at 516f6ef9 (2026-11-03).
+Checked at 5771494a (2026-11-03).
 
 Survey of t106dev @ 9f27b7fa (2026-11-03). Line numbers drift; search by name.
 Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `DataCache`, `WorldObserver`, `Server`,
@@ -13,7 +13,7 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
   `World.init` → runtimes (recommendations, clan hall, AFK trade, personas, KB warmup) → TCP servers →
   `BotManager.init` → `WorldObserver.init` → `DevConsole`. `World.init`: indexes, raid state, `spawnNpcs`, minions,
   grid, day/night, aggro ticker. Pathfinding pool starts lazily (first `request`). The perf recorder
-  (`Perf/LiveRecorder`, `[Perf] live`) starts before any worker. Backstop (39f8d4fe): an unhandled rejection is logged
+  (`Perf/LiveRecorder`, `[Perf] live`) starts before any worker. Backstop: an unhandled rejection is logged
   once per reason and counted (`noteFailure`); an uncaught exception, or any failure before startup finishes, flushes
   `CharacterWriteQueue`, closes the DB and exits 1. Shutdown (`NodeL2` `shutdown`): service drains capped at 10 s,
   then flush + close, forced exit by 16 s (limits.md).
@@ -26,7 +26,7 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
 - **Network:** `Server.packetReceiver` frames; `Session.dataReceive` → `Network/Opcodes` → `Network/Request/*` (87);
   out `Packet/Send`, `Network/Response/*`. Auth separate. The packet trace names server packets by the
   `Network/Response/*` file that sends them (`Session` `SERVER_PACKET_NAMES`, kept in step by
-  `tests/test_server_packet_names.js`, 9bd3640d).
+  `tests/test_server_packet_names.js`).
 - **World singleton** `World/World.js`: user sessions + `CharacterLocationIndex` (and a legacy `World.user.sessions`
   array), `npc.spawns`, NPC grid (6000), `NpcObjectIndex`, `RaidEntityIndex`, and party/invite/bot-chat logic that
   belongs to bots (WOR-15).
@@ -88,12 +88,13 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
 
 ## Debt
 
-- **WOR-1 — decided 2026-11-03: one server-side engine for everything the server moves** (bots, NPC, summons,
-  wanderers) on `MoveTo` with geodata and Z snap; `Automation` stays only as "approach and act" on top; players stay
-  client-driven. Last of the large merges, own plan, measured with the perf tool. Small step first: separate the shared
-  `session.moveTimer`. Was: **three movement engines** (client, `MoveTo`, `Automation`; wander rides Automation). Z snap per step only in `MoveTo`; speed re-integrated only there, Automation uses a
-  fixed `ticksToMove`; direct `setLocXYZ` in `NpcWander.teleportHome`, `SummonControl`, low-LOD warp. All share
-  `session.moveTimer`, cleared with both `clearTimeout` and `clearInterval`. ~1800 lines (`Automation` 687, `MoveTo` 815, `NpcWander` 272).
+- **WOR-1 three movement engines** (client, `MoveTo`, `Automation`; wander rides Automation). Z snap per step only in
+  `MoveTo`; speed re-integrated only there, Automation uses a fixed `ticksToMove`; direct `setLocXYZ` in
+  `NpcWander.teleportHome`, `SummonControl`, low-LOD warp. All share `session.moveTimer`, cleared with both
+  `clearTimeout` and `clearInterval`. ~1800 lines (`Automation` 687, `MoveTo` 815, `NpcWander` 272). **Decided
+  2026-11-03: one server-side engine for everything the server moves** (bots, NPC, summons, wanderers) on `MoveTo`
+  with geodata and Z snap; `Automation` stays only as "approach and act" on top; players stay client-driven. Last of
+  the large merges, own plan, measured with the perf tool. Small step first: separate the shared `session.moveTimer`.
 - **WOR-2 sync vs worker A* for hot bots.** Only companions and long routes use the pool; the rest run `findPath` on
   main, twice on fallback. `Npc.fetchCombatPath` (sync) is test-only.
 - **WOR-3 no single "is a bot" rule.** 17 local `isBot*Session` functions with different definitions, 122
@@ -102,9 +103,8 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
 - **WOR-4 half-migration: spatial index vs raw `World.user.sessions` scans.** Always-true flags guard legacy branches
   (`World.actorSpatialIndex`, `World.botRealPlayerIndex`); `typeof World.fetchVisibleRealPlayers === 'function'`
   guards (`UpdateEnvironment`, `Cooldown`, `BotAI`, `BotBrain`, sessions); raw scans in `MoveTo`, `SpawnNpcs.notifyNearby`,
-  `BroadcastVitals`, `NpcDied`, `Cooldown`, `Speak`, `AdminGiveAdena`, `fetchUser`/`fetchUserByName`. `BotStatus` scan
-  and the grid add/remove else-branches paid 2026-11-03 (0ef32de3).
-- **WOR-5 dead: worker actor-publication pipeline** left by 5d71001b: `World/MainActorPublicationSource` (test/bench
+  `BroadcastVitals`, `NpcDied`, `Cooldown`, `Speak`, `AdminGiveAdena`, `fetchUser`/`fetchUserByName`.
+- **WOR-5 dead: worker actor-publication pipeline:** `World/MainActorPublicationSource` (test/bench
   only), `notifyActorPublication`/`subscribeActorPublications`, `Population/ColdActorTableReceiver` (no importer),
   actor-read gates in `CharacterLocationIndex`/`CharacterActorSources`/`TableMirror`; the worker filters the `actors`
   table out. ~1000 lines. **Decided 2026-11-03: delete, as its own change with review** (map dead vs live branches first).
@@ -112,11 +112,11 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
   polygons, `ColdTrip.TOWN_RADIUS` 6000, `TravelRoutes.GATEKEEPER_TOWNS`, `ShopPlaces.PLAZAS`, WorldObserver list. "In
   town" is a circle, polygon or radius depending on the caller.
 - **WOR-7 hot/cold travel time:** cold straight line / `RUN_SPEED` 120 in `ColdTrip` (`BotRoute`, `ClanWarMovement`
-  call `ColdTrip.spotPlan`; always honest time since 10404b7e), hot geodata route × actor speed.
+  call `ColdTrip.spotPlan`), hot geodata route × actor speed.
 - **WOR-8 broadcast hooks copied 3×** (`Session.dataSendToMe`, `Session.dataSendToOthers`,
   `BotSession.dataSendToOthers`). Every visibility fix must touch three places.
 - **WOR-9 NPC interaction distance in many places:** player 36, `TownNpcApproach` 72/300, `ShoppingState` 300,
-  `ArenaDuelService` 250, `PrivateStoreTrade` 300. 4bc6b7e7 unified only bots.
+  `ArenaDuelService` 250, `PrivateStoreTrade` 300. Only bots share one rule (`TownNpcApproach`).
 - **WOR-10 per-location geodata fixes in three places:** `PlayerTransitionRecovery` (players), `VirtualObstacles`
   (everyone), `TownNpcSlots`/`TownGateCatalog` (bots).
 - **WOR-11 direct `World.npc.spawns = …filter`** in 6 files (PetTravel, PetMount, C4SkillEffects, NpcDied, SpoilSweep,
@@ -132,8 +132,6 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
   `AfkTradeService`, `TradeMeetingService`) beside `EventLoopTurn`; obsolete
   "twofold packet" re-slice in `Session.dataReceive`; opcode 0xff undefined (table has 255 slots: a 0xff packet throws); `UpdateEnvironment` comment wrong about
   hot bots; party/invite/bot-chat logic inside `World.js`.
-
-Most rewritten: `World.js` (88 commits), `Automation.js` (48), `MoveTo.js` (37), `CharacterLocation*` (12).
 
 ## Open questions
 

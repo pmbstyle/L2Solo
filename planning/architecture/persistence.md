@@ -1,6 +1,6 @@
 # Persistence and long-lived systems
 
-Checked at 516f6ef9 (2026-11-03).
+Checked at 5771494a (2026-11-03).
 
 Survey of t106dev @ 9f27b7fa (2026-11-03). Line numbers drift; search by name.
 Scope: `src/Database*`, `src/History*`, journals, `Persistence/`, `database/sql`, saved games, Clan, ClanHall, Social,
@@ -76,37 +76,38 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
   direct row CRUD (`deductAdena`/`giveAdena`/`giveItem`). Atomic counterparts: `transferInventoryBetweenCharacters`,
   `buyFromLivePrivateStore`. Callers (`buyFromStore`/`sellToStore`/`sellInventoryToStore`): `Purchase`, `Sell`,
   `ShotStock`, `BotSupplyErrand`, `ShoppingState`.
-  Paid 2026-11-03 (da467f98): the HTML bypasses `BuyMerchantItem`, `SellToMerchantItem`, `BuyBotShop`.
 - **PER-3 row CRUD beside transactions and the buffer.** `QuestService.giveItem/takeItem` (80 of 133 quests; ~50 use
   `QuestStep.apply` via `DeclarativeQuest`, ~9 both), `SellJunk`, `AdminGiveAdena`, `BotMammonUnseal`, `PetRuntime`, `CreateNewChar`.
   Inventory serialisation split three ways (`InventoryMutationQueue`, `questMutationTail`, `CharacterWriteQueue`).
 - **PER-4 dead: social graph.** `Social/SocialGraphRepository`, `Database.ensureSocialEntity`/
-  `commitSocialGraphEvent`, tables `social_entities/events/relations/projection_cursors`. Only a test uses it; added
-  a35f6482 as a foundation, never wired. Live memory is `InteractionMemory*`. **Decided 2026-11-03: delete code, drop the tables by a new migration, own change with review** (check migration numbers against `origin/develop`).
-- **PER-5 — decided 2026-11-03:** new migrations are keyed by name (not number) in one ordered list; 1-83 stay. To
-  agree with Slava before the first named one (social graph drop). The other mechanisms (re-run `sqlite.sql`,
-  `maintenance_tasks`, `world_meta` flags, service start-up migrations) move into that list over time. Was: **five schema mechanisms**; `sqlite.sql` drifts from the migrated shape; tables created both there and in
-  migrations. Fresh and upgraded DBs reach the final shape by different routes.
+  `commitSocialGraphEvent`, tables `social_entities/events/relations/projection_cursors`. Only a test uses it: a
+  foundation never wired. Live memory is `InteractionMemory*`. **Decided 2026-11-03: delete code, drop the tables by
+  a new migration, own change with review** (check migration numbers against `origin/develop`).
+- **PER-5 five schema mechanisms**; `sqlite.sql` drifts from the migrated shape; tables created both there and in
+  migrations. Fresh and upgraded DBs reach the final shape by different routes. **Decided 2026-11-03:** new
+  migrations are keyed by name (not number) in one ordered list; 1-83 stay. To agree with Slava before the first named
+  one (social graph drop). The other mechanisms (re-run `sqlite.sql`, `maintenance_tasks`, `world_meta` flags, service
+  start-up migrations) move into that list over time.
 - **PER-6 karma wash four copies** (`Karma.karmaWashForExperience`, `BotLifeState.prepareResolve`, SQL in
   `updateColdCharacterExperience`, SQL in the cold commit `characters` update); karma stored in `characters.karma` and
-  `statsJson.karma`. A death's wash (L2) is one rule (`DeathExperience.karmaLost`, b786dc02): hot via the death
+  `statsJson.karma`. A death's wash is one rule (`DeathExperience.karmaLost`): hot via the death
   record, cold via the record's `karmaLost` in the cold commit; the `prepareResolve` persist path still recomputes
   `stats.karma` from gain only.
-- **PER-7 — decided 2026-11-03:** `characters`+`items` are the character's record; `bot_life_state` is the worker's
-  working copy; every write to either goes through one transaction that updates both (the two-way sync in the cold
-  commit and after main's item moves is that, by design). Task: audit and close the one-copy writers (POP-5
+- **PER-7 character state in `characters` and `bot_life_state`** (level, exp, location, vitals; items vs summary),
+  synced both ways; several EXP write paths. Which copy readers trust is unclear. A row left hot by a restart is
+  rebuilt from the record at boot (`BotLifeState.staleHotRowFromRecord`); a hot row is not kept current during the
+  session (POP-22). **Decided 2026-11-03:** `characters`+`items` are the character's record; `bot_life_state` is the
+  worker's working copy; every write to either goes through one transaction that updates both (the two-way sync in the
+  cold commit and after main's item moves is that, by design). Task: audit and close the one-copy writers (POP-5
   `writeColdRow` fallback, the EXP write paths, karma in two places + PER-6, `BotSupplyErrand.markCold`) and add a
-  test that catches the copies diverging. After "make failures visible". Was: **character state in `characters` and `bot_life_state`** (level, exp, location, vitals; items vs summary),
-  synced both ways; several EXP write paths. Which copy readers trust is unclear. Done: a row left hot by a restart
-  is rebuilt from the record at boot (`BotLifeState.staleHotRowFromRecord`, 15dab2eb, pass3-races R1); a hot row is
-  still not kept current during the session (POP-22).
+  test that catches the copies diverging. After "make failures visible".
 - **PER-8 class change parallel paths:** `ClassTransfer.transfer` (actor first, rollback write swallowed),
   `SecondProfession` → SQL with repeated checks, `BotClassProgression` and `GeneratedColdSeeder` call
   `updateCharacterClassId` with their own pick; `ClassProgression` `lineage`/`coldLineage` differ on purpose.
-- **PER-9 — decided 2026-11-03:** bots move to the account warehouse (`account_warehouse_items`, batch, atomic);
+- **PER-9 two warehouse stores:** players `account_warehouse_items` (batch), bots per-character `warehouse_items`
+  (line by line); clan warehouse player batch vs bot path; `transferPlayerInventoryToClanWarehouse` test only.
+  **Decided 2026-11-03:** bots move to the account warehouse (`account_warehouse_items`, batch, atomic);
   `warehouse_items` goes by a named migration that moves its rows; own change with review, tested on a world copy.
-  Was: **two warehouse stores:** players `account_warehouse_items` (batch), bots per-character `warehouse_items` (line
-  by line); clan warehouse player batch vs bot path; `transferPlayerInventoryToClanWarehouse` test only.
 - **PER-10 `Database.js` god module:** game rules inside; two access styles (~195 methods vs 148 raw
   `Database.execute` from 29 files); repositories half extracted; `ClanMembershipRepository` repairs bot goals;
   `ClanAllianceRepository` writes `character_quests`.
@@ -114,9 +115,8 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
   `migrateAutonomousClanNames`. `compact-stackable-inventory-v3` is called on every boot but is a `maintenance_tasks`
   one-shot (skipped once done; a new version name re-runs it).
 - **PER-12 ephemeral-session opt-out checked at 15 call sites in 11 files** (`persistenceMode === 'ephemeral'`), not at the writer.
-- **PER-13 dead scripts:** `removeDatabaseFiles` duplicated in `DatabaseRestore` and `saved-games`. MariaDB schema
-  (`database/sql/database.sql`), `database/install.*`, `migrate-mariadb-to-sqlite.js` paid 2026-11-03 (a2aed31b).
-  `market-store-*.sql` are live: migrations 43/44 and the outbox install read them.
+- **PER-13 duplicate script code:** `removeDatabaseFiles` in both `DatabaseRestore` and `saved-games`.
+  (`market-store-*.sql` are live: migrations 43/44 and the outbox install read them.)
 - **PER-14 generators without an output manifest:** ~50 `generate-c4-<zone>.js` slices still write npcs, rewards,
   skills, items; spawns now from `generate-c4-mobius-spawns.js`; three Python generators. Which `data/` file is
   generated cannot be told mechanically.
@@ -133,7 +133,6 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
    collisions with upstream? — decided 2026-11-03: named migrations (PER-5).
 5. Bots on the account warehouse too, or is the split intended? — decided 2026-11-03: account warehouse (PER-9).
 6. Karma wash: with or without `MIN_KARMA_LOST`? One place for karma? (`MIN_KARMA_LOST` is 0, so "without"; the
-   death wash is one rule since b786dc02; the copies of PER-6 stay.)
+   death wash is one rule; the copies of PER-6 stay.)
 7. Port `giveItem`/`takeItem` quests to `QuestStep.apply`, or accept as legacy?
 8. Start-time repairs still needed? What produced zero-amount rows and duplicate stacks?
-9. ~~Is `migrate-mariadb-to-sqlite.js` still supported?~~ No: deleted, paid 2026-11-03 (a2aed31b).

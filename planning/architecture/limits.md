@@ -1,10 +1,9 @@
 # Hidden limits
 
-Checked at 516f6ef9 (2026-11-03).
+Checked at 5771494a (2026-11-03).
 
-Caps, budgets, size bounds, rates and top-K cuts, and what happens at each as the world grows. Survey 2026-11-03
-(every row re-read in code at be5c09f7; rows of later commits carry their sha). Line numbers are approximate — search
-by name. Paths relative to `src/GameServer/` unless they start with `src/`. Key in backticks = overridable in `config/default.ini` (`[BotPopulation]` also via `BOT_*` env).
+Caps, budgets, size bounds, rates and top-K cuts, and what happens at each as the world grows. Survey 2026-11-03,
+kept current with the code. Line numbers are approximate — search by name. Paths relative to `src/GameServer/` unless they start with `src/`. Key in backticks = overridable in `config/default.ini` (`[BotPopulation]` also via `BOT_*` env).
 
 Observable: **log** (a log line), **reason** (returned to the caller), **status** (always-on population status),
 **dD** (counter only with `developerDiagnostics=true`), **none**. "Binds at" is an estimate for ~1700 bots on one laptop.
@@ -41,10 +40,8 @@ Rule (CLAUDE.md): a new or changed limit gets a row here, and hitting it must be
     full rebuild every time (dD).
 14. `PersonalWarehouseIndex` keeps 64 kinds per owner, cut on every publish (lowest selfIds at init, table order on
     refresh): long-lived bots lose sight of the rest of their stock.
-15. ~~Meeting staging ≈ 5 concurrent preparations~~ — corrected in validation: 64 pages / 4 per preparation ≈ 16
-    concurrent at max size, and not silent (player sees "merchant busy", cold buyer logs `trade_meeting_backpressure`).
-    Replaced by (found in validation): an incremental snapshot row over 256 KB blocks every row queued behind it
-    (Coordinator `sendIncrementalEntries`): later hot→cold snapshots stall until that state shrinks (dD `send_failed`).
+15. An incremental snapshot row over 256 KB blocks every row queued behind it (Coordinator
+    `sendIncrementalEntries`): later hot→cold snapshots stall until that state shrinks (dD `send_failed`).
 
 Next in line: InteractionMemory evicting relations at 32/8/8 (real players exempt); group pair events cut at 64
 (9-member raids); clan goal candidates top 8, ClanPartyHelp 64 pending (refused silently); spot-room clamp 9-36
@@ -60,13 +57,13 @@ handler the player is disconnected).
 | Worker heap | old gen 512 MB, min 128 (`coldWorkerHeapMb`); young gen 192 MB, min 48 (`coldWorkerYoungMb`) | `ColdSimulationCoordinator` ~378 | OOM → restart with backoff 1/2/5/10/30 s (resets after 30 s healthy, forever); steady state above = crash loop | log | ~3000 bots (estimate) |
 | Steps in flight | 32 idle (1..128) / 8 with player / halved over `schedulerLagThrottleMs`, 2 at `schedulerLagAbortMs` (`coldWorkerMaxInFlight`, `…PlayerMaxInFlight`, `…LagMaxInFlight`) | Coordinator `desiredWorkerPressure` ~2180, Kernel ~671 | due bots wait | status `coldDue` | ~25 steps/s observed idle (≈ 70 s per cycle over 1700, not re-measured); with a player ~2-4 steps/s (estimate) |
 | IPC batch | 64 proposals (`coldWorkerBatchSize`); message 256 KB | Kernel ~666, Protocol ~7 | batch: next flush; message > 256 KB **dropped**: worker→main logged as `fault … message_too_large`, main→worker counted only in dD `ipcRejects` | log / dD | — |
-| Solo hunt window | 32 rounds (`MAX_WINDOW_ROUNDS`); a round that does not move the clock ends it; always on since be5c09f7 (no switch) | Kernel ~16, `huntWindow` ~2306 | window ends `round_cap` / `stalled` | status `windowEnd` | never at normal play (3-10 rounds per 300 s hold) |
+| Solo hunt window | 32 rounds (`MAX_WINDOW_ROUNDS`); a round that does not move the clock ends it; always on (no switch) | Kernel ~16, `huntWindow` ~2306 | window ends `round_cap` / `stalled` | status `windowEnd` | never at normal play (3-10 rounds per 300 s hold) |
 | Proposal payload | 240 KB per flush | Kernel ~11, flush ~2370-2415 | resent as delta; still too big → abandoned, requeued +5 s, forever | dD `workerPayload` | rare huge state |
 | Commit queue | 1024 entries / 4 MB (`coldWorkerQueueMaxEntries`, `…MaxBytes`); pause at 75 % of entries or full bytes, resume ≤ 50 % entries and ≤ 2 MB; > 256 KB rejected `proposal_too_large` | `ColdCommitQueue` ~69, `enqueue` ~214 | worker paused `commit_queue_high_water` | dD (`workerState=paused`; not in the always-on status) | main DB stalls |
 | Commit rows | 32 per flush (P0/P1 lanes 16); 2 s / 5 s; critical 100 ms | ColdCommitQueue ~64, ~343 | next flush | dD | sets ack latency |
 | SQLITE_BUSY | 5 retries (6 tries), 10/25/50/100/200 ms + jitter | ColdCommitQueue `retryBusy` ~368 | whole batch acked ok:false, worker requeues | dD `commitRefused`/`commitBusy`, no log | WAL truncate |
 | `STEP_STALL_MS` | 30 s | Kernel ~14, `recoverStalled` ~1620 | requeue +1 s (a party via its leader); a *sent* proposal has no ack timeout | dD | hung resolve |
-| Bot fault backoff / quarantine (POP-1, 6e521123) | a bot whose solo step or lifecycle command throws (in the worker, or on main by the command itself; a database or pending-write error is a plain 5 s retry, status `commandDbErrors`, first one logged), or a party run (keyed by party id, whoever leads it): retry after 1 s, 5 s, 30 s, 2 min per fault in a row, from the 5th quarantined 10 min at a time (`FAULT_BACKOFF_MS`, `FAULT_QUARANTINE_AFTER`, `FAULT_QUARANTINE_MS`); the hold wins over every other wake (compared with the start, a round's lead included); only a committed step or an ok command clears it; up to 4 distinct messages per bot logged | Kernel ~15, `fault` / `schedule` | bot held off (a hunt or command paused for that bot); one log line with the stack per message, one on entering quarantine; repeats counted | log + status `botFaults=<backing off>/<quarantined>/<faults>` | a deterministic bug in one bot's state or a rule (0 when healthy) |
+| Bot fault backoff / quarantine | a bot whose solo step or lifecycle command throws (in the worker, or on main by the command itself; a database or pending-write error is a plain 5 s retry, status `commandDbErrors`, first one logged), or a party run (keyed by party id, whoever leads it): retry after 1 s, 5 s, 30 s, 2 min per fault in a row, from the 5th quarantined 10 min at a time (`FAULT_BACKOFF_MS`, `FAULT_QUARANTINE_AFTER`, `FAULT_QUARANTINE_MS`); the hold wins over every other wake (compared with the start, a round's lead included); only a committed step or an ok command clears it; up to 4 distinct messages per bot logged | Kernel ~15, `fault` / `schedule` | bot held off (a hunt or command paused for that bot); one log line with the stack per message, one on entering quarantine; repeats counted | log + status `botFaults=<backing off>/<quarantined>/<faults>` | a deterministic bug in one bot's state or a rule (0 when healthy) |
 | Watchdog | unhealthy 5 s, dead 10 s, boot 60 s (`coldWorkerUnhealthyMs`, `…DeadMs`, `…BootMs`) | Coordinator ~2150 | pause (`heartbeat_stale`, not logged), kill, restart | log (kills) | GC near heap cap, heap snapshot |
 | Snapshot pages | 48 rows (32..64), 32 with a player or lag ≥ 40 ms; under lag ≥ 120 ms held up to 5 s (`coldWorkerSnapshotMaxDeferralMs`) | Coordinator ~192, `ColdSnapshotQueue.takeNormal` ~70 | next page; continuation pages need governor admission (`cold_snapshots`) | dD | mass hot/cold |
 | State page | 240 KB (only the `postCollections` path: economy refresh, acks) | `ColdMessagePages` ~3, Coordinator ~525, ~627 | row becomes `state:null`, worker drops it; `retryAfterMs` 10 s never read: nothing until the next snapshot | dD `out_snapshot_page_single_item_too_large` | rare |
@@ -79,12 +76,13 @@ handler the player is disconnected).
 | Floor checks | 24 LOS per player per scan; cache 2048 / 30 s | `FloorAwareActivationPolicy` ~75 | `geodata_budget` | dD | multilevel areas |
 | Placement / cooldown | 8 tries in 1400, then the anchor itself; 20 cooled per pass (`cooldownBatchSize`) | `ActivationPlacement` ~114, `HotActivation` ~137, PopulationService ~2108 | anchor fails → activation refused `no_safe_activation_placement`; next pass | none | crowds |
 | Hot AI dispatch | 1 decision per macrotask (≤ ~1000/s), no hot cap; queue coalesced per key (bounded by actors) | `HotAiDispatcher` ~44 | latency grows | dD | 300+ hot bots |
+| Hunt line-of-sight batch | 4 checks per idle tick (`CHECKS_PER_SCAN`); resume within 128 units (`RESUME_RANGE`), else restart at the first | `BotHuntingVisibility.batch`, `select` | scan stays pending, next tick reads on | dD `visibility:batch_blocked:<key>` | idle bots behind walls |
 | Population | 1700, clamp 2000 (`maxPlayingPopulation`) | PopulationConfig ~105, ~330 | silently clamped | none | > 2000 |
 | `allStates` | 2000 most recent (worker feeds use uncapped `everyState()` ~4061) | BotLifeState ~45, ~4055 | oldest missing | none | already near |
 | Seeding | waves of 5 regions × `starterBotsPerRace` 30 = 150, one batch per wave (`seedBatchSize` = max(50, cohort)); next wave when the last cohort averages level 5 (10 at ×50+); checked every 45 s (`generatedColdSeedDelayMs`) | `PopulationSeedPlanner` ~87, ~121, PopulationService ~1252, `GeneratedColdSeeder` | ramp follows levelling (~12 waves to 1700), not time | dD (wave log behind `developerDiagnostics`) | fresh world |
-| Decision deadlines (found in validation) | 64 per scheduler tick | Kernel `tick` ~1700, `dueCandidates` ~1217 | rest wait for the next 20 ms tick | none | boot catch-up |
-| Incremental snapshot row (found in validation) | 256 KB message | Coordinator `sendIncrementalEntries` ~1129 | page refused, job ok:false, oldest-first queue stops at that row each run | dD `send_failed` | rare huge state |
-| Cold competition gate (found in validation) | DB queue 0 and lag < 40 ms | Coordinator `canRun` ~181 | cold PvP competition work waits behind any DB write | none | with a busy DB |
+| Decision deadlines | 64 per scheduler tick | Kernel `tick` ~1700, `dueCandidates` ~1217 | rest wait for the next 20 ms tick | none | boot catch-up |
+| Incremental snapshot row | 256 KB message | Coordinator `sendIncrementalEntries` ~1129 | page refused, job ok:false, oldest-first queue stops at that row each run | dD `send_failed` | rare huge state |
+| Cold competition gate | DB queue 0 and lag < 40 ms | Coordinator `canRun` ~181 | cold PvP competition work waits behind any DB write | none | with a busy DB |
 
 ## Economy and board
 
@@ -121,7 +119,7 @@ handler the player is disconnected).
 | Meeting codec | 768 B × 4 pages, 8 KB raw, 40 incoming rows | TradeMeetingCodec ~25, ~45 | throw backpressure | reason |
 | Player↔bot window | 8 lines, 10000/line, 5000 gift, 80 items, TTL 120 s | BotTradeService ~10, ~333, ~352 | reason; amount **silently clamped** | reason / none |
 | Negotiation | 3 rounds, qty 100, 90 s | BotNegotiationService ~11, ~359, ~417 | `round_limit`; qty > 100 → 100 silently | reason / none |
-| Board window | HTML 8192 B; page 6, search 8, towns 25; cursor history 32 (found in validation) | PlayerBoardWindow ~9, ~114, ~202 | paged / throw / cut; oldest cursor dropped | error / none |
+| Board window | HTML 8192 B; page 6, search 8, towns 25; cursor history 32 | PlayerBoardWindow ~9, ~114, ~202 | paged / throw / cut; oldest cursor dropped | error / none |
 
 ## Parties and social memory
 
@@ -135,13 +133,13 @@ handler the player is disconnected).
 | Assembly recovery | 12 attempts or 6 + 5 min | PartyAssemblyRecovery ~1, ~22 | `party_assembly_timeout` | party history |
 | Party affinity | 16 peers (strong 8) | BackgroundPartyAffinity ~1 | forgotten | none |
 | ClanPartyHelp | 64 pending; 8 parties per request; TTL 10 min, retry 30 s | ClanPartyHelp ~25, ~90 | request refused silently | none |
-| Opportunistic raids | 2 parties, 15 min, search 60 s; per search 8 rosters, 72 bots, 12 forecasts, 12 ms CPU in 2 ms slices (`RaidSearchCounters`, found in validation) | PopulationConfig ~14, OpportunisticRaidDirector ~105, RaidSearchCounters ~3 | skipped / retry 10 s | status |
+| Opportunistic raids | 2 parties, 15 min, search 60 s; per search 8 rosters, 72 bots, 12 forecasts, 12 ms CPU in 2 ms slices (`RaidSearchCounters`) | PopulationConfig ~14, OpportunisticRaidDirector ~105, RaidSearchCounters ~3 | skipped / retry 10 s | status |
 | Clans | 40 bot clans (`CLAN_SIMULATION_MAX_BOT_CLANS`); 70 % members; 10/15/20/30/40 per clan by level | Database `createAutonomousClan` ~9478, ClanSimulationConfig ~5, ClanRules `memberLimit` ~19 | `founder_clan_limit` / clan limits | reason; dD |
 | Clan action pass | 8 actions, 80 ms / 20 ms with a player, 60 s | ClanSimulationConfig ~35, ClanActionService ~714 | next pass | dD |
 | Founder pass | 16 per 60 s; 20 ms, 5 ms with a player | ClanSimulationConfig ~36, ClanSimulationService ~351 | deferred | dD |
-| Clan goals | top 8 (max 12); candidate cache 128 FIFO (found in validation) | ClanGoalCandidateService ~8, ~83 | rest ignored | none |
+| Clan goals | top 8 (max 12); candidate cache 128 FIFO | ClanGoalCandidateService ~8, ~83 | rest ignored | none |
 | Orders / wars | 8 deliveries; 4 operations, roster 3-9 | ClanOrderService ~14, ClanWarConfig ~5, ClanWarDirector ~263 | deferred / `operation_capacity` | reason |
-| Action result | 16 KiB; depth 3, 32 keys, 512-char strings, 32 array items | Database ~185 | over 16 KiB `{truncated:true}`; the depth/key/string/array cuts are silent (found in validation) | flag / none |
+| Action result | 16 KiB; depth 3, 32 keys, 512-char strings, 32 array items | Database ~185 | over 16 KiB `{truncated:true}`; the depth/key/string/array cuts are silent | flag / none |
 
 ## World, movement, pathfinding
 
@@ -154,7 +152,7 @@ handler the player is disconnected).
 | Sync A* | 2000 nodes (`findPath` default) | GeodataEngine ~501, MoveTo ~728 | null → `TownPathfinder` waypoint → straight line if LOS → empty | `lastPathfinding` |
 | Worker A* | companion 4000; errand 30000 → 120000 on recovery; NPC 8000 | MoveTo ~16, `CompanionNavigationRecovery` ~8, Npc ~35 | recovery; after 3 route failures `exhausted` | reason / none |
 | Town route caches | 256 entries / 32768 points, TTL 120 s; corridor 128 points (`TownPathCorridor.MAX_POINTS`) | TownNavigation ~5, ~79, TownPathCorridor ~4 | LRU evict; route > 32768 points never cached; corridor > 128 → raw path, no lanes | dD |
-| Hunt targets | 96 / 32; radius 2500 → 8486 (ceil(6000·√2)) | HuntingState ~56, ~1112 | nearest N | none |
+| Hunt targets | 96 / 32; radius 2500 → 8486 (ceil(6000·√2)) | HuntingState ~56, ~1112, `limitTargetCandidates` | nearest N | dD `target_scan:capped:<tier>` |
 | NPC grid | 3×3 cells of 6000 (`NPC_GRID_SIZE`) | WorldConstants ~24, `World.fetchNpcsInRadius` ~1174 | radius > ~6000 clipped silently (the 8486 hunt search is; mostly harmless, bounded by the spot cell) | none |
 | Hot LOD | full ≤ 3500, exit 4000; ticks 3/7/30 s; far-visible tick budget 6 ms | HotActorLodPolicy ~5 | lower detail | dD |
 | Spot room | explicit `spot.capacity` (only raid sources: 999; raid boss spots ∞), else clamp(round(density × 0.75), 9, 36); own spot always has room | LevelingRoutes `capacityForSpot` ~259, `roomForSpot` ~271, SpotProfiles ~162 | full spots skipped, bots go off-band | dD (`spot_list skip full`, `farmCapacity` in the dD summary) |
@@ -166,7 +164,7 @@ handler the player is disconnected).
 |---|---|---|---|---|
 | Main DB queue | unbounded | `src/Database.js` `enqueue` ~274 | latency grows; governor reads `pending()` | dD (`dbQueue` in the dD summary) |
 | Busy timeout | 5 s (PRAGMA); checkpoint 250 / 50 ms | Database ~4452, `src/DatabaseCheckpointWorker.js` ~10 | transaction rejected | log |
-| Final checkpoint at shutdown | 3 s (timer cleared when the checkpoint answers, 94b5c3f4) | `src/DatabaseCheckpointCoordinator.js` `stop` | `checkpoint_shutdown_timeout`, the worker is terminated | result only |
+| Final checkpoint at shutdown | 3 s (timer cleared when the checkpoint answers) | `src/DatabaseCheckpointCoordinator.js` `stop` | `checkpoint_shutdown_timeout`, the worker is terminated | result only |
 | Passive checkpoint | WAL ≥ 4 MB, 5 s | DatabaseCheckpointCoordinator ~7 | skipped | dD |
 | WAL truncate | 256 MB, +64 MB, 60 s (`[Database] checkpointReset*`), polled every 5 s; **only without a player** (+30 s grace), empty DB queue, no checkpoint/resolve/retention/party formation running | `PopulationService.runAdaptiveWalReset` ~2732 | silently skipped | success dD; failure log |
 | State retention | 64 rows, 1 s, 12 ms; 60 s pause after a pass, 6 h idle pause | PopulationConfig ~116 | deferred the whole session while a player is online (`player_protected`) | dD |
@@ -177,15 +175,15 @@ handler the player is disconnected).
 | History retention | 5000 / table / min (`RETENTION_BATCH`, history worker) | `src/HistoryStore.js` ~26 | next minute | none |
 | Statement cache | 256 LRU; SQL > 16 KB uncached | `src/DatabaseStatements.js` ~4 | re-prepare | none |
 | Char write-behind | 750 ms, batch unbounded | CharacterWriteQueue ~3 | patch put back, retried forever | log |
-| Shutdown budget (39f8d4fe) | drains 10 s (`DRAIN_BUDGET_MS`), then flush (`FINAL_FLUSH_ROUNDS` 3) + close; exit at 16 s (`EXIT_DEADLINE_MS`); launcher SIGKILL at 18 s (run-server) / 20 s (start); each cold coordinator stop wait ≤ 10 s, its timer cleared (6e521123) | `src/NodeL2.js` `shutdown` | later drain steps skipped, the DB is still flushed and closed | log (step named; unsaved character count) |
-| Process failure reasons (39f8d4fe) | 64 distinct (`MAX_FAILURE_REASONS`), keyed by error name + first frame | `src/NodeL2.js` `noteFailure` | later reasons share one "other reasons" count | log (first of each with stack; counts at exit) |
+| Shutdown budget | drains 10 s (`DRAIN_BUDGET_MS`), then flush (`FINAL_FLUSH_ROUNDS` 3) + close; exit at 16 s (`EXIT_DEADLINE_MS`); launcher SIGKILL at 18 s (run-server) / 20 s (start); each cold coordinator stop wait ≤ 10 s, its timer cleared | `src/NodeL2.js` `shutdown` | later drain steps skipped, the DB is still flushed and closed | log (step named; unsaved character count) |
+| Process failure reasons | 64 distinct (`MAX_FAILURE_REASONS`), keyed by error name + first frame | `src/NodeL2.js` `noteFailure` | later reasons share one "other reasons" count | log (first of each with stack; counts at exit) |
 | PvP journal | 5000 rows (`MAX_PENDING`), flushed every 60 s (`ECONOMY_JOURNAL_FLUSH_MS`) | `src/PvpJournal.js` ~6, Database ~378 | buffer kept on a failed flush; over the cap rows **dropped silently** | none |
 
 ## Network and packets
 
 | Limit | Value | Where | When hit | Observable |
 |---|---|---|---|---|
-| Inbound frame | uint16 ≤ 65535 by construction; `Session.dataReceive` re-slices by **signed** `readInt16LE` | `src/Server.js` `packetReceiver` ~10, Session ~205 | size < 2: buffer reset + log; a 32768-65535 B packet is silently truncated before its handler (found in validation) | log / none |
+| Inbound frame | uint16 ≤ 65535 by construction; `Session.dataReceive` re-slices by **signed** `readInt16LE` | `src/Server.js` `packetReceiver` ~10, Session ~205 | size < 2: buffer reset + log; a 32768-65535 B packet is silently truncated before its handler | log / none |
 | Outbound frame | **signed** int16 ≤ 32767 B | Session `packData` ~264, BotSession ~80 | `ERR_OUT_OF_RANGE`: in a request handler `Server` logs "dropped a packet" and disconnects the player; from bot AI it throws into the caller | log / exception |
 | Warehouse slots | players `[GameServer] playerWarehouseSlots` 300 (1..1000); bots 100 (dwarf 120) + 6 per Expand Warehouse level, up to 8 | PersonalWarehouseLimits ~9 | out of range → 300 silently | none |
 | HTML | 8192 chars | NpcHtml ~6 | "Page is too large" | log |
@@ -208,12 +206,12 @@ handler the player is disconnected).
 | Chatter budget | 256 entries; area 45 s, speaker 120 s, topic 300 s, range 2000 | BotChatterBudget ~3 | cooldowns forgotten, repeats | none |
 | Global / clan chat | global: 18 s world-wide (×1-1.75, `globalChatMinIntervalMs`), topic 120 s (death 15 min), speaker 10 min; clan: 10 min per event, 12 pending per clan, 64 clans, TTL 2 min | `Bot/Population/BotGlobalChat` ~9, ~50, BotClanChat ~8 | suppressed | none |
 
-## Bot tables ([tables.md](tables.md), checked at be97733e)
+## Bot tables ([tables.md](tables.md))
 
 | Limit | Value | Where | When hit | Observable |
 |---|---|---|---|---|
 | Table levels | lines measured up to 78 (`MAX_LEVEL`, generator and `scripts/hunt-tables/common.js`); a bot of 79-80 reads 78 | `generate-spot-table.js`, `SpotValueTable` `combat` (`header.inputs.maxLevel`) | clamped | none |
-| Deep-blue cut | a spot more than 9 levels below the bot has no value (`ProgressionRates.DEEP_BLUE_LEVEL_GAP`); curves stop at gap 10 | `SpotValueTable` `combat`, generator `GAPS` | never ranked, never chosen by table readers (ours, user 10-29, not C4) | none |
+| Deep-blue cut | a spot more than 9 levels below the bot has no value (`ProgressionRates.DEEP_BLUE_LEVEL_GAP`); curves stop at gap 10 | `SpotValueTable` `combat`, generator `GAPS` | never ranked, never chosen by table readers (our choice, not C4: past C4's deep-blue drop gap such mobs drop little) | none |
 | Missing spot | a live catalogue spot without a table row has no value | `SpotValueTable.checkCatalog` | never chosen by table readers | log (one line per catalogue) |
 | Income ranking | spots from 15 below to 8 above the bot (`BASIS_MIN_GAP`), first 64 by held income | `SpotValueTable` `rankIncome` | the rest never offered | none |
 | Shortlists | 128 (`incomeRows`), oldest out | `SpotValueTable.rankedIncome` | re-sorted from the basis | dD `incomeEvictions` |

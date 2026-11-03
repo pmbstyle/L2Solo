@@ -1,6 +1,6 @@
 # Third pass: rules that are not pure or not deterministic (2026-11-03, t106dev @ be5c09f7)
 
-Checked at 516f6ef9 (2026-11-03).
+Checked at 5771494a (2026-11-03).
 
 Goal (CLAUDE.md): rules are pure functions of plain data, deterministic, owned once — hot and cold agree, a Rust port
 is mechanical. **Good already:** HitRules, Formulas, ProgressionRates, BackgroundDropResolver, ColdKillRewards,

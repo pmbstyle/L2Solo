@@ -1,6 +1,6 @@
 # Bot tables (precomputed)
 
-Checked at be97733e (2026-11-03).
+Checked at 5771494a (2026-11-03).
 
 Survey of `ivan/next-release` @ be97733e (tables of 81e247159, Tables run 41674181585). Line numbers drift; search by
 name. Scope: `data/Bots/*.json`, `data/Bots/hunt/*.json`, `scripts/generate-spot-table.js`,

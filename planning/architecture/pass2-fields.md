@@ -1,8 +1,8 @@
 # Second pass: fields written but never read, or read but never written (2026-11-03, t106dev)
 
-Checked at 516f6ef9 (2026-11-03).
+Checked at 5771494a (2026-11-03).
 
-Indexed with acorn over `src/` of the main checkout (t106dev). Paths relative to `src/GameServer/`.
+Indexed with acorn over `src/` of the main checkout (t106dev). Paths relative to `src/GameServer/`. Open items only.
 
 ## Bugs it reveals (top)
 
@@ -22,18 +22,12 @@ Indexed with acorn over `src/` of the main checkout (t106dev). Paths relative to
 
 ## Write-only (cost bytes on every commit, nobody reads)
 
-- Cold `stats`: `lastConsumablePurchase`, `lastExperienceAward`, `lastMarketPurchase`, `lastImprovement`,
-  `lastClanContribution`, `lastClanWarehouseTransfer`, `lastWarehouseDeposit`, `lastRaidPreparation`, `lastRespawnAt`,
-  `lastResurrectAt`, `legacyShoppingRecoveredAt`, `partyIncomeDecision`, `coldCompetition.endedAt`, `spiritshotCost`,
-  `soloSafe`, `plannedForGrade`, goal `requiredAdena`; WorldObserver-only: `expEarned`, `spEarned`, `adenaEarned`,
-  `lastResolveDebug`.
-- Party `statsJson`: `memberNames`, `lastRecruitAt`, `lastResolveAt`, `dissolvedAt`, `dissolvedReason`,
-  `replacedForClan`, `declaredMemberCount`, `attachedMemberCount`, `personaFormation`, `lastPartyMarketBreak`.
-- Hot session: `preShopLocation` (10 writers; reader removed on purpose in 648e3129), `targetAcquiredAt`,
-  `pendingBrainTurn` (code uses `pendingBrainTurns`), breadcrumbs `lastEquipmentUpgradeAt`, `lastTownTravelFailure`,
-  `lastHotPolicyReset`, `lastBrainBudget`, `lastBrainDecision`, `lastRevengeDecision`, `lastFinisherDecision`,
-  `lastAmbientScene`, `chatArrivalReason`, `lastSkillOutcome`, `combatOutcomeCounts`, `lastConflictParticipation`,
-  `lastWalResetResult`.
+- Cold `stats`: `lastMarketPurchase`, `lastImprovement`, `lastClanContribution`, `lastClanWarehouseTransfer`,
+  `lastWarehouseDeposit`, `lastRespawnAt`, `coldCompetition.endedAt`, goal `requiredAdena`; WorldObserver-only:
+  `expEarned`, `spEarned`, `adenaEarned`, `lastResolveDebug`.
+- Party `statsJson`: `lastResolveAt`.
+- Hot session: `preShopLocation` (10 writers; no reader on purpose), `targetAcquiredAt`, `pendingBrainTurn` (code
+  uses `pendingBrainTurns`).
 - DB columns: `afk_trade_shops.closedAt` (dead), `afk_trade_lines.initialCount`, `clan_operation_members.reservedAt/
   releasedAt`, `board_trade_meeting_lines.sourceAdRevision`, clan goal `orderRevision` (maybe meant for stale checks).
 

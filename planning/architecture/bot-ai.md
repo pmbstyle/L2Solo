@@ -1,6 +1,6 @@
 # Bot decision-making (hot)
 
-Checked at 516f6ef9 (2026-11-03).
+Checked at 5771494a (2026-11-03).
 
 Survey of t106dev @ 9f27b7fa (2026-11-03). Line numbers drift (~); search by name.
 Scope: `Bot/AI`, `Bot/Goals`, `Bot/BotAI.js`, chat → action. Cold stepping: [population.md](population.md).
@@ -12,7 +12,7 @@ Scope: `Bot/AI`, `Bot/Goals`, `Bot/BotAI.js`, chat → action. Cold stepping: [p
 | `BotAI.tick` | Order of guards per hot tick: PvP defense, board meeting, clan-alliance AI, trade, buff duty, LOD gate, chat arrival, auto-buy, far-away gate, death, loot, clan hall, hot competition, hot bot-party, then `States[session.plan]` | `BotAI.scheduleTick` via `HotAiDispatcher` |
 | `AI/States/*` | What the body does: hunting, following, resting, shopping, getting_buffed, fleeing, pk_* | `state.tick(...)` from `BotAI.tick` |
 | Activity / occupation | Which job (hunting, selling, shopping, crafting, improving). **Decided by the worker**; a hot body only reads it | `DecisionEvents.held(session).network.activity` |
-| Re-decision | When the held decision is stale | `DecisionEvents.raiseDecision(session, reason)`; near raise goes to the worker. Whether a far bot hears it now: `Economy/Reaction.js` (T189; the only rule since 13a7ba29) |
+| Re-decision | When the held decision is stale | `DecisionEvents.raiseDecision(session, reason)`; near raise goes to the worker. Whether a far bot hears it now: `Economy/Reaction.js` (T189: only at its player's moment; our rule) |
 | Solo spot step | Go to a spot or search locally | `BotDecisionService.suggest` (from HuntingState only) |
 | Hot target | Which mob | `BotTargetScorer`, `BotHuntingTargetPolicy`, `BotHuntingGroundPolicy`; party: `Population/PartyHuntingTarget` (hot and cold) |
 | Rest | Sit or not | `AI/RestPolicy` (hot, cold, BotStatus) |
@@ -43,33 +43,35 @@ deterministic brain; the LLM acts only on explicit player communication.
 
 ## Debt
 
-- **AI-1 — decided 2026-11-03:** regex only maps words (whole words, not substrings) to an intent and calls the same
-  `BotAgentTools` action the LLM calls. Meaning = the tool's: "stop" = `stay_here` (stand, keep the plan), "hunt" =
-  hunt and stay in the party, "follow" = `ChatArrivalState`. Was: **parallel path: player commands, regex vs LLM tools mean different things.** Regex is the default (OpenRouter off).
-  "stop": regex → `plan='resting'`; tool `stay_here` → `botStay` and keeps the plan. "hunt" for a companion: regex
-  detaches from the party, tool keeps it. "follow": regex raw `moveTo`, likely undone by the next hunting tick; tool
-  uses `ChatArrivalState`. `BotManager.applyPlayerSpeechRules` ~1119-1213. Not done yet: the regex still sets the plan itself.
-- **AI-2 — decided 2026-11-03:** hot fallbacks raise the fact (`raiseDecision`) and wait for the worker's spot; an
-  unsafe spot is left first (existing escape), then the bot waits. `SpotService.findBestSpot` goes. Was: **parallel path: two spot rankers.** Hot `SpotService.findBestSpot` (own density score + `LevelingRoutes.scoreSpot`, no `SpotEconomics` income) vs cold
-  `BotRoute.choose` (`LevelingRoutes.rankedSpots` is only the seeder's, `GeneratedColdSeeder`). Hot fallbacks bypass the
-  worker leaf: `BotDecisionService` (recovery, after town), `HuntingState` (unsafe ground), `ClanHall/Departure.js`. A hot
-  bot can pick ground the worker would not. Not done yet: all four `findBestSpot` calls are live.
+- **AI-1 parallel path: player commands, regex vs LLM tools mean different things.** Regex is the default
+  (OpenRouter off). "stop": regex → `plan='resting'`; tool `stay_here` → `botStay` and keeps the plan. "hunt" for a
+  companion: regex detaches from the party, tool keeps it. "follow": regex raw `moveTo`, likely undone by the next
+  hunting tick; tool uses `ChatArrivalState`. `BotManager.applyPlayerSpeechRules` ~1119-1213. **Decided 2026-11-03:**
+  regex only maps words (whole words, not substrings) to an intent and calls the same `BotAgentTools` action the LLM
+  calls. Meaning = the tool's: "stop" = `stay_here` (stand, keep the plan), "hunt" = hunt and stay in the party,
+  "follow" = `ChatArrivalState`.
+- **AI-2 parallel path: two spot rankers.** Hot `SpotService.findBestSpot` (own density score +
+  `LevelingRoutes.scoreSpot`, no `SpotEconomics` income) vs cold `BotRoute.choose` (`LevelingRoutes.rankedSpots` is
+  only the seeder's, `GeneratedColdSeeder`). Hot fallbacks bypass the worker leaf: `BotDecisionService` (recovery,
+  after town), `HuntingState` (unsafe ground), `ClanHall/Departure.js`; all four `findBestSpot` calls are live. A hot
+  bot can pick ground the worker would not. **Decided 2026-11-03:** hot fallbacks raise the fact (`raiseDecision`)
+  and wait for the worker's spot; an unsafe spot is left first (existing escape), then the bot waits.
+  `SpotService.findBestSpot` goes.
 - **AI-3 no owner of plan transitions.** ~70 `.plan =` sites in ~21 modules; side effects (abort automation,
   clear target, stand/sit, raise decision) repeated at each. `ArenaDuelService` sets `'arena'`, which has no state.
-- **AI-4 — decided 2026-11-03:** companions use `RestPolicy`, `PartyHealPolicy`, `BotSupportPlanner`; a real
-  difference for a party with a player becomes a parameter of the shared policy. Was: **FollowingState own thresholds.** Rest 0.30/0.15 vs `RestPolicy.party` 0.30/0.18; heal 0.70 hardcoded instead of
-  `PartyHealPolicy`; more local lines 0.65…0.25; own `selectHeal` beside `BotSupportPlanner`. Not done yet: the local lines are still in `FollowingState`.
+- **AI-4 FollowingState own thresholds.** Rest 0.30/0.15 vs `RestPolicy.party` 0.30/0.18; heal 0.70 hardcoded
+  instead of `PartyHealPolicy`; more local lines 0.65…0.25; own `selectHeal` beside `BotSupportPlanner`. **Decided
+  2026-11-03:** companions use `RestPolicy`, `PartyHealPolicy`, `BotSupportPlanner`; a real difference for a party with
+  a player becomes a parameter of the shared policy.
 - **AI-5 (technical, no product decision; plan it with ECO-1):** half-migration: Goals over WishNetwork. `NeedsEvaluator` says there is no priority ladder, yet emits
   priorities 100/96/80/50 sorted by `GoalPlanner`. `GoalState` keeps a second copy of the decision in the DB. Hot
   executes the leaf inline in HuntingState, cold through `GoalExecutor`.
 - **AI-6 hot/cold copy in `BotAvailability`.** `evaluate` vs `evaluateState`: same chain, different "already grouped" tests.
 - **AI-7 two "near a player" gates in `BotAI.tick`** (LOD 'preload' and `visibleRealPlayers`), both fire far-away chat;
   two copies of `visibleRealPlayers` (BotAI, itself with three fallback paths; BotBrain with its own `visibilityRadius`).
-- **AI-8 dead code.** `PersonaPartyDecisionPolicy` — paid 2026-11-03 (a2aed31b). `Bot/BotMerchant.js` (broken "Buy Local
-  Drops" dialog) replaced by the not-trading message in `Select.js` — paid 2026-11-03 (aeed748e). ("`buy-bot-shop` has no
-  handler" was wrong: `NpcBypasses/BuyBotShop.js` handled it; it went with the other HTML shop bypasses — paid 2026-11-03
-  (da467f98).) Open: `DecisionEvents` reasons build/supply/occupation/combat/benefits are accepted but never passed to
-  `raiseDecision` (they are section names `raiseSections` uses); `BotDecisionService.suggest` branches for dead/resting/following likely unreachable; `MerchantState` empty.
+- **AI-8 dead code.** `DecisionEvents` reasons build/supply/occupation/combat/benefits are accepted but never passed
+  to `raiseDecision` (they are section names `raiseSections` uses); `BotDecisionService.suggest` branches for
+  dead/resting/following likely unreachable; `MerchantState` empty.
 - **AI-9 two ambient engines.** `BotAmbientDirector` (default, `ambientScenesEnabled`) and legacy `BotConversation` path;
   `checkAndStartConversation` asks `BotConversation.canStart` even when the director runs.
 - **AI-10 silent catches.** `BotAI.js` around modules that always exist; `FollowingState` test guard in production;
@@ -85,5 +87,5 @@ deterministic brain; the LLM acts only on explicit player communication.
 2. AI-2: hot spot fallbacks — decided 2026-11-03: raise and wait for the worker.
 3. AI-4: companion thresholds — decided 2026-11-03: read the shared policies.
 4. AI-5: is `GoalState` persistence still needed, or should Goals shrink into a view over the card?
-5. Hot bot-party heal during PvE — answered in validation: `BotPvpTactics.support` (scored by `PartyHealPolicy.score`),
+5. Hot bot-party heal during PvE — answered: `BotPvpTactics.support` (scored by `PartyHealPolicy.score`),
    called by `HotBackgroundParty` ~494 (between fights) and ~531 (each hunt step).

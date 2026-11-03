@@ -1,21 +1,20 @@
 # Third pass: races and crash/shutdown data loss (2026-11-03, t106dev @ be5c09f7 + working tree)
 
-Checked at 516f6ef9 (2026-11-03).
+Checked at 5771494a (2026-11-03).
 
-Fact = code path read; guess = not traced to the end. Ordered by impact.
+Fact = code path read; guess = not traced to the end. Ordered by impact. Open rows only.
 
 | # | Where | What goes wrong | Likelihood | Fix / owner |
 |---|---|---|---|---|
 | R-A | `Backpack.deleteItem` ~85, `TrashItem`, `DropItem` | the packet's item count is not range-checked: an out-of-range count corrupts stacks (adena too) and persists; DropItem spawns the requested amount | crafted client (admin is open anyway) | `1 ≤ amount ≤ fetchAmount()`; spawn what was removed — Backpack |
 | R-B | `Purchase.consume` ~143 → `World.purchaseItems` with no shop; `PurchaseItem.awardItem` ~31 | a purchase is not tied to an open shop; an unknown item id never calls back and jams the character's `InventoryMutationQueue` (later pickups hang after the ground item was removed — loot lost; not verified) | crafted client | refuse with no shop; reject unknown templates |
-| R1 — **fixed 15dab2eb: boot rebuilds stale hot rows from characters+items** | `BotLifeState.recoverStaleHotStates` ~1275, `NodeL2.shutdown` | shutdown never cools hot bots; hot rows are not kept current; boot flips `phase='hot'` to cold keeping the activation-time level/exp/adena/summary; the worker's first commit rewrites `characters` and (bag changed) `items` from the stale copy: **hot-session EXP and loot lost, spent potions/shots/adena come back** (breaks PER-7) | **every restart with hot bots**, SIGINT included | boot rebuilds hot rows from characters+items in one transaction, or shutdown cools hot bots before the final flush — BotLifeState |
 | R2 | `BotLifeState.upsertState` ~3762, `save` ~872 | full-row UPSERT without revision CAS; callers build the row before awaits (ClanOrderService ~231-253, ClanEquipmentService ~297/507/589, ColdShotEconomyService.persist): a worker commit in between is overwritten (exp/level/adena/summary roll back; items keep the commit's bag) | narrow, under DB backlog | `save` takes `expectedRevision`, refuses stale |
 | R3 | `upsertState`, `writeColdRow` fallback ~2155, `prepareResolve` persist ~2970, market saves ~3515-3600 | 4-6 separate DB jobs per write; `upsertState` never writes `items`; plain EXP write skips the karma wash (the PER-7 one-copy writers) | crash for the split; summary-only write on every bag change | one transactional "life write" (row + characters + items) |
 | R4 | `Database.withCharacterFlush` ~648 | flush and transaction are separate queued jobs; a patch queued between them is written after as an absolute amount; transactions copy DB amounts back to memory (also PersonalWarehouse, ClanWarehouse, PetInventory, QuestStep, BuffService, PrivateStoreTrade/AfkTrade refresh) | small amounts under load | take the pending patch inside the same job before BEGIN; publish deltas to memory |
 | R5 | `Cooldown.cooldown` → `markCold` → `transitionToColdState` | the actor keeps ticking for ~2 upserts + accept (≤ 500 ms); `canCooldown` not re-checked; cache already cold so an invite activation passes; `loadAndSpawnBot` has no duplicate guard | every cooldown, small amounts | stop AI and detach first; one-step handover (POP-4) |
 | R6 | `HotActivation` / `handoffColdSimulationToMain` ~6501 | handoff bumps only the revision, `phase` stays cold until `markHot`: phase-only writers (board settlements, clan-hall dues, `payClanMember`, `ClanLevelSp.spend`) land in the window; `markDirty`/`snapshot_page`/`prepareProposal` ignore `fencedBots`; a cold save re-adds the bot (worst case simulated hot and cold) | plausible under load | `phase='activating'`; fenced bots refused; fence owner tokens |
 | R7 | `fenceBot` ~2077 vs `executeWorkerLifecycleCommand` ~3433 | fence waits ≤ 500 ms then hands off; the command's later `upsertState(travel…)` writes a travelling row and maybe a payment onto a bot being spawned | under backlog | command writes under `withMutationAdmission` |
-| R8 | `BotLifeState.refreshInventory` ~3285 | merges summary and items with `Math.max` per stack and adena: any divergence (R1, R3, R5) becomes a duplicate | whenever copies differ | `items` wins (PER-7) |
+| R8 | `BotLifeState.refreshInventory` ~3285 | merges summary and items with `Math.max` per stack and adena: any divergence (R3, R5, POP-22) becomes a duplicate | whenever copies differ | `items` wins (PER-7) |
 | R9 | `HotPartyLifecycle.activate` catch ~521 | a member left meanwhile → `members()` null → nobody released: all stay fenced (commands refused, sweep skips) until a later cold write | common under load | release exactly the fenced ids in `finally` |
 | R10 | `saveBackgroundParty`; coordinator afterCommit `'party'` ~1666 ("blind write") | no party CAS; a dissolved party written back active: zombie party until a worker restart | under load | party CAS; refuse to un-dissolve |
 | R11 | `CharacterWriteQueue.write/restore` + `withCharacterFlush` | a failed batch retries all snapshots every 750 ms; one poison value stops buffered persistence for all characters and blocks that character's transactions forever | needs a bad value | per-character fallback, quarantine with a count, check at `merge` |
@@ -25,10 +24,7 @@ Fact = code path read; guess = not traced to the end. Ordered by impact.
 
 Smaller: worker restart drops old-epoch acks (the named review never runs), waiters, economy decisions, meeting
 preparations (finished with an error); no value lost (CAS). `acceptColdState` 500 ms timeout in HotActivation leaves
-a bot cold with no owner until the 30-min sweep. SIGINT: ~7 chained 10 s races vs `forceExit` at 15 s — the process
-could exit before `CharacterWriteQueue.flushAll` and `Database.close`; patches queued after `flushAll` never flushed;
-`close()` does not flush the queue. Fixed 39f8d4fe: drains capped at 10 s, then up to 3 flush rounds and close, exit by
-16 s, unsaved characters counted. Clan SP spend: a flush between commit and `publish` can write pre-charge SP.
+a bot cold with no owner until the 30-min sweep. Clan SP spend: a flush between commit and `publish` can write pre-charge SP.
 `BotSupplyErrand.markCold` (POP-5): row cold while the actor stays in the World.
 Fine: cold commit batch one transaction (BUSY retry rolls back first); enchant guarded by `expectedEnchant`; board
 CAS, meeting idempotency, party/PvP transition CAS; pending sets cleared in `finally`.

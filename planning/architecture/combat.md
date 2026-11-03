@@ -1,6 +1,6 @@
 # Combat, skills, actors
 
-Checked at 516f6ef9 (2026-11-03).
+Checked at 5771494a (2026-11-03).
 
 Survey of t106dev @ 9f27b7fa (2026-11-03). Line numbers drift; search by name.
 Scope: `Actor`, `Skills`, `Effects`, `Combat`, `Npc`, `RaidBoss`, `Pets`, `Formulas.js`, `Karma.js`,
@@ -12,7 +12,6 @@ Scope: `Actor`, `Skills`, `Effects`, `Combat`, `Npc`, `RaidBoss`, `Pets`, `Formu
   physical/magic skill, `expected*` means; target modifier, skill power, level-fail roll, effect/blow land chance,
   lethal, absorb, reflect, DoT. Hot (`Attack`, `C4SkillEffects`), cold (`BackgroundResolver`, `ColdMobAction`,
   `ColdCombatProfile`), planners (`BotCombatUtility`, `BotTargetMatchup`, partly `OpportunisticRaidPolicy`, CMB-6).
-  T106 f5c260d0 "One combat core hot and cold", T124 f83e9338.
 - **`Formulas.js`:** C4 numbers — stats, timing (`attackTimes`, `calcSkillHitTime`), damage, rolls.
 - **Hot runtime:** `Actor/Attack.js` — `meleeHit`, cast pipeline `remoteHit` → `landRemoteCast` →
   `applyRemoteCastEffect`, adapters `prepareMeleeHit`/`prepareNpcMeleeHit`/`prepareSkillDamage`, `hit()` dispatch.
@@ -21,7 +20,7 @@ Scope: `Actor`, `Skills`, `Effects`, `Combat`, `Npc`, `RaidBoss`, `Pets`, `Formu
 - **Item-skill casts** (scrolls, resurrection items, pet summon, drain soul, sow): `Backpack.castItemSkill` on the
   caster's `attack.queueTimer`, so whatever cancels a cast cancels it and it never lands on another character; the item
   is spent at cast start (Lisvus); writes go under the bag owner (`Backpack.ownerId`). A hit breaks only a magic cast
-  (`Attack.tryBreakCast`, C4). 39f8d4fe; tails in debt.md theme 9.
+  (`Attack.tryBreakCast`, C4). Open tails: debt.md theme 9.
 - **Damage sinks:** player `Actor/Generics/ReceivedHit` (transfer pain, CP shield, HP, PvP/PK tally, karma) → `Die`
   (PK drop `PkDeathDrop`, death EXP `DeathExperience.applyDeathPenalty`); revive `Revive` / `RestartPoint` at
   `Formulas.respawnHp` (70 %); NPC `Npc/Generics/ReceivedHit` (overhit, hate, minions, social aggro) → `Die` → `NpcDied`
@@ -40,7 +39,9 @@ Scope: `Actor`, `Skills`, `Effects`, `Combat`, `Npc`, `RaidBoss`, `Pets`, `Formu
   `Actor/PvpFlag` (`attack` at swing start / offensive skill landing, `mark`) and `ReceivedHit.creditKill` (a
   character's death, and a summon's/pet's from `Npc/Generics/Die`); `Karma.pkKillKarma` (only through
   `PvpRules.tallyAfterKill`); `PkDropPolicy` hot (`PkDeathDrop`), cold (`Database` commit) and in
-  `EconomicValuation`'s expected loss. Death washes karma by the EXP lost (`DeathExperience.karmaLost`, hot and cold).
+  `EconomicValuation`'s expected loss: C4, a PK drops from 5 PKs on, one karma roll (`pkDeathDropChance` 0.7), then
+  each item on its own chance (bag 50 %, worn armour 40 %, weapon 10 %), up to 10. Death washes karma by the EXP
+  lost (`DeathExperience.karmaLost`, hot and cold).
 - **Cold fight (worker):** `BackgroundResolver.resolveFight` (solo), `resolvePartyFight` (party/raid), shared
   `coldBotTurn`/`attackDamage`; mob `ColdMobAction`; PvP `ColdPvpResolver`; rewards `ColdKillRewards` →
   `BackgroundDropResolver`; death `DeathExperience.applyColdDeath` (called by `BotLifeState.prepareResolve` and
@@ -71,10 +72,10 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
 | Skill reuse | **none** — proposed `Skills/SkillReuse` (CMB-1) |
 | MP cost | **none** — proposed in `Skills/` (CMB-2) |
 | Stat assembly | **none** (CMB-8) |
-| PvP flag, PvP/PK classification and tally, CP shield | `PvpRules` (ff564a01; hot `PvpFlag.attack`, `ReceivedHit`; cold `ColdPvpResolver`, `Database` cold commit) |
-| PK drop | `PkDropPolicy` (b786dc02; hot `PkDeathDrop`, cold `Database` commit, `EconomicValuation`) |
+| PvP flag, PvP/PK classification and tally, CP shield | `PvpRules` (hot `PvpFlag.attack`, `ReceivedHit`; cold `ColdPvpResolver`, `Database` cold commit) |
+| PK drop | `PkDropPolicy` (hot `PkDeathDrop`, cold `Database` commit, `EconomicValuation`) |
 | Mob EXP/SP | `Progression/MobExperience` + `Formulas.calcAcquiredExp` |
-| Death EXP and its karma wash | `Progression/DeathExperience` (`calculateLoss`, `karmaLost`; b786dc02) |
+| Death EXP and its karma wash | `Progression/DeathExperience` (`calculateLoss`, `karmaLost`) |
 | Revive / restart HP | `Formulas.respawnHp` (pets not yet, CMB-24) |
 
 ## Debt
@@ -90,7 +91,7 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
   `Actor ReceivedHit`; a confused mob hitting a mob writes HP directly.
 - **CMB-5 charge multiplier `0.8 + 0.201*n` copied three times** (`C4SkillEffects`, `BackgroundResolver`,
   `BotCombatUtility`). Belongs in HitRules.
-- **CMB-6 planner estimates bypass HitRules** (no target modifier, shield, crit), partly (corrected in validation):
+- **CMB-6 planner estimates bypass HitRules** (no target modifier, shield, crit), partly:
   `BotCombatUtility` skill pricing and `BotTargetMatchup` use `HitRules.expected*`, but `basicAttackDamageEstimate`
   is raw `Formulas.calcMeleeDamage`; `OpportunisticRaidPolicy` adds `HitRules.targetModifier` to raw
   `calcPhysicalDamage`/`calcMagicDamage`; `BotEmergencyFinisher`, `WishProviders`, `ClanRaidEstimate` are raw.
@@ -115,11 +116,11 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
   RaidCurse, ToggleSkills, EffectTicker.
 - **CMB-15 local patches:** skill 84 in `finalizeSkillResult`, skills 109/121 in HEAL_PERCENT, weapon 5606 in
   `C4WeaponSA`, duck-type guard in `Npc.hit` for stale aggro entries (crashed the process).
-- **CMB-16 dead:** `Attack.physicalRaceModifier` test only (`test_melee_dd_class_skills`).
-  (`Formulas.calcMeleeHit/calcRemoteHit/calcHitMiss` paid 2026-11-03 (a2aed31b); `calcMagicSuccess` is live through
-  `Formulas.calcSpoilSuccess`, hot `SpoilSweep` and cold `ColdKillRewards`; `HitRules` uses `calcMagicSuccessRate`.)
+- **CMB-16 dead:** `Attack.physicalRaceModifier` test only (`test_melee_dd_class_skills`). (`Formulas.calcMagicSuccess`
+  is live through `Formulas.calcSpoilSuccess`, hot `SpoilSweep` and cold `ColdKillRewards`; `HitRules` uses
+  `calcMagicSuccessRate`.)
 - **CMB-17 cold rewards copy:** `BackgroundDropResolver.progressionForFight` inlines `level*level*mod` instead of
-  `Formulas.calcAcquiredExp`. (Corrected in validation: cold drops do apply deep blue; a party passes its highest
+  `Formulas.calcAcquiredExp`. (Cold drops do apply deep blue; a party passes its highest
   member's level as `killerLevel`, slightly broader than C4, c4-check.)
 - **CMB-18 raid gap `+8/+7` literal** in `OpportunisticRaidPolicy` instead of `RaidCurse.RAID_LEVEL_MAX_DIFFERENCE`.
 - **CMB-19 peace zone checked in the request layer twice and in cold separately;** skills do not use the client-view
@@ -149,5 +150,5 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
 7. CMB-12: should combat events reach AI/economy through a hook?
 8. CMB-11: merge cold solo and party fights?
 - **CMB-26 not pinned by a test:** a cold bot that PKs and dies in the same cold fight has its death wash capped by
-  the karma after the fight's kills (fixed 2026-11-03 in `DeathExperience.applyColdDeath` + the cold commit); no
-  three-fighter test covers it yet.
+  the karma after the fight's kills (`DeathExperience.applyColdDeath` + the cold commit); no three-fighter test covers
+  it.
