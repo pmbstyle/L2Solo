@@ -76,6 +76,34 @@ async function run() {
     // but keeps its old due time, which must still move by the downtime.
     const staleHot = [9600417, 'DowntimeStaleHot', lastWrite - 120000, lastWrite];
     await bot(...staleHot, 'hot');
+    // Its hot session (activated following the player) gained a level and
+    // EXP, was placed near the player, drank 7 potions and paid 600 Adena: all
+    // of it went to the record only. The row still holds the activation-time copy.
+    const hotRecord = { level: 19, exp: 123456, sp: 789, loc: { ...loc, locX: loc.locX + 300 }, potions: 3, adena: 400 };
+    await Database.execute([`UPDATE characters SET level = ?, exp = ?, sp = ?, locX = ?, hp = 60, mp = 40 WHERE id = ?`,
+        [hotRecord.level, hotRecord.exp, hotRecord.sp, hotRecord.loc.locX, staleHot[0]]]);
+    await Database.setItem(staleHot[0], { selfId: 1060, name: 'Lesser Healing Potion', amount: hotRecord.potions });
+    await Database.setItem(staleHot[0], { selfId: 57, name: 'Adena', amount: hotRecord.adena });
+    await Database.execute([`UPDATE bot_life_state SET activity = 'following', adena = 1000, inventorySummary = ? WHERE characterId = ?`,
+        [JSON.stringify({ 57: { selfId: 57, name: 'Adena', amount: 1000, stackable: true },
+            1060: { selfId: 1060, name: 'Lesser Healing Potion', amount: 10, stackable: true } }), staleHot[0]]]);
+    // A configured static merchant stays hot (BotManager spawns it after
+    // boot); a dynamic market store has no startup owner and cools.
+    const staticMerchant = [9600421, Object.keys(invoke('GameServer/Bot/MerchantStoreConfigs'))[0], lastWrite + 300000, lastWrite];
+    const marketStore = [9600422, 'DowntimeMarketStore', lastWrite + 300000, lastWrite];
+    for (const merchant of [staticMerchant, marketStore]) await bot(...merchant, 'hot');
+    await Database.execute([`UPDATE bot_life_state SET activity = 'merchant',
+        statsJson = CASE WHEN characterId = ? THEN json_set(statsJson, '$.marketStore', json('{"storeType":1}')) ELSE statsJson END
+        WHERE characterId IN (?, ?)`, [marketStore[0], staticMerchant[0], marketStore[0]]]);
+    // A hot row whose character is gone (an old world saved without foreign
+    // keys): it cools as it is and does not fail every other bot's recovery.
+    const orphan = 9600430;
+    const raw = new DatabaseSync(fixture.world);
+    raw.exec('PRAGMA foreign_keys = OFF; PRAGMA busy_timeout = 5000;');
+    raw.prepare(`INSERT INTO bot_life_state (characterId,accountName,characterName,level,phase,activity,locX,locY,locZ,
+        inventorySummary,statsJson,nextResolveAt,updatedAt) VALUES (?,?,?,18,'hot','hunting',?,?,?,'{}',?,?,?)`)
+        .run(orphan, 'bot_downtime_orphan', 'DowntimeOrphan', loc.locX, loc.locY, loc.locZ, stats, lastWrite, lastWrite);
+    raw.close();
     // A row saved with fractional clocks: a command checkpoint refuses it, so the bot would take no command.
     const fractional = [9600418, 'DowntimeFraction', lastWrite + 0.5, lastWrite];
     await bot(...fractional);
@@ -127,6 +155,34 @@ async function run() {
     assert.equal(Number(hotRow.nextResolveAt), staleHot[2] + pause, 'stale hot: row due time moves by the downtime');
     assert.equal(hotState.timing.nextResolveAt, staleHot[2] + pause, 'stale hot: cached due time moves by the downtime');
     assert.equal(Number(hotRow.lastResolvedAt), staleHot[3] - 1000 + pause, 'stale hot: lastResolvedAt moves by the downtime');
+    // PER-7: the record wins. The row and the cache the worker starts from
+    // keep the hot session's gain and spending, so its first commit cannot
+    // write the activation-time EXP, potions or Adena back.
+    assert.equal(Number(hotRow.level), hotRecord.level, 'stale hot: the row keeps the level gained hot');
+    assert.equal(Number(hotRow.exp), hotRecord.exp, 'stale hot: the row keeps the EXP gained hot');
+    assert.equal(Number(hotRow.sp), hotRecord.sp, 'stale hot: the row keeps the SP gained hot');
+    assert.equal(Number(hotRow.adena), hotRecord.adena, 'stale hot: the Adena paid hot is not refunded');
+    assert.equal(JSON.parse(hotRow.inventorySummary)[1060].amount, hotRecord.potions, 'stale hot: the potions drunk hot do not come back');
+    assert.deepEqual([Number(hotRow.hp), Number(hotRow.mp)], [60, 40], 'stale hot: the vitals from the record');
+    // The activation placement is temporary: back at its background place, in both copies.
+    assert.equal(Number(hotRow.locX), loc.locX, 'stale hot: the row keeps its background position');
+    assert.equal(hotRow.activity, 'hunting', 'stale hot: a following bot resumes hunting');
+    assert.equal(hotState.exp, hotRecord.exp, 'stale hot: the cache the worker reads has the record EXP');
+    assert.equal(hotState.adena, hotRecord.adena, 'stale hot: the cache has the record Adena');
+    assert.equal(hotState.inventory[1060].amount, hotRecord.potions, 'stale hot: the cache has the record potions');
+    assert.equal(hotState.stats.canonicalAreaId, 'elven_ruins', 'stale hot: the plan fields stay');
+    const [orphanRow] = await Database.execute(['SELECT phase FROM bot_life_state WHERE characterId=?', [orphan]]);
+    assert.equal(orphanRow.phase, 'cold', 'a stale hot row with no character record still cools');
+    const [staticRow] = await Database.execute(['SELECT phase FROM bot_life_state WHERE characterId=?', [staticMerchant[0]]]);
+    const [storeRow] = await Database.execute(['SELECT phase FROM bot_life_state WHERE characterId=?', [marketStore[0]]]);
+    assert.equal(staticRow.phase, 'hot', 'a configured static merchant stays hot for its startup spawn');
+    assert.equal(storeRow.phase, 'cold', 'a dynamic market store cools: nothing spawns it on startup');
+    const [character] = await Database.execute(['SELECT level, exp, locX FROM characters WHERE id = ?', [staleHot[0]]]);
+    assert.equal(Number(character.locX), loc.locX, 'stale hot: the record takes the background position, as markCold writes it');
+    const items = await Database.fetchItems(staleHot[0]);
+    assert.deepEqual([Number(character.level), Number(character.exp)], [hotRecord.level, hotRecord.exp], 'stale hot: the record is not rolled back');
+    assert.deepEqual([Native.amount(items, 1060), Native.amount(items, 57)], [hotRecord.potions, hotRecord.adena],
+        'stale hot: the item rows are not rolled back');
     const [wholeParty] = await Database.execute(['SELECT * FROM bot_background_parties WHERE partyId=?', ['fractional-party']]);
     assert(['startedAt', 'nextResolveAt', 'updatedAt'].every((key) => Number.isSafeInteger(Number(wholeParty[key]))),
         'whole clocks: the party fence reads whole milliseconds');

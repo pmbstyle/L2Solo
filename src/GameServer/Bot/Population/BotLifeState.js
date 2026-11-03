@@ -1272,31 +1272,49 @@ function applyClassProgression(state, profile = {}) {
     });
 }
 
+// Hot plans with no cold continuation: a recovered bot resumes hunting.
+const STALE_HOT_ACTIVITIES = new Set(['following', 'shopping', 'getting_buffed', 'fleeing', 'pk_fleeing']);
+
+// A row left hot by a restart (shutdown does not cool hot bots) is the copy
+// taken at activation: the hot session wrote its EXP, loot, spent potions and
+// shots and vitals only to the record (characters + items, skills).
+// The record wins (PER-7): the row is rebuilt from it before the worker reads
+// it, or the worker's first commit writes the stale copy back over the record.
+// The plan and the mind stay, and so does the row's position: the policy of
+// the activation is not saved, and a 'return' activation (forced near the
+// player) is a temporary placement, so the bot goes back to its background
+// place as markCold would (the record takes that position too); a bot that
+// walked away hot resumes from where it was activated.
+// `record` = { character, items, coldCombat(kit) -> kit from the learned skills }.
+function staleHotRowFromRecord(row, record, timestamp) {
+    const state = normalize(row);
+    const { character } = record;
+    const level = Number(character.level || state.level || 1);
+    const held = inventoryStateFromItems(state, record.items);
+    return rowFromState({
+        ...held,
+        level,
+        exp: Number(character.exp || 0),
+        sp: Number(character.sp || 0),
+        levelBand: levelBand(level),
+        phase: 'cold',
+        activity: STALE_HOT_ACTIVITIES.has(state.activity) ? 'hunting' : state.activity,
+        vitals: { hp: Number(character.hp), maxHp: Number(character.maxHp), mp: Number(character.mp), maxMp: Number(character.maxMp) },
+        timing: { ...state.timing, nextResolveAt: state.timing.nextResolveAt ?? timestamp + 30000 },
+        stats: held.stats.coldCombat
+            ? { ...held.stats, coldCombat: record.coldCombat(held.stats.coldCombat) } : held.stats
+    });
+}
+
 function recoverStaleHotStates() {
-    const timestamp = now();
-    return Database.execute([
-        `UPDATE ${TABLE}
-        SET phase = 'cold',
-            activity = CASE
-                WHEN activity IN ('following', 'shopping', 'getting_buffed', 'fleeing', 'pk_fleeing') THEN 'hunting'
-                ELSE activity
-            END,
-            nextResolveAt = COALESCE(nextResolveAt, ?),
-            updatedAt = ?
-        WHERE phase = 'hot'
-        -- Static merchant bots are spawned from MerchantConfigs on startup.
-        -- Market and craft services stored in the cold population do not have
-        -- a startup owner, so retaining their hot phase would leave a database
-        -- ghost after a restart instead of a visible Giran station.
-        AND (activity <> 'merchant' OR statsJson LIKE '%"marketStore"%')
-        `,
-        [timestamp + 30000, timestamp]
-    ]).then((result) => {
-        const recovered = Number(result?.affectedRows || 0);
+    return Database.recoverStaleHotLifeStates(staleHotRowFromRecord, now()).then(({ recovered, withoutRecord }) => {
         if (recovered > 0) {
-            utils.infoWarn('BotLife', 'recovered %d stale hot states as cold on startup', recovered);
+            utils.infoWarn('BotLife', 'recovered %d stale hot states as cold from the character record on startup', recovered);
         }
-        return recovered;
+        if (withoutRecord > 0) {
+            utils.infoWarn('BotLife', 'cooled %d stale hot states with no character record as they were', withoutRecord);
+        }
+        return recovered + withoutRecord;
     });
 }
 

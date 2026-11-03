@@ -124,13 +124,6 @@ try {
         } finally {
             retirementProbe.close();
         }
-        const recovery = statements.find((entry) => entry.sql.includes("SET phase = 'cold'")
-            && entry.sql.includes("WHERE phase = 'hot'"));
-        assert(recovery, 'bot life init should recover stale hot records on startup');
-        assert(recovery.sql.includes("activity <> 'merchant' OR statsJson LIKE '%\"marketStore\"%'"), 'only dynamic market merchants should be recovered; configured static merchants remain hot');
-        assert(!recovery.sql.includes('activity <> \'crafting\''), 'craft services must recover as cold because they have no static startup owner');
-        assert(recovery.sql.includes("WHEN activity IN ('following', 'shopping', 'getting_buffed', 'fleeing', 'pk_fleeing') THEN 'hunting'"));
-        assert.strictEqual(recovery.params.length, 2, 'recovery query should set next resolve and updated timestamps');
         const dissolvedPartyRecovery = statements.find((entry) => entry.sql.includes('orphaned_dissolved_party'));
         assert(dissolvedPartyRecovery, 'startup must release members left behind by a dissolved background party');
         assert(dissolvedPartyRecovery.sql.includes('SET partyId = NULL'), 'orphan recovery must clear the persisted party id');

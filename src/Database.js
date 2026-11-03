@@ -6283,6 +6283,42 @@ const Database = {
         }).release(request), 'bot-life:const-party-resume');
     },
 
+    // Boot only, before the worker: every row left hot by a restart, rebuilt
+    // by `fromRecord` (BotLifeState) from its character record in one
+    // transaction. Configured static merchants stay hot: BotManager spawns them.
+    recoverStaleHotLifeStates(fromRecord, timestamp) {
+        return inTransaction(() => {
+            const rows = all(`SELECT * FROM bot_life_state WHERE phase = 'hot'
+                AND (activity <> 'merchant' OR statsJson LIKE '%"marketStore"%')`);
+            let withoutRecord = 0;
+            for (const row of rows) {
+                const id = Number(row.characterId);
+                const character = one('SELECT level, exp, sp, hp, maxHp, mp, maxMp FROM characters WHERE id = ?', [id]);
+                if (!character) {
+                    // No record to rebuild from (the cascade should prevent it):
+                    // cool the row as it is rather than fail every bot's boot.
+                    write(`UPDATE bot_life_state SET phase = 'cold', nextResolveAt = COALESCE(nextResolveAt, ?),
+                        updatedAt = ? WHERE characterId = ?`, [timestamp + 30000, timestamp, id]);
+                    withoutRecord += 1;
+                    continue;
+                }
+                const next = fromRecord(row, { character, items: all('SELECT * FROM items WHERE characterId = ? ORDER BY id', [id]),
+                    coldCombat: combat => nativeColdCombatSkillsUnsafe(id, combat) }, timestamp);
+                write(`UPDATE bot_life_state SET level = ?, exp = ?, sp = ?, adena = ?,
+                    activity = ?, phase = 'cold', nextResolveAt = ?, hp = ?, maxHp = ?, mp = ?, maxMp = ?,
+                    targetLevelBand = ?, inventorySummary = ?, statsJson = ?, mindJson = ?,
+                    simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?`,
+                [next.level, next.exp, next.sp, next.adena, next.activity, next.nextResolveAt,
+                    next.hp, next.maxHp, next.mp, next.maxMp, next.targetLevelBand,
+                    next.inventorySummary, next.statsJson, next.mindJson, timestamp, id]);
+                // The row's background position stays (its activation policy is
+                // not saved); the record takes it, as markCold writes it back.
+                write('UPDATE characters SET locX = ?, locY = ?, locZ = ? WHERE id = ?', [next.locX, next.locY, next.locZ, id]);
+            }
+            return { recovered: rows.length - withoutRecord, withoutRecord };
+        }, 'bot-life:stale-hot-recovery');
+    },
+
     recoverConstPartyActivities() {
         return inTransaction(() => require('./GameServer/Bot/Population/ConstPartyActivity').native({
             one, all, write, row: coldSimulationRow, now
