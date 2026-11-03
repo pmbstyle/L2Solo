@@ -631,8 +631,8 @@ function refusal(state, accepted, deps = {}, options = {}) {
     // the held earning spot (EconomyContext.holdRead: a goal change searches).
     if (Number.isFinite(deps.goalRevision) && deps.goalRevision !== accepted.goalRevision
         && Reaction.hears('goal_moved', Reaction.place(state))) return 'goal';
-    // Where the moment gate stands the card lives on, so nothing else heals a lost
-    // held build: every read of the earning spot would search in full.
+    // A far bot's card lives on, so nothing else heals a lost held build: every
+    // read of the earning spot would search in full.
     if (Reaction.reactive(state) && !Economy.heldBuild(state, deps)) return 'no_held';
     // options.collect: a build of the same step on this state follows a
     // refusal; the verdict collects and hands itself to it (forState).

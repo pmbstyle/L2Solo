@@ -379,13 +379,9 @@ async function run() {
         timing: {},
         stats: { marketSellRetryAfter: Date.now() + 15 * 60 * 1000 }
     };
-    const Reaction = invoke('GameServer/Bot/Economy/Reaction');
-    const gate = Reaction.on();
-    Reaction.configure(true);
     const shopping = { ...seller, activity: 'shopping' };
     const pastLook = await BotWarehouse.releaseCold(shopping, { inTown: true, before: shopping });
     assert.equal(pastLook.released, false, 'what a visit fetches to sell is read once, as it arrives');
-    Reaction.configure(gate);
     const marketRelease = await BotWarehouse.releaseCold(seller, { inTown: true });
     assert.deepStrictEqual(marketRelease.items.map((item) => [item.reason, item.amount]), [['market', 50]],
         'warehouse release must expose only the currently funded WTB quantity');

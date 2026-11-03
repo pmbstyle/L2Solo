@@ -5,7 +5,6 @@ const { fnv1a32 } = require('../Fnv1a');
 const Diagnostics = require('./EconomyDiagnostics');
 const { packetRowWishes } = require('./PurchaseFunding');
 const Bytes = require('./CompactBytes');
-const Reaction = require('./Reaction');
 const NEEDS = Object.freeze(['power', 'status', 'care', 'scores']);
 const MAX_NODES = 40;
 const MAX_ROOTS = 12;
@@ -1149,7 +1148,7 @@ class WishNetwork {
             return { agenda, later: agendaPass.later.filter(wish => agenda.some(step => step.rootKey === wish.key)) };
         };
         let steps = null;
-        if (individual && Reaction.on()) {
+        if (individual) {
             // One look a visit: a buy elsewhere goes only where the visit pays its one trip
             // (its steps in that town); a town that does not drops out of the choice.
             let pool = candidates;

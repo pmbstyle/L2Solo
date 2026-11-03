@@ -9,7 +9,6 @@ const Generation = require('../src/GameServer/Bot/Population/RecomputeGeneration
 async function run() {
     const Data = invoke('GameServer/DataCache'); Data.init();
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
-    const Reaction = invoke('GameServer/Bot/Economy/Reaction');
     const Config = invoke('GameServer/Bot/Population/PopulationConfig');
     invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').useRowSource(() => null, () => true);
     Generation.configure({ code: '1'.repeat(40), config: '2'.repeat(64) });
@@ -18,7 +17,6 @@ async function run() {
     const spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
     Economy.configure({ board: () => board, spots: () => spots });
     Config.knowledgeErrorsEnabled = false;
-    Reaction.configure(true);
     const T = Date.now();
     const Trip = invoke('GameServer/Bot/Economy/EconomicTrip');
     const deps = () => ({ timestamp: T, memoryIdentity: 'fixture-memory', sourceReady: true, caller: 'step', routeRows: Trip.prepared(base), routeKey: Trip.key(base) });
@@ -237,13 +235,6 @@ async function run() {
         const wants = Decision.economyFor(urgent, { ...read, decisions: { decided: () => ({ urgency: 1 }) } });
         assert.equal(wants.gapHorizonHours, 7.5, 'how long it may wait is the plan\'s');
     }
-    { // The gate off: no agenda.
-        Reaction.configure(false);
-        const { plan } = review();
-        assert.equal(plan.network.agenda, undefined);
-        Reaction.configure(true);
-    }
     console.log('PASS agenda');
 }
-run().then(() => { Reaction_off(); process.exit(0); }, error => { console.error(error); process.exit(1); });
-function Reaction_off() { invoke('GameServer/Bot/Economy/Reaction').configure(false); }
+run().then(() => process.exit(0), error => { console.error(error); process.exit(1); });

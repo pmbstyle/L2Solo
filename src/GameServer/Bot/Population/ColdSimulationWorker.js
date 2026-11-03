@@ -107,7 +107,6 @@ const DecisionEvents = require('../AI/DecisionEvents');
 const SavedStats = require('../SavedStats');
 const { stateKey } = require('./SpotOccupancyIndex');
 const DecisionSections = invoke('GameServer/Bot/Economy/DecisionSections');
-const PlayerMoment = invoke('GameServer/Bot/Population/PlayerMoment');
 const Reaction = invoke('GameServer/Bot/Economy/Reaction');
 const PartyWaitFallback = invoke('GameServer/Bot/Population/PartyWaitFallback');
 const Protocol = require('./ColdSimulationProtocol');
@@ -505,10 +504,6 @@ const occupationPlanner = new ColdOccupationPlanner({
             if (!input.economy) { input.source.leftToStep = true; return noWorkshop(); }
             if (input.mode === 'refresh' && !input.source.builtRefresh) {
                 if (DecisionSections.FIELD_ACTIVITIES.has(input.state.activity)) input.source.builtRefresh = input.economy;
-                if (kernel?.momentStats) {
-                    kernel.momentStats.refresh.built++;
-                    if (Number(input.state.stats?.wishDirty)) kernel.momentStats.refresh.dirty++;
-                }
             }
             // The shared money packet is derived from this same graph. Use it
             // in preparation only; the native writer owns physical funding.
@@ -607,8 +602,7 @@ const occupationPlanner = new ColdOccupationPlanner({
         }
         if (input.mode === 'refresh') {
             input.builtRefresh = null;
-            const entry = kernel?.states.get(id), refreshes = kernel?.momentStats?.refresh;
-            if (refreshes && meta.stale) refreshes.stale++;
+            const entry = kernel?.states.get(id);
             if (input.leftToStep) {
                 if (entry?.state === input.sourceState) entry.refreshWaits = true;
                 occupationPlanner.release(id); return;
@@ -625,10 +619,6 @@ const occupationPlanner = new ColdOccupationPlanner({
                 if (input.pending && hash === entry.economyPlanHash) { entry.economyPending = 0; input.economy = null; return; }
                 entry.economyPlanHash = hash;
                 entry.economyPending = workshop.economyPlan.d || 0;
-                if (refreshes) {
-                    refreshes.sent++;
-                    if (ColdEconomyPlan.acts(workshop.economyPlan)) refreshes.acts++;
-                }
                 send('ready', { phase: 'economy_plan_ready', characterId: id,
                     authority: EconomyCommit.authority(input.state), economyPlan: workshop.economyPlan,
                     economyDecision: workshop.economyDecision });
@@ -778,7 +768,7 @@ function occupationOwnerChanged(id, refresh = false, afterStep = false) {
     // A dirty bot's next step builds this same decision: the refresh runs after
     // it, on that step's held build, not as a second build beside it. A bot with
     // no step coming (a shop, a meeting) answers here.
-    if (refresh && !afterStep && Reaction.on() && entry.state.phase === 'cold'
+    if (refresh && !afterStep && entry.state.phase === 'cold'
         && Number(entry.state.stats?.wishDirty) && lifecycleKind(entry.state) !== 'event_driven') {
         entry.refreshWaits = true;
         return;
@@ -788,7 +778,6 @@ function occupationOwnerChanged(id, refresh = false, afterStep = false) {
     if (refresh && refreshedStates.has(entry.state)) return;
     if (refresh) {
         refreshedStates.add(entry.state); economyDiagnostics.count('occupation', 'refresh', 'main_state');
-        if (kernel.momentStats) kernel.momentStats.refresh.asked++;
     }
     const routeKey = EconomicTrip.key(entry.state);
     occupationPlanner.request(id, { state: entry.state, sourceState: entry.state, assetsKey: assetsKey(entry.state),
@@ -1190,14 +1179,13 @@ function rememberWishAdvisory(owner, advisory, seen = null, deps = null) {
     if (advisory?.eventProof && seen
         && !ColdEconomyDecision.advisoryPublicationHolds(seen, advisory, current.wishAdvisory)) return;
     // Validate this publication against the original build's proof.
-    const why = diagnostic || kernel.momentStats ? [] : undefined, verdict = kernel.momentStats ? {} : undefined;
+    const why = diagnostic ? [] : undefined;
     const Economy = advisory && seen && deps ? EconomyContext : null;
     const options = advisory && deps ? { baseline: advisory.baseline, activity: advisory.activity,
         leaf: advisory.card?.activity, mp: advisory.mp,
-        timestamp: Number(deps.timestamp || Date.now()), why, verdict } : null;
+        timestamp: Number(deps.timestamp || Date.now()), why } : null;
     if (advisory && seen && (!Economy || !(advisory.eventProof && Economy.eventProofHolds(seen, advisory.eventProof, deps, options)))) {
         if (diagnostic) economyDiagnostics.count('card', 'drop', `remember:${deps ? why[0] || 'unknown' : 'no_deps'}`);
-        if (kernel.momentStats) PlayerMoment.cardRefused(kernel.momentStats, why?.[0], verdict?.touchedSections, advisory.card?.activity?.rootKey, seen, advisory.card?.activity);
         advisory = null;
     }
     owner.wishAdvisory = advisory;
@@ -1557,7 +1545,6 @@ function startKernel(config = {}) {
     });
     // Use the main process's resolved setting, including programmatic overrides.
     Config.pvpAggression = invoke('GameServer/Social/PvpAggression').normalize(config.pvpAggression ?? Config.pvpAggression);
-    Reaction.configure(config.coldMomentGate === true);
     kernel = new ColdSimulationKernel({
         stateSources: LifeStateProjector.passiveWorkerStateSources(workerProjectorRole),
         shotIndex: invoke('GameServer/Bot/Economy/ShotMarketIndex').native(),
@@ -1707,7 +1694,6 @@ function startKernel(config = {}) {
                 ...(economyDecision ? { economyDecision } : {})
             };
         },
-        momentStats: config.coldMomentShadow === true ? PlayerMoment.createStats() : null,
         soloWindow: {
             // One round of a window: the step's projection without its soft
             // point and what follows it (ColdSoloWindow, the window's end has them).
@@ -1716,10 +1702,10 @@ function startKernel(config = {}) {
             deadline: (state, timestamp) => EconomyContext.holdEndsAt(state, timestamp),
             readers: plan => ({
                 edges: (before, after) => stockEdges(before, after, plan.economy),
-                moneyBound: after => DecisionSections.moneyReached(after, after.stats?.wishSections, escrowFor(after.characterId), plan.economy.network?.activity),
+                moneyBound: after => DecisionSections.moneyReached(after, after.stats?.wishSections, escrowFor(after.characterId)),
                 feasible: after => {
                     const leaf = plan.economy.network?.activity, failed = EconomyContext.leafCheck(after, leaf, {}, { heldUnits: heldAtStep(plan) });
-                    return !failed || !Reaction.hears(failed.link, Reaction.place(after, leaf));
+                    return !failed || !Reaction.hears(failed.link, Reaction.place(after));
                 },
                 // The native facts planLifecycle reads, on the round's end.
                 planHolds: (after, at) => {
@@ -1802,12 +1788,12 @@ function startKernel(config = {}) {
             // the existing planner; no new choice is made from a thin card.
             // A refused card's verdict serves the build below, which reads
             // this state, or a copy of it with a wish-focus plan deferred.
-            const prepared = {}, refused = [], heldLeaf = record?.wishAdvisory?.card?.activity ?? null;
+            const prepared = {};
             const where = Reaction.place(state);
             // A native plan that failed or moved is a real review: every gear candidate.
             deps.fullReview = (previousPlan !== originalPlan || !nativeHolds || solo && !planHolds()) && Reaction.hears('native', where);
             let refreshed = solo && !deps.fullReview
-                ? ColdEconomyDecision.refreshAdvisory(state, record?.wishAdvisory, deps, { prepared, collect: !wishFocus, why: refused }) : null;
+                ? ColdEconomyDecision.refreshAdvisory(state, record?.wishAdvisory, deps, { prepared, collect: !wishFocus }) : null;
             // A compact advisory contains no quantitative project needs.
             // The bounded clan-market review needs the full current graph.
             const marketReview = refreshed && (craftBidReview ? 'craft_bid' : clanMarketReviewDue(state, timestamp) ? 'clan_market' : '');
@@ -1937,9 +1923,6 @@ function startKernel(config = {}) {
                 route,
                 lastFight
             };
-            if (kernel.momentStats && !refreshed) PlayerMoment.settle(kernel.momentStats, state, stepPlan,
-                { baseline: state.stats?.wishSections, leaf: heldLeaf, nativeHolds, board: deps.board,
-                    refused: refused[0] || marketReview || (!solo ? 'party' : previousPlan !== originalPlan ? 'plan_moved' : 'plan_failed') });
             return stepPlan;
         },
         emit: send,

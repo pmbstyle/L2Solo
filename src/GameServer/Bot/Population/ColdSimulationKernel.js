@@ -584,7 +584,6 @@ class RetainedStateMap extends Map {
         if (this.#skillDtos && record && (wishAdvisory || record.wishAdvisory)) {
             // A near record's decision is the packet it posts to main (no proof), never a card:
             // the far card is dropped here and none is built while the bot is near.
-            if (this.momentStats && previousAdvice && !wishAdvisory) this.momentStats.cardDrops++;
             record.wishAdvisory = record.state?.phase === 'cold' ? wishAdvisory : null;
         }
         if (this.#skillDtos) {
@@ -652,7 +651,6 @@ class ColdSimulationKernel {
         // deadline(state, timestamp), readers(plan) }. A kernel built without
         // them (a test of another rule) has no window: a step is its one round.
         this.soloWindow = options.soloWindow || null;
-        this.momentStats = options.momentStats || null;
         // Read by the health line (PopulationStatus.soloWindowText): solo
         // hunting steps, their rounds and hunt time (steps per hunting
         // bot-hour = 3.6e6 * steps / huntMs); what ended each window.
@@ -2731,7 +2729,6 @@ class ColdSimulationKernel {
             ackUnbuilt: this.ackUnbuilt,
             stepLeadMs: Math.round(this.stepLeadMs),
             soloWindow: this.soloWindowStats,
-            moments: this.momentStats || null,
             proofOverflows: invoke('GameServer/Bot/Economy/WishNetwork').proofOverflowCount(), // lazy: the kernel's boot order
             nodeCapBuilds: invoke('GameServer/Bot/Economy/WishProviders').nodeCapBuildCount(), // lazy: the kernel's boot order
             asksPastDepth: invoke('GameServer/Bot/Economy/OfferQuery').pastDepthCount(), // lazy: the kernel's boot order

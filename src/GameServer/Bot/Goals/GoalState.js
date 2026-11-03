@@ -1,7 +1,6 @@
 const Database = invoke('Database');
 const { fnv1a32 } = require('../Fnv1a');
 const TableChannel = require('../Population/ColdTableChannel').shared;
-const Reaction = require('../Economy/Reaction');
 
 const TABLE = 'bot_goal_state';
 const cache = new Map();
@@ -125,9 +124,9 @@ const GoalState = {
         return cache.get(Number(characterId)) || null;
     },
 
-    // The goal's content without its review clock and what drifts with prices
-    // (costs, value rates): equal while a review keeps the same goal, so a reader
-    // can tell a due review from a new goal.
+    // What the goal is after, without its review clock and what drifts with
+    // prices (costs, value rates): equal while a review keeps the same goal, so
+    // a reader can tell a due review from a new goal.
     // 0 = no goal. A 32-bit digest: stable across restarts, not a save field.
     revision(characterId) {
         const snapshot = cache.get(Number(characterId));
@@ -135,14 +134,11 @@ const GoalState = {
         let revision = revisions.get(snapshot);
         if (revision === undefined) {
             const goal = snapshot.current;
-            const content = { ...goal, createdAt: 0, reviewedAt: 0, nextReviewAt: 0,
-                target: { ...goal.target, adena: 0 }, plan: { ...goal.plan, estimatedCost: 0, valueHours: 0, valueRate: 0, reserve: 0 } };
-            // Where the moment gate stands a goal copied from the bot's own leaf is
-            // its own output (Recompute): no revision; another goal names what it
-            // is after, a bought unit or a review of the same one does not.
-            revision = !Reaction.on() ? fnv1a32(JSON.stringify(content)) || 1
-                : goal.plan?.economyActivity !== undefined ? 0
-                    : fnv1a32(JSON.stringify([goal.type, goal.status, goal.target?.itemId, goal.plan?.marketTown, goal.plan?.purpose])) || 1;
+            // A goal copied from the bot's own leaf is its own output (Recompute):
+            // no revision; another goal names what it is after, a bought unit or
+            // a review of the same one does not.
+            revision = goal.plan?.economyActivity !== undefined ? 0
+                : fnv1a32(JSON.stringify([goal.type, goal.status, goal.target?.itemId, goal.plan?.marketTown, goal.plan?.purpose])) || 1;
             revisions.set(snapshot, revision);
         }
         return revision;

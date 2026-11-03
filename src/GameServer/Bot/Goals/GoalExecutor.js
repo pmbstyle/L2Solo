@@ -1,6 +1,5 @@
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
-const Reaction = invoke('GameServer/Bot/Economy/Reaction');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
@@ -56,7 +55,7 @@ function beginMarketTravel(state, goal, timestamp = Date.now(), { economy = null
         if (goal.plan?.valueRate !== undefined) request.r = goal.plan.valueRate;
         // The plan's own shopping step: the build asked its visit (EconomicValuation.visitPays)
         // and who sells what is read at the market, on arrival (decision 11-02).
-        const planned = !errand && Reaction.on() && goal.plan?.economyActivity === 'shopping';
+        const planned = !errand && goal.plan?.economyActivity === 'shopping';
         // lazy: cycle ColdMarketService reads this module at its load
         if (!planned && !invoke('GameServer/Bot/Economy/ColdMarketService').canTravelForPurchase(state, request,
             economy ? { timestamp, economy } : { timestamp })) {

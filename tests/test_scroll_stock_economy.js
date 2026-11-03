@@ -15,7 +15,9 @@ const state = (amount = 0, adena = 1000000000, extra = {}) => ({ characterId: 95
     loc: Routes.landingTown(origin), inventory: { 736: { selfId: 736, amount } },
     stats: { classId: 1, marketReturn: { loc: origin } }, ...extra });
 Economy.configure({ spots: [], knowledgeEnabled: false });
+// Each case is a first build: one bot id, and a far bot's look would read the held one.
 const published = input => {
+    Economy.forget(input.characterId);
     const context = Economy.forState(input);
     return { context, state: { ...input, stats: { ...input.stats, ...context.statsPacket } } };
 };

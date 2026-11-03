@@ -137,7 +137,7 @@ const PopulationStatus = {
             + ` geo=${mb(geodata.loadedBytes)}MB/${geodata.loadedRegions} geoViews=${mb(geodata.attachedBytes)}+${mb(worker.geodata?.attachedBytes)}MB`
             + ` geoRaw=${geodata.rawRegions || 0} geoIndexOnly=${geodata.indexOnlyRegions || 0}`
             + ` geoHeightReads=${geodata.heightFileReads || 0}+${worker.geodata?.heightFileReads || 0} ${this.npcHateText()}`
-            + this.incomeHoldText(worker.incomeHold) + (worker.proofOverflows === undefined ? '' : ` proofOver=${worker.proofOverflows} nodeCap=${worker.nodeCapBuilds} asksDeep=${worker.asksPastDepth} shotFlips=${worker.sourceShotFlips} quietGear=${worker.quietGearBuilds}`) + this.doorsText(worker.buildDoors, worker.raisedLinks) + this.soloWindowText(worker.soloWindow) + this.momentsText(worker.moments);
+            + this.incomeHoldText(worker.incomeHold) + (worker.proofOverflows === undefined ? '' : ` proofOver=${worker.proofOverflows} nodeCap=${worker.nodeCapBuilds} asksDeep=${worker.asksPastDepth} shotFlips=${worker.sourceShotFlips} quietGear=${worker.quietGearBuilds}`) + this.doorsText(worker.buildDoors, worker.raisedLinks) + this.soloWindowText(worker.soloWindow);
     },
 
     // huntSteps=<steps per hunting bot-hour>/<rounds per step>: solo hunting steps since the worker
@@ -154,19 +154,6 @@ const PopulationStatus = {
     doorsText(doors, raised) {
         const top = rows => Object.entries(rows || {}).sort((a, b) => b[1] - a[1]).map(([why, count]) => `${why}:${count}`).join(',');
         return doors ? ` doors=${Object.entries(doors).map(([caller, row]) => `${caller}:${row.join(':')}`).join(',')} raised=${top(raised)} rejected=${top(DecisionEvents.rejections())}` : '';
-    },
-
-    // moments=<builds>/<no moment>/<elsewhere>/<goal>/<posted>: economy builds since the worker started and those
-    // no player's moment asked for (T174, PlayerMoment), of them the ones that sent the bot elsewhere, renamed its
-    // goal, or posted an act from where it stands; noMoment: per first refusal <why>:<count>:<elsewhere>:<goal>:
-    // <posted>; at: the same per moment. cardDrops: cards dropped as a state published;
-    // cardRefused: fresh cards whose proof failed as they published, per reason.
-    momentsText(m) {
-        if (!m) return '';
-        const rows = Object.entries(m.why).sort((a, b) => b[1][0] - a[1][0]).map(([why, row]) => `${why}:${row.join(':')}`);
-        const at = Object.entries(m.moments).sort((a, b) => b[1][0] - a[1][0]).map(([name, row]) => `${name}:${row.join(':')}`);
-        const r = m.refresh;
-        return ` refresh=${r.asked}/${r.built}/${r.dirty}/${r.stale}/${r.sent}/${r.acts} cardDrops=${m.cardDrops} cardRefused=${Object.entries(m.cardRefused).map(([why, count]) => `${why}:${count}`).join(',')} where=${Object.entries(m.where).sort((a, b) => b[1][0] - a[1][0]).slice(0, 40).map(([why, row]) => `${why}:${row.join(':')}`).join(',')} moments=${m.builds}/${m.skipped}/${m.elsewhere}/${m.goal}/${m.posted} noMoment=${rows.join(',') || '-'} at=${at.join(',') || '-'}`;
     },
 
     // incomeHold=<kept>/<none>,<unrouted>,<renewed>,<moved>,<event>,<goal>;party<kept>/<missed>: held earning

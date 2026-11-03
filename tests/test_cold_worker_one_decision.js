@@ -37,7 +37,8 @@ async function createWorld(id) {
 
 // Runs inside the worker: the kernel's own decision point and projection, in
 // the order a solo step runs them, with a round that looted an escape scroll
-// the bot did not carry (new loot and a supply event).
+// the bot did not carry (new loot and a supply event, which far from a player
+// waits through the hunt and the rest for the bot's arrival in town).
 const observer = String.raw`
 module.exports.stepProbe = async (id) => {
     const entry = kernel.states.get(id), timestamp = Date.now();
@@ -52,12 +53,22 @@ module.exports.stepProbe = async (id) => {
             materialize: { exp: 0, sp: 0, adena: 0, items: [{ selfId: 736, amount: 1 }] },
             nextResolveAt: timestamp + 60000 }, timestamp, plan);
         const ColdEconomyDecision = invoke('GameServer/Bot/Population/ColdEconomyDecision');
-        return { decided, afterRound: builds - decided, activity: state.activity,
+        const afterRound = builds - decided;
+        // The next rounds, from the projected state, on the same step decision: one ends
+        // at the rest, then a trip arrives in town.
+        const round = (from, patch, at) => kernel.projectResolve(from, { patch, debug: {}, events: [],
+            materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: at + 60000 }, at, plan);
+        const rest = await round(projection.state, { activity: 'resting' }, timestamp + 1000);
+        const town = await round({ ...rest.state, activity: 'traveling' }, { activity: 'shopping' }, timestamp + 2000);
+        const supply = invoke('GameServer/Bot/Economy/DecisionSections').sectionBit('supply');
+        const raised = next => [Number(next.state.stats.wishDirty || 0) & supply, Number(next.state.stats.decisionSeq || 0)];
+        return { decided, afterRound, activity: state.activity,
+            wishDirty: Number(projection.state.stats.wishDirty || 0),
+            seq: [Number(plan.statsPacket.decisionSeq || 0), Number(projection.state.stats.decisionSeq || 0)],
+            rest: raised(rest), town: raised(town),
             selectedActivity: plan.economy.network.activity?.activity,
             selectedRoot: plan.economy.network.activity?.rootKey,
             execution: plan.economyPlan?.travel,
-            wishDirty: Number(projection.state.stats.wishDirty || 0),
-            seq: [Number(plan.statsPacket.decisionSeq || 0), Number(projection.state.stats.decisionSeq || 0)],
             baseline: [plan.statsPacket.wishSections?.at, projection.state.stats.wishSections?.at],
             edges: projection.economyEdges,
             card: { updatedAt: projection.economyDecision?.updatedAt, echo: projection.economyDecision?.echo,
@@ -101,7 +112,6 @@ module.exports.goalProbe = async (id) => {
 // A refresh of a dirty bot waits for its step, whose build it would repeat, and
 // runs on that step's output.
 module.exports.refreshProbe = async id => {
-    Reaction.configure(true);
     const asked = () => occupationPlanner.waiting.has(id) || occupationPlanner.slots.has(id);
     const record = (stats, economyPending) => { const entry = kernel.states.get(id);
         return { ...entry, economyPending, state: { ...entry.state, phase: 'cold', stats: { ...entry.state.stats, ...stats } } }; };
@@ -129,15 +139,14 @@ module.exports.refreshProbe = async id => {
         kernel.states.set(id, { ...own, state: { ...own.state } }, 'commit');
         const ran = asked();
         occupationPlanner.cancel(id);
-        Reaction.configure(false);
         return { waited, ran, built: after[0] - before[0], left: after[2] - before[2] };
     };
     // Main's reconcile asks with no pending count.
     return { pending: run(1), reconcile: run(0, () => occupationOwnerChanged(id, true)), left: await left() };
 };
 // A party member's step (no decision before its round): a level gained in
-// its round moves its kit, which its party step reads to open a re-plan; a
-// quiet step moves nothing.
+// its round moves its kit, which its party step reads to open a re-plan (at
+// the party's rest: in its fight the kit waits); a quiet step moves nothing.
 module.exports.kitProbe = async (id) => {
     const entry = kernel.states.get(id), timestamp = Date.now();
     const Data = invoke('GameServer/DataCache');
@@ -147,7 +156,7 @@ module.exports.kitProbe = async (id) => {
     const first = await step(member, 0, timestamp);
     const quiet = await step(first.state, 0, timestamp + 1000);
     const gain = Number(Data.experience[quiet.state.level]) - Number(quiet.state.exp) + 1;
-    const levelUp = await step(quiet.state, gain, timestamp + 2000);
+    const levelUp = await step({ ...quiet.state, activity: 'resting' }, gain, timestamp + 2000);
     return { quiet: quiet.kitMoved, levelUp: levelUp.kitMoved, levels: [quiet.state.level, levelUp.state.level] };
 };
 module.exports.occupationProbe = async (id) => {
@@ -230,8 +239,10 @@ parentPort.on('message', message => {
         assert.equal(step.decided, 1, 'a bot without a held decision builds its economy once, before the round');
         assert.equal(step.afterRound, 0, 'the projection after the round builds no economy');
         assert(step.edges & 1, 'the looted scroll is an edge the round acts on with the step decision');
-        assert.notEqual(step.wishDirty, 0, 'the supply event of the round waits for the next decision point');
-        assert(step.seq[1] > step.seq[0], 'the event check after the round moves the decision sequence');
+        assert.equal(step.wishDirty, 0, 'on the hunt the round\'s supply event raises nothing');
+        assert.equal(step.seq[1], step.seq[0], 'and the decision sequence stands');
+        assert.equal(step.rest[0], 0, 'nor does the round that ends at the rest');
+        assert(step.town[0] !== 0 && step.town[1] > step.seq[1], 'the arrival in town raises it and moves the sequence');
         assert.equal(step.baseline[1], step.baseline[0], 'the projected state keeps the baseline of the step decision');
         assert.equal(step.card.updatedAt, step.card.projectedAt, 'main gets the step card stamped to the projected state');
         assert.deepEqual(step.card.echo, step.card.projectedEcho, 'main gets the step card with the projected decision echo');

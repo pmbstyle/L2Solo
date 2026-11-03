@@ -10,7 +10,6 @@ const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
-const Reaction = invoke('GameServer/Bot/Economy/Reaction');
 const WealthDecision = require('./WealthCraftDecision');
 const Commit = require('./EconomyCommit');
 const { personalOfferAllowed } = require('../Population/PartyAdmission');
@@ -119,7 +118,7 @@ function withOutcome(state, opportunity, outcome, extras = {}) {
 function rejectedWork(current, accepted, why, recipeId) {
     if (current.phase !== 'cold') return current;
     const next = DecisionEvents.rejectedState(current, accepted, why);
-    if (next === current || !Reaction.on() || !(recipeId > 0)) return next;
+    if (next === current || !(recipeId > 0)) return next;
     return { ...next, stats: { ...next.stats, wealthRefused: WealthDecision.refusedMark(next, recipeId) } };
 }
 // refusal: { reason, recipeId, kind: the craft's name in the count, wealth by default }.

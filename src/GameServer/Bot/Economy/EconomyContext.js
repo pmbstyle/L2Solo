@@ -204,7 +204,7 @@ const ownQuantityRow = (row, rootKey, own) => row[0] === 'stock' || row[0] === '
 // The first input a completed build lacks for an event proof, '' if none.
 function eventProofMissing(state, deps, plan) {
     if (!plan || plan.pending) return 'pending';
-    if (!plan.quantityInputs && Reaction.hears('quantity', Reaction.place(state, plan.network?.activity))) return 'quantity_inputs';
+    if (!plan.quantityInputs && Reaction.hears('quantity', Reaction.place(state))) return 'quantity_inputs';
     if (!plan.liquidationInputs) return 'liquidation_inputs';
     if (extensions.size) return 'extensions';
     if (deps.nodes?.length) return 'nodes';
@@ -301,7 +301,7 @@ function heldBuildVerdict(state, proof, deps = {}, options = {}) {
     // sections before the echo.
     const dirty = Number(state.stats?.wishDirty) || 0;
     if (dirty && refuse('wish_dirty', dirty) && !collect) return out;
-    const where = Reaction.place(state, options.leaf);
+    const where = Reaction.place(state);
     const moved = (link, reason = link, quiet = false) => {
         const names = Reaction.sections(link);
         if (Reaction.hears(link, where)) return refuse(reason, names, quiet);
@@ -1395,7 +1395,7 @@ function buildForState(state, deps) {
         && !(mask & Sections.COMPUTED.gearReview) ? followedGear(state, held) : null;
     if (heldGear) quietGearBuilds++;
     passed(deps, 0);
-    // Why a door built (a door other than the step here, the step's in PlayerMoment's where).
+    // Why a door built (a door other than the step here).
     const movedNames = eventVerdict.firstSections ? `+${Sections.sectionNames(eventVerdict.firstSections).join('+')}` : '';
     // A build for the nodes alone names whose: a party's member or a candidate it asks to join,
     // and a held plan built for its nodes before (the same answer built again).
@@ -1640,7 +1640,7 @@ function buildForState(state, deps) {
     // A step's count is taken here: what reaches the bag on the way is its progress.
     if (plan.network.agenda) plan.network.agenda = plan.network.agenda.map(step => withHeldUnits(step, ColdEconomyDecision.heldFor(state, step.itemId)));
     // Its place in the money queue, as the card stamps it: a material has no packet row of its own.
-    if (plan.network.activity?.kind === 'buy' && Reaction.on()) {
+    if (plan.network.activity?.kind === 'buy') {
         Funding.stampRatio(plan.network.activity, plan.network.queue.find(wish => wish.key === plan.network.activity.rootKey));
     }
     const repick = plan.network.activity && eventVerdict.dropped?.get(stepPlace(plan.network.activity));

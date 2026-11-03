@@ -14,7 +14,6 @@ const Workshops = require('./CraftWorkshopService');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
 const WealthCraft = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
-const Reaction = require('./Reaction');
 const Commit = require('./EconomyCommit');
 const Price = require('./PriceDecision');
 const OfferQuery = require('./OfferQuery');
@@ -450,7 +449,7 @@ async function execute(state, step, now = Date.now()) {
     const candidate = recheck(state, selected);
     // What the act refuses is heard, its recipe marked as a wealth craft's: the search
     // does not pick it again until the next town look.
-    if (!candidate) return Reaction.on() ? WealthCraft.rejectAccepted(state, state, { kind: 'shot', reason: 'no_basket', recipeId }) : state;
+    if (!candidate) return WealthCraft.rejectAccepted(state, state, { kind: 'shot', reason: 'no_basket', recipeId });
     if (step?.recipeTarget) {
         if (known) return state;
         const board = AfkTrade.boardIndex(), scrollId = Number(recipe.recipeItemId);

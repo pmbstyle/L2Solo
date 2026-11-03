@@ -323,12 +323,7 @@ async function run() {
     } finally { LifeState.cachedState = beforeCached; LifeState.upsertState = beforePersist; }
     // A craft refused at the act carries its recipe for the pick to skip.
     {
-        const Reaction = invoke('GameServer/Bot/Economy/Reaction');
-        const fresh = await Service.execute(state, forbiddenExit);
-        assert.strictEqual(fresh.state.stats.wealthRefused, undefined, 'the gate off marks nothing');
-        Reaction.configure(true);
         const refused = await Service.execute(state, forbiddenExit);
-        Reaction.configure(false);
         assert.deepStrictEqual(refused.state.stats.wealthRefused.recipes, [recipe.recipeId], 'the refusal marks its recipe');
     }
     assert.strictEqual(purchases.length, writesBefore);

@@ -14,7 +14,8 @@ const Floor = require('../Population/SurvivalFloor');
 const InventoryLimits = require('../../Inventory/InventoryLimits');
 const Diagnostics = require('./EconomyDiagnostics');
 const Reaction = require('./Reaction');
-const { FIELD_ACTIVITIES, partyIdOf } = Reaction;
+const { FIELD_ACTIVITIES } = Reaction;
+const partyIdOf = state => String(state.party?.partyId || state.partyId || '');
 const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
 const DataCache = invoke('GameServer/DataCache');
 const CombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
@@ -172,8 +173,8 @@ function goalReached(state, baseline, escrow = 0) {
     return baseline?.goalBudget > 0 && PurchaseFunding.budget(state, escrow) >= baseline.goalBudget;
 }
 // The wallet reached what the bot watches where it stands.
-function moneyReached(state, baseline, escrow = 0, leaf = null) {
-    return Reaction.hears('money', Reaction.place(state, leaf)) ? moneyBound(state, baseline, escrow) : goalReached(state, baseline, escrow);
+function moneyReached(state, baseline, escrow = 0) {
+    return Reaction.hears('money', Reaction.place(state)) ? moneyBound(state, baseline, escrow) : goalReached(state, baseline, escrow);
 }
 function meaningfulMoney(state, baseline = state.stats?.wishSections, escrow = 0) {
     return moneyChanged(state, baseline, escrow, true);
@@ -303,15 +304,15 @@ function snapshot(state, context, cashBounds, moneyError = -1, mode, money = nul
 // baseline: the decision's (stats.wishSections). input: { board (the board
 // mirror, null: not ready, the market part waits), buyOrderEscrow, memory (a
 // reader of the bot's memory rows, called only when the bond is compared),
-// timestamp (the step's) }.
-function softEvents(state, baseline, input, leaf = null, before = null) {
+// timestamp (the step's) }. before: the state the step left (arriving in town).
+function softEvents(state, baseline, input, before = null) {
     if (!baseline) return NONE;
     let sections = NONE;
     // Diagnostics only: soft:step:far counts the soft points, soft:raise:<source>
     // the raises by source (the observation share per far step is read live).
     const diagnostic = Diagnostics.active();
     if (diagnostic) Diagnostics.count('soft', 'step', 'far');
-    const where = Reaction.place(state, leaf, before);
+    const where = Reaction.place(state, before);
     const add = source => {
         const names = Reaction.raise([source], where);
         sections = sections === NONE ? [...names] : [...new Set([...sections, ...names])];
@@ -410,7 +411,7 @@ function stateView(state, recipes = null) {
 // owner: { characterId, clanId, stats } (a state is one); into: the array written (the
 // near reader's, updated in place).
 function storesOf(owner, into = new Array(3)) {
-    // Where the moment gate stands a member hears what its clan asks for, not how much is left.
+    // A far member hears what its clan asks for, not how much is left.
     const demand = owner.stats?.clanMaterialDemand ?? null, request = Reaction.reactive(owner);
     into[0] = request && demand ? Object.keys(demand) : demand;
     into[1] = request ? ClanSupply.requestIdentity(owner) : ClanSupply.contentIdentity(owner); into[2] = ClanSupply.hasWarehouse(owner);
@@ -460,7 +461,7 @@ function events(before, after, escrow = 0, leaf = null) {
     const links = [];
     factEvents(previousFact, current, moneyChanged(after, represented || before.stats?.wishSections, escrow, false)
         || !previous.funding && fundingMark(before) !== fundingMark(after), links, occupationPlanned(after, leaf));
-    const where = Reaction.place(after, leaf, before);
+    const where = Reaction.place(after, before);
     return Reaction.raise(Reaction.gated(where) ? [...links, ...needsOpened(before, after, links, view)] : links, where);
 }
 // A need that opened in this step, one raise: one that stays open raises nothing more.
@@ -486,12 +487,15 @@ function needsOpened(before, after, facts, now) {
 // (travel.leafSpotId), the arrival keeps the pair leaf spot + ground reached
 // (stats.standIn, BackgroundResolver.resolveTravel), the leaf's own arrival
 // while the bot stands on that ground.
-// Death, recall, a party pull, a flight or a yield are none of these and
-// stay events. Read by the held build's verdict and by the far step's round
-// check (factEvents' planned); its field-trip clause is
-// EconomyContext.fieldActivity's.
+// A far bot (Reaction, own_move) owns more: hunting or resting on any ground,
+// and any trip but a forced one (FORCED_TRIPS: a flight, a death pressure, a
+// pushed-out spot, a party's call), so a pull to another spot or a flight's
+// arrival raises nothing there. Near a player only the leaf's own trip and
+// arrival are; death, recall, a pull, a flight or a yield stay events. Read by
+// the held build's verdict and by the far step's round check (factEvents'
+// planned); its field-trip clause is EconomyContext.fieldActivity's.
 function occupationPlanned(state, leaf) {
-    const where = Reaction.place(state, leaf);
+    const where = Reaction.place(state);
     if (ownMove(state, where) && !Reaction.hears('own_move', where)) return true;
     if (!leaf?.activity) return false;
     const hunt = leaf.activity === 'hunting';

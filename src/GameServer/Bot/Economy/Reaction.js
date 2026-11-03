@@ -7,33 +7,26 @@
 // all ask it; none keeps a rule of its own. A new rule is a row here.
 
 const FIELD_ACTIVITIES = new Set(['hunting', 'resting', 'traveling']);
-const partyIdOf = state => String(state.party?.partyId || state.partyId || '');
 
-// The gate (coldMomentGate), one per thread. Off, every bot reads as the author's.
-let gate = false;
-const configure = on => { gate = on === true; };
-
-// Places, as bits of a link's waits. OPEN hears everything: a body near a player, the
-// gate off. HUNT: the gate off, a far bot alone on a hunting leaf (T174). Behind the
-// gate: WORK on a hunt, the road or in a party's fight, REST, VISIT a town visit past
-// its first look, STAND anywhere else (a stall, a craft, a meeting).
-const OPEN = 0, HUNT = 1, WORK = 2, REST = 4, VISIT = 8, STAND = 16;
+// Places, as bits of a link's waits. OPEN hears everything: a body near a player, a
+// far bot the step it arrives in town. A far bot: WORK on a hunt, the road or in a
+// party's fight, REST, VISIT a town visit past its first look, STAND anywhere else (a
+// stall, a craft, a meeting).
+const OPEN = 0, WORK = 1, REST = 2, VISIT = 4, STAND = 8;
 const FIELD = WORK | REST, GATED = FIELD | VISIT | STAND;
-const NAMES = new Map([[OPEN, 'open'], [HUNT, 'hunt'], [WORK, 'work'], [REST, 'rest'], [VISIT, 'visit'], [STAND, 'stand']]);
+const NAMES = new Map([[OPEN, 'open'], [WORK, 'work'], [REST, 'rest'], [VISIT, 'visit'], [STAND, 'stand']]);
 
-// leaf: the held leaf, if the reader has it. before: the state a step left, read
-// for the one moment that is a change of place: arriving in town, where what
-// waited in the field is heard, once.
-function place(state, leaf = null, before = null) {
+// before: the state a step left, read for the one moment that is a change of place:
+// arriving in town, where what waited in the field is heard, once.
+function place(state, before = null) {
     if (state.phase !== 'cold') return OPEN;
-    if (!gate) return !partyIdOf(state) && FIELD_ACTIVITIES.has(state.activity) && leaf?.activity === 'hunting' ? HUNT : OPEN;
     if (state.stats?.tradeMeeting) return STAND;
     if (state.activity === 'hunting' || state.activity === 'traveling' || state.activity === 'grouped') return WORK;
     if (state.activity === 'resting') return REST;
     if (state.activity === 'shopping') return before && FIELD_ACTIVITIES.has(before.activity) ? OPEN : VISIT;
     return STAND;
 }
-// A place under the rule (behind the gate, far), and one in the field.
+// A place under the rule (far, not arriving), and one in the field.
 const gated = where => !!(where & GATED);
 const field = where => !!(where & FIELD);
 const reactive = state => gated(place(state));
@@ -41,11 +34,11 @@ const reactive = state => gated(place(state));
 // the agenda moves the plan to the next.
 const onVisit = state => place(state) === VISIT;
 const agendaHears = (state, why) => onVisit(state) && why.startsWith('check:');
-// Which step reads its facts: a round's end, the gate off a hunt only. Behind the gate a
-// party's round too, and the step that arrives in town: its one look.
+// Which step reads its facts: a hunt's round, a far party's round, and the step that
+// arrives in town: its one look.
 function readsFacts(before, after) {
     return before.activity === 'hunting'
-        || gated(place(before)) && (before.activity === 'grouped' || !place(after, null, before));
+        || gated(place(before)) && (before.activity === 'grouped' || !place(after, before));
 }
 
 const link = (sections, waits) => Object.freeze({ sections: Object.freeze(sections), waits });
@@ -102,8 +95,8 @@ const LINKS = Object.freeze({
     crafter_mp: link(['sources'], FIELD | VISIT),
     bands: link(STOCK, FIELD | VISIT),
     own_loss: link(BOUGHT, WORK | VISIT),
-    quantity: link(BOUGHT, HUNT | FIELD | VISIT),
-    liquidation: link(BOUGHT, HUNT | FIELD | VISIT),
+    quantity: link(BOUGHT, FIELD | VISIT),
+    liquidation: link(BOUGHT, FIELD | VISIT),
     threat: link(OBSERVED, 0),
     // The leaf's own check (EconomyContext.LEAF_CHECKS). Who sells what is read at
     // the market: a bot in the field learns of a gone offer as it arrives. A bot short
@@ -180,6 +173,6 @@ function woke(name, where) {
     return hears(name, where);
 }
 
-module.exports = { FIELD_ACTIVITIES, partyIdOf, configure, on: () => gate, place, gated, field, reactive, onVisit, agendaHears, readsFacts, hears, heard, raise, woke, raisedCounts: () => raisedCounts, sections,
+module.exports = { FIELD_ACTIVITIES, place, gated, field, reactive, onVisit, agendaHears, readsFacts, hears, heard, raise, woke, raisedCounts: () => raisedCounts, sections,
     answer, keeps, incomeLink, goalMoment, quiet,
     placeName: where => NAMES.get(where), LINKS };

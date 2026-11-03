@@ -484,7 +484,7 @@ async function releaseColdUnlocked(state, options = {}) {
     const reserved = storedReservations(state, warehouseItems, materials);
     // options.before: the state the step began from. What a visit fetches to sell is
     // read once, as it arrives (Reaction, warehouse).
-    const sells = !options.before || Reaction.hears('warehouse', Reaction.place(state, null, options.before));
+    const sells = !options.before || Reaction.hears('warehouse', Reaction.place(state, options.before));
     const selling = sells ? marketRequests(state, warehouseItems, reserved, options) : [];
     recordStage('item_plan', planStartedAt);
     return releaseRequests(state, warehouseItems, [...materials, ...selling], options);

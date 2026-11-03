@@ -4,8 +4,10 @@
 // far step's round check (DecisionSections.events with the step's leaf).
 // When X has no room, the route sends the bot to another spot Y: that detour
 // stands in for X (the pair leaf X, ground Y) while the bot stays on Y. A
-// material hunt, a flight (death pressure), an X the bot avoids (a backoff)
-// and a spot change without a trip (or back) are no stand-in: the move is an event.
+// flight (death pressure) and an X the bot avoids (a backoff) are no stand-in:
+// the held decision refuses them. A far bot's own move is no event anywhere
+// (Reaction, own_move): a material hunt's detour and a spot change without a
+// trip raise nothing in its round and keep its decision.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -121,33 +123,36 @@ async function run() {
         assert.deepEqual(round(routed, traveling), [], 'the round that starts the detour raises nothing');
         assert.deepEqual(round(arrived, arrived), [], 'a round on the stand-in spot raises nothing');
         // The same detour under a leaf that hunts a material at its monster
-        // (only that monster brings it in): the route names no stand-in, so
-        // neither the trip nor its arrival is the leaf's own.
+        // (only that monster brings it in): the route names no stand-in, yet a
+        // far bot's own trip and its arrival are its own (Reaction, own_move).
         const material = { ...leaf, itemId: 1864, amount: 5 };
         const materialRoute = BotRoute.trip({}, routed, material, { spots, timestamp: T, hasRoom: full(X) });
         assert(materialRoute?.needed && String(materialRoute.spotId) !== String(X), 'fixture: the material hunt detours too');
         const materialTrip = beginHuntingTrip(routed, materialRoute, T);
         const materialArrived = { ...materialTrip, ...Resolver.resolveSolo({ state: materialTrip,
             timestamp: materialTrip.stats.travel.arrivalAt }).patch };
-        assert.equal(Sections.occupationPlanned(materialTrip, material), false, 'a material hunt\'s detour trip is an event');
-        assert.equal(Sections.occupationPlanned(materialArrived, material), false, 'a material hunt\'s detour arrival is an event');
+        assert.equal(Sections.occupationPlanned(materialTrip, material), true, 'a far material hunt\'s detour trip is no event');
+        assert.equal(Sections.occupationPlanned(materialArrived, material), true, 'nor its detour arrival');
+        assert.equal(Sections.occupationPlanned({ ...materialTrip, phase: 'hot' }, material), false, 'near a player the detour trip is an event');
         // The bot stands on another spot with no trip there (a pull, a
-        // teleport): the stand-in was the ground it reached, not this one.
+        // teleport): far from a player its own ground is no event either.
         const other = spots.find(spot => spot.raidBoss !== true && spot.center
             && ![String(X), String(route.spotId)].includes(String(spot.id)));
         const moved = spotAt(arrived, other.id);
-        assert.equal(verdict(moved), false, 'a spot change without a trip refuses the decision');
-        assert.deepEqual(round(arrived, moved), ['occupation'], 'a spot change without a trip is an occupation event');
+        assert.equal(verdict(moved), true, 'a far spot change without a trip keeps the decision');
+        assert.deepEqual(round(arrived, moved), [], 'and raises nothing in the round');
+        assert.deepEqual(round({ ...arrived, phase: 'hot' }, { ...moved, phase: 'hot' }), ['occupation'],
+            'near a player a spot change without a trip is an occupation event');
         // A round there (the far step's projection), then back on the
         // stand-in ground without the detour (a party arrival, a fallback
-        // spot): that return is a move of its own, an event.
+        // spot): far from a player that return raises nothing either.
         const there = await Life.prepareResolve(moved, Resolver.resolveSolo({ state: moved, timestamp: T + 1000 }),
             { timestamp: T + 1000, persist: false, projectClassProgression: true, moneyEscrowFor: () => 0 });
         assert(there, 'fixture: the round projects');
         const back = { ...spotAt(there, route.spotId), activity: 'hunting' };
-        assert(round(there, back).includes('occupation'), 'a return to the stand-in ground without the detour is an event');
+        assert(!round(there, back).includes('occupation'), 'a far return to the stand-in ground raises nothing');
     }
-    console.log('PASS exp hunting detour keeps / a material hunt, a move off the stand-in and a return to it are events');
+    console.log('PASS exp hunting detour keeps / a far material hunt, a move off the stand-in and a return to it raise nothing');
 
     {
         // X has room but the bot avoids it (a backoff marked after the
@@ -156,10 +161,11 @@ async function run() {
             standing: (state, X) => { const at = pulled(state); return { ...at, stats: { ...at.stats, spotBackoffs: [backoff(X)] } }; } });
         assert(String(route.spotId) !== String(X), 'fixture: X avoided, the route leads elsewhere');
         assert.equal(verdict(arrived), false, 'the arrival away from an avoided X refuses the decision');
-        assert.deepEqual(round(routed, traveling), ['occupation'], 'the trip away from an avoided X is an event');
-        assert.deepEqual(round(arrived, arrived), ['occupation'], 'a round away from an avoided X is an event');
+        // Its round raises nothing far from a player: the verdict is what refuses.
+        assert.deepEqual(round(routed, traveling), [], 'the far trip away from an avoided X raises nothing in the round');
+        assert.deepEqual(round(arrived, arrived), [], 'nor a far round away from it');
     }
-    console.log('PASS a trip away from an avoided spot is an event');
+    console.log('PASS an arrival away from an avoided spot refuses the decision');
 
     {
         // A bot that died on spot Z (its death mark, held with the decision)
@@ -173,7 +179,7 @@ async function run() {
         assert(String(route.spotId) !== String(X), 'fixture: X full, the route leads elsewhere');
         assert.equal(route.reason, 'death_pressure_replan', 'fixture: a flight');
         assert.equal(verdict(traveling), false, 'a flight refuses the decision');
-        assert.equal(verdict(arrived), false, 'the arrival of a flight refuses the decision');
+        assert.equal(verdict(arrived), true, 'a far flight\'s arrival is its own ground: the decision stands');
     }
     console.log('PASS a death-pressure flight is an event');
 }

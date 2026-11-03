@@ -78,19 +78,14 @@ try {
     assert.equal(GoalExecutor.beginMarketTravel(state, sale, now).activity, 'traveling');
     assert.equal(checks, 2, 'forced unloading keeps its existing independent owner');
     // The plan's own shopping step travels on the visit its build asked.
-    const Reaction = invoke('GameServer/Bot/Economy/Reaction');
     const stepGoal = { type: 'buy_craft_material', target: { itemId: 1835, amount: 100 },
         plan: { expectedBenefit: 'market_buy_craft_material', marketTown: 'Giran', economyActivity: 'shopping', valueRate: 0.02 } };
     let asked = 0;
     Market.canTravelForPurchase = () => { asked++; return false; };
     const plain = { ...state, stats: {} };
-    assert.equal(GoalExecutor.beginMarketTravel(plain, stepGoal, now), null, 'the gate off asks the act as before');
-    assert.equal(asked, 1);
-    Reaction.configure(true);
-    let went;
-    try { went = GoalExecutor.beginMarketTravel(plain, stepGoal, now); } finally { Reaction.configure(false); }
-    assert.equal(went?.activity, 'traveling', 'the gate on: the plan\'s step goes and reads the market there');
-    assert.equal(asked, 1, 'no second trip question from the field');
+    const went = GoalExecutor.beginMarketTravel(plain, stepGoal, now);
+    assert.equal(went?.activity, 'traveling', 'the plan\'s step goes and reads the market there');
+    assert.equal(asked, 0, 'no second trip question from the field');
 } finally {
     Market.canTravelForPurchase = saved.check;
     Remote.canTradeRemotely = saved.remote;

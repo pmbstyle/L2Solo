@@ -87,6 +87,8 @@ function verify() {
     assert(ctx.projection.roots.includes(`power:${ear.selfId}:2`), 'same-template second earring is an acquisition root');
     assert(!ctx.projection.roots.some(key => key.startsWith('level:')), 'XP goal waits for the working kit');
     const clanMember = { ...paired, stats: { ...paired.stats, clanId: 1 } };
+    // Its own first build (far, a look reads the held one).
+    Economy.forget(paired.characterId);
     const clanCtx = Economy.forState(clanMember, { spots: [], board, timestamp, npcOffersFor: () => [],
         routeRows: Array.from({ length: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.length },
             () => [true, 0, 0]) });
@@ -167,7 +169,8 @@ function verify() {
     {
         const GameTime = invoke('GameServer/World/GameTime');
         const Party = invoke('GameServer/Bot/Population/PartyIncomeComparison');
-        const holder = { ...earning, characterId: 990901, stats: { ...earning.stats, wishFocus: ['power:200:14', 1, 1000000] } };
+        // Near a player, where every read hears the change at once (far: test_held_earning_spot).
+        const holder = { ...earning, characterId: 990901, phase: 'hot', stats: { ...earning.stats, wishFocus: ['power:200:14', 1, 1000000] } };
         const at = timestamp + 1000;
         const time = minutes => at + minutes * GameTime.GAME_MINUTE_MS;
         assert.equal(Economy.forState(holder, { spots, timestamp: time(0) }).hunt.spotId, 'rich', 'it chooses the better spot');
