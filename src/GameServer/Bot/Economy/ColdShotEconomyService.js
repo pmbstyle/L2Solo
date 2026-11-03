@@ -69,16 +69,17 @@ function recheck(state, selected) {
         const [recordId, lineId, price, revision] = selected.exit.map(Number);
         const compact = selected.exit[0] == null && selected.exit[2] == null;
         if (recordId > 0 || compact) {
-            const line = compact ? board.list(recipe.productId, AfkTrade.BUY).slice(0, 5)
+            const line = compact ? Price.productionBids(board, recipe.productId)
                 .find(row => Number(row.lineId) === lineId) : board.records.get(recordId)?.find(row => Number(row.lineId) === lineId);
             if (!line || line.storeType !== AfkTrade.BUY || line.revision !== revision || !compact && line.price !== price
                 || line.selfId !== Number(recipe.productId) || line.ownerId === Number(state.characterId)) return null;
             exit = { type: 'afk', conditional: line.custodyPolicy === 1, price: Number(line.price), count: Number(line.count), town: line.town, offer: Fields.offerFields(line) };
         } else if (recordId === -1 && Number.isSafeInteger(lineId) && lineId > 0 && price > 0 && revision >= 0) {
             exit = { type: 'use', price: 0, count: 0, ownUseUnits: lineId, ownUseUnitHours: price, residualUnitValue: 0 };
-        } else if (recordId === -2 && Number.isSafeInteger(lineId) && price > 0 && revision > 0) {
+        } else if ((recordId === -2 || recordId === -3) && Number.isSafeInteger(lineId) && price > 0 && revision > 0) {
             exit = require('./ShotSalePolicy').exit(state, Number(recipe.productId), { board,
                 town: Policy.townForCode(lineId), trip, current: price, lot: Number(recipe.productCount),
+                origin: recordId === -3 ? 'public_buy_interest' : 'public_item_trades',
                 productionUnits: batches * Number(recipe.productCount),
                 reserve: Math.max(0, Number(selected.ownReserve || 0) - Number(state.inventory?.[recipe.productId]?.amount || 0)
                     - Number(state.acceptedIncoming?.[recipe.productId] || 0)),
@@ -89,11 +90,14 @@ function recheck(state, selected) {
             // A forecast has no accepted price authority. Reprice it against
             // current evidence and revalue the selected physical quantity;
             // public bids above still require their exact line and revision.
-            if (!exit || exit.forecast.authority.revision < revision) return null;
+            // Public interest is a forecast, not an accepted order. Other
+            // buyers may change while the worker runs: the fresh curve and
+            // fixed-quantity valuation below decide whether this lot pays.
+            if (!exit || recordId === -2 && exit.forecast.authority.revision < revision) return null;
         }
     } else {
-        const rows = board.list(recipe.productId, AfkTrade.BUY);
-        for (let at = 0; at < Math.min(5, rows.length); at++) if (rows[at].ownerId !== Number(state.characterId)) {
+        const rows = Price.productionBids(board, recipe.productId);
+        for (let at = 0; at < rows.length; at++) if (rows[at].ownerId !== Number(state.characterId)) {
             const line = rows[at]; exit = { type: 'afk', conditional: line.custodyPolicy === 1, price: line.price, count: line.count, town: line.town, offer: Fields.offerFields(line) }; break;
         }
     }
@@ -261,7 +265,7 @@ async function buyMaterial(state, selfId, amount, maxPrice = Infinity, npc = tru
     const missing = amount - availableMaterial(state, selfId);
     if (missing <= 0) return { state, ready: true };
     const bought = await ColdMarket().acquire(state, selfId, missing, { maxPrice: planCap(sourcePlan, maxPrice), npc, purpose: 'craft_input',
-        r, money: PurchaseFunding.spendable(state, 0, { r }), quoteDepth: 5,
+        r, money: PurchaseFunding.spendable(state, 0, { r }), quoteDepth: 5, refreshSource: true,
         ...(sourcePlan ? { sourcePlan, towns: [sourcePlan.town] } : {}) });
     return { state: bought.state, ready: bought.bought && !bought.hot && availableMaterial(bought.state, selfId) >= amount };
 }
@@ -287,7 +291,7 @@ async function obtainCrystals(state, candidate, batches) {
             const sourcePlan = gear.purchases?.find(row => row.selfId === Number(input.selfId));
             return { selfId: input.selfId, amount: input.amount, options: { maxPrice: planCap(sourcePlan, input.maxPrice),
                 npc: true, purpose: 'craft_input', r: candidate.r,
-                money: PurchaseFunding.spendable(state, 0, { r: candidate.r }), quoteDepth: 5,
+                money: PurchaseFunding.spendable(state, 0, { r: candidate.r }), quoteDepth: 5, refreshSource: true,
                 ...(sourcePlan ? { sourcePlan, towns: [sourcePlan.town] } : {}) } };
         });
         const oreId = Number(candidate.ore.selfId);
@@ -296,7 +300,7 @@ async function obtainCrystals(state, candidate, batches) {
         if (existing) existing.amount += Number(candidate.ore.amount) * batches;
         else requirements.push({ selfId: oreId, amount: Number(candidate.ore.amount) * batches,
             options: { maxPrice: planCap(oreSource, candidate.orePrice), npc: true, purpose: 'craft_input', r: candidate.r,
-                money: PurchaseFunding.spendable(state, 0, { r: candidate.r }), quoteDepth: 5,
+                money: PurchaseFunding.spendable(state, 0, { r: candidate.r }), quoteDepth: 5, refreshSource: true,
                 ...(oreSource ? { sourcePlan: oreSource, towns: [oreSource.town] } : {}) } });
         const next = await ColdMarket().acquireMaterials(state, requirements);
         const activated = hotState(next.state);
@@ -321,7 +325,8 @@ async function obtainCrystals(state, candidate, batches) {
     } else if (gear.source === 'afk' || gear.source === 'npc') {
         const bought = await ColdMarket().acquire(state, gear.selfId, 1, { maxPrice: gear.price, npc: gear.source === 'npc',
             purpose: 'craft_input', r: candidate.r, money: PurchaseFunding.spendable(state, 0, { r: candidate.r }),
-            quoteDepth: 5, ...(gear.sourcePlan ? { sourcePlan: gear.sourcePlan, towns: [gear.sourcePlan.town] } : {}) });
+            quoteDepth: 5, refreshSource: true,
+            ...(gear.sourcePlan ? { sourcePlan: gear.sourcePlan, towns: [gear.sourcePlan.town] } : {}) });
         if (!bought.bought || bought.hot) return { state: bought.state, ready: false };
         state = bought.state;
     }

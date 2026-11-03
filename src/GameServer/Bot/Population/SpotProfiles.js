@@ -233,6 +233,7 @@ const SpotProfiles = {
         ]);
         const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
         const mode = LevelingRoutes.modeForState(state, options);
+        const soloSearch = !['party', 'duo'].includes(mode);
         const routeOptions = { ...options, excludedSpotIds,
             spotEconomics: options.spotEconomics || invoke('GameServer/Bot/Economy/SpotEconomics').create(state,
                 { timestamp, mode, members: options.capacityStates, ...(options.spotHunters ? { spotHunters: options.spotHunters } : {}) }),
@@ -303,37 +304,37 @@ const SpotProfiles = {
         }
 
         if (acquisitionPlan?.status === 'active') {
+            const sourceRoute = soloSearch ? GearAcquisitionPlanner.sourceRouteReader(state,
+                { timestamp, spots: profiles, matchupProfiles: routeOptions.matchupProfiles }) : null;
+            const plannedAllowed = (planned, npcId) => {
+                if (!planned || excludedSpotIds.has(String(planned.id)) || full(planned)
+                    || !homeAllowed(planned)) return false;
+                const hasLevelBounds = Number.isFinite(Number(planned.minLevel))
+                    && Number.isFinite(Number(planned.maxLevel));
+                const economicSource = EquipmentIncomeRoute.economicHunt(state)
+                    && Number(planned.avgLevel || planned.minLevel || 1) - state.level >= -15;
+                return (!currentSpot || !hasLevelBounds || SpotService.isSuitable(planned, targetLevel, options) || economicSource)
+                    && (!sourceRoute || planned.raidBoss === true || !npcId || sourceRoute(planned, npcId));
+            };
             // A gear objective may have several valid drop sources: the first
             // allowed one, else the persisted route.
             const plannedSource = GearAcquisitionPlanner.bestSourceForPlan(
                 state,
                 acquisitionPlan,
                 profiles,
-                { excludedSpotIds,
+                { excludedSpotIds, timestamp, mode, hasRoom, matchupProfiles: routeOptions.matchupProfiles,
+                    sourceAllowed: source => plannedAllowed(SpotIndex.spotById(profiles, source.spotId), source.npcId),
                     allowRaidSources: acquisitionPlan.next?.sourceKind === 'raid'
                         && GearAcquisitionPlanner.isClanOwnedPlan(acquisitionPlan) }
             );
             const planned = SpotIndex.spotById(profiles, plannedSource ? plannedSource.spotId : acquisitionPlan.next?.spotId);
-            if (planned && !excludedSpotIds.has(String(planned.id)) && !full(planned)
-                && LevelingRoutes.isSpotAllowedForState(planned, state, routeOptions)) {
-                // A drop source may be valid for the item but still be a
-                // starter-level camp for the bot. Never let an active gear
-                // plan pin an outleveled bot to that source indefinitely.
-                const hasLevelBounds = Number.isFinite(Number(planned.minLevel))
-                    && Number.isFinite(Number(planned.maxLevel));
-                const economicSource = EquipmentIncomeRoute.economicHunt(state)
-                    && Number(planned.avgLevel || planned.minLevel || 1) - state.level >= -15;
-                if (!currentSpot || !hasLevelBounds || SpotService.isSuitable(planned, targetLevel, options) || economicSource) {
-                    return planned;
-                }
-            }
+            if (plannedAllowed(planned, plannedSource?.npcId || acquisitionPlan.next?.npcId)) return planned;
         }
 
         if (currentSpot && !mustRelocate && SpotService.isSuitable(currentSpot, targetLevel, options)) {
             return LevelingRoutes.decorateSpot(currentSpot, currentMatch);
         }
 
-        const soloSearch = !['party', 'duo'].includes(mode);
         const withRoute = (spot) => LevelingRoutes.decorateSpot(spot, LevelingRoutes.routeMatchFor(spot, state, routeOptions));
         // The game table's spot list for the bot's role and level (ARCH-08-b):
         // best income first, ties to the closest level. The first spot that
@@ -409,7 +410,7 @@ const SpotProfiles = {
             const maybeSurvives = TargetMatchup.soloSpotUpperBound(routeOptions.matchupProfiles);
             const lower = lowerSpots(profiles, targetLevel)
                 .filter(profile => !excludedSpotIds.has(String(profile.id))
-                    && maybeSurvives(profile))
+                    && !full(profile) && maybeSurvives(profile))
                 .map(profile => ({ profile, value: spotValue(profile)?.valueHours ?? -Infinity }))
                 // Value first, ties as the near-level fallback: closest level, then density.
                 .sort((a, b) => b.value - a.value

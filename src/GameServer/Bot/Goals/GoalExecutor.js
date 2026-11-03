@@ -146,7 +146,18 @@ function finishVisit(state, timestamp, options) {
     // spot the bot still goes home; the room is read again at arrival.
     const refused = !!savedSpot && !clanReturn
         && !SpotProfiles.roomFilterFor(BotLifeState.occupancyIndex(), SpotProfiles.ensure(), [state])(savedSpot.id);
-    const selectedSpot = clanReturn ? savedSpot : returnState
+    // Keep a valid hunting origin. Replacing it with a fresh income pick
+    // sends material hunters to an unrelated camp; the worker's hunting
+    // leaf then immediately orders another trip back to its own source.
+    const acquisition = state.stats?.equipmentPlan;
+    const changedSource = acquisition?.status === 'active' && acquisition.next?.spotId
+        && String(acquisition.next.spotId) !== String(savedSpot?.id);
+    const keepOrigin = returnState && !clanReturn && !refused && !changedSource
+        && (acquisition?.status !== 'active' || invoke('GameServer/Bot/AI/GearAcquisitionPlanner')
+            .isPlanSourceViableForState(returnState, acquisition, { spots: SpotProfiles.ensure(), timestamp }))
+        && invoke('GameServer/Bot/Population/BotRoute').leafFitReader(returnState,
+            { spots: SpotProfiles.ensure(), timestamp })(savedSpot.id) === 'fit';
+    const selectedSpot = clanReturn || keepOrigin ? savedSpot : returnState
         ? SpotProfiles.findForState(returnState, { timestamp, excludedSpotIds: refused ? [savedSpot.id] : [] })
             || (spotBackoff ? null : savedSpot)
         : null;

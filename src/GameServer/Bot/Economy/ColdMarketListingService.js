@@ -45,7 +45,11 @@ function townCenter(name) {
 function marketAwareNpcCandidates(state, options = {}) {
     return MarketListingPolicy.evaluate(state, {
         unlimited: true,
-        allowPreTradeCleanup: options.allowPreTradeCleanup === true
+        allowPreTradeCleanup: options.allowPreTradeCleanup === true,
+        // A conditional quote still weighs down its owner's bag. During a
+        // forced unload it competes with NPC buyback again instead of keeping
+        // the old listing forever. Backed shop stock is not in this bag.
+        ...(options.allowPreTradeCleanup ? { kept: new Map() } : {})
     }).npc;
 }
 
@@ -73,14 +77,15 @@ function preTradeNpcCleanup(state, forcedCleanup = {}, timestamp = Date.now()) {
         cleanupReason: forcedCleanup.cleanupReason || 'inventory_cleanup',
         town: clearedState.currentRegion || null,
         at: timestamp
-    }).then((cleanedState) => ({
-        state: cleanedState || clearedState,
-        listed: false,
-        cleaned: !!cleanedState,
-        reason: 'pre_trade_npc_cleanup',
-        cleanup: forcedCleanup,
-        liquidated: candidates
-    }));
+    }).then(async (cleanedState) => {
+        if (cleanedState) {
+            const ads = await invoke('Database').reconcileConditionalSellAds(state.characterId);
+            for (const ad of ads) invoke('GameServer/AfkTrade/AfkTradeService').refreshRecord(ad);
+        }
+        return { state: cleanedState || clearedState,
+            listed: false, cleaned: !!cleanedState, reason: 'pre_trade_npc_cleanup',
+            cleanup: forcedCleanup, liquidated: candidates };
+    });
 }
 
 function open(state, options = {}) {
@@ -89,11 +94,16 @@ function open(state, options = {}) {
     }
     const timestamp = Number(options.now) || Date.now();
     if (Number(state.stats?.marketSellRetryAfter || 0) > timestamp) {
-        if (!options.forcedCleanup) return Promise.resolve({ state, listed: false, reason: 'sell_retry_cooldown' });
+        // A floor-driven goal may start the trip without the optional forced
+        // cleanup marker. Recheck the arrived bag: refusing its unload sends
+        // the same overweight bot straight back to town on its next step.
+        const floor = options.forcedCleanup ? null : require('../Population/SurvivalFloor').bagFor(state, timestamp);
+        const forcedCleanup = options.forcedCleanup || (floor?.action === 'unload' ? { cleanupReason: floor.reason } : null);
+        if (!forcedCleanup) return Promise.resolve({ state, listed: false, reason: 'sell_retry_cooldown' });
         // Cleanup may bypass the travel delay, but must not open another WTS.
         // Learn recipes first, as the sale path does: a learnable one is not junk.
         return LifeState.learnCraftableRecipes(state)
-            .then((learnedState) => preTradeNpcCleanup(learnedState || state, options.forcedCleanup, timestamp)).then((cleanup) => (
+            .then((learnedState) => preTradeNpcCleanup(learnedState || state, forcedCleanup, timestamp)).then((cleanup) => (
             BotWarehouse.depositCold({
                 ...cleanup.state,
                 stats: { ...cleanup.state.stats, marketSellRetryAfter: state.stats.marketSellRetryAfter }

@@ -1055,7 +1055,7 @@ class ColdSimulationKernel {
         const token = this.nextScheduleToken++;
         const current = this.states.get(id);
         const heapEntry = { characterId: id, version: Number(version),
-            dueAt: Number(dueAt || this.now()), scheduleToken: token,
+            dueAt: Math.ceil(Number(dueAt || this.now())), scheduleToken: token,
             playerWaiting: playerWaitingTransition(current?.state, kind, this),
             meetingTravel: meetingTravelTransition(current?.state, kind, this), lead };
         this.scheduleTokens.set(id, { token, version: Number(version), dueAt: heapEntry.dueAt, heapEntry });
@@ -1365,7 +1365,7 @@ class ColdSimulationKernel {
                 if (!attempt) {
                     // Its token is spent and no ACK will return it: back on the
                     // heap, or this bot stays unstepped until its next upsert.
-                    if (!this.stopping && !this.busy(id)) this.schedule(id, current.version, this.now() + STEP_STALL_MS, 'command');
+                    if (!this.stopping && !this.busy(id)) this.schedule(id, current.version, timestamp + 1000, 'command');
                     continue;
                 }
                 commandsSelected += 1;

@@ -29,6 +29,7 @@ const original = {
     learnColdRecipes: Database.learnColdRecipes,
     acceptLifecycleRow: LifeState.acceptLifecycleRow,
     syncInventorySummary: Database.syncInventorySummary,
+    reconcileConditionalSellAds: Database.reconcileConditionalSellAds,
     upsertState: LifeState.upsertState,
     learnCraftableRecipes: LifeState.learnCraftableRecipes,
     applyNpcLiquidation: LifeState.applyNpcLiquidation,
@@ -175,6 +176,7 @@ async function run() {
     };
     MarketBuyerActivity.refresh = async () => null;
     BotWarehouse.depositCold = async (state) => ({ state, count: 0 });
+    Database.reconcileConditionalSellAds = async () => [];
     await ColdMarketListingService.open({ ...materialCrafter, phase: 'cold', activity: 'shopping', level: 36,
         inventory: { ...materialCrafter.inventory, 2250: craftState.inventory[2250] },
         stats: { classId: 56, marketSellRetryAfter: 500000 } }, { now: 1000, forcedCleanup: { reason: 'npc_only_inventory' } });
@@ -193,6 +195,7 @@ run().catch((error) => {
     Database.learnColdRecipes = original.learnColdRecipes;
     LifeState.acceptLifecycleRow = original.acceptLifecycleRow;
     Database.syncInventorySummary = original.syncInventorySummary;
+    Database.reconcileConditionalSellAds = original.reconcileConditionalSellAds;
     LifeState.upsertState = original.upsertState;
     LifeState.learnCraftableRecipes = original.learnCraftableRecipes;
     LifeState.applyNpcLiquidation = original.applyNpcLiquidation;

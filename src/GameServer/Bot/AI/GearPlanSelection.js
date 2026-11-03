@@ -218,7 +218,8 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], timestamp = Da
         state.stats?.clanEquipmentOrder?.revision, JSON.stringify(replanContext)].join('|');
     const held = economy.gearPlanMemo;
     if (held?.key === key && held.spots === spots && replanContext.routeCurrent
-        && !replanContext.failure && !replanContext.invalidSource) {
+        && !replanContext.failure && !replanContext.invalidSource
+        && GearAcquisitionPlanner.isPlanSourceViableForState(state, previousPlan, { spots, timestamp })) {
         // A transport copy retains the current native progress/claims; only
         // the expensive choice is cached, never a stale whole state.
         return { ...held.result, replanContext,

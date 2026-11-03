@@ -654,9 +654,15 @@ function saleVisit(state) {
 }
 
 function marketListingIntent(state, goal = null) {
-    const forcedCleanup = state?.stats?.forcedMarketCleanup || null;
     const ordinaryVisit = state?.phase === 'cold' && state.activity === 'shopping'
         && invoke('GameServer/Bot/Economy/BotImprovementService').inTown(state);
+    const floor = ordinaryVisit && state.stats?.townVisit?.reason === 'sell_inventory'
+        && !state.stats?.forcedMarketCleanup ? SurvivalFloor.bagFor(state) : null;
+    // A prepared board plan does not unload the physical bag. Keep a hard
+    // slot/weight floor on the native sale path even when an earlier pass
+    // already ended the visit or its departure marker was not retained.
+    const forcedCleanup = state?.stats?.forcedMarketCleanup
+        || (floor?.action === 'unload' ? { cleanupReason: floor.reason } : null);
     const selling = saleVisit(state);
     if (!forcedCleanup && goal?.type !== 'sell_inventory' && !ordinaryVisit && !selling) {
         return { shouldOpen: false, state };

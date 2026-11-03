@@ -21,7 +21,7 @@ const DEFAULTS = {
     opportunisticRaidShotReserve: 1.3,
     opportunisticRaidExpeditionMs: 45 * 60000,
     phasePolicyEnabled: true,
-    directorEnabled: true,
+    directorEnabled: false,
     summaryIntervalMs: 30000,
     schedulerIntervalMs: 5000,
     // Cold simulation is invisible to players. Keep its total throughput

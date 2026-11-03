@@ -18,6 +18,7 @@ function publish(patch) { state = { ...state, ...patch, simulation: { ...state.s
 Life.acceptSimulationOwnership(id, state.simulation, state);
 Life.acceptSimulationOwnership(id + 1, state.simulation, { ...state, characterId: id + 1 });
 const db = {
+    withoutMutationAdmission: work => work(),
     recoverTradeMeetings: async cursor => cursor ? [] : [{ id: 7, actorA: id, actorB: id + 1 }],
     fetchTradeMeeting: async () => row,
     arriveTradeMeeting: async () => ({ meeting: { ...row, arrivalMask: 2 } }),

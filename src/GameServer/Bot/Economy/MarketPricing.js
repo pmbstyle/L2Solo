@@ -32,17 +32,20 @@ function traderContext(state, deps = {}) {
     // The bot's own trip to a town: none to the town it is shopping in.
     const here = state?.activity === 'shopping' ? state.currentRegion || null : null;
     const demandFor = (id, enchant, town, askingPrice) => {
-        const demand = !enchant ? require('./MarketTradeDemand').forecast(id, town, timestamp) : null;
-        if (!demand || !(askingPrice > 0)) return demand;
         const board = deps.board || economy.board;
+        const demand = !enchant ? require('./MarketDemand').forecast(id, town,
+            { board, ownerId: state.characterId, timestamp }) : null;
+        if (!demand || !(askingPrice > 0)) return demand;
         const belief = PriceBelief.prior(id, { board, characterId: Number(state.characterId),
             timestamp, understanding: trader.understanding, marketTrades: state.marketTrades || {} });
         if (!belief) return null;
         const market = PriceDecision.marketFor(id, { board, ownerId: state.characterId, town, timestamp,
             tripCost: trip, npcOffers: deps.npcOffersFor?.(id) || [], demand });
-        return { ...demand, willingUnits: PriceDecision.willingUnitsAt(belief, trader,
-            { price: askingPrice, applicableUnits: demand.applicableUnits,
-                landed: askingPrice + market.ownTrip, npcLanded: market.npcLanded }) };
+        const alternatives = PriceDecision.demandAtPrice(belief, market, trader, askingPrice);
+        const selected = alternatives.sort((a, b) => b.willingUnits * Math.exp(-trader.wait * b.delayHours)
+            - a.willingUnits * Math.exp(-trader.wait * a.delayHours))[0];
+        return selected ? { ...selected.source, applicableUnits: selected.applicableUnits,
+            willingUnits: selected.willingUnits, delayHours: selected.delayHours } : null;
     };
     let saleAmounts = null;
     const saleCount = line => {
@@ -198,7 +201,7 @@ function lineState(selfId, ctx, { price, storeType = SELL, worth = 0, fills = 0,
     return {
         price: Math.round(price),
         seenCounter: counter.deals,
-        seenAt: ctx.timestamp,
+        seenAt: Math.ceil(ctx.timestamp),
         seenItem: MarketCounters.itemDeals(selfId).deals,
         rival: ctx.board?.first(selfId, storeType, { excludeOwner: ctx.characterId, enchant })?.price || 0,
         worth: storeType === BUY ? Number(worth) || 0 : 0,
@@ -251,7 +254,7 @@ function disposition(item, ctx, { town = null, room = 1, stockQuote = false, sta
         const share = market.units > 0 ? units / market.units : 0;
         add('list', { receipts: Math.max(0, Number(ask.sold || 0) * ask.price * share),
             monetaryResidual: Math.max(0, Number(ask.residual || 0) * market.buyback * share),
-            delayHours: market.delayHours, riskHours: loss(ask.price, (ask.sold ?? units) * share) });
+            delayHours: ask.delayHours ?? market.delayHours, riskHours: loss(ask.price, (ask.sold ?? units) * share) });
     }
     const residualUnitValue = useful > 0 && room > 0 ? useful : market.buyback;
     const answer = bestAnswer(item.selfId, ctx, { units, enchant: item.enchant, residualUnitValue,

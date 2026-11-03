@@ -27,6 +27,10 @@ function fixture(file = ':memory:') {
         VALUES (11,'bot_test','Bot',0,0,100,100,0,0,0,0,0,0,0),(21,'player_test','Player',0,0,100,100,0,0,0,0,0,0,0);
         INSERT INTO clans(id,name,leaderId) VALUES (7,'BotClan',11),(8,'PlayerClan',21);
         UPDATE characters SET clanId=CASE id WHEN 11 THEN 7 ELSE 8 END;
+        INSERT INTO world_meta(key,value) VALUES
+            ('historyToken','keep-history-link'), ('boardMigrated','keep-migration'),
+            ('boardDealCount:1463','98956'), ('boardCounterDealCount:shot d','151017'),
+            ('boardDealCountsReady','1'), ('boardCounterCountsReady','1');
         INSERT INTO interaction_owners VALUES (11,1,0),(21,1,0);
         INSERT INTO board_trade_participants(characterId) VALUES (11),(21);
         INSERT INTO history_outbox(kind,payload) VALUES ('life_events','{"characterId":11,"events":[{"eventType":"death","summary":"pending","weight":1,"createdAt":2}]}');`);
@@ -78,6 +82,13 @@ function testScopes() {
                 assert.strictEqual(count(f.world, table), scope === 'all' ? 0 : 1, table);
             }
             assert.strictEqual(count(f.world, 'history_outbox'), 0);
+            const marketCounts = f.world.prepare(`SELECT key,value FROM world_meta
+                WHERE key GLOB 'boardDealCount:*' OR key GLOB 'boardCounterDealCount:*'
+                    OR key IN ('boardDealCountsReady','boardCounterCountsReady')`).all();
+            assert.strictEqual(marketCounts.length, scope === 'all' ? 0 : 4,
+                'only a full world reset discards the previous economy counters and initialization markers');
+            assert.strictEqual(f.world.prepare("SELECT value FROM world_meta WHERE key='historyToken'").get().value, 'keep-history-link');
+            assert.strictEqual(f.world.prepare("SELECT value FROM world_meta WHERE key='boardMigrated'").get().value, 'keep-migration');
             assert.deepStrictEqual(f.world.prepare('PRAGMA foreign_key_check').all(), []);
             if (scope === 'all') {
                 for (const table of [...HistoryStore.MOVED_TABLES,'clan_actions']) assert.strictEqual(count(f.history, table), 0, table);

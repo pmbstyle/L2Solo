@@ -197,27 +197,7 @@ const routeRequests = new Map();
 const publicWorkshopIndex = new (require('../Economy/PublicWorkshopIndex').PublicWorkshopIndex)();
 const publicWorkshopKeys = new Map(), workshopRevisions = new Map(), workshopDigests = new Map(), workshopScopeDigests = new Map();
 const digestToken = value => value ? `${value.xor}:${value.sum}:${value.count}` : '0:0:0';
-// A remembered refusal outlives its meeting preparation. Its check is built out
-// here, over plain values: a closure inside the preparation shares that scope and
-// would pin the step's whole economy context for the life of the entry.
-function witnessRefusalHolds(board, offers, purchase, itemId, npcAllowed) {
-    const refusals = invoke('GameServer/Bot/Economy/MeetingPriceRefusals');
-    return () => refusals.witnessCurrent(board, offers, purchase)
-        && invoke('GameServer/Bot/Economy/ProductionPolicy').allowsNpcShot(itemId) === npcAllowed;
-}
-function exactRefusalTokens(items, scopes) {
-    return [items.map(id => [id, boardIndex.itemFingerprint(id)]),
-        scopes.map(scope => [scope, MarketCounters.meetingRevisionOf(scope), digestToken(workshopScopeDigests.get(scope))])];
-}
-function sourceRefusalHolds({ exact, items, scopes, source, tokens, itemId, npcAllowed, admissionScope, admission }) {
-    const refusals = invoke('GameServer/Bot/Economy/MeetingPriceRefusals');
-    return () => (exact ? refusals.fingerprint(exactRefusalTokens(items, scopes)) === source
-        : tokens.every(([scope, board, market, workshop]) => boardIndex.groupFingerprint(scope) === board
-            && MarketCounters.meetingRevisionOf(scope) === market
-            && digestToken(workshopScopeDigests.get(scope)) === workshop))
-        && invoke('GameServer/Bot/Economy/ProductionPolicy').allowsNpcShot(itemId) === npcAllowed
-        && refusals.admissionFingerprint(boardIndex, admissionScope) === admission;
-}
+function refusalWorkshopDigest(scope) { return digestToken(workshopScopeDigests.get(scope)); }
 // A known empty workshop in the one shape the context key and the decision
 // packing read; a missing field would key a different planning input.
 const noWorkshop = () => ({ known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0 });
@@ -467,7 +447,8 @@ const occupationPlanner = new ColdOccupationPlanner({
                             updatedAt: Number(input.state.updatedAt || 0), scopes: [], offers: error.priceWitness, npcAllowed,
                             fundingDominance: true };
                         refusals.remember(slot.input.sourceState, input.board, request, error.purchase,
-                            witnessRefusalHolds(input.board, error.priceWitness, error.purchase, itemId, npcAllowed),
+                            refusals.sourceCheck(input.board, error.priceEvidence, {
+                                meetingRevisionOf: MarketCounters.meetingRevisionOf, workshopDigest: refusalWorkshopDigest }),
                             { fundingDominance: true });
                         throw error;
                     }
@@ -487,13 +468,16 @@ const occupationPlanner = new ColdOccupationPlanner({
                         updatedAt: Number(input.state.updatedAt || 0), scopes, npcAllowed, admissionScope, admission };
                     const broad = { ...base, source: refusals.fingerprint(tokens) };
                     const items = [...input.exactReads.keys()];
+                    const exactTokens = () => [items.map(id => [id, boardIndex.itemFingerprint(id)]),
+                        scopes.map(scope => [scope, MarketCounters.meetingRevisionOf(scope), digestToken(workshopScopeDigests.get(scope))])];
                     const exact = items.length > 0 && items.length <= 60
                         && [...input.exactReads].every(([id, token]) => boardIndex.itemFingerprint(id) === token);
-                    const source = exact ? refusals.fingerprint(exactRefusalTokens(items, scopes)) : broad.source;
+                    const source = exact ? refusals.fingerprint(exactTokens()) : broad.source;
                     error.priceEvidence = exact ? { ...base, items, source } : broad;
                     if (exact) error.priceFallback = broad;
                     refusals.remember(input.sourceState || input.state, input.board, request, error.purchase,
-                        sourceRefusalHolds({ exact, items, scopes, source, tokens, itemId, npcAllowed, admissionScope, admission }));
+                        refusals.sourceCheck(input.board, error.priceEvidence, {
+                            meetingRevisionOf: MarketCounters.meetingRevisionOf, workshopDigest: refusalWorkshopDigest }));
                 }
                 throw error;
             }
@@ -567,7 +551,8 @@ const occupationPlanner = new ColdOccupationPlanner({
             if (value && cursor.selectedValueHours > 0) {
                 const offer = value.exit?.offer;
                 const exit = offer ? [Number(offer.recordId), Number(offer.lineId), Number(value.exit.price), Number(offer.revision)]
-                    : value.exit?.staticId > 0 ? [0, Number(value.exit.staticId), Number(value.exit.price), 0] : null;
+                    : value.exit?.staticId > 0 ? [0, Number(value.exit.staticId), Number(value.exit.price), 0]
+                        : invoke('GameServer/Bot/Economy/ShotCraftPolicy').selectionFor(value)?.exit || null;
                 selected = { wealth: { recipeId: Number(value.recipe.recipeId), batches: Number(value.batches || 1),
                     ...(value.learning ? { scroll: (() => {
                         const purchase = value.basket.purchases.find(row => Number(row.selfId) === Number(value.recipe.recipeItemId));
@@ -1155,6 +1140,8 @@ function nativeFactsHold(replan) {
 // The existing native plan verdict. It grants no economy command or social
 // interaction.
 function nativePlanHolds(state, previousPlan, nativeReplan, timestamp, onFinalize = null) {
+    if (previousPlan?.status === 'active' && !GearAcquisitionPlanner.isPlanSourceViableForState(state, previousPlan,
+        { spots: planningSpots, timestamp })) return false;
     const wishFocus = previousPlan?.status === 'deferred' && previousPlan.strategy === 'none'
         && previousPlan.next == null && previousPlan.reason === 'wish_focus';
     const wishHolds = (wishFocus || previousPlan?.source === 'wish_network')

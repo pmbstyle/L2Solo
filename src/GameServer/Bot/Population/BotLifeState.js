@@ -832,10 +832,10 @@ function rowFromState(state) {
         spotId: persistedState.spotId || null,
         activity: persistedState.activity || 'hunting',
         phase: persistedState.phase || 'cold',
-        activityStartedAt: persistedState.timing?.activityStartedAt || null,
-        nextResolveAt: persistedState.timing?.nextResolveAt || null,
-        lastResolvedAt: persistedState.timing?.lastResolvedAt || null,
-        lastHotAt: persistedState.timing?.lastHotAt || null,
+        activityStartedAt: Math.ceil(persistedState.timing?.activityStartedAt || 0) || null,
+        nextResolveAt: Math.ceil(persistedState.timing?.nextResolveAt || 0) || null,
+        lastResolvedAt: Math.ceil(persistedState.timing?.lastResolvedAt || 0) || null,
+        lastHotAt: Math.ceil(persistedState.timing?.lastHotAt || 0) || null,
         locX: persistedState.loc?.locX || 0,
         locY: persistedState.loc?.locY || 0,
         locZ: persistedState.loc?.locZ || 0,
@@ -1168,7 +1168,12 @@ function hydrateCache() {
             // Once per bot at load: an old seed's base counts hennas a cold draw may have changed since.
             const seedRepair = ColdCombatProfile.oldSeedRepair(state.stats.coldCombat);
             if (seedRepair) state.stats.coldCombat = seedRepair;
-            if (row.nativeLearnedSkills != null || hennaRepair || seedRepair) {
+            // Recovery/potion durations once leaked fractional milliseconds
+            // into saved checkpoints. Repair SQL and cache together before
+            // publishing: rounding only the snapshot would fail native CAS.
+            const timingRepair = ['activityStartedAt', 'nextResolveAt', 'lastResolvedAt', 'lastHotAt', 'updatedAt']
+                .some(key => row[key] != null && Number.isFinite(Number(row[key])) && !Number.isInteger(Number(row[key])));
+            if (row.nativeLearnedSkills != null || hennaRepair || seedRepair || timingRepair) {
                 // Startup repair precedes cache publication and worker reads.
                 // Use the existing guarded save; do not learn/spend here.
                 if (state.phase === 'cold') {
@@ -2634,11 +2639,11 @@ const BotLifeState = {
         const workerOptions = Object.prototype.hasOwnProperty.call(options, 'workerAdmission')
             ? { workerAdmission: options.workerAdmission } : null;
 
-        const timestamp = Number(options.timestamp || now());
+        const timestamp = Math.ceil(Number(options.timestamp || now()));
         // The row's write stamp (updatedAt), a write-order key main compares:
         // the real now. A far step resolved as of its due, ahead of now
         // (ColdSimulationKernel stepLeadMs), names the real now here.
-        const writtenAt = Number(options.writtenAt || timestamp);
+        const writtenAt = Math.ceil(Number(options.writtenAt || timestamp));
         const experienceAward = ProgressionCap.applyAward(state.exp, result.materialize?.exp);
         const progressionLevel = ProgressionCap.levelForExperience(experienceAward.totalExp, Number(state.level || 1));
         let progressionState = { ...state, exp: experienceAward.totalExp, level: progressionLevel };
@@ -2844,11 +2849,13 @@ const BotLifeState = {
             },
             timing: {
                 ...(state.timing || {}),
+                ...(state.timing?.lastHotAt == null ? {} : { lastHotAt: Math.ceil(state.timing.lastHotAt) }),
                 activityStartedAt: nextActivity === state.activity
-                    ? state.timing?.activityStartedAt
+                    ? (state.timing?.activityStartedAt == null
+                        ? state.timing?.activityStartedAt : Math.ceil(state.timing.activityStartedAt))
                     : timestamp,
                 lastResolvedAt: timestamp,
-                nextResolveAt: result.nextResolveAt || timestamp + 60000
+                nextResolveAt: Math.ceil(result.nextResolveAt || timestamp + 60000)
             },
             stats: {
                 ...stats,
