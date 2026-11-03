@@ -142,6 +142,13 @@ thread: our rule, so a far bot does not re-decide on every event ([bot-ai.md](bo
   from the record (`staleHotRowFromRecord`). Not rebuilt at boot: `stats.classId` / `classProgression*` after a class
   change while hot, `stats.pk`, PvP/encounter memory, captured cold-combat base stats/effects/cooldowns.
 
+- **POP-23 the cold worker is the binding limit at ~1430 bots** (measured 2026-11-03, a fresh x50 world grown 231 →
+  1731 bots in 2 h on the 2015 laptop, code before this release, no profiler). Worker busy share 0.09 at 231 bots,
+  0.27 at 681, 0.63 at 1131, 0.93 at 1431, 1.00 from ~1580; main 0.22 → 0.56. Roughly +6 points of worker and +2.5 of
+  main per 100 bots; worker heap ~0.08 MB per bot (124 → 236 MB). At 1731 the worker is saturated: 3-163 bots overdue,
+  oldest up to 67 s, so far bots live slower than planned. The release's coldMomentGate (re-decide only at a player's
+  moment) and the readiness fix should cut this; the next profiled perf run on that world says where the worker's CPU
+  goes. 5-10k bots need the cold simulation split over several workers (per-thread table copies, TBL-7).
 ## Open questions
 
 1. One mechanism for solo, party and PvP transitions? Which DB primitive stays?

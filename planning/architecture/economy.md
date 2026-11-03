@@ -144,6 +144,12 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
   (worker), `ShotTradeDemand`, `PriceBelief.demandValue`, `MarketCounters`. `MarketDemand` looks like the entry
   (guess).
 
+- **ECO-14 trades that fail because the plan moved** (measured 2026-11-03, 2 h of a growing 1731-bot world): 548 AFK
+  market purchases and 43 buy-store sales failed with `trade_meeting_point_changed`, plus 126 post-commit economy plans
+  refused (`economy_material_protected` 60, `invalid_afk_trade_source` 55, `economy_plan_need_changed` 11). A deal is
+  agreed, then its meeting point, stock or need moves before it settles: worker and main work spent for nothing, and
+  bots that never get their item. Find why the meeting point changes between agreement and arrival (owner: the trade
+  meeting, `AfkTrade` meeting preparation / `BotAfkMarketService`) and whether the plan can hold it.
 ## Open questions
 
 1. ECO-1: worker `executePlan` only, with `reconcile`/`open` reduced to executors? — decided 2026-11-03: yes (ECO-1).

@@ -10,6 +10,9 @@ Observable: **log** (a log line), **reason** (returned to the caller), **status*
 
 Rule (CLAUDE.md): a new or changed limit gets a row here, and hitting it must be observable.
 
+**Measured capacity (2026-11-03, 2015 laptop, x50, before this release):** the cold worker saturates (busy 1.00)
+from ~1430-1580 bots; main 0.56 at 1731. See POP-23.
+
 ## Top 15 risks (silent when hit, likely at ~1700 bots)
 
 1. `BotLifeState.allStates` returns at most 2000 states: name lookup (`World`), `BotParty` bypass, startup PvP
