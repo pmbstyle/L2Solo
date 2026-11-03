@@ -196,6 +196,7 @@ function limitTargetCandidates(session, bot, candidates) {
         ? VISIBLE_TARGET_CANDIDATE_LIMIT
         : FULL_TARGET_CANDIDATE_LIMIT;
     if (candidates.length <= limit) return candidates;
+    Diagnostics.count('target_scan', 'capped', session.hotActorLod?.tier === 'visible' ? 'visible' : 'full');
     return candidates
         .map((npc) => ({ npc, distance: targetDistance(bot, npc) }))
         .sort((first, second) => first.distance - second.distance)
@@ -291,6 +292,7 @@ function findPreferredMonster(session, bot, radius, options = {}) {
                 npc,
                 evaluation: BotTargetScorer.score(scoreContext),
                 scoreContext,
+                matchupTarget,
                 claimed
             };
         })
@@ -317,8 +319,12 @@ function findPreferredMonster(session, bot, radius, options = {}) {
     }
     // Prefer a fight we can finish, but retain a visible unready candidate
     // so the caller can recover instead of wandering while exhausted.
-    const ordered = options.readyOnly ? readyRanked(bot, ranked) : ranked;
-    const scan = HuntingVisibility.select(session, 'solo', bot, ordered, candidate => candidate.npc);
+    // A solo scan's matchup is the bot's own: readiness reads the same profiles and views.
+    const ready = options.readyOnly ? readyRanked(bot, ranked, HuntingVisibility.batch(session, 'solo', bot),
+        partyActors.length ? readinessProfiles(bot) : readinessProfiles(bot, matchupProfiles, matchupStats), !partyActors.length) : null;
+    const ordered = ready ? ready.ordered : ranked;
+    const scan = HuntingVisibility.select(session, 'solo', bot, ordered, candidate => candidate.npc,
+        ready ? { start: ready.start, tail: ready.tail } : {});
     session.huntTargetScanPending = scan.pending;
     session.huntingTargetScan = { at: Date.now(), loc: botLocation(bot), radius,
         attackableNpcs: eligibleNearbyNpcs.length, eligibleAttackableNpcs: ranked.length };
@@ -357,26 +363,39 @@ function liveCurrentNpcTarget(session, bot, radius = session.huntingSearchRadius
 }
 
 // What the bot has now, once per scan; a pet keeps its own HP (actorProfiles).
-function readinessProfiles(bot) {
-    const profiles = TargetMatchup.actorProfiles([bot]);
-    return { stats: TargetMatchup.profileStats(profiles), remaining: EncounterReadiness.atVitals(profiles, bot.fetchHp(), bot.fetchMp(),
+function readinessProfiles(bot, profiles = TargetMatchup.actorProfiles([bot]), stats = TargetMatchup.profileStats(profiles)) {
+    return { stats, remaining: EncounterReadiness.atVitals(profiles, bot.fetchHp(), bot.fetchMp(),
         profiles.find(profile => profile.servitor === true)) };
 }
 // A mob the bot would take as it stands: a wounded one asks what is left of it.
-function encounterReadiness(bot, target, own = readinessProfiles(bot)) {
-    const view = TargetMatchup.targetView(target, own.stats);
+// view: the scan's own view of the target, when it was read with these stats.
+function encounterReadiness(bot, target, own = readinessProfiles(bot), view = TargetMatchup.targetView(target, own.stats)) {
     return EncounterReadiness.evaluate(own.remaining, { ...view, maxHp: target.fetchHp?.() ?? view.maxHp });
 }
-// The scan's fights: a visibility check reads the first few, so readiness stops there.
-function readyRanked(bot, ranked) {
-    const own = readinessProfiles(bot), checks = HuntingVisibility.CHECKS_PER_SCAN;
-    const ready = [], refused = [];
-    for (const candidate of ranked) {
-        if (ready.length >= checks) break;
-        candidate.readiness = encounterReadiness(bot, candidate.npc, own);
-        (candidate.readiness.ready ? ready : refused).push(candidate);
+// The scan's fights, ready ones first, and where the next visibility batch starts
+// in that order. The batch resumes where a blocked one stopped (batch.resumeId).
+// Before the refused tail: at that mob among the ready ones, or, when it is no
+// longer ready, at the first ready mob ranked after it, else at the first refused
+// one. Readiness is read up to the batch's checks and the one after it (the next
+// resume point); the fights past it stay unread between the ready and the refused,
+// so a blocked batch leaves the scan pending and the next tick reads on. Once the
+// batches reached the refused tail (batch.inTail) every fight is read and the batch
+// goes on at the resume mob's place among the refused, so the ready ones already
+// checked are not checked again and the scan ends. tail: where the refused start.
+function readyRanked(bot, ranked, batch, own, sameView = false) {
+    const resumeAt = batch.resumeId === null ? -1 : ranked.findIndex(candidate => candidate.npc.fetchId() === batch.resumeId);
+    const ready = [], refused = [], all = batch.inTail && resumeAt >= 0;
+    let start = resumeAt < 0 ? 0 : null, index = 0;
+    for (; index < ranked.length && (all || !(start !== null && ready.length > start + batch.checks)); index++) {
+        const candidate = ranked[index];
+        candidate.readiness = encounterReadiness(bot, candidate.npc, own, sameView ? candidate.matchupTarget : undefined);
+        if (!candidate.readiness.ready) { refused.push(candidate); continue; }
+        ready.push(candidate);
+        if (!all && start === null && index >= resumeAt) start = ready.length - 1;
     }
-    return [...ready, ...refused];
+    if (all) start = ready.length + Math.max(0, refused.indexOf(ranked[resumeAt]));
+    const unread = ranked.slice(index);
+    return { ordered: [...ready, ...unread, ...refused], start: start ?? ready.length, tail: ready.length + unread.length };
 }
 
 function rememberEncounterReadiness(session, target, readiness) {
