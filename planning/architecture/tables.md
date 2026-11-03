@@ -207,6 +207,7 @@ the catalogue, mob and henna data (TBL-3). The kit surface stays too (gear progr
 
 1. Kit surface and hunt tables: decided 2026-11-03, keep building; planned for gear progression and the market's
    demand estimate (above).
-2. Is "never value a spot more than 9 levels below the bot" (deep-blue cut in `SpotValueTable` `combat`) the stated
-   design? It is ours (user 10-29), not C4.
-3. Where should a staleness fingerprint fail: `npm run check` (author), the first read (log), or both?
+2. "Never value a spot more than 9 levels below the bot" (deep-blue cut in `SpotValueTable` `combat`): decided
+   2026-11-03, kept as our design (not C4; it matches C4's deep-blue drop rule gap `DEEP_BLUE_LEVEL_GAP` = 9, where
+   such mobs drop little). Cost: a bot never hunts a low spot for one item that drops there.
+3. Where should a staleness fingerprint fail: decided 2026-11-03, both — `npm run check` fails, the first read logs once (TBL-1, R2).

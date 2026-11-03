@@ -66,8 +66,8 @@ Known red in `notRunTests`: `test_beginner_shot_policy`, `test_finite_market_inc
 - **TBL-1 No staleness check against the code** (P mid, S low; high value, small cost). The header's `revision` is only
   logged (`SpotValueTable.checkCatalog`); a table built before a combat, rest, gear or potion change is used silently
   and bots choose spots and stock by the old fight. Hunt-table `fingerprints` are written, read by nobody. Fix:
-  fingerprint the src paths the generator exercises (tables.md "When to rebuild"), compare in `npm run check` and log at
-  the first read.
+  fingerprint the src paths the generator exercises (tables.md "When to rebuild"), compare in `npm run check` (fails)
+  and log once at the first read. Decided 2026-11-03: both (R2).
 - **TBL-2 Kit surface measured, never read** (P mid, S none at runtime; CI ~60 % of the curves phase). Only
   `HuntCycle.reader` reads `SpotValueTable.kitSurface`, and nothing in `src/` calls it. So the gear a bot really wears
   never moves the table's numbers until its own hunt samples exist: a weak or a strong kit chooses spots by the author's
