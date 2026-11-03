@@ -19,14 +19,13 @@ DataCache.init();
 async function run() {
     invoke('Database').init();
     assert(invoke('Database').isReady());
-    // A level-30 fighter with shots drinks ~2.8 potions an hour at -10_31 in the
-    // floor-cut table (T123: -9_31 is no spot of its own any more), so the
-    // two-hour stock exceeds the three-potion mixed stock below.
+    // A level-30 fighter at -10_31 drinking a bottle every twenty kills (the fixture's
+    // use, not the table's): the two-hour stock exceeds the three-potion mixed stock below.
     world.usePotionSpot('-10_31');
 
     const line = (selfId, amount) => ({ selfId, amount, name: DataCache.items.find((entry) => entry.selfId === selfId)?.template?.name });
     const state = {
-        // The one available canonical spot consumes potions without changing its values.
+        // The one available canonical spot, with the fixture's potion use.
         characterId: 9500001, level: 30, spotId: '-10_31', adena: 1000, phase: 'cold', activity: 'shopping',
         currentRegion: 'Giran', loc: world.town(),
         stats: { classId: 0, role: 'dps' },

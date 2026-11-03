@@ -26,6 +26,11 @@ for (const [, items] of Providers.gearCandidates(warrior)) {
     const item = items[0]; if (item) warrior.inventory[item.selfId] = { selfId: item.selfId,
         amount: 1, equipped: true, equippedCount: 1, slot: Number(item.etc.slot), enchant: 0 };
 }
+// A started potion stack: its slot is in the bag whatever the table's potion use
+// (survival bottles or the rest bottles RestPotion adds), so the bag interval below
+// turns on the shot stack's planned slot alone.
+const potionId = Number(invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(warrior).selfId);
+warrior.inventory[potionId] = { selfId: potionId, amount: 1 };
 const native = Economy.basics(warrior, deps), stock = native.stock('shots');
 const withShots = Table.value(native.bestSpotId, native.tableRole, warrior.level, true);
 // ARCH-NOTE: the use is the table's exact rate at the best spot (read from the table: a regenerated table moves it).

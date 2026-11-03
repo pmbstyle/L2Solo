@@ -2,6 +2,7 @@
 // built by the real wish network on a real board; no plan is written by hand.
 'use strict';
 const assert = require('node:assert/strict');
+const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 require('./helpers/databaseIsolation');
 require('../src/Global');
 const Generation = require('../src/GameServer/Bot/Population/RecomputeGeneration');
@@ -9,6 +10,17 @@ const Generation = require('../src/GameServer/Bot/Population/RecomputeGeneration
 async function run() {
     const Data = invoke('GameServer/DataCache'); Data.init();
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    // A review's stock is two items, shots and potions, whatever potion use a table
+    // rebuild measures (bots that rest drink none): the canonical table with its fighters
+    // drinking a bottle every twenty kills. Shots stand second when a review rolls the
+    // potions first, and gear follows both.
+    const Table = invoke('GameServer/Bot/AI/SpotValueTable');
+    const canonical = JSON.parse(fs.readFileSync(Table.DEFAULT_FILE, 'utf8')), potions = canonical.rowFields.indexOf('potions');
+    const tableDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agenda-')), tableFile = path.join(tableDir, 'potion-table.json');
+    process.on('exit', () => fs.rmSync(tableDir, { recursive: true, force: true }));
+    fs.writeFileSync(tableFile, JSON.stringify({ ...canonical,
+        rows: canonical.rows.map(rows => rows.map(row => row && row.map((value, at) => at === potions ? .05 : value))) }));
+    Table.useFile(tableFile);
     const Config = invoke('GameServer/Bot/Population/PopulationConfig');
     invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').useRowSource(() => null, () => true);
     Generation.configure({ code: '1'.repeat(40), config: '2'.repeat(64) });
