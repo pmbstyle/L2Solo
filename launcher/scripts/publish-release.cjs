@@ -9,6 +9,13 @@ const { assetUrl, repository, listReleases, channelOf, latestRelease, launcherRe
 const { readJson, writeJson, sha256 } = require('../main/files.cjs');
 
 const gh = args => execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+function publishedRelease(tag, ghClient) {
+    // The anonymous release list can still contain its pre-publication cached
+    // response. Known preview tags use the authenticated exact-tag endpoint.
+    const release = JSON.parse(ghClient(['api', `repos/${repository}/releases/tags/${tag}`]));
+    if (release.tag_name !== tag || release.draft) throw new Error(`Release ${tag} has not finished publication.`);
+    return release;
+}
 async function serverInstallers(directory, manifest, fetcher = fetch, releases) {
     const channel = channelOf(manifest.tag);
     const available = releases || await listReleases(fetcher);
@@ -46,10 +53,10 @@ async function publish({ tag = process.env.RELEASE_TAG, directory = path.resolve
     }
     if (existing && !existing.isDraft && release.channel !== 'preview') throw new Error('This release is already published. Use a new version instead of replacing its files.');
     if (release.channel === 'preview' && (sourceCommit !== launcherPackage.releaseSourceCommit || existing && existing.targetCommitish !== sourceCommit)) throw new Error('Preview source commit does not match the prepared build.');
-    const releases = await listReleases(fetcher);
+    const releases = release.channel === 'preview' ? [] : await listReleases(fetcher);
     if (existing && !existing.isDraft) {
         if (!existing.isPrerelease) throw new Error('A published preview must remain a prerelease.');
-        const published = releases.filter(item => item.tag_name === tag);
+        const published = [publishedRelease(tag, ghClient)];
         const verified = release.component === 'launcher' ? await launcherRelease(fetcher, published, '0.0.0', 'preview')
             : await latestRelease(fetcher, published, 'preview');
         if (verified.manifest.sourceCommit !== sourceCommit) throw new Error('Published preview belongs to a different source commit.');
@@ -63,7 +70,9 @@ async function publish({ tag = process.env.RELEASE_TAG, directory = path.resolve
         if (sourceCommit && manifest.sourceCommit !== sourceCommit) throw new Error('Server artifacts belong to a different source commit.');
         const archive = path.join(directory, manifest.archive.name);
         if ((await fs.promises.stat(archive)).size !== manifest.archive.bytes || await sha256(archive) !== manifest.archive.sha256) throw new Error('Server release archive checksum mismatch.');
-        launcherVersion = await serverInstallers(directory, manifest, fetcher, releases);
+        const candidates = release.channel === 'preview'
+            ? [publishedRelease(`launcher-v${manifest.minimumLauncherVersion}`, ghClient)] : releases;
+        launcherVersion = await serverInstallers(directory, manifest, fetcher, candidates);
     }
     const title = `${release.component === 'server' ? 'L2Solo Server' : 'L2Solo Launcher'} ${release.version}`;
     const prefix = launcherVersion ? `Server **${release.version}** · Launcher **${launcherVersion}**\n\nDownload the installer for your platform below. It installs the server and its Node.js runtime; Git and a system Node.js installation are not required.\n\n` : '';

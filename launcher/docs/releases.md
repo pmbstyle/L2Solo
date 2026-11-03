@@ -30,6 +30,8 @@ Download a **L2Solo Launcher Preview** installer from the preview server or laun
 
 To exercise the entire update path, install preview N, create a test world and backup, then use a later develop build N+1. Check server migration/rollback, world/history preservation, offline start and interrupted downloads. On Windows NSIS and Linux AppImage, check the application update and restart too; on macOS, replace the closed Preview app using its next DMG. CI package tests do not substitute for an installed previous-to-next application walkthrough. After validation, merge the reviewed source into `main` and publish stable component tags.
 
+The preview publisher resolves known component tags through the authenticated exact-tag API, including the server's companion launcher and an already published preview being retried. It does not discover them through the anonymous release list, whose cached response can lag publication. Drafts and mismatched tags are rejected; the normal version, source commit, installer and checksum checks still apply.
+
 ## Release notes
 
 Write player-facing changes in `release-notes/server.md` and `release-notes/launcher.md` as part of the update PR. The publisher uses these reviewed files for both preview and stable release bodies, adds component versions/download guidance, and labels previews with their source commit. Empty notes prevent publication. GitHub-generated PR lists are no longer the user-facing description. The launcher reads each release body from GitHub and displays server and launcher notes as plain text; external HTML is never rendered.
