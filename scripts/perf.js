@@ -14,7 +14,8 @@
 // Window (before / after a change, on a launcher save):
 //   node scripts/perf.js saves [--saves=<dir>]
 //   node scripts/perf.js prepare [--minutes=60] [--name=<save name>]     (grows a world, saves it)
-//   node scripts/perf.js run --save=<id> [--scenario=cold|hot] [--warmup=5] [--minutes=10] [--diagnostics] [--keep-world]
+//   node scripts/perf.js run --save=<id> [--scenario=cold|hot] [--warmup=5] [--minutes=10] [--diagnostics[=false]] [--keep-world]
+//       hot: [--players=1] [--route=<places>] [--route-minutes=3]   (players teleport along the fullest places)
 //   node scripts/perf.js report [<run folder>]
 //   node scripts/perf.js compare <run A> <run B>   (folders, or names under tmp/perf/runs)
 

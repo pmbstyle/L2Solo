@@ -19,7 +19,7 @@ const round = (value, digits = 1) => Math.round(value * 10 ** digits) / 10 ** di
 // 2026-11-03) moved cores and busy shares 3-4 %, long turns a minute 10-16 %, heap at the end
 // 9-16 %, the sampled growth up to 50 % and the single longest turn 30-90 %. A change inside these
 // (with some margin) is marked "noise": it needs more runs, or a longer window, to mean anything.
-const NOISE = [[/cores|busy %/, 0.06], [/gc %/, 0.3], [/long turns\/min/, 0.2], [/heap end|rss/, 0.2],
+const NOISE = [[/% cpu/, 0.15], [/cores|busy %/, 0.06], [/activation|cooldown/, 0.3], [/packets|KB/, 0.2], [/gc %/, 0.3], [/long turns\/min/, 0.2], [/heap end|rss/, 0.2],
     [/sampled growth/, 0.6], [/longest|player .* max/, 1], [/player /, 0.3]];
 
 function delta(label, a, b) {
@@ -39,6 +39,10 @@ function rows(a, b) {
         out.push([`${label} busy %`, x.busyPct, y.busyPct], [`${label} gc %`, x.gcPct, y.gcPct],
             [`${label} long turns/min`, x.longTurnsPerMin, y.longTurnsPerMin], [`${label} longest ms`, x.longestMs, y.longestMs],
             [`${label} p95 chunk longest ms`, x.chunkLongestP95Ms, y.chunkLongestP95Ms]);
+        for (const part of new Set([...(x.cpuParts || []), ...(y.cpuParts || [])].map(row => row.part))) {
+            const share = (t) => t.cpuParts?.find(row => row.part === part)?.pct ?? 0;
+            out.push([`${label} ${part} % cpu`, share(x), share(y)]);
+        }
     }
     if (a.player || b.player) {
         out.push(['player hot bots avg', a.player?.hotAvg, b.player?.hotAvg],
@@ -46,7 +50,15 @@ function rows(a, b) {
             ['player wait p99 ms', a.player?.schedule.p99Ms, b.player?.schedule.p99Ms],
             ['player wait max ms', a.player?.schedule.maxMs, b.player?.schedule.maxMs],
             ['player handler p95 ms', a.player?.handler.p95Ms, b.player?.handler.p95Ms],
-            ['player handler p99 ms', a.player?.handler.p99Ms, b.player?.handler.p99Ms]);
+            ['player handler p99 ms', a.player?.handler.p99Ms, b.player?.handler.p99Ms],
+            ['player packets/s', a.player?.packetsPerSecond, b.player?.packetsPerSecond],
+            ['player KB/s', a.player?.kbPerSecond, b.player?.kbPerSecond]);
+    }
+    if (a.transitions || b.transitions) {
+        for (const kind of ['activation', 'cooldown']) {
+            const x = a.transitions?.[kind], y = b.transitions?.[kind];
+            out.push([`${kind}s`, x?.count, y?.count], [`${kind} avg ms`, x?.avgMs, y?.avgMs], [`${kind} p95 ms`, x?.p95Ms, y?.p95Ms]);
+        }
     }
     out.push(['main heap end MB', a.memory.mainHeapUsedMb?.end, b.memory.mainHeapUsedMb?.end],
         ['rss max MB', a.memory.rssMb?.max, b.memory.rssMb?.max]);

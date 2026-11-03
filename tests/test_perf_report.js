@@ -40,9 +40,12 @@ jsonl('timeline-20261103.jsonl', [
     { type: 'cpu', t: iso(start + 61000), thread: 'main', instance: 0, ms: 60000, busyMs: 6000, gcMs: 0, longestMs: 120,
         longTurns: 4, profile: 'cpu/b.cpuprofile' },
     // The hot scenario's player: 20 probes, one waited 200 ms for the loop.
-    { type: 'player', t: iso(start + 30000), scheduleMs: [...Array(19).fill(2), 200], handlerMs: Array(20).fill(1), errors: 0, hot: 30 },
+    { type: 'player', t: iso(start + 30000), scheduleMs: [...Array(19).fill(2), 200], handlerMs: Array(20).fill(1), errors: 0, hot: 30,
+        players: 2, packets: 1200, bytes: 2 * 30 * 1024 * 10, seconds: 30, moves: 2 },
     { type: 'player', t: iso(end + 30000), scheduleMs: [999], handlerMs: [999], errors: 0, hot: 99 },
     { type: 'summary', t: iso(start + 30000), main: { memory: { heapUsed: 100 * MB, rss: 300 * MB }, processCpuMs: { user: 9000, system: 1000 } },
+        population: { metrics: { delta: { coldOwnerHandoffs: 3 }, transitions: { activation: { count: 3, avgMs: 100, p95Ms: 180, maxMs: 200 },
+            cooldown: { count: 1, avgMs: 40, p95Ms: 40, maxMs: 40 } } } },
         coldQueue: { overdue: 1 }, heaps: { main: { usedMb: 100 } }, recorder: { costMs: 60, inspectorMs: 0 } },
     { type: 'summary', t: iso(end), main: { memory: { heapUsed: 120 * MB, rss: 310 * MB }, processCpuMs: { user: 14000, system: 0 } },
         coldQueue: { overdue: 3 }, heaps: { main: { usedMb: 120 } }, recorder: { costMs: 60, inspectorMs: 0 } }
@@ -79,6 +82,12 @@ try {
     assert.deepEqual(s.player.schedule, { samples: 20, p50Ms: 2, p95Ms: 2, p99Ms: 200, maxMs: 200 }, 'probes of the window only');
     assert.equal(s.player.handler.p99Ms, 1);
     assert.equal(s.player.hotAvg, 30);
+    assert.equal(s.player.packetsPerSecond, 20, '1200 packets in 30 s to 2 players');
+    assert.equal(s.player.kbPerSecond, 10);
+    assert.equal(s.player.moves, 2);
+    assert.deepEqual(s.transitions, { activation: { count: 3, avgMs: 100, p95Ms: 180, maxMs: 200 },
+        cooldown: { count: 1, avgMs: 40, p95Ms: 40, maxMs: 40 }, handoffs: 3 });
+    assert.deepEqual(main.cpuParts, [{ part: 'world, actors, combat', ms: 60, pct: 100 }], 'World.js counts as world');
     assert.deepEqual(s.player.over, ['schedule p99 200 > 120 ms', 'schedule max 200 > 150 ms']);
     assert.deepEqual(s.memory.mainHeapUsedMb, { start: 100, end: 120, max: 120 });
     assert.deepEqual(s.memory.heaps.main, { start: 100, end: 120, max: 120 });

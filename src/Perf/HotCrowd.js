@@ -2,31 +2,50 @@
 
 const { performance } = require('perf_hooks');
 
-// The hot scenario of a window run (scripts/perf/window.js sets L2NODE_PERF_SCENARIO=hot): one player
-// stands where the most cold bots hunt, and the population's own activation heats the crowd around
-// them (activateNearPlayers counts this session as a real player: not a BotSession, account not
-// bot_*). The bots become hot by the path a real player causes; nothing here ticks them. A probe
-// measures what that player feels: every 50 ms their position packet goes through ValidatePosition,
-// timing how late the timer fired (the event loop the packet waited for) and how long the handler
-// ran. Samples go to the live recorder's timeline as "player" lines every 30 s.
+// The hot scenario of a window run (scripts/perf/window.js sets L2NODE_PERF_SCENARIO=hot): players
+// stand where the most cold bots hunt, and the population's own activation heats the crowd around
+// them (activateNearPlayers counts these sessions as real players: not a BotSession, account not
+// bot_*). The bots become hot by the path a real player causes; nothing here ticks them.
+// - L2NODE_PERF_PLAYERS: players, each at another of the fullest places (two activation radii
+//   apart, so their crowds do not merge);
+// - L2NODE_PERF_ROUTE: places on a route; every L2NODE_PERF_ROUTE_MINUTES each player teleports
+//   (the gatekeeper's teleport) to the next one, so crowds cool behind them and heat ahead: the
+//   cold <-> hot transitions a moving player causes, all through the window;
+// - a probe on the first player: every 50 ms their position packet goes through ValidatePosition,
+//   timing how late the timer fired (the event loop the packet waited for) and the handler.
+// Every 30 s a "player" line goes to the live recorder's timeline: probe samples, packets and bytes
+// the players were sent, moves, hot bots.
 
 const ACCOUNT = 'perf_player';
 const PROBE_MS = 50;
 const FLUSH_MS = 30000;
-// Bots are grouped in cells this wide to find the crowd (activationRadius is 9000 by default).
+// Bots are grouped in cells this wide to find the crowds.
 const CELL = 3000;
 
+const envNumber = (name, fallback, min, max) => {
+    const value = Number(process.env[name]);
+    return Number.isFinite(value) ? Math.max(min, Math.min(max, Math.floor(value))) : fallback;
+};
+
+function packetBytes(packet) {
+    if (Buffer.isBuffer(packet)) return packet.length;
+    if (packet?.buffer && Buffer.isBuffer(packet.buffer)) return packet.buffer.length;
+    return Number(packet?.length || 0);
+}
+
 class PlayerSession {
-    constructor(actor) {
-        this.accountId = ACCOUNT;
+    constructor(accountId, actor) {
+        this.accountId = accountId;
         this.actor = actor;
         this.packets = 0;
+        this.bytes = 0;
     }
 
     fetchAccountId() { return this.accountId; }
-    dataSendToMe() { this.packets += 1; }
-    dataSendToOthers() { this.packets += 1; }
-    dataSendToMeAndOthers() { this.packets += 1; }
+    sent(packet) { this.packets += 1; this.bytes += packetBytes(packet); }
+    dataSendToMe(packet) { this.sent(packet); }
+    dataSendToOthers(packet) { this.sent(packet); }
+    dataSendToMeAndOthers(packet) { this.sent(packet); }
 }
 
 function positionPacket(actor, sequence) {
@@ -38,9 +57,9 @@ function positionPacket(actor, sequence) {
     return packet;
 }
 
-// Where the most cold hunting bots are: a bot's own location in the fullest cell (a point on
-// walkable ground).
-function crowdLocation(states) {
+// The fullest cells of cold hunting bots, fullest first, each at least `apart` from the ones taken;
+// a place is a bot's own location in its cell (a point on walkable ground).
+function crowdLocations(states, count = 1, apart = 0) {
     const cells = new Map();
     for (const state of states) {
         const loc = state.loc;
@@ -50,17 +69,29 @@ function crowdLocation(states) {
         cell.count += 1;
         cells.set(key, cell);
     }
-    const best = [...cells.values()].sort((a, b) => b.count - a.count)[0];
-    return best ? { ...best.loc, bots: best.count } : null;
+    const places = [];
+    for (const cell of [...cells.values()].sort((a, b) => b.count - a.count)) {
+        if (places.length >= count) break;
+        if (places.some(place => Math.hypot(place.locX - cell.loc.locX, place.locY - cell.loc.locY) < apart)) continue;
+        places.push({ locX: cell.loc.locX, locY: cell.loc.locY, locZ: cell.loc.locZ, bots: cell.count });
+    }
+    return places;
+}
+
+function crowdLocation(states) {
+    return crowdLocations(states, 1)[0] || null;
 }
 
 const HotCrowd = {
     started: false,
-    session: null,
+    players: [],
 
     start() {
         if (process.env.L2NODE_PERF_SCENARIO !== 'hot' || this.started) return;
         this.started = true;
+        this.count = envNumber('L2NODE_PERF_PLAYERS', 1, 1, 20);
+        this.routeStops = envNumber('L2NODE_PERF_ROUTE', 0, 0, 50);
+        this.routeMs = envNumber('L2NODE_PERF_ROUTE_MINUTES', 3, 1, 120) * 60000;
         const timer = setInterval(() => {
             const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
             if (!Coordinator.ready || !Coordinator.snapshotsLoaded) return;
@@ -71,25 +102,36 @@ const HotCrowd = {
 
     place() {
         const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+        const Config = invoke('GameServer/Bot/Population/PopulationConfig');
         const BotManager = invoke('GameServer/Bot/BotManager');
-        const loc = crowdLocation(LifeState.allStates(100000));
-        if (!loc) {
+        this.stops = crowdLocations(LifeState.allStates(100000), Math.max(this.count, this.routeStops),
+            2 * Number(Config.activationRadius || 9000));
+        if (!this.stops.length) {
             utils.infoWarn('Perf', 'hot scenario: no cold hunting bot to stand by');
             return;
         }
-        utils.infoSuccess('Perf', 'hot scenario: player at %d,%d,%d among %d cold hunters', loc.locX, loc.locY, loc.locZ, loc.bots);
-        BotManager.provisionAndSpawn({ username: ACCOUNT, name: 'PerfPlayer', race: 0, sex: 0, classId: 0, face: 0,
-            hair: 0, hairColor: 0, plan: 'hunting', fullNewbieBlessing: false,
-            locX: loc.locX, locY: loc.locY, locZ: loc.locZ }, 0);
+        utils.infoSuccess('Perf', 'hot scenario: %d player(s), %d place(s)%s: %s', this.count, this.stops.length,
+            this.routeStops ? `, moving every ${this.routeMs / 60000} min` : '',
+            this.stops.map(stop => `${stop.locX},${stop.locY} (${stop.bots} cold hunters)`).join('; '));
+        this.step = 0;
+        for (let index = 0; index < this.count; index++) {
+            const stop = this.stops[index % this.stops.length];
+            const account = `${ACCOUNT}${index + 1}`;
+            BotManager.provisionAndSpawn({ username: account, name: `PerfPlayer${index + 1}`, race: 0, sex: 0, classId: 0,
+                face: 0, hair: 0, hairColor: 0, plan: 'hunting', fullNewbieBlessing: false,
+                locX: stop.locX, locY: stop.locY, locZ: stop.locZ }, index);
+        }
         const wait = setInterval(() => {
-            const source = BotManager.sessions.find(session => session?.actor && session.accountId === ACCOUNT);
-            if (!source) return;
+            const sources = BotManager.sessions.filter(session => session?.actor && String(session.accountId).startsWith(ACCOUNT));
+            if (sources.length < this.count) return;
             clearInterval(wait);
-            this.attach(source);
+            sources.sort((a, b) => a.accountId.localeCompare(b.accountId, 'en', { numeric: true })).forEach(source => this.attach(source));
+            this.probe();
+            if (this.routeStops > 1) setInterval(() => this.move(), this.routeMs).unref?.();
         }, 500);
     },
 
-    // The spawned character leaves the bot sessions (no AI of its own) and enters the world as a user.
+    // A spawned character leaves the bot sessions (no AI of its own) and enters the world as a user.
     attach(source) {
         const BotManager = invoke('GameServer/Bot/BotManager');
         source.aiActive = false;
@@ -97,39 +139,56 @@ const HotCrowd = {
         source.aiTimeout = null;
         invoke('GameServer/Bot/AI/HotAiDispatcher').cancel(source);
         BotManager.sessions = BotManager.sessions.filter(session => session !== source);
-        this.session = new PlayerSession(source.actor);
-        source.actor.session = this.session;
-        invoke('GameServer/World/World').insertUser(this.session);
-        this.probe();
+        const player = new PlayerSession(source.accountId, source.actor);
+        source.actor.session = player;
+        invoke('GameServer/World/World').insertUser(player);
+        this.players.push(player);
+    },
+
+    move() {
+        this.step += 1;
+        this.moves = (this.moves || 0) + this.players.length;
+        this.players.forEach((player, index) => {
+            const stop = this.stops[(index + this.step) % this.stops.length];
+            invoke(path.actor).teleportTo(player, player.actor, { locX: stop.locX, locY: stop.locY, locZ: stop.locZ, head: 0 });
+        });
     },
 
     probe() {
         const ValidatePosition = invoke('GameServer/Network/Request/ValidatePosition');
         const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
         const Recorder = invoke('Perf/LiveRecorder');
+        const first = this.players[0];
         const round = (ms) => Math.round(ms * 10) / 10;
         let schedule = [], handler = [], errors = 0, sequence = 0, expected = performance.now() + PROBE_MS;
+        let sent = { packets: 0, bytes: 0 };
         setInterval(() => {
             const now = performance.now();
             schedule.push(round(Math.max(0, now - expected)));
             expected = now + PROBE_MS;
             const began = performance.now();
             try {
-                ValidatePosition(this.session, positionPacket(this.session.actor, sequence++));
+                ValidatePosition(first, positionPacket(first.actor, sequence++));
             } catch {
                 errors += 1;
             }
             handler.push(round(performance.now() - began));
         }, PROBE_MS).unref?.();
         setInterval(() => {
+            const packets = this.players.reduce((sum, player) => sum + player.packets, 0);
+            const bytes = this.players.reduce((sum, player) => sum + player.bytes, 0);
             Recorder.note('player', { scheduleMs: schedule, handlerMs: handler, errors, hot: LifeState.counts().hot,
-                packets: this.session.packets });
+                players: this.players.length, packets: packets - sent.packets, bytes: bytes - sent.bytes,
+                seconds: FLUSH_MS / 1000, moves: this.moves || 0 });
+            sent = { packets, bytes };
             schedule = [];
             handler = [];
             errors = 0;
+            this.moves = 0;
         }, FLUSH_MS).unref?.();
     }
 };
 
 module.exports = HotCrowd;
 module.exports.crowdLocation = crowdLocation;
+module.exports.crowdLocations = crowdLocations;

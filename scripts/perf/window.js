@@ -148,6 +148,11 @@ async function run(flags) {
     if (!flags.save) throw new Error('Use --save=<id> (node scripts/perf.js saves lists them)');
     const warmup = Number(flags.warmup || 5), minutes = Number(flags.minutes || 10);
     if (!(warmup >= 0) || !(minutes > 0)) throw new Error('Use --warmup=<min> --minutes=<min>');
+    // The transition counters and timings live in PopulationMetrics behind developerDiagnostics: on
+    // by default for hot (--diagnostics=false turns it off), off for cold.
+    const diagnostics = flags.diagnostics === undefined ? scenario === 'hot' : flags.diagnostics !== 'false';
+    const crowd = scenario === 'hot' ? { players: Number(flags.players || 1), route: Number(flags.route || 0),
+        routeMinutes: Number(flags['route-minutes'] || 3) } : null;
     const { sha, dirty } = commit();
     const dir = path.join(PERF_DIR, 'runs', `${sha}${dirty ? '+' : ''}-${scenario}-${stamp()}`);
     fs.mkdirSync(dir, { recursive: true });
@@ -157,12 +162,14 @@ async function run(flags) {
     // only at the window's edges.
     writeIni(dir, { live: true, dir, keepProfileMs: 1, keepProfiles: 100000, heapEveryMinutes: 100000 });
     const meta = { sha, dirty, scenario, save: { id: flags.save, name: save.name }, bots, warmupMinutes: warmup,
-        windowMinutes: minutes, diagnostics: !!flags.diagnostics, node: process.version, startedAt: new Date().toISOString() };
+        windowMinutes: minutes, diagnostics, crowd, node: process.version, startedAt: new Date().toISOString() };
     fs.writeFileSync(path.join(dir, 'run.json'), `${JSON.stringify(meta, null, 2)}\n`);
     say(`${path.relative(ROOT, dir)}: ${save.name}, bots ${JSON.stringify(bots)}; ${warmup} min warm-up, ${minutes} min window`);
     // No seeding: the world is the save's, the same rows in every run.
     const server = startServer(dir, { BOT_POPULATION_SEED_DELAY_MS: String(86400000), L2NODE_PERF_SCENARIO: scenario,
-        ...(flags.diagnostics ? { BOT_DEVELOPER_DIAGNOSTICS: '1' } : {}) });
+        ...(diagnostics ? { BOT_DEVELOPER_DIAGNOSTICS: '1' } : {}),
+        ...(crowd ? { L2NODE_PERF_PLAYERS: String(crowd.players), L2NODE_PERF_ROUTE: String(crowd.route),
+            L2NODE_PERF_ROUTE_MINUTES: String(crowd.routeMinutes) } : {}) });
     try {
         await hold(server, dir, warmup * 60000, 'warm-up');
         await dumpHeaps(dir, server);
