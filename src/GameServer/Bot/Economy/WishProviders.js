@@ -1291,23 +1291,26 @@ function knownWorkshop(recipe, state, ctx, deps) {
 }
 // Translate the chosen shared wish into the existing equipment craft owner
 // or an opt-in hot stock visit, using the already built graph.
-function personalCraftPlan(state, context, { allowStock = false } = {}) {
-    const leaf = context?.network?.activity;
+function personalCraftPlan(state, context, { allowStock = false, wishKey = null } = {}) {
+    // An equipment project may retain its inputs while a survival wish owns
+    // the action. Read its existing graph without assigning it that action.
+    const leaf = wishKey ? null : context?.network?.activity;
+    const rootKey = wishKey || leaf?.rootKey;
     const paidInputs = state.stats?.equipmentPlan?.crystalPreparation && need('./BotCrystallization').preparation(state);
     if (paidInputs && leaf?.rootKey === paidInputs.key) return paidInputs.plan;
-    if (!leaf || !leaf.rootKey || !['crafting', 'shopping', 'hunting', 'improving'].includes(leaf.activity)) return null;
-    const wish = context.network.queue.find(row => row.key === leaf.rootKey)
-        || { object: context.projection?.nodes?.find(row => row.key === leaf.rootKey)?.object,
-            plan: context.network.plans.get(leaf.rootKey) };
-    const targetId = Number(wish?.object?.itemId || leaf.rootKey.split(':')[1]);
-    const stock = allowStock && state.phase === 'hot' && /^stock:(shots|potions|scrolls)$/.test(leaf.rootKey);
+    if (!rootKey || !wishKey && !['crafting', 'shopping', 'hunting', 'improving'].includes(leaf?.activity)) return null;
+    const wish = context.network.queue.find(row => row.key === rootKey)
+        || { object: context.projection?.nodes?.find(row => row.key === rootKey)?.object,
+            plan: context.network.plans.get(rootKey) };
+    const targetId = Number(wish?.object?.itemId || rootKey.split(':')[1]);
+    const stock = allowStock && state.phase === 'hot' && /^stock:(shots|potions|scrolls)$/.test(rootKey);
     const clanSupply = wish.object?.clanSupply && need('./ClanCrystalSupply').requirement(state);
-    if (!targetId || !leaf.rootKey.startsWith('power:') && !stock && !clanSupply) return null;
+    if (!targetId || !rootKey.startsWith('power:') && !stock && !clanSupply) return null;
     if (stock && (leaf.activity !== 'crafting' || leaf.funding || !wish?.funded)) return null;
     // Ready blacksmith exchanges cost no money, so their root need not be in
     // the spending queue. Route the native selected leaf to the equipment
     // owner; it cannot be executed by the dwarf workshop/production owner.
-    const dual = leaf.kind === 'craft' && leaf.activity === 'crafting' && leaf.executable && !leaf.funding
+    const dual = leaf?.kind === 'craft' && leaf.activity === 'crafting' && leaf.executable && !leaf.funding
         ? DualSwords.resolveByRecipeId(leaf.recipeId) : null;
     if (dual?.productId === targetId && dual.materials.every(row =>
         Number(state.inventory?.[row.selfId]?.amount || 0) >= row.amount)) return {
@@ -1321,7 +1324,7 @@ function personalCraftPlan(state, context, { allowStock = false } = {}) {
     };
     const providers = {}, components = {}, visited = new Set(), crystalInputs = new Map();
     let finalRecipe = null, crystalExchange = null, unseal = null;
-    let exchange = leaf.kind === 'luxury_exchange' && Number(leaf.improvement?.itemId) === targetId ? leaf.improvement : null;
+    let exchange = leaf?.kind === 'luxury_exchange' && Number(leaf.improvement?.itemId) === targetId ? leaf.improvement : null;
     const visit = (plan, depth = 0) => {
         if (!plan || depth > 8 || visited.has(plan)) return;
         visited.add(plan);
@@ -1348,7 +1351,7 @@ function personalCraftPlan(state, context, { allowStock = false } = {}) {
         }
         for (const row of plan.requirements || []) visit(row.plan || context.network.plans.get(row.key), depth + 1);
     };
-    visit(wish?.plan || context.network.plans.get(`item:${targetId}`));
+    visit(wish?.plan || context.network.plans.get(rootKey) || context.network.plans.get(`item:${targetId}`));
     if (clanSupply) {
         const plan = clanSupply.plan;
         const inputs = [...crystalInputs].map(([selfId, amount]) => ({ selfId, amount }));
@@ -1359,16 +1362,16 @@ function personalCraftPlan(state, context, { allowStock = false } = {}) {
                     materials: [...(crystalExchange?.materials || []).map(row => ({ ...row })), ...inputs] } } : {}) };
     }
     if (exchange) return { strategy: 'luxury_exchange', status: 'active',
-        target: { selfId: targetId, slot: Number(wish.object?.slot || leaf.rootKey.split(':')[2]) }, exchange,
+        target: { selfId: targetId, slot: Number(wish.object?.slot || rootKey.split(':')[2]) }, exchange,
         materials: [...exchange.materials.map(row => ({ ...row })),
             ...[...crystalInputs].map(([selfId, amount]) => ({ selfId, amount }))],
-        ...(leaf.activity === 'hunting' ? { next: { spotId: leaf.spotId, npcId: leaf.npcId,
+        ...(leaf?.activity === 'hunting' ? { next: { spotId: leaf.spotId, npcId: leaf.npcId,
             selfId: Number(leaf.itemId || leaf.object), sourceKind: leaf.kind } } : {}),
         valueRate: Number(wish.ratio || 0), source: 'wish_network' };
     if (!finalRecipe && !unseal) return null;
     return { strategy: 'craft', status: 'active',
-        target: { selfId: targetId, slot: stock ? 0 : Number(wish.object?.slot || leaf.rootKey.split(':')[2]) },
-        ...(leaf.activity === 'hunting' ? { next: { spotId: leaf.spotId, npcId: leaf.npcId,
+        target: { selfId: targetId, slot: stock ? 0 : Number(wish.object?.slot || rootKey.split(':')[2]) },
+        ...(leaf?.activity === 'hunting' ? { next: { spotId: leaf.spotId, npcId: leaf.npcId,
             selfId: Number(leaf.itemId || leaf.object), sourceKind: leaf.kind } } : {}),
         recipeId: Number(finalRecipe?.recipeId) || null,
         outputAmount: Number(wish.object?.amount || 1) + (stock ? Math.max(0, Number(state.inventory?.[targetId]?.amount) || 0) : 0),

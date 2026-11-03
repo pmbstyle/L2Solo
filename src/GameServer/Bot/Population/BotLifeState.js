@@ -362,8 +362,8 @@ function reconcileFulfilledEquipmentPlan(state = {}) {
         stats.marketLead = null;
     }
     let retained = plan?.inputPreparation;
-    while (retained && (!retained.recipeId || !retained.target?.selfId
-        || Number(retained.target.selfId) === Number(plan.target.selfId)
+    while (retained && (retained.reason === 'cancelled'
+        || !(retained.recipeId || retained.exchange?.kind === 'luxury_exchange' || retained.combine) || !retained.target?.selfId
         || equipmentTargetFulfilled({ equipmentPlan: retained }, state.inventory))) retained = retained.inputPreparation;
     if (retained) {
         // Completing a temporary equipment goal must not erase the separate

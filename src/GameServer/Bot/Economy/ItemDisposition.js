@@ -420,6 +420,23 @@ function retainedEquipmentAmounts(state) {
     return result;
 }
 
+// A paused project parks its captured share in the bank first. An executing
+// project uses the bag first. Allocate the bank once across both owners.
+function storedEquipmentAmounts(state, stored = null) {
+    const Warehouse = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
+    stored ||= Warehouse.ready() ? Warehouse.inventory(state) : {};
+    const primary = equipmentMaterialAmounts(state), retained = retainedEquipmentAmounts(state);
+    const paused = state?.stats?.equipmentPlan?.status === 'deferred';
+    const result = { primary: {}, retained: {} };
+    for (const id of new Set([...Object.keys(primary), ...Object.keys(retained)])) {
+        const bank = Math.max(0, Number(stored[id]?.amount || 0) - Number(stored[id]?.reservedAmount || 0));
+        const needed = Number(primary[id] || 0), bag = Number(state.inventory?.[id]?.amount || 0);
+        result.primary[id] = Math.min(bank, paused ? needed : Math.max(0, needed - bag));
+        result.retained[id] = Math.min(Math.max(0, bank - result.primary[id]), Number(retained[id] || 0));
+    }
+    return result;
+}
+
 function reservedUpgradeAmounts(state) {
     const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
     const role = Planner.roleFor(state);
@@ -463,6 +480,10 @@ function reservedEquipmentAmounts(state, options = {}) {
     if (!state) return {};
     const exchange = equipmentInputPlan(state);
     const inputs = equipmentMaterialAmounts(state, state.stats?.equipmentPlan, options);
+    const Warehouse = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
+    const stored = state[Warehouse.STOCK_INCLUDED] ? null : storedEquipmentAmounts(state);
+    if (stored && state.stats?.equipmentPlan?.status === 'deferred')
+        for (const [id, amount] of Object.entries(stored.primary)) inputs[id] = Math.max(0, Number(inputs[id] || 0) - amount);
     const upgrades = reservedUpgradeAmounts(state);
     const unseal = exchange?.unseal;
     if (unseal && Number(exchange.target?.selfId) === Number(unseal.productId)
@@ -471,8 +492,8 @@ function reservedEquipmentAmounts(state, options = {}) {
         upgrades[unseal.sourceId] = Math.max(Number(upgrades[unseal.sourceId] || 0), 1);
     for (const [id, amount] of Object.entries(reservedHennaAmounts(state)))
         upgrades[id] = Math.max(Number(upgrades[id] || 0), amount);
-    for (const [id, amount] of Object.entries(retainedEquipmentAmounts(state)))
-        upgrades[id] = Math.max(Number(upgrades[id] || 0), amount);
+    const retained = Object.fromEntries(Object.entries(retainedEquipmentAmounts(state))
+        .map(([id, amount]) => [id, Math.max(0, amount - Number(stored?.retained[id] || 0))]));
     for (const [id, amount] of Object.entries(invoke('GameServer/Bot/AI/PersonalGearProgression').preparedAmounts(state)))
         upgrades[id] = Math.max(Number(upgrades[id] || 0), amount);
     for (const book of invoke('GameServer/Skills/SkillBookCatalog').requiredBooks(state)) {
@@ -482,9 +503,9 @@ function reservedEquipmentAmounts(state, options = {}) {
     if (targetId && Number(state?.inventory?.[targetId]?.amount || 0) > 0
         && !state.inventory[targetId].equipped) upgrades[targetId] = 1;
     const clan = options.clan === false ? {} : invoke('GameServer/Clan/ClanSupplyPolicy').reservedAmounts(state);
-    return [...new Set([...Object.keys(inputs), ...Object.keys(upgrades), ...Object.keys(clan)])].reduce((reserved, selfId) => {
+    return [...new Set([...Object.keys(inputs), ...Object.keys(upgrades), ...Object.keys(retained), ...Object.keys(clan)])].reduce((reserved, selfId) => {
         reserved[selfId] = Math.max(Number(inputs[selfId] || 0),
-            Number(upgrades[selfId] || 0)) + Number(clan[selfId] || 0);
+            Number(upgrades[selfId] || 0)) + Number(retained[selfId] || 0) + Number(clan[selfId] || 0);
         return reserved;
     }, {});
 }
@@ -523,7 +544,9 @@ function reservationInputKey(state = {}) {
     return JSON.stringify([Number(plan?.target?.selfId || 0), craftInputs, combine,
         plan?.strategy === 'luxury_exchange' && plan.status === 'active' ? quantities(plan.materials) : null,
         invoke('GameServer/Clan/ClanSupplyPolicy').version(state), retainedEquipmentAmounts(state), reservedHennaAmounts(state),
-        state.stats?.equipmentPlan?.heldInputs ?? null, productionInputAmounts(state)]);
+        state.stats?.equipmentPlan?.heldInputs ?? null, productionInputAmounts(state),
+        invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').contentIdentity(state),
+        !!state[invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').STOCK_INCLUDED]]);
 }
 
 function actorItemValue(item, property, method) {
@@ -737,8 +760,8 @@ function warehouseCandidates(state) {
         if (active && !Policy.stage(state, [])) {
             const stock = Policy.available(state, Object.values(stored));
             const combined = { ...state, inventory: stock.combined };
-            const demand = equipmentMaterialAmounts(combined, active.plan);
-            const keys = new Set(Policy.keyInputs(state, active.recipe).map(row => Number(row.selfId)));
+            const demand = equipmentMaterialAmounts(combined, state.stats.equipmentPlan);
+            const keys = new Set(active.paused || !active.recipe ? [] : Policy.keyInputs(state, active.recipe).map(row => Number(row.selfId)));
             for (const [id, needed] of Object.entries(demand)) {
                 const item = state.inventory?.[id];
                 if (!item || item.equipped || keys.has(Number(id)) || !(isWarehouseCandidate(item) || isGradeCrystal(item))) continue;
@@ -823,6 +846,7 @@ module.exports = {
     capDeferredInputs,
     equipmentInputPlan,
     retainedEquipmentAmounts,
+    storedEquipmentAmounts,
     reservationInputKey,
     saleCandidates,
     selectedCraftAmounts,

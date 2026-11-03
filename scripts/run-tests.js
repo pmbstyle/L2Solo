@@ -16,6 +16,7 @@ const notRunTests = new Map([
 ]);
 
 const tests = [
+    'tests/test_equipment_input_warehouse.js',
     'tests/test_active_craft_warehouse.js',
     'tests/test_active_craft_warehouse_sqlite.js',
     'tests/test_clan_war_home.js',

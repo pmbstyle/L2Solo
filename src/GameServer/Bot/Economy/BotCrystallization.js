@@ -32,7 +32,8 @@ function spareState(state) {
     // The selected exchange reserves its inputs for this operation. Other
     // equipment, component and future-gear owners still protect their bag.
     const plan = invoke('GameServer/Bot/Economy/ItemDisposition').equipmentInputPlan(state);
-    return plan?.strategy === 'luxury_exchange' ? { ...state, stats: { ...state.stats, equipmentPlan: null } }
+    return plan?.strategy === 'luxury_exchange' ? { ...state, stats: { ...state.stats,
+        equipmentPlan: plan.inputPreparation ? { inputPreparation: plan.inputPreparation } : null } }
         : plan?.crystalPreparation ? { ...state, stats: { ...state.stats,
             equipmentPlan: { ...plan, crystalPreparation: null } } } : state;
 }

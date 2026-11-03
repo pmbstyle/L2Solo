@@ -10,6 +10,10 @@ const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const { GRADES } = invoke('GameServer/Bot/AI/GearGradeRule');
 
+function hasInputProject(plan) {
+    return !!(plan?.recipeId || plan?.exchange?.kind === 'luxury_exchange' || plan?.combine);
+}
+
 function deferredWishPlan(previousPlan, replanContext, state, timestamp = Date.now()) {
     const plan = { ...previousPlan, status: 'deferred', strategy: 'none', next: null, reason: 'wish_focus' };
     const pausedInputs = previousPlan?.status === 'deferred' && previousPlan.reason === 'wish_focus' && plan.heldInputs;
@@ -25,7 +29,7 @@ function deferredWishPlan(previousPlan, replanContext, state, timestamp = Date.n
                 ? Object.values(Warehouse.inventory(state)) : [];
             // Pausing a personal recipe transfers its banked inputs along with
             // the bag reserve, so an alternative goal cannot sell the stash.
-            const pooled = plan.recipeId
+            const pooled = hasInputProject(plan)
                 ? { ...state, inventory: require('../Economy/CraftWarehousePolicy').available(state, warehouse).combined } : state;
             const collected = Disposition.collectedEquipmentInputs(pooled, plan);
             plan.heldInputs = productionInputs
@@ -50,7 +54,7 @@ function uniqueCraftProjects(plan) {
     for (; row && !seen.has(row); row = row.inputPreparation) {
         seen.add(row);
         const id = Number(row.target?.selfId), slot = Number(row.target?.slot);
-        const craft = row.recipeId && (row.strategy === 'craft'
+        const craft = hasInputProject(row) && (['craft', 'luxury_exchange'].includes(row.strategy)
             || row.status === 'deferred' && row.reason === 'wish_focus');
         const key = craft && id > 0 && slot > 0 ? `${id}:${slot}` : null;
         if (key && identities.has(key)) {
@@ -105,11 +109,10 @@ function withBridgeInputPreparation(state, previous, next, timestamp = Date.now(
 // craft inputs protected if the offer disappears or the bot has to retry.
 function withMarketCraftPreparation(state, previous, next, timestamp = Date.now()) {
     if (next?.strategy !== 'market' || next.status !== 'active') return next;
-    const retained = previous?.strategy === 'craft' || previous?.status === 'deferred' && previous?.recipeId
-        || previous?.strategy === 'market' && previous?.recipeId && previous?.materials?.length
+    const retained = hasInputProject(previous) && (['craft', 'luxury_exchange'].includes(previous.strategy)
+        || previous.status === 'deferred' || previous.strategy === 'market' && previous.materials?.length)
         ? previous : previous?.inputPreparation;
-    if (retained?.strategy !== 'craft' && retained?.strategy !== 'market'
-        && !(retained?.status === 'deferred' && retained?.recipeId)) return next;
+    if (!hasInputProject(retained) || retained.reason === 'cancelled' || previous?.reason === 'cancelled') return next;
     if (GearAcquisitionPlanner.isClanOwnedPlan(retained)
         || !sameTarget(retained.target, next.target)) return next;
     const inputPreparation = deferredWishPlan(retained, {}, state, timestamp);
@@ -161,20 +164,60 @@ function withRetainedCraftPreparation(state, previous, next, timestamp = Date.no
         const older = withoutRetainedTarget(previous?.inputPreparation, next.target);
         return uniqueCraftProjects(older ? { ...next, inputPreparation: older } : next);
     }
-    const retained = previous?.recipeId ? previous : previous?.inputPreparation;
-    if (!retained?.recipeId || GearAcquisitionPlanner.isClanOwnedPlan(retained)
+    const retained = hasInputProject(previous) ? previous : previous?.inputPreparation;
+    if (!hasInputProject(retained) || GearAcquisitionPlanner.isClanOwnedPlan(retained)
         || sameTarget(retained.target, next.target)
-        || !Number(retained.target?.selfId) || retained.reason === 'cancelled'
+        || !Number(retained.target?.selfId) || retained.reason === 'cancelled' || previous?.reason === 'cancelled'
         || GearAcquisitionPlanner.equipmentTargetFulfilled(state, retained)) return next;
-    if (retained.strategy !== 'craft' && !(retained.status === 'deferred' && retained.reason === 'wish_focus')) return next;
+    if (!['craft', 'luxury_exchange', 'market'].includes(retained.strategy)
+        && !(retained.status === 'deferred' && retained.reason === 'wish_focus')) return next;
     const inputPreparation = deferredWishPlan({
-        target: retained.target, recipeId: retained.recipeId, materials: retained.materials,
+        target: retained.target, recipeId: retained.recipeId, exchange: retained.exchange, combine: retained.combine,
+        crystalPreparation: retained.crystalPreparation, materials: retained.materials,
         craftProviders: retained.craftProviders, componentRecipes: retained.componentRecipes,
         heldInputs: retained.heldInputs, inputPreparation: withoutRetainedTarget(retained.inputPreparation, next.target),
         status: retained.status, reason: retained.reason
     }, {}, state, timestamp);
     const usable = invoke('GameServer/Bot/Economy/ItemDisposition').equipmentInputPlan(state, inputPreparation);
-    return uniqueCraftProjects(usable?.status === 'active' && usable.strategy === 'craft' ? { ...next, inputPreparation } : next);
+    return uniqueCraftProjects(usable?.status === 'active' && hasInputProject(usable) ? { ...next, inputPreparation } : next);
+}
+
+function deferredAcquisitionPlan(state, previous, economy, replanContext = {}, timestamp = Date.now()) {
+    if (previous?.reason === 'cancelled') return { ...previous, status: 'deferred', strategy: 'none', next: null };
+    const paused = deferredWishPlan(previous, replanContext, state, timestamp);
+    const usable = invoke('GameServer/Bot/Economy/ItemDisposition').equipmentInputPlan(state, paused);
+    if (hasInputProject(usable) && usable.status === 'active' && economy.network?.activity === null) {
+        const Warehouse = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
+        if (Warehouse.ready() && Warehouse.hasItems(state)) {
+            const { reason, ...resumed } = usable;
+            const ready = require('../Economy/CraftWarehousePolicy').stage(
+                { ...state, stats: { ...state.stats, equipmentPlan: resumed } }, Object.values(Warehouse.inventory(state)));
+            // Stored inputs are advisory incoming stock, not a physical
+            // executable leaf. With no competing action, resume their owner
+            // so the ordinary warehouse trip can collect the ready stage.
+            if (ready?.requests.length) return resumed;
+        }
+    }
+    if (hasInputProject(usable) && usable.status === 'active' || paused.inputPreparation) return paused;
+    // A completed piece releases its old plan before the next review. Even
+    // when shots win that review, bank the collected inputs of the next
+    // concrete equipment choice instead of exposing them as market surplus.
+    const keys = new Set([
+        ...(economy.network?.queue || []).map(row => row.key),
+        ...(economy.projection?.roots || [])
+    ]);
+    const Providers = invoke('GameServer/Bot/Economy/WishProviders');
+    const owned = economy.board?.ownerLines?.(Number(state.characterId)) || [];
+    const stockState = owned.length
+        ? invoke('GameServer/Bot/Economy/MarketListingPolicy').ownSaleInputs(state, owned).state : state;
+    for (const key of keys) {
+        if (!/^power:\d+:\d+$/.test(key)) continue;
+        const candidate = Providers.personalCraftPlan(state, economy, { wishKey: key });
+        if (!candidate || candidate.clanGoal || GearAcquisitionPlanner.equipmentTargetFulfilled(state, candidate)) continue;
+        const project = deferredWishPlan(candidate, replanContext, stockState, timestamp);
+        if (Object.values(project.heldInputs || {}).some(amount => amount > 0)) return project;
+    }
+    return paused;
 }
 
 function selectAcquisitionPlan(state, previousPlan, { spots = [], timestamp = Date.now(), planningOptions = {}, preparedEconomy = null, preparedReplanContext = null } = {}) {
@@ -203,7 +246,7 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], timestamp = Da
         // Acquisition metadata remains resumable, but cannot override the
         // common engine's book, social, sale or production activity.
         const replanContext = preparedReplanContext || GearAcquisitionPlanner.replanContextFor(state, previousPlan, timestamp);
-        const acquisitionPlan = deferredWishPlan(previousPlan, replanContext, state, timestamp);
+        const acquisitionPlan = deferredAcquisitionPlan(state, previousPlan, economy, replanContext, timestamp);
         return { acquisitionPlan, replanContext,
             reusablePartyRequest: false, excludedSpotIds: SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp), economy };
     }
@@ -322,4 +365,4 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], timestamp = Da
     return { ...result, economy };
 }
 
-module.exports = { selectAcquisitionPlan, deferredWishPlan, withBridgeInputPreparation, withMarketCraftPreparation, withRetainedCraftPreparation, uniqueCraftProjects };
+module.exports = { selectAcquisitionPlan, deferredWishPlan, deferredAcquisitionPlan, withBridgeInputPreparation, withMarketCraftPreparation, withRetainedCraftPreparation, uniqueCraftProjects };
