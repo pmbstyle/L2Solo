@@ -40,7 +40,12 @@ class Threads {
         // The thread id is the N of the title's "[worker N]": workerInfo.workerId counts attaches and
         // differs from Worker#threadId when workers start together (seen: 2 named the third worker).
         this.session.on('NodeWorker.attachedToWorker', ({ params }) => {
-            const id = Number(/^\[worker (\d+)\]/.exec(params.workerInfo.title || '')?.[1] ?? params.workerInfo.workerId);
+            const id = Number(/^\[worker (\d+)\]/.exec(params.workerInfo.title || '')?.[1]);
+            if (!Number.isInteger(id)) {
+                utils.infoWarn('Perf', 'worker %s not measured: its inspector title %j has no "[worker N]"',
+                    params.workerInfo.url, params.workerInfo.title);
+                return;
+            }
             this.sessions.set(params.sessionId, id);
             this.sessionOf.set(id, params.sessionId);
             this.labels.set(id, this.labelOf(params.workerInfo, id));

@@ -94,14 +94,17 @@ const BUSY = 'function stepBots() { let x = 0; const t = Date.now(); while (Date
         // leaking worker's live memory grows from file to file and the diff names the function.
         for (let dump = 0; dump < 3; dump++) {
             if (dump) await sleep(700);
-            fs.writeFileSync(path.join(dir, 'request.json'), JSON.stringify({ kind: 'heap' }));
+            // The last one names a thread: only that one dumps.
+            fs.writeFileSync(path.join(dir, 'request.json'), JSON.stringify({ kind: 'heap', ...(dump === 2 ? { thread: 'perf-test-leak' } : {}) }));
             await recorder.tick();
             await recorder.writes;
         }
-        const heap = lines(path.join(boot, day)).filter(line => line.type === 'heap');
+        const heap = lines(path.join(boot, 'heap.jsonl'));
         assert.deepEqual([...new Set(heap.map(line => line.thread))].sort(), ['main', 'perf-test-leak']);
+        assert.equal(heap.filter(line => line.thread === 'main').length, 2, 'capture heap --thread asks only that thread');
         const leaking = heap.filter(line => line.thread === 'perf-test-leak');
         assert.equal(leaking.length, 3);
+        assert.ok(leaking.every(line => line.instance === workers[2].threadId), 'a dump names its thread instance');
         assert.ok(leaking[2].liveMb > leaking[0].liveMb + 2, `live memory grows: ${leaking.map(line => line.liveMb)}`);
         assert.match(leaking[2].self[0].fn, /^leak /);
         const kept = fs.readdirSync(path.join(boot, 'heap')).filter(name => name.includes('perf-test-leak')).sort();
@@ -115,6 +118,7 @@ const BUSY = 'function stepBots() { let x = 0; const t = Date.now(); while (Date
         fs.writeFileSync(path.join(dir, 'request.json'), JSON.stringify({ kind: 'snapshot', thread: 'perf-test-leak' }));
         await recorder.tick();
         const snapshot = fs.readdirSync(path.join(boot, 'heap')).find(name => name.endsWith('.heapsnapshot'));
+        assert.ok(!fs.readdirSync(path.join(boot, 'heap')).some(name => name.endsWith('.partial')), 'renamed when whole');
         assert.ok(snapshot && fs.readFileSync(path.join(boot, 'heap', snapshot), 'utf8').startsWith('{"snapshot"'));
 
         // A restarted worker is a new thread: profiled again under its name.

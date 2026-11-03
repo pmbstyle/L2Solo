@@ -17,10 +17,12 @@ const HeapProfile = require('./HeapProfile');
 // - spikes-<day>.jsonl: a chunk whose longest busy run reached longTurnMs, with the code that held it;
 // - cpu/*.cpuprofile: the raw chunk when its longest run reached keepProfileMs, or on request
 //   (scripts/perf.js capture cpu), for Chrome DevTools;
-// - heap/*.heapprofile: the sampling heap profile of each heap thread every heapEveryMinutes (and on
-//   capture heap), with a "heap" timeline line; the sampler is never reset, so two files diff into
-//   what the code kept in between (perf.js heap). The first file of a boot is the baseline and
-//   stays; heap/*.heapsnapshot only on capture snapshot.
+// - heap/*.heapprofile: the sampling heap profile of each heap thread, first FIRST_HEAP_MINUTES after
+//   it starts (the world loaded), then every heapEveryMinutes and on capture heap; the sampler is
+//   never reset, so two files of one thread diff into what the code kept in between (perf.js heap).
+//   heap.jsonl lists them (not a day file: pruning must not lose the baseline). The first file of a
+//   thread is the baseline and stays; a thread that exits keeps its first and last. heap/*.heapsnapshot
+//   only on capture snapshot.
 // Rare spikes are the reason for chunks: a profile that always runs has the minute of a spike at
 // 3 a.m. without anyone asking for it. Chunks overlap (the next profile starts before the last
 // one stops): a profiler that stops forgets the names of optimized code, and every later chunk
@@ -30,6 +32,7 @@ const HeapProfile = require('./HeapProfile');
 const ROOT = path.resolve(__dirname, '..', '..');
 const TICK_MS = 5000;
 const PRUNE_MS = 3600000;
+const FIRST_HEAP_MINUTES = 10;
 const BOOT_DIR = /^\d{8}-\d{6}$/;
 const DAY_FILE = /^(?:timeline|spikes)-(\d{8})\.jsonl$/;
 
@@ -91,7 +94,10 @@ class LiveRecorder {
             this.threads = new Threads();
             this.threads.start({ onReady: thread => this.attach(thread), onExit: (thread) => {
                 this.profiled.delete(thread.threadId);
+                const heap = this.heaped.get(thread.threadId);
                 this.heaped.delete(thread.threadId);
+                // A restarted worker is a new heap: the old one keeps its baseline and its last dump.
+                for (const old of heap?.files.slice(1, -1) || []) this.write(() => fs.promises.rm(old, { force: true }));
             } });
             this.timer = setInterval(() => this.tick(), TICK_MS);
             this.timer.unref?.();
@@ -147,10 +153,12 @@ class LiveRecorder {
     attachHeap(thread) {
         const state = { thread, sampling: false, dumping: false, dumpedAt: Date.now(), files: [] };
         this.heaped.set(thread.threadId, state);
+        // The first dump comes FIRST_HEAP_MINUTES in (or heapEveryMinutes, if sooner), not a full period.
+        const firstEarlyMs = Math.max(0, this.settings.heapEveryMinutes - Math.min(FIRST_HEAP_MINUTES, this.settings.heapEveryMinutes)) * 60000;
         this.threads.post(thread, 'HeapProfiler.startSampling', { samplingInterval: this.settings.heapSampleKb * 1024 })
             .then(() => {
                 state.sampling = true;
-                state.dumpedAt = Date.now();
+                state.dumpedAt = Date.now() - firstEarlyMs;
             }).catch(error => {
                 this.heaped.delete(thread.threadId);
                 if (this.running) this.warn(`heap sampling of ${thread.label}`, error);
@@ -163,19 +171,30 @@ class LiveRecorder {
         if (!this.running || this.ticking) return Promise.resolve();
         this.ticking = true;
         return this.takeRequest().then((request) => {
-            const due = Date.now() - this.settings.cpuChunkSeconds * 1000, forced = request?.kind === 'cpu';
+            // A capture asks every thread of its kind, or the one named by --thread.
+            const asked = (state, kind) => request?.kind === kind && (!request.thread || request.thread === state.thread.label);
+            const due = Date.now() - this.settings.cpuChunkSeconds * 1000;
             const ready = [...this.profiled.values()].filter(state => state.handle && !state.rotating);
-            if (forced && !ready.length) utils.infoWarn('Perf', 'capture cpu: no profiled thread is up');
-            const heapDue = Date.now() - this.settings.heapEveryMinutes * 60000, heapForced = request?.kind === 'heap';
-            const sampling = [...this.heaped.values()].filter(state => state.sampling && !state.dumping);
-            if (heapForced && !sampling.length) utils.infoWarn('Perf', 'capture heap: no sampled thread is up');
-            const heapJobs = sampling.filter(state => heapForced || state.dumpedAt <= heapDue).map(state => this.dumpHeap(state, heapForced));
+            if (request?.kind === 'cpu' && !ready.some(state => asked(state, 'cpu'))) {
+                utils.infoWarn('Perf', 'capture cpu: no profiled thread %s is up', request.thread || '');
+            }
+            const heapDue = Date.now() - this.settings.heapEveryMinutes * 60000;
+            const sampling = [...this.heaped.values()].filter(state => state.sampling);
+            for (const state of sampling.filter(row => row.dumping && asked(row, 'heap'))) {
+                utils.infoWarn('Perf', 'capture heap: %s is still writing its last dump', state.thread.label);
+            }
+            if (request?.kind === 'heap' && !sampling.some(state => asked(state, 'heap'))) {
+                utils.infoWarn('Perf', 'capture heap: no sampled thread %s is up', request.thread || '');
+            }
+            const heapJobs = sampling.filter(state => !state.dumping && (asked(state, 'heap') || state.dumpedAt <= heapDue))
+                .map(state => this.dumpHeap(state, asked(state, 'heap')));
             const snapshot = request?.kind === 'snapshot' ? [this.snapshot(String(request.thread || 'main'))] : [];
             if (Date.now() - this.prunedAt >= PRUNE_MS) {
                 this.prunedAt = Date.now();
                 this.prune().catch(error => this.warn('prune', error));
             }
-            const jobs = ready.filter(state => forced || state.startedAt <= due).map(state => this.rotate(state, forced));
+            const jobs = ready.filter(state => asked(state, 'cpu') || state.startedAt <= due)
+                .map(state => this.rotate(state, asked(state, 'cpu')));
             this.ticking = false;
             return Promise.all([...jobs, ...heapJobs, ...snapshot]);
         }).catch(error => this.warn('tick', error)).finally(() => { this.ticking = false; });
@@ -281,7 +300,7 @@ class LiveRecorder {
             const file = path.join(this.bootDir, 'heap',
                 `${stampOf(at)}.${String(at.getMilliseconds()).padStart(3, '0')}-${fileLabel(thread)}.heapprofile`);
             this.write(() => fs.promises.writeFile(file, text));
-            this.append({ type: 'heap', t: at.toISOString(), thread: thread.label, liveMb: summary.liveMb,
+            this.appendTo('heap.jsonl', { t: at.toISOString(), thread: thread.label, instance: thread.threadId, liveMb: summary.liveMb,
                 self: summary.self, code: summary.code, profile: path.relative(this.bootDir, file).split(path.sep).join('/'),
                 forced: !!forced });
             // The first file is the baseline every later one is compared with: it stays.
@@ -307,12 +326,19 @@ class LiveRecorder {
             utils.infoWarn('Perf', 'capture snapshot: no thread %s (threads: %s)', label, this.threads.all().map(row => row.label).join(','));
             return;
         }
-        const file = path.join(this.bootDir, 'heap', `${stampOf(new Date())}-${fileLabel(thread)}.heapsnapshot`);
+        const at = new Date();
+        const file = path.join(this.bootDir, 'heap',
+            `${stampOf(at)}.${String(at.getMilliseconds()).padStart(3, '0')}-${fileLabel(thread)}.heapsnapshot`);
+        // Written under .partial and renamed when whole: a worker that exits midway leaves no file
+        // that looks complete.
+        const partial = `${file}.partial`;
         try {
-            if (thread.worker) await pipeline(await thread.worker.getHeapSnapshot(), fs.createWriteStream(file));
-            else v8.writeHeapSnapshot(file);
+            if (thread.worker) await pipeline(await thread.worker.getHeapSnapshot(), fs.createWriteStream(partial));
+            else v8.writeHeapSnapshot(partial);
+            await fs.promises.rename(partial, file);
             utils.infoSuccess('Perf', 'captured heap snapshot of %s: %s', thread.label, path.relative(ROOT, file));
         } catch (error) {
+            await fs.promises.rm(partial, { force: true });
             this.warn(`heap snapshot of ${thread.label}`, error);
         }
     }

@@ -140,7 +140,7 @@ function printTimeline(flags) {
 const TAKEN = {
     cpu: 'each profiled thread that is up saves its current chunk (perf.js spikes)',
     heap: 'each sampled thread writes its heap profile now (perf.js heap)',
-    snapshot: 'the thread writes a full .heapsnapshot into heap/ (main stops for seconds and needs its heap size again in memory)'
+    snapshot: 'the thread (--thread, main by default) writes a full .heapsnapshot into heap/ (main stops for seconds and needs its heap size again in memory)'
 };
 
 async function capture(words, flags) {
@@ -148,7 +148,7 @@ async function capture(words, flags) {
     if (!TAKEN[kind]) throw new Error('Use: perf.js capture cpu | heap | snapshot [--thread=main]');
     const file = path.join(liveDir(), 'request.json');
     fs.mkdirSync(liveDir(), { recursive: true });
-    fs.writeFileSync(file, `${JSON.stringify({ kind, thread: flags.thread || 'main', at: new Date().toISOString() })}\n`);
+    fs.writeFileSync(file, `${JSON.stringify({ kind, thread: flags.thread, at: new Date().toISOString() })}\n`);
     for (let waited = 0; waited < 15000; waited += 500) {
         await new Promise(resolve => setTimeout(resolve, 500));
         if (!fs.existsSync(file)) {
@@ -177,9 +177,13 @@ function printHeap(words, flags) {
     if (words[1] && words[2]) return printGrowth(`${path.basename(words[1])} -> ${path.basename(words[2])}`,
         HeapProfile.diff(readHeap(words[1]), readHeap(words[2])), count);
     const dir = bootDir(flags);
-    const dumps = dayLines(dir, 'timeline').filter(line => line.type === 'heap' && (!flags.thread || line.thread === flags.thread));
+    const dumps = readLines(path.join(dir, 'heap.jsonl')).filter(line => !flags.thread || line.thread === flags.thread);
+    // One heap per thread instance: a restarted worker is another isolate, never diffed with the old.
     const byThread = new Map();
-    for (const line of dumps) byThread.set(line.thread, [...(byThread.get(line.thread) || []), line]);
+    for (const line of dumps) {
+        const key = `${line.thread} (thread ${line.instance})`;
+        byThread.set(key, [...(byThread.get(key) || []), line]);
+    }
     if (!byThread.size) console.log(`${path.basename(dir)}: no heap dumps yet (every [Perf] heapEveryMinutes, or perf.js capture heap)`);
     for (const [thread, lines] of byThread) {
         console.log(`\n${path.basename(dir)} ${thread}: ${lines.map(line => `${time(line.t).slice(11, 16)} ${line.liveMb}MB`).join('  ')}`);
