@@ -1,13 +1,13 @@
 'use strict';
 
 const path = require('path');
-const { PlayerClient, npcHtml, bypasses, carries, within } = require('./PlayerClient');
+const { npcHtml, bypasses, carries, objectIdAt, within } = require('./PlayerClient');
 
 // Runs an end-to-end scenario (tests/e2e/*.js, planning/e2e-player/plan.md) with the hot scenario's
 // player(s): each `step` is timed and noted in the live recorder's timeline as an "e2e" line (passed or
 // failed, with the server packets around a failure); "e2e-done" closes the scenario. A script module:
 //   module.exports = { name, players: 1, place(ctx) -> { locX, locY, locZ } | null, async run(ctx) }
-// ctx: { players: [PlayerClient], player, step(name, fn), within, npcHtml, bypasses, carries,
+// ctx: { players: [PlayerClient], player, step(name, fn), within, npcHtml, bypasses, carries, objectIdAt,
 //        world: { npcsNear, bots, botsNear, crowd, failures }, setup: { giveAdena, teleport } }.
 // Steps act through client packets only; `setup` prepares a player the way the game's own owner of that
 // grant does (the GM's give-adena), for what a test needs but a level-1 character does not have.
@@ -33,9 +33,11 @@ const world = {
         return this.bots().filter(state => state.loc && Math.hypot(state.loc.locX - loc.locX, state.loc.locY - loc.locY) <= radius);
     },
 
-    // The fullest place of cold hunters (HotCrowd's own choice of a crowd).
-    crowd() {
-        return invoke('Perf/HotCrowd').crowdLocations(this.bots(), 1)[0] || null;
+    // The fullest place of cold hunters (HotCrowd's own choice of a crowd), optionally at least
+    // `beyond` from a place.
+    crowd({ awayFrom = null, beyond = 0 } = {}) {
+        return invoke('Perf/HotCrowd').crowdLocations(this.bots(), 1000)
+            .find(place => !awayFrom || Math.hypot(place.locX - awayFrom.locX, place.locY - awayFrom.locY) >= beyond) || null;
     },
 
     // The cold worker's fault and the commit queue's afterCommit error counts (always on).
@@ -53,14 +55,17 @@ const setup = {
 
     // Travel: the gatekeeper's teleport (tests/e2e/gatekeeper.js checks that one through its window).
     teleport(client, loc) {
-        // global.path: this file's own require('path') hides the project's path map.
-        return invoke(global.path.actor).teleportTo(client.session, client.actor, { locX: loc.locX, locY: loc.locY, locZ: loc.locZ, head: 0 });
+        // global.path: this file's own require('path') hides the project's path map. The client then
+        // says it has loaded the new place (Appeared), as a real one does.
+        const moved = invoke(global.path.actor).teleportTo(client.session, client.actor, { locX: loc.locX, locY: loc.locY, locZ: loc.locZ, head: 0 });
+        if (moved !== false) client.appeared().catch(() => {});
+        return moved;
     }
 };
 
-async function run(script, sessions) {
+// players: the PlayerClients HotCrowd logged in.
+async function run(script, players) {
     const Recorder = invoke('Perf/LiveRecorder');
-    const players = sessions.map(session => new PlayerClient(session));
     const results = [];
     const step = async (name, fn) => {
         const started = Date.now();
@@ -77,7 +82,7 @@ async function run(script, sessions) {
             throw Object.assign(error, { stepFailed: true });
         }
     };
-    const ctx = { players, player: players[0], step, within, npcHtml, bypasses, carries, world, setup };
+    const ctx = { players, player: players[0], step, within, npcHtml, bypasses, carries, objectIdAt, world, setup };
     try {
         if (!players.length) throw new Error('no player spawned (server.log: "hot scenario")');
         await script.run(ctx);
