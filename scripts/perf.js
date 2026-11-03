@@ -16,6 +16,7 @@
 //   node scripts/perf.js prepare [--minutes=60] [--name=<save name>]     (grows a world, saves it)
 //   node scripts/perf.js run --save=<id> [--scenario=cold] [--warmup=5] [--minutes=10] [--diagnostics] [--keep-world]
 //   node scripts/perf.js report [<run folder>]
+//   node scripts/perf.js compare <run A> <run B>   (folders, or names under tmp/perf/runs)
 
 const fs = require('fs');
 const path = require('path');
@@ -26,6 +27,7 @@ const HeapProfile = require('../src/Perf/HeapProfile');
 const SavedGames = require('./saved-games');
 const Window = require('./perf/window');
 const Report = require('./perf/report');
+const Compare = require('./perf/compare');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -251,8 +253,13 @@ async function main() {
     if (command === 'prepare') return Window.prepare(flags);
     if (command === 'run') return Report.report(await Window.run(flags));
     if (command === 'report') return Report.report(runDir(words));
+    if (command === 'compare') {
+        if (!words[1] || !words[2]) throw new Error('Use: perf.js compare <run A> <run B>');
+        const find = (name) => (fs.existsSync(name) ? path.resolve(name) : path.join(Window.PERF_DIR, 'runs', name));
+        return Compare.compare(find(words[1]), find(words[2]), { top: numberFlag(flags, 'top', 8, 1) });
+    }
     console.log('Use: perf.js boots | spikes | timeline | heap [a b] | capture cpu|heap|snapshot | analyze <file>'
-        + ' | saves | prepare | run --save=<id> | report [<run>]');
+        + ' | saves | prepare | run --save=<id> | report [<run>] | compare <a> <b>');
     process.exitCode = command ? 1 : 0;
 }
 
