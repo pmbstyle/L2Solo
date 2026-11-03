@@ -19,7 +19,7 @@ assert(selected);
 allowed = false;
 Attack.prototype.remoteHit.call({ blockedPvpDefense: () => false, checkParticipants: () => false }, session, target, selected.skill);
 allowed = true;
-assert.strictEqual(session.lastSkillOutcome.status, 'rejected');
+assert(Feedback.blocked(bot, target, selected.skill), 'a native rejection backs the skill off on this target');
 const rejectedAlternatives = [];
 const fallback = Utility.select(bot, target, 'archer', { pvp: true, rejectedAlternatives });
 assert(fallback && fallback.skill !== selected.skill, 'native rejection must allow a different useful attack');
@@ -31,18 +31,14 @@ weapon = 'Weapon.Bow';
 assert(!Feedback.blocked(bot, target, selected.skill, Date.now() + Feedback.RETRY_MS), 'failed attempts cannot lock a skill forever');
 Feedback.record(session, bot, target, selected.skill, 'ineffective', 'miss');
 assert(!Feedback.blocked(bot, target, selected.skill), 'ordinary misses do not suppress valid attacks');
-assert.strictEqual(session.combatOutcomeCounts.rejected, 1);
-assert.strictEqual(session.combatOutcomeCounts.ineffective, 1);
 for(const outcome of [{heal:20},{mpRestore:10},{effect:{id:1201}},{charges:1},{cancelled:[1068]}]) {
     assert(Feedback.effective(outcome),'native support/control/charge result fields count as useful results');
 }
 assert(!Feedback.effective({heal:0,effect:null,missed:true}));
 Feedback.result(session,bot,target,selected.skill,{skillType:'heal',heal:20});
-assert.strictEqual(session.lastSkillOutcome.status,'effective');
-assert.strictEqual(session.lastSkillOutcome.detail,'heal');
 const player = { accountId: 'human', actor: bot };
 Feedback.record(player, bot, target, selected.skill, 'rejected', 'test');
-assert.strictEqual(player.lastSkillOutcome, undefined);
+assert(!Feedback.blocked(bot, target, selected.skill), 'a player cast is not bot feedback');
 const backstab = new Skillset().populateSnapshot(Profiles.skillSnapshotsFromRecords([{selfId:30,level:1}]))[0];
 let x=10;
 const dagger = {...bot,fetchClassId:()=>8,fetchLocX:()=>x,fetchLocY:()=>0,attack:new Attack(),

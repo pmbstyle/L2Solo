@@ -116,7 +116,7 @@ function departure(party, member, travel, now, given = undefined, current = null
         ...(war ? { warOperationId: party.stats.warOperation.id, supplyItemId: Number(current.target.itemId) } : {}),
         slots: need?.slots, limit: need?.limit };
     return { ...travel, stats: { ...travel.stats, partyMarketReturn: token,
-        lastPartyMarketBreak: token, clanPartyObjective: war ? member.stats?.clanPartyObjective || null : token.objective } };
+        clanPartyObjective: war ? member.stats?.clanPartyObjective || null : token.objective } };
 }
 // A personal warehouse visit is a short ordinary-party absence. The same
 // return ticket and membership handoff as market errands restores the roster.
@@ -125,7 +125,7 @@ function warehouseDeparture(party, member, travel, now = Date.now()) {
         || party?.stats?.objective?.raidBoss || pending(party, now).length) return null;
     const token = { partyId: party.partyId, characterId: member.characterId, until: now + RESERVATION_MS,
         objective: { ...(party.stats?.objective || {}) }, startedAt: now, cleanupReason: 'craft_warehouse' };
-    return { ...travel, stats: { ...travel.stats, partyMarketReturn: token, lastPartyMarketBreak: token } };
+    return { ...travel, stats: { ...travel.stats, partyMarketReturn: token } };
 }
 function stats(party, departed) {
     const token = departed?.stats?.partyMarketReturn;

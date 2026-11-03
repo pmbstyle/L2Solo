@@ -94,7 +94,7 @@ class RaidSupplyPreparation {
             const next = Errands.withPending(state, kept);
             await this.life.upsertState({ ...next,
                 activity: next.activity === 'party_wait' ? 'hunting' : next.activity,
-                stats: { ...next.stats, raidSupplyPreparation: null, lastRaidPreparation: { id: plan.id, reason, at: Date.now() } },
+                stats: { ...next.stats, raidSupplyPreparation: null },
                 timing: { ...next.timing, nextResolveAt: Date.now() + 1000 } }, reason);
         });
         this.onReleased?.(plan.memberIds);

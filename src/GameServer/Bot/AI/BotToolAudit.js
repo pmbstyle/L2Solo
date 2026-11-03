@@ -15,7 +15,7 @@ function text(value, max = MAX_TEXT_CHARS) {
 }
 
 function databaseReady() {
-    return typeof Database.isReady === 'function' && Database.isReady();
+    return Database.isReady();
 }
 
 function ensureSchema() {

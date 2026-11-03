@@ -1005,26 +1005,6 @@ function execute(session, decision, visiblePlayers, requestContext = null) {
     return outcome && typeof outcome.then === 'function' ? outcome.then(format) : format(outcome);
 }
 
-function remember(session, decision, result, model) {
-    if (!result?.applied) return;
-    session.lastBrainDecision = {
-        action: decision.action,
-        reason: decision.reason || result.reason,
-        appliedReason: result.reason,
-        outcome: result.outcome || 'applied',
-        serverApplied: !NON_MUTATING_ACTIONS.has(decision.action) && result.applied === true && result.outcome !== 'pending',
-        at: Date.now(),
-        model,
-        usage: decision.usage ? {
-            promptTokens: decision.usage.promptTokens ?? decision.usage.prompt_tokens,
-            completionTokens: decision.usage.completionTokens ?? decision.usage.completion_tokens,
-            cachedPromptTokens: decision.usage.cachedPromptTokens ?? decision.usage.prompt_tokens_details?.cached_tokens,
-            totalTokens: decision.usage.totalTokens ?? decision.usage.total_tokens,
-            cost: decision.usage.cost
-        } : null
-    };
-}
-
 function toolDescriptions(session = null) {
     return BotToolRegistry.descriptors(session);
 }
@@ -1152,7 +1132,6 @@ module.exports = {
     ACTIONS,
     availableActions,
     execute,
-    remember,
     pendingReply,
     rejectionReply,
     toolDescriptions,

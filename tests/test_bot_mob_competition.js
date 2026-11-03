@@ -220,7 +220,6 @@ try {
         calming.forEach(a => { a.session.coldLifeState.party.leaderId = calming[1].id; });
         calming[1].session.persona.traits = { empathy: 1, assertiveness: 0 };
         assert(!Revenge.request(calming[0].session, calmTarget, 'mob_competition', ['Enough.'], true, now, () => 0.2));
-        assert(calming[0].session.lastConflictParticipation.deescalated, 'the leader can settle a hot dispute');
         assert(calming.every(a => !a.session.pvpRevenge));
 
         const majority = group(3), majorityTarget = group(1, 10)[0];

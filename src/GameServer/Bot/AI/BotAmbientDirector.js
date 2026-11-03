@@ -279,12 +279,6 @@ function finish(sceneOrSession, reason = 'completed', now = Date.now()) {
     participants.forEach((session) => {
         if (session.ambientScene === scene) session.ambientScene = null;
         session.ambientLastSceneAt = Number(session.ambientLastSceneAt || scene.startedAt || now);
-        session.lastAmbientScene = {
-            id: scene.id,
-            topic: scene.topic,
-            at: now,
-            reason: clean(reason, 80)
-        };
         recordSceneEvent(session, scene, 'ambient_scene_finished', reason);
         refresh(session, now);
     });

@@ -270,10 +270,7 @@ function broadcastSpeech(session, data) {
 // Nearby bots hear the line through the BotManager dialogue entry.
 function enterBotDialogue(session, data) {
     try {
-        const BotManager = invoke('GameServer/Bot/BotManager');
-        if (BotManager && typeof BotManager.handlePlayerSpeak === 'function') {
-            BotManager.handlePlayerSpeak(session, data);
-        }
+        invoke('GameServer/Bot/BotManager').handlePlayerSpeak(session, data);
     } catch (err) {
         console.error("BotManager speak hook error:", err);
     }

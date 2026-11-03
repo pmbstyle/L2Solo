@@ -99,7 +99,7 @@ function expire(world, npc) {
 // the caller. Returns whether the corpse was in the list.
 function removeFromWorld(world, npc, label) {
     try {
-        if (world.removeNpcFromGrid) world.removeNpcFromGrid(npc);
+        world.removeNpcFromGrid(npc);
     }
     catch (error) {
         logWarning(`grid removal failed for ${label}`, error);
@@ -108,13 +108,6 @@ function removeFromWorld(world, npc, label) {
     // is not there; nothing else needs a scan.
     const index = world.npc.spawns.indexOf(npc);
     if (index >= 0) world.npc.spawns.splice(index, 1);
-    if (!world.removeNpcFromGrid) {
-        try {
-            world.indexSpawnsInGrid?.();
-        } catch (error) {
-            logWarning(`grid rebuild failed for ${label}`, error);
-        }
-    }
     return index >= 0;
 }
 
@@ -166,23 +159,14 @@ function decayMany(world, npcs) {
     });
     if (removed.size === 0) return 0;
 
-    if (world.removeNpcFromGrid) {
-        removed.forEach((npc) => {
-            try {
-                world.removeNpcFromGrid(npc);
-            } catch (error) {
-                logWarning('grid removal failed during batch decay', error);
-            }
-        });
-    }
-    world.npc.spawns = world.npc.spawns.filter((entry) => !removed.has(entry));
-    if (!world.removeNpcFromGrid) {
+    removed.forEach((npc) => {
         try {
-            world.indexSpawnsInGrid?.();
+            world.removeNpcFromGrid(npc);
         } catch (error) {
-            logWarning('grid rebuild failed during batch decay', error);
+            logWarning('grid removal failed during batch decay', error);
         }
-    }
+    });
+    world.npc.spawns = world.npc.spawns.filter((entry) => !removed.has(entry));
 
     notifications.forEach(({ npcId, sourceSession }) => {
         try {

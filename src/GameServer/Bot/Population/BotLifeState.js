@@ -2302,42 +2302,6 @@ const BotLifeState = {
         )), Promise.resolve([]));
     },
 
-    migrateLegacyColdCombatProfiles(limit = 5) {
-        if (!initialized) return Promise.resolve([]);
-        const safeLimit = Math.max(1, Math.min(20, Number(limit) || 5));
-        const candidates = Array.from(cache.values())
-            .filter((state) => state.phase === 'cold')
-            // Profiles made by the first cold resolver used the class tree
-            // before this migration existed.  They have a profile but not an
-            // authoritative skill source, so replace their skills once too.
-            .filter((state) => ColdCombatProfile.needsDatabaseBackfill(state.stats?.coldCombat))
-            .filter((state) => !pendingWrites.has(state.characterId))
-            .sort((a, b) => Number(a.updatedAt || 0) - Number(b.updatedAt || 0))
-            .slice(0, safeLimit);
-
-        return candidates.reduce((chain, state) => chain.then((migrated) => (
-            Database.fetchSkills(state.characterId).then((skills) => {
-                const nextState = {
-                    ...state,
-                    stats: {
-                        ...(state.stats || {}),
-                        coldCombat: ColdCombatProfile.legacySnapshot(state, skills, now())
-                    },
-                    updatedAt: now()
-                };
-                const row = rowFromState(nextState);
-                return save(row).then(() => {
-                    const snapshot = normalize(row);
-                    cache.set(snapshot.characterId, snapshot);
-                    return [...migrated, snapshot];
-                });
-            }).catch((err) => {
-                utils.infoWarn('BotLife', 'legacy cold combat profile failed for %s: %s', state.name, err.message);
-                return migrated;
-            })
-        )), Promise.resolve([]));
-    },
-
     statesForParty(partyId) {
         if (!initialized || !partyId) return Promise.resolve([]);
 
@@ -2723,11 +2687,6 @@ const BotLifeState = {
             adenaEarned: Number(state.stats?.adenaEarned || 0) + Number(result.materialize?.adena || 0) + materializedAdenaItems,
             route: result.debug?.route || state.stats?.route || null,
             lastResolveDebug: compactResolveDebug(result.debug),
-            lastExperienceAward: {
-                requested: experienceAward.requested,
-                accepted: experienceAward.accepted,
-                discarded: experienceAward.discarded
-            },
             ...(targetCombat ? { targetCombat } : {})
         };
         const inventory = { ...(state.inventory || {}) };
@@ -3630,7 +3589,6 @@ const BotLifeState = {
             inventory: purchasePatch.inventory,
             stats: {
                 ...(state.stats || {}),
-                lastConsumablePurchase: purchasePatch.purchase,
                 lastReason: reason
             },
             updatedAt: now()

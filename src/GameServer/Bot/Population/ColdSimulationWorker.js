@@ -153,8 +153,7 @@ if (forbiddenLoaded.length) throw new Error(`cold worker loaded forbidden module
 
 let kernel = null;
 // The scheduler wakes at kernel.nextWakeAt() (one timer on the nearest
-// deadline). false restores the fixed loopIntervalMs poll.
-const LOOP_ALARM = true;
+// deadline).
 // Longest idle sleep: the bound on a wake missed by a path that adds work
 // without a re-arm (a resolve finishing between messages).
 const LOOP_IDLE_CAP_MS = 250;
@@ -1529,7 +1528,7 @@ function runLoop() {
 // Every path that can add earlier work (a message, the heartbeat's competition
 // review arming a decision deadline) calls this: the timer moves only sooner.
 function wakeLoopIfSooner() {
-    if (!LOOP_ALARM || !loopTimer || shuttingDown || loopWakeAt(Date.now()) >= loopArmedAt) return;
+    if (!loopTimer || shuttingDown || loopWakeAt(Date.now()) >= loopArmedAt) return;
     clearTimeout(loopTimer);
     Config.developerDiagnostics && economyDiagnostics.count('worker_wake', 'rearmed', 'sooner');
     armLoop();
@@ -2057,10 +2056,7 @@ function startKernel(config = {}) {
     });
     OccupationSources.initialise();
     loopIntervalMs = Math.max(5, Number(config.loopIntervalMs) || 20);
-    if (LOOP_ALARM) armLoop();
-    else loopTimer = setInterval(() => {
-        kernel.tick();
-    }, loopIntervalMs);
+    armLoop();
     if (Config.coldCompetitionObserveEnabled) {
         const allowed = new Set((DataCache.npcs || []).filter(npc => npc.template?.kind === 'Monster'
             && !invoke('GameServer/Bot/AI/BotRaidSafety').isProtectedRaidEntity(npc)).map(npc => Number(npc.selfId)));

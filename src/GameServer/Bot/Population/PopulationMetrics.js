@@ -32,10 +32,7 @@ function emptyCounters() {
         partyRecruits: 0,
         partyDissolutions: 0,
         dbFlushes: 0,
-        schedulerRuns: 0,
-        schedulerSkips: 0,
         partyFormationBudgetStops: 0,
-        schedulerOverruns: 0,
         slowResolves: 0,
         backgroundDeferrals: 0,
         partyFormationDeferrals: 0,
@@ -50,10 +47,8 @@ function emptyCounters() {
         coldOwnerErrors: 0,
         coldOwnerLegacyDeferred: 0,
         coldOwnerDbBusy: 0,
-        coldOwnerDbRetries: 0,
         coldOwnerHandoffs: 0,
         missedEventsRecovered: 0,
-        economySafetyRepairs: 0,
         coldSafetyStateRepairs: 0,
         boardReviewWakeups: 0,
         coldSafetyQueueRepairs: 0,
@@ -99,17 +94,14 @@ const PopulationMetrics = {
     },
     // Last LAG_WINDOW readings, kept outside eventLoop: snapshot() spreads eventLoop into the status API.
     lagHistory: [],
+    // The player-activity and lag signal (recordSchedulerProfile), read by the
+    // cold worker pressure and the background work admissions.
     schedulerState: {
-        budgetMs: 0,
         mode: 'unknown',
-        lagMs: 0,
-        coldBatch: 0,
-        coldBatchLimit: 0,
-        coldQueueSaturated: false
+        lagMs: 0
     },
     interval: {
         resolveDurationsMs: [],
-        schedulerDurationsMs: [],
         partyFormationDurationsMs: [],
         partyFormationStageDurationsMs: new DiagnosticMetricMap(),
         actorPathDurationsMs: [],
@@ -274,12 +266,6 @@ const PopulationMetrics = {
         this.counters.missedEventsRecovered++;
     },
 
-    recordEconomySafetyRepair() {
-        if (!Config.developerDiagnostics) return;
-        this.counters.economySafetyRepairs++;
-        this.counters.missedEventsRecovered++;
-    },
-
     recordPartyFormation() {
         if (!Config.developerDiagnostics) return;
         this.counters.partyFormations += 1;
@@ -310,24 +296,6 @@ const PopulationMetrics = {
         if (value >= Config.resolveSlowMs) {
             this.counters.slowResolves += 1;
         }
-    },
-
-    recordSchedulerRun(ms) {
-        if (!Config.developerDiagnostics) return;
-        const value = Math.max(0, Number(ms) || 0);
-        this.counters.schedulerRuns += 1;
-        this.interval.schedulerDurationsMs.push(value);
-        if (this.interval.schedulerDurationsMs.length > Config.resolveSampleLimit) {
-            this.interval.schedulerDurationsMs.shift();
-        }
-        if (value >= Config.schedulerIntervalMs) {
-            this.counters.schedulerOverruns += 1;
-        }
-    },
-
-    recordSchedulerSkip() {
-        if (!Config.developerDiagnostics) return;
-        this.counters.schedulerSkips += 1;
     },
 
     recordBackgroundDeferral() {
@@ -362,11 +330,6 @@ const PopulationMetrics = {
         const key = String(reason || 'unknown');
         this.counters.coldOwnerLegacyDeferred += 1;
         this.interval.coldOwnerLegacyReasons.set(key, Number(this.interval.coldOwnerLegacyReasons.get(key) || 0) + 1);
-    },
-
-    recordColdOwnerDbRetry() {
-        if (!Config.developerDiagnostics) return;
-        this.counters.coldOwnerDbRetries += 1;
     },
 
     recordColdOwnerHandoff(result = {}) {
@@ -442,24 +405,12 @@ const PopulationMetrics = {
     recordSchedulerProfile(profile = {}) {
         this.schedulerState = {
             ...this.schedulerState,
-            budgetMs: Math.max(0, Number(profile.budgetMs) || 0),
             mode: profile.idle ? 'idle' : 'player',
             lagMs: Math.max(0, Number(profile.lagMs) || 0),
             playerMode: profile.activity?.mode || 'idle',
             realPlayers: Math.max(0, Number(profile.activity?.realPlayers) || 0),
             connectingPlayers: Math.max(0, Number(profile.activity?.connectingPlayers) || 0),
             companions: Math.max(0, Number(profile.activity?.companionCount) || 0)
-        };
-    },
-
-    recordColdBatch(count = 0, limit = 0) {
-        const batch = Math.max(0, Number(count) || 0);
-        const cap = Math.max(0, Number(limit) || 0);
-        this.schedulerState = {
-            ...this.schedulerState,
-            coldBatch: batch,
-            coldBatchLimit: cap,
-            coldQueueSaturated: cap > 0 && batch >= cap
         };
     },
 
@@ -533,7 +484,6 @@ const PopulationMetrics = {
 
         this.lastSummaryCounters = { ...this.counters };
         const resolveStats = stats(this.interval.resolveDurationsMs);
-        const schedulerStats = stats(this.interval.schedulerDurationsMs);
         const partyFormationStats = stats(this.interval.partyFormationDurationsMs);
         const actorPathStats = stats(this.interval.actorPathDurationsMs);
         const companionPathStats = stats(this.interval.companionPathDurationsMs);
@@ -549,7 +499,6 @@ const PopulationMetrics = {
         const stateRetentionDeferralReasons = Object.fromEntries(this.interval.stateRetentionDeferralReasons.entries());
         const stateRetentionPolicyRows = Object.fromEntries(this.interval.stateRetentionPolicyRows.entries());
         this.interval.resolveDurationsMs = [];
-        this.interval.schedulerDurationsMs = [];
         this.interval.partyFormationDurationsMs = [];
         this.interval.actorPathDurationsMs = [];
         this.interval.companionPathDurationsMs = [];
@@ -570,7 +519,7 @@ const PopulationMetrics = {
             delta,
             eventLoop: { ...this.eventLoop, delay },
             resolve: resolveStats,
-            scheduler: { ...schedulerStats, ...this.schedulerState },
+            scheduler: { ...this.schedulerState },
             partyFormation: partyFormationStats,
             pathfinding: {
                 actor: actorPathStats,

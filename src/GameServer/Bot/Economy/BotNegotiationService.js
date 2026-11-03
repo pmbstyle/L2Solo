@@ -186,7 +186,7 @@ function summary(negotiation) {
 }
 
 function persist(negotiation) {
-    if (!Database.isReady?.() || !actorId(negotiation.botSession)) return Promise.resolve(false);
+    if (!Database.isReady() || !actorId(negotiation.botSession)) return Promise.resolve(false);
     const write = () => Database.execute([
         `INSERT INTO bot_negotiations (
             id, playerId, botId, itemObjectId, itemSelfId, amount,

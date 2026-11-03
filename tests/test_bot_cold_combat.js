@@ -15,7 +15,6 @@ const BackgroundDropResolver = invoke('GameServer/Bot/Population/BackgroundDropR
 const Npc = invoke('GameServer/Npc/Npc');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const PartyRewardMath = invoke('GameServer/Actor/PartyRewardMath');
-const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const PopulationMetrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 
@@ -137,9 +136,6 @@ const migratedSnapshot = ColdCombatProfile.legacySnapshot(fighter, [{ selfId: 3,
 assert.strictEqual(migratedSnapshot.skills[0].level, 4, 'legacy snapshot must preserve the stored skill level');
 assert.strictEqual(migratedSnapshot.skillSource, 'database', 'legacy snapshot must prevent a later fallback from replacing persisted skills');
 assert.strictEqual(migratedSnapshot.version, ColdCombatProfile.PROFILE_VERSION, 'a database snapshot must record the current completeness contract');
-assert.strictEqual(ColdCombatProfile.needsDatabaseBackfill({ skillSource: 'database', version: ColdCombatProfile.PROFILE_VERSION - 1 }), true, 'a previous-version database snapshot must be repaired once');
-assert.strictEqual(ColdCombatProfile.needsDatabaseBackfill(migratedSnapshot), false, 'a current database snapshot must not be rescanned on every migration tick');
-assert.strictEqual(ColdCombatProfile.needsDatabaseBackfill({ version: ColdCombatProfile.PROFILE_VERSION }), true, 'a class-tree fallback without a database source must still be migrated');
 
 function musicSkill(selfId) {
     return { selfId, level: 1, passive: false, spell: false, power: 0, mp: 60, hp: 0, hitTime: 1000, reuse: 0, buffTime: 120000 };
@@ -897,30 +893,4 @@ assert.strictEqual(combatMetrics.heals, partyResult.debug.heals, 'population tel
 PopulationMetrics.counters = originalMetrics.counters;
 PopulationMetrics.lastSummaryCounters = originalMetrics.lastSummaryCounters;
 
-const originalMigrateLegacyColdCombatProfiles = PopulationService.migrateLegacyColdCombatProfiles;
-const originalMigrationRunning = PopulationService.coldCombatProfileMigrationRunning;
-const originalNextMigrationAt = PopulationService.nextColdCombatProfileMigrationAt;
-let profileMigrationCalls = 0;
-PopulationService.migrateLegacyColdCombatProfiles = () => {
-    profileMigrationCalls++;
-    return Promise.resolve([]);
-};
-PopulationService.coldCombatProfileMigrationRunning = false;
-PopulationService.nextColdCombatProfileMigrationAt = 0;
-Promise.resolve()
-    .then(() => PopulationService.maybeMigrateLegacyColdCombatProfiles(1000))
-    .then(() => PopulationService.maybeMigrateLegacyColdCombatProfiles(1001))
-    .then(() => PopulationService.maybeMigrateLegacyColdCombatProfiles(11000))
-    .then(() => {
-        assert.strictEqual(profileMigrationCalls, 2, 'the post-resolve cold-profile migration must run initially and respect its cadence');
-        console.log('Cold combat profile checks passed');
-    })
-    .catch((err) => {
-        console.error(err);
-        process.exitCode = 1;
-    })
-    .finally(() => {
-        PopulationService.migrateLegacyColdCombatProfiles = originalMigrateLegacyColdCombatProfiles;
-        PopulationService.coldCombatProfileMigrationRunning = originalMigrationRunning;
-        PopulationService.nextColdCombatProfileMigrationAt = originalNextMigrationAt;
-    });
+console.log('Cold combat profile checks passed');

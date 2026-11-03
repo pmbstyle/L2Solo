@@ -684,7 +684,7 @@ function applySummon(session, actor, target, skill, semantic, magicSkill, attack
         const World = invoke('GameServer/World/World');
         const coords = fetchSummonCoords(actor, target, skill);
         if (skill.fetchTargetKind?.() === 'corpse_mob') {
-            World.removeNpcFromGrid?.(target);
+            World.removeNpcFromGrid(target);
             World.npc.spawns = World.npc.spawns.filter((spawn) => spawn.fetchId?.() !== target?.fetchId?.());
         }
 
@@ -712,8 +712,7 @@ function placeSummon(session, actor, skill, npcData, coords, { hp = null, remain
     if (Number(hp) > 0) npc.setHp(Math.min(Number(hp), npc.fetchMaxHp()));
 
     World.npc.spawns.push(npc);
-    if (World.addNpcToGrid) World.addNpcToGrid(npc);
-    else World.indexSpawnsInGrid?.();
+    World.addNpcToGrid(npc);
 
     actor.summon = npc;
     session.summon = npc;

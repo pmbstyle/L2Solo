@@ -31,8 +31,6 @@ function receivedHit(session, actor, npc, hit, options = {}) {
         const playerId = Number(session?.actor?.fetchId?.() || 0);
         if (actorId) dropState.raidAttackers.add(actorId);
         if (playerId) dropState.raidAttackers.add(playerId);
-        if (actor?.model) actor.model.raidBossAttackTargetId = Number(npc.fetchId?.() || 0);
-        if (session?.actor?.model) session.actor.model.raidBossAttackTargetId = Number(npc.fetchId?.() || 0);
     }
     if (levels.length > 0) {
         dropState.dropAttackerLevels ??= [];

@@ -172,7 +172,7 @@ function candidateCatalog(playerSession, minLevel = 1, maxLevel = 80, classId = 
     const catalog = BotAvailability.catalogForPlayer(
         playerSession,
         BotManager.sessions || [],
-        LifeState.allStates?.(2000) || []
+        LifeState.allStates(2000)
     );
     return catalog.filter((candidate) => {
         const level = Number(candidate.level || candidate.subject?.level || 1);

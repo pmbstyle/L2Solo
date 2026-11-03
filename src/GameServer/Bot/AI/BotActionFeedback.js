@@ -9,8 +9,7 @@ function key(actor, target, skill) {
 function record(session, actor, target, skill, status, detail, now = Date.now()) {
     if (!actor || !(String(session?.accountId || '').startsWith('bot_') || session?.constructor?.name === 'BotSession')) return;
     let state = actors.get(actor);
-    if (!state) { state = { failures: new Map(), counts: {} }; actors.set(actor, state); }
-    state.counts[status] = Math.min(1000000, (state.counts[status] || 0) + 1);
+    if (!state) { state = { failures: new Map() }; actors.set(actor, state); }
     const id = key(actor, target, skill);
     for (const [entry, until] of state.failures) if (until <= now) state.failures.delete(entry);
     if (status === 'rejected') {
@@ -18,8 +17,6 @@ function record(session, actor, target, skill, status, detail, now = Date.now())
         state.failures.set(id, now + RETRY_MS);
         if (state.failures.size > LIMIT) state.failures.delete(state.failures.keys().next().value);
     } else state.failures.delete(id);
-    session.lastSkillOutcome = { skillId: skill?.fetchSelfId?.(), targetId: target?.fetchId?.(), status, detail, at: now };
-    session.combatOutcomeCounts = { ...state.counts };
 }
 function blocked(actor, target, skill, now = Date.now()) {
     return (actors.get(actor)?.failures.get(key(actor, target, skill)) || 0) > now;

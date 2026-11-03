@@ -808,8 +808,7 @@ class Backpack extends BackpackModel {
             });
 
             World.npc.spawns.push(npc);
-            if (World.addNpcToGrid) World.addNpcToGrid(npc);
-            else World.indexSpawnsInGrid?.();
+            World.addNpcToGrid(npc);
             this.deleteItem(session, id, itemSkill.consumeCount || 1, () => {
                 session.dataSendToMeAndOthers(ServerResponse.npcInfo(npc), npc);
             }, 'item_skill');
@@ -890,8 +889,7 @@ class Backpack extends BackpackModel {
             if (!npc) return;
 
             World.npc.spawns.push(npc);
-            if (World.addNpcToGrid) World.addNpcToGrid(npc);
-            else World.indexSpawnsInGrid?.();
+            World.addNpcToGrid(npc);
             session.actor.pet = npc;
             session.pet = npc;
             session.dataSendToMeAndOthers?.(ServerResponse.npcInfo(npc), npc);

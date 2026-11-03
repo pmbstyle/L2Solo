@@ -22,16 +22,11 @@ const DEFAULTS = {
     opportunisticRaidExpeditionMs: 45 * 60000,
     phasePolicyEnabled: true,
     summaryIntervalMs: 30000,
+    // How often the player-activity and lag signal is published (the cold
+    // worker pressure and the background work admissions read it).
     schedulerIntervalMs: 5000,
-    // Cold simulation is invisible to players. Keep its total throughput
-    // bounded, while allowing a larger catch-up slice when no real player is
-    // online. The player-aware budget remains intentionally conservative.
+    // One cooperative main-thread slice of background work.
     schedulerSliceMs: 12,
-    schedulerIdleBudgetMs: 2500,
-    schedulerPlayerBudgetMs: 100,
-    schedulerPartyBudgetMs: 75,
-    schedulerIdleMaxResolvesPerTick: 100,
-    schedulerPlayerMaxResolvesPerTick: 12,
     coldOwnerResolveTimeoutMs: 10000,
     coldWorkerBatchSize: 64,
     coldWorkerCommitBatchSize: 32,
@@ -102,9 +97,6 @@ const DEFAULTS = {
     // in small batches so restart never becomes a database migration spike.
     classProgressionMigrationIntervalMs: 10000,
     classProgressionMigrationBatchSize: 5,
-    coldCombatProfileMigrationIntervalMs: 10000,
-    coldCombatProfileMigrationBatchSize: 5,
-    partyFormationIntervalMs: 45000,
     // A protected player session may replenish only required parties. The
     // worker finds candidates; the main loop performs one guarded atomic write.
     protectedPartyFormationPollMs: 5000,
@@ -124,9 +116,6 @@ const DEFAULTS = {
     starterBotsPerRace: 30,
     generatedColdBatchSize: 50,
     generatedColdSeedDelayMs: 45000,
-    // The persistent world is resolved in bounded batches so population
-    // expansion never becomes a database spike after a restart.
-    maxResolvesPerTick: 25,
     // Append-only diagnostics and AI memory have explicit lifecycles. Run a
     // single indexed delete statement per idle tick, delayed after start so it
     // never joins the startup write burst.
@@ -179,7 +168,6 @@ const DEFAULTS = {
     cooldownBatchSize: 20,
     cooldownRadius: 11000,
     activationRadius: 9000,
-    activationLevelRange: 5,
     maxActivationsPerScan: 6,
     activationPlacementRadius: 1400,
     activationMinPlayerDistance: 450,
@@ -204,9 +192,6 @@ const DEFAULTS = {
     marketTradeChatEnabled: true,
     marketTradeChatIntervalMs: 8 * 60 * 1000,
     marketTradeChatGlobalMinIntervalMs: 100000,
-    partyRecruitmentChatEnabled: true,
-    partyRecruitmentChatIntervalMs: 12 * 60 * 1000,
-    partyRecruitmentChatGlobalMinIntervalMs: 90000,
     partyMarketBreakMinSessionMs: 10 * 60 * 1000,
     partyMarketBreakMinFights: 8,
     partyMarketBreakCooldownMs: 5 * 60 * 1000,
@@ -214,8 +199,7 @@ const DEFAULTS = {
     resolveSlowMs: 250,
     resolveSampleLimit: 200,
     eventLoopSampleMs: 1000,
-    slowEventLoopLagMs: 75,
-    debug: false
+    slowEventLoopLagMs: 75
 };
 
 const ENV_KEYS = {
@@ -235,18 +219,12 @@ const ENV_KEYS = {
     cooldownGraceMs: 'BOT_COOLDOWN_GRACE_MS',
     cooldownRadius: 'BOT_COOLDOWN_RADIUS',
     activationRadius: 'BOT_ACTIVATION_RADIUS',
-    activationLevelRange: 'BOT_ACTIVATION_LEVEL_RANGE',
     maxActivationsPerScan: 'BOT_MAX_ACTIVATIONS_PER_SCAN',
     activationFloorDirectZ: 'BOT_ACTIVATION_FLOOR_DIRECT_Z',
     activationFloorGeoChecksPerScan: 'BOT_ACTIVATION_FLOOR_GEO_CHECKS_PER_SCAN',
     activationFloorCacheMs: 'BOT_ACTIVATION_FLOOR_CACHE_MS',
     activationFloorCacheLimit: 'BOT_ACTIVATION_FLOOR_CACHE_LIMIT',
     schedulerSliceMs: 'BOT_POPULATION_SCHEDULER_SLICE_MS',
-    schedulerIdleBudgetMs: 'BOT_POPULATION_SCHEDULER_IDLE_BUDGET_MS',
-    schedulerPlayerBudgetMs: 'BOT_POPULATION_SCHEDULER_PLAYER_BUDGET_MS',
-    schedulerPartyBudgetMs: 'BOT_POPULATION_SCHEDULER_PARTY_BUDGET_MS',
-    schedulerIdleMaxResolvesPerTick: 'BOT_POPULATION_SCHEDULER_IDLE_MAX_RESOLVES',
-    schedulerPlayerMaxResolvesPerTick: 'BOT_POPULATION_SCHEDULER_PLAYER_MAX_RESOLVES',
     coldOwnerResolveTimeoutMs: 'BOT_POPULATION_COLD_OWNER_TIMEOUT_MS',
     coldWorkerBatchSize: 'BOT_POPULATION_COLD_WORKER_BATCH_SIZE',
     coldWorkerCommitBatchSize: 'BOT_POPULATION_COLD_WORKER_COMMIT_BATCH_SIZE',
@@ -296,8 +274,6 @@ const ENV_KEYS = {
     marketTradeChatEnabled: 'BOT_MARKET_TRADE_CHAT_ENABLED',
     marketTradeChatIntervalMs: 'BOT_MARKET_TRADE_CHAT_INTERVAL_MS',
     marketTradeChatGlobalMinIntervalMs: 'BOT_MARKET_TRADE_CHAT_GLOBAL_MIN_INTERVAL_MS',
-    partyRecruitmentChatEnabled: 'BOT_PARTY_RECRUITMENT_CHAT_ENABLED',
-    partyRecruitmentChatIntervalMs: 'BOT_PARTY_RECRUITMENT_CHAT_INTERVAL_MS',
     partyMarketBreakMinSessionMs: 'BOT_PARTY_MARKET_BREAK_MIN_SESSION_MS',
     partyHistoryRetentionMs: 'BOT_PARTY_HISTORY_RETENTION_MS',
     partyHistoryCleanupBatchSize: 'BOT_PARTY_HISTORY_CLEANUP_BATCH_SIZE',
@@ -318,8 +294,7 @@ const ENV_KEYS = {
     staleLlmTurnMs: 'BOT_STALE_LLM_TURN_MS',
     compactedConversationRetentionMs: 'BOT_COMPACTED_CONVERSATION_RETENTION_MS',
     conversationMaxUncompactedRows: 'BOT_CONVERSATION_MAX_UNCOMPACTED_ROWS',
-    devLogPlayerChat: 'BOT_DEV_LOG_PLAYER_CHAT',
-    debug: 'BOT_POPULATION_DEBUG'
+    devLogPlayerChat: 'BOT_DEV_LOG_PLAYER_CHAT'
 };
 
 function asBoolean(value, fallback) {

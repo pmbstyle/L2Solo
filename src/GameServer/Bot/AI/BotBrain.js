@@ -568,7 +568,6 @@ async function requestDecision(payload, cfg, session, requestContext, visiblePla
             if (['say', 'none'].includes(validated.action)) return { applied: false, reason: validated.reason,
                 playerVisibleReply: validated.reply, policyDecision: validated };
             const result = await BotAgentTools.execute(session, validated, visiblePlayers, { ...context, deferReply: true });
-            BotAgentTools.remember(session, validated, result, cfg.model);
             return { ...result, executedDecision: validated };
         }
     });
@@ -774,7 +773,6 @@ async function applyDecision(session, decision, visiblePlayers, requestContext) 
     let result = decision.mutation?.result || await BotAgentTools.execute(session, decision, visiblePlayers, requestContext);
     if (!dialogueAlive(session, requestContext)) return { ...result, replyDelivered: false, playerVisibleReply: null };
     if (decision.action === 'none') return { ...result, replyDelivered: false, playerVisibleReply: null };
-    BotAgentTools.remember(session, decision, result, config().model);
     const playerSession = requestContext?.playerSession;
     let playerVisibleReply = null;
     if (result.applied) {
@@ -1095,12 +1093,6 @@ const BotBrain = {
                 async () => ({ ok: false, reason: admission.reason, retryAfterMs: admission.retryAfterMs || 0 }),
                 'chain'
             ).catch(() => {});
-            session.lastBrainBudget = {
-                ...BotInferenceBudget.status(session),
-                deniedReason: admission.reason,
-                retryAfterMs: admission.retryAfterMs,
-                at: Date.now()
-            };
             BotEventJournal.record({
                 botId: bot.fetchId?.(),
                 eventType: 'llm_budget',
@@ -1180,7 +1172,6 @@ const BotBrain = {
                     rounds: providerResult?.rounds || 1
                 }
             })).catch(() => {});
-            session.lastBrainBudget = BotInferenceBudget.status(session);
             session.brainInFlight = false;
             drainQueuedTurns(session);
         };

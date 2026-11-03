@@ -534,7 +534,7 @@ async function resolveClanInternal(clan, options = {}) {
             DiagnosticConfig.developerDiagnostics && (metrics.goalsCompleted += previous?.status === 'completed' ? 0 : 1);
             record(metrics.reasonCounts, Contracts.REASON_CODES.CONTRIBUTION_LEVEL_UP);
             await ClanCrestService.ensureAutonomousCrest(clan.id);
-            if (typeof ClanService.reload === 'function') await ClanService.reload();
+            await ClanService.reload();
             return {
                 ok: true,
                 clanId: clan.id,

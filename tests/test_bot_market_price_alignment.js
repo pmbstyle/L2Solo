@@ -178,7 +178,6 @@ function purchaseFor(buyer) {
     assert.strictEqual(goal.target.amount, 1, 'this gear purchase needs one physical copy');
     assert(economy.network.queue.some((wish) => wish.key === goal.plan.wishKey && wish.funded),
         'a native shopping leaf comes from the funded queue');
-    assert.strictEqual(goal.plan.requiredAdena, 0, 'a funded shopping leaf has no funding shortfall');
     const reserve = kitReserve(buyer, economy);
     close(economy.survivalReserve, reserve, 'one-hour survival reserve');
     assert.strictEqual(economy.statsPacket.money[2], Math.round(reserve), 'native saved reserve rounding');

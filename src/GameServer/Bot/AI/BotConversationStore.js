@@ -122,7 +122,7 @@ function copyTurn(turn) {
 }
 
 function databaseReady() {
-    return typeof Database.isReady === 'function' && Database.isReady();
+    return Database.isReady();
 }
 
 function ensureSchema() {

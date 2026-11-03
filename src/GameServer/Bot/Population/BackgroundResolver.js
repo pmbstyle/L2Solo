@@ -2509,7 +2509,7 @@ const BackgroundResolver = {
                     spotId: spot.id,
                     currentRegion: state.homeRegion || state.currentRegion,
                     loc: { ...spot.center },
-                    stats: { ...(state.stats || {}), legacyShoppingRecoveredAt: timestamp }
+                    stats: { ...(state.stats || {}) }
                 },
                 events: [{
                     type: 'shopping_recovered',

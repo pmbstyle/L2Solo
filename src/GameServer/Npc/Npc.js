@@ -131,11 +131,6 @@ class Npc extends NpcModel {
         // back to the actor's online flag.
         if (actor.session && actor.session.actor !== actor) return false;
         if (typeof actor.fetchIsOnline === 'function' && actor.fetchIsOnline() === false) return false;
-
-        // NPCs and lightweight test actors may not expose StateModel. Only
-        // use the generic isDead() fallback when it cannot trigger the player
-        // ActionFailed side effect implemented by Actor.isDead().
-        if (!actor.state && actor.isDead?.() === true) return false;
         return true;
     }
 

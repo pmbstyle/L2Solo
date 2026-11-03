@@ -677,7 +677,6 @@ const updateVitalsOffset = updateNameEnd + 2;
 assert.strictEqual(partyUpdate.readInt32LE(updateVitalsOffset), actor.fetchCp(), 'C4 party update should send CP before HP');
 assert.strictEqual(partyUpdate.readInt32LE(updateVitalsOffset + 8), actor.fetchHp(), 'C4 party update should send HP after CP');
 assert.strictEqual(ServerResponse.partySmallWindowDeleteAll()[0], 0x50, 'C4 party delete all opcode should be 0x50');
-assert.strictEqual(ServerResponse.partySmallWindowDelete(actor.fetchId(), actor.fetchName())[0], 0x51, 'C4 party delete opcode should be 0x51');
 
 const partyPositions = ServerResponse.partyMemberPosition([actor]);
 assert.strictEqual(partyPositions[0], 0xa7, 'C4 PartyMemberPosition should use opcode 0xa7');

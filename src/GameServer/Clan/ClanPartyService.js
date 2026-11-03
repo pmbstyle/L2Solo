@@ -242,7 +242,7 @@ async function prepareOperationRoster(clan, goal) {
 
     if (joinedMemberIds.length) {
         DiagnosticConfig.developerDiagnostics && (metrics.supportClanJoins += joinedMemberIds.length);
-        if (typeof ClanService.reload === 'function') await ClanService.reload();
+        await ClanService.reload();
         const projected = await GoalService.clanProjectionById(currentClan.id);
         if (projected?.state?.goal) {
             currentClan = projected;
@@ -402,7 +402,7 @@ async function resolveActiveOperation(clan, goal, operation, options = {}) {
             metrics.levelUps += 1;
             await ClanCrestService.ensureAutonomousCrest(clan.id);
             recordReason(Contracts.REASON_CODES.CONTRIBUTION_LEVEL_UP);
-            if (typeof ClanService.reload === 'function') await ClanService.reload();
+            await ClanService.reload();
         } else {
             recordReason(advanced.code);
         }

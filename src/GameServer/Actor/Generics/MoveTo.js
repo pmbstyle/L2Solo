@@ -444,7 +444,7 @@ function moveTo(session, actor, coords) {
         // expensive autonomous routes as well.
         const useWorkerPathfinding = isCompanion || pathMaxNodes > COMPANION_PATH_MAX_NODES;
         const useSegmentedTownRoute = pathMaxNodes > COMPANION_PATH_MAX_NODES;
-        const townName = useSegmentedTownRoute && TownNavigation.enabled()
+        const townName = useSegmentedTownRoute
             ? TownTransitPolicy.routeTown({ locX: startX, locY: startY, locZ: startZ }, requestedTo) : null;
 
         if (!townName && shouldUseLowLodWarp({

@@ -160,11 +160,7 @@ class NpcModel extends CreatureModel {
     // Monsters, Bosses, summons/pets, and the town guards that engage them
     // stay killable.
     fetchIsKillable() {
-        // NPC models without a template kind are lightweight/test doubles;
-        // only real templates are subject to the immortality rule.
-        const kind = String(this.model.kind || '');
-        if (!kind) return true;
-        if (['Monster', 'Boss', 'Summon'].includes(kind)) return true;
+        if (['Monster', 'Boss', 'Summon'].includes(this.model.kind)) return true;
         if (this.fetchAttackable() || this.fetchIsSummon() || this.fetchIsPet()) return true;
         return invoke('GameServer/Npc/TownGuard').isTownGuard(this);
     }

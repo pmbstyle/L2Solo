@@ -63,6 +63,7 @@ async function run() {
         .map(member => ({ ...member, spotId: 'far76', party: { partyId: 'bgp_far', role: 'dps' } }));
     const party = { partyId: 'bgp_far', leaderId: 1, memberIds: [1, 2], spotId: 'far76', status: 'active', revision: 1, stats: {} };
     let saved = null;
+    const restorePartyCommit = require('./helpers/recordedPartyCommit').install();
     try {
         Config.partyMinSize = 2; Config.partyMaxSize = 5;
         PartyState.active = () => [party];
@@ -90,6 +91,7 @@ async function run() {
         Object.assign(PartyState, { active: originals.active, find: originals.find, createOrUpdate: originals.createOrUpdate });
         Object.assign(LifeState, { cachedStatesForParties: originals.cachedStatesForParties, cachedState: originals.cachedState });
         Config.partyMinSize = originals.partyMinSize; Config.partyMaxSize = originals.partyMaxSize;
+        restorePartyCommit();
     }
     // ... and it forms a party with the bots that hunt its request spot.
     const groups = PopulationService.groupPartyCandidatesByObjective([seeker, bot(3, 2, 76, 'ground76', 'dps'),

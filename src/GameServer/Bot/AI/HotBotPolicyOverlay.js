@@ -103,7 +103,6 @@ function prune(session) {
     if (Number(overlay.expiresAt || 0) > now()) return overlay;
     restorePullPolicy(session, overlay);
     delete session.hotPolicyOverlay;
-    session.lastHotPolicyReset = { reason: 'expired', at: now() };
     return null;
 }
 
@@ -149,24 +148,23 @@ function set(session, patch = {}, context = {}) {
     return { ...updated, skillPriorities: { ...updated.skillPriorities }, pull: updated.pull && { ...updated.pull } };
 }
 
-function clear(session, reason = 'lifecycle') {
+function clear(session) {
     if (!session?.hotPolicyOverlay) return false;
     restorePullPolicy(session, session.hotPolicyOverlay);
     delete session.hotPolicyOverlay;
-    session.lastHotPolicyReset = { reason, at: now() };
     return true;
 }
 
 function clearForDeath(session) {
-    return clear(session, 'death');
+    return clear(session);
 }
 
 function clearForCold(session) {
-    return clear(session, 'cold_transition');
+    return clear(session);
 }
 
 function clearForPartyDetach(session) {
-    return clear(session, 'party_detached');
+    return clear(session);
 }
 
 function combatPolicy(session) {

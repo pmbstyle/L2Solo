@@ -16,8 +16,6 @@ const inheritedDrain = Profiles.skillSnapshotsFromRecords([{ selfId: 1147, level
 assert.strictEqual(inheritedDrain.spell, true);
 assert.strictEqual(inheritedDrain.hitTime, 4000);
 assert.strictEqual(inheritedDrain.reuse, 12000);
-assert(Profiles.needsDatabaseBackfill({ skillSource: 'database', version: 4 }), 'persisted incomplete snapshots must be rebuilt');
-assert(!Profiles.needsDatabaseBackfill({ skillSource: 'hot', version: 4 }), 'native snapshots already include this metadata');
 let cases = 0, gearCases = 0, summonCases = 0;
 for (const { classId } of templates) {
     const level = Progression.lineage(classId).length === 1 ? 19 : Progression.lineage(classId).length === 2 ? 39 : Progression.lineage(classId).length === 3 ? 74 : 78;

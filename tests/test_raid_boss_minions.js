@@ -16,7 +16,8 @@ DataCache.init();
 const world = {
     user: { sessions: [] },
     npc: { spawns: [], nextId: 3000000 },
-    indexSpawnsInGrid() {}
+    addNpcToGrid() {},
+    removeNpcFromGrid() {}
 };
 const bossTemplate = DataCache.npcs.find((npc) => npc.selfId === 10001);
 const boss = new Npc(world.npc.nextId++, {

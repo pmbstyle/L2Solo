@@ -204,6 +204,7 @@ async function run() {
     // Native physical preparation ends here; the original ownership checks
     // below use mocked assignments, not persisted cold-life membership rows.
     await Database.close();
+    const restorePartyCommit = require('./helpers/recordedPartyCommit').install();
     // A far party (cold leader): the pass records the pending join for the
     // leader's step and joins nobody itself.
     const originalFind = PartyState.find;
@@ -218,7 +219,8 @@ async function run() {
     members[0] = { ...members[0], phase: 'hot' };
     const recruited = await PopulationService.recruitBackgroundMembers(candidates);
     assert.deepStrictEqual([...recruited], [3, 4]);
-    assert.deepStrictEqual(assigned.map((entry) => entry.state.characterId), [3, 4]);
+    assert.deepStrictEqual(assigned.map((entry) => entry.state.characterId), [1, 2, 3, 4],
+        'the join commits the whole resulting roster');
     assert.deepStrictEqual(saved.memberIds, [1, 2, 3, 4]);
     assert.deepStrictEqual(saved.roleCoverage, { tank: 1, healer: 1, buffer: 1, dps: 1 });
     assert.strictEqual(saved.leaderId, 1, 'recruitment must preserve an attached party leader');
@@ -266,7 +268,8 @@ async function run() {
         { ...nativeRows[3], characterId: 61, name: 'SharedTwo' }
     ]);
     assert.deepStrictEqual([...sharedCandidates].sort((a, b) => a - b), [60, 61], 'a candidate must be claimed by only one active party per formation pass');
-    assert.deepStrictEqual(sharedAssignments.map((entry) => entry.characterId).sort((a, b) => a - b), [60, 61]);
+    assert.deepStrictEqual(sharedAssignments.filter((entry) => entry.characterId >= 60)
+        .map((entry) => `${entry.characterId}:${entry.partyId}`).sort(), ['60:bgp_shared_a', '61:bgp_shared_b']);
 
     const fairGroups = PopulationService.groupPartyCandidatesBySpot([
         { characterId: 101, level: 10, spotId: 'crowded', activity: 'party_wait', timing: { activityStartedAt: 20 } },
@@ -623,6 +626,7 @@ async function run() {
     assert.strictEqual(concurrentResults.filter((result) => result.ok).length, 1, 'only one concurrent request may activate a character');
     assert.strictEqual(concurrentResults.filter((result) => result.reason === 'activation_pending').length, 1, 'the competing request must observe the early activation reservation');
     assert.strictEqual(activationOrder.filter((entry) => entry.startsWith('spawn:')).length, 1, 'concurrent activation must create exactly one hot AI session');
+    restorePartyCommit();
     console.log('Bot background party recruitment checks passed');
 }
 

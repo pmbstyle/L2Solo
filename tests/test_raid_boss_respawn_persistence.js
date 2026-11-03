@@ -37,7 +37,8 @@ async function main() {
     const world = {
         user: { sessions: [] },
         npc: { spawns: [], nextId: 1000000, periodMode: 'day', raidBossRespawnTimers: new Map() },
-        indexSpawnsInGrid() {}
+        addNpcToGrid() {},
+        removeNpcFromGrid() {}
     };
     assert.strictEqual(SpawnNpcs.spawnNpc(world, definition), null,
         'persisted respawn_time must gate startup spawning');

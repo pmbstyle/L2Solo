@@ -1,5 +1,4 @@
 const StarterItemCatalog = invoke('GameServer/Knowledge/StarterItemCatalog');
-const ActorQueries = require('../World/ActorSpatialQueries');
 const refreshPartyMemberships = require('../World/PartyMembershipPublication');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const Database    = invoke('Database');
@@ -1326,20 +1325,6 @@ const BotManager = {
         });
     },
 
-    botShout(session, text) {
-        if (!session.actor) return;
-        const ServerResponse = invoke('GameServer/Network/Response');
-        const World = invoke('GameServer/World/World');
-        
-        const packet = ServerResponse.speak(session.actor, { kind: 1, text: text });
-        
-        ActorQueries.humans(World).forEach((user) => {
-            if (user.socket && typeof user.socket.write === 'function' && user.accountId.indexOf('bot_') !== 0) {
-                user.dataSendToMe(packet);
-            }
-        });
-    },
-
     checkAndStartConversation(botSession) {
         if (botSession.inConversation || botSession.partyCompanion) return;
         const bot = botSession.actor;
@@ -1415,43 +1400,6 @@ const BotManager = {
 
     handleBotGlobalShout(botSession) {
         return invoke('GameServer/Bot/Population/BotGlobalChat').maybeAmbient(botSession);
-    },
-
-    findHighDensityCoord() {
-        const coords = { locX: -83000, locY: 243000, locZ: -3700 }; // default Keltir spot
-        const sectors = {};
-        const World = invoke('GameServer/World/World');
-
-        let maxCount = 0;
-        let bestSector = null;
-
-        ActorQueries.humans(World).forEach((session) => {
-            const actor = session.actor;
-            if (actor && actor.fetchIsOnline() && actor.fetchKarma() === 0 && !session.accountId?.startsWith('bot_') && !utils.isInPeaceZone(actor.fetchLocX(), actor.fetchLocY())) {
-                const sx = Math.floor(actor.fetchLocX() / 4000);
-                const sy = Math.floor(actor.fetchLocY() / 4000);
-                const key = `${sx},${sy}`;
-                if (!sectors[key]) {
-                    sectors[key] = { count: 0, sumX: 0, sumY: 0, sumZ: 0 };
-                }
-                sectors[key].count++;
-                sectors[key].sumX += actor.fetchLocX();
-                sectors[key].sumY += actor.fetchLocY();
-                sectors[key].sumZ += actor.fetchLocZ();
-
-                if (sectors[key].count > maxCount) {
-                    maxCount = sectors[key].count;
-                    bestSector = sectors[key];
-                }
-            }
-        });
-
-        if (bestSector) {
-            coords.locX = Math.floor(bestSector.sumX / bestSector.count);
-            coords.locY = Math.floor(bestSector.sumY / bestSector.count);
-            coords.locZ = GeodataEngine.getHeight(coords.locX, coords.locY, Math.floor(bestSector.sumZ / bestSector.count));
-        }
-        return coords;
     },
 
     startStatusLogMonitor() {

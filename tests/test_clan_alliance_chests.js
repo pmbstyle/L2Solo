@@ -6,7 +6,7 @@ require('../src/Global');
 const DataCache = invoke('GameServer/DataCache');
 const SpawnNpcs = invoke('GameServer/World/Generics/SpawnNpcs');
 DataCache.init();
-const world = { npc: { nextId: 1000000, spawns: [] }, user: { sessions: [] }, addNpcToGrid() {} };
+const world = { npc: { nextId: 1000000, spawns: [] }, user: { sessions: [] }, addNpcToGrid() {}, removeNpcFromGrid() {} };
 const kills = [];
 const mocks = {
     'GameServer/Progression/OverhitReward': { capture() {} },

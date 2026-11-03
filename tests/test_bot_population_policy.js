@@ -83,7 +83,6 @@ const Parties = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const originalFindParty = Parties.find;
 const originalConfig = {
     activationRadius: Config.activationRadius,
-    activationLevelRange: Config.activationLevelRange,
     maxActivationsPerScan: Config.maxActivationsPerScan,
     cooldownGraceMs: Config.cooldownGraceMs,
     cooldownRadius: Config.cooldownRadius,
@@ -110,7 +109,6 @@ async function run() {
     const youngFarBot = session('bot_young_far', actor(5, 15000), { populationHotAt: Date.now() - 1000 });
 
     Config.activationRadius = 9000;
-    Config.activationLevelRange = 5;
     Config.maxActivationsPerScan = 1;
     Config.cooldownGraceMs = 120000;
     Config.cooldownRadius = 11000;

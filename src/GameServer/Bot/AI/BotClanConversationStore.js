@@ -20,7 +20,7 @@ function install(connection) {
 }
 
 async function append(clanId, turn) {
-    if (!Database.isReady?.() || !(Number(clanId) > 0)) return false;
+    if (!Database.isReady() || !(Number(clanId) > 0)) return false;
     try {
         await Database.execute([`INSERT INTO bot_clan_dialogue_messages
             (clanId, turnId, role, speakerId, name, text, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -35,7 +35,7 @@ async function append(clanId, turn) {
 }
 
 async function recent(clanId, { since = 0, limit = 12 } = {}) {
-    if (!Database.isReady?.() || !(Number(clanId) > 0)) return [];
+    if (!Database.isReady() || !(Number(clanId) > 0)) return [];
     const count = Math.max(1, Math.min(32, Math.floor(Number(limit) || 12)));
     try {
         const rows = await Database.execute([`SELECT role, speakerId, name, text, createdAt, turnId

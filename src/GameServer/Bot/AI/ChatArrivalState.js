@@ -6,7 +6,7 @@ const DEFAULT_HOLD_MS = 60000;
 // (the world retires the actor while session.actor stays) ends the follow.
 function online(session, actor = session?.actor) {
     if (!actor || session?.actor !== actor || !actor.fetchIsOnline?.()) return false;
-    const record = invoke('GameServer/World/World').registeredActorById?.(actor.fetchId?.());
+    const record = invoke('GameServer/World/World').registeredActorById(actor.fetchId?.());
     return !record || (record.actor === actor && record.retired !== true);
 }
 
@@ -17,14 +17,13 @@ function distance2d(first, second) {
     return Math.sqrt((dx * dx) + (dy * dy));
 }
 
-function clear(session, reason = 'cleared') {
+function clear(session) {
     if (!session) return false;
     session.chatArrivalActive = false;
     session.chatArrivalTargetSession = null;
     session.chatArrivalTargetActor = null;
     session.chatArrivalUntil = 0;
     session.chatArrivalLastMoveAt = 0;
-    session.chatArrivalReason = reason;
     session.chatArrivalPersistent = false;
     session.chatArrivalStopOnArrival = false;
     return true;
@@ -41,7 +40,6 @@ function start(session, targetSession, options = {}) {
         ? 0
         : Date.now() + Math.max(10000, Number(options.holdMs || DEFAULT_HOLD_MS));
     session.chatArrivalLastMoveAt = 0;
-    session.chatArrivalReason = options.reason || 'remote_chat_come';
     session.currentTargetId = undefined;
     session.targetTrackId = undefined;
     session.incomingThreatId = undefined;

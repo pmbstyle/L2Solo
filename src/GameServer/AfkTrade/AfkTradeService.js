@@ -1004,7 +1004,7 @@ function offerOf(line, town = null) {
         ...offerFields(line, town),
         available: PartyAdmission.personalOfferAllowed(line, null,
             invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(line.ownerId), null,
-            World.registeredActorById?.(line.ownerId)?.session),
+            World.registeredActorById(line.ownerId)?.session),
         sourceName: projection ? projection.actor.fetchName() : (entry.shop.ownerName || `Trader ${store.ownerId}`),
         itemName: storeItem.name || itemName(line.selfId),
         projection,
@@ -1024,7 +1024,7 @@ function offerOf(line, town = null) {
 function offers(selfId, storeType, options = {}) {
     const excluded = Number(options.characterId || 0);
     const ownState = excluded ? invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(excluded) : null;
-    const ownSession = excluded ? World.registeredActorById?.(excluded)?.session : null;
+    const ownSession = excluded ? World.registeredActorById(excluded)?.session : null;
     const enchant = options.enchant === undefined || options.enchant === null ? null : Number(options.enchant);
     const limit = Number(options.limit) > 0 ? Number(options.limit) : Infinity;
     const result = [];

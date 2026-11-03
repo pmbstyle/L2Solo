@@ -647,14 +647,6 @@ module.exports = function ({
                     };
                 }, 'dues');
             });
-        },
-        clanHallBlocksDissolution(clanId) {
-            return tx(
-                () =>
-                    !!one('SELECT id FROM clan_halls WHERE ownerId=?', [Number(clanId)]) ||
-                    !!one('SELECT clanId FROM clan_hall_bids WHERE clanId=?', [Number(clanId)]),
-                'dissolution'
-            );
         }
     };
 };

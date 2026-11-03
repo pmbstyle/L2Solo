@@ -356,8 +356,6 @@ function refreshAfterEquipment(session, upgrades) {
     // toggle themselves.
     ShotStock.restockAfterWeaponChange(actor, upgrades.map(({ slot }) => slot), 'BotGear');
 
-    session.lastEquipmentUpgradeAt = Date.now();
-
     if (session.dataSendToOthers) {
         session.dataSendToOthers(ServerResponse.charInfo(actor), actor);
     }

@@ -35,7 +35,6 @@ function townAt(actor) {
 
 function defer(session, bot, reason, now = Date.now()) {
     session.townTravelRetryAt = now + RETRY_MS + Math.abs(Number(bot?.fetchId?.() || 0) % 5000);
-    session.lastTownTravelFailure = { reason, at: now, retryAt: session.townTravelRetryAt };
     bot?.automation?.abortAll?.(bot);
 }
 

@@ -13,7 +13,6 @@ const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatib
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 const { GRADES: RANKS, rankOf: rankIndex, gradeForLevel } = invoke('GameServer/Bot/AI/GearGradeRule');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
-const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
 // Common materials have hundreds of sources. Retain only their sorted index
 // positions per shared input key, rather than a plain source object per row.
 // ARCH-NOTE: PERF on 1,000 native states/2,045 spots: retained heap plus
@@ -415,7 +414,7 @@ function candidateEffort(candidate, state, options = {}) {
     const allowedRecipeIds = options.allowedRecipeIds || stationRecipeIds();
     let missingRoute = false;
     const materialEffort = missingMaterials(candidate.recipe, state.inventory)
-        .filter((material) => material.missing > 0 && !CraftSupplementMaterials.isSupplementalMaterial(material.selfId))
+        .filter((material) => material.missing > 0)
         .reduce((sum, material) => {
             const source = farmSourceForMaterial(material.selfId, state, spots, allowedRecipeIds, material.missing, new Set(), options);
             if (!source) {
@@ -894,7 +893,6 @@ function marketPlan(state = {}, target, offer, options = {}) {
         grade: Progression.acquisitionRankFor(state),
         role,
         strategy: 'market',
-        soloSafe: true,
         partyNeed: 'solo_ok',
         partyNeedReason: options.reason || 'market_fallback',
         requiresParty: false,
@@ -1411,7 +1409,6 @@ function craftProgress(state, plan) {
         if (!recipe || seen.has(recipe.recipeId)) return;
         const nextSeen = new Set(seen).add(recipe.recipeId);
         for (const material of recipe.materials || []) {
-            if (CraftSupplementMaterials.isSupplementalMaterial(material.selfId)) continue;
             const required = Number(material.amount || 0) * crafts;
             requirements[material.selfId] = (requirements[material.selfId] || 0) + required;
             const component = C4RecipeItems.resolveByProductId(material.selfId);
@@ -1581,7 +1578,6 @@ function finalizePlan(state = {}, previousPlan = null, rawPlan = {}, context = {
         ...(sameClanTarget ? { clanGoal: { ...previousPlan.clanGoal } } : {}),
         startedAt: samePlan ? Number(previousPlan?.startedAt || timestamp) : timestamp,
         plannedForLevel: Number(state.level || 1),
-        plannedForGrade: gradeForLevel(state.level),
         progressionBaseline: samePlan && previousPlan?.progressionBaseline
             ? previousPlan.progressionBaseline
             : { level: Number(state.level || 1), exp: Number(state.exp || 0) },
@@ -1895,7 +1891,6 @@ function retargetPlanSource(state = {}, plan = {}, source = null) {
         ...plan,
         next,
         materials,
-        soloSafe: assessment.need === 'solo_ok',
         partyNeed: assessment.need,
         partyNeedReason: assessment.reason,
         requiresParty: assessment.need === 'required',
@@ -2798,7 +2793,7 @@ function farmSourceForMaterial(itemId, state, spots, allowedRecipeIds, requiredA
     for (const ingredient of component.materials || []) {
         const owned = Number(state.inventory?.[ingredient.selfId]?.amount || 0);
         const required = Number(ingredient.amount || 0) * crafts;
-        if (owned >= required || CraftSupplementMaterials.isSupplementalMaterial(ingredient.selfId)) continue;
+        if (owned >= required) continue;
         const source = farmSourceForMaterial(ingredient.selfId, state, spots, allowedRecipeIds, required - owned, nextVisited, options);
         // A recipe is viable only if every missing ingredient has a route.
         if (!source) return directRoute;
@@ -2900,7 +2895,7 @@ function dualSwordBridgePlan(state, options = {}) {
     return { status: 'ready_to_craft', strategy: 'craft', role, phase: GearLifecycle.phaseFor(state),
         target: { selfId: Number(target.item.selfId), name: target.item.template.name, slot: Number(target.item.etc.slot) },
         recipeId: target.recipe.recipeId, materials: target.materials, next: null,
-        soloSafe: true, requiresParty: false, partyNeed: 'solo_ok', expectedKills: 0,
+        requiresParty: false, partyNeed: 'solo_ok', expectedKills: 0,
         rateModelVersion: RATE_MODEL_VERSION, ...common };
 }
 
@@ -2963,7 +2958,7 @@ function rawPlanFor(state = {}, options = {}) {
         : null;
     const preparedCraftReady = preparedTarget?.recipe
         && missingMaterials(preparedTarget.recipe, state.inventory)
-            .every((material) => material.missing <= 0 || CraftSupplementMaterials.isSupplementalMaterial(material.selfId));
+            .every((material) => material.missing <= 0);
     const forcedMarketPlan = marketRecoveryPlanForTarget(state, options.forceMarketTargetId, options);
     if (forcedMarketPlan) return forcedMarketPlan;
     if (!options.recipeId && !options.wishTargetId && !preparedCraftReady) {
@@ -2986,14 +2981,14 @@ function rawPlanFor(state = {}, options = {}) {
         const buy = offer && marketEffort(offer, state) <= directEffort;
         const sourceAssessment = source ? partyNeedAssessmentForSource(state, source) : null;
         return target && buy ? {
-            status: 'active', phase: GearLifecycle.phaseFor(state), grade: 'none', role: roleFor(state), strategy: 'market', soloSafe: true, requiresParty: false,
+            status: 'active', phase: GearLifecycle.phaseFor(state), grade: 'none', role: roleFor(state), strategy: 'market', requiresParty: false,
             rateModelVersion: RATE_MODEL_VERSION,
             expectedKills: Math.ceil(marketEffort(offer, state)),
             target: { selfId: Number(target.selfId), name: target.template?.name || `Item ${target.selfId}`, slot: Number(target.etc?.slot || 0) },
             market: marketTerms(state, offer, { buyOrderEscrow: planningOptions.buyOrderEscrow }),
             recipeId: null, materials: [], next: null
         } : source ? {
-            status: 'active', grade: 'none', role: roleFor(state), strategy: 'direct_drop', soloSafe: sourceAssessment.need === 'solo_ok',
+            status: 'active', grade: 'none', role: roleFor(state), strategy: 'direct_drop',
             partyNeed: sourceAssessment.need,
             partyNeedReason: sourceAssessment.reason,
             requiresParty: sourceAssessment.need === 'required',
@@ -3020,7 +3015,7 @@ function rawPlanFor(state = {}, options = {}) {
             ? farmSourceForMaterial(material.selfId, state, spots, allowedRecipeIds, material.missing, new Set(), planningOptions)
             : null
     }));
-    const missingMaterialPlans = materialPlans.filter((material) => material.missing > 0 && !CraftSupplementMaterials.isSupplementalMaterial(material.selfId));
+    const missingMaterialPlans = materialPlans.filter((material) => material.missing > 0);
     const canonical = target.recipe && C4RecipeItems.resolveByRecipeId(target.recipe.recipeId);
     const part = canonical?.materials?.find(row => Number(row.selfId) !== Number(canonical.recipeItemId));
     const partItem = part && catalogItem(part.selfId);
@@ -3078,7 +3073,6 @@ function rawPlanFor(state = {}, options = {}) {
         target: { selfId: Number(target.item.selfId), name: target.item.template?.name || `Item ${target.item.selfId}`, slot: Number(target.slot || target.item.etc?.slot || 0) },
         recipeId: target.recipe ? Number(target.recipe.recipeId) : null,
         strategy,
-        soloSafe,
         partyNeed,
         partyNeedReason,
         requiresParty,

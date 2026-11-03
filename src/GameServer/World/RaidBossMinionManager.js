@@ -251,7 +251,7 @@ function cleanupMinion(world, minion, sourceSession) {
     try {
         minion.destructor?.(sourceSession || { dataSendToMeAndOthers() {}, dataSendToMe() {} });
     } catch (_) {}
-    world.removeNpcFromGrid?.(minion);
+    world.removeNpcFromGrid(minion);
     const index = world.npc.spawns.indexOf(minion);
     if (index >= 0) world.npc.spawns.splice(index, 1);
     NpcVisibility.deleteKnownNpc(world, sourceSession, objectId);

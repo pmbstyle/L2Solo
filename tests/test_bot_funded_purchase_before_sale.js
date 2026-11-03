@@ -46,7 +46,6 @@ async function choice(state, label) {
     if (leaf.activity === 'shopping') {
         assert.strictEqual(goal.target.itemId, leaf.itemId);
         assert.strictEqual(goal.plan.estimatedCost, leaf.price);
-        assert.strictEqual(goal.plan.requiredAdena, 0);
         assert.strictEqual(goal.type, Number(DataCache.items.find(row => Number(row.selfId) === leaf.itemId)?.etc?.slot || 0)
             ? 'upgrade_gear' : 'buy_craft_material');
         assert(Funding.spendable(result.state, 0, { itemId: leaf.itemId }) >= leaf.price,

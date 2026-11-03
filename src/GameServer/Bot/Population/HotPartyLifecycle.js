@@ -366,7 +366,7 @@ async function releaseUnsafeHunt(partyId) {
             return Life.preparePartyReview(state, next);
         });
         const dissolved = Parties.prepareCommit({ ...party, status: 'dissolved', memberIds: [], nextResolveAt: null,
-            stats: { ...party.stats, hotLifecycle: null, partyBreakReason: reason, dissolvedAt: timestamp } });
+            stats: { ...party.stats, hotLifecycle: null, partyBreakReason: reason } });
         if (!dissolved || releases.some(row => !row)) return { ok: false, reason: 'invalid_party_review' };
         const result = await Database.commitBackgroundPartyMembership({ party: dissolved.row, members: releases,
             review: true, expectedPhase: 'hot', expectedPartyRevision: party.revision, canCommitHot: ready,
@@ -566,7 +566,7 @@ async function cooldown(partyId, reason = 'policy', options = {}) {
                 ...result.party,
                 status: 'dissolved',
                 nextResolveAt: null,
-                stats: { ...(result.party.stats || {}), partyBreakReason: 'raid_failed', dissolvedAt: Date.now() }
+                stats: { ...(result.party.stats || {}), partyBreakReason: 'raid_failed' }
             });
             if (dissolved) {
                 await invoke('GameServer/Clan/ClanEquipmentService').recordRaidFailure(dissolved);

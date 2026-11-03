@@ -1783,9 +1783,6 @@ class ColdSimulationKernel {
                     stats: {
                         ...(run.party.stats || {}),
                         partyBreakReason: run.invalidReason,
-                        declaredMemberCount: run.party.memberIds?.length || 0,
-                        attachedMemberCount: run.members.length,
-                        dissolvedAt: startedAt,
                         travel: null
                     }
                 };

@@ -79,8 +79,7 @@ function calculateRestoration(actor, deathRecord, context = {}) {
 }
 
 function databaseReady() {
-    const Database = persistenceDatabase();
-    return typeof Database.isReady !== 'function' || Database.isReady();
+    return persistenceDatabase().isReady();
 }
 
 function queue(characterId, work) {

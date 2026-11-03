@@ -8,7 +8,6 @@ const CACHE_TTL_MS = 120000;
 const NEGATIVE_TTL_MS = 3000;
 const services = new WeakMap();
 
-function enabled() { return process.env.L2_TOWN_NAVIGATION !== '0'; }
 function startOf(r) { return { locX: r.startX, locY: r.startY, locZ: r.startZ }; }
 function endOf(r) { return { locX: r.endX, locY: r.endY, locZ: r.endZ }; }
 function hash(value) {
@@ -193,4 +192,4 @@ function forPool(pool) {
     return services.get(pool);
 }
 
-module.exports = { TownNavigation, forPool, enabled, CACHE_LIMIT, POINT_LIMIT, hash };
+module.exports = { TownNavigation, forPool, CACHE_LIMIT, POINT_LIMIT, hash };

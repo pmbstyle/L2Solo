@@ -106,7 +106,7 @@ function completedRaidResult(party, members, completed, timestamp) {
         } })), events: [], nextResolveAt: null,
         partyPatch: { status: 'dissolved', nextResolveAt: null, stats: {
             raidEncounter: completed, pveEncounter: null, restUntil: null,
-            partyBreakReason: 'raid_defeated', dissolvedAt: timestamp, lastResolveAt: timestamp
+            partyBreakReason: 'raid_defeated', lastResolveAt: timestamp
         } },
         debug: { reason: 'raid_already_defeated', fights: 0, wins: 0,
             raidBossTemplateId: completed.bossTemplateId }
@@ -166,7 +166,7 @@ const BackgroundPartyResolver = {
             return { memberResults: members.map(state => ({ state, result: { patch: {}, events: [],
                 materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 1000 } })),
                 atomic: true, events: [], nextResolveAt: null, partyPatch: { status: 'dissolved', nextResolveAt: null,
-                    stats: { partyBreakReason: 'craft_materials_collected', dissolvedAt: timestamp, lastResolveAt: timestamp } },
+                    stats: { partyBreakReason: 'craft_materials_collected', lastResolveAt: timestamp } },
                 debug: { reason: 'craft_materials_collected', fights: 0, wins: 0 } };
         }
         if (materialHunt) targetNpcId = Material.target(party, members);
@@ -190,7 +190,7 @@ const BackgroundPartyResolver = {
             return { atomic: true, memberResults: members.map(state => ({ state, result: { patch: {}, events: [],
                 materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt } })), events: [], nextResolveAt,
             partyPatch: { ...(cancelled ? { status: 'dissolved' } : {}), stats: { assemblyWait: require('./PartyAssemblyRecovery').record(party, timestamp),
-                lastResolveAt: timestamp, ...(cancelled ? { partyBreakReason: reason, dissolvedAt: timestamp } : {}) } }, debug: { reason, fights: 0, wins: 0 } };
+                lastResolveAt: timestamp, ...(cancelled ? { partyBreakReason: reason } : {}) } }, debug: { reason, fights: 0, wins: 0 } };
         }
         const raidCombatActive = raidObjective
             && party.stats?.raidEncounter?.status === 'active'
@@ -210,7 +210,7 @@ const BackgroundPartyResolver = {
             return { memberResults: members.map(state => ({ state, result: { patch: {}, events: [],
                 materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 1000 } })),
                 events: [], nextResolveAt: null, partyPatch: { status: 'dissolved',
-                    stats: { ...party.stats, partyBreakReason: 'raid_unavailable', dissolvedAt: timestamp } },
+                    stats: { ...party.stats, partyBreakReason: 'raid_unavailable' } },
                 debug: { reason: 'raid_unavailable', fights: 0, wins: 0 } };
         }
         const revival = !raidCombatActive && require('./ColdPartyRevival').resolve({ party, members, timestamp, episodeId, assessRelationship });
@@ -788,10 +788,8 @@ const BackgroundPartyResolver = {
                     restUntil: partyRestUntil,
                     lastResolveAt: timestamp,
                     ...(raidFailed ? {
-                        dissolvedAt: timestamp,
                         partyBreakReason: 'raid_failed'
                     } : raidDefeated ? {
-                        dissolvedAt: timestamp,
                         partyBreakReason: 'raid_defeated'
                     } : {})
                 }

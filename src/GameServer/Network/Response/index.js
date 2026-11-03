@@ -95,7 +95,6 @@ module.exports = {
      wareHouseDepositList: require('./WareHouseDepositList'),
   wareHouseWithdrawalList: require('./WareHouseWithdrawalList'),
     partySmallWindowAll: require('./PartySmallWindowAll'),
- partySmallWindowDelete: require('./PartySmallWindowDelete'),
     partySmallWindowDeleteAll: require('./PartySmallWindowDeleteAll'),
      partySmallWindowUpdate: require('./PartySmallWindowUpdate'),
        partyMemberPosition: require('./PartyMemberPosition'),

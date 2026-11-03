@@ -11,7 +11,6 @@ const RESOURCE_IDS = new Set([
 const isResource = (id) => RESOURCE_IDS.has(Number(id));
 // Blades a dual-sword exchange consumes; warehouseMaterials hands them over.
 const DUAL_COMPONENT_IDS = new Set(DualSwords.COMBINATIONS.flatMap(([, leftId, rightId]) => [leftId, rightId]));
-const isSupplement = require('../Bot/Economy/CraftSupplementMaterials').isSupplementalMaterial;
 const clanIdFor = (state) => Number(state?.clanId ?? state?.stats?.clanId ?? 0);
 const resolveRecipe = (id) => Recipes.resolveByRecipeId(id) || DualSwords.resolveByRecipeId(id);
 const isPersonalCraft = (state, plan = state?.stats?.equipmentPlan) => clanIdFor(state) > 0
@@ -62,7 +61,6 @@ function requirements(recipe, inventory = {}, allowedRecipeIds = null, count = 1
         const materials = recipeForProvider(current, provider, batches).materials || [];
         for (const material of materials) {
             const id = Number(material.selfId);
-            if (isSupplement(id)) continue;
             const amount = Number(material.amount) * batches;
             demand.set(id, (demand.get(id) || 0) + amount);
             const used = Math.min(amount, owned.get(id) || 0);
@@ -98,4 +96,4 @@ function warehouseMaterials(plan, inventory, rows) {
     })).filter(item => item.amount > 0);
 }
 
-module.exports = { RESOURCE_IDS, isResource, isSupplement, clanIdFor, resolveRecipe, isPersonalCraft, stockInventory, craftStock, requirements, warehouseMaterials, recipeForProvider };
+module.exports = { RESOURCE_IDS, isResource, clanIdFor, resolveRecipe, isPersonalCraft, stockInventory, craftStock, requirements, warehouseMaterials, recipeForProvider };
