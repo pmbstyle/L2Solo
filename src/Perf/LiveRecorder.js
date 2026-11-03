@@ -190,7 +190,20 @@ class LiveRecorder {
             return;
         }
         const began = performance.now();
-        const profile = typeof text === 'string' ? JSON.parse(text) : text;
+        let profile;
+        try {
+            if (typeof text === 'string') text = CpuProfile.repairText(text);
+            profile = typeof text === 'string' ? JSON.parse(text) : text;
+        } catch (error) {
+            // Text Node wrote that repairText cannot fix: kept once per thread and boot for a report.
+            if (!state.unparsedKept) {
+                state.unparsedKept = true;
+                const file = path.join(this.bootDir, 'cpu', `${stampOf(new Date(startedAt))}-${thread.label.replace(/[^\w.-]+/g, '_')}.unparsed.txt`);
+                this.write(() => fs.promises.writeFile(file, text));
+                this.warn(`cpu chunk of ${thread.label} (text kept in ${path.relative(ROOT, file)})`, error);
+            } else this.warn(`cpu chunk of ${thread.label}`, error);
+            return;
+        }
         const a = CpuProfile.analyze(profile, { longTurnMs: this.settings.longTurnMs, since: state.lastEnd });
         state.lastEnd = profile.endTime || state.lastEnd;
         this.costMs += performance.now() - began;

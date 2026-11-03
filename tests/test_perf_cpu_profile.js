@@ -58,6 +58,31 @@ assert.equal(tail.busyMs, 3);
 assert.equal(tail.runs, 2);
 assert.equal(tail.longest.ms, 2);
 
+// Node writes regexp code names unescaped ("RegExp: <source>"): a quote or backslash in a pattern
+// breaks the profile's JSON until it is repaired.
+const v8 = require('v8');
+const handle = v8.startCpuProfile();
+const patterns = [/"(\w+)"\[x\]/g, /\[(\d+)\((\d+)\)\]/, /\\u12\d/];
+// repairText's own pattern runs under the profiler as well (on the live server it repairs the
+// chunk before): its name must not cut itself.
+const broken = '{"nodes":[{"callFrame":{"functionName":"RegExp: "a"\\d","lineNumber":-1,"columnNumber":-1,"scriptId":0,"url":""}}]}';
+for (const end = Date.now() + 300; Date.now() < end;) {
+    for (const pattern of patterns) {
+        pattern.lastIndex = 0;
+        pattern.test('"abc"[x] [1(2)] \\u123');
+    }
+}
+for (const end = Date.now() + 300; Date.now() < end;) CpuProfile.repairText(broken);
+assert.equal(JSON.parse(CpuProfile.repairText(broken)).nodes[0].callFrame.functionName, 'RegExp: "a"\\d');
+const raw = handle.stop();
+assert.throws(() => JSON.parse(raw), SyntaxError, 'Node 24.15 still writes these names unescaped');
+const repaired = JSON.parse(CpuProfile.repairText(raw));
+const names = repaired.nodes.map(node => node.callFrame.functionName);
+for (const pattern of patterns) assert.ok(names.includes(`RegExp: ${pattern.source}`), `kept ${pattern.source}`);
+const windows = '{"nodes":[{"id":1,"callFrame":{"functionName":"tick","url":"C:\\Users\\l2\\src\\BotAI.js","lineNumber":1}}]}';
+assert.equal(JSON.parse(CpuProfile.repairText(windows)).nodes[0].callFrame.url, 'C:\\Users\\l2\\src\\BotAI.js');
+assert.equal(CpuProfile.repairText('{"a":"\\n"}'), '{"a":"\\n"}', 'valid text is left as it is');
+
 const empty = CpuProfile.analyze({ nodes: [], samples: [], timeDeltas: [], startTime: 0, endTime: 0 });
 assert.equal(empty.longest, null);
 assert.equal(empty.runs, 0);

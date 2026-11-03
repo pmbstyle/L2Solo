@@ -127,4 +127,29 @@ function analyze(profile, { longTurnMs = 50, top: count = 8, keep = 20, since = 
     };
 }
 
-module.exports = { analyze, sourceOf };
+// Node 24.15 writes the text of v8.startCpuProfile / Worker#startCpuProfile without escaping names:
+// V8 names a regexp's code "RegExp: <source>", so a quote or backslash in a pattern breaks the
+// JSON (seen on the real server: `"RegExp: \[(\d+)\((\d+)\)\]"`). The name runs up to the tail
+// every regexp node has (no line, no script, no url); it is written again escaped. The pattern
+// spells its quotes \x22: its own source is in the profile too, and must not hold the text it
+// looks for (it did, and cut itself). A path with backslashes (a script on Windows) gets its lone
+// backslashes doubled. Returns the text JSON.parse accepts.
+const REGEXP_NAME = /\x22functionName\x22:\x22(RegExp: [\s\S]*?)\x22(,\x22lineNumber\x22:-1,\x22columnNumber\x22:-1,\x22scriptId\x22:0,\x22url\x22:\x22\x22)/g;
+
+function repairText(text) {
+    try {
+        JSON.parse(text);
+        return text;
+    } catch {
+        const names = text.replace(REGEXP_NAME, (match, name, tail) => `"functionName":${JSON.stringify(name)}${tail}`);
+        try {
+            JSON.parse(names);
+            return names;
+        } catch {
+            return names.replace(/\\([\s\S])/g, (pair, next, at) => (/["\\/bfnrt]/.test(next)
+                || (next === 'u' && /^[0-9a-fA-F]{4}$/.test(names.slice(at + 2, at + 6))) ? pair : `\\\\${next}`));
+        }
+    }
+}
+
+module.exports = { analyze, sourceOf, repairText };
