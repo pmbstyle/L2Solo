@@ -13,6 +13,11 @@ const step = (amount, valueHours) => ({ itemId: 1835, amount, unitPrice: 1, valu
 assert.equal(Valuation.visitPays(context, [step(1, 0.02)], route), false, 'one unit alone does not pay the road');
 assert.equal(Valuation.visitPays(context, [step(1, 0.02), step(100, 2)], route), true, 'the visit\'s other steps carry it');
 assert.equal(Valuation.visitPays(context, [step(1, 0.02)], { known: true, hours: 0, fees: 0 }), true, 'in town it costs no road');
+// A required purchase's road (hot and cold alike): its share of the whole need still to buy.
+const kitUnit = { selfId: 1835, units: 1, amount: 1, cost: 1000 };
+assert.equal(Valuation.tripPays(context, kitUnit, route, { required: true, valueHours: 0.05 }), true, 'the whole need carries its road');
+assert.equal(Valuation.tripPays(context, kitUnit, route, { required: true, valueHours: 0.05, wanted: 10 }), false,
+    'a tenth of the need does not, as a visit\'s step of it would not');
 assert.equal(useful.valueHours, 2 - 0.105 - 0.1);
 assert.equal(useful.cashNow, 105, 'transport fees consume money once');
 assert.equal(useful.cycleHours, 0.1);

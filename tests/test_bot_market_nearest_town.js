@@ -165,10 +165,15 @@ function selectionPlansFromHuntingSpot() {
     assert(missing, 'the native NG kit has a single-slot wearable sold by canonical Orc NPCs');
     delete wanderer.inventory[missing.selfId];
     const timestamp = Date.now();
-    const review = () => invoke('GameServer/Bot/Economy/EconomyContext').forState(wanderer, {
-        spots, timestamp, routeRows: require('./fixtures/native_gear_economy').prepareRoutes(wanderer),
-        npcOffersFor: id => lookup.offersFor(id)
-    });
+    // Each review is a fresh look at the state this test set: a far bot at work holds its
+    // plan through a change of its kit or bag (Reaction), and these are the test's edits.
+    const Context = invoke('GameServer/Bot/Economy/EconomyContext');
+    const review = () => {
+        Context.forget(wanderer.characterId);
+        return Context.forState(wanderer, { spots, timestamp,
+            routeRows: require('./fixtures/native_gear_economy').prepareRoutes(wanderer),
+            npcOffersFor: id => lookup.offersFor(id) });
+    };
     let economy = review();
     const shot = economy.stock('shots');
     if (shot.survivalMissing > 0) {

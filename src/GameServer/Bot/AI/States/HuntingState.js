@@ -727,7 +727,9 @@ module.exports = {
                 const amount = invoke('GameServer/Bot/Population/ColdEconomyDecision').remainingToOrder(leaf, state);
                 if (amount > 0 && invoke('GameServer/Bot/Economy/ColdMarketService').canTravelForPurchase(state,
                     { selfId: Number(leaf.itemId || leaf.object?.itemId || leaf.object),
-                        amount, town: leaf.town, valueHours: leaf.valueHours,
+                        amount, town: leaf.town, valueHours: leaf.valueHours, required: leaf.required === true,
+                        // The root's whole need still to buy: a part fill weighs its road as the visit does.
+                        wanted: amount + Math.max(0, Number(leaf.wanted || 0) - Number(leaf.amount || 0)),
                         ...(!/^stock:/.test(String(leaf.rootKey)) && leaf.r > 0 ? { r: leaf.r } : {}) }, { economy })) {
                     const trip = startShopping(session, bot, BotAI, 'Heading to town for my next planned purchase.', leaf.town);
                     if (trip !== 'deferred' && trip !== false) return;

@@ -9,8 +9,12 @@ function prepareRoutes(state) {
     return next.value;
 }
 
+// A fresh look at the state the caller set: a far bot at work holds its plan through
+// a change of its bag or purse (Reaction), and these are the caller's edits.
 function review(state, { timestamp, spots, lookup, buyOrderEscrow = 0 }) {
-    return invoke('GameServer/Bot/Economy/EconomyContext').forState(state, {
+    const Context = invoke('GameServer/Bot/Economy/EconomyContext');
+    Context.forget(state.characterId);
+    return Context.forState(state, {
         timestamp, spots, routeRows: prepareRoutes(state), buyOrderEscrow,
         npcOffersFor: id => lookup.offersFor(id)
     });

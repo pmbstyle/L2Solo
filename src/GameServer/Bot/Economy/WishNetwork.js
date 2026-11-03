@@ -997,7 +997,22 @@ class WishNetwork {
         }
         // Stock nobody can supply keeps its queue place and its bid. No visit closes it,
         // so it takes the bot off nothing while something else can be done (user 11-01, T178).
-        const unsupplied = wish => wish.key.startsWith('stock:') && !fundable(wish);
+        // So does required stock whose road its goods do not carry (EconomicValuation.roadCarried,
+        // at the bot's own hour): no trip for a few potions; they ride along on a visit
+        // made for something else, or are bought where the bot stands.
+        const floor = hourAdena > 0 ? 1 / hourAdena : 0;
+        const roadless = wish => {
+            const plan = wish.plan, entries = plan?.tripEntries || [];
+            if (!(wish.progressionPriority > 0) || !entries.length) return false;
+            const road = { fees: tripValue(entries, 'fees'), hours: tripValue(entries, 'hours') };
+            if (!(road.fees + road.hours > 0)) return false;
+            // The step its seller would make: the units it holds of the need, at its price.
+            const row = plan.requirements?.[0], item = row?.plan?.execution || row?.plan;
+            const wanted = nonnegative(row?.amount) || 1, amount = Math.min(wanted, Number(item?.availableUnits ?? Infinity));
+            return !Valuation.roadCarried({ moneyPrice: floor }, { unitPrice: item?.unitPrice, price: nonnegative(plan.basePrice) * amount / wanted,
+                amount, wanted, valueHours: nonnegative(wish.valueHours) * amount / wanted }, road);
+        };
+        const unsupplied = wish => wish.key.startsWith('stock:') && (!fundable(wish) || roadless(wish));
         const doable = wishes.filter(wish => !unsupplied(wish));
         const activePriority = Math.max(0, ...(doable.length ? doable : wishes).map(wish => wish.progressionPriority));
         // An errand leaves the goal alone (decision 10-26): stock takes the money and
@@ -1047,6 +1062,14 @@ class WishNetwork {
             recipeId: wish.plan?.recipeId });
         const demands = new Map(), leaves = new Map();
         const active = { leaves, demands, stages: false };
+        // Required kit (a slot piece) and survival stock the queue funds: its steps are
+        // `required`, the purchase of a path the bot already decided, road and fees in its
+        // price (EconomicValuation.visitPays/tripPays). Not an earning craft, a clan's
+        // supply or a crystal preparation, whatever priority they hold.
+        const kitRoot = wish => { const node = byKey.get(wish.key);
+            return wish.funded && nonnegative(node?.progressionPriority) > 0
+                && (wish.key.startsWith('stock:') || rootSlot(wish.key) > 0 && !node.object?.clanSupply); };
+        const required = new Set(queue.filter(kitRoot).map(wish => wish.key));
         const flow = (key, value, amount = 1, rootKey = key, prepared = null, pass = active, staged = false) => {
             const complete = prepared || plans.get(key);
             if (!complete || !value) return;
@@ -1063,6 +1086,7 @@ class WishNetwork {
                 const leaf = pass.leaves.get(leafKey) || { ...plan, key: leafKey, nodeKey: key, rootKey, activity: plan.activity, ...(staged ? { staged } : {}),
                     ...(plan.kind === 'crystallize' ? { improvement: { ...plan.improvement, amount: plan.batches || 1 } } : {}),
                     object: node.object, amount: acquired, ...(acquired < amount ? { wanted: amount } : {}),
+                    ...(required.has(rootKey) ? { required: true } : {}),
                     price: stockFor ? plan.price * (complete.execution ? 1 : acquired / amount)
                         : plan.basePrice * acquired + tripValue(plan.tripEntries, 'fees'),
                     effort: stockFor ? plan.effort * (complete.execution ? 1 : acquired / amount)
@@ -1139,6 +1163,7 @@ class WishNetwork {
             if (!agendaPass) {
                 const held = gap && fundable(gap) ? [] : tiers.filter(wish => !wishes.includes(wish));
                 const later = moneyQueue(held, available, 0, moneyPrice).queue.filter(wish => wish.funded);
+                for (const wish of later) if (kitRoot(wish)) required.add(wish.key);
                 const pass = { leaves: new Map(), demands: new Map(), stages: true };
                 for (const wish of [...queue.filter(wish => funded.has(wish.key)), ...later]) flow(wish.key, wish.valueHours, 1, wish.key, stockFor ? wish.plan : null, pass);
                 agendaPass = { later, rows: [...pass.leaves.values()] };

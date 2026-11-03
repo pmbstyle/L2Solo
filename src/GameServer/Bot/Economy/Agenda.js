@@ -12,7 +12,7 @@ const positive = value => Math.max(0, Number(value) || 0);
 const NO_REQUIREMENTS = Object.freeze([]);
 // What a kept step's check, card and act read: nothing else is held per bot.
 const STEP_FIELDS = ['key', 'nodeKey', 'rootKey', 'activity', 'kind', 'sourceType', 'quoted', 'executable', 'town', 'itemId',
-    'amount', 'wanted', 'unitPrice', 'availableUnits', 'price', 'valueHours', 'object', 'npcId', 'staged'];
+    'amount', 'wanted', 'unitPrice', 'availableUnits', 'price', 'valueHours', 'object', 'npcId', 'staged', 'required'];
 function stepRow(leaf) {
     const row = { requirements: NO_REQUIREMENTS };
     for (const field of STEP_FIELDS) if (leaf[field] !== undefined) row[field] = leaf[field];
@@ -53,14 +53,18 @@ function focusAfter(network, queue, playedHours) {
 }
 // The next seller of what a seller could not fill or lost, anywhere the bot can reach.
 // What it wanted stands, less the step's progress, its value per unit too: a dearer
-// line stops there. The next seller counts from the bag as it is.
+// line stops there. A required step (kit, survival stock) was funded at its price
+// whatever its value: it goes on up to that funded price per unit, not beyond. The
+// next seller counts from the bag as it is.
 function nextSeller(done, progress, network, ask) {
     const rest = (positive(done.wanted) || positive(done.amount)) - progress;
     if (!(rest > 0)) return null;
     const offer = ask.bestOffer(done);
     if (!offer) return null;
     const hoursPerUnit = positive(done.valueHours) / positive(done.amount);
-    if (hoursPerUnit > 0 && offer.unitPrice * positive(network.moneyPrice) > hoursPerUnit) return null;
+    const funded = done.required ? positive(done.unitPrice) || positive(done.price) / positive(done.amount) : 0;
+    if (hoursPerUnit > 0 && offer.unitPrice * positive(network.moneyPrice) > hoursPerUnit
+        && !(offer.unitPrice <= funded)) return null;
     const amount = Math.min(rest, offer.availableUnits);
     return { ...done, amount, wanted: rest, town: offer.town, unitPrice: offer.unitPrice, availableUnits: offer.availableUnits, sourceType: offer.sourceType,
         heldAtDecision: ask.held(done.itemId), price: offer.unitPrice * amount + offer.tripFees,
