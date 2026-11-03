@@ -34,7 +34,7 @@ The preview publisher resolves known component tags through the authenticated ex
 
 ## Release notes
 
-Write player-facing changes in `release-notes/server.md` and `release-notes/launcher.md` as part of the update PR. The publisher uses these reviewed files for both preview and stable release bodies, adds component versions/download guidance, and labels previews with their source commit. Empty notes prevent publication. GitHub-generated PR lists are no longer the user-facing description. The launcher reads each release body from GitHub and displays server and launcher notes as plain text; external HTML is never rendered.
+Write player-facing changes in `release-notes/server.md` and `release-notes/launcher.md` as part of the update PR. The publisher uses these reviewed files for both preview and stable release bodies, adds component versions/download guidance, and labels previews with their source commit. Empty notes prevent publication. GitHub-generated PR lists are no longer the user-facing description. Updates has one Markdown notes panel: server release notes take priority, with launcher notes as a fallback when server notes are unavailable. Headings, lists, emphasis, code and tables are formatted locally. Raw HTML is escaped, images remain text, and links use the existing main-process URL checks before opening externally.
 
 ## CI and artifacts
 

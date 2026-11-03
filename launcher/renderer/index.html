@@ -6,6 +6,7 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
     <title>L2Solo Launcher</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="vendor/markdown-it.js" defer></script>
     <script src="app.js" defer></script>
 </head>
 <body>
@@ -65,10 +66,9 @@
         <section id="view-updates" class="view" hidden>
             <div class="page-heading"><h1>Updates</h1><button id="updates-check" class="quiet-button"><svg><use href="#i-updates"/></svg> Check for updates</button></div>
             <p id="preview-notice" class="settings-notice" hidden>Preview channel · Test builds from develop. Use a separate test world.</p>
-            <details id="launcher-notes-panel" class="plain-panel" hidden><summary>Launcher release notes</summary><pre id="launcher-release-notes" class="release-notes"></pre></details>
             <div class="update-summary"><div><span class="eyebrow">LAUNCHER</span><h2 id="launcher-update-title">L2Solo Launcher</h2><p id="launcher-update-description">Checking for application updates.</p><progress id="launcher-update-progress" max="100" value="0" aria-label="Launcher update download" hidden></progress></div><button id="launcher-update-action" class="quiet-button" disabled>Check for updates</button></div>
-            <div class="update-summary"><div><span class="eyebrow">SERVER · STABLE</span><h2 id="update-title">Check for updates</h2><p id="update-description">Server releases are downloaded from GitHub.</p></div><button id="install-update" class="primary-button compact" disabled>Install latest release</button></div>
-            <div class="two-columns"><div class="plain-panel"><div class="section-heading"><h2>Release notes</h2><span id="release-tag" class="small-tag">—</span></div><p id="release-date" class="muted"></p><pre id="release-notes">Check for updates to load release notes.</pre><button id="release-link" class="text-button" hidden>View on GitHub ↗</button></div><div class="plain-panel maintenance"><h2>Geodata</h2><p>Verify and replace missing or damaged geodata.</p><button id="repair-geodata" class="quiet-button" disabled>Verify &amp; repair</button><hr><h2>Server files</h2><p>Updates preserve your world database, backups and local settings.</p><button id="updates-folder" class="text-button">Open server folder ↗</button></div></div>
+            <div class="update-summary"><div><span id="server-release-label" class="eyebrow">SERVER · STABLE</span><h2 id="update-title">Check for updates</h2><p id="update-description">Server releases are downloaded from GitHub.</p></div><button id="install-update" class="primary-button compact" disabled>Install latest release</button></div>
+            <div class="two-columns"><div class="plain-panel"><div class="section-heading"><h2>Release notes</h2><span id="release-tag" class="small-tag">—</span></div><p id="release-date" class="muted"></p><div id="release-notes" class="release-notes">Check for updates to load release notes.</div><button id="release-link" class="text-button" hidden>View on GitHub ↗</button></div><div class="plain-panel maintenance"><h2>Geodata</h2><p>Verify and replace missing or damaged geodata.</p><button id="repair-geodata" class="quiet-button" disabled>Verify &amp; repair</button><hr><h2>Server files</h2><p>Updates preserve your world database, backups and local settings.</p><button id="updates-folder" class="text-button">Open server folder ↗</button></div></div>
             <div id="news-section" hidden><div class="section-heading"><h2>News &amp; Updates</h2><button class="text-button" data-link="https://l2solo.com">All news ↗</button></div><div id="news-grid" class="news-grid"></div></div>
         </section>
         <section id="view-console" class="view" hidden>

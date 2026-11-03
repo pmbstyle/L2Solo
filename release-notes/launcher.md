@@ -6,5 +6,6 @@ Manage your local L2Solo server from one desktop application.
 - Find related settings together, with descriptions for each option and one AI provider section.
 - Download server updates in the background. Failed startup verification restores the previous code and world snapshot.
 - Preview builds use a separate application profile, server folder and update channel.
+- Read formatted release notes in one Updates panel, without duplicate launcher notes.
 
 Windows Setup and Linux AppImage support application updates. On macOS, download the matching DMG, quit the launcher and replace the application. These builds do not require paid signing certificates.

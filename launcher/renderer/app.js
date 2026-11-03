@@ -7,6 +7,10 @@ let state = { installed: false, root: null, phase: 'stopped', busy: false, logs:
 let sections = [], selectedSection = 'Quick setup', currentView = 'home', settingsRoot = null, actionPending = false, lastError = null;
 const dirty = new Map();
 let renderedBackups = '';
+let renderedReleaseNotes;
+const releaseMarkdown = window.markdownit({ html: false, linkify: false, maxNesting: 20 });
+// Keep remote images from adding tracking requests or broken-image clutter.
+releaseMarkdown.renderer.rules.image = (tokens, index) => releaseMarkdown.utils.escapeHtml(tokens[index].content);
 const names = { General: 'Rates & gameplay', BotPopulation: 'Bot population', AI: 'AI',
     WorldObserver: 'World Observer', GameServer: 'Game server', AuthServer: 'Login server', Database: 'Database',
     ClanSimulation: 'Clan simulation', ClanWars: 'Clan wars', Enchant: 'Enchanting' };
@@ -86,13 +90,11 @@ function render(next) {
     renderLauncherUpdate(locked);
     $('channel-label').textContent = state.releaseChannel === 'preview' ? 'PREVIEW' : 'BETA';
     $('preview-notice').hidden = state.releaseChannel !== 'preview';
+    $('server-release-label').textContent = state.releaseChannel === 'preview' ? 'SERVER · PREVIEW' : 'SERVER · STABLE';
+    renderReleaseNotes();
     if (state.latest) {
         $('update-title').textContent = !state.installed ? `${state.latest.tag} is ready to install` : state.latest.updateAvailable ? `${state.latest.tag} is available` : 'Your server is up to date';
         $('update-description').textContent = !state.installed ? 'Choose a folder to install the server.' : state.latest.updateAvailable ? `Installed: ${state.version?.split(' ·')[0]}. Your database and settings will be preserved.` : `Installed: ${state.latest.tag}. You can verify release files at any time.`;
-        $('release-tag').textContent = state.latest.tag;
-        $('release-notes').textContent = state.latest.notes || 'No release notes were provided.';
-        $('release-date').textContent = date(state.latest.publishedAt);
-        $('release-link').hidden = false;
         if (state.latest.launcherUpdateRequired) $('update-description').textContent = 'Update the launcher above before installing this server release.';
         if (state.updatePending) $('update-description').textContent = 'Start the server to verify this update. World and history snapshots will be restored if startup fails.';
         if (state.developerMode) $('update-description').textContent = 'Update this Git checkout with your development tools, or choose a separate folder for a managed installation.';
@@ -117,8 +119,6 @@ function render(next) {
 }
 function renderLauncherUpdate(locked) {
     const update = state.launcherUpdate || { status: 'idle', currentVersion: state.launcherVersion };
-    $('launcher-notes-panel').hidden = !update.notes;
-    $('launcher-release-notes').textContent = update.notes || '';
     const busy = ['checking', 'downloading', 'installing'].includes(update.status);
     $('launcher-update-title').textContent = update.availableVersion && ['available', 'downloading', 'downloaded', 'installing'].includes(update.status)
         ? `Launcher ${update.availableVersion} ${update.status === 'downloaded' ? 'is ready' : 'is available'}` : `L2Solo Launcher ${update.currentVersion || ''}`;
@@ -132,6 +132,23 @@ function renderLauncherUpdate(locked) {
     $('launcher-update-action').disabled = busy || locked;
     $('launcher-update-progress').hidden = update.status !== 'downloading';
     $('launcher-update-progress').value = update.percent || 0;
+}
+function releaseNotesSource() {
+    if (state.latest?.notes) return state.latest;
+    const update = state.launcherUpdate;
+    if (update?.notes && update.availableVersion) return { ...update, tag: `launcher-v${update.availableVersion}` };
+    return state.latest || null;
+}
+function renderReleaseNotes() {
+    const release = releaseNotesSource();
+    const notes = release ? release.notes || 'No release notes were provided.' : 'Check for updates to load release notes.';
+    if (notes !== renderedReleaseNotes) {
+        $('release-notes').innerHTML = releaseMarkdown.render(notes);
+        renderedReleaseNotes = notes;
+    }
+    $('release-tag').textContent = release?.tag || '—';
+    $('release-date').textContent = release?.publishedAt ? date(release.publishedAt) : '';
+    $('release-link').hidden = !release?.url;
 }
 function formatBytes(bytes) { return bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : `${(bytes / 1024 ** 2).toFixed(1)} MB`; }
 function date(value) { const parsed = new Date(value); return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' }); }
@@ -411,7 +428,13 @@ $('install-update').addEventListener('click', () => run(async () => {
 }));
 $('repair-geodata').addEventListener('click', () => run(async () => { render(await api.repair()); toast('Geodata verified. Your world is ready.'); }));
 $('observer-button').addEventListener('click', () => run(() => api.openObserver()));
-$('release-link').addEventListener('click', () => run(() => api.openLink(state.latest.url)));
+$('release-link').addEventListener('click', () => run(() => api.openLink(releaseNotesSource().url)));
+$('release-notes').addEventListener('click', event => {
+    const link = event.target.closest('a');
+    if (!link) return;
+    event.preventDefault();
+    run(() => api.openLink(new URL(link.getAttribute('href'), releaseNotesSource()?.url).href));
+});
 $('settings-search').addEventListener('input', renderFields);
 $('save-settings').addEventListener('click', () => run(async () => {
     sections = await api.saveSettings([...dirty.values()]);

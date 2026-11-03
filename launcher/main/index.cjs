@@ -27,9 +27,11 @@ else {
         protocol.handle('l2solo', request => {
             const url = new URL(request.url);
             const relative = decodeURIComponent(url.pathname).replace(/^\//, '');
+            if (url.hostname !== 'app') return new Response('Not found', { status: 404 });
+            if (relative === 'vendor/markdown-it.js') return net.fetch(pathToFileURL(require.resolve('markdown-it/browser')).toString());
             const base = relative.startsWith('assets/') ? assetsRoot : path.join(assetsRoot, 'renderer');
             const filename = path.resolve(base, relative);
-            if (url.hostname !== 'app' || !filename.startsWith(`${base}${path.sep}`)) return new Response('Not found', { status: 404 });
+            if (!filename.startsWith(`${base}${path.sep}`)) return new Response('Not found', { status: 404 });
             return net.fetch(pathToFileURL(filename).toString());
         });
         session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));

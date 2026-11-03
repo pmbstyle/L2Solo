@@ -16,6 +16,9 @@ app.whenReady().then(async () => {
     const { RuntimeManager } = require(path.join(resources, 'app.asar/main/runtime.cjs'));
     const { LauncherUpdates } = require(path.join(resources, 'app.asar/main/launcher-updates.cjs'));
     assert.equal(typeof LauncherUpdates, 'function');
+    const MarkdownIt = require(path.join(resources, 'app.asar/node_modules/markdown-it'));
+    assert.match(new MarkdownIt({ html: false }).render('**Release notes**'), /<strong>Release notes<\/strong>/);
+    assert.ok(fs.existsSync(require.resolve('markdown-it/browser', { paths: [path.join(resources, 'app.asar')] })));
     const root = path.join(temporary, 'server');
     const put = (name, content) => { const target = path.join(root, name); fs.mkdirSync(path.dirname(target), { recursive: true }); fs.writeFileSync(target, content); };
     put('package.json', '{"version":"0.1.0"}');
