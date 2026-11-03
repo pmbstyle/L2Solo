@@ -227,6 +227,9 @@ function summarize(dir) {
         coldDueMax: Math.max(0, ...summaries.map(line => line.coldQueue?.overdue || 0)),
         player: playerSummary(data.timeline.filter(line => line.type === 'player' && Date.parse(line.t) > start && Date.parse(line.t) <= end)),
         transitions: transitionsSummary(summaries),
+        e2e: data.timeline.some(line => line.type === 'e2e' || line.type === 'e2e-done') ? {
+            steps: data.timeline.filter(line => line.type === 'e2e').map(({ step, ok, ms, error, packets }) => ({ step, ok, ms, error, packets })),
+            done: data.timeline.find(line => line.type === 'e2e-done') || null } : null,
         context: contextSummary(summaries, data.timeline, start, end),
         threads,
         memory: {
@@ -243,6 +246,14 @@ function print(s) {
     console.log(`${r.folder}: ${r.sha}${r.dirty ? ' (uncommitted changes)' : ''}, ${r.scenario}, ${r.save.name}`);
     console.log(`  bots ${JSON.stringify(r.bots)}, ${r.warmupMinutes} min warm-up, window ${s.windowMinutes} min`
         + `; process ${s.processCores} cores, recorder ${s.recorderMainPct} % of main, cold due max ${s.coldDueMax}`);
+    if (s.e2e) {
+        const failed = s.e2e.steps.filter(row => !row.ok).length;
+        console.log(`\ne2e ${s.run.script || ''}: ${s.e2e.steps.length} step(s), ${failed} failed${s.e2e.done ? '' : ', NOT FINISHED in the window'}`);
+        for (const row of s.e2e.steps) {
+            console.log(`  ${row.ok ? 'ok  ' : 'FAIL'} ${String(row.ms ?? '-').padStart(6)} ms  ${row.step}${row.ok ? '' : `: ${row.error}`}`);
+            if (!row.ok && row.packets?.length) console.log(`        server sent: ${row.packets.join(', ')}`);
+        }
+    }
     if (s.player) {
         const p = s.player, q = (x) => `p50 ${x.p50Ms} / p95 ${x.p95Ms} / p99 ${x.p99Ms} / max ${x.maxMs} ms`;
         console.log(`\nplayer (${p.schedule.samples} probes, hot bots avg ${p.hotAvg} max ${p.hotMax}): ${p.over.length ? `OVER: ${p.over.join(', ')}` : 'within limits'}`);
@@ -257,7 +268,10 @@ function print(s) {
         console.log(`\ntransitions: cold -> hot ${line(t.activation)}; hot -> cold ${line(t.cooldown)}; handoffs ${t.handoffs}`);
     } else if (s.run.scenario === 'hot') console.log('\ntransitions: none recorded (run with --diagnostics)');
     if (s.run.scenario === 'hot' && !s.player) console.log('\nplayer: none in the window: the hot scenario did not start (server.log, "hot scenario")');
-    for (const [label, t] of Object.entries(s.threads)) {
+    // A short window (a script that ends before a CPU chunk does) has no chunk of its own to show.
+    const shown = Object.entries(s.threads).filter(([, t]) => t.minutes > 0);
+    if (!shown.length && Object.keys(s.threads).length) console.log('\ncpu: no chunk ended inside the window (it was shorter than [Perf] cpuChunkSeconds)');
+    for (const [label, t] of shown) {
         console.log(`\n${label}: busy ${t.busyPct} %, gc ${t.gcPct} %, long turns ${t.longTurnsPerMin}/min,`
             + ` longest ${t.longestMs} ms (p95 of chunk longest ${t.chunkLongestP95Ms} ms)${t.instances > 1 ? `, ${t.instances} instances` : ''}`);
         if (t.longTurnCode.length) console.log('  long turns held by:');

@@ -76,9 +76,12 @@ const HotCrowd = {
     players: [],
 
     start() {
-        if (process.env.L2NODE_PERF_SCENARIO !== 'hot' || this.started) return;
+        const scenario = process.env.L2NODE_PERF_SCENARIO;
+        if (!['hot', 'script'].includes(scenario) || this.started) return;
         this.started = true;
-        this.count = envNumber('L2NODE_PERF_PLAYERS', 1, 1, 20);
+        // script: an end-to-end scenario (src/Perf/PlayerScript) plays the player(s) instead of standing.
+        this.script = scenario === 'script' ? invoke('Perf/PlayerScript').load(process.env.L2NODE_PERF_SCRIPT) : null;
+        this.count = this.script ? Math.max(1, Number(this.script.players || 1)) : envNumber('L2NODE_PERF_PLAYERS', 1, 1, 20);
         this.routeStops = envNumber('L2NODE_PERF_ROUTE', 0, 0, 50);
         this.routeMs = envNumber('L2NODE_PERF_ROUTE_MINUTES', 3, 1, 120) * 60000;
         const timer = setInterval(() => {
@@ -93,7 +96,8 @@ const HotCrowd = {
         const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
         const Config = invoke('GameServer/Bot/Population/PopulationConfig');
         const BotManager = invoke('GameServer/Bot/BotManager');
-        this.stops = crowdLocations(LifeState.everyState(), Math.max(this.count, this.routeStops),
+        const own = this.script?.place?.() || null;
+        this.stops = own ? [own] : crowdLocations(LifeState.everyState(), Math.max(this.count, this.routeStops),
             2 * Number(Config.activationRadius || 9000));
         if (!this.stops.length) {
             utils.infoWarn('Perf', 'hot scenario: no cold hunting bot to stand by');
@@ -123,6 +127,11 @@ const HotCrowd = {
             }
             sources.sort((a, b) => a.accountId.localeCompare(b.accountId, 'en', { numeric: true })).forEach(source => this.attach(source));
             this.probe();
+            if (this.script) {
+                // The spawned character's world packets (UserInfo, the area) are sent before the script acts.
+                setTimeout(() => invoke('Perf/PlayerScript').run(this.script, this.players)
+                    .catch(error => utils.infoWarn('Perf', 'e2e %s failed: %s', this.script.name, error.message)), 3000);
+            }
             if (this.routeStops > 1) setInterval(() => this.move(), this.routeMs).unref?.();
         }, 500);
     },

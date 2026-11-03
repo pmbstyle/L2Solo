@@ -94,7 +94,7 @@ const SERVER_PACKET_NAMES = {
     0x23: 'WithdrawalParty',
     0x24: 'OustPartyMember',
     0x27: 'MoveToLocation',
-    0x28: 'NpcSay',
+    0x28: 'TeleportToLocation',
     0x2f: 'MoveToPawn',
     0x2e: 'ChangeMoveType',
     0x39: 'SkillList',
@@ -369,3 +369,5 @@ class Session {
 }
 
 module.exports = Session;
+// A written packet's name from the trace table (src/Perf/PlayerClient reads what a player was sent).
+module.exports.serverPacketName = (opcode) => packetName(SERVER_PACKET_NAMES, opcode);

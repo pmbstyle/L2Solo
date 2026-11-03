@@ -16,6 +16,7 @@
 //   node scripts/perf.js prepare [--minutes=60] [--name=<save name>]     (grows a world, saves it)
 //   node scripts/perf.js run --save=<id> [--scenario=cold|hot] [--warmup=5] [--minutes=10] [--diagnostics[=false]] [--keep-world]
 //       hot: [--players=1] [--route=<places>] [--route-minutes=3]   (players teleport along the fullest places)
+//       script: --script=tests/e2e/<name>.js   (an end-to-end player scenario; the window ends when it does)
 //   node scripts/perf.js report [<run folder>]
 //   node scripts/perf.js compare <run A> <run B>   (folders, or names under tmp/perf/runs)
 

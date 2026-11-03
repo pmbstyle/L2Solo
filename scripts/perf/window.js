@@ -99,6 +99,19 @@ async function hold(server, dir, ms, label) {
     }
 }
 
+// A script run's window: until the script notes e2e-done, at most `ms`.
+async function holdUntilScriptDone(server, dir, ms) {
+    const done = () => {
+        const boot = fs.readdirSync(dir).find(name => /^\d{8}-\d{6}$/.test(name));
+        return !!boot && fs.readdirSync(path.join(dir, boot)).filter(name => name.startsWith('timeline-'))
+            .some(name => fs.readFileSync(path.join(dir, boot, name), 'utf8').includes('"type":"e2e-done"'));
+    };
+    for (const end = Date.now() + ms; Date.now() < end && !done();) {
+        if (!server.alive()) throw new Error(`the server exited during the script:\n${logTail(dir)}`);
+        await sleep(2000);
+    }
+}
+
 // A capture through the recorder's request file; resolves when the recorder wrote request.done.json
 // (every thread it asked has written), whatever the number of threads.
 async function capture(dir, kind, server) {
@@ -137,17 +150,20 @@ async function prepare(flags) {
 async function run(flags) {
     geodataDir();
     const scenario = flags.scenario || 'cold';
-    if (!['cold', 'hot'].includes(scenario)) throw new Error('Use --scenario=cold|hot');
+    if (!['cold', 'hot', 'script'].includes(scenario)) throw new Error('Use --scenario=cold|hot|script');
+    const script = scenario === 'script' ? path.resolve(ROOT, String(flags.script || '')) : null;
+    if (scenario === 'script' && (!flags.script || !fs.existsSync(script))) throw new Error('Use --scenario=script --script=<tests/e2e/name.js>');
     if (!flags.save) throw new Error('Use --save=<id> (node scripts/perf.js saves lists them)');
     const warmup = Number(flags.warmup || 5), minutes = Number(flags.minutes || 10);
     if (!(warmup >= 0) || !(minutes > 0)) throw new Error('Use --warmup=<min> --minutes=<min>');
     // The transition counters and timings live in PopulationMetrics behind developerDiagnostics: on
     // by default for hot (--diagnostics=false turns it off), off for cold.
     const diagnostics = flags.diagnostics === undefined ? scenario === 'hot' : flags.diagnostics !== 'false';
-    const crowd = scenario === 'hot' ? { players: Number(flags.players || 1), route: Number(flags.route || 0),
+    const crowd = scenario === 'hot' && !script ? { players: Number(flags.players || 1), route: Number(flags.route || 0),
         routeMinutes: Number(flags['route-minutes'] || 3) } : null;
     const { sha, dirty } = commit();
-    const dir = path.join(PERF_DIR, 'runs', `${sha}${dirty ? '+' : ''}-${scenario}-${stamp()}`);
+    const name = script ? `script-${path.basename(script, '.js')}` : scenario;
+    const dir = path.join(PERF_DIR, 'runs', `${sha}${dirty ? '+' : ''}-${name}-${stamp()}`);
     fs.mkdirSync(dir, { recursive: true });
     const save = await SavedGames.run({ operation: 'load', databasePath: path.join(dir, 'world.sqlite'), savesDir: savesDir(flags), id: flags.save });
     const bots = botCounts(path.join(dir, 'world.sqlite'));
@@ -155,11 +171,13 @@ async function run(flags) {
     // only at the window's edges.
     writeIni(dir, { live: true, dir, keepProfileMs: 0, keepProfilesPerDay: 100000, heapEveryMinutes: 100000 });
     const meta = { sha, dirty, scenario, save: { id: flags.save, name: save.name }, bots, warmupMinutes: warmup,
-        windowMinutes: minutes, diagnostics, crowd, node: process.version, startedAt: new Date().toISOString() };
+        windowMinutes: minutes, diagnostics, crowd, script: script && path.relative(ROOT, script), node: process.version,
+        startedAt: new Date().toISOString() };
     fs.writeFileSync(path.join(dir, 'run.json'), `${JSON.stringify(meta, null, 2)}\n`);
     say(`${path.relative(ROOT, dir)}: ${save.name}, bots ${JSON.stringify(bots)}; ${warmup} min warm-up, ${minutes} min window`);
     // No seeding: the world is the save's, the same rows in every run.
     const server = startServer(dir, { BOT_POPULATION_SEED_DELAY_MS: String(86400000), L2NODE_PERF_SCENARIO: scenario,
+        ...(script ? { L2NODE_PERF_SCRIPT: script } : {}),
         ...(diagnostics ? { BOT_DEVELOPER_DIAGNOSTICS: '1' } : {}),
         ...(crowd ? { L2NODE_PERF_PLAYERS: String(crowd.players), L2NODE_PERF_ROUTE: String(crowd.route),
             L2NODE_PERF_ROUTE_MINUTES: String(crowd.routeMinutes) } : {}) });
@@ -168,7 +186,8 @@ async function run(flags) {
         await dumpHeaps(dir, server);
         meta.windowStart = new Date().toISOString();
         say('window open');
-        await hold(server, dir, minutes * 60000, 'the window');
+        if (script) await holdUntilScriptDone(server, dir, minutes * 60000);
+        else await hold(server, dir, minutes * 60000, 'the window');
         meta.windowEnd = new Date().toISOString();
         await dumpHeaps(dir, server);
         say('window closed; stopping the server');
