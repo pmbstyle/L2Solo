@@ -131,8 +131,7 @@ Database.init(() => {
         BotManager.init();
         WorldObserver.init();
         DevConsole.init();
-        if (process.env.L2NODE_HOT_LOAD_TEST === '1') {
-            invoke('GameServer/Bot/LoadTest/HotBotLoadTest').start();
-        }
+        // A window run's hot scenario (scripts/perf/window.js); nothing without L2NODE_PERF_SCENARIO=hot.
+        invoke('Perf/HotCrowd').start();
     });
 });

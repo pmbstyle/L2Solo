@@ -59,7 +59,7 @@ function threadSummary(data, label, start, end) {
         instance = line.instance;
         const file = line.profile && path.join(data.bootDir, line.profile);
         if (!file || !fs.existsSync(file)) { lastEnd = 0; continue; }
-        const profile = JSON.parse(CpuProfile.repairText(fs.readFileSync(file, 'utf8')));
+        const { profile } = CpuProfile.parse(fs.readFileSync(file, 'utf8'));
         const a = CpuProfile.analyze(profile, { top: Infinity, since: lastEnd });
         lastEnd = profile.endTime || 0;
         profiled += a.busyMs;
@@ -81,6 +81,31 @@ function threadSummary(data, label, start, end) {
         cpuSelf: top(self, 15, profiled),
         cpuFiles: top(files, 10, profiled)
     };
+}
+
+// What the hot scenario's player felt (src/Perf/HotCrowd). The limits are the old mixed load
+// test's (MixedRuntimeSlo, removed with it), kept as the verdict: a packet waiting 40 ms at p95 is felt.
+const PLAYER_LIMITS = { scheduleP95Ms: 40, scheduleP99Ms: 120, scheduleMaxMs: 150, handlerP95Ms: 25, handlerP99Ms: 75 };
+
+function quantiles(values) {
+    if (!values.length) return null;
+    const sorted = [...values].sort((a, b) => a - b), at = (q) => sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * q) - 1)];
+    return { samples: sorted.length, p50Ms: at(0.5), p95Ms: at(0.95), p99Ms: at(0.99), maxMs: sorted.at(-1) };
+}
+
+function playerSummary(lines) {
+    if (!lines.length) return null;
+    const schedule = quantiles(lines.flatMap(line => line.scheduleMs || []));
+    const handler = quantiles(lines.flatMap(line => line.handlerMs || []));
+    if (!schedule || !handler) return null;
+    const over = [['schedule p95', schedule.p95Ms, PLAYER_LIMITS.scheduleP95Ms], ['schedule p99', schedule.p99Ms, PLAYER_LIMITS.scheduleP99Ms],
+        ['schedule max', schedule.maxMs, PLAYER_LIMITS.scheduleMaxMs], ['handler p95', handler.p95Ms, PLAYER_LIMITS.handlerP95Ms],
+        ['handler p99', handler.p99Ms, PLAYER_LIMITS.handlerP99Ms]].filter(([, value, limit]) => value > limit)
+        .map(([what, value, limit]) => `${what} ${value} > ${limit} ms`);
+    const hot = lines.map(line => line.hot).filter(Number.isFinite);
+    return { schedule, handler, errors: lines.reduce((sum, line) => sum + (line.errors || 0), 0),
+        hotAvg: hot.length ? round(hot.reduce((a, b) => a + b, 0) / hot.length) : 0, hotMax: Math.max(0, ...hot),
+        limits: PLAYER_LIMITS, over };
 }
 
 function range(values) {
@@ -113,6 +138,7 @@ function summarize(dir) {
         processCores: seconds ? round(cpuMs / 1000 / seconds, 2) : 0,
         recorderMainPct: seconds ? round(100 * recorderMs / 1000 / seconds, 2) : 0,
         coldDueMax: Math.max(0, ...summaries.map(line => line.coldQueue?.overdue || 0)),
+        player: playerSummary(data.timeline.filter(line => line.type === 'player' && Date.parse(line.t) > start && Date.parse(line.t) <= end)),
         threads,
         memory: {
             mainHeapUsedMb: range(summaries.map(line => (line.main?.memory?.heapUsed || NaN) / MB)),
@@ -128,6 +154,12 @@ function print(s) {
     console.log(`${r.folder}: ${r.sha}${r.dirty ? ' (uncommitted changes)' : ''}, ${r.scenario}, ${r.save.name}`);
     console.log(`  bots ${JSON.stringify(r.bots)}, ${r.warmupMinutes} min warm-up, window ${s.windowMinutes} min`
         + `; process ${s.processCores} cores, recorder ${s.recorderMainPct} % of main, cold due max ${s.coldDueMax}`);
+    if (s.player) {
+        const p = s.player, q = (x) => `p50 ${x.p50Ms} / p95 ${x.p95Ms} / p99 ${x.p99Ms} / max ${x.maxMs} ms`;
+        console.log(`\nplayer (${p.schedule.samples} probes, hot bots avg ${p.hotAvg} max ${p.hotMax}): ${p.over.length ? `OVER: ${p.over.join(', ')}` : 'within limits'}`);
+        console.log(`  waited for the loop: ${q(p.schedule)}`);
+        console.log(`  position handler:    ${q(p.handler)}${p.errors ? `, ${p.errors} errors` : ''}`);
+    }
     for (const [label, t] of Object.entries(s.threads)) {
         console.log(`\n${label}: busy ${t.busyPct} %, gc ${t.gcPct} %, long turns ${t.longTurnsPerMin}/min,`
             + ` longest ${t.longestMs} ms (p95 of chunk longest ${t.chunkLongestP95Ms} ms)${t.instances > 1 ? `, ${t.instances} instances` : ''}`);

@@ -156,4 +156,15 @@ function repairText(text) {
     }
 }
 
-module.exports = { analyze, sourceOf, frameOf, repairText };
+// The profile and the text it parsed from (repaired when Node wrote it broken), parsing once when
+// the text is valid.
+function parse(text) {
+    try {
+        return { profile: JSON.parse(text), text };
+    } catch {
+        const repaired = repairText(text);
+        return { profile: JSON.parse(repaired), text: repaired };
+    }
+}
+
+module.exports = { analyze, sourceOf, frameOf, repairText, parse };

@@ -14,7 +14,7 @@
 // Window (before / after a change, on a launcher save):
 //   node scripts/perf.js saves [--saves=<dir>]
 //   node scripts/perf.js prepare [--minutes=60] [--name=<save name>]     (grows a world, saves it)
-//   node scripts/perf.js run --save=<id> [--scenario=cold] [--warmup=5] [--minutes=10] [--diagnostics] [--keep-world]
+//   node scripts/perf.js run --save=<id> [--scenario=cold|hot] [--warmup=5] [--minutes=10] [--diagnostics] [--keep-world]
 //   node scripts/perf.js report [<run folder>]
 //   node scripts/perf.js compare <run A> <run B>   (folders, or names under tmp/perf/runs)
 
@@ -209,7 +209,7 @@ function printHeap(words, flags) {
 function analyzeFile(words, flags) {
     const file = words[1];
     if (!file) throw new Error('Use: perf.js analyze <file.cpuprofile>');
-    const a = CpuProfile.analyze(JSON.parse(CpuProfile.repairText(fs.readFileSync(file, 'utf8'))), { longTurnMs: numberFlag(flags, 'long', 50, 1), top: 15 });
+    const a = CpuProfile.analyze(CpuProfile.parse(fs.readFileSync(file, 'utf8')).profile, { longTurnMs: numberFlag(flags, 'long', 50, 1), top: 15 });
     const pct = (part) => `${Math.round(100 * part / (a.durationMs || 1))}%`;
     console.log(`${path.basename(file)}: ${Math.round(a.durationMs)} ms, busy ${pct(a.busyMs)}, gc ${pct(a.gcMs)}, ${a.runs} busy runs, ${a.longTurns} long`);
     console.log('\nself time (whole profile):');

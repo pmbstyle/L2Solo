@@ -1,7 +1,9 @@
 'use strict';
 
 // Window runs: the live recorder ([Perf] live) on a fixed world for a bounded time, so two commits
-// can be compared. The world is a launcher save (scripts/saved-games.js): `prepare` grows one and
+// can be compared. Scenarios: cold (no player: every bot cold) and hot (src/Perf/HotCrowd: one player
+// where the most bots hunt, the crowd around them heated by the normal activation, and a probe of
+// what that player feels). The world is a launcher save (scripts/saved-games.js): `prepare` grows one and
 // saves it, `run` loads a save into its own folder, so the save itself is never touched and every
 // run starts from the same rows. A run: boot, warm-up, heap dump, window, heap dump, stop.
 
@@ -142,7 +144,7 @@ async function prepare(flags) {
 async function run(flags) {
     geodataDir();
     const scenario = flags.scenario || 'cold';
-    if (scenario !== 'cold') throw new Error('Use --scenario=cold');
+    if (!['cold', 'hot'].includes(scenario)) throw new Error('Use --scenario=cold|hot');
     if (!flags.save) throw new Error('Use --save=<id> (node scripts/perf.js saves lists them)');
     const warmup = Number(flags.warmup || 5), minutes = Number(flags.minutes || 10);
     if (!(warmup >= 0) || !(minutes > 0)) throw new Error('Use --warmup=<min> --minutes=<min>');
@@ -159,7 +161,7 @@ async function run(flags) {
     fs.writeFileSync(path.join(dir, 'run.json'), `${JSON.stringify(meta, null, 2)}\n`);
     say(`${path.relative(ROOT, dir)}: ${save.name}, bots ${JSON.stringify(bots)}; ${warmup} min warm-up, ${minutes} min window`);
     // No seeding: the world is the save's, the same rows in every run.
-    const server = startServer(dir, { BOT_POPULATION_SEED_DELAY_MS: String(86400000),
+    const server = startServer(dir, { BOT_POPULATION_SEED_DELAY_MS: String(86400000), L2NODE_PERF_SCENARIO: scenario,
         ...(flags.diagnostics ? { BOT_DEVELOPER_DIAGNOSTICS: '1' } : {}) });
     try {
         await hold(server, dir, warmup * 60000, 'warm-up');

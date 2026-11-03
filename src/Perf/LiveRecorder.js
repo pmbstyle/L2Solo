@@ -7,7 +7,6 @@ const { performance } = require('perf_hooks');
 const { Worker } = require('worker_threads');
 const { pipeline } = require('stream/promises');
 const Threads = require('./Threads');
-const CpuProfile = require('./CpuProfile');
 const HeapProfile = require('./HeapProfile');
 
 // Live recorder for a server that runs for days ([Perf] live, planning/perf-tooling/plan.md).
@@ -27,7 +26,8 @@ const HeapProfile = require('./HeapProfile');
 // 3 a.m. without anyone asking for it. Chunks overlap (the next profile starts before the last
 // one stops): a profiler that stops forgets the names of optimized code, and every later chunk
 // would charge its time to the timer that called it. The samples a chunk shares with the last one
-// are left out of its numbers, so a run in the overlap counts once.
+// are left out of its numbers, so a run in the overlap counts once. A chunk is parsed, analyzed
+// and written on the recorder's own thread (ChunkWorker): on main that held 200-400 ms turns.
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const TICK_MS = 5000;
@@ -99,6 +99,7 @@ class LiveRecorder {
                 // A restarted worker is a new heap: the old one keeps its baseline and its last dump.
                 for (const old of heap?.files.slice(1, -1) || []) this.write(() => fs.promises.rm(old, { force: true }));
             } });
+            this.chunks = { worker: null, pending: new Map(), nextId: 0 };
             this.timer = setInterval(() => this.tick(), TICK_MS);
             this.timer.unref?.();
             this.prune().catch(error => this.warn('prune', error));
@@ -121,6 +122,7 @@ class LiveRecorder {
         await Promise.all([...this.profiled.values()].map(state => Promise.resolve().then(() => state.handle?.stop()).catch(() => null)));
         this.profiled.clear();
         this.heaped.clear();
+        await this.chunks.worker?.terminate();
         this.threads.stop();
         return this.writes;
     }
@@ -245,45 +247,69 @@ class LiveRecorder {
             if (this.profiled.has(thread.threadId)) this.warn(`cpu chunk of ${thread.label}`, error);
             return;
         }
-        const began = performance.now();
-        let profile;
+        const prefix = path.join(this.bootDir, 'cpu', `${stampOf(new Date(startedAt))}-${fileLabel(thread)}`);
+        let reply;
         try {
-            if (typeof text === 'string') text = CpuProfile.repairText(text);
-            profile = typeof text === 'string' ? JSON.parse(text) : text;
+            reply = await this.analyzeChunk({ text: typeof text === 'string' ? text : JSON.stringify(text), since: state.lastEnd,
+                longTurnMs: this.settings.longTurnMs, keepProfileMs: this.settings.keepProfileMs, forced: !!forced, prefix,
+                keepUnparsed: !state.unparsedKept });
         } catch (error) {
-            // Text Node wrote that repairText cannot fix: kept once per thread and boot for a report.
-            if (!state.unparsedKept) {
-                state.unparsedKept = true;
-                const file = path.join(this.bootDir, 'cpu', `${stampOf(new Date(startedAt))}-${fileLabel(thread)}.unparsed.txt`);
-                this.write(() => fs.promises.writeFile(file, text));
-                this.warn(`cpu chunk of ${thread.label} (text kept in ${path.relative(ROOT, file)})`, error);
-            } else this.warn(`cpu chunk of ${thread.label}`, error);
+            this.warn(`cpu chunk of ${thread.label}`, error);
             return;
         }
-        const a = CpuProfile.analyze(profile, { longTurnMs: this.settings.longTurnMs, since: state.lastEnd });
-        state.lastEnd = profile.endTime || state.lastEnd;
-        this.costMs += performance.now() - began;
-        const keep = forced || (a.longest?.ms || 0) >= this.settings.keepProfileMs;
-        const file = keep ? path.join(this.bootDir, 'cpu',
-            `${stampOf(new Date(startedAt))}-${fileLabel(thread)}-${Math.round(a.longest?.ms || 0)}ms.cpuprofile`) : null;
+        if (reply.error) {
+            // Text Node wrote that repairText cannot fix: kept once per thread and boot for a report.
+            if (reply.unparsed) state.unparsedKept = true;
+            this.warn(`cpu chunk of ${thread.label}${reply.unparsed ? ` (text kept in ${path.relative(ROOT, reply.unparsed)})` : ''}`, reply.error);
+            return;
+        }
+        const a = reply.analysis, file = reply.file;
+        state.lastEnd = reply.endTime || state.lastEnd;
         const at = new Date(startedAt).toISOString();
+        const kept = file && path.relative(this.bootDir, file).split(path.sep).join('/');
         this.append({ type: 'cpu', t: at, thread: thread.label, instance: thread.threadId, ms: a.durationMs, busyMs: a.busyMs,
-            gcMs: a.gcMs, longestMs: a.longest?.ms || 0, longTurns: a.longTurns, runs: a.runs,
-            profile: file && path.relative(this.bootDir, file).split(path.sep).join('/') });
+            gcMs: a.gcMs, longestMs: a.longest?.ms || 0, longTurns: a.longTurns, runs: a.runs, profile: kept });
         if (a.longTurns > 0 || forced) {
             this.appendTo(`spikes-${dayOf(new Date(startedAt))}.jsonl`, { t: new Date(startedAt + (a.longest?.atMs || 0)).toISOString(), chunk: at,
                 thread: thread.label, ms: a.longest?.ms || 0, longTurns: a.longTurns, long: a.long.slice(0, 5),
                 code: a.longest?.code || [], self: a.longest?.self || [], gcMs: a.gcMs, busyMs: a.busyMs,
-                profile: file && path.relative(this.bootDir, file).split(path.sep).join('/'), forced: !!forced });
+                profile: kept, forced: !!forced });
         }
         if (!file) return;
-        this.write(() => fs.promises.writeFile(file, typeof text === 'string' ? text : JSON.stringify(text)));
         this.profiles.push(file);
         while (this.profiles.length > this.settings.keepProfiles) {
             const old = this.profiles.shift();
             this.write(() => fs.promises.rm(old, { force: true }));
         }
         if (forced) utils.infoSuccess('Perf', 'captured cpu of %s: %s', thread.label, path.relative(ROOT, file));
+    }
+
+    // The chunk thread (ChunkWorker), started on first use and again after it dies; it does not keep
+    // the process alive.
+    analyzeChunk(message) {
+        const chunks = this.chunks;
+        if (!chunks.worker) {
+            const worker = new Worker(path.join(__dirname, 'ChunkWorker.js'), { name: 'perf-chunks' });
+            worker.unref();
+            const fail = (error) => {
+                if (chunks.worker === worker) chunks.worker = null;
+                for (const waiter of chunks.pending.values()) waiter.reject(error);
+                chunks.pending.clear();
+            };
+            worker.on('message', (reply) => {
+                const waiter = chunks.pending.get(reply.id);
+                chunks.pending.delete(reply.id);
+                waiter?.resolve(reply);
+            });
+            worker.on('error', fail);
+            worker.on('exit', () => fail(new Error('chunk thread exited')));
+            chunks.worker = worker;
+        }
+        return new Promise((resolve, reject) => {
+            const id = ++chunks.nextId;
+            chunks.pending.set(id, { resolve, reject });
+            chunks.worker.postMessage({ id, ...message });
+        });
     }
 
     async dumpHeap(state, forced) {
@@ -377,6 +403,12 @@ class LiveRecorder {
                 .then(heap => [thread.label, { usedMb: mb(heap.used_heap_size), totalMb: mb(heap.total_heap_size) }])
                 .catch(() => null)));
         return Object.fromEntries(rows.filter(Boolean));
+    }
+
+    // A line another measurement adds to the timeline (src/Perf/HotCrowd: the player probe).
+    note(type, record) {
+        if (!this.running) return;
+        this.append({ type, t: new Date().toISOString(), ...record });
     }
 
     append(record) {

@@ -43,7 +43,7 @@ const BUSY = 'function stepBots() { let x = 0; const t = Date.now(); while (Date
         await sleep(300);
         const names = new Map([[workers[0].threadId, 'perf-test-busy'], [workers[1].threadId, 'perf-test-quiet'],
             [workers[2].threadId, 'perf-test-leak']]);
-        for (const thread of recorder.threads.all().filter(row => row.worker)) {
+        for (const thread of recorder.threads.all().filter(row => row.worker && row.label !== 'perf-chunks')) {
             assert.equal(thread.label, names.get(thread.threadId), `thread ${thread.threadId}`);
             assert.equal(thread.worker.threadId, thread.threadId);
         }
@@ -77,7 +77,7 @@ const BUSY = 'function stepBots() { let x = 0; const t = Date.now(); while (Date
         assert.equal(summary.coldQueue.overdue, 2);
         assert.equal(summary.coordinator.worker.heapAfterGc, 1);
         assert.equal(summary.population, null, 'diagnostics off: no population summary');
-        assert.deepEqual(Object.keys(summary.heaps).sort(), ['main', 'perf-test-busy', 'perf-test-leak', 'perf-test-quiet'],
+        assert.deepEqual(Object.keys(summary.heaps).sort(), ['main', 'perf-chunks', 'perf-test-busy', 'perf-test-leak', 'perf-test-quiet'],
             'heap of every thread, profiled or not');
         assert.ok(summary.main.memory.rss > 0);
 
