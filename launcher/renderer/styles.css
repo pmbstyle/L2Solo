@@ -170,7 +170,22 @@ input::placeholder { color: var(--faint); }
 .eyebrow { display: block; color: var(--gold); font-size: 9px; letter-spacing: 1.1px; margin-bottom: 8px; }
 .update-summary h2 { font-size: 18px; }
 .update-summary p, .maintenance p { font-size: 11px; color: var(--muted); line-height: 1.7; }
-#release-notes, .release-notes { white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.9 system-ui; color: #aebbac; max-height: 340px; overflow: auto; }
+.release-notes { overflow-wrap: anywhere; font: 12px/1.75 system-ui; color: #aebbac; max-height: 420px; overflow: auto; }
+.release-notes > :first-child { margin-top: 0; }
+.release-notes > :last-child { margin-bottom: 0; }
+.release-notes p { margin: 0 0 12px; }
+.release-notes h1, .release-notes h2, .release-notes h3, .release-notes h4 { color: var(--text); font-size: 15px; font-weight: 600; margin: 20px 0 8px; }
+.release-notes ul, .release-notes ol { margin: 8px 0 14px; padding-left: 20px; }
+.release-notes li + li { margin-top: 4px; }
+.release-notes li p { margin: 4px 0; }
+.release-notes strong { color: var(--text); }
+.release-notes code { padding: 2px 5px; border-radius: 4px; background: #d8bd7312; color: var(--gold); font: 11px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.release-notes pre { margin: 12px 0; padding: 12px; border: 1px solid var(--line); border-radius: 6px; overflow: auto; }
+.release-notes pre code { display: block; padding: 0; background: transparent; white-space: pre; }
+.release-notes a { color: var(--gold); text-decoration: underline; text-underline-offset: 3px; }
+.release-notes blockquote { margin: 12px 0; padding-left: 12px; border-left: 2px solid var(--line); color: var(--muted); }
+.release-notes table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; margin: 12px 0; }
+.release-notes th, .release-notes td { padding: 6px 10px; border: 1px solid var(--line); text-align: left; }
 hr { border: 0; border-top: 1px solid var(--line); margin: 24px 0; }
 .footnote { margin: 24px 0 0; color: var(--faint); font-size: 10px; }
 .news-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }

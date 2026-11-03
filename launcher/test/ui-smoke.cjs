@@ -167,12 +167,44 @@ module.exports = async function smoke({ window, controller, directory }) {
         assert.equal(await js("document.getElementById('launcher-update-action').textContent"), 'Download DMG ↗');
         assert.ok(await js("document.getElementById('launcher-update-description').textContent.includes('quit the launcher')"));
     }
-    controller.state.launcherUpdate.notes = 'Launcher changes <img src=x onerror=alert(1)>';
+    controller.state.launcherUpdate.notes = 'Launcher-only **fallback** notes';
+    controller.state.launcherUpdate.url = 'https://github.com/pmbstyle/L2Solo/releases/tag/launcher-v0.3.0';
     controller.publish();
-    await wait("!document.getElementById('launcher-notes-panel').hidden && document.getElementById('launcher-release-notes').textContent.includes('Launcher changes')");
-    assert.equal(await js("document.querySelector('#launcher-release-notes img') === null"), true);
+    await wait("document.querySelector('#release-notes strong')?.textContent === 'fallback'");
+    assert.equal(await js("document.getElementById('release-tag').textContent"), 'launcher-v0.3.0');
+    assert.equal(await js("document.getElementById('launcher-notes-panel') === null"), true);
+    const notes = ['Server **0.1.0-preview.4** · Launcher **0.2.0-preview.4**', '## What changed',
+        '- Readable **release notes**\n- World backups and server updates', 'Commit `a037a00f4a3bb8be0d3418b225ae287e60fb8f71`.',
+        '[View changes](https://github.com/pmbstyle/L2Solo/releases/tag/server-v0.1.0-preview.4)',
+        '> Your world stays yours.', '```ini\n[AI]\nenabled = false\n```'].join('\n\n');
+    controller.state.releaseChannel = 'preview';
+    controller.state.latest = { tag: 'server-v0.1.0-preview.4', notes, publishedAt: '2026-11-03T12:00:00Z', updateAvailable: true,
+        url: 'https://github.com/pmbstyle/L2Solo/releases/tag/server-v0.1.0-preview.4' };
+    controller.state.launcherUpdate = { currentVersion: '0.2.0-preview.3', availableVersion: '0.2.0-preview.4', status: 'available', supported: false,
+        notes, url: 'https://github.com/pmbstyle/L2Solo/releases/tag/launcher-v0.2.0-preview.4' };
+    controller.publish();
+    await wait("document.querySelector('#release-notes h2')?.textContent === 'What changed'");
+    assert.equal(await js("document.querySelectorAll('#release-notes').length"), 1);
+    assert.equal(await js("document.querySelectorAll('#release-notes li').length"), 2);
+    assert.equal(await js("document.querySelectorAll('#release-notes pre code').length"), 1);
+    assert.equal(await js("document.getElementById('release-notes').textContent.includes('**')"), false);
+    assert.equal(await js("document.getElementById('release-notes').textContent.includes('Launcher-only')"), false);
+    assert.equal(await js("document.getElementById('server-release-label').textContent"), 'SERVER · PREVIEW');
+    const { shell } = require('electron'), openExternal = shell.openExternal, opened = [];
+    shell.openExternal = async url => { opened.push(url); };
+    try {
+        await js("document.querySelector('#release-notes a').click()");
+        const deadline = Date.now() + 5000;
+        while (!opened.length && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 25));
+        assert.deepEqual(opened, [controller.state.latest.url]);
+    } finally { shell.openExternal = openExternal; }
     await capture('updates');
+    controller.state.latest.notes = '<img src=x onerror="window.__notesExecuted=true">\n\n[bad](javascript:alert(1))\n\n![<svg onload=alert(1)>](https://example.invalid/image.png)';
+    controller.publish();
+    await wait("document.getElementById('release-notes').textContent.includes('<img')");
+    assert.equal(await js("document.querySelector('#release-notes img, #release-notes svg, #release-notes script, #release-notes a') === null"), true);
+    assert.equal(await js("window.__notesExecuted === undefined"), true);
     assert.deepEqual(rendererErrors, []);
     await fs.promises.writeFile(path.join(directory, 'result.json'), JSON.stringify({ passed: true, checks: ['home', 'compact layout', 'login address', 'bot target separate from players', 'settings help and units', 'hidden settings excluded from search', 'semantic settings groups', 'stop hover', 'unified AI', 'backup create/restore/delete', 'wipe confirmation/cancel/scope', 'world tools disabled online', 'observer availability', 'navigation', 'settings saved to INI', 'enum selects', 'enum saved to INI', 'start', 'console streaming', 'graceful stop', 'updates'], rendererErrors }, null, 2));
-    console.log('Desktop UI smoke passed: app layout, backups, wipe, navigation, settings, start/stop, Observer, console.');
+    console.log('Desktop UI smoke passed: app layout, backups, wipe, settings, start/stop, Markdown notes, single notes panel, safe links and escaped HTML.');
 };
