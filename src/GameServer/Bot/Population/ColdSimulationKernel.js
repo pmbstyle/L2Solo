@@ -583,6 +583,7 @@ class RetainedStateMap extends Map {
         if (this.#skillDtos && record && (wishAdvisory || record.wishAdvisory)) {
             // A near record's decision is the packet it posts to main (no proof), never a card:
             // the far card is dropped here and none is built while the bot is near.
+            if (this.momentStats && previousAdvice && !wishAdvisory) this.momentStats.cardDrops++;
             record.wishAdvisory = record.state?.phase === 'cold' ? wishAdvisory : null;
         }
         if (this.#skillDtos) {
@@ -651,7 +652,6 @@ class ColdSimulationKernel {
         // steps counting what the window would skip (windowShadow).
         this.soloWindow = options.soloWindow || null;
         this.momentStats = options.momentStats || null;
-        this.momentGate = options.momentGate === true;
         // Always on, read by the health line (PopulationStatus.soloWindowText):
         // solo hunting steps, their rounds and hunt time (steps per hunting
         // bot-hour = 3.6e6 * steps / huntMs); what ended each; the shadow's
@@ -2776,6 +2776,8 @@ class ColdSimulationKernel {
             asksPastDepth: invoke('GameServer/Bot/Economy/OfferQuery').pastDepthCount(), // lazy: the kernel's boot order
             sourceShotFlips: invoke('GameServer/Bot/AI/GearAcquisitionPlanner').sourceShotFlipCount(), // lazy: the kernel's boot order
             quietGearBuilds: invoke('GameServer/Bot/Economy/EconomyContext').quietGearBuildCount(), // lazy: the kernel's boot order
+            buildDoors: invoke('GameServer/Bot/Economy/EconomyContext').buildDoors(), // lazy: the kernel's boot order
+            raisedLinks: invoke('GameServer/Bot/Economy/Reaction').raisedCounts(), // lazy: the kernel's boot order
             maxInFlight: this.maxInFlight,
             maxAtomicPartySize: this.maxAtomicPartySize,
             paused: this.paused,

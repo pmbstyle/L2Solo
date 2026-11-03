@@ -4,6 +4,7 @@ const Fnv1a = require('../Fnv1a');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const DataCache = invoke('GameServer/DataCache');
+const Network = invoke('GameServer/Bot/Economy/WishNetwork');
 
 function cleanupGoal(need) {
     return {
@@ -70,7 +71,7 @@ function evaluate(state = {}, options = {}) {
         const gear = ItemTemplateIndex.find(DataCache.items, itemId);
         const slot = Number(gear?.etc?.slot || 0);
         const input = String(leaf.rootKey || '').startsWith('power:')
-            && Number(leaf.rootKey.split(':')[1]) !== itemId;
+            && Network.rootItem(leaf.rootKey) !== itemId;
         const equipment = slot && !input;
         const itemName = state.inventory?.[String(itemId)]?.name
             || gear?.template?.name || `Item ${itemId}`;

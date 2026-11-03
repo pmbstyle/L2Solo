@@ -27,7 +27,7 @@ function traderContext(state, deps = {}) {
     const adena = Math.max(0, Number(state?.adena ?? state?.inventory?.[57]?.amount ?? 0));
     const origin = deps.findSpot ? OfferOrder.farmingOrigin(state, deps.findSpot) : null;
     const economicTrip = deps.tripCost?.details ? deps.tripCost : economy.trip?.details ? economy.trip
-        : Profit.tripFor(state, { ...economy, origin });
+        : Profit.tripFor(state, { hourAdena: hour, origin });
     const trip = economicTrip;
     const persona = deps.persona || economy.persona;
     const trader = PriceDecision.traderOf(persona, { hourAdena: hour, moneyPrice: economy.moneyPrice, gapHorizonHours: economy.gapHorizonHours });

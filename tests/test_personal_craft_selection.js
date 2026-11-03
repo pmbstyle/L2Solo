@@ -36,7 +36,7 @@ function build(state) {
     return Economy.forState(state, { timestamp, board: new BoardIndex(), spots: [], npcOffersFor: () => [], workshop: null,
         knownRecipes: [], withNodes: true, knowledgeEnabled: false,
         routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
-        workshops: id => [service(id)], rememberContext: false });
+        workshops: id => [service(id)], caller: 'meeting_prepare' });
 }
 
 const spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure() || [];

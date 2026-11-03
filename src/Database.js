@@ -3504,7 +3504,7 @@ function repriceAfkTradeLineUnsafe(characterId, id, unitPrice, expectedRevision,
     if (!Number.isSafeInteger(reserved) || reserved < 0) throw new Error('invalid_afk_trade_budget');
     if (difference > 0) afkTradeDebitAdenaUnsafe(characterId, difference);
     if (difference < 0) afkTradeCreditAdenaUnsafe(characterId, -difference);
-    const changedIds = [];
+    const changedIds = difference ? [57] : [];
     if (returned > 0 && shop.custodyPolicy !== 1 && Number(shop.storeType) === 1) {
         afkTradeCreditItemUnsafe(characterId, line, returned);
         changedIds.push(Number(line.selfId));
@@ -3526,7 +3526,7 @@ function repriceAfkTradeLineUnsafe(characterId, id, unitPrice, expectedRevision,
     return {
         shop: filled ? closedRecord(current) : afkTradeShopUnsafe(shop.id),
         changedIds,
-        moved: changedIds.length > 0 || difference !== 0
+        moved: changedIds.length > 0
     };
 }
 
@@ -3721,7 +3721,7 @@ function closeBoardRecordUnsafe(shop, { ownMove = true, at = now() } = {}) {
             if (give(line, line.count) === 'bag') changed.push(Number(line.selfId));
         });
     }
-    if (Number(shop.escrowAdena || 0) > 0) give({ selfId: 57 }, shop.escrowAdena);
+    if (Number(shop.escrowAdena || 0) > 0 && give({ selfId: 57 }, shop.escrowAdena) === 'bag') changed.push(57);
     deleteBoardRecordUnsafe(shop.id, at);
     return changed;
 }
@@ -4966,7 +4966,8 @@ const Database = {
                 shop: opened.shop,
                 closedRecords,
                 ownerInventory: afkTradeInventoryUnsafe(characterId),
-                coldLifeRows: fenceAfkTradePartiesUnsafe([characterId], opened.changedIds)
+                // An ad with no custody moved nothing: the worker's step stands.
+                coldLifeRows: opened.changedIds.length ? fenceAfkTradePartiesUnsafe([characterId], opened.changedIds) : {}
             };
         }, 'afk-trade:create'));
     },
@@ -5031,10 +5032,11 @@ const Database = {
         }
         return withCharacterFlush(characterId, () => inTransaction(() => {
             const opened = list.map((config) => openBoardRecordUnsafe(characterId, { ...config, kind }, config.lines));
+            const changedIds = opened.flatMap((record) => record.changedIds);
             return {
                 opened: opened.map((record) => record.shop),
                 ownerInventory: afkTradeInventoryUnsafe(characterId),
-                coldLifeRows: fenceAfkTradePartiesUnsafe([characterId], opened.flatMap((record) => record.changedIds))
+                coldLifeRows: changedIds.length ? fenceAfkTradePartiesUnsafe([characterId], changedIds) : {}
             };
         }, 'board:open'));
     },

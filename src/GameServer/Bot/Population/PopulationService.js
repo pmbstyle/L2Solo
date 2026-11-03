@@ -3280,7 +3280,7 @@ const PopulationService = {
                 }
                 : craft.state || plannedState;
             if (!completed && ['materials_changed', 'missing_product', 'missing_station', 'insufficient_adena'].includes(craft.reason))
-                recoveredState = DecisionEvents.rejectedState(recoveredState, plannedState);
+                recoveredState = DecisionEvents.rejectedState(recoveredState, plannedState, `craft:${craft.reason}`);
             return LifeState.upsertState(recoveredState, reason).then(async (saved) => {
                 if (saved && craft.reason === 'component_crafted' && saved.activity !== 'crafting'
                     && invoke('GameServer/Bot/Economy/BotImprovementService').inTown(saved)
@@ -3403,7 +3403,7 @@ const PopulationService = {
             .then(async (wealthCraft) => {
                 const current = wealthCraft.state || updatedState;
                 const inTown = invoke('GameServer/Bot/Economy/BotImprovementService').inTown(current);
-                const released = inTown ? await BotWarehouse.releaseCold(current, { inTown: true }) : { state: current };
+                const released = inTown ? await BotWarehouse.releaseCold(current, { inTown: true, before: state }) : { state: current };
                 const afterRelease = released.state || current;
                 const deposited = inTown && !released.aborted && (afterRelease.stats?.equipmentPlan?.inputPreparation
                     || require('../Economy/CraftWarehousePolicy').planFor(afterRelease))

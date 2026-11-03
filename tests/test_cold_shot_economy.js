@@ -123,6 +123,12 @@ async function images(ids) {
         await Shots.execute(crafter, { craft: { recipeId: 20, batches: 7 } }, now);
         assert.deepEqual(await images([crafter.characterId, supplier.characterId]), refusedBefore,
             'below-floor production cannot debit, crystallize or consume materials');
+        const Reaction = invoke('GameServer/Bot/Economy/Reaction');
+        Reaction.configure(true);
+        const refused = await Shots.execute(crafter, { craft: { recipeId: 20, batches: 65 } }, now);
+        Reaction.configure(false);
+        assert(refused.stats.wishDirty, 'what the act refuses is heard, the plan does not ask it again');
+        assert(invoke('GameServer/Bot/Economy/WealthCraftDecision').refused(refused, 20), 'its recipe waits for the next town look');
 
         const oldOffer = Afk.offers(45, Afk.SELL).find(row => Number(row.sourceId) === supplier.characterId);
         assert(oldOffer, 'the expensive physical helmet remains in its seller escrow');

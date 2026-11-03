@@ -101,15 +101,39 @@ module.exports.goalProbe = async (id) => {
 // A refresh of a dirty bot waits for its step, whose build it would repeat, and
 // runs on that step's output.
 module.exports.refreshProbe = async id => {
-    kernel.momentGate = true;
+    Reaction.configure(true);
     const asked = () => occupationPlanner.waiting.has(id) || occupationPlanner.slots.has(id);
-    const record = stats => { const entry = kernel.states.get(id);
-        return { ...entry, economyPending: 1, state: { ...entry.state, phase: 'cold', stats: { ...entry.state.stats, ...stats } } }; };
-    occupationPlanner.cancel(id);
-    kernel.states.set(id, record({ wishDirty: 1 }));
-    const waited = !asked();
-    kernel.states.set(id, record({ wishDirty: 0 }), 'commit');
-    return { waited, ran: asked() };
+    const record = (stats, economyPending) => { const entry = kernel.states.get(id);
+        return { ...entry, economyPending, state: { ...entry.state, phase: 'cold', stats: { ...entry.state.stats, ...stats } } }; };
+    const run = (pending, ask) => {
+        occupationPlanner.cancel(id);
+        kernel.states.set(id, record({ wishDirty: 1 }, pending));
+        ask?.();
+        const waited = !asked();
+        kernel.states.set(id, record({ wishDirty: 0 }, pending), 'commit');
+        return { waited, ran: asked() };
+    };
+    // A plan that does not stand: the request leaves it to the step, which answers.
+    const left = async () => {
+        occupationPlanner.cancel(id);
+        const worker = record({ wishDirty: 0 }, 0);
+        kernel.states.set(id, { ...worker, state: { ...worker.state, activity: 'hunting', party: null, partyId: null } });
+        EconomyContext.forget(id);
+        const door = () => (EconomyContext.buildDoors().economy_refresh || [0, 0, 0]).slice();
+        const before = door();
+        occupationOwnerChanged(id, true);
+        for (let tries = 0; tries < 500 && !kernel.states.get(id).refreshWaits; tries++) await new Promise(done => setTimeout(done, 10));
+        const waited = kernel.states.get(id).refreshWaits === true && !asked();
+        const after = door();
+        const own = kernel.states.get(id);
+        kernel.states.set(id, { ...own, state: { ...own.state } }, 'commit');
+        const ran = asked();
+        occupationPlanner.cancel(id);
+        Reaction.configure(false);
+        return { waited, ran, built: after[0] - before[0], left: after[2] - before[2] };
+    };
+    // Main's reconcile asks with no pending count.
+    return { pending: run(1), reconcile: run(0, () => occupationOwnerChanged(id, true)), left: await left() };
 };
 // A party member's step (no decision before its round): a level gained in
 // its round moves its kit, which its party step reads to open a re-plan; a
@@ -228,7 +252,9 @@ parentPort.on('message', message => {
         assert.equal(kit.levelUp, true, 'a level gained in a party round is a kit event for the party step');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'refresh'), refreshProbe: id });
         const refreshResponse = await wait(message => message.probeId === 'refresh'); if (refreshResponse.error) throw Error(refreshResponse.error);
-        assert.deepEqual(refreshResponse.value, { waited: true, ran: true }, 'a dirty bot refreshes after its step, not beside it');
+        const moved = { waited: true, ran: true };
+        assert.deepEqual(refreshResponse.value, { pending: moved, reconcile: moved, left: { ...moved, built: 0, left: 1 } },
+            'a dirty bot refreshes after its step, not beside it, and no ask is lost');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'occupation'), occupationProbe: id });
         const occupationResponse = await wait(message => message.probeId === 'occupation');
         if (occupationResponse.error) throw Error(occupationResponse.error);

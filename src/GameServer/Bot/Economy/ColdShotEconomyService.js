@@ -12,6 +12,9 @@ const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const Profit = require('./CraftProfitPolicy');
 const Workshops = require('./CraftWorkshopService');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
+const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
+const WealthCraft = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
+const Reaction = require('./Reaction');
 const Commit = require('./EconomyCommit');
 const Price = require('./PriceDecision');
 const OfferQuery = require('./OfferQuery');
@@ -192,8 +195,7 @@ async function obtainRecipe(state, selected, now) {
         || Number(wanted.recipeId) !== Number(recipe.recipeId) || Number(wanted.batches) !== Number(route.batches)
         || maxSpend > Number(wanted.maxSpend || 0) * 1.25
         || Number(wanted.at || 0) + 15 * 60 * 1000 <= now) {
-        const stats = require('../AI/DecisionEvents').applyRaise({ ...(state.stats || {}) },
-            require('./DecisionSections').sectionMask(['sources', 'benefits', 'money']));
+        const stats = DecisionEvents.applyOwnRaise(state);
         state = await persist({ ...state, stats: { ...stats,
             shotRecipeDemand: { itemId, recipeId: Number(recipe.recipeId), batches: Number(route.batches), amount: 1, maxSpend, at: now }
         } }, 'shot_recipe_demand') || state;
@@ -359,8 +361,7 @@ async function craft(state, candidate, index, now) {
         || !held?.gearInputs || Number(held?.at) + 30 * 60 * 1000 <= now) {
         const gearInputs = Number(held?.gearTarget) === gearTarget && held?.gearInputs
             && Number(held.at) + 30 * 60 * 1000 > now ? held.gearInputs : ItemDisposition.collectedEquipmentInputs(state);
-        const stats = require('../AI/DecisionEvents').applyRaise({ ...(state.stats || {}) },
-            require('./DecisionSections').sectionMask(['sources', 'benefits', 'money']));
+        const stats = DecisionEvents.applyOwnRaise(state);
         state = await persist({ ...state, stats: { ...stats, shotCraft: { ...state.stats?.shotCraft,
             preparing: { recipeId: Number(candidate.recipe.recipeId), productId: Number(candidate.recipe.productId),
                 batches, gearTarget, gearInputs, at: now } } } }, 'shot_craft_preparing');
@@ -447,7 +448,9 @@ async function execute(state, step, now = Date.now()) {
         && !(await Database.execute(['SELECT recipeId FROM character_recipes WHERE characterId=? AND recipeId=? LIMIT 1',
             [Number(state.characterId), Number(selected.gear[1])]])).length) return state;
     const candidate = recheck(state, selected);
-    if (!candidate) return state;
+    // What the act refuses is heard, its recipe marked as a wealth craft's: the search
+    // does not pick it again until the next town look.
+    if (!candidate) return Reaction.on() ? WealthCraft.rejectAccepted(state, state, { kind: 'shot', reason: 'no_basket', recipeId }) : state;
     if (step?.recipeTarget) {
         if (known) return state;
         const board = AfkTrade.boardIndex(), scrollId = Number(recipe.recipeItemId);

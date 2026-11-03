@@ -13,6 +13,8 @@ const Providers = require('./WishProviders');
 const Floor = require('../Population/SurvivalFloor');
 const InventoryLimits = require('../../Inventory/InventoryLimits');
 const Diagnostics = require('./EconomyDiagnostics');
+const Reaction = require('./Reaction');
+const { FIELD_ACTIVITIES, partyIdOf } = Reaction;
 const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
 const DataCache = invoke('GameServer/DataCache');
 const CombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
@@ -91,7 +93,7 @@ const COMPUTED = Object.freeze({
     // level and kit matchup; its other reads are checked beside it.
     sourceGround: sectionMask(['build']),
     // What makes a build weigh every gear candidate whatever the moment: the
-    // bot's kit, what gear gives it, a death (PlayerMoment.quiet).
+    // bot's kit, what gear gives it, a death (Reaction.quiet).
     gearReview: sectionMask(['build', 'benefits', 'combat']),
     // The crafter's workshop (its best recipe and income per hour, the
     // occupation planner's answer), kept with the held build: the planner
@@ -99,22 +101,6 @@ const COMPUTED = Object.freeze({
     // labour), which the foundation writes every build, and the kept
     // recipe's market (its watch rows raise money).
     workshop: FOUNDATION | sectionMask(['money'])
-});
-// The one table of what a moved fact touches, for near and far bots alike
-// (factEvents over factsOf). build: the kit (class, level, gear, hennas,
-// skills, craft); bag: the bag full or its weight level, which changes the
-// loot worth taking.
-const FACT_SECTIONS = Object.freeze({
-    build: Object.freeze(['build', 'benefits', 'sources']),
-    recipes: Object.freeze(['build', 'benefits', 'sources']),
-    dead: Object.freeze(['combat']),
-    relations: Object.freeze(['relations']),
-    funding: Object.freeze(['money']),
-    occupation: Object.freeze(['occupation']),
-    riskDeaths: Object.freeze(['combat', 'occupation']),
-    supply: Object.freeze(['supply']),
-    bag: Object.freeze(['supply', 'sources']),
-    stores: Object.freeze(['supply', 'sources'])
 });
 // The names of the sections raised in wishDirty bits, in table order.
 function sectionNames(bits) {
@@ -180,6 +166,15 @@ function moneyBound(state, baseline, escrow = 0) {
     return reachesUpper(positive(state.adena), baseline.cashBounds) || Array.isArray(baseline.budgetBounds)
         && reachesUpper(PurchaseFunding.budget(state, escrow), baseline.budgetBounds);
 }
+// At work a bot watches what its goal costs (decision 11-02), not each price its
+// last review read: the rest and the town read those.
+function goalReached(state, baseline, escrow = 0) {
+    return baseline?.goalBudget > 0 && PurchaseFunding.budget(state, escrow) >= baseline.goalBudget;
+}
+// The wallet reached what the bot watches where it stands.
+function moneyReached(state, baseline, escrow = 0, leaf = null) {
+    return Reaction.hears('money', Reaction.place(state, leaf)) ? moneyBound(state, baseline, escrow) : goalReached(state, baseline, escrow);
+}
 function meaningfulMoney(state, baseline = state.stats?.wishSections, escrow = 0) {
     return moneyChanged(state, baseline, escrow, true);
 }
@@ -212,7 +207,7 @@ function carrySectionBaseline(previous, current, updated) {
             else delete current[name];
         }
     };
-    carry(sectionBit('money'), ['wallet', 'cashBounds', 'budgetBounds', 'funding', 'moneyError']);
+    carry(sectionBit('money'), ['wallet', 'cashBounds', 'budgetBounds', 'goalBudget', 'funding', 'moneyError']);
     carry(sectionBit('occupation') | sectionBit('build'), ['sample', 'share', 'incomeError', 'frustration', 'bond']);
     carry(sectionBit('money') | sectionBit('sources') | sectionBit('supply'), ['bagValue']);
     return current;
@@ -295,6 +290,7 @@ function snapshot(state, context, cashBounds, moneyError = -1, mode, money = nul
     const share = Hunt.onSpotShare(state);
     return { at: Number(context.timestamp), wallet, cashBounds, funding: fundingMark(actual, escrow), moneyError,
         ...(budgetTracked ? { budgetBounds: money.budgetBounds } : {}),
+        ...(context.goalBudget > wallet ? { goalBudget: context.goalBudget } : {}),
         bagValue: positive(context.choiceBagValue),
         ...(facts || semanticFacts(state)), threat: context.gearThreatMask,
         frustration: frustrationOf(state), ...(bond ? { bond } : {}),
@@ -308,33 +304,27 @@ function snapshot(state, context, cashBounds, moneyError = -1, mode, money = nul
 // mirror, null: not ready, the market part waits), buyOrderEscrow, memory (a
 // reader of the bot's memory rows, called only when the bond is compared),
 // timestamp (the step's) }.
-// A solo bot on its hunt, away from town (T174): what it hears there is its own
-// next wish coming within reach and WTB/WTS on what it watches. The money drift
-// and the income stay in its state and its next build reads them. A hunt for
-// money is not one: its wallet is what it hunts for, and a seller at a fair
-// price crosses no watch.
-function softEvents(state, baseline, input, leaf = null) {
+function softEvents(state, baseline, input, leaf = null, before = null) {
     if (!baseline) return NONE;
     let sections = NONE;
     // Diagnostics only: soft:step:far counts the soft points, soft:raise:<source>
     // the raises by source (the observation share per far step is read live).
     const diagnostic = Diagnostics.active();
     if (diagnostic) Diagnostics.count('soft', 'step', 'far');
+    const where = Reaction.place(state, leaf, before);
     const add = source => {
-        const names = SOFT_SECTIONS[source];
+        const names = Reaction.raise([source], where);
         sections = sections === NONE ? [...names] : [...new Set([...sections, ...names])];
         if (diagnostic) Diagnostics.count('soft', 'raise', source);
     };
-    const away = input.momentGate === true && leaf?.funding !== true && awayHunt(state, leaf);
-    if (away ? moneyBound(state, baseline, input.buyOrderEscrow) : meaningfulMoney(state, baseline, input.buyOrderEscrow)) add('money');
+    if (Reaction.hears('money', where) && meaningfulMoney(state, baseline, input.buyOrderEscrow)) add('money');
+    else if (goalReached(state, baseline, input.buyOrderEscrow)) add('goal');
     const bondNow = () => Providers.relationBond(state, { memory: input.memory?.() ?? null });
-    if (!away && observationChanged(state, baseline, input.timestamp, undefined, bondNow)) add('observation');
+    if (Reaction.hears('observation', where) && observationChanged(state, baseline, input.timestamp, undefined, bondNow)) add('observation');
     if (input.board && marketCrossed(input.board, baseline.marketWatch, Number(state.characterId))) add('market');
     return sections;
 }
 const NONE = Object.freeze([]);
-const SOFT_SECTIONS = Object.freeze({ money: Object.freeze(['money']),
-    observation: Object.freeze(['occupation', 'benefits', 'sources']), market: Object.freeze(['sources', 'money']) });
 // The watch rows against the board mirror, one head read per row: a sell line
 // (SELL) below the reference by more than the error, or a buy line (BUY)
 // above it by more than the error. Rows of another shape
@@ -374,25 +364,16 @@ function relationTargetIds(state, memory = null) {
 // memory: the bot's interaction memory rows, null when the caller read none.
 function factsOf(view, memory = null) {
     return { build: kitFact(view), recipes: view.recipes ? hash(view.recipes) : null,
-        relations: hash([view.party?.partyId, view.party?.role, view.clanId, ...(view.relationTargets || relationTargetIds(view, memory))]),
+        relations: hash([view.clanId, ...(view.relationTargets || relationTargetIds(view, memory))]),
+        party: hash([view.party?.partyId, view.party?.role]),
         occupation: hash([view.spotId, view.activity === 'resting' ? 'hunting' : view.activity]),
-        dead: view.dead, riskDeaths: view.riskDeaths, supply: hash(view.supply), stores: hash(view.stores),
+        dead: view.dead, riskDeaths: view.riskDeaths, supply: hash(view.supply), stores: hash(view.stores), warehouse: view.warehouse,
         bag: hash([view.bagFull, view.weight]) };
 }
 // The stock items whose presence is the supply fact: the trip's Scroll of
 // Escape (736), the planned shot, the planned healing potion.
 function stockIds(shotPlan, potion) {
     return [736, shotPlan.selfId, potion.selfId];
-}
-// The bot's party id as a string (`bgp_<ts36>_<leaderId>`, `bgp_hot_<uuid>`),
-// '' when it has none (the relations fact's party, the held build's kept
-// projection: EconomyContext).
-function partyIdOf(state) {
-    return String(state.party?.partyId || state.partyId || '');
-}
-const FIELD_ACTIVITIES = new Set(['hunting', 'resting', 'traveling']);
-function awayHunt(state, leaf) {
-    return state.phase === 'cold' && FIELD_ACTIVITIES.has(state.activity) && leaf?.activity === 'hunting' && !partyIdOf(state);
 }
 // The far reader: the raw values of a saved state. recipes: the known recipe
 // ids the build reads (WishProviders.recipeIds), null when the caller holds
@@ -415,6 +396,7 @@ function stateView(state, recipes = null) {
     const potion = HealingPotionStock.purchasePotionFor(state);
     view.supply = stockIds(shots, potion).map(id => [id, positive(state.inventory?.[id]?.amount) > 0]);
     view.stores = storesOf(state);
+    view.warehouse = Warehouse.contentIdentity(state);
     // The bag full: its slot limit (the full-bag sale itself is SurvivalFloor's).
     view.bagFull = Number(bag.slots >= InventoryLimits.forState(state));
     // The kit profile store reads the kit by the hashes this view already holds.
@@ -422,16 +404,19 @@ function stateView(state, recipes = null) {
         CombatProfile.profileFor(state, Date.now(), { kitHashes: view.kitHashes }).maxLoad);
     return view;
 }
-// The tables main keeps about the bot: the clan's material demand, the
-// personal warehouse, the clan supply and whether the clan has a warehouse.
-// owner: { characterId, clanId, stats } (a state is one); into: the array
-// written (the near reader's, updated in place).
-function storesOf(owner, into = new Array(4)) {
-    into[0] = owner.stats?.clanMaterialDemand ?? null; into[1] = Warehouse.contentIdentity(owner);
-    into[2] = ClanSupply.contentIdentity(owner); into[3] = ClanSupply.hasWarehouse(owner);
+// What the bot's clan asks of it and holds for it: the clan's material demand, the clan
+// supply, whether the clan has a warehouse, the clan goal's crystals. The personal
+// warehouse is its own fact: the bot's own doing, read in town (Reaction, warehouse).
+// owner: { characterId, clanId, stats } (a state is one); into: the array written (the
+// near reader's, updated in place).
+function storesOf(owner, into = new Array(3)) {
+    // Where the moment gate stands a member hears what its clan asks for, not how much is left.
+    const demand = owner.stats?.clanMaterialDemand ?? null, request = Reaction.reactive(owner);
+    into[0] = request && demand ? Object.keys(demand) : demand;
+    into[1] = request ? ClanSupply.requestIdentity(owner) : ClanSupply.contentIdentity(owner); into[2] = ClanSupply.hasWarehouse(owner);
     const crystals = owner.stats?.equipmentPlan?.clanGoal?.clanId && require('./ClanCrystalSupply').identity(owner);
-    if (crystals) into[4] = crystals;
-    else into.length = 4;
+    if (crystals) into[3] = crystals;
+    else into.length = 3;
     return into;
 }
 // memory: the bot's interaction memory (the caller's deps.memory), null when
@@ -466,13 +451,31 @@ function events(before, after, escrow = 0, leaf = null) {
     // fact the baseline lacks reads the state before.
     const previousFact = key => Object.hasOwn(previous, key) ? previous[key] : (original ||= semanticFacts(before))[key];
     // No memory and no recipe book here: the relations and the recipes the
-    // decision kept stand until the next verdict, which reads both.
-    const current = { ...semanticFacts(after), relations: previousFact('relations'), recipes: previousFact('recipes') };
+    // decision kept stand until the next verdict, which reads both; the party with them.
+    const view = stateView(after);
+    const current = { ...factsOf(view), relations: previousFact('relations'), recipes: previousFact('recipes'), party: previousFact('party') };
     // leaf: the step's held leaf (the worker's round check): the move it
     // ordered is no event (occupationPlanned). None (main, a step without a
     // plan): every move is an event.
-    return factEvents(previousFact, current, moneyChanged(after, represented || before.stats?.wishSections, escrow, false)
-        || !previous.funding && fundingMark(before) !== fundingMark(after), null, occupationPlanned(after, leaf));
+    const links = [];
+    factEvents(previousFact, current, moneyChanged(after, represented || before.stats?.wishSections, escrow, false)
+        || !previous.funding && fundingMark(before) !== fundingMark(after), links, occupationPlanned(after, leaf));
+    const where = Reaction.place(after, leaf, before);
+    return Reaction.raise(Reaction.gated(where) ? [...links, ...needsOpened(before, after, links, view)] : links, where);
+}
+// A need that opened in this step, one raise: one that stays open raises nothing more.
+// now: the step's view of after (stateView), its supply ids read once.
+function needsOpened(before, after, facts, now) {
+    const count = (state, id) => positive(state.inventory?.[id]?.amount);
+    const potionId = now.supply[2][0], floor = Number(after.stats?.stockTargets?.[5]) || 0;
+    const ranOut = now.supply.some(([id]) => count(before, id) > 0 && !count(after, id))
+        || count(before, potionId) >= floor && count(after, potionId) < floor;
+    const opened = ranOut ? ['need_supply'] : [];
+    if (facts.includes('bag')) {
+        const was = stateView(before);
+        if (now.bagFull > was.bagFull || now.weight > was.weight) opened.push('need_bag');
+    }
+    return opened;
 }
 // The one reading of an occupation against the held leaf (Recompute: own
 // outputs are not inputs): the trip the leaf ordered under way (to its
@@ -488,6 +491,8 @@ function events(before, after, escrow = 0, leaf = null) {
 // check (factEvents' planned); its field-trip clause is
 // EconomyContext.fieldActivity's.
 function occupationPlanned(state, leaf) {
+    const where = Reaction.place(state, leaf);
+    if (ownMove(state, where) && !Reaction.hears('own_move', where)) return true;
     if (!leaf?.activity) return false;
     const hunt = leaf.activity === 'hunting';
     if (state.activity === 'traveling') {
@@ -501,6 +506,14 @@ function occupationPlanned(state, leaf) {
     if (hunt) return leaf.spotId != null && (state.activity === 'hunting' || state.activity === 'resting')
         && (ownSpot(state.spotId, leaf) || standsIn(state, leaf));
     return state.activity === leaf.activity;
+}
+// A trip the bot took itself, out or back, and the ground it reached (the trip's
+// start was its event); a flight, a pushed-out spot or a party's call is the world's.
+const FORCED_TRIPS = new Set(['unsafe_ground_evacuation', 'death_pressure_replan', 'party_spot_replan', 'competition_avoid']);
+function ownMove(state, where) {
+    if (state.activity !== 'traveling') return Reaction.field(where);
+    const travel = state.stats?.travel;
+    return !!travel && !travel.cause && !FORCED_TRIPS.has(travel.reason);
 }
 function ownSpot(spotId, leaf) {
     return spotId != null && String(spotId) === String(leaf.spotId);
@@ -517,12 +530,13 @@ function standsIn(state, leaf) {
 // ordered (occupationPlanned, the verdict's), its own output, no event.
 function factEvents(previousFact, current, funding = false, facts = null, planned = false) {
     const sections = new Set();
-    const raise = fact => { facts?.push(fact); for (const name of FACT_SECTIONS[fact]) sections.add(name); };
+    const raise = fact => { facts?.push(fact); for (const name of Reaction.sections(fact)) sections.add(name); };
     if (!previousFact('dead') && current.dead) raise('dead');
     if (previousFact('build') !== current.build) raise('build');
     if (previousFact('recipes') !== current.recipes) raise('recipes');
     if (previousFact('relations') !== current.relations) raise('relations');
-    if (funding) { facts?.push('funding'); sections.add('funding'); }
+    if (previousFact('party') !== current.party) raise('party');
+    if (funding) raise('funding');
     // Resting reads as hunting at its spot: a rest where the bot hunted is
     // none, a rest at another spot is an occupation event.
     if (!planned && previousFact('occupation') !== current.occupation) raise('occupation');
@@ -531,6 +545,7 @@ function factEvents(previousFact, current, funding = false, facts = null, planne
     if (previousFact('supply') !== current.supply) raise('supply');
     if (previousFact('bag') !== current.bag) raise('bag');
     if (previousFact('stores') !== current.stores) raise('stores');
+    if (previousFact('warehouse') !== current.warehouse) raise('warehouse');
     return [...sections];
 }
 // The kit fact each economy build records in its baseline moved between two
@@ -541,5 +556,5 @@ function factEvents(previousFact, current, funding = false, facts = null, planne
 function kitMoved(before, after) {
     return (before?.stats?.wishSections?.build ?? null) !== (after?.stats?.wishSections?.build ?? null);
 }
-module.exports = { FIELD_ACTIVITIES, partyIdOf, awayHunt, SECTIONS, COMPUTED, FACT_SECTIONS, sectionBit, sectionMask, sectionNames, kit, kitMoved, moneyChanged, moneyBound, observationChanged, incomeError,
-    MARKET_WATCH, softEvents, marketCrossed, carrySectionBaseline, baselineIdentity, sample, sampleRows, packSample, observationBaselineValid, bounds, snapshot, semanticFacts, factsOf, relationTargetIds, events, factEvents, occupationPlanned, hash, isEmptyWishPlan, decisionRefusal, partyIdOf };
+module.exports = { FIELD_ACTIVITIES, partyIdOf, moneyReached, goalReached, SECTIONS, COMPUTED, sectionBit, sectionMask, sectionNames, kit, kitMoved, moneyChanged, moneyBound, observationChanged, incomeError,
+    MARKET_WATCH, softEvents, marketCrossed, carrySectionBaseline, baselineIdentity, sample, sampleRows, packSample, observationBaselineValid, bounds, snapshot, semanticFacts, factsOf, relationTargetIds, events, factEvents, occupationPlanned, hash, isEmptyWishPlan, decisionRefusal };

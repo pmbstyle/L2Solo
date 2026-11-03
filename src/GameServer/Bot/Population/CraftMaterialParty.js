@@ -68,6 +68,8 @@ function request(state, plan, { spots = [], economy, memo = null, timestamp = Da
         || !spots.length || !economy) return null;
     const focus = economy.network?.focus?.[0];
     if (focus !== `power:${plan.target?.selfId}:${plan.target?.slot}`) return null;
+    // A bot out for its stock recruits nobody; supplyPause holds a standing request.
+    if (economy.network?.activity?.rootKey?.startsWith('stock:')) return null;
     const Index = require('../../Item/ItemTemplateIndex'), Data = invoke('GameServer/DataCache');
     const target = Index.find(Data.items, plan.target.selfId);
     if (!['b', 'a'].includes(target?.etc?.rank)) return null;
@@ -148,15 +150,15 @@ function remaining(state, goal, inventory = state.inventory) {
 // renewed material decision may reopen it. No source search is needed here.
 function supplyPause(state, plan, { economy, timestamp = Date.now() } = {}) {
     const held = requestOf(state);
-    const focus = economy?.network?.focus?.[0] || '';
-    if (!held || !['open', 'deferred'].includes(held.status) || !focus.startsWith('stock:')
+    const step = economy?.network?.activity?.rootKey || '';
+    if (!held || !['open', 'deferred'].includes(held.status) || !step.startsWith('stock:')
         || state.partyId || state.party?.partyId || state.activity === 'dead'
         || !plan?.recipeId || plan.clanGoal || plan.levelingRecovery
         || !['active', 'deferred', 'blocked'].includes(plan.status)
         || remaining({ ...state, stats: { ...state.stats, equipmentPlan: plan } }, held) <= 0) return null;
     const incoming = positive(economy?.stockFor?.(held.itemId, `power:${held.targetId}:${plan.target.slot}`)?.incoming);
     if (incoming >= positive(held.requiredTotal) - positive(state.inventory?.[held.itemId]?.amount)) return null;
-    return { ...held, status: 'deferred', suspendedFor: focus,
+    return { ...held, status: 'deferred', suspendedFor: step,
         deferredUntil: Number(held.deferredUntil || 0) || timestamp };
 }
 

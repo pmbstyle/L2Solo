@@ -73,6 +73,34 @@ function acquisition(context, plan, route) {
         cycleHours: Number(route?.hours) }]);
 }
 
+// One new-purchase journey question: the quantity pays its trip. The originating
+// finite utility is for the requested quantity: a partial feasible fill gets
+// only its proportional value, never all of it; no value given: its place in
+// the money queue (r), else the reader's own usefulness.
+function tripPays(context, plan, route, { valueHours, r } = {}) {
+    if (!route?.known) return false;
+    if (route.hours === 0 && route.fees === 0) return true;
+    const total = Number(valueHours), rate = Number(r);
+    const valuation = valueHours !== undefined && Number.isFinite(total) && total >= 0
+        ? { ...context, itemUsefulness: () => total / Math.max(1, Number(plan.amount)) }
+        : r !== undefined && Number.isFinite(rate) && rate >= 0
+            ? { ...context, itemUsefulness: () => rate * plan.cost / plan.units } : context;
+    const result = acquisition(valuation, plan, route);
+    return result.known && result.valueHours > 0;
+}
+
+// A town visit pays its one trip: the plan's steps there, their value against
+// their cost, the road's hours and fees. Asked by the build of the step it
+// chooses and by the agenda of the step it moves to (Reaction, one look a visit).
+function visitPays(context, steps, route) {
+    let cost = 0, valueHours = 0;
+    for (const step of steps) {
+        cost += positive(step.unitPrice) > 0 ? positive(step.unitPrice) * positive(step.amount) : positive(step.price);
+        valueHours += positive(step.valueHours);
+    }
+    return tripPays(context, { selfId: Number(steps[0]?.itemId), units: 1, amount: 1, cost }, route, { valueHours });
+}
+
 // MVP-4: hours spent earning a cash shortfall at the net income rate. No
 // shortfall waits nothing even without income; a shortfall without income is
 // unknown (null), never free time.
@@ -164,4 +192,4 @@ function progressStats(state, { timestamp = Date.now(), startedAt = 0, kills = 0
         lifelongKills: positive(stats.lifelongKills) + (knowledgeEnabled ? positive(kills) : 0) };
 }
 module.exports = { riskWeight, powerWeight, stageHours, decisionHorizon, deathHours, liveDeathHours, karmaHours, pkDropValue, resale, progressStats, trait,
-    opportunity, acquisition, createOpportunity, addOutcome, finishOpportunity, OUTCOME_LIMIT, fundingDelay, readyBenefit };
+    opportunity, acquisition, tripPays, visitPays, createOpportunity, addOutcome, finishOpportunity, OUTCOME_LIMIT, fundingDelay, readyBenefit };

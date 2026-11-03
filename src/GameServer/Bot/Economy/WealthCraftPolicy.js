@@ -189,7 +189,7 @@ function evaluateBasket(args, recipe, planFor, exit, ownedFor, context, batches 
     const basket = input.basket || basketFor(input.recipe, input.planFor, input.ownedFor, input.batches ?? 1, input.context);
     return drain(evaluatePrepared({ ...input, basket }));
 }
-function* searchQuantity({ state, recipe, planFor, exits = [], ownedFor = () => null, context = {}, mode = 'action' }) {
+function* searchQuantity({ state, recipe, planFor, exits = [], ownedFor = () => null, context = {}, mode = 'action', refusal = null }) {
     let best = null;
     // Complete bounded search also handles discontinuous quote/fee breakpoints.
     // Zero is the without-case; never force production when every value is <=0.
@@ -205,7 +205,7 @@ function* searchQuantity({ state, recipe, planFor, exits = [], ownedFor = () => 
         // input supply infinite. Price the actual replenished cycle separately.
         const inputsFor = mode === 'occupation' ? () => null : ownedFor;
         const basket = yield* prepareBasket(recipe, planFor, inputsFor, batches, context);
-        if (!basket) continue;
+        if (!basket) { if (refusal) refusal.reason = 'no_basket'; continue; }
         for (const exit of exits) {
             yield 'exit';
             const pricedExit = typeof exit.forQuantity === 'function' ? exit.forQuantity(batches) : exit;
@@ -217,6 +217,7 @@ function* searchQuantity({ state, recipe, planFor, exits = [], ownedFor = () => 
             const candidate = yield* evaluatePrepared({ state, recipe, batches, basket, exit: pricedExit, ownedFor, context });
             const score = mode === 'occupation' ? candidate?.incomePerHour : candidate?.valueHours;
             if (candidate && score > 0 && (!best || score > (mode === 'occupation' ? best.incomePerHour : best.valueHours))) best = candidate;
+            else if (refusal) refusal.reason = candidate ? 'no_value' : 'no_outcome';
         }
         yield 'candidate';
     }

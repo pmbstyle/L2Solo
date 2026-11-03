@@ -366,6 +366,9 @@ function planPurchase(state, selfId, amount, options = {}) {
         }
         const filled = OfferQuery.fill(quotes, amount, { money: moneyForTown(source.town, npcPrice, quotes), maxPrice, npcPrice,
             excludeOwner: state?.characterId, accept, acceptFill });
+        if (filled.units < amount) options.onUnfilled?.({ amount, planned: Number(source.npc || 0)
+            + (source.lines || []).reduce((sum, entry) => sum + Number(entry.count), 0),
+            money: moneyForTown(source.town, npcPrice, quotes), cost: Number(source.cost) });
         if (filled.units < amount || !Number.isFinite(Number(source.landed))) return null;
         plan = { ...filled, town: source.town, npcPrice, whole: true, spendBudget: moneyForTown(source.town, npcPrice, quotes),
             landed: filled.cost + Math.max(0, Number(source.landed) - Number(source.cost || 0)) };
@@ -396,38 +399,29 @@ function planPurchase(state, selfId, amount, options = {}) {
 // One new-purchase journey gate, shared by visible/cold goals and errands.
 // Accepted obligations have their own custody/route owner; this gate does
 // not cancel them or charge an already justified town visit twice.
+// A craft's inputs travel on the basket that chose them: its value already paid the trip.
+const BASKET_PURPOSES = new Set(['wealth_craft', 'recipe', 'craft_input']);
 function worthwhileTravel(state, plan, options = {}) {
     if (!plan || !(plan.units > 0)) return false;
+    if (BASKET_PURPOSES.has(options.purpose)) return true;
     if (options.purpose === 'raid_supply' && require('../Population/RaidSupplyPolicy').held(state)?.id === options.raidPreparationId) return true;
     if (options.purpose === 'clan') return true;
     const context = options.economy || ColdEconomyDecision.economyFor(state);
     const route = context.trip?.details ? context.trip.details(plan.town)
         : EconomicTrip.read(state, plan.town, {
             origin: OfferOrder.farmingOrigin(state, id => invoke('GameServer/Bot/AI/SpotService').findById(id)) });
-    if (!route?.known) return false;
-    if (route.hours === 0 && route.fees === 0) return true;
-    // The originating finite utility is for the requested quantity. A
-    // partial feasible fill gets only its proportional value, never all of it.
-    const total = Number(options.valueHours);
-    const supplied = options.valueHours !== undefined && Number.isFinite(total) && total >= 0;
-    const rate = Number(options.r);
-    const valuation = supplied ? { ...context, itemUsefulness: () => total / Math.max(1, Number(plan.amount)) }
-        : options.r !== undefined && Number.isFinite(rate) && rate >= 0
-            ? { ...context, itemUsefulness: () => rate * plan.cost / plan.units } : {
-                ...context, itemUsefulness: id => {
-                    const known = Number(context.itemUsefulness?.(id));
-                    if (known > 0) return known;
-                    // Mandatory stock may have no discretionary wish row;
-                    // its marginal benefit is still the shared stock input.
-                    for (const kind of ['shots', 'potions', 'scrolls']) {
-                        const stock = context.stock?.(kind);
-                        if (Number(stock?.itemId) === Number(id)) return Number(stock.benefitPerUnit || 0);
-                    }
-                    return known;
-                }
-            };
-    const result = EconomicValuation.acquisition(valuation, plan, route);
-    return result.known && result.valueHours > 0;
+    // Mandatory stock may have no discretionary wish row;
+    // its marginal benefit is still the shared stock input.
+    const valuation = { ...context, itemUsefulness: id => {
+        const known = Number(context.itemUsefulness?.(id));
+        if (known > 0) return known;
+        for (const kind of ['shots', 'potions', 'scrolls']) {
+            const stock = context.stock?.(kind);
+            if (Number(stock?.itemId) === Number(id)) return Number(stock.benefitPerUnit || 0);
+        }
+        return known;
+    } };
+    return EconomicValuation.tripPays(valuation, plan, route, options);
 }
 const deniedTrips = new WeakMap();
 const ADMISSION_OWNER_LIMIT = 8;
@@ -707,7 +701,7 @@ async function acquireMaterials(state, requirements) {
         }
         return { state: current, ready: true, spent, units };
     }
-    let current = state, spent = 0, units = 0;
+    let current = state, spent = 0, units = 0, short = '';
     const extras = [];
     let reservedState = null, reserved = null;
     const held = (value, id) => {
@@ -729,6 +723,7 @@ async function acquireMaterials(state, requirements) {
             const bought = await acquire(current, requirement.selfId, missing, options);
             current = bought.state || current; spent += Number(bought.spent || 0); units += Number(bought.units || 0);
             if (bought.pending || bought.hot || bought.traveling || current.stats?.marketErrand) return { ...bought, state: current, ready: false, spent, units };
+            short ||= bought.reason || (bought.plan ? 'bought_less' : '');
             continue;
         }
         const board = await buyHere(current, plan, { deferRealNpc: true });
@@ -736,6 +731,7 @@ async function acquireMaterials(state, requirements) {
         if (board.pending) return { ...board, state: current, ready: false, spent, units };
         if (board.hot) return { state: current, ready: false, hot: true, spent, units };
         const left = Math.max(0, Number(requirement.amount) - held(current, requirement.selfId));
+        if (left > 0) short ||= 'line_sold';
         const offer = options.npc === false ? null
             : NpcRestock.quoteFor(requirement.selfId, current.currentRegion, Number(plan.npcPrice) || null);
         if (offer && left > 0 && offer.price <= Number(options.maxPrice ?? Infinity)) extras.push({
@@ -746,7 +742,7 @@ async function acquireMaterials(state, requirements) {
         town: current.currentRegion, extras, potions: false, scrolls: false, shots: false });
     current = result.state;
     for (const receipt of result.receipts) { spent += Number(receipt.spent || 0); units += Number(receipt.units || 0); }
-    return { state: current, spent, units, hot: !!LifeState.hotRow(current.characterId),
+    return { state: current, spent, units, hot: !!LifeState.hotRow(current.characterId), short,
         ready: requirements.every(row => held(current, row.selfId) >= Number(row.amount)) };
 }
 

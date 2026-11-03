@@ -1,6 +1,7 @@
 'use strict';
 
 const BuffPolicy = invoke('GameServer/Bot/Economy/BuffServicePolicy');
+const Network = invoke('GameServer/Bot/Economy/WishNetwork');
 const Rewards = require('../Economy/SpotRewardExpectation');
 const GameDataCatalogue = require('../../Knowledge/GameDataCatalogue');
 const Material = require('./CraftMaterialParty');
@@ -257,9 +258,9 @@ function compare(state, peers, options = {}) {
     const fee = help?.status === 'funded' ? 0 : payer ? positive(help?.fee) : 0;
     // A recipe/component delivery is not the completion of the final gear
     // purchase. Only compare direct item time for the focused equipment.
-    const focusedItem = String(focus?.[0] || '').match(/^power:(\d+):/);
+    const focusedItem = String(focus?.[0]).startsWith('power:') ? Network.rootItem(focus[0]) : 0;
     const finalItem = materialParty ? !!materialGoal
-        : Number(goal?.itemId) > 0 && (!focusedItem || Number(focusedItem[1]) === Number(goal.itemId));
+        : Number(goal?.itemId) > 0 && (!focusedItem || focusedItem === Number(goal.itemId));
     const partyItemHours = finalItem
         ? itemHours(state, prepared.spot, party?.kills, goal, members, agreement) : null;
     // The direct solo drop may be at a different camp from the best cash

@@ -43,75 +43,17 @@ function initialise() {
     require('../../Knowledge/RecoveryCatalog').seatedMpRates(Data.classTemplates, Rest, mpRates);
 }
 
+// What a build holds back is the owner's reading, the one the act and the
+// commit read.
 function* reservations(state) {
-    const reserved = invoke('GameServer/Bot/AI/PersonalGearProgression').preparedAmounts(state);
-    const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
     const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
     const plan = Disposition.equipmentInputPlan(state);
-    const planInputs = {};
-    for (const [id, amount] of Object.entries(Disposition.retainedEquipmentAmounts(state))) {
-        reserved[id] = Math.max(Number(reserved[id] || 0), amount); yield 'ingredient';
-    }
-    const role = Planner.roleFor(state), classId = Number(state.stats?.classId || state.classId || 0);
-    const allowed = Disposition.gradeIndex(Planner.gradeForLevel(state.level));
-    if (plan?.strategy === 'luxury_exchange' && plan.status === 'active')
-        for (const row of plan.materials || []) planInputs[row.selfId] = Math.max(Number(planInputs[row.selfId] || 0), Number(row.amount));
-    const equipped = new Map(), staged = new Map();
-    for (const key in state.inventory || {}) {
-        const item = state.inventory[key], template = ItemIndex.find(Data.items, Number(item.selfId));
-        const slot = Number(template?.etc?.slot || 0), rank = Disposition.gradeIndex(template?.etc?.rank);
-        if ([6, 9, 10, 11, 12, 15].includes(slot)) {
-            const candidate = { selfId: Number(item.selfId), rank, score: Planner.itemScore(template, role, classId) };
-            if (item.equipped || Number(item.equippedCount || 0) > 0) equipped.set(slot, candidate);
-            else if (Number(item.amount) > 0 && rank <= allowed && Planner.suitable(template, state, role, template.etc.rank)) {
-                const current = staged.get(slot);
-                if (!current || rank > current.rank || rank === current.rank && candidate.score > current.score) staged.set(slot, candidate);
-            }
-        }
-        yield 'stock';
-    }
-    for (const [slot, candidate] of staged) {
-        let worn = equipped.get(slot) || ([10, 11].includes(slot) ? equipped.get(15) : null);
-        if (slot === 15) for (const number of [10, 11]) {
-            const other = equipped.get(number);
-            if (other && (!worn || other.rank > worn.rank || other.rank === worn.rank && other.score > worn.score)) worn = other;
-        }
-        if (!worn || candidate.rank > worn.rank || candidate.rank === worn.rank && candidate.score > worn.score) reserved[candidate.selfId] = 1;
-        yield 'owned';
-    }
-    if (plan?.combine && ['active', 'component_ready', 'ready_to_craft', 'blocked'].includes(plan.status)) {
-        for (const row of plan.combine.requirements || []) {
-            planInputs[row.selfId] = Math.max(Number(planInputs[row.selfId] || 0), Number(row.amount || 0)); yield 'ingredient';
-        }
-    }
-    if (['active', 'component_ready', 'ready_to_craft'].includes(plan?.status) && plan.strategy === 'craft') {
-        // ARCH-NOTE: accepted clan/provider allocations belong to their existing
-        // owner. Missing immutable allocation adapter makes this forecast unknown.
-        if (plan.clanGoal?.clanId && plan.recipeId) return null;
-        const Recipes = invoke('GameServer/Items/C4RecipeItems');
-        const stack = [{ rows: plan.materials || [], at: 0, multiplier: 1, seen: new Set(), depth: 0 }];
-        while (stack.length) {
-            const node = stack[stack.length - 1];
-            if (node.at >= node.rows.length) { stack.pop(); yield 'edge'; continue; }
-            const row = node.rows[node.at++], id = Number(row.selfId), required = Number(row.amount) * node.multiplier;
-            if (id && !node.seen.has(id)) {
-                planInputs[id] = Number(planInputs[id] || 0) + required;
-                const missing = Math.max(0, required - Number(state.inventory?.[id]?.amount ?? row.owned ?? 0));
-                const recipe = missing > 0 ? Recipes.resolveByProductId(id) : null;
-                if (recipe && node.depth < 5) stack.push({ rows: recipe.materials || [], at: 0,
-                    multiplier: Math.ceil(missing / Math.max(1, Number(recipe.productCount))), seen: new Set([...node.seen, id]), depth: node.depth + 1 });
-                else if (recipe && node.depth >= 5) return null;
-            }
-            yield 'edge';
-        }
-    }
-    if (plan?.status === 'active') for (const row of plan.crystalPreparation?.materials || [])
-        planInputs[row.selfId] = Math.max(Number(planInputs[row.selfId] || 0), Number(row.amount));
-    for (const [id, amount] of Object.entries(Disposition.capDeferredInputs(state.stats?.equipmentPlan, planInputs)))
-        reserved[id] = Math.max(Number(reserved[id] || 0), amount);
-    const target = Number(plan?.target?.selfId || 0);
-    if (target && Number(state.inventory?.[target]?.amount) > 0 && !state.inventory[target].equipped) reserved[target] = 1;
-    return reserved;
+    // ARCH-NOTE: accepted clan/provider allocations belong to their existing
+    // owner. Missing immutable allocation adapter makes this forecast unknown.
+    if (['active', 'component_ready', 'ready_to_craft'].includes(plan?.status) && plan.strategy === 'craft'
+        && plan.clanGoal?.clanId && plan.recipeId) return null;
+    yield 'ingredient';
+    return Disposition.reservedEquipmentAmounts(state);
 }
 
 function* feasibility(state, { board, read = () => {} }, reserved = null) {

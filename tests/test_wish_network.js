@@ -240,3 +240,47 @@ for (let seed = 0; seed < 40; seed++) {
 }
 assert(exactRows.has(100 + PACKET_ROWS - 1), 'with exactly PACKET_ROWS funded wishes the last one owns a row and stays selectable');
 console.log('PASS selected purchase is payable by the money packet rows (FX-E3 row bound)');
+
+// Two gear goals that replace each other never stand in one agenda: the better stands,
+// goods of other slots follow it (a two-hander and a shield, an armour beside them).
+{
+    require('../src/Global');
+    const Reaction = require('../src/GameServer/Bot/Economy/Reaction');
+    const buy = (key, itemId, value) => ({ key, need: 'power', object: { itemId }, valueHours: value, price: 100,
+        paths: [{ kind: 'buy', activity: 'shopping', executable: true, town: 'Giran', itemId, price: 100, costHours: .01, availableUnits: 1 }] });
+    Reaction.configure(true);
+    const shop = new WishNetwork().build({ ...input, characterId: 7, wallet: 1000, inputKey: 'agenda', previous: { focus: null, dormant: [] },
+        roots: ['power:101:14', 'power:102:8', 'power:103:6'],
+        nodes: [buy('power:101:14', 101, 30), buy('power:102:8', 102, 20), buy('power:103:6', 103, 10)] });
+    Reaction.configure(false);
+    const steps = [shop.activity, ...shop.agenda].map(step => step.rootKey);
+    assert.equal(steps.includes('power:101:14') && steps.includes('power:102:8'), false, 'a two-hander and a shield never stand together');
+    assert.equal(steps.includes('power:103:6'), true, 'another slot follows');
+
+    // A review reads a craft to its end: the stages after the key, marked as resting on it.
+    const part = id => ({ key: `item:${id}`, object: { itemId: id },
+        paths: [{ kind: 'buy', activity: 'shopping', executable: true, town: 'Giran', itemId: id, price: 50, costHours: .01, availableUnits: 9 }] });
+    Reaction.configure(true);
+    const staged = new WishNetwork().build({ characterId: 7, ...input, wallet: 1000, inputKey: 'stages', previous: { focus: null, dormant: [] }, roots: ['power:104:7'],
+        nodes: [part(11), part(12), { key: 'power:104:7', need: 'power', object: { itemId: 104 }, valueHours: 30, price: 100,
+            paths: [{ kind: 'craft', activity: 'crafting', executable: true, town: 'Giran', costHours: .01, keyInputs: ['item:11'],
+                requirements: [{ key: 'item:11', amount: 1 }, { key: 'item:12', amount: 5 }] }] }] });
+    Reaction.configure(false);
+    assert.equal(staged.activity.itemId, 11, 'fixture: the key comes first');
+    assert.deepEqual(staged.agenda.map(step => [step.itemId, step.staged]), [[12, true]], 'the next stage waits on it in the agenda');
+}
+// One look a visit: a buy elsewhere goes only where the visit pays its one trip.
+{
+    const Reaction = require('../src/GameServer/Bot/Economy/Reaction');
+    const far = hours => ({ key: 'power:105:6', need: 'power', object: { itemId: 105 }, valueHours: 1, price: 100,
+        paths: [{ kind: 'buy', activity: 'shopping', executable: true, quoted: true, town: 'Giran', itemId: 105, price: 100,
+            unitPrice: 100, costHours: .01, availableUnits: 1, tripHours: hours, tripFees: 0 }] });
+    const build = hours => new WishNetwork().build({ ...input, characterId: 7, wallet: 1000, inputKey: `visit:${hours}`,
+        previous: { focus: null, dormant: [] }, roots: ['power:105:6'], nodes: [far(hours)] });
+    Reaction.configure(true);
+    const near = build(0), away = build(50);
+    Reaction.configure(false);
+    assert.equal(near.activity?.itemId, 105, 'in town the step stands');
+    assert.notEqual(away.activity?.itemId, 105, 'a road dearer than the visit is not taken');
+    assert.equal(build(50).activity?.itemId, 105, 'the gate off chooses as before');
+}

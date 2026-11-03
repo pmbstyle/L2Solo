@@ -368,7 +368,7 @@ async function run() {
 
     warehouseRows = [{ id: 72, selfId: 5220, name: 'Metal Hardener', amount: 100 }];
     withdrawals.length = 0;
-    const marketRelease = await BotWarehouse.releaseCold({
+    const seller = {
         characterId: 59,
         name: 'WarehouseSeller',
         phase: 'cold',
@@ -378,7 +378,15 @@ async function run() {
         inventory: {},
         timing: {},
         stats: { marketSellRetryAfter: Date.now() + 15 * 60 * 1000 }
-    }, { inTown: true });
+    };
+    const Reaction = invoke('GameServer/Bot/Economy/Reaction');
+    const gate = Reaction.on();
+    Reaction.configure(true);
+    const shopping = { ...seller, activity: 'shopping' };
+    const pastLook = await BotWarehouse.releaseCold(shopping, { inTown: true, before: shopping });
+    assert.equal(pastLook.released, false, 'what a visit fetches to sell is read once, as it arrives');
+    Reaction.configure(gate);
+    const marketRelease = await BotWarehouse.releaseCold(seller, { inTown: true });
     assert.deepStrictEqual(marketRelease.items.map((item) => [item.reason, item.amount]), [['market', 50]],
         'warehouse release must expose only the currently funded WTB quantity');
     assert.strictEqual(warehouseRows[0].amount, 50, 'unfunded warehouse surplus must remain stored');

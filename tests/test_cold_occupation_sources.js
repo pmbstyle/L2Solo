@@ -106,6 +106,15 @@ assert(drain(staleSources.options.preparePurchase(state, 1864, 1, { npc: false }
 const protectedState = { ...owner, stats: { ...owner.stats, equipmentPlan: { strategy: 'craft', status: 'active',
     target: { selfId: 3000 }, materials: [{ selfId: 1864, amount: 40 }] } } };
 assert.equal(drain(Sources.reservations(protectedState)).value[1864], 40);
+{ // The build holds back what the commit holds back: the owner's whole reading, a chosen dye too.
+    const Henna = invoke('GameServer/Henna/HennaRules');
+    const symbol = Henna.availableForClass(1)[0];
+    const dyed = { ...owner, stats: { ...owner.stats, classId: 1, wishFocus: [`henna:${symbol.id}`] } };
+    assert.equal(drain(Sources.reservations(dyed)).value[symbol.dyeSelfId], Number(symbol.dyeAmount));
+    assert.deepEqual(drain(Sources.reservations(dyed)).value, invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(dyed));
+    const clanCraft = { ...owner, stats: { ...owner.stats, equipmentPlan: { strategy: 'craft', status: 'active', recipeId: 1, clanGoal: { clanId: 7 } } } };
+    assert.equal(drain(Sources.reservations(clanCraft)).value, null, 'a clan allocation has no forecast here');
+}
 const listed = new BoardIndex();
 listed.put({ id: 1, ownerId: owner.characterId, storeType: 1, kind: 'sell_ad', town: 'Giran', revision: 2,
     lines: [{ lineId: 1, selfId: 1864, count: 10, price: 100 }] });
@@ -138,6 +147,11 @@ const packedDecision = Publication.compact(structuredClone(Publication.capture({
 assert.deepEqual(packedDecision.shot, step);
 assert.equal(packedDecision.workshop.cycleHours, 0.01);
 assert.equal(Plan.MAX_PLAN_PAYLOAD_BYTES + Publication.COMMAND_HEADER_BYTES + 32 + 8, Plan.MAX_BYTES);
+{ // A batch that fit alone can overflow beside the rest: it waits whole, no error.
+    const room = { sell: [], withdraw: [], travel: null, buyAds: ['x'.repeat(Plan.MAX_PLAN_PAYLOAD_BYTES)], buyKit: [], buyCaps: [] };
+    Plan.fit(room);
+    assert.deepEqual([room.buyAds, room.buyKit, room.d], [undefined, undefined, 1], 'the buy batch leaves as one, marked not prepared');
+}
 console.log('PASS native town/NPC authority parity, streamed routes/reservations and five-quote purchase view');
 
 // Public wishes keep all quotes; the executable worker sources use current

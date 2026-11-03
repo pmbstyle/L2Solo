@@ -8,6 +8,7 @@ const { Worker } = require('worker_threads');
 const { performance } = require('perf_hooks');
 
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+const Reaction = invoke('GameServer/Bot/Economy/Reaction');
 const Database = invoke('Database');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -747,6 +748,7 @@ class ColdSimulationCoordinator {
         case 'ready':
             if (payload.phase === 'loaded') {
                 this.sendPlanningCatalog();
+                Reaction.configure(Config.coldMomentGate === true);
                 this.post('init', { config: this.workerConfig(), catalogVersion: utils.buildNumber(),
                     recomputeGeneration: RecomputeGeneration.metadata() });
                 this.stopDiagnosticSelection?.();

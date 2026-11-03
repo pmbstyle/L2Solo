@@ -110,9 +110,9 @@ async function run() {
     assert(!separateSellers.some(row => row.lines.some(line => line.selfId === 24)
         && row.lines.some(line => line.selfId === 1785)), 'weapon shop and grocer never become one seller');
 
-    state = await seed(9619, 50000, {}, [{ selfId: 736, name: 'Scroll of Escape', amount: 2 }]);
+    state = await seed(9619, 50000, {}, [{ selfId: 736, name: 'Scroll of Escape', amount: 10 }]);
     const Goals = invoke('GameServer/Bot/Goals/GoalState');
-    const goal = (await Goals.set(9619, { type: 'buy_craft_material', status: 'active', target: { itemId: 1785, amount: 6 },
+    const goal = (await Goals.set(9619, { type: 'buy_craft_material', status: 'active', target: { itemId: 1785, amount: 6, adena: first.price },
         plan: { expectedBenefit: 'market_buy_craft_material', marketTown: 'Dion', purpose: 'craft_input', r: 1 } })).current;
     const activated = await Market.tryPurchase(state, goal);
     assert.equal(activated.hot, true, 'cold caller propagates activation after the committed NPC await');
@@ -158,7 +158,7 @@ async function run() {
 
         state = await seed(9624, 3000000);
         const selected = (await Goals.set(9624, { type: 'buy_craft_material', status: 'active',
-            target: { itemId: 1463, amount: 125 }, plan: { expectedBenefit: 'market_buy_craft_material',
+            target: { itemId: 1463, amount: 125, adena: configured.price }, plan: { expectedBenefit: 'market_buy_craft_material',
                 marketTown: 'Dion', purpose: 'craft_input', r: 1 } })).current;
         const configuredGoal = await Market.tryPurchase(state, selected);
         assert.equal(configuredGoal.units, 125);
@@ -167,7 +167,7 @@ async function run() {
         assert.equal(Goals.snapshot(9624).current.status, 'completed', 'singleton owns goal progress atomically');
 
         state = await seed(9626, 3000000);
-        const deferred = (await Goals.set(9626, { ...selected, target: { itemId: 1463, amount: 125 } })).current;
+        const deferred = (await Goals.set(9626, { ...selected, target: { itemId: 1463, amount: 125, adena: configured.price } })).current;
         const primeGoal = Goals.prime;
         let paid;
         try {
@@ -232,6 +232,11 @@ async function run() {
         assert.equal(again.reason, 'craft_rejected');
         assert.equal(captured.filter(row => row.id === 9621).length, 1,
             'selected unchanged two-batch wealth craft re-entry uses already purchased free inputs');
+        DB.craftInventoryItems = async () => { throw Error('economy_material_protected'); };
+        const calm = await Life.upsertState({ ...again.state, stats: { ...again.state.stats, wishDirty: 0 } }, 'fixture_raise_read');
+        const protectedInputs = await Wealth.execute(calm, opportunity);
+        assert.equal(protectedInputs.reason, 'craft_rejected');
+        assert(protectedInputs.state.stats.wishDirty, 'what the commit protects is heard: the plan does not ask it again');
         state = again.state;
     } finally { DB.craftInventoryItems = craftOwner; }
     const wealthCraft = await Wealth.execute(state, opportunity);
@@ -242,7 +247,7 @@ async function run() {
     state = await crafter(9622);
     const candidate = { recipe, batches: 2, maxBatches: 2, requiredCrystals: 1, crystalId: 1458,
         ore: recipe.materials.find(row => row.selfId === 1785), orePrice: first.price, r: 1,
-        basket: { purchases: [source] }, output, profit: 1, salePrice: 1 };
+        basket: { purchases: [source] }, output, profit: 1, salePrice: 1, exit: { type: 'afk', town: 'Giran' } };
     try {
         DB.craftInventoryItems = async () => { throw Error('fixture_selected_shot_waits'); };
         await assert.rejects(Shots.craft(state, candidate, {}, at), /fixture_selected_shot_waits/);

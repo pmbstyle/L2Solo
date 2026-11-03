@@ -150,7 +150,9 @@ const looked = new WeakMap();
 function itemNeed(state, item, projected) {
     const bag = projected?.get(Number(state.characterId)) || state.inventory;
     let economy = looked.get(bag);
-    if (!economy) looked.set(bag, economy = ColdEconomyDecision.economyFor({ ...state, inventory: bag }));
+    // A look on a copied bag never replaces the bot's held plan.
+    if (!economy) looked.set(bag, economy = ColdEconomyDecision.economyFor({ ...state, inventory: bag },
+        { caller: 'item_need' }));
     return positive(economy.itemUsefulness(Number(item.selfId)));
 }
 

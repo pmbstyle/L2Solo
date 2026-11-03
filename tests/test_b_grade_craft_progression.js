@@ -77,7 +77,7 @@ function verify(recipeId, missing = false, slot = 14, classId = 3, targetId = nu
     const context = Economy.forState(state, { timestamp, board, spots: [], npcOffersFor: () => [],
         workshop: null, knownRecipes: [], withNodes: true, knowledgeEnabled: false,
         routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
-        workshops: id => id === recipeId ? [service] : [], rememberContext: false });
+        workshops: id => id === recipeId ? [service] : [], caller: 'meeting_prepare' });
     const productNode = context.projection.nodes.find(row => row.key === `item:${recipe.productId}`);
     assert(productNode?.paths.some(row => row.kind === 'craft' && row.recipeId === recipeId),
         'the published 100% variant survives the earlier unavailable lower-success variant');
@@ -195,9 +195,11 @@ async function verifyNativeCrafts() {
                 craftReturn: returnTo, marketReturn: returnTo,
                 partyMarketReturn: { partyId: 'fixture_party_return', until: Date.now() + 900000 } } }, 'b_unseal_return_ticket');
             // A clan goal's reserve binds what a member sells, not its own craft plan.
-            const Supply = invoke('GameServer/Clan/ClanSupplyPolicy'), clanReserve = Supply.reservedAmounts;
-            Supply.reservedAmounts = () => ({ [reservedId]: 999 });
-            const result = await Craft.craft(buyer, () => 0).finally(() => { Supply.reservedAmounts = clanReserve; });
+            const clanId = 990000 + recipeId;
+            invoke('GameServer/Clan/ClanSupplyPolicy').publish({ id: clanId, level: 1, members: [], state: { goal: { type: 'item', required: 999, progress: 0,
+                policy: { strategy: 'buy' }, target: { itemId: reservedId } } } }, []);
+            buyer = await Life.upsertState({ ...buyer, stats: { ...buyer.stats, clanId } }, 'b_clan_member');
+            const result = await Craft.craft(buyer, () => 0);
             assert.equal(result.crafted, true, `${recipeId}: ${result.reason} ${result.error || ''}`);
             buyer = await Life.upsertState(result.state, 'b_craft_receipt');
             const physical = await Database.fetchItems(buyer.characterId);
@@ -224,7 +226,7 @@ async function verifyNativeCrafts() {
                 assert.equal(invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(buyer)[recipe.productId], 1,
                     'the base remains protected until its unseal receipt');
                 const held = Economy.forState({ ...buyer, activity: 'hunting' }, { timestamp, board: new BoardIndex(), spots: [],
-                    npcOffersFor: () => [], workshop: null, workshops: () => [], knownRecipes: [], rememberContext: false,
+                    npcOffersFor: () => [], workshop: null, workshops: () => [], knownRecipes: [], caller: 'meeting_prepare',
                     routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]) });
                 assert.equal(held.network.activity?.kind, 'mammon_unseal', 'owned base needs no remaining workshop');
                 const resumed = Providers.personalCraftPlan(buyer, held);
@@ -265,7 +267,7 @@ async function verifyNativeCrafts() {
                 const operations = [];
                 for (let step = 0; step < 12; step++) {
                     const economy = Economy.forState(customer, { timestamp: Date.now(), board: new BoardIndex(), spots: [],
-                        npcOffersFor: Sources.npcOffersFor, workshop: null, knownRecipes: [], rememberContext: false,
+                        npcOffersFor: Sources.npcOffersFor, workshop: null, knownRecipes: [], caller: 'meeting_prepare',
                         routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
                         workshops: id => id === recipeId ? [{ ...provider, recipeId, entryPrice: provider.price,
                             capacityBatches: 1, townName: 'Giran', loc: station.loc }] : [] });
@@ -407,7 +409,7 @@ if (isMainThread) {
         && ['d', 'c'].includes(Data.items.find(item => item.selfId === row.selfId)?.etc?.rank)) delete state.inventory[id];
     const provider = plan.craftProviders[457];
     const context = Economy.forState(state, { timestamp, board: new BoardIndex(), spots: [],
-        npcOffersFor: Sources.npcOffersFor, workshop: null, knownRecipes: [], rememberContext: false,
+        npcOffersFor: Sources.npcOffersFor, workshop: null, knownRecipes: [], caller: 'meeting_prepare',
         routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
         workshops: id => id === 457 ? [{ ...provider, recipeId: id, entryPrice: provider.price,
             capacityBatches: 1, townName: 'Giran', loc: station.loc }] : [] });

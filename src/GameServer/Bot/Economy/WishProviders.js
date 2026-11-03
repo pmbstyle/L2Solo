@@ -39,6 +39,12 @@ const PRODUCER_PRICED = WISH_ROOTS;
 const GEAR_ROOTS = 4;
 const GEAR_ROUNDS = 4;
 const SOLVER_LIMITS = new Set(['missing_wish_requirement', 'cyclic_wish_network', 'invalid_wish_node', 'wish_network_depth']);
+// The gear a bot is after: its plan's target and the focus of its wishes, the one reading
+// of a review and of a quiet build (EconomyContext).
+function followedGear(state) {
+    const focus = state.stats?.wishFocus?.[0];
+    return [Number(state.stats?.equipmentPlan?.target?.selfId || 0), String(focus).startsWith('power:') ? Network.rootItem(focus) : 0];
+}
 function gearCandidates(state, ctx = null, wornFor = wornReader(state), acquisitionAllowed = null, progression = null, exchanges = null) {
     const Data = invoke('GameServer/DataCache');
     const revision = Sources.revision();
@@ -49,8 +55,7 @@ function gearCandidates(state, ctx = null, wornFor = wornReader(state), acquisit
         ? Planner.gradeForLevel(state.level) : Progression.acquisitionRankFor(state, progression || undefined));
     const result = new Map();
     const budget = Math.max(0, Number(ctx?.wallet ?? Funding.budget(state)) - Number(ctx?.survivalReserve || 0));
-    const target = Number(state.stats?.equipmentPlan?.target?.selfId || 0);
-    const held = Number(String(state.stats?.wishFocus?.[0] || '').match(/^power:(\d+):/)?.[1] || 0);
+    const [target, held] = followedGear(state);
     const slotKits = new Map(kits);
     for (const [first, second] of [[1, 2], [4, 5]]) if (slotKits.has(first) && !slotKits.has(second)) slotKits.set(second, slotKits.get(first));
     for (const [slot, kit] of slotKits) {
@@ -1281,7 +1286,7 @@ function personalCraftPlan(state, context, { allowStock = false } = {}) {
     const wish = context.network.queue.find(row => row.key === leaf.rootKey)
         || { object: context.projection?.nodes?.find(row => row.key === leaf.rootKey)?.object,
             plan: context.network.plans.get(leaf.rootKey) };
-    const targetId = Number(wish?.object?.itemId || leaf.rootKey.split(':')[1]);
+    const targetId = Number(wish?.object?.itemId || Network.rootItem(leaf.rootKey));
     const stock = allowStock && state.phase === 'hot' && /^stock:(shots|potions|scrolls)$/.test(leaf.rootKey);
     const clanSupply = wish.object?.clanSupply && need('./ClanCrystalSupply').requirement(state);
     if (!targetId || !leaf.rootKey.startsWith('power:') && !stock && !clanSupply) return null;
@@ -1341,7 +1346,7 @@ function personalCraftPlan(state, context, { allowStock = false } = {}) {
                     materials: [...(crystalExchange?.materials || []).map(row => ({ ...row })), ...inputs] } } : {}) };
     }
     if (exchange) return { strategy: 'luxury_exchange', status: 'active',
-        target: { selfId: targetId, slot: Number(wish.object?.slot || leaf.rootKey.split(':')[2]) }, exchange,
+        target: { selfId: targetId, slot: Number(wish.object?.slot || Network.rootSlot(leaf.rootKey)) }, exchange,
         materials: [...exchange.materials.map(row => ({ ...row })),
             ...[...crystalInputs].map(([selfId, amount]) => ({ selfId, amount }))],
         ...(leaf.activity === 'hunting' ? { next: { spotId: leaf.spotId, npcId: leaf.npcId,
@@ -1349,7 +1354,7 @@ function personalCraftPlan(state, context, { allowStock = false } = {}) {
         valueRate: Number(wish.ratio || 0), source: 'wish_network' };
     if (!finalRecipe && !unseal) return null;
     return { strategy: 'craft', status: 'active',
-        target: { selfId: targetId, slot: stock ? 0 : Number(wish.object?.slot || leaf.rootKey.split(':')[2]) },
+        target: { selfId: targetId, slot: stock ? 0 : Number(wish.object?.slot || Network.rootSlot(leaf.rootKey)) },
         ...(leaf.activity === 'hunting' ? { next: { spotId: leaf.spotId, npcId: leaf.npcId,
             selfId: Number(leaf.itemId || leaf.object), sourceKind: leaf.kind } } : {}),
         recipeId: Number(finalRecipe?.recipeId) || null,
@@ -1423,4 +1428,4 @@ function unpackLiquidationInputs(read) {
     const rows = Object.freeze(read.list(() => Object.freeze([read.uint(), read.number()])));
     return Object.freeze({ basis: Object.freeze({ shots, potions, excluded }), rows });
 }
-module.exports = { nodeCapBuildCount: () => nodeCapBuilds, GEAR_FINALISTS_PER_SLOT, PRODUCER_PRICED, recipeIds, quantityReaders, relationTargets, relationBond, knownWorkshop, personalCraftPlan, liquidationCandidates, liquidationInputs, packLiquidationInputs, unpackLiquidationInputs, build, gearCandidates, gearGain, skillGain, attackRate, rotationRate, worn };
+module.exports = { followedGear, nodeCapBuildCount: () => nodeCapBuilds, GEAR_FINALISTS_PER_SLOT, PRODUCER_PRICED, recipeIds, quantityReaders, relationTargets, relationBond, knownWorkshop, personalCraftPlan, liquidationCandidates, liquidationInputs, packLiquidationInputs, unpackLiquidationInputs, build, gearCandidates, gearGain, skillGain, attackRate, rotationRate, worn };

@@ -1,150 +1,44 @@
 const Policy = require('./WealthCraftPolicy');
 const Profit = require('./CraftProfitPolicy');
 const Workshops = require('./CraftWorkshopService');
-const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Karma = require('../../Karma');
 const Database = invoke('Database');
-const DataCache = invoke('GameServer/DataCache');
 const Recipes = invoke('GameServer/Items/C4RecipeItems');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
-const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
+const Reaction = invoke('GameServer/Bot/Economy/Reaction');
+const WealthDecision = require('./WealthCraftDecision');
 const Commit = require('./EconomyCommit');
 const { personalOfferAllowed } = require('../Population/PartyAdmission');
 const Price = require('./PriceDecision');
-const OfferQuery = require('./OfferQuery');
 const DecisionEvents = require('../AI/DecisionEvents');
-const ProductionPolicy = require('./ProductionPolicy');
+const { offerFields } = require('../../AfkTrade/BoardIndex');
 const ColdOccupationSources = require('../Population/ColdOccupationSources');
 const Sources = () => { ColdOccupationSources.initialise(); return ColdOccupationSources; };
 
 const inFlight = new Set();
 
-// Spending rechecks a single worker-selected native batch/exit. It uses the
-// current scalar purse and at most five indexed input quotes; it never builds
-// wishes, a catalogue scan, or a new quantity optimisation on main.
+// Spending asks the build's own question (WealthDecision.stepStands) on the one recipe,
+// batch count and exit the worker chose, with the build's reads as they stand now.
 const mpChanged = (state, recipe, batches) => Number(state.vitals?.mp || 0) < Number(recipe.mpCost || 0) * batches;
 function recheck(state, step = {}, knownRecipes = Workshops.cachedRecipes(state.characterId), refusal = null) {
+    const why = {}, no = reason => { if (refusal) Object.assign(refusal, { reason, recipeId: Number(step.recipeId) }); return null; };
     const recipe = Recipes.resolveByRecipeId(Number(step.recipeId)), batches = Number(step.batches || 1);
     const packet = state.stats?.money;
     if (!recipe || !CraftShopService.canCraft(state, recipe) || !Number.isSafeInteger(batches)
-        || batches < 1 || batches > 64 || !Array.isArray(packet) || !(packet[0] > 0) || !(packet[1] > 0)) return null;
-    if (mpChanged(state, recipe, batches)) {
-        if (refusal) refusal.reason = 'mp_changed';
-        return null;
-    }
-    const template = ItemTemplateIndex.find(DataCache.items, Number(recipe.productId));
-    if (!template) return null;
-    const board = AfkTrade.boardIndex();
-    const context = { hourAdena: Number(packet[0]), moneyPrice: Number(packet[1]),
-        ...Sources().craftLabour(state), fixedBatches: batches };
-    const trip = Profit.tripFor(state, context); context.trip = trip;
-    const learning = !(knownRecipes || []).some(row => Number(row.recipeId ?? row) === Number(recipe.recipeId));
-    let scrollQuote = null;
-    if (learning) {
-        if (!Array.isArray(step.scroll) || !ItemDisposition.canLearnRecipe(state, { selfId: Number(recipe.recipeItemId) })) return null;
-        const owned = require('./WealthCraftDecision').freeAmount(state, state.inventory?.[recipe.recipeItemId] || {});
-        if (!owned) {
-            if (step.scroll.length !== 2) return null;
-            scrollQuote = board.list(recipe.recipeItemId, AfkTrade.SELL).find(row =>
-                Number(row.lineId) === Number(step.scroll[0]) && Number(row.revision) === Number(step.scroll[1])
-                && Number(row.ownerId) !== Number(state.characterId) && Number(row.count) >= 1
-                && Number(row.price) > 0 && !Number(row.enchant || 0) && personalOfferAllowed(row, state));
-            if (!scrollQuote) return null;
-        }
-        context.recipeInput = Number(recipe.recipeItemId);
-    }
-    const ownedFor = id => {
-        const row = state.inventory?.[id];
-        if (!row) return null;
-        const protectedCount = Math.max(Number(row.protectedAmount || 0), Number(row.starterMobLootAmount || 0),
-            Number(row.reservedAmount || 0), Number(state.stats?.clanMaterialDemand?.[id] || 0));
-        const count = require('./WealthCraftDecision').freeAmount(state, row, { [id]: protectedCount });
-        return { count: Number(id) === Number(recipe.productId) ? Math.max(0, count - Number(step.ownReserve || 0)) : count,
-            unitValue: Policy.drain(Sources().exitValue(state, id, board)) };
-    };
-    const ownOutput = board.ownerLines(state.characterId).filter(line => line.storeType === AfkTrade.SELL
-        && line.custodyPolicy !== 1 && line.selfId === Number(recipe.productId) && !Number(line.enchant || 0));
-    // Pricing and the without-case must see the same saleable output;
-    // equipped and protected items cannot exhaust external buyer demand.
-    context.existingOutput = Number(ownedFor(Number(recipe.productId))?.count || 0)
-        + ownOutput.reduce((sum, line) => sum + Number(line.count), 0)
-        + Number(state.acceptedIncoming?.[recipe.productId] || 0);
-    let exit = null;
-    if (Array.isArray(step.exit) && step.exit.length === 4) {
-        const [recordId, lineId, price, revision] = step.exit.map(Number);
-        const compact = step.exit[0] == null && step.exit[2] == null;
-        if (recordId > 0 || compact) {
-            const line = compact ? Price.productionBids(board, recipe.productId)
-                .find(row => Number(row.lineId) === lineId) : board.records.get(recordId)?.find(row => Number(row.lineId) === lineId);
-            if (!line || line.storeType !== AfkTrade.BUY || line.revision !== revision || !compact && line.price !== price || line.count <= 0
-                || line.ownerId === Number(state.characterId) || line.selfId !== Number(recipe.productId)
-                || !personalOfferAllowed(line, state)) return null;
-            exit = { type: 'afk', conditional: line.custodyPolicy === 1, price: Number(line.price), count: line.count, town: line.town, offer: require('../../AfkTrade/BoardIndex').offerFields(line) };
-        } else if (recordId === -2 || recordId === -3) {
-            const Shots = require('./ShotCraftPolicy');
-            exit = require('./ProductionSalePolicy').exit(state, recipe.productId, { board,
-                town: Shots.townForCode(lineId), trip, current: price, lot: Number(recipe.productCount),
-                productionUnits: batches * Number(recipe.productCount),
-                origin: recordId === -3 ? 'public_buy_interest' : 'public_item_trades',
-                npcOffers: Sources().npcOffersFor(recipe.productId),
-                units: Number(recipe.productCount) + context.existingOutput });
-            // Revalue public interest at today's curve; its content hash is
-            // an invalidation signal, never a lease on the whole market.
-            if (!exit || recordId === -2 && exit.forecast.authority.revision < revision) return null;
-        } else {
-            const fixed = staticExits(recipe, template)[lineId - 1];
-            if (!fixed || Number(fixed.price) !== price) return null;
-            exit = fixed;
-        }
-    } else {
-        // Legacy compact packets are accepted only through a bounded current
-        // indexed look. New packets preserve the selected quote identity.
-        const lines = Price.productionBids(board, recipe.productId);
-        for (let at = 0; at < lines.length; at++) {
-            const line = lines[at];
-            if (line.ownerId !== Number(state.characterId) && line.count > 0 && personalOfferAllowed(line, state)) {
-                exit = { type: 'afk', conditional: line.custodyPolicy === 1, price: line.price, count: line.count, town: line.town,
-                    offer: require('../../AfkTrade/BoardIndex').offerFields(line) }; break;
-            }
-        }
-        if (!exit) exit = staticExits(recipe, template)[0] || null;
-    }
-    if (!exit) return null;
-    exit = { ...exit, trip: trip(exit.town), tripDetails: trip.details?.(exit.town) };
-    if (exit.type === 'afk') {
-        // Raw indexed depth is the same view the worker receives. A competitive
-        // tail can change F(q), so the selected forecast remains unsupported.
-        const { cheaperUnits, limit } = Price.exitCompetition(board.list(recipe.productId, AfkTrade.SELL),
-            { ownerId: state.characterId, price: exit.price, count: exit.count });
-        if (limit) return null;
-        exit.cheaperUnits = cheaperUnits;
-    }
-    exit = Price.prospectiveExit(state, exit, { board, timestamp: Date.now() });
-    if (ownOutput.some(line => line.price !== Number(exit.price))) return null;
-    const planFor = (id, amount) => {
-        if (learning && Number(id) === Number(recipe.recipeItemId)) {
-            if (!scrollQuote || amount !== 1) return null;
-            const travel = trip(scrollQuote.town);
-            return { town: scrollQuote.town, units: 1, whole: true, cost: Number(scrollQuote.price),
-                landed: Number(scrollQuote.price) + travel, tripDetails: trip.details?.(scrollQuote.town),
-                lines: [{ line: scrollQuote, count: 1, price: Number(scrollQuote.price) }], npc: 0 };
-        }
-        const best = OfferQuery.cheapestTown(board, id, { amount, cost: trip, excludeOwner: state.characterId,
-            quoteDepth: Price.QUOTE_DEPTH, accept: line => !Number(line.enchant || 0) && personalOfferAllowed(line, state),
-            npcOffers: ProductionPolicy.allowsNpcShot(id) ? Sources().npcOffersFor(id) : [] });
-        return best?.whole ? { ...best, tripDetails: trip.details?.(best.town), quoteDepth: Price.QUOTE_DEPTH } : null;
-    };
-    if (learning) context.recipeStock = ownedFor(Number(recipe.recipeItemId));
-    const candidate = Policy.evaluateBasket({ state, recipe, batches, planFor, exit, ownedFor, context });
-    if (!candidate || !(candidate.valueHours > 0)) return null;
-    const cash = candidate.basket.cashCost + candidate.basket.actualCashFees;
-    const r = cash > 0 ? candidate.valueHours / cash : Infinity;
-    return cash <= PurchaseFunding.spendable(state, 0, { r }) ? { ...candidate, template, r, learning } : null;
+        || batches < 1 || batches > 64 || !Array.isArray(packet) || !(packet[0] > 0) || !(packet[1] > 0)) return no('recipe_state');
+    if (mpChanged(state, recipe, batches)) return no('mp_changed');
+    const prepared = Policy.drain(Sources().prepare(state, { board: AfkTrade.boardIndex(), timestamp: Date.now(), targetRecipe: recipe,
+        stock: step.ownReserve > 0 ? { itemId: Number(recipe.productId), target: Number(step.ownReserve) } : null }));
+    if (!prepared) return no('no_plan');
+    const stands = WealthDecision.stepStands(state, recipe, { knownRecipes, batches, prepared, refusal: why,
+        exit: Array.isArray(step.exit) && step.exit.length === 4 ? step.exit : null });
+    if (!stands) return no(why.reason || 'no_basket');
+    return stands.exit.offer ? { ...stands, exit: { ...stands.exit, offer: offerFields(stands.exit.offer) } } : stands;
 }
 
 function eligible(state) {
@@ -200,8 +94,7 @@ function withOutcome(state, opportunity, outcome, extras = {}) {
             ...(outcome === 'buying' && (state.stats?.wealthCraft?.outcome !== 'buying'
                 || Number(state.stats.wealthCraft.recipeId) !== Number(opportunity.recipe.recipeId)
                 || Number(state.stats.wealthCraft.batches) !== Number(opportunity.batches || 1))
-                ? DecisionEvents.applyRaise({ ...(state.stats || {}) },
-                    require('./DecisionSections').sectionMask(['sources', 'benefits', 'money'])) : {}),
+                ? DecisionEvents.applyOwnRaise(state) : {}),
             ...(['sold', 'waiting_for_buyer'].includes(outcome) ? { production: {
                 ...(state.stats?.production || {}),
                 crafts: Number(state.stats?.production?.crafts || 0) + 1,
@@ -223,14 +116,17 @@ function withOutcome(state, opportunity, outcome, extras = {}) {
 
 // Retire only the accepted work that actually failed. A purchase/learning
 // await may have published another native row; never save its older caller.
-function rejectedWork(current, accepted) {
+function rejectedWork(current, accepted, why, recipeId) {
     if (current.phase !== 'cold') return current;
-    return DecisionEvents.rejectedState(current, accepted);
+    const next = DecisionEvents.rejectedState(current, accepted, why);
+    if (next === current || !Reaction.on() || !(recipeId > 0)) return next;
+    return { ...next, stats: { ...next.stats, wealthRefused: WealthDecision.refusedMark(next, recipeId) } };
 }
+// refusal: { reason, recipeId, kind: the craft's name in the count, wealth by default }.
 async function rejectAccepted(state, accepted = state, refusal = null) {
     const current = LifeState.cachedState(state.characterId) || state;
     if (refusal?.reason === 'mp_changed') return current;
-    const next = rejectedWork(current, accepted);
+    const next = rejectedWork(current, accepted, `${refusal?.kind || 'wealth'}:${refusal?.reason || 'source'}`, refusal?.recipeId);
     return next === current ? current : await LifeState.upsertState(next, 'wealth_craft_source_rejected') || current;
 }
 
@@ -238,7 +134,7 @@ async function rejectAccepted(state, accepted = state, refusal = null) {
 // below advances the revision; it runs only while the decision still holds.
 async function execute(state, opportunity, options = {}) {
     if (opportunity.exit.type === 'afk' && !personalOfferAllowed(opportunity.exit.offer, state)) {
-        return { state: await rejectAccepted(state), crafted: false, reason: 'buyer_changed' };
+        return { state: await rejectAccepted(state, state, { reason: 'buyer_changed', recipeId: opportunity.recipe.recipeId }), crafted: false, reason: 'buyer_changed' };
     }
     const recipe = opportunity.recipe;
     const batches = Math.min(64, Math.max(1, Number(opportunity.batches || 1)));
@@ -250,7 +146,7 @@ async function execute(state, opportunity, options = {}) {
         if (opportunity.basket.owned.some((stock) => physical
             .filter((item) => Number(item.selfId) === Number(stock.selfId) && !item.equipped)
             .reduce((count, item) => count + Number(item.amount || 0), 0) < Number(stock.count))) {
-            return { state: await rejectAccepted(state), crafted: false, reason: 'owned_materials_changed' };
+            return { state: await rejectAccepted(state, state, { reason: 'owned_materials_changed', recipeId: recipe.recipeId }), crafted: false, reason: 'owned_materials_changed' };
         }
     }
     if (options.stillPrepared && !options.stillPrepared()) return { state, crafted: false, reason: 'decision_changed', stale: true };
@@ -263,16 +159,19 @@ async function execute(state, opportunity, options = {}) {
         const knowledge = await acquireRecipe(current, opportunity);
         current = knowledge.state; spent += knowledge.spent;
         if (!knowledge.ready) return { state: knowledge.reason === 'recipe_unavailable'
-            ? await rejectAccepted(current, state) : current, crafted: false, reason: knowledge.reason, spent };
+            ? await rejectAccepted(current, state, { ...knowledge, recipeId: recipe.recipeId }) : current, crafted: false, reason: knowledge.reason, spent };
         // Each input is bought in its town (the one purchase path): here, or
         // the bot goes there and the craft waits for the next look.
         const ColdMarket = invoke('GameServer/Bot/Economy/ColdMarketService');
         const required = Profit.requirements(recipe, batches) || new Map();
+        // Why a chosen seller's line did not fill, for the health line (T190).
+        let unfilled = '';
+        const onUnfilled = ({ amount, planned, money, cost }) => { unfilled = planned < amount ? 'more_than_planned' : money < cost ? 'money' : 'seller'; };
         const inputs = opportunity.basket.purchases.filter(purchase => Number(purchase.selfId) !== Number(recipe.recipeItemId))
             .map(purchase => ({ selfId: purchase.selfId, amount: Number(required.get(Number(purchase.selfId)) || 0),
             options: { towns: [purchase.town], npc: Number(purchase.npc || 0) > 0, purpose: 'wealth_craft',
                 r: opportunity.r, money: PurchaseFunding.spendable(current, 0, { r: opportunity.r }),
-                quoteDepth: 5, sourcePlan: purchase } }));
+                quoteDepth: 5, sourcePlan: purchase, onUnfilled } }));
         const bought = await ColdMarket.acquireMaterials(current, inputs);
         current = bought.state || current; spent += Number(bought.spent || 0);
         if (bought.pending) return { state: current, crafted: false, pending: true, spent };
@@ -280,10 +179,10 @@ async function execute(state, opportunity, options = {}) {
         if (!bought.ready && (bought.traveling || current.stats?.marketErrand)) {
             return { state: current, crafted: false, reason: 'buying_trip', spent };
         }
-        if (!bought.ready) throw Error('purchase_unavailable');
+        if (!bought.ready) throw Object.assign(Error('purchase_unavailable'), { why: bought.reason || (bought.plan ? 'unbought' : unfilled || bought.short || 'no_source') });
     } catch (error) {
         const failed = withOutcome(error?.message === 'purchase_unavailable'
-            ? rejectedWork(LifeState.cachedState(current.characterId) || current, state) : current, opportunity, 'purchase_failed',
+            ? rejectedWork(LifeState.cachedState(current.characterId) || current, state, `wealth:purchase_failed/${error.why}`, recipe.recipeId) : current, opportunity, 'purchase_failed',
             { spent, error: String(error?.message || error) });
         return { state: await LifeState.upsertState(failed, 'wealth_craft_purchase_failed') || failed,
             crafted: false, reason: 'purchase_failed' };
@@ -292,7 +191,7 @@ async function execute(state, opportunity, options = {}) {
     const items = await Database.fetchItems(current.characterId, 'wealth_craft_items');
     const materials = materialRows(items, recipe, batches);
     if (!materials) {
-        const failed = withOutcome(rejectedWork(LifeState.cachedState(current.characterId) || current, state), opportunity, 'materials_changed', { spent });
+        const failed = withOutcome(rejectedWork(LifeState.cachedState(current.characterId) || current, state, 'wealth:materials_changed', recipe.recipeId), opportunity, 'materials_changed', { spent });
         return { state: await LifeState.upsertState(failed, 'wealth_craft_materials_changed') || failed,
             crafted: false, reason: 'materials_changed' };
     }
@@ -306,7 +205,7 @@ async function execute(state, opportunity, options = {}) {
             && Number(offer.price) === Number(opportunity.exit.price)
             && Number(offer.count) > 0
     )))) {
-        const changed = withOutcome(rejectedWork(LifeState.cachedState(current.characterId) || current, state), opportunity, 'buyer_changed', { spent });
+        const changed = withOutcome(rejectedWork(LifeState.cachedState(current.characterId) || current, state, 'wealth:buyer_changed', recipe.recipeId), opportunity, 'buyer_changed', { spent });
         return { state: await LifeState.upsertState(changed, 'wealth_craft_buyer_changed') || changed,
             crafted: false, reason: 'buyer_changed' };
     }
@@ -334,8 +233,9 @@ async function execute(state, opportunity, options = {}) {
         remainingMp = Number(crafted?.mp ?? current.vitals?.mp);
     } catch (error) {
         const semantic = ['craft_recipe_changed', 'craft_recipe_materials_changed', 'craft_product_changed',
-            'craft_product_template_changed', 'craft_material_identity_changed', 'craft material changed'].includes(error?.message);
-        const failed = withOutcome(semantic ? rejectedWork(LifeState.cachedState(current.characterId) || current, state) : current, opportunity, 'craft_rejected',
+            'craft_product_template_changed', 'craft_material_identity_changed', 'craft material changed',
+            'economy_material_protected'].includes(error?.message);
+        const failed = withOutcome(semantic ? rejectedWork(LifeState.cachedState(current.characterId) || current, state, 'wealth:craft_failed', recipe.recipeId) : current, opportunity, 'craft_rejected',
             { spent, error: String(error?.message || error) });
         return { state: await LifeState.upsertState(failed, 'wealth_craft_rejected') || failed,
             crafted: false, reason: 'craft_rejected' };

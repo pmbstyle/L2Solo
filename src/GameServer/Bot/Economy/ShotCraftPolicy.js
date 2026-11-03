@@ -496,7 +496,7 @@ function* shotSearch(state, knownRecipes, context, options) {
     for (const id of SHOT_RECIPE_IDS) {
         const recipe = Recipes.resolveByRecipeId(id);
         yield 'recipe';
-        if (!recipe || !CraftShopService.canCraft(state, recipe)) continue;
+        if (!recipe || !CraftShopService.canCraft(state, recipe) || Wealth.refused(state, id)) continue;
         const route = yield* recipeShotSearch(state, recipe, context, shared);
         if (!route) continue;
         if (ids.has(id)) {

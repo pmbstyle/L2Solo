@@ -6,6 +6,7 @@ const roots = [null, 'power', 'stock', 'book', 'enchant', 'sa', 'henna', 'status
 const stockKinds = [null, 'shots', 'potions', 'scrolls'];
 const Funding = require('./PurchaseFunding');
 const { MAX_DEPTH } = require('./WishNetwork');
+const PartyAdmission = require('../Population/PartyAdmission');
 const integer = n => Number.isSafeInteger(n) && n >= 0;
 // Selected NPC and configured shot quotes already have a native purchase owner.
 // Public BUY ads describe alternative player supply, not a duplicate store job.
@@ -144,7 +145,7 @@ function retainedProjectIntents(state, network, worth, board = null, routeDetail
             if (!Number.isSafeInteger(amount) || !amount) continue;
             let estimate = Number(worth(id)) || Number(invoke('GameServer/Bot/Economy/MarketCounters').firstPrice(id));
             if (board?.list) {
-                const allowed = invoke('GameServer/Bot/Population/PartyAdmission').personalOfferAllowed;
+                const allowed = PartyAdmission.personalOfferAllowed;
                 const offers = board.list(id, 1), money = offers.length && routeDetails
                     ? Funding.spendable(state, 0, { r: Funding.significant(rate) }) : 0;
                 let quote = null;
@@ -273,7 +274,7 @@ function meetingPurchase(network, intents, { selfId, count, price, town, enchant
     // stored priority; another goal's reserve cannot authorize this quote.
     const packet = state?.stats?.money;
     let valueRate = intent.valueRate;
-    if (state?.stats?.wishFocus?.[0] === wish.key && Array.isArray(packet)) {
+    if ((state?.stats?.wishFocus?.[0] === wish.key || wish.key.startsWith('stock:')) && Array.isArray(packet)) {
         for (let at = 4; at + 2 < packet.length; at += 3) {
             if (Number(packet[at + 2]) === Number(wish.object?.itemId) && packet[at] > 0 && packet[at] >= packet[1]) {
                 valueRate = Number(packet[at]); break;

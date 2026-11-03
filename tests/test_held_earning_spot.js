@@ -167,6 +167,22 @@ function verify() {
         assert.equal(later.searches, 0, 'with no new search');
         assert.equal(Economy.incomeMoved(turned), true, 'the held build is to be rebuilt on it');
         assert.equal(Card.refusal(turned, accepted, deps(45)), 'events:income_moved', 'its card refuses');
+        // At work the bot finishes where it stands; its rest hears the better spot.
+        const Reaction = invoke('GameServer/Bot/Economy/Reaction');
+        Reaction.configure(true);
+        const at = activity => Card.refusal({ ...turned, phase: 'cold', activity }, accepted, deps(45));
+        assert.notEqual(at('hunting'), 'events:income_moved', 'a hunt does not hear it');
+        assert.equal(at('resting'), 'events:income_moved', 'its rest does');
+        // A job that is no hunt ends first: the same rest on a craft does not hear it.
+        const proof = built.eventProof(), resting = { ...turned, phase: 'cold', activity: 'resting' };
+        const heardOn = leaf => {
+            const options = { baseline: resting.stats.wishSections, leaf, collect: true };
+            const first = Economy.heldBuildVerdict(resting, proof, deps(45), options);
+            return Economy.heldBuildVerdict(resting, { ...proof, activity: first.leaf }, deps(45), options).reason;
+        };
+        assert.equal(heardOn({ activity: 'hunting', spotId: 'poor' }), 'income_moved', 'fixture: a hunter hears it');
+        assert.notEqual(heardOn({ activity: 'crafting', recipeId: 1 }), 'income_moved', 'a crafter finishes');
+        Reaction.configure(false);
         const rebuilt = Economy.forState(turned, deps(45));
         assert.notEqual(rebuilt.plan, built.plan, 'the build refuses');
         assert.equal(rebuilt.hunt.spotId, 'poor', 'and moves to it');
@@ -205,7 +221,7 @@ function verify() {
     }
 
     // The bot's own build leaves the search's economic band (a complete kit, a
-    // stock focus): no route. The rebuild keeps that focus: re-weighed, it could
+    // focus off gear and resale): no route. The rebuild keeps that focus: re-weighed, it could
     // flip back and ask the next search, a rebuild per step.
     // Stock nobody sells takes no focus (T178), so this bot needs a seller: the
     // worker's real supply, the towns' NPC shops and the routes to them (main
@@ -216,9 +232,9 @@ function verify() {
         let bot = null;
         for (let id = 990210; !bot && id < 990240; id++) {
             const held = heldBot(id, supplied, { complete: true });
-            if (/^stock:/.test(held.state.stats.wishFocus?.[0])) bot = held;
+            if (!/^(power:|resale:)/.test(held.state.stats.wishFocus?.[0] ?? 'power:')) bot = held;
         }
-        assert(bot, 'fixture: a build that chose a stock focus');
+        assert(bot, 'fixture: a build that chose a focus outside the band');
         const { state } = bot, focus = state.stats.wishFocus[0];
         const left = count(() => Economy.forState(state, deps(1, supplied)));
         assert(left.searches >= 1, 'the goal change searches');

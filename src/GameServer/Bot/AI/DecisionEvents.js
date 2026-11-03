@@ -1,6 +1,7 @@
 'use strict';
 const { isMainThread } = require('node:worker_threads');
 const Sections = require('../Economy/DecisionSections');
+const Reaction = require('../Economy/Reaction');
 const TownVisitInterval = require('../Economy/TownVisitInterval');
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Decisions = invoke('GameServer/Bot/Population/ColdEconomyDecision');
@@ -14,11 +15,10 @@ const reasons = new Set(['town', 'revived', 'money', 'build', 'sources', 'supply
 const bit = Sections.sectionBit;
 // A section name (raiseSections) marks its own bit.
 const sectionBits = { ...Object.fromEntries(Sections.SECTIONS.map(name => [name, bit(name)])), funding: bit('money') };
-// A named reason marks the sections of its fact in the one table
-// (DecisionSections.FACT_SECTIONS); town is an arrival, no fact.
-const factBits = fact => Sections.sectionMask(Sections.FACT_SECTIONS[fact]);
+// A named reason marks the sections of its link in the one table (Reaction.LINKS).
+const factBits = fact => Sections.sectionMask(Reaction.sections(fact));
 const reasonBits = { ...sectionBits, money: factBits('funding'), build: factBits('build'),
-    revived: factBits('dead'), relations: factBits('relations'), town: bit('supply') | bit('money') };
+    revived: factBits('dead'), relations: factBits('relations'), town: factBits('town'), sources: factBits('rejected') };
 function statsFor(session) {
     return session.coldLifeState ? (session.coldLifeState.stats ||= {}) : (session.decisionStats ||= {});
 }
@@ -35,6 +35,11 @@ function applyRaise(stats, bits, impossible = false) {
     stats.wishDirty = (Number(stats.wishDirty) || 0) | bits;
     if (impossible) stats.activityLeaf = 0;
     return stats;
+}
+// A far bot's own preparation stands in its state for its next review.
+function applyOwnRaise(state) {
+    const stats = { ...(state.stats || {}) };
+    return Reaction.hears('own_preparation', Reaction.place(state)) ? applyRaise(stats, factBits('own_preparation')) : stats;
 }
 // A near bot (a body on main) takes its decisions on the background thread:
 // the raise waits on the session (nearRaise, ORed while pending) and rides its
@@ -64,7 +69,10 @@ function raiseDecision(session, reason, { impossible = false } = {}) {
 // A real command rejection belongs to the accepted decision that attempted
 // it. The caller persists this returned state through its existing writer;
 // late failures never invalidate a newer decision or raise an event twice.
-function rejectedState(current, accepted = current) {
+const rejections = {};
+// A refusal with no state to mark: read on the health line.
+const refused = why => { rejections[why] = (rejections[why] || 0) + 1; };
+function rejectedState(current, accepted = current, why = 'other') {
     const source = accepted?.stats;
     if (!current?.stats || !source || Number(current.characterId) !== Number(accepted.characterId) || current.stats.wishDirty
         || Sections.decisionRefusal(current, Number(source.decisionSeq || 0), Number(source.activityLeaf || 0),
@@ -74,7 +82,8 @@ function rejectedState(current, accepted = current) {
         if (!baseline || baseline !== Sections.baselineIdentity(current.stats.wishSections)) return current;
     }
     const next = { ...current, stats: { ...current.stats } };
-    applyRaise(next.stats, reasonBits.sources, true);
+    applyRaise(next.stats, factBits('rejected'), true);
+    rejections[why] = (rejections[why] || 0) + 1;
     return next;
 }
 // A near bot's posted raise bag on the background thread's mind (stats),
@@ -180,4 +189,4 @@ function raiseSections(before, after, ...lists) {
     stats.wishDirty = (Number(stats.wishDirty) || 0) | bits;
     return bits;
 }
-module.exports = { statsFor, decisionStatsFor, applyRaise, raiseDecision, takePostedRaise, applyPendingRaise, nearFields, receive, held, checkWallet, rejectedState, rejectSession, raiseSections };
+module.exports = { rejections: () => rejections, refused, statsFor, decisionStatsFor, applyRaise, applyOwnRaise, raiseDecision, takePostedRaise, applyPendingRaise, nearFields, receive, held, checkWallet, rejectedState, rejectSession, raiseSections };

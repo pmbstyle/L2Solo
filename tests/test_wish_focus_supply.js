@@ -17,7 +17,9 @@ function build(availableUnits, gear = true, commitment = 0) {
         wallet: 1000000, hourAdena: 100000, persona: { traits: { commitment } }, remembered: false });
 }
 let result = build(100);
-assert.equal(result.focus[0], 'stock:shots', 'stock a seller can close keeps its survival priority');
+assert.equal(result.activity.rootKey, 'stock:shots', 'stock a seller can close keeps its survival priority');
+assert.equal(result.queue[0].key, 'stock:shots', 'and the money');
+assert.equal(result.focus[0], 'power:95:14', 'an errand leaves the goal alone (decision 10-26)');
 result = build(0);
 assert.equal(result.focus[0], 'power:95:14', 'stock nobody sells does not hold the focus');
 assert.equal(result.activity.itemId, 95, 'the bot goes for the gear it can buy');
@@ -25,4 +27,6 @@ assert(result.queue.some(wish => wish.key === 'stock:shots'), 'the wish keeps it
 assert.equal(build(0, false).focus[0], 'stock:shots', 'with nothing else to do it still stands');
 assert.equal(build(0, true, 0.5).queue.find(wish => wish.key === 'stock:shots').valueHours, 100,
     'losing the focus does not cut the bid');
+assert.equal(build(100, true, 0.5).queue.find(wish => wish.key === 'stock:shots').valueHours, 100,
+    'nor does the goal cut a survival errand');
 console.log('PASS unsupplied stock / survival stock / queue place');

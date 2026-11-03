@@ -18,5 +18,19 @@ assert.equal(revision(goal({}, { estimatedCost: 700, valueHours: 3, valueRate: 5
 assert.notEqual(revision(goal({}, {}, { itemId: 1865 })), first, 'another item is another goal');
 assert.notEqual(revision(goal({}, {}, { amount: 4 })), first, 'a bought unit moves it');
 assert.notEqual(revision(goal({}, { marketTown: 'Dion' })), first, 'another town moves it');
+// Where the moment gate stands the bot's own progress moves nothing.
+const Reaction = invoke('GameServer/Bot/Economy/Reaction');
+Reaction.configure(true);
+const own = (change, plan, target) => goal(change, { economyActivity: 'shopping', ...plan }, target);
+assert.equal(revision(own()), 0, 'a goal copied from the own leaf is no outside goal');
+assert.equal(revision(own({}, { marketTown: 'Dion' }, { amount: 4 })), 0, 'whatever it became');
+const errand = revision(goal());
+assert(errand > 0, 'an errand is a goal from outside');
+assert.equal(revision(goal({}, {}, { amount: 4 })), errand, 'its bought unit moves nothing');
+assert.equal(revision(goal({}, { kind: 'craft' })), errand, 'nor does a step of the same errand');
+assert.notEqual(revision(goal({}, {}, { itemId: 1865 })), errand, 'another item does');
+assert.notEqual(revision(goal({}, { marketTown: 'Dion' })), errand, 'another town does');
+assert.notEqual(revision(goal({ status: 'abandoned' })), errand, 'a dropped errand does');
+Reaction.configure(false);
 console.log('goal revision ok');
 process.exit(0);

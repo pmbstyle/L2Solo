@@ -17,9 +17,11 @@ const notRunTests = new Map([
 const tests = [
     'tests/test_scroll_stock_economy.js',
     'tests/test_wish_focus_supply.js',
+    'tests/test_wish_goal_loyalty.js',
     'tests/test_active_craft_warehouse.js',
     'tests/test_personal_craft_selection.js',
     'tests/test_player_moment.js',
+    'tests/test_agenda.js',
     'tests/test_goal_revision.js',
     'tests/test_active_craft_warehouse_sqlite.js',
     'tests/test_clan_war_home.js',

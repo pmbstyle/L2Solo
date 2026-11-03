@@ -8,6 +8,11 @@ const tiny = Valuation.acquisition(context, { selfId: 1835, units: 1, cost: 1 },
 assert(tiny.known && tiny.valueHours < 0, 'one unit cannot pay for a separate round trip');
 const useful = Valuation.acquisition(context, { selfId: 1835, units: 100, cost: 100 }, route);
 assert(useful.known && useful.valueHours > 0, 'an executable useful stack can justify the same trip');
+// One look a visit: the visit's steps in one town pay its one trip together.
+const step = (amount, valueHours) => ({ itemId: 1835, amount, unitPrice: 1, valueHours });
+assert.equal(Valuation.visitPays(context, [step(1, 0.02)], route), false, 'one unit alone does not pay the road');
+assert.equal(Valuation.visitPays(context, [step(1, 0.02), step(100, 2)], route), true, 'the visit\'s other steps carry it');
+assert.equal(Valuation.visitPays(context, [step(1, 0.02)], { known: true, hours: 0, fees: 0 }), true, 'in town it costs no road');
 assert.equal(useful.valueHours, 2 - 0.105 - 0.1);
 assert.equal(useful.cashNow, 105, 'transport fees consume money once');
 assert.equal(useful.cycleHours, 0.1);
@@ -72,6 +77,20 @@ try {
         plan: { expectedBenefit: 'market_sale_inventory', marketTown: 'Giran' } };
     assert.equal(GoalExecutor.beginMarketTravel(state, sale, now).activity, 'traveling');
     assert.equal(checks, 2, 'forced unloading keeps its existing independent owner');
+    // The plan's own shopping step travels on the visit its build asked.
+    const Reaction = invoke('GameServer/Bot/Economy/Reaction');
+    const stepGoal = { type: 'buy_craft_material', target: { itemId: 1835, amount: 100 },
+        plan: { expectedBenefit: 'market_buy_craft_material', marketTown: 'Giran', economyActivity: 'shopping', valueRate: 0.02 } };
+    let asked = 0;
+    Market.canTravelForPurchase = () => { asked++; return false; };
+    const plain = { ...state, stats: {} };
+    assert.equal(GoalExecutor.beginMarketTravel(plain, stepGoal, now), null, 'the gate off asks the act as before');
+    assert.equal(asked, 1);
+    Reaction.configure(true);
+    let went;
+    try { went = GoalExecutor.beginMarketTravel(plain, stepGoal, now); } finally { Reaction.configure(false); }
+    assert.equal(went?.activity, 'traveling', 'the gate on: the plan\'s step goes and reads the market there');
+    assert.equal(asked, 1, 'no second trip question from the field');
 } finally {
     Market.canTravelForPurchase = saved.check;
     Remote.canTradeRemotely = saved.remote;

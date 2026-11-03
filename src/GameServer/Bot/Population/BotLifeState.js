@@ -14,6 +14,7 @@ const Consumption = require('../Economy/ConsumptionDiagnostics');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
 const DecisionEvents = require('../AI/DecisionEvents');
 const DecisionSections = require('../Economy/DecisionSections');
+const Reaction = require('../Economy/Reaction');
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
@@ -2905,7 +2906,7 @@ const BotLifeState = {
         const standIn = nextState.stats.standIn;
         if (standIn && String(standIn.ground) !== String(nextState.spotId)) nextState.stats.standIn = null;
         let hard = [];
-        if (state.activity === 'hunting') {
+        if (Reaction.readsFacts(state, nextState)) {
             // A round records its rewards/resources/sample immediately. It
             // renews the decision only for a meaningful dependent event; a
             // retry derives that one event from the same accepted input.
@@ -2928,7 +2929,7 @@ const BotLifeState = {
         // round): money, income and the watched market against the bot's own
         // error; raised with the round's hard events in one bump.
         const soft = !isMainThread && typeof options.softInputFor === 'function'
-            ? DecisionSections.softEvents(nextState, nextState.stats.wishSections, options.softInputFor(nextState, timestamp), options.leaf ?? null) : [];
+            ? DecisionSections.softEvents(nextState, nextState.stats.wishSections, options.softInputFor(nextState, timestamp), options.leaf ?? null, state) : [];
         // checkSections: the sections a failed cheap check of this step raised
         // before its projection (the worker's room at arrival), in the same bump.
         DecisionEvents.raiseSections(state, nextState, hard, soft, options.checkSections || []);

@@ -110,10 +110,11 @@ class ColdOccupationPlanner {
             if (entry.reads.get(id) === token) continue;
             // Coalesce by the exact used item revision. Updating this token is
             // safe only together with dirty: the obsolete work is never applied.
+            const wasDirty = entry.dirty;
             entry.reads.set(id, token); entry.dirty = true;
             entry.cursor[14] = 1; DiagnosticConfig.developerDiagnostics && (this.stats.invalidations++);
             if (!entry.done) this.ready.add(owner);
-            else this.publish(entry.id, entry.input, unknownWorkshop(), { stale: true });
+            else if (!wasDirty) this.publish(entry.id, entry.input, unknownWorkshop(), { stale: true });
         }
         this.kick();
     }

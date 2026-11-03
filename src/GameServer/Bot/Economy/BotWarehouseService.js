@@ -12,6 +12,7 @@ const CRAFT_STAGE_CACHE_MS = 30000;
 const CRAFT_VISIT_RETRY_MS = 5 * 60 * 1000;
 const CRAFT_STAGE_CACHE_LIMIT = 1024;
 const { MAX_GEAR_COPIES_PER_TYPE } = require('./WarehouseRules');
+const Reaction = require('./Reaction');
 
 function serializeDeposit(characterId, work) {
     const key = Number(characterId);
@@ -481,7 +482,10 @@ async function releaseColdUnlocked(state, options = {}) {
     const planStartedAt = Date.now();
     const materials = materialRequests(state, warehouseItems);
     const reserved = storedReservations(state, warehouseItems, materials);
-    const selling = marketRequests(state, warehouseItems, reserved, options);
+    // options.before: the state the step began from. What a visit fetches to sell is
+    // read once, as it arrives (Reaction, warehouse).
+    const sells = !options.before || Reaction.hears('warehouse', Reaction.place(state, null, options.before));
+    const selling = sells ? marketRequests(state, warehouseItems, reserved, options) : [];
     recordStage('item_plan', planStartedAt);
     return releaseRequests(state, warehouseItems, [...materials, ...selling], options);
 }

@@ -284,6 +284,15 @@ async function run() {
             'an accepted action waits for MP without invalidating the graph');
         assert.strictEqual(currentBasket.basket.purchases[0].lines[0].line.recordId, 991011,
             'main spending recheck skips the cheaper party personal ingredient supplier');
+        // The act reads the bag as the build does: what the build holds back it buys.
+        const material = Number(currentBasket.basket.purchases[0].selfId), needed = Number(currentBasket.basket.purchases[0].count);
+        const saving = { ...fundedCrafter, inventory: { [material]: { selfId: material, amount: 1 } },
+            stats: { ...fundedCrafter.stats, equipmentPlan: { status: 'active', target: { selfId: material } } } };
+        assert.strictEqual(Service.recheck(saving, step, [{ recipeId: 25 }]).basket.purchases[0].count, needed,
+            'one unit kept for the bot\'s own goal is not spent by the craft');
+        const movedBid = {};
+        assert.strictEqual(Service.recheck(fundedCrafter, { ...step, exit: [991013, 9910130, 90000, 2] }, [{ recipeId: 25 }], movedBid), null);
+        assert.strictEqual(movedBid.reason, 'exit_gone', 'a bid that moved since the build is named');
         assert.strictEqual(Service.recheck(fundedCrafter,
             { ...step, exit: [991012, 9910120, 100000, 1] }, [{ recipeId: 25 }]), null,
         'a selected party personal buyer cannot pass spending recheck');
@@ -312,6 +321,16 @@ async function run() {
         assert.strictEqual(await Service.rejectAccepted(state), rejected);
         assert.strictEqual(sourceWrites, 1, 'one accepted failure persists one source event, never a repeated invalidation loop');
     } finally { LifeState.cachedState = beforeCached; LifeState.upsertState = beforePersist; }
+    // A craft refused at the act carries its recipe for the pick to skip.
+    {
+        const Reaction = invoke('GameServer/Bot/Economy/Reaction');
+        const fresh = await Service.execute(state, forbiddenExit);
+        assert.strictEqual(fresh.state.stats.wealthRefused, undefined, 'the gate off marks nothing');
+        Reaction.configure(true);
+        const refused = await Service.execute(state, forbiddenExit);
+        Reaction.configure(false);
+        assert.deepStrictEqual(refused.state.stats.wealthRefused.recipes, [recipe.recipeId], 'the refusal marks its recipe');
+    }
     assert.strictEqual(purchases.length, writesBefore);
     Admission.configureTradeAdmission(id => LifeState.cachedState(Number(id)),
         id => invoke('GameServer/World/World').registeredActorById(Number(id))?.session);

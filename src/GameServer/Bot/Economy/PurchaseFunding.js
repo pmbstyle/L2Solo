@@ -194,6 +194,12 @@ function rootRatio(wish) {
 function leafRatio(leaf, wish) {
     return leaf?.r > 0 ? leaf.r : rootRatio(wish);
 }
+// A card leaf stamped with its place in the money queue.
+function stampRatio(leaf, wish) {
+    const r = leafRatio(leaf, wish);
+    if (r > 0) leaf.r = r;
+    return leaf;
+}
 // The funding terms of a buy goal, one rule for every reader: its root's
 // place in the money queue when the goal carries one, else the money
 // packet's row for its item.
@@ -232,5 +238,5 @@ function packetFor(network, hour, reserve) {
     return packet;
 }
 function tripEscrow(plan, escrow = 0) { return plan?.market?.sourceType === 'npc' ? escrow : 0; }
-module.exports = { itemRate, budget, operatingReserve, shortfall, surplus, spendable, clanCredit, stockAllowance, quoteScale, forOpportunity, nativeTerms, companionTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, leafRatio, goalTerms, stockTerms,
+module.exports = { itemRate, budget, operatingReserve, shortfall, surplus, spendable, clanCredit, stockAllowance, quoteScale, forOpportunity, nativeTerms, companionTerms, tripEscrow, budgetFor, packetAfterPurchase, moneyReached, packetFor, packetRowWishes, PACKET_ROWS, significant, rootRatio, leafRatio, stampRatio, goalTerms, stockTerms,
     summary: () => Diagnostics.active() ? ({ moneyPacketMissing }) : ({ enabled: false }), resetCounters: () => { moneyPacketMissing = 0; } };

@@ -1,6 +1,7 @@
 const Database = invoke('Database');
 const { fnv1a32 } = require('../Fnv1a');
 const TableChannel = require('../Population/ColdTableChannel').shared;
+const Reaction = require('../Economy/Reaction');
 
 const TABLE = 'bot_goal_state';
 const cache = new Map();
@@ -136,7 +137,12 @@ const GoalState = {
             const goal = snapshot.current;
             const content = { ...goal, createdAt: 0, reviewedAt: 0, nextReviewAt: 0,
                 target: { ...goal.target, adena: 0 }, plan: { ...goal.plan, estimatedCost: 0, valueHours: 0, valueRate: 0, reserve: 0 } };
-            revision = fnv1a32(JSON.stringify(content)) || 1;
+            // Where the moment gate stands a goal copied from the bot's own leaf is
+            // its own output (Recompute): no revision; another goal names what it
+            // is after, a bought unit or a review of the same one does not.
+            revision = !Reaction.on() ? fnv1a32(JSON.stringify(content)) || 1
+                : goal.plan?.economyActivity !== undefined ? 0
+                    : fnv1a32(JSON.stringify([goal.type, goal.status, goal.target?.itemId, goal.plan?.marketTown, goal.plan?.purpose])) || 1;
             revisions.set(snapshot, revision);
         }
         return revision;

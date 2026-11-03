@@ -1,4 +1,5 @@
 'use strict';
+const Network = invoke('GameServer/Bot/Economy/WishNetwork');
 
 // These reviews run only on the bot's ordinary lifecycle, never from a timer
 // or population scan. The record is worker-local and survives state updates.
@@ -22,7 +23,7 @@ function personalBidDue(state, record, timestamp, board) {
     const ItemIndex = invoke('GameServer/Item/ItemTemplateIndex'), items = invoke('GameServer/DataCache').items;
     for (const need of needs) {
         if (plan.clanGoal && need.key === `power:${Number(plan.target?.selfId)}:${Number(plan.target?.slot)}`) continue;
-        const targetId = Number(String(need.key).split(':')[1]);
+        const targetId = Network.rootItem(need.key);
         if (!['b', 'a', 's'].includes(ItemIndex.find(items, targetId)?.etc?.rank)
             || !invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(need.itemId)) continue;
         const offered = owned.filter(row => row.storeType === 3 && row.selfId === need.itemId && row.count > 0)
