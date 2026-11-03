@@ -165,13 +165,6 @@ function normalizeStoreItems(storeCfg, { staticStore = false } = {}) {
     })).filter((item) => !staticStore || item.price > 0);
 }
 
-function describeStoreItems(items, limit = 3) {
-    return items
-        .slice(0, limit)
-        .map((item) => itemName(item.selfId))
-        .join(', ');
-}
-
 function deductAdena(actor, amount) {
     return new Promise((resolve, reject) => {
         const adenaItem = fetchAdena(actor);
@@ -650,7 +643,6 @@ function findBestBuyerForActor(actor, merchantSessions, options = {}) {
 module.exports = {
     nativeStoreItems,
     buyFromStore,
-    describeStoreItems,
     findAfkBuyerForActor,
     findBestBuyerForActor,
     itemBasePrice,

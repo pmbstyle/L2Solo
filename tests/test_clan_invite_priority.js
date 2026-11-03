@@ -5,7 +5,6 @@ const vm = require('node:vm');
 const target = process.argv[2] || path.join(__dirname, '../src/GameServer/Bot/AI/BotAvailability.js');
 let members = [{ id: 2 }];
 let relationshipReason = null;
-let personaCalls = 0;
 const memory = { trust: -10, recentlyAbandonedAt: Date.now() };
 const dependencies = {
     'GameServer/Bot/AI/BotSocialMemory': {
@@ -14,9 +13,6 @@ const dependencies = {
         relationship: () => 'stranger'
     },
     'GameServer/Bot/AI/BotServiceIdentity': { isStaticService: subject => !!subject.staticService },
-    'GameServer/Bot/AI/PersonaPartyDecisionPolicy': {
-        evaluate: () => { personaCalls++; return { accept: false, reason: 'prefers_solo' }; }
-    },
     'GameServer/SpeckMath': { Point3D: class { distance() { return 100000; } } },
     'GameServer/Social/InteractionMemoryRuntime': { assess: () => ({ ready: true }) },
     'GameServer/Clan/ClanService': { findById: id => id === 77 ? { members } : null },
@@ -57,7 +53,6 @@ for (const activity of ['dead', 'shopping', 'merchant', 'crafting', 'traveling',
         }
     }
 }
-assert.equal(personaCalls, 0);
 relationshipReason = 'relationship_hostile';
 assert.equal(availability.evaluate(player, { actor: actor(2, 77) }).reason, 'relationship_hostile');
 assert.equal(availability.evaluate(player, { actor: actor(2, 88) }).reason, 'relationship_hostile');

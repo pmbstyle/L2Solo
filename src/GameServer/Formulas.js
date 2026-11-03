@@ -200,10 +200,6 @@ const Formulas = {
         return Math.max(1, Math.min(99, chance));
     },
 
-    calcMeleeHit(pAtk, pAtkRnd, pDef) {
-        return this.calcMeleeDamage(pAtk, pAtkRnd, pDef);
-    },
-
     calcMeleeDamage(pAtk, pAtkRnd, pDef, { critical = false, soulshot = false, skillPower = 0, criticalDamageMultiplier = 1, criticalDamageAdd = 0, rng } = {}) {
         const variation = rng ? Math.floor(rng() * (2 * pAtkRnd + 1)) - pAtkRnd : utils.oneFromSpan(-pAtkRnd, pAtkRnd);
         const pAtkRndMul = 1 + variation / 100;
@@ -467,14 +463,6 @@ const Formulas = {
 
         rate = Math.max(1, Math.min(rate, 99));
         return rate * Math.max(0, Number(resistModifier) || 0);
-    },
-
-    calcRemoteHit(mAtk, power, mDef) {
-        return this.calcMagicDamage(mAtk, power, mDef);
-    },
-
-    calcHitMiss(attacker, target, rng = Math.random, context = {}) {
-        return !this.calcHitChance(attacker, target, rng, context);
     }
 };
 

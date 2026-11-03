@@ -232,7 +232,7 @@ function nativeShotOptions(state, index, context) {
             }, { board: index.board, timestamp: index.at }));
             yield 'quote';
         }
-        exits.push(...yield* require('./ShotSalePolicy').exits(owner, recipe, { board: index.board, timestamp: index.at,
+        exits.push(...yield* require('./ProductionSalePolicy').exits(owner, recipe, { board: index.board, timestamp: index.at,
             trip, npcOffersFor: id => require('../Population/ColdOccupationSources').npcOffersFor(id),
             reserve: Number(stock?.itemId) === Number(recipe.productId)
                 ? Math.max(0, Number(stock.target || 0) - Number(state.inventory?.[recipe.productId]?.amount || 0)

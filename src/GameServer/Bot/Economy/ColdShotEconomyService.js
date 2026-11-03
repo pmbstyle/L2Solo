@@ -80,7 +80,7 @@ function recheck(state, selected) {
         } else if (recordId === -1 && Number.isSafeInteger(lineId) && lineId > 0 && price > 0 && revision >= 0) {
             exit = { type: 'use', price: 0, count: 0, ownUseUnits: lineId, ownUseUnitHours: price, residualUnitValue: 0 };
         } else if ((recordId === -2 || recordId === -3) && Number.isSafeInteger(lineId) && price > 0 && revision > 0) {
-            exit = require('./ShotSalePolicy').exit(state, Number(recipe.productId), { board,
+            exit = require('./ProductionSalePolicy').exit(state, Number(recipe.productId), { board,
                 town: Policy.townForCode(lineId), trip, current: price, lot: Number(recipe.productCount),
                 origin: recordId === -3 ? 'public_buy_interest' : 'public_item_trades',
                 productionUnits: batches * Number(recipe.productCount),

@@ -3,7 +3,6 @@ require('../src/Global');
 invoke('GameServer/DataCache').init();
 const Data = invoke('GameServer/DataCache');
 const Agreement = invoke('GameServer/Bot/Population/PartyAgreement');
-const Persona = invoke('GameServer/Bot/AI/PersonaPartyDecisionPolicy');
 const Spot = invoke('GameServer/Bot/AI/SpotService');
 const oldItems = Data.items, oldFind = Spot.findById;
 try {
@@ -19,13 +18,11 @@ try {
             if (help) assert(text.includes('paying 30k'));
         }
     }
-    assert.equal(Persona.reply({ accept: true, goal }), 'ok, farming Karik Horn in Cruma Tower');
-    assert.equal(Persona.reply({ accept: true, goal: { spotId: 'cruma' } }), 'ok, heading to Cruma Tower');
     assert.equal(Agreement.formationText('Beto', 'cruma', goal, { mode: 'turn' }),
         'Beto formed a party at Cruma Tower: farming Karik Horn, loot by turn.');
     for (const [fee, word] of [[30000, '30k'], [999999, '1kk'], [1250000, '1.3kk']]) {
         assert(Agreement.describe(goal, { help: { itemId: 1867, fee } }).includes(`paying ${word}`));
     }
     assert.equal(Agreement.describe({ itemId: 999999 }, null), '');
-    console.log('Player replies and journals use names and compact loot clauses');
+    console.log('Party journals use names and compact loot clauses');
 } finally { Data.items = oldItems; Spot.findById = oldFind; }

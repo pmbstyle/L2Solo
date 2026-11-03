@@ -12,9 +12,8 @@ function profileFor(state) {
     return BotPersona.of(state);
 }
 
-// How much a persona wants a party, before the situation: shared by the
-// bot-to-bot intent below and the answer to a player's invite
-// (PersonaPartyDecisionPolicy). Not rounded.
+// How much a persona wants a party, before the situation (the bot-to-bot
+// intent below). Not rounded.
 function baseScore(persona) {
     const traits = persona.traits;
     const driveBonus = persona.primaryDrive === 'social' ? 18
