@@ -27,7 +27,8 @@ function emptyCounters() {
         coldShareCutFights: 0,
         skippedResolves: 0,
         activations: 0,
-        // Activations refused after the fence (HotActivation activationRefusal).
+        // Activations refused (HotActivation: in_transit, no_safe_activation_placement), by reason in
+        // activationRefusalReasons; counted with or without developerDiagnostics.
         activationRefusals: 0,
         cooldowns: 0,
         partyFormations: 0,
@@ -112,6 +113,7 @@ const PopulationMetrics = {
         activationDurationsMs: [],
         cooldownDurationsMs: [],
         skippedResolveReasons: new DiagnosticMetricMap(),
+        activationRefusalReasons: new DiagnosticMetricMap(),
         coldOwnerCommitDurationsMs: [],
         coldOwnerLegacyReasons: new DiagnosticMetricMap(),
         coldOwnerRejectReasons: new DiagnosticMetricMap(),
@@ -261,9 +263,11 @@ const PopulationMetrics = {
         this.pushTransition('activationDurationsMs', durationMs);
     },
 
-    recordActivationRefusal() {
-        if (!Config.developerDiagnostics) return;
+    // Always counted: the reason map holds at most KEY_LIMIT keys between summaries.
+    recordActivationRefusal(reason = 'unknown') {
         this.counters.activationRefusals += 1;
+        const key = String(reason || 'unknown');
+        this.interval.activationRefusalReasons.set(key, Number(this.interval.activationRefusalReasons.get(key) || 0) + 1);
     },
 
     recordCooldown(durationMs) {
@@ -501,6 +505,7 @@ const PopulationMetrics = {
         const partyFormationStages = Object.fromEntries(Array.from(this.interval.partyFormationStageDurationsMs.entries())
             .map(([stage, values]) => [stage, stats(values)]));
         const skippedResolveReasons = Object.fromEntries(this.interval.skippedResolveReasons.entries());
+        const activationRefusalReasons = Object.fromEntries(this.interval.activationRefusalReasons.entries());
         const activationFloorReasons = Object.fromEntries(this.interval.activationFloorReasons.entries());
         const coldOwnerLegacyReasons = Object.fromEntries(this.interval.coldOwnerLegacyReasons.entries());
         const coldOwnerRejectReasons = Object.fromEntries(this.interval.coldOwnerRejectReasons.entries());
@@ -521,6 +526,7 @@ const PopulationMetrics = {
         this.interval.stateRetentionPolicyRows = new DiagnosticMetricMap();
         this.interval.partyFormationStageDurationsMs = new DiagnosticMetricMap();
         this.interval.skippedResolveReasons = new DiagnosticMetricMap();
+        this.interval.activationRefusalReasons = new DiagnosticMetricMap();
 
         return {
             uptimeMs: elapsedMs,
@@ -552,6 +558,7 @@ const PopulationMetrics = {
             },
             partyFormationStages,
             skippedResolveReasons,
+            activationRefusalReasons,
             memory: process.memoryUsage ? process.memoryUsage() : null
         };
     }

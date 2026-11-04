@@ -25,7 +25,7 @@ Scope: `Bot/Population`, `Bot/Travel`, `BotManager`, `BotSession`, worker protoc
 | `LifecycleSafetySweep` | Every 30 min: rows not covered by the worker get repaired | `startLifecycleSafetySweep` |
 | Seeding | `GeneratedColdSeeder` + `PopulationSeedPlanner` | `scheduleGeneratedColdSeed` |
 | `Travel/` | `TravelRoutes`, `TripPayment`, `ScrollStock` — shared by hot and cold, done right | — |
-| `ColdTrip` | Cold trip time, honest: scroll cast, 5 s per hop, run at 120 u/s, walkers (a walker near a player leaves its trip in `HotActivation` at the endpoint `walkerAppearance` gives, read after the fence); a traveller answers an invite | `townPlan`, `spotPlan`, `toSpot` |
+| `ColdTrip` | Cold trip time, honest: scroll cast, 5 s per hop, run at 120 u/s, walkers (a walker near a player leaves its trip in `HotActivation` at the endpoint `walkerAppearance` gives on the resolver's arrival, read after the fence, only if that endpoint is within the activation radius of the player; refusals are counted by reason, `activationRefusals`); a traveller answers an invite | `townPlan`, `spotPlan`, `toSpot` |
 
 ## Lifecycle
 

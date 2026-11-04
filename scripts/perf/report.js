@@ -151,7 +151,13 @@ function transitionsSummary(lines) {
         return { count: delta(counter), avgMs: timed ? round(windows.reduce((sum, t) => sum + t.avgMs * t.count, 0) / timed) : 0,
             p95Ms: Math.max(0, ...windows.map(t => t.p95Ms)), maxMs: Math.max(0, ...windows.map(t => t.maxMs)) };
     };
-    return { activation: of('activation', 'activations'), cooldown: of('cooldown', 'cooldowns'), handoffs: delta('coldOwnerHandoffs') };
+    // Refused activations by reason (HotActivation), summed over the windows.
+    const refusalReasons = {};
+    metrics.forEach(m => Object.entries(m.activationRefusalReasons || {}).forEach(([reason, count]) => {
+        refusalReasons[reason] = (refusalReasons[reason] || 0) + (Number(count) || 0);
+    }));
+    return { activation: of('activation', 'activations'), cooldown: of('cooldown', 'cooldowns'), handoffs: delta('coldOwnerHandoffs'),
+        refusals: { count: delta('activationRefusals'), reasons: refusalReasons } };
 }
 
 // The live server's context over the window (PopulationStatus.vitals, the recorder's files and
@@ -297,7 +303,9 @@ function print(s) {
     }
     if (s.transitions) {
         const t = s.transitions, line = (x) => `${x.count} (avg ${x.avgMs} / p95 ${x.p95Ms} / max ${x.maxMs} ms)`;
-        console.log(`\ntransitions: cold -> hot ${line(t.activation)}; hot -> cold ${line(t.cooldown)}; handoffs ${t.handoffs}`);
+        const refused = Object.entries(t.refusals?.reasons || {}).map(([reason, count]) => `${reason} ${count}`).join(', ');
+        console.log(`\ntransitions: cold -> hot ${line(t.activation)}; hot -> cold ${line(t.cooldown)}; handoffs ${t.handoffs}; `
+            + `refused ${t.refusals?.count || 0}${refused ? ` (${refused})` : ''}`);
     } else if (s.run.scenario === 'hot') console.log('\ntransitions: none recorded (run with --diagnostics)');
     if (s.run.scenario === 'hot' && !s.player) console.log('\nplayer: none in the window: the hot scenario did not start (server.log, "hot scenario")');
     // A short window (a script that ends before a CPU chunk does) has no chunk of its own to show.

@@ -8,6 +8,13 @@ const ColdSimulationCoordinator = invoke('GameServer/Bot/Population/ColdSimulati
 const pendingActivations = new Set();
 const HOT_PLANS = new Set(['hunting', 'resting', 'shopping', 'merchant', 'pk_hunting']);
 
+// An activation the bot's own state refuses (in transit, no placement a player
+// would see): counted by reason (PopulationMetrics), never logged.
+function refused(reason, state) {
+    Metrics.recordActivationRefusal(reason);
+    return { ok: false, reason, state };
+}
+
 function activationPlan(state, options = {}) {
     const activity = state?.activity || 'hunting';
     if (options.recoverOnActivation || (options.readyOnActivation && (activity === 'dead' || activity === 'resting'))) {
@@ -123,9 +130,7 @@ const HotActivation = {
             const leavesTrip = walker || options.interruptBackgroundActivity === true
                 || (['remote_invite', 'party_invite', 'remote_chat_come'].includes(reason)
                     && state.activity === 'traveling');
-            if (state.activity === 'traveling' && !leavesTrip) {
-                return { ok: false, reason: 'in_transit', state };
-            }
+            if (state.activity === 'traveling' && !leavesTrip) return refused('in_transit', state);
             state = appearance(state);
             if (!state.accountName) return { ok: false, reason: 'missing_account', state };
             if (pendingActivations.has(state.characterId)) {
@@ -141,7 +146,9 @@ const HotActivation = {
             });
             // A failed placement must not dissolve a party, remove a market
             // listing or hand ownership away from the cold worker.
-            if (!placement) return { ok: false, reason: 'no_safe_activation_placement', state };
+            // With playerLoc only a point within the activation radius of the
+            // player is accepted: a walker whose endpoint is out of sight stays cold.
+            if (!placement) return refused('no_safe_activation_placement', state);
             // Reserve the character before party cleanup or recipe sync can
             // yield. Otherwise two concurrent visibility/invite requests can
             // both pass the guard and create independent hot AI sessions.
@@ -266,8 +273,9 @@ const HotActivation = {
                     pendingActivations.delete(state.characterId);
                     const failureReason = error.activationRefusal || (error.partyRefusal ? 'already_grouped'
                         : craftActivation ? 'craft_recipe_sync_failed' : 'activation_prepare_failed');
-                    // A refusal is an answer, as the early returns are: counted, not logged.
-                    if (error.activationRefusal) Metrics.recordActivationRefusal();
+                    // A refusal found after the fence is counted by reason, as before it
+                    // (refused); any other failure is logged.
+                    if (error.activationRefusal) Metrics.recordActivationRefusal(error.activationRefusal);
                     else utils.infoWarn('BotPopulation', 'activation failed for %s: %s', state.name, error.message || error);
                     return { ok: false, reason: failureReason, state };
                 });
