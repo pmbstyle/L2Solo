@@ -1,6 +1,6 @@
 # Second pass: game logic bugs (2026-11-03)
 
-Checked at 57670ceb (2026-11-04).
+Checked at 39e43408 (2026-11-04).
 
 Checked against Lisvus C4 (Mobius C4 not fetched). 2026-11-04 pass read today's changes (fight gate and readiness,
 unhuntable ground, NPC price table, meeting anchors, craft kit reserve, party fences, FailureLog, PR #207 arrow stock and

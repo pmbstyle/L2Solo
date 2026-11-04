@@ -1,6 +1,6 @@
 # Third pass: races and crash/shutdown data loss (2026-11-03, t106dev @ be5c09f7 + working tree)
 
-Checked at 57670ceb (2026-11-04).
+Checked at 39e43408 (2026-11-04).
 
 Fact = code path read; guess = not traced to the end. Ordered by impact. Open rows only.
 

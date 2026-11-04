@@ -1,6 +1,6 @@
 # Architecture debt
 
-Checked at 199c3b19 (2026-11-04).
+Checked at 39e43408 (2026-11-04).
 
 Index across areas; details and evidence in each area file (ids: AI, POP, ECO, CMB, WOR, PER, TBL).
 Add a line when you find a tail you do not fix. Delete it when it is paid (the area file states the new rule).

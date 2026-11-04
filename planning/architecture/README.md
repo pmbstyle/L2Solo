@@ -1,6 +1,6 @@
 # Architecture map
 
-Checked at 199c3b19 (2026-11-04).
+Checked at 39e43408 (2026-11-04).
 
 What exists, who owns each rule, which path is canonical. First survey: t106dev (now `ivan/next-release`) @ 9f27b7fa,
 2026-11-03, six read-only passes. Line numbers drift; search by name.

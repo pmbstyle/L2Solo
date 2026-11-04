@@ -1,6 +1,6 @@
 # Second pass: silent failures and masking defaults (2026-11-03)
 
-Checked at 199c3b19 (2026-11-04).
+Checked at 39e43408 (2026-11-04).
 
 **Re-verified on t106dev** (2026-11-03); line numbers below are approximate, from the first (stale) pass — search by
 name. Open rows only. A failure a catch survives goes through `FailureLog` (counted by site, the first logged, status

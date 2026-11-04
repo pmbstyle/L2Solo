@@ -1,6 +1,6 @@
 # Third pass: client entry points — crashes, accidental dupes/losses, bot economy (2026-11-03, t106dev)
 
-Checked at 199c3b19 (2026-11-04).
+Checked at 39e43408 (2026-11-04).
 
 Scope: 87 request handlers, NpcTalkResponse + 46 NpcBypasses, Speak `.` commands, UserCommand. Deliberate cheating
 for gain is out of scope (the admin panel is open to all by decision). Ordered by likelihood in normal play.
@@ -15,7 +15,7 @@ the DB and exits 1; a half-done non-atomic move, PER-1/2/3, stays half done).
 | X2 | `Backpack.dropItem` ~210 → `World.spawnItem` | drop a +N item, pick it up | comes back +0 (enchant not passed; PK drop passes it) | C |
 | X3 | `NpcBypasses/GatekeeperTeleport` ~22 | double-click a destination | fee charged twice (no `pendingActorTeleport` check, adena taken before the delayed move) | C |
 | X4 | `PurchaseItem.awardItem` ~30, `Bot/TradeService.giveItem` ~222 | buy 2 rings at an NPC / static merchant | one non-stackable row with amount 2; spreads into trades and bot inventories | C |
-| X6 | `Speak.consume` ~267, `.tell/.invite/.joinparty` ~200, `BotManager.handlePlayerSpeak`, `BotRemoteChat.replyForStateNow`, `World.askForTeamUp` → `inviteBotByName` ~640, `RequestPledgePower`, `RemoveShortcut`, `CrystallizeItem` | /tell a bot, party chat with LLM, invite a cold bot | a rejection in these unobserved chains reaches only the process backstop (logged once, counted); `inviteBotByName` throw leaks party capacity | C (missing catch), G (rejects) |
+| X6 | `Speak.consume` ~267, `.tell/.invite/.joinparty` ~200, `BotManager.handlePlayerSpeak`, `BotRemoteChat.replyForStateNow`, `World.askForTeamUp` → `inviteBotByName` ~640, `RequestPledgePower`, `CrystallizeItem` | /tell a bot, party chat with LLM, invite a cold bot | a rejection in these unobserved chains reaches only the process backstop (logged once, counted); `inviteBotByName` throw leaks party capacity | C (missing catch), G (rejects) |
 | X7 | buffered `deleteItem` vs direct awards (`useExtractableItem` ~517, `useRecipeItem` ~477, `QuestService.giveItem`, PER-1, PER-2) | any crash or stop between steps | award saved, consumption lost; half-moved NPC buy / merchant deal; logout during PER-1 100 ms steps = paid, nothing received | C |
 | X8 | read → await → absolute write: `PurchaseItem.awardItem`, `SellJunk` ~93 (`.sell`, no NPC), `QuestService.giveItem/takeItem` vs buffered deletes and warehouse/enchant/pet transactions | `.sell` while companions loot; shots spent during pickup; deposit during a party adena split | one gain overwrites another: adena lost or created, memory ≠ DB | C pattern, G window |
 | X9 | `Bot/TradeService`, TradeDone commit, `AfkTradeService.refreshActorInventory` ~530 | an item change while a bot trade commits | race: items can be duplicated; a used potion comes back in memory | C, G timing |
@@ -42,7 +42,7 @@ packets drop only the sender.
 
 ## Fixes in order
 
-1. Handlers return their promises (Speak tell/party/LLM, askForTeamUp, PledgePower, RemoveShortcut, CrystallizeItem).
+1. Handlers return their promises (Speak tell/party/LLM, askForTeamUp, PledgePower, CrystallizeItem).
 2. One owner for every stack change (Backpack + InventoryMutationQueue, PER-3); relative SQL deltas in transactions
    (covers X7-X10).
 3. Gatekeeper: refuse while `pendingActorTeleport`; fee inside the teleport commit.

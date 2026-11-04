@@ -1,6 +1,6 @@
 # Second pass: fields written but never read, or read but never written (2026-11-03, t106dev)
 
-Checked at 199c3b19 (2026-11-04).
+Checked at 39e43408 (2026-11-04).
 
 Indexed with acorn over `src/` of the main checkout (t106dev). Paths relative to `src/GameServer/`. Open items only.
 

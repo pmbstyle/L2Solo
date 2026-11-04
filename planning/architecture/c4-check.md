@@ -1,6 +1,6 @@
 # C4 check: combat rules (2026-11-03)
 
-Checked at 199c3b19 (2026-11-04).
+Checked at 39e43408 (2026-11-04).
 
 Read from source: Lisvus `gitlab.com/TheDnR/l2j-lisvus` @ fdc7e33 (the revision the project uses) and L2J Mobius
 master 245bc80a `L2J_Mobius_C4_ScionsOfDestiny`. Mobius "C4" carries later-chronicle code (it says "Interlude

@@ -1,6 +1,6 @@
 # Persistence and long-lived systems
 
-Checked at 199c3b19 (2026-11-04).
+Checked at 39e43408 (2026-11-04).
 
 Survey of t106dev @ 9f27b7fa (2026-11-03). Line numbers drift; search by name.
 Scope: `src/Database*`, `src/History*`, journals, `Persistence/`, `database/sql`, saved games, Clan, ClanHall, Social,
@@ -23,7 +23,8 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
 - **History DB:** second file `<world>.history.sqlite`; world transactions write `history_outbox`, `HistoryWorker`
   moves rows, main deletes them; retention in `HistoryStore`.
 - **Journals:** `EconomyJournal` (TEMP triggers sum adena/item flow), `PvpJournal`; one outbox row per flush.
-- **WAL checkpoints:** `DatabaseCheckpointCoordinator` + worker (≥ 4 MB, every 5 s). Not `NativeWriteCheckpoint` (a
+- **WAL checkpoints:** `DatabaseCheckpointCoordinator` + worker (≥ 4 MB, every 5 s); the WAL truncate
+  (`PopulationService.runAdaptiveWalReset`) is tried when a passive one finishes (`Database.onCheckpoint`, limits.md). Not `NativeWriteCheckpoint` (a
   revision fence for bot rows).
 - **Saved games:** `scripts/saved-games.js` (v2 = world + history file) via the launcher; `DatabaseRestore` installs
   with a marker and rolls back on next init; lock in `scripts/database-access.js`, which also checks a launcher

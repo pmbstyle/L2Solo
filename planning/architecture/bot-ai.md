@@ -1,6 +1,6 @@
 # Bot decision-making (hot)
 
-Checked at 199c3b19 (2026-11-04).
+Checked at 39e43408 (2026-11-04).
 
 Survey of t106dev @ 9f27b7fa (2026-11-03). Line numbers drift (~); search by name.
 Scope: `Bot/AI`, `Bot/Goals`, `Bot/BotAI.js`, chat → action. Cold stepping: [population.md](population.md).
@@ -76,7 +76,7 @@ deterministic brain; the LLM acts only on explicit player communication.
   dead/resting/following likely unreachable; `MerchantState` empty.
 - **AI-9 two ambient engines.** `BotAmbientDirector` (default, `ambientScenesEnabled`) and legacy `BotConversation` path;
   `checkAndStartConversation` asks `BotConversation.canStart` even when the director runs.
-- **AI-13 `World.fetchUser` as control flow.** `HuntingState` (~1035) and `FollowingState` (~2018) ask
+- **AI-13 `World.fetchUser` as control flow.** `HuntingState` (~1082) and `FollowingState` (~1981) ask
   `fetchUser` first and read its rejection as "not a player", then `fetchNpc`: a session scan, an `Error` and two
   promises per tick with an NPC target (perf, not a failure; the sync `World.registeredActorById` answers it).
   `SpotService.ensureIndexed` returns `[]` without World definitions (a startup window), not counted.

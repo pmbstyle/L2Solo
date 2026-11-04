@@ -1,6 +1,6 @@
 # Fourth pass: game data under data/ against C4 (2026-11-04, ivan/next-release)
 
-Checked at 610abd94 (2026-11-04).
+Checked at 39e43408 (2026-11-04).
 
 Sources: Lisvus `gitlab.com/TheDnR/l2j-lisvus` @ fdc7e33 (the generators' pinned revision; datapack sql + stats xml),
 L2J Mobius C4 @ 6bc10d28 (the spawn generator's pin; a few files fetched raw), l2hub.info/c4 (pages fetched). Where

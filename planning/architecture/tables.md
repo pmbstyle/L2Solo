@@ -1,8 +1,8 @@
 # Bot tables (precomputed)
 
-Checked at 199c3b19 (2026-11-04).
+Checked at 39e43408 (2026-11-04).
 
-Survey of `ivan/next-release` @ be97733e; committed tables of 0a4e1c245 (Tables run 41728520994). Line numbers drift; search by
+Survey of `ivan/next-release` @ be97733e; committed tables of d45cfa5a3 (f62f1683, Tables run 41751582154). Line numbers drift; search by
 name. Scope: `data/Bots/*.json`, `data/Bots/hunt/*.json`, `scripts/generate-spot-table.js`,
 `scripts/generate-spot-reward-catalog.js`, `scripts/hunt-tables/*`, `scripts/fight-table/*`,
 `scripts/hunt-cycle-check.js`, `.github/workflows/tables.yml`, reader `Bot/AI/SpotValueTable`.
@@ -65,7 +65,7 @@ Loot response: `GearAcquisitionPlanner.itemDropYield` at x1/x10/x50. The catalog
   `src`, `data/Npcs`, `data/Items`, `data/Skills`, `data/Templates` (not `scripts/`, not geodata), or `--revision=`.
   `fingerprint` = `{ hash, files: { path: sha1 } }` of the files `TableFingerprint` lists for the spot table (written by
   the merge phase, so a `pick` artifact carries one too). `inputs` (hours, seed, geodata, rate x1, maxLevel 78, refGap,
-  bands, curve spots, line classes), `counts` (246937 simulated hours for this table).
+  bands, curve spots, line classes), `counts` (233672 simulated hours for this table).
 
 **Staleness.** Two checks. `SpotValueTable.checkCatalog` runs at the first read on each thread and when the catalogue
 moves: one line `SpotTable  N of M catalogue spots missing; geodata: table X, server Y; table revision R`, a warning
@@ -78,8 +78,9 @@ its header; `npm run check` (`scripts/check-tables.js`) recomputes it for `data/
 removed or changed since; it also fails when the list names a path that no longer exists. The server's first read
 of the spot table, on the main thread only, logs one `SpotTable` line: matches, or a warning with the changed files
 (the table stays in use; not fatal). A table without a fingerprint is "unknown": the check warns and passes, the
-server logs one warning. **The committed tables (f62f1683) carry none yet**: the check stays a warning until the next
-rebuild writes one; from then on any change to a listed file makes `npm run check` warn on a working copy and fail on
+server logs one warning. **The committed tables (f62f1683) carry none yet** and predate inputs this release
+changed (cold skill records, skill data flags, readiness on the live pull, rest end, C4 drops in `data/Npcs`, the NPC
+price table): stale, but the check stays a warning until the next rebuild writes a fingerprint; from then on any change to a listed file makes `npm run check` warn on a working copy and fail on
 CI (PR checks) or with `--strict`, until the tables are rebuilt: a release's commits stay green, its PR cannot pass
 with stale tables.
 

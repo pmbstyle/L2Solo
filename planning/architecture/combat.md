@@ -1,6 +1,6 @@
 # Combat, skills, actors
 
-Checked at 199c3b19 (2026-11-04).
+Checked at 39e43408 (2026-11-04).
 
 Survey of t106dev @ 9f27b7fa (2026-11-03). Line numbers drift; search by name.
 Scope: `Actor`, `Skills`, `Effects`, `Combat`, `Npc`, `RaidBoss`, `Pets`, `Formulas.js`, `Karma.js`,
@@ -67,6 +67,7 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
 | Aggro range | `Npc/NpcAggroRange` |
 | Skill semantics | `Skills/C4SkillRules` |
 | A skill rank's base numbers (hit time, reuse, cast type, MP, power, duration) | `Model/Skill` fetchers (C4SkillRules over the data row); cold records copy them (`ColdCombatProfile.skillRecord`) |
+| Is a skill magic (cast speed, spiritshot, cast break, MP and land rate; also picks the damage formula, debt.md 17) | `Skill.fetchSpell` (a `C4SkillRules` `isMagic` over the data `spell` flag), hot and cold (the record copies it, `ColdCombatProfile.actionShot` reads it) |
 | Item-skill cast (timer, spend, landing) | `Backpack.castItemSkill` (bots' own SoE `BotTownTravel.beginEscape` is still a parallel path, debt.md theme 9) |
 | Cast break by damage | `Attack.tryBreakCast` (magic casts only) |
 | Effects store / stat sums | `EffectStore` + `EffectStats` |

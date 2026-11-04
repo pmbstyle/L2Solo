@@ -1,6 +1,6 @@
 # Population, hot/cold, cold worker
 
-Checked at 199c3b19 (2026-11-04).
+Checked at 39e43408 (2026-11-04).
 
 Survey of t106dev @ 9f27b7fa (2026-11-03). Line numbers drift; search by name.
 Scope: `Bot/Population`, `Bot/Travel`, `BotManager`, `BotSession`, worker protocol.
