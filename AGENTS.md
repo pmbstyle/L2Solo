@@ -6,6 +6,8 @@ build step. These rules apply to every agent and every change, whoever wrote the
 
 The map of what exists, who owns each rule and which path is canonical: `planning/architecture/` (start with
 `README.md`; read the area you touch before changing it). Open work in priority order: `planning/roadmap.md`.
+Before taking an item there, put your name in its Who column and push; do not take an item someone else holds; the
+commit that finishes it deletes the row.
 
 ## Performance is a primary criterion
 
