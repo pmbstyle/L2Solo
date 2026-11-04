@@ -618,8 +618,16 @@ function compactResolveDebug(debug = {}) {
     };
 }
 
+// save()'s own parse of the stats text it bound, kept for the normalize(row)
+// that follows when the row's statsJson (the RETURNING text) is that same text:
+// parsing it again gives an equal object. Taken once (no two states share it).
+const parsedStats = new WeakMap();
+
 function normalize(row) {
-    const stats = SpotRiskPolicy.marksInSteps(SavedStats.merge(row.statsJson, row.mindJson), Date.now());
+    const parsed = parsedStats.get(row);
+    if (parsed) parsedStats.delete(row);
+    const body = parsed && parsed.statsJson === row.statsJson ? parsed.stats : row.statsJson;
+    const stats = SpotRiskPolicy.marksInSteps(SavedStats.merge(body, row.mindJson), Date.now());
     delete stats.marketTrades;
     delete stats.priceBeliefs;
     // The retired combat profile hold record (no reader).
@@ -875,10 +883,13 @@ function setSessionSnapshotsAuthority(session, saved) {
 function save(row, options = {}) {
     // ARCH-NOTE: strip retired counters even when an old caller supplies them on a new row.
     const proposedStats = parseJson(row.statsJson, {});
+    // Whether proposedStats is still the parse of the text bound below.
+    let boundParse = !!proposedStats && typeof proposedStats === 'object' && !Array.isArray(proposedStats);
     if (proposedStats.marketTrades || proposedStats.priceBeliefs) {
         delete proposedStats.marketTrades;
         delete proposedStats.priceBeliefs;
         row.statsJson = safeJson(proposedStats);
+        boundParse = false;
     }
     // A hot row belongs to the actor in the world; only markCold hands it back
     // to the cold population. A cold row proposed over it comes from a job that
@@ -894,6 +905,7 @@ function save(row, options = {}) {
     if (reconciled !== proposed) {
         row.activity = reconciled.activity;
         row.statsJson = safeJson(reconciled.stats);
+        boundParse = false;
     }
     // An async lifecycle step may still hold the inventory from before an
     // exchange. Reject it before its subsequent inventory sync restores gear.
@@ -1029,7 +1041,10 @@ function save(row, options = {}) {
         ]
     ];
     NativeWriteCheckpoint.bindRow(beforeWrite?.value, statement, row.characterId);
-    return Database.saveBotLifeState(statement, databaseOptions, row.characterId).then((result) => {
+    // The write reads the kit from the stats it binds, normalize(row) the stats
+    // it returns: both take this parse while their text is the one parsed.
+    const parsed = boundParse ? { statsJson: row.statsJson, stats: proposedStats } : null;
+    return Database.saveBotLifeState(statement, databaseOptions, row.characterId, parsed).then((result) => {
         if (result && typeof result.affectedRows === 'number' && result.affectedRows !== 1) {
             const error = new Error(`bot life state ownership conflict for ${row.characterId}`);
             error.code = 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT';
@@ -1038,6 +1053,7 @@ function save(row, options = {}) {
         }
         Metrics.recordDbFlush();
         row.statsJson = result.statsJson;
+        if (parsed) parsedStats.set(row, parsed);
         if (result.mindJson !== undefined) row.mindJson = result.mindJson;
         // The cache built from this row takes the row's revision (moved by
         // this write on a far row), not the older one the caller's state carried.
