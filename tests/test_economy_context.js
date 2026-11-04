@@ -578,7 +578,8 @@ async function run() {
     // A far bot's card with a selling leaf holds: its check reads the sale list
     // over the basics, and the card's view gets the same economy as basics
     // built anew on that state (one held-spot read for both); a moved bag gives
-    // the bag's answer; after the hold's window the check's search renews the
+    // the bag's answer; a later check with nothing moved searches nothing; an
+    // input that moved (the catalog period) makes the check's search renew the
     // hold and the view reads its answer as basics built after it do.
     {
         const Card = invoke('GameServer/Bot/Population/ColdEconomyDecision');
@@ -623,9 +624,14 @@ async function run() {
             assert.deepEqual(same.economy, same.fresh, 'the view\'s economy is the basics\' on that state');
             const moved = refresh({ ...published, inventory: { ...published.inventory, 1060: { selfId: 1060, amount: 7, stackable: true } } }, T);
             assert.deepEqual(moved.economy, moved.fresh, 'a moved bag gives the bag\'s answer');
-            const later = refresh(published, T + 31 * invoke('GameServer/World/GameTime').GAME_MINUTE_MS);
-            assert.equal(later.reads.renewed, 1, 'fixture: the window\'s end searches in the check');
-            assert.equal(later.reads.window, 1, 'fixture: by the window');
+            const minute = invoke('GameServer/World/GameTime').GAME_MINUTE_MS;
+            const quiet = refresh(published, T + 31 * minute);
+            assert.equal(reads(quiet.reads), 1, 'a later check with nothing moved reads the held spot');
+            assert.equal(Object.keys(quiet.reads).length, 1, 'with no search');
+            invoke('GameServer/Bot/AI/SpotValueTable').useFile();
+            const later = refresh(published, T + 32 * minute);
+            assert.equal(later.reads.renewed, 1, 'fixture: a turned catalog searches in the check');
+            assert.equal(later.reads['event:spawns'], 1, 'fixture: by its input');
             assert.equal(reads(later.reads), 1, 'the view reads the renewed hold anew');
             assert.deepEqual(later.economy, later.fresh, 'the view\'s economy is the renewed hold\'s');
         } finally {

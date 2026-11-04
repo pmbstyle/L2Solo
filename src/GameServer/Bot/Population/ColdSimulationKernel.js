@@ -21,8 +21,16 @@ const STEP_STALL_MS = 30000;
 // stack, entering quarantine once; repeats are only counted (status `botFaults`).
 // Distinct messages logged per failing bot; others are only counted.
 const FAULT_LOGGED_MESSAGES = 4;
-// A solo hunt window's most rounds (typically 3-10 inside its ~300 s hold).
+// A solo hunt window's most rounds: it ends at its round's events
+// (ColdSoloWindow.endOf) or its look-ahead, rarely here.
 const MAX_WINDOW_ROUNDS = 32;
+// How far past the step's clock a window's rounds run. They run in one burst
+// at the step and read the world as it stands then (crowds, prices, the
+// board), and a hot session, party or command that interrupts the window
+// lives that time again (huntedThrough). Future world state is no input an
+// event could carry: this is the simulation's look-ahead, not a window for a
+// missing event.
+const WINDOW_LEAD_MS = 300000;
 // Ready resolver promises chained back to back ran a tick's whole batch as one task (T41 profile
 // 10-26: up to 1.3 s with no turn; the heartbeat, the flush and main's acks waited behind it). Each
 // queued step and command starts on its own turn: same work, no long task.
@@ -644,7 +652,7 @@ class ColdSimulationKernel {
         this.projectResolve = typeof options.projectResolve === 'function' ? options.projectResolve : null;
         // A hunting solo step's window (T120, ColdSoloWindow), the worker's:
         // { projectRound(state, result, timestamp, plan, writtenAt),
-        // deadline(state, timestamp), readers(plan) }. A kernel built without
+        // readers(plan) }. A kernel built without
         // them (a test of another rule) has no window: a step is its one round.
         this.soloWindow = options.soloWindow || null;
         // Read by the health line (PopulationStatus.soloWindowText): solo
@@ -2377,8 +2385,8 @@ class ColdSimulationKernel {
     // its timestamp, ended, and the window's sums (the bag's loot for the
     // priority, the events and debug main reads); null when the step went stale.
     async huntWindow(source, first, plan, roundOptions, writtenAt) {
-        const { projectRound, deadline } = this.soloWindow;
-        const until = deadline(first.state, first.timestamp), readers = this.windowReaders(plan);
+        const { projectRound } = this.soloWindow;
+        const readers = this.windowReaders(plan);
         const events = [], soulCrystals = [], items = [];
         let round = first, rounds = 1, debug = {};
         const add = result => {
@@ -2391,10 +2399,13 @@ class ColdSimulationKernel {
         for (;;) {
             const after = await projectRound(round.state, round.result, round.timestamp, plan, writtenAt);
             if (!this.resolverSourceCurrent(source)) return null;
-            // Two guards bound the loop whatever endOf decides: a round cap and a
-            // round that does not move the clock (limits.md; counted in windowEnd).
-            const ended = ColdSoloWindow.endOf(round.state, after, round.result, until, readers)
+            // Three guards bound the loop whatever endOf decides: a round cap, the
+            // look-ahead (the next round due past the step's clock + WINDOW_LEAD_MS:
+            // huntedThrough stays inside it) and a round that does not move the
+            // clock (limits.md; counted in windowEnd).
+            const ended = ColdSoloWindow.endOf(round.state, after, round.result, readers)
                 || (rounds >= MAX_WINDOW_ROUNDS ? 'round_cap' : '')
+                || (Math.ceil(Number(after.timing?.nextResolveAt)) >= first.timestamp + WINDOW_LEAD_MS ? 'lead' : '')
                 || (Math.ceil(Number(after.timing?.nextResolveAt)) > round.timestamp ? '' : 'stalled');
             if (ended) {
                 // huntedThrough (ColdSoloWindow): the last round's start, the end of the credited hunt.

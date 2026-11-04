@@ -923,11 +923,13 @@ function rankedIncome(role, level, costs = { shots: 0, potions: 0 }, minGap = -7
 // prices consumables with the bot's own beliefs: those prices are no key of
 // the shared shortlist (every bot would add its own row and evict the shared
 // game-data rows), and only the ids are read, so no row objects are built.
-function rankedSpotIds(role, level, costs = { shots: 0, potions: 0 }, minGap = -7, shots = true, rewardOptions = {}) {
+// cuts: an array that takes the ranking's cut (a record only cutStands
+// reads), for a caller that holds its answer over the prices it stands on.
+function rankedSpotIds(role, level, costs = { shots: 0, potions: 0 }, minGap = -7, shots = true, rewardOptions = {}, cuts = null) {
     const { t, rates } = incomeSource();
     const skill = rewardOptions.spoilSkillLevel ?? roleSpoilLevel(role, level);
     DiagnosticConfig.developerDiagnostics && (stats.spotIdRanks += 1);
-    return rankIncome(t, rates, role, level, costs, minGap, shots, skill).map(({ index }) => t.spots[index][0]);
+    return rankIncome(t, rates, role, level, costs, minGap, shots, skill, cuts).map(({ index }) => t.spots[index][0]);
 }
 // The positive incomes of the role/level band at these consumable prices,
 // best first, ties to the spot whose level is closest to the bot's, then by
@@ -939,7 +941,7 @@ function rankedSpotIds(role, level, costs = { shots: 0, potions: 0 }, minGap = -
 // spans the widest band any reader asks (BASIS_MIN_GAP, the income route's);
 // a narrower minGap filters its rows, so the readers share one basis.
 const BASIS_MIN_GAP = -15;
-function rankIncome(t, rates, role, level, costs, minGap, shots, skill) {
+function rankIncome(t, rates, role, level, costs, minGap, shots, skill, cuts = null) {
     const basisGap = Math.min(minGap, BASIS_MIN_GAP);
     const basisKey = `${role}:${level}:${basisGap}:${shotKey(shots)}:${skill}`;
     let basis = incomeBases.get(basisKey);
@@ -986,12 +988,166 @@ function rankIncome(t, rates, role, level, costs, minGap, shots, skill) {
         if (t.spots[basis.indexes[index]][1] - level < minGap) continue;
         const income = basis.values[index * 3] - basis.values[index * 3 + 1] * costs.shots
             - basis.values[index * 3 + 2] * costs.potions;
-        if (income > 0) rows.push({ index: basis.indexes[index], income, held: income * basis.shares[index] });
+        if (income > 0) rows.push({ index: basis.indexes[index], income, held: income * basis.shares[index], at: index });
     }
     rows.sort((a, b) => b.held - a.held
         || Math.abs(t.spots[a.index][1] - level) - Math.abs(t.spots[b.index][1] - level)
         || String(t.spots[a.index][0]).localeCompare(String(t.spots[b.index][0])));
-    return rows.slice(0, 64);
+    const cut = rows.slice(0, 64);
+    cuts?.push({ t, basis, level, minGap, costs, positives: rows.length, cut });
+    return cut;
+}
+// The prices over which rankIncome's cuts (rankedSpotIds' records) keep their
+// place for the spots that matter to the caller (matters(spotId); others may
+// come and go), each price with the other as read, narrowing ranges
+// ({ shots: [low, high], potions: [low, high] } around the prices read): a spot's income (values: adena + loot, shots,
+// potions an hour) and its held income (× its share) are lines in each price,
+// so the cut is a set of line comparisons. A spot that matters in the cut
+// stays above zero and above every spot out of it (with at most 64 positive
+// spots, the cut takes them all: only once more come could it be pushed out);
+// one out of it stays out: at or below zero while the cut takes every
+// positive spot, else below every spot in it. Ties at the read price stand
+// only there; each comparison keeps a margin of a few roundings of its terms
+// at the price it reaches (keepAbove, firstMeet's grow).
+// The comparisons are linear in both prices at once: the cut stands anywhere
+// inside the hull of the two ranges (a convex set). Cost per cut and price:
+// O(n) (n: the band's spots) and, for "above every spot", the meeting of two
+// envelopes (firstMeet), O(n) per envelope corner passed inside the range.
+function cutStands(cuts, matters, ranges) {
+    for (const { t, basis, level, minGap, costs, positives, cut } of cuts) cutStand(t, basis, level, minGap, costs, positives, cut, matters, ranges);
+}
+// Scratch rows of cutStand, grown to the largest band (no allocation per call).
+let cutScratch = { inCut: new Uint8Array(0), held: new Float64Array(0), heldError: new Float64Array(0), slope: new Float64Array(0) };
+function cutStand(t, basis, level, minGap, costs, positives, cut, matters, stand) {
+    const n = basis.indexes.length, values = basis.values, shares = basis.shares;
+    if (cutScratch.inCut.length < n) {
+        cutScratch = { inCut: new Uint8Array(n), held: new Float64Array(n), heldError: new Float64Array(n), slope: new Float64Array(n) };
+    }
+    const { inCut, held, heldError, slope } = cutScratch;
+    inCut.fill(0, 0, n);
+    for (const row of cut) inCut[row.at] = 1;
+    const income = at => values[at * 3] - values[at * 3 + 1] * costs.shots - values[at * 3 + 2] * costs.potions;
+    const error = at => 8 * Number.EPSILON * (values[at * 3] + values[at * 3 + 1] * costs.shots + values[at * 3 + 2] * costs.potions);
+    // The band's spots in and out of the cut; whether one matters is asked
+    // only where its comparison would narrow a range (counts).
+    const inAll = [], outAll = [];
+    const counts = at => matters(t.spots[basis.indexes[at]][0]);
+    for (let at = 0; at < n; at++) {
+        const spot = t.spots[basis.indexes[at]];
+        if (spot[1] - level < minGap) continue;
+        (inCut[at] ? inAll : outAll).push(at);
+        const v = at * 3, gross = values[v + 1] * costs.shots + values[v + 2] * costs.potions;
+        held[at] = (values[v] - values[v + 1] * costs.shots - values[v + 2] * costs.potions) * shares[at];
+        heldError[at] = 8 * Number.EPSILON * (values[v] + gross) * shares[at];
+    }
+    const inMatters = inAll.filter(counts);
+    const full = positives > cut.length, crowdable = full || outAll.length > 0;
+    const most = list => { let top = 0; for (const at of list) if (heldError[at] > top) top = heldError[at]; return top; };
+    // [A, B, the B lines that take part]: every spot that matters in the cut
+    // above every one out of it; with a full cut every one in it above every
+    // out one that matters.
+    const pairs = [crowdable ? [inMatters, outAll, null] : null, full ? [inAll, outAll, counts] : null]
+        .filter(Boolean).map(([A, B, admit]) => ({ A, B, admit, margin: 2 * (most(A) + most(B)) }));
+    // A margin grows with the price's move: the roundings of a spot's costs at the price it reaches.
+    const growth = (list, slot) => { let top = 0; for (const at of list) top = Math.max(top, values[at * 3 + slot] * shares[at]); return 8 * Number.EPSILON * top; };
+    for (const [name, slot] of [['shots', 1], ['potions', 2]]) {
+        const x0 = costs[name];
+        let low = stand[name][0], high = stand[name][1];
+        const keep = (a, b, e, g) => { [low, high] = keepAbove(x0, low, high, a, b, e, g); };
+        for (const at of inMatters) if (low < high) keep(income(at), -values[at * 3 + slot], error(at), 8 * Number.EPSILON * values[at * 3 + slot]);
+        // With the cut taking every positive spot, one out of it that matters stays at or below zero.
+        if (!full) for (const at of outAll) {
+            if (!(low < high)) break;
+            const a = -income(at), b = values[at * 3 + slot], e = error(at), g = 8 * Number.EPSILON * b;
+            const [l, h] = keepAbove(x0, low, high, a, b, e, g);
+            if ((l !== low || h !== high) && counts(at)) { low = l; high = h; }
+        }
+        for (const list of [inAll, outAll]) for (const at of list) slope[at] = values[at * 3 + slot] * shares[at];
+        // Every spot that matters in the cut above every one out of it; with a full cut every one in it above every out one that matters.
+        for (const { A, B, admit, margin } of pairs) {
+            if (!(low < high)) continue;
+            // The B lines that come within the margin of A's least anywhere in the range (lines: their ends).
+            const grow = 2 * (growth(A, slot) + growth(B, slot));
+            let floor = Infinity;
+            const up0 = high - x0, down0 = x0 - low, ends = Number.isFinite(up0) && Number.isFinite(down0);
+            if (ends) for (const k of A) floor = Math.min(floor, held[k] - slope[k] * up0, held[k] + slope[k] * down0);
+            const near = [];
+            for (const k of B) {
+                if (ends && !(Math.max(held[k] - slope[k] * up0, held[k] + slope[k] * down0) > floor - margin - grow * Math.max(up0, down0))) continue;
+                if (!admit || admit(k)) near.push(k);
+            }
+            const up = firstMeet(A, near, held, slope, 1, margin, grow, up0), down = firstMeet(A, near, held, slope, -1, margin, grow, down0);
+            if (up === 0 || down === 0) { low = high = x0; continue; }
+            high = Math.min(high, x0 + up * (1 - 1e-9));
+            low = Math.max(low, x0 - down * (1 - 1e-9));
+        }
+        stand[name] = [Math.min(low, x0), Math.max(high, x0)];
+    }
+}
+// The range [low, high] around x0, narrowed so that a + b·d stays above
+// 2(e + g·|d|) for every move d from x0 in it (e: a few roundings of the
+// comparison's terms at x0, g: their growth per unit of the price); a
+// comparison inside its margin at x0 stands only there.
+function keepAbove(x0, low, high, a, b, e, g) {
+    if (!(a > 2 * e)) return [x0, x0];
+    const up = b - 2 * g, down = -b - 2 * g;
+    if (up < 0) high = Math.min(high, x0 + (a - 2 * e) / -up);
+    if (down < 0) low = Math.max(low, x0 - (a - 2 * e) / -down);
+    return [low, high];
+}
+// The first move u ≥ 0 (the price up for sign 1, down for -1) at which the
+// least of A's lines (held - sign·slope·u) comes within margin + grow·u of
+// the most of B's: 0 when it is there already, Infinity when never. It
+// follows the two envelopes corner by corner (the least of A, the most of B,
+// each line taking over where it crosses the one before, the steeper one of
+// lines crossing at one point), up to the move limit (Infinity past it: the
+// caller's range ends there; a line of B that stays below A's least up to it
+// never takes part). A line enters an envelope once: at most |A| + |B|
+// corners (past them, rounding: the move reached, no meeting found below it).
+function firstMeet(A, B, held, slope, sign, margin, grow, limit) {
+    if (!A.length || !B.length) return Infinity;
+    // Slopes in the move's direction: a line is held - fall·u.
+    let a = A[0], b = -1, floor = Infinity;
+    for (const k of A) {
+        const v = held[k], fall = sign * slope[k], va = held[a];
+        if (v < va || (v === va && fall > sign * slope[a])) a = k;
+        if (Number.isFinite(limit)) floor = Math.min(floor, v, v - fall * limit);
+    }
+    // Only a line of B that comes within the margin of A's least somewhere up to the limit can meet it.
+    let near = B;
+    if (Number.isFinite(limit)) {
+        near = [];
+        const reach = floor - margin - grow * limit;
+        for (const k of B) if (Math.max(held[k], held[k] - sign * slope[k] * limit) > reach) near.push(k);
+        if (!near.length) return Infinity;
+    }
+    for (const k of near) {
+        if (b < 0 || held[k] > held[b] || (held[k] === held[b] && sign * slope[k] < sign * slope[b])) b = k;
+    }
+    let u = 0;
+    for (let corner = 0; corner <= A.length + near.length && u <= limit; corner++) {
+        const fa = sign * slope[a], fb = sign * slope[b];
+        const gap = (held[a] - fa * u) - (held[b] - fb * u), room = gap - margin - grow * u;
+        if (!(room > 0)) return u;
+        const closing = fa - fb + grow;
+        const meets = closing > 0 ? u + room / closing : Infinity;
+        let nextA = Infinity, na = a, nextB = Infinity, nb = b;
+        for (const k of A) {
+            const falls = sign * slope[k] - fa;
+            if (!(falls > 0)) continue;
+            const cross = (held[k] - held[a]) / falls;
+            if (cross >= u && (cross < nextA || (cross === nextA && sign * slope[k] > sign * slope[na]))) { nextA = cross; na = k; }
+        }
+        for (const k of near) {
+            const rises = fb - sign * slope[k];
+            if (!(rises > 0)) continue;
+            const cross = (held[b] - held[k]) / rises;
+            if (cross >= u && (cross < nextB || (cross === nextB && sign * slope[k] < sign * slope[nb]))) { nextB = cross; nb = k; }
+        }
+        if (meets <= nextA && meets <= nextB) return meets > limit ? Infinity : meets;
+        if (nextA <= nextB) { u = nextA; a = na; } else { u = nextB; b = nb; }
+    }
+    return u > limit ? Infinity : u;
 }
 // The share of its row's kills one bot keeps on a spot full of hunters
 // (huntShare): the bots the spot has room for (LevelingRoutes.roomForSpot,
@@ -1023,10 +1179,11 @@ function kitSurface(role, level) {
     return null;
 }
 
-// The table's revision as of now. The spot catalog is checked at once; rates and rewards are seen at the
-// table's own next read (rates are a restart input; the clan worker's rate switch comes with its NPC snapshot).
+// The table's revision as of now: the spot catalog, rewards, rates and the table file are checked at once
+// (incomeSource), so a reader keyed on it is not moved by the table's own next read (the clan worker's rate
+// switch comes with its NPC snapshot).
 function revision() {
-    if (catalogMoved(spotSource() || EMPTY_SPOTS)) incomeSource();
+    incomeSource();
     return tableRevision;
 }
 
@@ -1040,4 +1197,4 @@ function useFile(next = DEFAULT_FILE) {
     clearIncomeBases();
 }
 
-module.exports = { value, kills, cycle, production, huntShare, geodataProfile, kitSurface, roleClass, lineClass, roleFor, roleSpoilLevel, spotLevel, referenceLevel, roles, revision, best, rankedIncome, rankedSpotIds, useFile, useSpots, expGapFactor, cacheStats, DEFAULT_FILE };
+module.exports = { value, kills, cycle, production, huntShare, geodataProfile, kitSurface, roleClass, lineClass, roleFor, roleSpoilLevel, spotLevel, referenceLevel, roles, revision, best, rankedIncome, rankedSpotIds, cutStands, keepAbove, useFile, useSpots, expGapFactor, cacheStats, DEFAULT_FILE };

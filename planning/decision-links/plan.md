@@ -38,7 +38,7 @@ Inputs marked (E) have an event today, (–) have none, (S) need a significance 
 | Pricing | price(id), persona | board beliefs per item (E market watch), persona traits (E), frustration (E observation) | `EconomyContext.pricing`, `PriceBelief.prior` per build | rebuilt per build; board reads not keyed on item revision |
 | Route rows | trip table per town | activity class (shopping / shop trip / other), region while shopping, loc where read, marketReturn, karma flip, scroll present (E state) | `EconomicTrip.key` = `routeInputs` (cb292781) | was keyed on raw activity + scroll count |
 | Matchup profiles | profile array + verdict caches | kit profile object (E build), shot kind loaded, servitor (mp, summon, cooldowns), timestamp | `BotTargetMatchup.stateProfiles` ring of 8 (c2d035d2) | ring misses basics→forState across an await; verdicts die with the array |
-| Income search | held earning spot, row, hour | level/kit/matchup (E build, combat), recovery level cap (E recovery), loaded shot kind (–, beginner shots run out silently), origin spot/loc and samples/exclusions (E occupation), party (E relations), consumable prices (exact, the reader's price), `economicHunt` gate (E), money weight (the weights the answer stands over), frustration (its range), crowd/room at candidate spots (the crowd key's replay), risk exclusions (`exclusionVersion`), spawn catalog period (table revision) | `holdRead` on `incomeMoved`, no window | reads its own previous output (money[0], ECO-15) |
+| Income search | held earning spot, row, hour | level/kit/matchup (E build, combat), recovery level cap (E recovery), loaded shot kind (–, beginner shots run out silently), origin spot/loc and samples/exclusions (E occupation), party (E relations), consumable prices (the reader's, inside the hull its answer is replayed over), `economicHunt` gate (E), money weight (the weights the answer stands over), frustration (its range), crowd/room at candidate spots (the crowd key's replay), risk exclusions (`exclusionVersion`), spawn catalog period (table revision) | `holdRead` on `incomeMoved`, no window | reads its own previous output (money[0], ECO-15) |
 | Hunt / death / karma hours | hunt income, deathHours, karmaHours, riskWeight | income route + onSpotShare (E observation), exp/level (E), karma (E), lostGearHours (bag × prices, PK only) | `foundation` | rebuilt with the whole foundation |
 | Kit and stock targets | shots/potions/scrolls targets, survival reserve, bag hours | live bag counts (E supply/bag), `visitEvery` (E town), slots and sale candidates (E bag), restCap = wallet (E money: not wired, kept foundation keeps a stale restCap) | `foundation` → `kitReader` | needs only the bag/money, rebuilt with the income search |
 | Source facts | where to get each wished item | level/kill band/spoiler (E build), sourceRouteReader (exclusions, economicHunt, grouped), trips + hourAdena, spot values (crowd –, samples E, deathHours/riskWeight drift every round) | `WishProviders.sourcePath` → `GearAcquisitionPlanner.sourceFacts` per build, ~9 % | values move every round: hold gains < 0.5 % until crowd/risk are versioned |
@@ -93,19 +93,15 @@ Inputs marked (E) have an event today, (–) have none, (S) need a significance 
 2. Per-bot input versions instead of section masks: bag, money, kit, level, occupation, relations, market. A link
    stores the versions it read; `DecisionSections.COMPUTED` becomes these per-link input sets.
 3. Per-spot versions (crowd, risk); then `HOLD_MS` and other windows go.
-4. Done (branch ivan/links-step4-planner): planner answers per mode on the values they read
-   (`ColdSimulationWorker.plannerInputKey`; finished cards outside the 64 working contexts; a state that reads the same
-   keeps the job, in flight too); a crafter's MP as the band of its craft checks (`WealthCraftPolicy.craftMpBand`:
-   the card's craft refresh, the planner keys, `crafter_mp`); the after-round action on the facts of the last action
-   ask (`ColdEconomyPlan.edgesSince`, the bot's baseline at the step's commit). Open: near, refresh and meeting stay on
-   the state object (their economy reads memory rows, crowd and goals: step 2); the action's key holds the step clock
-   (it reads the clock); a workshop card serves 30 game min (`WORKSHOP_SERVE_MS`: the demand forecasts age with no event, debt.md 25).
    Income search done: `HOLD_MS` deleted. `EquipmentIncomeRoute.search` returns with its answer what it stands on
-   (`stands`): the shot and potion prices, exact (they also cut the band's first-64 list over rows the search never
-   scores); a range of frustration (a line in each score, as the weight); the crowd key: the candidates that could
-   change the answer anywhere in the box (weight range × frustration range × any crowd, the pick's own hunters up to
-   the count where it loses), with the score of each as a function of its hunters (huntShare scales a table row, an
-   observed row's deaths), replayed at each check against the counts now (`crowdStands`). The catalog period is the
+   (`stands`): the shot and potion prices with the range of each its answer is replayed over (a row's costs are a
+   line in each price; the band's first-64 cut, read over rows the search never scores, keeps its place for the spots
+   that move the candidates: `SpotValueTable.cutStands`; linear in both prices, so the hull of the two ranges); a
+   range of frustration (a line in each score, as the weight); the crowd key: the candidates that could change the
+   answer anywhere in the box (weight range × frustration range × the prices' hull × any crowd, the pick's own
+   hunters up to the count where it loses), with the score of each as a function of its hunters (huntShare scales a
+   table row, an observed row's deaths) and the prices, replayed at each check against the counts and prices now
+   (`crowdStands`). The catalog period is the
    spot table's revision. Samples stay on the observation rule (not linear: rates, calibration inside the crowd cut,
    deathHours over the hunt's exp). The death recovery's target level cap is a version (`recovery`) and a fact
    raised both ways. The solo hunt window lost the hold's deadline: its bound is the kernel's own look-ahead
@@ -113,8 +109,13 @@ Inputs marked (E) have an event today, (–) have none, (S) need a significance 
    watch (the money drift, the samples and income_moved wait at work, Reaction). Counted: `incomeHold`
    event:<input>, `income_crowd:kept|searched`, `windowEnd` lead/market. Left: the other windows of the census
    below.
-4. Planner results keyed by input versions per mode (one slot per bot per mode, outside the 64-slot pool for finished
-   cards); `edges` against a baseline of the facts the action reads (MP thresholds included).
+4. Done (branch ivan/links-step4-planner): planner answers per mode on the values they read
+   (`ColdSimulationWorker.plannerInputKey`; finished cards outside the 64 working contexts; a state that reads the same
+   keeps the job, in flight too); a crafter's MP as the band of its craft checks (`WealthCraftPolicy.craftMpBand`:
+   the card's craft refresh, the planner keys, `crafter_mp`); the after-round action on the facts of the last action
+   ask (`ColdEconomyPlan.edgesSince`, the bot's baseline at the step's commit). Open: near, refresh and meeting stay on
+   the state object (their economy reads memory rows, crowd and goals: step 2); the action's key holds the step clock
+   (it reads the clock); a workshop card serves 30 game min (`WORKSHOP_SERVE_MS`: the demand forecasts age with no event, debt.md 25).
 5. Wish projection by node: rebuild only the item nodes whose inputs moved (price of that item, its source facts, the
    wallet cut), keep the rest.
 6. (Dropped, see below: one rebuild per bot after an update is the honest cost.)
@@ -147,12 +148,10 @@ Expected: −12-17 s per 15-min window (2-3 % of the worker). The large costs ar
 
 ## Step 3 list: time windows standing in for events (census 2026-11-04)
 
-None has a limits.md row or a debt line naming its missing event (except TownNavigation 120 s). Biggest work first
+None has a limits.md row or a debt line naming its missing event (except TownNavigation 120 s and the gear party route). Biggest work first
 (src/GameServer/...): party member goal review every 60 s (`PopulationService` ~476, `GoalPlanner` ~22, `GoalService` ~41: the inputHash
 already names the inputs); `PartyRequestPlanner` reviewAt + partyWaitReplanMs 5 min; `PopulationService` phase policy
-10 s (POP-24: 0.003 % of main, kept); party income review 5 min (`PartyGoalPolicy` ~62,
-`CraftMaterialParty` ~202); REVIEW_MS 5-min holds (`CraftMaterialParty`, `PartyIncomeComparison`: keys miss kit,
-spoiler, route permission); `PartySessionReview` 20/5 min; +10/30 s step polls in `BackgroundResolver`
+10 s (POP-24: 0.003 % of main, kept); +10/30 s step polls in `BackgroundResolver`
 (~2543-2699), `BackgroundPartyResolver` (~189-355), `ClanPartyDuty` waiting on outcomes that already fire;
 `ColdMarketService` RETRY_DELAY_MS 15 min (the buyer wake is half-dead: `GoalExecutor` ~43 still refuses until the
 stamp); 30-min holds in `ColdShotEconomyService`, `ItemDisposition` ~394, `WishProviders` ~663 (its preparing and
@@ -160,13 +159,14 @@ wealth craft rows; the recipe investment is event-driven), `CombinedErrandPolicy
 `ClanActionService`, `ClanEquipmentService`), `ClanGoalCandidateService` 30 s TTL, `ClanWarehouseService` 1 h keyed by
 clan only, clan runtime 5 s DB re-reads; hot AI scans: the 150 ms party threat projection (AI-14; the loot scan now reads only a
 party's own drops, the threat scan only NPCs targeting a member), `BotSupportPlanner` 0.25-1 s, `HotBackgroundParty`
-2 s (≤ 0.01 % of main, 2026-11-04 hot run); `HotActorLodPolicy` status 3/15 s (AI-15; its 8/10 s holds are hysteresis, visible combat ends with its stance); `GearAcquisitionPlanner` 1-4 h cooldowns; ~15 small ones with an existing revision not in the key.
+2 s (≤ 0.01 % of main, 2026-11-04 hot run); `HotActorLodPolicy` status 3/15 s (AI-15; its 8/10 s holds are hysteresis, visible combat ends with its stance); `GearAcquisitionPlanner` party route set aside 1 h (`PARTY_ROUTE_RETRY_MS`, limits row and debt line: who could join has no event; the other set-aside routes wake on level, weapon grade and party); ~15 small ones with an existing revision not in the key.
 Done 2026-11-05 (branch ivan/market-roll-windows): the sale retry (`ColdMarketListingService` 30 min) is the goods
 and buyers the last visit tried; `MarketDemandIndex` WANTED_TTL and its 15-min re-persist gave way to clear events
 (only a wish-only want keeps the window, ECO-16); `CraftMarketReview` 15/2 min reviews on its facts; the listing roll
 stands on item facts with held dispositions.
-Unclear (time may be the real input): hunt evidence aging 6 h, "no progress over N" rules, LLM policy TTL, ColdPve
-10 min, clan rescue duration. Also found: `MarketBuyerActivity.refresh` is never called (its score is dead). ~140
+Unclear (time may be the real input): hunt evidence aging 6 h, "no progress over N" rules (`PartySessionReview`
+grace, patience and 10-min recent progress; `GearAcquisitionPlanner` craft stall 2-4 h, `acquisitionCooldown`), LLM policy TTL, ColdPve 10 min, clan rescue duration. `PartySessionReview`
+hears relation decay only at the members' next memory, war or social revision. Also found: `MarketBuyerActivity.refresh` is never called (its score is dead). ~140
 scheduling/budget limits (B) have no limits.md row.
 
 ## Step 5 staged and a measurement note (design 2026-11-04)

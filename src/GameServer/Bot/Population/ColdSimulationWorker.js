@@ -236,6 +236,9 @@ function changeWorkshop(key, row) {
 }
 const EDGE_STEPS = 64;
 const WORK_STAGES = Object.freeze(['stock', 'recipe', 'ingredient', 'owned', 'quote', 'trip', 'exit', 'without', 'success', 'utility', 'candidate', 'funding', 'edge']);
+// A workshop card's window: the demand forecasts' clock decay has no event
+// (debt.md 25); 30 game min (5 real min) is ~8% demand drift.
+const WORKSHOP_SERVE_MS = 30 * invoke('GameServer/World/GameTime').GAME_MINUTE_MS;
 // A planner job's inputs as one value (ColdOccupationPlanner inputKey), by mode:
 // - wish: the route table's inputs (EconomicTrip.key): the rows read nothing else.
 // - occupation (a crafter's workshop): the state's values without its commit
@@ -250,8 +253,8 @@ const WORK_STAGES = Object.freeze(['stock', 'recipe', 'ingredient', 'owned', 'qu
 //   exits read through the demand forecasts (MarketTradeDemand: the trades of
 //   an item decay by an e-fold per uptime hour, with no event between two
 //   trades) and through a combat profile's effects when the state stores no
-//   max MP: a finished workshop serves for the earning hold's window
-//   (EconomyContext.HOLD_MS, servesUntil; limits.md "Occupation planner").
+//   max MP: a finished workshop serves for its own window
+//   (WORKSHOP_SERVE_MS, servesUntil; limits.md "Occupation planner").
 // - action, showcase, craft_market: the same with HP (and the exact MP of a bot
 //   that rests for mana: SurvivalFloor's cast costs), the step's stock target,
 //   the step's economy (the object the step built) and the step clock, which
@@ -270,6 +273,16 @@ const objectSerials = new WeakMap();
 let nextObjectSerial = 0;
 const serialOf = value => value && typeof value === 'object'
     ? objectSerials.get(value) ?? (objectSerials.set(value, ++nextObjectSerial), nextObjectSerial) : 0;
+// The state's text per variant (stateValues: [without HP, with HP]), built
+// once per state object: a state is replaced, not edited (the near publish's
+// mind merge drops its entry). Held as long as the state is (the record's
+// state of a bot holding a workshop card: one text, 6-24 KB).
+const stateTexts = new WeakMap();
+function stateText(state, withHp) {
+    let texts = stateTexts.get(state);
+    if (!texts) stateTexts.set(state, texts = [null, null]);
+    return texts[+withHp] ??= stateValues(state, withHp);
+}
 function stateValues(state, withHp) {
     const mp = withHp && invoke('GameServer/Bot/AI/BotRoles').shouldRestForMana(state) ? state.vitals?.mp
         : WealthCraftPolicy.craftMpBand(CraftEligibility.craftLevelFor(state), state.vitals?.mp);
@@ -277,15 +290,14 @@ function stateValues(state, withHp) {
     const stats = state.stats && state.stats.wishAdvisory !== undefined ? { ...state.stats, wishAdvisory: undefined } : state.stats;
     return JSON.stringify({ ...state, ...STATE_STAMPS, vitals, stats });
 }
-// values: the state's text (stateValues) when the caller already has it.
-function plannerInputKey(input, values = null) {
+function plannerInputKey(input) {
     const mode = input.mode || 'occupation';
     if (mode === 'wish') return input.routeKey;
     const beside = `${input.assetsKey}|${Number(input.buyOrderEscrow || 0)}|${input.sourceReady ? 1 : 0}|${input.recipeBook ?? ''}|${input.knownShotRecipes ?? ''}`;
     if (IDENTITY_MODES.has(mode)) return `${serialOf(input.state)}|${beside}|${Number(input.pending || 0)}|${input.meeting?.token ?? ''}`;
     const clock = CLOCK_MODES.has(mode);
     const text = JSON.stringify([input.routeKey, beside, clock ? [Number(input.timestamp), serialOf(input.economy), input.stock ?? null] : null])
-        + (values ?? stateValues(input.state, clock));
+        + stateText(input.state, clock);
     return `${fnv1a32(text)}.${fnv1a32(text, 0x01000193)}.${text.length}`;
 }
 const occupationPlanner = new ColdOccupationPlanner({
@@ -302,7 +314,7 @@ const occupationPlanner = new ColdOccupationPlanner({
     // same on (kernel.states.set rebases it).
     ownCurrent: (id, input) => !shuttingDown && kernel?.states.get(id)?.state === input.sourceState,
     inputKey: plannerInputKey,
-    servesUntil: input => (input.mode || 'occupation') === 'occupation' ? Number(input.timestamp) + EconomyContext.HOLD_MS : Infinity,
+    servesUntil: input => (input.mode || 'occupation') === 'occupation' ? Number(input.timestamp) + WORKSHOP_SERVE_MS : Infinity,
     capture: (id, input, read, readScope) => {
         const book = RecipeBookCodec.unpack(input.recipeBook);
         const exactReads = input.mode === 'meeting' ? new Map() : null;
@@ -686,7 +698,9 @@ const occupationPlanner = new ColdOccupationPlanner({
             // mind keys the body takes and the post and raise it answers.
             // The published packet moves the record's mind, as the far step's merge does,
             // so the next post's events compare against it and a raise is taken once.
+            // It edits the record's state in place: its kept key text goes (stateText).
             Object.assign(owner.state.stats ||= {}, workshop.statsPacket);
+            stateTexts.delete(owner.state);
             owner.nearRoute = { key: input.routeKey, rows: workshop.routeRows };
             send('ready', { phase: 'economy_decided', characterId: id, economyDecision: workshop.decision,
                 near: { statsPacket: workshop.statsPacket, shotRestock: workshop.shotRestock, personalCraft: workshop.personalCraft,
@@ -1761,7 +1775,7 @@ function startKernel(config = {}) {
             // original economic plan after the meeting releases the actor.
             const kitMoved = DecisionSections.kitMoved(state, projected);
             if (raidPreparing || state.stats?.tradeMeeting) return { state: projected,
-                durable: Object.keys(durable).length ? durable : null, kitMoved };
+                durable: Object.keys(durable).length ? durable : null, kitMoved, ...(actionBaseline ? { actionBaseline } : {}) };
             const asked = economyEdges && economy ? await askAction(projected, timestamp,
                 { stock: economy.stock('shots'), economy, caller: `edges_${economyEdges}` }) : null;
             const preparedAction = asked?.plan || null;
@@ -1804,10 +1818,15 @@ function startKernel(config = {}) {
             // point and what follows it (ColdSoloWindow, the window's end has them).
             projectRound: (state, result, timestamp, plan, writtenAt) => LifeStateProjector.prepareResolve(state, result,
                 { ...roundProjection(state, timestamp, writtenAt, plan), statsPacket: plan.statsPacket, statsPacketBeforeResolve: true }),
-            deadline: (state, timestamp) => EconomyContext.holdEndsAt(state, timestamp),
             readers: plan => ({
                 edges: (before, after) => stockEdges(before, after, plan.economy),
                 moneyBound: after => DecisionSections.moneyReached(after, after.stats?.wishSections, escrowFor(after.characterId)),
+                // The soft point's market watch (heard at work), against the board mirror.
+                market: after => {
+                    const board = boardReady();
+                    return !!board && Reaction.hears('market', Reaction.place(after))
+                        && DecisionSections.marketCrossed(board, after.stats?.wishSections?.marketWatch, Number(after.characterId));
+                },
                 feasible: after => {
                     const leaf = plan.economy.network?.activity, failed = EconomyContext.leafCheck(after, leaf, {}, { heldUnits: heldAtStep(plan) });
                     return !failed || !Reaction.hears(failed.link, Reaction.place(after));
@@ -1957,7 +1976,9 @@ function startKernel(config = {}) {
                 // economy: worker-local, the step's one decision; the
                 // projection after the round reads it (never posted).
                 return { statsPacket: stepStatsPacket(state, refreshed.economy, timestamp), economy: refreshed.economy,
-                    ...(asked?.baseline ? { actionBaseline: asked.baseline } : {}),
+                    // The facts of the step's last action ask: the card's own or its craft refresh's.
+                    ...(asked?.baseline || refreshed.actionBaseline
+                        ? { actionBaseline: asked?.baseline || refreshed.actionBaseline } : {}),
                     ...(occupation?.economyPlan || refreshed.economyPlan
                         ? { economyPlan: occupation?.economyPlan || refreshed.economyPlan } : {}),
                     activityPick: { activity: leaf.activity, spotId: leaf.spotId, npcId: leaf.npcId },
@@ -2034,8 +2055,10 @@ function startKernel(config = {}) {
             const stepPlan = {
                 ...(preparedOccupation?.economyPlan || nullReuse && refreshed?.economyPlan
                     ? { economyPlan: preparedOccupation?.economyPlan || refreshed.economyPlan } : {}),
-                // Worker-local: the facts of the step's action ask (projectResolve carries them on).
-                ...(asked?.baseline ? { actionBaseline: asked.baseline } : {}),
+                // Worker-local: the facts of the step's last action ask, its own or
+                // a kept card's craft refresh (projectResolve carries them on).
+                ...(asked?.baseline || nullReuse && refreshed?.actionBaseline
+                    ? { actionBaseline: asked?.baseline || refreshed.actionBaseline } : {}),
                 statsPacket,
                 economy,
                 activityPick: economy.network.activity ? { activity: economy.network.activity.activity,
@@ -2083,19 +2106,16 @@ function startKernel(config = {}) {
             // same on the new state goes on, finished or in flight (main
             // echoing the bot's own commit, a catalog page resending the row);
             // any other is dropped: a near, refresh or meeting job (keyed on
-            // the state object), a finished one keyed on the step clock. The
-            // state's text is built once per variant (with HP or without).
-            const routeKey = EconomicTrip.key(entry.state), texts = [null, null];
+            // the state object), a finished one keyed on the step clock.
+            const routeKey = EconomicTrip.key(entry.state);
             for (const held of occupationPlanner.entriesOf(id)) {
                 const keep = held.mode === 'wish' ? routeKey === held.fingerprint
                     : !IDENTITY_MODES.has(held.mode) && !(held.done && CLOCK_MODES.has(held.mode));
-                const clock = CLOCK_MODES.has(held.mode);
                 const incoming = !keep ? null : held.mode === 'wish'
                     ? { ...held.input, state: EconomicTrip.frame(entry.state), sourceState: entry.state, routeKey }
                     : { ...held.input, state: entry.state, sourceState: entry.state, routeKey,
                         routeRows: held.input.routeKey === routeKey ? held.input.routeRows : null };
-                if (incoming && (held.mode === 'wish'
-                    || plannerInputKey(incoming, texts[+clock] ??= stateValues(entry.state, clock)) === held.fingerprint)) {
+                if (incoming && (held.mode === 'wish' || plannerInputKey(incoming) === held.fingerprint)) {
                     occupationPlanner.rebase(held, incoming);
                 } else if (held.mode === 'wish') cancelRoute(id);
                 else occupationPlanner.cancel(id, held.mode);

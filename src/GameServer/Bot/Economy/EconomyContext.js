@@ -13,7 +13,6 @@ const Valuation = require('./EconomicValuation');
 const Providers = require('./WishProviders');
 const Sections = require('./DecisionSections');
 const Reaction = require('./Reaction');
-const GameTime = invoke('GameServer/World/GameTime');
 const Funding = require('./PurchaseFunding');
 const Packet = require('./StatsPacket');
 const SpotRiskPolicy = require('../Population/SpotRiskPolicy');
@@ -1016,17 +1015,18 @@ function incomeRouteFor(state, deps, timestamp, price, keep) {
 // (Sections.LINK_INPUTS incomeSearch, incomeVersions) and the money weights
 // its answer stands over (EquipmentIncomeRoute.search's weights: the spot
 // value's money weight, SpotEconomics.moneyWeight, is the packet's hour times
-// its money price, the gap wish's ratio, which every build publishes anew).
-// Main's goal revision is no input of the search. found: the search's
-// { route, weights }. why: what asked it (an input, 'window', 'first': no
-// held answer), for the link counts. moved: the hold a later search found
-// instead, until the build is rebuilt; afterGoal: that search followed the
-// weighing (the economic hunt's turn or the money weight), not the window or
-// another input.
+// its money price, the gap wish's ratio, which every build publishes anew),
+// and what else it stands on (search's stands: the prices it read, its
+// frustration range, its crowd key). Main's goal revision is no input of the
+// search. found: the search's { route, weights, stands }. why: what asked it
+// (an input, 'first': no held answer), for the link counts. moved: the hold a
+// later search found instead, until the build is rebuilt; afterGoal: that
+// search followed the weighing (the economic hunt's turn or the money
+// weight), not another input.
 function newHold(found, at, versions, why, afterGoal = false) {
     const route = found.route;
     return { at, route: route ? { spot: route.spot, row: route.row, earning: route.earning } : null,
-        versions, weights: found.weights, why, moved: null, afterGoal };
+        versions, weights: found.weights, stands: found.stands ?? null, why, moved: null, afterGoal };
 }
 // The earning spot search's input versions on a state (its key's discrete and
 // continuous inputs). view: the build's stateView (heldReadsOf), else the part
@@ -1040,53 +1040,50 @@ const OBSERVATION = Sections.sectionBit('observation');
 // answer's search (a version; the money weight outside the weights the
 // answer stands over, or the packet's own hour where the band has none to
 // count in), else the observation bit of mask (the bot's own sample values,
-// which no version carries), else '': inside its key a search returns the same
-// answer. The weight reads the packet's hour, the last search's own earning
-// (ECO-15): a move a search makes is heard after the build that publishes it.
-function incomeMoved(answer, versions, mask = 0) {
+// which no version carries: heard beyond the bot's own error, the
+// observation rule), else what the answer stands on (live: the state now and
+// the reader's price function, null for a reader with none;
+// EquipmentIncomeRoute.standsMoved: 'prices', 'frustration', 'crowd'), else
+// '': inside its key a search returns the same answer. The weight reads the
+// packet's hour, the last search's own earning (ECO-15): a move a search
+// makes is heard after the build that publishes it.
+function incomeMoved(answer, versions, mask = 0, live = null) {
     return Sections.movedInput('incomeSearch', answer.versions, versions, 0, weightBounds(answer))
-        || (Number(mask) & OBSERVATION ? 'observation' : '');
+        || (Number(mask) & OBSERVATION ? 'observation' : '')
+        || (live ? IncomeRoute.standsMoved(answer.stands, live.state, versions.weight, live.price) : '');
 }
 // The key of an earning-spot search made outside the hold (the party
 // comparison's own solo search, PartyIncomeComparison.soloChoice): the same
 // inputs as the held spot's (incomeVersions on the searched state, options:
-// the search's spots and mode) and the weights its answer stands over. One
+// the search's spots, mode and price) and what its answer stands on. One
 // rule with the hold: searchMoved names the input that moved since ('' none);
 // the observation bit, which only a build hears, the caller reads by the
 // observation event's own rule.
 function searchInputs(state, found, at, options) {
-    return { versions: incomeVersions(state, options, at), weights: found.weights };
+    return { versions: incomeVersions(state, options, at), weights: found.weights, stands: found.stands ?? null };
 }
 function searchMoved(inputs, state, timestamp, options) {
-    return incomeMoved(inputs, incomeVersions(state, options, timestamp));
+    return incomeMoved(inputs, incomeVersions(state, options, timestamp), 0, { state, price: options.price });
 }
 // A search of this moment read every event: the bits ask none of it again.
 const eventsFor = (answer, mask, timestamp) => answer.at === timestamp ? 0 : mask;
 const spotOf = route => route ? String(route.spot.id) : null;
-// The held earning spot's inputs with no event (crowd and room, consumable
-// and loot prices, the spawn catalogue period; LINK_INPUTS incomeSearch
-// events) are read again at most every 30 game minutes, on any read
-// (holdRead): a search of its own.
-const HOLD_MS = 30 * GameTime.GAME_MINUTE_MS;
 // Held-spot reads by verdict (the worker status line): kept, no held build,
 // a held null (the search found no route), renewed (a search chose the held
 // spot again, in place), moved (it chose another, or none: each read until
-// the rebuild), window (a search the window asked, among renewed and moved),
-// event: the searches each key input asked (incomeMoved: a build's own, or
-// one a read asked, among renewed and moved); party: the party comparison's
-// solo side, kept or missed (the comparison searches for itself).
-const holdStats = { kept: 0, none: 0, unrouted: 0, renewed: 0, moved: 0, window: 0, partyKept: 0, partyMissed: 0, event: {} };
+// the rebuild), event: the searches each key input asked (incomeMoved: a
+// build's own, or one a read asked, among renewed and moved); party: the
+// party comparison's solo side, kept or missed (the comparison searches for
+// itself).
+const holdStats = { kept: 0, none: 0, unrouted: 0, renewed: 0, moved: 0, partyKept: 0, partyMissed: 0, event: {} };
 const countHoldEvent = input => { holdStats.event[input] = (holdStats.event[input] || 0) + 1; };
 function incomeHoldStats() { return { ...holdStats, event: { ...holdStats.event } }; }
-const holdDueAt = hold => hold.at + HOLD_MS;
 // Why the hold's answer asks a search now: an input of its key moved
-// (incomeMoved), the window ended ('window'), or '' (it holds).
-function holdDueWhy(answer, versions, mask, timestamp) {
-    return incomeMoved(answer, versions, eventsFor(answer, mask, timestamp)) || (timestamp >= holdDueAt(answer) ? 'window' : '');
+// (incomeMoved), or '' (it holds). No time: every input the search reads has
+// a version, an event bit, an exact value or a range (decision links step 3).
+function holdDueWhy(answer, versions, mask, timestamp, live) {
+    return incomeMoved(answer, versions, eventsFor(answer, mask, timestamp), live);
 }
-// When the bot's held spot is searched again: a plan deadline of a solo hunt
-// window (ColdSoloWindow); a hold another search moved is due now, a bot with
-// none counts its window from `timestamp`.
 // The search the hold's answer comes from (its time; a moved hold's, the
 // search that moved it), null without a hold: the party comparison names
 // its solo side by it (PartyIncomeComparison.soloChoice), so a reader keyed on
@@ -1095,24 +1092,19 @@ function holdAnswerAt(state) {
     const hold = cache.get(`character:${Number(state.characterId) || 0}`)?.plan?.hold;
     return hold ? (hold.moved || hold).at : null;
 }
-function holdEndsAt(state, timestamp) {
-    const hold = cache.get(`character:${Number(state.characterId) || 0}`)?.plan?.hold;
-    if (hold?.moved) return timestamp;
-    return holdDueAt(hold || { at: timestamp });
-}
 // The one hold (decision 10-30): the answer of the search the bot's held build
 // made (a route or none), kept as found: no search and no matchup per read
 // (10-31: re-judging the held spot per read cost more than the ranking it
 // saved). A build that rebuilds its foundation searches when an input of the
 // key moved (deps.searchIncome); any other read whose key moved
 // (holdDueWhy: options.versions, read here when not given; options.mask: the
-// build's sections, the observation bit among them) or whose window ended
-// (HOLD_MS, on every path: basics here, a build through holdCheck) asks one
-// full search with no rebuild: the same answer renews the hold in place (a
-// rebuild per window doubled the wish projection, 10-31); another one moves
-// it: reads return that answer under its own key and the held build and its
-// card refuse (heldSpotMoved), so the next decision point rebuilds the
-// foundation on it. Returns { route, searched, hold }, or null: no held build
+// build's sections, the observation bit among them; options.price, the
+// prices it stands on; the crowd key; on every path: basics here, a build
+// through holdCheck) asks one full search with no rebuild: the same answer
+// renews the hold in place (a rebuild per renewal doubled the wish
+// projection, 10-31); another one moves it: reads return that answer under
+// its own key and the held build and its card refuse (heldSpotMoved), so the
+// next decision point rebuilds the foundation on it. Returns { route, searched, hold }, or null: no held build
 // (the caller searches). The party read never searches: a hold it cannot
 // serve (none, a held null: another question than a solo route, or due) is a
 // miss, and the comparison's own search asks with its options, which must not
@@ -1124,11 +1116,11 @@ function holdRead(state, options) {
     const timestamp = Number(options.timestamp) || Date.now();
     const answer = hold.moved || hold;
     const versions = options.versions || incomeVersions(state, options, timestamp);
-    const why = holdDueWhy(answer, versions, options.mask, timestamp);
+    // The party read has no prices of its own: the hold's owner hears them.
+    const why = holdDueWhy(answer, versions, options.mask, timestamp, { state, price: party ? null : options.price });
     if (!why) return heldAnswer(hold, party);
     if (party) { holdStats.partyMissed += 1; return null; }
-    if (why === 'window') holdStats.window += 1;
-    else countHoldEvent(why);
+    countHoldEvent(why);
     const found = IncomeRoute.search(state, options);
     const next = newHold(found, timestamp, versions, why, why === 'economic' || why === 'weight');
     if (spotOf(found.route) === spotOf(hold.route)) {
@@ -1149,28 +1141,36 @@ function heldAnswer(hold, party) {
 }
 // A build's read of the hold (heldVerdictFor): holdRead reached only through
 // basics would leave every bot off the card path (and a build that serves the
-// held plan) without its window or its key. Runs after the verdict, over the
+// held plan) without its key. Runs after the verdict, over the
 // build's versions (heldReadsOf) and mask: a foundation it rebuilds after an
 // input moved searches anyway (buildForState's searchIncome). True when the
 // verdict must be judged again: the search moved the hold, or it stood moved
 // and the verdict is the step's (handed: judged maybe before the move). A
 // hold an earlier search moved, its answer under its own key, reads that
-// answer and no search, so it needs no prices; a verdict judged here already
-// saw it. The rebuild on a moved hold takes its answer (incomeRouteFor
-// through holdRead), not a second search: also a search made before an await
-// (the worker step's heldWorkshop).
+// answer and no search; a verdict judged here already saw it. The build's
+// prices (the board resolved) are the ones its own search reads; a build that
+// rebuilds its foundation reads the key itself (buildForState's searchIncome,
+// on its own prices), so an unmoved hold is not read here at all. The rebuild
+// on a moved hold takes its answer (incomeRouteFor through holdRead), not a
+// second search: also a search made before an await (the worker step's
+// heldWorkshop).
 function holdCheck(state, deps, held, verdict, judged, versions) {
     const hold = held?.plan.hold, timestamp = Number(deps.timestamp || Date.now());
     if (!hold) return false;
     const mask = verdictMask(state, deps.eventVerdict, verdict);
-    const why = holdDueWhy(hold.moved || hold, versions, mask, timestamp);
+    const rebuilt = mask & Sections.COMPUTED.foundation;
+    if (rebuilt && !hold.moved) return false;
+    // The build's prices, resolved only when a key read reaches them (the
+    // stands, after the versions and bits) or a search runs.
+    let priced = null;
+    const price = id => (priced ||= pricing(state, personaOf(state, deps), deps.board, timestamp, deps).price)(id);
+    const why = holdDueWhy(hold.moved || hold, versions, mask, timestamp, { state, price });
     if (!why) {
         if (!hold.moved || cache.get(`character:${Number(state.characterId) || 0}`)?.plan?.hold !== hold) return false;
         heldAnswer(hold, deps.party === true);
         return !judged;
     }
-    if (why !== 'window' && mask & Sections.COMPUTED.foundation) return false;
-    const { price } = pricing(state, personaOf(state, deps), deps.board, timestamp, deps);
+    if (rebuilt) return false;
     holdRead(state, { ...deps, timestamp, required: GearProgression.assess(state).required, price, versions, mask });
     return !!hold.moved;
 }
@@ -1475,7 +1475,7 @@ const stepPlace = leaf => `${leaf.activity}|${leaf.kind}|${leaf.itemId}|${leaf.t
 // entry (held.links, carried to the entry that replaces it, gone with the
 // entry: evicted, forgotten or reset): what each link's answer was built on.
 // link:<link>:<outcome>. The links on their keys: incomeSearch rebuilt:<input>
-// a search by the input that asked it (incomeMoved, 'window', 'first': no held
+// a search by the input that asked it (incomeMoved, 'first': no held
 // answer), kept:quiet its answer served; workshop at the step's look
 // rebuilt:<input> asked by the input that moved (workshopMoved, 'unknown': a
 // held answer with no income), kept:quiet kept. routeRows is a shadow, the
@@ -1489,8 +1489,7 @@ const stepPlace = leaf => `${leaf.activity}|${leaf.kind}|${leaf.itemId}|${leaf.t
 // kept:quiet reads (untimed: not in link:income:search and the links line's
 // search count; its own time is link:income:verify, its number the verify
 // counts; the spot list, value and matchup counters inside select still count
-// it) and every window search against the answer it replaced (what the inputs
-// with no event moved).
+// it): a mismatch is an input the key misses.
 const linkTotals = {};
 let linkVerifyTick = 0;
 // The links still decided by masks: their rows split what the key would decide.
@@ -1550,7 +1549,6 @@ function incomeShadow(state, deps, seen, hold, timestamp, board) {
     }
     seen.incomeSearch = { at: answer.at, spot, income };
     linkCount('incomeSearch', before ? `rebuilt:${answer.why}` : 'first');
-    if (before && answer.why === 'window') linkCount('incomeSearch', `verify:${sameAnswer(before.spot, before.income, spot, income)}`);
 }
 // The route rows at a rebuild.
 function buildShadow(seen, held, routeKey, versions) {
@@ -1713,7 +1711,8 @@ function buildForState(state, deps) {
     // the step raised: the rebuild takes its answer (holdRead) for the
     // income_moved refusal's section, not a second search.
     const heldSpot = held?.plan.hold?.moved || held?.plan.hold;
-    const searchIncome = heldSpot && !keptBase ? incomeMoved(heldSpot, reads.versions, eventsFor(heldSpot, mask, timestamp)) : '';
+    const searchIncome = heldSpot && !keptBase
+        ? incomeMoved(heldSpot, reads.versions, eventsFor(heldSpot, mask, timestamp), { state, price }) : '';
     const base = keptBase ? foundationFromPlan(state, keptBase, deps, price)
         : foundation(state, { ...deps, searchIncome, incomeVersions: reads.versions },
             persona, timestamp, price, record => { incomeRecord = record; });
@@ -2518,5 +2517,5 @@ function reset() {
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
 module.exports = { quietGearBuildCount: () => quietGearBuilds, buildDoors: () => ({ ...doors, ...Agenda.counts() }), countDoor,
-    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), incomeHoldStats, linkStats, holdEndsAt, heldIncomeRoute, heldSpotMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockFor, stockReader, keptKit, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider, holdAnswerAt, searchInputs, searchMoved, HOLD_MS,
+    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), incomeHoldStats, linkStats, heldIncomeRoute, heldSpotMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockFor, stockReader, keptKit, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider, holdAnswerAt, searchInputs, searchMoved,
     craftIncome };

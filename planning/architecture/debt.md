@@ -122,22 +122,12 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    hours, the help fee and buff price thresholds, the 10 % margins), so an interval needs the breakpoints of
    `PartyIncomeComparison.evaluate` per member. A material roster keys its wallets exactly.
 
-24. **The earning-spot searches hear the crowd by a window.** The held earning spot (`EconomyContext` `HOLD_MS`) and
-   the party comparison's own solo search (`PartyIncomeComparison.soloChoice`, same window) search again every 30 game
-   minutes for the crowd, risk exclusions and spawn period at the candidate spots, which have no event
-   (decision-links step 3: per-spot versions).
-
 23. **Clan war reviews run on a window.** `ClanWarDirector.review` visits every autonomous clan each 60 s
    (`ClanWarConfig.reviewMs`, 4 per pulse) and reads its loss pressure from SQL each time, though most inputs have
    events (`ClanReviewEvents`, war accept, social relation changes, losses) or a known deadline (quiet withdrawal,
    ceasefire, loss window, intel TTL). The review is also the only sampler of enemy sightings at a spot (positions,
    no event), so it needs a sightings sampler of its own before it can wait for its events. An unchanged review is
    no longer written.
-
-23. **The held earning spot's inputs with no event.** Crowd and room at the candidate spots (`SpotOccupancyIndex`),
-   consumable and loot prices (the market watch names only the wish and sale rows) and the spawn catalogue period
-   carry no version: the held spot refreshes them only by its 30-game-minute window (`EconomyContext.HOLD_MS`,
-   limits.md) and the observation bit (decision-links plan step 3: per-spot versions).
 
 23. **A drop fact's band depends on the order of the wish build's items.** `WishProviders` `sourcePath` passes
    `economicLower: progression.required || !!spoiler`, where `spoiler` is read only at the first item with a spoil
@@ -147,9 +137,10 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
 
 25. **The demand forecasts age by the clock with no event.** `MarketTradeDemand.forecast` decays an item's trades by
    an e-fold per uptime hour between two trades, so a workshop priced on them (`ProductionSalePolicy.exit`) moves
-   with no input moving; the planner's workshop card serves for the earning hold's window instead
-   (`ColdSimulationWorker` `servesUntil`, limits.md "Occupation planner"). The forecast's breakpoints (its units
-   floor, a town dropping below one unit) would give the time the answer stands until.
+   with no input moving, as a combat profile's effects ending do for the MP cap of a state that stores none
+   (`ColdOccupationSources.craftLabour`); the planner's workshop card serves for its own window instead
+   (`WORKSHOP_SERVE_MS`, limits.md "Occupation planner"). The forecast's breakpoints (its units floor, a town
+   dropping below one unit) and the effects' ends would give the time the answer stands until.
 
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets`' `gapHorizonHours`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so

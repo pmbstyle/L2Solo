@@ -99,6 +99,87 @@ try {
     const fromThread = Economics.create(state)(spot, true);
     assert(Math.abs(fromThread.kills - Math.min(alone.kills, production / 5)) < 1e-6 * alone.kills,
         `the thread's four others share it with a caller that passes no count: ${fromThread.kills}`);
+
+    // The earning spot search holds its answer on its candidates' hunters
+    // (EquipmentIncomeRoute.search's stands, the crowd key; decision links
+    // step 3). The bot stands on the band's best table spot, whose spawns its
+    // hunters share; its next best it knows by its own samples. Bots joining
+    // its spot one by one: the key keeps the answer exactly while a fresh
+    // search still gives it (the spot, its charge, who sets its earning), and
+    // asks a search ('crowd') at the first count where it does not: the bot is
+    // crowded off to the other spot. The prices inside the ranges its answer
+    // stands on keep it, as a fresh search does; its frustration inside its
+    // range keeps.
+    {
+        const Route = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
+        const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
+        const now = Date.now();
+        Table.useSpots([]);
+        const held = Route.spotList(state).ids(true, 30, -15)[0];
+        const [, rows, min, max] = offline.rows.find(row => row[0] === held);
+        Table.useSpots([{ id: held, npcEntries: rows.map(([selfId, count]) => ({ selfId, count, production: count * 60 })),
+            rewards: { adenaMin: min, adenaMax: max } }]);
+        const other = Route.spotList(state).ids(true, 30, -15).find(id => id !== held);
+        const catalog = [held, other].map((id, at) => ({ id, avgLevel: 30, minLevel: 30, maxLevel: 30, density: 60,
+            tagsAuthoritative: true, tags: [], npcEntries: [], center: { locX: -80000 + at * 500, locY: 150000, locZ: 0 } }));
+        const crowd = new Occupancy.SpotOccupancyIndex();
+        SpotProfiles.useOccupancy(() => crowd);
+        let bot = { ...state, characterId: 990777, spotId: held, loc: catalog[0].center, stats: { ...state.stats, huntEfficiency: [] } };
+        const own = Economics.create(bot, { timestamp: now })(catalog[0], true);
+        assert(own.crowd?.value, 'fixture: the held spot\'s row follows its hunters\' share');
+        for (let n = 0; n < 3; n++) bot = { ...bot, stats: { ...bot.stats, huntEfficiency: Hunt.record(bot, { spotId: other, timestamp: now,
+            cycleMs: 3600000, exp: 0.6 * own.exp, adena: 0.6 * own.income, loot: 0, costs: 0, kills: 0.6 * own.kills }) } };
+        const options = { spots: catalog, timestamp: now, required: true };
+        const answerOf = route => route ? `${route.spot.id}|${route.row.useShots}|${route.earning === route.row.income ? 'own' : 'other'}` : null;
+        const weight = Economics.moneyWeight(bot);
+        let found = Route.search(bot, options), answer = answerOf(found.route);
+        assert.equal(found.route?.spot.id, held, 'fixture: alone the bot keeps its spot');
+        assert.equal(Route.standsMoved(found.stands, bot, weight, undefined), '', 'the search\'s own moment stands');
+        let next = 992000, kept = 0, crowdedOff = 0;
+        for (let n = 1; n <= 200 && !crowdedOff; n++) {
+            crowd.update({ characterId: next++, activity: 'hunting', spotId: held });
+            const fresh = Route.search(bot, options), moved = Route.standsMoved(found.stands, bot, weight, undefined);
+            assert.equal(moved === '', answerOf(fresh.route) === answer, `the key and a fresh search agree with ${n} others on the spot`);
+            if (moved === '') { kept++; continue; }
+            assert.equal(moved, 'crowd', 'by its input');
+            found = fresh; answer = answerOf(fresh.route);
+            if (fresh.route?.spot.id === other) crowdedOff = n;
+        }
+        assert(kept > 0, 'bots joining inside the key keep the answer with no search');
+        assert(crowdedOff, 'the crowd takes the bot to the other spot');
+        // The prices: a table row's costs are a line in each, so the key
+        // replays the answer at the prices now over the hull of the ranges it
+        // stands on (priceStands), as a fresh search answers there, and past
+        // them searches ('prices'). The held spot pays for its shots, the
+        // other spot's own samples do not: cheap enough shots take the bot back.
+        const costs = Hunt.consumablePrices(bot);
+        const shotId = invoke('GameServer/Inventory/ShotStock').planForState(bot).selfId;
+        const priced = (shots, potions) => id => Number(id) === Number(shotId) ? shots : potions;
+        const { shotsRange } = found.stands.prices;
+        let pricedKept = 0, back = 0;
+        for (const shots of [0, 0.3, 0.6, 0.9, 0.99, 1.01, 1.1, 1.5, 2, 10].map(f => f * costs.shots)) {
+            for (const potions of [0, 0.5, 1, 2].map(f => f * costs.potions)) {
+                const price = priced(shots, potions), moved = Route.standsMoved(found.stands, bot, weight, price);
+                const fresh = answerOf(Route.search(bot, { ...options, price }).route);
+                if (fresh?.startsWith(`${held}|`)) back++;
+                if (moved === '') {
+                    pricedKept++;
+                    assert.equal(fresh, answer, `kept at shot ${shots} and potion ${potions}: a fresh search agrees`);
+                } else assert.equal(moved, 'prices', 'by its input');
+            }
+        }
+        assert(pricedKept > 4, 'price moves inside the hull keep the answer with no search');
+        assert(back > 0, 'fixture: cheaper shots take the bot back to its spot');
+        assert(shotsRange[0] > 0, 'fixture: the answer stands on the shot price');
+        assert.equal(Route.standsMoved(found.stands, bot, weight, priced(shotsRange[0] * (1 - 1e-6), costs.potions)), 'prices',
+            'a shot price just past its range searches');
+        const { base, high } = found.stands.risk, upper = Math.min(high, 3);
+        const fretting = k => ({ ...bot, stats: { ...bot.stats, frustration: k * (1 + base) - 1 } });
+        const inside = fretting((1 + upper) / 2);
+        assert.equal(Route.standsMoved(found.stands, inside, weight, undefined), '', 'frustration inside its range keeps');
+        assert.equal(answerOf(Route.search(inside, options).route), answer, 'and a fresh search agrees');
+        if (Number.isFinite(high)) assert.equal(Route.standsMoved(found.stands, fretting(2 * high), weight, undefined), 'frustration', 'past it searches');
+    }
 } finally {
     SpotProfiles.useOccupancy(null);
     Table.useSpots([]);

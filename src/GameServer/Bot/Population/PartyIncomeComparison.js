@@ -67,7 +67,7 @@ function evaluate({ solo, party, cash = null, spendable = 0, fee = 0, rewardFee 
 
 // The solo side's earning route: { route, version, own }. The spot the bot's
 // held build earns at (decision 10-30), read each time (no search, and no memo
-// may outlive its window); else a search of its own (own: its held record).
+// of it here); else a search of its own (own: its held record).
 // version names the search the route came from (the hold's answer's, or the
 // own search's time): a held forming verdict lives no longer than it
 // (PartyGoalPolicy.verdictInputs).
@@ -79,7 +79,7 @@ function soloChoice(state, spots, timestamp) {
     if (route) return { route, version: `held:${Economy.holdAnswerAt(standalone)}`, own: null };
     const id = Number(state.characterId) || 0;
     let own = soloChoices.get(id);
-    if (!own || own.spots !== spots || timestamp < own.at || timestamp >= own.at + Economy.HOLD_MS
+    if (!own || own.spots !== spots || timestamp < own.at
         || Economy.searchMoved(own, standalone, timestamp, options)
         || invoke('GameServer/Bot/Economy/DecisionSections').observationChanged(standalone, own.observed, timestamp)) {
         const found = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').search(standalone, options);
@@ -98,11 +98,11 @@ function soloChoice(state, spots, timestamp) {
 // The solo side's own search (EquipmentIncomeRoute.search) is kept on what it
 // reads, by the held earning spot's own key (EconomyContext.searchInputs,
 // searchMoved: DecisionSections.LINK_INPUTS incomeSearch on the solo copy,
-// soloState, and the weights its answer stands over); its own samples and
-// time on the spot by the observation event's rule
+// soloState, the weights its answer stands over and what else it stands on:
+// its prices, frustration range and crowd key); its own samples and time on
+// the spot by the observation event's rule
 // (DecisionSections.observationChanged), as the observation bit reaches the
-// hold. Inputs with no event (crowd, prices, the spawn period): the hold's
-// window (HOLD_MS) stands in for them here too.
+// hold.
 function observed(state, timestamp) {
     return { sample: invoke('GameServer/Bot/Economy/DecisionSections').sample(state, timestamp),
         share: invoke('GameServer/Bot/AI/BotHuntEfficiency').onSpotShare(state),

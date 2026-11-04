@@ -120,6 +120,26 @@ module.exports.goalProbe = async (id) => {
         return { same, held, refusal, moved };
     } finally { Economy.forState = original; }
 };
+// A kept card's craft refresh (a crafter's MP out of its band) asks the action
+// before the round: the step's projection compares against that ask, so the
+// band crossing asks once, though the last committed ask read another level.
+// The probe stands in for the crafter's refresh (refreshCraftPacket) with a
+// real action ask on the step's state.
+module.exports.craftStepProbe = async (id) => {
+    const timestamp = Date.now() + 10000, callers = [];
+    const ask = askAction, refresh = refreshCraftPacket;
+    askAction = (state, at, options) => { callers.push(options.caller); return ask(state, at, options); };
+    refreshCraftPacket = async (state, at, refreshed) => refreshed && { ...refreshed,
+        actionBaseline: (await askAction(state, at, { economy: refreshed.economy, caller: 'craft_mp' })).baseline };
+    try {
+        const record = kernel.states.get(id), state = record.state;
+        record.actionBaseline = ColdEconomyPlan.actionBaseline({ ...state, level: Number(state.level) - 1 });
+        const plan = await kernel.planLifecycle({ state, timestamp });
+        const projection = await kernel.projectResolve(plan.plannedState || state, { patch: {}, debug: {}, events: [],
+            materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 60000 }, timestamp, plan);
+        return { callers, edges: Number(projection.economyEdges || 0), carried: !!projection.actionBaseline };
+    } finally { askAction = ask; refreshCraftPacket = refresh; }
+};
 // A refresh of a dirty bot waits for its step, whose build it would repeat, and
 // runs on that step's output.
 module.exports.refreshProbe = async id => {
@@ -202,7 +222,7 @@ const loaded = new Module(workerData.workerPath, module);
 loaded.filename = workerData.workerPath; loaded.paths = Module._nodeModulePaths(path.dirname(workerData.workerPath));
 loaded._compile(fs.readFileSync(workerData.workerPath, 'utf8') + workerData.observer, workerData.workerPath);
 parentPort.on('message', message => {
-    const probe = ['stepProbe', 'goalProbe', 'kitProbe', 'occupationProbe', 'refreshProbe'].find(name => message[name]);
+    const probe = ['stepProbe', 'goalProbe', 'craftStepProbe', 'kitProbe', 'occupationProbe', 'refreshProbe'].find(name => message[name]);
     if (!probe) return;
     loaded.exports[probe](message[probe]).then(value => parentPort.postMessage({ probeId: message.msgId, value }))
         .catch(error => parentPort.postMessage({ probeId: message.msgId, error: error.stack }));
@@ -310,6 +330,11 @@ parentPort.on('message', message => {
         assert.equal(goal.held, '', 'the held decision holds on the warm state at the same goal revision');
         assert.equal(goal.refusal, 'goal', 'a moved goal revision refuses the held decision');
         assert.equal(goal.moved, 1, 'the next decision point after a goal change builds once');
+        worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'craft'), craftStepProbe: id });
+        const craftResponse = await wait(message => message.probeId === 'craft'); if (craftResponse.error) throw Error(craftResponse.error);
+        console.log(JSON.stringify(craftResponse.value));
+        assert.deepEqual(craftResponse.value, { callers: ['craft_mp'], edges: 0, carried: true },
+            'a kept card\'s craft refresh is the step\'s one action ask: the round compares against it, not the last commit');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'kit'), kitProbe: id });
         const kitResponse = await wait(message => message.probeId === 'kit'); if (kitResponse.error) throw Error(kitResponse.error);
         const kit = kitResponse.value;
