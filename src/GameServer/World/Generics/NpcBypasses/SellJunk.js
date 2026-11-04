@@ -57,7 +57,7 @@ async function sellJunk(session) {
 
     if (sales.length === 0) {
         session.dataSendToMe(ServerResponse.speak(session.actor, { kind: 0, text: "You have no unequipped items to sell." }));
-        return;
+        return { count: 0, payout: 0 };
     }
 
     let totalAdenaPayout = 0;
@@ -115,12 +115,15 @@ async function sellJunk(session) {
         });
     }));
 
-    return Promise.all(writes);
+    await Promise.all(writes);
+    return { count: sales.reduce((sum, sale) => sum + sale.amount, 0), payout: totalAdenaPayout };
 }
 
-// The NPC dialog does not await its handlers: a failure is logged here.
+// The NPC dialog does not await its handlers: a failure is logged here. A
+// bot's town visit awaits `sell` itself: { count, payout } or a rejection.
 module.exports = function(session) {
     return sellJunk(session).catch((error) => {
         utils.infoWarn('SellJunk', 'junk sale failed for %s: %s', session?.actor?.fetchName?.() || 'unknown', error?.message || String(error));
     });
 };
+module.exports.sell = sellJunk;

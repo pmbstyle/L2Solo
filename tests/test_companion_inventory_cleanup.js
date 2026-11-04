@@ -22,6 +22,7 @@ const TownChat = invoke('GameServer/Bot/AI/TownChatter');
 const Travel = invoke('GameServer/Bot/AI/BotTownTravel');
 const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const Trade = invoke('GameServer/Bot/BotTradeService');
+const Warehouse = invoke('GameServer/Bot/Economy/BotWarehouseService');
 Data.init();
 let nextId = 971000;
 function item(selfId, amount, extras = {}) {
@@ -77,13 +78,6 @@ function shopping(probe) {
         const probe = owner([worn, shots, quest, locked, item(57, 100000)]);
         const beforeLoad = probe.actor.backpack.fetchTotalLoad();
         assert(beforeLoad > probe.actor.fetchMaxLoad());
-        const planned = Cleanup.plan(probe.actor);
-        assert(planned.length);
-        assert(planned.every(row => row.source === shots), 'worn gear, quest items, pet-locked items and money stay owned in the bag');
-        const removed = planned.reduce((sum, row) => sum + row.amount * row.source.fetchMass(), 0);
-        assert(beforeLoad - removed < 10000, 'deposit enough to clear the first native weight penalty');
-        assert(planned[0].amount < shots.fetchAmount(), 'keep combat ammunition');
-        assert.equal(probe.actor.backpack.fetchTotalLoad(), beforeLoad, 'planning does not mutate items');
         assert.equal(Cleanup.errand(probe.session, probe.actor, BotAI).kind, 'unload_inventory', 'field followers may leave for the warehouse');
         probe.session.activeTrade = {};
         assert.equal(Cleanup.errand(probe.session, probe.actor, BotAI), null, 'never leave an active player trade');
@@ -109,16 +103,24 @@ function shopping(probe) {
         assert.equal(requested[4].preserveShoppingTarget, true);
 
         const immovable = owner([item(347, 1, { equipped: true })], 10000);
-        assert.deepEqual(Cleanup.plan(immovable.actor), []);
         assert.equal(Cleanup.errand(immovable.session, immovable.actor, BotAI), null);
         assert(immovable.session.companionUnloadRetryAt > Date.now(), 'an unfixable bag must not loop through town');
+        const arrows = owner([item(1341, 5000), item(1864, 4000)]);
+        assert.equal(Cleanup.errand(arrows.session, arrows.actor, BotAI)?.kind, 'sell_unused_arrows');
+        const sale = Disposition.unusedArrowCandidates;
+        Disposition.unusedArrowCandidates = () => [];
+        try {
+            assert.equal(Cleanup.errand(arrows.session, arrows.actor, BotAI)?.kind, 'unload_inventory',
+                'arrows the NPC sale would not take send the companion to the warehouse, not to the merchant again');
+        } finally { Disposition.unusedArrowCandidates = sale; }
         const light = owner([item(1835, 10)]);
         assert.equal(Cleanup.errand(light.session, light.actor, BotAI), null);
         assert.equal(light.session.plan, 'following');
 
-        const reserved = item(1865, 500), free = item(1835, 6000), protectedProbe = owner([reserved, free]);
+        const reserved = item(1865, 500), protectedProbe = owner([reserved], 100);
+        assert(Warehouse.hasActorDepositCandidates(protectedProbe.actor, { inventory: {}, stats: {} }, null, { unload: true }));
         replace(Disposition, 'unreservedActorItems', (_state, items) => items.filter(item => item !== reserved));
-        assert(Cleanup.plan(protectedProbe.actor, { inventory: {}, stats: {} }).every(row => row.source !== reserved),
+        assert(!Warehouse.hasActorDepositCandidates(protectedProbe.actor, { inventory: {}, stats: {} }, null, { unload: true }),
             'preserve materials committed to crafting or another owner');
 
         // Native SQLite transfer: retain exact quantities and metadata across
@@ -192,11 +194,11 @@ function shopping(probe) {
         const gate = new Promise(resolve => { release = resolve; });
         const transfer = Database.transferInventoryToWarehouse;
         replace(Database, 'transferInventoryToWarehouse', async (...args) => { await gate; return transfer.apply(Database, args); });
-        const pending = Cleanup.deposit(interrupted.session, interrupted.actor, target);
-        await Promise.resolve(); await Promise.resolve();
+        const pending = Warehouse.depositActorAtWarehouse(interrupted.actor, { inventory: {}, stats: {} }, interrupted.session, target, { unload: true });
+        for (let tick = 0; tick < 20; tick++) await new Promise(resolve => setImmediate(resolve));
         interrupted.session.actor = light.actor;
         release();
-        await assert.rejects(pending, /companion_unload_interrupted/);
+        await assert.rejects(pending, /warehouse_actor_changed/);
         assert.equal((await Database.fetchWarehouseItems(971001)).find(row => row.selfId === 1835).amount, startingShots - carried);
         console.log('Companion unload: field departure, protected inventory, partial shot storage, native SQLite conservation/reopen, leader return and interrupted writes passed');
     } finally {

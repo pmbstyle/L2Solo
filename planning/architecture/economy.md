@@ -50,7 +50,10 @@ MerchantStoreConfigs}`, `src/Market*`, `src/Economy*`, `Population/ColdEconomy{P
   tier read one step shape (`roadCarried`: unit price × units the seller fills, their share of the need). Our choice:
   a far bot with no potions keeps hunting without them until a town visit (a kit trip, a full-bag sale, a death's
   respawn), so a missing potion never costs a trip of its own.
-- **Warehouse:** hot `BotWarehouseService.depositActorAtWarehouse`, cold `depositCold`, worker mirror
+- **Warehouse:** hot `BotWarehouseService.depositActorAtWarehouse` (each write rechecks the actor at the NPC in its
+  transaction; a party companion's overweight errand, `AI/CompanionInventoryCleanup` → `ShoppingState`, passes
+  `unload`: free stock past the candidates, heaviest first, until below the first weight penalty; its arrows go to
+  the NPC through `SellJunk`), cold `depositCold`, worker mirror
   `PersonalWarehouseIndex`, craft staging `CraftWarehousePolicy`.
 - **Crafting for trade:** decisions in the worker (`WealthCraftDecision`, `ShotCraftPolicy`, `CraftProfitPolicy`,
   `ProductionSalePolicy`); execution on main (`ColdWealthCraftService`, `ColdShotEconomyService`,
@@ -155,9 +158,6 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
   `economy_plan_need_changed` 11 (a real staleness, counted). The plan's sale keeps the kit of the craft it selects
   (`ColdEconomyPlan.prepare` → `ItemDisposition.recipeInputAmounts`), since `BotAfkMarketService.executePlan` runs
   `plan.shot` first.
-- **ECO-15 companion unload by its own path** (merged from develop PR #207). A hot companion's unload
-  (`AI/CompanionInventoryCleanup`) picks its own deposit set by weight and sells arrows through
-  `Database.sellItemsToNpc` directly, beside `BotWarehouseService.depositActorAtWarehouse` and `SellJunk` (ECO-7, ECO-2).
 ## Open questions
 
 1. ECO-1: worker `executePlan` only, with `reconcile`/`open` reduced to executors? — decided 2026-11-03: yes (ECO-1).

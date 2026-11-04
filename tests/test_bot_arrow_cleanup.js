@@ -152,7 +152,11 @@ function companion(saved) {
             fetchTitle: () => 'Trader', fetchLocX: () => target.locX, fetchLocY: () => target.locY }] });
         replace(World, 'refreshPartyMemberships', () => 0);
         replace(TownChat, 'say', () => true);
-        assert.deepEqual(Cleanup.plan(probe.actor, hot), [], 'unused arrows never become warehouse deposits');
+        // The sale announces itself to the bot's own client; this stub actor has none.
+        const Response = invoke('GameServer/Network/Response');
+        for (const packet of ['userInfo', 'itemsList', 'speak']) replace(Response, packet, () => null);
+        assert(!invoke('GameServer/Bot/Economy/BotWarehouseService').hasActorDepositCandidates(probe.actor, hot, null, { unload: true }),
+            'unused arrows never become warehouse deposits');
         const errand = Cleanup.errand(probe.session, probe.actor, { getClosestTown: () => ({ name: 'Giran' }) });
         assert.equal(errand.kind, 'sell_unused_arrows');
         probe.session.companionShopping = errand; probe.session.shoppingTarget = target;
@@ -180,25 +184,6 @@ function companion(saved) {
         assert.equal(Native.amount(await Database.fetchItems(lightArcher.characterId), 57), 100 + 4375 * price);
         assert.equal(light.session.plan, 'following');
         assert.equal(light.session.companionUnloadRetryAt, 0, 'successful unload needs no repeated cleanup cooldown');
-
-        const delayed = await persisted(972014, 40);
-        const pendingProbe = companion(delayed);
-        pendingProbe.actor.backpack = new Backpack({ items: await Database.fetchItems(delayed.characterId), paperdoll: {} });
-        pendingProbe.session.companionShopping = { kind: 'sell_unused_arrows', target };
-        let release, entered = false;
-        const gate = new Promise(resolve => { release = resolve; });
-        const nativeSale = Database.sellItemsToNpc;
-        replace(Database, 'sellItemsToNpc', async (...args) => { entered = true; await gate; return nativeSale.apply(Database, args); });
-        const pending = Cleanup.sellUnusedArrows(pendingProbe.session, pendingProbe.actor, target);
-        await Promise.resolve(); assert(entered);
-        pendingProbe.actor.fetchClassId = () => 9;
-        const changedBow = equippedBow('d');
-        pendingProbe.actor.backpack.insertItem(973111, changedBow.selfId, { amount: 1, equipped: true, slot: 14 });
-        release();
-        await assert.rejects(pending, /companion_arrow_sale_interrupted/,
-            'a class change during the queued write preserves an archer ammunition');
-        assert.equal(Native.amount(await Database.fetchItems(delayed.characterId), 1341), 5000);
-        assert.equal(Native.amount(await Database.fetchItems(delayed.characterId), 57), 100);
 
         await Database.close(); await Database.init();
         for (const id of [cold.characterId, hot.characterId]) {

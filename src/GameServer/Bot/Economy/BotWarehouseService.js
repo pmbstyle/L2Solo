@@ -13,6 +13,7 @@ const CRAFT_VISIT_RETRY_MS = 5 * 60 * 1000;
 const CRAFT_STAGE_CACHE_LIMIT = 1024;
 const { MAX_GEAR_COPIES_PER_TYPE } = require('./WarehouseRules');
 const Reaction = require('./Reaction');
+const Mutations = require('../../Inventory/InventoryMutationQueue');
 
 function serializeDeposit(characterId, work) {
     const key = Number(characterId);
@@ -127,17 +128,17 @@ async function learnActorRecipes(actor, state = null, session = null, { recipeId
     return learned;
 }
 
-async function depositActorUnlocked(actor, state = null, session = null) {
+async function depositActorUnlocked(actor, state = null, session = null, { unload = false, validate = null } = {}) {
     const backpack = actor?.backpack;
     if (!backpack || !actor?.fetchId) return { count: 0, items: [] };
 
     const learned = await learnActorRecipes(actor, state, session);
     const retained = storedAmounts(await Database.fetchWarehouseItems(actor.fetchId()));
     const stored = [];
-    for (const { source, item, storable } of storableActorItems(actor, state, session?.shoppingNpcSale)) {
+    for (const { source, item, storable } of storableActorItems(actor, state, session?.shoppingNpcSale, { unload })) {
         const amount = retentionAmount({ ...item, amount: storable }, retained.get(item.selfId));
         if (amount <= 0) continue;
-        const result = await Database.transferInventoryToWarehouse(actor.fetchId(), { ...item, amount });
+        const result = await Database.transferInventoryToWarehouse(actor.fetchId(), { ...item, amount }, { validate });
         if (Number(result.inventoryAmount) === 0) backpack.items = backpack.items.filter((entry) => entry !== source);
         else source.setAmount(result.inventoryAmount);
         retained.set(item.selfId, Number(retained.get(item.selfId) || 0) + amount);
@@ -153,7 +154,56 @@ function depositActor(actor, state = null, session = null) {
 
 // The actor's warehouse candidates and the amount of each that may be stored:
 // what the town visit sells to the NPC (npcSale, by selfId) stays in the bag for that sale.
-function storableActorItems(actor, state = null, npcSale = null) {
+// An unload (a party companion's overweight errand, AI/CompanionInventoryCleanup)
+// also stores free stock past them, until the bag is below the first weight penalty.
+function storableActorItems(actor, state = null, npcSale = null, { unload = false } = {}) {
+    const rows = candidateActorItems(actor, state, npcSale);
+    return unload ? [...rows, ...weightExcess(actor, state, rows)] : rows;
+}
+
+// A companion can neither leave its party for a market trip nor list loot, so
+// what keeps it past the penalty is stored, heaviest first, shots last: never
+// worn gear, quest or reserved items (unreservedActorItems), arrows (ArrowStock
+// keeps their stock, the NPC buys the rest), beginner shots, Adena, or the last
+// combat charge of a consumable.
+function weightExcess(actor, state, chosen) {
+    const backpack = actor?.backpack, maximum = actor?.fetchMaxLoad?.();
+    if (!backpack || !(maximum > 0)) return [];
+    let excess = Number(backpack.fetchTotalLoad?.() || 0) - (Math.ceil(maximum / 2) - 1)
+        - chosen.reduce((sum, row) => sum + row.storable * Number(row.source.fetchMass?.() || 0), 0);
+    if (!(excess > 0)) return [];
+    const Shot = invoke('GameServer/Inventory/ShotStock');
+    const Beginner = invoke('GameServer/Items/C4BeginnerShots');
+    const Arrows = require('../../Inventory/ArrowStock');
+    const { canDeposit } = require('../../Warehouse/WarehouseItemRules');
+    const taken = new Map(chosen.map(row => [row.source, row.storable]));
+    const sources = backpack.fetchItems();
+    const current = state ? { ...state, inventory: LifeState.inventorySummaryFromItems(sources) } : null;
+    const weapon = backpack.fetchEquippedWeapon?.();
+    const rows = (current ? ItemDisposition.unreservedActorItems(current, sources) : sources)
+        .filter(source => canDeposit(source) && !source.fetchEquipped?.() && !Beginner.isRestricted(source.fetchSelfId())
+            && !Arrows.isArrow(source) && Number(source.fetchMass?.()) > 0)
+        .map(source => {
+            const shot = Shot.SHOT_IDS.includes(source.fetchSelfId());
+            const charge = shot ? Number(Shot.kindForSelfId(source.fetchSelfId()) === 'soulshot'
+                ? weapon?.fetchSoulshot?.() : weapon?.fetchSpiritshot?.()) || 1
+                : source.fetchKind?.() === 'Other.Potion' ? 1 : 0;
+            const free = Math.max(0, source.fetchAmount() - charge - Number(taken.get(source) || 0));
+            return { source, mass: Number(source.fetchMass()), free, shot };
+        })
+        .sort((a, b) => Number(a.shot) - Number(b.shot) || b.mass * b.free - a.mass * a.free);
+    const result = [];
+    for (const row of rows) {
+        if (excess <= 0) break;
+        const storable = Math.min(row.free, Math.ceil(excess / row.mass));
+        if (storable <= 0) continue;
+        result.push({ source: row.source, item: itemData(row.source), storable });
+        excess -= storable * row.mass;
+    }
+    return result;
+}
+
+function candidateActorItems(actor, state = null, npcSale = null) {
     const selling = new Map(npcSale || []);
     if (state && invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(state)) {
         const sources = actor?.backpack?.fetchItems?.().slice() || [];
@@ -183,8 +233,8 @@ function storableActorItems(actor, state = null, npcSale = null) {
     return rows;
 }
 
-function hasActorDepositCandidates(actor, state = null, npcSale = null) {
-    return storableActorItems(actor, state, npcSale).length > 0;
+function hasActorDepositCandidates(actor, state = null, npcSale = null, options = {}) {
+    return storableActorItems(actor, state, npcSale, options).length > 0;
 }
 
 function isAtWarehouseService(actor, target) {
@@ -200,16 +250,27 @@ function isAtWarehouseService(actor, target) {
     ) <= 300;
 }
 
-function depositActorAtWarehouse(actor, state, session, target) {
+// A hot bot's warehouse stop. Each write runs after the bag's queued
+// mutations and rechecks, in its transaction, that the actor still stands at
+// the warehouse and is free (actorAtWarehouse). options.unload: see storableActorItems.
+function depositActorAtWarehouse(actor, state, session, target, { unload = false } = {}) {
     if (!isAtWarehouseService(actor, target)) {
         return Promise.reject(new Error('warehouse NPC is no longer active'));
     }
-    return serializeDeposit(actor.fetchId(), async () => {
+    const validate = () => actorAtWarehouse(actor, session, target);
+    return serializeDeposit(actor.fetchId(), () => Mutations.run(actor.backpack, async () => {
         const released = await releaseActorAtWarehouse(actor, state, session, target);
         if (released.length) session.shoppingNpcSale = invoke('GameServer/Bot/Economy/MarketListingPolicy').npcSaleForActor(session);
-        const deposited = await depositActorUnlocked(actor, state, session);
+        validate();
+        const deposited = await depositActorUnlocked(actor, state, session, { unload, validate });
         return { ...deposited, released };
-    });
+    }));
+}
+
+function actorAtWarehouse(actor, session, target) {
+    if (session && session.actor !== actor || actor.isDead?.() || actor.fetchIsOnline?.() === false
+        || !isAtWarehouseService(actor, target) || session?.activeTrade || session?.trade || session?.activeNegotiation
+        || actor.fetchPrivateStoreType?.()) throw new Error('warehouse_actor_changed');
 }
 
 function hasActorWithdrawalCandidates(actor, state) {
@@ -225,11 +286,7 @@ async function releaseActorAtWarehouse(actor, state, session, target) {
     const craft = policy.planFor(current) ? policy.stage(current, rows)?.requests || [] : [];
     const reserved = storedReservations(current, rows, craft);
     const requests = [...craft, ...marketRequests(current, rows, reserved)], released = [];
-    const validate = () => {
-        if (session.actor !== actor || actor.isDead?.() || !isAtWarehouseService(actor, target)
-            || session.activeTrade || session.trade || session.activeNegotiation || actor.fetchPrivateStoreType?.())
-            throw new Error('warehouse_actor_changed');
-    };
+    const validate = () => actorAtWarehouse(actor, session, target);
     for (const request of requests.slice(0, 16)) {
         let left = request.amount;
         for (const row of rows.filter(row => Number(row.selfId) === request.selfId
