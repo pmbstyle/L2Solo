@@ -33,7 +33,10 @@ async function run() {
             { status: 'complete', strategy: 'none' }, context, now + 2);
         assert(Planner.replanContextFor(remembered, idle, now + 3).excludedMaterialIds.includes(75),
             'an idle tick without alternatives must retain the failure memory');
-        assert.strictEqual(Planner.replanContextFor(remembered, idle, now + 5 * 3600000).excludedMaterialIds.length, 0);
+        assert(Planner.replanContextFor(remembered, idle, now + 5 * 3600000).excludedMaterialIds.includes(75),
+            'the failure memory has no clock: it stands while its wake inputs hold');
+        assert.strictEqual(Planner.replanContextFor({ ...remembered, level: 54 }, idle, now + 4).excludedMaterialIds.length, 0,
+            'a level wakes the failed purchase at once');
         const variants = new Set(Array.from({ length: 30 }, (_, i) => Planner.preferredTarget(
             { ...state, characterId: i + 1 }, { findMarketOffer: () => null })?.item.selfId));
         assert(variants.size > 1, 'comparable dual routes must not synchronize the whole population');

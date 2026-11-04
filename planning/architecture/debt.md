@@ -110,12 +110,22 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    offer is listed or made cheaper (`recordChanged`); a bot whose budget grows past an offer it already saw waits
    out the failed visit's retry stamp (limits.md "Buyer retry", 15 min). A budget event re-checking the owner's
    heap nodes against the item's best offer would replace the window.
+24. **A craft material party request is reviewed every 5 min.** `CraftMaterialParty.request` (`REVIEW_MS`, ~104,
+   ~113) keeps the request and its worker memo for 5 min of game time instead of keying them on what the review reads
+   (the material's remaining amount, the camps' forecasts, the source route reader); a time window stands in for
+   those events.
+
 23. **The forming verdict hears a member's wallet and time on the spot by its income error.**
    `PartyGoalPolicy.verdictInputs` re-judges a roster when a member's adena or `onSpotShare` moves beyond its
    `incomeError` (at least 3 %), not over an interval its answer stands on (as the earning hold's money weights):
    the comparison is not one line in them (funding delays clipped at zero, the minimum of funding and direct item
    hours, the help fee and buff price thresholds, the 10 % margins), so an interval needs the breakpoints of
    `PartyIncomeComparison.evaluate` per member. A material roster keys its wallets exactly.
+
+24. **The earning-spot searches hear the crowd by a window.** The held earning spot (`EconomyContext` `HOLD_MS`) and
+   the party comparison's own solo search (`PartyIncomeComparison.soloChoice`, same window) search again every 30 game
+   minutes for the crowd, risk exclusions and spawn period at the candidate spots, which have no event
+   (decision-links step 3: per-spot versions).
 
 23. **Clan war reviews run on a window.** `ClanWarDirector.review` visits every autonomous clan each 60 s
    (`ClanWarConfig.reviewMs`, 4 per pulse) and reads its loss pressure from SQL each time, though most inputs have
@@ -124,18 +134,10 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    no event), so it needs a sightings sampler of its own before it can wait for its events. An unchanged review is
    no longer written.
 
-23. **A drop fact's band depends on the order of the wish build's items.** `WishProviders` `sourcePath` passes
-   `economicLower: progression.required || !!spoiler`, where `spoiler` is read only at the first item with a spoil
-   source (or the spoil-demand roots): for a spoiler the drop facts asked before it take the voluntary band, the
-   ones after the wider equipment one. `KeptSourceFacts` keys each fact on the spoiler as it was read; one rule
-   (read the spoiler once per build, or band by `progression.required` alone) is the owner's choice.
-
-25. **The demand forecasts age by the clock with no event.** `MarketTradeDemand.forecast` decays an item's trades by
-   an e-fold per uptime hour between two trades, so a workshop priced on them (`ProductionSalePolicy.exit`) moves
-   with no input moving, as a combat profile's effects ending do for the MP cap of a state that stores none
-   (`ColdOccupationSources.craftLabour`); the planner's workshop card serves for its own window instead
-   (`WORKSHOP_SERVE_MS`, limits.md "Occupation planner"). The forecast's breakpoints (its units floor, a town
-   dropping below one unit) and the effects' ends would give the time the answer stands until.
+23. **The held earning spot's inputs with no event.** Crowd and room at the candidate spots (`SpotOccupancyIndex`),
+   consumable and loot prices (the market watch names only the wish and sale rows) and the spawn catalogue period
+   carry no version: the held spot refreshes them only by its 30-game-minute window (`EconomyContext.HOLD_MS`,
+   limits.md) and the observation bit (decision-links plan step 3: per-spot versions).
 
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets`' `gapHorizonHours`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so
@@ -234,14 +236,3 @@ Each area file ends with its open questions; none blocks the order above.
   new board offer for a set-aside target or material (`market_alternative`, `craft_stalled`) wakes nothing (the planner
   reads no board revision); `abandonAcquisition` has no game caller (tests only). A party route set aside
   (`party_route_unavailable`) has no event for a recruit pool that could now form it: a 1 h window stands in.
-- A completed economy intent keeps its `bot_economy_intents` row (`[S,0,X]`); the stats receipt `[S+1,1,X]` supersedes
-  it by sequence or by id (`Database` `economyTupleUnsafe`). A writer that put an older receipt back (one not naming
-  X; `EconomyCommit.preserveLeafSql` keeps every whole-stats writer from it today) would let the intent win again and
-  a retry of X run twice. Nothing checks this beyond that rule.
-- `DatabaseStatements.prepare` treats SQL over 16 KB like DDL: not cached and it also clears the connection's whole
-  statement cache, so every such call re-prepares all the hot statements after it; only the uncached part is meant.
-- `LiveRecorder.start()`'s catch does not close `this.heapWindow`: a start that fails after `observe()` leaves its
-  handle open, so the isolate's GC observer (and its pause counting) never stops.
-- `CraftMaterialParty.REVIEW_MS` and `PartyIncomeComparison.REVIEW_MS` (5 min) are read by no game code since the
-  material camp and the party income review key on their inputs: only tests use them as time offsets
-  (`test_craft_material_party`, `test_party_income_comparison`). Dead exports.

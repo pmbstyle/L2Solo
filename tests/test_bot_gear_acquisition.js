@@ -390,6 +390,16 @@ const partyBlockedContext = GearAcquisitionPlanner.replanContextFor(
 );
 assert.strictEqual(partyBlockedContext.failure.reason, 'party_route_unavailable',
     'a repeatedly deferred required party route must become a planner recovery, not an endless direct-drop objective');
+const partySetAside = partyBlockedContext.recoveryTargets.find(entry => entry.reason === 'party_route_unavailable');
+assert(Array.isArray(partySetAside.wake) && partySetAside.until === 20 * 60 * 1000 + 3600000,
+    'a party route set aside wakes on its inputs, and after a window for the recruit pool, which has no event');
+const asidePlan = { ...partyBlockedPlan, status: 'complete', recoveryTargets: partyBlockedContext.recoveryTargets };
+assert(GearAcquisitionPlanner.replanContextFor(partyBlockedState, asidePlan, 20 * 60 * 1000 + 3600000 - 1)
+    .excludedTargetIds.includes(partySetAside.targetId));
+assert(!GearAcquisitionPlanner.replanContextFor(partyBlockedState, asidePlan, 20 * 60 * 1000 + 3600000)
+    .excludedTargetIds.includes(partySetAside.targetId), 'the recruit pool window ends the set-aside party route');
+assert(!GearAcquisitionPlanner.replanContextFor({ ...partyBlockedState, party: { partyId: 'formed' } }, asidePlan, 20 * 60 * 1000 + 1)
+    .excludedTargetIds.includes(partySetAside.targetId), 'joining a party wakes it at once');
 const partyBlockedFallback = GearAcquisitionPlanner.planFor(partyBlockedState, {
     spots: [],
     ...partyBlockedContext,

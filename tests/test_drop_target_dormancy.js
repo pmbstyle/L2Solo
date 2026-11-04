@@ -63,8 +63,15 @@ try {
     const exhausted = Gear.replanContextFor({ ...base, stats: { ...base.stats,
         targetCombat: { targetNpcId: 450, resolves: 100, targetKills: 100 } } }, plan, at + 104);
     assert.equal(exhausted.failure.reason, 'drop_exhausted');
-    assert.equal(exhausted.recoveryTargets[0].until, at + 104 + 3600000);
-    assert.equal(exhausted.recoveryTargets[0].wake, undefined);
+    assert.deepEqual(exhausted.recoveryTargets[0].wake, [10, -1, 0]);
+    assert.equal(exhausted.recoveryTargets[0].until, undefined);
+    const spent = { ...plan, recoveryTargets: exhausted.recoveryTargets };
+    assert(Gear.replanContextFor(base, spent, at + 30 * 3600000).excludedTargetIds.includes(target.selfId),
+        'an exhausted drop stays set aside while its wake inputs hold, however long');
+    assert(!Gear.replanContextFor({ ...base, level: 11 }, spent, at + 105).excludedTargetIds.includes(target.selfId),
+        'a level wakes an exhausted drop at once');
+    assert(!Gear.replanContextFor({ ...base, party: { partyId: 'p' } }, spent, at + 105).excludedTargetIds.includes(target.selfId),
+        'a party wakes an exhausted drop at once');
 
     assert.equal(Cold.spotSpawns({ npcEntries: [{ selfId: 93, count: 1 }] }, 93), true);
     assert.equal(Cold.spotSpawns({ npcEntries: [], npcSelfIds: [93] }, 93), true);
@@ -95,5 +102,5 @@ try {
         assert.equal(spotScans, 1, 'one shared spot scan serves every member and the party aggregate');
     }
     Cold.spotSpawns = spotSpawns;
-    console.log('PASS target-only telemetry, event dormancy, four-target cap and unchanged drop exhaustion timer');
+    console.log('PASS target-only telemetry, event dormancy, four-target cap and drop exhaustion wake');
 } finally { fs.rmSync(directory, { recursive: true, force: true }); }
