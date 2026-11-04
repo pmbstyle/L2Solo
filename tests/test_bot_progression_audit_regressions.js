@@ -151,7 +151,7 @@ async function checkWorkerSafety() {
         simulation: { revision: 3 },
         stats: { ...m.stats, clanPartyObjective: objective } }));
     const party = { partyId: 'unsafe', leaderId: 1, memberIds: [1, 2, 3], spotId: 'tower',
-        stats: { objective, sessionExpiresAt: at + 3600000 } };
+        stats: { objective } };
     const kernel = new ColdSimulationKernel({ now: () => at,
         resolveSolo: () => { throw new Error('party review must not run a solo fight'); },
         resolveParty: () => { throw new Error('an unsafe clan party must be released before combat'); },

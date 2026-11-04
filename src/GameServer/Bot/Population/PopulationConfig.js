@@ -141,11 +141,6 @@ const DEFAULTS = {
     partyRequestMaxAgeMs: 15 * 60 * 1000,
     partyPreferredMaxAgeMs: 5 * 60 * 1000,
     partyRequestCooldownMs: 5 * 60 * 1000,
-    // Stagger the first shared-hunt review; this is no longer a hard lifetime.
-    // Later reviews use goals, progress, relationships and individual patience.
-    partySessionMaxMs: 20 * 60 * 1000,
-    partyReviewIntervalMs: 5 * 60 * 1000,
-    partySessionJitterMs: 5 * 60 * 1000,
     // Dissolved party rows are operational history, not durable state. Keep
     // a short diagnostic window without allowing every rotation to grow the
     // population database forever.

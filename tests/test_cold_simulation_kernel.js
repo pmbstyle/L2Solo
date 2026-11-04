@@ -721,6 +721,15 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.deepStrictEqual(refreshProposal.partyResolution.memberPlans.map(row => row.characterId), [120], 'only changed requirement keys cross the worker boundary');
     assert.strictEqual(refreshProposal.partyResolution.requirementRefreshedAt, now);
     assert.strictEqual(refreshKernel.partyRequirementProgress.size, 0, 'completed refresh scratch is released');
+    const baselineReview = refreshProposal.partyResolution.party.stats.sessionReview;
+    assert(Number.isSafeInteger(baselineReview?.key) && baselineReview.decisions.length === 0,
+        'a new party\'s first resolve records its review evidence, with no review step');
+    const baselineParty = refreshProposal.partyResolution.party, baselineStats = baselineParty.stats;
+    assert(!require('../src/GameServer/Bot/Population/BackgroundPartyLifecycle').sessionExpired(
+        { ...baselineParty, stats: { ...baselineStats, fightsResolved: Number(baselineStats.fightsResolved || 0) + 50,
+            fightsWon: Number(baselineStats.fightsWon || 0) + 50, lastProgressAt: now + 3600000 - 1000 } },
+        now + 3600000, refreshKernel.partyReviewOptions({ party: refreshParty }), refreshMembers),
+    'a winning party with unchanged inputs is not reviewed on the clock');
 
     // A member whose own step moved its kit opens the re-plan with
     // no due mark from main; members already passed wait for the next step.
@@ -838,7 +847,8 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         memberIds: [22, 23],
         spotId: 'old-party-spot',
         startedAt: now - 120000,
-        stats: { sessionExpiresAt: now - 1 }
+        // The review's clock (a concern's grace) ran out.
+        stats: { sessionReview: { at: now - 300000, nextAt: now - 1 } }
     };
     const expiredPartyKernel = recordingKernel({
         resolveSolo: resolver,
@@ -860,8 +870,9 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         .partyResolution.party.status, 'active');
     assert.strictEqual(expiryProposal.payload.proposals.find((proposalEntry) => proposalEntry.characterId === 23)
         .nextState.activity, expiredPartyMembers[1].activity, 'a review alone preserves current travel/activity');
-    assert(expiryProposal.payload.proposals.find(p => p.partyResolution).partyResolution.party.stats.sessionReview.nextAt > now,
-        'review must advance its deadline rather than spin on the legacy expiry');
+    const reviewed = expiryProposal.payload.proposals.find(p => p.partyResolution).partyResolution.party.stats.sessionReview;
+    assert(Number.isSafeInteger(reviewed.key) && !(reviewed.nextAt > 0 && reviewed.nextAt <= now),
+        'review records its inputs rather than spin on a spent deadline');
 
     const expiryScheduleMessages = [];
     let expiryScheduleNow = now;
@@ -880,7 +891,7 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         leaderId: 25,
         memberIds: [25, 26],
         nextResolveAt: expiryScheduleNow + 60000,
-        stats: { sessionExpiresAt: expiryScheduleNow + 5000 }
+        stats: { sessionReview: { at: expiryScheduleNow - 1000, nextAt: expiryScheduleNow + 5000 } }
     };
     const expiryScheduleKernel = recordingKernel({
         resolveSolo: resolver,
@@ -913,7 +924,7 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         leaderId: 27,
         memberIds: [27, 28],
         nextResolveAt: partyDue,
-        stats: { sessionExpiresAt: expiryScheduleNow + 60000 }
+        stats: { sessionReview: { at: expiryScheduleNow - 1000, nextAt: expiryScheduleNow + 60000 } }
     };
     const partyDueFacts = leading(partyDueParty, [partyDueLeader, partyDueMember]);
     assert.strictEqual(nextDueAt(partyDueLeader, expiryScheduleNow, {}, false, partyDueFacts), partyDue,
@@ -942,15 +953,14 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     const singletonMember = state(24, {
         activity: 'grouped',
         timing: { lastResolvedAt: singletonNow - 1000, nextResolveAt: singletonNow + 60000 },
-        party: { partyId: 'singleton-party', leaderId: 24 },
-        stats: { sessionExpiresAt: singletonNow + 5000 }
+        party: { partyId: 'singleton-party', leaderId: 24 }
     });
     const singletonParty = {
         partyId: 'singleton-party',
         leaderId: 24,
         memberIds: [24],
         nextResolveAt: singletonNow + 60000,
-        stats: { sessionExpiresAt: singletonNow + 5000 }
+        stats: { sessionReview: { at: singletonNow - 1000, nextAt: singletonNow + 5000 } }
     };
     const singletonKernel = recordingKernel({
         resolveSolo: resolver,

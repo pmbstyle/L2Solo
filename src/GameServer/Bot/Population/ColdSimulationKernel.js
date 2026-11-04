@@ -215,27 +215,12 @@ function deterministicRandom(state = {}) {
 const NO_FACTS = Object.freeze({ leaderParty: () => null, partyMembers: () => [], buyOrderEscrow: () => 0,
     hallNeeded: () => false, playerWaiting: () => false });
 
-// party: the party row this bot leads, or null.
-function partySessionExpiryAt(state = {}, party = null, partySession = {}) {
-    if (party?.stats?.warOperation) return 0;
-    const partyId = party?.partyId || state.party?.partyId || state.partyId || '';
-    if (!partyId) return 0;
-
-    const explicitExpiry = Number(
-        party?.stats?.sessionReview?.nextAt
-        || party?.stats?.sessionExpiresAt
-        || state.stats?.sessionExpiresAt
-        || 0
-    );
-    if (explicitExpiry > 0) return explicitExpiry;
-
-    const startedAt = Number(
-        party?.stats?.formedAt
-        || party?.startedAt
-        || state.stats?.formedAt
-        || 0
-    );
-    return BackgroundPartyLifecycle.rotationExpiry(partyId, startedAt, partySession);
+// party: the party row this bot leads, or null. The fixed clock its next
+// review waits on (a concern's grace, clan help's end), 0 for none: its
+// other clocks run with its fights and its inputs move with its steps.
+function partySessionExpiryAt(party = null) {
+    if (!party?.partyId || party.stats?.warOperation) return 0;
+    return Number(party.stats?.sessionReview?.nextAt || 0);
 }
 
 // party: the party row this bot leads, or null; members: its member states.
@@ -270,7 +255,7 @@ function nextDueAt(state = {}, timestamp = Date.now(), partySession = {}, meetin
     const partyDue = party ? Number(party.nextResolveAt || 0) : 0;
     const due = partyDue > 0 ? partyDue : stateDue;
     if (party && partyIntegrityInvalid(party, facts.partyMembers(party), partySession)) return timestamp;
-    const sessionExpiry = meetingPending ? 0 : partySessionExpiryAt(state, party, partySession);
+    const sessionExpiry = meetingPending ? 0 : partySessionExpiryAt(party);
     if (sessionExpiry > 0) return due > 0 ? Math.min(due, sessionExpiry) : sessionExpiry;
     return due > 0 ? due : Math.max(0, Number(state.updatedAt || timestamp));
 }
@@ -682,6 +667,10 @@ class ColdSimulationKernel {
         this.flushTargetMs = Math.max(100, Number(options.flushTargetMs) || 2000);
         this.flushHardMs = Math.max(this.flushTargetMs, Number(options.flushHardMs) || 5000);
         this.partySession = options.partySession || {};
+        // partyId -> { key, flags }: the relation flags of a party's session
+        // review (partyReviewOptions), one entry per party in the table,
+        // dropped with its row (partyRemove, partyReset).
+        this.partyRelationFlags = new Map();
         this.partyMinSize = Math.max(2, Number(options.partyMinSize) || 2);
         this.maxAtomicPartySize = Math.max(
             this.partyMinSize,
@@ -792,6 +781,38 @@ class ColdSimulationKernel {
         };
     }
 
+    // A party run's session review options (BackgroundPartyLifecycle review,
+    // sessionExpired, baseline): this thread's relations and personas, and the
+    // relation flags the review reads (PartySessionReview.relationFlags), held
+    // per party while the members' memory, clan war and clan social revisions
+    // hold (a re-read moves the review's key only when a flag flips).
+    partyReviewOptions(run) {
+        const memory = this.interactionMemory, social = memory.clanSocial;
+        const assessRelationship = memory.assess.bind(memory), partyId = String(run.party?.partyId || '');
+        return {
+            ...this.partySession,
+            assessRelationship,
+            relationFlags: (members, timestamp) => {
+                const key = JSON.stringify([memory.clanWars?.revision ?? 0, social?.membershipVersion ?? 0,
+                    members.map(member => {
+                        const id = Number(member.characterId);
+                        return [id, memory.revision(id) ?? 0, social?.clans?.get(social.identity({ id }).clanId)?.revision ?? 0];
+                    })]);
+                const held = this.partyRelationFlags.get(partyId);
+                if (held?.key === key) return held.flags;
+                const flags = require('./PartySessionReview').relationFlags(members, { assessRelationship }, timestamp);
+                this.partyRelationFlags.set(partyId, { key, flags });
+                return flags;
+            },
+            chooseLeader: states => typeof invoke === 'function' ? invoke('GameServer/Bot/Population/BackgroundPartyComposition').chooseLeader(states) : states[0],
+            roleCoverage: states => typeof invoke === 'function' ? invoke('GameServer/Bot/Population/BackgroundPartyComposition').roleCoverage(states) : run.party.roleCoverage,
+            personaFor: state => typeof invoke === 'function' ? invoke('GameServer/Bot/AI/BotPersona').of(state) : state.persona,
+            requiresWeaponBridge: this.requiresWeaponBridge,
+            equipmentBridgeReason: this.equipmentBridgeReason,
+            spot: run.spot
+        };
+    }
+
     dueAt(state, timestamp = this.now()) {
         // Compact catalog members carry no stats. Read the current roster
         // locally; no additional snapshot fields or population scan.
@@ -831,6 +852,7 @@ class ColdSimulationKernel {
 
     partyRemove(partyId) {
         this.clearFault(`party:${partyId}`);
+        this.partyRelationFlags.delete(String(partyId));
         const previous = this.partyUnindex(partyId);
         if (previous) this.refreshLeaderSchedule(previous.leaderId);
         return previous;
@@ -842,6 +864,7 @@ class ColdSimulationKernel {
         const leaders = [...this.parties.values()].map(party => party.leaderId);
         this.parties.clear();
         this.partyByMember.clear();
+        this.partyRelationFlags.clear();
         for (const id of leaders) this.refreshLeaderSchedule(id);
         return leaders;
     }
@@ -1864,20 +1887,12 @@ class ColdSimulationKernel {
             const rescuing = run.members.some(s => s.vitals?.hp <= 0);
             const equipmentBridgeReview = !run.party.stats?.warOperation && !meetingPending && !rescuing && !BackgroundPartyLifecycle.raidStarted(run.party)
                 && run.members.some(member => this.equipmentBridgeReason?.(member) || this.requiresWeaponBridge?.(member));
+            const reviewOptions = this.partyReviewOptions(run);
             if (!meetingPending && !rescuing && !run.party.stats?.warOperation && !CraftMaterialPartyRoute.evacuating(run.party)
-                && (BackgroundPartyLifecycle.sessionExpired(run.party, startedAt, this.partySession)
+                && (BackgroundPartyLifecycle.sessionExpired(run.party, startedAt, reviewOptions, run.members)
                 || ClanEquipment.needsReview(run.party, run.members)
                 || equipmentBridgeReview)) {
-                const review = BackgroundPartyLifecycle.review(run.party, run.members, startedAt, {
-                    ...this.partySession,
-                    assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),
-                    chooseLeader: states => typeof invoke === 'function' ? invoke('GameServer/Bot/Population/BackgroundPartyComposition').chooseLeader(states) : states[0],
-                    roleCoverage: states => typeof invoke === 'function' ? invoke('GameServer/Bot/Population/BackgroundPartyComposition').roleCoverage(states) : run.party.roleCoverage,
-                    personaFor: state => typeof invoke === 'function' ? invoke('GameServer/Bot/AI/BotPersona').of(state) : state.persona,
-                    requiresWeaponBridge: this.requiresWeaponBridge,
-                    equipmentBridgeReason: this.equipmentBridgeReason,
-                    spot: run.spot
-                });
+                const review = BackgroundPartyLifecycle.review(run.party, run.members, startedAt, reviewOptions);
                 const proposals = partyTransitionProposals(run, review.states, review.party, startedAt, this.now(), {
                     type: 'party_session_review', summary: `Party ${run.party.partyId} reviewed its shared hunt`, weight: 1,
                     meta: { partyId: run.party.partyId, departed: [...review.leaving.keys()], decisions: review.decisions }
@@ -1927,7 +1942,10 @@ class ColdSimulationKernel {
                     stats: {
                         ...(run.party.stats || {}),
                         lastResolveAt: startedAt,
-                        travel: null
+                        travel: null,
+                        // A trip is no idleness: the no-fight clock counts from its arrival.
+                        ...(run.party.stats?.sessionReview
+                            ? { sessionReview: { ...run.party.stats.sessionReview, idleSince: startedAt } } : {})
                     }
                 };
                 const materialArrival = CraftMaterialPartyRoute.arrived(run.party, arrivedMembers, startedAt);
@@ -2050,6 +2068,10 @@ class ColdSimulationKernel {
                 stats: { ...(run.party.stats || {}), ...(resolution.partyPatch?.stats || {}) },
                 nextResolveAt: resolution.nextResolveAt
             };
+            // A new party's first review evidence rides this resolve's row.
+            if (!run.party.stats?.sessionReview && !meetingPending && !rescuing && resolvedParty.status !== 'dissolved'
+                && !run.party.stats?.warOperation && !BackgroundPartyLifecycle.raidStarted(run.party))
+                resolvedParty.stats.sessionReview = BackgroundPartyLifecycle.baseline(run.party, run.members, startedAt, reviewOptions);
             // The pending join main recorded (recruitBackgroundMembers): the
             // recruit check runs here on this thread's copies of the recruits;
             // the answer rides the leader's proposal (main commits a join). A

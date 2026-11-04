@@ -234,9 +234,11 @@ include matchup, individual roles and affected member IDs. No PvP is executed.
 
 ## Party lifetime
 
-The legacy `sessionExpiresAt` is now the first review deadline, not a disband
-deadline. Further reviews run every five minutes and persist a bounded decision
-per member. Recent wins sustain a group; an urgent goal elsewhere, personal
+A party's first resolve records its review evidence (no review step). A review
+runs when its inputs move (roster and levels, objective, members' plan targets
+and clan objectives, relation revisions) or a clock runs out (a concern's grace,
+patience with no win, recent progress ending, a pause ending), never on a fixed
+cadence, and persists a bounded decision per member. Recent wins sustain a group; an urgent goal elsewhere, personal
 hostility or repeated unsuccessful attempts with no progress can cause departure.
 Commitment and friendship extend patience; committed friends can keep helping.
 Goal/conflict concerns must persist through a grace period. Recovery and travel

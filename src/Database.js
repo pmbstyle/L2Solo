@@ -6741,9 +6741,8 @@ const Database = {
             delete partyStats.playerTakeover;
             partyStats.partyBreakReason = 'player_party_released';
             // Time spent under a player leader is not autonomous party-session
-            // age. Start a fresh review window when the bots resume control.
+            // age. The bots' next resolve records a fresh review baseline.
             partyStats.formedAt = timestamp;
-            partyStats.sessionExpiresAt = null;
             partyStats.sessionReview = null;
             partyStats.lastProgressAt = timestamp;
             partyStats.partySpotRisk = null;

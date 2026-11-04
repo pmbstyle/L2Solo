@@ -1591,12 +1591,7 @@ function startKernel(config = {}) {
         shotIndex: invoke('GameServer/Bot/Economy/ShotMarketIndex').native(),
         resolveSolo: (options) => BackgroundResolver.resolveSolo(options),
         resolveParty: (options) => BackgroundPartyResolver.resolve(options),
-        partySession: {
-            partySessionMaxMs: Config.partySessionMaxMs,
-            partyReviewIntervalMs: Config.partyReviewIntervalMs,
-            partySessionJitterMs: Config.partySessionJitterMs,
-            partyMinSize: Config.partyMinSize
-        },
+        partySession: { partyMinSize: Config.partyMinSize },
         partyMinSize: Config.partyMinSize,
         buyOrderEscrow: escrowFor,
         hallNeeded,
