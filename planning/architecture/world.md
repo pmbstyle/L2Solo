@@ -59,7 +59,8 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
   intervals), per-session `moveTimer`.
 - **DataCache:** frozen datapack; two lookup styles (WOR-14).
 - **WorldObserver:** dev HTTP UI (3.2k lines), reads World, DB, bots; own town list. Its knowledge pages read the
-  game's one KB copy (`KnowledgeBaseService`, persistence.md).
+  game's one loaded KB (`KnowledgeBaseService`, persistence.md); its detail calls are uncached (one mob/spawn read
+  from disk per `npcDetail`).
 
 ## Data flow
 

@@ -83,7 +83,7 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
 | History rows | `historyOutboxUnsafe` → `HistoryStore.APPLY` | owner |
 | Stopped-DB integrity check | `DatabaseRestore.quickCheckDatabase` | shared |
 | Generated data | each `scripts/generate-*`; KB checked by `check:knowledge-base` | no manifest (PER-14) |
-| Generated KB in memory | `KnowledgeBaseService` `loadData`: one parsed copy per data directory, shared by `NativeKnowledgeBase` (NPC dialogs, bot dialogue) and the observer's pages (icons per request); item sources kept as mob ids and counts only (`compactItemSources`, ~26 MB heap) | owner |
+| Generated KB in memory | `KnowledgeBaseService` `loadData`: one load per data directory, shared by `NativeKnowledgeBase` (NPC dialogs, bot dialogue) and the observer's pages (icons per request). In memory: manifest, skills, item/mob rows for lists and summaries (traits computed once), item sources as mob ids (`itemSourceIndex`), reward groups as one Float64Array (`rewardGroupIndex`): ~6 MB heap + 1 MB typed arrays. Full item/mob/spawn records are read on demand by byte range (`KnowledgeBaseRecords`: ranges scanned at load from the generator's layout, fds held open; the generator replaces files by rename) | owner |
 
 ## Debt
 

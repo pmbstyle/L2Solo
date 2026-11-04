@@ -13,3 +13,4 @@ tmp/
 /.codex-remote-attachments
 .DS_Store
 .DS_Store
+data/KnowledgeBase/*.json.tmp

@@ -11,7 +11,7 @@ const { createExportedCatalogue } = require('../src/GameServer/Knowledge/Exporte
 const { create } = require('../src/GameServer/Knowledge/GameDataCatalogue');
 const DataCache = invoke('GameServer/DataCache'), NativeRecipes = require('../src/GameServer/Items/C4RecipeItems');
 const beforeNative = { items: DataCache.items, npcs: DataCache.npcs, spawns: DataCache.npcSpawns, recipes: NativeRecipes.loadedSource() };
-let ownedExport, itemReads = 0, npcReads = 0;
+let ownedExport, sharedExport, npcReads = 0;
 
 const previousPreset = process.env.L2NODE_PROGRESSION_RATE;
 const dataDir = path.join(__dirname, '..', 'data', 'KnowledgeBase');
@@ -22,8 +22,7 @@ const service = createKnowledgeBaseService({
     catalogueFactory: (data, options) => {
         ownedExport = data;
         const catalogue = createExportedCatalogue(data, options);
-        return { ...catalogue, item: id => { itemReads++; return catalogue.item(id); },
-            npc: id => { npcReads++; return catalogue.npc(id); } };
+        return { ...catalogue, npc: id => { npcReads++; return catalogue.npc(id); } };
     }
 });
 
@@ -52,6 +51,7 @@ try {
     assert.strictEqual(skillDetail.name, 'NPC Wind Strike');
     assert(skillDetail.observation.includes('not proof this bot learned'));
     const nativeSkillService = createKnowledgeBaseService({ dataDir, progressionRates: ProgressionRates,
+        catalogueFactory: (data, options) => { sharedExport = data; return createExportedCatalogue(data, options); },
         nativeSkills: () => [{ selfId: 3, template: { name: 'Power Strike', distance: 50 }, levels: [{ level: 1, mp: 10, power: 25 }, { level: 2, mp: 10, power: 27 }] }] });
     assert(nativeSkillService.listSkills({ q: 'Power Strike' }).items.some(skill => skill.id === 3 && skill.name === 'Power Strike'));
     assert.strictEqual(nativeSkillService.skillDetail(3).levelCount, 2);
@@ -108,15 +108,38 @@ try {
     const blackWolf = shortSword.sources.drops.find((npc) => npc.id === 317);
     assert.strictEqual(blackWolf.chancePercent, 1.0393); // Lisvus 317: 10393 / 1e6
     const exported = service.catalogue();
-    assert.equal(exported.item(1), ownedExport.itemById.get(1));
-    assert.equal(nativeSkillService.catalogue().item(1), exported.item(1),
-        'services over one data directory share one parsed copy (the game dialogs and the observer)');
-    const rawItems = JSON.parse(fs.readFileSync(path.join(dataDir, 'items.json'), 'utf8'));
+    nativeSkillService.catalogue();
+    assert.equal(sharedExport, ownedExport, 'services over one data directory share one loaded copy (the game dialogs and the observer)');
+    const raw = (name) => JSON.parse(fs.readFileSync(path.join(dataDir, `${name}.json`), 'utf8'));
+    const rawItems = raw('items'), rawMobs = raw('mobs'), rawSpawns = raw('spawns');
     const rawShortSword = rawItems.find((item) => item.id === 1);
+    // Full records are read from disk on demand: each is the generated record (an item's sources through
+    // sourcesForItem only), for every 20th record and the first and last.
+    const sampled = (rows) => rows.filter((row, index) => index % 20 === 0 || index === rows.length - 1);
+    sampled(rawItems).forEach((item) => assert.deepStrictEqual(exported.item(item.id), { ...item, sources: null }, `item ${item.id} record`));
+    sampled(rawSpawns).forEach((spawn) => assert.deepStrictEqual(exported.spawn(spawn.id), spawn, `spawn ${spawn.id} record`));
+    const rawSpawnById = new Map(rawSpawns.map((spawn) => [spawn.id, spawn]));
+    sampled(rawMobs).forEach((mob) => {
+        assert.deepStrictEqual(exported.npc(mob.id), mob, `mob ${mob.id} record`);
+        assert.deepStrictEqual(exported.spawnsForNpc(mob.id), mob.spawnIds.map((id) => rawSpawnById.get(id)), `mob ${mob.id} spawns`);
+        // Reward groups are kept compact in memory: the same rolls as the generated groups, at the generated x1 rates.
+        const detail = service.npcDetail(mob.id);
+        for (const [field, kind] of [['drops', 'drop'], ['spoils', 'spoil']]) {
+            assert.deepStrictEqual(detail[field].map((group) => [group.groupIndex, group.items.map((item) => [item.itemId, item.name])]),
+                mob[field].map((group) => [group.groupIndex, group.items.map((item) => [item.itemId, item.sourceName])]), `mob ${mob.id} ${kind} groups`);
+            detail[field].forEach((group, groupIndex) => group.items.forEach((item, itemIndex) => {
+                const generated = mob[field][groupIndex].items[itemIndex].rateProfiles.x1;
+                assert.ok(Math.abs(item.chancePercent - generated.chancePercent) <= 1e-8
+                    && Math.abs(item.expectedAmountPerKill - generated.expectedAmountPerKill) <= 1e-8, `mob ${mob.id} ${kind} ${item.itemId} x1 rate`);
+            }));
+        }
+        assert.deepStrictEqual([detail.dropCount, detail.spoilCount, detail.spawnCount],
+            [mob.drops.flatMap((group) => group.items).length, mob.spoils.flatMap((group) => group.items).length, mob.spawnIds.length]);
+    });
     const mobIdRecords = (records) => records.map(({ mobId }) => ({ mobId }));
     assert.deepEqual(exported.sourcesForItem(1, { kind: 'drop' }), mobIdRecords(rawShortSword.sources.drops));
     assert.equal(exported.sourcesForItem(1), null);
-    assert.equal(exported.potentialSpawnData().definitions, ownedExport.spawns);
+    assert.deepStrictEqual(exported.potentialSpawnData().definitions, rawSpawns);
     assert.deepEqual(service.relations('item', 1, { spots: [] }), { kind: 'item', id: 1, origin: 'exported',
         recipes: { available: false, origin: null, revision: null, producedBy: null, usedBy: null },
         sources: { available: true, origin: 'exported', revision: ownedExport.manifest?.generatedAt || null,
@@ -166,9 +189,9 @@ try {
     const combined = createExportedCatalogue(ownedExport, { nativeCatalogue: nativeFixture });
     assert.equal(combined.recipesForProduct(1), fixtureRecipes);
     assert.equal(combined.relations('npc', 317, { spots: [] }).selectedSpots.rows, fixtureSpots);
-    assert.equal(combined.item(1), exported.item(1), 'explicit native relations do not replace exported legacy detail rows');
+    assert.deepStrictEqual(combined.item(1), exported.item(1), 'explicit native relations do not replace exported legacy detail rows');
 
-    const mobs = require('../data/KnowledgeBase/mobs.json');
+    const mobs = rawMobs;
     const mobById = new Map(mobs.map(npc => [npc.id, npc]));
     let checkedRelations = 0;
     for (const npc of mobs.filter(npc => npc.minions?.length || npc.minionOf?.length)) {
@@ -244,7 +267,7 @@ try {
         'NPC detail stat grids must render whole values');
     assert.match(mapHtml, /href="\/observer\/database\/items"/);
     assert.match(mapHtml, /id="npcSpawnLayer"/);
-    assert(itemReads > 1 && npcReads > 1, 'actual reference detail readers call the common interface');
+    assert(npcReads > 1, 'npcDetail reads the mob record through the common interface');
     assert.deepEqual({ items: DataCache.items, npcs: DataCache.npcs, spawns: DataCache.npcSpawns, recipes: NativeRecipes.loadedSource() }, beforeNative,
         'standalone exported reference never initializes the native datapack/recipe source');
 } finally {

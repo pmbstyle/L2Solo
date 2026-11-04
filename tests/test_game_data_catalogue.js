@@ -116,10 +116,11 @@ try {
     assert.notEqual(revisionOf(growing), beforeGrowth);
 
     const exportedSpawns = [{ id: 'E' }];
-    const data = { itemById: new Map([[1864, { id: 1864 }]]),
-        itemSources: { mobIds: (id, kind) => id === 1864 && kind === 'drops' ? [1] : [] },
-        mobById: new Map([[1, { spawnIds: ['E'] }]]), spawnById: new Map([['E', exportedSpawns[0]]]),
-        spawns: exportedSpawns, manifest: { generatedAt: 'fixture-export' } };
+    const exportedSpawn = id => id === 'E' ? exportedSpawns[0] : null;
+    const data = { itemSources: { mobIds: (id, kind) => id === 1864 && kind === 'drops' ? [1] : [] },
+        records: { item: id => id === 1864 ? { id: 1864 } : null, npc: id => id === 1 ? { spawnIds: ['E'] } : null,
+            spawn: exportedSpawn, spawns: ids => (ids || []).map(exportedSpawn).filter(Boolean), allSpawns: () => exportedSpawns },
+        manifest: { generatedAt: 'fixture-export' } };
     const e = createExportedCatalogue(data, { nativeCatalogue: c });
     assert.equal(e.capabilities({ spots: A }).selectedSources, true);
     assert.equal(e.sourceIndexFor(A), plannerMap, 'injected export returns the existing native Map');

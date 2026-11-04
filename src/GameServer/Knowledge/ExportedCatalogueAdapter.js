@@ -1,9 +1,9 @@
 'use strict';
 
-// Wrap the reference service's already-owned Maps, relation lists and item
-// source reader. No native require/init or extra payload copy: optional native
-// queries are supplied explicitly by a caller that already owns the loaded
-// native data.
+// Wrap the reference service's loaded knowledge base: its on-demand record
+// reader (a fresh parsed item/mob/spawn record per call) and item source reader.
+// No native require/init or extra payload copy: optional native queries are
+// supplied explicitly by a caller that already owns the loaded native data.
 const { create } = require('./GameDataCatalogue');
 const EMPTY = Object.freeze([]);
 
@@ -23,10 +23,10 @@ function createExportedCatalogue(data, { nativeCatalogue = null } = {}) {
             return { sources: exportedInfo(), potentialSpawns: exportedInfo(), recipes: borrowed('recipes'),
                 selectedSources: borrowed('selectedSources'), selectedSpots: borrowed('selectedSpots') };
         },
-        item: id => data.itemById.get(id) || null,
-        npc: id => data.mobById.get(id) || null,
-        spawn: id => data.spawnById.get(id) || null,
-        spawnsForNpc: id => (data.mobById.get(id)?.spawnIds || []).map(key => data.spawnById.get(String(key))).filter(Boolean),
+        item: id => data.records.item(id),
+        npc: id => data.records.npc(id),
+        spawn: id => data.records.spawn(id),
+        spawnsForNpc: id => data.records.spawns(data.records.npc(id)?.spawnIds),
         // Exported source records carry the mob id only (the knowledge base keeps no other source field).
         sourcesForItem: (id, { kind } = {}) => {
             const mobIds = data.itemSources.mobIds(id, kind);
@@ -42,7 +42,7 @@ function createExportedCatalogue(data, { nativeCatalogue = null } = {}) {
         selectedNpcSpots: (id, spots) => nativeCatalogue?.selectedNpcSpots(id, spots) ?? null,
         selectedSpotNpcs: (id, spots) => nativeCatalogue?.selectedSpotNpcs(id, spots) ?? null,
         potentialSpawnData: () => ({ kind: 'potential_definitions', origin: 'exported',
-            revision: data.manifest?.generatedAt || null, definitions: data.spawns,
+            revision: data.manifest?.generatedAt || null, definitions: data.records.allSpawns(),
             totalSemantics: 'per_explicit_coordinate_or_random_total_in_bounds',
             periodSemantics: 'day_or_night_otherwise_always', population: 'definition_only' })
     });

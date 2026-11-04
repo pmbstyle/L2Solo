@@ -54,6 +54,7 @@ function canonicalize(value) {
         .filter(([, entry]) => entry !== undefined));
 }
 
+// The server reads items/mobs/spawns record by record in this layout (src/WorldObserver/KnowledgeBaseRecords.js).
 function jsonText(value) {
     return `${JSON.stringify(canonicalize(value), null, 2)}\n`;
 }
@@ -502,7 +503,28 @@ function serializeOutputs(database) {
 
 function writeOutputs(outputs) {
     fs.mkdirSync(outputDir, { recursive: true });
-    outputs.forEach((text, name) => fs.writeFileSync(path.join(outputDir, name), text));
+    // Replace each file by rename: a running server keeps reading the file it loaded through its open descriptor.
+    outputs.forEach((text, name) => {
+        const target = path.join(outputDir, name), temporary = `${target}.tmp`;
+        fs.writeFileSync(temporary, text);
+        try {
+            renameWithRetry(temporary, target);
+        } finally {
+            fs.rmSync(temporary, { force: true });
+        }
+    });
+}
+
+// Windows refuses a rename for a moment while a scanner or indexer holds the target: retry for up to ~2 s.
+function renameWithRetry(from, to) {
+    for (let attempt = 1; ; attempt++) {
+        try {
+            return fs.renameSync(from, to);
+        } catch (error) {
+            if (!['EPERM', 'EBUSY', 'EACCES'].includes(error.code) || attempt >= 20) throw error;
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+        }
+    }
 }
 
 function checkOutputs(outputs) {
