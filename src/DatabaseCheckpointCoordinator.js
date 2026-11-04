@@ -36,6 +36,9 @@ const counters = {
 };
 let last = null;
 let lastReset = null;
+// Told each finished checkpoint, after it is recorded and no longer in flight
+// (onResult): the WAL truncate decides on a fresh passive result there.
+const resultListeners = new Set();
 // The worker's heap as of its last answer (WorkerHeapTelemetry.heapRecord).
 let workerHeap = null;
 
@@ -122,6 +125,9 @@ function spawn() {
         });
         if (activeRequest?.id === Number(message.id)) activeRequest = null;
         entry.resolve(result);
+        for (const listener of resultListeners) {
+            try { listener(result); } catch (_) { /* a listener must not break the checkpoint loop */ }
+        }
     });
     instance.on('error', (error) => {
         if (instance !== worker) return;
@@ -245,10 +251,15 @@ function snapshot() {
     };
 }
 
+function onResult(listener) {
+    resultListeners.add(listener);
+    return () => resultListeners.delete(listener);
+}
+
 async function terminateForTest() {
     if (!worker) return false;
     await worker.terminate();
     return true;
 }
 
-module.exports = { start, request, stop, snapshot, terminateForTest };
+module.exports = { start, request, stop, snapshot, onResult, terminateForTest };

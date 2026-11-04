@@ -6763,6 +6763,11 @@ const Database = {
         return CheckpointCoordinator.snapshot();
     },
 
+    // listener(result) after each finished checkpoint; returns the unsubscribe.
+    onCheckpoint(listener) {
+        return CheckpointCoordinator.onResult(listener);
+    },
+
     checkpoint(options = {}) {
         if (shuttingDown) return Promise.reject(new Error('SQLite shutdown is in progress (maintenance:checkpoint)'));
         if (!connection) return Promise.reject(new Error('SQLite is not initialized (maintenance:checkpoint)'));

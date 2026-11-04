@@ -1058,7 +1058,7 @@ const PopulationService = {
     classProgressionMigrationTimer: null,
     nextStateRetentionAt: 0,
     stateRetentionPassRows: 0,
-    walResetTimer: null,
+    walResetUnsubscribe: null,
     walResetRunning: false,
     nextWalResetAt: 0,
     personaBackfillTimer: null,
@@ -1163,15 +1163,7 @@ const PopulationService = {
                 () => this.nextStateRetentionAt, timestamp => this.runStateRetention(timestamp));
         }
 
-        // The WAL reset stays a poll: its gate (WAL bytes past a threshold, an
-        // idle write queue, no checkpoint in flight) has no event to wait for.
-        const walResetIntervalMs = Math.max(1000, Number(options.default.Database?.checkpointResetIntervalMs) || 5000);
-        if (Number(options.default.Database?.checkpointResetWalBytes) > 0) {
-            this.walResetTimer = setInterval(() => {
-                this.runAdaptiveWalReset();
-            }, walResetIntervalMs);
-            if (typeof this.walResetTimer.unref === 'function') this.walResetTimer.unref();
-        }
+        this.armWalReset();
 
         if (Config.phasePolicyEnabled !== false) {
             this.phasePolicyTimer = setInterval(() => {
@@ -1222,10 +1214,8 @@ const PopulationService = {
         this.stateRetentionRunning = false;
         this.stateRetentionPassRows = 0;
         this.nextStateRetentionAt = 0;
-        if (this.walResetTimer) {
-            clearInterval(this.walResetTimer);
-            this.walResetTimer = null;
-        }
+        this.walResetUnsubscribe?.();
+        this.walResetUnsubscribe = null;
         this.walResetRunning = false;
         this.nextWalResetAt = 0;
         PersistentStateRetention.reset();
@@ -2733,6 +2723,21 @@ const PopulationService = {
             resetGrowthBytes,
             resetDue
         };
+    },
+
+    // The WAL truncate is tried when a passive checkpoint finishes (every
+    // checkpointIntervalMs while the WAL is past checkpointMinWalBytes): the
+    // gate wants that fresh, complete result and no checkpoint in flight. Not a
+    // poll: one on the checkpoint's own period phase-locks with it after a long
+    // main turn (both due in one timer pass, the checkpoint first), then sees a
+    // checkpoint in flight on every try and the WAL never truncates.
+    armWalReset() {
+        this.walResetUnsubscribe?.();
+        this.walResetUnsubscribe = null;
+        if (!(Number(options.default.Database?.checkpointResetWalBytes) > 0)) return;
+        this.walResetUnsubscribe = Database.onCheckpoint((result) => {
+            if (result?.mode === 'passive' && result.ok && !result.skipped) this.runAdaptiveWalReset();
+        });
     },
 
     runAdaptiveWalReset(timestamp = Date.now()) {

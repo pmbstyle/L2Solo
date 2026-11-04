@@ -145,6 +145,27 @@ async function run() {
         'due WAL pressure must receive the maintenance timer quiet window even when intervals share a phase');
     assert.strictEqual(checkpointCalls, 3);
     assert.strictEqual(phaseLockedRetentionCalls, 0, 'state retention must yield before opening a competing transaction');
+
+    // The truncate is tried as each passive checkpoint finishes, not on a poll
+    // that can phase-lock with the checkpoint timer and always find it in flight.
+    const originalOnCheckpoint = Database.onCheckpoint;
+    let checkpointListener = null;
+    Database.onCheckpoint = (listener) => { checkpointListener = listener; return () => { checkpointListener = null; }; };
+    PopulationService.armWalReset();
+    assert.strictEqual(typeof checkpointListener, 'function', 'WAL pressure must be watched from checkpoint results');
+    PopulationService.walResetRunning = false;
+    PopulationService.nextWalResetAt = 0;
+    checkpointListener({ ok: true, mode: 'truncate', busy: 0 });
+    checkpointListener({ ok: true, mode: 'passive', skipped: true });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(checkpointCalls, 3, 'a reset or a skipped checkpoint must not start another reset');
+    checkpointListener({ ok: true, mode: 'passive', skipped: false, busy: 0, logFrames: 20, checkpointedFrames: 20 });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.strictEqual(checkpointCalls, 4, 'a finished passive checkpoint under due WAL pressure must request the truncate');
+    PopulationService.walResetUnsubscribe();
+    assert.strictEqual(checkpointListener, null);
+    PopulationService.walResetUnsubscribe = null;
+    Database.onCheckpoint = originalOnCheckpoint;
     Database.pending = originalDatabasePending;
     Database.checkpointSnapshot = originalDatabaseCheckpointSnapshot;
     Database.checkpoint = originalDatabaseCheckpoint;

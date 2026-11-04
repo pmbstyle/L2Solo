@@ -78,8 +78,17 @@ async function run() {
 
     reader.exec('ROLLBACK');
     reader.close();
+    // The WAL truncate decides on this notice (PopulationService.armWalReset):
+    // the result is recorded and the checkpoint no longer in flight.
+    const notices = [];
+    const unsubscribe = Database.onCheckpoint((result) => notices.push({ result, inFlight: CheckpointCoordinator.snapshot().inFlight,
+        last: CheckpointCoordinator.snapshot().last?.mode }));
     const drained = await Database.checkpoint();
+    unsubscribe();
     assert.strictEqual(drained.ok, true);
+    // The 5 s timer's own checkpoint may be told too; this one is told once.
+    assert.deepStrictEqual(notices.filter(notice => notice.result === drained).map(notice => [notice.result.mode, notice.inFlight, notice.last]),
+        [['passive', false, 'passive']], 'a finished checkpoint must be told once, after it is recorded and no longer in flight');
     assert(Number(drained.checkpointedFrames) <= Number(drained.logFrames));
     const reset = await Database.checkpoint({ mode: 'restart', busyTimeoutMs: 50 });
     assert.strictEqual(reset.ok, true);

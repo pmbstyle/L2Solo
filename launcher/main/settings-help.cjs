@@ -8,7 +8,6 @@ const help = {
         checkpointMinWalBytes: 'Minimum write-ahead log size, in bytes, before a routine checkpoint does work. Smaller thresholds cause more frequent disk activity.',
         checkpointResetWalBytes: 'Log size in bytes that makes an idle-time log reset eligible. 0 disables resets; resets still wait for an idle database and no real or connecting players.',
         checkpointResetGrowthBytes: 'Additional log growth in bytes required after the previous successful reset before another reset is eligible.',
-        checkpointResetIntervalMs: 'How often the server checks whether an idle-time database log reset is needed, in milliseconds.',
         checkpointResetCooldownMs: 'Minimum wait after a successful database log reset, in milliseconds. Limits how often this maintenance can run.',
         checkpointResetRetryMs: 'Wait before retrying a log reset that could not proceed, in milliseconds.',
         checkpointResetBusyTimeoutMs: 'Maximum time a log-reset attempt waits for a database lock, in milliseconds. The runtime limits this wait to 250 ms to protect gameplay.'

@@ -171,7 +171,7 @@ player online (8 in flight, status `coldDue`).
 | Busy timeout | 5 s (PRAGMA); checkpoint 250 / 50 ms | Database ~4452, `src/DatabaseCheckpointWorker.js` ~10 | transaction rejected | log |
 | Final checkpoint at shutdown | 3 s (timer cleared when the checkpoint answers) | `src/DatabaseCheckpointCoordinator.js` `stop` | `checkpoint_shutdown_timeout`, the worker is terminated | result only |
 | Passive checkpoint | WAL ≥ 4 MB, 5 s | DatabaseCheckpointCoordinator ~7 | skipped | dD |
-| WAL truncate | 256 MB, +64 MB, 60 s (`[Database] checkpointReset*`), polled every 5 s; **only without a player** (+30 s grace), empty DB queue, no checkpoint/resolve/retention/party formation running | `PopulationService.runAdaptiveWalReset` ~2732 | silently skipped | success dD; failure log |
+| WAL truncate | 256 MB, +64 MB, 60 s (`[Database] checkpointReset*`), tried when a passive checkpoint finishes (`armWalReset`, 5 s); **only without a player** (+30 s grace), empty DB queue, no checkpoint/resolve/retention/party formation running | `PopulationService.runAdaptiveWalReset` ~2743 | silently skipped | success dD; failure log |
 | State retention | 64 rows, 1 s, 12 ms; 60 s pause after a pass, 6 h idle pause | PopulationConfig ~116 | deferred the whole session while a player is online (`player_protected`) | dD |
 | Retention caps | activity 100k; tool 50k; LLM 50k; conversation 512; 30 days; 128 rows per pair (PopulationConfig keys, e.g. `activityJournalMaxRows`) | PersistentStateRetention ~4 | only when retention runs | dD |
 | Safety sweep | 64 rows/page, 30 min, 240 KB repair | LifecycleSafetySweep ~6, ~109, ~216 | cycle stretches; oversized repair edge skipped, retried after 30 min | dD `deferred` |
