@@ -1,4 +1,5 @@
 const FailureLog = require('../../FailureLog');
+const FaultHold = require('./BotFaultHold');
 const ClassProgression = invoke('GameServer/ClassProgression');
 const DiagnosticConfig = require('./Population/PopulationConfig');
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
@@ -109,6 +110,35 @@ function clearTacticalState(session) {
     session.retreatFailure = undefined;
     session.spoilAttemptedTargetId = undefined;
     session.sweepAttemptedTargetId = undefined;
+}
+
+// The plan a bot falls back to: a player's companion follows, a merchant keeps its
+// store, a player killer hunts players, any other bot hunts.
+function ownPlan(session, bot) {
+    if (session.followPlayerSession && session.partyCompanion === true) return 'following';
+    if (session.plan === 'merchant' || bot.fetchPrivateStore?.()) return 'merchant';
+    return session.pkProfile ? 'pk_hunting' : 'hunting';
+}
+
+// A hot AI state that threw: the cold step's answer (BotFaultHold). Counted under its plan
+// (the first stack logged); the bot's state is held off longer per fault in a row while the
+// rest of its tick (death, PvP defense, party sync) runs; at the fifth in a row it leaves
+// that plan for its own (ownPlan), which runs at once, and its held decision is taken again,
+// the step it held proved impossible (counted `ai.state_left`). A state tick that returns
+// ends the run.
+function stateFaulted(session, bot, plan, error, now = Date.now()) {
+    FailureLog.note(`ai.state.${plan}`, error);
+    const entry = session.stateFault ||= { count: 0, holdUntil: 0 };
+    FaultHold.fault(entry, now);
+    if (entry.count !== FaultHold.QUARANTINE_AFTER) return;
+    FailureLog.note('ai.state_left', error);
+    raiseDecision(session, 'sources', { impossible: true });
+    const own = ownPlan(session, bot);
+    if (own === plan) return;
+    bot.automation?.abortAll?.(bot);
+    session.currentTargetId = undefined;
+    session.plan = own;
+    entry.holdUntil = now;
 }
 
 function recordHotStage(name, startedAt) {
@@ -693,11 +723,13 @@ const BotAI = {
         if (state) {
             const stateName = session.plan;
             const stateStartedAt = DiagnosticConfig.developerDiagnostics ? performance.now() : 0;
+            // A state held off after its faults (stateFaulted) waits.
+            if (session.stateFault?.holdUntil > tickStartedAt) return;
             try {
                 state.tick(session, bot, Generics, BotAI);
+                if (session.stateFault) session.stateFault = null;
             } catch (err) {
-                // A state that throws on every tick: counted, its first stack logged.
-                FailureLog.note(`ai.state.${stateName}`, err);
+                stateFaulted(session, bot, stateName, err);
             } finally {
                 DiagnosticConfig.developerDiagnostics && recordHotStage(`state.${stateName}`, stateStartedAt);
             }

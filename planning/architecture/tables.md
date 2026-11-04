@@ -1,8 +1,8 @@
 # Bot tables (precomputed)
 
-Checked at 199c3b19 (2026-11-04).
+Checked at 39e43408 (2026-11-04).
 
-Survey of `ivan/next-release` @ be97733e; committed tables of 0a4e1c245 (Tables run 41728520994). Line numbers drift; search by
+Survey of `ivan/next-release` @ be97733e; committed tables of d45cfa5a3 (f62f1683, Tables run 41751582154). Line numbers drift; search by
 name. Scope: `data/Bots/*.json`, `data/Bots/hunt/*.json`, `scripts/generate-spot-table.js`,
 `scripts/generate-spot-reward-catalog.js`, `scripts/hunt-tables/*`, `scripts/fight-table/*`,
 `scripts/hunt-cycle-check.js`, `.github/workflows/tables.yml`, reader `Bot/AI/SpotValueTable`.
@@ -63,14 +63,26 @@ Loot response: `GearAcquisitionPlanner.itemDropYield` at x1/x10/x50. The catalog
   potions per outing — a copy of the stock rule (`EconomyContext.foundation` buys the row's use).
 - Header: `revision` = `git rev-parse --short=9 HEAD` at build time, `+local` when `git status` shows changes under
   `src`, `data/Npcs`, `data/Items`, `data/Skills`, `data/Templates` (not `scripts/`, not geodata), or `--revision=`.
-  `inputs` (hours, seed, geodata, rate x1, maxLevel 78, refGap, bands, curve spots, line classes), `counts`
-  (246937 simulated hours for this table).
+  `fingerprint` = `{ hash, files: { path: sha1 } }` of the files `TableFingerprint` lists for the spot table (written by
+  the merge phase, so a `pick` artifact carries one too). `inputs` (hours, seed, geodata, rate x1, maxLevel 78, refGap,
+  bands, curve spots, line classes), `counts` (233672 simulated hours for this table).
 
-**Staleness at runtime.** `SpotValueTable.checkCatalog` runs at the first read on each thread and when the catalogue
+**Staleness.** Two checks. `SpotValueTable.checkCatalog` runs at the first read on each thread and when the catalogue
 moves: one line `SpotTable  N of M catalogue spots missing; geodata: table X, server Y; table revision R`, a warning
-when spots are missing or the geodata differs. It catches a spawn or geodata change (spot ids move). It never compares
-`revision` with the running code: a table built before a combat change is used silently. Hunt-table `fingerprints`
-(sha1 of the data dirs) are written and read by nobody.
+when spots are missing or the geodata differs. It catches a spawn or geodata change (spot ids move). The fingerprint
+catches a change in the code or data the table was simulated by: `src/GameServer/Bot/AI/TableFingerprint.js`
+holds the concrete file list of "When to rebuild" (`INPUTS.spot`, `INPUTS.hunt`; a directory = every file under it but
+dot files and `*.md`), each file's sha1 (CRLF read as LF, so a Windows checkout agrees). Each generator writes it into
+its header; `npm run check` (`scripts/check-tables.js`) recomputes it for `data/Bots/spot-table.json` and every
+`data/Bots/hunt/*.json` (by `header.generator`) and fails naming the table, its build revision and the files added,
+removed or changed since; it also fails when the list names a path that no longer exists. The server's first read
+of the spot table, on the main thread only, logs one `SpotTable` line: matches, or a warning with the changed files
+(the table stays in use; not fatal). A table without a fingerprint is "unknown": the check warns and passes, the
+server logs one warning. **The committed tables (f62f1683) carry none yet** and predate inputs this release
+changed (cold skill records, skill data flags, readiness on the live pull, rest end, C4 drops in `data/Npcs`, the NPC
+price table): stale, but the check stays a warning until the next rebuild writes a fingerprint; from then on any change to a listed file makes `npm run check` warn on a working copy and fail on
+CI (PR checks) or with `--strict`, until the tables are rebuilt: a release's commits stay green, its PR cannot pass
+with stale tables.
 
 **Readers (the decisions it serves).** All through `SpotValueTable` (`value`, `best`, `rankedIncome`,
 `rankedSpotIds`, `cycle`, `production`, `huntShare`, `kitSurface`):
@@ -88,7 +100,9 @@ when spots are missing or the geodata differs. It catches a spawn or geodata cha
   the server's rates (`SpotRewardExpectation.value`, over the row's `mix` and the live spot's species of the period).
 
 **Cost.** Loaded lazily on each thread at its first lookup (not at boot): read 45 ms + `JSON.parse` 260 ms and ~100 MB
-of transient heap on this laptop (measured 2026-11-03), then `packRows` packs rows into typed arrays outside the JS heap:
+of transient heap on this laptop (measured 2026-11-03); on main, once per process and only for a table with a
+fingerprint, one read and sha1 of its ~410 input files (~19 MB, most of it `data/Npcs`; not measured, est. well under the
+parse), then `packRows` packs rows into typed arrays outside the JS heap:
 ~36 MB per thread (numbers 17.9 MB Float64, 3 of their 23 columns NaN placeholders; gates 6.2, gate shares 6.2, mix
 6.0). Two copies: main and the cold worker each read the file; the table does not cross `ColdTableChannel` (only the
 spot catalogue does, `catalog_page`). Caches per thread: value memo ≤ 32768 rows (3.4 MB slab), income bases ≤ 524288
@@ -113,8 +127,8 @@ No header, so a stale or probe copy cannot be told apart.
 
 ## Hunt tables (`data/Bots/hunt/`)
 
-`node scripts/hunt-tables/build.js --tables=all`, in order; each file `{ header: { revision, fingerprints, inputs,
-counts, buildSeconds }, ... }`. The model: a bot's strength = class base card + henna + worn items, a mob hour by
+`node scripts/hunt-tables/build.js --tables=all`, in order; each file `{ header: { revision, fingerprint, inputs,
+counts, buildSeconds }, ... }` (`fingerprint`: `TableFingerprint` `INPUTS.hunt`, the same for the 9 files of a build). The model: a bot's strength = class base card + henna + worn items, a mob hour by
 formula (`HuntModel.mobHour`), corrected against the real cold hunt. Built for "kit and party tables" (T128, cited
 design doc `docs/game-decisions.md` is missing).
 
@@ -160,8 +174,15 @@ committed. `scripts/hunt-cycle-check.js`: `HuntCycle` against the generator's hu
   not the full table's curve spots. For checking a few spots, never for `data/`.
 - One `all` run reads the committed tables as inputs: the kit surface reads the old `data/Bots/hunt/gear.json`; hunt `mobs`/`spots`
   read the old `data/Bots/spot-reward-npcs.json`. After a catalogue or gear change, a second run is needed for them to agree.
+  The check sees the reward-catalogue half (it is a hunt input: the copied catalogue makes the hunt tables stale), not
+  the gear half (the kit surface's `data/Bots/hunt/gear.json` is no input, TBL-4).
 
-**When to rebuild** (a change author applies this; changes only in a reader need none):
+**When to rebuild** (a change author applies this; changes only in a reader need none). The concrete file list is
+`TableFingerprint.INPUTS` (one place; the generators, the check and the server read it): a path added here goes there
+too. It also lists what the generators require directly: `Item/ItemTemplateIndex` (both), `Henna/HennaRules`,
+`World/TownRespawn`, `Bot/Economy/BotLuxuryExchange` and `data/Bots/spot-reward-npcs.json` (hunt). A committed table
+with a header is no input of another (its revision moves on every rebuild, the pair would never agree): the kit
+surface's `data/Bots/hunt/gear.json` is covered by the gear-ladder code instead.
 
 | A change in | Rebuild |
 |---|---|
@@ -170,13 +191,13 @@ committed. `scripts/hunt-cycle-check.js`: `HuntCycle` against the generator's hu
 | Spot catalogue: `World/Generics/SpawnNpcs.js`, `Bot/AI/{SpotService,SpotIndex}`, `Bot/Population/SpotProfiles.js`, spawns in `data/Npcs`, `scripts/geodata-release.json` | `all` (twice if the reward catalogue moves: hunt reads the old one) |
 | Game data: `data/Npcs` (stats, exp, skills), `data/Items`, `data/Skills`, `data/Templates` | `all`. A drop-table-only change moves money without a rebuild (read live), but stacks need one |
 | Gear ladders: `GearAcquisitionPlanner.suitable`, `BotEquipmentCompatibility`, `ItemAcquisitionCatalog`, `NpcShopBuyLists`, `data/Recipes`, `data/Henna` | `hunt` (then `spot` for the kit surface) |
-| The generators (`scripts/generate-spot-table.js`, `scripts/hunt-tables/*`) | the table they write |
+| The generators: `scripts/generate-spot-table.js` and `scripts/hunt-tables/{common,HuntModel,static-tables}.js` (both); `scripts/hunt-tables/{build,rotation,corrections,ceilings}.js` (hunt; `verify.js` none) | the table they write |
 | Readers only: `SpotValueTable`, `SpotEconomics`, `SpotRewardExpectation`, `BotHuntEfficiency`, server rates | none |
 | Hot action interruption only: `EffectRestrictions.interruptOnApply`, `Npc.interruptCombatActions` and the live NPC combat loop (not called by the cold fight or table generators) | none; shared impairment, stat and effect rules still require the rebuild above |
 
 ## Assessment
 
-**Spot table — keep; simplify; add a staleness check.**
+**Spot table — keep; simplify.**
 - Serves: spot choice, the value of a bot's hour (every trip, purchase and wish is priced by it), shots / potions /
   bag decisions, death price, first board prices, party-vs-solo.
 - Buys: performance above all. One ranking reads 300-600 spots for a line and level; simulating 2 h on each per decision
@@ -187,13 +208,13 @@ committed. `scripts/hunt-cycle-check.js`: `HuntCycle` against the generator's hu
   a mix of at most 8 species. Corrected at read: crowding (live hunters share the spawns' production), money (live NPC
   reward groups and rates), the period's species, the bot's own samples once it hunted a spot. Not corrected: the gear
   the bot really wears (the kit surface meant to do it is read by nothing), market prices of loot (NPC values).
-- Staleness is silent after a combat change: bots keep choosing by the old fight until someone rebuilds.
+- Staleness after a combat change is caught by the fingerprint (`npm run check` fails on CI, warns locally; a warning at the first read), but
+  the server still uses the stale table: bots keep choosing by the old fight until someone rebuilds.
 - For 5-10k bots: lookups do not grow with bots (keyed by line and level); rebuild time grows with spots × lines, not
   bots. What grows: a copy per thread (~36 MB packed + ~100 MB transient at parse) if the cold simulation is split over
   several workers. A Rust rewrite either ports the generator or keeps tables that encode the JS combat; the same seed
   giving the same table is then a free parity check of the port.
-- Improvements, value vs cost: staleness fingerprint of the exercised src paths, checked by `npm run check` and at the
-  first read (high value, small); drop unread columns and the compat branches (small value, small); Float32 without
+- Improvements, value vs cost: drop unread columns and the compat branches (small value, small); Float32 without
   placeholder columns, one copy shared across threads (`SharedArrayBuffer`) or a binary pack instead of JSON (mid
   value now, high at 5-10k, mid cost); decide the kit surface (TBL-2).
 
@@ -217,4 +238,5 @@ the catalogue, mob and henna data (TBL-3). The kit surface stays too (gear progr
 2. "Never value a spot more than 9 levels below the bot" (deep-blue cut in `SpotValueTable` `combat`): decided
    2026-11-03, kept as our design (not C4; it matches C4's deep-blue drop rule gap `DEEP_BLUE_LEVEL_GAP` = 9, where
    such mobs drop little). Cost: a bot never hunts a low spot for one item that drops there.
-3. Where should a staleness fingerprint fail: decided 2026-11-03, both — `npm run check` fails, the first read logs once (TBL-1, R2).
+3. Where should a staleness fingerprint fail: decided 2026-11-03, both — `npm run check` fails on CI / `--strict` and warns locally (a release's commits stay green until its tables are rebuilt before the PR), the first read logs once
+   ("Staleness" above).

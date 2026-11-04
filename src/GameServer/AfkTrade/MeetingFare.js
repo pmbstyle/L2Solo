@@ -3,6 +3,8 @@
 // A conditional meeting needs its seller to travel to the advertised town.
 // This is an early feasibility check, not consent: the worker and native
 // transaction still verify the exact meeting point and current wallet.
+// A seller with an accepted meeting rides its route for no fare; whether that
+// meeting is in this town is MeetingAnchor's rule, read before this one.
 const fares = new WeakMap();
 function sellerCanReach(offer, seller) {
     const trade = [1, 3].includes(Number(offer?.storeType)) || ['afk_bot_store', 'afk_player_store'].includes(offer?.sourceType);

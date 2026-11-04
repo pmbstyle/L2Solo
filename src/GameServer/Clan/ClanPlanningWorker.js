@@ -37,9 +37,9 @@ const boardIndex = new BoardIndex();
 tables.watch('board', boardIndex.follower());
 // The channel sends every table to every worker; this one reads none of the
 // cold worker's tables (memory ~one row per bot, parties, goals,
-// raids, meetings, clan halls, recipes),
+// raids, meetings, player anchors, clan halls, recipes),
 // so it keeps no rows of them.
-for (const name of ['memory', 'parties', 'goals', 'raids', 'meetings', 'clan_halls', 'recipes']) {
+for (const name of ['memory', 'parties', 'goals', 'raids', 'meetings', 'player_anchors', 'clan_halls', 'recipes']) {
     tables.watch(name, { reset() {}, put() {}, remove() {} }, { retain: false });
 }
 const originalInvoke = global.invoke;

@@ -205,8 +205,8 @@ function wait(ms) {
     ToggleSkills.deactivate(session(wounded), wounded, 'relax');
 
     const hunter = actor();
-    const eye = skill(359, 'Eye of Hunter', 1, { spell: true });
-    assert.strictEqual(eye.fetchSpell(), true, 'Eye of Hunter should remain a magical C4 buff');
+    const eye = skill(359, 'Eye of Hunter', 1);
+    assert.strictEqual(eye.fetchSpell(), false, 'Eye of Hunter is not a spell (Lisvus sets no isMagic): a hit does not break it');
     C4SkillEffects.execute(session(hunter), hunter, hunter, eye, { magicSkill: false, attack: { clearLoadedShot() {} } });
     assert.strictEqual(EffectStats.multiplier(hunter, 'pAtk-insects'), 1.5, 'Eye of Hunter should expose sourced insect damage');
     assert.strictEqual(EffectStats.multiplier(hunter, 'pAtk-plants'), 1.5, 'Eye of Hunter should expose sourced plant damage');
@@ -220,7 +220,7 @@ function wait(ms) {
     const gremlin = new NpcModel(utils.crushOb(legacyCombatNpcs.find((npc) => Number(npc.selfId) === 1)));
     assert.strictEqual(gremlin.fetchRace(), 'fairy', 'legacy NPC models should expose their sourced race to weakness skills');
     const slayer = actor();
-    const slayerEye = skill(360, 'Eye of Slayer', 1, { spell: true });
+    const slayerEye = skill(360, 'Eye of Slayer', 1);
     C4SkillEffects.execute(session(slayer), slayer, slayer, slayerEye, { magicSkill: false, attack: { clearLoadedShot() {} } });
     for (const race of ['beast', 'construct', 'dragon', 'giant']) {
         assert.strictEqual(Attack.physicalRaceModifier(slayer, { fetchRace: () => race }), 1.5, `Eye of Slayer should multiply physical damage against ${race}`);

@@ -1,6 +1,6 @@
 # End-to-end scripts
 
-Checked at 199c3b19 (2026-11-04).
+Checked at 39e43408 (2026-11-04).
 
 Situations played on the real server by a scripted player (`src/Perf/PlayerScript.js`, `src/Perf/PlayerClient.js`):
 the player acts only through client packets (`session.dataReceive`, the real request handlers) and a step checks
@@ -71,6 +71,14 @@ that fail as "script timeout at <step>" (today a step without its own `within`/`
 window closes), and a `ctx.precondition(what, fn)` (proposed) that fails as "precondition: <what>" in the report.
 Until then each step bounds its own waits (`within(ms, ...)`, `packet(name, { timeoutMs })`).
 
+## Limits
+
+- Bot AI is random: an expectation is "within N s at least once" on a fixed save; a flaky one gets a longer timeout
+  or a narrower expectation, not a retry loop.
+- No game client: rendering and a client-side rejection of a packet are not seen.
+- One script per `perf.js run`; a runner over a folder of scripts (`perf.js e2e`, proposed) and a fork CI job for
+  the scripts (like the bot tables) are not there yet.
+
 ## Change -> scripts
 
 From the scripts' `areas` (paths under `src/`):
@@ -117,3 +125,11 @@ Asked 2026-11-03 for this release's changes; researched, not written (e2e runs w
   for the rows that were hot (merchants excepted): `bot_life_state` level, exp, adena equal `characters` and `items`,
   and the record's exp not below the first run's (unless the bot died). A small checker script (proposed) under
   `scripts/perf/`.
+
+Planned with the harness (2026-11-03), not written:
+
+- **party**: walk to a hunting bot, `invite`, expect the join and that it follows; dismiss (the client has no
+  dismiss-party (0x2b) step yet), expect it back on its own plan, and cool when the player leaves.
+- **hunt**: walk into a crowd, `attack` a mob, expect the kill and EXP; bots compete for mobs without failures. A
+  client skill step (skill use, 0x2f) is not there yet.
+- **chat**: `say` to a nearby bot (`Network/Request/Speak.js`), expect a reply within N s.

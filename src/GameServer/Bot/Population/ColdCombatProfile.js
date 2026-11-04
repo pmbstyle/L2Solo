@@ -22,6 +22,7 @@ const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
 const BotPullEstimate = invoke('GameServer/Bot/AI/BotPullEstimate');
 const NpcCombatChoice = invoke('GameServer/Npc/NpcCombatChoice');
+const SkillModel = invoke('GameServer/Model/Skill');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const RAID_MINIONS = require('../../../../data/Npcs/Minions/c4_raid_bosses.json');
 const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
@@ -30,7 +31,8 @@ const HennaRules = invoke('GameServer/Henna/HennaRules');
 const C4WeaponSA = invoke('GameServer/Items/C4WeaponSA');
 
 // Rebuild persisted kits that could have been overwritten by an older resolve.
-const PROFILE_VERSION = 7;
+// 8: records carry the hot Skill model's numbers (skillRecord).
+const PROFILE_VERSION = 8;
 const BASE_STATS = ['STR', 'DEX', 'CON', 'INT', 'WIT', 'MEN'];
 const npcCombatCache = new WeakMap();
 
@@ -359,12 +361,22 @@ function npcCombatStats(npc) {
     return result;
 }
 
+// A skill rank's data row flattened as the hot Skillset builds its Skill model.
 function skillDefinition(selfId, level) {
     const skill = ItemTemplateIndex.findRequired(DataCache.skills || [], selfId);
     if (!skill) return null;
     const definition = SkillRankIndex.findFiniteOrLastEligible(skill.levels || [], level)
         || null;
-    return definition ? { ...skill.template, ...skill.time, ...definition } : null;
+    return definition ? { selfId: skill.selfId, ...skill.template, ...skill.time, ...skill.summon, ...definition } : null;
+}
+
+// A cold skill record takes its numbers from the hot Skill model of the same
+// rank (C4SkillRules over the data row: per-level hit time and reuse, cast
+// type, MP, power, duration), so a kit built from the learned rows equals a
+// hot capture of the same kit (skillSnapshot) and hot and cold read one owner.
+function skillRecord(selfId, level) {
+    const definition = skillDefinition(selfId, level);
+    return definition ? skillSnapshot(new SkillModel(definition)) : null;
 }
 
 function summonFields(definition = {}) {
@@ -410,15 +422,8 @@ function skillSnapshot(skill) {
 function skillsFromTree(classId, level) {
     return skillTreeEntries(classId).map((entry) => {
         const learned = learnedTreeRow(entry, level);
-        if (!learned) return null;
-        const skill = ItemTemplateIndex.findRequired(DataCache.skills || [], entry.selfId);
-        const definition = skillDefinition(entry.selfId, learned.level) || {};
-        return {
-            selfId: number(entry.selfId), level: number(learned.level, 1), passive: skill?.template?.passive === true,
-            spell: definition.spell === true, power: number(definition.power), mp: number(definition.mp), hp: number(definition.hp),
-            hitTime: number(definition.hitTime), reuse: number(definition.reuse), buffTime: number(definition.buff),
-            ...summonFields(definition)
-        };
+        const record = learned && skillRecord(entry.selfId, learned.level);
+        return record ? { ...record, level: number(learned.level, 1) } : null;
     }).filter(Boolean);
 }
 
@@ -426,23 +431,10 @@ function skillSnapshotsFromRecords(records = []) {
     return records.map((record) => {
         const selfId = number(record.selfId);
         const requestedLevel = number(record.level, 1);
-        const skill = ItemTemplateIndex.findNumericRowRequired(DataCache.skills || [], selfId);
-        if (!skill) return null;
-        const definition = skillDefinition(selfId, requestedLevel);
-        if (!definition) return null;
-        return {
-            selfId,
-            level: number(definition.level, requestedLevel),
-            passive: record.passive === true || skill.template?.passive === true,
-            spell: definition.spell === true,
-            power: number(definition.power),
-            mp: number(definition.mp),
-            hp: number(definition.hp),
-            hitTime: number(definition.hitTime),
-            reuse: number(definition.reuse),
-            buffTime: number(definition.buff),
-            ...summonFields(definition)
-        };
+        if (!ItemTemplateIndex.findNumericRowRequired(DataCache.skills || [], selfId)) return null;
+        const snapshot = skillRecord(selfId, requestedLevel);
+        if (!snapshot) return null;
+        return { ...snapshot, passive: snapshot.passive || record.passive === true };
     }).filter(Boolean);
 }
 
@@ -1444,14 +1436,12 @@ function shotSupply(state, timestamp) {
 // The shot an action loads from a supply (shotSupply), by the hot rule
 // (ShotStock.actionShotKind): a spell a spiritshot, a physical skill a
 // soulshot unless its ssBoost is 0, a normal attack (no skill) a soulshot.
-// The supply when it holds that kind, otherwise null.
+// A record's spell flag is the Skill model's (skillRecord). The supply when it
+// holds that kind, otherwise null.
 function actionShot(shot, skill = null) {
     if (!shot) return null;
     let kind = ShotStock.actionShotKind(false);
-    if (skill) {
-        const semantic = C4SkillRules.resolveCached(skill);
-        kind = ShotStock.actionShotKind(semantic.isMagic ?? skill.spell === true, semantic.ssBoost);
-    }
+    if (skill) kind = ShotStock.actionShotKind(skill.spell === true, C4SkillRules.resolveCached(skill).ssBoost);
     if (kind === 'soulshot') return shot.soulshot ? shot : null;
     return kind && shot.spiritshot ? shot : null;
 }

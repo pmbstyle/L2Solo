@@ -1,6 +1,6 @@
 # Combat, skills, actors
 
-Checked at 199c3b19 (2026-11-04).
+Checked at 39e43408 (2026-11-04).
 
 Survey of t106dev @ 9f27b7fa (2026-11-03). Line numbers drift; search by name.
 Scope: `Actor`, `Skills`, `Effects`, `Combat`, `Npc`, `RaidBoss`, `Pets`, `Formulas.js`, `Karma.js`,
@@ -114,6 +114,8 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
 | Aggro range | `Npc/NpcAggroRange` |
 | Skill semantics | `Skills/C4SkillRules` |
 | NPC attack reaction (hate + group/clan assistance) | hot `Npc/Attacked`, called by `ReceivedHit` and `C4SkillEffects` (`C4SkillRules.provokesNpc` for casts) |
+| A skill rank's base numbers (hit time, reuse, cast type, MP, power, duration) | `Model/Skill` fetchers (C4SkillRules over the data row); cold records copy them (`ColdCombatProfile.skillRecord`) |
+| Is a skill magic (cast speed, spiritshot, cast break, MP and land rate; also picks the damage formula, debt.md 17) | `Skill.fetchSpell` (a `C4SkillRules` `isMagic` over the data `spell` flag), hot and cold (the record copies it, `ColdCombatProfile.actionShot` reads it) |
 | Item-skill cast (timer, spend, landing) | `Backpack.castItemSkill` (bots' own SoE `BotTownTravel.beginEscape` is still a parallel path, debt.md theme 9) |
 | Cast break by damage | `Attack.tryBreakCast` (magic casts only) |
 | Effects store / stat sums | `EffectStore` + `EffectStats` |
@@ -130,9 +132,9 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
 ## Debt
 
 - **CMB-1 skill reuse differs hot vs cold.** Hot `Actor.markSkillReuse` applies reuse multipliers, speed, Skill
-  Mastery; cold `BackgroundResolver.spendSkill` uses raw `skill.reuse`; `RaidHealingEstimate` copies the hot rule;
+  Mastery; cold `BackgroundResolver.spendSkill` uses the record's base reuse (no multipliers); `RaidHealingEstimate` copies the hot rule;
   NPC `NpcCombatChoice.reuseMs` = max(1000, raw). Cold casters cast less often.
-- **CMB-2 MP cost differs.** Hot `Attack.skillMpCost` (dance cost, consume multipliers); cold raw `skill.mp`; partial
+- **CMB-2 MP cost differs.** Hot `Attack.skillMpCost` (dance cost, consume multipliers); cold the record's base `skill.mp`; partial
   copies in `SurvivalFloor.stateCastCosts`, `ColdCombatProfile.partyMusicMpCost`.
 - **CMB-3 three swing loops, two damage paths.** `Attack.meleeHit`, `Npc.meleeHit`, `SummonControl.attackTick`
   (inline timing, calls sinks directly: no cast break, reflect; owner flag and CP do apply). A monster hitting a
@@ -146,7 +148,7 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
   `calcPhysicalDamage`/`calcMagicDamage`; `BotEmergencyFinisher`, `WishProviders`, `ClanRaidEstimate` are raw.
   Use `HitRules.expected*`.
 - **CMB-7 hot NPC and hot servitor melee have no weapon spread** (`prepareNpcMeleeHit` passes no `pAtkRnd`); cold mobs
-  (`ColdMobAction`) and cold servitors (`ColdSummonProfile`) do. C4 (c4-check): +0..10 % for every attacker.
+  (`ColdMobAction`) and cold servitors (`ColdSummonProfile`) do. C4 check below: +0..10 % for every attacker.
 - **CMB-8 stat assembly twice.** Hot `CalculateStats` rounds twice, runs `C4GradePenalty` and item skills; cold rounds
   once, no grade penalty.
 - **CMB-9 half-migration: legacy buff markers.** `BuffCatalog.ALL_BUFFS`, `actor.activeBuffs` (written by
@@ -171,7 +173,7 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
   `calcMagicSuccessRate`.)
 - **CMB-17 cold rewards copy:** `BackgroundDropResolver.progressionForFight` inlines `level*level*mod` instead of
   `Formulas.calcAcquiredExp`. (Cold drops do apply deep blue; a party passes its highest
-  member's level as `killerLevel`, slightly broader than C4, c4-check.)
+  member's level as `killerLevel`, slightly broader than C4, C4 check below.)
 - **CMB-18 raid gap `+8/+7` literal** in `OpportunisticRaidPolicy` instead of `RaidCurse.RAID_LEVEL_MAX_DIFFERENCE`.
 - **CMB-19 peace zone checked in the request layer twice and in cold separately;** skills do not use the client-view
   rule of weapon hits.
@@ -180,8 +182,6 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
 - **CMB-22 `BotPvpThreats.character` maps any NPC with an owner to its owner**, a quest monster too (`QuestService`
   spawns with `ownerId`): its attacks are remembered as the owner's aggression. `PvpRules.isPlayable` gates the flag and
   the kill tally, not that memory.
-- **CMB-23 "rest until" 0.95 copied inline** in `RestingState` (twice) and `BackgroundResolver.resolveRest` beside
-  `RestPolicy.THRESHOLDS.locked`, each with its own mana rule; `HotBackgroundParty` uses the RestPolicy line.
 - **CMB-24 pet revival is not C4 doRevive.** `PetRuntime.revive` and `SummonControl.revivePet` (which calls it, then
   sets HP/MP again) give full HP and MP; Lisvus pets revive at 70 % HP like players (`Formulas.respawnHp`).
 - **CMB-25 resurrection's EXP restore does not wash karma** (Lisvus `restoreExp` -> `addExp` does).
@@ -201,12 +201,38 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
   level 6 still has base chance 7 after its independent 6-8% trigger roll. The generator duplicates the skill
   chance owner (`generate-c4-weapon-sa.py`); align that ownership before migrating the weapon proc.
 
+## C4 check (2026-11-03)
+
+Read from source: Lisvus `gitlab.com/TheDnR/l2j-lisvus` @ fdc7e33 (the revision the project uses) and L2J Mobius
+master 245bc80a `L2J_Mobius_C4_ScionsOfDestiny`. Mobius "C4" carries later-chronicle code (it says "Interlude
+adjustment", "H5 Damage Formula"); where they differ, **Lisvus is taken as C4**.
+
+| # | Rule | C4 | Project now | Verdict |
+|---|---|---|---|---|
+| CMB-1 | Skill reuse | `L2Character.doCast`: reuse × m/pReuseRate × 333/MAtkSpd or PAtkSpd; Skill Mastery (players) → 100 ms. NPCs: same formula, no Mastery, no floor | Hot player `Actor.markSkillReuse` matches. NPC `NpcCombatChoice.reuseMs` = max(1000, raw); pets raw reuse, cold the Skill model's base reuse (`ColdCombatProfile.skillRecord`), no speed scaling | Player OK. NPC 1000 ms floor is ours, not C4. One shared reuse function (Mastery as a flag) for player, NPC, pet, cold |
+| CMB-2 | MP cost | `CharStat.getMpConsume/getMpInitialConsume`: initial part paid at cast start (lost on interrupt), rest at hit; dance + n × nextDanceCost; consume-rate stats | Hot formula matches but pays all at landing (interrupt loses nothing). Cold the record's base `skill.mp` (the Skill model's) | Hot: split initial/rest (needs per-level `mpInitialConsume` from the Lisvus datapack). Cold: use the shared function |
+| CMB-4 | PvP flag | `updatePvPStatus`: attacker flagged only if target karma == 0; at swing start, hit or miss; summon flags owner; Lisvus 40 s / 20 s | `PvpRules.flagsAttacker`, hot `PvpFlag.attack` at swing start (hit or miss) and offensive skill landing (Lisvus `callSkill`), summon/pet flags owner; cold same rule. 15 s | OK. 15 s is ours |
+| CMB-4 | PvP kill | `onKillUpdatePvPKarma`: flagged target + killer without karma → PvP+1; war → PvP+1; karma target → PvP+1 (`AwardPKKillPVPPoint=True`); white → PK+1 + karma 240 × max(1,pk/2) × max(1,lvl ratio) ≤ 10000; killing a summon gives karma, no PK | `PvpRules.killOutcome` + `tallyAfterKill`, hot `ReceivedHit.creditKill` (also a summon's/pet's death), cold resolver + commit | OK |
+| CMB-4 | CP | `PcStatus.reduceHp`: transfer pain, then CP absorbs when attacker is playable (player, summon, pet), then HP | `PvpRules.shieldDamage` after transfer pain, playable = character, summon or pet (`PvpRules.isPlayable`) | OK |
+| CMB-7 | Monster melee spread | Lisvus `calcPhysDam`: +0..10 % for every attacker | Hot NPC and hot servitor (`Attack.prepareNpcMeleeHit`): no spread; player ±pAtkRnd % (Mobius shape); cold mobs ±30 %, cold servitors ±template pAtkRnd | One rule in HitRules for all attackers (Lisvus +0..10 %); player rule differs from Lisvus too |
+| CMB-20 | Grade penalty | skill 4267 level 1: ×0.22 to atk/cast speed, evasion, EXP/SP, run speed, regen | `C4GradePenalty` matches (hot only) | OK. Cold only matters if cold bots can wear over-grade gear (unchecked) |
+| CMB-3 | Servitor attack | No overrides: `L2Character.onHitTimer` — reflect, absorb, cast/attack break, owner flag, target CP | `SummonControl.attackTick` calls `receivedHit` directly: no cast break, reflect, arena check (owner flag and CP applied) | **Not C4:** route the servitor swing through `Attack.hit` with `Formulas` timing |
+| CMB-17 | Deep blue | Drops: highest level of all attackers (raid: skip > raid+8); EXP: (5/6)^(diff−5) over 5, highest rewarded member in range | `ProgressionRates.deepBlueRule`, `MobExperience.gapFactor` match | OK. Cold party counts a member who never hit (slightly broader) |
+| Cast feedback / engagement | Hex, Power Break, Corpse Plague and other hostile casts | Lisvus `doCast`: use message 46 with skill id + level; `Continuous`: failure 158 to caster, no separate success acknowledgement. `callSkill` → attacked event → one hate and leader/minion assistance before success roll, except hate removal/reduction and blows. Mobius also provokes on resist but uses failure message 139 | Hot `Attack` / `C4SkillEffects` follow Lisvus; `Npc/Attacked` owns the shared hit/cast reaction, including group and clan assistance. `C4SkillRules.provokesNpc` includes corpse-targeted area casts; living attackable victims react at impact even on resist, while the corpse anchor is excluded | Hot OK. Cold damage-only hate remains CMB-28 |
+| Playable poison chances | Skills 84,103,1095,1167,1168,1209 | Lisvus uses poison strength tables 1..8 as base chances. Mobius C4 separates `abnormalLevel` from `activateRate`: 35/35/70/35/70/60 respectively. Both sources agree on these skills' magic levels | Native casts through `C4SkillRules` use Mobius's base chances and the shared source magic levels, keeping existing damage and timing; the shared land formula still applies level, shots and resistance modifiers. Ordinary Poison 129 already has base chance 70 | Explicit choice of Mobius for playable poison base chances. NPC poison discrepancies and the weapon-proc override remain CMB-30 |
+| Resurrection target | Skill 1016 | Lisvus `L2Skill.getTargetList`, `TARGET_CORPSE_PLAYER`: a living target gets `INCORRECT_TARGET` (109), no cast. Mobius C4 also rejects living targets but its resurrection condition sends 113 | `SkillExec` and `Attack.remoteHit` call `Attack.validateSkillTarget` before approach and again at cast start; it uses `isValidSkillTarget` and sends 109 + ActionFailed. Dead targets remain eligible | Follows Lisvus |
+| Undead-only target | Disrupt Undead 1031 and other `TARGET_UNDEAD` skills | Lisvus `L2Skill.getTargetList` requires a living undead NPC or summon, sends `INCORRECT_TARGET` (109) for a non-undead NPC, and cancels before cast start and MP payment. `TARGET_AURA_UNDEAD` instead filters its victims and can cast without any. Mobius C4 uses a target-race condition and message 113 for Disrupt Undead | `Attack.validateSkillTarget` rejects non-undead single targets before approach and cast start; `isValidSkillTarget` admits undead NPCs/summons and filters undead auras. Refusal sends 109 + ActionFailed, preserves MP/reuse and provokes nobody | Follows Lisvus |
+| NPC control / hate retention | Sleep (1069), stun, paralysis and fear | Lisvus `startSleeping` aborts attacks/casts; `L2CharacterAI.onEvtSleeping` stops movement and client auto-attack without changing attack intention or hate. `stopSleeping` sends `EVT_THINK`. Mobius C4 `AttackableAI.onActionThink` also waits while all skills are disabled | `EffectRestrictions.interruptOnApply` cancels NPC actions through `Npc.interruptCombatActions`, retaining the existing combat loop and hate. It resumes against the highest valid hate after restrictions end; no auto-aggro or new hit is required | Follows Lisvus's retained intention; existing 100 ms loop supplies the think event |
+
+Not verified: retail itself (code + shipped settings used); Mobius pinned 6bc10d28 vs master; whether a healer joins
+`_attackByList`; source of NPC `pAtkRnd` = 30 in `data/Npcs`; whether cold bots equip over-grade gear.
+
 ## Open questions
 
-1. CMB-1/2: raw reuse and MP in cold — simplification or gap? One function for hot, cold and estimates? (c4-check:
+1. CMB-1/2: base reuse and MP (no multipliers) in cold — simplification or gap? One function for hot, cold and estimates? (C4 check:
    gap; one shared reuse and MP function, the NPC 1000 ms floor is ours.)
-2. CMB-7: does a C4 monster hit have weapon spread? (c4-check: yes, Lisvus +0..10 % for every attacker.)
-3. CMB-3: should a servitor swing go through `Attack.hit`? (c4-check: yes, C4 has no servitor override.)
+2. CMB-7: does a C4 monster hit have weapon spread? (C4 check: yes, Lisvus +0..10 % for every attacker.)
+3. CMB-3: should a servitor swing go through `Attack.hit`? (C4 check: yes, C4 has no servitor override.)
 4. CMB-20: grade penalty, transfer pain, cast break absent in cold — by design?
 5. Do cold bots fight with C4 pets, or servitors only by design?
 6. CMB-9: can `BuffCatalog`/`activeBuffs` go, or do packets need them? (Stats still read them, CMB-9.)

@@ -107,7 +107,7 @@ try {
     near(mixed.adena, 120 * only.adena, 'the kills pay as the killed species does');
     const all = Rewards.value({ id: '-10_12', npcEntries: [{ selfId: 34, count: 10 }, { selfId: 38, count: 9 }, { selfId: 380, count: 6 }],
         rewards: { adenaMin: 34, adenaMax: 119 } }, 24);
-    assert.notStrictEqual(Math.round(only.adena), Math.round(all.adena), 'the fixture tells the mix from the spawns');
+    assert(Math.abs(only.adena - all.adena) > 0.1, 'the fixture tells the mix from the spawns');
     // The kill cache is keyed by the spot and the row's mix, not the row: a
     // row of the same spot with another mix pays as its own species.
     for (const rows of fixture.rows) for (const row of rows) if (row) row[row.length - 1] = [34, 1];
@@ -244,6 +244,43 @@ try {
         utils.infoSuccess = saved.success;
         Table.useSpots([]);
         Table.useFile();
+    }
+}
+
+// The table against the files it was simulated by: one line at its
+// first read, a warning naming the files changed since its build.
+{
+    const TableFingerprint = require('../src/GameServer/Bot/AI/TableFingerprint');
+    const lines = [];
+    const saved = { warn: utils.infoWarn, success: utils.infoSuccess };
+    utils.infoWarn = (prefix, ...params) => lines.push(['warn', prefix, ...params]);
+    utils.infoSuccess = (prefix, ...params) => lines.push(['success', prefix, ...params]);
+    const scratch = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'spot-fingerprint-'));
+    try {
+        const fixture = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'spot_table.json'), 'utf8'));
+        const current = TableFingerprint.fingerprint('spot');
+        const write = (name, fingerprint) => {
+            const file = path.join(scratch, name);
+            fs.writeFileSync(file, JSON.stringify({ ...fixture, header: { ...fixture.header, revision: 'abc', fingerprint } }));
+            return file;
+        };
+        const fingerprintLines = () => lines.filter(([, prefix, format]) => prefix === 'SpotTable' && /fingerprint|stale/.test(format));
+        Table.useFile(write('fresh.json', current));
+        Table.value('S', 'dps', 24, true);
+        Table.value('S', 'dps', 20, true);
+        assert.deepStrictEqual(fingerprintLines().map(([level]) => level), ['success'], 'a table of the current code: one line');
+        Table.useFile(write('stale.json', { hash: 'old', files: { ...current.files, 'src/GameServer/Formulas.js': '0' } }));
+        Table.value('S', 'dps', 24, true);
+        const stale = fingerprintLines().slice(1);
+        assert.strictEqual(stale.length, 1, 'a stale table: one line');
+        assert.strictEqual(stale[0][0], 'warn', 'a warning, the table stays in use');
+        assert.deepStrictEqual(stale[0].slice(3), ['abc', 1, 'src/GameServer/Formulas.js'], 'its build and the file changed since');
+        near(Table.value('S', 'dps', 24, true).kills, 200, 'a stale table still answers');
+    } finally {
+        utils.infoWarn = saved.warn;
+        utils.infoSuccess = saved.success;
+        Table.useFile();
+        fs.rmSync(scratch, { recursive: true, force: true });
     }
 }
 

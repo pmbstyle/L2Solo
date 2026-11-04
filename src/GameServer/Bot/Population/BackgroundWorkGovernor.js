@@ -139,12 +139,25 @@ function admit(options = {}) {
     }
 
     state.mode = pressure.playerProtected ? 'player' : 'idle';
-    const lagAbortMs = Math.max(1, number(Config.backgroundGovernorLagAbortMs, Config.schedulerLagAbortMs || 120));
+    // A forced job (the WAL truncate past its ceiling) is never deferred: it
+    // takes no resource and charges the window what it takes (complete).
+    if (options.force === true) {
+        const lease = { id: state.nextLeaseId++, job, resource: '', budgetMs: requestedBudgetMs, startedAt: timestamp,
+            generation: state.generation, playerProtected: pressure.playerProtected, forced: true };
+        state.usedMs += requestedBudgetMs;
+        return { ok: true, budgetMs: requestedBudgetMs, pressure, lease };
+    }
+    // A job may stop at a lower lag than the governor's own (options.maxLagMs).
+    const lagAbortMs = Math.max(1, Math.min(number(Config.backgroundGovernorLagAbortMs, Config.schedulerLagAbortMs || 120),
+        number(options.maxLagMs, Infinity)));
     if (pressure.lagMs >= lagAbortMs) return defer(job, 'event_loop_lag', pressure, timestamp);
 
+    // The main DB queue drains in 12 ms slices, so a timer between two slices
+    // sees the drain's own backlog; the default 8 (about one or two slices of
+    // jobs) admits at the tail of a drain and defers under a real backlog.
     const dbQueueMax = Math.max(0, Math.floor(number(pressure.playerProtected
         ? Config.backgroundGovernorPlayerDbQueueMax
-        : Config.backgroundGovernorIdleDbQueueMax, pressure.playerProtected ? 0 : 8)));
+        : Config.backgroundGovernorIdleDbQueueMax, 8)));
     if (pressure.dbPending > dbQueueMax) return defer(job, 'database_queue', pressure, timestamp);
     if (resource && state.resources.has(resource)) return defer(job, 'resource_busy', pressure, timestamp);
 

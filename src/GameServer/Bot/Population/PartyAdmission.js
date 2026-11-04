@@ -1,4 +1,6 @@
 const MeetingFare = require('../../AfkTrade/MeetingFare');
+const MeetingAnchor = require('../../AfkTrade/MeetingAnchor');
+const { isMainThread } = require('node:worker_threads');
 
 // All formation paths share this admission budget. Historical origin labels
 // never grant slots or protect a party; reservations include in-flight commits.
@@ -61,9 +63,13 @@ let tradeStateFor = id => typeof invoke === 'function'
     ? invoke('GameServer/Bot/Population/BotLifeState')?.cachedState?.(Number(id)) : null;
 let tradeSessionFor = id => typeof invoke === 'function'
     ? invoke('GameServer/World/World')?.registeredActorById?.(Number(id))?.session : null;
-function configureTradeAdmission(stateFor, sessionFor = () => null) {
+// A player's meeting anchor: main keeps it, the cold worker mirrors it.
+let playerAnchorFor = id => typeof invoke === 'function' && isMainThread
+    ? invoke('GameServer/AfkTrade/TradeMeetingService').playerAnchor(id) : null;
+function configureTradeAdmission(stateFor, sessionFor = () => null, anchorFor = () => null) {
     tradeStateFor = stateFor;
     tradeSessionFor = sessionFor;
+    playerAnchorFor = anchorFor;
 }
 function personalOfferAllowed(offer, ownState, otherState, ownSession = null, otherSession = null) {
     if (!(offer?.conditional || offer?.custodyPolicy === 1)) return true;
@@ -72,7 +78,12 @@ function personalOfferAllowed(offer, ownState, otherState, ownSession = null, ot
     if (otherState === undefined) otherState = tradeStateFor(otherId);
     if (otherSession === null) otherSession = tradeSessionFor(otherId);
     const seller = Number(offer.storeType) === 3 ? ownState : otherState;
+    // A side already committed to a meeting elsewhere cannot meet in this
+    // offer's town until that meeting ends (its marker is rewritten then).
     return partyTradeAllowed('trade', ownState, ownSession) && partyTradeAllowed('trade', otherState, otherSession)
+        && MeetingAnchor.compatible(offer.town, [
+            MeetingAnchor.of(ownState, ownState || !ownSession?.actor ? null : playerAnchorFor(Number(ownSession.actor.fetchId()))),
+            MeetingAnchor.of(otherState, otherState ? null : playerAnchorFor(otherId))])
         && MeetingFare.sellerCanReach(offer, seller);
 }
 module.exports = { PartyAdmission, priority, partyTradeAllowed, personalOfferAllowed, configureTradeAdmission,

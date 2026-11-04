@@ -1,10 +1,12 @@
 const fs = require('fs');
 const path = require('path');
+const { isMainThread } = require('worker_threads');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const Rewards = require('../Economy/SpotRewardExpectation');
 const SpotIndex = require('./SpotIndex');
 const DiagnosticConfig = require('../Population/PopulationConfig');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
+const TableFingerprint = require('./TableFingerprint');
 
 // The world spot table (market-sim step 3.3(c), N44): what an hour of solo
 // hunting on a spot gives a bot of a role and level, with shots or without.
@@ -109,6 +111,34 @@ function checkCatalog(spots) {
     const log = global.utils?.[missing || tableGeodata !== serverGeodata ? 'infoWarn' : 'infoSuccess'];
     log?.('SpotTable', '%d of %d catalogue spots missing from the spot table; geodata: table %s, server %s; table revision %s',
         missing, hunting, tableGeodata, serverGeodata, revision);
+}
+
+// The table against the files it was simulated by (TableFingerprint):
+// one line at the first read of a table, on the main thread only (the worker
+// reads the same file on the same code). A stale table stays in use: bots
+// choose by the fight it measured until it is rebuilt; `npm run check` fails.
+// Costs one read and sha1 of its ~20 MB of inputs, once per process.
+let fingerprintChecked = null, currentInputs = null, unknownLogged = false;
+function checkFingerprint(header) {
+    if (!isMainThread || !global.utils) return;
+    const recorded = header?.fingerprint;
+    if (!recorded) {
+        if (file === DEFAULT_FILE && !unknownLogged) utils.infoWarn('SpotTable',
+            'the spot table carries no fingerprint (an older build): whether it matches the code is unknown until its next rebuild');
+        unknownLogged = unknownLogged || file === DEFAULT_FILE;
+        return;
+    }
+    if (fingerprintChecked === recorded.hash) return;
+    fingerprintChecked = recorded.hash;
+    try {
+        currentInputs = currentInputs || TableFingerprint.compute('spot');
+        const verdict = TableFingerprint.compare(recorded, currentInputs);
+        if (verdict.state === 'fresh') utils.infoSuccess('SpotTable', 'the spot table matches the code it was built from (fingerprint %s)', recorded.hash);
+        else utils.infoWarn('SpotTable', 'the spot table (built at %s) is stale: %d input files changed since: %s; rebuild it (tables.md "Rebuild")',
+            header.revision, verdict.changed.length, TableFingerprint.list(verdict.changed));
+    } catch (error) {
+        utils.infoWarn('SpotTable', 'the spot table\'s fingerprint could not be checked: %s', error.message);
+    }
 }
 
 // The profile of the geodata pack the server stands on (its manifest's, the
@@ -323,6 +353,7 @@ function rowIndex(t, row) {
 function load() {
     if (table) return table;
     const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    checkFingerprint(raw.header);
     const field = (fields, name) => {
         const index = fields.indexOf(name);
         if (index < 0) throw new Error(`spot table: missing field ${name}`);

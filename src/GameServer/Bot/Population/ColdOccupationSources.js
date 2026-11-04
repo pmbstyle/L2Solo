@@ -225,8 +225,6 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
     const purchaseTables = new Map();
     const preparePurchase = function* (owner, id, amount, query = {}) {
         read(id);
-        const Arrows = require('../../Inventory/ArrowStock');
-        if (Arrows.isArrow({ selfId: id }) && Arrows.purchaseAmount(owner, id, amount) < amount) return null;
         const npc = query.npc === true && Production.allowsNpcShot(id);
         const tableKey = `${Number(owner.characterId)}:${Number(id)}:${npc ? 1 : 0}`;
         let table = purchaseTables.get(tableKey);

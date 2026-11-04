@@ -22,7 +22,8 @@ const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
 const Utility = invoke('GameServer/Bot/AI/BotCombatUtility');
 
 const HOUR_SECONDS = 3600;
-const RESTED = RestPolicy.THRESHOLDS.locked;
+// Where a solo rest ends (the reference bot's line, RestPolicy.restedLine).
+const RESTED = RestPolicy.THRESHOLDS.rested;
 const DRINKS = HealingPotionStock.POTIONS.filter(potion => potion.hot);
 const NO_USE = Object.freeze({ use: 0, hours: 0 });
 

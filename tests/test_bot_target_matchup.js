@@ -202,6 +202,23 @@ try {
     World.fetchNpcsInRadius = () => [pack[0], engagedMate];
     assert.strictEqual(Hunting.findPreferredMonster({ actor: lean, plan: 'hunting' }, lean, 2500), pack[0],
         'a mob on another target does not join the pull');
+    // Readiness judges that same pull, as a cold fight's judges its rolled one: a hunter that
+    // takes a pair whole, worn down so that one mob is still a fight and the pair is not, sits
+    // for the pair and takes the mob once its mate is gone.
+    const pairHp = hunter.fetchMaxHp() * 6 / full;
+    const worn = { ...hunter, fetchMaxHp: () => pairHp, fetchHp: () => pairHp * 0.6 };
+    // Whole mobs (the fixture's HP was filled before its passives were cut).
+    const pair = [packMate(930021, 300), packMate(930022, 302)].map(mob => Object.assign(mob, { fetchHp: () => mob.fetchMaxHp() }));
+    World.fetchNpcsInRadius = () => pair;
+    assert(Matchup.pullVerdict(Matchup.actorProfiles([worn]), Matchup.targetView(pair[0]), 2).eligible,
+        'the whole bar takes the pair');
+    const wornSession = { actor: worn, plan: 'hunting' };
+    assert.strictEqual(Hunting.findPreferredMonster(wornSession, worn, 2500, { readyOnly: true }), null,
+        'a worn hunter does not take the pair its HP no longer carries');
+    assert.strictEqual(wornSession.lastEncounterReadiness.ready, false, 'it rests for the pair');
+    World.fetchNpcsInRadius = () => [pair[0]];
+    assert.strictEqual(Hunting.findPreferredMonster(wornSession, worn, 2500, { readyOnly: true }), pair[0],
+        'the same mob alone is a fight at that HP');
 
     const crowded = [1, 2, 3, 4, 5].map(n => Object.assign(candidate(920000 + n, n * 100), { fetchHostile: () => false, fetchClanName: () => '' }));
     World.fetchNpcsInRadius = () => crowded;

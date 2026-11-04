@@ -61,12 +61,15 @@ function stateCastCosts(state, profile, timestamp) {
 
 // Weight penalty 1 is only the C4 walking-speed step. During the sale retry
 // it waits like a half-full bag and the bot hunts on, spending its shots,
-// instead of flying back to a town that bought nothing. Unused arrows have
-// an executable NPC sale and do not wait; heavier steps and full bags stay the floor.
-function saleRetryWaits(floor, state, timestamp, inventoryOwner = state) {
+// instead of flying back to a town that bought nothing. Unused arrows the NPC
+// sale takes (ItemDisposition.unusedArrowCandidates, the sale's own lines) do
+// not wait; heavier steps and full bags stay the floor. bag: the state or the
+// live actor; asState: that bag as a state for the sale, built only when arrows are held.
+function saleRetryWaits(floor, state, timestamp, bag = state, asState = () => bag) {
     return floor?.reason === 'overweight' && floor.weightPenalty === 1
-        && !ArrowStock.unused(inventoryOwner).length
-        && Number(state?.stats?.marketSellRetryAfter || 0) > timestamp ? null : floor;
+        && Number(state?.stats?.marketSellRetryAfter || 0) > timestamp
+        && !(ArrowStock.unused(bag).length > 0
+            && invoke('GameServer/Bot/Economy/ItemDisposition').unusedArrowCandidates(asState()).length > 0) ? null : floor;
 }
 
 function forState(state, timestamp = Date.now(), inputs = null) {
@@ -137,7 +140,7 @@ function forActor(actor, state = null, timestamp = Date.now()) {
     return saleRetryWaits(evaluate({ dead: actor.isDead?.() === true, hp: actor.fetchHp?.(), mp: actor.fetchMp?.(),
         manaRequired: Roles.shouldRestForMana(actor), castCosts: costs,
         ...actorInventory(actor), slotLimit: InventoryLimits.forActor(actor), maxLoad: actor.fetchMaxLoad?.() || 0 }),
-    state, timestamp, actor);
+    state, timestamp, actor, () => invoke('GameServer/Bot/Economy/MarketListingPolicy').actorState({ actor, coldLifeState: state }));
 }
 
 module.exports = { evaluate, forState, bagFor, forActor, bagMarks, stateInventory, inventoryLimit, weightPenalty };

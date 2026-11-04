@@ -32,7 +32,7 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
                 INSERT INTO characters (id, username, name, classId, race, maxHp, maxMp, sex, face, hair, hairColor, locX, locY, locZ)
                 VALUES (1, 'bot_memory_test', 'MemoryBot', 0, 0, 100, 100, 0, 0, 0, 0, 0, 0, 0)`);
             const saved = { execute: Database.execute, location: Database.updateCharacterLocation,
-                experience: Database.updateCharacterExperience, vitals: Database.updateCharacterVitals,
+                progress: Database.updateCharacterProgress, vitals: Database.updateCharacterVitals,
                 dirty: Coordinator.markDirty,
                 membership: Database.reconcileBotClanMembership };
             let writes = 0;
@@ -46,7 +46,7 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
                     const result = statement.run(...params.map(v => v ?? null));
                     return { affectedRows: Number(result.changes) };
                 };
-                Database.updateCharacterLocation = Database.updateCharacterExperience = Database.updateCharacterVitals = async () => {};
+                Database.updateCharacterLocation = Database.updateCharacterProgress = Database.updateCharacterVitals = async () => {};
                 Database.reconcileBotClanMembership = async () => ({ repairedMembers: 0, repairedParties: 0 });
                 Database.reconcileBotClanGoals = async () => ({ repairedMembers: 0, repairedParties: 0 });
                 Coordinator.markDirty = () => {};
@@ -86,7 +86,7 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
                 await new Promise(resolve => setImmediate(resolve));
             } finally {
                 Database.execute = saved.execute; Database.updateCharacterLocation = saved.location;
-                Database.updateCharacterExperience = saved.experience; Database.updateCharacterVitals = saved.vitals;
+                Database.updateCharacterProgress = saved.progress; Database.updateCharacterVitals = saved.vitals;
                 Coordinator.markDirty = saved.dirty;
                 Database.reconcileBotClanMembership = saved.membership;
                 Database.reconcileBotClanGoals = originalReconcileClanGoals;

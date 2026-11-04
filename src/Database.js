@@ -4,6 +4,7 @@ const BeginnerShots = require('./GameServer/Items/C4BeginnerShots');
 const InventoryLimits = require('./GameServer/Inventory/InventoryLimits');
 const fs = require('fs');
 const DiagnosticConfig = require('./GameServer/Bot/Population/PopulationConfig');
+const { DiagnosticMetricMap } = require('./GameServer/Bot/Population/DiagnosticMetricMap');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 const { AsyncLocalStorage } = require('node:async_hooks');
@@ -128,12 +129,29 @@ let historyPath;
 let boardDealCountsReady = false;
 let boardCounterCountsReady = false;
 let flushPendingCharacterWrites = null;
+// CharacterWriteQueue.applyInJob(characterId, apply): hands over and clears the
+// character's buffered snapshot. jobCharacterIds: the characters whose snapshot
+// the job enqueued now writes first (set while a withCharacterFlush work runs).
+let applyPendingCharacterWrite = null;
+let jobCharacterIds = null;
 const MARKET_TRADE_RETENTION_MS = HistoryStore.MARKET_TRADE_RETENTION_MS;
 const cooperative = {
     depth: 0,
     sliceStartedAt: 0,
     sliceMs: 0
 };
+// The queue runs its jobs back to back in one microtask chain; after this much
+// of it (jobs and their callers' continuations) the drain gives the event loop
+// a turn (setImmediate) before the next job. A job is never split, so order and
+// atomicity hold. A slice starts at the first job of a turn and ends at the
+// next event-loop boundary (an immediate armed with it), so a chain of awaited
+// calls with nothing else queued accumulates within its turn and yields too.
+const DB_QUEUE_SLICE_MS = 12;
+let drainSliceStartedAt = 0;
+
+function endDrainSlice() {
+    drainSliceStartedAt = 0;
+}
 
 const metrics = {
     pending: 0,
@@ -145,17 +163,42 @@ const metrics = {
     waitMs: 0,
     runMs: 0,
     maxPending: 0,
+    // Drain yields to the event loop (counted with diagnostics off too).
+    queueYields: 0,
     // Diagnostic snapshots built by stats(); control reads use pending().
     snapshots: 0,
     byOperation: null
 };
 
+// Why a maintenance pass on this database was not run when it was tried (state retention, the
+// WAL truncate; PopulationService), `job:reason` -> count, governor refusals as `governor_<reason>`.
+// Counted with diagnostics off too: stats().maintenance. Bounded by DiagnosticMetricMap.
+const maintenanceRefusals = new DiagnosticMetricMap();
+
 function now() {
     return Date.now();
 }
 
+function maintenanceSnapshot() {
+    return { refusals: Object.fromEntries(maintenanceRefusals.entries()) };
+}
+
 function yieldToEventLoop() {
     return new Promise((resolve) => setImmediate(resolve));
+}
+
+// After a job: yield when the drain slice (or a cooperatively() caller's
+// slice) is spent, then settle the job's promise.
+function afterQueueJob(settle) {
+    const at = now();
+    const cooperativeSpent = cooperative.depth > 0 && at - cooperative.sliceStartedAt >= cooperative.sliceMs;
+    if (!cooperativeSpent && !(drainSliceStartedAt > 0 && at - drainSliceStartedAt >= DB_QUEUE_SLICE_MS)) return settle();
+    metrics.queueYields += 1;
+    // The slice's own immediate, armed before this one, has ended it.
+    return yieldToEventLoop().then(() => {
+        if (cooperative.depth > 0) cooperative.sliceStartedAt = now();
+        return settle();
+    });
 }
 
 function normalizeValue(value) {
@@ -280,7 +323,13 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
     const queuedAt = timed ? now() : 0;
     metrics.pending += 1;
     if (timed) metrics.maxPending = Math.max(metrics.maxPending, metrics.pending);
+    const characterIds = jobCharacterIds;
+    const job = characterIds ? () => { applyJobCharacterWrites(characterIds); return work(); } : work;
     const execute = () => {
+        if (drainSliceStartedAt === 0) {
+            drainSliceStartedAt = now();
+            setImmediate(endDrainSlice);
+        }
         const startedAt = timed ? now() : 0;
         const wait = startedAt - queuedAt;
         EconomyJournal.begin(operation);
@@ -288,7 +337,7 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
         if (!connection?.isTransaction) ClanReviewInputs.beginCandidateCommit();
         let committed = false;
         try {
-            const result = work();
+            const result = job();
             EconomyJournal.commit();
             if (!connection?.isTransaction) ClanReviewInputs.commitCandidateInputs();
             committed = true;
@@ -314,16 +363,8 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
         }
     };
     const queued = queryTail.then(execute, execute);
-    const cooperativeQueue = cooperative.depth > 0;
-    const result = cooperativeQueue
-        ? queued.then((value) => {
-            if (cooperative.depth <= 0 || now() - cooperative.sliceStartedAt < cooperative.sliceMs) return value;
-            return yieldToEventLoop().then(() => {
-                cooperative.sliceStartedAt = now();
-                return value;
-            });
-        })
-        : queued;
+    const result = queued.then((value) => afterQueueJob(() => value),
+        (error) => afterQueueJob(() => { throw error; }));
     queryTail = result.catch(() => null);
     return result;
 }
@@ -646,18 +687,46 @@ async function inPreparedTransactionBatch(items, prepare, hooks, operation) {
     });
 }
 
+// The buffered snapshot written by the job itself, before its work, in its own
+// transaction: what was buffered while the job waited in the queue (a drain
+// slice, a timer, a packet) is in the rows the work reads. Inside a raw
+// transaction it stays buffered (a rollback there would lose it).
+function applyJobCharacterWrites(characterIds) {
+    if (!applyPendingCharacterWrite || !connection || connection.isTransaction) return;
+    for (const id of characterIds) applyPendingCharacterWrite(id, state => mutationAdmission.run(undefined, () => {
+        connection.exec('BEGIN IMMEDIATE');
+        try {
+            applyBufferedCharacterStateUnsafe(id, state);
+            connection.exec('COMMIT');
+        } catch (error) {
+            if (connection.isTransaction) connection.exec('ROLLBACK');
+            throw error;
+        }
+    }));
+}
+
+// The work's job writes these characters' snapshots first; a nested call keeps
+// the outer characters (captured when it is called, inside the outer work).
+function withJobCharacterIds(ids, work) {
+    const outer = jobCharacterIds;
+    jobCharacterIds = ids;
+    try { return work(); } finally { jobCharacterIds = outer; }
+}
+
 function withCharacterFlush(characterId, work) {
     if (!flushPendingCharacterWrites || !Number(characterId)) return work();
-    return Promise.resolve(flushPendingCharacterWrites(Number(characterId))).then(work);
+    const ids = [...new Set([...(jobCharacterIds || []), Number(characterId)])];
+    return Promise.resolve(flushPendingCharacterWrites(Number(characterId))).then(() => withJobCharacterIds(ids, work));
 }
 
 function withCharacterFlushes(characterIds, work) {
     if (!flushPendingCharacterWrites) return work();
     const ids = [...new Set((characterIds || []).map(Number).filter(Boolean))];
+    const jobIds = [...new Set([...(jobCharacterIds || []), ...ids])];
     return ids.reduce(
         (pending, characterId) => pending.then(() => flushPendingCharacterWrites(characterId)),
         Promise.resolve()
-    ).then(work);
+    ).then(() => withJobCharacterIds(jobIds, work));
 }
 
 function applySchemaMigrations() {
@@ -896,9 +965,9 @@ function applySchemaMigrations() {
             `);
         }],
         [16, () => {
-            // Retention is deliberately incremental. These indexes keep each
-            // idle-only delete batch on a narrow age/group range instead of
-            // turning maintenance into a main-thread table scan.
+            // Retention is deliberately incremental (PersistentStateRetention):
+            // these indexes keep each step, during play too, on a narrow
+            // age/group range instead of a main-thread table scan.
             connection.exec(`
                 CREATE INDEX IF NOT EXISTS bot_conversation_messages_compacted_age
                     ON bot_conversation_messages(compacted, createdAt, id);
@@ -1871,22 +1940,8 @@ function applySchemaMigrations() {
             if (columns.has(column)) connection.exec(`ALTER TABLE bot_life_state DROP COLUMN ${column}`);
         }
         connection.exec(`
-            CREATE INDEX bot_life_state_party_owner_filter
-                ON bot_life_state(phase, partyId, activity, spotId, updatedAt);
             CREATE INDEX bot_life_state_party_request_expiry
                 ON bot_life_state(phase, partyRequestStatus, partyRequestedAt, partyRequestPriority);
-            CREATE INDEX bot_life_state_warehouse_release
-                ON bot_life_state(characterId, updatedAt)
-                WHERE phase = 'cold'
-                AND accountName NOT LIKE 'bot_craft_%'
-                AND (partyId IS NULL OR partyId = '')
-                AND activity IN ('hunting', 'resting');
-            CREATE INDEX bot_life_state_warehouse_demand
-                ON bot_life_state(updatedAt, characterId)
-                WHERE phase = 'cold'
-                AND accountName NOT LIKE 'bot_craft_%'
-                AND (partyId IS NULL OR partyId = '')
-                AND activity IN ('hunting', 'resting');
         `);
         PartyCandidateProjection.createIndex(connection);
         const projection = connection.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'bot_party_candidate_projection'").get();
@@ -1937,13 +1992,30 @@ function applySchemaMigrations() {
         }
         require('./GameServer/Clan/ClanJoinPenaltyMigration')(connection, now());
     }]);
-    const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
-    migrations.forEach(([version, apply]) => {
-        if (applied.has(version)) return;
+    // New migrations are keyed by name (named_migrations), never by a new
+    // number, so a branch's migration cannot collide with upstream's: append
+    // [name, apply] here. They run after the numbered ones, in list order.
+    const namedMigrations = [
+        // Four bot row indexes no query needs (their readers left with the goal
+        // reconcile and warehouse passes). Each holds updatedAt, which every save
+        // moves, so each cost a page per bot save: 42 MB/min of WAL (14 %) on the
+        // 1731-bot save. The queries that used them by chance take phase_partyId
+        // or the covering party candidate projection index. Worlds saved on an
+        // early build ran this as numbered 84; that row is deleted, so the
+        // launcher reads such a world as schema 83 again.
+        ['drop-unused-bot-life-indexes', () => connection.exec(`
+            DROP INDEX IF EXISTS bot_life_state_market_reconcile;
+            DROP INDEX IF EXISTS bot_life_state_party_owner_filter;
+            DROP INDEX IF EXISTS bot_life_state_warehouse_demand;
+            DROP INDEX IF EXISTS bot_life_state_warehouse_release;
+            DELETE FROM schema_migrations WHERE version = 84;
+        `)]
+    ];
+    const migrate = (apply, record) => {
         connection.exec('BEGIN IMMEDIATE');
         try {
             apply();
-            connection.prepare('INSERT INTO schema_migrations(version, appliedAt) VALUES (?, ?)').run(version, now());
+            record();
             connection.exec('COMMIT');
         } catch (error) {
             try {
@@ -1954,6 +2026,21 @@ function applySchemaMigrations() {
             }
             throw error;
         }
+    };
+    const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
+    migrations.forEach(([version, apply]) => {
+        if (applied.has(version)) return;
+        migrate(apply, () => connection.prepare('INSERT INTO schema_migrations(version, appliedAt) VALUES (?, ?)').run(version, now()));
+    });
+    const names = new Set(namedMigrations.map(([name]) => name));
+    if (names.size !== namedMigrations.length) throw new Error('named migrations repeat a name');
+    const appliedNames = new Set(connection.prepare('SELECT name FROM named_migrations').all().map((row) => row.name));
+    // A world saved by a newer build: its extra migrations are kept, not undone.
+    const unknown = [...appliedNames].filter((name) => !names.has(name));
+    if (unknown.length) console.warn('DB          :: named migrations unknown to this build %s', unknown.join(', '));
+    namedMigrations.forEach(([name, apply]) => {
+        if (appliedNames.has(name)) return;
+        migrate(apply, () => connection.prepare('INSERT INTO named_migrations(name, appliedAt) VALUES (?, ?)').run(name, now()));
     });
 }
 
@@ -2839,15 +2926,15 @@ function parsedObject(raw) {
     }
 }
 
-// The kit rebuild below keeps a held rank's fields over the fresh ones and puts
-// the fresh keys first; a held skill whose keys already start with them and
-// whose identity fields match rebuilds into the same JSON.
+// A held record is current when it is the fresh one field for field: the
+// fresh record already carries the hot Skill model's numbers (ColdCombatProfile
+// skillRecord), so a rebuild of a current kit writes the same JSON.
 function heldSkillCurrent(held, fresh) {
-    if (!held || held.selfId !== fresh.selfId || held.level !== fresh.level || held.passive !== fresh.passive) return false;
+    if (!held) return false;
     const heldKeys = Object.keys(held);
     let index = 0;
-    for (const key in fresh) if (heldKeys[index++] !== key) return false;
-    return true;
+    for (const key in fresh) if (heldKeys[index++] !== key || held[key] !== fresh[key]) return false;
+    return index === heldKeys.length;
 }
 
 // The kit from the learned rows. Returns `combat` itself when the rows rebuild
@@ -2859,16 +2946,7 @@ function nativeColdCombatSkillsUnsafe(characterId, combat) {
     const held = Array.isArray(combat.skills) ? combat.skills : null;
     if (held && combat.version === ColdCombatProfile.PROFILE_VERSION && combat.skillSource === 'database'
         && held.length === learned.length && learned.every((skill, index) => heldSkillCurrent(held[index], skill))) return combat;
-    const proposed = new Map((held || []).map(skill => [Number(skill.selfId), skill]));
-    return { ...combat, version: ColdCombatProfile.PROFILE_VERSION, skillSource: 'database',
-        skills: learned.map(skill => {
-            const sameRank = proposed.get(skill.selfId);
-            // Hot Skill models resolve C4 semantics (for example buff power)
-            // beyond the raw datapack DTO. Keep that metadata for the exact
-            // learned rank; changed/missing ranks need a fresh native DTO.
-            return Number(sameRank?.level) === skill.level
-                ? { ...skill, ...sameRank, selfId: skill.selfId, level: skill.level, passive: skill.passive } : skill;
-        }) };
+    return { ...combat, version: ColdCombatProfile.PROFILE_VERSION, skillSource: 'database', skills: learned };
 }
 
 function syncInventorySummaryUnsafe(characterId, inventory = {}) {
@@ -3023,27 +3101,41 @@ function applySoulCrystalStepsUnsafe(characterId, steps, guard = () => {}) {
     }
 }
 
+// A bot's progress copied to its `characters` row (level, EXP, SP, vitals,
+// class) as one UPDATE. SQLite rewrites the entry of every index whose column
+// the UPDATE sets, changed or not (characters_clan_level_id holds the level),
+// so with the stored row at hand only the moved columns are set; without it
+// the IS NOT guard writes nothing when nothing moved (95 % of cold resolves).
+// washKarma: the EXP gained washes karma (Karma), read from the stored EXP so
+// a repeated write cannot wash twice. Null when nothing is to be written.
+function characterProgressStatement(characterId, values, { washKarma = false, before = null } = {}) {
+    const columns = Object.keys(values).filter((column) => !before || Number(before[column]) !== values[column]);
+    if (!columns.length) return null;
+    const assignments = columns.map((column) => `${escapeIdentifier(column)} = ?`);
+    const params = columns.map((column) => values[column]);
+    if (washKarma && columns.includes('exp')) {
+        assignments.unshift('karma = MAX(0, karma - CAST(MAX(0, ? - exp) / ? AS INTEGER))');
+        params.unshift(values.exp, KARMA_XP_DIVIDER);
+    }
+    const guard = before ? '' : `(${columns.map((column) => `${escapeIdentifier(column)} IS NOT ?`).join(' OR ')}) AND `;
+    return [`UPDATE characters SET ${assignments.join(', ')} WHERE ${guard}id = ?`,
+        [...params, ...(before ? [] : columns.map((column) => values[column])), characterId]];
+}
+
 function applyColdPhysicalStateUnsafe(characterId, physical = {}, parts = null, deathRecord = null) {
     const before = one('SELECT level,exp,sp,hp,maxHp,mp,maxMp,classId FROM characters WHERE id = ?', [characterId]);
     const classId = Number.isFinite(Number(physical.classId)) ? Number(physical.classId) : null;
     const values = {
         level: Number(physical.level || 1), exp: Number(physical.exp || 0), sp: Number(physical.sp || 0),
         hp: Number(physical.hp || 0), maxHp: Number(physical.maxHp || 0),
-        mp: Number(physical.mp || 0), maxMp: Number(physical.maxMp || 0)
+        mp: Number(physical.mp || 0), maxMp: Number(physical.maxMp || 0),
+        ...(classId !== null ? { classId } : {})
     };
-    // The karma wash reads only an EXP gain, so a step that moves none of
-    // these columns leaves the row as it is.
-    const changed = !before || (classId !== null && Number(before.classId) !== classId)
-        || Object.keys(values).some((column) => Number(before[column]) !== values[column]);
-    parts && Diagnostics.count('commit_characters', changed ? 'written' : 'same');
-    // Use the persisted XP delta inside the fenced transaction: unchanged
-    // snapshots cannot wash karma twice, and non-combat updates grant none.
-    if (changed) write(`UPDATE characters SET karma = MAX(0, karma - CAST(MAX(0, ? - exp) / ? AS INTEGER)),
-        level = ?, exp = ?, sp = ?, hp = ?, maxHp = ?, mp = ?, maxMp = ?${classId !== null ? ', classId = ?' : ''} WHERE id = ?`, [
-        values.exp, KARMA_XP_DIVIDER,
-        values.level, values.exp, values.sp, values.hp, values.maxHp, values.mp, values.maxMp,
-        ...(classId !== null ? [classId] : []), characterId
-    ]);
+    // Inside the fenced transaction: an unchanged snapshot cannot wash karma
+    // twice, and a step without an EXP gain washes none.
+    const statement = before ? characterProgressStatement(characterId, values, { washKarma: true, before }) : null;
+    parts && Diagnostics.count('commit_characters', statement ? 'written' : 'same');
+    if (statement) write(...statement);
     if (physical.soulCrystals?.length) applySoulCrystalStepsUnsafe(characterId, physical.soulCrystals);
     parts?.lap('physical');
     if (physical.inventory) syncInventorySummaryUnsafe(characterId, physical.inventory);
@@ -5643,6 +5735,10 @@ const Database = {
                 || !require('./GameServer/Clan/ClanRaidRoster').same(previousStats.objective?.fullRoster, nextStats.objective?.fullRoster)))
                 return { affectedRows: 0, reason: 'raid_admission' };
             if (previous?.status === 'hot') return { affectedRows: 0, reason: 'party_hot' };
+            // Dissolution is final: a write prepared from the party before it
+            // (a worker step's afterCommit, a review) would bring back a roster
+            // whose members already left.
+            if (previous?.status === 'dissolved' && row.status !== 'dissolved') return { affectedRows: 0, reason: 'party_dissolved' };
             if (Number(previousStats.clanGoalInvalidationVersion || 0) > Number(nextStats.clanGoalInvalidationVersion || 0))
                 return { affectedRows: 0, reason: 'goal_invalidated' };
             const payment = partyAgreementUnsafe(previous, row);
@@ -6652,8 +6748,10 @@ const Database = {
         if (revisionTrace.size < 4 && !revisionTrace.has(characterId)) revisionTrace.set(characterId, 60);
     },
 
-    registerCharacterWriteFlush(flush) {
+    // applyInJob is kept when only flush is replaced (fixtures stub the flush).
+    registerCharacterWriteFlush(flush, applyInJob) {
         flushPendingCharacterWrites = typeof flush === 'function' ? flush : null;
+        if (applyInJob !== undefined) applyPendingCharacterWrite = typeof applyInJob === 'function' ? applyInJob : null;
     },
 
     admitEconomyCommand(characterId, kind, { authority, original = null, acknowledged = null, reconcilePending = false } = {}) {
@@ -6704,11 +6802,11 @@ const Database = {
         return mutationAdmission.run(undefined, work);
     },
 
-    cooperatively(work, sliceMs = 12) {
+    cooperatively(work, sliceMs = DB_QUEUE_SLICE_MS) {
         const outermost = cooperative.depth === 0;
         if (outermost) {
             cooperative.sliceStartedAt = now();
-            cooperative.sliceMs = Math.max(1, Number(sliceMs) || 12);
+            cooperative.sliceMs = Math.max(1, Number(sliceMs) || DB_QUEUE_SLICE_MS);
         }
         cooperative.depth += 1;
         return Promise.resolve().then(work).finally(() => {
@@ -6723,7 +6821,8 @@ const Database = {
     stats({ resetPeak = false } = {}) {
         // Depth and physical checkpoint outcomes are runtime control sources.
         if (!DiagnosticConfig.developerDiagnostics) return { path: databasePath || null, historyPath: historyPath || null,
-            pending: metrics.pending, diagnostics: { enabled: false }, checkpoint: CheckpointCoordinator.snapshot(), history: History.stats() };
+            pending: metrics.pending, queueYields: metrics.queueYields, diagnostics: { enabled: false },
+            checkpoint: CheckpointCoordinator.snapshot(), maintenance: maintenanceSnapshot(), history: History.stats() };
         metrics.snapshots += 1;
         const operations = Object.fromEntries(Array.from(metrics.byOperation?.entries() || []).map(([key, value]) => [key, { ...value }]));
         const snapshot = {
@@ -6731,6 +6830,7 @@ const Database = {
             historyPath: historyPath || null,
             pending: metrics.pending,
             maxPending: metrics.maxPending,
+            queueYields: metrics.queueYields,
             total: metrics.total,
             reads: metrics.reads,
             writes: metrics.writes,
@@ -6741,10 +6841,17 @@ const Database = {
             avgRunMs: metrics.total ? Math.round(metrics.runMs / metrics.total) : 0,
             operations,
             checkpoint: CheckpointCoordinator.snapshot(),
+            maintenance: maintenanceSnapshot(),
             history: History.stats()
         };
         if (resetPeak) metrics.maxPending = metrics.pending;
         return snapshot;
+    },
+
+    // A maintenance try that did not run (maintenanceRefusals): one map increment.
+    noteMaintenanceRefusal(job, reason) {
+        const key = `${job}:${reason}`;
+        maintenanceRefusals.set(key, (maintenanceRefusals.get(key) || 0) + 1);
     },
 
     // Operations waiting on the write queue. The schedulers read this on every
@@ -6757,6 +6864,11 @@ const Database = {
     // operation counters stats() copies.
     checkpointSnapshot() {
         return CheckpointCoordinator.snapshot();
+    },
+
+    // listener(result) after each finished checkpoint; returns the unsubscribe.
+    onCheckpoint(listener) {
+        return CheckpointCoordinator.onResult(listener);
     },
 
     checkpoint(options = {}) {
@@ -11152,17 +11264,17 @@ const Database = {
                 simulationRevision: Number(state.simulationRevision) };
         }, 'bot-life:generated-appearance'));
     },
-    updateColdCharacterExperience(id, level, exp, sp, options = {}) {
+    // A bot row's level, EXP, SP and vitals copied to `characters` in one
+    // guarded UPDATE; washKarma for a karma bot whose cold EXP washes it.
+    updateCharacterProgress(id, { level, exp, sp, hp, maxHp, mp, maxMp }, washKarma = false, options = {}) {
         const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write', id);
-        return withCharacterFlush(id, () => guardedNativeWrite(`UPDATE characters
-            SET karma = MAX(0, karma - CAST(MAX(0, ? - exp) / ? AS INTEGER)),
-                level = ?, exp = ?, sp = ? WHERE id = ?`,
-            [exp, KARMA_XP_DIVIDER, level, exp, sp, id], 'character:cold-experience', admission));
+        const [sql, params] = characterProgressStatement(id, { level, exp, sp, hp, maxHp, mp, maxMp }, { washKarma });
+        return withCharacterFlush(id, () => guardedNativeWrite(sql, params, 'character:progress', admission));
     },
     updateCharacterExperience(id, level, exp, sp, options = {}) {
         const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write', id);
-        return withCharacterFlush(id, () => guardedNativeWrite('UPDATE "characters" SET "level" = ?, "exp" = ?, "sp" = ? WHERE id = ?',
-            [level, exp, sp, id], 'character:experience', admission));
+        const [sql, params] = characterProgressStatement(id, { level, exp, sp });
+        return withCharacterFlush(id, () => guardedNativeWrite(sql, params, 'character:experience', admission));
     },
     fetchCharacterDeathExperience(id) {
         return selectOne('character_death_experience', ['*'], 'characterId = ?', [Number(id)], 'character:death-exp-fetch')
@@ -11235,8 +11347,8 @@ const Database = {
     },
     updateCharacterVitals(id, hp, maxHp, mp, maxMp, options = {}) {
         const admission = captureWriteAdmission(options, 'invalid_character_vitals_before_write', id);
-        return withCharacterFlush(id, () => guardedNativeWrite('UPDATE "characters" SET "hp" = ?, "maxHp" = ?, "mp" = ?, "maxMp" = ? WHERE id = ?',
-            [hp, maxHp, mp, maxMp, id], 'character:vitals', admission));
+        const [sql, params] = characterProgressStatement(id, { hp, maxHp, mp, maxMp });
+        return withCharacterFlush(id, () => guardedNativeWrite(sql, params, 'character:vitals', admission));
     },
     updateCharacterStatus(id, { hp, mp, cp, effects, skillCooldowns }) { return withCharacterFlush(id, () => update('characters', { hp, mp, cp, effects, ...(skillCooldowns === undefined ? {} : { skillCooldowns }) }, 'id = ?', [id], 'character:status')); },
     updateCharacterPvpPkKarma(id, pvp, pk, karma) { return withCharacterFlush(id, () => update('characters', { pvp, pk, karma }, 'id = ?', [id], 'character:karma')); },
@@ -11525,6 +11637,21 @@ Object.assign(Database, {
     },
     cancelTradeMeeting(id, reason) { return withTradeMeetingFlush(id, () => TradeMeetings.terminal(Number(id), false, reason), 'board:meeting-cancel'); },
     acknowledgeTradeMeeting(id, actor) { return withCharacterFlush(actor, () => inTransaction(() => TradeMeetings.acknowledge(Number(id), Number(actor)), 'board:meeting-ack')); },
+    // Boot only, before recovery: one page of bots whose saved state names a
+    // meeting; each marker is rewritten from its accepted meetings when it
+    // differs (TradeMeeting.remark). { rows: changed life rows, next: cursor or null }.
+    refreshTradeMeetingMarkers(afterId = 0) {
+        return inTransaction(() => {
+            const marked = all(`SELECT characterId, json_extract(statsJson,'$.tradeMeeting') marker FROM bot_life_state
+                WHERE characterId>? AND instr(statsJson,'"tradeMeeting":[')>0 ORDER BY characterId LIMIT 64`, [Number(afterId)]);
+            const rows = {};
+            for (const { characterId, marker } of marked) {
+                const row = TradeMeetings.remark(Number(characterId), marker ? JSON.parse(marker) : null);
+                if (row) rows[characterId] = row;
+            }
+            return { rows, next: marked.length === 64 ? Number(marked.at(-1).characterId) : null };
+        }, 'board:meeting-markers');
+    },
     recoverTradeMeetings(afterId = 0) { return inTransaction(() => all('SELECT id,actorA,actorB,state FROM board_trade_meetings WHERE id>? ORDER BY id LIMIT 32', [afterId]), 'board:meeting-recover'); }
 });
 

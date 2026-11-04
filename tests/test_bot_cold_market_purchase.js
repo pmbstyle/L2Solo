@@ -51,8 +51,7 @@ const originals = {
     setItem: Database.setItem,
     syncInventorySummary: Database.syncInventorySummary,
     updateCharacterLocation: Database.updateCharacterLocation,
-    updateCharacterExperience: Database.updateCharacterExperience,
-    updateCharacterVitals: Database.updateCharacterVitals,
+    updateCharacterProgress: Database.updateCharacterProgress,
     clearGoal: GoalState.clear,
     user: World.user,
     bestOffer: MarketOpportunity.bestOffer,
@@ -80,8 +79,7 @@ async function run() {
     Database.reconcileBotClanMembership = async () => ({ repairedMembers: 0, repairedParties: 0 });
     Database.reconcileBotClanGoals = async () => ({ repairedMembers: 0, repairedParties: 0 });
     Database.updateCharacterLocation = async () => {};
-    Database.updateCharacterExperience = async () => {};
-    Database.updateCharacterVitals = async () => {};
+    Database.updateCharacterProgress = async () => {};
     MarketTelemetry.reset();
     Economy.forState = function (value, ...args) {
         if (value?.phase === 'cold') throw new Error('fixture forbids main cold wish builds');
@@ -806,8 +804,7 @@ run().catch((err) => {
     Database.setItem = originals.setItem;
     Database.syncInventorySummary = originals.syncInventorySummary;
     Database.updateCharacterLocation = originals.updateCharacterLocation;
-    Database.updateCharacterExperience = originals.updateCharacterExperience;
-    Database.updateCharacterVitals = originals.updateCharacterVitals;
+    Database.updateCharacterProgress = originals.updateCharacterProgress;
     GoalState.clear = originals.clearGoal;
     World.user = originals.user;
     MarketOpportunity.bestOffer = originals.bestOffer;

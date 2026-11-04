@@ -111,10 +111,14 @@ function restSeconds(state, missingHp, missingMp, options = {}) {
     return Math.max(hpSeconds, mpSeconds);
 }
 
+// The rest to a full bar, or to options.line ({ hp, mp } shares: a solo rest's
+// rested line, RestPolicy.restedLine); never under 8 s.
 function estimateRestMs(state, vitals, options = {}) {
     const maxHp = Number(vitals.maxHp || vitals.hp || 1);
     const maxMp = Number(vitals.maxMp || vitals.mp || 1);
-    return Math.round(Math.max(restSeconds(state, maxHp - Number(vitals.hp || 0), maxMp - Number(vitals.mp || 0), options), 8) * 1000);
+    const line = options.line || { hp: 1, mp: 1 };
+    return Math.round(Math.max(restSeconds(state, line.hp * maxHp - Number(vitals.hp || 0),
+        line.mp * maxMp - Number(vitals.mp || 0), options), 8) * 1000);
 }
 
 module.exports = { coldRestRegenPerTick, restRegenPerTick, restMpPerTick, requiresManaRecovery, restSeconds, estimateRestMs };

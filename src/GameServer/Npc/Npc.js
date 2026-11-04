@@ -10,6 +10,7 @@ const AttackRange    = invoke('GameServer/Actor/AttackRange');
 const ManorData      = invoke('GameServer/Manor/ManorData');
 const NpcSkills      = invoke('GameServer/Npc/NpcSkills');
 const NpcCombatChoice = invoke('GameServer/Npc/NpcCombatChoice');
+const FailureLog     = require('../../FailureLog');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const EffectTicker   = invoke('GameServer/Effects/EffectTicker');
@@ -19,13 +20,15 @@ const NpcHate = invoke('GameServer/Npc/NpcHate');
 const NpcWander = invoke('GameServer/Npc/NpcWander');
 const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool');
 const AttackHelper   = new Attack();
-// Dropped chases and mobs left out of combat still hating (fake death).
+// Dropped chases, chase path requests that gave no usable way (noPath), and mobs
+// left out of combat still hating (fake death).
 const hateStats = { outOfReach: 0, noPath: 0, idleWithHate: 0, attackTimeout: 0 };
-// A monster that neither attacked or cast nor was attacked for 2 minutes drops
-// the chase and its hate, then walks home (Mobius C4 AttackableAI
+// A monster that neither attacked or cast nor was attacked for 2 minutes stops
+// hating its target; the next hated one gets a timeout of its own, and with none
+// left it walks home (Lisvus and Mobius C4 L2AttackableAI.thinkAttack,
 // MAX_ATTACK_TIMEOUT = 1200 game ticks, refreshed by each of those, not by hate
-// alone, not counted while it cannot move: the timeout is for targets it cannot
-// reach, such as a player running at its speed).
+// alone, not counted while it cannot move). It is the one give-up for a target
+// the mob cannot reach: one it has no path to, or a player running at its speed.
 const ATTACK_TIMEOUT_MS = 120000;
 
 // MoveToPawn already tells the client to follow a moving target. Rebuilding
@@ -35,7 +38,8 @@ const CHASE_REPATH_INTERVAL_MS = 300;
 const NPC_PATH_MAX_NODES = 8000;
 const NPC_PATH_RETRY_INTERVAL_MS = 500;
 const NPC_PATH_MAX_RETRY_INTERVAL_MS = 4000;
-const NPC_PATH_FAILURE_TIMEOUT_MS = 10000;
+// The pool's own deadline for one chase path request (a pool error when hit).
+const NPC_PATH_REQUEST_TIMEOUT_MS = 10000;
 
 
 
@@ -314,33 +318,35 @@ class Npc extends NpcModel {
             let activeMoveCoords = null;
             let activePathWaypoints = [];
             let activePathTargetCoords = null;
-            let pathFailureStartedAt = 0;
             let pathFailureCount = 0;
             let nextPathRetryAt = 0;
             let pendingPath = null;
             let pathGeneration = 0;
             let activeTarget = initialTarget;
-            // A chase request that gave no way to the target: an empty path, or a pool
-            // error (queue full, pre-empted, timed out, a crashed worker). Lisvus stops
-            // hating an actor it could not hit for its attack timeout, whatever the cause
-            // (L2AttackableAI.thinkAttack): the 10 s run from the first failed request.
-            const pathFailed = (actor, requestedAt) => {
-                pathFailureStartedAt ||= requestedAt;
+            // A chase request that gave no usable way to the target: an empty path, a
+            // path to where the target no longer is (it moved CHASE_REPATH_DISTANCE or
+            // more meanwhile: a running target, a slow pool), or a pool error (queue
+            // full, pre-empted, timed out, a crashed worker). Counted (npcHate noPath);
+            // the next request waits 0.5, 1, 2, then 4 s per failure in a row. The mob
+            // keeps hating: Lisvus has no give-up of its own for a target it has no way
+            // to, only its attack timeout (ATTACK_TIMEOUT_MS).
+            const pathFailed = () => {
                 pathFailureCount++;
+                hateStats.noPath += 1;
                 nextPathRetryAt = Date.now() + Math.min(
                     NPC_PATH_MAX_RETRY_INTERVAL_MS,
                     NPC_PATH_RETRY_INTERVAL_MS * (2 ** (pathFailureCount - 1))
                 );
-                if (Date.now() - pathFailureStartedAt >= NPC_PATH_FAILURE_TIMEOUT_MS) {
-                    this.removeAggroTarget(session, actor, 'noPath');
-                }
             };
 
             this.timer.combat = setInterval(() => {
                 if (!this.fetchStateAttack() && !EffectRestrictions.canAttack(this)) {
                     // Control is not a failed chase. A path interrupted before
-                    // it landed must get a fresh timeout after control ends.
-                    pathFailureStartedAt = 0;
+                    // it landed must get a fresh retry after control ends.
+                    if (pendingPath) {
+                        pathGeneration++;
+                        pendingPath = null;
+                    }
                     pathFailureCount = 0;
                     nextPathRetryAt = 0;
                     activeMoveCoords = null;
@@ -361,7 +367,6 @@ class Npc extends NpcModel {
                     activeMoveCoords = null;
                     activePathWaypoints = [];
                     activePathTargetCoords = null;
-                    pathFailureStartedAt = 0;
                     pathFailureCount = 0;
                     nextPathRetryAt = 0;
                     this.automation.abortAll(this);
@@ -383,8 +388,8 @@ class Npc extends NpcModel {
                 }
 
                 if (EffectRestrictions.canMove(this) && Date.now() - this.combatActiveAt >= ATTACK_TIMEOUT_MS) {
-                    hateStats.attackTimeout += 1;
-                    this.endFight(session);
+                    this.combatActiveAt = Date.now();
+                    this.removeAggroTarget(session, actor, 'attackTimeout');
                     return;
                 }
 
@@ -458,7 +463,6 @@ class Npc extends NpcModel {
                         if (!pendingPath) {
                             const requestedTarget = { locX: newDstX, locY: newDstY, locZ: newDstZ };
                             const generation = ++pathGeneration;
-                            const requestedAt = now;
                             pendingPath = this.fetchCombatPathAsync(actor)
                                 .then((path) => {
                                     if (generation !== pathGeneration || !this.state.fetchCombats()) return;
@@ -471,23 +475,23 @@ class Npc extends NpcModel {
                                         actor.fetchLocY(),
                                         actor.fetchLocZ()
                                     ));
-                                    if (drift >= CHASE_REPATH_DISTANCE) return;
-                                    if (!path || path.length <= 1) {
-                                        pathFailed(actor, requestedAt);
+                                    if (drift >= CHASE_REPATH_DISTANCE || !path || path.length <= 1) {
+                                        pathFailed();
                                         return;
                                     }
                                     activePathWaypoints = path.slice(1);
                                     activePathTargetCoords = requestedTarget;
-                                    pathFailureStartedAt = 0;
                                     pathFailureCount = 0;
                                     nextPathRetryAt = 0;
                                 }, (error) => {
                                     // A newer request replaced this one, or the server stops.
                                     if (['STALE_PATH', 'POOL_SHUTDOWN'].includes(error?.code)) return;
                                     if (generation !== pathGeneration || !this.state.fetchCombats()) return;
-                                    pathFailed(actor, requestedAt);
+                                    pathFailed();
                                 })
-                                .catch(() => {
+                                .catch((error) => {
+                                    // A throw in the handlers above: count it, retry later.
+                                    FailureLog.note('npc.chase_path', error);
                                     nextPathRetryAt = Date.now() + NPC_PATH_RETRY_INTERVAL_MS;
                                 })
                                 .finally(() => {
@@ -504,7 +508,6 @@ class Npc extends NpcModel {
                     return;
                 }
 
-                pathFailureStartedAt = 0;
                 pathFailureCount = 0;
                 nextPathRetryAt = 0;
                 activePathWaypoints = [];
@@ -663,7 +666,7 @@ class Npc extends NpcModel {
             maxNodes: NPC_PATH_MAX_NODES
         }, {
             key: `npc:${this.fetchId()}`,
-            timeoutMs: NPC_PATH_FAILURE_TIMEOUT_MS
+            timeoutMs: NPC_PATH_REQUEST_TIMEOUT_MS
         });
     }
 

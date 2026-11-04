@@ -11,6 +11,8 @@ const stableVersionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 const versionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-preview\.(0|[1-9]\d*))?$/;
 const tagPattern = /^(?:server-)?v\d+\.\d+\.\d+(?:-preview\.\d+)?$/;
 const launcherTagPattern = /^launcher-v\d+\.\d+\.\d+(?:-preview\.\d+)?$/;
+// Named database migrations (src/Database.js namedMigrations).
+const migrationNamePattern = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,199}$/;
 const platforms = ['darwin-arm64', 'darwin-x64', 'linux-x64', 'win32-x64'];
 const requiredServerFiles = ['package.json', 'config/default.ini', 'scripts/run-server.js', 'scripts/geodata-release.json',
     'scripts/geodata-bootstrap.js', 'src/NodeL2.js', 'src/Server.js', 'scripts/launcher-population.js'];
@@ -56,6 +58,9 @@ function validateManifest(manifest, tag) {
     validateChannel(manifest, tag);
     if (manifest.schemaVersion === 2 && (manifest.component !== 'server' || manifest.version !== versionOf(tag)
         || !Number.isSafeInteger(manifest.databaseSchemaVersion) || manifest.databaseSchemaVersion < 1
+        || manifest.databaseMigrationNames !== undefined && (!Array.isArray(manifest.databaseMigrationNames) || manifest.databaseMigrationNames.length > 10000
+            || manifest.databaseMigrationNames.some(name => typeof name !== 'string' || !migrationNamePattern.test(name))
+            || new Set(manifest.databaseMigrationNames).size !== manifest.databaseMigrationNames.length)
         || !stableVersionPattern.test(manifest.runtime?.version) || Number(manifest.runtime.version.split('.')[0]) < 22
         || !versionPattern.test(manifest.minimumLauncherVersion))) throw new Error('Invalid server runtime or compatibility information.');
     if (manifest.startupProtocolVersion !== undefined && (manifest.schemaVersion !== 2 || ![1, 2].includes(manifest.startupProtocolVersion))) throw new Error('Unsupported server startup protocol. Update the launcher first.');

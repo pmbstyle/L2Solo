@@ -509,15 +509,18 @@ function inventoryAdena(inventory) {
     return Number(inventory?.[57]?.amount || inventory?.['57']?.amount || 0);
 }
 
-function marketPurchaseBlocker(state = {}, offer = {}, qty = 1) {
+// The bot's purchase gate on main. A worker command (`commanded`) already passed
+// the gear rules in its plan; the war ticket and the arrow stock still hold,
+// as the bag may have changed since the plan.
+function marketPurchaseBlocker(state = {}, offer = {}, qty = 1, { commanded = false } = {}) {
     const selfId = Number(offer?.selfId || 0);
     const warBlocker = require('./PartyMarketBreak').warSupplyPurchaseBlocker(state, selfId);
     if (warBlocker) return warBlocker;
     const count = Number(qty);
     const template = itemTemplate(selfId);
     if (!template || !Number.isSafeInteger(count) || count <= 0) return null;
-    const Arrows = require('../../Inventory/ArrowStock');
-    if (Arrows.isArrow({ selfId }) && Arrows.purchaseAmount(state, selfId, count) < count) return 'arrow_stock_limit';
+    if (require('../../Inventory/ArrowStock').admitted(state, selfId, count) < count) return 'arrow_stock_limit';
+    if (commanded) return null;
     const slot = Number(template.etc?.slot || 0);
     if (slot <= 0) return null;
 
@@ -2191,8 +2194,7 @@ const BotLifeState = {
             locX: row.locX,
             locY: row.locY,
             locZ: row.locZ
-        })).then(() => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp))
-            .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
+        })).then(() => Database.updateCharacterProgress(row.characterId, row))
             .then(() => {
                 const snapshot = normalize(row);
                 const current = cache.get(characterId);
@@ -2988,6 +2990,8 @@ const BotLifeState = {
                 }
                 const row = rowFromState(profiledState);
                 const characterId = row.characterId;
+                const vitals = () => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp, nativeWriteOptions);
+                const progress = (washKarma = false) => Database.updateCharacterProgress(row.characterId, row, washKarma, nativeWriteOptions);
                 return save(row, nativeWriteOptions)
                     .then(() => {
                         const deathRecord = profiledState.stats?.deathExperience;
@@ -3002,21 +3006,19 @@ const BotLifeState = {
                                 penaltyAppliedAt: deathRecord.penaltyAppliedAt,
                                 karma: profiledState.stats?.karma,
                                 sp: row.sp
-                            }, nativeWriteOptions);
+                            }, nativeWriteOptions).then(vitals);
                         }
+                        // A restore wrote the restored EXP; the row's would undo it.
                         if (result.patch?.restoreExpPercent !== undefined) {
                             return Database.restoreCharacterDeathExperience(row.characterId, result.patch.restoreExpPercent, timestamp, nativeWriteOptions)
-                                .then((restored) => restored || Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp, nativeWriteOptions));
+                                .then((restored) => (restored ? vitals() : progress()));
                         }
                         if (result.patch?.clearDeathExperience) {
                             return Database.clearCharacterDeathExperience(row.characterId, result.patch.clearDeathExperience, timestamp, nativeWriteOptions)
-                                .then(() => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp, nativeWriteOptions));
+                                .then(() => progress());
                         }
-                        return Number(state.stats?.karma || 0) > 0
-                            ? Database.updateColdCharacterExperience(row.characterId, row.level, row.exp, row.sp, nativeWriteOptions)
-                            : Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp, nativeWriteOptions);
+                        return progress(Number(state.stats?.karma || 0) > 0);
                     })
-                    .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp, nativeWriteOptions))
                     .then(() => result.soulCrystals?.length
                         ? Database.applyColdSoulCrystalResults(row.characterId, result.soulCrystals, nativeWriteOptions || {}) : null)
                     .then(() => syncInventorySummary(row.characterId, profiledState.inventory, newDeath ? 'resolve_death' : 'resolve', nativeWriteOptions))
@@ -3824,8 +3826,7 @@ const BotLifeState = {
             locX: row.locX,
             locY: row.locY,
             locZ: row.locZ
-        }).then(() => row)).then((row) => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp).then(() => row))
-            .then((row) => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp).then(() => row))
+        }).then(() => row)).then((row) => Database.updateCharacterProgress(row.characterId, row).then(() => row))
             .then((row) => paidTrip().then(() => row))
             .then((row) => {
                 const snapshot = normalize(row);

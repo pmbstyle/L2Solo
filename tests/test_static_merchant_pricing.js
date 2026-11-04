@@ -25,10 +25,12 @@ const botLines = store => store.items.map(line => ({ selfId: line.selfId, count:
     price: Pricing.botPriceFor(store, line) })).filter(line => line.price > 0);
 // All 367 configured lines from b5eb1b574942fd9c1622fe961e6a2f4eef9e5a03:
 // moving player prices must not change any retained bot payout or shot price.
+// x10/x50 moved once when the payout cap read the one NPC table (town
+// sellers): 4 jewelry payouts no longer sit under fallback lists no NPC sells.
 const baselineBotPrices = {
     1: '02b74cbda7b9d26662e0970bd3cbf3b1738ad1c61283df61a382b49061a127eb',
-    10: '246610ee5b236fc0a410cfa447dd5516c2df79762b2e88a3518048eb0a475616',
-    50: 'f083f40faf1676dafedb0967b63ef75673dd555053f251ee0be2791a60a133ca'
+    10: '2acd1485894e866485c9cd832c8537ce34c826f7e9ed1265570c68797175c824',
+    50: 'bc7ca65c882187db4f29f74561711d6329f378d96a28881e753bed88d91393c2'
 };
 
 function inventoryItem(selfId, amount) {
@@ -51,7 +53,7 @@ async function run() {
             baselineBotPrices[rate], `every retained bot price matches the baseline at x${rate}`);
         const cheapest = new Map();
         const addOffer = (id, price) => cheapest.set(id, Math.min(cheapest.get(id) ?? Infinity, price));
-        // Enumerate actual NPC lists independently of the policy's allOffers index.
+        // Enumerate actual NPC lists independently of the policy's NPC price table.
         for (const id of Shops.npcIds()) {
             for (const line of Shops.fetchForNpc(id)) {
                 addOffer(line.selfId, line.price ?? templates.get(line.selfId).template.price);

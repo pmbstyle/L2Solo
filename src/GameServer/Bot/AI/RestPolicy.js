@@ -5,12 +5,20 @@ const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 
 // HP and MP shares under which a bot stops to rest. A party fights a little
 // longer than a solo bot; a bot that already retreated (recovery locked)
-// rests until it is nearly full.
+// rests until it is nearly full. rested: where a solo rest ends (restOver):
+// high in the bar, as a player sits once and then chains kills on a full bar,
+// not kill-sit-kill-sit at the edge of the next fight (maintainer 11-04; our
+// choice, C4 leaves it to the player). 0.95 is the old hot wake line and the
+// party's: the last few percent are a long wait for nothing a fight reads.
 const THRESHOLDS = {
     solo: { hp: 0.35, mp: 0.20 },
     party: { hp: 0.30, mp: 0.18 },
-    locked: { hp: 0.95, mp: 0.95 }
+    locked: { hp: 0.95, mp: 0.95 },
+    rested: { hp: 0.95, mp: 0.95 }
 };
+// How far its caution moves a bot's rested line (restedLine): a reckless bot
+// gets up at 0.92, a cautious one at 0.98.
+const RESTED_CAUTION_SPREAD = 0.03;
 
 // The mana rule: alone only casters rest for MP; in a party tanks and music
 // fighters also recover MP for taunts and songs.
@@ -90,6 +98,32 @@ function petRested(pet) {
     return !petNeedsRest(pet, THRESHOLDS.locked.hp);
 }
 
+// A solo bot's rested line: THRESHOLDS.rested moved by its persona's caution
+// (BotPersona traits, 0.5 without one: the tables' reference bot), within
+// RESTED_CAUTION_SPREAD. Deterministic per bot, hot and cold.
+function restedLine(persona = null) {
+    const caution = Number(persona?.traits?.caution);
+    const shift = Number.isFinite(caution) ? (Math.max(0, Math.min(1, caution)) - 0.5) * 2 * RESTED_CAUTION_SPREAD : 0;
+    return { hp: THRESHOLDS.rested.hp + shift, mp: THRESHOLDS.rested.mp + shift };
+}
+
+// When a rest is over, hot (RestingState) and cold (BackgroundResolver.resolveRest)
+// alike: at the bot's rested line (restedLine; MP too when it rests for mana:
+// restWaitsForMana / ColdRest.requiresManaRecovery), a party member at the
+// locked line (its camp and its healers see to the rest). whole: a rest the
+// next fight sent an already rested bot to (it was refused at its line) ends
+// on a full bar, HP and MP, as the whole-bar pull verdict that picked the
+// fight admits it there: no stand, refuse and sit again. The pet rested either
+// way (petRested).
+function restOver(vitals, { mana = false, pet = null, party = false, persona = null, whole = false } = {}) {
+    if (!petRested(pet)) return false;
+    const hp = Number(vitals?.hp) || 0, mp = Number(vitals?.mp) || 0;
+    const maxHp = Math.max(1, Number(vitals?.maxHp) || 0), maxMp = Math.max(1, Number(vitals?.maxMp) || 0);
+    if (whole) return hp >= maxHp && mp >= maxMp;
+    const line = party ? THRESHOLDS.locked : restedLine(persona);
+    return hp / maxHp >= line.hp && (!mana || mp / maxMp >= line.mp);
+}
+
 function raidReady(subject, vitals = subject?.vitals || {}, paidCost = null) {
     // A native cast pays immediately before effects, in the same callback.
     // Admission requires the reserve before that one payment; this credits
@@ -112,4 +146,4 @@ function sitsToRest(seated, standing, missingHp, missingMp, mana) {
     return ticks(seated) <= ticks(standing);
 }
 
-module.exports = { THRESHOLDS, restsForMana, sitsForMana, restWaitsForMana, needsRest, needsRetreat, petRested, raidReady, sitsToRest };
+module.exports = { THRESHOLDS, restsForMana, sitsForMana, restWaitsForMana, needsRest, needsRetreat, petRested, restedLine, restOver, raidReady, sitsToRest };

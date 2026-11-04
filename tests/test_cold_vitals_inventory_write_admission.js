@@ -125,7 +125,8 @@ async function workerBoundary(writer, stage, mode) {
     let admission, control, stop, targetEntered = false, held = false, targetFlushes = 0, flushCompleted = false;
     c.population = { executeWorkerLifecycleCommand(...args) { admission = args[2]?.workerAdmission;
         return Population.executeWorkerLifecycleCommand(...args); } };
-    const method = writer === 'vitals' ? 'updateCharacterVitals' : 'syncInventorySummary';
+    // A resolve writes the physical EXP and vitals in one statement.
+    const method = writer === 'vitals' ? 'updateCharacterProgress' : 'syncInventorySummary';
     const original = Database[method];
     Database[method] = function (...args) {
         if (args[0] === id) { targetEntered = true; called.resolve(); }
@@ -143,11 +144,11 @@ async function workerBoundary(writer, stage, mode) {
         await turn();
         if (stage === 'queue') { assert(flushCompleted); assert(Database.stats().pending >= 1, 'original write waits in real queryTail after completed flush'); }
         assert(c.commandInflight.has(id)); assert.equal(targetFlushes, 1);
-        assert.equal(admission.check(), null, 'original cached checkpoint/source/promise still current after own ROW and EXP');
+        assert.equal(admission.check(), null, 'original cached checkpoint/source/promise still current after own ROW');
         const initial = facts(id), oldCharacter = physical(initial, id), oldLife = lifeRow(initial, id), oldMaterial = material(initial, id);
         assert.equal(oldLife.hp, 90); assert.equal(oldLife.exp, state.exp + expDelta);
         assert.equal(JSON.parse(oldLife.inventorySummary)['1869'].amount, 5, 'own ROW already contains the materialized summary');
-        assert.equal(oldCharacter.exp, state.exp + expDelta, 'normal physical EXP is already durable');
+        assert.equal(oldCharacter.exp, writer === 'vitals' ? state.exp : state.exp + expDelta, 'physical EXP is written with the vitals');
         assert.equal(oldCharacter.hp, writer === 'vitals' ? 85 : 90, 'partial physical vitals depend on the held writer');
         assert.equal(oldMaterial.length, 1); assert.equal(oldMaterial[0].amount, 2, 'changing inventory proposal not yet synchronized');
         assert.deepEqual(initial.skills.filter(row => row.characterId === id), preparedSkills.get(id),
@@ -178,7 +179,7 @@ async function workerBoundary(writer, stage, mode) {
             assert.deepEqual(admission.check(), { reason: 'stale_command' });
         }
         // This exact partial image is captured AFTER the authority control.
-        // ROW/EXP, and inventory-stage vitals, are already committed facts.
+        // The ROW, and at the inventory stage the EXP and vitals, are already committed facts.
         const barrier = facts(id); gate.resolve(); await control; await c.commandTail;
         const after = facts(id), character = physical(after, id), item = material(after, id), acks = sent.filter(row => row.message.type === 'command_ack');
         const changed = Object.keys(barrier).filter(key => JSON.stringify(barrier[key]) !== JSON.stringify(after[key]));
@@ -210,7 +211,10 @@ async function workerBoundary(writer, stage, mode) {
                 assert.equal(result.reason, mode === 'stop' ? 'coordinator_stopping' : mode === 'fence' ? 'hot_handoff_fenced' : 'stale_command');
                 assert.deepEqual(result.commandCheckpoint, request.commandCheckpoint);
             }
-            if (writer === 'vitals') assert.equal(character.hp, 85, 'retired source cannot execute held genuine HP-changing SQL');
+            if (writer === 'vitals') {
+                assert.equal(character.hp, 85, 'retired source cannot execute held genuine HP-changing SQL');
+                assert.equal(character.exp, state.exp, 'nor its EXP, written with the vitals');
+            }
             else assert.equal(item[0].amount, 2, 'retired source cannot execute held genuine item-changing transaction');
             assert.deepEqual(after, barrier, 'refusal conserves all seven tables and cache at this partial barrier');
         }

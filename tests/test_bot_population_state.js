@@ -31,7 +31,7 @@ const fixtureReady = originalExecute(["INSERT INTO accounts(username,password) V
     ]))));
 const originalSyncInventorySummary = Database.syncInventorySummary;
 const originalUpdateCharacterLocation = Database.updateCharacterLocation;
-const originalUpdateCharacterExperience = Database.updateCharacterExperience;
+const originalUpdateCharacterProgress = Database.updateCharacterProgress;
 const originalApplyCharacterDeathExperience = Database.applyCharacterDeathExperience;
 const originalRestoreCharacterDeathExperience = Database.restoreCharacterDeathExperience;
 const originalClearCharacterDeathExperience = Database.clearCharacterDeathExperience;
@@ -73,7 +73,7 @@ try {
     };
     Database.syncInventorySummary = () => Promise.resolve();
     Database.updateCharacterLocation = () => Promise.resolve();
-    Database.updateCharacterExperience = () => Promise.resolve();
+    Database.updateCharacterProgress = () => Promise.resolve();
     Database.applyCharacterDeathExperience = () => Promise.resolve({ applied: true });
     Database.restoreCharacterDeathExperience = () => Promise.resolve({ restored: 0 });
     Database.clearCharacterDeathExperience = () => Promise.resolve({ cleared: true });
@@ -550,7 +550,7 @@ try {
         Database.saveBotLifeState = originalSaveLifeState;
         Database.syncInventorySummary = originalSyncInventorySummary;
         Database.updateCharacterLocation = originalUpdateCharacterLocation;
-        Database.updateCharacterExperience = originalUpdateCharacterExperience;
+        Database.updateCharacterProgress = originalUpdateCharacterProgress;
         Database.applyCharacterDeathExperience = originalApplyCharacterDeathExperience;
         Database.restoreCharacterDeathExperience = originalRestoreCharacterDeathExperience;
         Database.clearCharacterDeathExperience = originalClearCharacterDeathExperience;
@@ -572,7 +572,7 @@ try {
     Database.saveBotLifeState = originalSaveLifeState;
     Database.syncInventorySummary = originalSyncInventorySummary;
     Database.updateCharacterLocation = originalUpdateCharacterLocation;
-    Database.updateCharacterExperience = originalUpdateCharacterExperience;
+    Database.updateCharacterProgress = originalUpdateCharacterProgress;
     Database.applyCharacterDeathExperience = originalApplyCharacterDeathExperience;
     Database.restoreCharacterDeathExperience = originalRestoreCharacterDeathExperience;
     Database.clearCharacterDeathExperience = originalClearCharacterDeathExperience;

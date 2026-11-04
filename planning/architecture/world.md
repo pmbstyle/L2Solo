@@ -1,6 +1,6 @@
 # World, movement, runtime loop
 
-Checked at 199c3b19 (2026-11-04).
+Checked at 39e43408 (2026-11-04).
 
 Survey of t106dev @ 9f27b7fa (2026-11-03). Line numbers drift; search by name.
 Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `DataCache`, `WorldObserver`, `Server`,
@@ -10,7 +10,8 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
 
 - **Boot** `src/NodeL2.js`: Global → DB lock → `Database.init` → `DataCache.init` → clan planning worker →
   `compactStackableInventory` → `ClanService.init` → `GeodataEngine.init` → `NpcInteractionGeometry.init` (a pack without verified counter geometry logs why, once) →
-  `World.init` → runtimes (recommendations, clan hall, AFK trade, personas, KB warmup) → TCP servers →
+  `World.init` → runtimes (recommendations, clan hall) → `BotLifeState.init` (before the boot passes that write life
+  rows) → AFK trade, personas, KB warmup → TCP servers →
   `BotManager.init` → `WorldObserver.init` → `DevConsole`. `World.init`: indexes, raid state, `spawnNpcs`, minions,
   grid, day/night, aggro ticker. Pathfinding pool starts lazily (first `request`). The perf recorder
   (`Perf/LiveRecorder`, `[Perf] live`) starts before any worker. Backstop: an unhandled rejection is counted by
@@ -66,7 +67,8 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
   main-thread `findPath`** (the rest) → fallbacks `TownPathfinder`, then straight LOS line, else no move. Segment loop on 100/250 ms with Z snap and `TownTraffic.steer`. Bots skip
   `updateEnvironment` while moving; their aggro comes from the 1 s ticker.
 - **NPC chase:** worker path → `Automation.scheduleMoveToCoords` (linear, no Z snap) → `scheduleAction` approach.
-  No way for 10 s (empty paths or pool errors, `Npc` `pathFailed`) drops the target's hate (`noPath`, Lisvus attack timeout).
+  A request with no usable way (an empty path, one the target outran by 120, a pool error; `Npc` `pathFailed`, counted
+  `noPath`) retries after 0.5/1/2/4 s; the mob keeps hating until the 2 min attack timeout drops that target (Lisvus).
 - **Broadcast:** `dataSendToMeAndOthers` → `World.fetchVisibleRealPlayers` (index + `inClientView`); bots
   `BotSession.dataSendToOthers` (real sockets only).
 
@@ -130,8 +132,7 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
   `ItemTemplateIndex.find*` (~170 calls in 126 files) vs `npcRow`.
 - **WOR-15 leftovers:** `Timer.js` reads private timer fields (the "TODO" is in `Automation.timer`); 7 inline
   setImmediate yields (`Database`, `ClanPlanningCoordinator`, two clan equipment services, `InteractionMemory`,
-  `AfkTradeService`, `TradeMeetingService`) beside `EventLoopTurn`; obsolete
-  "twofold packet" re-slice in `Session.dataReceive`; opcode 0xff undefined (table has 255 slots: a 0xff packet throws); `UpdateEnvironment` comment wrong about
+  `AfkTradeService`, `TradeMeetingService`) beside `EventLoopTurn`; opcode 0xff undefined (table has 255 slots: a 0xff packet throws); `UpdateEnvironment` comment wrong about
   hot bots; party/invite/bot-chat logic inside `World.js`.
 
 ## Open questions

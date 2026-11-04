@@ -78,7 +78,7 @@ const DEFAULTS = {
     backgroundGovernorIdleBudgetMs: 250,
     backgroundGovernorPlayerBudgetMs: 50,
     backgroundGovernorIdleDbQueueMax: 8,
-    backgroundGovernorPlayerDbQueueMax: 0,
+    backgroundGovernorPlayerDbQueueMax: 8,
     backgroundGovernorLagAbortMs: 120,
     partyFormationIdleBudgetMs: 3000,
     partyFormationPlayerBudgetMs: 600,
@@ -113,7 +113,8 @@ const DEFAULTS = {
     stateRetentionStartDelayMs: 90000,
     stateRetentionIntervalMs: 1000,
     stateRetentionPassPauseMs: 60000,
-    stateRetentionIdlePauseMs: 6 * 60 * 60 * 1000,
+    // After a pass that removed nothing (not a server without players): a pass is ~12 bounded statements.
+    stateRetentionIdlePauseMs: 10 * 60 * 1000,
     stateRetentionBatchSize: 64,
     stateRetentionBudgetMs: 12,
     activityJournalRetentionMs: 30 * 24 * 60 * 60 * 1000,

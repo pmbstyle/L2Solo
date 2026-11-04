@@ -135,15 +135,9 @@ function observePurchase(offer, units, state) {
 // purchase records the bot as shopping unless options.keepActivity (a
 // purchase made for it where it hunts).
 function buyOffer(state, offer, options = {}) {
-    const warBlocker = state.stats?.partyMarketReturn?.warOperationId
-        && invoke('GameServer/Bot/Population/PartyMarketBreak').warSupplyPurchaseBlocker(state, offer.selfId);
-    if (warBlocker) return Promise.resolve({ purchased: false, blocked: true, reason: warBlocker });
     if (!options.economyCommand && !MarketOpportunity.botCanBuy(offer)) return Promise.resolve({ purchased: false, blocked: true, reason: 'configured_supply_retired' });
     const qty = Math.max(1, Math.floor(Number(options.qty) || 1));
-    const Arrows = require('../../Inventory/ArrowStock');
-    if (Arrows.isArrow(offer) && Arrows.purchaseAmount(state, offer.selfId, qty) < qty)
-        return Promise.resolve({ purchased: false, blocked: true, reason: 'arrow_stock_limit' });
-    const blocker = options.economyCommand ? null : LifeState.marketPurchaseBlocker(state, offer, qty);
+    const blocker = LifeState.marketPurchaseBlocker(state, offer, qty, { commanded: !!options.economyCommand });
     if (blocker) { if (Diagnostics.active()) purchaseObservation(state, offer.selfId, qty, undefined, 'purchase_refusal', blocker);
         return Promise.resolve({ purchased: false, blocked: true, reason: blocker }); }
     if (['afk_player_store', 'afk_bot_store'].includes(offer.sourceType)) {

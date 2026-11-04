@@ -15,6 +15,7 @@ const DangerMoment = invoke('GameServer/Bot/AI/DangerMoment');
 const EscapePolicy = invoke('GameServer/Bot/AI/BotEscapePolicy');
 const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const SummonerTactics = invoke('GameServer/Bot/AI/SummonerTactics');
+const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 
 const REST_FOLLOW_WAKE_DISTANCE = 600;
 const { EMERGENCY_RETREAT_DISTANCE } = invoke('GameServer/Bot/AI/DangerRule');
@@ -69,11 +70,25 @@ function restsSeated(session, bot) {
         bot.fetchMaxHp() - bot.fetchHp(), bot.fetchMaxMp() - bot.fetchMp(), waitsForMana(session, bot));
 }
 
-// Does this rest last until MP is back (RestPolicy.restWaitsForMana)? The
-// party state is the fight mode's (BotClassPolicy.modeFor): a player's
+// The party state is the fight mode's (BotClassPolicy.modeFor): a player's
 // companion, a bot party with a member beside it.
+function inParty(session, bot) {
+    return BotClassPolicy.modeFor(bot, { session }) !== 'solo_pve';
+}
+
+// Does this rest last until MP is back (RestPolicy.restWaitsForMana)?
 function waitsForMana(session, bot) {
-    return RestPolicy.restWaitsForMana(bot, BotClassPolicy.modeFor(bot, { session }) !== 'solo_pve');
+    return RestPolicy.restWaitsForMana(bot, inParty(session, bot));
+}
+
+// Is the rest over (RestPolicy.restOver, the cold rest's rule): at the bot's
+// rested line, or whole for a rest its next fight sent it to when it was
+// already rested (session.restWhole, HuntingState.beginVoluntaryRecovery).
+function rested(session, bot) {
+    const party = inParty(session, bot);
+    return RestPolicy.restOver({ hp: bot.fetchHp(), maxHp: bot.fetchMaxHp(), mp: bot.fetchMp(), maxMp: bot.fetchMaxMp() },
+        { mana: RestPolicy.restWaitsForMana(bot, party), party, persona: BotPersona.of(session),
+            whole: !party && session.restWhole === true, pet: SummonerTactics.petRestView(bot) });
 }
 
 function maybeCastManaRegeneration(session, bot, Generics) {
@@ -138,6 +153,7 @@ function retreatFromThreat(session, bot, threat) {
 
 module.exports = {
     maybeCastManaRegeneration,
+    rested,
     tick(session, bot, Generics, BotAI) {
         invoke('GameServer/Bot/Economy/HotBoardReviewService').naturalBreak(session, 1);
         if (session.followPlayerSession && session.partyCompanion === true) {
@@ -186,10 +202,7 @@ module.exports = {
                 : (!leaderTargetIsHeldPull ? leaderTargetId : undefined);
             const leaderSeated = player.state?.fetchSeated?.() === true;
             const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
-            const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
-            const recovered = hpRatio >= 0.95 && (
-                !waitsForMana(session, bot) || mpRatio >= 0.95
-            ) && RestPolicy.petRested(SummonerTactics.petRestView(bot));
+            const recovered = rested(session, bot);
 
             // A companion can join while it is already sitting from a prior
             // hunt. If it is in a starter town, send low-level bots to the
@@ -280,14 +293,11 @@ module.exports = {
             return; // Stay seated and do nothing else
         }
 
-        const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
-        const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
         const restingWithLeader = session.partyCompanion === true
             && session.followPlayerSession?.actor?.state?.fetchSeated?.() === true;
-        if (hpRatio >= 0.95 && (
-            !waitsForMana(session, bot) || mpRatio >= 0.95
-        ) && RestPolicy.petRested(SummonerTactics.petRestView(bot)) && !restingWithLeader) {
+        if (rested(session, bot) && !restingWithLeader) {
             session.recoveryLocked = false;
+            session.restWhole = false;
             delete session.explicitRestOrder;
             bot.state.setSeated(false);
             session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);

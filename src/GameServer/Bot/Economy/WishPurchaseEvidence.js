@@ -4,15 +4,16 @@
 const Query = require('./OfferQuery');
 const Production = require('./ProductionPolicy');
 const FixedShots = require('./FixedShotOffers');
+const ArrowStock = require('../../Inventory/ArrowStock');
 const unlimited = offer => offer.sourceType === 'npc' || offer.sourceType === 'configured_store';
 function reader(state, ctx, deps, { npcOnly = false, town = null } = {}) {
     // Preparation belongs to the existing worker. A reader cannot synchronously
     // expand geometry or treat an unprepared trip as free.
     const cost = deps.tripCost || ctx.trip;
     return id => {
-        const Arrows = require('../../Inventory/ArrowStock');
-        const capacity = Arrows.isArrow({ selfId: id }) ? Arrows.purchaseAmount(state, id, Number.MAX_SAFE_INTEGER) : Infinity;
-        if (capacity <= 0) return null;
+        // Every wish purchase is sized here: a leaf buys at most these units (Agenda.nextSeller).
+        const capacity = ArrowStock.admitted(state, id, Infinity);
+        if (!(capacity > 0)) return null;
         if (typeof cost !== 'function' || typeof cost.details !== 'function') return null;
         const others = Production.allowsNpcShot(id) ? (deps.npcOffersFor?.(id) || [])
             .filter(offer => (!npcOnly || offer.sourceType === 'npc') && (!town || offer.town === town)).slice(0, 17) : [];

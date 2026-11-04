@@ -5,9 +5,12 @@ Lineage II Chronicle 4 server emulator (a NodeL2 fork) for a solo MMO: the world
 build step. These rules apply to every agent and every change, whoever wrote the code being changed.
 
 The map of what exists, who owns each rule and which path is canonical: `planning/architecture/` (start with
-`README.md`; read the area you touch before changing it). Open work in priority order: `planning/roadmap.md`.
-Before taking an item there, put your name in its Who column and push; do not take an item someone else holds; the
-commit that finishes it deletes the row.
+`README.md`; read the area you touch before changing it).
+`planning/` holds open work only: a finished plan, audit or report is deleted in the commit that finishes it
+(what was done lives in the commits and the code).
+`planning/architecture/` keeps only README.md, bot-ai.md, combat.md, economy.md, population.md, persistence.md, world.md,
+debt.md, limits.md, tables.md, e2e.md, findings.md and check.js; no other md under `planning/` is committed except an
+open plan for a large item, deleted when it is done.
 
 ## Performance is a primary criterion
 
@@ -18,6 +21,9 @@ much as behaviour:
 - Prefer the cheaper of two correct rules; reuse a computed result instead of recomputing; no work on the main thread
   that the worker can do; no per-tick scans over all bots.
 - Development is a balance between simulation, realism and performance. Say which one a choice trades.
+- A player can be online all the time. No work waits for an idle server (no player): maintenance, cleanup and
+  repairs run with a player online within a stated stall budget; only what cannot (e.g. VACUUM) runs at boot or
+  shutdown.
 - Keep game rules pure functions of plain data (no World or DB inside a rule), deterministic (seeded rolls), owned
   once, crossing the worker boundary as explicit plain messages. Do not grow per-bot state or per-step work without
   need: it multiplies with the population.
@@ -60,14 +66,15 @@ is one mechanism per rule.
 - The cold worker has no `World`: worker code must not reach World-dependent services; pass the lookup in.
 - Data under `data/` produced by a `scripts/generate-*` script: change the generator and regenerate, never edit the
   JSON by hand. After changing items, mobs, skills or spawns, run `npm run generate:knowledge-base`.
-- Bot tables (`data/Bots/spot-table.json`, `spot-reward-npcs.json`, `hunt/*`) are simulated by real code. A change to
-  a path in `planning/architecture/tables.md` "When to rebuild" makes them stale: rebuild them before the PR. (With
-  the next release each table carries a fingerprint of its inputs, and `npm run check` warns locally and fails on CI
-  when one is stale.)
+- Bot tables (`data/Bots/spot-table.json`, `spot-reward-npcs.json`, `hunt/*`) are simulated by real code and carry a
+  fingerprint of their input files. A change to a path in `planning/architecture/tables.md` "When to rebuild" makes
+  them stale: `npm run check` warns locally and fails on CI; rebuild them before the PR.
 - Limits (caps, budgets, page/byte sizes, pool sizes, timeouts) live in `planning/architecture/limits.md`; a new or
   changed limit gets a row, and hitting it must be observable (a counted reason, not a silent drop).
 - A survived failure is never silent: count it through `src/FailureLog.js` (site + first stack), never rethrow from a
   timer.
+- A schema change is a new named migration in `src/Database.js`'s named list (`namedMigrations`), never a new
+  number.
 - Secrets and machine paths go only in `config/local.ini` (gitignored).
 
 ## Tests
@@ -86,8 +93,10 @@ is one mechanism per rule.
 
 - Dead code: prove by search that nothing reaches it (`invoke`, `require`, method names, tests, scripts) before
   deleting; batch such deletions.
-- A behaviour change: one change at a time, reviewed on its diff before commit.
-- One commit per finished, self-contained unit; each commit builds and passes its own tests.
+- A behaviour change is reviewed on its diff before commit, by a review agent (Claude `/code-review`, Codex review),
+  not by hand.
+- A commit is the work on one problem (one bug, gap or rework) with its tests and map update, not one per edit; it
+  builds and passes its own tests. Two problems are two commits.
 
 ## Commits and PRs
 

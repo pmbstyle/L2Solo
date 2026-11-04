@@ -93,8 +93,8 @@ async function run() {
         const materials = base({ 1869: { selfId: 1869, amount: 100, stackable: true } });
         const materialBoard = new BoardIndex(); boardLine(materialBoard, { selfId: 1869, count: 30 });
         const partial = evaluate(materials, materialBoard);
-        assert.equal(units(partial.listings), 30);
-        assert.equal(units(partial.npc), 70, 'a partial stack ad also retains only its actual quantity');
+        assert.equal(units(partial.listings), 100, 'a standing stack line takes the further units at its price');
+        assert.equal(units(partial.npc), 0, 'none of a listed material goes to the NPC at half price');
         assert.equal(units(evaluate(materials, new BoardIndex()).listings), 100, 'a new stack line can physically list the entire stack');
         const shopBoard = new BoardIndex(); boardLine(shopBoard, { custodyPolicy: 0 });
         const backed = evaluate(state, shopBoard);

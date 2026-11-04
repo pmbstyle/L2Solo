@@ -2,6 +2,7 @@
 const DiagnosticConfig = require('./GameServer/Bot/Population/PopulationConfig');
 
 const path = require('path');
+const FailureLog = require('./FailureLog');
 const { Worker } = require('worker_threads');
 
 const DEFAULT_INTERVAL_MS = 5000;
@@ -35,7 +36,13 @@ const counters = {
     resetErrors: 0
 };
 let last = null;
+// lastReset: the last reset that emptied the WAL (the truncate's growth baseline);
+// lastResetAttempt: the last reset tried, failed or busy included.
 let lastReset = null;
+let lastResetAttempt = null;
+// Told each finished checkpoint, after it is recorded and no longer in flight
+// (onResult): the WAL truncate decides on a fresh passive result there.
+const resultListeners = new Set();
 // The worker's heap as of its last answer (WorkerHeapTelemetry.heapRecord).
 let workerHeap = null;
 
@@ -44,6 +51,7 @@ function resetState() {
     durations.length = 0;
     last = null;
     lastReset = null;
+    lastResetAttempt = null;
 }
 
 function percentile(values, fraction) {
@@ -86,6 +94,7 @@ function record(result = {}) {
         if (durations.length > SAMPLE_LIMIT) durations.shift();
     }
     if (reset) {
+        lastResetAttempt = normalized;
         if (!normalized.ok) DiagnosticConfig.developerDiagnostics && (counters.resetErrors += 1);
         else if (Number(normalized.busy || 0) > 0) DiagnosticConfig.developerDiagnostics && (counters.resetBusy += 1);
         else {
@@ -122,6 +131,9 @@ function spawn() {
         });
         if (activeRequest?.id === Number(message.id)) activeRequest = null;
         entry.resolve(result);
+        for (const listener of resultListeners) {
+            try { listener(result); } catch (error) { FailureLog.note('db.checkpoint_listener', error); } // the loop goes on
+        }
     });
     instance.on('error', (error) => {
         if (instance !== worker) return;
@@ -241,8 +253,14 @@ function snapshot() {
         v8Heap: workerHeap,
         } : { diagnosticsEnabled: false }),
         last: last ? { ...last } : null,
-        lastReset: lastReset ? { ...lastReset } : null
+        lastReset: lastReset ? { ...lastReset } : null,
+        lastResetAttempt: lastResetAttempt ? { ...lastResetAttempt } : null
     };
+}
+
+function onResult(listener) {
+    resultListeners.add(listener);
+    return () => resultListeners.delete(listener);
 }
 
 async function terminateForTest() {
@@ -251,4 +269,4 @@ async function terminateForTest() {
     return true;
 }
 
-module.exports = { start, request, stop, snapshot, terminateForTest };
+module.exports = { start, request, stop, snapshot, onResult, terminateForTest };
