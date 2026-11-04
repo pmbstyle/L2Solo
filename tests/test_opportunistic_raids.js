@@ -155,6 +155,15 @@ async function run() {
         members: grouped, spot, elapsedMs: 60000, timestamp: at, targetNpcId: 10366 });
     assert.equal(held.debug.reason, 'raid_wait_native_activation', JSON.stringify(held.debug));
     assert.equal(held.debug.fights, 0, 'the invisible simplified resolver never rewards these raids');
+    // Main activates or dissolves it (each writes its members); the cold roster
+    // steps again only at the expedition's end, its wait lived, not hunted.
+    const expedition = { ...formation, stats: { objective: { ...objective, expiresAt: at + 600000 } } };
+    const waiting = invoke('GameServer/Bot/Population/BackgroundPartyResolver').resolve({ party: expedition,
+        members: grouped, spot, elapsedMs: 60000, timestamp: at, targetNpcId: 10366 });
+    assert.equal(waiting.debug.reason, 'raid_wait_native_activation');
+    assert.equal(waiting.nextResolveAt, at + 600000, 'no 10 s step while main activates the roster');
+    assert(waiting.memberResults.every(({ result }) => result.nextResolveAt === at + 600000
+        && result.eventWait === 'raid_wait_native_activation'));
 
     const Safety = invoke('GameServer/Bot/AI/BotRaidSafety'), World = invoke('GameServer/World/World');
     const actor = (id, selfId, boss = false) => ({ fetchId: () => id, fetchSelfId: () => selfId,
