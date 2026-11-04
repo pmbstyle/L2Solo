@@ -336,6 +336,22 @@ async function run() {
         } finally { Generation.configure(kept); }
         assert(Economy.restoreEventProof(bytes, accepted), 'fixture: the generation is back');
         Economy.forget(native.characterId);
+        // A server with no published code identity (a branch tree) holds its
+        // decisions within the process, but saves none for a restart.
+        try {
+            Generation.configure({ code: '4'.repeat(40), config: '2'.repeat(64), local: true });
+            const local = Economy.forState(native, deps());
+            const localPacket = local.statsPacket, localState = { ...native, stats: { ...native.stats, ...localPacket } };
+            const localProof = local.eventProof();
+            assert(localProof, 'a local identity still proves the decision');
+            assert.equal(Economy.eventProofHolds(localState, localProof, { ...deps(), gearThreatMask: local.gearThreatMask },
+                { baseline: localPacket.wishSections, leaf: local.network.activity, timestamp: T }), true,
+                'the held decision holds within the process');
+            assert.equal(Economy.restartEventProof(localProof, { ...accepted, decisionSeq: localPacket.decisionSeq,
+                activityLeaf: localPacket.activityLeaf, focus: localPacket.wishFocus?.[0] ?? null, baseline: localPacket.wishSections,
+                card: { activity: local.network.activity } }), null, 'and saves no prefix for a restart');
+            assert.equal(Economy.restoreEventProof(bytes, accepted), null, 'nor restores one');
+        } finally { Generation.configure(kept); Economy.forget(native.characterId); }
     }
     // Away from town a bag count is no moment (T174): loot keeps a far bot's decision on the
     // field, a bot in town or near a player reads it at once.

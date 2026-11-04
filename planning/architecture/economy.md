@@ -96,6 +96,7 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
 | Cold physical purchase | `ColdMarketService.acquire` |
 | NPC purchase | `NpcRestockPlan` → `NpcPurchaseBasket` |
 | Plan publication | decided: the worker plan; three paths still publish (ECO-1) |
+| Whether a held economy build may be served (its event proof) | `EconomyContext.heldBuildVerdict` over the proof's code/config/rates identity, `RecomputeGeneration.current`: a detached checkout's commit or a launcher install's the install marker .l2solo/installation.json `sourceCommit`; a branch tree gets a process-local identity (held builds hold in the process). A proof saved for a restart only under a published identity (`restorable`); the identity is the claimed commit plus config and rates, not a content hash: a hand-edited install or a dirty detached tree keeps the release sha (startup logs the source: `Recompute :: code identity`) |
 
 ## Debt
 

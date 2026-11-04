@@ -238,7 +238,7 @@ function captureEventProof(state, deps = {}, options = {}) {
         bands: plan.quantityBands || [], hourAdena: plan.hourAdena,
         // A restored prefix currently excludes process-local owner versions.
         // Unsupported owners abstain; an empty numeric revision is not proof.
-        restartable: !!RecomputeGeneration.current() && typeof deps.memoryIdentity === 'string'
+        restartable: !!RecomputeGeneration.restorable() && typeof deps.memoryIdentity === 'string'
             && deps.sourceReady === true });
 }
 
@@ -497,7 +497,7 @@ function restartEventProof(proof, accepted) {
     if (proof?.version !== 2 || proof.restartable !== true || !accepted?.card
         || Object.keys(proof).some(key => !['version', 'owner', 'at', 'generation', 'decision', 'activity',
             'quantities', 'liquidation', 'stockRoots', 'bands', 'hourAdena', 'restartable'].includes(key))
-        || !RecomputeGeneration.current() || proof.generation !== RecomputeGeneration.current()
+        || !RecomputeGeneration.restorable() || proof.generation !== RecomputeGeneration.restorable()
         || !/^[a-f0-9]{64}$/.test(proof.generation)
         || proof.owner !== accepted.characterId || proof.at !== accepted.baseline?.at
         || !Array.isArray(proof.decision) || proof.decision.length !== 3
@@ -528,7 +528,7 @@ function restartEventProof(proof, accepted) {
     } catch (_) { return null; }
 }
 function restoreEventProof(prefix, accepted) {
-    const generation = RecomputeGeneration.current();
+    const generation = RecomputeGeneration.restorable();
     // No minimum length: every short read below throws and refuses the whole prefix.
     if (!generation || !(prefix instanceof Uint8Array)
         || prefix.byteLength > PROOF_RAW_BYTES || !accepted?.card) return null;
