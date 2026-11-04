@@ -43,5 +43,16 @@ try {
     assert.equal(lesser.price, Pricing.botPurchasePrice(lesser.selfId));
     assert(Number.isFinite(Pricing.cheapestPurchase(1539)), 'fixture: a city store sells the Greater Healing Potion');
     assert.equal(Pricing.botPurchasePrice(1539), Infinity, 'no bot can buy it');
+    // One NPC price table (town sellers, cheapest row): a bot's NPC price, the
+    // survival reserve and a scrap craft's input price are what a town NPC
+    // asks; an item no town NPC sells (Haste Potion) has none.
+    const Shops = invoke('GameServer/World/Generics/NpcShopBuyLists');
+    const Index = invoke('GameServer/Bot/Economy/ShotMarketIndex').native();
+    Index.refreshNpc();
+    for (const id of [lesser.selfId, 736, 1835, 3947, 1062]) {
+        const town = Shops.townPriceForItem(id) ?? Infinity;
+        assert.equal(Pricing.botNpcListPrice(id), town, `a bot's NPC price of ${id} is the town's`);
+        assert.equal(Index.npcPrice.get(id) ?? Infinity, town, `the craft index prices ${id} as the town`);
+    }
 } finally { useRate(original); }
 console.log('PASS potion NPC price');

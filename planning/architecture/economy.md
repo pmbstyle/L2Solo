@@ -85,12 +85,12 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
 | First price | `FirstPrice` via `MarketCounters.firstPrice` |
 | Configured merchant price | `StaticMerchantPricing` |
 | What a bot may buy where, and the price it pays | `ProductionPolicy` (`allowsNpcShot`, `allowsFixedShot`: a city store sells a bot only shots), read by `MarketOpportunity.botCanBuy` and `StaticMerchantPricing.cheapestPurchase(forBot)` (`botPurchasePrice`, `botBuyPrice`: the hunt model, potion and shot restock) |
-| An item's NPC price (valuation, first price), main and workers | `BotMarketPricing.npcPrice` over `NpcShopBuyLists.townPrices` (town sellers, cheapest row). The workers get the table as rows (`npcPriceRows`, ~600 rows ≤ ~18 KB, once per worker start or clan context revision): cold in the `npc_offers` catalogue, clan in its planning context; a crafted shot's cost reads its inputs' price there |
+| An item's NPC price (valuation, first price, a bot's NPC purchase price, the survival reserve, scrap-craft inputs), main and workers | `BotMarketPricing.npcPrice`/`npcPriceOf` over `NpcShopBuyLists.townPrices` (town sellers, cheapest row; read by `StaticMerchantPricing` and `ShotMarketIndex` through `npcPriceRows`, a worker's snapshot rows there). The workers get the table as rows (`npcPriceRows`, ~600 rows ≤ ~18 KB, once per worker start or clan context revision): cold in the `npc_offers` catalogue, clan in its planning context; a crafted shot's cost reads its inputs' price there |
 | Adena rate scaling | `BotEconomyPricing.scalePrice/economyRate` |
 | Which offer to buy | `OfferQuery.bestSellOffer` + `OfferOrder` |
 | Trip cost | `OfferOrder.tripCost` → `EconomicTrip` |
 | Spendable money | `PurchaseFunding` |
-| Survival kit price and reserve (shots, potions, escape scroll) | `EconomyContext.kitReader`: the reserve holds the kit at the NPC list price (`StaticMerchantPricing.botNpcListPrice`, the bot's estimate where no NPC sells it). A restock counter (`PurchaseFunding.survivalTranche` → `spendable`) counts that share beside the queue's money; a town's tax above it comes from that money, and when that falls short the kit at the quote is still paid from the wallet (never refused) |
+| Survival kit price and reserve (shots, potions, escape scroll) | `EconomyContext.kitReader`: the reserve holds the kit at the NPC table's price (`StaticMerchantPricing.botNpcListPrice`, the cheapest town NPC; the bot's estimate where no town NPC sells it). A restock counter (`PurchaseFunding.survivalTranche` → `spendable`) counts that share beside the queue's money; a town's tax above it comes from that money, and when that falls short the kit at the quote is still paid from the wallet (never refused) |
 | Whether a road pays for a funded required kit piece or survival stock (visit, trip, tier) | `EconomicValuation.roadCarried` (read by `visitPays`/`tripPays`; step marked `required` by `WishNetwork`) |
 | What to sell / list / NPC-sell | `MarketListingPolicy.evaluate` / `npcSaleForActor` |
 | Bid lines | `BuyAdPolicy.linesFor/bidFor` |
@@ -124,10 +124,9 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
   `chooseTown` (expected value) for the plan; `saleTown` has "until step 3.6".
 - **ECO-6 offer queries on main bypass `OfferQuery`.** `MarketOpportunity.hotOffers` (hand filter, no `botCanBuy`;
   its only callers are `ShotStock`'s two hot restock reads, each with its own `accept`). An item's NPC price (valuation,
-  `FirstPrice`) is one table, main's and both workers' (see the owners row). Still open: the NPC purchase quotes are
-  read in four more places (`StaticMerchantPricing.cheapestPurchase`, `MarketOpportunity.npcOffers`,
-  `NpcRestockPlan.quoteFor` over `npcOffers`, `NpcShopBuyLists.allOffers` for the shot price in `ShotMarketIndex`,
-  which also reads the fallback lists and non-town sellers: a no-grade shot has two NPC prices, hot and cold agree on both), and the workers' offer rows come from two builders (cold
+  `FirstPrice`, `StaticMerchantPricing`, `ShotMarketIndex`) is one table, main's and both workers' (see the owners row).
+  Still open: the per-town NPC purchase quotes are read in two more places (`MarketOpportunity.npcOffers`,
+  `NpcRestockPlan.quoteFor` over `npcOffers`), and the workers' offer rows come from two builders (cold
   `ColdNpcPlanningCatalog.buildRows`: low-tier gear, cheapest per town; clan `MarketOpportunity.npcOffersAll`: per
   seller); their agreement with the table is unverified.
 - **ECO-7 warehouse candidates twice** (`ItemDisposition.warehouseCandidates` vs `unreservedActorItems` +
@@ -166,8 +165,8 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
 1. ECO-1: worker `executePlan` only, with `reconcile`/`open` reduced to executors? — decided 2026-11-03: yes (ECO-1).
 2. Should hot buy/sell read the same `MarketListingPolicy`/`OfferQuery` answers as cold?
 3. Player-facing price models (negotiation, chat price limit, craft fee): design choices, or read `MarketPricing`?
-4. NPC price: the valuation table is canonical (owners); should the purchase quotes (`cheapestPurchase`, `npcOffers`)
-   read it too? Is `ProgressionRates.multiplier` vs `.adena` intended?
+4. NPC price: the valuation table is canonical (owners, `cheapestPurchase` reads it); should the per-town quotes
+   (`npcOffers`) read it too? Is `ProgressionRates.multiplier` vs `.adena` intended?
 5. `targetTownForItems` or `chooseTown`? What is "step 3.6"?
 6. Parity scripts: still a role?
 7. Can legacy branches go (saved goals, parked craft plans, `MarketSnapshot` shape)?
