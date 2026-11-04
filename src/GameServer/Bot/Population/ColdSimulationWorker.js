@@ -285,6 +285,7 @@ const occupationPlanner = new ColdOccupationPlanner({
         if (input.mode === 'showcase' || input.mode === 'craft_market') return { economyPlan:
             yield* invoke('GameServer/Bot/Population/ColdEconomyPlan').prepare(input.state, input.economy, {
                 showcaseOnly: input.mode === 'showcase', now: input.timestamp, board: input.board, tripCost: input.economy.trip,
+                saleHold: saleHold(input.state.characterId),
                 buyOrderEscrow: input.buyOrderEscrow,
                 npcOffersFor: OccupationSources.npcOffersFor,
                 findSpot: id => SpotIndex.spotById(planningSpots, id)
@@ -526,7 +527,7 @@ const occupationPlanner = new ColdOccupationPlanner({
         if (!prepared && input.mode === 'refresh') {
             const economyPlan = yield* invoke('GameServer/Bot/Population/ColdEconomyPlan').prepare(input.state, input.economy, {
                 now: input.timestamp, board: input.board, persona: BotPersona.of(input.state), tripCost: input.economy.trip,
-                preparedCraft: null, npcOffersFor: OccupationSources.npcOffersFor,
+                preparedCraft: null, npcOffersFor: OccupationSources.npcOffersFor, saleHold: saleHold(input.state.characterId),
                 buyOrderEscrow: input.buyOrderEscrow, findSpot: id => SpotIndex.spotById(planningSpots, id) });
             return { selected: null, economyPlan, economyDecision: ColdEconomyDecision.capture(input.economy, input.state) };
         }
@@ -574,7 +575,7 @@ const occupationPlanner = new ColdOccupationPlanner({
         const economyPlan = input.economy ? yield* invoke('GameServer/Bot/Population/ColdEconomyPlan').prepare(input.state, input.economy, {
             ...prepared.options, now: input.timestamp, board: input.board, persona: BotPersona.of(input.state),
             tripCost: prepared.context.trip, preparedCraft: selected,
-            npcOffersFor: OccupationSources.npcOffersFor,
+            npcOffersFor: OccupationSources.npcOffersFor, saleHold: saleHold(input.state.characterId),
             ...(economyDiagnostics.enabled(input.state.characterId) ? { onTownDecision: decision => economyDiagnostics.push({
                 owner: input.state.characterId, revision: Number(input.state.simulation?.revision), trigger: 'economy_plan',
                 phase: 'town_choice', town: decision.town, reason: decision.reason, candidates: decision.candidates,
@@ -714,6 +715,12 @@ function occupationFor(state, timestamp, options = {}, mode = 'occupation') {
         buyOrderEscrow: options.buyOrderEscrow ?? escrowFor(state.characterId),
         knownShotRecipes: recipes.knownShotRecipes || [], recipeBook: recipes.recipeBook, stock: options.stock || null, economy,
         sourceReady: tables.ready('board') && tables.ready('market'), mode, routeKey, routeRows });
+}
+// The bot's held sale dispositions (MarketListingPolicy holdKey) on its worker
+// record, which outlives its state updates: at most two per sale candidate.
+function saleHold(characterId) {
+    const record = kernel?.states.get(Number(characterId));
+    return record ? (record.saleHold ||= new Map()) : null;
 }
 // A clan craft's selected material can be independent of the current wish.
 // Review only an executable indexed quote, at most once per two minutes for

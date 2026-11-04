@@ -274,7 +274,8 @@ function observeDisposition(options) {
 const firstQuote = observeDisposition(suppliedOptions());
 const sale = firstQuote.result;
 assert.strictEqual(sale.listings.length, MarketListingPolicy.BOARD_SLOTS, 'eight board slots: 3 shop lines + 5 sell ads');
-assert.strictEqual(sale.decisions.filter((decision) => decision.reason === 'no_board_slot').length,
+// Each item's roll keeps every option a floor chance (one item here keeps its lot).
+assert.strictEqual(sale.decisions.filter((decision) => decision.action === 'warehouse').length,
     items.length - MarketListingPolicy.BOARD_SLOTS, 'the rest is kept, not dumped');
 for (const listing of sale.listings) {
     assert(listing.price > 0 && listing.marketReason === 'expected_value');
@@ -283,23 +284,70 @@ for (const listing of sale.listings) {
 const sameQuote = observeDisposition(suppliedOptions());
 const again = sameQuote.result;
 assert.deepStrictEqual(again.listings.map((item) => [item.selfId, item.price]), sale.listings.map((item) => [item.selfId, item.price]),
-    'one decision point, one roll: the same answer when asked again');
-const freshQuote = observeDisposition(suppliedOptions({ now: now + 1 }));
-const decisionCalls = quote => quote.calls.filter(call => call.key.length === 4 && call.key[0] === 'dispose');
+    'the same facts, one roll: the same answer when asked again');
+// The roll stands on the item's facts, not the clock (maintainer, 2026-11-05):
+// the bag's units of it, its board lines and its deals.
+const laterQuote = observeDisposition(suppliedOptions({ now: now + 45 * 60 * 1000 }));
+const decisionCalls = quote => quote.calls.filter(call => call.key.length === 6 && call.key[0] === 'dispose');
 const firstCalls = decisionCalls(firstQuote);
 assert.strictEqual(firstCalls.length, items.length);
 assert.deepStrictEqual(new Set(firstCalls.map(call => call.key[2])), new Set(items),
     'every original material reaches the actual native disposition roll');
-for (const call of firstCalls) assert.deepStrictEqual(call.key, ['dispose', state.characterId, call.key[2], now]);
+for (const call of firstCalls) assert.deepStrictEqual(call.key, ['dispose', state.characterId, call.key[2], 100,
+    board.itemFingerprint(call.key[2]), MarketCounters.itemDeals(call.key[2]).deals]);
 assert(firstCalls.every(call => call.value >= 0 && call.value < 1));
 assert.deepStrictEqual(decisionCalls(sameQuote), firstCalls,
-    'the same point uses the same actual key and native roll');
-const freshCalls = decisionCalls(freshQuote);
-assert.strictEqual(freshCalls.length, items.length);
-assert.deepStrictEqual(new Set(freshCalls.map(call => call.key[2])), new Set(items));
-for (const call of freshCalls) assert.deepStrictEqual(call.key, ['dispose', state.characterId, call.key[2], now + 1],
-    'a new point reaches native selection with a new actual key, even if the same price wins');
-assert(freshQuote.result.listings.every(item => item.price > 0));
+    'the same facts use the same actual key and native roll');
+assert.deepStrictEqual(decisionCalls(laterQuote), firstCalls, 'time alone is no new fact: no new roll');
+assert.deepStrictEqual(laterQuote.result.listings.map(item => [item.selfId, item.price]),
+    sale.listings.map(item => [item.selfId, item.price]), '45 minutes later the unchanged bag lists the same lines');
+// A fact of one item rolls that item again, and only it.
+const looted = { ...state, inventory: { ...bag, [items[0]]: { ...bag[items[0]], amount: 101 } } };
+const lootRolls = (() => {
+    const TendencyRoll = require('../src/GameServer/Bot/AI/TendencyRoll'), originalRoll = TendencyRoll.roll, keys = [];
+    TendencyRoll.roll = function (...key) { keys.push(key); return originalRoll.apply(this, key); };
+    try { MarketListingPolicy.evaluate(looted, suppliedOptions()); } finally { TendencyRoll.roll = originalRoll; }
+    return keys.filter(key => key.length === 6 && key[0] === 'dispose');
+})();
+assert.deepStrictEqual(lootRolls.find(key => key[2] === items[0]).slice(3, 4), [101], 'a loot of the item is a new fact');
+assert.deepStrictEqual(lootRolls.filter(key => key[2] !== items[0]), firstCalls.filter(call => call.key[2] !== items[0])
+    .map(call => call.key), 'the other items keep their rolls');
+board.put({ id: 960001, kind: 'sell_ad', storeType: 1, ownerId: 960002, town: 'Giran',
+    lines: [{ lineId: 960003, selfId: items[1], count: 5, price: 3000, enchant: 0 }] });
+const rivalCalls = decisionCalls(observeDisposition(suppliedOptions()));
+assert.notDeepStrictEqual(rivalCalls.find(call => call.key[2] === items[1]).key, firstCalls.find(call => call.key[2] === items[1]).key,
+    'a rival line of the item is a new fact');
+assert.deepStrictEqual(rivalCalls.find(call => call.key[2] === items[2]).key, firstCalls.find(call => call.key[2] === items[2]).key);
+board.remove(960001);
+
+// The worker holds each item's disposition on those facts and the rest of its
+// inputs (MarketListingPolicy holdKey): a later build with nothing new answers
+// the same without deciding again; a new bid on the board is answered at once.
+const saleHold = new Map();
+const sameTrip = () => 0; sameTrip.details = () => ({ known: true, fees: 0, hours: 0 });
+const holdSale = extra => observeDisposition(suppliedOptions({ saleHold, tripCost: sameTrip, ...extra }));
+const listed = quote => quote.result.listings.map(item => [item.selfId, item.price]);
+const heldFirst = holdSale();
+assert.strictEqual(decisionCalls(heldFirst).length, items.length, 'the first build decides every item');
+assert.deepStrictEqual(listed(heldFirst), listed(observeDisposition(suppliedOptions({ tripCost: sameTrip }))),
+    'a held build answers as an unheld one');
+const heldLater = holdSale({ now: now + 45 * 60 * 1000 });
+assert.strictEqual(decisionCalls(heldLater).length, 0, 'nothing new: no item is decided again');
+assert.deepStrictEqual(listed(heldLater), listed(heldFirst), 'and the listings stay');
+board.put({ id: 960010, kind: 'buy_ad', storeType: 3, ownerId: 960011, town: 'Giran',
+    lines: [{ lineId: 960012, selfId: items[3], count: 100, price: 1000000, enchant: 0 }] });
+const answered = holdSale();
+assert.deepStrictEqual(decisionCalls(answered).map(call => call.key[2]), [items[3]], 'a bid moves only its item');
+assert.deepStrictEqual(answered.result.answers.map(row => [row.item.selfId, Number(row.line.recordId)]), [[items[3], 960010]],
+    'a new rich bid is answered at the next build, held dispositions or not');
+board.remove(960010);
+const noBid = holdSale();
+assert.deepStrictEqual(decisionCalls(noBid).map(call => call.key[2]), [items[3]]);
+assert.deepStrictEqual(noBid.result.answers, [], 'the bid gone, no answer is held');
+const otherTrader = holdSale({ persona: { traits: { caution: 0.9 } } });
+assert.strictEqual(decisionCalls(otherTrader).length, items.length, 'another trader (persona, hour, money price) decides again');
+assert(saleHold.size <= 2 * items.length, 'the hold keeps only this sale\'s items');
+
 // Only selected lines carry their current quote and public event cursors.
 assert.strictEqual('book' in sale, false, 'no personal item book is returned');
 for (const listing of sale.listings) {

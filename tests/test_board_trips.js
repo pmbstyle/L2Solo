@@ -129,9 +129,11 @@ Config.staticShotsDisabled = false;
     assert.strictEqual(answer.line.town, 'Dion');
     assert.strictEqual(answer.count, 30);
     assert.strictEqual(answer.net, 900 * 30, 'no trip to the town the bot stands in');
+    // One bag and board roll once (the roll stands on the item's facts); twenty
+    // trials name their own rolls to sample the choice.
     let chosen = 0;
     for (let run = 0; run < 20; run++) {
-        const market = ListingPolicy.evaluate(inDion, { now: 1000 + run, ...{} });
+        const market = ListingPolicy.evaluate(inDion, { now: 1000, decisionPoint: `trial:${run}` });
         if (market.answers.some((entry) => entry.line.town === 'Dion' && entry.count === 30)) chosen += 1;
     }
     assert(chosen >= 18, `a generous ad in the bot's own town is answered (${chosen} of 20)`);
