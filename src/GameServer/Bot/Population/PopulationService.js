@@ -1197,6 +1197,7 @@ const PopulationService = {
         this.stopHotBoardReviews();
         const coldStop = ColdSimulationCoordinator.stop();
         if (this.initialSummaryTimer) {
+        invoke('GameServer/Bot/AI/BotTownTravel').stopSupplyReturns();
             clearTimeout(this.initialSummaryTimer);
             this.initialSummaryTimer = null;
         }

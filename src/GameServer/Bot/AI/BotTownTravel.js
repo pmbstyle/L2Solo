@@ -13,8 +13,11 @@ const TradeMeetings = invoke('GameServer/AfkTrade/TradeMeetingService');
 const SOE_SKILL_ID = 2013;
 const SOE_CAST_MS = TripPayment.SCROLL_CAST_MS;
 const SOE_DISTANCE = 2500;
-// A supply errand's return whose hot write failed writes again after this (returnSupplyHot).
+// A supply errand's return whose hot write failed writes again after this, this many writes in all
+// (returnSupplyHot).
 const SUPPLY_RETURN_RETRY_MS = 5000;
+const SUPPLY_RETURN_ATTEMPTS = 4;
+const supplyReturnTimers = new Map();
 
 function distance2d(bot, target) {
     const dx = bot.fetchLocX() - target.x;
@@ -82,20 +85,45 @@ function revealInterruptedSupplyErrand(session, bot) {
 }
 
 // A supply errand's end: the parked bot's row turns hot before `resume` runs its AI again, so the
-// bot is never hot in memory while its row is cold (two owners). A failed write (LifeState.markHot
-// counts it) keeps the bot parked, its AI stopped, and writes again every SUPPLY_RETURN_RETRY_MS
-// while its session holds the same actor.
-function returnSupplyHot(session, reason, resume) {
-    const actor = session.actor;
+// bot is not hot in memory while its row is cold (two owners). A failed write (LifeState.markHot
+// counts it) keeps the bot parked, its AI stopped, and writes again from the latest cached row
+// (a conflict means the row moved) every SUPPLY_RETURN_RETRY_MS, up to SUPPLY_RETURN_ATTEMPTS
+// writes; then it resumes with the row left cold, as before this rule, counted as
+// population.supply_return_cold. Only a return still in its 'returning' phase writes or resumes:
+// another owner (a const party, a cooldown) that took the bot meanwhile keeps it. With the
+// population off markHot writes nothing (null) and the errand resumes at once.
+function returnSupplyHot(session, reason, resume, attempt = 1) {
+    const actor = session.actor, returning = session.supplyErrandPhase === 'returning';
+    const current = () => session.actor === actor && (!returning || session.supplyErrandPhase === 'returning');
+    if (invoke('GameServer/Bot/Population/PopulationConfig').enabled === false) return Promise.resolve(resume());
     const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
     return Promise.resolve().then(() => PopulationService.markHot(session, reason))
         .catch(error => FailureLog.note('population.mark_hot', error))
         .then((saved) => {
-            if (saved) return resume();
-            if (!actor || session.actor !== actor) return null;
-            return new Promise(resolve => setTimeout(resolve, SUPPLY_RETURN_RETRY_MS).unref())
-                .then(() => (session.actor === actor ? returnSupplyHot(session, reason, resume) : null));
+            if (!actor || !current()) return null;
+            // A bot that was not parked cold was hot all along: nothing to wait for.
+            if (saved || !returning) return resume();
+            if (attempt >= SUPPLY_RETURN_ATTEMPTS) {
+                FailureLog.note('population.supply_return_cold', Error(`supply errand of ${actor.fetchId?.()} resumed with its row cold after ${attempt} hot writes failed`));
+                return resume();
+            }
+            return new Promise((resolve) => {
+                const timer = setTimeout(() => { supplyReturnTimers.delete(timer); resolve(true); }, SUPPLY_RETURN_RETRY_MS);
+                timer.unref?.();
+                supplyReturnTimers.set(timer, resolve);
+            }).then((due) => {
+                if (!due || !current()) return null;
+                const latest = BotLifeState.cachedState?.(Number(actor.fetchId?.()));
+                if (latest) session.coldLifeState = latest;
+                return returnSupplyHot(session, reason, resume, attempt + 1);
+            });
         });
+}
+
+// Shutdown (PopulationService.stop): a waiting return writes nothing more.
+function stopSupplyReturns() {
+    for (const [timer, resolve] of supplyReturnTimers) { clearTimeout(timer); resolve(false); }
+    supplyReturnTimers.clear();
 }
 
 function restoreSupplyHot(session, bot, reason = 'supply_errand_interrupted') {
@@ -355,5 +383,6 @@ module.exports = {
     requestMeeting,
     revealSupplyErrand,
     restoreSupplyHot,
-    returnSupplyHot
+    returnSupplyHot,
+    stopSupplyReturns
 };

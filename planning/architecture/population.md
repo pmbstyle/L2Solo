@@ -90,7 +90,8 @@ thread: our rule, so a far bot does not re-decide on every event ([bot-ai.md](bo
 - **POP-5 hot → cold row builder has three branches** in `writeColdRow`; the fallback writes
   `Database.updateCharacter*` directly, bypassing `upsertState`. `BotSupplyErrand` calls `markCold` outside `Cooldown`,
   with no `acceptColdState` (its failure is counted, `population.mark_cold`). Its return (`BotTownTravel.returnSupplyHot`)
-  writes the row hot before the AI runs and keeps the bot parked while that write fails.
+  writes the row hot before the AI runs; while that write fails it keeps the bot parked
+  (limits.md "Supply errand return"), and `Cooldown.canCooldown` refuses a returning bot.
 - **POP-6 cold rules also run on main.** `PopulationService.resolveColdState` / `resolveColdEntryBranch`: karma
   (`ColdKarmaPolicy` + `resolveSolo`) duplicates the worker's `planLifecycle` (and is hardly reached: `lifecycleKind`
   sends a karma bot to the resolver before any command); `precomputedResult || resolveSolo(...)` fallbacks (raid-supply

@@ -207,6 +207,36 @@ async function raidEndCase(failures) {
     check(cancelled.includes('bot_2'), 'the ordinary companion\'s AI tick was not cancelled');
 }
 
+// The errand's return turns the row hot before the AI runs again. With the population off there is
+// no row to own: it resumes at once. While the hot write fails the bot stays parked (its AI not
+// started); at shutdown the wait ends and nothing resumes.
+async function returnCase(failures) {
+    const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+    const check = (ok, message) => { if (!ok) failures.push(`return: ${message}`); };
+    const parked = () => ({ actor: { fetchId: () => 2000301 }, supplyErrandPhase: 'cold', plan: 'following',
+        dataSendToOthers() {} });
+    let writes = 0, inits = 0;
+    PopulationService.markHot = async () => { writes += 1; return null; };
+    BotAI.stop = () => {}; BotAI.init = () => { inits += 1; };
+    const enabled = Config.enabled;
+    try {
+        Config.enabled = false;
+        const off = await BotTownTravel.restoreSupplyHot(parked(), null);
+        check(off.ok === true && inits === 1 && writes === 0, `population off: ok=${off.ok} inits=${inits} writes=${writes} (expected resumed, no write)`);
+    } finally {
+        Config.enabled = enabled;
+    }
+    inits = 0; writes = 0;
+    const session = parked();
+    const returned = BotTownTravel.restoreSupplyHot(session, null);
+    await new Promise(resolve => setImmediate(resolve));
+    check(writes === 1 && inits === 0 && session.supplyErrandPhase === 'returning',
+        `a failed hot write: writes=${writes} inits=${inits} phase=${session.supplyErrandPhase} (expected parked, AI not started)`);
+    BotTownTravel.stopSupplyReturns();
+    const stopped = await returned;
+    check(stopped.ok === false && inits === 0 && writes === 1, `at shutdown: ok=${stopped.ok} inits=${inits} writes=${writes} (expected no resume, no write)`);
+}
+
 async function main() {
     const originals = {
         bestSupplyOffer: MarketOpportunity.bestSupplyOffer,
@@ -238,6 +268,7 @@ async function main() {
         await runCase('cold', failures);
         await runCase('shopping', failures);
         await raidEndCase(failures);
+        await returnCase(failures);
     } finally {
         MarketOpportunity.bestSupplyOffer = originals.bestSupplyOffer;
         BotTownTravel.request = originals.request;
