@@ -76,8 +76,8 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
 - **NPC chase:** worker path → `Automation.scheduleMoveToCoords` (linear, no Z snap) → `scheduleAction` approach.
   A request with no usable way (an empty path, one the target outran by 120, a pool error; `Npc` `pathFailed`, counted
   `noPath`) retries after 0.5/1/2/4 s; the mob keeps hating until the 2 min attack timeout drops that target (Lisvus).
-- **Broadcast:** `dataSendToMeAndOthers` → `World.fetchVisibleRealPlayers` (index + `inClientView`); bots
-  `BotSession.dataSendToOthers` (real sockets only).
+- **Broadcast:** `dataSendToMeAndOthers` → `World.fetchVisibleRealPlayers` (the index's real-player cells +
+  `inClientView`; no hot bot is walked); bots `BotSession.dataSendToOthers` (real sockets only).
 
 ## Canonical owners
 

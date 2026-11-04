@@ -225,12 +225,14 @@ function isVisibleFrom(creature, candidate) {
         Number(candidate.actor.fetchLocX() ?? 0), Number(candidate.actor.fetchLocY() ?? 0));
 }
 
+// realOnly reads the index's real-player cells (online, finite XYZ, PlayerActivitySignal's
+// real session, kept by updateUserLocation): a bot packet no longer walks the hot bots around it.
 function visibleUserSessions(user, session, creature, realOnly) {
     const runtime = currentUserLocationIndex(user);
     if (!runtime) return [];
     const loc = { locX: Number(creature?.fetchLocX?.()), locY: Number(creature?.fetchLocY?.()), locZ: 0 };
     if (!Number.isFinite(loc.locX) || !Number.isFinite(loc.locY)) return [];
-    return runtime.index.nearSources(loc, CLIENT_VISIBILITY_RADIUS, { view: 'actor', kind: 'all',
+    return runtime.index.nearSources(loc, CLIENT_VISIBILITY_RADIUS, { view: 'actor', kind: realOnly ? 'player' : 'all',
         accept: (record) => !record.retired
             && record.session !== session && (!realOnly || !isBotSession(record.session))
             && record.actor.fetchIsOnline?.() === true })
