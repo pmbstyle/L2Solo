@@ -218,6 +218,7 @@ player online (8 in flight, status `coldDue`).
 | Table levels | lines measured up to 78 (`MAX_LEVEL`, generator and `scripts/hunt-tables/common.js`); a bot of 79-80 reads 78 | `generate-spot-table.js`, `SpotValueTable` `combat` (`header.inputs.maxLevel`) | clamped | none |
 | Deep-blue cut | a spot more than 9 levels below the bot has no value (`ProgressionRates.DEEP_BLUE_LEVEL_GAP`); curves stop at gap 10 | `SpotValueTable` `combat`, generator `GAPS` | never ranked, never chosen by table readers (our choice, not C4: past C4's deep-blue drop gap such mobs drop little) | none |
 | Missing spot | a live catalogue spot without a table row has no value | `SpotValueTable.checkCatalog` | never chosen by table readers | log (one line per catalogue) |
+| Stale table | a table whose fingerprint differs from its input files (`TableFingerprint`); the message names the first 8 changed files (`list`) | `scripts/check-tables.js` (`npm run check`), `SpotValueTable` `checkFingerprint` (main, first read) | check fails; the server keeps the table and logs; a table without a fingerprint only warns | the line, with the count of changed files |
 | Income ranking | spots from 15 below to 8 above the bot (`BASIS_MIN_GAP`), first 64 by held income | `SpotValueTable` `rankIncome` | the rest never offered | none |
 | Shortlists | 128 (`incomeRows`), oldest out | `SpotValueTable.rankedIncome` | re-sorted from the basis | dD `incomeEvictions` |
 | Value memo | 32768 rows (`MAX_VALUE_MEMO`), ring | `SpotValueTable` `memoValue` | oldest row recomputed | dD `memoEvictions` |

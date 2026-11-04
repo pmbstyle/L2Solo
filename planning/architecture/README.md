@@ -54,5 +54,6 @@ says the commit it was last checked at.
   failure a catch survives goes through `FailureLog` (counted by site, the first logged, status `swallowed=`).
 - Cited but missing: `docs/architecture.md` (`BotRoute.js`, `EconomyContext.js`), `docs/t189-plan.md` (T189 commit),
   `docs/game-decisions.md` (`scripts/fight-table`, `ShotStock`).
-- A precomputed table is not checked against the code it measured: after a change listed in tables.md "When to
-  rebuild", rebuild it (TBL-1).
+- A precomputed table carries a fingerprint of the files it was simulated by (`TableFingerprint`): after a change listed
+  in tables.md "When to rebuild", `npm run check` fails until the table is rebuilt (a table built before fingerprints:
+  a warning only).

@@ -47,6 +47,7 @@ const os = require('os');
 const path = require('path');
 const ProgressionRates = require('../src/GameServer/ProgressionRates');
 const HuntKeys = require('./hunt-tables/common');
+const TableFingerprint = require('../src/GameServer/Bot/AI/TableFingerprint');
 
 const root = path.resolve(__dirname, '..');
 process.chdir(root);
@@ -1083,6 +1084,8 @@ async function main() {
                 schema: SCHEMA_VERSION,
                 generator: 'scripts/generate-spot-table.js',
                 revision,
+                // The files this table is simulated by (TableFingerprint): npm run check fails when one moved.
+                fingerprint: TableFingerprint.fingerprint('spot'),
                 inputs: { hours: options.hours, curveHours: options.curveHours, catalogueSeed: CATALOGUE_SEED, geodata: catalogue.geodata,
                     periodMode: CATALOGUE_PERIODS, rate: 'x1', maxLevel: MAX_LEVEL, refGap: REF_GAP, bandLevels: BAND_LEVELS,
                     curveSpots: CURVE_SPOTS, roleClasses: roleClasses(), roleLines: ROLE_LINES,

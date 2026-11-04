@@ -166,6 +166,7 @@ const tests = [
     'tests/test_spot_reward_expectation.js',
     'tests/test_spot_table_stacks.js',
     'tests/test_spot_table_generator.js',
+    'tests/test_table_fingerprint.js',
     'tests/test_first_price.js',
     'tests/test_bot_solo_hunt_safety.js',
     'tests/test_bot_routing_thresholds.js',

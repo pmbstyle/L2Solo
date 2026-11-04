@@ -46,10 +46,9 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    or lands on a newer cast; fix = those paths call `attack.abortCast`. Not C4 yet: the "already casting" gate blocks
    instant items (potions) during any cast (Lisvus `ItemSkills.castInstantly` allows them); a stunned/sleeping player
    can start an SoE (Lisvus refuses on `isAllSkillsDisabled`). Both refuse before spending, so no item is lost.
-10. **Bot tables: silent staleness and work nobody reads** ([tables.md](tables.md), lines below). No check that a table
-   matches the code it measured (TBL-1); a kit surface and 9 hunt tables built on every rebuild, read by nothing at
-   runtime (TBL-2, TBL-3); one rebuild run reads old inputs (TBL-4); a full copy per thread (TBL-7); the generator
-   patches live owners and copies the potion stock rule (TBL-8).
+10. **Bot tables: work nobody reads** ([tables.md](tables.md), lines below). A kit surface and 9 hunt tables built on
+   every rebuild, read by nothing at runtime (TBL-2, TBL-3); one rebuild run reads old inputs (TBL-4); a full copy per
+   thread (TBL-7); the generator patches live owners and copies the potion stock rule (TBL-8).
 
 11. **Bot prices of a purchase disagree on who sells.** `StaticMerchantPricing.cheapestPurchase(id, { forBot: true })`
    (and `botBuyPrice`, `botPurchasePrice`, the hunt model's consumable prices) counts the configured city stores for every
@@ -86,11 +85,6 @@ red in `notRunTests`: `test_beginner_shot_policy`, `test_cold_armor_set_effects`
 
 **P** = player impact, **S** = server impact (roadmap.md). Evidence and the assessment: [tables.md](tables.md).
 
-- **TBL-1 No staleness check against the code** (P mid, S low; high value, small cost). The header's `revision` is only
-  logged (`SpotValueTable.checkCatalog`); a table built before a combat, rest, gear or potion change is used silently
-  and bots choose spots and stock by the old fight. Hunt-table `fingerprints` are written, read by nobody. Fix:
-  fingerprint the src paths the generator exercises (tables.md "When to rebuild"), compare in `npm run check` (fails)
-  and log once at the first read. Decided 2026-11-03: both (R2).
 - **TBL-2 Kit surface measured, never read** (P mid, S none at runtime; CI ~60 % of the curves phase). Only
   `HuntCycle.reader` reads `SpotValueTable.kitSurface`, and nothing in `src/` calls it. So the gear a bot really wears
   never moves the table's numbers until its own hunt samples exist: a weak or a strong kit chooses spots by the author's
@@ -99,8 +93,8 @@ red in `notRunTests`: `test_beginner_shot_policy`, `test_cold_armor_set_effects`
   4 tests). They also copy the catalogue, mob and henna data. Built on purpose for planned consumers (gear progression,
   the market's demand estimate; tables.md "Assessment"); the debt is the missing reader.
 - **TBL-4 One `all` run reads old inputs** (P low, S none). The kit surface reads the committed `data/Bots/hunt/gear.json`; hunt
-  `mobs`/`spots` read the committed `data/Bots/spot-reward-npcs.json`; their fingerprints the committed `data/Bots/spot-table.json`. After a
-  catalogue or gear change the tables disagree until a second run. Order the jobs or drop the coupling (TBL-2/3).
+  `mobs`/`spots` read the committed `data/Bots/spot-reward-npcs.json`. After a catalogue or gear change the tables disagree until
+  a second run; `npm run check` flags the hunt half (the reward catalogue is a hunt input), not the kit surface's `data/Bots/hunt/gear.json`. Order the jobs or drop the coupling (TBL-2/3).
 - **TBL-5 Unread columns** (P none, S low; cheap). Row `adena`, `loot` (money is read live, `SpotRewardExpectation.value`),
   curve `adena`, spot column 4 (always 1); the generator still pools and prices loot for them (`poolRowLoot`).
 - **TBL-6 Compat paths for old table shapes** (P none, S none; cheap). Loader branches for tables before `roleLines`,
