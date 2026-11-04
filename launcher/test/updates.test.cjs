@@ -14,13 +14,14 @@ const { Controller } = require('../main/controller.cjs');
 const { RuntimeManager, prepareRuntime, targetFor } = require('../main/runtime.cjs');
 const { ReleaseCatalog } = require('../main/release-catalog.cjs');
 const { LauncherUpdates, validateFeed } = require('../main/launcher-updates.cjs');
-const { assetUrl, listReleases, selectRelease, latestRelease, launcherRelease, validateManifest, validateLauncherManifest, channelOf, newerVersion } = require('../main/releases.cjs');
+const { requiredServerFiles, assetUrl, listReleases, selectRelease, latestRelease, launcherRelease, validateManifest, validateLauncherManifest, channelOf, newerVersion } = require('../main/releases.cjs');
 const { applyRelease, markerPath, journalPath, recover } = require('../main/installer.cjs');
 const { writeJson, readJson, sha256, canonicalPath } = require('../main/files.cjs');
 const { collect, verifyTarget, feeds, feedsForChannel } = require('../scripts/launcher-assets.cjs');
 const { publish: publishRelease, serverInstallers } = require('../scripts/publish-release.cjs');
 const { plan } = require('../scripts/release-plan.cjs');
 const { prepare: preparePreview } = require('../scripts/prepare-preview.cjs');
+const { databaseSchema } = require('../scripts/package-server.cjs');
 const { prepareWorld, query } = require('./world-fixture.cjs');
 const { rejectUpdateBeforeMigrations } = require('../../scripts/database-access.js');
 
@@ -456,7 +457,7 @@ test('certificate-free builds keep automatic NSIS/AppImage updates and route por
     }
 });
 
-async function serverFixture(script, tag = 'v0.1.0', schemaVersion = 1, { sourceCommit = 'a'.repeat(40), minimumLauncherVersion = '0.2.0' } = {}) {
+async function serverFixture(script, tag = 'v0.1.0', schemaVersion = 1, { sourceCommit = 'a'.repeat(40), minimumLauncherVersion = '0.2.0', migrationNames } = {}) {
     const stage = directory('server-stage');
     const migrationCheckpoint = schemaVersion === 2
         ? "if(process.env.L2NODE_UPDATE_TRIAL==='1'){require('./database-access.js').beginUpdateMigrations(process.cwd(),JSON.parse(process.env.L2NODE_UPDATE_DATABASES));}\n" : '';
@@ -478,7 +479,8 @@ async function serverFixture(script, tag = 'v0.1.0', schemaVersion = 1, { source
     const bytes = fs.readFileSync(archive);
     const manifest = validateManifest({ schemaVersion, tag, minimumLauncherVersion,
         ...(channelOf(tag) === 'preview' ? { sourceCommit, channel: 'preview' } : {}),
-        ...(schemaVersion === 2 ? { component: 'server', version: tag.replace(/^(server-)?v/, ''), databaseSchemaVersion: 1, startupProtocolVersion: 2, runtime: { version: process.versions.node } } : {}),
+        ...(schemaVersion === 2 ? { component: 'server', version: tag.replace(/^(server-)?v/, ''), databaseSchemaVersion: 1, startupProtocolVersion: 2, runtime: { version: process.versions.node },
+            ...(migrationNames ? { databaseMigrationNames: migrationNames } : {}) } : {}),
         archive: { name: path.basename(archive), bytes: bytes.length, sha256: await sha256(archive) }, files }, tag);
     const release = { tag_name: tag, prerelease: channelOf(tag) === 'preview', assets: [{ name: 'l2solo-release.json', browser_download_url: assetUrl(tag, 'l2solo-release.json') },
         { name: manifest.archive.name, size: bytes.length, browser_download_url: assetUrl(tag, manifest.archive.name) }] };
@@ -709,6 +711,64 @@ test('an imported newer world is rejected before replacing code or changing its 
     assert.equal((await readJson(markerPath(root))).tag, 'v0.1.0');
     assert.equal(query(root, process.execPath, 'SELECT MAX(version) AS version FROM schema_migrations')[0].version, 999);
     assert.equal(fs.existsSync(journalPath(root)), false);
+});
+
+test('an imported world with a named migration the release does not know is rejected before replacing code', async () => {
+    const root = directory('future-named-world');
+    const initial = await serverFixture(oldScript);
+    await applyRelease(root, initial.stage, initial.manifest);
+    put(root, 'config/local.ini', ''); prepareWorld(root, process.execPath);
+    query(root, process.execPath, "INSERT INTO named_migrations(name, appliedAt) VALUES ('known-step', 1), ('from-a-newer-build', 1) RETURNING name");
+    const next = await serverFixture(oldScript + '\n// new code', 'server-v0.2.0', 2, { migrationNames: ['known-step'] });
+    const controller = new Controller({ userData: directory('future-named-profile'), nodePath: process.execPath, fetcher: next.fetcher });
+    await controller.choose(root);
+    await assert.rejects(controller.install(), /migration from-a-newer-build requires a newer server/);
+    assert.equal(fs.readFileSync(path.join(root, 'scripts/run-server.js'), 'utf8'), oldScript);
+    assert.equal((await readJson(markerPath(root))).tag, 'v0.1.0');
+    assert.equal(fs.existsSync(journalPath(root)), false);
+});
+
+test('the update snapshot checks numbered and named migrations against the release', async () => {
+    const root = directory('schema-guard-world');
+    const initial = await serverFixture(oldScript);
+    await applyRelease(root, initial.stage, initial.manifest);
+    put(root, 'config/local.ini', ''); prepareWorld(root, process.execPath);
+    const controller = new Controller({ userData: directory('schema-guard-profile'), nodePath: process.execPath });
+    await controller.choose(root);
+    const snapshot = guard => controller.helper('update-data.cjs', ['snapshot', JSON.stringify({ id: crypto.randomUUID(), ...controller.worldOptions(), ...guard })]);
+    query(root, process.execPath, "INSERT INTO schema_migrations(version, appliedAt) VALUES (83, 1) RETURNING version");
+    query(root, process.execPath, "INSERT INTO named_migrations(name, appliedAt) VALUES ('drop-unused-bot-life-indexes', 1) RETURNING name");
+    assert.equal((await snapshot({ maximumSchemaVersion: 83, knownMigrationNames: ['drop-unused-bot-life-indexes', 'later-step'] })).files.length, 2);
+    await assert.rejects(snapshot({ maximumSchemaVersion: 83, knownMigrationNames: ['later-step'] }), /migration drop-unused-bot-life-indexes requires a newer server/);
+    await assert.rejects(snapshot({ maximumSchemaVersion: 83 }), /migration drop-unused-bot-life-indexes requires a newer server/,
+        'a release without the list predates named migrations');
+    assert.equal((await snapshot({})).files.length, 2, 'a schema 1 manifest names no schema and is not checked');
+    query(root, process.execPath, "INSERT INTO schema_migrations(version, appliedAt) VALUES (84, 1) RETURNING version");
+    await assert.rejects(snapshot({ maximumSchemaVersion: 83, knownMigrationNames: ['drop-unused-bot-life-indexes'] }), /schema 84 requires a newer server/);
+});
+
+test('the server package reads numbered and named migrations from the database source', () => {
+    const source = `migrations.push([1, () => a()]);\n    migrations.push([7, () => b()]);
+    const namedMigrations = [
+        // ['commented-out', () => no()],
+        ['first-step', () => connection.exec('x')],
+        ['second.step_2', () => {
+            ['not', 'a', 'migration'].forEach(run);
+        }]
+    ];
+    const later = [['outside-the-list', () => {}]];`;
+    assert.deepEqual(databaseSchema(source), { databaseSchemaVersion: 7, databaseMigrationNames: ['first-step', 'second.step_2'] });
+    assert.throws(() => databaseSchema('migrations.push([1, () => a()]);'), /Cannot determine/);
+    const real = databaseSchema(fs.readFileSync(path.resolve(__dirname, '../../src/Database.js'), 'utf8'));
+    assert.equal(real.databaseSchemaVersion, 83, 'numbered migrations end at 83');
+    assert.equal(real.databaseMigrationNames[0], 'drop-unused-bot-life-indexes');
+    const manifest = { schemaVersion: 2, component: 'server', tag: 'server-v0.2.0', version: '0.2.0', minimumLauncherVersion: '0.2.0',
+        databaseSchemaVersion: 83, startupProtocolVersion: 2, runtime: { version: process.versions.node },
+        archive: { name: 'L2Solo-Server-v0.2.0.zip', bytes: 1, sha256: 'a'.repeat(64) }, files: requiredServerFiles.map(file => ({ path: file, bytes: 1, sha256: 'a'.repeat(64) })) };
+    assert.equal(validateManifest({ ...manifest, databaseMigrationNames: real.databaseMigrationNames }, manifest.tag).databaseMigrationNames, real.databaseMigrationNames);
+    for (const databaseMigrationNames of [['same', 'same'], [''], ['../escape'], [7], 'first-step']) {
+        assert.throws(() => validateManifest({ ...manifest, databaseMigrationNames }, manifest.tag), /Invalid server runtime or compatibility/);
+    }
 });
 
 test('successful trial requires both bound ports and initialized world before admitting players', async () => {

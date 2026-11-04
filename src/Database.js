@@ -2001,12 +2001,14 @@ function applySchemaMigrations() {
         // moves, so each cost a page per bot save: 42 MB/min of WAL (14 %) on the
         // 1731-bot save. The queries that used them by chance take phase_partyId
         // or the covering party candidate projection index. Worlds saved on an
-        // early build ran this as numbered 84; that row is ignored.
+        // early build ran this as numbered 84; that row is deleted, so the
+        // launcher reads such a world as schema 83 again.
         ['drop-unused-bot-life-indexes', () => connection.exec(`
             DROP INDEX IF EXISTS bot_life_state_market_reconcile;
             DROP INDEX IF EXISTS bot_life_state_party_owner_filter;
             DROP INDEX IF EXISTS bot_life_state_warehouse_demand;
             DROP INDEX IF EXISTS bot_life_state_warehouse_release;
+            DELETE FROM schema_migrations WHERE version = 84;
         `)]
     ];
     const migrate = (apply, record) => {

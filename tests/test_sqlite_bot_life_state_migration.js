@@ -629,7 +629,9 @@ if (process.argv[2] === '--bootstrap') {
     const stray = open(stray84Path);
     assert.deepStrictEqual(schemaShape(stray), freshShape, 'a world that ran numbered 84 keeps the fresh bot row indexes');
     assert.deepStrictEqual(namedRows(stray).map((row) => row.name), ['drop-unused-bot-life-indexes'],
-        'the named migration runs again harmlessly beside the stray 84 row');
+        'the named migration runs again harmlessly where numbered 84 ran');
+    assert.strictEqual(Number(stray.prepare('SELECT MAX(version) AS version FROM schema_migrations').get().version), 83,
+        'the stray 84 row is deleted, so the launcher reads the world as schema 83');
     stray.exec("INSERT INTO named_migrations(name, appliedAt) VALUES ('from-a-newer-build', 0)");
     stray.close();
     const newer = bootstrap(stray84Path);

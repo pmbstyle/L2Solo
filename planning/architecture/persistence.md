@@ -102,7 +102,8 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
   with Slava 2026-11-04:** new migrations are keyed by name, not number: `namedMigrations` in `applySchemaMigrations`,
   run after the numbered ones in list order, each recorded once in `named_migrations` (a name this build does not know
   is logged and kept). To add one, append `['what-it-does', () => …]`; numbered 1–83 stay. The first,
-  `drop-unused-bot-life-indexes`, ran as numbered 84 on a few early worlds; that row is ignored. The other mechanisms
+  `drop-unused-bot-life-indexes`, ran as numbered 84 on a few early worlds; it deletes that row. The launcher's
+  schema guard knows both kinds (`launcher/docs/releases.md`). The other mechanisms
   (re-run `sqlite.sql`, `maintenance_tasks`, `world_meta` flags, service start-up migrations) move into that list over
   time.
 - **PER-6 karma wash three copies** (`Karma.karmaWashForExperience`, `BotLifeState.prepareResolve`, SQL in
