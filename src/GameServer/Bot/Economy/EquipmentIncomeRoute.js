@@ -6,6 +6,7 @@ const BotHuntEfficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const SpotEconomics = require('./SpotEconomics');
 const Packet = require('./StatsPacket');
 const WalkBack = require('./WalkBack');
+const Diagnostics = require('./EconomyDiagnostics');
 
 // Only economic errands may deliberately hunt below the ordinary XP band.
 // Deep-blue drop/spoil penalties still apply in the native reward facts.
@@ -214,4 +215,20 @@ function weightRange(weight, pool, open, pick, checks) {
     return { low: Math.min(low, weight), high: Math.max(high, weight) };
 }
 
-module.exports = { select, search, economicHunt, spotList };
+// Diagnostics only: each search's duration (link:income:search) and the
+// searches since the start with their milliseconds (the worker's links line),
+// both entry points.
+const searchCounts = { searches: 0, ms: 0 };
+const timed = entry => function (state, options) {
+    if (!Diagnostics.active()) return entry(state, options);
+    const started = performance.now();
+    try { return entry(state, options); } finally {
+        const ms = performance.now() - started;
+        searchCounts.searches++; searchCounts.ms += ms;
+        Diagnostics.duration('link:income:search', ms);
+    }
+};
+
+// untimedSelect: the link shadow's verify search (EconomyContext), kept out of these counts.
+module.exports = { select: timed(select), search: timed(search), untimedSelect: select,
+    searchTotals: () => ({ ...searchCounts }), economicHunt, spotList };

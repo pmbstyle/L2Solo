@@ -67,6 +67,13 @@ Inputs marked (E) have an event today, (–) have none, (S) need a significance 
    on the held route; restCap follows money.
 1. Declare inputs in code: each link's key lists its inputs (comment + one test that changing each input rebuilds and
    changing anything else does not). Start with income search, kit, route rows, workshop.
+   Stage A done (no behaviour change): `DecisionSections.LINK_INPUTS` (incomeSearch, workshop, routeRows) and
+   `inputVersions` (value digests over the verdict's `stateView`); a shadow under developerDiagnostics counts what the
+   key would decide against the mask (`link:<link>:<rebuilt|kept>:<input|mask-only|key-only:input>`, `verify:*`,
+   `link:income:search`, the worker's `links=` line). Key-only by reading (no event today): a risk mark on a spot that
+   is not the held leaf's, and a mark's expiry (exclusions); the held leaf's own arrival moves the search's origin
+   (spot, own output: decide); the workshop's packet hour/price are the previous build's (one build behind) and its
+   wallet, maxMp and own board lines carry no fact; beginner shots running out (bagShot).
 2. Per-bot input versions instead of section masks: bag, money, kit, level, occupation, relations, market. A link
    stores the versions it read; `DecisionSections.COMPUTED` becomes these per-link input sets.
 3. Per-spot versions (crowd, risk); then `HOLD_MS` and other windows go.

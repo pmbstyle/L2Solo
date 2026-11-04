@@ -145,7 +145,7 @@ const PopulationStatus = {
             + ` geo=${mb(geodata.loadedBytes)}MB/${geodata.loadedRegions} geoViews=${mb(geodata.attachedBytes)}+${mb(worker.geodata?.attachedBytes)}MB`
             + ` geoRaw=${geodata.rawRegions || 0} geoIndexOnly=${geodata.indexOnlyRegions || 0}`
             + ` geoHeightReads=${geodata.heightFileReads || 0}+${worker.geodata?.heightFileReads || 0} ${this.npcHateText()}`
-            + this.incomeHoldText(worker.incomeHold) + (worker.proofOverflows === undefined ? '' : ` proofOver=${worker.proofOverflows} nodeCap=${worker.nodeCapBuilds} asksDeep=${worker.asksPastDepth} shotFlips=${worker.sourceShotFlips} quietGear=${worker.quietGearBuilds}`) + this.doorsText(worker.buildDoors, worker.raisedLinks) + this.soloWindowText(worker.soloWindow);
+            + this.incomeHoldText(worker.incomeHold) + this.linksText(worker.links) + (worker.proofOverflows === undefined ? '' : ` proofOver=${worker.proofOverflows} nodeCap=${worker.nodeCapBuilds} asksDeep=${worker.asksPastDepth} shotFlips=${worker.sourceShotFlips} quietGear=${worker.quietGearBuilds}`) + this.doorsText(worker.buildDoors, worker.raisedLinks) + this.soloWindowText(worker.soloWindow);
     },
 
     // swallowed=<failures>/<sites>: failures main and the cold worker survived since start (FailureLog:
@@ -195,6 +195,20 @@ const PopulationStatus = {
     // weights the held answer stands over.
     incomeHoldText(h) {
         return h ? ` incomeHold=${h.kept || 0}/${h.none || 0},${h.unrouted || 0},${h.renewed || 0},${h.moved || 0},${h.event || 0},${h.goal || 0},${h.weight || 0},${h.bag || 0};party${h.partyKept || 0}/${h.partyMissed || 0}` : '';
+    },
+
+    // links=<link>:<rebuilt>/<kept>,mask<n>,key<n>,verify<mismatch>/<row>/<checked>,new<n>;...;search=<n>/<ms>ms: the
+    // decision links' shadow keys since the worker started (EconomyContext incomeShadow, buildShadow, workshopShadow; developerDiagnostics only):
+    // rebuilt/kept as a key on the link's inputs would decide; mask: today's mask rebuilt what the key keeps; key: the
+    // key would rebuild what the mask keeps (a possibly stale answer); verify: held answers checked against a fresh one
+    // (mismatch: another spot or recipe, row: another income); new: answers with nothing to compare; search: the
+    // earning spot searches and their time.
+    linksText(links) {
+        if (!links) return '';
+        const rows = Object.entries(links).filter(([link]) => link !== 'search').map(([link, r]) =>
+            `${link}:${r.rebuilt}/${r.kept},mask${r.maskOnly},key${r.keyOnly},verify${r.mismatch}/${r.row}/${r.verified},new${r.unjudged}`);
+        if (links.search) rows.push(`search=${links.search.searches}/${Math.round(links.search.ms)}ms`);
+        return ` links=${rows.join(';')}`;
     },
 
     // Mobs that forgot a chase (out of reach / no path / 2 min without an attack), mobs left out of

@@ -680,6 +680,28 @@ async function run() {
             assert.deepEqual(afterCard.verdicts, [1, 1], 'one verdict for the card, the step\'s workshop and its build');
             ({ published } = fresh());
             assert.equal(stepOf({ ...published, adena: 0 }).kept, null, 'a moved wallet asks');
+            // Each declared workshop input (DecisionSections LINK_INPUTS workshop)
+            // moved asks the planner again, by the build's kit fact or the route key;
+            // not yet the cold MP cap (maxMp) and the own board lines, which no fact
+            // carries (the link shadow counts them key-only).
+            const stat = (state, more) => ({ ...state, stats: { ...state.stats, ...more } });
+            const askedOn = { 'kit.class': state => stat(state, { classId: 4 }), 'kit.level': state => ({ ...state, level: state.level + 1 }),
+                craft: state => stat(state, { workshop: { entries: [2] } }), crafter: state => ({ ...state, craftLevel: 0 }),
+                recipes: state => stat(state, { recipes: [5] }), closesTowns: state => stat(state, { karma: 700 }),
+                route: state => ({ ...state, loc: { ...state.loc, locX: state.loc.locX + 1000 } }) };
+            assert.deepEqual(Object.keys(askedOn).sort(),
+                Sections.LINK_INPUTS.workshop.discrete.filter(name => !['maxMp', 'ownLines'].includes(name)).sort(), 'a row per input heard today');
+            for (const [name, move] of Object.entries(askedOn)) {
+                ({ published } = fresh());
+                const shadow = counts();
+                assert.equal(stepOf(move(published)).kept, null, `a moved ${name} asks`);
+                if (name === 'route') assert.equal(delta(shadow, 'link:workshop:rebuilt:route'), 1, 'the link shadow names the route');
+            }
+            ({ published } = fresh());
+            const shadow = counts();
+            assert.equal(stepOf({ ...published, vitals: { ...published.vitals, maxMp: published.vitals.maxMp + 1 } }).kept, workshop,
+                'an MP cap move keeps the workshop today');
+            assert.equal(delta(shadow, 'link:workshop:rebuilt:key-only:maxMp'), 1, 'the link shadow counts it key-only');
             const unknownCrafter = { ...crafter, characterId: 990033 };
             const unknownHeld = Economy.forState(unknownCrafter, { ...deps, workshop: { ...workshop, known: false } });
             const unknown = stepOf({ ...unknownCrafter, stats: { ...unknownCrafter.stats, ...unknownHeld.statsPacket } });

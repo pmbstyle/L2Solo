@@ -359,6 +359,108 @@ function verify() {
         assert.equal(next.result.plan, left.result.plan, 'the next read serves it');
         assert.equal(next.searches, 0, 'with no search');
     }
+    // The search's declared inputs (DecisionSections LINK_INPUTS incomeSearch):
+    // moving any one of them makes the next build of the held bot search (true
+    // today: a section, the goal or an event raise ends the hold; the samples by
+    // the soft point's observation event, raised here as the step would). Each
+    // input's version is a digest of its value on the state (inputVersions):
+    // moving one input moves its version and only the versions derived from it
+    // (the samples' signature reads class, level and party; the gear gap reads
+    // the worn kit and the adventurer; the crafter flag the craft level; the money
+    // weight the packet's hour and price; the karma flip the route key).
+    {
+        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+        const Shots = invoke('GameServer/Inventory/ShotStock');
+        const stat = (state, more) => ({ ...state, stats: { ...state.stats, ...more } });
+        const versions = (state, recipes = null, board = null) => Sections.inputVersions(Sections.stateView(state, recipes),
+            state, time(1), { spots, board });
+        const movedNames = (before, after) => Object.keys(after).filter(name => !Object.is(after[name], before[name])).sort();
+        const ear = Object.values(fighter(1, { complete: true }).inventory).find(row => row.equippedSlots.includes(2));
+        const worn = state => ({ ...state, inventory: { ...state.inventory,
+            [ear.selfId]: { ...ear, amount: 2, equippedCount: 2, equippedSlots: [1, 2] } } });
+        const sampledThird = state => stat(state, { huntEfficiency: [0, 1, 2].reduce(rows => Hunt.record(stat(state, { huntEfficiency: rows }),
+            { spotId: 'third', timestamp: started, cycleMs: 60000, adena: 500, costs: 100, loot: 0, exp: 50, kills: 10 }), state.stats.huntEfficiency) });
+        const raised = state => stat(state, { wishDirty: Sections.sectionMask(Sections.softEvents(state, state.stats.wishSections, { timestamp: time(1) })) });
+        const money = (state, hour, price) => { const packet = state.stats.money;
+            return stat(state, { money: Packet.money({ hourAdena: Packet.hourAdena(packet) * hour, moneyPrice: Packet.moneyPrice(packet) * price,
+                survivalReserve: Packet.survivalReserve(packet), firstUnfundedPrice: Packet.firstUnfundedPrice(packet) }) }); };
+        // [input, move, versions it moves]
+        const rows = [
+            ['kit.class', state => stat(state, { classId: 1 }), ['kit.class', 'samples']],
+            ['kit.level', state => ({ ...state, level: 11 }), ['kit.level', 'samples']],
+            ['kit.worn', worn, ['kit.worn', 'required']],
+            ['kit.hennas', state => stat(state, { hennas: [1, 0, 0] }), ['kit.hennas']],
+            ['kit.skills', state => stat(state, { coldCombat: { ...state.stats.coldCombat,
+                skills: state.stats.coldCombat.skills.map((skill, at) => at ? skill : { ...skill, level: skill.level + 1 }) } }), ['kit.skills']],
+            ['kit.capture', state => stat(state, { coldCombat: { ...state.stats.coldCombat, henna: { str: 1 } } }), ['kit.capture']],
+            ['party', state => ({ ...state, party: { partyId: 5, role: 'member' } }), ['party', 'samples']],
+            ['adventurer', state => stat({ ...state, activity: 'crafting' }, { craftShop: true, generatedIndex: 10001 }), ['adventurer', 'required']],
+            ['economic', state => stat(state, { wishFocus: [/^power:/.test(state.stats.wishFocus[0]) ? 'stock:1061' : 'power:300:14', 1, 1000000] }), ['economic']],
+            ['required', worn, ['kit.worn', 'required']],
+            // A spot the held leaf did not order (its own arrival is no event).
+            ['spot', state => ({ ...state, spotId: 'nowhere' }), ['spot']],
+            ['samples', state => raised(sampledThird(state)), ['samples']],
+            ['exclusions', state => stat(state, { capacityBackoffs: [{ spotId: 'rich', untilStep: 5 }] }), ['exclusions']],
+            ['bagShot', state => { const shot = Shots.combatPlanForState(state);
+                return { ...state, inventory: { ...state.inventory, [shot.selfId]: { selfId: shot.selfId, amount: 5000 } } }; }, ['bagShot']]
+        ];
+        assert.deepEqual(rows.map(row => row[0]).sort(), [...Sections.LINK_INPUTS.incomeSearch.discrete].sort(), 'a row per declared input');
+        let id = 990300;
+        for (const [name, move] of rows) {
+            const { state } = heldBot(++id);
+            assert(count(() => Economy.forState(move(state), deps(1))).searches >= 1, `a moved ${name} searches the held spot`);
+        }
+        // inputVersions on a bot out of the economic hunt (a stock focus), so the adventurer moves no goal.
+        const base = stat(heldBot(++id).state, { wishFocus: ['stock:1060', 1, 1000000] }), before = versions(base);
+        const others = [
+            ['craft', state => stat(state, { workshop: { entries: [1] } }), ['craft']],
+            ['crafter', state => ({ ...state, craftLevel: 1 }), ['craft', 'crafter']],
+            ['closesTowns', state => stat(state, { karma: 700 }), ['closesTowns', 'route', 'route.karma']],
+            ['hour', state => money(state, 2, 1), ['hour', 'weight']],
+            ['price', state => money(state, 1, 2), ['price', 'weight']],
+            ['wallet', state => ({ ...state, adena: 5 }), ['wallet']],
+            ['maxMp', state => ({ ...state, vitals: { ...state.vitals, maxMp: 301 } }), ['maxMp']]
+        ];
+        for (const [name, move, moved] of [...rows.map(([name, move, moved]) => [name, name === 'samples' ? sampledThird : move, moved]), ...others])
+            assert.deepEqual(movedNames(before, versions(move(base))), moved.sort(), `moving ${name} moves its version only`);
+        assert.deepEqual(movedNames(before, versions(base, [1, 2])), ['recipes'], 'the recipe book moves its version only');
+        assert.deepEqual(movedNames(before, versions(base, null, { ownerLines: () => [{}] })), ['ownLines'], 'own board lines move theirs only');
+        assert.deepEqual(movedNames(before, versions({ ...base, stats: { ...base.stats } })), [], 'a copy of the state moves nothing');
+        const declared = Object.values(Sections.LINK_INPUTS).flatMap(link => [...link.discrete, ...link.continuous]);
+        assert(declared.every(name => Object.hasOwn(before, name)), 'every declared input has a version');
+        const covered = new Set([...rows, ...others].map(row => row[0]).concat('recipes', 'ownLines', 'weight', 'route'));
+        assert.deepEqual(Object.keys(before).filter(name => !covered.has(name) && !name.startsWith('route.')), [],
+            'every version is moved here (the route fields: test_economic_trip_marginal)');
+        assert.equal(Sections.movedInput('incomeSearch', before, versions(money(base, 1.0001, 1)), 0.01), '', 'a weight drift inside the error keeps');
+        assert.equal(Sections.movedInput('incomeSearch', before, versions(money(base, 4, 1)), 0.01), 'weight', 'one beyond it moves');
+    }
+    // The link shadow (developerDiagnostics): a read inside the window keeps as
+    // the key would, the window's search is one the key would not make (and finds
+    // the same spot), a level up rebuilds by its input, and a mark on a spot the
+    // held leaf does not hunt moves an input the hold does not hear (key-only).
+    {
+        const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+        const counts = () => invoke('GameServer/Bot/Economy/EconomyDiagnostics').metrics().counts || {};
+        const diagnosticsBefore = Config.developerDiagnostics;
+        Config.developerDiagnostics = true;
+        try {
+            const before = counts(), delta = key => (counts()[key] || 0) - (before[key] || 0);
+            const { state } = heldBot(990330);
+            Economy.forState(state, deps(1));
+            assert.equal(delta('link:incomeSearch:kept:quiet'), 1, 'a read inside the window keeps');
+            Economy.forState(state, deps(31));
+            assert.equal(delta('link:incomeSearch:kept:mask-only'), 1, 'the window searches what the key keeps');
+            assert.equal(delta('link:incomeSearch:verify:same'), 1, 'and finds the held spot');
+            const levelled = { ...state, level: 11 }, rebuilt = Economy.forState(levelled, deps(32));
+            assert.equal(delta('link:incomeSearch:rebuilt:kit.level'), 1, 'a level up rebuilds by its input');
+            const marked = { ...published(levelled, rebuilt), stats: { ...published(levelled, rebuilt).stats,
+                capacityBackoffs: [{ spotId: 'poor', untilStep: 5 }] } };
+            Economy.forState(marked, deps(33));
+            Economy.forState(marked, deps(34));
+            assert.equal(delta('link:incomeSearch:rebuilt:key-only:exclusions'), 1, 'a mark the hold does not hear is key-only, once');
+            assert(Economy.linkStats().incomeSearch.keyOnly >= 1, 'the worker\'s links line carries it');
+        } finally { Config.developerDiagnostics = diagnosticsBefore; }
+    }
     // A far bot in the field needs no bag rows: a read list past its bound leaves it its proof.
     {
         const { built, state } = heldBot(990250);

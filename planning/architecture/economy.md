@@ -67,7 +67,9 @@ MerchantStoreConfigs}`, `src/Market*`, `src/Economy*`, `Population/ColdEconomy{P
   purchase and wish prices an hour with; shots / potions pay (`ShotStock.usePolicy`, `EconomyContext.foundation`).
   Money of a kill is live (`SpotRewardExpectation.value`). See [tables.md](tables.md).
 - **Observability:** `EconomyDiagnostics`, `MarketTelemetry`, `CraftTelemetry`, `MarketSnapshot`, `src/EconomyJournal`,
-  `src/MarketTradeOverview*`, `src/MarketEconomyOverview`.
+  `src/MarketTradeOverview*`, `src/MarketEconomyOverview`. The decision links' shadow (developerDiagnostics only):
+  `EconomyContext` compares a key on `DecisionSections.LINK_INPUTS` with today's masks (`link:*` counts, the worker's
+  `links=` status line; planning/decision-links).
 
 ## Data flow
 

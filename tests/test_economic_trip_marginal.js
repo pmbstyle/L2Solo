@@ -65,4 +65,24 @@ for (const value of [field, { ...field, inventory: {} }, returning, { ...returni
     { ...field, activity: 'traveling', stats: { travel: { spotId: 8, to: dion, arrivalActivity: 'hunting' } } },
     { ...field, stats: { karma: 700 } }])
     assert.deepEqual(EconomicTrip.prepared(value), rowsOf(value), 'the route table on its key reads as the full state');
+// The route rows' declared inputs (DecisionSections LINK_INPUTS routeRows): each
+// one moved moves the key and is the input named; what keeps the key moves none.
+const Sections = require('../src/GameServer/Bot/Economy/DecisionSections');
+const firstMoved = (from, to) => Sections.movedInput('routeRows', Sections.routeVersions(from), Sections.routeVersions(to));
+const routeRows = [
+    ['route.activity', field, { ...field, activity: 'shopping' }],
+    ['route.region', state, { ...state, currentRegion: 'Giran' }],
+    ['route.loc', field, { ...field, loc: giran }],
+    ['route.scroll', field, { ...field, inventory: {} }],
+    ['route.karma', field, { ...field, stats: { karma: 700 } }],
+    ['route.return', returning, { ...field, stats: { marketReturn: { loc: giran } } }],
+    ['route.travel', planned, { ...planned, stats: { ...planned.stats, travel: { ...planned.stats.travel, townName: 'Giran' } } }]];
+assert.deepEqual(routeRows.map(row => row[0]), [...Sections.LINK_INPUTS.routeRows.discrete], 'a row per declared input');
+for (const [name, from, to] of routeRows) {
+    assert.notEqual(EconomicTrip.key(to), EconomicTrip.key(from), `a moved ${name} moves the route key`);
+    assert.equal(firstMoved(from, to), name, `and is the input that moved (${name})`);
+}
+for (const value of [{ ...field, activity: 'resting' }, { ...field, inventory: { 736: { selfId: 736, amount: 1 } } },
+    { ...field, currentRegion: 'Dion' }, { ...field, activity: 'traveling', stats: { travel: { spotId: 8, to: dion, arrivalActivity: 'hunting' } } }])
+    assert.equal(firstMoved(field, value), '', 'a rest, a hunt, a trip to a spot or a scroll used while one is left moves no input');
 console.log('Economic marginal trips: spent outbound, shared visit, extra detour, actual continuation, worker parity, unknown/karma routes and the route key passed');

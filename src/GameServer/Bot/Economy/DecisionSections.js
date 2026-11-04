@@ -116,6 +116,141 @@ const COMPUTED = Object.freeze({
     // recipe's market (its watch rows raise money).
     workshop: FOUNDATION | sectionMask(['money'])
 });
+// The decision links (planning/decision-links/plan.md, step 1): the inputs each
+// link reads, by inputVersions name. Declared and measured only (EconomyContext's
+// link shadow, developerDiagnostics): no decision reads them yet, the masks
+// above still decide. discrete: a version compared exactly; continuous: a value
+// compared beyond the bot's own error (movedInput); events: what the link reads
+// with no version, standing on an event or on nothing today.
+const linkOf = (discrete, continuous, events) => Object.freeze({ discrete: Object.freeze(discrete),
+    continuous: Object.freeze(continuous), events: Object.freeze(events) });
+const LINK_INPUTS = Object.freeze({
+    // The earning spot search (EquipmentIncomeRoute.select, called by
+    // EconomyContext.incomeRouteFor and holdRead; its route feeds foundation).
+    incomeSearch: linkOf([
+        'kit.class', // select: SpotValueTable.roleFor (the table role) and Match.stateProfiles
+        'kit.level', // select: state.level (the band, minGap, spotList.ids, avgLevel - level), the matchup
+        'kit.worn', 'kit.hennas', 'kit.capture', // select: Match.stateProfiles -> soloSpotUpperBound, spotAllowedReaderFor
+        'kit.skills', // spotList: ColdKillRewards.spoilerFor(skillsFor), the spoil skill level; the matchup
+        'party', // select: the state.party.partyId gate
+        'adventurer', // select: PersonalGearProgression.adventurer gate
+        'economic', // select: economicHunt opens the search (EconomyContext.goalMoved compares it)
+        'required', // select: required (GearProgression.assess in EconomyContext.incomeRouteFor)
+        'spot', // select: ids start with state.spotId; origin = its center, else state.loc (WalkBack.tripHours)
+        'samples', // select: BotHuntEfficiency.sampledRows spot ids join the candidates
+        'exclusions', // select: SpotRiskPolicy.excludedSpotIdsForStates
+        'bagShot' // spotList.ids: consumablePrices' shot (ShotStock.planForState); stateProfiles' loaded shot (shotInputs)
+    ], [
+        'weight', // SpotEconomics.create: moneyWeight, the packet's hourAdena x moneyPrice (EconomyContext.weightMoved)
+        'hour' // SpotEconomics.create: the packet's own hour where the band has no money hour (search's weights.hour)
+    ], [
+        'observation', // SpotEconomics.create: the bot's own sample values (the soft point's observation event)
+        'prices', // spotList.ids and SpotEconomics: consumable and loot prices (market watch)
+        'crowd', // SpotEconomics spotHunters, SpotProfiles.roomFor: no event (the 30-min window stands in)
+        'spawns', // SpotValueTable rows and the spawn catalog period: no event
+        'mode' // select: the caller's mode (party, duo) and maxChecks, an option of the call
+    ]),
+    // The crafter's workshop: the occupation planner's answer
+    // (ColdOccupationSources.prepare over the planner capture,
+    // ColdSimulationWorker occupationPlanner.capture), kept by
+    // EconomyContext.heldWorkshopOf.
+    workshop: linkOf([
+        'kit.class', 'kit.level', // WealthCraftDecision recipe eligibility; craftLabour's profile maxMp
+        'craft', // prepare: CraftShopService.craftLevelFor; capture: stats.workshop.entries (knownRecipes); the station
+        'crafter', // the worker asks a crafter only (no_crafter)
+        'recipes', // capture: RecipeBookCodec.unpack(recipeBook)
+        'maxMp', // craftLabour: state.vitals.maxMp (a cold command's MP cap)
+        'closesTowns', // the route rows' karma flip and the craft towns
+        'route', // prepare: EconomicTrip.key against the captured routeKey / routeRows
+        'ownLines' // prepareExits: own board lines are skipped; Wealth.eligible(ownLines)
+    ], [
+        'hour', 'price', // prepare: Packet.hourAdena / Packet.moneyPrice (labour, trips, valuation)
+        'wallet' // the planner's sameInput: adena (sameDecisionInput)
+    ], [
+        'bag', // prepare: every inventory row's free amount (WealthCraftDecision.freeAmount)
+        'reservations', // prepare: reservations(state)
+        'market', // prepare: board reads (sourceToken item revisions)
+        'reserve' // prepare: Packet.survivalReserve
+    ]),
+    // The town route table (EconomicTrip.prepare, keyed by EconomicTrip.key =
+    // routeInputs): one input per routeInputs field.
+    routeRows: linkOf([
+        'route.activity', // routeInputs: shopping, a trip to a visit, or neither
+        'route.region', // routeInputs: currentRegion on a visit
+        'route.loc', // routeInputs: the bot's point where no trip end or return point stands for it
+        'route.scroll', // routeInputs: TripPayment.hasColdScroll
+        'route.karma', // routeInputs: Karma.closesTowns
+        'route.return', // routeInputs: stats.marketReturn.loc
+        'route.travel' // routeInputs: the accepted trip's town and end
+    ], [], [])
+});
+// What the earning spot search reads of the bag (LINK_INPUTS incomeSearch
+// bagShot, EconomyContext.bagInputs): the shot its consumable prices name
+// (BotHuntEfficiency.consumablePrices: a spiritshot class's blessed or plain
+// one by what it holds) and the kind of shot the fight loads
+// (BotTargetMatchup.shotKind of ColdCombatProfile.shotSupply: none once the
+// charges end; none without a bag, as stateProfiles).
+function shotInputs(state, timestamp) {
+    return [Number(ShotStock.planForState(state)?.selfId) || 0, state.inventory
+        ? invoke('GameServer/Bot/AI/BotTargetMatchup').shotKind(CombatProfile.shotSupply(state, timestamp)) : 0];
+}
+const pointOf = loc => loc ? [Number(loc.locX) || 0, Number(loc.locY) || 0, Number(loc.locZ) || 0] : null;
+// Every link input's version on a state, by LINK_INPUTS name: a digest of the
+// input's value (no counter, no state identity), continuous ones the value
+// itself. view: the state's stateView (the held verdict's reads); spots: the
+// catalogue the search reads (a spot without a center reads the bot's point);
+// board: the board mirror (ownLines; null without one). Diagnostics and tests
+// only: it reads the risk marks, the samples, the gear assessment and the route
+// inputs on each call.
+function inputVersions(view, state, timestamp, { spots = null, board = null } = {}) {
+    const stats = state.stats || {}, kits = view.kitHashes || [];
+    const spot = spots ? invoke('GameServer/Bot/AI/SpotIndex').spotById(spots, state.spotId) : null;
+    const Gear = invoke('GameServer/Bot/AI/PersonalGearProgression');
+    const excluded = invoke('GameServer/Bot/Population/SpotRiskPolicy').excludedSpotIdsForStates([state]);
+    const sampled = new Set(Hunt.sampledRows(state, timestamp).map(row => String(row.spotId)));
+    return {
+        'kit.class': hash([kits[0], kits[1]]), 'kit.level': kits[2], 'kit.worn': kits[3], 'kit.hennas': kits[4],
+        'kit.skills': kits[5], 'kit.capture': kits[6],
+        craft: hash([view.craftLevel, view.craftStationId ?? null, view.workshop?.entries ?? null]),
+        crafter: view.craftLevel > 0, closesTowns: view.closesTowns,
+        recipes: view.recipes ? hash(view.recipes) : null,
+        party: hash([view.party?.partyId, view.party?.role]),
+        spot: hash([state.spotId ?? null, spot?.center ? null : pointOf(state.loc)]),
+        samples: hash([...sampled].sort()),
+        exclusions: hash([...excluded].map(String).sort()),
+        bagShot: hash(shotInputs(state, timestamp)),
+        economic: invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').economicHunt(state),
+        adventurer: Gear.adventurer(state), required: !!Gear.assess(state).required,
+        weight: invoke('GameServer/Bot/Economy/SpotEconomics').moneyWeight(state),
+        hour: Number(Packet.hourAdena(stats.money)) || 0, price: Number(Packet.moneyPrice(stats.money)) || 0,
+        wallet: positive(state.adena), maxMp: Number(state.vitals?.maxMp) || 0,
+        ownLines: board ? Number(board.ownerLines(Number(state.characterId)).length > 0) : null,
+        ...routeVersions(state)
+    };
+}
+// The route table's inputs (EconomicTrip.routeInputs): the whole key (route)
+// and one version per field (LINK_INPUTS routeRows).
+function routeVersions(state) {
+    const route = invoke('GameServer/Bot/Economy/EconomicTrip').routeInputs(state);
+    return { route: hash(route), 'route.activity': route.activity, 'route.region': route.currentRegion, 'route.loc': hash(route.loc),
+        'route.scroll': route.inventory[736].amount, 'route.karma': route.stats.karma,
+        'route.return': hash(route.stats.marketReturn), 'route.travel': hash(route.stats.travel) };
+}
+// The first input of a link that moved between two inputVersions, '' when
+// none: a discrete one by its version, a continuous one outside the answer's
+// own range where it carries one (bounds: name -> [low, high], as the held
+// earning spot's weights), else beyond the relative error (the bot's own, as
+// the observation event reads it).
+function movedInput(link, before, now, error = 0, bounds = null) {
+    const inputs = LINK_INPUTS[link];
+    for (const name of inputs.discrete) if (before[name] !== now[name]) return name;
+    for (const name of inputs.continuous) {
+        const was = Number(before[name]), is = Number(now[name]), range = bounds?.[name];
+        if (range ? !(is >= range[0] && is <= range[1])
+            : !Object.is(was, is) && !(Math.abs(is - was) <= Math.abs(was) * error)) return name;
+    }
+    return '';
+}
 // The names of the sections raised in wishDirty bits, in table order.
 function sectionNames(bits) {
     const names = [];
@@ -576,5 +711,5 @@ function factEvents(previousFact, current, funding = false, facts = null, planne
 function kitMoved(before, after) {
     return (before?.stats?.wishSections?.build ?? null) !== (after?.stats?.wishSections?.build ?? null);
 }
-module.exports = { FIELD_ACTIVITIES, partyIdOf, moneyReached, goalReached, SECTIONS, COMPUTED, sectionBit, sectionMask, sectionNames, kit, kitMoved, moneyChanged, moneyBound, observationChanged, incomeError,
+module.exports = { FIELD_ACTIVITIES, partyIdOf, moneyReached, goalReached, SECTIONS, COMPUTED, LINK_INPUTS, inputVersions, routeVersions, movedInput, shotInputs, stateView, sectionBit, sectionMask, sectionNames, kit, kitMoved, moneyChanged, moneyBound, observationChanged, incomeError,
     MARKET_WATCH, softEvents, marketCrossed, carrySectionBaseline, baselineIdentity, sample, sampleRows, packSample, observationBaselineValid, bounds, snapshot, semanticFacts, factsOf, relationTargetIds, events, factEvents, occupationPlanned, hash, isEmptyWishPlan, decisionRefusal };

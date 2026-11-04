@@ -1021,15 +1021,10 @@ function newHold(state, found, at, afterGoal = false) {
         economic: IncomeRoute.economicHunt(state), weights: found.weights, bag: bagInputs(state, at),
         moved: null, afterGoal };
 }
-// What the income search reads of the bag (DecisionSections incomeSearch): the
-// shot its consumable prices name (BotHuntEfficiency.consumablePrices: a
-// spiritshot class's blessed or plain one by what it holds) and the kind of
-// shot the fight loads (BotTargetMatchup.shotKind of ColdCombatProfile.shotSupply:
-// none once the charges end; none without a bag, as stateProfiles).
+// What the income search reads of the bag (DecisionSections incomeSearch,
+// its link input bagShot): the shot its prices name and the shot the fight loads.
 function bagInputs(state, timestamp) {
-    const ShotStock = invoke('GameServer/Inventory/ShotStock');
-    return [Number(ShotStock.planForState(state)?.selfId) || 0, state.inventory
-        ? invoke('GameServer/Bot/AI/BotTargetMatchup').shotKind(invoke('GameServer/Bot/Population/ColdCombatProfile').shotSupply(state, timestamp)) : 0];
+    return Sections.shotInputs(state, timestamp);
 }
 function bagMoved(hold, state, timestamp) {
     const bag = bagInputs(state, timestamp);
@@ -1351,11 +1346,13 @@ function heldOptionsOf(held) {
 // What a build and its verdict read beside the held entry: the gear threat,
 // the facts, read once (the held leaf's own trip is read as the field
 // activity it ordered, fieldActivity), and the build's input name.
+// view: the facts' stateView (requestFacts' reads), kept for the link shadow.
 function heldReadsOf(state, deps, held) {
     const gearThreat = GearThreat.prepare(state, deps, held?.gearThreat);
     const current = fieldActivity(state, held?.activity, held?.plan.network?.activity);
-    const facts = requestFacts(current, deps);
-    return { gearThreat, current, facts, key: inputName(facts, gearThreat.mask) };
+    const view = Sections.stateView(current, Providers.recipeIds(current, deps));
+    const facts = Sections.factsOf(view, deps.memory ?? null);
+    return { gearThreat, current, facts, view, key: inputName(facts, gearThreat.mask) };
 }
 // The one verdict on the held build (heldBuildVerdict), collecting: the
 // sections of all its refusals, no held build or an unproved one = every
@@ -1446,6 +1443,129 @@ function advanced(held, verdict, state, deps) {
 // A step by what it does and where, for the health line's repick row: a build after a
 // dropped step that takes it again names two answers to one question that disagree.
 const stepPlace = leaf => `${leaf.activity}|${leaf.kind}|${leaf.itemId}|${leaf.town}`;
+// The decision links' shadow (planning/decision-links/plan.md step 1): what a
+// key on each link's inputs (Sections.LINK_INPUTS) would decide beside what the
+// masks decide today. developerDiagnostics only; no decision reads it. Per bot,
+// on its held entry (held.links, carried to the entry that replaces it, gone
+// with the entry: evicted, forgotten or reset): the inputVersions each link's
+// answer was built on. link:<link>:<outcome>, the key's decision first: rebuilt:<input>
+// both rebuild (the first input that moved); kept:quiet both keep; kept:mask-only
+// the mask rebuilds what the key would keep; rebuilt:key-only:<input> the key
+// would rebuild what the mask keeps (a possibly stale answer today), once per held
+// answer; first / resync: nothing to compare (a first answer, or one made outside
+// a build: a basics read's window search). verify:<same|row|mismatch>: the held
+// answer against a fresh one where the key keeps (row: the same spot or recipe,
+// another income): incomeSearch a fresh select on 1 in 16 kept:quiet reads
+// (untimed: not in link:income:search and the links line's search count; its
+// own time is link:income:verify, its number the verify counts; the spot list,
+// value and matchup counters inside select still count it) and every mask-only
+// search; workshop the planner's answer after a mask-only ask
+// (no fresh answer is at hand where both keep); routeRows none (its key is its
+// inputs: test_economic_trip_marginal reads the table on the full state).
+const linkTotals = {};
+let linkVerifyTick = 0;
+function linkCount(link, outcome) {
+    Diagnostics.count('link', link, outcome);
+    const row = linkTotals[link] ||= { rebuilt: 0, kept: 0, maskOnly: 0, keyOnly: 0, verified: 0, row: 0, mismatch: 0, unjudged: 0 };
+    const [what, why] = outcome.split(':');
+    if (what === 'verify') { row.verified++; if (why !== 'same') row[why]++; }
+    else if (what === 'first' || what === 'resync') row.unjudged++;
+    else { row[what]++; if (why === 'mask-only') row.maskOnly++; else if (why === 'key-only') row.keyOnly++; }
+}
+function linkStats() {
+    const out = { search: IncomeRoute.searchTotals() };
+    for (const [link, row] of Object.entries(linkTotals)) out[link] = { ...row };
+    return out;
+}
+const linkJudged = (rebuiltToday, moved) => moved ? rebuiltToday ? `rebuilt:${moved}` : `rebuilt:key-only:${moved}`
+    : rebuiltToday ? 'kept:mask-only' : 'kept:quiet';
+// The continuous inputs' significance: the bot's own income error, never below
+// a learned bot's (as EconomyContext.weightMoved reads it).
+const linkError = state => Math.max(positive(state.stats?.wishSections?.incomeError), Knowledge.INCOME_ERROR_FLOOR);
+const sameAnswer = (spot, income, freshSpot, freshIncome) => spot !== freshSpot ? 'mismatch'
+    : Object.is(income, freshIncome) ? 'same' : 'row';
+function linkVersions(state, deps, reads, timestamp, board) {
+    const view = reads.view || Sections.stateView(reads.current, Providers.recipeIds(reads.current, deps));
+    return Sections.inputVersions(view, state, timestamp,
+        { spots: deps.spots, board: typeof board?.ownerLines === 'function' ? board : null });
+}
+// A link's own inputs of the versions: what held.links keeps (~30 small values
+// per bot, diagnostics only).
+function linkOwn(link, versions) {
+    const { discrete, continuous } = Sections.LINK_INPUTS[link], own = {};
+    for (const name of discrete) own[name] = versions[name];
+    for (const name of continuous) own[name] = versions[name];
+    return own;
+}
+// The money weights a held answer stands over (EquipmentIncomeRoute.search's
+// weights, as weightMoved reads them): the weight inside [low, high], the own
+// hour exact where the answer reads it, any hour where it does not. held: a hold
+// answer, or the record of one (its weights as searched).
+function weightBounds(held) {
+    const weights = held?.weights;
+    if (!weights) return null;
+    return { weight: [weights.low, weights.high], hour: weights.hour === null ? [-Infinity, Infinity] : [weights.hour, weights.hour] };
+}
+// The earning spot search at a build, served or rebuilt. hold: the build's
+// (its plan's, or the foundation's); today it searched when its answer is of
+// this moment (a section or bag search, the window, the goal or the weight).
+function incomeShadow(state, deps, seen, hold, versions, timestamp, board) {
+    const answer = hold?.moved || hold;
+    if (!answer) return;
+    const before = seen.incomeSearch;
+    const spot = spotOf(answer.route), income = answer.route?.row?.income ?? null;
+    if (before?.at === answer.at) {
+        const moved = Sections.movedInput('incomeSearch', before.versions, versions, linkError(state), weightBounds(answer));
+        if (moved) {
+            if (!before.stale) linkCount('incomeSearch', linkJudged(false, moved));
+            before.stale = true;
+            return;
+        }
+        linkCount('incomeSearch', 'kept:quiet');
+        if (++linkVerifyTick % 16) return;
+        const started = performance.now();
+        const fresh = IncomeRoute.untimedSelect(state, { spots: deps.spots, mode: deps.mode, maxChecks: deps.maxChecks, timestamp,
+            required: GearProgression.assess(state).required,
+            price: pricing(state, personaOf(state, deps), board, timestamp, deps).price });
+        Diagnostics.duration('link:income:verify', performance.now() - started);
+        linkCount('incomeSearch', `verify:${sameAnswer(spot, income, spotOf(fresh), fresh?.row?.income ?? null)}`);
+        return;
+    }
+    seen.incomeSearch = { at: answer.at, versions: linkOwn('incomeSearch', versions), spot, income, weights: answer.weights };
+    if (!before || answer.at !== timestamp) { linkCount('incomeSearch', before ? 'resync' : 'first'); return; }
+    const moved = Sections.movedInput('incomeSearch', before.versions, versions, linkError(state), weightBounds(before));
+    linkCount('incomeSearch', linkJudged(true, moved));
+    if (!moved) linkCount('incomeSearch', `verify:${sameAnswer(before.spot, before.income, spot, income)}`);
+}
+// The route rows and the workshop at a rebuild. workshop: the step's (deps), a
+// planner answer when it is not the held build's own.
+function buildShadow(state, deps, seen, held, routeKey, workshop, versions) {
+    if (!seen.routeRows) linkCount('routeRows', 'first');
+    else linkCount('routeRows', linkJudged(!!held && held.plan.routeKey !== routeKey, Sections.movedInput('routeRows', seen.routeRows, versions)));
+    seen.routeRows = linkOwn('routeRows', versions);
+    if (!workshop || workshop === held?.plan.workshop) return;
+    const pending = seen.workshop?.verify ? seen.workshop.answer : null;
+    if (pending) linkCount('workshop', `verify:${sameAnswer(pending.recipeId, pending.incomePerHour, workshop.recipeId, workshop.incomePerHour)}`);
+    seen.workshop = { versions: linkOwn('workshop', versions), answer: workshop };
+}
+// The workshop at the step's look (heldWorkshop): kept, the held answer; null, asked.
+function workshopShadow(state, deps, held, reads, kept) {
+    const answer = held.plan.workshop;
+    // An unknown workshop is asked whatever moved: no link decision.
+    if (!answer || answer.known === false || !Number.isFinite(answer.incomePerHour)) return;
+    const timestamp = Number(deps.timestamp || Date.now());
+    const versions = linkVersions(state, deps, reads, timestamp, deps.board);
+    const seen = held.links ||= {}, before = seen.workshop;
+    if (before?.answer !== answer) {
+        linkCount('workshop', before ? 'resync' : 'first');
+        seen.workshop = { versions: linkOwn('workshop', versions), answer };
+        return;
+    }
+    const moved = Sections.movedInput('workshop', before.versions, versions, linkError(state));
+    if (!moved || !kept || !before.stale) linkCount('workshop', linkJudged(!kept, moved));
+    if (moved && kept) before.stale = true;
+    before.verify = !kept && !moved;
+}
 function buildForState(state, deps) {
     const diagnostic = Diagnostics.active();
     const inputSequence = Number(state.stats?.decisionSeq || 0);
@@ -1477,6 +1597,8 @@ function buildForState(state, deps) {
                 caller: deps.caller || 'economy_context', trigger: deps.trigger || 'request', phase: 'wish_context',
                 reason: held.key === key ? 'hit_same_inputs' : 'hit_own_result', outcome: 'held',
                 revision: state.simulation?.revision, wallet: positive(state.adena) });
+            entry.links ||= held.links || {};
+            incomeShadow(state, deps, entry.links, entry.plan.hold, linkVersions(state, deps, reads, timestamp, sourceBoard), timestamp, sourceBoard);
         }
         if (keeps) {
             entry.gearThreat = gearThreat;
@@ -1610,6 +1732,13 @@ function buildForState(state, deps) {
         && workshop.cycleHours > 0 && Number.isFinite(workshop.cycleHours);
     if (productive) { watch(workshop.productId); context.hourAdena = Math.max(context.hourAdena, workshop.incomePerHour); }
     context.routeKey = Trip.key(state); context.routeRows = fullRoute(deps.routeRows) ? deps.routeRows : null;
+    // The link shadow's record, carried to the entry this build keeps.
+    const links = diagnostic ? held?.links || {} : undefined;
+    if (diagnostic) {
+        const versions = linkVersions(state, deps, reads, timestamp, sourceBoard);
+        incomeShadow(state, deps, links, base.hold, versions, timestamp, sourceBoard);
+        buildShadow(state, deps, links, held, context.routeKey, Object.hasOwn(deps, 'workshop') ? deps.workshop : null, versions);
+    }
     const tripHour = context.hourAdena;
     context.trip = deps.tripCost || Trip.preparedReader(context.routeRows || [], { hourAdena: tripHour });
     const readSpot = SpotEconomics.create(state, { ...deps, timestamp, persona, price, deathHours: context.deathHours,
@@ -1785,7 +1914,7 @@ function buildForState(state, deps) {
         remember(cache, actorKey, { key,
             heldUnits: ColdEconomyDecision.heldAtDecisionOf(leaf, state),
             craftReservations: leaf?.activity === 'crafting' ? CraftInputReservations.heldCraftRows(state, plan.network.craftNeeds) : undefined,
-            readIds: Int32Array.from(readIds), plan, stateRef: new WeakRef(state), gearThreat,
+            readIds: Int32Array.from(readIds), plan, stateRef: new WeakRef(state), gearThreat, links,
             // A quiet build sees only the followed gear: a list it shortened is no review.
             gearFollowed: heldGear ? held.gearFollowed : rootItems(context.projection), goalRevision: deps.goalRevision,
             activity: state.activity,
@@ -2296,6 +2425,7 @@ function heldWorkshop(state, deps, eventVerdict) {
     // the build: its reads (the build key among them) are taken fresh then.
     if (!kept && eventVerdict.collected) eventVerdict.collected.reads = null;
     if (Diagnostics.active()) {
+        workshopShadow(state, own, held, reads, kept);
         if (kept) Diagnostics.count('workshop', 'kept', verdict.valid ? 'held_valid' : 'lifecycle');
         // The served held build keeps an unknown or another route's workshop.
         else if (verdict.valid) countUnknownWorkshop(state);
@@ -2338,5 +2468,5 @@ function reset() {
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
 module.exports = { quietGearBuildCount: () => quietGearBuilds, buildDoors: () => ({ ...doors, ...Agenda.counts() }), countDoor,
-    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), incomeHoldStats, holdEndsAt, heldIncomeRoute, incomeMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockFor, stockReader, keptKit, keptTargets, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
+    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), incomeHoldStats, linkStats, holdEndsAt, heldIncomeRoute, incomeMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockFor, stockReader, keptKit, keptTargets, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
     craftIncome };
