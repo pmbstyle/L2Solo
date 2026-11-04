@@ -53,6 +53,7 @@ items are added or removed by priority at any time.
 |---|---|---|---|
 | Stackable flag flipped on 222 items, mostly quest items (pass4 D-5); check save rows merge | mid | low |  |
 | Deep-blue adena at x10/x50 about rate× too rare: `ProgressionRates` ~214 divides the adena rate by the drop rate, a Lisvus step of the seeded/spoil path only (L2Attackable ~966); categorized adena has no divide (~1096-1118). Also cold takes the killer's level for the gap, hot the highest attacker's | mid | low |  |
+| Spot comfort: a player farms where one bar lasts many kills; a spot where he sits after nearly every kill he leaves (or seeks a party). Spot value per hour already pays for rest time (`kph` from simulated hours), but nothing scores kills per bar: one long rest and a sit per kill cost the same hour (`SpotValueTable`/`LevelingRoutes.scoreSpot`, gate `BotTargetMatchup.pullVerdict` judges one pull) | mid | low |  |
 | D-S shots only via craft/board (decided): make sure bots supply them | high | low |  |
 | Trade meetings with fighting bots (`fetchAttacks`), moving buffers (`fetchMoves`) | mid | low |  |
 | Archer bots ignore Long Shot; pet ticket "inventory full" at 80 | mid | low |  |
