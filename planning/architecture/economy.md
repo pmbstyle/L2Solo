@@ -156,8 +156,10 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
   `invalid_afk_trade_source` 55 (a plan names a stack row that changed; open: the plan's craft step runs before its
   sale and can consume a listed stack, so part of these may be gone with the craft kit reserve below) and
   `economy_plan_need_changed` 11 (a real staleness, counted). The plan's sale keeps the kit of the craft it selects
-  (`ColdEconomyPlan.prepare` → `ItemDisposition.recipeInputAmounts`), since `BotAfkMarketService.executePlan` runs
-  `plan.shot` first.
+  (`ColdEconomyPlan.prepare` → `productionKit` → `ItemDisposition.saleReservations`), since
+  `BotAfkMarketService.executePlan` runs `plan.shot` first. `saleReservations` owns the sum: reserves of different
+  purposes add (gear plan inputs + one production kit, as main's listing check does), the planned kit and the setup in
+  progress are one purpose (the larger per item).
 ## Open questions
 
 1. ECO-1: worker `executePlan` only, with `reconcile`/`open` reduced to executors? — decided 2026-11-03: yes (ECO-1).

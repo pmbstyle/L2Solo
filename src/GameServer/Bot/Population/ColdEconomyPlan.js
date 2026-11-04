@@ -106,9 +106,10 @@ function* prepareNative(state, economy, options) {
     const purchase = canAct && !options.showcaseOnly
         ? Ready.purchase(state, economy, options.board) || Ready.clanCraftPurchase(state, economy, options.board) : null;
     // Main runs the plan's craft (plan.shot) before its sale: the sale keeps
-    // that craft's kit, which the craft consumes or holds (productionInputAmounts).
+    // that craft's kit, which the craft consumes or holds (productionInputAmounts),
+    // on top of the gear plan's reserve (ItemDisposition.saleReservations).
     const saleInput = Listing.ownSaleInputs(state, own, { ...options, economy,
-        reserved: Listing.maxReserved(options.reserved, shotKit(state, options)) });
+        productionKit: shotKit(state, options) });
     const sale = Listing.evaluate(saleInput.state, saleInput.options);
     // A profitable surplus sale uses a meeting or a backed shop in the town
     // already reached. Leave the selected purchase/focus intact for review.

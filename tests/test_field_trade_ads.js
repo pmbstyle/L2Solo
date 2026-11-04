@@ -63,6 +63,12 @@ const id = 730062;
                 assert(crafting.value.shot?.wealth, 'the plan runs the selected craft');
                 assert(skins(prepared.value) > 500 - 384, 'fixture: without a craft the skins are offered');
                 assert(skins(crafting.value) <= 500 - 384, 'the craft kit is not offered by the same plan');
+                // A gear plan that needs the same input keeps its share on top
+                // of the kit, as main's listing check counts them.
+                const shared = Plan.prepare(state, economy, { ...options, preparedReservations: { 1867: 100 },
+                    preparedCraft: { wealth: { recipeId: 25, batches: 64 } } });
+                let both; do { both = shared.next(); } while (!both.done);
+                assert(skins(both.value) <= 500 - 384 - 100, 'the gear share and the craft kit are both kept');
             } finally { Crafters.isServiceCrafter = crafter; }
         } finally { Roll.roll = roll; }
         assert(prepared.value.sell.length > 0, 'the native field owner selects WTS without a supplied buyer forecast');
