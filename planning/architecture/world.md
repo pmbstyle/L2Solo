@@ -77,7 +77,8 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
   A request with no usable way (an empty path, one the target outran by 120, a pool error; `Npc` `pathFailed`, counted
   `noPath`) retries after 0.5/1/2/4 s; the mob keeps hating until the 2 min attack timeout drops that target (Lisvus).
 - **Broadcast:** `dataSendToMeAndOthers` → `World.fetchVisibleRealPlayers` (the index's real-player cells +
-  `inClientView`; no hot bot is walked); bots `BotSession.dataSendToOthers` (real sockets only).
+  `inClientView`; no hot bot is walked); bots `BotSession.dataSendToOthers` (real sockets only). NPC vitals
+  (`BroadcastVitals`): the same query cut to 3500, one StatusUpdate for all (C4 informs the players targeting it).
 
 ## Canonical owners
 
@@ -116,7 +117,7 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
 - **WOR-4 half-migration: spatial index vs raw `World.user.sessions` scans.** Always-true flags guard legacy branches
   (`World.actorSpatialIndex`); `typeof World.fetchVisibleRealPlayers === 'function'`
   guards (`UpdateEnvironment`, `Cooldown`, `BotBrain`, sessions); raw scans in `MoveTo`, `SpawnNpcs.notifyNearby`,
-  `BroadcastVitals`, `NpcDied`, `Cooldown`, `Speak`, `AdminGiveAdena`, `fetchUser`/`fetchUserByName`.
+  `BroadcastVitals` (summon owner), `NpcDied`, `Cooldown`, `Speak`, `AdminGiveAdena`, `fetchUser`/`fetchUserByName`.
 - **WOR-5 dead: worker actor-publication pipeline:** `World/MainActorPublicationSource` (test/bench
   only), `notifyActorPublication`/`subscribeActorPublications`, `Population/ColdActorTableReceiver` (no importer),
   actor-read gates in `CharacterLocationIndex`/`CharacterActorSources`/`TableMirror`; the worker filters the `actors`

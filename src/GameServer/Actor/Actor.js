@@ -160,20 +160,24 @@ class Actor extends ActorModel {
             invoke(path.actor).calculateStats.refresh(this.session, this);
         }
 
-        this.session.dataSendToMe(
-            ServerResponse.statusUpdate(creature.fetchId(), [
-                { id: 0x9, value: creature.fetchHp   () },
-                { id: 0xa, value: creature.fetchMaxHp() },
-                { id: 0xb, value: creature.fetchMp   () },
-                { id: 0xc, value: creature.fetchMaxMp() },
-                { id: 0x21, value: creature.fetchCp?.() || 0 },
-                { id: 0x22, value: creature.fetchMaxCp?.() || 0 },
-                ...(creature === this ? [
-                    { id: 0x0e, value: this.backpack.fetchTotalLoad() },
-                    { id: 0x0f, value: this.fetchMaxLoad() }
-                ] : []),
-            ])
-        );
+        this.session.dataSendToMe(Actor.vitalsPacket(creature, creature === this ? this : null));
+    }
+
+    // A creature's vitals as StatusUpdate, the same bytes for every viewer
+    // (BroadcastVitals builds it once); the actor's own also carries its load.
+    static vitalsPacket(creature, self = null) {
+        return ServerResponse.statusUpdate(creature.fetchId(), [
+            { id: 0x9, value: creature.fetchHp   () },
+            { id: 0xa, value: creature.fetchMaxHp() },
+            { id: 0xb, value: creature.fetchMp   () },
+            { id: 0xc, value: creature.fetchMaxMp() },
+            { id: 0x21, value: creature.fetchCp?.() || 0 },
+            { id: 0x22, value: creature.fetchMaxCp?.() || 0 },
+            ...(self ? [
+                { id: 0x0e, value: self.backpack.fetchTotalLoad() },
+                { id: 0x0f, value: self.fetchMaxLoad() }
+            ] : []),
+        ]);
     }
 }
 

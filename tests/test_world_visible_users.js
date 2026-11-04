@@ -4,6 +4,8 @@ require('../src/Global');
 
 const World = invoke('GameServer/World/World');
 const BotSession = invoke('GameServer/Bot/BotSession');
+const Actor = invoke('GameServer/Actor/Actor');
+const broadcastVitals = invoke('GameServer/Npc/Generics/BroadcastVitals');
 const Frame = invoke('Packet/Frame');
 
 let actorId = 9800000;
@@ -44,12 +46,22 @@ function recording(session) {
     session.written = [];
     session.socket = { write: (buffer) => session.written.push(buffer) };
     session.dataSendToMe = (packet) => session.sent.push(packet);
+    session.actor.statusUpdateVitals = () => assert.fail('a viewer is sent the packet, not asked to build it');
     return session;
 }
 const farPlayer = {
     accountId: 'player_far',
     fetchAccountId() { return this.accountId; },
     actor: actorAt(3600, 0)
+};
+const npc = {
+    fetchId: () => 1900001,
+    fetchLocX: () => 0,
+    fetchLocY: () => 0,
+    fetchHp: () => 812,
+    fetchMaxHp: () => 1000,
+    fetchMp: () => 40,
+    fetchMaxMp: () => 90
 };
 
 try {
@@ -77,6 +89,27 @@ try {
     assert.deepStrictEqual(farPlayer.written, [Frame.pack(say)]);
     assert.deepStrictEqual([boundaryPlayer, offlinePlayer].map(session => session.written.length), [0, 0],
         'the view boundary and offline players get no bot packet');
+    // An NPC's vitals: one StatusUpdate, the bytes an actor's own update would build, to the
+    // real players within 3500 only (farPlayer sees it at 3600 but is outside the band).
+    for (const session of [visiblePlayer, farPlayer]) session.written = [];
+    broadcastVitals(npc);
+    assert.strictEqual(visiblePlayer.sent.length, 1, 'a real player near the NPC gets its vitals');
+    assert.deepStrictEqual(visiblePlayer.sent[0], Actor.vitalsPacket(npc));
+    assert.deepStrictEqual([farPlayer, boundaryPlayer, offlinePlayer].map(session => session.sent.length), [0, 0, 0],
+        'players beyond 3500 and offline ones get no vitals');
+    const nearPlayer = recording({
+        accountId: 'player_near',
+        fetchAccountId() { return this.accountId; },
+        actor: actorAt(0, 3499)
+    });
+    World.insertUser(nearPlayer);
+    try {
+        broadcastVitals(npc);
+        assert.deepStrictEqual(nearPlayer.sent, [visiblePlayer.sent[1]], 'every viewer gets the same packet');
+        assert.deepStrictEqual(nearPlayer.sent[0], Actor.vitalsPacket(npc));
+    } finally {
+        World.removeUser(nearPlayer);
+    }
 } finally {
     for (const session of [source, visiblePlayer, visibleBot, boundaryPlayer, offlinePlayer, farPlayer]) World.removeUser(session);
     World.user = originalUser;
