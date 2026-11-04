@@ -17,12 +17,17 @@ Scope: `Actor`, `Skills`, `Effects`, `Combat`, `Npc`, `RaidBoss`, `Pets`, `Formu
   `applyRemoteCastEffect`, adapters `prepareMeleeHit`/`prepareNpcMeleeHit`/`prepareSkillDamage`, `hit()` dispatch.
 - **Request gate:** `Actor/Generics/{AttackRequest,AttackExec,SkillRequest,SkillExec}` — alive, restrictions, queue,
   peace zone. Hot bots use it too.
-- **Resurrection admission:** `Attack.validateResurrectionTarget` uses `isValidSkillTarget` for `corpse_player`;
-  `SkillExec` calls it before planning an approach and `Attack.remoteHit` rechecks at cast start, before reuse and
-  MP payment. A living target receives C4 message 109 and ActionFailed even outside cast range or while rooted.
-  `corpse_ally` remains caster-centred. Cost on main: one target predicate per rejected attempt, two per accepted
-  single-corpse player request (lookup and cast start); other targets only check the target kind. No new
-  per-tick work, per-bot state, DB writes or worker messages. Cold combat and measured tables are unchanged.
+- **Restricted target admission:** `Attack.validateSkillTarget` uses `isValidSkillTarget` for `corpse_player`
+  and single-target `C4SkillRules.undeadOnly` skills. `SkillExec` calls it before planning an approach and
+  `Attack.remoteHit` rechecks at cast start, before shots, reuse and MP payment. A living resurrection target or
+  non-undead target of an undead-only skill receives C4 message 109 and ActionFailed even outside cast range or
+  while rooted. Undead NPCs and summons are eligible. `corpse_ally` and skills with undead-aura metadata remain
+  caster-centred; `isValidSkillTarget` filters living bystanders while preserving ordinary enemy eligibility.
+  Direct effects retain their execution guard. Requiem's missing aura metadata remains CMB-29.
+  Cost on main: one target predicate per rejected attempt, two per accepted restricted request (lookup and cast
+  start), and one undead trait check per candidate of an undead aura. Other requests check only the target kind
+  and existing semantic flag. No new per-tick work, per-bot state, DB writes or worker messages. Cold combat,
+  its existing undead skill selection and measured tables are unchanged.
 - **Item-skill casts** (scrolls, resurrection items, pet summon, drain soul, sow): `Backpack.castItemSkill` on the
   caster's `attack.queueTimer`, so whatever cancels a cast cancels it and it never lands on another character; the item
   is spent at cast start (Lisvus); writes go under the bag owner (`Backpack.ownerId`). A hit breaks only a magic cast
@@ -162,6 +167,9 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
   nuke gives no owner hate in a pet fight, while hot hostile casts add one before their success roll. Cold currently
   resolves secondary debuffs only on damaging turns; standalone debuff effects are not resolved there. Route cold cast
   engagement through `C4SkillRules.provokesNpc` when this cold fight rule is aligned (changes the measured fights).
+- **CMB-29 Requiem is missing its aura shape.** Lisvus skill 1049 is `TARGET_AURA_UNDEAD`, but
+  `C4SkillRules` preserves only `undeadOnly`, not `sourceTarget` or `radius`. Native requests still select a single
+  enemy; its execution-only semantic test does not pin caster-centred casting or nearby aggro removal.
 
 ## Open questions
 

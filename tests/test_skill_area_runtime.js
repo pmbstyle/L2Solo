@@ -293,4 +293,34 @@ assert.strictEqual(stunVictim.fetchHp(), 967, 'a resisted secondary stun must pr
 assert.deepStrictEqual(debuffSession.packets.filter(packet => packet?.[0] === 0x64).map(packet => packet.readInt32LE(1)),
     [158, 35], 'caster failure and damage feedback must both arrive when only the secondary effect resisted');
 
+const Store = invoke('GameServer/Effects/EffectStore');
+const holyAuraData = require('../data/Skills/Active/active.json').find(row => row.selfId === 107);
+for (const hasUndead of [true, false]) {
+    const auraCaster = actor(), auraSession = session(auraCaster);
+    const living = npc(1005020, 50, 0), undead = npc(1005021, 100, 0), neutral = npc(1005022, 75, 0);
+    living.fetchUndead = () => false;
+    undead.fetchUndead = () => true;
+    neutral.fetchUndead = () => true;
+    neutral.fetchAttackable = () => false;
+    const aura = new SkillModel({ selfId: 107, ...holyAuraData.template, ...holyAuraData.time, ...holyAuraData.levels[0] });
+    World.fetchNpcsInRadius = () => hasUndead ? [living, undead, neutral] : [living, neutral];
+    Math.random = () => 0;
+    try {
+        attack.remoteHit(auraSession, auraCaster, aura);
+        assert(auraSession.packets.some(packet => packet[0] === 0x48), 'an undead aura must cast from its living caster');
+        assert.strictEqual(auraCaster.mp, 1000 - aura.fetchConsumedMp(), 'an undead aura pays MP even without eligible targets');
+        assert.strictEqual(living.enteredCombat, 0, 'an undead aura must not provoke living monsters');
+        assert.strictEqual(Store.hasDebuff(living, 'root'), false, 'Holy Aura must not root living monsters');
+        assert.strictEqual(neutral.enteredCombat, 0, 'an undead aura must preserve ordinary enemy eligibility');
+        assert.strictEqual(Store.hasDebuff(neutral, 'root'), false, 'Holy Aura must not root non-hostile undead');
+        assert.strictEqual(Store.hasDebuff(undead, 'root'), hasUndead, 'Holy Aura must still root nearby undead');
+        assert(!auraSession.packets.some(packet => packet[0] === 0x64 && [109, 158].includes(packet.readInt32LE(1))),
+            'living bystanders and an empty undead aura must not report invalid target or a resisted effect');
+    } finally {
+        Store.remove(undead, 'root');
+        World.fetchNpcsInRadius = originalFetchNpcsInRadius;
+        Math.random = originalRandom;
+    }
+}
+
 console.log('Skill area runtime checks passed');

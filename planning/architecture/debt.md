@@ -6,6 +6,7 @@ Index across areas; details and evidence in each area file (ids: AI, POP, ECO, C
 Add a line when you find a tail you do not fix. Delete it when it is paid (the area file states the new rule).
 
 - Cold fights credit damage hate only, so a resisted offensive cast does not engage its caster as hot does (CMB-28).
+- Requiem (1049) lacks its C4 undead-aura target shape and radius, so it still resolves as a single-target skill (CMB-29).
 - Combat lint debt: skill 4080 is defined twice in `C4SkillRules`; `C4SkillEffects.applyBalanceLife` has an unused
   `actor` argument. Check the duplicate skill against C4 before removing a definition.
 

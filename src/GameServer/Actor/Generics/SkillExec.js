@@ -36,7 +36,7 @@ function skillExec(session, actor, data) {
     function scheduleCast(target, callback, options) {
         // Target lookups and approaches outlive the request's initial action
         // check. A different request may have started casting or swinging.
-        if (!canStartSkill(session, actor, data) || !actor.attack.validateResurrectionTarget(session, actor, target, skill)) return;
+        if (!canStartSkill(session, actor, data) || !actor.attack.validateSkillTarget(session, actor, target, skill)) return;
         actor.automation.scheduleAction(session, actor, target, skill.fetchDistance(), () => {
             if (canStartSkill(session, actor, data)) callback();
         }, options);

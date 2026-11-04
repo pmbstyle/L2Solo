@@ -321,7 +321,7 @@ class Attack {
             invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
             return;
         }
-        if (!this.validateResurrectionTarget(session, actor, creature, skill)) return;
+        if (!this.validateSkillTarget(session, actor, creature, skill)) return;
 
         if (actor.canUseSkill?.(skill) === false) {
             invoke('GameServer/Bot/AI/BotActionFeedback').record(session, actor, creature, skill, 'rejected', 'reuse');
@@ -842,10 +842,13 @@ class Attack {
         return this.isValidSkillTarget(target, skill, actor);
     }
 
-    // Both approach admission and cast start use the same corpse rule and
-    // refusal. Corpse-ally skills use the living caster as their area centre.
-    validateResurrectionTarget(session, actor, target, skill) {
-        if (skill.fetchTargetKind?.() !== 'corpse_player' || this.isValidSkillTarget(target, skill, actor)) return true;
+    // Lisvus rejects restricted single targets before approach and casting.
+    // Auras instead use the caster as centre and filter their affected targets.
+    validateSkillTarget(session, actor, target, skill) {
+        const semantic = skill.fetchSemantic?.();
+        const restricted = skill.fetchTargetKind?.() === 'corpse_player'
+            || (semantic?.undeadOnly && semantic.sourceTarget !== 'aura');
+        if (!restricted || this.isValidSkillTarget(target, skill, actor)) return true;
         ConsoleText.transmit(session, ConsoleText.caption.incorrectTarget);
         session.dataSendToMe(ServerResponse.actionFailed());
         invoke('GameServer/Bot/AI/BotActionFeedback').record(session, actor, target, skill, 'rejected', 'invalid_target');
@@ -857,6 +860,16 @@ class Attack {
     isValidSkillTarget(target, skill, actor = null) {
         if (!target) return false;
         const targetKind = skill.fetchTargetKind?.();
+
+        const semantic = skill.fetchSemantic?.();
+        if (semantic?.undeadOnly) {
+            if (target.fetchUndead?.() !== true) return false;
+            // TARGET_UNDEAD permits undead NPCs and summons. Auras also
+            // require the ordinary enemy eligibility checked below.
+            if (semantic.sourceTarget !== 'aura') {
+                return target.state?.fetchDead?.() !== true && target.isDead?.() !== true;
+            }
+        }
 
         if (targetKind === 'corpse_mob') {
             return target.fetchAttackable?.() === true && target.isDead?.() === true;
