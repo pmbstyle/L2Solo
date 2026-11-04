@@ -746,9 +746,9 @@ function occupationFor(state, timestamp, options = {}, mode = 'occupation') {
         return answer;
     }
     const recipes = options.recipeKnowledge || recipeKnowledgeOf(state);
-    return request({ state, sourceState, timestamp, assetsKey: assetsKey(state),
-        // The party goal query passes its own (main's) escrow; else the board's sum.
-        buyOrderEscrow: options.buyOrderEscrow ?? escrowFor(state.characterId),
+    // The party goal query passes its own (main's) escrow; else the board's sum.
+    const buyOrderEscrow = options.buyOrderEscrow ?? escrowFor(state.characterId);
+    return request({ state, sourceState, timestamp, assetsKey: assetsKey(state), buyOrderEscrow,
         knownShotRecipes: recipes.knownShotRecipes || [], recipeBook: recipes.recipeBook, stock: options.stock || null, economy,
         sourceReady: tables.ready('board') && tables.ready('market'), mode, routeKey, routeRows });
 }
@@ -757,6 +757,18 @@ function occupationFor(state, timestamp, options = {}, mode = 'occupation') {
 function saleHold(characterId) {
     const record = kernel?.states.get(Number(characterId));
     return record ? (record.saleHold ||= new Map()) : null;
+}
+// A step's action ask: the planner's answer (plan) and the facts the ask read
+// (ColdEconomyPlan.actionBaseline; null for a cancelled job). The step carries
+// the facts of its last ask to its commit (projectResolve's actionBaseline,
+// the kernel's onCommitAck): they become the bot's baseline only once main
+// committed the step, so a dropped step asks again on the same edge.
+async function askAction(state, timestamp, options) {
+    const id = Number(state.characterId);
+    const baseline = ColdEconomyPlan.actionBaseline(state,
+        { buyOrderEscrow: escrowFor(id), ownLines: boardReady()?.ownerLines(id) || [] });
+    const plan = await occupationFor(state, timestamp, options, 'action');
+    return { plan, baseline: plan === null || plan && Object.hasOwn(plan, 'economyPlan') ? baseline : null };
 }
 // A clan craft's selected material can be independent of the current wish.
 // Review only an executable indexed quote, once per change of its facts
@@ -804,13 +816,13 @@ async function refreshCraftPacket(state, timestamp, refreshed) {
     if (mp === preparedMp || !invoke('GameServer/Bot/AI/BotRoles').shouldRestForMana(state)
         && WealthCraftPolicy.sameCraftMp(CraftEligibility.craftLevelFor(state), preparedMp, mp)) return refreshed;
     const sourceState = kernel.states.get(Number(state.characterId))?.state;
-    const action = await occupationFor(state, timestamp,
-        { stock: refreshed.economy.stock('shots'), economy: refreshed.economy, caller: 'craft_mp' }, 'action');
+    const { plan: action, baseline } = await askAction(state, timestamp,
+        { stock: refreshed.economy.stock('shots'), economy: refreshed.economy, caller: 'craft_mp' });
     if (!action?.economyPlan || kernel.states.get(Number(state.characterId))?.state !== sourceState) return null;
     // Native action preparation has completed on the held graph. Only this
     // physical packet changes; decision clocks and saved original stay put.
     const prepared = ColdEconomyDecision.refreshPreparedCraft(refreshed, action.economyPlan.shot || null, mp);
-    return prepared ? { ...prepared, economyPlan: action.economyPlan } : null;
+    return prepared ? { ...prepared, economyPlan: action.economyPlan, actionBaseline: baseline } : null;
 }
 function cancelRoute(characterId) {
     const id = Number(characterId);
@@ -1200,6 +1212,17 @@ function roundProjection(state, timestamp, writtenAt, plan) {
 function stockEdges(before, after, economy) {
     return ColdEconomyPlan.edges(before, after,
         { buyOrderEscrow: escrowFor(after.characterId), stockFor: (_state, kind) => economy.stock(kind) });
+}
+// The step's after-round action ask: the facts its plan reads that moved since
+// the bot's last action ask (ColdEconomyPlan.edgesSince): this step's own ask
+// before the round (asked), else the last committed step's (the record's
+// actionBaseline, set at its commit ack); a bot with none yet (a new worker)
+// compares against the step's start. stockFor(kind): the kit stock reader.
+function actionEdges(start, after, stockFor, asked = null) {
+    const id = Number(after.characterId);
+    const options = { buyOrderEscrow: escrowFor(id), stockFor: (_state, kind) => stockFor(kind), ownLines: boardReady()?.ownerLines(id) || [] };
+    return ColdEconomyPlan.edgesSince(asked || kernel.states.get(id)?.actionBaseline || ColdEconomyPlan.actionBaseline(start, options),
+        after, options);
 }
 // What the step's decision counts its own item's progress from (a material
 // hunt's), for a leaf that does not carry it.
@@ -1666,7 +1689,8 @@ function startKernel(config = {}) {
             // the round below: that is its one decision point.
             const stepEconomy = lifecyclePlan?.economy || null;
             let economy = stepEconomy, seenEcho = null, refreshed = null, observedDeps = null, economyEdges = null;
-            const ownEscrow = () => escrowFor(state.characterId);
+            // The facts of this step's last action ask (askAction), carried to its commit.
+            let actionBaseline = lifecyclePlan?.actionBaseline || null;
             const base = {
                 ...roundProjection(state, timestamp, writtenAt, lifecyclePlan),
                 ...(crowded ? { checkSections: ROOM_SECTIONS } : {}),
@@ -1695,9 +1719,10 @@ function startKernel(config = {}) {
                         // gate read (edges skips resting, travelling and party
                         // bots, which read none).
                         let stock = refreshed?.economy || prepared.basics || null;
-                        economyEdges = ColdEconomyPlan.edges(state, projected,
-                            { buyOrderEscrow: ownEscrow(), stockFor: (_state, kind) => (stock ||= prepared.basics = EconomyContext.basics(projected, deps)).stock(kind) });
+                        economyEdges = actionEdges(state, projected,
+                            kind => (stock ||= prepared.basics = EconomyContext.basics(projected, deps)).stock(kind), actionBaseline);
                         if (refreshed) refreshed = await refreshCraftPacket(projected, timestamp, refreshed);
+                        if (refreshed?.actionBaseline) actionBaseline = refreshed.actionBaseline;
                         if (refreshed) { if (economyDiagnostics.active()) economyDiagnostics.count('advisory', 'reuse', 'result'); return refreshed.economy; }
                         // The lifecycle's order: the held build's workshop while its
                         // key holds, else the planner's answer (stepWorkshop).
@@ -1720,7 +1745,7 @@ function startKernel(config = {}) {
             const projected = ClanMembershipPolicy.reconcileState(resolved);
             if (stepEconomy) {
                 seenEcho = ColdEconomyDecision.stateEcho(projected);
-                economyEdges = stockEdges(windowStart, projected, stepEconomy);
+                economyEdges = actionEdges(windowStart, projected, kind => stepEconomy.stock(kind), actionBaseline);
             }
             const beforeLevel = Number(state.stats?.classProgressionLevel || 0);
             const beforeClassId = Number(state.stats?.classProgressionClassId ?? state.stats?.classId ?? 0);
@@ -1737,8 +1762,10 @@ function startKernel(config = {}) {
             const kitMoved = DecisionSections.kitMoved(state, projected);
             if (raidPreparing || state.stats?.tradeMeeting) return { state: projected,
                 durable: Object.keys(durable).length ? durable : null, kitMoved };
-            const preparedAction = economyEdges && economy ? await occupationFor(projected, timestamp,
-                { stock: economy.stock('shots'), economy, caller: `edges_${economyEdges}` }, 'action') : null;
+            const asked = economyEdges && economy ? await askAction(projected, timestamp,
+                { stock: economy.stock('shots'), economy, caller: `edges_${economyEdges}` }) : null;
+            const preparedAction = asked?.plan || null;
+            if (asked?.baseline) actionBaseline = asked.baseline;
             const economyPlan = preparedAction?.economyPlan || (stepEconomy ? lifecyclePlan.economyPlan : refreshed?.economyPlan) || null;
             const record = kernel.states.get(Number(projected.characterId));
             // Every sent plan stamps what is still deferred: a complete plan
@@ -1767,6 +1794,8 @@ function startKernel(config = {}) {
                 ...(economy ? { economy } : {}),
                 buffOffer: invoke('GameServer/Bot/Economy/ColdBuffOffer').project(projected,
                     kernel.occupancy.members(projected.spotId, 'physical'), timestamp),
+                // Worker-local: the kernel keeps it for the commit ack.
+                ...(actionBaseline ? { actionBaseline } : {}),
                 ...(economyDecision ? { economyDecision } : {})
             };
         },
@@ -1919,14 +1948,16 @@ function startKernel(config = {}) {
                 const leaf = refreshed.economy.network.activity;
                 // The card holds the plan: the route is read on the input state.
                 const { routedState, route, lastFight } = stepTrip(state, routeTrip(state, standingSpot(state), leaf, timestamp), timestamp);
-                let occupation = routedState.activity === 'hunting' && leaf.activity !== 'hunting'
-                    ? await occupationFor(routedState, timestamp, { economy: refreshed.economy, caller: 'card' }, 'action') : null;
+                const asked = routedState.activity === 'hunting' && leaf.activity !== 'hunting'
+                    ? await askAction(routedState, timestamp, { economy: refreshed.economy, caller: 'card' }) : null;
+                let occupation = asked?.plan || null;
                 if (!occupation?.economyPlan && !refreshed.economyPlan)
                     occupation = await clanMarketPlan(routedState, refreshed.economy, timestamp);
                 rememberWishAdvisory(kernel.states.get(Number(state.characterId)), refreshed.advisory);
                 // economy: worker-local, the step's one decision; the
                 // projection after the round reads it (never posted).
                 return { statsPacket: stepStatsPacket(state, refreshed.economy, timestamp), economy: refreshed.economy,
+                    ...(asked?.baseline ? { actionBaseline: asked.baseline } : {}),
                     ...(occupation?.economyPlan || refreshed.economyPlan
                         ? { economyPlan: occupation?.economyPlan || refreshed.economyPlan } : {}),
                     activityPick: { activity: leaf.activity, spotId: leaf.spotId, npcId: leaf.npcId },
@@ -1982,11 +2013,10 @@ function startKernel(config = {}) {
                 stats: plannedStats
             };
             const { routedState, route, lastFight } = stepTrip(plannedState, routeTrip(plannedState, standingSpot(state), economy.network.activity, timestamp), timestamp);
+            const asked = routedState.activity === 'hunting' && economy.network.activity?.activity && economy.network.activity.activity !== 'hunting'
+                ? await askAction(routedState, timestamp, { economy, caller: 'step' }) : null;
             let preparedOccupation = routedState.activity === 'shopping'
-                ? await occupationFor(routedState, timestamp, { economy, caller: 'step' }, 'showcase')
-                : routedState.activity === 'hunting' && economy.network.activity?.activity
-                    && economy.network.activity.activity !== 'hunting'
-                    ? await occupationFor(routedState, timestamp, { economy, caller: 'step' }, 'action') : null;
+                ? await occupationFor(routedState, timestamp, { economy, caller: 'step' }, 'showcase') : asked?.plan || null;
             if (!preparedOccupation?.economyPlan && !(nullReuse && refreshed?.economyPlan))
                 preparedOccupation = await clanMarketPlan(routedState, economy, timestamp);
             // The review stands aside for a plan of its own: it counts as done, or
@@ -2004,6 +2034,8 @@ function startKernel(config = {}) {
             const stepPlan = {
                 ...(preparedOccupation?.economyPlan || nullReuse && refreshed?.economyPlan
                     ? { economyPlan: preparedOccupation?.economyPlan || refreshed.economyPlan } : {}),
+                // Worker-local: the facts of the step's action ask (projectResolve carries them on).
+                ...(asked?.baseline ? { actionBaseline: asked.baseline } : {}),
                 statsPacket,
                 economy,
                 activityPick: economy.network.activity ? { activity: economy.network.activity.activity,

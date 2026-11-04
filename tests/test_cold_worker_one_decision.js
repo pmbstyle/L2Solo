@@ -59,7 +59,18 @@ module.exports.stepProbe = async (id) => {
         const round = (from, patch, at) => kernel.projectResolve(from, { patch, debug: {}, events: [],
             materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: at + 60000 }, at, plan);
         const rest = await round(projection.state, { activity: 'resting' }, timestamp + 1000);
-        const town = await round({ ...rest.state, activity: 'traveling' }, { activity: 'shopping' }, timestamp + 2000);
+        // The rest ends with nothing moved since the step's action ask.
+        const back = await round(rest.state, { activity: 'hunting' }, timestamp + 1500);
+        const arrive = at => round({ ...rest.state, activity: 'traveling' }, { activity: 'shopping' }, at);
+        const town = await arrive(timestamp + 2000);
+        // Main drops that step: the same arrival asks again. Once main commits
+        // a step that asked on it, the arrival asks nothing more.
+        const again = await arrive(timestamp + 2500);
+        const proposalId = id + ':edges-probe';
+        kernel.inFlight.set(id, { state: kernel.states.get(id).state, startedAt: timestamp, pendingCommitId: proposalId,
+            actionBaseline: again.actionBaseline });
+        kernel.onCommitAck({ results: [{ ok: true, characterId: id, proposalId, state: kernel.states.get(id).state }] });
+        const committed = await arrive(timestamp + 3000);
         const supply = invoke('GameServer/Bot/Economy/DecisionSections').sectionBit('supply');
         const raised = next => [Number(next.state.stats.wishDirty || 0) & supply, Number(next.state.stats.decisionSeq || 0)];
         return { decided, afterRound, activity: state.activity,
@@ -70,7 +81,7 @@ module.exports.stepProbe = async (id) => {
             selectedRoot: plan.economy.network.activity?.rootKey,
             execution: plan.economyPlan?.travel,
             baseline: [plan.statsPacket.wishSections?.at, projection.state.stats.wishSections?.at],
-            edges: projection.economyEdges,
+            edges: projection.economyEdges, laterEdges: [rest.economyEdges, back.economyEdges, town.economyEdges, again.economyEdges, committed.economyEdges],
             card: { updatedAt: projection.economyDecision?.updatedAt, echo: projection.economyDecision?.echo,
                 projectedAt: Number(projection.state.updatedAt || 0), projectedEcho: ColdEconomyDecision.stateEcho(projection.state) } };
     } finally { Economy.forState = original; }
@@ -197,6 +208,37 @@ parentPort.on('message', message => {
         .catch(error => parentPort.postMessage({ probeId: message.msgId, error: error.stack }));
 });`;
 
+// The after-round action ask reads the facts of the bot's last action ask
+// (ColdEconomyPlan.edgesSince): with nothing moved, no ask; each moved fact
+// names its bit.
+{
+    const Plan = invoke('GameServer/Bot/Population/ColdEconomyPlan');
+    const Craft = require('../src/GameServer/Bot/Economy/WealthCraftPolicy');
+    const asked = { characterId: 1, level: 30, activity: 'hunting', currentRegion: 'Giran', adena: 100, vitals: { mp: 300 },
+        inventory: { 1864: { selfId: 1864, amount: 5 }, 1463: { selfId: 1463, amount: 100 } }, stats: { dwarvenCraftLevel: 4 } };
+    const lines = [{ lineId: 7, fills: 1 }];
+    const options = { stockFor: (_state, kind) => kind === 'shots' ? { itemId: 1463, keep: 50 } : null, ownLines: lines };
+    const baseline = Plan.actionBaseline(asked, { ownLines: lines });
+    const since = (patch, extra = {}) => Plan.edgesSince(baseline, { ...asked, ...patch }, { ...options, ...extra });
+    assert.equal(Plan.edges({ ...asked, activity: 'resting' }, asked, options), 8, 'a round from rest to hunt is the round\'s edge');
+    assert.equal(since({}), 0, 'nothing moved since the last action ask: no ask, though a rest ended');
+    assert.equal(since({ activity: 'resting' }), 0, 'a rest asks nothing');
+    assert.equal(since({ inventory: { ...asked.inventory, 1865: { selfId: 1865, amount: 1 } } }), 1, 'new loot');
+    assert.equal(since({ inventory: { ...asked.inventory, 1463: { selfId: 1463, amount: 10 } } }), 2, 'a kit stock threshold');
+    assert.equal(since({ inventory: { ...asked.inventory, 1463: { selfId: 1463, amount: 90 } } }), 0, 'a count inside it');
+    assert.equal(since({ activity: 'shopping' }), 8, 'a shopping town reached');
+    assert.equal(since({ level: 31 }), 16, 'a level');
+    assert.equal(since({ activity: 'dead' }), 32, 'a death');
+    const band = Craft.craftMpBand(4, 300), inside = 300 + 0.5, outside = band[3] ? band[2] + 1 : band[2];
+    assert(Craft.sameCraftMp(4, 300, inside), 'fixture: an MP inside its band');
+    assert.equal(since({ vitals: { mp: inside } }), 0, 'an MP inside the band of the craft checks');
+    assert.equal(since({ vitals: { mp: outside } }), 64, 'the craft MP out of its band');
+    assert.equal(since({ vitals: { mp: outside }, stats: { dwarvenCraftLevel: 0 } }), 0, 'a bot with no craft reads no MP');
+    assert.equal(since({}, { ownLines: [{ lineId: 7, fills: 2 }] }), 128, 'a trade on an own line');
+    assert.equal(since({}, { ownLines: [{ lineId: 7, fills: 1 }, { lineId: 8, fills: 0 }] }), 0, 'a line the bot posted');
+    assert.equal(since({}, { ownLines: [{ lineId: 7, fills: 1 }, { lineId: 8, fills: 1 }] }), 128, 'a trade on a line posted since');
+}
+
 (async () => {
     const id = 710031;
     const world = await createWorld(id);
@@ -250,6 +292,9 @@ parentPort.on('message', message => {
         assert.equal(step.decided, 1, 'a bot without a held decision builds its economy once, before the round');
         assert.equal(step.afterRound, 0, 'the projection after the round builds no economy');
         assert(step.edges & 1, 'the looted scroll is an edge the round acts on with the step decision');
+        assert.deepEqual(step.laterEdges.map(bits => bits & 9), [0, 0, 8, 8, 0],
+            'a rest asks nothing, its end with nothing moved since the last action ask asks nothing, the arrival in town asks, '
+            + 'again after main dropped that step, and not after main committed it');
         assert.equal(step.wishDirty, 0, 'on the hunt the round\'s supply event raises nothing');
         assert.equal(step.seq[1], step.seq[0], 'and the decision sequence stands');
         assert.equal(step.rest[0], 0, 'nor does the round that ends at the rest');
