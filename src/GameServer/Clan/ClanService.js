@@ -563,8 +563,11 @@ const ClanService = {
 
     SMALL_CREST_MAX_BYTES,
     onlineObjectId,
+    // A cold bot's state reached main (every accepted row): its roster row follows
+    // its level, class and name, unless its actor is online (the actor's own
+    // updates own the row then). Unchanged, the row needs no presence test.
     syncColdMember(bot) {
-        if (!bot || onlineSessionByActorId(bot.characterId)?.actor?.fetchIsOnline?.()) return;
+        if (!bot) return;
         if (bot.stats?.clanId !== undefined && Number(bot.stats.clanId) === 0) return;
         const clan = state.clans.get(Number(bot.stats?.clanId)) || this.clanOfMember(bot.characterId);
         const member = clan?.members.find(m => m.id === Number(bot.characterId));
@@ -573,6 +576,8 @@ const ClanService = {
         const classId = Number(bot.stats?.classId ?? member.classId);
         const nameChanged = Boolean(bot.name) && member.name !== bot.name;
         if (member.level === level && member.classId === classId && !nameChanged) return;
+        const World = invoke('GameServer/World/World');
+        if (World.registeredActorById(bot.characterId)?.actor?.fetchIsOnline?.()) return;
         Object.assign(member, { level, classId, online: true });
         if (nameChanged) {
             this.renameMember(bot.characterId, bot.name);
