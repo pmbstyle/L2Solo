@@ -1,4 +1,5 @@
 const assert = require('assert');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const fs = require('node:fs');
 require('./helpers/databaseIsolation');
 const fixture = require('./helpers/isolatedSocialDatabase')('fx-market-case');
@@ -53,9 +54,9 @@ async function run() {
     // MVP-1: money waits only behind a path with a step now, so the decision
     // reads prepared routes (as live does) and the gap is a priced seller.
     assert.notStrictEqual(native.read.activity.activity, 'crafting', 'the unchanged original inputs have no funded synthetic craft leaf');
-    assert(native.captured.queue.some(row => !row.funded && Math.round(row.price) === native.state.stats.money[3]),
+    assert(native.captured.queue.some(row => !row.funded && Math.round(row.price) === Packet.firstUnfundedPrice(native.state.stats.money)),
         'the first unfunded priority with a step now is the money gap, including improvements as well as gear');
-    assert(native.state.stats.money[3] > 0, 'the genuine unfunded priority remains a money gap');
+    assert(Packet.firstUnfundedPrice(native.state.stats.money) > 0, 'the genuine unfunded priority remains a money gap');
     const nativePacket = structuredClone(state.stats.money);
     const productId = 999999;
     const recipe = { type: 'dwarven', recipeId: 90001, level: 4, productId,

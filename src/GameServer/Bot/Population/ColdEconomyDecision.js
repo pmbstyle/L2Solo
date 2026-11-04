@@ -12,6 +12,7 @@ const FailureLog = require('../../../FailureLog');
 const { isMainThread } = require('node:worker_threads');
 const { fnv1a32 } = require('../Fnv1a');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
+const Packet = require('../Economy/StatsPacket');
 const RestartDecision = require('./EconomyRestartDecision');
 const CraftInputReservations = require('../Economy/CraftInputReservations');
 const Sections = require('../Economy/DecisionSections');
@@ -435,10 +436,10 @@ function view(state, decision, deps = {}, preparedBase = null) {
         return base;
     };
     const packet = state.stats?.money;
-    const valid = Array.isArray(packet) && packet.length >= 4;
+    const valid = Packet.hasMoney(packet);
     if (!valid || !basicsKeys) basics();
-    const hourAdena = valid ? Number(packet[0]) : base.hourAdena;
-    const moneyPrice = valid ? Number(packet[1]) : hourAdena > 0 ? 1 / hourAdena : 0;
+    const hourAdena = valid ? Number(Packet.hourAdena(packet)) : base.hourAdena;
+    const moneyPrice = valid ? Number(Packet.moneyPrice(packet)) : hourAdena > 0 ? 1 / hourAdena : 0;
     const known = id => {
         const pairs = decision?.usefulness || [];
         for (let i = 0; i < pairs.length; i += 2) if (pairs[i] === Number(id)) return pairs[i + 1];
@@ -449,12 +450,13 @@ function view(state, decision, deps = {}, preparedBase = null) {
     const activity = decision?.activity || null;
     const wish = decision?.wish ? { object: { kind: kindFor(decision.wish[0]), amount: decision.wish[1] }, price: decision.wish[2] } : null;
     // The hours an urgent want may wait for a better price (PriceDecision.waitRate).
-    const gapHorizonHours = () => !decision?.urgency ? 0 : Number.isFinite(state.stats?.stockTargets?.[6]) ? state.stats.stockTargets[6]
+    const publishedHorizon = () => Packet.gapHorizonHours(state.stats?.stockTargets);
+    const gapHorizonHours = () => !decision?.urgency ? 0 : Number.isFinite(publishedHorizon()) ? publishedHorizon()
         : decision.urgency === URGENCY_SHOTS
         ? basics().stock('shots').targetHours : decision.urgency === URGENCY_POTIONS
             ? basics().stock('potions').targetHours
             : EconomicValuation.stageHours(state, basics().hunt.expPerHour, basics().persona);
-    const own = { state, hourAdena, moneyPrice, survivalReserve: valid ? Number(packet[2]) : base.survivalReserve,
+    const own = { state, hourAdena, moneyPrice, survivalReserve: valid ? Number(Packet.survivalReserve(packet)) : base.survivalReserve,
         board, network: { activity }, activity, wish,
         craftReservations: Object.fromEntries(activity?.craftReservations || []),
         watchList: (decision?.watch || []).map(row => ({ itemId: row[0], amount: row[1], worth: row[2], kind: kindFor(row[3]) })),

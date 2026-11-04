@@ -2,6 +2,7 @@
 const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
+const Packet = require('../Economy/StatsPacket');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
 const EscapePolicy = invoke('GameServer/Bot/AI/BotEscapePolicy');
@@ -66,8 +67,8 @@ function forActor(session, actor, target, options = {}) {
             { dangerMoment: true });
     // Drinking costs the bottle the bot then buys again.
     const heldPotion = potion ? { heal: potion.heal, price: HealingPotionStock.purchasePotionFor(actor).price } : null;
-    // The price of money as EconomyContext holds it (money[1] of its stats packet); unknown leaves the author rule.
-    const packetPrice = Number(economy.statsPacket?.money?.[1] || 0);
+    // The price of money as EconomyContext holds it (its stats packet's moneyPrice); unknown leaves the author rule.
+    const packetPrice = Number(Packet.moneyPrice(economy.statsPacket?.money) || 0);
     const moneyPrice = economy.moneyPrice > 0 ? economy.moneyPrice : packetPrice > 0 ? packetPrice : null;
     const targetId = Number(target.fetchId?.() ?? 0);
     if (moneyPrice === null) Diagnostics.count('danger_moment', 'no_price', 'all');

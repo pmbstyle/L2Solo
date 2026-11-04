@@ -1,5 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -174,8 +175,8 @@ async function run() {
     assert(warriorContext.purchaseBudget(warriorStock.itemId) >= Math.floor(warriorStock.usePerHour) * warriorStock.unitPrice);
     assert(warriorContext.purchaseBudget(warriorStock.itemId) <= warrior.adena);
     assert(warriorContext.purchaseBudget(1) <= warrior.adena - reserve);
-    assert(warriorContext.statsPacket.money.length >= 4 && warriorContext.statsPacket.money.length <= 28);
-    assert(warriorContext.statsPacket.money.every(Number.isFinite) && warriorContext.statsPacket.money[2] > 0);
+    assert(Packet.hasMoney(warriorContext.statsPacket.money) && Packet.fundedRows(warriorContext.statsPacket.money) <= Packet.MONEY_ROWS);
+    assert(warriorContext.statsPacket.money.every(Number.isFinite) && Packet.survivalReserve(warriorContext.statsPacket.money) > 0);
     const Profit = invoke('GameServer/Bot/Economy/CraftProfitPolicy');
     for (const wallet of [0, 20000, 200000, 1000000, 50000000]) {
         const state = { ...warrior, adena: wallet };
@@ -390,7 +391,7 @@ async function run() {
         assert.deepEqual([...raisedBy(carrying(0), carrying(0))], [], 'it raises once');
         // Potions under what the survival drink keeps: a need far from a player.
         const potion = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(published).selfId;
-        const drinks = amount => ({ ...published, stats: { ...published.stats, stockTargets: [0, 0, 0, 0, 0, 10] },
+        const drinks = amount => ({ ...published, stats: { ...published.stats, stockTargets: Packet.stockTargets({ potionId: 0, potionTarget: 0, shotId: 0, shotTarget: 0, shotCurrentAtBuild: 0, potionSurvivalTarget: 10 }) },
             inventory: { ...published.inventory, [potion]: { selfId: potion, amount } } });
         const atDrinks = state => ({ ...state, stats: { ...state.stats, wishSections: { ...state.stats.wishSections, ...Gate.semanticFacts(drinks(12)) } } });
         const onHuntLeaf = (before, after) => Gate.events(atDrinks(before), atDrinks(after), 0, { activity: 'hunting', spotId: published.spotId });

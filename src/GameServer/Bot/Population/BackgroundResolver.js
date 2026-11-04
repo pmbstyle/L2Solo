@@ -1,6 +1,7 @@
 const { coldRestRegenPerTick, restRegenPerTick, requiresManaRecovery, estimateRestMs } = require('./ColdRest');
 const PveEncounter = require('./ColdPveEncounter');
 const ColdSoulCrystal = require('./ColdSoulCrystal');
+const Packet = require('../Economy/StatsPacket');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const DataCache = invoke('GameServer/DataCache');
 const Formulas = invoke('GameServer/Formulas');
@@ -1594,8 +1595,8 @@ const PET_LEFT_ACTIONS = 400;
 // What a fight's danger moment weighs, from the bot's packet (DangerRule); null
 // before its first decision, as a hot body's first ticks (the retreat rule then).
 function coldDangerPrice(stats) {
-    const [deathHours, riskWeight] = stats?.dangerPrice || [];
-    const moneyPrice = Number(stats?.money?.[1]);
+    const deathHours = Packet.deathHours(stats?.dangerPrice), riskWeight = Packet.riskWeight(stats?.dangerPrice);
+    const moneyPrice = Number(Packet.moneyPrice(stats?.money));
     return deathHours >= 0 && moneyPrice > 0 ? { deathHours, riskWeight, moneyPrice } : null;
 }
 

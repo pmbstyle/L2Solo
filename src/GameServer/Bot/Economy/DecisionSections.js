@@ -7,6 +7,7 @@ const FailureLog = require('../../../FailureLog');
 const { fnv1a32 } = require('../Fnv1a');
 const { createHash } = require('node:crypto');
 const PurchaseFunding = require('./PurchaseFunding');
+const Packet = require('./StatsPacket');
 const Karma = require('../../Karma');
 const Warehouse = require('./PersonalWarehouseIndex');
 const ClanSupply = require('../../Clan/ClanSupplyPolicy');
@@ -144,9 +145,9 @@ function kit(state) {
 function fundingMark(state, escrow = 0) {
     const packet = state.stats?.money;
     if (!Array.isArray(packet)) return 0;
-    const wallet = PurchaseFunding.budget(state, escrow) - positive(packet[2]);
+    const wallet = PurchaseFunding.budget(state, escrow) - positive(Packet.survivalReserve(packet));
     const funded = [];
-    for (let at = 5; at < packet.length; at += 3) funded.push(wallet >= positive(packet[at]));
+    for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) funded.push(wallet >= positive(Packet.fundedCumulative(packet, row)));
     // Items or adena on their way from the board are a board-side money fact.
     return hash([wallet >= 0, ...funded, PurchaseFunding.moneyReached(state, escrow), state.incomingPending === true]);
 }
@@ -482,7 +483,7 @@ function events(before, after, escrow = 0, leaf = null, unhuntable = false) {
 // now: the step's view of after (stateView), its supply ids read once.
 function needsOpened(before, after, facts, now) {
     const count = (state, id) => positive(state.inventory?.[id]?.amount);
-    const potionId = now.supply[2][0], floor = Number(after.stats?.stockTargets?.[5]) || 0;
+    const potionId = now.supply[2][0], floor = Number(Packet.potionSurvivalTarget(after.stats?.stockTargets)) || 0;
     const ranOut = now.supply.some(([id]) => count(before, id) > 0 && !count(after, id))
         || count(before, potionId) >= floor && count(after, potionId) < floor;
     const opened = ranOut ? ['need_supply'] : [];

@@ -15,6 +15,7 @@ const Sections = require('./DecisionSections');
 const Reaction = require('./Reaction');
 const GameTime = invoke('GameServer/World/GameTime');
 const Funding = require('./PurchaseFunding');
+const Packet = require('./StatsPacket');
 const SpotRiskPolicy = require('../Population/SpotRiskPolicy');
 const ColdEconomyDecision = require('../Population/ColdEconomyDecision');
 const Network = require('./WishNetwork');
@@ -647,7 +648,7 @@ function spotExcluded(state, leaf) {
     return SpotRiskPolicy.excludedSpotIdsForStates([state]).has(String(leaf.spotId)) ? EXCLUDED : '';
 }
 // A trade leaf's town route: known and its fees payable now.
-const tripOf = (state, deps) => deps.tripCost || Trip.preparedReader(deps.routeRows || [], { hourAdena: positive(state.stats?.money?.[0]) });
+const tripOf = (state, deps) => deps.tripCost || Trip.preparedReader(deps.routeRows || [], { hourAdena: positive(Packet.hourAdena(state.stats?.money)) });
 function tradeRoute(state, leaf, deps) {
     const trip = tripOf(state, deps);
     const route = trip.details?.(leaf.town);
@@ -1282,7 +1283,7 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
             canRestock: true, benefit: positive(bestTable?.deaths) * deathHours, restUse: potionRest.use, restHours: potionRest.hours } };
     const { stock, kitCost, reserve } = kitReader(kitData, price,
         () => kitData.scrollHours ??= scrollHoursFor(state, deps.spots, bestSpotId));
-    // The plan row's scroll hours (stockTargets [9]): the build's own answer,
+    // The plan row's scroll hours (stockTargets' scrollHours): the build's own answer,
     // else the catalogue spot's cached one, never a route solve of its own.
     const scrollHours = () => kitData.scrollHours ??= scrollHoursFor(state, deps.spots, bestSpotId, false);
     // The rest bottles the wallet pays now: a stock it cannot pay would stand
@@ -1620,14 +1621,14 @@ function buildForState(state, deps) {
         // demand or renew the decision seed while that input is unavailable.
         context.network = { inputKey: key, queue: [], activity: null, plans: new Map(), demands: new Map(),
             focus: state.stats?.wishFocus || null, dormant: state.stats?.dormantWishes || [],
-            moneyPrice: positive(state.stats?.money?.[1]), hourAdena: context.hourAdena, available: 0,
+            moneyPrice: positive(Packet.moneyPrice(state.stats?.money)), hourAdena: context.hourAdena, available: 0,
             decisionSeq: state.stats?.decisionSeq || 0, activityLeaf: state.stats?.activityLeaf || 0 };
         context.moneyPrice = context.network.moneyPrice; context.gapHorizonHours = 0;
         context.watchList = []; context.intentPending = true;
         context.itemUsefulness = () => 0; context.worth = price; context.purchaseBudget = () => 0;
         context.statsPacket = { wishFocus: context.network.focus, dormantWishes: context.network.dormant,
             decisionSeq: context.network.decisionSeq, activityLeaf: context.network.activityLeaf,
-            money: state.stats?.money || [0, 0, base.survivalReserve, 0], stockTargets: state.stats?.stockTargets || stockTargets(base),
+            money: state.stats?.money || Packet.money({ hourAdena: 0, moneyPrice: 0, survivalReserve: base.survivalReserve, firstUnfundedPrice: 0 }), stockTargets: state.stats?.stockTargets || stockTargets(base),
             dangerPrice: dangerPrice(base) };
         readIds = null;
         return view(state, planOf(context, base, { key, tripHour, prices }), deps, { price, kit: base, board, read, spotValue: context.spotValue, trip: context.trip });
@@ -2046,21 +2047,21 @@ function view(state, plan, deps, built = {}) {
 // What a fight's danger moment weighs (DangerRule), for the cold fight, which
 // reads the bot's packet: a read of the view's basics would build them.
 function dangerPrice(base) {
-    return [base.deathHours, base.riskWeight];
+    return Packet.dangerPrice({ deathHours: base.deathHours, riskWeight: base.riskWeight });
 }
 // stats.stockTargets, the plan's kit targets published with its money packet
-// (L72), read on main by keptKit / keptTargets:
-// [potionId, potionTarget, shotId, shotTarget, shotCurrentAtBuild, potionSurvivalTarget, gapHorizonHours,
-//  shotCanRestock (1/0), shotSurvivalTarget, scrollHoursPerUnit].
-// [5]: also the bottles the survival drink keeps from the rest drink (RestPotion).
-// [6]: how long the plan's urgent want may wait for a price, main's trader reads it.
-// [9]: the hours a Scroll of Escape saves (scrollHoursFor), three significant
-// digits; -1 when the build did not price it and its origin is off the
-// catalogue (no route solve for the row: main then reads the basics, below).
+// (L72, layout in StatsPacket), read on main by keptKit / keptTargets.
+// potionSurvivalTarget: also the bottles the survival drink keeps from the rest drink (RestPotion).
+// gapHorizonHours: how long the plan's urgent want may wait for a price, main's trader reads it.
+// scrollHours: the hours a Scroll of Escape saves (scrollHoursFor), three
+// significant digits; unpriced when the build did not price it and its origin
+// is off the catalogue (no route solve for the row: main then reads the basics, below).
 function stockTargets(base, gapHorizonHours = 0) {
     const potions = base.stock('potions'), shots = base.stock('shots'), hours = base.scrollHours();
-    return [potions.itemId, potions.target, shots.itemId, shots.target, shots.current, potions.survivalTarget, gapHorizonHours,
-        base.kit.shots.canRestock ? 1 : 0, shots.survivalTarget, Number.isFinite(hours) ? Number(positive(hours).toPrecision(3)) : -1];
+    return Packet.stockTargets({ potionId: potions.itemId, potionTarget: potions.target, shotId: shots.itemId, shotTarget: shots.target,
+        shotCurrentAtBuild: shots.current, potionSurvivalTarget: potions.survivalTarget, gapHorizonHours,
+        shotsCanRestock: base.kit.shots.canRestock, shotSurvivalTarget: shots.survivalTarget,
+        scrollHours: Number.isFinite(hours) ? Number(positive(hours).toPrecision(3)) : null });
 }
 // The bot's missing shot stack as crafters see it (stats.shotDemand, read by
 // MarketDemandIndex and CraftWorkshopService): null when the stock rule wants
@@ -2095,26 +2096,27 @@ function shotDemand(economy, state, timestamp, previous = null) {
 // shot (level, weapon: no published target yet), and when shots that cannot
 // restock rose above the stock owned at the build (their target was capped by
 // it), and for a purchase when a scroll is missing and the row has no scroll
-// hours ([9] -1). A row from before the restock slots ([7]-[9]) serves the sale
+// hours (unpriced). A row from before the restock slots (not complete) serves the sale
 // only. The reasons are counted for diagnostics only (kit:basics:<reason>).
 const keptMiss = reason => { if (Diagnostics.active()) Diagnostics.count('kit', 'basics', reason); return null; };
 function publishedKit(state, purchase) {
-    const row = state.stats?.stockTargets, ShotStock = invoke('GameServer/Inventory/ShotStock'), plan = ShotStock.planForState(state);
-    if (!Array.isArray(row) || row.length < 5) return keptMiss('none');
-    if (row[0] !== HealingPotionStock.purchasePotionFor(state).selfId || row[2] !== plan.selfId) return keptMiss('item');
-    const full = row.length >= 10 && [1, 3, 5, 8, 9].every(at => Number.isFinite(row[at]));
+    const row = Packet.kitRow(state.stats?.stockTargets), ShotStock = invoke('GameServer/Inventory/ShotStock'), plan = ShotStock.planForState(state);
+    if (!row) return keptMiss('none');
+    if (row.potionId !== HealingPotionStock.purchasePotionFor(state).selfId || row.shotId !== plan.selfId) return keptMiss('item');
+    const full = row.complete;
     if (purchase && !full) return keptMiss('old');
     const scrolls = positive(state.inventory?.[736]?.amount);
-    if (purchase && row[9] < 0 && scrolls < invoke('GameServer/Bot/Travel/ScrollStock').TARGET_AMOUNT) return keptMiss('scroll_unpriced');
+    if (purchase && row.scrollHours === null && scrolls < invoke('GameServer/Bot/Travel/ScrollStock').TARGET_AMOUNT) return keptMiss('scroll_unpriced');
     const beginnerCurrent = ShotStock.beginnerAmount(state, plan);
-    const shots = positive(state.inventory?.[plan.selfId]?.amount) + beginnerCurrent, canRestock = full && row[7] === 1;
-    if (!canRestock && shots > row[4]) return keptMiss('shots_rose');
+    const shots = positive(state.inventory?.[plan.selfId]?.amount) + beginnerCurrent, canRestock = full && row.shotsCanRestock;
+    if (!canRestock && shots > row.shotCurrentAtBuild) return keptMiss('shots_rose');
     if (Diagnostics.active()) Diagnostics.count('kit', 'published', purchase ? 'purchase' : 'sale');
     return { scrolls, closed: invoke('GameServer/Karma').closesTowns(state.stats?.karma),
-        scrollHours: full ? positive(row[9]) : 0,
-        shots: { itemId: row[2], current: shots, beginnerCurrent, target: canRestock ? row[3] : Math.min(shots, row[3]),
-            survivalTarget: canRestock ? row[8] : Math.min(shots, positive(row[8])) },
-        potions: { itemId: row[0], current: positive(state.inventory?.[row[0]]?.amount), target: row[1], survivalTarget: positive(row[5]) } };
+        scrollHours: full ? positive(row.scrollHours) : 0,
+        shots: { itemId: row.shotId, current: shots, beginnerCurrent, target: canRestock ? row.shotTarget : Math.min(shots, row.shotTarget),
+            survivalTarget: canRestock ? row.shotSurvivalTarget : Math.min(shots, positive(row.shotSurvivalTarget)) },
+        potions: { itemId: row.potionId, current: positive(state.inventory?.[row.potionId]?.amount), target: row.potionTarget,
+            survivalTarget: positive(row.potionSurvivalTarget) } };
 }
 // The kit a purchase on main reads (ShotStock, HealingPotionStock and
 // ScrollStock restocks, NpcRestockPlan, ColdMarketService funding): stock,
@@ -2135,7 +2137,7 @@ function keptTargets(state = {}, deps = {}) {
     return { potions: base.stock('potions').target, shots: base.stock('shots') };
 }
 function survivalReserve(state = {}) {
-    return Array.isArray(state.stats?.money) ? positive(state.stats.money[2]) : basics(state).survivalReserve;
+    return Array.isArray(state.stats?.money) ? positive(Packet.survivalReserve(state.stats.money)) : basics(state).survivalReserve;
 }
 function craftIncome(state) {
     // The guarded worker publication is the only production income reader on

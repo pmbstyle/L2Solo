@@ -52,6 +52,7 @@ const DataCache = invoke('GameServer/DataCache');
 const C4Recipes = require('./GameServer/Items/C4RecipeItems');
 const TradeIntent = require('./GameServer/Bot/Economy/TradeIntent');
 const PurchaseFunding = require('./GameServer/Bot/Economy/PurchaseFunding');
+const StatsPacket = require('./GameServer/Bot/Economy/StatsPacket');
 const ClanSocialPolicy = require('./GameServer/Clan/ClanSocialPolicy');
 const ClanRules = require('./GameServer/Clan/ClanRules');
 const ClanSocialEvidence = require('./GameServer/Clan/ClanSocialEvidence');
@@ -2612,7 +2613,7 @@ function checkArrowPurchaseUnsafe(characterId, itemId, count, source = null, pen
 function checkEconomyFundingUnsafe(characterId, step, amount, funding = {}, walletOverride = null, packetOverride = null) {
     if (!step) return;
     const stats = SavedStats.merge(step.row.statsJson, step.row.mindJson), packet = packetOverride || stats.money;
-    if (!Array.isArray(packet) || packet.length < 4) throw Error('economy_funding_missing');
+    if (!StatsPacket.hasMoney(packet)) throw Error('economy_funding_missing');
     const wallet = walletOverride === null ? Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=57', [characterId]).amount) : walletOverride;
     const { r, itemId, valueHours, side, survivalCost, survivalShare, clanPart, raidPreparationId } = funding;
     const fundingCapture = Diagnostics.active() && Diagnostics.enabled(characterId) ? {} : null;
@@ -2622,8 +2623,8 @@ function checkEconomyFundingUnsafe(characterId, step, amount, funding = {}, wall
             'SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=?', [characterId, itemId]).amount) } } } : {})
     }, 0, { r, itemId, valueHours, side, survivalCost, survivalShare, clanPart, raidPreparationId, free: funding.free === true }, fundingCapture);
     if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'native_funding', amount <= budget ? 'allowed' : 'funding_changed',
-        { item: Number(funding.itemId), cost: amount, wallet, budget, available: budget, reserve: Number(packet[2]),
-            priorityReserve: fundingCapture?.priorityReserve, moneyPrice: Number(packet[1]), escrow: 0,
+        { item: Number(funding.itemId), cost: amount, wallet, budget, available: budget, reserve: Number(StatsPacket.survivalReserve(packet)),
+            priorityReserve: fundingCapture?.priorityReserve, moneyPrice: Number(StatsPacket.moneyPrice(packet)), escrow: 0,
             decisionSeq: Number(stats.decisionSeq), activityLeaf: Number(stats.activityLeaf), wishKey: stats.wishFocus?.[0] });
 
     if (!Number.isFinite(amount) || amount > budget) throw Error('economy_funding_changed');
@@ -4246,7 +4247,7 @@ function reconcileBotBuyAdsUnsafe(characterId, held, configs, timestamp, { bidWa
     if (additions.length) {
         const life = one('SELECT statsJson, mindJson FROM bot_life_state WHERE characterId = ?', [characterId]);
         const stats = SavedStats.merge(life?.statsJson, life?.mindJson);
-        if (life && (!Array.isArray(stats.money) || stats.money.length < 4)) throw Error('economy_funding_missing');
+        if (life && !StatsPacket.hasMoney(stats.money)) throw Error('economy_funding_missing');
         if (Array.isArray(stats.money)) {
             const wallet = Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=57', [characterId]).amount);
             for (const row of additions) {
@@ -7088,7 +7089,7 @@ const Database = {
             if (!Number.isSafeInteger(sellerAdena + total)) throw Error('private_store_adena_overflow');
             if (details.fundingPacket) {
                 const packet = details.fundingPacket();
-                if (!Array.isArray(packet) || packet.length < 4) throw Error('economy_funding_missing');
+                if (!StatsPacket.hasMoney(packet)) throw Error('economy_funding_missing');
                 checkEconomyFundingUnsafe(buyerId, { row: { statsJson: '{}' } }, total, details.funding, null, packet);
             }
             afkTradeDebitAdenaUnsafe(buyerId, total);
@@ -8731,7 +8732,7 @@ const Database = {
                     throw Error('live_workshop_recipe_changed');
                 for (const [id, amount] of required) checkEconomyMaterialProtectionUnsafe(customerId, step, id, amount);
                 const packet = fundingPacket?.();
-                if (!Array.isArray(packet) || packet.length < 4) throw Error('economy_funding_missing');
+                if (!StatsPacket.hasMoney(packet)) throw Error('economy_funding_missing');
                 checkEconomyFundingUnsafe(customerId, step, price, { ...funding, itemId: recipe.productId }, null, packet);
             }
             let success = !!product;

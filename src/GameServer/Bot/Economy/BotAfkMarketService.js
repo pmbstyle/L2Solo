@@ -1,5 +1,6 @@
 const ClassProgression = invoke('GameServer/ClassProgression');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
+const Packet = require('./StatsPacket');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
@@ -371,7 +372,7 @@ async function withdrawSourceInvalidBuyAds(ownerId) {
 // first (the trip pays from the wallet); without a buy goal the ads stand
 // while the needs still ask for their items (standingBuyNeed), else go.
 async function reduceStandingBids(state, ads, { beforeWrite } = {}) {
-    const hour = Number(state.stats?.money?.[0]);
+    const hour = Number(Packet.hourAdena(state.stats?.money));
     if (state.phase !== 'cold' || !ads.length || !Number.isFinite(hour) || hour < 0
         || state.stats?.tradeMeeting) return false;
     // A preparation is still a quote, checked by record revision at native
@@ -959,7 +960,7 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         // this does not choose a new price or rebuild the worker's wishes.
         const budgetState = { ...state, adena: PurchaseFunding.budget(state, escrow) };
         const owned = AfkTrade.boardIndex().ownerLines(ownerId);
-        wanted = BuyAdPolicy.keepRetainedBids(state, owned, wanted, Number(state.stats?.money?.[1]), escrow);
+        wanted = BuyAdPolicy.keepRetainedBids(state, owned, wanted, Number(Packet.moneyPrice(state.stats?.money)), escrow);
         let town = buyAdTown(state, ads, wanted);
         for (let pass = 0; pass <= MAX_LINES + BoardRules.BOT_RECORDS.buy_ad; pass++) {
             wanted = BuyAdPolicy.retainedLines(budgetState, wanted, owned, town);

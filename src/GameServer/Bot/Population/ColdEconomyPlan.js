@@ -1,6 +1,7 @@
 const FailureLog = require('../../../FailureLog');
 const { SELL } = require('../../AfkTrade/BoardIndex');
 const Funding = require('../Economy/PurchaseFunding');
+const Packet = require('../Economy/StatsPacket');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
 const { fnv1a32 } = require('../Fnv1a');
 const MAX_BYTES = 768;
@@ -210,7 +211,7 @@ function* prepareNative(state, economy, options) {
             activityLeaf: economy.network?.activityLeaf ?? state.stats?.activityLeaf,
             wishKey: goal?.plan?.wishKey,
             wallet: state.adena, escrow: options.buyOrderEscrow,
-            budget: money, available: money, reserve: state.stats?.money?.[2] };
+            budget: money, available: money, reserve: Packet.survivalReserve(state.stats?.money) };
         Diagnostics.push({ ...trace, reason: plan.travel ? 'travel_planned' : 'plan_prepared', town: goal?.plan?.marketTown });
         for (const row of plan.buyAds || []) Diagnostics.push({ ...trace, phase: 'buy_request', reason: 'bid_planned',
             item: row[0], planned: row[1], unitPrice: row[2], source: 'board_bid' });

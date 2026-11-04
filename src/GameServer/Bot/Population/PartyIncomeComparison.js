@@ -3,6 +3,7 @@
 const BuffPolicy = invoke('GameServer/Bot/Economy/BuffServicePolicy');
 const Network = invoke('GameServer/Bot/Economy/WishNetwork');
 const Rewards = require('../Economy/SpotRewardExpectation');
+const Packet = require('../Economy/StatsPacket');
 const GameDataCatalogue = require('../../Knowledge/GameDataCatalogue');
 const Material = require('./CraftMaterialParty');
 const SpotEconomics = require('../Economy/SpotEconomics');
@@ -252,7 +253,7 @@ function compare(state, peers, options = {}) {
         .find(row => row.characterId === Number(state.characterId)) : null;
     const goal = materialGoal || state.stats?.partyRequest || state.stats?.equipmentPlan?.next || options.objective;
     const cash = materialParty ? materialGoal?.materialCash ?? null : positive(focus?.[2]) || null;
-    const spendable = Math.max(0, positive(state.adena) - positive(state.stats?.money?.[2]));
+    const spendable = Math.max(0, positive(state.adena) - positive(Packet.survivalReserve(state.stats?.money)));
     const help = options.party?.stats?.agreement?.help || options.objective?.helpDeal;
     const payer = Number(help?.payerId) === Number(state.characterId);
     const fee = help?.status === 'funded' ? 0 : payer ? positive(help?.fee) : 0;

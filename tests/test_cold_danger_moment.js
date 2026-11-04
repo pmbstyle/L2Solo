@@ -1,4 +1,5 @@
 const assert = require('assert');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 require('../src/Global');
 const DataCache = invoke('GameServer/DataCache');
 DataCache.init();
@@ -18,7 +19,7 @@ const POTION = HealingPotionStock.POTIONS.find(potion => potion.hot);
 const base = { characterId: 901, name: 'Danger', level: 12, phase: 'cold', activity: 'hunting',
     loc: { locX: 0, locY: 0, locZ: 0 }, inventory: {},
     vitals: { hp: 100, maxHp: 500, mp: 200, maxMp: 200 },
-    stats: { classId: 0, money: [10000, 1 / 10000, 0, 0], dangerPrice: [0.5, 1.5], coldCombat: { version: 1, classId: 0,
+    stats: { classId: 0, money: [10000, 1 / 10000, 0, 0], dangerPrice: Packet.dangerPrice({ deathHours: 0.5, riskWeight: 1.5 }), coldCombat: { version: 1, classId: 0,
         base: { str: 40, dex: 30, con: 43, int: 21, wit: 11, men: 25 },
         equipment: { weaponKind: 'Weapon.Sword', pAtk: 80, pAtkRnd: 0, mAtk: 40,
             atkSpd: 379, critical: 0, accur: 100, pDef: 120, mDef: 50, evasion: 0, bonusMp: 0, shieldPDef: 0 },
@@ -55,8 +56,8 @@ function hotAction({ hp = base.vitals.hp, mobHp = mob.maxHp, foe = mob, bottles 
         canUseSkill: () => true, backpack: { fetchItems: () => bottles ? [{ fetchSelfId: () => POTION.selfId, fetchAmount: () => bottles, fetchId: () => 1 }] : [] } };
     const target = { fetchId: () => foe.selfId, fetchHp: () => mobHp, matchupTarget: { ...foe }, fetchCollectiveRunSpd: () => foe.runSpd,
         state: { fetchDead: () => false } };
-    const session = { heldEconomy: { decided: true, deathHours: base.stats.dangerPrice[0], riskWeight: base.stats.dangerPrice[1],
-        moneyPrice: base.stats.money[1] } };
+    const session = { heldEconomy: { decided: true, deathHours: Packet.deathHours(base.stats.dangerPrice), riskWeight: Packet.riskWeight(base.stats.dangerPrice),
+        moneyPrice: Packet.moneyPrice(base.stats.money) } };
     return DangerMoment.forActor(session, actor, target, { attackers: [target],
         profiles: TargetMatchup.coldProfiles(profile, base, T, { shot: null }) })?.action;
 }

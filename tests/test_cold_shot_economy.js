@@ -1,5 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const { useRate } = require('./helpers/progressionRate');
 require('./helpers/databaseIsolation');
 const fixture = require('./helpers/isolatedSocialDatabase')('cold-shot-economy');
@@ -112,8 +113,8 @@ async function images(ids) {
         await Database.setSkill({ selfId: 248, name: 'Crystallize', passive: false, level: 1 }, crafter.characterId);
         crafter = await measuredEconomy(crafter, now);
         const recipe = Recipes.resolveByRecipeId(20);
-        assert.equal(crafter.stats.money[0], 77000, 'labour uses three measured native hunting rounds');
-        assert(crafter.stats.money[1] >= 1 / crafter.stats.money[0]);
+        assert.equal(Packet.hourAdena(crafter.stats.money), 77000, 'labour uses three measured native hunting rounds');
+        assert(Packet.moneyPrice(crafter.stats.money) >= 1 / Packet.hourAdena(crafter.stats.money));
         // NEXT-E2 evaluates the complete finite batch action: the old 22324
         // quote can repay its gear cost over seven batches. A 250000 quote
         // remains unprofitable for the whole finite 1000-unit bid.
@@ -157,7 +158,7 @@ async function images(ids) {
             gear: nativeStep.craft.gear.map((value, at) => at === 5 ? Number(value) + 1 : value) }), null,
         'a source revision mismatch refuses the sparse identity before physical spending');
         const candidate = Shots.craftCandidate(crafter, recipe, index);
-        assert(candidate.r >= crafter.stats.money[1]);
+        assert(candidate.r >= Packet.moneyPrice(crafter.stats.money));
         assert(Funding.spendable(crafter, 0, { r: candidate.r }) >= candidate.gear.cash + candidate.orePrice * 21);
         const history = [];
         originals = { buy: Afk.buyFromShop, npc: Database.purchaseNpcInventoryItem,

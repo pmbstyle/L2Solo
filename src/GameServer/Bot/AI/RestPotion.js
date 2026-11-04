@@ -9,12 +9,13 @@
 // mana, its MP, so a bottle saves nothing while the MP holds the rest; a rest a
 // pet holds ends no sooner (RestPolicy.petRested). The survival drink stays
 // (tryUseInCombat, the danger moment, the cold fight's) and keeps its bottles
-// (stockTargets[5]). Healing potions only; Quick Healing waits for near death.
+// (stockTargets' potionSurvivalTarget). Healing potions only; Quick Healing waits for near death.
 // It reads the hot actor's API: a hot bot, or a cold profile through
 // ColdClassPolicy.actorFor. A party's rest ends at its slowest member, so party
 // members stay out of it, as of SoloSelfHeal.
 const ColdRest = invoke('GameServer/Bot/Population/ColdRest');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
+const Packet = require('../Economy/StatsPacket');
 const Formulas = invoke('GameServer/Formulas');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const Pricing = invoke('GameServer/Bot/Economy/StaticMerchantPricing');
@@ -42,19 +43,19 @@ const hoursOf = seconds => seconds / HOUR_SECONDS;
 
 // The healing potions in the bag beyond those its survival drink keeps.
 function spareBottles(actor, stats, inventory) {
-    let bottles = -Math.max(0, Number(stats?.stockTargets?.[5]) || 0);
+    let bottles = -Math.max(0, Number(Packet.potionSurvivalTarget(stats?.stockTargets)) || 0);
     for (const potion of DRINKS) bottles += HealingPotionStock.heldAmount(actor, inventory, potion.selfId);
     return bottles;
 }
 
 // Between fights: the potion to drink instead of sitting, or null. stats: the
-// bot's money and stock packet, its hour (money[0], EconomyContext.hourAdena);
+// bot's money and stock packet, its hour (the money packet's hourAdena, EconomyContext.hourAdena);
 // without one (no decision yet, the spot table's reference bot) its hour is
 // unknown and it does not drink. inventory: a cold bag; unset, the hot actor's.
 // pet: reads the rest view of its pet (PetHealRule.restView), last: a hot tick
 // that drinks nothing does not pay for it.
 function betweenFights(actor, { stats = null, inventory = null, pet = null } = {}) {
-    const hour = Number(stats?.money?.[0]);
+    const hour = Number(Packet.hourAdena(stats?.money));
     const missing = RESTED.hp * actor.fetchMaxHp() - actor.fetchHp();
     if (!(hour > 0) || !(missing > 0)) return null;
     const left = restLeft(actor);

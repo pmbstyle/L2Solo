@@ -5,6 +5,7 @@
 // resale) ask one search on any path, the same answer renews in place, a new one
 // rebuilds; a search that found nothing is kept like a route.
 const assert = require('node:assert/strict');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const { Worker, isMainThread } = require('node:worker_threads');
 require('./helpers/databaseIsolation');
 require('../src/Global');
@@ -180,10 +181,10 @@ function verify() {
         const Economics = invoke('GameServer/Bot/Economy/SpotEconomics');
         const Learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
         const { state } = heldBot(990260);
-        const [hour] = state.stats.money;
+        const hour = Packet.hourAdena(state.stats.money);
         assert(state.stats.wishSections.incomeError > Learning.INCOME_ERROR_FLOOR && hour > 0,
             'fixture: the bot has an income error above the floor and an hour');
-        const base = Economics.moneyWeight(state), money = Math.max(1, hour * state.stats.money[1]);
+        const base = Economics.moneyWeight(state), money = Math.max(1, hour * Packet.moneyPrice(state.stats.money));
         const power = money * (1 - base) / base;
         const weighed = (weight, incomeError) => ({ ...state, stats: { ...state.stats,
             wishSections: { ...state.stats.wishSections, incomeError },

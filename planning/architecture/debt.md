@@ -85,7 +85,7 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
 
 20. **Main still builds the basics for a kit value the plan row does not publish.** `ColdShotEconomyService`
    (~155, a shot crafter's own reserve on `executePlan`'s `plan.shot`) passes `basics(state).stock('shots')` to
-   `ShotCraftPolicy.recipeShotSearch`, which reads `benefitHours` (its target can disagree with `stockTargets[3]`);
+   `ShotCraftPolicy.recipeShotSearch`, which reads `benefitHours` (its target can disagree with the `stockTargets` shot target);
    the card view's `stock()` (`ColdEconomyDecision.view` ~464) gives `worthwhileTravel` its `benefitPerUnit`. Both
    need the stock's benefit, which `stockTargets` does not carry; publishing it (or the use rate) would move them to
    `keptKit`.
@@ -101,8 +101,14 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    supply event, so the held earning spot and a kept foundation hear it only at the next search (the window, an
    event). The source ground compares the kind itself (`sourceRouteReader`).
 
+22. **The wish focus and dormant rows have no layout owner.** `stats.wishFocus` (`[key, sinceHours, price]`) and
+   `stats.dormantWishes` rows (`[key, reason, 0, price, playedHours, loyalty]`), written by `WishNetwork` (~1038) and
+   also held as `network.focus`, are read by slot in ~30 places (`focus?.[0]` in diagnostics and keys,
+   `SpotEconomics.moneyShort`, `PartyIncomeComparison`, `ActorEconomyProjection`). They want one owner like
+   `StatsPacket` (the money, kit and danger arrays).
+
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
-`stockTargets[6]`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so
+`stockTargets`' `gapHorizonHours`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so
 a rich bot there has a null activity (T178): a test expecting "one leaf" from such a scene breaks the same way. Known
 red in `notRunTests`: `test_beginner_shot_policy`, `test_cold_armor_set_effects`, `test_finite_market_income`,
 `test_gear_intermediate_candidates`, `test_npc_purchase_consumers`, `test_task4_b5_hot_cold_same`,

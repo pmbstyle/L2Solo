@@ -1,5 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict'), fs = require('node:fs');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 require('./helpers/databaseIsolation');
 const fixture = require('./helpers/isolatedSocialDatabase')('npc-basket');
 require('../src/Global'); fixture.assertConfigured(options.default);
@@ -232,18 +233,18 @@ async function run() {
     const Potions = invoke('GameServer/Bot/AI/HealingPotionStock'), potionId = Potions.purchasePotionFor(state).selfId;
     const potionLine = value => Restock.collect(value, { town: 'Dion', shots: false, scrolls: false })
         .flatMap(row => row.lines).find(line => line.selfId === potionId)?.amount || 0;
-    const fresh = Economy.basics(state).stock('potions').target + 7, targets = packet.stockTargets;
-    assert.equal(targets.length, 10, 'the plan publishes its restock slots');
-    const published = { ...state, stats: { ...state.stats, stockTargets: [targets[0], fresh, ...targets.slice(2, 5), fresh, ...targets.slice(6)] } };
+    const fresh = Economy.basics(state).stock('potions').target + 7, targets = Packet.kitRow(packet.stockTargets);
+    assert.equal(targets.complete, true, 'the plan publishes its restock slots');
+    const published = { ...state, stats: { ...state.stats, stockTargets: Packet.stockTargets({ ...targets, potionTarget: fresh, potionSurvivalTarget: fresh }) } };
     assert.equal(potionLine(published), fresh, 'the errand fills the published potion target');
-    const otherPotion = { ...published, stats: { ...published.stats, stockTargets: [0, ...published.stats.stockTargets.slice(1)] } };
+    const otherPotion = { ...published, stats: { ...published.stats, stockTargets: Packet.stockTargets({ ...Packet.kitRow(published.stats.stockTargets), potionId: 0 }) } };
     const basicsAmount = Potions.restockPlan(otherPotion, { unitPrice: Restock.quoteFor(potionId, 'Dion').price,
         context: Economy.basics(otherPotion) }).amount;
     assert.notEqual(basicsAmount, fresh, 'the basics target differs from the published one');
     assert.equal(potionLine(otherPotion), basicsAmount, 'a row of another potion buys the basics target');
     // The row the build just published buys what a fresh foundation buys.
     const Shot = invoke('GameServer/Inventory/ShotStock'), Scrolls = invoke('GameServer/Bot/Travel/ScrollStock');
-    const shotId = targets[2], shotPrice = Restock.quoteFor(shotId, 'Dion')?.price || 7;
+    const shotId = targets.shotId, shotPrice = Restock.quoteFor(shotId, 'Dion')?.price || 7;
     const potionPrice = Restock.quoteFor(potionId, 'Dion').price, scrollPrice = Restock.quoteFor(736, 'Dion').price;
     const withContext = context => context ? { context } : {};
     const shotPlan = (value, context) => Shot.restockPlan(value, { plan: Shot.planForState(value), unitPrice: shotPrice,
@@ -257,27 +258,27 @@ async function run() {
     assert.deepEqual(potionPlan(state), potionPlan(state, built), 'the same potion restock');
     assert.deepEqual([scrollPlan(state).amount, scrollPlan(state).cost], [scrollPlan(state, built).amount, scrollPlan(state, built).cost],
         'the same scroll restock (the row keeps three digits of its hours)');
-    // Shots: [7] whether they restock, [8] their survival target, [4] the stock owned at the build.
-    const shotRow = (canRestock, target, survival, atBuild, owned) => ({ ...state,
+    // Shots: whether they restock, their survival target, the stock owned at the build.
+    const shotRow = (shotsCanRestock, shotTarget, shotSurvivalTarget, shotCurrentAtBuild, owned) => ({ ...state,
         inventory: { ...state.inventory, [shotId]: { selfId: shotId, amount: owned } },
-        stats: { ...state.stats, stockTargets: [...targets.slice(0, 3), target, atBuild, ...targets.slice(5, 7), canRestock, survival, targets[9]] } });
-    const restocking = shotPlan(shotRow(1, 500, 200, 0, 0));
+        stats: { ...state.stats, stockTargets: Packet.stockTargets({ ...targets, shotTarget, shotCurrentAtBuild, shotsCanRestock, shotSurvivalTarget }) } });
+    const restocking = shotPlan(shotRow(true, 500, 200, 0, 0));
     assert(restocking.needed, 'below the published survival target the bot restocks');
     assert.equal(restocking.targetAmount, 500, 'up to the published shot target');
     assert(restocking.amount >= 200, 'the survival part is always funded');
-    const capped = shotPlan(shotRow(0, 500, 200, 60, 50));
+    const capped = shotPlan(shotRow(false, 500, 200, 60, 50));
     assert.equal(capped.targetAmount, 50, 'shots that cannot restock keep at most what the bag holds');
     assert.equal(capped.needed, false, 'and buy none');
-    const rose = shotRow(0, 500, 200, 40, 50);
+    const rose = shotRow(false, 500, 200, 40, 50);
     assert.deepEqual(shotPlan(rose), shotPlan(rose, Economy.basics(rose)), 'capped shots risen since the build read the basics');
-    const roseRestocking = shotPlan(shotRow(1, 500, 200, 40, 50));
+    const roseRestocking = shotPlan(shotRow(true, 500, 200, 40, 50));
     assert.equal(roseRestocking.targetAmount, 500, 'restockable shots keep the published target as they rise');
     assert(roseRestocking.needed);
-    // Scrolls: [9] the hours one saves, the money a side purchase may take.
-    const scrollRow = hours => ({ ...state, stats: { ...state.stats, stockTargets: [...targets.slice(0, 9), hours] } });
-    assert.equal(scrollPlan(scrollRow(targets[9])).funding.side, targets[9] / scrollPrice, 'a scroll is worth the hours it saves');
+    // Scrolls: the hours one saves, the money a side purchase may take.
+    const scrollRow = scrollHours => ({ ...state, stats: { ...state.stats, stockTargets: Packet.stockTargets({ ...targets, scrollHours }) } });
+    assert.equal(scrollPlan(scrollRow(targets.scrollHours)).funding.side, targets.scrollHours / scrollPrice, 'a scroll is worth the hours it saves');
     assert.equal(scrollPlan(scrollRow(0)).funding.side, 0, 'no saved hours, no side money');
-    const unpriced = scrollRow(-1);
+    const unpriced = scrollRow(null);
     assert(scrollPlan(unpriced).funding.side > 0, 'a row without scroll hours reads them from the basics');
     assert.deepEqual(scrollPlan(unpriced), scrollPlan(unpriced, Economy.basics(unpriced)));
     assert.equal((await Restock.purchase(state, { town: 'Dion', shots: false, potions: false })).receipts.length, 1);

@@ -4,6 +4,7 @@
 // worth more than the bottle's NPC price; one rule hot and cold; its potion
 // stock buys what the rule drinks.
 const assert = require('node:assert/strict');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const { useRate } = require('./helpers/progressionRate');
 require('./helpers/databaseIsolation');
 require('../src/Global');
@@ -33,7 +34,7 @@ function bot(classId, { hp = 1, mp = 1, bottles = 10, hour = 600000, keep = 0 } 
     state.characterId = 7000 + classId;
     state.vitals = { hp: profile.maxHp * hp, maxHp: profile.maxHp, mp: profile.maxMp * mp, maxMp: profile.maxMp };
     state.inventory[POTION] = { selfId: POTION, amount: bottles };
-    state.stats = { ...state.stats, ...(hour > 0 ? { money: [hour, 1 / hour, 0, 0], stockTargets: [POTION, 0, 0, 0, 0, keep] } : {}) };
+    state.stats = { ...state.stats, ...(hour > 0 ? { money: [hour, 1 / hour, 0, 0], stockTargets: Packet.stockTargets({ potionId: POTION, potionTarget: 0, shotId: 0, shotTarget: 0, shotCurrentAtBuild: 0, potionSurvivalTarget: keep }) } : {}) };
     return { state, profile };
 }
 

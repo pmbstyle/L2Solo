@@ -5,6 +5,7 @@
 const roots = [null, 'power', 'stock', 'book', 'enchant', 'sa', 'henna', 'status', 'resale', 'production'];
 const stockKinds = [null, 'shots', 'potions', 'scrolls'];
 const Funding = require('./PurchaseFunding');
+const Packet = require('./StatsPacket');
 const { MAX_DEPTH } = require('./WishNetwork');
 const PartyAdmission = require('../Population/PartyAdmission');
 const integer = n => Number.isSafeInteger(n) && n >= 0;
@@ -275,9 +276,10 @@ function meetingPurchase(network, intents, { selfId, count, price, town, enchant
     const packet = state?.stats?.money;
     let valueRate = intent.valueRate;
     if ((state?.stats?.wishFocus?.[0] === wish.key || wish.key.startsWith('stock:')) && Array.isArray(packet)) {
-        for (let at = 4; at + 2 < packet.length; at += 3) {
-            if (Number(packet[at + 2]) === Number(wish.object?.itemId) && packet[at] > 0 && packet[at] >= packet[1]) {
-                valueRate = Number(packet[at]); break;
+        for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) {
+            const ratio = Packet.fundedRatio(packet, row);
+            if (Number(Packet.fundedItem(packet, row)) === Number(wish.object?.itemId) && ratio > 0 && ratio >= Packet.moneyPrice(packet)) {
+                valueRate = Number(ratio); break;
             }
         }
     }

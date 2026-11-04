@@ -2,6 +2,7 @@
 // built by the real wish network on a real board; no plan is written by hand.
 'use strict';
 const assert = require('node:assert/strict');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 require('./helpers/databaseIsolation');
 require('../src/Global');
@@ -182,7 +183,7 @@ async function run() {
         const { plan } = review();
         const steps = [plan.network.activity, ...plan.network.agenda];
         const cost = steps.reduce((sum, step) => sum + step.price, 0);
-        const reserve = plan.statsPacket.money[2];
+        const reserve = Packet.survivalReserve(plan.statsPacket.money);
         const tight = review({ adena: reserve + cost + 1 });
         const first = tight.plan.network.activity;
         assert(tight.plan.network.agenda.length > 0, 'fixture: the steps are funded');
@@ -249,7 +250,7 @@ async function run() {
         const Decision = invoke('GameServer/Bot/Population/ColdEconomyDecision');
         const { state } = review();
         const read = { ...deps(), board, decisions: { decided: () => null } };
-        const urgent = { ...state, stats: { ...state.stats, stockTargets: [...state.stats.stockTargets.slice(0, 6), 7.5] } };
+        const urgent = { ...state, stats: { ...state.stats, stockTargets: Packet.stockTargets({ ...Packet.kitRow(state.stats.stockTargets), gapHorizonHours: 7.5 }) } };
         const wants = Decision.economyFor(urgent, { ...read, decisions: { decided: () => ({ urgency: 1 }) } });
         assert.equal(wants.gapHorizonHours, 7.5, 'how long it may wait is the plan\'s');
     }

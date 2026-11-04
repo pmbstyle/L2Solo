@@ -1,5 +1,6 @@
 const FailureLog = require('../../../FailureLog');
 const Policy = require('./WealthCraftPolicy');
+const Packet = require('./StatsPacket');
 const Profit = require('./CraftProfitPolicy');
 const Workshops = require('./CraftWorkshopService');
 const Karma = require('../../Karma');
@@ -30,7 +31,7 @@ function recheck(state, step = {}, knownRecipes = Workshops.cachedRecipes(state.
     const recipe = Recipes.resolveByRecipeId(Number(step.recipeId)), batches = Number(step.batches || 1);
     const packet = state.stats?.money;
     if (!recipe || !CraftShopService.canCraft(state, recipe) || !Number.isSafeInteger(batches)
-        || batches < 1 || batches > 64 || !Array.isArray(packet) || !(packet[0] > 0) || !(packet[1] > 0)) return no('recipe_state');
+        || batches < 1 || batches > 64 || !Array.isArray(packet) || !(Packet.hourAdena(packet) > 0) || !(Packet.moneyPrice(packet) > 0)) return no('recipe_state');
     if (mpChanged(state, recipe, batches)) return no('mp_changed');
     const prepared = Policy.drain(Sources().prepare(state, { board: AfkTrade.boardIndex(), timestamp: Date.now(), targetRecipe: recipe,
         stock: step.ownReserve > 0 ? { itemId: Number(recipe.productId), target: Number(step.ownReserve) } : null }));

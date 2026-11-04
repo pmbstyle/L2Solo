@@ -68,7 +68,7 @@ const spot = { id: 'potion_field', name: 'Potion field', avgLevel: 14, density: 
 
 // A solo round that drinks: the bot comes back below its rest line to a mob it
 // hunts at full health (Walking Fungus, level 8), and its hour is worth a
-// bottle a second (money[0]), so it drinks to save the rest instead of sitting
+// bottle a second (its money packet's hour), so it drinks to save the rest instead of sitting
 // through it (RestPotion, T141). A fight that would end below the potion line
 // is no longer taken (BotEncounterReadiness), so no admitted fight is relied
 // on to go wrong; the seed sweep is deterministic.
