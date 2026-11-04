@@ -56,7 +56,11 @@ function hotAction({ hp = base.vitals.hp, mobHp = mob.maxHp, foe = mob, bottles 
         canUseSkill: () => true, backpack: { fetchItems: () => bottles ? [{ fetchSelfId: () => POTION.selfId, fetchAmount: () => bottles, fetchId: () => 1 }] : [] } };
     const target = { fetchId: () => foe.selfId, fetchHp: () => mobHp, matchupTarget: { ...foe }, fetchCollectiveRunSpd: () => foe.runSpd,
         state: { fetchDead: () => false } };
-    const session = { heldEconomy: { decided: true, deathHours: Packet.deathHours(base.stats.dangerPrice), riskWeight: Packet.riskWeight(base.stats.dangerPrice),
+    // The held view carries the build's packet (DecisionEvents.receive); its own
+    // death price is the basics', built on main, and never read beside the packet.
+    const session = { heldEconomy: { decided: true, statsPacket: { dangerPrice: base.stats.dangerPrice },
+        get deathHours() { throw Error('the view\'s basics are not built for a death price'); },
+        get riskWeight() { throw Error('the view\'s basics are not built for a risk weight'); },
         moneyPrice: Packet.moneyPrice(base.stats.money) } };
     return DangerMoment.forActor(session, actor, target, { attackers: [target],
         profiles: TargetMatchup.coldProfiles(profile, base, T, { shot: null }) })?.action;

@@ -199,4 +199,30 @@ advance(60001);
 assert(courier.actor.isDead(), 'elapsed time does not automatically revive a ritual corpse');
 state.stage = 'failed';
 assert.strictEqual(service.awaitingRitualResurrection(courier), false, 'abandoning the quest releases the ritual corpse');
+// A bot's death prices its lost progress with the death hours its build
+// published (stats.dangerPrice), as the basics with those hours would; no
+// basics are built on main for a bot with the packet.
+{
+    const Economy = mocks['GameServer/Bot/Economy/EconomyContext'];
+    const Valuation = mocks['GameServer/Bot/Economy/EconomicValuation'];
+    mocks['GameServer/Bot/AI/KnowledgeLearning'] = invoke('GameServer/Bot/AI/KnowledgeLearning');
+    const prior = { characterId: 3, level: 20, stats: { dangerPrice: [2, 1], economyClock: now - 3600000,
+        playedHours: 1, frustration: 1 } };
+    const victim = { accountId: 'bot_death_price', actor: actor(3), coldLifeState: prior, populationActivating: true,
+        dataSendToMeAndOthers() {}, dataSendToOthers() {} };
+    victim.actor.session = victim;
+    const persona = Economy.personal(prior, { timestamp: now }).persona;
+    const expected = Valuation.progressStats(prior, { timestamp: now, losses: 1, lossHours: Valuation.liveDeathHours(2),
+        persona, knowledgeEnabled: mocks['GameServer/Bot/AI/KnowledgeLearning'].knowledgeEnabled(), startedAt: now });
+    const basics = Economy.basics;
+    try {
+        Economy.basics = () => { throw Error('a bot with a danger packet needs no basics at death'); };
+        victim.actor.hp = 0;
+        die(victim, victim.actor);
+    } finally { Economy.basics = basics; }
+    assert(expected.frustration > 1, 'fixture: the death costs progress');
+    // The VM realm's objects: compared by their JSON.
+    assert.strictEqual(JSON.stringify(victim.coldLifeState.stats), JSON.stringify({ ...prior.stats, ...expected }),
+        'the published death hours price the loss');
+}
 console.log('Clan alliance immediate death recovery: native packets, town, continuation, stale landing, cancellation and scope passed');

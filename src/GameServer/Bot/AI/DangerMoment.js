@@ -30,10 +30,16 @@ function attackersOf(actor, target, near = null) {
 // The decision the body received with its death price, else null: before
 // the first near decision arrives (DecisionEvents.held gives a view without
 // a card) the author's retreat rule decides. `decided` is read first: the
-// cardless view's death price is never consulted.
-function decidedEconomy(session) {
+// cardless view's death price is never consulted. The price is the one its
+// build published (statsPacket.dangerPrice, as the cold fight reads it); the
+// view's own (its basics, built on main) only for a packet without one.
+function decidedDanger(session) {
     const economy = DecisionEvents.held(session);
-    return economy?.decided && economy.deathHours >= 0 ? economy : null;
+    if (!economy?.decided) return null;
+    const packet = economy.statsPacket?.dangerPrice;
+    const deathHours = packet ? Packet.deathHours(packet) : economy.deathHours;
+    return deathHours >= 0
+        ? { economy, deathHours, riskWeight: packet ? Packet.riskWeight(packet) : economy.riskWeight } : null;
 }
 
 // The mobs on the bot as one mob with their HP left and attack summed (minimum.md #3).
@@ -53,8 +59,9 @@ function enemyOn(actor, target, attackers = attackersOf(actor, target)) {
 // is kept on the session, so the fixed-ratio potion step yields to it.
 function forActor(session, actor, target, options = {}) {
     session.dangerMoment = undefined;
-    const economy = decidedEconomy(session);
-    if (!economy || !target) return null;
+    const danger = decidedDanger(session);
+    if (!danger || !target) return null;
+    const economy = danger.economy;
     const hp = Number(actor.fetchHp?.() || 0), maxHp = Number(actor.fetchMaxHp?.() || 0);
     const mp = Number(actor.fetchMp?.() || 0), maxMp = Number(actor.fetchMaxMp?.() || 0);
     // A pet keeps its own HP (BotTargetMatchup.actorProfiles; it tanks first).
@@ -74,7 +81,7 @@ function forActor(session, actor, target, options = {}) {
     if (moneyPrice === null) Diagnostics.count('danger_moment', 'no_price', 'all');
     const moment = DangerRule.moment({ profiles, enemy, hp, maxHp, mp, maxMp, level: actor.fetchLevel?.(), classId: actor.fetchClassId?.(),
         attacked: options.attacked !== false, canEscape: EscapePolicy.assess(session, actor, attackers).possible, potion: heldPotion,
-        deathHours: economy.deathHours, moneyPrice, riskWeight: economy.riskWeight, botId: actor.fetchId?.(), targetId });
+        deathHours: danger.deathHours, moneyPrice, riskWeight: danger.riskWeight, botId: actor.fetchId?.(), targetId });
     session.dangerMoment = moment ? { targetId, action: moment.action } : undefined;
     return moment;
 }
@@ -83,7 +90,7 @@ function forActor(session, actor, target, options = {}) {
 // caller checks it before its own scan for the attackers.
 function applies(session, actor) {
     const hp = Number(actor.fetchHp?.() || 0), maxHp = Number(actor.fetchMaxHp?.() || 0);
-    if (hp < maxHp && decidedEconomy(session)) return true;
+    if (hp < maxHp && decidedDanger(session)) return true;
     session.dangerMoment = undefined;
     return false;
 }
