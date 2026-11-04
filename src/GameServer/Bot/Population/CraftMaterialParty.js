@@ -128,7 +128,7 @@ function request(state, plan, { spots = [], economy, memo = null, timestamp = Da
         amount, requiredTotal, targetId: plan.target.selfId, materialCash, materialSoloHours,
         attempts: positive(previous?.attempts),
         materialLevel: state.level, materialClass: state.stats?.classId ?? state.classId,
-        materialReviewedAt: timestamp, reviewAt: timestamp + REVIEW_MS };
+        materialReviewedAt: timestamp };
 }
 
 function remaining(state, goal, inventory = state.inventory) {

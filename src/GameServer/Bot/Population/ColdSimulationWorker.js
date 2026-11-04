@@ -1886,7 +1886,8 @@ function startKernel(config = {}) {
             // second bare wish plan drops that retained chain on every switch.
             const acquisitionPlan = selectedAcquisition.acquisitionPlan;
             const partyRequest = PartyRequestPlanner.partyRequestForPlan(state, acquisitionPlan, timestamp,
-                { spots, economy, memo: kernel.states.get(Number(state.characterId)), search: routeSearch(state, timestamp) });
+                { spots, economy, memo: kernel.states.get(Number(state.characterId)), search: routeSearch(state, timestamp),
+                    planKey: selectedAcquisition.planKey });
             // The step took its build result, which clears wishDirty: a moved
             // route section, or a new plan destination the search reads (the
             // gear branch, the party wait), drops the kept route before the

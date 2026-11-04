@@ -9,6 +9,7 @@ const OfferOrder = invoke('GameServer/Bot/Economy/OfferOrder');
 const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const { GRADES } = invoke('GameServer/Bot/AI/GearGradeRule');
+const { fnv1a32 } = require('../Fnv1a');
 
 function hasInputProject(plan) {
     return !!(plan?.recipeId || plan?.exchange?.kind === 'luxury_exchange' || plan?.combine);
@@ -259,6 +260,11 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], timestamp = Da
         chosen?.funded, activity?.key, previousPlan?.status, previousPlan?.acquisitionProgress?.failures,
         previousPlan?.target?.selfId, state.stats?.partyRequest?.status,
         state.stats?.clanEquipmentOrder?.revision, JSON.stringify(replanContext)].join('|');
+    // The open party request carries the hash of the key its plan was chosen
+    // under (PartyRequestPlanner): while the bot waits, the plan is kept until
+    // one of those inputs moves (level, kit, plan materials, the wish and its
+    // funding, the plan's status, failures and replan context).
+    const planKey = fnv1a32(key);
     const held = economy.gearPlanMemo;
     if (held?.key === key && held.spots === spots && replanContext.routeCurrent
         && !replanContext.failure && !replanContext.invalidSource
@@ -316,7 +322,7 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], timestamp = Da
         && replanContext.routeCurrent
         && !replanContext.failure
         && state.stats?.partyRequest?.status === 'open'
-        && Number(state.stats.partyRequest.reviewAt || 0) > timestamp
+        && Number(state.stats.partyRequest.planKey) === planKey
         && !(previousPlan.strategy === 'craft' ? finishedOffer
             : GearAcquisitionPlanner.fundedMarketPlanForTarget(state, previousPlan.target?.selfId, planOptions));
     const upgradedPlan = availabilityPlan || (
@@ -357,7 +363,7 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], timestamp = Da
             && Number(finalizedPlan.acquisitionProgress?.at || finalizedPlan.startedAt || timestamp) + 20 * 60 * 1000 <= timestamp
     }, timestamp), timestamp), timestamp);
     const result = { acquisitionPlan: { ...acquisitionPlan },
-        replanContext, reusablePartyRequest, excludedSpotIds };
+        replanContext, reusablePartyRequest, excludedSpotIds, planKey };
     economy.gearPlanMemo = { key, spots, result };
     return { ...result, economy };
 }

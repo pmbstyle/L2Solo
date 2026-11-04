@@ -34,12 +34,61 @@ const originals = {
     tryPurchase: ColdMarketService.tryPurchase,
     reviewGoal: GoalService.review,
     beginMarketTravel: GoalExecutor.beginMarketTravel,
-    recordMany: LifeEvents.recordMany,
-    partyWaitReplanMs: Config.partyWaitReplanMs
+    recordMany: LifeEvents.recordMany
 };
 
+// A bot waiting for a party keeps its gear plan with no clock: the plan is
+// chosen again only when an input of the choice moves (here its kit), however
+// long it waits, and the open request carries the key it was chosen under.
+function planKeptWhileWaiting() {
+    const Selection = invoke('GameServer/Bot/AI/GearPlanSelection');
+    const Providers = invoke('GameServer/Bot/Economy/WishProviders');
+    const Requests = invoke('GameServer/Bot/Population/PartyRequestPlanner');
+    const stubbed = ['planFor', 'combatReadiness', 'bestSourceForPlan', 'replacementPlanFor', 'fundedMarketPlanForTarget',
+        'finalizePlan', 'isPlanSourceViableForState'];
+    const saved = Object.fromEntries(stubbed.map(name => [name, GearPlanner[name]]));
+    const savedCraft = Providers.personalCraftPlan;
+    let planned = 0;
+    const plan = { status: 'active', strategy: 'direct_drop', requiresParty: true, partyNeed: 'required',
+        target: { selfId: 100 }, next: { spotId: 'x', npcId: 1 } };
+    Object.assign(GearPlanner, { planFor: () => { planned++; return plan; }, combatReadiness: () => ({ hasWeapon: true }),
+        bestSourceForPlan: () => ({ spotId: 'x', npcId: 1 }), replacementPlanFor: () => null,
+        fundedMarketPlanForTarget: () => null, finalizePlan: (_state, _previous, next) => next,
+        isPlanSourceViableForState: () => true });
+    Providers.personalCraftPlan = () => null;
+    try {
+        const wish = { key: 'power:100:7', object: { itemId: 100, slot: 7 }, funded: false };
+        // Every step rebuilds the economy: the build's own memo is gone.
+        const economy = () => ({ network: { queue: [wish], focus: [wish.key],
+            activity: { rootKey: wish.key, activity: 'hunting', key: 'hunt:x' } }, statsPacket: {} });
+        const step = (state, timestamp) => {
+            const chosen = Selection.selectAcquisitionPlan(state, plan, { timestamp, preparedEconomy: economy(),
+                preparedReplanContext: { routeCurrent: true, failure: null } });
+            return { chosen, request: { status: 'open', planKey: chosen.planKey } };
+        };
+        const timestamp = Date.now();
+        const bot = { characterId: 9150, level: 30, activity: 'hunting', inventory: { 1: { selfId: 1, equipped: true, slot: 7 } }, stats: { classId: 1 } };
+        // The step that opens the request moves an input of the choice (the
+        // request's status): the next one chooses under the waiting key.
+        const opened = step({ ...bot, stats: { ...bot.stats, partyRequest: step(bot, timestamp).request } }, timestamp);
+        assert.strictEqual(planned, 2, 'fixture: the plan is chosen without and then with the open request');
+        const waiting = { ...bot, stats: { ...bot.stats, partyRequest: opened.request } };
+        const later = step(waiting, timestamp + 2 * 60 * 60 * 1000);
+        assert.strictEqual(later.chosen.reusablePartyRequest, true);
+        assert.strictEqual(planned, 2, 'two hours of waiting on the same inputs: the plan is kept');
+        const regeared = { ...waiting, inventory: { 2: { selfId: 2, equipped: true, slot: 7 } } };
+        assert.strictEqual(step(regeared, timestamp + 60 * 1000).chosen.reusablePartyRequest, false);
+        assert.strictEqual(planned, 3, 'a new kit piece: the plan is chosen again at once');
+        const request = Requests.partyRequestForPlan(waiting, plan, timestamp, { economy: { worth: () => 0 }, planKey: later.chosen.planKey });
+        assert.strictEqual(request.planKey, later.chosen.planKey, 'the request keeps the choice key');
+    } finally {
+        Object.assign(GearPlanner, saved);
+        Providers.personalCraftPlan = savedCraft;
+    }
+}
+
 async function run() {
-    Config.partyWaitReplanMs = 5 * 60 * 1000;
+    planKeptWhileWaiting();
     const state = {
         characterId: 9101,
         name: 'PartyWaitProbe',
@@ -324,6 +373,5 @@ run().catch((err) => {
     GoalService.review = originals.reviewGoal;
     GoalExecutor.beginMarketTravel = originals.beginMarketTravel;
     LifeEvents.recordMany = originals.recordMany;
-    Config.partyWaitReplanMs = originals.partyWaitReplanMs;
     fs.rmSync(isolated.directory, { recursive: true, force: true });
 });

@@ -106,6 +106,10 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    also held as `network.focus`, are read by slot in ~30 places (`focus?.[0]` in diagnostics and keys,
    `SpotEconomics.moneyShort`, `PartyIncomeComparison`, `ActorEconomyProjection`). They want one owner like
    `StatsPacket` (the money, kit and danger arrays).
+23. **A craft material party request is reviewed every 5 min.** `CraftMaterialParty.request` (`REVIEW_MS`, ~104,
+   ~113) keeps the request and its worker memo for 5 min of game time instead of keying them on what the review reads
+   (the material's remaining amount, the camps' forecasts, the source route reader); a time window stands in for
+   those events.
 
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets`' `gapHorizonHours`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so

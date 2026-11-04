@@ -95,9 +95,6 @@ const DEFAULTS = {
     protectedPartyFormationLagAbortMs: 40,
     protectedPartyFormationMainBudgetMs: 25,
     protectedPartyFormationMaxBackoffMs: 120000,
-    // Party requests are orthogonal to activity.  This is the slow safety
-    // replan/review cadence, not a period during which the bot is blocked.
-    partyWaitReplanMs: 5 * 60 * 1000,
     phasePolicyIntervalMs: 10000,
     // Start with every level-one hunting sector. Waves open every five levels
     // at x1-x10, or every ten levels at x50 and above. This is a cap for
