@@ -78,33 +78,4 @@ function evaluate(remaining, target, attacksOf = undefined) {
     return { ready, reason: ready ? 'ready' : 'no_reserve', survival };
 }
 
-// Where a rest for a fight it was refused ends (RestPolicy.restOver; hot
-// HuntingState, cold BackgroundResolver): the HP and MP, on the way its regen
-// takes (regen: { hp, mp } a tick, MP regained whatever its mana rule), at which
-// readiness admits that fight (profiles, pet: as atVitals'; fight: the view it
-// was refused, its pull with it), capped at whole: full HP and MP. The way is
-// halved REST_TARGET_STEPS times, so the target lies within 1/32 of the rest
-// to whole past the exact point, never before it: 1 + 5 verdicts, once a rest.
-// ticks: the regen ticks it takes to get there.
-const REST_TARGET_STEPS = 5;
-function restTarget(profiles, pet, fight, vitals, regen) {
-    const hp = Number(vitals.hp) || 0, maxHp = Number(vitals.maxHp) || 0;
-    const mp = Number(vitals.mp) || 0, maxMp = Number(vitals.maxMp) || 0;
-    const rateHp = Number(regen?.hp) || 0, rateMp = Number(regen?.mp) || 0;
-    const ticksFor = (missing, rate) => missing > 0 ? (rate > 0 ? missing / rate : Infinity) : 0;
-    const whole = Math.max(ticksFor(maxHp - hp, rateHp), ticksFor(maxMp - mp, rateMp));
-    if (!Number.isFinite(whole)) return { hp: maxHp, mp: maxMp, ticks: Infinity };
-    const at = share => ({ hp: Math.min(maxHp, hp + rateHp * whole * share),
-        mp: Math.min(maxMp, mp + rateMp * whole * share), ticks: whole * share });
-    const admits = point => evaluate(atVitals(profiles, point.hp, point.mp, pet), fight).ready;
-    if (!admits(at(1))) return at(1);
-    let low = 0, high = 1;
-    for (let step = 0; step < REST_TARGET_STEPS; step++) {
-        const middle = (low + high) / 2;
-        if (admits(at(middle))) high = middle;
-        else low = middle;
-    }
-    return at(high);
-}
-
-module.exports = { FIGHT_MARGIN_SECONDS, atVitals, atWholeBar, evaluate, restTarget };
+module.exports = { FIGHT_MARGIN_SECONDS, atVitals, atWholeBar, evaluate };

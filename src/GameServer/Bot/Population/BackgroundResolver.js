@@ -17,6 +17,7 @@ const PartyHealPolicy = invoke('GameServer/Bot/AI/PartyHealPolicy');
 const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
+const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const RestPotion = invoke('GameServer/Bot/AI/RestPotion');
@@ -179,17 +180,15 @@ function applyStandingRegen(state, sourceVitals, elapsedMs, timestamp = Date.now
     return vitals;
 }
 
-// The rest a refused fight sends a cold bot to (RestPolicy.restOver, the hot rest's
-// rule): the vitals its fight is admitted at, on its rest's regen (ColdRest
-// restRegenPerTick, MP counted: the fight may wait for it), and the time to them,
-// never under estimateRestMs's 8 s.
-function restTargetFor(state, vitals, restFor, timestamp) {
-    const maxHp = Number(vitals.maxHp ?? restFor.profile.maxHp), maxMp = Number(vitals.maxMp ?? restFor.profile.maxMp);
-    const now = { hp: Number(vitals.hp ?? maxHp), maxHp, mp: Number(vitals.mp ?? maxMp), maxMp };
-    const regen = restRegenPerTick(state, maxHp - now.hp, maxMp - now.mp, { profile: restFor.profile, timestamp, requireMana: true });
-    const target = EncounterReadiness.restTarget(restFor.profiles, restFor.pet, restFor.fight, now, regen);
-    if (!Number.isFinite(target.ticks)) return null;
-    return { hp: target.hp, mp: target.mp, ms: Math.max(8000, target.ticks * Formulas.REGEN_TICK_MS) };
+// The rest a solo cold bot sits down to (RestPolicy.restOver, the hot rest's rule):
+// to its rested line; one its next fight sent it to when it was already rested
+// (refused at its line) goes on to a full bar, HP and MP.
+function soloRestMs(state, vitals, { refused = false } = {}) {
+    const persona = BotPersona.of(state);
+    if (refused && RestPolicy.restOver(vitals, { mana: requiresManaRecovery(state), persona })) {
+        return estimateRestMs(state, vitals, { requireMana: true });
+    }
+    return estimateRestMs(state, vitals, { line: RestPolicy.restedLine(persona) });
 }
 
 function resolveRest(state, elapsedMs, timestamp, options = {}) {
@@ -200,14 +199,8 @@ function resolveRest(state, elapsedMs, timestamp, options = {}) {
         mp: Math.max(0, Number(state.vitals?.mp || 0)),
         maxMp: combat.maxMp
     };
-    // A rest for a refused fight ends where it is admitted (restTargetFor's stats.restTo), while
-    // its deadline is the one set with it; any other rest (a party's, one moved on) ends whole.
-    const held = state.stats?.restTo;
-    const target = held && Number(held.until) === Number(state.stats?.restUntil) ? held : null;
-    // Seated, or standing when that refills the rest faster (user 10-29); a fight's rest
-    // counts the MP it waits for, as its target did.
-    const regen = restRegenPerTick(state, vitals.maxHp - vitals.hp, vitals.maxMp - vitals.mp,
-        { profile: combat, timestamp, ...options, ...(target ? { requireMana: true } : {}) });
+    // Seated, or standing when that refills the rest faster (user 10-29).
+    const regen = restRegenPerTick(state, vitals.maxHp - vitals.hp, vitals.maxMp - vitals.mp, { profile: combat, timestamp, ...options });
     const ticks = Math.max(0, Number(elapsedMs) || 0) / Formulas.REGEN_TICK_MS;
     vitals.hp = Math.min(vitals.maxHp, vitals.hp + regen.hp * ticks);
     vitals.mp = Math.min(vitals.maxMp, vitals.mp + regen.mp * ticks);
@@ -218,20 +211,18 @@ function resolveRest(state, elapsedMs, timestamp, options = {}) {
     const summon = rested.stats?.coldCombat?.summon;
     const petView = coldPetView(combat, summon, vitals, rested.stats?.coldCombat?.cooldowns, timestamp);
     const petReady = RestPolicy.petRested(petView);
-    const recoveryNeeded = !RestPolicy.restOver(state, vitals, { target, mana: requireMana, pet: petView,
-        party: options.party === true });
+    // Solo to the bot's rested line, a party at its locked line (RestPolicy.restOver).
+    const party = options.party === true, persona = party ? null : BotPersona.of(state);
+    const recoveryNeeded = !RestPolicy.restOver(vitals, { mana: requireMana, pet: petView, party, persona });
     // The deadline is an estimate, not an additional readiness condition.
     // Regeneration can fill the member slightly before that deadline; keeping
     // the deadline alive in that case would move it forward on every resolve.
-    const scheduledRemainingMs = recoveryNeeded && (requireMana || target)
+    const scheduledRemainingMs = recoveryNeeded && requireMana
         ? Math.max(0, Number(state.stats?.restUntil || 0) - timestamp)
         : 0;
-    // A fight's rest goes on to its target (at least a regen tick), not to whole.
-    const toTargetMs = target ? Math.max(Formulas.REGEN_TICK_MS, Formulas.REGEN_TICK_MS * Math.max(
-        (target.hp - vitals.hp) / Math.max(0.01, regen.hp), (target.mp - vitals.mp) / Math.max(0.01, regen.mp))) : 0;
     const remainingMs = recoveryNeeded
-        ? Math.max(target ? toTargetMs : estimateRestMs(state, vitals, options), scheduledRemainingMs,
-            petReady ? 0 : petRestMs(combat, summon, vitals, timestamp))
+        ? Math.max(estimateRestMs(state, vitals, party ? options : { ...options, line: RestPolicy.restedLine(persona) }),
+            scheduledRemainingMs, petReady ? 0 : petRestMs(combat, summon, vitals, timestamp))
         : 0;
     const resting = recoveryNeeded;
     // ARCH-NOTE: Native checkpoints require integer milliseconds. A pet's regen
@@ -242,9 +233,7 @@ function resolveRest(state, elapsedMs, timestamp, options = {}) {
         patch: {
             activity: resting ? 'resting' : 'hunting',
             vitals,
-            // The target moves on with the deadline it now has.
-            stats: { ...(rested.stats || {}), restUntil,
-                ...(held ? { restTo: target && resting ? { ...target, until: restUntil } : null } : {}) }
+            stats: { ...(rested.stats || {}), restUntil }
         },
         events: resting ? [] : [{
             type: 'recovered',
@@ -1762,11 +1751,8 @@ function resolveFight({ state, spot, targetNpcId = 0, rng, timestamp = Date.now(
         // Below its rest line a bot sits whatever the mob, as it would after a fight.
         const now = { hp: state.vitals?.hp ?? bot.maxHp, maxHp: bot.maxHp, mp: state.vitals?.mp ?? bot.maxMp, maxMp: bot.maxMp };
         const combat = state.stats?.coldCombat;
-        const belowLines = needsRest(state, now, { pet: coldPetView(bot, combat?.summon, now, combat?.cooldowns, timestamp) });
-        if (!readiness.ready || belowLines) {
-            // restFor: the fight a rest above the lines waits for (restTargetFor), as hot's.
-            return { avoided: true, needsRest: true, reason: 'solo_recovery_needed',
-                restFor: belowLines ? null : { profile: bot, profiles: matchupProfiles, pet: petNear, fight: usual } };
+        if (!readiness.ready || needsRest(state, now, { pet: coldPetView(bot, combat?.summon, now, combat?.cooldowns, timestamp) })) {
+            return { avoided: true, needsRest: true, reason: 'solo_recovery_needed' };
         }
     }
     const vitals = {
@@ -2844,10 +2830,7 @@ const BackgroundResolver = {
                     patch.activity = 'resting';
                     const drinkMs = drinkToRest(roundProfile, true, coldPetView(roundProfile, patch.stats.coldCombat?.summon, patch.vitals,
                         patch.stats.coldCombat?.cooldowns, timestamp + combatMs));
-                    const restTo = result.restFor ? restTargetFor(fightState, patch.vitals, result.restFor, timestamp) : null;
-                    patch.stats.restUntil = Math.ceil(timestamp + Math.max(restTo ? restTo.ms : estimateRestMs(fightState, patch.vitals), drinkMs));
-                    if (restTo || patch.stats.restTo) patch.stats.restTo = restTo
-                        ? { hp: restTo.hp, mp: restTo.mp, until: patch.stats.restUntil } : null;
+                    patch.stats.restUntil = Math.ceil(timestamp + Math.max(soloRestMs(fightState, patch.vitals, { refused: true }), drinkMs));
                     events.push({ type: 'rest', weight: 2,
                         summary: `${state.name || 'Bot'} sat down before another fight near ${spot.name}`,
                         meta: { spotId: spot.id, reason: result.reason } });
@@ -2965,7 +2948,7 @@ const BackgroundResolver = {
                 patch.activity = 'resting';
                 patch.stats = {
                     ...(patch.stats || state.stats || {}),
-                    restUntil: Math.ceil(timestamp + Math.round(result.runMs || 0) + Math.max(estimateRestMs(fightState, patch.vitals), drinkMs,
+                    restUntil: Math.ceil(timestamp + Math.round(result.runMs || 0) + Math.max(soloRestMs(fightState, patch.vitals), drinkMs,
                         RestPolicy.petRested(petView) ? 0 : petRestMs(fightProfile, summonLeft, patch.vitals, timestamp + combatMs)))
                 };
                 events.push({

@@ -45,6 +45,7 @@ const SurvivalFloor = invoke('GameServer/Bot/Population/SurvivalFloor');
 const DecisionEvents = require('../DecisionEvents');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const ShoppingState = invoke('GameServer/Bot/AI/States/ShoppingState');
+const RestingState = invoke('GameServer/Bot/AI/States/RestingState');
 const { SPOT_CELL_SIZE } = invoke('GameServer/World/WorldConstants');
 
 const TARGET_STALL_TICKS = 5;
@@ -377,13 +378,9 @@ function readinessProfiles(bot, profiles = TargetMatchup.actorProfiles([bot]), s
 // readiness judges its rolled pull the same way, BackgroundResolver.resolveFight),
 // a wounded mob with what is left of it.
 // view: the scan's own view of the target, when it was read with these stats.
-// fight: the view judged, where a rest for it ends (beginVoluntaryRecovery).
 function encounterReadiness(bot, target, own = readinessProfiles(bot), view = TargetMatchup.targetView(target, own.stats), pull = 1) {
-    const pulled = BotPullEstimate.pullView(view, pull);
-    const fight = { ...pulled, maxHp: pulled.maxHp - view.maxHp + (target.fetchHp?.() ?? view.maxHp) };
-    const readiness = EncounterReadiness.evaluate(own.remaining, fight);
-    readiness.fight = fight;
-    return readiness;
+    const fight = BotPullEstimate.pullView(view, pull);
+    return EncounterReadiness.evaluate(own.remaining, { ...fight, maxHp: fight.maxHp - view.maxHp + (target.fetchHp?.() ?? view.maxHp) });
 }
 // The scan's fights, ready ones first, and where the next visibility batch starts
 // in that order. The batch resumes where a blocked one stopped (batch.resumeId).
@@ -428,11 +425,12 @@ function rememberEncounterReadiness(session, target, readiness) {
     };
 }
 
-// readiness: the refused fight's (encounterReadiness), whose admission ends the
-// rest (session.restTo, RestPolicy.restOver; the next hunting tick drops it);
-// without one the bot rests whole.
+// readiness: the refused fight's. A bot it refused at its rested line rests to
+// a full bar (session.restWhole, RestPolicy.restOver; the next hunting tick
+// drops it), else it would stand, be refused and sit again every tick.
 function beginVoluntaryRecovery(session, bot, BotAI, readiness = null) {
-    session.restTo = readiness?.fight ? restTarget(bot, readiness.fight) : null;
+    session.restWhole = false;
+    session.restWhole = !!readiness && RestingState.rested(session, bot);
     if (session.currentTargetId) clearTarget(session, bot, session.currentTargetId);
     TownNpcApproach.reset(session);
     session.lastTargetEvaluation = undefined;
@@ -454,17 +452,6 @@ function beginVoluntaryRecovery(session, bot, BotAI, readiness = null) {
         at: Date.now()
     };
     BotAI.say(session, Speech.line('combat.rest'), { ambient: true, key: 'rest' });
-}
-
-// The vitals at which the fight is admitted, on the way seated regen takes
-// (BotEncounterReadiness.restTarget), once a rest.
-function restTarget(bot, fight) {
-    const automation = bot.automation;
-    if (typeof automation?.fetchRevHpAmount !== 'function') return null;
-    const profiles = TargetMatchup.actorProfiles([bot]);
-    return EncounterReadiness.restTarget(profiles, profiles.find(profile => profile.servitor === true) || null, fight,
-        { hp: bot.fetchHp(), maxHp: bot.fetchMaxHp(), mp: bot.fetchMp(), maxMp: bot.fetchMaxMp() },
-        { hp: automation.fetchRevHpAmount(bot, { seated: true }), mp: automation.fetchRevMpAmount(bot, { seated: true }) });
 }
 
 function targetOnCooldown(session, targetId) {
@@ -710,8 +697,8 @@ module.exports = {
     claimedTargetIds,
     tick(session, bot, Generics, BotAI) {
         session.deferredOccupation = null;
-        // A rest's end lives while the bot rests (beginVoluntaryRecovery).
-        if (session.restTo) session.restTo = null;
+        // A rest's full bar lives while the bot rests (beginVoluntaryRecovery).
+        if (session.restWhole) session.restWhole = false;
         if (session.pendingTownTrip) {
             const trip = startShopping(session, bot, BotAI, session.pendingTownTrip.reason);
             if (trip !== 'deferred') return;
