@@ -2603,7 +2603,8 @@ const BackgroundResolver = {
             const expiresAt = Number(state.stats.supplyErrand.expiresAt || 0);
             // A native accepted obligation has no lateness deadline. Its
             // terminal event releases this workflow; downtime cannot abandon it.
-            if (!(state.stats.supplyErrand.meetingToken && state.stats.tradeMeeting) && expiresAt > 0 && timestamp >= expiresAt) {
+            const deadline = !(state.stats.supplyErrand.meetingToken && state.stats.tradeMeeting) && expiresAt > 0;
+            if (deadline && timestamp >= expiresAt) {
                 return {
                     patch: {
                         activity: 'hunting',
@@ -2623,11 +2624,14 @@ const BackgroundResolver = {
                     debug: { activity: 'supply_errand_expired' }
                 };
             }
+            // The parked companion shops hot; its return writes the row hot
+            // (BotTownTravel.returnSupplyHot) and a meeting writes its own
+            // state. The row's own end is the errand's deadline above.
             return {
                 patch: { activity: 'shopping', stats: { ...(state.stats || {}) } },
                 events: [],
                 materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-                nextResolveAt: timestamp + 30000,
+                nextResolveAt: deadline ? expiresAt : timestamp + 30000,
                 debug: { activity: 'supply_errand' }
             };
         }
