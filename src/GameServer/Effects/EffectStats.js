@@ -64,6 +64,40 @@ function statValues(actor, stat, posture = undefined) {
     return values;
 }
 
+// What statValues reads apart from the gear, as one string: each stored effect
+// (its sequence, renewed when it is replaced; an item passive by its key, as
+// every stats rebuild recreates it from the gear), each passive skill and
+// whether each of their conditions holds now. Equal keys and equal gear give
+// equal values for every stat (CalculateStats.refresh).
+function inputKey(actor) {
+    const situation = situationOf(actor);
+    let key = '';
+    const conditions = (entries) => {
+        for (const entry of entries || []) key += SkillRequirements.conditionMet(entry.condition, situation) ? '+' : '-';
+    };
+    for (const effect of Object.values(EffectStore.prune(actor))) {
+        key += effect.type === 'item_passive' ? effect.key : effect.sequence;
+        conditions(effect.conditionalStats);
+        key += ',';
+    }
+    key += '|';
+    for (const list of [actor?.skillset?.fetchSkills?.(), actor?.fetchPassiveSkills?.()]) {
+        for (const skill of list || []) {
+            if (skill?.fetchPassive?.() !== true) continue;
+            const semantic = skill.fetchSemantic?.() || C4SkillRules.resolveCached({
+                selfId: skill.fetchSelfId?.(),
+                name: skill.fetchName?.(),
+                level: skill.fetchLevel?.()
+            });
+            key += `${skill.fetchSelfId?.()}:${skill.fetchLevel?.()}`;
+            conditions([semantic]);
+            conditions(semantic.conditionalStats);
+            key += ',';
+        }
+    }
+    return key;
+}
+
 // What the actor wears, from its backpack. Each field is read on first use
 // and kept for the rest of the lookup.
 function gearOf(actor) {
@@ -115,5 +149,6 @@ class SituationContext {
 module.exports = {
     multiplier,
     add,
-    situationalMultiplier
+    situationalMultiplier,
+    inputKey
 };

@@ -196,13 +196,12 @@ Ordered by impact. Fact = code path read; guess = not traced to the end.
 
 H = hot bots near players (100-300 in a crowd); "est." = reasoned, not measured. Measured: 22,348 NPC spawns; NPCs
 in a 3×3 grid window median 100, max 749; `EffectStore.list` with 25 effects 8.3 µs; a `bot_life_state` row ≈
-statsJson 6.4 KB + mindJson 1 KB + inventorySummary 2.9 KB. Confirm C2-C4 with a hot-crowd perf run before fixing.
+statsJson 6.4 KB + mindJson 1 KB + inventorySummary 2.9 KB. Confirm C3-C4 with a hot-crowd perf run before fixing.
 Impact is at 1700 / 10k bots.
 
 | # | Where | What is wrong (how often × size) | Impact | Fix (same behaviour, cheaper) |
 |---|---|---|---|---|
 | C1 | cold commit: `ColdSimulationOwner.commitBatch` → `persistencePatch` + `SavedStats.statsColumns`; `Database.writeColdCommitUnsafe`; triggers `bot_party_candidate_stats/_metadata` | every cold commit × ~10 KB: whole stats/mind/inventory stringified when only clock/vitals changed; json_patch + json_extract + 7 trigger json_extracts; ~10 KB row rewritten (~12-16 KB WAL, est. ~1.2 GB/h) | Med / **High** (the WAL growth) | changed top-level stats keys (`json_set` per key, as `writeHeldOnRevision`); skip inventorySummary when `bagChanged === false`; later move per-step fields out of statsJson |
-| C2 | `Actor.statusUpdateVitals(self)` → full `calculateStats` | every hit received, cast, 3 s regen per hot actor: ~55 EffectStats calls + 6 `EffectStore.list`, skills spread, passives walk; est. ≥ 0.5 ms; est. 50-200 ms/s of main at 100 fighting bots | **High** / High | vitals only; `calculateStats` only on effect/gear/level change (revision) |
 | C3 | `Npc/Generics/BroadcastVitals` | every NPC HP change × all sessions: linear filter, 2 SpeckMath per session, packets built for bots and dropped; est. 20-50 ms/s at H=300 | Med / High | `World.realPlayerSessionsNear(loc, 3500)`, owner via `ActorQueries.byId` |
 | C4 | `World.visibleUserSessions` realOnly (every `BotSession.dataSendToOthers`), `botVisibleRealPlayers` | every bot packet × bots nearby: queries `kind: 'all'`, filters bots by name, sorts: O(H²) | Med / Med-High | query `kind: 'player'`; return before building a packet when nobody sees |
 | C5 | `BotAfkMarketService.executePlan` → `MarketPricing.lineState` → `beliefFor` → `PriceBelief.prior` → `FirstPrice.priceOf` | every listed line in a cold review, on main: recomputes the belief only for `sigma` the worker already had (350-500 ms main turns measured) | Med-High (long turns) | carry `sigma` in the plan line; mind the 768 B plan cap |

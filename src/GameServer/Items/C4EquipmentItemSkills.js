@@ -2895,12 +2895,15 @@ function resolveItem(itemSelfId) {
     return ITEM_SKILLS[String(Number(itemSelfId))] || null;
 }
 
-function conditionalStatsFor(skillId, level = 1, context = {}) {
+function conditionalEntries(skillId, level = 1) {
     const bySkill = CONDITIONAL_SKILL_STATS[String(Number(skillId))];
-    if (!bySkill) return {};
+    if (!bySkill) return [];
     const levelKey = String(Number(level) || 1);
-    const entries = bySkill[levelKey] || bySkill[String(Object.keys(bySkill).length)] || [];
-    return entries
+    return bySkill[levelKey] || bySkill[String(Object.keys(bySkill).length)] || [];
+}
+
+function conditionalStatsFor(skillId, level = 1, context = {}) {
+    return conditionalEntries(skillId, level)
         .filter((entry) => conditionMatches(entry.condition, context))
         .reduce((stats, entry) => mergeStats(stats, entry.stats), {});
 }
@@ -2966,6 +2969,24 @@ function sync(actor, items = []) {
     return applied.filter(Boolean);
 }
 
+// Which conditions of the worn items' skills hold for the actor now: sync
+// bakes them into each item's effect (a weapon SA keeps its own on the
+// effect, read live), so the stats rebuild reads them (CalculateStats.inputKey).
+function conditionKey(actor, items = []) {
+    const WeaponSA = invoke('GameServer/Items/C4WeaponSA');
+    let key = '';
+    for (const item of items) {
+        if (!item?.fetchEquipped?.() || WeaponSA.definition(item)) continue;
+        const itemSkill = resolveItem(item.fetchSelfId?.());
+        if (!itemSkill) continue;
+        for (const entry of conditionalEntries(itemSkill.skillId, itemSkill.level)) {
+            key += conditionMatches(entry.condition, { actor }) ? '+' : '-';
+        }
+        key += ',';
+    }
+    return key;
+}
+
 function situationalStats(actor, context = {}) {
     return actor?.backpack?.fetchItems?.()
         .filter((item) => !!item?.fetchEquipped?.())
@@ -2987,5 +3008,6 @@ module.exports = {
     conditionalStatsFor,
     effectForItem,
     sync,
+    conditionKey,
     situationalStats
 };

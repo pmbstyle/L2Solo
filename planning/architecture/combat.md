@@ -31,7 +31,9 @@ Scope: `Actor`, `Skills`, `Effects`, `Combat`, `Npc`, `RaidBoss`, `Pets`, `Formu
   `skillType` chain), `ChargeLifecycle`, `ToggleSkills`, `CubicControl`, `SkillReuse` (persistence only).
 - **Effects:** `EffectStore` (authoritative), `EffectStats`, `EffectTicker`, `EffectRestrictions`; `BuffCatalog` legacy.
 - **Stats:** hot `CalculateStats`, cold `ColdCombatProfile.powerTerms/formulaPower` — both call `Formulas` but assemble
-  separately.
+  separately. A hot vitals update (`Actor.statusUpdateVitals`: regen tick, hit, DoT) rebuilds only when
+  `CalculateStats.inputKey` moved (level, class, worn items, effects, passives, the conditions they read: HP
+  thresholds, moving, seated, night); a new stat input goes into that key.
 - **Summons/pets:** servitors are `Npc` with own loop `SummonControl.attackTick` (hit from `Attack.prepareNpcMeleeHit`);
   C4 pets `Pets/PetRuntime` (`isPet` and `isSummon`); cold models servitors only (`ColdSummonProfile`).
 - **Raid:** `RaidBossBalance` (0.75 at load), `RaidCurse` (hot only).

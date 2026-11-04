@@ -32,9 +32,9 @@ const actor = {
     fetchId: () => 1, fetchHp: () => 100, fetchMaxHp: () => 100,
     fetchMp: () => 10, fetchMaxMp: () => 20, fetchMaxLoad: () => 10000
 };
-const originalStats = Generics.calculateStats;
+const originalRefresh = Generics.calculateStats.refresh;
 try {
-    Generics.calculateStats = () => {};
+    Generics.calculateStats.refresh = () => {};
     Actor.prototype.statusUpdateVitals.call(actor, actor);
     const packet = packets[0], fields = new Map();
     assert.equal(packet[0], 0x0e);
@@ -42,5 +42,5 @@ try {
         fields.set(packet.readInt32LE(9 + i * 8), packet.readInt32LE(13 + i * 8));
     assert.equal(fields.get(0x0e), 1600, 'self status update includes current load');
     assert.equal(fields.get(0x0f), 10000);
-} finally { Generics.calculateStats = originalStats; }
+} finally { Generics.calculateStats.refresh = originalRefresh; }
 console.log('Inventory weight: arrow stacks, equipped gear, removal and client load update passed');

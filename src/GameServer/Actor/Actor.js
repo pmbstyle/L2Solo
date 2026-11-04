@@ -157,7 +157,7 @@ class Actor extends ActorModel {
 
     statusUpdateVitals(creature) {
         if (creature === this) {
-            invoke(path.actor).calculateStats(this.session, this);
+            invoke(path.actor).calculateStats.refresh(this.session, this);
         }
 
         this.session.dataSendToMe(
