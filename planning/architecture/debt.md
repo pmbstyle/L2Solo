@@ -152,7 +152,7 @@ hot/cold transition (POP-4), start-up repairs removed after their cause is found
 ## Planned features
 
 - Cold walker visible on its road (plan local to the maintainer's sessions, not in the repo yet).
-- Recompute only the link a change touches (plan local, not in the repo yet).
+- Recompute only the link a change touches: [../decision-links/plan.md](../decision-links/plan.md) (next release).
 - Gear progression and the market's demand estimate from the hunt tables (current and future bots by class and level
   band: gear, hennas, consumables), see tables.md "Assessment" (TBL-3).
 
