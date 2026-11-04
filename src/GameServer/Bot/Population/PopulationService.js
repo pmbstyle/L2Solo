@@ -3487,7 +3487,11 @@ const PopulationService = {
         }).then(async (goalSnapshot) => {
             const remote = await BotAfkMarketService.reconcile(marketState, goalSnapshot?.current, goalSnapshot?.candidates);
             const current = remote.state || marketState;
-            const travelState = tripEdge || SurvivalFloor.forState(current)?.action === 'unload'
+            // forState unloads only where the bag alone does (the mana floor comes first), so
+            // the cheap bag floor answers the common no; one moment for both reads.
+            const now = Date.now();
+            const travelState = tripEdge || (SurvivalFloor.bagFor(current, now)?.action === 'unload'
+                && SurvivalFloor.forState(current, now)?.action === 'unload')
                 ? GoalExecutor.beginMarketTravel(current, goalSnapshot?.current, Date.now(),
                     { economy: current === marketState ? goalSnapshot?.economy : null }) : null;
             return travelState ? LifeState.upsertState(travelState, 'goal_market_travel') : current;

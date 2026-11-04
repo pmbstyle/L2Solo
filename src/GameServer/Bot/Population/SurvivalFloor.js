@@ -82,8 +82,10 @@ function forState(state, timestamp = Date.now(), inputs = null) {
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
     const Roles = invoke('GameServer/Bot/AI/BotRoles');
     const profile = Profile.profileFor(state, timestamp);
+    // evaluate reads the cast costs only for a role that rests for mana.
+    const manaRequired = Roles.shouldRestForMana(state);
     return saleRetryWaits(evaluate({ hp: state.vitals?.hp, mp: state.vitals?.mp ?? profile.maxMp,
-        manaRequired: Roles.shouldRestForMana(state), castCosts: stateCastCosts(state, profile, timestamp),
+        manaRequired, castCosts: manaRequired ? stateCastCosts(state, profile, timestamp) : [],
         ...stateInventory(state, invoke('GameServer/DataCache').items),
         slotLimit: InventoryLimits.forState(state, profile), maxLoad: profile.maxLoad }), state, timestamp);
 }
@@ -127,8 +129,10 @@ function forActor(actor, state = null, timestamp = Date.now()) {
     // lazy: worker the cold worker loads this file (BackgroundResolver); forActor is hot only.
     const Attack = invoke('GameServer/Actor/Attack');
     const Roles = invoke('GameServer/Bot/AI/BotRoles'); // lazy: worker as Attack above.
-    const mask = Attack.weaponMaskFor(actor);
-    const costs = (actor.skillset?.fetchSkills?.() || []).filter(skill => {
+    // evaluate reads the cast costs only for a role that rests for mana.
+    const manaRequired = Roles.shouldRestForMana(actor);
+    const mask = manaRequired ? Attack.weaponMaskFor(actor) : 0;
+    const costs = !manaRequired ? [] : (actor.skillset?.fetchSkills?.() || []).filter(skill => {
         const semantic = skill.fetchSemantic?.() || {};
         return !skill.fetchPassive?.() && semantic.target === 'enemy' && !semantic.notUsedInC4
             && (!semantic.requires?.weaponsAllowed || (Number(semantic.requires.weaponsAllowed) & mask) !== 0)
@@ -138,7 +142,7 @@ function forActor(actor, state = null, timestamp = Date.now()) {
     })
         .map(skill => Attack.prototype.skillMpCost(actor, skill));
     return saleRetryWaits(evaluate({ dead: actor.isDead?.() === true, hp: actor.fetchHp?.(), mp: actor.fetchMp?.(),
-        manaRequired: Roles.shouldRestForMana(actor), castCosts: costs,
+        manaRequired, castCosts: costs,
         ...actorInventory(actor), slotLimit: InventoryLimits.forActor(actor), maxLoad: actor.fetchMaxLoad?.() || 0 }),
     state, timestamp, actor, () => invoke('GameServer/Bot/Economy/MarketListingPolicy').actorState({ actor, coldLifeState: state }));
 }
