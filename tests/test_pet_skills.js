@@ -151,12 +151,16 @@ async function main() {
         assert.strictEqual(skill.fetchConsumedMp(),cost);assert.strictEqual(skill.fetchPower(),power);
         const ownerMp=session.actor.fetchMp();
         assert(AI.tick(pet,()=>0));
+        assert.strictEqual(session.packets.some(packet=>packet[0]===0x2b),false,
+            'a baby pet healing its owner outside combat must not announce an attack stance');
         assert.strictEqual(pet.fetchMp(),pet.fetchMaxMp(),'no initial MP cost: charged when heal lands');
         await wait(skill.fetchHitTime()*333/pet.fetchCollectiveCastSpd()+150);
         pet.automation.stopReplenish();
         assert.strictEqual(session.actor.fetchHp(),hp+power,'sourced flat heal, not percent or invented M.Atk bonus');
         assert.strictEqual(pet.fetchMp(),pet.fetchMaxMp()-cost,'exact pet MP expenditure');
         assert.strictEqual(session.actor.fetchMp(),ownerMp,'owner MP is untouched');
+        assert.strictEqual(session.packets.some(packet=>packet[0]===0x2b),false,
+            'finishing an out-of-combat heal must not leave a baby pet in attack stance');
         const packet=session.packets.findLast(p=>p[0]===0xb5);
         assert(packet,'pet window receives immediate status');
         assert.strictEqual(packet.readInt32LE(39),pet.fetchMaxMp()-cost,'wire MP agrees with server');
