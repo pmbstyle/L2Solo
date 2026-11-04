@@ -2677,7 +2677,7 @@ function prepareCraftReservationsUnsafe(step, recipe) {
     }, { craft: false, clan: false });
 }
 
-function checkEconomyMaterialProtectionUnsafe(characterId, step, selfId, used, sale = false) {
+function checkEconomyMaterialProtectionUnsafe(characterId, step, selfId, used, sale = false, held = 0) {
     if (!step) return;
     const stats = SavedStats.merge(step.row.statsJson, step.row.mindJson), inventory = InventorySummary.read(step.row.inventorySummary);
     // Bilateral market acceptance also rechecks the current gear/craft/clan
@@ -2691,7 +2691,7 @@ function checkEconomyMaterialProtectionUnsafe(characterId, step, selfId, used, s
         Number(step.reserved?.[selfId] || 0), Number(item.protectedAmount || 0), Number(item.starterMobLootAmount || 0), Number(item.reservedAmount || 0))
         + (sale ? Number(invoke('GameServer/Bot/Economy/ItemDisposition').productionInputAmounts({ stats })[selfId] || 0) : 0);
     const available = Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=? AND equipped=0',
-        [characterId, Number(selfId)]).amount);
+        [characterId, Number(selfId)]).amount) + held;
     if (available - reserve < used) throw Error('economy_material_protected');
 }
 
@@ -3997,8 +3997,206 @@ function validBoardRecord(kind, storeType, rows) {
     return [BoardRules.SELL, BoardRules.BUY].includes(BoardRules.storeTypeFor(kind, storeType));
 }
 
+// A record line's numbers as written, checked: its fills and pricing cursor
+// (a bot's own, or a fresh one; none for a player).
+function boardLineValues(line, storeType, botOwned) {
+    const selfId = Number(line.selfId);
+    const count = Math.floor(Number(line.count));
+    const price = Math.floor(Number(line.price));
+    const enchant = Math.max(0, Math.floor(Number(line.enchant || 0)));
+    if (!Number.isSafeInteger(selfId) || selfId <= 0 || selfId === 57
+        || !Number.isSafeInteger(count) || count < 1
+        || !Number.isSafeInteger(price) || price < (storeType === BoardRules.BUY ? 1 : 0)) {
+        throw new Error('invalid_afk_trade_line');
+    }
+    const fills = botOwned ? (line.fills ?? 0) : 0;
+    if (!Number.isSafeInteger(fills) || fills < 0) throw new Error('invalid_board_pricing');
+    const pricing = botOwned ? (line.pricing || initialLinePricingUnsafe(selfId, price, storeType)) : null;
+    const observations = pricing ? pricingValues(pricing) : PRICING_FIELDS.map(field => OPTIONAL_PRICING_FIELDS.has(field) ? 0 : null);
+    if (pricing && pricing.seenFills > fills) throw new Error('invalid_board_pricing');
+    return { selfId, count, price, enchant, fills, observations };
+}
+
+// A bot's sale keeps its production inputs (ItemDisposition): one check per
+// line, its row read once per move (no write of the move touches it). `held`:
+// units of the item the shop still holds that count as in the bag (a
+// republished shop's stock is offered again).
+function saleProtectionUnsafe(characterId, botOwned) {
+    const life = botOwned && one('SELECT * FROM bot_life_state WHERE characterId=?', [characterId]);
+    if (!life) return null;
+    const inputs = invoke('GameServer/Bot/Economy/ItemDisposition').productionInputAmounts({
+        stats: SavedStats.merge(life.statsJson, life.mindJson) });
+    const step = { row: life };
+    return (selfId, count, held = 0) => {
+        if (inputs[selfId] > 0) checkEconomyMaterialProtectionUnsafe(characterId, step, selfId, count, true, held);
+    };
+}
+
+// Takes `count` of a sell line's item out of the owner's bag (a conditional
+// ad only names the row) and returns the first row taken. `sourceIds`: rows
+// this move took from already.
+function takeSellStockUnsafe(characterId, line, { selfId, enchant, count }, { flexible, compatibleParts, conditional, sourceIds }) {
+    let source = null;
+    let sourceId = Number(line.objectId || line.sourceObjectId || 0);
+    // Returned nonstackable stock is one physical row per unit. Keep
+    // the logical lot's metadata even when another row serves it.
+    const metadataSql = compatibleParts ? ' AND slot = ? AND petData IS ?' : '';
+    const metadataValues = compatibleParts ? [Number(line.slot || 0), petDataText(line.petData)] : [];
+    if (flexible) {
+        const preferred = one(`SELECT id FROM items WHERE id = ? AND characterId = ?
+            AND selfId = ? AND enchant = ? AND equipped = 0 AND amount >= ?${metadataSql}`,
+        [sourceId, characterId, selfId, enchant, count, ...metadataValues]);
+        if (!preferred || sourceIds.has(sourceId)) {
+            const candidates = all(`SELECT id FROM items WHERE characterId = ?
+                AND selfId = ? AND enchant = ? AND equipped = 0 AND amount >= ?${metadataSql}
+                ORDER BY id`, [characterId, selfId, enchant, count, ...metadataValues]);
+            sourceId = Number(candidates.find((candidate) => !sourceIds.has(Number(candidate.id)))?.id || 0);
+        }
+    }
+    if (!sourceId && compatibleParts) {
+        // Each unused physical row supplies at least one unit; used
+        // IDs may still have stock, so leave room to skip them.
+        const partLimit = Math.min(Number.MAX_SAFE_INTEGER, count + sourceIds.size);
+        const parts = all(`SELECT id, amount FROM items WHERE characterId = ?
+            AND selfId = ? AND enchant = ? AND equipped = 0 AND amount > 0${metadataSql}
+            ORDER BY id LIMIT ?`, [characterId, selfId, enchant, ...metadataValues, partLimit]);
+        let remaining = count;
+        for (const part of parts) {
+            const partId = Number(part.id);
+            if (sourceIds.has(partId)) continue;
+            const partCount = Math.min(remaining, Number(part.amount));
+            const taken = afkTradeTakeItemUnsafe(characterId, partId, selfId, enchant, partCount);
+            sourceIds.add(partId);
+            if (!source) source = taken;
+            remaining -= partCount;
+            if (remaining === 0) break;
+        }
+        if (remaining > 0) throw new Error('invalid_afk_trade_source');
+        return source;
+    }
+    if (!sourceId || sourceIds.has(sourceId)) throw new Error('invalid_afk_trade_source');
+    sourceIds.add(sourceId);
+    return conditional ? one('SELECT * FROM items WHERE id=? AND characterId=?', [sourceId, characterId])
+        : afkTradeTakeItemUnsafe(characterId, sourceId, selfId, enchant, count);
+}
+
+function petDataText(petData) {
+    return petData ? (typeof petData === 'string' ? petData : JSON.stringify(petData)) : null;
+}
+
+function insertBoardLineUnsafe(shopId, line, { selfId, count, price, enchant, fills, observations }, source, timestamp) {
+    write(`INSERT INTO afk_trade_lines(
+        shopId, sourceObjectId, selfId, name, count, initialCount, price,
+        enchant, slot, stackable, petData, createdAt, updatedAt, fills,
+        ${PRICING_COLUMNS.join(', ')}
+    ) VALUES (${Array(14 + PRICING_COLUMNS.length).fill('?').join(', ')})`, [
+        shopId,
+        source ? Number(source.id) : null,
+        selfId,
+        source?.name || line.name || `Item ${selfId}`,
+        count,
+        count,
+        price,
+        source ? Number(source.enchant || 0) : enchant,
+        source ? Number(source.slot || 0) : Number(line.slot || 0),
+        line.stackable ? 1 : 0,
+        source?.petData || line.petData || null,
+        timestamp,
+        timestamp,
+        fills,
+        ...observations
+    ]);
+}
+
+// A bot's sell shop republished as a sell shop in its town keeps its record:
+// its id, its revision moving on (the key a stale move fails on), its lines
+// whose item, count, price and pricing stand unwritten. A changed count moves
+// only the difference between the bag and the line; a line gone gives its
+// stock back, a new one takes it. Lines stay in the order of `rows` (the
+// projection and the next review read them by id): a line whose old row would
+// sort out of order, or after a new one, is given back and taken again as a
+// new row. Bag and journal end as a close and reopen leave them. Closing and
+// reopening rewrote the shop row, its indexes, every line and their bag
+// stacks: 29.5 WAL frames a republish of one changed line, 20.5 now (150 shops
+// of the 1731-bot save; the rest is the bag rows and the fenced life row).
+function keepsShopRecord(active, config, storeType) {
+    return storeType === BoardRules.SELL && Number(active.storeType) === BoardRules.SELL
+        && active.custodyPolicy !== 1 && (config.town || null) === (active.town || null);
+}
+
+function republishSellShopUnsafe(characterId, active, config, rows, timestamp) {
+    const botOwned = isBotOwnerUnsafe(characterId);
+    const held = all('SELECT * FROM afk_trade_lines WHERE shopId = ? ORDER BY id', [active.id]);
+    const open = held.filter(line => Number(line.count) > 0);
+    const sameStock = (old, line, values) => Number(old.selfId) === values.selfId && Number(old.enchant || 0) === values.enchant
+        && Number(old.slot || 0) === Number(line.slot || 0) && (Number(old.stackable) === 1) === !!line.stackable
+        && (old.petData || null) === petDataText(line.petData);
+    let lastId = 0, appended = false;
+    const plan = rows.map((line) => {
+        const values = boardLineValues(line, BoardRules.SELL, botOwned);
+        const index = appended ? -1 : open.findIndex(old => Number(old.id) > lastId && sameStock(old, line, values));
+        if (index < 0) { appended = true; return { line, values, kept: null }; }
+        const [kept] = open.splice(index, 1);
+        lastId = Number(kept.id);
+        return { line, values, kept };
+    });
+    // The check a close and reopen makes: each line's count against the bag
+    // with the whole old stock back, less what earlier lines took again.
+    const protection = saleProtectionUnsafe(characterId, botOwned);
+    if (protection) {
+        const stock = new Map();
+        open.concat(plan.filter(step => step.kept).map(step => step.kept))
+            .forEach(line => stock.set(Number(line.selfId), (stock.get(Number(line.selfId)) || 0) + Number(line.count)));
+        plan.forEach(({ values }) => {
+            const back = stock.get(values.selfId) || 0;
+            protection(values.selfId, values.count, back);
+            stock.set(values.selfId, back - values.count);
+        });
+    }
+    const changed = new Set();
+    // What leaves the shop goes back first: a line below may take it again.
+    held.filter(line => !plan.some(step => step.kept === line)).forEach((line) => {
+        if (Number(line.count) > 0) {
+            afkTradeCreditItemUnsafe(characterId, line, Number(line.count));
+            changed.add(Number(line.selfId));
+        }
+        write('DELETE FROM afk_trade_lines WHERE id = ?', [line.id]);
+    });
+    plan.forEach(({ values, kept }) => {
+        if (!kept || values.count >= Number(kept.count)) return;
+        afkTradeCreditItemUnsafe(characterId, kept, Number(kept.count) - values.count);
+        changed.add(values.selfId);
+    });
+    const take = { flexible: true, compatibleParts: true, conditional: false, sourceIds: new Set() };
+    plan.forEach(({ line, values, kept }) => {
+        if (!kept) {
+            insertBoardLineUnsafe(active.id, line, values, takeSellStockUnsafe(characterId, line, values, take), timestamp);
+            changed.add(values.selfId);
+            return;
+        }
+        if (values.count > Number(kept.count)) {
+            takeSellStockUnsafe(characterId, { ...line, objectId: line.objectId || kept.sourceObjectId },
+                { ...values, count: values.count - Number(kept.count) }, take);
+            changed.add(values.selfId);
+        }
+        const pricingMoved = PRICING_COLUMNS.some((column, index) => kept[column] === null || kept[column] === undefined
+            ? values.observations[index] !== null : Number(kept[column]) !== Number(values.observations[index]));
+        if (values.count === Number(kept.count) && values.price === Number(kept.price)
+            && values.fills === Number(kept.fills || 0) && !pricingMoved) return;
+        write(`UPDATE afk_trade_lines SET count = ?, price = ?, fills = ?,
+            ${PRICING_COLUMNS.map(column => `${column} = ?`).join(', ')}, updatedAt = ? WHERE id = ?`,
+        [values.count, values.price, values.fills, ...values.observations, timestamp, kept.id]);
+    });
+    write(`UPDATE afk_trade_shops SET title = ?, locX = ?, locY = ?, locZ = ?, head = ?, appearanceJson = ?,
+        packageSale = ?, revision = revision + 1, updatedAt = ? WHERE id = ?`, [
+        String(config.title || '').slice(0, 52), Number(config.locX || 0), Number(config.locY || 0), Number(config.locZ || 0),
+        Number(config.head || 0), JSON.stringify(config.appearance || {}), config.packageSale ? 1 : 0, timestamp, active.id]);
+    return { shop: afkTradeShopUnsafe(active.id), changedIds: [...changed] };
+}
+
 // Opens one record inside the caller's transaction (see createAfkTradeShop).
-// A shop replaces the owner's shop when `replace` is set; an ad is one item
+// A shop replaces the owner's shop when `replace` is set (a sell shop
+// republished in its town keeps its record, republishSellShopUnsafe); an ad is one item
 // and one per item. `expectedRevision` names the shop it replaces. No kind
 // has a deadline (expiresAt 0): records close by events (user, 2026-10-05).
 // Returns { shop, changedIds }.
@@ -4018,6 +4216,10 @@ function openBoardRecordUnsafe(characterId, config, rows, { prepaid = false, bid
         active = one("SELECT * FROM afk_trade_shops WHERE ownerId = ? AND kind = 'shop' AND status = 'active'", [characterId]);
         if (active && !config.replace) throw new Error('afk_trade_already_active');
         if (config.expectedRevision !== undefined) checkRecordRevisionUnsafe(active, config.expectedRevision);
+        if (active && keepsShopRecord(active, config, storeType)) {
+            checkBotCapsUnsafe(characterId, kind, rows.length);
+            return republishSellShopUnsafe(characterId, active, config, rows, timestamp);
+        }
         // Replacing a remote shop returns its escrow and reserves the new
         // stock in the same transaction. A failed publish restores both.
         if (active) {
@@ -4073,98 +4275,20 @@ function openBoardRecordUnsafe(characterId, config, rows, { prepaid = false, bid
 
     // A replaced shop or an ad may name a stack the bag has merged since: the
     // same item from another stack serves. A player's new shop names its own.
-    const flexible = !!active || kind !== 'shop';
-    const compatibleParts = !!active && Number(active.storeType) === BoardRules.SELL
-        && active.custodyPolicy !== 1 && kind === 'shop' && storeType === BoardRules.SELL && !conditional;
-    const sourceIds = new Set();
+    const take = { flexible: !!active || kind !== 'shop', conditional, sourceIds: new Set(),
+        compatibleParts: !!active && Number(active.storeType) === BoardRules.SELL
+            && active.custodyPolicy !== 1 && kind === 'shop' && storeType === BoardRules.SELL && !conditional };
     const botOwned = isBotOwnerUnsafe(characterId);
+    const protection = storeType === BoardRules.SELL ? saleProtectionUnsafe(characterId, botOwned) : null;
     rows.forEach((line) => {
-        const selfId = Number(line.selfId);
-        const count = Math.floor(Number(line.count));
-        const price = Math.floor(Number(line.price));
-        const enchant = Math.max(0, Math.floor(Number(line.enchant || 0)));
-        if (!Number.isSafeInteger(selfId) || selfId <= 0 || selfId === 57
-            || !Number.isSafeInteger(count) || count < 1
-            || !Number.isSafeInteger(price) || price < (storeType === BoardRules.BUY ? 1 : 0)) {
-            throw new Error('invalid_afk_trade_line');
-        }
-        const fills = botOwned ? (line.fills ?? 0) : 0;
-        if (!Number.isSafeInteger(fills) || fills < 0) throw new Error('invalid_board_pricing');
-        const pricing = botOwned ? (line.pricing || initialLinePricingUnsafe(selfId, price, storeType)) : null;
-        const observations = pricing ? pricingValues(pricing) : PRICING_FIELDS.map(field => OPTIONAL_PRICING_FIELDS.has(field) ? 0 : null);
-        if (pricing && pricing.seenFills > fills) throw new Error('invalid_board_pricing');
-
+        const values = boardLineValues(line, storeType, botOwned);
         let source = null;
         if (storeType === BoardRules.SELL) {
-            const life = botOwned && one('SELECT * FROM bot_life_state WHERE characterId=?', [characterId]);
-            if (life && invoke('GameServer/Bot/Economy/ItemDisposition').productionInputAmounts({
-                stats: SavedStats.merge(life.statsJson, life.mindJson) })[selfId] > 0)
-                checkEconomyMaterialProtectionUnsafe(characterId, { row: life }, selfId, count, true);
-            let sourceId = Number(line.objectId || line.sourceObjectId || 0);
-            // Returned nonstackable stock is one physical row per unit. Keep
-            // the logical lot's metadata even when another row serves it.
-            const metadataSql = compatibleParts ? ' AND slot = ? AND petData IS ?' : '';
-            const metadataValues = compatibleParts ? [Number(line.slot || 0),
-                line.petData ? (typeof line.petData === 'string' ? line.petData : JSON.stringify(line.petData)) : null] : [];
-            if (flexible) {
-                const preferred = one(`SELECT id FROM items WHERE id = ? AND characterId = ?
-                    AND selfId = ? AND enchant = ? AND equipped = 0 AND amount >= ?${metadataSql}`,
-                [sourceId, characterId, selfId, enchant, count, ...metadataValues]);
-                if (!preferred || sourceIds.has(sourceId)) {
-                    const candidates = all(`SELECT id FROM items WHERE characterId = ?
-                        AND selfId = ? AND enchant = ? AND equipped = 0 AND amount >= ?${metadataSql}
-                        ORDER BY id`, [characterId, selfId, enchant, count, ...metadataValues]);
-                    sourceId = Number(candidates.find((candidate) => !sourceIds.has(Number(candidate.id)))?.id || 0);
-                }
-            }
-            if (!sourceId && compatibleParts) {
-                // Each unused physical row supplies at least one unit; used
-                // IDs may still have stock, so leave room to skip them.
-                const partLimit = Math.min(Number.MAX_SAFE_INTEGER, count + sourceIds.size);
-                const parts = all(`SELECT id, amount FROM items WHERE characterId = ?
-                    AND selfId = ? AND enchant = ? AND equipped = 0 AND amount > 0${metadataSql}
-                    ORDER BY id LIMIT ?`, [characterId, selfId, enchant, ...metadataValues, partLimit]);
-                let remaining = count;
-                for (const part of parts) {
-                    const partId = Number(part.id);
-                    if (sourceIds.has(partId)) continue;
-                    const partCount = Math.min(remaining, Number(part.amount));
-                    const taken = afkTradeTakeItemUnsafe(characterId, partId, selfId, enchant, partCount);
-                    sourceIds.add(partId);
-                    if (!source) source = taken;
-                    remaining -= partCount;
-                    if (remaining === 0) break;
-                }
-                if (remaining > 0) throw new Error('invalid_afk_trade_source');
-            } else {
-                if (!sourceId || sourceIds.has(sourceId)) throw new Error('invalid_afk_trade_source');
-                sourceIds.add(sourceId);
-                source = conditional ? one('SELECT * FROM items WHERE id=? AND characterId=?', [sourceId, characterId])
-                    : afkTradeTakeItemUnsafe(characterId, sourceId, selfId, enchant, count);
-            }
-            if (!conditional) changedIds.push(selfId);
+            protection?.(values.selfId, values.count);
+            source = takeSellStockUnsafe(characterId, line, values, take);
+            if (!conditional) changedIds.push(values.selfId);
         }
-        write(`INSERT INTO afk_trade_lines(
-            shopId, sourceObjectId, selfId, name, count, initialCount, price,
-            enchant, slot, stackable, petData, createdAt, updatedAt, fills,
-            ${PRICING_COLUMNS.join(', ')}
-        ) VALUES (${Array(14 + PRICING_COLUMNS.length).fill('?').join(', ')})`, [
-            shopId,
-            source ? Number(source.id) : null,
-            selfId,
-            source?.name || line.name || `Item ${selfId}`,
-            count,
-            count,
-            price,
-            source ? Number(source.enchant || 0) : enchant,
-            source ? Number(source.slot || 0) : Number(line.slot || 0),
-            line.stackable ? 1 : 0,
-            source?.petData || line.petData || null,
-            timestamp,
-            timestamp,
-            fills,
-            ...observations
-        ]);
+        insertBoardLineUnsafe(shopId, line, values, source, timestamp);
     });
     if (conditional && storeType === BoardRules.BUY) {
         checkConditionalBidUnsafe(characterId, rows[0], Number(rows[0].price), bidWallet);

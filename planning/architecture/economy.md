@@ -24,7 +24,9 @@ MerchantStoreConfigs}`, `src/Market*`, `src/Economy*`, `Population/ColdEconomy{P
   14 main minutes).
 - **Main reconcile:** `BotAfkMarketService.reconcile` → `reconcileBuyAds`/`reconcileSellShop` recomputes lines on main;
   the sell shop only when its bag key moved (`stockSignature`: fired personal and beginner shots stay out while the
-  published kit holds and no arrows are held).
+  published kit holds and no arrows are held). Only prices moved: `repriceSellLines`; lines moved: `publishSellShop`,
+  which keeps a sell shop's record in its town (`Database` `republishSellShopUnsafe`: revision + 1, unchanged lines
+  unwritten, a count moves only its difference) instead of closing and reopening it.
 - **Cold town visit:** `ColdMarketListingService.open`: enchant → NPC cleanup → `saleDecision` →
   `ColdMarketBuyStoreService.sellToBestBuyer` → `StaticBuyerService.sell` → NPC liquidation → `depositCold` →
   `listOnBoard`. The board writer's "no" to a bot's sell listing (a unit held for its gear, craft or clan,

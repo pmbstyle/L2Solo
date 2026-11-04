@@ -87,9 +87,23 @@ async function groupedReplacement() {
     assert.deepEqual(await bag(), fragments);
     await Database.execute(['DELETE FROM items WHERE characterId=?', [partsOwner]]);
 
+    // In its own town the shop keeps its record: the first line keeps its
+    // row and gives a unit back, the second takes two; totals as a reopen.
+    const sameTownUsed = await item(2);
+    shop = (await publish([line(await item(2), 2)])).shop;
+    shop = (await replace(shop, [line(sameTownUsed, 1), line(shop.lines[0].sourceObjectId, 2)])).shop;
+    assert.deepEqual(shop.lines.map(row => row.count), [1, 2]);
+    assert.equal(total(await bag()), 1, 'three of the four units are listed, one is in the bag');
+    await Database.closeAfkTradeShop(partsOwner);
+    assert.equal(total(await bag()), 4);
+    await Database.execute(['DELETE FROM items WHERE characterId=?', [partsOwner]]);
+
     const partiallyUsed = await item(2);
     shop = (await publish([line(await item(2), 2)])).shop;
-    shop = (await replace(shop, [line(partiallyUsed, 1), line(shop.lines[0].sourceObjectId, 2)])).shop;
+    // A shop moved to another town is closed and opened again (in its own
+    // town the first line would keep the old row): every line takes anew.
+    shop = (await publish([line(partiallyUsed, 1), line(shop.lines[0].sourceObjectId, 2)],
+        { replace: true, expectedRevision: shop.revision, town: 'Dion' })).shop;
     assert.deepEqual(shop.lines.map(row => row.count), [1, 2]);
     assert.deepEqual((await bag()).map(row => [row.id, row.amount]), [[partiallyUsed, 1]],
         'bounded selection skips a previously consumed ID with stock before taking both returned pieces');

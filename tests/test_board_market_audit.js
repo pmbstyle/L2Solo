@@ -451,7 +451,7 @@ async function run() {
         const after = (await Database.fetchAfkTradeShops(owner))[0];
         const stem = after.lines.find(line => Number(line.selfId) === 1864);
         const varnish = after.lines.find(line => Number(line.selfId) === 1865);
-        assert.notStrictEqual(stem.id, before.id, 'the physical line was replaced');
+        assert.strictEqual(stem.id, before.id, 'the kept quote stays on its row (the shop is republished in place)');
         assert.strictEqual(stem.count, 999, 'bag top-up joined the kept quote');
         assert.strictEqual(stem.fills, 1, 'logical continuity retained its exact fill');
         assert.deepStrictEqual(stem.pricing, before.pricing, 'a kept quote does not reset unconsumed observations');
