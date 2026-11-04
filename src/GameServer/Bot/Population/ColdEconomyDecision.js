@@ -80,6 +80,18 @@ function workshopValues(value) {
         && Number.isFinite(income) && Number.isFinite(cycle) ? [recipeId, productId, income, cycle] : [0, 0, NaN, NaN];
 }
 function unknownWorkshop() { return { known: false, recipeId: 0, productId: 0, incomePerHour: NaN, cycleHours: NaN }; }
+// A known workshop with nothing to craft (the planner's answer to a bot it has no recipe search for).
+function noWorkshop() { return { known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0 }; }
+// The occupation planner's answer to a bot that is no service crafter and has
+// no own board line, known without the planner (no recipe search, no sale
+// feasibility to read): its occupation branch (ColdSimulationWorker) and the
+// step's shortcut before an ask (member, lifecycle) both return it. Else null:
+// the planner answers. board: the board mirror (ownerLines).
+function noCrafterWorkshop(state, board) {
+    if (require('../Economy/CraftEligibility').isServiceCrafter(state)
+        || board?.ownerLines(Number(state.characterId))?.length) return null;
+    return { ...noWorkshop(), feasibility: null };
+}
 class CompactDecision {
     constructor(updatedAt, echo, riskWeight, activity, data, flags) {
         this.echo = echo; this.data = data;
@@ -832,4 +844,4 @@ class ColdEconomyDecisions {
 }
 
 module.exports = { personalUsefulness, preparedCardWorth, usefulnessVersion, capture, heldFor, heldAtDecisionOf, progressSince, remainingToOrder, materialHunt, ownItem, stateEcho, echoHolds, CompactActivity, ColdEconomyDecisions, economyFor, view, nearView, advisory, restoreAdvisory, advisoryPublicationHolds, sameEconomicOutput, current, canReuse, refusal, refreshAdvisory, refreshPreparedCraft, cardWithShot, kindCode, kindFor, compact, workshopValues,
-    unknownWorkshop, MAX_BYTES, MAX_SHOT_BYTES, COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES };
+    unknownWorkshop, noWorkshop, noCrafterWorkshop, MAX_BYTES, MAX_SHOT_BYTES, COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES };

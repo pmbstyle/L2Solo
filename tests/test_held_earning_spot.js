@@ -374,13 +374,14 @@ function verify() {
     // moving one input moves its version and only the versions derived from it
     // (the samples' signature reads class, level and party; the gear gap reads
     // the worn kit and the adventurer; the crafter flag the craft level; the money
-    // weight the packet's hour and price; the karma flip the route key).
+    // weight the packet's hour and price; the karma flip the route key; a
+    // crafter's own lines the lines it sells, a shot crafter's supply its bag).
     {
         const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
         const Shots = invoke('GameServer/Inventory/ShotStock');
         const stat = (state, more) => ({ ...state, stats: { ...state.stats, ...more } });
-        const versions = (state, recipes = null, board = null, mode = null) => Sections.inputVersions(Sections.stateView(state, recipes),
-            state, time(1), { spots, board, mode });
+        const versions = (state, recipes = null, board = null, mode = null, income = null) => Sections.inputVersions(Sections.stateView(state, recipes),
+            state, time(1), { spots, board, mode, income });
         const movedNames = (before, after) => Object.keys(after).filter(name => !Object.is(after[name], before[name])).sort();
         const ear = Object.values(fighter(1, { complete: true }).inventory).find(row => row.equippedSlots.includes(2));
         const worn = state => ({ ...state, inventory: { ...state.inventory,
@@ -423,20 +424,31 @@ function verify() {
         const others = [
             ['craft', state => stat(state, { workshop: { entries: [1] } }), ['craft']],
             ['crafter', state => ({ ...state, craftLevel: 1 }), ['craft', 'crafter']],
-            ['closesTowns', state => stat(state, { karma: 700 }), ['closesTowns', 'route', 'route.karma']],
+            ['route', state => stat(state, { karma: 700 }), ['route', 'route.karma']],
             ['hour', state => money(state, 2, 1), ['hour', 'weight']],
-            ['price', state => money(state, 1, 2), ['price', 'weight']],
-            ['wallet', state => ({ ...state, adena: 5 }), ['wallet']],
             ['maxMp', state => ({ ...state, vitals: { ...state.vitals, maxMp: 301 } }), ['maxMp']]
         ];
         for (const [name, move, moved, extra] of [...rows.map(([name, move, moved, extra]) => [name, name === 'samples' ? sampledThird : move, moved, extra]), ...others])
             assert.deepEqual(movedNames(before, versions(move(base), null, null, extra?.mode)), moved.sort(), `moving ${name} moves its version only`);
         assert.deepEqual(movedNames(before, versions(base, [1, 2])), ['recipes'], 'the recipe book moves its version only');
-        assert.deepEqual(movedNames(before, versions(base, null, { ownerLines: () => [{}] })), ['ownLines'], 'own board lines move theirs only');
+        const lines = rows => ({ ownerLines: () => rows });
+        assert.deepEqual(movedNames(before, versions(base, null, lines([{}]))), ['ownLines'], 'own board lines move theirs only');
+        assert.deepEqual(movedNames(before, versions(base, null, null, null, ['rich', 900])), ['income'], 'the income answer moves its own');
+        // A crafter's own lines: the lines it sells, by item, count and price.
+        const crafter = { ...base, craftLevel: 1 }, sell = { storeType: 1, selfId: 1835, count: 10, price: 5 };
+        const sold = rows => versions(crafter, null, lines(rows)).ownLines;
+        assert.notEqual(sold([sell]), sold([{ ...sell, count: 9 }]), 'a crafter\'s line sold moves its lines');
+        assert.equal(sold([sell]), sold([sell, { ...sell, storeType: 3, selfId: 1 }]), 'its buy lines do not');
+        // A shot crafter's supply: its shots and potions present or not.
+        const shotBook = [20], shot = Shots.planForState(base);
+        const supplied = state => versions(state, shotBook).supply;
+        assert.equal(versions(base).supply, null, 'no shot recipe, no supply input');
+        assert.notEqual(supplied(base), supplied({ ...base, inventory: { ...base.inventory, [shot.selfId]: { selfId: shot.selfId, amount: 1 } } }),
+            'a shot crafter\'s shots arriving move its supply');
         assert.deepEqual(movedNames(before, versions({ ...base, stats: { ...base.stats } })), [], 'a copy of the state moves nothing');
         const declared = Object.values(Sections.LINK_INPUTS).flatMap(link => [...link.discrete, ...link.continuous]);
         assert(declared.every(name => Object.hasOwn(before, name)), 'every declared input has a version');
-        const covered = new Set([...rows, ...others].map(row => row[0]).concat('recipes', 'ownLines', 'weight', 'route'));
+        const covered = new Set([...rows, ...others].map(row => row[0]).concat('recipes', 'ownLines', 'weight', 'income', 'supply'));
         assert.deepEqual(Object.keys(before).filter(name => !covered.has(name) && !name.startsWith('route.')), [],
             'every version is moved here (the route fields: test_economic_trip_marginal)');
         assert.equal(Sections.movedInput('incomeSearch', before, versions(money(base, 1.0001, 1)), 0.01), '', 'a weight drift inside the error keeps');

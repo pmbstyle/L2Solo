@@ -199,7 +199,7 @@ const digestToken = value => value ? `${value.xor}:${value.sum}:${value.count}` 
 function refusalWorkshopDigest(scope) { return digestToken(workshopScopeDigests.get(scope)); }
 // A known empty workshop in the one shape the context key and the decision
 // packing read; a missing field would key a different planning input.
-const noWorkshop = () => ({ known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0 });
+const { noWorkshop, noCrafterWorkshop } = ColdEconomyDecision;
 function workshopsFor(recipeId, state) { return publicWorkshopIndex.candidates(recipeId, Number(state?.characterId || 0)); }
 function changeWorkshop(key, row) {
     const previous = publicWorkshopKeys.get(key);
@@ -512,6 +512,8 @@ const occupationPlanner = new ColdOccupationPlanner({
             yield 'candidate';
         }
         if (input.mode === 'occupation' || input.mode === 'near') {
+            const none = noCrafterWorkshop(input.state, input.board);
+            if (none) return none;
             const eligible = invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(input.state);
             if (!eligible || !input.recipesKnown) {
                 const mask = input.board?.ownerLines(input.state.characterId)?.length
@@ -738,6 +740,15 @@ function personalCraftBidReviewDue(state, timestamp) {
 // build reads it, a held card asks none.
 function askWorkshop(state, timestamp, routeRows, caller, options = {}) {
     return occupationFor(state, timestamp, { ...options, routeRows, routeKey: EconomicTrip.key(state), caller });
+}
+// A step's workshop when its held one is not kept: the planner's answer, known
+// here for a bot that is no service crafter and has no own board line
+// (noCrafterWorkshop: the same answer, no planner job).
+function stepWorkshop(state, timestamp, deps, caller) {
+    const none = noCrafterWorkshop(state, deps.board);
+    if (!none) return askWorkshop(state, timestamp, deps.routeRows, caller);
+    economyDiagnostics.count('occupation', 'ask', `occupation|${caller}|no_crafter`);
+    return none;
 }
 async function refreshCraftPacket(state, timestamp, refreshed) {
     if (!refreshed || !CraftEligibility.isServiceCrafter(state)) return refreshed;
@@ -1647,17 +1658,10 @@ function startKernel(config = {}) {
                         if (refreshed) refreshed = await refreshCraftPacket(projected, timestamp, refreshed);
                         if (refreshed) { if (economyDiagnostics.active()) economyDiagnostics.count('advisory', 'reuse', 'result'); return refreshed.economy; }
                         // The lifecycle's order: the held build's workshop while its
-                        // verdict keeps it, else the planner's answer, which for a bot
-                        // that is no service crafter and has no own board line is
-                        // known here (its occupation branch: no workshop, no feasibility).
+                        // key holds, else the planner's answer (stepWorkshop).
                         const caller = projected.party?.partyId || projected.partyId ? 'party' : 'karma';
-                        deps.workshop = EconomyContext.heldWorkshop(projected, deps, prepared.eventVerdict ||= {});
-                        if (!deps.workshop && !CraftEligibility.isServiceCrafter(projected)
-                            && !deps.board?.ownerLines(projected.characterId)?.length) {
-                            deps.workshop = { ...noWorkshop(), feasibility: null };
-                            economyDiagnostics.count('occupation', 'ask', `occupation|${caller}|no_crafter`);
-                        }
-                        deps.workshop ||= await askWorkshop(projected, timestamp, deps.routeRows, caller);
+                        deps.workshop = EconomyContext.heldWorkshop(projected, deps, prepared.eventVerdict ||= {})
+                            || await stepWorkshop(projected, timestamp, deps, caller);
                         return EconomyContext.forState(projected, withIncomeRoute(withEventVerdict(deps, prepared), prepared.basics));
                     },
                     onEconomy: (built, seen) => {
@@ -1844,7 +1848,7 @@ function startKernel(config = {}) {
             // else it asks. The kernel replaces a state, never edits it: the
             // copy and its verdict stay the build's across the ask.
             if (!refreshed) deps.workshop = EconomyContext.heldWorkshop(preparationState, deps, prepared.eventVerdict ||= {})
-                || await askWorkshop(state, timestamp, deps.routeRows, 'lifecycle');
+                || await stepWorkshop(state, timestamp, deps, 'lifecycle');
             // No later ask reaches the finalize: a solo bot under routeHeld
             // has its native facts holding, so the card path asked above.
             if (economyDiagnostics.active() && routeHeld && !finalized) economyDiagnostics.count('lifecycle', 'plan_holds', 'skipped');

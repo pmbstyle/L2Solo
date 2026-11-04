@@ -109,18 +109,12 @@ const COMPUTED = Object.freeze({
     sourceGround: sectionMask(['build']),
     // What makes a build weigh every gear candidate whatever the moment: the
     // bot's kit, what gear gives it, a death (Reaction.quiet).
-    gearReview: sectionMask(['build', 'benefits', 'combat']),
-    // The crafter's workshop (its best recipe and income per hour, the
-    // occupation planner's answer), kept with the held build: the planner
-    // reads the money packet (stats.money: hour adena, trip value, craft
-    // labour), which the foundation writes every build, and the kept
-    // recipe's market (its watch rows raise money).
-    workshop: FOUNDATION | sectionMask(['money'])
+    gearReview: sectionMask(['build', 'benefits', 'combat'])
 });
 // The decision links (planning/decision-links/plan.md, steps 1-2): the inputs
-// each link reads, by inputVersions name. The earning spot search decides on
-// them (EconomyContext.incomeMoved); the workshop and the route rows are
-// measured only (EconomyContext's link shadow, developerDiagnostics).
+// each link reads, by inputVersions name. The earning spot search and the
+// workshop decide on them (EconomyContext.incomeMoved, workshopKeyHolds); the
+// route rows are measured only (EconomyContext's link shadow, developerDiagnostics).
 // discrete: a version compared exactly; continuous: a value compared inside
 // the answer's own range, else beyond the bot's own error (movedInput);
 // events: what the link reads with no version, standing on an event bit or on
@@ -158,22 +152,21 @@ const LINK_INPUTS = Object.freeze({
     // ColdSimulationWorker occupationPlanner.capture), kept by
     // EconomyContext.heldWorkshopOf.
     workshop: linkOf([
-        'kit.class', 'kit.level', // WealthCraftDecision recipe eligibility; craftLabour's profile maxMp
+        'kit.class', 'kit.level', // mpPerHour (seated recovery by class and level); recipe eligibility
         'craft', // prepare: CraftShopService.craftLevelFor; capture: stats.workshop.entries (knownRecipes); the station
-        'crafter', // the worker asks a crafter only (no_crafter)
+        'crafter', // the worker asks a service crafter only (noCrafterWorkshop)
         'recipes', // capture: RecipeBookCodec.unpack(recipeBook)
         'maxMp', // craftLabour: state.vitals.maxMp (a cold command's MP cap)
-        'closesTowns', // the route rows' karma flip and the craft towns
-        'route', // prepare: EconomicTrip.key against the captured routeKey / routeRows
-        'ownLines' // prepareExits: own board lines are skipped; Wealth.eligible(ownLines)
-    ], [
-        'hour', 'price', // prepare: Packet.hourAdena / Packet.moneyPrice (labour, trips, valuation)
-        'wallet' // the planner's sameInput: adena (sameDecisionInput)
-    ], [
-        'bag', // prepare: every inventory row's free amount (WealthCraftDecision.freeAmount)
-        'reservations', // prepare: reservations(state)
-        'market', // prepare: board reads (sourceToken item revisions)
-        'reserve' // prepare: Packet.survivalReserve
+        'route', // prepare: EconomicTrip.key against the captured routeKey / routeRows (the karma flip among them)
+        'income', // prepare: Packet.hourAdena, the earning the held earning spot's answer published (its spot and hour)
+        'ownLines', // a crafter: its own sell lines (WealthCraftDecision output stock and prices, the shot exits'
+        // posted count); any other bot: whether one stands (noCrafterWorkshop asks the planner's feasibility)
+        'supply' // a shot crafter: the bag's shot and potion presence (its product's own stock)
+    ], [], [
+        'money', // the money bit: the wallet (the planner's funding), the packet's money price and survival reserve, the market watch
+        'observation', // the observation bit: the bot's own samples, which move its hour before the income answer does
+        'bag', // prepare: every inventory row's free amount (WealthCraftDecision.freeAmount): heard in town (the money bit)
+        'reservations' // prepare: reservations(state): no event (the next ask)
     ]),
     // The town route table (EconomicTrip.prepare, keyed by EconomicTrip.key =
     // routeInputs): one input per routeInputs field.
@@ -197,6 +190,9 @@ function shotInputs(state, timestamp) {
     return [Number(ShotStock.planForState(state)?.selfId) || 0, state.inventory
         ? invoke('GameServer/Bot/AI/BotTargetMatchup').shotKind(CombatProfile.shotSupply(state, timestamp)) : 0];
 }
+// lazy: ShotCraftPolicy loads the craft decision, which reads this module's readers.
+let shotRecipes = null;
+const shotRecipe = id => (shotRecipes ||= new Set(invoke('GameServer/Bot/Economy/ShotCraftPolicy').SHOT_RECIPE_IDS)).has(Number(id));
 const pointOf = loc => loc ? [Number(loc.locX) || 0, Number(loc.locY) || 0, Number(loc.locZ) || 0] : null;
 // One reader per link input over one call's reads (r: the view, the state,
 // the options; what several inputs share is read once, r.once).
@@ -204,7 +200,7 @@ const VERSIONS = Object.freeze({
     'kit.class': r => hash([r.kits[0], r.kits[1]]), 'kit.level': r => r.kits[2], 'kit.worn': r => r.kits[3],
     'kit.hennas': r => r.kits[4], 'kit.skills': r => r.kits[5], 'kit.capture': r => r.kits[6],
     craft: r => hash([r.view.craftLevel, r.view.craftStationId ?? null, r.view.workshop?.entries ?? null]),
-    crafter: r => r.view.craftLevel > 0, closesTowns: r => r.view.closesTowns,
+    crafter: r => r.once('crafter', () => require('./CraftEligibility').isServiceCrafter(r.state)),
     recipes: r => r.view.recipes ? hash(r.view.recipes) : null,
     party: r => hash([r.view.party?.partyId, r.view.party?.role]),
     mode: r => ['party', 'duo'].includes(r.mode),
@@ -219,23 +215,33 @@ const VERSIONS = Object.freeze({
     adventurer: r => invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(r.state),
     required: r => !!invoke('GameServer/Bot/AI/PersonalGearProgression').assess(r.state).required,
     weight: r => invoke('GameServer/Bot/Economy/SpotEconomics').moneyWeight(r.state),
-    hour: r => Number(Packet.hourAdena(r.stats.money)) || 0, price: r => Number(Packet.moneyPrice(r.stats.money)) || 0,
-    wallet: r => positive(r.state.adena), maxMp: r => Number(r.state.vitals?.maxMp) || 0,
-    ownLines: r => r.board ? Number(r.board.ownerLines(Number(r.state.characterId)).length > 0) : null,
+    hour: r => Number(Packet.hourAdena(r.stats.money)) || 0, maxMp: r => Number(r.state.vitals?.maxMp) || 0,
+    income: r => r.income ? hash(r.income) : null,
+    ownLines: r => {
+        if (!r.board) return null;
+        const lines = r.board.ownerLines(Number(r.state.characterId));
+        if (!VERSIONS.crafter(r)) return Number(lines.length > 0);
+        return hash(lines.filter(line => Number(line.storeType ?? 1) === 1 && line.custodyPolicy !== 1)
+            .map(line => [Number(line.selfId), Number(line.count), Number(line.price)]).sort((a, b) => a[0] - b[0] || a[2] - b[2] || a[1] - b[1]));
+    },
+    supply: r => r.view.recipes?.some(shotRecipe) ? hash(r.view.supply ?? null) : null,
     ...Object.fromEntries(['route', 'route.activity', 'route.region', 'route.loc', 'route.scroll', 'route.karma', 'route.return',
         'route.travel'].map(name => [name, r => r.once('route', () => routeVersions(r.state))[name]]))
 });
-// Every link input's version on a state, by LINK_INPUTS name (link: only that
-// link's discrete and continuous ones): a digest of the input's value (no
-// counter, no state identity), continuous ones the value itself. view: the
-// state's stateView (the held verdict's reads) or linkView; spots: the
-// catalogue the search reads (a spot without a center reads the bot's point);
-// board: the board mirror (ownLines; null without one); mode: the caller's.
-function inputVersions(view, state, timestamp, { spots = null, board = null, mode = null, link = null } = {}) {
+// Every link input's version on a state, by LINK_INPUTS name (link: only the
+// discrete and continuous ones of that link, or of each of a list): a digest
+// of the input's value (no counter, no state identity), continuous ones the
+// value itself. view: the state's stateView (the held verdict's reads) or
+// linkView (no supply); spots: the catalogue the search reads (a spot without
+// a center reads the bot's point); board: the board mirror (ownLines; null
+// without one); mode: the caller's; income: the earning spot answer the money
+// packet carries ([spot, earning], EconomyContext.incomeOutput).
+function inputVersions(view, state, timestamp, { spots = null, board = null, mode = null, income = null, link = null } = {}) {
     const memo = new Map();
-    const r = { view, state, timestamp, spots, board, mode, stats: state.stats || {}, kits: view.kitHashes || [],
+    const r = { view, state, timestamp, spots, board, mode, income, stats: state.stats || {}, kits: view.kitHashes || [],
         once: (name, read) => memo.has(name) ? memo.get(name) : memo.set(name, read()).get(name) };
-    const names = link ? [...LINK_INPUTS[link].discrete, ...LINK_INPUTS[link].continuous] : Object.keys(VERSIONS);
+    const names = !link ? Object.keys(VERSIONS) : [...new Set([link].flat().flatMap(name =>
+        [...LINK_INPUTS[name].discrete, ...LINK_INPUTS[name].continuous]))];
     const out = {};
     for (const name of names) out[name] = VERSIONS[name](r);
     return out;

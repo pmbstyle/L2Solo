@@ -82,6 +82,13 @@ Inputs marked (E) have an event today, (–) have none, (S) need a significance 
    searches by input (`event:<input>`). Behaviour: a section raise that moves no input keeps the held spot (clan,
    friend, recipe, the income_moved echo, unhuntable on the same spot); a risk mark or its expiry on any candidate
    searches at the next build; inputs with no event refresh only by `HOLD_MS` and observation.
+   Stage D done: the workshop decides on its key (`EconomyContext.workshopKeyHolds` over `plan.workshopKey`: route,
+   craft, class/level, recipes, maxMp, the earning answer the build published (`plan.incomeOutput`), crafter, own lines (a crafter's sell lines,
+   else presence), a shot crafter's supply presence; the money and observation bits); `COMPUTED.workshop` gone; one
+   `ColdEconomyDecision.noCrafterWorkshop` for the planner's branch and the step (member, lifecycle: no planner job
+   for a non-crafter without lines; an ask on a served step stays on the entry, `askedWorkshop`). Behaviour: an MP cap, own sell line or income answer move asks; a combat,
+   relations, occupation or supply raise that moves no input keeps (the bag only through the money bit, in town).
+   Left on the shadow: routeRows.
 2. Per-bot input versions instead of section masks: bag, money, kit, level, occupation, relations, market. A link
    stores the versions it read; `DecisionSections.COMPUTED` becomes these per-link input sets.
 3. Per-spot versions (crowd, risk); then `HOLD_MS` and other windows go.
