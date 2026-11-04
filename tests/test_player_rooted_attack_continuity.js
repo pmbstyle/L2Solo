@@ -1,3 +1,5 @@
+'use strict';
+
 const assert = require('node:assert/strict');
 require('../src/Global');
 
@@ -10,6 +12,7 @@ const SkillRequest = invoke('GameServer/Actor/Generics/SkillRequest');
 const Validate = invoke('GameServer/Network/Request/ValidatePosition');
 const World = invoke('GameServer/World/World');
 const Timer = invoke('GameServer/Timer');
+const Attack = invoke('GameServer/Actor/Attack');
 
 (async () => {
     const saved = { now: Date.now, timeout: global.setTimeout, clear: global.clearTimeout,
@@ -28,7 +31,7 @@ const Timer = invoke('GameServer/Timer');
         isBlocked() { return this.state.isBlocked(); }, canUseSkill: () => true,
         backpack: { fetchTotalWeaponKind: () => 'Weapon.Knife' },
         skillset: { fetchSkill: () => skill },
-        attack: { meleeHit() { hits.push(actor.x); }, remoteHit() { casts.push(actor.x); } } };
+        attack: Object.assign(new Attack(), { meleeHit() { hits.push(actor.x); }, remoteHit() { casts.push(actor.x); } }) };
     const session = { actor, persistenceMode: 'ephemeral', dataSendToMe(p) { packets.push(p); },
         dataSendToMeAndOthers(p) { packets.push(p); } };
     actor.session = session;

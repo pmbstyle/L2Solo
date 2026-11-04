@@ -17,6 +17,12 @@ Scope: `Actor`, `Skills`, `Effects`, `Combat`, `Npc`, `RaidBoss`, `Pets`, `Formu
   `applyRemoteCastEffect`, adapters `prepareMeleeHit`/`prepareNpcMeleeHit`/`prepareSkillDamage`, `hit()` dispatch.
 - **Request gate:** `Actor/Generics/{AttackRequest,AttackExec,SkillRequest,SkillExec}` — alive, restrictions, queue,
   peace zone. Hot bots use it too.
+- **Resurrection admission:** `Attack.validateResurrectionTarget` uses `isValidSkillTarget` for `corpse_player`;
+  `SkillExec` calls it before planning an approach and `Attack.remoteHit` rechecks at cast start, before reuse and
+  MP payment. A living target receives C4 message 109 and ActionFailed even outside cast range or while rooted.
+  `corpse_ally` remains caster-centred. Cost on main: one target predicate per rejected attempt, two per accepted
+  single-corpse player request (lookup and cast start); other targets only check the target kind. No new
+  per-tick work, per-bot state, DB writes or worker messages. Cold combat and measured tables are unchanged.
 - **Item-skill casts** (scrolls, resurrection items, pet summon, drain soul, sow): `Backpack.castItemSkill` on the
   caster's `attack.queueTimer`, so whatever cancels a cast cancels it and it never lands on another character; the item
   is spent at cast start (Lisvus); writes go under the bag owner (`Backpack.ownerId`). A hit breaks only a magic cast

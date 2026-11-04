@@ -1,3 +1,5 @@
+'use strict';
+
 const ServerResponse = invoke('GameServer/Network/Response');
 
 const ConsoleText = {
@@ -21,6 +23,7 @@ const ConsoleText = {
         earnedExpAndSp    :  95,
         inventoryFull     : 129,
         levelUp           :  96,
+        incorrectTarget   : 109,
         incorrectDest     : 144,
         attackFailed      : 158,
         magicResisted     : 159,
