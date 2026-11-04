@@ -36,8 +36,7 @@ const originals = {
     updateItemAmount: Database.updateItemAmount,
     updateItemEquipState: Database.updateItemEquipState,
     updateCharacterLocation: Database.updateCharacterLocation,
-    updateCharacterExperience: Database.updateCharacterExperience,
-    updateCharacterVitals: Database.updateCharacterVitals,
+    updateCharacterProgress: Database.updateCharacterProgress,
     syncInventorySummary: Database.syncInventorySummary,
     transferInventoryToWarehouse: Database.transferInventoryToWarehouse,
     upsertState: LifeState.upsertState
@@ -125,8 +124,7 @@ async function run() {
     };
     Database.updateItemEquipState = () => Promise.resolve();
     Database.updateCharacterLocation = () => Promise.resolve();
-    Database.updateCharacterExperience = () => Promise.resolve();
-    Database.updateCharacterVitals = () => Promise.resolve();
+    Database.updateCharacterProgress = () => Promise.resolve();
     Database.transferInventoryToWarehouse = () => Promise.resolve({ inventoryAmount: 0 });
     Database.syncInventorySummary = (characterId, inventory) => {
         calls.push({ type: 'inventory-sync', characterId, inventory });
@@ -442,8 +440,7 @@ run().catch((err) => {
     Database.updateItemAmount = originals.updateItemAmount;
     Database.updateItemEquipState = originals.updateItemEquipState;
     Database.updateCharacterLocation = originals.updateCharacterLocation;
-    Database.updateCharacterExperience = originals.updateCharacterExperience;
-    Database.updateCharacterVitals = originals.updateCharacterVitals;
+    Database.updateCharacterProgress = originals.updateCharacterProgress;
     Database.syncInventorySummary = originals.syncInventorySummary;
     Database.transferInventoryToWarehouse = originals.transferInventoryToWarehouse;
     LifeState.upsertState = originals.upsertState;
