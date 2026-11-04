@@ -186,8 +186,9 @@ async function run() {
     assert.equal(count(state(), { reserved: { 1458: 7 } }), 13, 'selected production inputs stay reserved');
     const stock = state(); stock.inventory[1458].reservedAmount = 9;
     assert.equal(count(stock), 11, 'explicit physical reservations stay owned');
-    stock.inventory[1458].acceptedCustomer = true;
-    assert.equal(count(stock), 0, 'accepted customer stock cannot be sold');
+    // A bag is replaced, never edited in place (its sale list is kept per bag).
+    const customer = state(); customer.inventory[1458] = { ...stock.inventory[1458], acceptedCustomer: true };
+    assert.equal(count(customer), 0, 'accepted customer stock cannot be sold');
     const selected = { kind: 'luxury_exchange', grossRequirements: [{ key: 'item:1458', amount: 12 }],
         requirements: [{ key: 'item:1458', amount: 12 }] };
     const network = { activity: { rootKey: 'power:95:14' },

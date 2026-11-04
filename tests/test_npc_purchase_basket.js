@@ -242,6 +242,25 @@ async function run() {
         context: Economy.basics(otherPotion) }).amount;
     assert.notEqual(basicsAmount, fresh, 'the basics target differs from the published one');
     assert.equal(potionLine(otherPotion), basicsAmount, 'a row of another potion buys the basics target');
+    // Each step of a restock reads the bag after the virtual purchases before
+    // it: an extra bought between the potions and the shots is in the sale
+    // list the shots' step reads (a new bag, not the potions' one edited).
+    {
+        const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition'), keptKit = Economy.keptKit;
+        const extra = 1835, seen = [];
+        assert(Restock.quoteFor(extra, 'Dion'), 'fixture: Dion sells the extra');
+        Economy.keptKit = (value, ...rest) => {
+            seen.push(Disposition.saleCandidates(value, { unlimited: true, keptAmounts: {} }).find(row => row.selfId === extra)?.count || 0);
+            return keptKit(value, ...rest);
+        };
+        try {
+            const bought = Restock.collect(published, { town: 'Dion', scrolls: false, extras: [{ selfId: extra, amount: 10, funding: { r: 1 } }] })
+                .flatMap(row => row.lines).find(line => line.selfId === extra)?.amount || 0;
+            assert.equal(bought, 10, 'fixture: the extra is bought');
+            assert.equal(seen[0], 0, 'the potions\' step sees the bag before it');
+            assert.equal(seen.at(-1), 10, 'the shots\' step sees the extra in the sale list');
+        } finally { Economy.keptKit = keptKit; }
+    }
     // The row the build just published buys what a fresh foundation buys.
     const Shot = invoke('GameServer/Inventory/ShotStock'), Scrolls = invoke('GameServer/Bot/Travel/ScrollStock');
     const shotId = targets.shotId, shotPrice = Restock.quoteFor(shotId, 'Dion')?.price || 7;
