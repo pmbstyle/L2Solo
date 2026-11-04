@@ -103,14 +103,17 @@ async function run() {
     assert.strictEqual(await PopulationService.runAdaptiveWalReset(1000), null, 'a checkpoint in flight must hold the truncate');
     assert.strictEqual(refused('wal_truncate:checkpoint_in_flight', before), 1, 'a refused truncate must be counted with its reason');
     checkpointState.checkpoint.inFlight = false;
-    checkpointState.pending = 1;
+    const queueBound = Config.backgroundGovernorPlayerDbQueueMax;
+    checkpointState.pending = queueBound + 1;
     assert.strictEqual(await PopulationService.runAdaptiveWalReset(1000), null,
-        'with a player the governor must refuse the truncate while the player\'s writes are queued');
+        'with a player the governor must refuse the truncate behind a write backlog');
     assert.strictEqual(refused('wal_truncate:governor_database_queue', before), 1);
-    checkpointState.pending = 0;
+    // The tail of a sliced drain (a few queued jobs) does not hold it back.
+    checkpointState.pending = queueBound;
     assert.strictEqual(checkpointCalls, 0);
     const playerReset = await PopulationService.runAdaptiveWalReset(1000);
     assert.strictEqual(playerReset.mode, 'truncate', 'with a player online the truncate must run once its WAL gates pass');
+    checkpointState.pending = 0;
     assert(PopulationService.nextWalResetAt > 1000, 'a successful reset must install a cooldown');
     // A truncate last measured over the player budget is skipped (counted) while a player is online.
     checkpointState.checkpoint.lastResetAttempt = { ok: true, mode: 'truncate', busy: 0, durationMs: 80 };
@@ -128,14 +131,17 @@ async function run() {
         'a truncate over the player budget must be tried again after its retry period');
     assert.strictEqual(refused('wal_truncate:estimate_retry', before), 1);
     assert.strictEqual(checkpointCalls, 2);
-    // Past the 512 MB WAL ceiling it runs with a player anyway, counted.
+    // Past the 512 MB WAL ceiling it runs with a player anyway, behind any
+    // write backlog, counted.
     PopulationService.nextWalResetAt = 0;
     Governor.reset();
     checkpointState.checkpoint.last.afterBytes = 512 * 1024 * 1024;
+    checkpointState.pending = queueBound + 90;
     assert.strictEqual((await PopulationService.runAdaptiveWalReset(1000)).mode, 'truncate',
         'past the WAL ceiling the truncate must run with a player');
     assert.strictEqual(refused('wal_truncate:forced_over_ceiling', before), 1);
     assert.strictEqual(checkpointCalls, 3);
+    checkpointState.pending = 0;
     checkpointState.checkpoint.last.afterBytes = 300;
     PopulationService.nextWalResetAt = 0;
     // With a player and the governor off nothing bounds the truncate: refused, counted.
@@ -258,12 +264,12 @@ async function run() {
     Metrics.currentEventLoopLag = () => 0;
     // A player online: retention runs (its bound is pinned on a real table in
     // test_persistent_state_retention), and is refused (counted) while the
-    // player's writes are queued, while main lags, or with the governor off.
+    // a write backlog, while main lags, or with the governor off.
     Governor.reset();
     PopulationService.playerActivityProfile = () => ({ protected: true, activeParty: false, realPlayers: 1, companionCount: 0, mode: 'player' });
-    checkpointState.pending = 1;
+    checkpointState.pending = queueBound + 1;
     before = refusals();
-    assert.strictEqual(await PopulationService.runStateRetention(3000), null, 'a queued player write must hold retention back');
+    assert.strictEqual(await PopulationService.runStateRetention(3000), null, 'a write backlog must hold retention back');
     assert.strictEqual(retentionCalls, 0);
     assert.strictEqual(refused('state_retention:governor_database_queue', before), 1, 'a refused retention must be counted with its reason');
     checkpointState.pending = 0;

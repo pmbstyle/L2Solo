@@ -263,6 +263,37 @@ async function run() {
     checks.push('options snapshot and synchronous getter Error boundary');
     checks.push('PASSIVE bypass remains outside the Main reservation');
 
+    // A long drain gives the event loop a turn between jobs (after 12 ms of
+    // them), keeps job order, and a truncate queued behind it still waits.
+    const drained = [], yieldsBefore = Database.stats().queueYields;
+    const slowJob = index => write(1, `test:checkpoint-barrier-drain-${index}`, () => {
+        const end = Date.now() + 3;
+        while (Date.now() < end) { /* a 3 ms job */ }
+        drained.push(index);
+    });
+    const drainJobs = Array.from({ length: 12 }, (_, index) => slowJob(index));
+    let immediateSaw = -1;
+    setImmediate(() => { immediateSaw = drained.length; });
+    setRequest(request => { drained.push(request.mode); return Promise.resolve('drain-reset'); });
+    const drainReset = Database.checkpoint({ mode: 'truncate', busyTimeoutMs: 50 });
+    const drainTail = slowJob(12);
+    assert.equal(await drainReset, 'drain-reset');
+    await Promise.all([...drainJobs, drainTail]);
+    restoreRequest();
+    assert(immediateSaw > 0 && immediateSaw < 12, `a timer runs in the middle of the drain (after ${immediateSaw} jobs)`);
+    assert.deepEqual(drained, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 'truncate', 12],
+        'jobs keep their order across yields; the truncate waits for every job queued before it');
+    assert(Database.stats().queueYields > yieldsBefore, 'drain yields are counted');
+    // A caller awaiting each call, with nothing else queued, yields as well.
+    drained.length = 0;
+    let chainImmediateSaw = -1;
+    const chain = (async () => { for (let index = 0; index < 12; index++) await slowJob(index); })();
+    setImmediate(() => { chainImmediateSaw = drained.length; });
+    await chain;
+    assert(chainImmediateSaw > 0 && chainImmediateSaw < 12, `a timer runs in the middle of an awaited chain (after ${chainImmediateSaw} jobs)`);
+    assert.deepEqual(facts(), committed(1));
+    checks.push('long drain and awaited chain yield to timers, keep order, truncate still waits');
+
     const requestError = Error('fixture coordinator rejected reset');
     const failuresBeforeRequest = Database.stats().failures;
     setRequest(() => Promise.reject(requestError));

@@ -144,10 +144,14 @@ function admit(options = {}) {
         number(options.maxLagMs, Infinity)));
     if (pressure.lagMs >= lagAbortMs) return defer(job, 'event_loop_lag', pressure, timestamp);
 
+    // The main DB queue drains in 12 ms slices, so a timer between two slices
+    // sees the drain's own backlog; the default 8 (about one or two slices of
+    // jobs) admits at the tail of a drain and defers under a real backlog. A
+    // job may take any queue (options.anyDbQueue: the forced WAL truncate).
     const dbQueueMax = Math.max(0, Math.floor(number(pressure.playerProtected
         ? Config.backgroundGovernorPlayerDbQueueMax
-        : Config.backgroundGovernorIdleDbQueueMax, pressure.playerProtected ? 0 : 8)));
-    if (pressure.dbPending > dbQueueMax) return defer(job, 'database_queue', pressure, timestamp);
+        : Config.backgroundGovernorIdleDbQueueMax, 8)));
+    if (!options.anyDbQueue && pressure.dbPending > dbQueueMax) return defer(job, 'database_queue', pressure, timestamp);
     if (resource && state.resources.has(resource)) return defer(job, 'resource_busy', pressure, timestamp);
 
     const capMs = budgetMs(pressure.playerProtected);

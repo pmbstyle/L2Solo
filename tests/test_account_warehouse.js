@@ -147,6 +147,34 @@ async function main() {
         await Warehouse.deposit(first, [{ objectId: 202, amount: 1 }]);
         assert.equal((await Warehouse.list(second)).find(item => item.fetchSelfId() === 627).fetchEnchantLevel(), 4);
 
+        // A shot spent (buffered bag amount) while the deposit waits behind a
+        // DB drain slice is in the bag the deposit reads and is not written
+        // over it later: 1000 - 1 - 500 = 499 in the bag, 500 more stored. Also
+        // when the flush timer takes that amount while the deposit waits.
+        const WriteQueue = invoke('GameServer/Persistence/CharacterWriteQueue');
+        for (const timerFlush of [false, true]) {
+            await Database.execute(['UPDATE items SET amount = 1000 WHERE id = 201']);
+            const stockBefore = (await Database.fetchPlayerWarehouseItems(1, 'Shared')).find(row => row.selfId === 1864).amount;
+            const slowJobs = Array.from({ length: 6 }, () => Database.execute(['SELECT 1', [], { onTiming() {
+                const end = Date.now() + 3;
+                while (Date.now() < end) { /* a 3 ms job */ }
+            } }]));
+            setImmediate(() => {
+                WriteQueue.itemAmount(1, 201, 999);
+                if (timerFlush) WriteQueue.flushAll();
+            });
+            const deposited = Database.transferPlayerWarehouseBatch(1, 'Shared', [
+                { id: 201, selfId: 1864, amount: 500, stackable: true }
+            ], 'deposit');
+            await Promise.all(slowJobs);
+            assert.equal((await deposited)[0].inventoryAmount, 499, 'the deposit reads the buffered amount');
+            await WriteQueue.flushCharacter(1);
+            assert.equal((await Database.fetchItems(1)).find(row => row.id === 201).amount, 499,
+                'no buffered amount lands after the deposit');
+            assert.equal((await Database.fetchPlayerWarehouseItems(1, 'Shared')).find(row => row.selfId === 1864).amount,
+                stockBefore + 500);
+        }
+
         // Two stale windows cannot withdraw the same remaining stack twice.
         const [stored] = (await Database.fetchPlayerWarehouseItems(1, 'Shared')).filter(row => row.selfId === 1864);
         const competing = await Promise.allSettled([1, 2].map(id => Database.transferPlayerWarehouseBatch(id, 'Shared', [

@@ -15,9 +15,10 @@ overdue max 1-4 (before this release saturated from ~1430-1580 bots). See POP-23
 
 ## Top risks (silent when hit, likely at ~1700 bots)
 
-1. Background governor allows a DB queue of **0** while a player is online: any queued write defers safety sweep,
-   cold snapshot continuation pages, early commits, clan actions/founders, hot market review (dD only).
-2. State retention and the WAL truncate share the governor's 50 ms/s with a player (and its DB queue 0, risk 1): under a
+1. Background governor allows a DB queue of **8** while a player is online (the queue drains in 12 ms slices, so a
+   timer between two sees the drain's backlog): a longer backlog defers safety sweep, cold snapshot continuation
+   pages, early commits, clan actions/founders, hot market review (dD only).
+2. State retention and the WAL truncate share the governor's 50 ms/s with a player (and its DB queue 8, risk 1): under a
    steady write queue they still defer (counted: `maintenance.refusals`, perf report), and the WAL can grow past
    256 MB until a quiet second; a truncate measured over 50 ms is skipped with a player (`estimate_over_budget`),
    tried again every 10 min and forced past a 512 MB WAL (`estimate_retry`, `forced_over_ceiling`): a pause over 50 ms
@@ -72,7 +73,7 @@ player online (8 in flight, status `coldDue`).
 | Occupation planner | 64 contexts, 8 owners × 4 units, 4 ms | `ColdOccupationPlanner` ~7 | waiting queue (unbounded) | dD | boot catch-up |
 | Wish route requests | 64 pending | `ColdSimulationWorker` `occupationFor` ~690 | `[]` | none | catch-up |
 | Planner error log | first 32 distinct | ColdOccupationPlanner ~201 | later errors silent; meeting errors never logged | log (32) | long uptime |
-| Governor | 250 / 50 ms per 1 s; DB queue 8 / **0** with player; lag 120 ms | `BackgroundWorkGovernor` ~141 | defer | dD (mode not in the always-on status); state retention and WAL truncate deferrals always (`maintenance.refusals`) | with a player |
+| Governor | 250 / 50 ms per 1 s; DB queue 8 idle and with a player (`backgroundGovernor*DbQueueMax`: about one or two 12 ms drain slices of jobs, the tail of a drain is admitted; a forced WAL truncate takes any queue, `anyDbQueue`); lag 120 ms | `BackgroundWorkGovernor` ~141 | defer | dD (mode not in the always-on status); state retention and WAL truncate deferrals always (`maintenance.refusals`) | with a player |
 | Activation pool | 100 nearest within 9000 | PopulationService `activateNearPlayers` ~1971 → `BotLifeState.coldNear` ~2246 | busy/`pk_hunting`/party duplicates filtered after the cut | none | Giran, Aden |
 | Activations | 6 per 10 s scan, world-wide (crafters outside; one party may exceed it) | `PopulationService` ~2020 | `activation_budget` returned, recorded by nobody | none | ~36/min |
 | Floor checks | 24 LOS per player per scan; cache 2048 / 30 s | `FloorAwareActivationPolicy` ~75 | `geodata_budget` | dD | multilevel areas |
@@ -87,7 +88,7 @@ player online (8 in flight, status `coldDue`).
 | Seeding | waves of 5 regions × `starterBotsPerRace` 30 = 150, one batch per wave (`seedBatchSize` = max(50, cohort)); next wave when the last cohort averages level 5 (10 at ×50+); checked every 45 s (`generatedColdSeedDelayMs`) | `PopulationSeedPlanner` ~87, ~121, PopulationService ~1252, `GeneratedColdSeeder` | ramp follows levelling (~12 waves to 1700), not time | dD (wave log behind `developerDiagnostics`) | fresh world |
 | Decision deadlines | 64 per scheduler tick | Kernel `tick` ~1700, `dueCandidates` ~1217 | rest wait for the next 20 ms tick | none | boot catch-up |
 | Incremental snapshot row | 256 KB message | Coordinator `sendIncrementalEntries` ~1129 | page refused, job ok:false, oldest-first queue stops at that row each run | dD `send_failed` | rare huge state |
-| Cold competition gate | DB queue 0 and lag < 40 ms | Coordinator `canRun` ~181 | cold PvP competition work waits behind any DB write | none | with a busy DB |
+| Cold competition gate | DB queue 0 and lag < 40 ms | Coordinator `canRun` ~204 | cold PvP competition work waits behind any DB write, a drain between its slices too | none | with a busy DB |
 
 ## Economy and board
 
@@ -171,11 +172,11 @@ player online (8 in flight, status `coldDue`).
 
 | Limit | Value | Where | When hit | Observable |
 |---|---|---|---|---|
-| Main DB queue | unbounded | `src/Database.js` `enqueue` ~274 | latency grows; governor reads `pending()` | dD (`dbQueue` in the dD summary) |
+| Main DB queue | unbounded; the drain yields with setImmediate after 12 ms of jobs in one turn, an awaited chain too (`DB_QUEUE_SLICE_MS`, also the `cooperatively` default; a slice ends at the next event-loop boundary); a job is never split | `src/Database.js` `enqueue` ~318, `afterQueueJob` ~192 | latency grows; between slices `pending()` shows the backlog (governor bound 8; party formation, clan help, clan wars, raids and the native raid opening wait for it, `database_busy`) | dD (`dbQueue` in the dD summary); `stats().queueYields` always |
 | Busy timeout | 5 s (PRAGMA); checkpoint 250 / 50 ms (WAL truncate 20 ms with a player) | Database ~4452, `src/DatabaseCheckpointWorker.js` ~10 | transaction rejected | log |
 | Final checkpoint at shutdown | 3 s (timer cleared when the checkpoint answers) | `src/DatabaseCheckpointCoordinator.js` `stop` | `checkpoint_shutdown_timeout`, the worker is terminated | result only |
 | Passive checkpoint | WAL ≥ 4 MB, 5 s | DatabaseCheckpointCoordinator ~7 | skipped | dD |
-| WAL truncate | 256 MB, +64 MB, 60 s cooldown, 5 s retry (`[Database] checkpointReset*`), tried when a passive checkpoint finishes (`armWalReset`, 5 s) that checkpointed every frame, none in flight; governor job `wal_truncate` (resource `db_maintenance`) asks the last measured truncate (`checkpoint.lastResetAttempt.durationMs`, at least the busy timeout; 40 ms before any); busy timeout 20 ms with a player, 50 idle; with a player an estimate over the 50 ms player budget is skipped, but tried once every 10 min (`WAL_TRUNCATE_ESTIMATE_RETRY_MS`; the new measurement replaces the estimate) and run regardless past a 512 MB WAL (`WAL_TRUNCATE_FORCE_WAL_BYTES`: the size bounds the file whatever the write rate, the 10 min period alone would let ~550 MB grow at ~55 MB/min); with a player and the governor off, refused | `PopulationService.runAdaptiveWalReset` ~2784 | skipped, retried at the next passive checkpoint | status `maintenance.refusals` `wal_truncate:<reason>` (`estimate_over_budget`, `estimate_retry`, `forced_over_ceiling`, `governor_off`, `governor_<reason>`, WAL gates), `checkpoint.lastResetAttempt` (perf report); failure `db.wal_truncate` (FailureLog) |
+| WAL truncate | 256 MB, +64 MB, 60 s cooldown, 5 s retry (`[Database] checkpointReset*`), tried when a passive checkpoint finishes (`armWalReset`, 5 s) that checkpointed every frame, none in flight; governor job `wal_truncate` (resource `db_maintenance`) asks the last measured truncate (`checkpoint.lastResetAttempt.durationMs`, at least the busy timeout; 40 ms before any); busy timeout 20 ms with a player, 50 idle; with a player an estimate over the 50 ms player budget is skipped, but tried once every 10 min (`WAL_TRUNCATE_ESTIMATE_RETRY_MS`; the new measurement replaces the estimate) and run regardless past a 512 MB WAL, behind any DB queue (`WAL_TRUNCATE_FORCE_WAL_BYTES`: the size bounds the file whatever the write rate, the 10 min period alone would let ~550 MB grow at ~55 MB/min); with a player and the governor off, refused | `PopulationService.runAdaptiveWalReset` ~2784 | skipped, retried at the next passive checkpoint | status `maintenance.refusals` `wal_truncate:<reason>` (`estimate_over_budget`, `estimate_retry`, `forced_over_ceiling`, `governor_off`, `governor_<reason>`, WAL gates), `checkpoint.lastResetAttempt` (perf report); failure `db.wal_truncate` (FailureLog) |
 | State retention | 1 s, one policy step per run (≤ 2 statements, each bounded: ≤ 64 deletes, ≤ 2048 rows walked or 1024 index entries ranked); governor job `state_retention` (resource `db_maintenance`) asks 12 ms, at least 4, the slice is the grant; waits at lag ≥ `schedulerLagThrottleMs` (40 ms); with a player and the governor off, refused; 60 s pause after a pass that removed rows, 10 min after one that removed nothing (`stateRetentionIdlePauseMs`; not a wait for a server without players: nothing here waits for one) | PopulationConfig ~116, `PopulationService.runStateRetention` ~2867, `PersistentStateRetention` (`WALK_ROWS`, `GROUP_WINDOW_ROWS`) | deferred to the next 1 s alarm | status `maintenance.refusals` `state_retention:<reason>` (perf report); failure `db.state_retention` (FailureLog) |
 | Retention caps | activity 100k; tool 50k; LLM 50k; conversation 512; 30 days; 128 rows per pair (PopulationConfig keys, e.g. `activityJournalMaxRows`); a table cap walks 2048 rows per step before it deletes (100k rows: ~50 steps, one per policy round of ~10 s) | PersistentStateRetention ~21 | only when retention runs | dD |
 | Safety sweep | 64 rows/page, 30 min, 240 KB repair | LifecycleSafetySweep ~6, ~109, ~216 | cycle stretches; oversized repair edge skipped, retried after 30 min | dD `deferred` |

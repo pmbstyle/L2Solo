@@ -2821,8 +2821,10 @@ const PopulationService = {
             else Database.noteMaintenanceRefusal('wal_truncate', 'estimate_retry');
         }
         const budgetMs = activity.protected ? Math.min(estimateMs, playerBudgetMs) : estimateMs;
-        const admission = this.admitMaintenance('wal_truncate', activity,
-            { requestedBudgetMs: budgetMs, minimumBudgetMs: budgetMs });
+        // Past the ceiling it also takes any DB queue: it waits behind the
+        // backlog in the queue, and the WAL size is the bound that must hold.
+        const admission = this.admitMaintenance('wal_truncate', activity, { requestedBudgetMs: budgetMs, minimumBudgetMs: budgetMs,
+            ...(walBytes >= WAL_TRUNCATE_FORCE_WAL_BYTES ? { anyDbQueue: true } : {}) });
         if (!admission) return Promise.resolve(null);
         this.walResetEstimateRetryAt = 0;
 
