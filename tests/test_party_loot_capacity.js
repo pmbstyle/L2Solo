@@ -127,6 +127,24 @@ const originalSessions = Manager.sessions, originalRandom = Math.random;
         assert.equal(blockedWorld.awards.length, 0);
         assert.equal(blocked.leader.partyCompanionSettings.itemLastLootIndex, -1, 'a rejected pickup must not consume a turn');
         assert(messages(blocked.leader).includes(422), 'retain weight feedback when nobody can accept the drop');
+        // The party's loot scan leaves the refused drop alone until a bag changes,
+        // instead of sending a companion to it again every scan.
+        const World = invoke('GameServer/World/World'), savedItems = World.items;
+        Object.assign(blockedDrop, { partyLootLeaderId: 1, fetchLocX: () => 0, fetchLocY: () => 0, fetchLocZ: () => 0 });
+        const Combat = invoke('GameServer/Bot/AI/PartyCombatState'), combatActive = Combat.isActive;
+        const Generics = invoke(path.actor), actions = { stop: Generics.stopAutomation, pickup: Generics.pickupExec };
+        World.items = { spawns: [blockedDrop] }; Combat.isActive = () => false;
+        Generics.stopAutomation = () => {}; Generics.pickupExec = () => {};
+        try {
+            blocked.leader.lastGroundLootScanAt = 0;
+            assert.equal(Party.reconcileGroundLoot(blocked.leader), 0, 'no picker is sent to a drop nobody has room for');
+            blocked.other.actor.fetchMaxLoad = () => 1000000;
+            blocked.leader.lastGroundLootScanAt = 0;
+            assert.equal(Party.reconcileGroundLoot(blocked.leader), 1, 'room in a bag makes the drop worth a pickup again');
+        } finally {
+            World.items = savedItems; Combat.isActive = combatActive;
+            Generics.stopAutomation = actions.stop; Generics.pickupExec = actions.pickup;
+        }
         assert.equal(invoke('Database').isReady(), false, 'the regression must not open a live database');
         console.log('Party loot capacity: overloaded soulshots, all pickers/modes, Adena split, turn recovery, full bags and pending awards passed');
     } finally {
