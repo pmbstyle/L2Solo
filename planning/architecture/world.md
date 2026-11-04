@@ -23,8 +23,9 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
 - **Globals** `src/Global.js`: `invoke`, `utils`, INI layering (default → `L2NODE_SHARED_CONFIG_FILE` → local.ini, or
   `L2NODE_CONFIG_FILE` instead of local), `path.*`. Also holds
   game data: `PEACE_ZONES` circles and `utils.isInPeaceZone`.
-- **Network:** `Server.packetReceiver` frames; `Session.dataReceive` → `Network/Opcodes` → `Network/Request/*` (87);
-  out `Packet/Send`, `Network/Response/*`. Auth separate. The packet trace names server packets by the
+- **Network:** `Server.packetReceiver` splits the stream; `Packet/Frame` owns the unsigned 2-byte length both ways
+  (game, login, bot sessions; over a frame: refused and counted); `Session.dataReceive` → `Network/Opcodes` →
+  `Network/Request/*` (87); out `Packet/Send`, `Network/Response/*`. Auth separate. The packet trace names server packets by the
   `Network/Response/*` file that sends them (`Session` `SERVER_PACKET_NAMES`, kept in step by
   `tests/test_server_packet_names.js`).
 - **World singleton** `World/World.js`: user sessions + `CharacterLocationIndex` (and a legacy `World.user.sessions`

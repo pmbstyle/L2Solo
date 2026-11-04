@@ -1,5 +1,6 @@
 const ServerResponse = invoke('AuthenticationServer/Network/Response');
 const Opcodes        = invoke('AuthenticationServer/Network/Opcodes');
+const Frame          = invoke('Packet/Frame');
 
 class Session {
     constructor(socket) {
@@ -23,17 +24,15 @@ class Session {
     }
 
     dataReceive(data) {
-        // Weird, sometimes the packet is sent twofold/duplicated. I had to limit it based on the header size...
-        const packet = data.slice(2, data.readInt16LE());
+        const packet = Frame.body(data);
         const decipheredPacket = require('blowfish-ecb').decipher(this.blowfish, packet);
         return Opcodes.table[decipheredPacket[0]](this, decipheredPacket);
     }
 
     dataSend(data, encipher = true) {
-        const header = Buffer.alloc(2);
-        header.writeInt16LE(utils.size(data) + 2);
         const encipheredPacket = encipher ? require('blowfish-ecb').encipher(this.blowfish, data) : data;
-        this.socket.write(Buffer.concat([header, encipheredPacket]));
+        const frame = Frame.pack(encipheredPacket);
+        if (frame) this.socket.write(frame); // null: longer than a frame, not sent (counted)
     }
 
     error(err) {

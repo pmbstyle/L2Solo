@@ -48,8 +48,7 @@ Next in line: InteractionMemory evicting relations at 32/8/8 (real players exemp
 (9-member raids); clan goal candidates top 8, ClanPartyHelp 64 pending (refused silently); spot-room clamp 9-36
 sending bots off-band; oversized proposals requeued every 5 s forever; oversized states dropped once via
 `postCollections` (`state:null`, the 10 s retry is never read). Not silent but binding: cold-step throughput with a
-player online (8 in flight, status `coldDue`); signed int16 outbound frames throwing above 32767 B (in a request
-handler the player is disconnected).
+player online (8 in flight, status `coldDue`).
 
 ## Cold worker and scheduling
 
@@ -188,8 +187,8 @@ handler the player is disconnected).
 
 | Limit | Value | Where | When hit | Observable |
 |---|---|---|---|---|
-| Inbound frame | uint16 ≤ 65535 by construction; `Session.dataReceive` re-slices by **signed** `readInt16LE` | `src/Server.js` `packetReceiver` ~10, Session ~205 | size < 2: buffer reset + log; a 32768-65535 B packet is silently truncated before its handler | log / none |
-| Outbound frame | **signed** int16 ≤ 32767 B | Session `packData` ~264, BotSession ~80 | `ERR_OUT_OF_RANGE`: in a request handler `Server` logs "dropped a packet" and disconnects the player; from bot AI it throws into the caller | log / exception |
+| Inbound frame | unsigned 2..65535 B (`Packet/Frame.body`, game and login); a string field must end in its terminator (`Packet/Receive.readS`) | `src/Server.js` `packetReceiver` ~10, `src/Packet/Frame.js` | size < 2 in the stream: buffer reset + log, connection closed; a length past its frame or a string without a terminator fails the packet (the connection is dropped, "dropped a packet") | log; status `packetRefused=<in>/<out>/<unterminated>` |
+| Outbound frame | unsigned ≤ 65535 B (`Packet/Frame.pack`: Session, BotSession, login Session) | `src/Packet/Frame.js` | packet not sent, the connection stays (the first per opcode logged) | log + status `packetRefused` |
 | Warehouse slots | players `[GameServer] playerWarehouseSlots` 300 (1..1000); bots 100 (dwarf 120) + 6 per Expand Warehouse level, up to 8 | PersonalWarehouseLimits ~9 | out of range → 300 silently | none |
 | HTML | 8192 chars | NpcHtml ~6 | "Page is too large" | log |
 | Socket backpressure | none (no `writableLength`/drain check in src) | Session ~222 | buffer grows | none |
