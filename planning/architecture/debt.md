@@ -50,11 +50,6 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    every rebuild, read by nothing at runtime (TBL-2, TBL-3); one rebuild run reads old inputs (TBL-4); a full copy per
    thread (TBL-7); the generator patches live owners and copies the potion stock rule (TBL-8).
 
-11. **Bot prices of a purchase disagree on who sells.** `StaticMerchantPricing.cheapestPurchase(id, { forBot: true })`
-   (and `botBuyPrice`, `botPurchasePrice`, the hunt model's consumable prices) counts the configured city stores for every
-   item, while a bot buys only shots there (`MarketOpportunity.botCanBuy`): a Scroll of Escape reads 300 (a city store)
-   against an NPC's 400-600. The survival kit reads the NPC list (`botNpcListPrice`).
-
 12. **Readiness edge (theoretical).** `BotTargetMatchup.soloSurvival`: an attack with no MP cost and a 0 vulnerability
    modifier gives a NaN budget, which makes the envelope refuse a fight another attack wins (no 0 damage weakness in the
    data today). The fight-time bisection (25 envelope evaluations per verdict, ~0.1-0.2 ms per hot scan) can become
@@ -73,6 +68,10 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
 16. **Worker restart policies.** The cold worker and the path pool slots share `WorkerRestartBackoff` (1/2/5/10/30 s,
    forever, logged); the checkpoint worker restarts every 250 ms forever, dD only (`DatabaseCheckpointCoordinator`
    ~61), the clan planning worker retries after 5 s (`ClanPlanningCoordinator` ~73). One restart rule for all.
+
+16. **"Is this skill magic" has two owners** (pass4 D-4): 43 skills carry the wrong spell flag in data; the hot path
+   overrides 35 of them, the cold path and the estimates read the raw flag. One owner: fix the data flags and read
+   one rule everywhere.
 
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets[6]`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so
@@ -160,3 +159,6 @@ Each area file ends with its open questions; none blocks the order above.
   `GeneratedColdSeeder`), each with its own two-handed and level rule.
 - `HotBackgroundParty` ~328 calls `HotPartyLifecycle.confirmMarkedRaidStart`, a compatibility reader that only
   returns `Roster.nativeHotStarted`, and drops the result (a dead call).
+- `BotAI.scheduleTick` catches a throw from the rest of the hot tick (outside `States[plan]`) with a bare
+  `console.error("Bot AI Tick Error")` every tick, not `FailureLog` and not `BotFaultHold`: a guard before the state
+  (party sync, ground loot, chat) that throws every tick is logged every tick and never held off.

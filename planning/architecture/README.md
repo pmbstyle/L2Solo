@@ -7,7 +7,7 @@ What exists, who owns each rule, which path is canonical. First survey: t106dev 
 
 Read the file of the area you touch before changing it. Debt across areas and the order to pay it: [debt.md](debt.md).
 Limits: [limits.md](limits.md). C4 check: [c4-check.md](c4-check.md). Second pass by symptom (verify before acting):
-`pass2-*.md` — dead branches, dormant features, fields, logic bugs, rule numbers, silent failures. Third pass:
+`pass2-*.md` — dead branches, dormant features, fields, logic bugs, rule numbers, silent failures. Data vs C4: `pass4-data-c4.md` (2026-11-04, 610abd94). Third pass:
 `pass3-*.md` — client entry points, per-step cost, purity, races, tests. The pass files are dated surveys: a row is
 deleted when a commit fixes it, the survey is not redone; a survey with nothing open left is deleted.
 
@@ -50,7 +50,8 @@ says the commit it was last checked at.
 - `Cold*` in Economy is usually a main-thread service; the worker planner is `Population/ColdEconomyPlan`.
 - Worker guard wraps only `invoke()`; relative `require()` and lazy invokes slip through. `SpotService` returns `[]`
   without World instead of throwing. ~40 `isMainThread` branches.
-- A worker step or command that throws is held off and quarantined (`ColdSimulationKernel.fault`, `FAULT_*` in limits.md); a
+- A worker step or command that throws is held off and quarantined (`ColdSimulationKernel.fault`), a hot AI state that
+  throws is held off and leaves its plan at the 5th (`BotAI` `stateFaulted`), both by `BotFaultHold` (limits.md); a
   failure a catch survives goes through `FailureLog` (counted by site, the first logged, status `swallowed=`).
 - Cited but missing: `docs/architecture.md` (`BotRoute.js`, `EconomyContext.js`), `docs/t189-plan.md` (T189 commit),
   `docs/game-decisions.md` (`scripts/fight-table`, `ShotStock`).
