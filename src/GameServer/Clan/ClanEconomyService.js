@@ -1,6 +1,7 @@
 const { DiagnosticMetricMap } = require('../Bot/Population/DiagnosticMetricMap');
 const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const SavedStats = require('../Bot/SavedStats');
+const InventorySummary = require('../Bot/Population/InventorySummary');
 const Database = invoke('Database');
 const ClanService = invoke('GameServer/Clan/ClanService');
 const Config = invoke('GameServer/Clan/ClanSimulationConfig');
@@ -78,7 +79,7 @@ async function clanProjection() {
             phase: String(row.phase || ''),
             adena: number(row.adena),
             simulationRevision: number(row.simulationRevision),
-            inventory: parseJson(row.inventorySummary, {}),
+            inventory: InventorySummary.read(row.inventorySummary),
             stats
         };
         if (!BotServiceIdentity.isStaticService(member)) byId.get(clanId).members.push(member);

@@ -7,6 +7,7 @@ const { Worker } = require('node:worker_threads');
 const { DatabaseSync } = require('node:sqlite');
 require('../src/Global');
 const SavedStats = require('../src/GameServer/Bot/SavedStats');
+const InventorySummary = require('../src/GameServer/Bot/Population/InventorySummary');
 const Data = invoke('GameServer/DataCache'); Data.init();
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Decision = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
@@ -16,14 +17,13 @@ const root = path.resolve(__dirname, '..'), workerPath = root + '/src/GameServer
 const db = new DatabaseSync(process.argv[2], { readOnly: true });
 const rows = db.prepare("SELECT * FROM bot_life_state WHERE phase='cold' ORDER BY characterId LIMIT ?").all(Number(process.argv[3] || 300));
 assert(rows.length >= 300, 'parity requires at least 300 native cold states');
-const json = raw => JSON.parse(raw || '{}');
 const states = rows.map(row => ({ characterId: row.characterId, name: row.characterName, level: row.level, exp: row.exp,
     sp: row.sp, adena: row.adena, phase: row.phase, activity: row.activity, currentRegion: row.currentRegion,
     spotId: row.spotId, updatedAt: row.updatedAt, loc: { locX: row.locX, locY: row.locY, locZ: row.locZ },
     vitals: { hp: row.hp, maxHp: row.maxHp, mp: row.mp, maxMp: row.maxMp },
     timing: { lastResolvedAt: row.lastResolvedAt, nextResolveAt: row.nextResolveAt },
     simulation: { revision: row.simRevision || 0 },
-    party: row.partyId ? { partyId: row.partyId } : null, stats: SavedStats.merge(row.statsJson, row.mindJson), inventory: json(row.inventorySummary) }));
+    party: row.partyId ? { partyId: row.partyId } : null, stats: SavedStats.merge(row.statsJson, row.mindJson), inventory: InventorySummary.read(row.inventorySummary) }));
 db.close();
 const spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure(), catalog = npcPlanningCatalogRows();
 const board = new (invoke('GameServer/AfkTrade/BoardIndex').BoardIndex)();

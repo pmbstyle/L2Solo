@@ -50,7 +50,7 @@ function eligibility(state = {}, options = {}) {
 }
 
 function persistencePatch(state = {}, timestamp = Date.now(),
-    inventorySummary = JSON.stringify(InventorySummary.canonicalize(state.inventory))) {
+    inventorySummary = InventorySummary.saved(InventorySummary.canonicalize(state.inventory))) {
     return {
         level: Number(state.level || 1),
         exp: Number(state.exp || 0),
@@ -113,7 +113,7 @@ function withPersistedStats(state, result) {
         // Board settlements, drops and native party payments can all change
         // the bag after the proposed state: continue with the committed bag.
         if (!result.settled && !result.pkDrops?.length && !result.partyPayment) return persisted;
-        return { ...persisted, adena: Number(row.adena || 0), inventory: JSON.parse(row.inventorySummary || '{}') };
+        return { ...persisted, adena: Number(row.adena || 0), inventory: InventorySummary.read(row.inventorySummary) };
     } catch (error) {
         // The cache keeps the proposed state: it misses this commit's revisions, settlement or drop until a reload.
         FailureLog.note('cold.owner_row_merge', error);
@@ -212,7 +212,7 @@ function commitBatch(entries = [], options = {}) {
         });
         const changedItemIds = inventoryChanged && Array.isArray(entry.proposal?.changedItemIds)
             ? [...entry.proposal.changedItemIds, ...removedItemIds] : null;
-        const inventorySummary = JSON.stringify(canonicalInventory);
+        const inventorySummary = InventorySummary.saved(canonicalInventory);
         requests.push({
             characterId: Number(nextState.characterId),
             expectedRevision: entry.revision,

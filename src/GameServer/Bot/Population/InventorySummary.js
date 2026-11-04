@@ -97,9 +97,71 @@ function mergeBagChange(first = {}, second = {}) {
     };
 }
 
+// The saved form of a bag summary (bot_life_state.inventorySummary). An item
+// whose name, kind and rank are its template's (name, kind or '', rank or
+// 'none': what every summary writer puts there) is saved without them and with
+// `t: 1`; read back they come from the template. Any other item stays whole.
+// The whole row is rewritten on every save, so this is ~1.4 KB of WAL a save.
+// saved/read are the one writer and reader of the column's text; `t` lives only here.
+let templateFields = new Map(), templateData = null, dataCache = null, Templates = null;
+function fieldsOf(selfId) {
+    dataCache ||= invoke('GameServer/DataCache');
+    if (templateData !== dataCache.items) { templateFields = new Map(); templateData = dataCache.items; }
+    // Keyed by the item id within one item data array: all the fields read.
+    let fields = templateFields.get(selfId);
+    if (fields === undefined) {
+        Templates ||= invoke('GameServer/Item/ItemTemplateIndex');
+        const template = Number.isSafeInteger(selfId) && selfId > 0 ? Templates.find(templateData || [], selfId) : null;
+        const name = template?.template?.name;
+        fields = typeof name === 'string' ? { name, kind: template.template.kind || '', rank: template.etc?.rank || 'none' } : null;
+        templateFields.set(selfId, fields);
+    }
+    return fields;
+}
+
+function packItem(item) {
+    if (!item || typeof item !== 'object' || Object.hasOwn(item, 't')) return item;
+    const fields = fieldsOf(Number(item.selfId));
+    if (!fields || item.name !== fields.name || item.kind !== fields.kind || item.rank !== fields.rank) return item;
+    const rest = {};
+    for (const key in item) if (key !== 'name' && key !== 'kind' && key !== 'rank') rest[key] = item[key];
+    rest.t = 1;
+    return rest;
+}
+
+function unpackItem(item) {
+    if (item?.t !== 1 || Object.hasOwn(item, 'name')) return item;
+    const rest = {};
+    for (const key in item) if (key !== 't') rest[key] = item[key];
+    const fields = fieldsOf(Number(item.selfId));
+    // A template gone from the data: the fallbacks the summary writers use.
+    return Object.assign(rest, fields || { name: `Item ${item.selfId}`, kind: '', rank: 'none' });
+}
+
+function saved(inventory = {}) {
+    const out = {};
+    for (const key in inventory || {}) out[key] = packItem(inventory[key]);
+    return JSON.stringify(out);
+}
+
+// The summary of a row (its text, or an object already parsed): a new object
+// with every item whole, {} for anything else.
+function read(raw) {
+    let parsed = raw;
+    if (typeof raw === 'string') {
+        try { parsed = JSON.parse(raw || '{}'); } catch (_) { return {}; }
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out = {};
+    for (const key in parsed) out[key] = unpackItem(parsed[key]);
+    return out;
+}
+
 module.exports = {
     canonicalize,
     completeInstances,
     bagChange,
-    mergeBagChange
+    mergeBagChange,
+    saved,
+    read
 };

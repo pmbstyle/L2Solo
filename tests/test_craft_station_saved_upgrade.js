@@ -9,6 +9,7 @@ fixture.assertConfigured(options.default);
 const Data = invoke('GameServer/DataCache'); Data.init();
 const Database = invoke('Database');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
+const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
 const Seeder = invoke('GameServer/Bot/Population/GeneratedColdSeeder');
 const Shops = invoke('GameServer/Bot/Economy/CraftShopService');
 
@@ -18,7 +19,7 @@ async function run() {
     const oldLoc = { locX: 1, locY: 2, locZ: 3 };
     // A summary-only stack: the bag names shots the crafter holds no item row for.
     const phantomShots = { 1835: { selfId: 1835, name: 'Soulshot: No Grade', amount: 1000 } };
-    const persistedBag = async (characterId) => Life.normalizeInventoryStackability(JSON.parse((await Database.execute([
+    const persistedBag = async (characterId) => Life.normalizeInventoryStackability(InventorySummary.read((await Database.execute([
         'SELECT inventorySummary FROM bot_life_state WHERE characterId = ?', [characterId]]))[0].inventorySummary));
     const physicalBag = async (characterId) => Life.normalizeInventoryStackability(
         Life.inventorySummaryFromItems(await Database.fetchItems(characterId)));

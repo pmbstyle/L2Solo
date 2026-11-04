@@ -67,7 +67,9 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
   A save rewrites the whole row whenever its length moves (almost always), so the WAL per save is the row's size:
   the kit's skill records are saved as their ranks (`SavedSkills`: `[[selfId, level], ...]` when every record is
   its rank's data, else whole), written by `SavedStats.compact` and the kit rebuild, unpacked by
-  `SavedStats.body`/`merge` and the raw kit readers (clan candidate trigger, buff seller check, clan member combat).
+  `SavedStats.body`/`merge` and the raw kit readers (clan candidate trigger, buff seller check, clan member combat);
+  a bag item whose name, kind and rank are its template's is saved without them (`InventorySummary.saved`, `t: 1`),
+  every reader of the column takes `InventorySummary.read`.
 - **History:** outbox in the same transaction → worker moves → main deletes; `readHistory` flushes first.
 - **Schema evolution — five mechanisms:** re-run `sqlite.sql`; numbered then named migrations; `maintenance_tasks`
   one-shots; `world_meta` flags; service start-up migrations (`ClanService.migrateAutonomousClanNames`,
@@ -83,6 +85,7 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
 | Hot field buffering | `CharacterWriteQueue` + `withCharacterFlush` | bypassed (PER-3) |
 | Value-moving item operation | one transactional Database method per operation (`sellItemsToNpc`, `buyFromLivePrivateStore`, `applyQuestStep`) | half-migrated |
 | Cold persisted state | `bot_life_state` + revision fence | owner |
+| Saved row layout (kit ranks, bag items without template fields) | `SavedSkills`, `InventorySummary.saved`/`read` | owner |
 | Join cooldown | `Clan/ClanRules.JOIN_COOLDOWN_MS` | shared |
 | Clan-hall visit hot/cold | `ClanHall/VisitPolicy`, `VisitNeed` | shared |
 | Death EXP | `Progression/DeathExperience` | shared |

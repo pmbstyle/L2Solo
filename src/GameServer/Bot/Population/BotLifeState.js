@@ -630,7 +630,7 @@ function normalize(row) {
     delete stats.lastResolveDebug;
     // The bag is a pure function of its text (item templates do not change at run time).
     const inventory = prior && prior.inventorySummary === row.inventorySummary ? prior.inventory
-        : normalizeInventoryStackability(parseJson(row.inventorySummary, {}));
+        : normalizeInventoryStackability(InventorySummary.read(row.inventorySummary));
 
     const state = ClanMembershipPolicy.reconcileState({
         characterId: Number(row.characterId),
@@ -810,7 +810,7 @@ function recordFromSession(session, phase, reason = '') {
         targetLevelBand: levelBand(actor.fetchLevel()),
         deathCount: 0,
         partyId: null,
-        inventorySummary: safeJson(inventory),
+        inventorySummary: InventorySummary.saved(inventory),
         ...SavedStats.statsColumns(stats),
         updatedAt: timestamp
     };
@@ -853,7 +853,7 @@ function rowFromState(state) {
         targetLevelBand: persistedState.levelBand || levelBand(persistedState.level),
         deathCount: persistedState.stats?.deaths || 0,
         partyId: persistedState.party?.partyId || null,
-        inventorySummary: safeJson(persistedState.inventory || {}),
+        inventorySummary: InventorySummary.saved(persistedState.inventory || {}),
         ...SavedStats.statsColumns(persistedState.stats),
         // `save()` does not bind the revision: a far row's revision moves in
         // SQL and save() writes the moved number back here. Until then the row
@@ -1389,7 +1389,7 @@ function recoverDissolvedPartyMembers() {
 function mergeSessionIntoLifeState(session, state, phase, reason = '', options = {}) {
     const observed = recordFromSession(session, phase, reason);
     const observedStats = SavedStats.merge(observed.statsJson, observed.mindJson);
-    const observedInventory = parseJson(observed.inventorySummary, {});
+    const observedInventory = InventorySummary.read(observed.inventorySummary);
     const timestamp = now();
     const physicalLoc = options.physicalLocation
         ? { locX: observed.locX, locY: observed.locY, locZ: observed.locZ } : null;
@@ -2168,7 +2168,7 @@ const BotLifeState = {
                     lastResolvedAt: now()
                 },
                 stats: { ...(craftState.stats || {}), ...membershipStats, pvpEnemies: BotEnemyMemory.snapshot(session), lastReason: reason },
-                inventory: parseJson(row.inventorySummary, {})
+                inventory: InventorySummary.read(row.inventorySummary)
             };
             // Built without mergeSessionIntoLifeState: the near raise joins here.
             DecisionEvents.applyPendingRaise(session, nextState.stats);
@@ -3041,7 +3041,7 @@ const BotLifeState = {
                         if (deathDrop?.inventory) {
                             // The published state carries the row the drop read back.
                             row.simulationRevision = deathDrop.revision;
-                            row.inventorySummary = safeJson(deathDrop.inventory);
+                            row.inventorySummary = InventorySummary.saved(deathDrop.inventory);
                             row.statsJson = safeJson({ ...parseJson(row.statsJson, {}), pkDropDeathSequence: deathDrop.deathSequence });
                             invoke('GameServer/Actor/Generics/PkDeathDrop').spawn(row.characterId, profiledState.loc, deathDrop.drops);
                         }
@@ -3692,7 +3692,7 @@ const BotLifeState = {
     // saved as the row's bag summary the way a full save writes it.
     writeHeldFields(read, { stats = {}, columns = {}, inventory = null }, reason) {
         return writeHeldOnRevision(read, { stats: { ...stats, lastReason: reason }, columns: inventory
-            ? { ...columns, inventorySummary: safeJson(InventorySummary.canonicalize(inventory)) }
+            ? { ...columns, inventorySummary: InventorySummary.saved(InventorySummary.canonicalize(inventory)) }
             : columns }, reason);
     },
 

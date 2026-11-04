@@ -1,6 +1,7 @@
 const ClassProgression = invoke('GameServer/ClassProgression');
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 const ItemTemplateIndex = require('../GameServer/Item/ItemTemplateIndex');
+const InventorySummary = require('../GameServer/Bot/Population/InventorySummary');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -569,7 +570,7 @@ function compactClanCraftPlan(goal, members, warehouse, knowledge = []) {
     if (!recipe) return { reasonCode: 'clan_craft_recipe_unavailable', craft: null };
     const providers = Object.fromEntries(Object.entries(plan.craftProviders || {}).map(([id, provider]) => [id,
         { ...provider, known: knowledge.some(row => Number(row.characterId) === Number(provider.characterId) && Number(row.recipeId) === Number(id)) }]));
-    const inventory = { ...observerJson(carrier.inventorySummary) };
+    const inventory = InventorySummary.read(carrier.inventorySummary);
     for (const row of warehouse) {
         const id = Number(row.selfId);
         inventory[id] = { selfId: id, amount: Number(inventory[id]?.amount || 0)
@@ -890,7 +891,7 @@ function compactClanMember(row, hotEntry = null, leaderId = 0) {
         locZ: clanNumber(row.lifeLocZ || row.locZ)
     };
     const area = hot?.area || WorldAreaCatalog.publicArea(WorldAreaCatalog.resolve(loc));
-    const inventory = observerJson(row.inventorySummary);
+    const inventory = InventorySummary.read(row.inventorySummary);
     const equipment = coldEquipmentValue({ inventory, stats });
     const online = !!hot || Number(row.isOnline) === 1 || String(row.phase || '') === 'hot';
     return {

@@ -25,7 +25,7 @@ async function assertCachedAsStored(saved) {
     assert.deepEqual(saved.inventory, stored.inventory);
     assert.equal(saved.simulation.revision, stored.simulation.revision);
     // Both are what the stored texts parse to now (a parse handed on is that parse).
-    assert.deepEqual(stored.inventory, Life.normalizeInventoryStackability(JSON.parse(row.inventorySummary)));
+    assert.deepEqual(stored.inventory, Life.normalizeInventoryStackability(InventorySummary.read(row.inventorySummary)));
     for (const [key, value] of Object.entries(JSON.parse(row.mindJson || '{}'))) assert.deepEqual(stored.stats[key], value, key);
 }
 async function run() {

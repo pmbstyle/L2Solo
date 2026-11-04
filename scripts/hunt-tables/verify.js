@@ -59,7 +59,7 @@ function strengthCheck(file, count) {
     const out = { bots: 0, maxRel: 0, worst: null, outsideTable: 0, perField: {}, mismatched: 0 };
     for (const row of picked) {
         const stats = require('../../src/GameServer/Bot/SavedStats').body(row.statsJson);
-        const inventory = JSON.parse(row.inventorySummary || '{}');
+        const inventory = invoke('GameServer/Bot/Population/InventorySummary').read(row.inventorySummary);
         const classId = invoke('GameServer/Bot/Population/ColdCombatProfile').classIdOf({ stats });
         const state = { characterId: Number(row.characterId), level: Number(row.level), classId, stats, inventory };
         const owner = M.profileOf(state);

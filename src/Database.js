@@ -47,6 +47,7 @@ const Diagnostics = require('./GameServer/Bot/Economy/EconomyDiagnostics');
 const ColdCombatProfile = require('./GameServer/Bot/Population/ColdCombatProfile');
 const SavedStats = require('./GameServer/Bot/SavedStats');
 const SavedSkills = require('./GameServer/Bot/SavedSkills');
+const InventorySummary = require('./GameServer/Bot/Population/InventorySummary');
 const PartyCandidateProjection = require('./DatabasePartyCandidateProjection');
 const PlayerWarehouse = require('./DatabasePlayerWarehouse');
 const DataCache = invoke('GameServer/DataCache');
@@ -2542,7 +2543,7 @@ function economyStepUnsafe(characterId, command, kind) {
     if (tuple[1] !== 0 || command[2] !== tuple[0]) throw Error('economy_sequence_changed');
     economyOwnerUnsafe(characterId, command.authority, true);
     const state = { level: Number(row.level), phase: row.phase, stats: SavedStats.merge(row.statsJson, row.mindJson),
-        inventory: jsonObject(row.inventorySummary) };
+        inventory: InventorySummary.read(row.inventorySummary) };
     // Current own protection is prepared once inside the atomic boundary,
     // never inferred from the worker's spending proposal.
     const reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(state);
@@ -2672,13 +2673,13 @@ function prepareCraftReservationsUnsafe(step, recipe) {
     // bot sells or trades, not this plan (docs/game-decisions.md, 11-02).
     step.reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts({
         level: Number(step.row.level), phase: step.row.phase, stats,
-        inventory: jsonObject(step.row.inventorySummary)
+        inventory: InventorySummary.read(step.row.inventorySummary)
     }, { craft: false, clan: false });
 }
 
 function checkEconomyMaterialProtectionUnsafe(characterId, step, selfId, used, sale = false) {
     if (!step) return;
-    const stats = SavedStats.merge(step.row.statsJson, step.row.mindJson), inventory = jsonObject(step.row.inventorySummary);
+    const stats = SavedStats.merge(step.row.statsJson, step.row.mindJson), inventory = InventorySummary.read(step.row.inventorySummary);
     // Bilateral market acceptance also rechecks the current gear/craft/clan
     // reserves inside its transaction, without a prepared economy command.
     step.reserved ??= invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts({
@@ -2721,7 +2722,7 @@ function writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp = nul
     const ids = [...new Set([57, ...changedIds].map(Number))];
     const physical = LifeState.inventorySummaryFromItems(all(`SELECT * FROM items
         WHERE characterId = ? AND selfId IN (${ids.map(() => '?').join(',')})`, [Number(characterId), ...ids]));
-    const inventory = jsonObject(row.inventorySummary);
+    const inventory = InventorySummary.read(row.inventorySummary);
     for (const id of ids) {
         if (physical[id]) inventory[id] = physical[id];
         else delete inventory[id];
@@ -2736,7 +2737,7 @@ function writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp = nul
         statsJson = json_patch(${statsBase},json(?)),
         mindJson = CASE WHEN ? IS NULL THEN mindJson ELSE json_patch(mindJson,json(?)) END,
         simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?`,
-    [JSON.stringify(inventory), adena, mp, JSON.stringify(body), ...mindPatchParams(mind), now(), Number(characterId)]);
+    [InventorySummary.saved(inventory), adena, mp, JSON.stringify(body), ...mindPatchParams(mind), now(), Number(characterId)]);
     const inventoryPatch = Object.fromEntries(ids
         .map(id => [id, physical[id] || null]));
     return { ...normalizeRow(coldSimulationRow(characterId)), inventoryPatch };
@@ -2802,7 +2803,7 @@ function partyAgreementUnsafe(previous, proposed) {
 function syncAdenaSnapshotUnsafe(characterId, amount, event = null) {
     const row = one('SELECT inventorySummary, statsJson FROM bot_life_state WHERE characterId = ?', [Number(characterId)]);
     if (!row) return false;
-    const inventory = jsonObject(row.inventorySummary);
+    const inventory = InventorySummary.read(row.inventorySummary);
     inventory['57'] = {
         ...(inventory['57'] || {}),
         selfId: 57,
@@ -2814,7 +2815,7 @@ function syncAdenaSnapshotUnsafe(characterId, amount, event = null) {
     write(`UPDATE bot_life_state SET adena = ?, inventorySummary = ?, statsJson = ?, updatedAt = ?, ${MOVE_FAR_REVISION}
         WHERE characterId = ?`, [
         Math.max(0, Number(amount) || 0),
-        JSON.stringify(inventory),
+        InventorySummary.saved(inventory),
         JSON.stringify(stats),
         now(),
         Number(characterId)
@@ -2837,7 +2838,7 @@ function updateColdInventorySnapshotUnsafe(characterId, selfId, event = null, ex
     if (expectedRevision !== null && Number(expectedRevision) !== currentRevision) {
         return { ok: false, code: 'stale_snapshot', simulationRevision: currentRevision };
     }
-    const inventory = jsonObject(row.inventorySummary);
+    const inventory = InventorySummary.read(row.inventorySummary);
     const physical = Number(one(`SELECT COALESCE(SUM(amount), 0) AS amount
         FROM items WHERE characterId = ? AND selfId = ? AND amount > 0`, [id, itemId]).amount || 0);
     const previous = inventory[String(itemId)] || {};
@@ -2858,7 +2859,7 @@ function updateColdInventorySnapshotUnsafe(characterId, selfId, event = null, ex
         WHERE characterId = ? AND phase = 'cold'
           AND simulationRevision = ?
           AND (? = 1 OR partyId IS NULL OR partyId = '')`, [
-        JSON.stringify(inventory),
+        InventorySummary.saved(inventory),
         itemId === 57 ? physical : null,
         JSON.stringify(stats),
         nextRevision,
@@ -3286,7 +3287,7 @@ function dropPkDeathItemsUnsafe(characterId) {
     for (const item of drops) write('DELETE FROM items WHERE id=? AND characterId=?', [item.id, characterId]);
     const summary = invoke('GameServer/Bot/Population/BotLifeState').inventorySummaryFromItems(all('SELECT * FROM items WHERE characterId=? ORDER BY id', [characterId]));
     const written = one(`UPDATE bot_life_state SET inventorySummary=?, statsJson=json_set(statsJson,'$.pkDropDeathSequence',?)
-        WHERE characterId=? RETURNING ${NativeWriteCheckpoint.columns.join(', ')}`, [JSON.stringify(summary), death, characterId]);
+        WHERE characterId=? RETURNING ${NativeWriteCheckpoint.columns.join(', ')}`, [InventorySummary.saved(summary), death, characterId]);
     return { drops, inventory: summary, deathSequence: death, revision: Number(written.simulationRevision), checkpoint: written };
 }
 
@@ -4374,14 +4375,14 @@ function mergeBoardSettlementsUnsafe(characterId, { advance = false } = {}) {
     if (!life || life.phase !== 'cold') return { changedIds: [...changedIds], row: null };
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
     const physical = LifeState.inventorySummaryFromItems(all('SELECT * FROM items WHERE characterId = ?', [id]));
-    const inventory = jsonObject(life.inventorySummary);
+    const inventory = InventorySummary.read(life.inventorySummary);
     for (const selfId of changedIds) {
         if (physical[selfId]) inventory[selfId] = physical[selfId];
         else delete inventory[selfId];
     }
     write(`UPDATE bot_life_state SET inventorySummary = ?, adena = ?,
         simulationRevision = simulationRevision + ?, updatedAt = ? WHERE characterId = ?`,
-    [JSON.stringify(inventory), Number(physical[57]?.amount || 0), advance ? 1 : 0, now(), id]);
+    [InventorySummary.saved(inventory), Number(physical[57]?.amount || 0), advance ? 1 : 0, now(), id]);
     return { changedIds: [...changedIds], row: normalizeRow(coldSimulationRow(id)) };
 }
 
@@ -4489,7 +4490,7 @@ function recruitmentRows(where, params) {
         FROM characters c LEFT JOIN bot_life_state l ON l.characterId=c.id
         LEFT JOIN bot_party_candidate_projection p ON p.characterId=c.id WHERE ${where}`, params).map(row => ({ ...row,
             phase: row.phase || '', activity: row.activity || '', spotId: row.spotId || null, partyId: row.partyId || null,
-            stats: SavedStats.body(row.statsJson), inventory: jsonObject(row.inventorySummary) }));
+            stats: SavedStats.body(row.statsJson), inventory: InventorySummary.read(row.inventorySummary) }));
 }
 function recruitmentSourceCurrent(source) {
     if (source?.kind === 'economic') {
@@ -4864,16 +4865,16 @@ const Database = {
             const nextMp = Math.max(0, Number(seller.mp) - mana);
             const buyerAdena = payerBalance - fee;
             const sellerAdena = afkTradeAdenaRowsUnsafe(provider).reduce((sum, row) => sum + Number(row.amount || 0), 0);
-            const buyerInventory = parsedObject(buyer.inventorySummary) || {};
-            const sellerInventory = parsedObject(seller.inventorySummary) || {};
+            const buyerInventory = InventorySummary.read(buyer.inventorySummary);
+            const sellerInventory = InventorySummary.read(seller.inventorySummary);
             buyerInventory['57'] = { ...(buyerInventory['57'] || {}), selfId: 57, name: 'Adena', amount: buyerAdena };
             sellerInventory['57'] = { ...(sellerInventory['57'] || {}), selfId: 57, name: 'Adena', amount: sellerAdena };
             write(`UPDATE bot_life_state SET statsJson = ?, inventorySummary = ?, adena = ?,
                 simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?`,
-            [JSON.stringify(buyerStats), JSON.stringify(buyerInventory), buyerAdena, timestamp, payer]);
+            [JSON.stringify(buyerStats), InventorySummary.saved(buyerInventory), buyerAdena, timestamp, payer]);
             write(`UPDATE bot_life_state SET statsJson = ?, inventorySummary = ?, adena = ?, mp = ?,
                 simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?`,
-            [JSON.stringify(sellerStats), JSON.stringify(sellerInventory), sellerAdena, nextMp, timestamp, provider]);
+            [JSON.stringify(sellerStats), InventorySummary.saved(sellerInventory), sellerAdena, nextMp, timestamp, provider]);
             write('UPDATE characters SET mp = ? WHERE id = ?', [nextMp, provider]);
             return { ok: true, buyerAdena, sellerAdena, nextMp,
                 buyerRevision: Number(buyer.simulationRevision) + 1,
@@ -6489,7 +6490,7 @@ const Database = {
                 const snapshots = members.map(member => ({ characterId: member.characterId, level: member.patch.level,
                     phase: request.phase, vitals: { hp: member.patch.hp, maxHp: member.patch.maxHp,
                         mp: member.patch.mp, maxMp: member.patch.maxMp },
-                    classId: jsonObject(member.patch.statsJson).classId, inventory: jsonObject(member.patch.inventorySummary), stats: SavedStats.body(member.patch.statsJson) }));
+                    classId: jsonObject(member.patch.statsJson).classId, inventory: InventorySummary.read(member.patch.inventorySummary), stats: SavedStats.body(member.patch.statsJson) }));
                 const reason = raidRosterCommitReason(party, jsonObject(request.statsJson), null, snapshots);
                 if (reason) return { ok: false, reason };
             }
@@ -7336,7 +7337,7 @@ const Database = {
                 all('SELECT * FROM skills WHERE characterId = ?', [characterId]), now());
             checkCapturedWriteAdmission(admission, characterId);
             write('UPDATE bot_life_state SET sp = ?, inventorySummary = ?, statsJson = ?, simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?',
-                [character.sp, JSON.stringify(inventory), JSON.stringify(SavedSkills.packStats(stats)), now(), characterId]);
+                [character.sp, InventorySummary.saved(inventory), JSON.stringify(SavedSkills.packStats(stats)), now(), characterId]);
             return one('SELECT * FROM bot_life_state WHERE characterId = ?', [characterId]);
         }, 'cold:automatic-skills'));
     },
@@ -7516,7 +7517,7 @@ const Database = {
                 }
                 // A resolve saves its lifecycle row before materializing loot.
                 // Hydration can see that row while physical items still lag.
-                const inventory = jsonObject(life.inventorySummary);
+                const inventory = InventorySummary.read(life.inventorySummary);
                 const physical = all(`SELECT selfId, SUM(amount) AS amount FROM items
                     WHERE characterId = ? AND selfId IN (57, ?) GROUP BY selfId`, [characterId, item.selfId]);
                 const amounts = new Map(physical.map(row => [Number(row.selfId), Number(row.amount)]));
@@ -8063,7 +8064,7 @@ const Database = {
                     || slot !== Number(template.etc?.slot || 0))) throw Error('npc_item_template_changed');
                 if (seller && step && slot > 0) {
                     const blocker = invoke('GameServer/Bot/Population/BotLifeState').marketPurchaseBlocker({
-                        level: Number(step.row.level), stats: SavedStats.merge(step.row.statsJson, step.row.mindJson), inventory: jsonObject(step.row.inventorySummary)
+                        level: Number(step.row.level), stats: SavedStats.merge(step.row.statsJson, step.row.mindJson), inventory: InventorySummary.read(step.row.inventorySummary)
                     }, { selfId: itemId }, count);
                     if (blocker) throw Error(blocker);
                 }
@@ -8511,7 +8512,7 @@ const Database = {
                 const source = { characterId, level: Number(character?.level), clanId: Number(character?.clanId),
                     stats: { ...SavedStats.merge(life?.statsJson, life?.mindJson), classId: Number(character?.classId) },
                     inventory: Life.inventorySummaryFromItems(physical) };
-                const protectedInventory = jsonObject(life?.inventorySummary);
+                const protectedInventory = InventorySummary.read(life?.inventorySummary);
                 for (const id of Object.keys(source.inventory))
                     source.inventory[id] = { ...protectedInventory[id], ...source.inventory[id] };
                 const position = state ? life : character;
@@ -8558,7 +8559,7 @@ const Database = {
                 const source = { characterId, level: Number(character?.level), clanId: Number(character?.clanId),
                     stats: { ...SavedStats.merge(life?.statsJson, life?.mindJson), classId: Number(character?.classId) },
                     inventory: Life.inventorySummaryFromItems(all('SELECT * FROM items WHERE characterId = ? ORDER BY id', [characterId])) };
-                const protectedInventory = jsonObject(life?.inventorySummary);
+                const protectedInventory = InventorySummary.read(life?.inventorySummary);
                 for (const id of Object.keys(source.inventory))
                     source.inventory[id] = { ...protectedInventory[id], ...source.inventory[id] };
                 const position = state ? life : character;
@@ -9009,12 +9010,12 @@ const Database = {
                     const fromItems = id === Number(customerId) || !!workshop;
                     const inventory = fromItems
                         ? lifeState.inventorySummaryFromItems(all('SELECT * FROM items WHERE characterId = ? AND amount > 0', [id]))
-                        : JSON.parse(clanCrafter.inventorySummary || '{}');
+                        : InventorySummary.read(clanCrafter.inventorySummary);
                     write(`UPDATE bot_life_state SET inventorySummary = ?, simulationRevision = simulationRevision + 1,
                         statsJson = json_set(statsJson, '$.clanInventoryRevision', simulationRevision + 1),
                         adena = CASE WHEN ? THEN ? ELSE adena END,
                         mp = CASE WHEN characterId = ? THEN ? ELSE mp END, updatedAt = ? WHERE characterId = ?`,
-                    [JSON.stringify(inventory), fromItems ? 1 : 0, Number(inventory['57']?.amount || 0), crafterId, crafterMp, now(), id]);
+                    [InventorySummary.saved(inventory), fromItems ? 1 : 0, Number(inventory['57']?.amount || 0), crafterId, crafterMp, now(), id]);
                 }
                 if (workshop) {
                     const production = { ...jsonObject(workshopCrafter.statsJson).production };
@@ -10471,7 +10472,7 @@ const Database = {
         return inTransaction(() => {
             const row = one('SELECT * FROM bot_life_state WHERE characterId = ?', [characterId]);
             if (!row || row.phase !== 'cold' || Number(row.simulationRevision) !== Number(expectedRevision)) return false;
-            const inventory = jsonObject(row.inventorySummary);
+            const inventory = InventorySummary.read(row.inventorySummary);
             const supplies = Object.fromEntries(itemIds.slice(0, 128).filter(id => inventory[id]).map(id => [id, inventory[id]]));
             syncInventorySummaryUnsafe(characterId, supplies);
             return true;
@@ -10533,7 +10534,7 @@ const Database = {
                     return { ok: false, code: 'clan_goal_changed' };
                 const members = goals.map(goal => {
                     const row = one('SELECT characterId, inventorySummary, statsJson FROM bot_life_state WHERE characterId = ?', [Number(goal.target?.memberId || 0)]);
-                    return row && { characterId: row.characterId, inventory: jsonObject(row.inventorySummary), stats: SavedStats.body(row.statsJson) };
+                    return row && { characterId: row.characterId, inventory: InventorySummary.read(row.inventorySummary), stats: SavedStats.body(row.statsJson) };
                 }).filter(Boolean);
                 const gap = invoke('GameServer/Clan/ClanSupplyPolicy').requirements(
                     { id: clan, level: clanRow.level, state: previousState, members },
@@ -10656,10 +10657,10 @@ const Database = {
                 }
                 if (remaining) throw new Error('clan reward funding changed');
                 const next = one('SELECT inventorySummary FROM bot_life_state WHERE characterId = ?', [character]);
-                const inventory = jsonObject(next.inventorySummary);
+                const inventory = InventorySummary.read(next.inventorySummary);
                 const wallet = Number(expectedPhase === 'hot' ? inventory[57]?.amount || 0 : life.adena) + reward;
                 inventory[57] = { ...(inventory[57] || {}), selfId: 57, name: 'Adena', amount: wallet };
-                write('UPDATE bot_life_state SET adena = ?, inventorySummary = ? WHERE characterId = ?', [wallet, JSON.stringify(inventory), character]);
+                write('UPDATE bot_life_state SET adena = ?, inventorySummary = ? WHERE characterId = ?', [wallet, InventorySummary.saved(inventory), character]);
                 write('DELETE FROM items WHERE characterId = ? AND selfId = 57', [character]);
                 write("INSERT INTO items(selfId, name, amount, enchant, equipped, slot, characterId) VALUES(57, 'Adena', ?, 0, 0, 0, ?)", [wallet, character]);
                 recordClanGoalEventUnsafe({ clanId: clan, eventType: 'member_item_reward', goalType: deliveryGoal.type,
@@ -10719,7 +10720,7 @@ const Database = {
                 return { ok: false, code: 'item_ordered' };
             }
             const rows = all('SELECT * FROM items WHERE characterId = ? AND amount > 0', [id]);
-            if (life.phase === 'cold' && !Policy.inventoryMatches(rows, jsonObject(life.inventorySummary))) {
+            if (life.phase === 'cold' && !Policy.inventoryMatches(rows, InventorySummary.read(life.inventorySummary))) {
                 return { ok: false, code: 'inventory_not_materialized' };
             }
             if (life.phase === 'hot' && (typeof validateLive !== 'function' || !validateLive(member, rows))) {
@@ -10755,7 +10756,7 @@ const Database = {
             ledger(stock.selfId, 'withdraw');
             const updatedRows = all('SELECT * FROM items WHERE characterId = ? AND amount > 0', [id]);
             const physical = LifeState.inventorySummaryFromItems(updatedRows);
-            const inventory = jsonObject(life.inventorySummary);
+            const inventory = InventorySummary.read(life.inventorySummary);
             for (const selfId of new Set([stock.selfId, ...plan.returned.map((row) => row.selfId)])) {
                 delete inventory[String(selfId)];
                 if (physical[String(selfId)]) inventory[String(selfId)] = physical[String(selfId)];
@@ -10767,7 +10768,7 @@ const Database = {
                 returned: plan.returned.map((row) => ({ selfId: row.selfId, enchant: row.enchant })), at: timestamp };
             write(`UPDATE bot_life_state SET inventorySummary = ?, statsJson = ?,
                 simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?`, [
-                JSON.stringify(inventory), JSON.stringify(stats), timestamp, id
+                InventorySummary.saved(inventory), JSON.stringify(stats), timestamp, id
             ]);
             if (simulation) {
                 clanState.warehouseRevision = revision;
