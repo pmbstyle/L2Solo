@@ -2011,6 +2011,27 @@ function applySchemaMigrations() {
             DROP INDEX IF EXISTS bot_life_state_warehouse_demand;
             DROP INDEX IF EXISTS bot_life_state_warehouse_release;
             DELETE FROM schema_migrations WHERE version = 84;
+        `)],
+        // A cold bot's items rows known to match its stored bag summary
+        // (itemsMatchSummaryUnsafe): a row per bot, written by the cold commit
+        // that made them match, deleted by every write of an items row the
+        // summary sync reads, whoever writes it (warehouse, trade, store, quest,
+        // a hot bot's buffered amount, raw SQL). A side table: an items write
+        // never rewrites the wide life row.
+        ['bot-items-synced', () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS bot_items_synced (
+                characterId INTEGER PRIMARY KEY REFERENCES bot_life_state(characterId) ON DELETE CASCADE,
+                inventoryRevision INTEGER NOT NULL
+            );
+            CREATE TRIGGER IF NOT EXISTS items_unsync_insert AFTER INSERT ON items
+            BEGIN DELETE FROM bot_items_synced WHERE characterId = NEW.characterId; END;
+            CREATE TRIGGER IF NOT EXISTS items_unsync_update AFTER UPDATE OF id, selfId, amount, enchant, equipped, slot, characterId ON items
+            WHEN OLD.id IS NOT NEW.id OR OLD.selfId IS NOT NEW.selfId OR OLD.amount IS NOT NEW.amount
+                OR OLD.enchant IS NOT NEW.enchant OR OLD.equipped IS NOT NEW.equipped OR OLD.slot IS NOT NEW.slot
+                OR OLD.characterId IS NOT NEW.characterId
+            BEGIN DELETE FROM bot_items_synced WHERE characterId IN (OLD.characterId, NEW.characterId); END;
+            CREATE TRIGGER IF NOT EXISTS items_unsync_delete AFTER DELETE ON items
+            BEGIN DELETE FROM bot_items_synced WHERE characterId = OLD.characterId; END;
         `)]
     ];
     const migrate = (apply, record) => {
@@ -2981,8 +3002,29 @@ function nativeColdCombatSkillsUnsafe(characterId, combat) {
     return { ...combat, version: ColdCombatProfile.PROFILE_VERSION, skillSource: 'database', skills: learned };
 }
 
-function syncInventorySummaryUnsafe(characterId, inventory = {}) {
-    const existing = all('SELECT id, selfId, amount, enchant, equipped, slot FROM items WHERE characterId = ? ORDER BY id', [characterId]);
+// Whether a cold bot's items rows match its stored bag summary: a cold commit
+// that synced them wrote the marker at the summary's revision, and since then
+// no items row of the bot moved (the bot-items-synced triggers delete it) and
+// no other writer moved the summary (inventoryRevision). Read before the
+// commit's UPDATE moves the revision.
+function itemsMatchSummaryUnsafe(characterId) {
+    return !!one(`SELECT 1 AS synced FROM bot_items_synced s JOIN bot_life_state b
+        ON b.characterId = s.characterId AND b.inventoryRevision = s.inventoryRevision WHERE s.characterId = ?`, [characterId]);
+}
+
+// Makes the items rows of a bot match the stacks of `inventory` (a stack with
+// no positive amount: no rows); rows of selfIds it does not name stay. A stack
+// is synced from its own rows only, and a second sync of the same entry finds
+// nothing to write, so `selfIds` (a Set) limits it to those stacks when the
+// rows of the others already match their entries: no read or compare of
+// theirs. Every stack when absent.
+function syncInventorySummaryUnsafe(characterId, inventory = {}, selfIds = null) {
+    const entries = Object.keys(inventory).length;
+    if (selfIds && !selfIds.size) return { characterId, entries };
+    const existing = selfIds
+        ? all(`SELECT id, selfId, amount, enchant, equipped, slot FROM items INDEXED BY items_characterId_selfId
+            WHERE characterId = ? AND selfId IN (SELECT value FROM json_each(?)) ORDER BY id`, [characterId, JSON.stringify([...selfIds])])
+        : all('SELECT id, selfId, amount, enchant, equipped, slot FROM items WHERE characterId = ? ORDER BY id', [characterId]);
     const bySelfId = new Map();
     const byId = new Map();
     existing.forEach((row) => {
@@ -2994,7 +3036,7 @@ function syncInventorySummaryUnsafe(characterId, inventory = {}) {
     Object.values(inventory).forEach((item) => {
         const selfId = Number(item.selfId || 0);
         const amount = Number(item.amount || 0);
-        if (!selfId) return;
+        if (!selfId || selfIds && !selfIds.has(selfId)) return;
         const rows = bySelfId.get(selfId) || [];
         if (amount <= 0) {
             rows.forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]));
@@ -3073,7 +3115,7 @@ function syncInventorySummaryUnsafe(characterId, inventory = {}) {
         });
         rows.slice(desired.length).forEach((row) => write('DELETE FROM items WHERE id = ? AND characterId = ?', [row.id, characterId]));
     });
-    return { characterId, entries: Object.keys(inventory).length };
+    return { characterId, entries };
 }
 
 function syncColdDeathExperienceUnsafe(characterId, record, timestamp) {
@@ -3154,7 +3196,10 @@ function characterProgressStatement(characterId, values, { washKarma = false, be
         [...params, ...(before ? [] : columns.map((column) => values[column])), characterId]];
 }
 
-function applyColdPhysicalStateUnsafe(characterId, physical = {}, parts = null, deathRecord = null) {
+// bag: the cold commit's summary write, null when its patch names none:
+// inventoryRevision, the one its UPDATE left, and matched, whether the rows
+// matched the stored summary before that UPDATE (itemsMatchSummaryUnsafe).
+function applyColdPhysicalStateUnsafe(characterId, physical = {}, parts = null, deathRecord = null, bag = null) {
     const before = one('SELECT level,exp,sp,hp,maxHp,mp,maxMp,classId FROM characters WHERE id = ?', [characterId]);
     const classId = Number.isFinite(Number(physical.classId)) ? Number(physical.classId) : null;
     const values = {
@@ -3170,8 +3215,24 @@ function applyColdPhysicalStateUnsafe(characterId, physical = {}, parts = null, 
     if (statement) write(...statement);
     if (physical.soulCrystals?.length) applySoulCrystalStepsUnsafe(characterId, physical.soulCrystals);
     parts?.lap('physical');
-    if (physical.inventory) syncInventorySummaryUnsafe(characterId, physical.inventory);
-    parts && Diagnostics.count('commit_inventory', physical.inventory ? 'sent' : 'absent');
+    if (physical.inventory) {
+        // The rows already match the stored summary, which the step's bag
+        // was (the revision fence): only the stacks it moved can differ. Soul
+        // crystal steps above rewrote rows of this bag: every stack then.
+        const stacks = bag?.matched && Array.isArray(physical.changedItemIds) && !physical.soulCrystals?.length
+            ? new Set(physical.changedItemIds.map(Number)) : null;
+        syncInventorySummaryUnsafe(characterId, physical.inventory, stacks);
+        // The rows match the summary this commit stored until an items write.
+        if (bag) write(`INSERT INTO bot_items_synced(characterId, inventoryRevision) VALUES (?, ?)
+            ON CONFLICT(characterId) DO UPDATE SET inventoryRevision = excluded.inventoryRevision`, [characterId, bag.inventoryRevision]);
+        if (parts) {
+            const entries = Object.values(physical.inventory);
+            const synced = stacks ? entries.filter((item) => stacks.has(Number(item.selfId || 0))).length : entries.length;
+            Diagnostics.count('commit_inventory', stacks ? 'stacks' : 'full');
+            Diagnostics.count('commit_inventory', 'stack', 'synced', synced);
+            Diagnostics.count('commit_inventory', 'stack', 'kept', entries.length - synced);
+        }
+    } else if (parts) Diagnostics.count('commit_inventory', 'absent');
     parts?.lap('inventory');
     if (physical.pvpKills?.length) {
         if (physical.pvpKills.length > 18) throw Error('cold PvP: too many kills');
@@ -6174,6 +6235,11 @@ const Database = {
             const parts = Diagnostics.laps('commit_');
             const partition = proposalPartition(request, fields);
             if (!partition.ok) return { ok: false, characterId, reason: 'partition_rejected', detail: partition.reason };
+            const physical = request.physical || null;
+            // The bag's rows against its stored summary, before the UPDATE
+            // replaces that summary (applyColdPhysicalStateUnsafe).
+            const bagWrite = physical?.inventory && typeof requestedPatch.inventorySummary === 'string';
+            const matched = bagWrite && Array.isArray(physical.changedItemIds) && itemsMatchSummaryUnsafe(characterId);
             const written = writeColdCommitUnsafe(fields, requestedPatch);
             if (!written) {
                 // A refusal hands back the row: the worker rebases on it.
@@ -6187,9 +6253,9 @@ const Database = {
             }
             const revision = expectedRevision + 1;
             parts?.lap('row_write');
-            const physical = request.physical || null;
             EconomyJournal.detail(request.journalReason || 'resolve');
-            const { drops: pkDrops, rewrote } = physical ? applyColdPhysicalStateUnsafe(characterId, physical, parts, request.stats?.deathExperience) : { drops: [], rewrote: false };
+            const bag = bagWrite ? { matched, inventoryRevision: Number(written.inventoryRevision) } : null;
+            const { drops: pkDrops, rewrote } = physical ? applyColdPhysicalStateUnsafe(characterId, physical, parts, request.stats?.deathExperience, bag) : { drops: [], rewrote: false };
             parts?.lap('physical');
             // What deals and closed records left for the bot on the board while
             // the worker held it reaches its bag with this save.

@@ -54,7 +54,11 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
 - **Cold:** `bot_life_state` row is authoritative (level, exp, sp, adena, location, vitals, `inventorySummary`,
   `statsJson`, `mindJson`, `simulationRevision`). A proposal names its revision; stale is refused. A commit also
   writes `characters` in the same transaction (only the moved columns); a resolve copies level, EXP, SP and vitals
-  in one guarded UPDATE (`updateCharacterProgress`, nothing written when nothing moved). Items ↔ summary synced both ways. Every index on the row costs a WAL
+  in one guarded UPDATE (`updateCharacterProgress`, nothing written when nothing moved). Items ↔ summary synced both ways;
+  a cold commit reads and compares only the stacks its step moved (`InventorySummary.bagChange` `changedItemIds`) while
+  the rows still match the stored summary (`bot_items_synced`, named migration `bot-items-synced`: a row per bot written
+  by the commit at its `inventoryRevision`, deleted by an `items` trigger on any write of a row the sync reads, raw SQL
+  too; a summary moved by another writer leaves it behind), else every stack. Every index on the row costs a WAL
   page per save (SQLite rewrites the entry of every column the UPDATE sets, changed or not), so no index holds
   `updatedAt` except the covering `bot_life_state_party_candidate_projection` (read with INDEXED BY), and the
   whole-row writers (`BotLifeState.save`, the cold commit) set the indexed `accountName`, `characterName`, `phase`,

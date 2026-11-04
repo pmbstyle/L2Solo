@@ -201,11 +201,17 @@ function commitBatch(entries = [], options = {}) {
         // a proposal without the flag rewrites them. The physical writer needs
         // explicit removals even though persisted summaries omit empty stacks;
         // only items owned by this proposal: the stacks its step emptied.
+        // changedItemIds: those and the stacks the step added or changed, the
+        // only ones the writer compares with their rows while no other writer
+        // touched them; without the list it compares every stack.
         const inventoryChanged = entry.proposal?.bagChanged !== false;
         const physicalInventory = inventoryChanged ? { ...canonicalInventory } : null;
-        if (inventoryChanged) (entry.proposal?.removedItemIds || []).forEach((selfId) => {
+        const removedItemIds = inventoryChanged ? entry.proposal?.removedItemIds || [] : [];
+        removedItemIds.forEach((selfId) => {
             if (!canonicalInventory[selfId]) physicalInventory[selfId] = { selfId: Number(selfId), amount: 0 };
         });
+        const changedItemIds = inventoryChanged && Array.isArray(entry.proposal?.changedItemIds)
+            ? [...entry.proposal.changedItemIds, ...removedItemIds] : null;
         const inventorySummary = JSON.stringify(canonicalInventory);
         requests.push({
             characterId: Number(nextState.characterId),
@@ -227,7 +233,8 @@ function commitBatch(entries = [], options = {}) {
                 } : {}),
                 ...(entry.proposal?.durable?.pvpKills ? { pvpKills: entry.proposal.durable.pvpKills } : {}),
                 ...(entry.proposal?.durable?.soulCrystals?.length ? { soulCrystals: entry.proposal.durable.soulCrystals } : {}),
-                ...(inventoryChanged ? { inventory: physicalInventory } : {})
+                ...(inventoryChanged ? { inventory: physicalInventory } : {}),
+                ...(changedItemIds ? { changedItemIds } : {})
             },
             allowParty: entry.options?.allowParty === true || options.allowParty === true,
             allowLifecycle: entry.options?.allowLifecycle === true || options.allowLifecycle === true,

@@ -49,42 +49,57 @@ function canonicalize(inventory = {}) {
     }, {});
 }
 
-// What a step did to the bag, in one walk over base and next, shaped as the
-// proposal fields main's commit reads (ColdSimulationOwner): bagChanged (the
-// commit rewrites the physical items only then) and removedItemIds, the selfIds
-// of the stacks the step emptied (the commit deletes their rows). A stack with
-// no positive amount counts as absent. Equal items compare raw: raw-equal
-// implies canonical-equal, so a miss costs a write, never a skipped one.
+// What a step did to the bag, shaped as the proposal fields main's commit
+// reads (ColdSimulationOwner): bagChanged (the commit rewrites the physical
+// items only then), removedItemIds, the selfIds of the stacks the step emptied
+// (the commit deletes their rows), and with a moved bag changedItemIds, the
+// selfIds of the stacks it added or changed (with the emptied ones the only
+// stacks the commit compares with their rows while no other writer touched
+// them: Database bot_items_synced). A stack with no positive amount counts as
+// absent. Equal items compare raw: raw-equal implies canonical-equal, so a
+// miss costs a write, never a skipped one.
 function bagChange(baseInventory = {}, nextInventory = {}) {
     const base = baseInventory || {};
     const next = nextInventory || {};
     const removed = [];
-    let changed = false;
-    let baseCount = 0;
+    const changed = [];
     for (const key in base) {
         const item = base[key];
         if (!item || !(Number(item.amount) > 0)) continue;
-        baseCount += 1;
         const after = next[key];
-        if (!after || !(Number(after.amount) > 0)) {
-            removed.push(Number(item.selfId || key));
-            changed = true;
-            continue;
-        }
-        if (!changed && after !== item && !isDeepStrictEqual(after, item)) changed = true;
+        if (!after || !(Number(after.amount) > 0)) removed.push(Number(item.selfId || key));
     }
-    if (!changed) {
-        // Every base stack is still there unchanged: the bag moved only if
-        // next holds a stack base did not.
-        let nextCount = 0;
-        for (const key in next) if (next[key] && Number(next[key].amount) > 0) nextCount += 1;
-        changed = nextCount !== baseCount;
+    for (const key in next) {
+        const after = next[key];
+        if (!after || !(Number(after.amount) > 0)) continue;
+        const item = base[key];
+        if (after === item) continue;
+        if (!item || !(Number(item.amount) > 0) || !isDeepStrictEqual(after, item)) changed.push(Number(after.selfId || key));
     }
-    return removed.length ? { bagChanged: changed, removedItemIds: removed } : { bagChanged: changed };
+    if (!removed.length && !changed.length) return { bagChanged: false };
+    return removed.length ? { bagChanged: true, changedItemIds: changed, removedItemIds: removed }
+        : { bagChanged: true, changedItemIds: changed };
+}
+
+// Two bag changes over one commit as one (main's cleanup trip after the step,
+// a proposal that replaces a queued one on the same revision): every flag and
+// stack either moved. A side without the stack list (a moved bag it does not
+// name) leaves none: the commit then compares every stack.
+function mergeBagChange(first = {}, second = {}) {
+    if (first.bagChanged === false && second.bagChanged === false) return { bagChanged: false };
+    const named = (change) => change.bagChanged === false || Array.isArray(change.changedItemIds);
+    const removed = [...new Set([...(first.removedItemIds || []), ...(second.removedItemIds || [])])];
+    return {
+        bagChanged: true,
+        ...(named(first) && named(second)
+            ? { changedItemIds: [...new Set([...(first.changedItemIds || []), ...(second.changedItemIds || [])])] } : {}),
+        ...(removed.length ? { removedItemIds: removed } : {})
+    };
 }
 
 module.exports = {
     canonicalize,
     completeInstances,
-    bagChange
+    bagChange,
+    mergeBagChange
 };

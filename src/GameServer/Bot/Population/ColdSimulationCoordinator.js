@@ -1616,13 +1616,15 @@ class ColdSimulationCoordinator {
         if (cleanupState) {
             proposal.inventoryCleanupForced = true;
             delete cleanupState.cleanup;
-            // The trip pays here (scroll, fee): the worker's bag flag and
-            // emptied stacks did not see it, so the commit adds what it moved.
-            // A set union: preparing the same proposal again adds nothing twice
-            // (a flag left true by it costs one physical write, never a skip).
+            // The trip pays here (scroll, fee): the worker's bag fields did not
+            // see it, so the commit adds what it moved. A set union: preparing
+            // the same proposal again adds nothing twice (a flag left true by it
+            // costs one physical write, never a skip).
             const paid = InventorySummary.bagChange(resolvedState.inventory, cleanupState.inventory);
-            if (paid.bagChanged) proposal.bagChanged = true;
-            if (paid.removedItemIds) proposal.removedItemIds = [...new Set([...(proposal.removedItemIds || []), ...paid.removedItemIds])];
+            if (paid.bagChanged) {
+                const { bagChanged, changedItemIds, removedItemIds } = InventorySummary.mergeBagChange(proposal, paid);
+                Object.assign(proposal, { bagChanged, changedItemIds, removedItemIds });
+            }
             return cleanupState;
         }
         // The worker's step result commits as it is: the room at a spot is
