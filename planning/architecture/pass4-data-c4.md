@@ -11,7 +11,6 @@ where a row says so. Fact = compared value by value; guess = not traced to the e
 
 | # | Where (file / id) | Ours | C4 (source) | Impact | Fix |
 |---|---|---|---|---|---|
-| D-1 | `data/Npcs/Rewards/rewards.json` (NodeL2's list, no generator): the drops of 597 spawned monster types, 49 % of all monster spawns and 70 % of spawns at level ≤ 40 (every legacy monster: `c4_legacy_monsters` took the Lisvus templates in 1bfbc203 but not their drops). Of the 555 that Lisvus has drops for, 1 matches | Adena range ~0.82 × C4 at levels 1-59 (median of 546; Ol Mahum Guerilla 207: 246-469), ~0.49 × at 60+, Turak Bugbear Warrior 249: 184-368. Material sets differ (207: Varnish, Iron Ore, Silver Nugget, Steel; spoil has no Soulshot B). Gear groups ~1.6-2 × (Gemstone Beast 540 armor group 0.72 %; Gray Wolf 525 Small Sword 0.62 %), spoils ~1.2 × | Lisvus `droplist.sql` (C4 source), equal to l2hub C4 on every sample (207: adena 298-568 70 %, Crafted Dagger 0.0188 %, Varnish/Coal 7.69 %, Cokes 1.28 %; 249: 423-846; 525: Small Sword 1.04 %) | Fact. Player loot; bot adena/hour, loot and spoil income; spot table `adena`/`loot`, hunt tables, market prices | Data, by generator: write the Lisvus groups of these monsters into rewards.json the way `generate-c4-high-grade-drops` already writes there (`rewardGroups` in `scripts/lib/generate-c4-monster-location.js`), keep the 302 rows Lisvus has no drops for (or drop them: decide; e.g. Gremlin 1 drops in ours, none in Lisvus). Then `generate:knowledge-base`; tables stale (rebuild all) |
 | D-2 | `data/Skills/Active/active.json` summon skills 1111, 1128, 1225, 1226, 1227, 1228 (`time.reuse`, one value per skill) | 21 600 000 ms (6 h) at every level | 6 h at levels 1-4 (Wizard line, 20-35), 20 000 ms from level 5 (Warlock, Elemental Summoner, Phantom Summoner, learned at 40). Lisvus and Mobius `#reuseDelay` tables agree | Fact. A summoner at 40+ whose servitor dies or is dismissed cannot summon again for 6 h, hot (`Skill.fetchReuseTime` → `model.reuse`, no `C4SkillRules` reuse) and cold (`BackgroundResolver` cooldowns) | Code + data: per-level reuse has no place in the skill shape; add `reuseTimeByLevel` to `C4SkillRules` (or a per-level field the loader reads). Same shape gap: Return 1050 lvl 2 hit 1500 ms, Party Recall 1255 lvl 2 3500 ms (ours 20 000 both levels) |
 | D-3 | active.json Wind Shackle 1206 | hit 4000 ms, reuse 15 000 ms, `buff` 120 000 ms | hit 1500, reuse 8000, effect 15 s (Lisvus; Mobius same hit/reuse) | Fact. Elven and dark elven mystics learn it at 14; no `C4SkillRules` hit/reuse override, so hot and cold use the data (duration has an override, 15 s; raw `time.buff` readers still see 120 s) | Data (active.json has no generator) or a `C4SkillRules` entry; one place, not both |
 | D-4 | active.json / switch.json `template.spell` on 43 skills: songs/dances 304-311, 349, 363-367; 3rd-class 341-348, 350-362, 369; stances 339/340 (switch.json); 1346, 1347, 1349; 4110; 2169 | `spell: true` (2169: false) | `isMagic` false (2169: true). Mobius marks songs/dances as dance type, not magic | Fact on values, guess on effect. All player ones are level 62+ skills. Hot `Skill.fetchSpell` takes `C4SkillRules.isMagic` first and has it for 35 of them; 354 Hamstring Shot, 359 Eye of Hunter, 360 Eye of Slayer, 1346/1347/1349, 2169, 4110 have none, so hot treats those 8 by the wrong flag. Cold and estimates read the raw flag for all 43 (`ColdCombatProfile` ~418/1417, `SurvivalFloor` ~56, `BotTargetMatchup` ~283/340, `ColdMobAction`/`BackgroundResolver` land chance, `RaidHealingEstimate`, `WishProviders`, `ClanRaidEstimate`): MAtk/cast speed/spiritshot/MP rate for physical skills | Data (fix the 43 flags) and code: "is magic" has two owners; the cold readers should take the one `Skill`/`C4SkillRules` answer (debt line) |
@@ -26,6 +25,10 @@ Smaller (fact): skill cast ranges differ on a few skills (Power Strike, Stun Att
 skills with a range: Paagrio 1260/1261/1282/1305 400, songs/dances 40, Greater Group Heal 1219 600, Lisvus none) —
 cold reach (`ColdCombatProfile` ~1479) reads it. New characters miss the Tutorial Guide 5588 every Lisvus class gets.
 Raid bosses and their minions at 0.75 atk/def/HP (`RaidBossBalance`) are ours, not C4 (in combat.md).
+21 Lisvus drop rows of rewards.json monsters are left out because the item has no template here (`generate-c4-legacy-drops`
+names them): compressed C soulshot recipes 5154/5269 (recipes.csv has their recipes, but the scroll cannot be obtained), Zweihander
+5284, spellbooks/amulets 5014/5015/6395-6398, grand boss jewels 6656/6660-6662 (Queen Ant, Core, Orfen, Antharas). Fix:
+item templates (a generator), then drop the exclusions.
 
 **Matches C4 (fact, whole data):** item price, weight, grade, crystal count, soulshot count and base stats of all
 5722 item templates except D-5/D-8 (potions 1060/1061/1539/726/728, shots 1835/1463/2509/3947/3948, SoE 736/1829,
@@ -33,17 +36,18 @@ Resurrection 737 exact; names differ on 337, cosmetic, the client shows its own)
 (`scripts/check-skill-mp.js` against Lisvus passes, with its l2hub exceptions); every tree level has a data level
 (`expandSourcedLevels`); recipes.csv and extractable_items.csv identical; henna symbols and trees; experience table;
 armor sets (`C4ArmorSets`); 1977 monster templates (legacy + every `c4_*` slice); the reward rows of every generated
-`c4_*` slice (5 raid bosses in `c4_raid_bosses` differ only where a Lisvus category sums over 100 %, not verified);
+`c4_*` slice and of the 560 rewards.json monsters Lisvus has drops for (`generate-c4-legacy-drops`, but the 21 rows above; the
+67 unspawned monster tables Lisvus has no drops for keep the NodeL2 groups, e.g. Gremlin 1) (5 raid bosses in `c4_raid_bosses` differ only where a Lisvus category sums over 100 %, not verified);
 knowledge base (`check:knowledge-base` passes). "Strong Type" mobs (4303-4310): templates keep the base HP/EXP and
 code multiplies both (`C4SkillRules`, `NpcSkills.templateMaxHpMultiplierFor`), as Lisvus does (Ol Mahum Guerilla
 770 × 2 = l2hub 1540). SoE 2013 not magic, 20 s static. NPC shop prices = Lisvus buylists (template × 1.15), and C4
 grocers sell no D+ shots (Lisvus has them only in GM shop 300511), as ours.
 
 **Generators.** Generated slices equal their source (above). Two generators also write into hand files:
-`generate-c4-high-grade-drops` appends groups to rewards.json, `generate-c4-mobius-spawns` strips rows from
+`generate-c4-legacy-drops` rewrites the groups of the Lisvus-covered tables in rewards.json, `generate-c4-mobius-spawns` strips rows from
 `data/Npcs/Spawns/spawns.json`; a hand edit in those files can be lost or conflict on the next run. `data/Templates/class-vitals.json`
 and `Henna/c4-henna*.json` have no generator (sourced by hand; henna equals Lisvus). The vendor trees the generators
-read (`tmp/vendor/l2j-lisvus`, `l2j-mobius`) are not on this laptop; nothing was regenerated.
+read (`tmp/vendor/l2j-lisvus`, `l2j-mobius`) are not on this laptop; only `generate-c4-legacy-drops` was run (Lisvus fdc7e33).
 
 Not checked: pets data, weapon SA and soul crystals (python generators), aggro ranges, per-mob NPC skills, quest drop
 rates (in quest code), manor, multisell, buff durations of ~47 skills (Lisvus counts ticks; the `C4SkillRules`

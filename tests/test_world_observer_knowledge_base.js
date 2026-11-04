@@ -106,7 +106,7 @@ try {
         sourceCount: shortSword.sourceCount
     });
     const blackWolf = shortSword.sources.drops.find((npc) => npc.id === 317);
-    assert.strictEqual(blackWolf.chancePercent, 0.6187);
+    assert.strictEqual(blackWolf.chancePercent, 1.0393); // Lisvus 317: 10393 / 1e6
     const exported = service.catalogue();
     assert.equal(exported.item(1), ownedExport.itemById.get(1));
     assert.equal(exported.sourcesForItem(1, { kind: 'drop' }), ownedExport.itemById.get(1).sources.drops);
@@ -167,7 +167,7 @@ try {
         max: keltirAdena.maxAmount,
         chance: keltirAdena.chancePercent,
         expected: keltirAdena.expectedAmountPerKill
-    }, { min: 245, max: 350, chance: 100, expected: 297.5 });
+    }, { min: 280, max: 420, chance: 100, expected: 350 }); // Lisvus 8-12 at 70 %, x50: 35 rolls
 
     assert.deepStrictEqual(spawnMapPoints({ possibleLocations: [{ locX: 10, locY: 20, locZ: -30 }] }), [
         { locX: 10, locY: 20, locZ: -30, source: 'location' }

@@ -73,6 +73,10 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    overrides 35 of them, the cold path and the estimates read the raw flag. One owner: fix the data flags and read
    one rule everywhere.
 
+17. **The native drop tooltip has no pages.** `NativeDropProtocol.encode` refuses more than 64 rows (8192 chars) and
+   `NpcBypasses/NativeDrop` then sends the target as unavailable: Antharas 12211 (90 C4 rows since the legacy drops,
+   pinned in `test_native_drop_ui`). Pages or a cut with a count, client and server together.
+
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets[6]`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so
 a rich bot there has a null activity (T178): a test expecting "one leaf" from such a scene breaks the same way. Known

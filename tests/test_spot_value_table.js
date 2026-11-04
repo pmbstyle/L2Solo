@@ -107,7 +107,7 @@ try {
     near(mixed.adena, 120 * only.adena, 'the kills pay as the killed species does');
     const all = Rewards.value({ id: '-10_12', npcEntries: [{ selfId: 34, count: 10 }, { selfId: 38, count: 9 }, { selfId: 380, count: 6 }],
         rewards: { adenaMin: 34, adenaMax: 119 } }, 24);
-    assert.notStrictEqual(Math.round(only.adena), Math.round(all.adena), 'the fixture tells the mix from the spawns');
+    assert(Math.abs(only.adena - all.adena) > 0.1, 'the fixture tells the mix from the spawns');
     // The kill cache is keyed by the spot and the row's mix, not the row: a
     // row of the same spot with another mix pays as its own species.
     for (const rows of fixture.rows) for (const row of rows) if (row) row[row.length - 1] = [34, 1];
