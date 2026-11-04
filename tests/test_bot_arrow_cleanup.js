@@ -37,7 +37,8 @@ function equippedBow(rank) {
 const state = (classId, inventory) => ({ characterId: 972001, level: 52, phase: 'cold', activity: 'shopping',
     vitals: { hp: 100, mp: 100 }, adena: 100, currentRegion: 'Giran', homeRegion: 'Giran',
     loc: { locX: 83000, locY: 148000, locZ: -3400 }, party: { partyId: null }, inventory,
-    stats: { classId, marketSellRetryAfter: Date.now() + 1800000 } });
+    // The sale retry: the last visit tried every kind in this bag and nothing new came since.
+    stats: { classId, marketSellSeen: { items: Object.keys(inventory).map(Number).sort((a, b) => a - b), buyers: null } } });
 const restores = [];
 function replace(object, key, value) { const old = object[key]; restores.push(() => { object[key] = old; }); object[key] = value; }
 async function persisted(id, classId, amount = 5000) {
@@ -119,7 +120,7 @@ function companion(saved) {
             'cold bots sell unused arrows at the NPC even during the sale cooldown');
         assert.equal(Native.amount(await Database.fetchItems(cold.characterId), 57), 100 + 5000 * price);
         assert.equal(Native.amount(await Database.fetchWarehouseItems(cold.characterId), 1341), 0);
-        assert.equal(sold.state.stats.marketSellRetryAfter, cold.stats.marketSellRetryAfter, 'keep the unrelated market cooldown');
+        assert.deepEqual(sold.state.stats.marketSellSeen, cold.stats.marketSellSeen, 'keep the unrelated sale retry');
         const bow = await persisted(972012, 9);
         assert.equal((await Listing.open(bow, { now })).reason, 'sell_retry_cleanup');
         assert.equal(Native.amount(await Database.fetchItems(bow.characterId), 1341), 2000);

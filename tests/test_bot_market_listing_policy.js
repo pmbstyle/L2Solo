@@ -111,7 +111,7 @@ const wornStarter = { ...state, phase: 'cold', activity: 'hunting', currentRegio
         selfId: 1146, name: starterShirt.template.name, kind: starterShirt.template.kind,
         stackable: false, amount: 1, equipped: true, equippedCount: 1,
         instances: [{ id: 9060000, amount: 1, equipped: true, slot: starterShirt.etc.slot }]
-    } }, stats: { classId: 0, marketSellRetryAfter: now + 60000 } };
+    } }, stats: { classId: 0, marketSellSeen: { items: [1146], buyers: null } } };
 assert.strictEqual(ItemDisposition.inventoryCleanupNeed(wornStarter, { now }), null,
     'worn starter equipment does not cause a town trip');
 const spareShirt = { ...wornStarter, inventory: { 1146: { ...wornStarter.inventory[1146], amount: 2,
@@ -119,8 +119,8 @@ const spareShirt = { ...wornStarter, inventory: { 1146: { ...wornStarter.invento
         { id: 9060001, amount: 1, equipped: false, slot: 0, enchant: 6 }]
 } } };
 const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
-for (const marketSellRetryAfter of [0, now + 60000]) {
-    const singleSpare = { ...spareShirt, stats: { ...spareShirt.stats, marketSellRetryAfter } };
+for (const marketSellSeen of [null, { items: [1146], buyers: null }]) {
+    const singleSpare = { ...spareShirt, stats: { ...spareShirt.stats, marketSellSeen } };
     assert.strictEqual(ItemDisposition.inventoryCleanupNeed(singleSpare, { now }), null,
         'one spare starter piece does not interrupt hunting, with or without a market cooldown');
     assert.strictEqual(PopulationService.prepareInventoryCleanupProposal(singleSpare, now), null,

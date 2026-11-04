@@ -340,7 +340,30 @@ function equipmentTargetFulfilled(stats = {}, inventory = {}) {
         ));
 }
 
+// Whether the equipment plan, while it acts, wants an item: its target, its
+// next input or a material it still misses.
+function planWants(plan, itemId) {
+    const id = Number(itemId);
+    return id > 0 && ['active', 'component_ready', 'ready_to_craft'].includes(plan?.status) && (Number(plan.target?.selfId) === id || Number(plan.next?.itemId) === id
+        || (plan.materials || []).some(row => Number(row.selfId) === id && Number(row.missing || 0) > 0));
+}
+
+// A want's clear events (MarketDemandIndex: no clock): the item arrived in the
+// bag by any path (loot, trade, craft, a purchase elsewhere), or a want the
+// plan backed is one the plan no longer wants. A clan's want is the clan
+// signal's own (Database clan market demand).
+function settleMarketWanted(state) {
+    const wanted = state.stats?.marketWanted;
+    if (!wanted || wanted.clanId) return state;
+    const id = Number(wanted.itemId);
+    // held: what the bag holds once the failed purchase's units arrive (a want without it keeps to its plan).
+    const arrived = Number(wanted.held) > 0 && Number(state.inventory?.[id]?.amount || 0) >= Number(wanted.held);
+    if (!arrived && !(wanted.plan === true && !planWants(state.stats?.equipmentPlan, id))) return state;
+    return { ...state, stats: { ...state.stats, marketWanted: null } };
+}
+
 function reconcileFulfilledEquipmentPlan(state = {}) {
+    state = settleMarketWanted(state);
     const progress = invoke('GameServer/Bot/AI/EquipmentAcquisitionProgress');
     const plan = state.stats?.equipmentPlan;
     if (plan?.clanGoal?.goalKey && progress.componentAcquired(state, plan)) {
@@ -2046,7 +2069,7 @@ const BotLifeState = {
         const newerTiming = Number(current.simulation?.revision || 0) > Number(row.simulationRevision)
             || Number(current.updatedAt || 0) > Number(row.updatedAt);
         const snapshot = { ...current, simulation: movedSimulation(current, row),
-            stats: { ...current.stats, lastWarehouseWithdrawal: row.withdrawal, ...(row.market ? { marketSellRetryAfter: null } : {}) },
+            stats: { ...current.stats, lastWarehouseWithdrawal: row.withdrawal, ...(row.market ? { marketSellSeen: null } : {}) },
             timing: newerTiming ? current.timing : { ...current.timing, nextResolveAt: row.nextResolveAt ? Number(row.nextResolveAt) : null } };
         cache.set(snapshot.characterId, snapshot);
         notifyColdSnapshot(snapshot, 'cold_warehouse_withdrawal');
@@ -4208,6 +4231,7 @@ BotLifeState.normalizeInventoryStackability = normalizeInventoryStackability;
 BotLifeState.preserveClanOwnedEquipmentState = preserveClanOwnedEquipmentState;
 BotLifeState.reconcileEquipmentInventory = reconcileEquipmentInventory;
 BotLifeState.reconcileFulfilledEquipmentPlan = reconcileFulfilledEquipmentPlan;
+BotLifeState.planWants = planWants;
 BotLifeState.reconcileIncompatibleShieldState = reconcileIncompatibleShieldState;
 
 BotLifeState.targetCombatTelemetry = targetCombatTelemetry;

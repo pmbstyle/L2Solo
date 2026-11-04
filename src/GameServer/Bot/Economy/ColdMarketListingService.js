@@ -12,8 +12,6 @@ const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy')
 const BuyStoreService = invoke('GameServer/Bot/Economy/ColdMarketBuyStoreService');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 
-const SELL_RETRY_DELAY_MS = 30 * 60 * 1000;
-
 function stoppedDeposit(warehouse) {
     return { state: warehouse.state, listed: false, reason: warehouse.reason, warehouse, aborted: true };
 }
@@ -62,7 +60,7 @@ function preTradeNpcCleanup(state, forcedCleanup = {}, timestamp = Date.now()) {
         stats: {
             ...(state.stats || {}),
             forcedMarketCleanup: null,
-            marketSellRetryAfter: null
+            marketSellSeen: null
         }
     };
     if (!candidates.length) {
@@ -95,7 +93,8 @@ function open(state, options = {}) {
         return Promise.resolve({ state, listed: false, reason: 'not_shopping' });
     }
     const timestamp = Number(options.now) || Date.now();
-    if (Number(state.stats?.marketSellRetryAfter || 0) > timestamp) {
+    // The sale retry: nothing new (goods or a buyer of them) since the last visit.
+    if (ItemDisposition.saleRetryHolds(state)) {
         // A floor-driven goal may start the trip without the optional forced
         // cleanup marker. Recheck the arrived bag: refusing its unload sends
         // the same overweight bot straight back to town on its next step.
@@ -109,16 +108,17 @@ function open(state, options = {}) {
             .then((learnedState) => preTradeNpcCleanup(learnedState || state, forcedCleanup, timestamp)).then((cleanup) => (
             BotWarehouse.depositCold({
                 ...cleanup.state,
-                stats: { ...cleanup.state.stats, marketSellRetryAfter: state.stats.marketSellRetryAfter }
+                stats: { ...cleanup.state.stats, marketSellSeen: state.stats.marketSellSeen }
             }).then((warehouse) => warehouse.aborted ? stoppedDeposit(warehouse)
                 : ({ ...cleanup, state: warehouse.state, reason: 'sell_retry_cleanup' }))
         ));
     }
+    // The visit's end writes the sale retry on what it could not place.
     const deferSellRetry = (nextState) => ({
         ...nextState,
         stats: {
             ...(nextState?.stats || {}),
-            marketSellRetryAfter: timestamp + SELL_RETRY_DELAY_MS
+            marketSellSeen: ItemDisposition.saleSeen(nextState)
         }
     });
     return ColdSafeEnchantService.enchantSafe(state, options)
@@ -231,7 +231,7 @@ function open(state, options = {}) {
 function travelToShopTown(state, board, timestamp) {
     // The visit saved its sale retry before answering buy ads (open); the trip
     // to the shop town is not a new sale trip and must not wait behind it.
-    const stats = { ...(state.stats || {}), marketSellRetryAfter: null,
+    const stats = { ...(state.stats || {}), marketSellSeen: null,
         shopTown: state.stats?.shopTown || { town: board.shopTown, at: timestamp } };
     const goal = { type: 'sell_inventory', status: 'active',
         plan: { expectedBenefit: 'market_sale_inventory', marketTown: board.shopTown } };
@@ -243,7 +243,7 @@ function travelToShopTown(state, board, timestamp) {
     const trip = GoalExecutor.beginMarketTravel({ ...state, activity: 'hunting', stats }, goal, timestamp);
     const travel = trip?.stats?.travel?.townName === board.shopTown ? trip : null;
     if (travel) travel.stats.marketReturn = state.stats?.marketReturn || travel.stats.marketReturn;
-    const waiting = travel ? null : { ...state, stats: { ...stats, marketSellRetryAfter: timestamp + SELL_RETRY_DELAY_MS } };
+    const waiting = travel ? null : { ...state, stats: { ...stats, marketSellSeen: ItemDisposition.saleSeen(state) } };
     const next = travel || GoalExecutor.finishMarketVisit(waiting, timestamp, { recoverMissingReturn: true })
         || waiting;
     return LifeState.upsertState(next, travel ? 'cold_market_shop_town_trip' : 'cold_market_shop_town_unreached')
@@ -279,7 +279,6 @@ function storedAmounts(state) {
 }
 
 module.exports = {
-    SELL_RETRY_DELAY_MS,
     marketStoreTitle,
     marketLocation,
     targetMarketTownName,

@@ -49,7 +49,7 @@ async function run() {
         await untouched();
         await Database.execute(['DROP TRIGGER fail_warehouse_projection', []]);
         await Database.execute(['UPDATE bot_life_state SET statsJson=? WHERE characterId=?',
-            [JSON.stringify({ ...state.stats, freshNote: 'keep-me', marketSellRetryAfter: 1791210000000 }), id]]);
+            [JSON.stringify({ ...state.stats, freshNote: 'keep-me', marketSellSeen: { items: [1864], buyers: null } }), id]]);
         const result = await withdraw();
         assert(result.coldLifeRow, 'successful withdrawal returns its atomically committed lifecycle row');
         assert.equal(JSON.parse(result.coldLifeRow.inventorySummary)[1864].amount, 20);
@@ -60,7 +60,7 @@ async function run() {
         const [patched] = await Database.execute(['SELECT statsJson,nextResolveAt FROM bot_life_state WHERE characterId=?', [id]]);
         const stats = JSON.parse(patched.statsJson);
         assert.deepEqual(stats.lastWarehouseWithdrawal, withdrawal, 'one metadata patch records the completed withdrawal');
-        assert.equal(stats.marketSellRetryAfter, null, 'market release wakes the existing sale lifecycle');
+        assert.equal(stats.marketSellSeen, null, 'market release wakes the existing sale lifecycle');
         assert.equal(stats.freshNote, 'keep-me', 'metadata merge preserves unrelated fresh state');
         assert.equal(patch.nextResolveAt, withdrawal.at);
         assert.equal((await Database.fetchWarehouseItems(id)).length, 0);

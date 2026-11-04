@@ -4,24 +4,27 @@ const Packet = require('../Economy/StatsPacket');
 
 // These reviews run only on the bot's ordinary lifecycle, never from a timer
 // or population scan. The record is worker-local and survives state updates.
-function personalBidDue(state, record, timestamp, board) {
+// A review stands on facts, not a clock: the needs it would bid or buy for,
+// the bot's own bids of those items and the board's best foreign ask and bid
+// of each (what its bid or purchase prices against). It runs when a need is
+// short and those facts differ from the last review's, so an unsuccessful
+// review cannot spin, and a line that moves no best price wakes none.
+const bestQuotes = (board, id, ownerId) => [board.first?.(id, 1, { excludeOwner: ownerId })?.price ?? 0,
+    board.first?.(id, 3, { excludeOwner: ownerId })?.price ?? 0];
+function personalBidDue(state, record, board) {
     const plan = state.stats?.equipmentPlan;
     if (state.activity !== 'hunting' || !plan || plan.clanGoal && !plan.inputPreparation
         || !(plan.inputPreparation || plan.recipeId && (plan.strategy === 'craft'
             || plan.status === 'deferred' && plan.reason === 'wish_focus'))
         || state.partyId || state.party?.partyId || state.stats?.tradeMeeting || state.incomingPending) return false;
-    if (!record) return false;
-    if (!Number.isFinite(record.craftBidReviewAt)) {
-        record.craftBidReviewAt = timestamp + (Number(state.characterId) * 7919 % 900000);
-        return false;
-    }
-    if (record.craftBidReviewAt > timestamp) return false;
-    record.craftBidReviewAt = timestamp + 900000;
+    if (!record || !board) return false;
     const moneyPrice = Number(Packet.moneyPrice(state.stats?.money));
-    if (!board || !(moneyPrice > 0)) return false;
+    if (!(moneyPrice > 0)) return false;
     const needs = invoke('GameServer/Bot/Economy/TradeIntent').retainedProjectIntents(state, { moneyPrice }, () => 1);
     const owned = board.ownerLines(Number(state.characterId));
     const ItemIndex = invoke('GameServer/Item/ItemTemplateIndex'), items = invoke('GameServer/DataCache').items;
+    const seen = [];
+    let short = false;
     for (const need of needs) {
         if (plan.clanGoal && need.key === `power:${Number(plan.target?.selfId)}:${Number(plan.target?.slot)}`) continue;
         const targetId = Network.rootItem(need.key);
@@ -29,28 +32,37 @@ function personalBidDue(state, record, timestamp, board) {
             || !invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(need.itemId)) continue;
         const offered = owned.filter(row => row.storeType === 3 && row.selfId === need.itemId && row.count > 0)
             .reduce((sum, row) => sum + Number(row.count), 0);
-        if (offered < need.amount) return true;
+        seen.push([need.key, need.itemId, need.amount, offered, bestQuotes(board, need.itemId, Number(state.characterId))]);
+        short ||= offered < need.amount;
     }
-    return false;
+    // Kept also when nothing is short: an own bid withdrawn later is a new fact.
+    const facts = JSON.stringify(seen), moved = facts !== record.craftBidSeen;
+    record.craftBidSeen = facts;
+    return short && moved;
 }
 
 // Check only two indexed inputs before calculating stock. This runs on the
 // ordinary bot lifecycle and does not introduce a population-wide scan.
-function clanInputDue(state, record, timestamp, board) {
+// Returns the review's facts when it is due ('' otherwise): the caller that
+// reviews (or stands the review aside) keeps them as record.clanMarketSeen.
+function clanInputDue(state, record, board) {
     const plan = state.stats?.equipmentPlan;
     if (state.activity !== 'hunting' || !plan?.clanGoal || plan.strategy !== 'craft' || !Number(plan.next?.itemId)
-        || state.partyId || state.party?.partyId || state.stats?.tradeMeeting || !record || !board?.list
-        || Number(record.clanMarketReviewAt || 0) + 120000 > timestamp) return false;
+        || state.partyId || state.party?.partyId || state.stats?.tradeMeeting || !record || !board?.list) return '';
     const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(Number(plan.recipeId));
     const part = recipe?.materials?.find(row => Number(row.selfId) !== Number(recipe.recipeItemId));
     const candidates = [Number(part?.selfId), Number(recipe?.recipeItemId)]
         .filter(id => id > 0 && board.list(id, 1)?.length);
-    if (!candidates.length) return false;
+    if (!candidates.length) return '';
     const moneyPrice = Number(Packet.moneyPrice(state.stats?.money));
-    if (!(moneyPrice > 0)) return false;
+    if (!(moneyPrice > 0)) return '';
     const key = `power:${Number(plan.target?.selfId)}:${Number(plan.target?.slot)}`;
-    return invoke('GameServer/Bot/Economy/TradeIntent').retainedProjectIntents(state, { moneyPrice }, () => 1)
-        .some(row => row.key === key && candidates.includes(row.itemId));
+    const rows = invoke('GameServer/Bot/Economy/TradeIntent').retainedProjectIntents(state, { moneyPrice }, () => 1)
+        .filter(row => row.key === key && candidates.includes(row.itemId));
+    if (!rows.length) return '';
+    const facts = JSON.stringify([key, Number(plan.recipeId), rows.map(row => [row.itemId, row.amount]),
+        candidates.map(id => [id, bestQuotes(board, id, Number(state.characterId))])]);
+    return facts === record.clanMarketSeen ? '' : facts;
 }
 
 module.exports = { personalBidDue, clanInputDue };

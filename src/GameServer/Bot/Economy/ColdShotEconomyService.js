@@ -194,8 +194,7 @@ async function obtainRecipe(state, selected, now) {
     const wanted = state.stats?.shotRecipeDemand;
     if (!wanted || Number(wanted.itemId) !== itemId
         || Number(wanted.recipeId) !== Number(recipe.recipeId) || Number(wanted.batches) !== Number(route.batches)
-        || maxSpend > Number(wanted.maxSpend || 0) * 1.25
-        || Number(wanted.at || 0) + 15 * 60 * 1000 <= now) {
+        || maxSpend > Number(wanted.maxSpend || 0) * 1.25) {
         const stats = DecisionEvents.applyOwnRaise(state);
         state = await persist({ ...state, stats: { ...stats,
             shotRecipeDemand: { itemId, recipeId: Number(recipe.recipeId), batches: Number(route.batches), amount: 1, maxSpend, at: now }
@@ -422,7 +421,10 @@ async function review(state, now = Date.now(), options = {}) {
         if (state.activity === 'traveling' || ColdMarket().pendingErrand(state, now)) return { state };
         const decision = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions.decided(state);
         const step = Policy.unpackStep(decision?.shot);
-        if (!step || step.wealth) return { state, reason: 'planning_pending' };
+        // No shot step this round (a purchase or sale took it, or a wealth craft)
+        // keeps a recipe want; a bot that no longer crafts shots drops it.
+        if (!step || step.wealth) return { state: craftsShots(state) ? state : await dropRecipeDemand(state),
+            reason: 'planning_pending' };
         const craftedState = await execute(state, step, now);
         return { state: craftedState || LifeState.snapshot(id) || state,
             crafted: !!craftedState?.stats?.shotCraft && Number(craftedState.stats.shotCraft.at) === now };
@@ -435,11 +437,24 @@ async function review(state, now = Date.now(), options = {}) {
     }
 }
 
+// The bot's shot recipe want (stats.shotRecipeDemand) ends when the plan
+// drops it: the bot can no longer craft shots, the step names another recipe
+// or a craft, or the recipe no longer pays its learning (MarketDemandIndex: no clock).
+// A crafter that can learn a shot recipe at all (not a pause: a party, an errand, a gear craft).
+const craftsShots = state => CraftShopService.isServiceCrafter(state) && CraftShopService.craftLevelFor(state) >= 2
+    && !state.stats?.craftStationId;
+async function dropRecipeDemand(state, keepItemId = 0) {
+    const wanted = state.stats?.shotRecipeDemand;
+    if (!wanted || Number(wanted.itemId) === Number(keepItemId)) return state;
+    return await persist({ ...state, stats: { ...(state.stats || {}), shotRecipeDemand: null } }, 'shot_recipe_demand_dropped') || state;
+}
+
 async function execute(state, step, now = Date.now()) {
-    if (!Policy.eligible(state, now)) return state;
+    if (!Policy.eligible(state, now)) return craftsShots(state) ? state : dropRecipeDemand(state);
     const recipeId = Number(step?.craft?.recipeId || step?.recipeTarget);
     const recipe = Recipes.resolveByRecipeId(recipeId);
-    if (!recipe || !CraftShopService.canCraft(state, recipe)) return state;
+    state = await dropRecipeDemand(state, step?.recipeTarget ? recipe?.recipeItemId : 0);
+    if (!recipe || !CraftShopService.canCraft(state, recipe)) return dropRecipeDemand(state);
     const known = (await Database.execute(['SELECT recipeId FROM character_recipes WHERE characterId=? AND recipeId=? LIMIT 1',
         [Number(state.characterId), recipeId]])).length > 0;
     if (known && Number(recipe.recipeItemId) === Number(state.stats?.shotRecipeDemand?.itemId)) {
@@ -465,7 +480,7 @@ async function execute(state, step, now = Date.now()) {
         const decision = require('./WealthCraftDecision').recipePaths(state, recipe, { route: candidate, sale,
             acquisition: ask ? { available: true, price: Number(ask.price),
                 hours: Number(candidate.context.trip.details?.(ask.town)?.hours || 0) } : null, context: candidate.context });
-        if (!['learn', 'acquire'].includes(decision.best.kind)) return state;
+        if (!['learn', 'acquire'].includes(decision.best.kind)) return dropRecipeDemand(state);
         return obtainRecipe(state, { recipe, route: candidate, recipeDecision: decision,
             owned: Number(state.inventory?.[scrollId]?.amount || 0) > 0, scrollQuote: ask }, now);
     }

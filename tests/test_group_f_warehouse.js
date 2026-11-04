@@ -63,7 +63,7 @@ async function run() {
         assert.equal(released.released, true, 'a warehouse listing is actionable without any open buy ad');
         assert.deepEqual(released.items.map(item => [item.selfId, item.amount, item.reason]), [[1864, 20, 'market']]);
         assert.equal(decisions.at(-1).state.inventory[1864].amount, 30, 'E sees the full bag and warehouse stock once');
-        assert.equal(released.state.stats.marketSellRetryAfter, null);
+        assert.equal(released.state.stats.marketSellSeen, null);
         assert.deepEqual(await totals(ids[0], 1864).then(({ physical, stored, total }) => ({ physical, stored, total })),
             { physical: 30, stored: 0, total: 30 });
 

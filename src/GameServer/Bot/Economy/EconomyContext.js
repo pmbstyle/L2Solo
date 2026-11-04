@@ -1264,7 +1264,7 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
         const plannedSlots = Number(shotUse > 0 && !positive(state.inventory?.[shotItemId]?.amount) && !beginnerCurrent)
             + Number(potionUse + potionRest.use > 0 && !positive(state.inventory?.[potionItemId]?.amount));
         let slotLimit = Floor.inventoryLimit(race);
-        const saleLimit = Disposition.soloSaleSlotLimit(state, timestamp);
+        const saleLimit = Disposition.soloSaleSlotLimit(state);
         if (saleLimit !== null) {
             // Stock cannot be its own reason for an earlier town visit. Keep
             // the entire usable kit while checking known free saleable loot.

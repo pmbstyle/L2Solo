@@ -3460,7 +3460,7 @@ const PopulationService = {
                 .then((saved) => saved || batchState);
         }
         const listingIntent = marketListingIntent(purchasedState, goal);
-        // A sale trip must reach the buyers and its 30-min retry, which only open does.
+        // A sale trip must reach the buyers and its sale retry, which only open does.
         const listingPromise = !marketLifecycle.closed && listingIntent.shouldOpen
             && (!workerPlan?.economyPlan || listingIntent.cleanup || listingIntent.saleVisit)
             ? openMarketListing(listingIntent, goal)

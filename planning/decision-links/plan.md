@@ -136,13 +136,16 @@ already names the inputs); `PartyRequestPlanner` reviewAt + partyWaitReplanMs 5 
 spoiler, route permission); `PartySessionReview` 20/5 min; +10/30 s step polls in `BackgroundResolver`
 (~2543-2699), `BackgroundPartyResolver` (~189-355), `ClanPartyDuty` waiting on outcomes that already fire;
 `ColdMarketService` RETRY_DELAY_MS 15 min (the buyer wake is half-dead: `GoalExecutor` ~43 still refuses until the
-stamp); `ColdMarketListingService` 30 min; `MarketDemandIndex` WANTED_TTL 30 min + a 15-min re-persist that exists to
-beat it; 30-min holds in `ColdShotEconomyService`, `ItemDisposition` ~394, `WishProviders` ~663, `CombinedErrandPolicy`;
-`CraftMarketReview` 15/2 min; `FirstPrice` CACHE_MS 1 h over static inputs; clan reviews (`ClanWarDirector`,
+stamp); 30-min holds in `ColdShotEconomyService`, `ItemDisposition` ~394, `WishProviders` ~663 (its preparing and
+wealth craft rows; the recipe investment is event-driven), `CombinedErrandPolicy`; `FirstPrice` CACHE_MS 1 h over static inputs; clan reviews (`ClanWarDirector`,
 `ClanActionService`, `ClanEquipmentService`), `ClanGoalCandidateService` 30 s TTL, `ClanWarehouseService` 1 h keyed by
 clan only, clan runtime 5 s DB re-reads; hot AI scans: the 150 ms party threat projection (AI-14; the loot scan now reads only a
 party's own drops, the threat scan only NPCs targeting a member), `BotSupportPlanner` 0.25-1 s, `HotBackgroundParty`
 2 s (≤ 0.01 % of main, 2026-11-04 hot run); `HotActorLodPolicy` status 3/15 s (AI-15; its 8/10 s holds are hysteresis, visible combat ends with its stance); `GearAcquisitionPlanner` 1-4 h cooldowns; ~15 small ones with an existing revision not in the key.
+Done 2026-11-05 (branch ivan/market-roll-windows): the sale retry (`ColdMarketListingService` 30 min) is the goods
+and buyers the last visit tried; `MarketDemandIndex` WANTED_TTL and its 15-min re-persist gave way to clear events
+(only a wish-only want keeps the window, ECO-16); `CraftMarketReview` 15/2 min reviews on its facts; the listing roll
+stands on item facts with held dispositions.
 Unclear (time may be the real input): hunt evidence aging 6 h, "no progress over N" rules, LLM policy TTL, ColdPve
 10 min, clan rescue duration. Also found: `MarketBuyerActivity.refresh` is never called (its score is dead). ~140
 scheduling/budget limits (B) have no limits.md row.

@@ -67,7 +67,11 @@ function retryAfterFailedPurchase(state, goal, reason) {
                 ...(state.stats?.marketWanted || {}),
                 itemId: goal.target.itemId,
                 itemName: goal.target.itemName,
-                lastMissingAt: timestamp
+                lastMissingAt: timestamp,
+                // What the bag holds once the want is met: its arrival clears it (BotLifeState.settleMarketWanted).
+                held: Number(state.inventory?.[goal.target.itemId]?.amount || 0) + Math.max(1, Number(goal.target.amount) || 1),
+                // Backed by the equipment plan: it lives until the plan drops it (MarketDemandIndex).
+                plan: invoke('GameServer/Bot/Population/BotLifeState').planWants(state.stats?.equipmentPlan, goal.target.itemId)
             },
             marketLead: null
         }

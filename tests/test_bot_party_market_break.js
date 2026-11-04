@@ -172,7 +172,7 @@ async function run() {
         gearGoal, now, config), 'an already equipped D weapon is not a required kit gap');
     assert(!Break.sessionReady(party, members[2], null, now, config), 'ordinary errands retain the session limit');
     const bow = invoke('GameServer/DataCache').items.find(item => item.template?.kind === 'Weapon.Bow' && item.etc?.rank === 'd');
-    const overloadedArcher = { ...members[0], level: 52, phase: 'cold', stats: { classId: 24, marketSellRetryAfter: now + 1800000 },
+    const overloadedArcher = { ...members[0], level: 52, phase: 'cold', stats: { classId: 24, marketSellSeen: { items: [1341], buyers: null } },
         inventory: { [bow.selfId]: { selfId: bow.selfId, amount: 1, equipped: true, equippedCount: 1, slot: 14 },
             1341: { selfId: 1341, amount: 11000, stackable: true, kind: 'Other.Arrow' } } };
     assert.equal(Break.memberNeed(party, overloadedArcher, now).reason, 'inventory_overweight');

@@ -18,7 +18,8 @@ function maybeAnnounceWanted(state, goal, timestamp = Date.now()) {
     if (!TradeChat.ready(state, timestamp)) return { state, announced: false, reason: 'global_cooldown' };
     const text = wantedText(state, goal);
     if (!TradeChat.deliver(state, text, timestamp)) return { state, announced: false, reason: 'no_audience' };
-    return { state: { ...state, stats: { ...(state.stats || {}), marketWanted: { itemId: goal.target.itemId, itemName: goal.target.itemName, lastTradeAdAt: timestamp } } }, announced: true, text };
+    return { state: { ...state, stats: { ...(state.stats || {}), marketWanted: { ...(Number(wanted.itemId) === Number(goal.target.itemId) ? wanted : {}),
+        itemId: goal.target.itemId, itemName: goal.target.itemName, lastTradeAdAt: timestamp } } }, announced: true, text };
 }
 
 function reset() {

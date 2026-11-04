@@ -171,6 +171,8 @@ let safetyOrphanRepairs = 0;
 let previousElu = null;
 let planningSpots = [];
 invoke('GameServer/Bot/AI/SpotValueTable').useSpots(() => planningSpots);
+// The sale retry reads the buyers of a bot's unsold goods on this thread's board.
+invoke('GameServer/Bot/Economy/ItemDisposition').useBoard(() => boardReady());
 let planningNpcOfferRows = [];
 const tables = new TableMirror({ actorProjectorRole: workerProjectorRole });
 // Planning producers import this same collector; its worker cap is64 rows.
@@ -723,24 +725,25 @@ function saleHold(characterId) {
     return record ? (record.saleHold ||= new Map()) : null;
 }
 // A clan craft's selected material can be independent of the current wish.
-// Review only an executable indexed quote, at most once per two minutes for
-// this bot, on its ordinary lifecycle; no population-wide wake or timer.
-function clanMarketReviewDue(state, timestamp) {
-    return require('./CraftMarketReview').clanInputDue(state, kernel.states.get(Number(state.characterId)), timestamp, boardReady());
+// Review only an executable indexed quote, once per change of its facts
+// (CraftMarketReview), on its ordinary lifecycle; no population-wide wake or timer.
+function clanMarketReviewDue(state) {
+    return require('./CraftMarketReview').clanInputDue(state, kernel.states.get(Number(state.characterId)), boardReady());
 }
 async function clanMarketPlan(state, economy, timestamp) {
-    if (!clanMarketReviewDue(state, timestamp)) return null;
+    const due = clanMarketReviewDue(state);
+    if (!due) return null;
     const record = kernel.states.get(Number(state.characterId));
-    record.clanMarketReviewAt = timestamp;
+    record.clanMarketSeen = due;
     const board = boardReady();
     if (!board || !invoke('GameServer/Bot/Economy/ReadyTradeChoice').clanCraftPurchase(state, economy, board)) return null;
     return occupationFor(state, timestamp, { economy, caller: 'clan_market' }, 'craft_market');
 }
-// Missing B+ project bids must eventually be published even if the current
-// wish never generates a stock/loot edge. Spread first and repeat reviews over
-// fifteen minutes, including projects retained behind a different goal.
-function personalCraftBidReviewDue(state, timestamp) {
-    return require('./CraftMarketReview').personalBidDue(state, kernel.states.get(Number(state.characterId)), timestamp, boardReady());
+// Missing B+ project bids must be published even if the current wish never
+// generates a stock/loot edge, including projects retained behind a different
+// goal: reviewed when their facts move (CraftMarketReview).
+function personalCraftBidReviewDue(state) {
+    return require('./CraftMarketReview').personalBidDue(state, kernel.states.get(Number(state.characterId)), boardReady());
 }
 // A build's workshop (the crafter's best recipe and its income per hour,
 // occupationFor mode occupation), counted by the caller that asks: only a
@@ -1777,7 +1780,7 @@ function startKernel(config = {}) {
             const originalPlan = state.stats?.equipmentPlan || null;
             const previousPlan = GearPlanSelection.uniqueCraftProjects(originalPlan);
             if (previousPlan !== originalPlan) state = { ...state, stats: { ...state.stats, equipmentPlan: previousPlan } };
-            const craftBidReview = personalCraftBidReviewDue(state, timestamp);
+            const craftBidReview = personalCraftBidReviewDue(state);
             // Failure counters and recovery deadlines are live native facts,
             // even when the expensive wish calculation still holds.
             const nativeReplan = GearAcquisitionPlanner.replanContextFor(state, previousPlan, timestamp);
@@ -1837,7 +1840,7 @@ function startKernel(config = {}) {
                 ? ColdEconomyDecision.refreshAdvisory(state, record?.wishAdvisory, deps, { prepared, collect: !wishFocus }) : null;
             // A compact advisory contains no quantitative project needs.
             // The bounded clan-market review needs the full current graph.
-            const marketReview = refreshed && (craftBidReview ? 'craft_bid' : clanMarketReviewDue(state, timestamp) ? 'clan_market' : '');
+            const marketReview = refreshed && (craftBidReview ? 'craft_bid' : clanMarketReviewDue(state) ? 'clan_market' : '');
             if (marketReview && Reaction.woke(marketReview, where)) refreshed = null;
             if (refreshed) refreshed = await refreshCraftPacket(state, timestamp, refreshed);
             // Compact advice has no full money queue for clan acquisition.
@@ -1937,7 +1940,7 @@ function startKernel(config = {}) {
                 preparedOccupation = await clanMarketPlan(routedState, economy, timestamp);
             // The review stands aside for a plan of its own: it counts as done, or
             // the bot would rebuild on every step while that plan waits.
-            else if (record && clanMarketReviewDue(routedState, timestamp)) record.clanMarketReviewAt = timestamp;
+            else if (record) record.clanMarketSeen = clanMarketReviewDue(routedState) || record.clanMarketSeen;
             if (!preparedOccupation?.economyPlan && craftBidReview && routedState.activity === 'hunting')
                 preparedOccupation = await occupationFor(routedState, timestamp, { economy, caller: 'craft_bid' }, 'craft_market');
             const seen = { ...routedState, stats: { ...routedState.stats, ...statsPacket } };

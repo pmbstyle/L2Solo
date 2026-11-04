@@ -7554,7 +7554,7 @@ const Database = {
         const market = record.items.some(row => row[2] === 1);
         return enqueue(() => {
             const row = one(`UPDATE bot_life_state SET statsJson=json_set(COALESCE(statsJson,'{}'),
-                '$.lastWarehouseWithdrawal',json(?)${market ? ", '$.marketSellRetryAfter', NULL" : ''}),
+                '$.lastWarehouseWithdrawal',json(?)${market ? ", '$.marketSellSeen', NULL" : ''}),
                 nextResolveAt=CASE WHEN activity='hunting' THEN ? ELSE nextResolveAt END, ${MOVE_FAR_REVISION} WHERE characterId=?
                 RETURNING characterId,nextResolveAt,simulationRevision,updatedAt`, [raw, record.at, Number(characterId)]);
             return row ? { ...row, withdrawal: record, market } : null;
