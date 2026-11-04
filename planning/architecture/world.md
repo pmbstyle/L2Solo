@@ -35,6 +35,7 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
   `VirtualObstacles/*` per town.
 - **Pathfinding pool** `Geodata/PathfindingWorkerPool` (≤ 2 workers) → `PathfindingWorker`. Callers: `MoveTo`
   (companions, long routes; town routes through the `TownNavigation.forPool` wrapper), NPC chase (`Npc.fetchCombatPathAsync`).
+  A crashed worker is logged and respawned forever after the shared `WorkerRestartBackoff` (the cold worker's rule).
 - **Movement — three engines (WOR-1):** players client-driven (`MoveToLocation` → broadcast; `ValidatePosition` →
   `UpdatePosition`); bots server-simulated `MoveTo.startPathMovement`; NPC/summon/pawn `Automation.scheduleAction`/
   `scheduleMoveToCoords`/`startMoveInterpolation`. Wander `NpcWander` is not its own engine: it drives

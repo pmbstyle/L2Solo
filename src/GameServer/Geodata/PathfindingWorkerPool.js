@@ -3,6 +3,11 @@ const os = require('os');
 const path = require('path');
 const { Worker } = require('worker_threads');
 const GeodataEngine = require('./GeodataEngine');
+const RestartBackoff = require('../../WorkerRestartBackoff');
+
+// Crash reasons whose stack was already logged (each crash is logged, the
+// stack once per reason).
+const STACK_REASONS_MAX = 32;
 
 function taskError(message, code) {
     const error = new Error(message);
@@ -20,9 +25,11 @@ class BoundedPathfindingWorkerPool {
             developerDiagnostics: DiagnosticConfig.developerDiagnostics === true,
             sharedGeodata: GeodataEngine.sharedDescriptor()
         } }));
-        this.restartLimit = Math.max(0, Number(options.restartLimit) || 3);
         this.workers = [];
-        this.restartAttempts = [];
+        // Per slot: crashes in a row (RestartBackoff) and the pending respawn.
+        this.restartCrashes = [];
+        this.restartTimers = [];
+        this.stackReasons = new Set();
         this.queue = [];
         this.tasks = new Map();
         this.latestByKey = new Map();
@@ -33,6 +40,9 @@ class BoundedPathfindingWorkerPool {
         this.townWindowAt = Date.now();
         this.townWorkMs = 0;
         this.budgetTimer = null;
+        // Always counted (status line): worker crashes, respawns, and requests
+        // refused while no slot was up.
+        this.health = { crashes: 0, respawns: 0, refusedDown: 0 };
         this.metrics = {
             queued: 0,
             completed: 0,
@@ -59,7 +69,7 @@ class BoundedPathfindingWorkerPool {
             this.onWorkerFailure({ index, worker: null, task: null }, error);
             return;
         }
-        const slot = { index, worker, task: null };
+        const slot = { index, worker, task: null, upSince: Date.now() };
         this.workers[index] = slot;
         this.unavailable = false;
         worker.on('message', (message) => this.onMessage(slot, message));
@@ -73,7 +83,10 @@ class BoundedPathfindingWorkerPool {
 
     request(request, options = {}) {
         if (this.shuttingDown) return Promise.reject(taskError('path worker pool is shutting down', 'POOL_SHUTDOWN'));
-        if (this.unavailable) return Promise.reject(taskError('path worker pool is unavailable', 'WORKER_UNAVAILABLE'));
+        if (this.unavailable) {
+            this.health.refusedDown += 1;
+            return Promise.reject(taskError('path worker pool is unavailable', 'WORKER_UNAVAILABLE'));
+        }
         this.init();
         const key = options.key ? String(options.key) : null;
         const priority = Number(options.priority) || 0;
@@ -191,7 +204,6 @@ class BoundedPathfindingWorkerPool {
         if (task.request.townCorridor && task.priority < 100) this.townWorkMs += workerMs;
         if (!task.cancelled) {
             if (message.ok) {
-                this.restartAttempts[slot.index] = 0;
                 DiagnosticConfig.developerDiagnostics && (this.metrics.completed += 1);
                 this.finishTask(task, message.path, null);
             } else {
@@ -204,31 +216,53 @@ class BoundedPathfindingWorkerPool {
         this.dispatch();
     }
 
+    // A crashed slot is down until its respawn, which the shared worker backoff
+    // times (1, 2, 5, 10, then every 30 s, forever). While no slot is up, the
+    // pool refuses requests as WORKER_UNAVAILABLE (counted).
     onWorkerFailure(slot, error) {
         if (slot.failed) return;
         slot.failed = true;
         slot.worker?.terminate?.().catch?.(() => null);
+        const failure = error instanceof Error ? error : taskError(String(error), 'PATH_WORKER_ERROR');
         const task = slot.task;
         slot.task = null;
         if (task) {
             DiagnosticConfig.developerDiagnostics && (this.metrics.errors += 1);
-            this.finishTask(task, null, error instanceof Error ? error : taskError(String(error), 'PATH_WORKER_ERROR'));
+            this.finishTask(task, null, failure);
         }
-        const attempts = Number(this.restartAttempts[slot.index] || 0) + 1;
-        this.restartAttempts[slot.index] = attempts;
-        if (!this.shuttingDown && attempts <= this.restartLimit) {
-            this.spawn(slot.index);
-        } else {
-            this.workers[slot.index] = null;
-            if (!this.shuttingDown && this.workers.every((workerSlot) => !workerSlot)) {
-                this.unavailable = true;
-                this.queue.splice(0).forEach((queued) => {
-                    DiagnosticConfig.developerDiagnostics && (this.metrics.errors += 1);
-                    this.finishTask(queued, null, taskError('path worker pool is unavailable', 'WORKER_UNAVAILABLE'));
-                });
-            }
+        if (this.workers[slot.index] === slot) this.workers[slot.index] = null;
+        if (this.shuttingDown) return;
+        const index = slot.index;
+        const restart = RestartBackoff.next(this.restartCrashes[index], slot.upSince || 0, Date.now());
+        this.restartCrashes[index] = restart.crashes;
+        this.health.crashes += 1;
+        this.logCrash(index, failure, restart);
+        clearTimeout(this.restartTimers[index]);
+        this.restartTimers[index] = setTimeout(() => {
+            this.restartTimers[index] = null;
+            if (this.shuttingDown) return;
+            this.health.respawns += 1;
+            this.spawn(index);
+            this.dispatch();
+        }, restart.delayMs);
+        this.restartTimers[index].unref?.();
+        if (this.workers.every((workerSlot) => !workerSlot)) {
+            this.unavailable = true;
+            this.queue.splice(0).forEach((queued) => {
+                this.health.refusedDown += 1;
+                this.finishTask(queued, null, taskError('path worker pool is unavailable', 'WORKER_UNAVAILABLE'));
+            });
         }
         this.dispatch();
+    }
+
+    logCrash(index, error, restart) {
+        const reason = `${error.code || error.name || 'Error'}: ${error.message}`;
+        const firstOfReason = !this.stackReasons.has(reason) && this.stackReasons.size < STACK_REASONS_MAX;
+        if (firstOfReason) this.stackReasons.add(reason);
+        utils.infoWarn('PathWorker', 'path worker %d crashed (%s); restarting in %dms, %d in a row, %d since start%s',
+            index, reason, restart.delayMs, restart.crashes, this.health.crashes,
+            firstOfReason && error.stack ? `\n${error.stack}` : '');
     }
 
     finishTask(task, value, error) {
@@ -250,7 +284,10 @@ class BoundedPathfindingWorkerPool {
         const isCompanion = (task) => String(task?.key || '').startsWith('companion:');
         return {
             ...(DiagnosticConfig.developerDiagnostics ? this.metrics : { diagnosticsEnabled: false }),
+            started: this.started,
             workers: this.workers.filter(Boolean).length,
+            size: this.size,
+            ...this.health,
             busy: this.workers.filter((slot) => !!slot?.task).length,
             queue: this.queue.length,
             companionBusy: this.workers.filter((slot) => isCompanion(slot?.task)).length,
@@ -265,6 +302,7 @@ class BoundedPathfindingWorkerPool {
         if (this.shuttingDown) return Promise.resolve();
         this.shuttingDown = true;
         clearTimeout(this.budgetTimer);
+        this.restartTimers.forEach((timer) => clearTimeout(timer));
         this.unavailable = true;
         this.queue.splice(0).forEach((task) => this.finishTask(task, null, taskError('path worker pool shut down', 'POOL_SHUTDOWN')));
         this.workers.forEach((slot) => {

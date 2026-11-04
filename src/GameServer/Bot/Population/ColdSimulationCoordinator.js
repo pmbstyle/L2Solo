@@ -38,6 +38,7 @@ const { TTL_MS: COMPETITION_TTL_MS } = require('./ColdCompetitionActions');
 const { STEP_MS: PVP_STEP_MS } = require('./PvpEncounterBudget');
 const ColdStateDelta = require('./ColdStateDelta');
 const InventorySummary = require('./InventorySummary');
+const RestartBackoff = require('../../../WorkerRestartBackoff');
 const { ColdCommitQueue, EARLY_COMMIT_ROW_BUDGET_MS } = require('./ColdCommitQueue');
 const { ColdSnapshotQueue } = require('./ColdSnapshotQueue');
 const ColdSafetyTransport = require('./ColdSafetyTransport');
@@ -2303,12 +2304,11 @@ class ColdSimulationCoordinator {
         this.waiters.clear();
         this.pauseReasons.delete('heartbeat_stale');
         if (this.stopping) return;
-        // A run that stayed up 30 s after loading its world was healthy: back off from the first delay again.
-        if (this.loadedAt && Date.now() - this.loadedAt > 30000) this.restartCount = 0;
+        // Healthy means up 30 s after loading its world (the shared restart rule).
+        const restart = RestartBackoff.next(this.restartCount, this.loadedAt, Date.now());
         this.loadedAt = 0;
-        const delays = [1000, 2000, 5000, 10000, 30000];
-        const restartDelay = delays[Math.min(this.restartCount, delays.length - 1)];
-        this.restartCount += 1;
+        const restartDelay = restart.delayMs;
+        this.restartCount = restart.crashes;
         DiagnosticConfig.developerDiagnostics && (this.counters.workerRestarts += 1);
         utils.infoWarn('ColdWorker', 'worker exited code=%d cause=%s last message %s; restarting in %dms',
             Number(code || 0), this.terminateCause || 'worker_own_exit', this.lastWorkerMessage || 'none', restartDelay);
