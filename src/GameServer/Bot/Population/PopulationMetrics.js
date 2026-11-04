@@ -27,7 +27,7 @@ function emptyCounters() {
         coldShareCutFights: 0,
         skippedResolves: 0,
         activations: 0,
-        // Activations refused (HotActivation: in_transit, no_safe_activation_placement), by reason in
+        // Activations refused (HotActivation: in_transit, walker_endpoint_far, no_safe_activation_placement), by reason in
         // activationRefusalReasons; counted with or without developerDiagnostics.
         activationRefusals: 0,
         cooldowns: 0,

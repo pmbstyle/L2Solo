@@ -127,18 +127,21 @@ for (const file of ['src/GameServer/Bot/Population/ColdTrip.js', 'src/GameServer
     assert.ok(!/setInterval|setTimeout/.test(fs.readFileSync(path.join(__dirname, '..', file), 'utf8')), `${file} has no timer`);
 }
 
-// Appearance near a player: at the teleport point early on the run, at the
-// spot edge later; never on the line between them.
-const early = PopulationService.walkerAppearance(walker, run.startAt + 100);
-assert.deepStrictEqual(early.loc, DRAGON_VALLEY, 'early: at the teleport point');
-assert.strictEqual(early.activity, 'hunting');
-assert.strictEqual(early.spotId, 'dv', 'it keeps its destination spot');
-assert.strictEqual(early.stats.travel, null);
-const late = PopulationService.walkerAppearance(walker, run.endAt - 100);
-assert.deepStrictEqual(late.loc, NEAR_DRAGON_VALLEY, 'late: at the spot edge it ran to');
-assert.strictEqual(late.activity, 'hunting');
-assert.strictEqual(late.stats.travel, null);
-assert.strictEqual(PopulationService.walkerAppearance(bot(), T), null, 'a hunter is no walker');
+// Appearance near a player: at the spot edge it runs to when the player is in
+// reach of it, else at the teleport point it ran from; never on the line between
+// them, and with neither in reach not at all.
+const atEdge = PopulationService.walkerAppearance(walker, DRAGON_VALLEY);
+assert.deepStrictEqual(atEdge.loc, NEAR_DRAGON_VALLEY, 'the spot edge it runs to, though the player stands at its start');
+assert.strictEqual(atEdge.activity, 'hunting');
+assert.strictEqual(atEdge.spotId, 'dv', 'it keeps its destination spot');
+assert.strictEqual(atEdge.stats.travel, null);
+const atStart = PopulationService.walkerAppearance(red, DION_FIELD);
+assert.deepStrictEqual(atStart.loc, DION_FIELD, 'the spot edge out of reach: at the point it set out from');
+assert.strictEqual(atStart.activity, 'hunting');
+assert.strictEqual(atStart.stats.travel, null);
+const roadMiddle = ColdTrip.positionAt(red, (red.stats.travel.run.startAt + red.stats.travel.run.endAt) / 2);
+assert.strictEqual(PopulationService.walkerAppearance(red, roadMiddle), false, 'by the middle of a long road: no endpoint in reach');
+assert.strictEqual(PopulationService.walkerAppearance(bot(), DION_FIELD), null, 'a hunter is no walker');
 
 // A traveller is not busy: it answers an invite from where it is now.
 const realAssess = InteractionMemory.assess;
@@ -197,7 +200,7 @@ try {
         const aside = (loc) => ({ ...loc, locX: loc.locX + 1000 });
         const tripMs = ColdTrip.toSpot(bot(), spotTravel(NEAR_DRAGON_VALLEY), T).stats.travel.arrivalAt - T;
 
-        // 1.5 s before the end of its run: past half, so it shows at the spot edge.
+        // 1.5 s before the end of its run, the player by the spot edge.
         cachedWalker(4200, {}, spotTravel(NEAR_DRAGON_VALLEY), Date.now() - tripMs + 1500);
         const activated = await PopulationService.showWalkersNear(aside(NEAR_DRAGON_VALLEY), [], [], Date.now());
         assert.strictEqual(activated.length, 1, 'the walker is activated on the first attempt');
@@ -209,24 +212,42 @@ try {
         assert.strictEqual(shown.stats.travel, null, 'no trip is left on the activated row');
         assert.strictEqual(spawned[0].backgroundActivity, 'hunting');
 
-        // Just after its run began: at the teleport point, and a detour keeps its stand-in pair there too.
+        // 45% of its run, the player by the teleport point it ran from: the spot edge is
+        // in sight too, so it appears there; a detour keeps its stand-in pair.
         spawned = [];
         const runStartMs = TripPayment.SCROLL_CAST_MS + 2 * ColdTrip.HOP_MS;
-        cachedWalker(4201, {}, { ...spotTravel(NEAR_DRAGON_VALLEY), leafSpotId: 'leaf' }, Date.now() - runStartMs - 200);
+        const shortRunMs = ColdTrip.runMs(DRAGON_VALLEY, NEAR_DRAGON_VALLEY);
+        cachedWalker(4201, {}, { ...spotTravel(NEAR_DRAGON_VALLEY), leafSpotId: 'leaf' },
+            Date.now() - runStartMs - Math.round(shortRunMs * 0.45));
         assert.strictEqual((await PopulationService.showWalkersNear(aside(DRAGON_VALLEY), [], [], Date.now())).length, 1);
-        assert.deepStrictEqual(placedAt(spawned[0]), DRAGON_VALLEY, 'early on the run: at the teleport point');
+        assert.deepStrictEqual(placedAt(spawned[0]), NEAR_DRAGON_VALLEY, 'the arrival in sight: it appears there');
         assert.strictEqual(spawned[0].coldLifeState.activity, 'hunting');
         assert.deepStrictEqual(spawned[0].coldLifeState.stats.standIn, { leaf: 'leaf', ground: 'dv' },
             'a detour walker stands in for its leaf, as on arrival');
 
-        // A long walk on foot, 40% done: the player is by its road, its endpoint far out of sight.
+        // A long walk on foot, 10% done, the player where it set out: the spot edge is
+        // out of reach, so it appears at its start, still standing in for its leaf.
         spawned = [];
         const longMs = ColdTrip.runMs(DION_FIELD, NEAR_DRAGON_VALLEY);
-        const far = cachedWalker(4202, { stats: { karma: 100 } }, spotTravel(NEAR_DRAGON_VALLEY), Date.now() - Math.round(longMs * 0.4));
+        cachedWalker(4204, { stats: { karma: 100 } }, { ...spotTravel(NEAR_DRAGON_VALLEY), leafSpotId: 'leaf' },
+            Date.now() - Math.round(longMs * 0.1));
+        assert.strictEqual((await PopulationService.showWalkersNear(aside(DION_FIELD), [], [], Date.now())).length, 1);
+        assert.deepStrictEqual(placedAt(spawned[0]), DION_FIELD, 'at the point it set out from');
+        assert.deepStrictEqual(spawned[0].coldLifeState.stats.standIn, { leaf: 'leaf', ground: 'dv' });
+
+        // The same long walk half done, the player by the middle of its road: within the
+        // activation radius of the walker, both endpoints farther. It walks on cold.
+        spawned = [];
+        const far = cachedWalker(4202, { stats: { karma: 100 } }, spotTravel(NEAR_DRAGON_VALLEY), Date.now() - Math.round(longMs * 0.5));
         const road = ColdTrip.positionAt(far, Date.now());
-        assert.ok(Math.hypot(road.locX - DION_FIELD.locX, road.locY - DION_FIELD.locY) > Config.activationRadius);
+        for (const end of [DION_FIELD, NEAR_DRAGON_VALLEY]) {
+            assert.ok(Math.hypot(road.locX - end.locX, road.locY - end.locY) > Config.activationRadius);
+        }
         assert.strictEqual((await PopulationService.showWalkersNear(road, [], [], Date.now())).length, 0,
             'an endpoint no player sees is not activated');
+        const answer = await PopulationService.requestActivation(LifeState.cachedState(4202), 'near_player',
+            { readyOnActivation: true, preferAnchor: true, playerLoc: road });
+        assert.strictEqual(answer.reason, 'walker_endpoint_far');
         assert.strictEqual(spawned.length, 0);
         assert.strictEqual(LifeState.cachedState(4202).activity, 'traveling', 'it walks on cold');
 

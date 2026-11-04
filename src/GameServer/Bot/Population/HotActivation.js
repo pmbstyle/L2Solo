@@ -122,16 +122,23 @@ const HotActivation = {
             }
             // A traveller a player invites or calls leaves its trip, as a hunter
             // leaves its spot (design 5.9). A walker (ColdTrip: a solo run to a
-            // spot) a player comes near leaves it too, at the endpoint
-            // walkerAppearance gives, never on the road between them.
+            // spot) a player comes near leaves it too, at the endpoint in reach of
+            // the player walkerAppearance gives, never on the road between them;
+            // false when neither endpoint is in reach. A bot no longer a walker
+            // (it arrived while fenced) is taken as it is.
             const walker = reason === 'near_player' && state.activity === 'traveling' && !!state.stats?.travel?.run;
-            const appearance = (s) => (walker
-                ? invoke('GameServer/Bot/Population/PopulationService').walkerAppearance(s, Date.now()) || s : s);
+            const appearance = (s) => {
+                if (!walker) return s;
+                const shown = invoke('GameServer/Bot/Population/PopulationService').walkerAppearance(s, options.playerLoc);
+                return shown === null ? s : shown;
+            };
             const leavesTrip = walker || options.interruptBackgroundActivity === true
                 || (['remote_invite', 'party_invite', 'remote_chat_come'].includes(reason)
                     && state.activity === 'traveling');
             if (state.activity === 'traveling' && !leavesTrip) return refused('in_transit', state);
-            state = appearance(state);
+            const shown = appearance(state);
+            if (shown === false) return refused('walker_endpoint_far', state);
+            state = shown;
             if (!state.accountName) return { ok: false, reason: 'missing_account', state };
             if (pendingActivations.has(state.characterId)) {
                 return { ok: false, reason: 'activation_pending', state };
@@ -147,7 +154,7 @@ const HotActivation = {
             // A failed placement must not dissolve a party, remove a market
             // listing or hand ownership away from the cold worker.
             // With playerLoc only a point within the activation radius of the
-            // player is accepted: a walker whose endpoint is out of sight stays cold.
+            // player is accepted.
             if (!placement) return refused('no_safe_activation_placement', state);
             // Reserve the character before party cleanup or recipe sync can
             // yield. Otherwise two concurrent visibility/invite requests can
@@ -165,6 +172,9 @@ const HotActivation = {
                     utils.infoWarn('ColdWorker', 'activation fence fallback for %s: %s', state.name, fence.reason);
                 }
                 const current = appearance(LifeState.cachedState(state.characterId) || state);
+                if (current === false) {
+                    throw Object.assign(Error('walker_endpoint_far'), { activationRefusal: 'walker_endpoint_far' });
+                }
                 if (playerInvite && current.party?.partyId) throw Object.assign(Error('already_grouped'), { partyRefusal: true });
                 const moved = current.spotId !== state.spotId || ['locX', 'locY', 'locZ']
                     .some(key => current.loc?.[key] !== state.loc?.[key]);

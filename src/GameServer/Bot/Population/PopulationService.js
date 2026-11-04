@@ -116,21 +116,25 @@ function hasFiniteCoordinate(value) {
         && Number.isFinite(Number(value));
 }
 
-// A walker a player comes near (ColdTrip) shows itself at the
-// teleport point it ran from or at the spot edge it runs to, whichever is
-// nearer its place on the road, never on the straight line between them; the
-// author's hot movement takes over from there. Either way the trip is done
-// (resolveTravel's arrival: activity, spot, region, a detour's standIn); before
-// half the run only its place is the teleport point, where the bot hunts or
-// walks on as a hot bot decides.
-function walkerAppearance(state, timestamp = Date.now()) {
+// A walker a player at `playerLoc` comes near (ColdTrip) shows itself at an
+// endpoint of its run, never on the straight line between them (a walker on its
+// road is open work): at the spot edge it runs to when that is within the
+// activation radius of the player, else at the teleport point it ran from when
+// that is; the author's hot movement takes over from there. Either way the trip
+// is done (resolveTravel's arrival: activity, spot, region, a detour's standIn);
+// at the teleport point only its place differs, where the bot hunts or walks on
+// as a hot bot decides. null: no walker; false: neither endpoint in reach (on a
+// run longer than twice the radius, a player by its middle), it stays cold.
+function walkerAppearance(state, playerLoc) {
     const travel = state?.stats?.travel;
     const run = travel?.run;
     if (state?.activity !== 'traveling' || !run) return null;
+    const inReach = (loc) => !!loc && !!playerLoc && Math.hypot(Number(loc.locX) - Number(playerLoc.locX),
+        Number(loc.locY) - Number(playerLoc.locY)) <= Config.activationRadius;
     const arrival = BackgroundResolver.resolveSolo({ state, spot: null, timestamp: Number(travel.arrivalAt) });
     const shown = { ...state, ...arrival.patch };
-    return (timestamp - run.startAt) / Math.max(1, run.endAt - run.startAt) >= 0.5
-        ? shown : { ...shown, loc: { ...run.from } };
+    if (inReach(shown.loc)) return shown;
+    return inReach(run.from) ? { ...shown, loc: { ...run.from } } : false;
 }
 
 // Main's trip to a spot it chose itself: the trip a coordinator route to the
@@ -2058,8 +2062,8 @@ const PopulationService = {
         return LifeState.walkersNear(loc, Config.activationRadius, timestamp).reduce((chain, state) => chain.then(() => {
             if (ambientActivated.length >= Config.maxActivationsPerScan) return null;
             if (!state || state.phase !== 'cold' || BotErrands.busyWith(state, ACTIVATION_BUSY_FLAGS)) return null;
-            // HotActivation leaves the trip at walkerAppearance's endpoint, read after its fence,
-            // only where this player sees it (playerLoc: placement within the activation radius).
+            // HotActivation leaves the trip at walkerAppearance's endpoint in reach of this
+            // player, read after its fence; with neither in reach the walker stays cold.
             return this.requestActivation(state, 'near_player', { readyOnActivation: true, preferAnchor: true, playerLoc: loc })
                 .then((result) => {
                     if (!result.ok) return;
