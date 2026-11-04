@@ -95,7 +95,8 @@ function traderContext(state, deps = {}) {
         preparedWorth: deps.preparedWorth || (economy.network?.demands && economy.projection?.values
             ? id => economy.network.demands.has(`item:${id}`) || economy.projection.values.has(Number(id))
                 ? economy.worth(id) : NaN : typeof economy.worth === 'function' && !economy.price ? id => economy.worth(id) : null),
-        preparedBuffer: deps.preparedBuffer || null,
+        // The version of the card preparedWorth reads (ColdEconomyDecision.usefulnessVersion), main's card reader.
+        preparedVersion: deps.preparedVersion ?? null,
         preparedValue: economy.network?.demands && economy.projection?.values ? id => {
             const key = `item:${id}`;
             return economy.network.demands.has(key) ? economy.network.demands.get(key)

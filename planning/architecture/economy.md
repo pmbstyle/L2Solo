@@ -89,7 +89,7 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
 
 | Rule | Owner |
 |---|---|
-| Board ask/bid | `MarketPricing` over `PriceDecision`/`PriceBelief` |
+| Board ask/bid | `MarketPricing` over `PriceDecision`/`PriceBelief`; the owner's own look (`BoardLook.review`) reviews a line when an input its answer reads moves: of the money price an ask reads only the trader's wait (0 with no urgent want), a bid its worth (usefulness / money price, not linear in the answer: exact change); main's card by `ColdEconomyDecision.usefulnessVersion` |
 | First price | `FirstPrice` via `MarketCounters.firstPrice` |
 | Configured merchant price | `StaticMerchantPricing` |
 | What a bot may buy where, and the price it pays | `ProductionPolicy` (`allowsNpcShot`, `allowsFixedShot`: a city store sells a bot only shots), read by `MarketOpportunity.botCanBuy` and `StaticMerchantPricing.cheapestPurchase(forBot)` (`botPurchasePrice`, `botBuyPrice`: the hunt model, potion and shot restock) |

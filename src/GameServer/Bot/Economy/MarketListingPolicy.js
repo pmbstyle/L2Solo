@@ -102,7 +102,7 @@ function cardTraderContext(state, options = {}) {
         npcOffersFor: selfId => invoke('GameServer/Bot/Economy/MarketOpportunity').npcOffersAll(selfId), // lazy: worker main-only NPC shops
         ...options,
         board: Object.hasOwn(options, 'board') ? options.board : invoke('GameServer/AfkTrade/AfkTradeService').boardIndex(), // lazy: worker main-only board
-        persona, preparedWorth: worth, preparedBuffer: prepared?.data,
+        persona, preparedWorth: worth, preparedVersion: ColdEconomyDecision.usefulnessVersion(prepared),
         economy: { persona, hourAdena: Number(Packet.hourAdena(packet)), moneyPrice: Number(Packet.moneyPrice(packet)), gapHorizonHours: NaN, worth } });
 }
 

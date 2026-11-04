@@ -409,6 +409,18 @@ function preparedCardWorth(decision, id, state, moneyPrice, understanding, enabl
     return NaN;
 }
 
+// What preparedCardWorth reads of a card (the stale flag, its usefulness
+// pairs) as one version: worths read from one card stand for the next card
+// that reads the same (a flag write copies the buffer, a new decision brings a
+// new one). null: no card.
+function usefulnessVersion(decision) {
+    if (!decision) return null;
+    const data = decision.data;
+    if (decision.stale || !data || data.byteLength > MAX_BYTES) return 'none';
+    const text = new Float32Array(data, 28, (decision.counts & 63) * 2).join(',');
+    return fnv1a32(text) * 2 ** 21 + (fnv1a32(text, 0x9e3779b9) & 0x1fffff);
+}
+
 // The basics' enumerable keys, learned from the first build: basics() always
 // returns the same shape, so a later view defines them without a build.
 let basicsKeys = null;
@@ -819,5 +831,5 @@ class ColdEconomyDecisions {
     }
 }
 
-module.exports = { personalUsefulness, preparedCardWorth, capture, heldFor, heldAtDecisionOf, progressSince, remainingToOrder, materialHunt, ownItem, stateEcho, echoHolds, CompactActivity, ColdEconomyDecisions, economyFor, view, nearView, advisory, restoreAdvisory, advisoryPublicationHolds, sameEconomicOutput, current, canReuse, refusal, refreshAdvisory, refreshPreparedCraft, cardWithShot, kindCode, kindFor, compact, workshopValues,
+module.exports = { personalUsefulness, preparedCardWorth, usefulnessVersion, capture, heldFor, heldAtDecisionOf, progressSince, remainingToOrder, materialHunt, ownItem, stateEcho, echoHolds, CompactActivity, ColdEconomyDecisions, economyFor, view, nearView, advisory, restoreAdvisory, advisoryPublicationHolds, sameEconomicOutput, current, canReuse, refusal, refreshAdvisory, refreshPreparedCraft, cardWithShot, kindCode, kindFor, compact, workshopValues,
     unknownWorkshop, MAX_BYTES, MAX_SHOT_BYTES, COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES };
