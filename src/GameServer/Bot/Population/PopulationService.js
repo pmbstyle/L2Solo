@@ -2052,9 +2052,8 @@ const PopulationService = {
         return LifeState.walkersNear(loc, Config.activationRadius, timestamp).reduce((chain, state) => chain.then(() => {
             if (ambientActivated.length >= Config.maxActivationsPerScan) return null;
             if (!state || state.phase !== 'cold' || BotErrands.busyWith(state, ACTIVATION_BUSY_FLAGS)) return null;
-            const shown = walkerAppearance(state, timestamp);
-            if (!shown) return null;
-            return this.requestActivation(shown, 'near_player', { readyOnActivation: true, preferAnchor: true })
+            // HotActivation leaves the trip at walkerAppearance's endpoint, read after its fence.
+            return this.requestActivation(state, 'near_player', { readyOnActivation: true, preferAnchor: true })
                 .then((result) => {
                     if (!result.ok) return;
                     activated.push(result);

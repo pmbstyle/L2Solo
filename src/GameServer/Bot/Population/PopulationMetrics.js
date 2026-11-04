@@ -27,6 +27,8 @@ function emptyCounters() {
         coldShareCutFights: 0,
         skippedResolves: 0,
         activations: 0,
+        // Activations refused after the fence (HotActivation activationRefusal).
+        activationRefusals: 0,
         cooldowns: 0,
         partyFormations: 0,
         partyRecruits: 0,
@@ -259,6 +261,11 @@ const PopulationMetrics = {
         if (!Config.developerDiagnostics) return;
         this.counters.activations += 1;
         this.pushTransition('activationDurationsMs', durationMs);
+    },
+
+    recordActivationRefusal() {
+        if (!Config.developerDiagnostics) return;
+        this.counters.activationRefusals += 1;
     },
 
     recordCooldown(durationMs) {

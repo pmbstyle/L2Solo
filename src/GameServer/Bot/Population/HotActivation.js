@@ -114,13 +114,19 @@ const HotActivation = {
                 return { ok: false, reason: 'pk_encounter_only', state };
             }
             // A traveller a player invites or calls leaves its trip, as a hunter
-            // leaves its spot (design 5.9).
-            const leavesTrip = options.interruptBackgroundActivity === true
+            // leaves its spot (design 5.9). A walker (ColdTrip: a solo run to a
+            // spot) a player comes near leaves it too, at the endpoint
+            // walkerAppearance gives, never on the road between them.
+            const walker = reason === 'near_player' && state.activity === 'traveling' && !!state.stats?.travel?.run;
+            const appearance = (s) => (walker
+                ? invoke('GameServer/Bot/Population/PopulationService').walkerAppearance(s, Date.now()) || s : s);
+            const leavesTrip = walker || options.interruptBackgroundActivity === true
                 || (['remote_invite', 'party_invite', 'remote_chat_come'].includes(reason)
                     && state.activity === 'traveling');
             if (state.activity === 'traveling' && !leavesTrip) {
                 return { ok: false, reason: 'in_transit', state };
             }
+            state = appearance(state);
             if (!state.accountName) return { ok: false, reason: 'missing_account', state };
             if (pendingActivations.has(state.characterId)) {
                 return { ok: false, reason: 'activation_pending', state };
@@ -151,12 +157,13 @@ const HotActivation = {
                 if (!fence.ok && fence.reason !== 'worker_not_ready') {
                     utils.infoWarn('ColdWorker', 'activation fence fallback for %s: %s', state.name, fence.reason);
                 }
-                const current = LifeState.cachedState(state.characterId) || state;
+                const current = appearance(LifeState.cachedState(state.characterId) || state);
                 if (playerInvite && current.party?.partyId) throw Object.assign(Error('already_grouped'), { partyRefusal: true });
                 const moved = current.spotId !== state.spotId || ['locX', 'locY', 'locZ']
                     .some(key => current.loc?.[key] !== state.loc?.[key]);
                 state = current;
-                if (current.activity === 'traveling' && !leavesTrip) {
+                // Still traveling after its appearance: a walker began a trip with no run.
+                if (current.activity === 'traveling' && (walker || !leavesTrip)) {
                     throw Object.assign(Error('in_transit'), { activationRefusal: 'in_transit' });
                 }
                 if (moved) {
@@ -259,7 +266,9 @@ const HotActivation = {
                     pendingActivations.delete(state.characterId);
                     const failureReason = error.activationRefusal || (error.partyRefusal ? 'already_grouped'
                         : craftActivation ? 'craft_recipe_sync_failed' : 'activation_prepare_failed');
-                    utils.infoWarn('BotPopulation', 'activation failed for %s: %s', state.name, error.message || error);
+                    // A refusal is an answer, as the early returns are: counted, not logged.
+                    if (error.activationRefusal) Metrics.recordActivationRefusal();
+                    else utils.infoWarn('BotPopulation', 'activation failed for %s: %s', state.name, error.message || error);
                     return { ok: false, reason: failureReason, state };
                 });
             });

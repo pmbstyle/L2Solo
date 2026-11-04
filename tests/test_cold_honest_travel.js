@@ -160,32 +160,69 @@ try {
     BotSocialMemory.getSnapshot = realGet;
 }
 
-// A walker near a player is activated at its appearance point, within the
-// activation budget; only the walker list is read.
+// A walker near a player is activated through HotActivation at its appearance
+// point on the first attempt, within the activation budget; only the walker
+// list is read.
 (async () => {
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
-    const realNear = LifeState.walkersNear;
-    const realRequest = PopulationService.requestActivation;
-    const requested = [];
+    const SavedStats = require('../src/GameServer/Bot/SavedStats');
+    const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+    const Placement = invoke('GameServer/Bot/Population/ActivationPlacement');
+    const Owner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
+    const Manager = invoke('GameServer/Bot/BotManager');
+    const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
+    const real = { near: LifeState.walkersNear, resolve: Placement.resolve, handoff: Owner.handoffToMain,
+        spawn: Manager.loadAndSpawnBot, accept: Coordinator.acceptColdState, diagnostics: Config.developerDiagnostics };
     try {
-        const walker = { ...ColdTrip.toSpot(bot(), spotTravel(NEAR_DRAGON_VALLEY), T), characterId: 4100 };
+        // Now is 1.5 s before the end of its run: past half, so it shows at the spot edge.
+        const now = Date.now();
+        const planned = ColdTrip.toSpot(bot({ characterId: 4200 }), spotTravel(NEAR_DRAGON_VALLEY), T);
+        const startedAt = now - (planned.stats.travel.arrivalAt - T) + 1500;
+        const trip = ColdTrip.toSpot(bot({ characterId: 4200, name: 'Walker', accountName: 'bot_walker_4200' }),
+            spotTravel(NEAR_DRAGON_VALLEY), startedAt);
+        const walker = LifeState.acceptLifecycleRow({ ...trip, characterName: trip.name, ...trip.loc,
+            ...SavedStats.statsColumns(trip.stats), inventorySummary: JSON.stringify(trip.inventory), simulationRevision: 1 });
+        assert.strictEqual(walker.activity, 'traveling');
+        assert.ok(walker.stats.travel.run, 'the cached row is a walker');
         const run = walker.stats.travel.run;
-        LifeState.walkersNear = (loc, radius, at) => (at >= run.startAt && at <= run.endAt ? [walker] : []);
-        PopulationService.requestActivation = (state, reason, options) => {
-            requested.push({ state, reason, options });
-            return Promise.resolve({ ok: true });
+        LifeState.walkersNear = (loc, radius, at) => (at >= run.startAt && at <= run.endAt
+            ? [LifeState.cachedState(walker.characterId)] : []);
+        const placed = [], spawned = [];
+        let restored = 0;
+        Placement.resolve = (state) => {
+            placed.push(state);
+            return { loc: { ...state.loc }, spot: { id: state.spotId, name: 'Dragon Valley', center: { ...state.loc } } };
         };
-        const activated = await PopulationService.showWalkersNear(NEAR_DRAGON_VALLEY, [], [], run.endAt - 500);
-        assert.strictEqual(activated.length, 1);
-        assert.strictEqual(requested[0].reason, 'near_player');
-        assert.deepStrictEqual(requested[0].state.loc, NEAR_DRAGON_VALLEY, 'it appears at the spot edge, not on the road');
-        assert.strictEqual(requested[0].options.playerLoc, undefined, 'placed at its own point, not beside the player');
+        Owner.handoffToMain = async () => ({ ok: true, revision: 2 });
+        Manager.loadAndSpawnBot = async (_account, data) => { spawned.push(data); return { actor: {} }; };
+        Coordinator.acceptColdState = async () => { restored++; return { ok: true }; };
+        Config.developerDiagnostics = true;
+        const refusals = Metrics.counters.activationRefusals;
+
+        const activated = await PopulationService.showWalkersNear(NEAR_DRAGON_VALLEY, [], [], Date.now());
+        assert.strictEqual(activated.length, 1, 'the walker is activated on the first attempt');
+        assert.strictEqual(spawned.length, 1);
+        assert.strictEqual(Metrics.counters.activationRefusals, refusals, 'no refusal');
+        assert.strictEqual(restored, 0, 'nothing is handed back to the worker');
+        const shown = spawned[0].coldLifeState;
+        assert.deepStrictEqual(shown.loc, NEAR_DRAGON_VALLEY, 'it appears at the spot edge, not on the road');
+        assert.deepStrictEqual({ locX: spawned[0].locX, locY: spawned[0].locY, locZ: spawned[0].locZ }, NEAR_DRAGON_VALLEY);
+        assert.ok(placed.every(state => state.activity !== 'traveling'), 'placement reads the appearance, not the trip');
+        assert.strictEqual(shown.activity, 'hunting', 'the trip is over: it hunts at its destination');
+        assert.strictEqual(shown.spotId, 'dv');
+        assert.strictEqual(shown.stats.travel, null, 'no trip is left on the activated row');
+        assert.strictEqual(spawned[0].backgroundActivity, 'hunting');
+
         const full = Array(Config.maxActivationsPerScan).fill({ ok: true });
-        await PopulationService.showWalkersNear(NEAR_DRAGON_VALLEY, [], full, run.endAt - 500);
-        assert.strictEqual(requested.length, 1, 'a full activation budget shows no walker');
+        await PopulationService.showWalkersNear(NEAR_DRAGON_VALLEY, [], full, Date.now());
+        assert.strictEqual(spawned.length, 1, 'a full activation budget shows no walker');
     } finally {
-        LifeState.walkersNear = realNear;
-        PopulationService.requestActivation = realRequest;
+        LifeState.walkersNear = real.near;
+        Placement.resolve = real.resolve;
+        Owner.handoffToMain = real.handoff;
+        Manager.loadAndSpawnBot = real.spawn;
+        Coordinator.acceptColdState = real.accept;
+        Config.developerDiagnostics = real.diagnostics;
     }
     assert.ok(TravelRoutes.teleportPoints().length > 0);
     console.log('cold honest travel checks passed');
