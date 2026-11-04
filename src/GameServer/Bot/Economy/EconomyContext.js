@@ -983,11 +983,16 @@ function incomeRouteFor(state, deps, timestamp, price, keep) {
     const reads = keep ? [] : null;
     const read = keep ? id => { const value = price(id); reads.push(id, value); return value; } : price;
     // The bot keeps its earning spot (decision 10-30): a build that
-    // rebuilds its foundation (a section event, deps.searchIncome; the
-    // income drift is the soft point's observation event) or no held build
-    // searches afresh, any other read takes the hold.
+    // rebuilds its foundation on a section the search reads, or on a supply
+    // build that moved its shot (deps.searchIncome, incomeSearchWhy's reason;
+    // the income drift is the soft point's observation event), or no held
+    // build searches afresh; any other read takes the hold, a moved one its
+    // moved answer (a full search's, inside its window: holdRead searches a
+    // due one itself). That held route carries no price reads: the foundation
+    // reads the same shot and potion prices itself.
     const held = deps.searchIncome ? null : holdRead(state, { ...deps, timestamp, required, price: read });
     if (deps.searchIncome) holdStats.event += 1;
+    if (deps.searchIncome === 'bag') holdStats.bag += 1;
     const route = held ? held.route : IncomeRoute.select(state, { ...deps, timestamp, required, price: read });
     // searched: the route is a full search's (an event build reuses only such a record).
     const record = { state, timestamp, spots: deps.spots, mode: deps.mode, maxChecks: deps.maxChecks, required, reads, route,
@@ -1004,12 +1009,36 @@ function incomeRouteFor(state, deps, timestamp, price, keep) {
 // the spot value's money weight (SpotEconomics.moneyWeight, as select's
 // SpotEconomics.create reads it: the packet's hour times its money price, the
 // gap wish's ratio), which every build publishes anew. Main's goal revision is
-// no input of the search.
+// no input of the search. bag: what it read of the bag (bagInputs).
 // moved: the hold a later search found instead, until the build is rebuilt;
 // afterGoal: that search was the goal's (goalMoved or weightMoved), not the window's.
 function newHold(state, route, at, afterGoal = false) {
     return { at, route: route ? { spot: route.spot, row: route.row, earning: route.earning } : null,
-        economic: IncomeRoute.economicHunt(state), weight: SpotEconomics.moneyWeight(state), moved: null, afterGoal };
+        economic: IncomeRoute.economicHunt(state), weight: SpotEconomics.moneyWeight(state), bag: bagInputs(state, at),
+        moved: null, afterGoal };
+}
+// What the income search reads of the bag (DecisionSections incomeSearch): the
+// shot its consumable prices name (BotHuntEfficiency.consumablePrices: a
+// spiritshot class's blessed or plain one by what it holds) and the kind of
+// shot the fight loads (BotTargetMatchup.shotKind of ColdCombatProfile.shotSupply:
+// none once the charges end; none without a bag, as stateProfiles).
+function bagInputs(state, timestamp) {
+    const ShotStock = invoke('GameServer/Inventory/ShotStock');
+    return [Number(ShotStock.planForState(state)?.selfId) || 0, state.inventory
+        ? invoke('GameServer/Bot/AI/BotTargetMatchup').shotKind(invoke('GameServer/Bot/Population/ColdCombatProfile').shotSupply(state, timestamp)) : 0];
+}
+function bagMoved(hold, state, timestamp) {
+    const bag = bagInputs(state, timestamp);
+    return !hold.bag || bag[0] !== hold.bag[0] || bag[1] !== hold.bag[1];
+}
+// Why a build with this mask searches its earning spot afresh
+// (deps.searchIncome): 'section', a section the search reads
+// (COMPUTED.incomeSearch); 'bag', a supply build whose bag moved what the
+// search read; '' else: a supply build rebuilds the foundation (kit, stock,
+// tables) on the held route.
+function incomeSearchWhy(state, mask, hold, timestamp) {
+    if (mask & Sections.COMPUTED.incomeSearch) return 'section';
+    return mask & Sections.COMPUTED.foundation && hold && bagMoved(hold, state, timestamp) ? 'bag' : '';
 }
 const spotOf = route => route ? String(route.spot.id) : null;
 // The held build's earning spot is searched again at most every 30 game
@@ -1023,9 +1052,10 @@ const HOLD_MS = 30 * GameTime.GAME_MINUTE_MS;
 // gear and resale, or the bot leaving or taking a craft station or shop, read
 // before its kit event rebuilds the foundation), weight (one its money weight's
 // move beyond the bot's error asked before the window's end, among renewed and
-// moved); party: the party comparison's solo side, kept or missed (the
+// moved), bag (an event search a supply build asked because its shot moved,
+// among event); party: the party comparison's solo side, kept or missed (the
 // comparison searches for itself).
-const holdStats = { kept: 0, none: 0, unrouted: 0, renewed: 0, moved: 0, event: 0, goal: 0, weight: 0, partyKept: 0, partyMissed: 0 };
+const holdStats = { kept: 0, none: 0, unrouted: 0, renewed: 0, moved: 0, event: 0, goal: 0, weight: 0, bag: 0, partyKept: 0, partyMissed: 0 };
 function incomeHoldStats() { return { ...holdStats }; }
 // A goal change that opens or closes the search (decision 10-30, a search like
 // the window's): the economic hunt turned since the search, the focus moved
@@ -1113,15 +1143,17 @@ function heldAnswer(hold, party) {
 // A build's read of the hold (heldVerdictFor): holdRead reached only through
 // basics would leave every bot off the card path (and a build that serves the
 // held plan) without its window or its goal change. Runs after the verdict: a
-// foundation it rebuilds searches anyway. True when the verdict must be judged
-// again: the search moved the hold, or it stood moved and the verdict is the
-// step's (handed: judged maybe before the move). A hold an earlier search
-// moved, its answer inside its own window, reads that answer and no search
-// (holdRead, when it reads this hold), so it needs no prices; a verdict judged
-// here already saw it.
+// foundation it rebuilds with a search (incomeSearchWhy) searches anyway. True
+// when the verdict must be judged again: the search moved the hold, or it
+// stood moved and the verdict is the step's (handed: judged maybe before the
+// move). A hold an earlier search moved, its answer inside its own window,
+// reads that answer and no search (holdRead, when it reads this hold), so it
+// needs no prices; a verdict judged here already saw it. The rebuild on a
+// moved hold takes its answer (incomeRouteFor through holdRead), not a second
+// search: also a search made before an await (the worker step's heldWorkshop).
 function holdCheck(state, deps, held, verdict, judged) {
     const hold = held?.plan.hold, timestamp = Number(deps.timestamp || Date.now());
-    if (!hold || verdictMask(state, deps.eventVerdict, verdict) & Sections.COMPUTED.foundation
+    if (!hold || incomeSearchWhy(state, verdictMask(state, deps.eventVerdict, verdict), hold, timestamp)
         || !holdDue(hold, state, timestamp)) return false;
     if (hold.moved && !holdDue(hold.moved, state, timestamp)
         && cache.get(`character:${Number(state.characterId) || 0}`)?.plan?.hold === hold) {
@@ -1256,8 +1288,7 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
     // The rest bottles the wallet pays now: a stock it cannot pay would stand
     // first in the money queue, its gap (WishNetwork.moneyQueue), and hold back
     // every wish below it. The rule pays them back within the outing.
-    if (potionRest.use > 0) kitData.potions.restCap = kitData.potions.current
-        + Math.floor(Math.max(0, Funding.budget(state) - reserve) / Math.max(1, price(potionItemId)));
+    if (potionRest.use > 0) kitData.potions.restCap = restCapOf(state, kitData.potions, reserve, price);
     return { tableRole, hunt, hourAdena, survivalReserve: reserve, kitCost, kit: kitData,
         lostGearHours, bestSpotId, deathHours, bestTable, stock, scrollHours,
         hold: income.hold,
@@ -1265,12 +1296,23 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
         expectedDeathHours: positive(bestTable?.deaths) * deathHours,
         karmaHours: Valuation.karmaHours(state, { ...hunt, lostGearHours, deathsPerHour: positive(bestTable?.deaths) }) };
 }
+// The rest bottles' cap: those held and those the money above the reserve buys.
+function restCapOf(state, potions, reserve, price) {
+    return potions.current + Math.floor(Math.max(0, Funding.budget(state) - reserve) / Math.max(1, price(potions.itemId)));
+}
+// A kept foundation: the plan's pieces, the rest bottles' cap read anew (the
+// wallet is no section of the foundation; restCapOf).
 function foundationFromPlan(state, plan, deps, price) {
-    const { stock, kitCost } = kitReader(plan.kit, price,
+    let kit = plan.kit;
+    if (positive(kit.potions?.restUse) > 0) {
+        const restCap = restCapOf(state, kit.potions, plan.survivalReserve, price);
+        if (restCap !== kit.potions.restCap) kit = { ...kit, potions: { ...kit.potions, restCap } };
+    }
+    const { stock, kitCost } = kitReader(kit, price,
         () => plan.kit.scrollHours ??= scrollHoursFor(state, deps.spots, plan.bestSpotId));
     const scrollHours = () => plan.kit.scrollHours ??= scrollHoursFor(state, deps.spots, plan.bestSpotId, false);
     return { hunt: plan.hunt, hourAdena: plan.hourAdena, survivalReserve: plan.survivalReserve,
-        kit: plan.kit, stock, kitCost, scrollHours, lostGearHours: plan.lostGearHours, bestSpotId: plan.bestSpotId,
+        kit, stock, kitCost, scrollHours, lostGearHours: plan.lostGearHours, bestSpotId: plan.bestSpotId,
         hold: plan.hold,
         deathHours: plan.deathHours, riskWeight: plan.riskWeight,
         expectedDeathHours: plan.expectedDeathHours, karmaHours: plan.karmaHours };
@@ -1525,10 +1567,16 @@ function buildForState(state, deps) {
     // The income route record of this build (its own search or the basics'
     // one): its solo matchup profiles serve the providers' source route reader.
     let incomeRecord = null;
+    // A supply build whose shot held keeps the held route (incomeSearchWhy).
+    // A search at this step's moment moved the hold (holdCheck: this build's,
+    // or the worker step's heldWorkshop before its await): it read this state,
+    // after every event the step raised, so the rebuild takes its answer
+    // (holdRead) for the income_moved refusal's section, not a second search.
+    const hold = held?.plan.hold;
+    const movedNow = !!hold?.moved && hold.moved.at === timestamp && !holdDue(hold.moved, state, timestamp);
     const base = keptBase ? foundationFromPlan(state, keptBase, deps, price)
-        : foundation(state, { ...deps, searchIncome: !!held && (!!(mask & Sections.COMPUTED.foundation) || incomeMoved(state)) },
-            persona, timestamp, price,
-            record => { incomeRecord = record; });
+        : foundation(state, { ...deps, searchIncome: hold && !movedNow ? incomeSearchWhy(state, mask, hold, timestamp) : '' },
+            persona, timestamp, price, record => { incomeRecord = record; });
     // These facts still belong to the reused foundation: its items stay read.
     if (keptBase) for (const id of held.readIds) read(id);
     const quantityInputs = createQuantityInputs();

@@ -114,6 +114,7 @@ function verify() {
         assert.equal(count(() => Economy.forState(turned, deps(60))).searches, 0, 'until its own end');
         const moved = count(() => Economy.forState(turned, deps(62)));
         assert.notEqual(moved.result.plan, built.plan, 'a better spot rebuilds the build');
+        assert.equal(moved.searches, 1, 'on the search that moved the hold, not a second one');
         assert.equal(moved.result.hunt.spotId, 'poor', 'on the new spot');
         assert.equal(Economy.incomeMoved(turned), false, 'and the new build holds it');
     }
@@ -201,6 +202,43 @@ function verify() {
             assert.equal(count(() => Economy.basics(weighed(large, incomeError), deps(minute + 2))).searches, 1, 'a move beyond it searches');
             assert.equal(count(() => Economy.basics(weighed(large, incomeError), deps(minute + 3))).searches, 0, 'once');
         }
+    }
+
+    // A supply build (DecisionSections incomeSearch) rebuilds the foundation on
+    // the held route: the search reads of the bag only the shot, so a bag move
+    // that keeps it searches nothing, and one that changes the shot the fight
+    // loads searches.
+    {
+        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+        const Matchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
+        const Shots = invoke('GameServer/Inventory/ShotStock');
+        const { built, state } = settled(990270);
+        const turned = sampled(state, 'poor');
+        const supplied = bag => ({ ...turned, inventory: bag, stats: { ...turned.stats, wishDirty: Sections.sectionBit('supply') } });
+        const kept = count(() => Economy.forState(supplied({ ...turned.inventory, 1060: { selfId: 1060, amount: 5 } }), deps(1)));
+        assert.notEqual(kept.result.plan, built.plan, 'the supply build rebuilds');
+        assert.equal(kept.searches, 0, 'with no search');
+        assert.equal(kept.result.hunt.spotId, 'rich', 'on the held spot');
+        const shot = Shots.combatPlanForState(turned);
+        const loaded = { ...turned.inventory, [shot.selfId]: { selfId: shot.selfId, amount: 5000 } };
+        const kind = bag => Matchup.shotKind(Profile.shotSupply({ ...turned, inventory: bag }, time(2)));
+        assert.notEqual(kind(loaded), kind(turned.inventory), 'fixture: the shots change what the fight loads');
+        const searched = count(() => Economy.forState(supplied(loaded), deps(2)));
+        assert(searched.searches >= 1, 'a shot the fight now loads searches');
+        assert.equal(searched.result.hunt.spotId, 'poor', 'and finds the better spot');
+    }
+
+    // The worker step judges the held build before its build, with an await
+    // between (heldWorkshop): a search there that moves the hold is the
+    // build's answer at that moment, not one to repeat.
+    {
+        const { state } = settled(990280);
+        const turned = sampled(state, 'poor'), step = deps(31), eventVerdict = {};
+        assert.equal(count(() => Economy.heldWorkshop(turned, step, eventVerdict)).searches, 1, 'fixture: the step\'s look searches');
+        assert.equal(Economy.incomeMoved(turned), true, 'fixture: and moves the hold');
+        const built = count(() => Economy.forState(turned, { ...step, eventVerdict }));
+        assert.equal(built.searches, 0, 'the build of the same moment takes that answer');
+        assert.equal(built.result.hunt.spotId, 'poor', 'and rebuilds on it');
     }
 
     // A moved hold with a valid verdict: found by a read, it refuses the held

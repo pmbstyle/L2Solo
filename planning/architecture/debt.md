@@ -95,6 +95,12 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    the build answers with the old bit until the next near decision. The cold look answers on its own state
    (`ColdOccupationSources.canSell`); on main the mask stands in for reading the reservations on every look.
 
+21. **The supply fact misses the beginner shots.** `DecisionSections.stockIds` (~387) names the paid shot
+   (`ShotStock.planForState`), while a fight loads the beginner grant first (`ShotStock.combatPlanForState`): the
+   grant running out turns the shot a fight loads (`ColdCombatProfile.shotSupply`, the matchup's shot kind) with no
+   supply event, so the held earning spot and a kept foundation hear it only at the next search (the window, an
+   event). The source ground compares the kind itself (`sourceRouteReader`).
+
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets[6]`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so
 a rich bot there has a null activity (T178): a test expecting "one leaf" from such a scene breaks the same way. Known

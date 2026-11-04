@@ -188,10 +188,12 @@ const PopulationStatus = {
         return doors ? ` doors=${Object.entries(doors).map(([caller, row]) => `${caller}:${row.join(':')}`).join(',')} raised=${top(raised)} rejected=${top(DecisionEvents.rejections())}` : '';
     },
 
-    // incomeHold=<kept>/<none>,<unrouted>,<renewed>,<moved>,<event>,<goal>,<weight>;party<kept>/<missed>: held earning
-    // spot reads since the worker started (EconomyContext.heldIncomeRoute, decision 10-30), diagnostics off too.
+    // incomeHold=<kept>/<none>,<unrouted>,<renewed>,<moved>,<event>,<goal>,<weight>,<bag>;party<kept>/<missed>: held earning
+    // spot reads and searches since the worker started (EconomyContext holdStats, decision 10-30), diagnostics off too:
+    // event counts a build's own searches (a section, or bag: a supply build whose shot moved, also in event), goal and
+    // weight the searches a goal input's move asked inside the window.
     incomeHoldText(h) {
-        return h ? ` incomeHold=${h.kept || 0}/${h.none || 0},${h.unrouted || 0},${h.renewed || 0},${h.moved || 0},${h.event || 0},${h.goal || 0},${h.weight || 0};party${h.partyKept || 0}/${h.partyMissed || 0}` : '';
+        return h ? ` incomeHold=${h.kept || 0}/${h.none || 0},${h.unrouted || 0},${h.renewed || 0},${h.moved || 0},${h.event || 0},${h.goal || 0},${h.weight || 0},${h.bag || 0};party${h.partyKept || 0}/${h.partyMissed || 0}` : '';
     },
 
     // Mobs that forgot a chase (out of reach / no path / 2 min without an attack), mobs left out of

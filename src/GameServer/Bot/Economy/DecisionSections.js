@@ -75,10 +75,19 @@ function sectionMask(names) {
 // decision point a piece is reused while none of its sections is raised
 // (EconomyContext.forState's mask), rebuilt when one is.
 // foundation: hunt income, risk, death and kit hours, stock targets, the
-// survival reserve (kit, profile, consumables, the observation; not money).
+// survival reserve (kit, profile, consumables, the observation). Of money it
+// reads the wallet only for the rest bottles' cap, read anew on a kept
+// foundation (EconomyContext.foundationFromPlan), and the money weight of its
+// income search, which the held earning spot follows itself (weightMoved).
 // Of the relations fact it reads only the party role (its spot value table
 // and hunt income); relations is in its list for it, so a party join
 // rebuilds it (a deviation from the spec's four sections).
+// incomeSearch: what makes a rebuilt foundation search its earning spot
+// again (EquipmentIncomeRoute.select) instead of taking the held one: the
+// foundation's sections but supply. The search reads of the bag only the
+// shot: the one its consumable prices name (ShotStock.planForState) and the
+// kind the fight loads (ColdCombatProfile.shotSupply), which the hold keeps
+// and a supply build compares (EconomyContext.bagMoved).
 // sources: the source walk (worn gear and level; party, clan, role;
 // exclusions, risk, hunt rows; the plan, persona, craft station, trades;
 // the hour adena and the money mark). weighing: focus, step and money queue.
@@ -89,6 +98,7 @@ function sectionMask(names) {
 const FOUNDATION = sectionMask(['build', 'combat', 'supply', 'occupation', 'relations']);
 const COMPUTED = Object.freeze({
     foundation: FOUNDATION,
+    incomeSearch: sectionMask(['build', 'combat', 'occupation', 'relations']),
     weighing: sectionMask(SECTIONS),
     route: sectionMask(['build', 'relations', 'occupation', 'sources']),
     // The source walk's per-spot ground verdict (GearAcquisitionPlanner.sourceGround):
