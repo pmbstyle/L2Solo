@@ -327,4 +327,37 @@ function soloFight({ classId, level, skills = [], effects = [], hp = null, mp = 
     console.log('PASS hunt model reads a real target');
 }
 
+// 15. A skill rank's numbers have one owner, the hot Skill model (C4SkillRules over the
+// data row); a cold record of the rank (learned rows, a class tree) carries the same.
+// Summons reuse 6 h at levels 1-4 and 20 s from level 5 (Lisvus #reuseDelay); Return and
+// Party Recall level 2 cast in 1.5 s and 3.5 s.
+{
+    const hotRank = (selfId, level) => {
+        const data = DataCache.skills.find(entry => entry.selfId === selfId);
+        const { levels, ...rest } = data;
+        return new SkillModel({ ...utils.crushOb(JSON.parse(JSON.stringify(rest))), ...levels.find(entry => entry.level === level) });
+    };
+    const coldRank = (selfId, level) => ColdCombatProfile.skillSnapshotsFromRecords([{ selfId, level }])[0];
+    const cases = [];
+    for (const id of [1111, 1128, 1225, 1226, 1227, 1228]) cases.push([id, 4, { reuse: 21600000 }], [id, 5, { reuse: 20000 }]);
+    cases.push([1050, 1, { hitTime: 20000 }], [1050, 2, { hitTime: 1500 }], [1255, 1, { hitTime: 20000 }], [1255, 2, { hitTime: 3500 }]);
+    for (const [id, level, expected] of cases) {
+        const hot = hotRank(id, level), cold = coldRank(id, level);
+        for (const [field, value] of Object.entries(expected)) {
+            const hotValue = field === 'reuse' ? hot.fetchReuseTime() : hot.fetchHitTime();
+            assert.strictEqual(hotValue, value, `hot ${id} level ${level} ${field} ${value}`);
+            assert.strictEqual(cold[field], value, `cold ${id} level ${level} ${field} ${value}`);
+        }
+        assert.strictEqual(cold.spell, hot.fetchSpell(), `${id} level ${level}: one cast type hot and cold`);
+        assert.strictEqual(cold.mp, hot.fetchConsumedMp(), `${id} level ${level}: one MP cost hot and cold`);
+    }
+    // The servitor's lifetime and crystal upkeep come with the record, as hot.
+    const kat = coldRank(1111, 5);
+    assert.deepStrictEqual([kat.totalLifeTime, kat.itemIdOT, kat.itemConsumeSteps], [1200000, 1458, 1], 'Kat the Cat\'s summon terms');
+    // A class tree's record (class-only estimates) reads the same owner.
+    const tree = ColdCombatProfile.skillsFor({ level: 40 }, 14, 40).find(record => record.selfId === 1111);
+    assert.strictEqual(tree?.reuse, 20000, 'a level 40 Warlock\'s tree Kat the Cat reuses in 20 s');
+    console.log('PASS skill rank numbers: cold records read the hot Skill model');
+}
+
 console.log('Cold fight hot rules checks passed');
