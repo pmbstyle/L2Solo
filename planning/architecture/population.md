@@ -148,6 +148,13 @@ thread: our rule, so a far bot does not re-decide on every event ([bot-ai.md](bo
   c3fdb8c3) rebuilt every held build and ran the worker at 0.93 on the same world. Growth while seeding: about +6
   points of worker and +2.5 of main per 100 bots; worker heap ~0.08 MB per bot. 5-10k bots still need the cold
   simulation split over several workers (per-thread table copies, TBL-7).
+- **POP-24 the hot/cold phase policy is a 10 s scan** (`PopulationService.tickPhasePolicy`, limits.md "Activations"):
+  per player the 100 nearest cold rows, ≤ 24 floor LOS, the walker list, then every hot bot's distance to the
+  players. It stands in for events that exist only in part: a player's cell change and login (`World`), a cold commit
+  near a player (`LifeStateCache` publications), a walker's place on its run (`travel.run` times); and for some that
+  do not: a hot bot walking out of the cooldown radius, the cooldown grace ending, a refused activation or cooldown
+  becoming possible. A missed one leaves a bot hot or cold until the next scan, and the scan is also the activation
+  pace (6 per 10 s). Measured 2026-11-04 hot run (2 players, ~120 hot): 0.003 % of main, so kept until it shows.
 
 - **POP-24 step polls standing in for events** (limits.md "Wait polls"). Missing events: a board fill for a shopping
   bot (buyer wakes cover hunting/party_wait only), so the raid supply purchase and the town command retry; the
