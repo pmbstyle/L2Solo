@@ -53,7 +53,9 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
 - **Spawns:** `SpawnNpcs`, `RemoveNpc`, `NpcDecay`, `DayNightSpawnManager`, `RaidBossMinionManager`, `RaidBossState`.
   An NPC's model inherits its template (`SpawnNpcs.npcModel`: the row flattened once per frozen datapack row, 2.7k
   for 33k NPCs); every write lands on the NPC's own model. Own-key reads of a model (keys, spread, JSON, clone, a
-  worker message) miss template fields and `delete` uncovers them: no code does either; keep it so.
+  worker message) miss template fields and `delete` uncovers them: no code does either; keep it so. Its combat and
+  movement parts (`automation`, `attack`, `timer`, hate and skill-reuse maps) are built on first use (`Npc` getters);
+  a read that only looks (hate, reuse, a walk to resume) builds none. `state` stays eager: scans near hot actors read it.
 - **Timers:** no central scheduler. `Timer.js` (reads Node internals `_idleStart`/`_idleTimeout`, used by Automation only), `EventLoopTurn`
   (setImmediate yield), tickers: `NpcAggro` 1 s (also drives wander), `EffectTicker`, `PopulationService` (6
   intervals), per-session `moveTimer`.

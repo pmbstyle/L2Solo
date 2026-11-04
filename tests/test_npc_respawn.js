@@ -121,4 +121,60 @@ const chest = SpawnNpcs.spawnChildNpc(spawnWorld, chestRow, at(5));
 assert.strictEqual(questChest.fetchMaxHp(), 1, 'the quest chest has its quest HP');
 assert.strictEqual(chest.fetchMaxHp(), chestRow.vitals.maxHp, 'a datapack chest keeps its template HP');
 
+// An NPC builds its combat and movement parts on first use: one never touched
+// acts as one whose parts were read, each NPC's are its own, and a fight or a
+// walk runs and ends on them as before.
+const attacker = { fetchId: () => 7001, fetchLocX: () => 1000, fetchLocY: () => -2000, fetchLocZ: () => -3000,
+    fetchIsOnline: () => true, state: { fetchDead: () => false } };
+const combatView = (npc) => {
+    // The looking reads first: they must answer the same before anything is built.
+    const view = { hate: npc.getHating(attacker), mostHated: npc.fetchMostHated(),
+        skillsReady: npc.fetchCombatSkills().map((skill) => npc.canUseSkill(skill)) };
+    return { ...view, regen: [npc.automation.fetchRevHpAmount(npc), npc.automation.fetchRevMpAmount(npc)],
+        hateEntries: npc.aggroList.size, reuses: npc.skillReuseUntil.size, attackTimers: npc.attack.timers.size,
+        timers: { ...npc.timer }, walk: npc.automation.moveInterpolation, combat: npc.state.fetchCombats(),
+        stable: npc.automation === npc.automation && npc.attack === npc.attack && npc.aggroList === npc.aggroList
+            && npc.skillReuseUntil === npc.skillReuseUntil && npc.timer === npc.timer };
+};
+const [resting, read] = [SpawnNpcs.spawnChildNpc(spawnWorld, row, at(6)), SpawnNpcs.spawnChildNpc(spawnWorld, row, at(6))];
+for (const part of ['automation', 'attack', 'timer', 'skillReuseUntil', 'aggroList']) void read[part];
+const restingView = combatView(resting);
+assert.deepStrictEqual(restingView, combatView(read), 'a never-touched NPC acts as one whose parts were read');
+assert.deepStrictEqual(restingView.regen, [row.vitals.revHp, row.vitals.revMp], 'an NPC regenerates at its template rate');
+assert.deepStrictEqual([restingView.hate, restingView.mostHated, restingView.skillsReady, restingView.stable],
+    [0, null, [true], true], 'a resting NPC hates no one, has its skills ready and keeps its parts');
+const idless = (npc) => {
+    const out = observed(npc);
+    delete out.fetchId; delete out.fields.id;
+    out.npcInfo = out.npcInfo.slice(0, 2) + out.npcInfo.slice(10); // its object id
+    return out;
+};
+assert.deepStrictEqual(idless(resting), idless(read), 'reading an NPC\'s parts changes nothing it shows');
+
+const [fighter, bystander] = [SpawnNpcs.spawnChildNpc(spawnWorld, row, at(7)), SpawnNpcs.spawnChildNpc(spawnWorld, row, at(8))];
+const sentBy = () => { const sent = []; return { sent, dataSendToMe() {}, dataSendToMeAndOthers(packet) { sent.push(packet[0]); } }; };
+const fight = sentBy();
+assert.strictEqual(fighter.addDamageHate(fight, attacker, 0, 100), true, 'a hit NPC takes its attacker into its hate');
+fighter.markSkillReuse(fighter.fetchCombatSkills()[0]);
+assert.deepStrictEqual([fighter.state.fetchCombats(), fighter.getHating(attacker), fighter.fetchMostHated(),
+    fighter.canUseSkill(fighter.fetchCombatSkills()[0])], [true, 100, attacker, false], 'the NPC fights its attacker');
+assert.deepStrictEqual(combatView(bystander), restingView, 'one NPC\'s fight never reaches another of its template');
+fight.sent.length = 0;
+fighter.destructor(fight);
+assert.deepStrictEqual([fighter.state.fetchCombats(), fighter.getHating(attacker), fighter.fetchMostHated(),
+    fighter.timer.combatStart], [false, 0, null, undefined], 'a despawn ends the fight and its timers');
+const despawn = sentBy();
+resting.destructor(despawn);
+assert.deepStrictEqual(despawn.sent, fight.sent, 'a never-touched NPC despawns as one that fought');
+
+const walker = SpawnNpcs.spawnChildNpc(spawnWorld, row, at(9));
+const walk = sentBy();
+assert.strictEqual(walker.automation.scheduleMoveToCoords(walk, walker, { locX: 1100, locY: -2000, locZ: -3000 },
+    () => {}, { speed: 60, towards: 'wander' }), true, 'an NPC walks on its first-built automation');
+assert.deepStrictEqual([walk.sent, walker.state.fetchTowards()], [[0x01], 'wander'], 'the walk is announced');
+walk.sent.length = 0;
+walker.destructor(walk);
+assert.deepStrictEqual([walk.sent, walker.automation.moveInterpolation, walker.automation.timer.action.timer],
+    [[0x47, ...despawn.sent], null, undefined], 'a despawn stops a walking NPC and its walk timers');
+
 console.log('NPC respawn regression checks passed');
