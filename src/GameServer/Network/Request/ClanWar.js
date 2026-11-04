@@ -20,8 +20,8 @@ function fail(session, code) {
     return { ok: false, code };
 }
 const handler = action => (session, buffer) => {
-    const packet = new Receive(buffer); packet.readS();
-    if (packet.data.length !== 1 || packet.offset !== buffer.length || packet.data[0].length > 16) return Promise.resolve(fail(session, 'invalid_clan_name'));
+    const packet = new Receive(buffer); packet.readS(); // a name without its terminator fails the packet
+    if (packet.offset !== buffer.length || packet.data[0].length > 16) return Promise.resolve(fail(session, 'invalid_clan_name'));
     return consume(session, packet.data[0], action);
 };
 function list(session, command) {
