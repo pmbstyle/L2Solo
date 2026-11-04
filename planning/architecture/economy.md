@@ -167,6 +167,16 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
   progress are one purpose (the larger per item). Open: in a cold town visit (`PopulationService.applyColdResolve` →
   `executePlan`, no post-commit step around it) the plan's own refusals (`economy_plan_*`, `afk_trade_shop_changed`
   from its bid, withdraw and buy-ad blocks) still leave the lifecycle command as a worker fault (`main_command`).
+- **ECO-15 the income search reads its own output.** `EquipmentIncomeRoute.select` values spots in the band's best
+  hour ("own outputs are not inputs"), but its `SpotEconomics.create` weighs money by `moneyWeight(state)`: the
+  packet's hour (`stats.money[0]`, the last build's `hourAdena`, i.e. the last search's `earning`) × money price
+  (`money[1]`, the gap wish's ratio, at least 1 / hour). For a bot whose gap ratio is above that floor (~half of
+  the 1700-bot save) the answer depends on the previous answer, and the weight moves with every build (between two
+  saves 100 min apart, same-focus bots: median |Δweight| 0.015, p90 0.39). The held earning spot searches again
+  when the weight moved beyond the bot's income error (EconomyContext `weightMoved`, as the observation event; never
+  below `INCOME_ERROR_FLOOR`, also with knowledge errors off), so a
+  search that moves the route, through the hour the next build publishes, can ask the next one (and a bot's first
+  build, searched with no packet, asks one more). Open: value the weight at the band hour.
 ## Open questions
 
 1. ECO-1: worker `executePlan` only, with `reconcile`/`open` reduced to executors? — decided 2026-11-03: yes (ECO-1).

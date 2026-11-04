@@ -991,21 +991,26 @@ function incomeRouteFor(state, deps, timestamp, price, keep) {
     const route = held ? held.route : IncomeRoute.select(state, { ...deps, timestamp, required, price: read });
     // searched: the route is a full search's (an event build reuses only such a record).
     const record = { state, timestamp, spots: deps.spots, mode: deps.mode, maxChecks: deps.maxChecks, required, reads, route,
-        searched: !held || held.searched, hold: held ? held.hold : newHold(state, route, timestamp, deps.goalRevision) };
+        searched: !held || held.searched, hold: held ? held.hold : newHold(state, route, timestamp) };
     keep?.(record);
     return record;
 }
 // What a held build keeps of the search that chose its route (decision 10-30):
 // the route's spot, income row and hour (null: the search found none), not the
 // search's matchup profiles (their verdict caches would live with the plan);
-// when it ran and the goal it ran for (the focus, main's goal revision).
+// when it ran and the goal as the search read it: the economic hunt
+// (EquipmentIncomeRoute.economicHunt: an adventurer whose focus is gear or
+// resale), which opens the search to a bot with no kit gap and no Spoil, and
+// the spot value's money weight (SpotEconomics.moneyWeight, as select's
+// SpotEconomics.create reads it: the packet's hour times its money price, the
+// gap wish's ratio), which every build publishes anew. Main's goal revision is
+// no input of the search.
 // moved: the hold a later search found instead, until the build is rebuilt;
-// afterGoal: that search was a goal change's, not the window's.
-function newHold(state, route, at, goal, afterGoal = false) {
+// afterGoal: that search was the goal's (goalMoved or weightMoved), not the window's.
+function newHold(state, route, at, afterGoal = false) {
     return { at, route: route ? { spot: route.spot, row: route.row, earning: route.earning } : null,
-        focus: focusOf(state), goal, moved: null, afterGoal };
+        economic: IncomeRoute.economicHunt(state), weight: SpotEconomics.moneyWeight(state), moved: null, afterGoal };
 }
-const focusOf = state => state.stats?.wishFocus?.[0] ?? null;
 const spotOf = route => route ? String(route.spot.id) : null;
 // The held build's earning spot is searched again at most every 30 game
 // minutes, on any read (holdRead).
@@ -1013,21 +1018,45 @@ const HOLD_MS = 30 * GameTime.GAME_MINUTE_MS;
 // Held-spot reads by verdict (the worker status line): kept, no held build,
 // a held null (the search found no route), renewed (a search chose the held
 // spot again, in place), moved (it chose another, or none: each read until
-// the rebuild), an event search, goal (a search a goal change asked before
-// the window's end, among renewed and moved); party: the party comparison's
-// solo side, kept or missed (the comparison searches for itself).
-const holdStats = { kept: 0, none: 0, unrouted: 0, renewed: 0, moved: 0, event: 0, goal: 0, partyKept: 0, partyMissed: 0 };
+// the rebuild), an event search, goal (a search the economic hunt's turn asked
+// before the window's end, among renewed and moved: the focus into or out of
+// gear and resale, or the bot leaving or taking a craft station or shop, read
+// before its kit event rebuilds the foundation), weight (one its money weight's
+// move beyond the bot's error asked before the window's end, among renewed and
+// moved); party: the party comparison's solo side, kept or missed (the
+// comparison searches for itself).
+const holdStats = { kept: 0, none: 0, unrouted: 0, renewed: 0, moved: 0, event: 0, goal: 0, weight: 0, partyKept: 0, partyMissed: 0 };
 function incomeHoldStats() { return { ...holdStats }; }
-// A goal change (decision 10-30, a search like the window's): the focus moved
-// since the search, by the bot's own build or an outside write, or main's goal
-// revision did (only a caller that passes one compares it).
-function goalMoved(hold, state, goal) {
-    return hold.focus !== focusOf(state) || Number.isFinite(goal) && goal !== hold.goal;
+// A goal change that opens or closes the search (decision 10-30, a search like
+// the window's): the economic hunt turned since the search, the focus moved
+// into or out of gear and resale by the bot's own build or an outside write,
+// or the bot stopped or started being an adventurer (select's gate: a kit gap
+// and Spoil open the search whatever the focus). A move between two focuses on
+// the same side, or of main's goal revision, keeps the held answer but for the
+// money weight it may move (weightMoved).
+function goalMoved(hold, state) {
+    return hold.economic !== IncomeRoute.economicHunt(state);
+}
+// The money weight the search valued spots with moved beyond the bot's own
+// error (the decision baseline's incomeError, as the observation event reads
+// it): a drift inside it is no change (maintainer 2026-11-04). Never below the
+// error a fully learned bot keeps (KnowledgeLearning.INCOME_ERROR_FLOOR): the
+// weight moves with the money price every build publishes, so with knowledge
+// errors off (incomeError 0) or before a first baseline an exact compare would
+// search after every build. The weight reads the packet's hour, the last
+// search's own earning (ECO-15): a move a search makes is heard after the
+// build that publishes it.
+function weightMoved(hold, state) {
+    const weight = SpotEconomics.moneyWeight(state);
+    const error = Math.max(positive(state.stats?.wishSections?.incomeError), Knowledge.INCOME_ERROR_FLOOR);
+    return Math.abs(weight - hold.weight) > hold.weight * error;
 }
 const holdDueAt = hold => hold.at + HOLD_MS;
-function holdDue(hold, state, timestamp, goal) {
-    return timestamp >= holdDueAt(hold) || goalMoved(hold, state, goal);
+// Why the hold asks a search now: 'window', 'goal', 'weight', or '' (it holds).
+function holdDueWhy(hold, state, timestamp) {
+    return timestamp >= holdDueAt(hold) ? 'window' : goalMoved(hold, state) ? 'goal' : weightMoved(hold, state) ? 'weight' : '';
 }
+const holdDue = (hold, state, timestamp) => !!holdDueWhy(hold, state, timestamp);
 // When the bot's held spot is searched again: a plan deadline of a solo hunt
 // window (ColdSoloWindow); a hold another search moved is due now, a bot with
 // none counts its window from `timestamp`.
@@ -1041,11 +1070,12 @@ function holdEndsAt(state, timestamp) {
 // (10-31: re-judging the held spot per read cost more than the ranking it
 // saved). A section event (level, kit, death, party: forState rebuilds the
 // foundation and searches, deps.searchIncome) and the income drift (the
-// observation event) end it through the verdict. A goal change or the window's
-// end (HOLD_MS, on every path: basics here, a build through holdCheck) asks one
-// full search with no rebuild: the same answer renews the hold in place (a
-// rebuild per window doubled the wish projection, 10-31); another one moves it:
-// reads return that answer for its own window and the held build and its card
+// observation event) end it through the verdict. A goal change that can change
+// its answer (goalMoved, weightMoved) or the window's end (HOLD_MS, on every
+// path: basics here, a build through holdCheck) asks one full search with no
+// rebuild: the same answer renews the hold in place (a rebuild per window
+// doubled the wish projection, 10-31); another one moves it: reads return that
+// answer for its own window and the held build and its card
 // refuse (incomeMoved), so the next decision point rebuilds the foundation on it.
 // Returns { route, searched, hold }, or null: no held build (the caller
 // searches). The party read never searches: a hold it cannot serve (none, a
@@ -1057,12 +1087,13 @@ function holdRead(state, options) {
     if (!hold) { holdStats[party ? 'partyMissed' : 'none'] += 1; return null; }
     const timestamp = Number(options.timestamp) || Date.now();
     const answer = hold.moved || hold;
-    if (!holdDue(answer, state, timestamp, options.goalRevision)) return heldAnswer(hold, party);
+    const why = holdDueWhy(answer, state, timestamp);
+    if (!why) return heldAnswer(hold, party);
     if (party) { holdStats.partyMissed += 1; return null; }
-    const afterGoal = timestamp - answer.at < HOLD_MS;
-    if (afterGoal) holdStats.goal += 1;
+    const afterGoal = why !== 'window';
+    if (afterGoal) holdStats[why] += 1;
     const found = IncomeRoute.select(state, options);
-    const next = newHold(state, found, timestamp, options.goalRevision ?? answer.goal, afterGoal);
+    const next = newHold(state, found, timestamp, afterGoal);
     if (spotOf(found) === spotOf(hold.route)) {
         Object.assign(hold, next);
         holdStats.renewed += 1;
@@ -1091,8 +1122,8 @@ function heldAnswer(hold, party) {
 function holdCheck(state, deps, held, verdict, judged) {
     const hold = held?.plan.hold, timestamp = Number(deps.timestamp || Date.now());
     if (!hold || verdictMask(state, deps.eventVerdict, verdict) & Sections.COMPUTED.foundation
-        || !holdDue(hold, state, timestamp, deps.goalRevision)) return false;
-    if (hold.moved && !holdDue(hold.moved, state, timestamp, deps.goalRevision)
+        || !holdDue(hold, state, timestamp)) return false;
+    if (hold.moved && !holdDue(hold.moved, state, timestamp)
         && cache.get(`character:${Number(state.characterId) || 0}`)?.plan?.hold === hold) {
         heldAnswer(hold, deps.party === true);
         return !judged;

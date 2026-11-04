@@ -1,8 +1,9 @@
 'use strict';
 // Decision 10-30: a bot keeps its earning spot. A held build with a valid event
 // proof: inside the window nothing searches, on any path; the window's end and
-// a goal change ask one search on any path, the same answer renews in place, a
-// new one rebuilds; a search that found nothing is kept like a route.
+// a goal change that can change the answer (the focus into or out of gear and
+// resale) ask one search on any path, the same answer renews in place, a new one
+// rebuilds; a search that found nothing is kept like a route.
 const assert = require('node:assert/strict');
 const { Worker, isMainThread } = require('node:worker_threads');
 require('./helpers/databaseIsolation');
@@ -76,7 +77,8 @@ function count(read) {
 }
 
 function verify() {
-    // Own build chose another focus: one search at the next decision point, then held.
+    // The published build, its own focus read: one search at the next decision
+    // point if that focus turned the economic hunt, then held.
     const settled = (characterId, extra) => {
         const { built, state } = heldBot(characterId, extra);
         assert.equal(Economy.forState(state, deps(0, extra)).plan, built.plan,
@@ -128,31 +130,77 @@ function verify() {
         assert.equal(Economy.incomeMoved(turned), false, 'its search does not move the hold');
     }
 
-    // A goal change searches inside the window: the bot's own build, an outside
-    // write of the focus, main's goal revision.
+    // A goal change searches inside the window only when it opens or closes the
+    // search: the focus turned into or out of gear and resale (the economic
+    // hunt). A focus moved on the same side, by the bot's own build or an outside
+    // write, or main's goal revision keeps the held answer: the bot keeps its spot.
     {
-        const { native, state } = heldBot(990204);
-        assert.notEqual(state.stats.wishFocus?.[0], native.stats.wishFocus[0], 'fixture: the build chose its own focus');
-        const moved = count(() => Economy.forState(sampled(state, 'poor'), deps(1)));
-        assert(moved.searches >= 1, 'the build\'s own new focus searches');
-        assert.equal(moved.result.hunt.spotId, 'poor', 'and a better spot rebuilds on it');
+        // The hold was searched for the native focus, a gear one.
+        const { state } = heldBot(990204);
+        const turned = sampled(state, 'poor');
+        const focused = key => ({ ...turned, stats: { ...turned.stats, wishFocus: [key, 1, 1000000] } });
+        for (const [minute, key] of [[1, 'power:300:14'], [2, 'resale:300']]) {
+            const kept = count(() => Economy.basics(focused(key), deps(minute)));
+            assert.equal(kept.searches, 0, `a ${key} focus does not search`);
+            assert.equal(kept.result.hunt.spotId, 'rich', 'and the bot keeps its spot');
+        }
+        const left = count(() => Economy.forState(focused('stock:1060'), deps(3)));
+        assert(left.searches >= 1, 'a focus off gear and resale searches');
+        assert.equal(left.result.hunt.spotId, 'poor', 'and the bot leaves a spot chosen for the old focus');
     }
     {
-        const { state } = settled(990205);
-        const turned = sampled(state, 'poor');
-        const written = { ...turned, stats: { ...turned.stats, wishFocus: ['power:300:14', 1, 1000000] } };
-        const moved = count(() => Economy.forState(written, deps(1)));
-        assert(moved.searches >= 1, 'a written focus searches');
-        assert.equal(moved.result.hunt.spotId, 'poor', 'and the bot leaves a spot chosen for the old focus');
+        // A kit gap opens the search whatever the focus: the hold of a stock focus.
+        const native = sampled(fighter(990205), 'rich');
+        const focused = (state, key) => ({ ...state, stats: { ...state.stats, wishFocus: [key, 1, 1000000] } });
+        assert.equal(Economy.forState(focused(native, 'stock:1060'), deps(0)).hunt.spotId, 'rich', 'fixture: held for a stock focus');
+        const turned = sampled(native, 'poor');
+        const kept = count(() => Economy.basics(focused(turned, 'stock:1061'), deps(1)));
+        assert.equal(kept.searches, 0, 'another focus off gear and resale does not search');
+        assert.equal(kept.result.hunt.spotId, 'rich', 'and the bot keeps its spot');
+        const into = count(() => Economy.basics(focused(turned, 'power:300:14'), deps(2)));
+        assert.equal(into.searches, 1, 'a focus into gear searches');
+        assert.equal(into.result.hunt.spotId, 'poor', 'and finds the better spot');
     }
     {
         const goal = { goalRevision: 7 };
         const { built, state } = settled(990206, goal);
         assert.equal(count(() => Economy.forState(state, deps(1, goal))).searches, 0, 'the same goal revision holds');
-        const renewed = count(() => Economy.forState(state, deps(1, { goalRevision: 8 })));
-        assert.equal(renewed.searches, 1, 'a new goal revision searches');
-        assert.equal(renewed.result.plan, built.plan, 'the same spot stays in place');
-        assert.equal(count(() => Economy.forState(state, deps(2, { goalRevision: 8 }))).searches, 0, 'once');
+        const moved = count(() => Economy.forState(state, deps(1, { goalRevision: 8 })));
+        assert.equal(moved.searches, 0, 'a new goal revision does not search');
+        assert.equal(moved.result.plan, built.plan, 'and the held build stands');
+    }
+
+    // The money weight the search valued spots with (SpotEconomics.moneyWeight:
+    // the packet's hour times its money price) is the goal's other input: a
+    // move inside the bot's own income error keeps the hold, one beyond it
+    // searches once. With knowledge errors off (the baseline's error 0) the
+    // error a learned bot keeps stands in: the weight moves on every build.
+    {
+        const Economics = invoke('GameServer/Bot/Economy/SpotEconomics');
+        const Learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
+        const { state } = heldBot(990260);
+        const [hour] = state.stats.money;
+        assert(state.stats.wishSections.incomeError > Learning.INCOME_ERROR_FLOOR && hour > 0,
+            'fixture: the bot has an income error above the floor and an hour');
+        const base = Economics.moneyWeight(state), money = Math.max(1, hour * state.stats.money[1]);
+        const power = money * (1 - base) / base;
+        const weighed = (weight, incomeError) => ({ ...state, stats: { ...state.stats,
+            wishSections: { ...state.stats.wishSections, incomeError },
+            money: [hour, weight * power / (1 - weight) / hour, ...state.stats.money.slice(2)] } });
+        for (const [minute, incomeError, error] of [[31, state.stats.wishSections.incomeError, state.stats.wishSections.incomeError],
+            [64, 0, Learning.INCOME_ERROR_FLOOR]]) {
+            // A search past the window holds the weight this state reads.
+            assert.equal(count(() => Economy.basics(weighed(base, incomeError), deps(minute))).searches, 1, 'fixture: the window\'s search');
+            const up = base * (1 + 2 * error) < 0.99;
+            const small = base * (1 + (up ? 1 : -1) * error / 2), large = base * (1 + (up ? 1 : -1) * 2 * error);
+            assert(Math.abs(Economics.moneyWeight(weighed(large, incomeError)) - large) < 1e-9 && large * power / (1 - large) >= 1,
+                'fixture: the packet carries the weight');
+            const kept = count(() => Economy.basics(weighed(small, incomeError), deps(minute + 1)));
+            assert.equal(kept.searches, 0, `a weight move inside the error (${error}) does not search`);
+            assert.equal(kept.result.hunt.spotId, 'rich', 'and the bot keeps its spot');
+            assert.equal(count(() => Economy.basics(weighed(large, incomeError), deps(minute + 2))).searches, 1, 'a move beyond it searches');
+            assert.equal(count(() => Economy.basics(weighed(large, incomeError), deps(minute + 3))).searches, 0, 'once');
+        }
     }
 
     // A moved hold with a valid verdict: found by a read, it refuses the held
