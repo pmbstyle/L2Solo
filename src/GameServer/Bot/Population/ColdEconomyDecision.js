@@ -642,7 +642,7 @@ function refusal(state, accepted, deps = {}, options = {}) {
     const why = [], verdict = {};
     const holds = Economy.eventProofHolds(state, accepted.eventProof, deps, { activity: accepted.activity, leaf,
         baseline: accepted.baseline, mp: accepted.mp, timestamp: Number(deps.timestamp || Date.now()), why, verdict,
-        collect: options.collect === true && !!options.prepared });
+        collect: options.collect === true && !!options.prepared, basics: options.basics });
     if (options.prepared) options.prepared.eventVerdict = verdict;
     return holds ? '' : `events:${why[0] || 'unproved'}`;
 }
@@ -654,10 +654,17 @@ function canReuse(state, accepted, deps = {}, options = {}) {
 // not build them or their income route again for the same state and deps,
 // and the card's verdict; options.collect: the caller builds on this state
 // and deps when the card is refused (its verdict serves the build's).
+// The basics: a selling leaf's check in the card's verdict builds them on the
+// same state and deps right before (EconomyContext LEAF_CHECKS selling), with
+// nothing yielding or written between; that answer serves when it read the
+// held earning spot with no search (a search renews or moves the hold, after
+// which a second read keeps its answer but records no search) at the same time.
 function refreshAdvisory(state, accepted, deps = {}, options = {}) {
-    const refused = refusal(state, accepted, deps, options);
+    const checked = {};
+    const refused = refusal(state, accepted, deps, { ...options, basics: checked });
     if (refused) { options.why?.push(refused); return null; }
-    const base = invoke('GameServer/Bot/Economy/EconomyContext').basics(state, deps); // lazy: cycle EconomyContext constructs and validates these cards
+    const base = checked.base?.preparedIncomeRoute?.searched === false && checked.base.timestamp === Number(deps.timestamp || Date.now())
+        ? checked.base : invoke('GameServer/Bot/Economy/EconomyContext').basics(state, deps); // lazy: cycle EconomyContext constructs and validates these cards
     if (options.prepared) options.prepared.basics = base;
     // This new result is fenced to the actual publication and the accepted
     // decision's echo; never relax ColdEconomyDecisions.matches or any

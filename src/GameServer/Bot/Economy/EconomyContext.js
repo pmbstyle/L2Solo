@@ -419,7 +419,8 @@ function heldBuildVerdict(state, proof, deps = {}, options = {}) {
     };
     if (!away && !salesHold()) return out;
     // The leaf's own check (LEAF_CHECKS): a check:<name> refusal names its sections.
-    const failed = leafCheck(state, leaf, deps, { heldUnits, current: null, prepared: { liquidation: saleCandidates } });
+    // options.basics: a holder that receives the basics the leaf check built (ColdEconomyDecision.refreshAdvisory).
+    const failed = leafCheck(state, leaf, deps, { heldUnits, current: null, prepared: { liquidation: saleCandidates, basics: options.basics } });
     if (failed && moved(failed.link, failed.reason) && !collect) return out;
     // On a hunt only the build a refusal asks for reads the bag and the sale
     // list: nobody checks their bag to go on fighting. A proof with no rows
@@ -684,7 +685,8 @@ const LEAF_CHECKS = Object.freeze({
         deps = resolved(state, deps, false);
         if (!tradeRoute(state, leaf, deps) || !(leaf.kind === 'liquidate' && leaf.funding === true && leaf.items?.length
             && OccupationSources.hasNpcSellerInTown(leaf.town))) return SALE;
-        return (input.prepared?.liquidation || Providers.liquidationCandidates(state, input.current ? input.current() : basics(state, deps)))
+        const own = () => input.prepared?.basics ? (input.prepared.basics.base = basics(state, deps)) : basics(state, deps);
+        return (input.prepared?.liquidation || Providers.liquidationCandidates(state, input.current ? input.current() : own()))
             .some(row => leaf.items.includes(Number(row.selfId))) ? '' : SALE;
     },
     // This retains the chosen intention. The native executor still
