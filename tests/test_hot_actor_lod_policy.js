@@ -56,13 +56,18 @@ const visible = botSession(2002, 6000);
 const visibleContext = Policy.evaluate(visible, [player], 1000);
 assert.strictEqual(visibleContext.tier, 'visible', '6000 remains server-visible at reduced decision quality');
 assert.strictEqual(Policy.nextTickDelay(visible, visibleContext), 7000, 'far-visible AI uses the bounded lower cadence');
+assert.strictEqual(visibleContext.playerVisible, true, 'the player sees a bot at the client view edge');
 visible.actor = actor(2002, 6001);
 assert.strictEqual(Policy.evaluate(visible, [player], 2000).tier, 'preload', 'outside server visibility is preload-only');
+assert.strictEqual(Policy.evaluate(visible, [player], 2000).playerVisible, false);
+assert.strictEqual(Policy.evaluate(botSession(2009, 100), [botSession(2010, 0), playerSession(1009, 0, { online: false })], 2000).playerVisible,
+    false, 'other bots and offline players do not see it');
 assert.strictEqual(Policy.nextTickDelay(visible, { tier: 'preload' }), 30000, 'outer preload remains lightweight');
 
 const companion = botSession(2003, 9000, { session: { partyCompanion: true, followPlayerSession: player } });
 const companionContext = Policy.evaluate(companion, [player], 1000);
 assert.strictEqual(companionContext.tier, 'full', 'party companions always receive full quality');
+assert.strictEqual(companionContext.playerVisible, false, 'a promoted tier is no sight of the player');
 assert.strictEqual(Policy.nextTickDelay(companion, companionContext, () => 0), 1000, 'party companions keep the fast player hot path');
 
 const selected = botSession(2004, 5500);

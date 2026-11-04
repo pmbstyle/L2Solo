@@ -172,7 +172,10 @@ function evaluate(session, sessions = [], now = Date.now()) {
     state.reason = reason;
     state.nearestPlayerDistance = Number.isFinite(nearestDistance) ? Math.round(nearestDistance) : null;
     state.evaluatedAt = now;
-    return { tier, reason, nearestPlayerDistance: nearestDistance, promotedUntil: Number(state.promotedUntil || 0), highRisk: heldPromotion };
+    // playerVisible: a real player is within the client's view of the bot (the
+    // nearest one, from this same read); BotAI's far-away gate and local chat read it.
+    return { tier, reason, nearestPlayerDistance: nearestDistance, playerVisible: nearestDistance <= CLIENT_VISIBILITY_RADIUS,
+        promotedUntil: Number(state.promotedUntil || 0), highRisk: heldPromotion };
 }
 
 function nextTickDelay(session, context, random = Math.random) {

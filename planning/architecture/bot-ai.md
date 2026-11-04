@@ -69,8 +69,8 @@ deterministic brain; the LLM acts only on explicit player communication.
   priorities 100/96/80/50 sorted by `GoalPlanner`. `GoalState` keeps a second copy of the decision in the DB. Hot
   executes the leaf inline in HuntingState, cold through `GoalExecutor`.
 - **AI-6 hot/cold copy in `BotAvailability`.** `evaluate` vs `evaluateState`: same chain, different "already grouped" tests.
-- **AI-7 two "near a player" gates in `BotAI.tick`** (LOD 'preload' and `visibleRealPlayers`), both fire far-away chat;
-  two copies of `visibleRealPlayers` (BotAI, itself with three fallback paths; BotBrain with its own `visibilityRadius`).
+- **AI-7 two "near a player" gates in `BotAI.tick`** (LOD 'preload' and the LOD context's `playerVisible`, one read of
+  the nearest player), both fire far-away chat; BotBrain keeps its own `visibleRealPlayers` with its own `visibilityRadius`.
 - **AI-8 dead code.** `DecisionEvents` reasons build/supply/occupation/combat/benefits are accepted but never passed
   to `raiseDecision` (they are section names `raiseSections` uses); `BotDecisionService.suggest` branches for
   dead/resting/following likely unreachable; `MerchantState` empty.

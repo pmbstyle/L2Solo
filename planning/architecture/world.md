@@ -113,8 +113,8 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
   `startsWith('bot_')`, 24 `constructor(?).name === 'BotSession'` (21 files), `PlayerActivitySignal.isRealPlayerSession`
   (plus a local copy in `BotTradeService`), `NpcAggro.isHotBotSession`.
 - **WOR-4 half-migration: spatial index vs raw `World.user.sessions` scans.** Always-true flags guard legacy branches
-  (`World.actorSpatialIndex`, `World.botRealPlayerIndex`); `typeof World.fetchVisibleRealPlayers === 'function'`
-  guards (`UpdateEnvironment`, `Cooldown`, `BotAI`, `BotBrain`, sessions); raw scans in `MoveTo`, `SpawnNpcs.notifyNearby`,
+  (`World.actorSpatialIndex`); `typeof World.fetchVisibleRealPlayers === 'function'`
+  guards (`UpdateEnvironment`, `Cooldown`, `BotBrain`, sessions); raw scans in `MoveTo`, `SpawnNpcs.notifyNearby`,
   `BroadcastVitals`, `NpcDied`, `Cooldown`, `Speak`, `AdminGiveAdena`, `fetchUser`/`fetchUserByName`.
 - **WOR-5 dead: worker actor-publication pipeline:** `World/MainActorPublicationSource` (test/bench
   only), `notifyActorPublication`/`subscribeActorPublications`, `Population/ColdActorTableReceiver` (no importer),
