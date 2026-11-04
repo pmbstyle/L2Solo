@@ -26,8 +26,6 @@ items are added or removed by priority at any time.
 
 | Item | P | S | Who |
 |---|---|---|---|
-| PR #207 code brought in line with the rules: one arrow-cap admission point (ArrowStock), companion unload through the shared warehouse/sale owners, arrowCleanupFirst decision out of main (ECO-15) | low | mid | ivan |
-| Architecture passes this round: data vs C4 (pass4-data-c4), logic (pass2-logic), races (pass3-races) | mid | mid | ivan |
 | One poison value stops buffered persistence for every character (`CharacterWriteQueue`, races R11) | mid | **high** |  |
 | Fence without an owner (races R6): a release by id can drop another owner's fence; owner tokens | mid | mid |  |
 | Retention and WAL truncate never run during play: state retention deferred 29× 'player_protected' in a 15-min hot run, WAL 387+ MB (tables and WAL grow all session); run them through the governor, measure the truncate stall; count the truncate gate's refusals (silent today) | low | **high** | ivan |
