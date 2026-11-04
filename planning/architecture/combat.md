@@ -66,6 +66,7 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
 | Who a mob attacks | `Npc/NpcHate` |
 | Aggro range | `Npc/NpcAggroRange` |
 | Skill semantics | `Skills/C4SkillRules` |
+| A skill rank's base numbers (hit time, reuse, cast type, MP, power, duration) | `Model/Skill` fetchers (C4SkillRules over the data row); cold records copy them (`ColdCombatProfile.skillRecord`) |
 | Item-skill cast (timer, spend, landing) | `Backpack.castItemSkill` (bots' own SoE `BotTownTravel.beginEscape` is still a parallel path, debt.md theme 9) |
 | Cast break by damage | `Attack.tryBreakCast` (magic casts only) |
 | Effects store / stat sums | `EffectStore` + `EffectStats` |
@@ -82,9 +83,9 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
 ## Debt
 
 - **CMB-1 skill reuse differs hot vs cold.** Hot `Actor.markSkillReuse` applies reuse multipliers, speed, Skill
-  Mastery; cold `BackgroundResolver.spendSkill` uses raw `skill.reuse`; `RaidHealingEstimate` copies the hot rule;
+  Mastery; cold `BackgroundResolver.spendSkill` uses the record's base reuse (no multipliers); `RaidHealingEstimate` copies the hot rule;
   NPC `NpcCombatChoice.reuseMs` = max(1000, raw). Cold casters cast less often.
-- **CMB-2 MP cost differs.** Hot `Attack.skillMpCost` (dance cost, consume multipliers); cold raw `skill.mp`; partial
+- **CMB-2 MP cost differs.** Hot `Attack.skillMpCost` (dance cost, consume multipliers); cold the record's base `skill.mp`; partial
   copies in `SurvivalFloor.stateCastCosts`, `ColdCombatProfile.partyMusicMpCost`.
 - **CMB-3 three swing loops, two damage paths.** `Attack.meleeHit`, `Npc.meleeHit`, `SummonControl.attackTick`
   (inline timing, calls sinks directly: no cast break, reflect; owner flag and CP do apply). A monster hitting a
@@ -142,7 +143,7 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
 
 ## Open questions
 
-1. CMB-1/2: raw reuse and MP in cold — simplification or gap? One function for hot, cold and estimates? (c4-check:
+1. CMB-1/2: base reuse and MP (no multipliers) in cold — simplification or gap? One function for hot, cold and estimates? (c4-check:
    gap; one shared reuse and MP function, the NPC 1000 ms floor is ours.)
 2. CMB-7: does a C4 monster hit have weapon spread? (c4-check: yes, Lisvus +0..10 % for every attacker.)
 3. CMB-3: should a servitor swing go through `Attack.hit`? (c4-check: yes, C4 has no servitor override.)

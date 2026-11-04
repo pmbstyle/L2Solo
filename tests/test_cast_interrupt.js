@@ -347,4 +347,27 @@ try {
     global.clearTimeout = savedClearTimeout;
 }
 
+// C4 (Lisvus L2Character.breakCast): a hit breaks only a magic cast. Songs, dances,
+// Hamstring Shot, Eye of Hunter and the servitor buffs are not spells (isMagic
+// false); Wind Shackle is.
+{
+    const SkillModel = invoke('GameServer/Model/Skill');
+    const rows = require('../data/Skills/Active/active.json');
+    const rank = (selfId) => {
+        const { levels, ...rest } = rows.find((row) => row.selfId === selfId);
+        return new SkillModel({ ...utils.crushOb(JSON.parse(JSON.stringify(rest))), ...levels[0] });
+    };
+    const broken = (selfId) => {
+        let aborted = false;
+        const caster = { effects: {}, state: { fetchCasts: () => true }, fetchMen: () => 1,
+            attack: { activeCast: { skill: rank(selfId) }, abortCast: () => (aborted = true) } };
+        new Attack().tryBreakCast(caster, 1e6, () => 0);
+        return aborted;
+    };
+    for (const selfId of [304, 307, 349, 365, 354, 359, 1346]) {
+        assert.strictEqual(broken(selfId), false, `a hit does not break skill ${selfId} (not a spell)`);
+    }
+    assert.strictEqual(broken(1206), true, 'a hit breaks a Wind Shackle cast (a spell)');
+}
+
 console.log('Cast interrupt checks passed');

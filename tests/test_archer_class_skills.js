@@ -186,7 +186,7 @@ assert(lowHpDamage > fullHpDamage, 'Fatal Counter damage should increase as the 
 
 assert.strictEqual(Formulas.calcLethalStrikeChance(76, 76, 76), 2, 'equal-level lethal chance should match the sourced two percent');
 assert.strictEqual(Formulas.calcLethalStrikeChance(70, 76, 76), 0, 'the Lisvus middle lethal level band should retain its integer-division behavior');
-const lethalShot = skill(343, 'Lethal Shot', 1, { spell: true, power: 5132, distance: 900 });
+const lethalShot = skill(343, 'Lethal Shot', 1, { power: 5132, distance: 900 });
 const lethalTarget = actor({ id: 1000002, kind: 'Monster', hp: 1000, maxHp: 1000, level: 76 });
 const lethalOutcome = C4SkillEffects.execute(session(fullHpArcher), fullHpArcher, lethalTarget, lethalShot, {
     magicSkill: lethalShot.fetchSpell(),
@@ -208,7 +208,7 @@ assert.strictEqual(raidOutcome.damage, 200, 'raid bosses should still receive or
 assert.strictEqual(raidOutcome.forceLethalVitals, false, 'raid bosses must not receive the post-hit lethal effect');
 
 const evadingArcher = actor();
-const evadeShot = skill(369, 'Evade Shot', 1, { spell: true, power: 2020, mp: 130, distance: 900, buff: 30000 });
+const evadeShot = skill(369, 'Evade Shot', 1, { power: 2020, mp: 130, distance: 900, buff: 30000 });
 const evadeOutcome = C4SkillEffects.execute(session(evadingArcher), evadingArcher, damageTarget, evadeShot, {
     magicSkill: evadeShot.fetchSpell(),
     attack: { clearLoadedShot() {}, prepareSkillDamage: () => 321 }

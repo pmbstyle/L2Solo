@@ -186,7 +186,8 @@ async function main() {
     assert(fullFight.actions <= Pvp.MAX_ACTIONS && fullFight.durationMs <= Pvp.MAX_DURATION_MS);
     assert(fullFight.incidents.length <= 18, 'actual attribution stays linear in roster size');
     const healer = { ...right, stats: { ...right.stats, coldCombat: { ...right.stats.coldCombat,
-        skills: [{ selfId: 1011, level: 1, spell: true, passive: false, power: 100, mp: 12, hitTime: 1500, reuse: 1000 }] } } };
+        // A real learned rank (Battle Heal 1): the kit a save rebuilds from the skill rows carries the same numbers.
+        skills: Profile.skillSnapshotsFromRecords([{ selfId: 1015, level: 1 }]) } } };
     const injured = { ...right, characterId: 90, vitals: { ...right.vitals, hp: 350 } };
     const healedFight = Pvp.resolve({ sides: [sides[0], { principal: healer, members: [healer, injured] }],
         roles: new Map([[90, 'support']]), timestamp: at, rng: seeded('heal'), personaFor });

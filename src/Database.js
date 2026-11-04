@@ -2839,15 +2839,15 @@ function parsedObject(raw) {
     }
 }
 
-// The kit rebuild below keeps a held rank's fields over the fresh ones and puts
-// the fresh keys first; a held skill whose keys already start with them and
-// whose identity fields match rebuilds into the same JSON.
+// A held record is current when it is the fresh one field for field: the
+// fresh record already carries the hot Skill model's numbers (ColdCombatProfile
+// skillRecord), so a rebuild of a current kit writes the same JSON.
 function heldSkillCurrent(held, fresh) {
-    if (!held || held.selfId !== fresh.selfId || held.level !== fresh.level || held.passive !== fresh.passive) return false;
+    if (!held) return false;
     const heldKeys = Object.keys(held);
     let index = 0;
-    for (const key in fresh) if (heldKeys[index++] !== key) return false;
-    return true;
+    for (const key in fresh) if (heldKeys[index++] !== key || held[key] !== fresh[key]) return false;
+    return index === heldKeys.length;
 }
 
 // The kit from the learned rows. Returns `combat` itself when the rows rebuild
@@ -2859,16 +2859,7 @@ function nativeColdCombatSkillsUnsafe(characterId, combat) {
     const held = Array.isArray(combat.skills) ? combat.skills : null;
     if (held && combat.version === ColdCombatProfile.PROFILE_VERSION && combat.skillSource === 'database'
         && held.length === learned.length && learned.every((skill, index) => heldSkillCurrent(held[index], skill))) return combat;
-    const proposed = new Map((held || []).map(skill => [Number(skill.selfId), skill]));
-    return { ...combat, version: ColdCombatProfile.PROFILE_VERSION, skillSource: 'database',
-        skills: learned.map(skill => {
-            const sameRank = proposed.get(skill.selfId);
-            // Hot Skill models resolve C4 semantics (for example buff power)
-            // beyond the raw datapack DTO. Keep that metadata for the exact
-            // learned rank; changed/missing ranks need a fresh native DTO.
-            return Number(sameRank?.level) === skill.level
-                ? { ...skill, ...sameRank, selfId: skill.selfId, level: skill.level, passive: skill.passive } : skill;
-        }) };
+    return { ...combat, version: ColdCombatProfile.PROFILE_VERSION, skillSource: 'database', skills: learned };
 }
 
 function syncInventorySummaryUnsafe(characterId, inventory = {}) {

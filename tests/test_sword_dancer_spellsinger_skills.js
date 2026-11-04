@@ -103,7 +103,7 @@ assert.strictEqual(attack.skillUseConditionFailure(dancerWithoutDuals, skill(271
 const dancerWithDuals = effectsActor({ weaponKind: 'Weapon.Dual' });
 assert.strictEqual(attack.skillUseConditionFailure(dancerWithDuals, skill(271, 'Dance of Warrior')), null, 'dual swords must satisfy the dance weapon gate');
 
-const protection = skill(311, 'Dance of Protection', 1, { spell: true, buff: 0 });
+const protection = skill(311, 'Dance of Protection', 1, { buff: 0 });
 assert.strictEqual(protection.fetchSpell(), false, 'Dance of Protection must use the sourced physical song/dance cast type');
 assert.strictEqual(protection.fetchBuffTime(), 120000, 'Dance of Protection must last 120 seconds');
 const blizzard = skill(1290, 'Blizzard', 1, { spell: true, buff: 0, mp: 250, hitTime: 7000, reuse: 3600000, distance: 900, power: 350 });

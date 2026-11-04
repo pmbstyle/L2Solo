@@ -327,4 +327,46 @@ function soloFight({ classId, level, skills = [], effects = [], hp = null, mp = 
     console.log('PASS hunt model reads a real target');
 }
 
+// 15. A skill rank's numbers have one owner, the hot Skill model (C4SkillRules over the
+// data row); a cold record of the rank (learned rows, a class tree) carries the same.
+// Summons reuse 6 h at levels 1-4 and 20 s from level 5 (Lisvus #reuseDelay); Return and
+// Party Recall level 2 cast in 1.5 s and 3.5 s; Wind Shackle casts in 1.5 s and reuses in 8 s.
+{
+    const hotRank = (selfId, level) => {
+        const data = DataCache.skills.find(entry => entry.selfId === selfId);
+        const { levels, ...rest } = data;
+        return new SkillModel({ ...utils.crushOb(JSON.parse(JSON.stringify(rest))), ...levels.find(entry => entry.level === level) });
+    };
+    const coldRank = (selfId, level) => ColdCombatProfile.skillSnapshotsFromRecords([{ selfId, level }])[0];
+    const cases = [];
+    for (const id of [1111, 1128, 1225, 1226, 1227, 1228]) cases.push([id, 4, { reuse: 21600000 }], [id, 5, { reuse: 20000 }]);
+    cases.push([1050, 1, { hitTime: 20000 }], [1050, 2, { hitTime: 1500 }], [1255, 1, { hitTime: 20000 }], [1255, 2, { hitTime: 3500 }]);
+    cases.push([1206, 1, { hitTime: 1500, reuse: 8000 }], [1206, 19, { hitTime: 1500, reuse: 8000 }]);
+    for (const [id, level, expected] of cases) {
+        const hot = hotRank(id, level), cold = coldRank(id, level);
+        for (const [field, value] of Object.entries(expected)) {
+            const hotValue = field === 'reuse' ? hot.fetchReuseTime() : hot.fetchHitTime();
+            assert.strictEqual(hotValue, value, `hot ${id} level ${level} ${field} ${value}`);
+            assert.strictEqual(cold[field], value, `cold ${id} level ${level} ${field} ${value}`);
+        }
+        assert.strictEqual(cold.spell, hot.fetchSpell(), `${id} level ${level}: one cast type hot and cold`);
+        assert.strictEqual(cold.mp, hot.fetchConsumedMp(), `${id} level ${level}: one MP cost hot and cold`);
+    }
+    // One cast type (Lisvus isMagic): songs, dances, stances, the 3rd-class physical skills and
+    // the servitor buffs are not spells; Magic Haste Potion is.
+    const physical = [304, 305, 306, 307, 308, 309, 310, 311, 349, 363, 364, 365, 366, 367, 339, 340, 341, 342, 343, 344, 345,
+        346, 347, 348, 350, 351, 352, 353, 354, 355, 356, 357, 358, 359, 360, 361, 362, 369, 1346, 1347, 1349];
+    for (const [id, magic] of [...physical.map(id => [id, false]), [2169, true]]) {
+        assert.strictEqual(hotRank(id, 1).fetchSpell(), magic, `hot ${id} magic ${magic}`);
+        assert.strictEqual(coldRank(id, 1).spell, magic, `cold ${id} magic ${magic}`);
+    }
+    // The servitor's lifetime and crystal upkeep come with the record, as hot.
+    const kat = coldRank(1111, 5);
+    assert.deepStrictEqual([kat.totalLifeTime, kat.itemIdOT, kat.itemConsumeSteps], [1200000, 1458, 1], 'Kat the Cat\'s summon terms');
+    // A class tree's record (class-only estimates) reads the same owner.
+    const tree = ColdCombatProfile.skillsFor({ level: 40 }, 14, 40).find(record => record.selfId === 1111);
+    assert.strictEqual(tree?.reuse, 20000, 'a level 40 Warlock\'s tree Kat the Cat reuses in 20 s');
+    console.log('PASS skill rank numbers: cold records read the hot Skill model');
+}
+
 console.log('Cold fight hot rules checks passed');
