@@ -283,12 +283,22 @@ if (process.argv[2] === '--bootstrap') {
             'v72 must drop the owner/lease index');
         assert.deepStrictEqual(db.prepare(`SELECT name FROM sqlite_master WHERE ${loanColumns.map((name) => `sql LIKE '%${name}%'`).join(' OR ')}`).all(), [],
             'no index or trigger names a loan column');
-        const partyOwnerIndex = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'bot_life_state_party_owner_filter'").get();
-        assert(partyOwnerIndex?.sql?.includes('(phase, partyId, activity, spotId, updatedAt)'), 'party candidate index must cover formation scans');
-        ['bot_life_state_warehouse_release', 'bot_life_state_warehouse_demand'].forEach((name) => {
-            const partial = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?").get(name);
-            assert(partial?.sql?.includes("WHERE phase = 'cold'"), `${name} must stay a partial index on far bots`);
-        });
+        // v84: no query needs these, and each held updatedAt, which every save moves.
+        ['bot_life_state_market_reconcile', 'bot_life_state_party_owner_filter', 'bot_life_state_warehouse_release',
+            'bot_life_state_warehouse_demand'].forEach((name) => assert(
+            !db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?").get(name), `v84 must drop ${name}`));
+        // The bot row queries that used them still search an index, not the table.
+        const searchesIndex = (sql) => {
+            const plan = db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all().map((row) => row.detail);
+            assert(plan.some((detail) => /^SEARCH bot_life_state USING (COVERING )?INDEX /.test(detail))
+                && !plan.some((detail) => /^SCAN bot_life_state\b/.test(detail)), `${sql.slice(0, 60)}: ${plan.join(' | ')}`);
+        };
+        searchesIndex(`SELECT characterId, partyObjectiveSpot, partyRequestStatus, partyRequestPriority, updatedAt, level
+            FROM bot_life_state WHERE phase = 'cold' AND (partyId IS NULL OR partyId = '') AND spotId IS NOT NULL
+            AND activity IN ('hunting', 'resting', 'party_wait')`);
+        searchesIndex(`SELECT partyId, COUNT(*), MIN(updatedAt) FROM bot_life_state
+            WHERE phase = 'cold' AND partyId IN ('party-a', 'party-b') GROUP BY partyId`);
+        searchesIndex('SELECT MAX(updatedAt) AS lastWriteAt FROM bot_life_state WHERE updatedAt < 1812345690000');
         ['bot_party_candidate_insert', 'bot_party_candidate_metadata', 'bot_party_candidate_ordinary', 'bot_party_candidate_stats'].forEach((name) => assert(
             db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = ?").get(name), `migrations must leave ${name}`));
         ['bot_party_candidate_payload', 'bot_party_candidate_identity'].forEach((name) => assert(
@@ -320,8 +330,6 @@ if (process.argv[2] === '--bootstrap') {
         assert.strictEqual(Number(db.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 15').get().count), 1, 'v15 must be recorded exactly once');
         assert.strictEqual(Number(db.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 17').get().count), 1, 'v17 must be recorded exactly once');
         assert.strictEqual(Number(db.prepare('SELECT COUNT(*) count FROM schema_migrations WHERE version = 25').get().count), 1, 'v25 must be recorded exactly once');
-        const marketIndex = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'bot_life_state_market_reconcile'").get();
-        assert(marketIndex?.sql?.includes('phase, updatedAt, characterId'), 'market rotation must have a keyset-compatible lifecycle index');
         assert.deepStrictEqual(legacyRows(db), expectedRows, 'migration must preserve every pre-v10 bot lifecycle value');
         assert.deepStrictEqual(
             db.prepare('SELECT simulationRevision FROM bot_life_state ORDER BY characterId').all().map((row) => Number(row.simulationRevision)),
@@ -600,7 +608,6 @@ if (process.argv[2] === '--bootstrap') {
         ALTER TABLE bot_life_state ADD COLUMN simulationLeaseId TEXT;
         ALTER TABLE bot_life_state ADD COLUMN simulationLeaseUntil INTEGER NOT NULL DEFAULT 0;
         CREATE INDEX bot_life_state_simulation_owner_lease ON bot_life_state(simulationOwner, simulationLeaseUntil, phase, activity);
-        DROP INDEX bot_life_state_party_owner_filter;
         CREATE INDEX bot_life_state_party_owner_filter ON bot_life_state(simulationOwner, phase, partyId, activity, spotId, updatedAt);
         DROP TRIGGER bot_party_candidate_metadata;
         ${metadataSql.replace('level,phase,', 'level,phase,simulationOwner,')

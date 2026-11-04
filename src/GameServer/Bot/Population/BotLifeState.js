@@ -2194,8 +2194,7 @@ const BotLifeState = {
             locX: row.locX,
             locY: row.locY,
             locZ: row.locZ
-        })).then(() => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp))
-            .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp))
+        })).then(() => Database.updateCharacterProgress(row.characterId, row))
             .then(() => {
                 const snapshot = normalize(row);
                 const current = cache.get(characterId);
@@ -2991,6 +2990,8 @@ const BotLifeState = {
                 }
                 const row = rowFromState(profiledState);
                 const characterId = row.characterId;
+                const vitals = () => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp, nativeWriteOptions);
+                const progress = (washKarma = false) => Database.updateCharacterProgress(row.characterId, row, washKarma, nativeWriteOptions);
                 return save(row, nativeWriteOptions)
                     .then(() => {
                         const deathRecord = profiledState.stats?.deathExperience;
@@ -3005,21 +3006,19 @@ const BotLifeState = {
                                 penaltyAppliedAt: deathRecord.penaltyAppliedAt,
                                 karma: profiledState.stats?.karma,
                                 sp: row.sp
-                            }, nativeWriteOptions);
+                            }, nativeWriteOptions).then(vitals);
                         }
+                        // A restore wrote the restored EXP; the row's would undo it.
                         if (result.patch?.restoreExpPercent !== undefined) {
                             return Database.restoreCharacterDeathExperience(row.characterId, result.patch.restoreExpPercent, timestamp, nativeWriteOptions)
-                                .then((restored) => restored || Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp, nativeWriteOptions));
+                                .then((restored) => (restored ? vitals() : progress()));
                         }
                         if (result.patch?.clearDeathExperience) {
                             return Database.clearCharacterDeathExperience(row.characterId, result.patch.clearDeathExperience, timestamp, nativeWriteOptions)
-                                .then(() => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp, nativeWriteOptions));
+                                .then(() => progress());
                         }
-                        return Number(state.stats?.karma || 0) > 0
-                            ? Database.updateColdCharacterExperience(row.characterId, row.level, row.exp, row.sp, nativeWriteOptions)
-                            : Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp, nativeWriteOptions);
+                        return progress(Number(state.stats?.karma || 0) > 0);
                     })
-                    .then(() => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp, nativeWriteOptions))
                     .then(() => result.soulCrystals?.length
                         ? Database.applyColdSoulCrystalResults(row.characterId, result.soulCrystals, nativeWriteOptions || {}) : null)
                     .then(() => syncInventorySummary(row.characterId, profiledState.inventory, newDeath ? 'resolve_death' : 'resolve', nativeWriteOptions))
@@ -3827,8 +3826,7 @@ const BotLifeState = {
             locX: row.locX,
             locY: row.locY,
             locZ: row.locZ
-        }).then(() => row)).then((row) => Database.updateCharacterExperience(row.characterId, row.level, row.exp, row.sp).then(() => row))
-            .then((row) => Database.updateCharacterVitals(row.characterId, row.hp, row.maxHp, row.mp, row.maxMp).then(() => row))
+        }).then(() => row)).then((row) => Database.updateCharacterProgress(row.characterId, row).then(() => row))
             .then((row) => paidTrip().then(() => row))
             .then((row) => {
                 const snapshot = normalize(row);

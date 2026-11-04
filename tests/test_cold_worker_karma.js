@@ -111,9 +111,13 @@ function wait(ms) {
     const [washed] = await Database.execute(['SELECT karma, pk, exp FROM characters WHERE id = ?', [characterId]]);
     assert.strictEqual(washed.karma, 44, 'legacy cold resolve must also persist karma washing');
     assert.strictEqual(washed.pk, 1);
-    await Database.updateColdCharacterExperience(characterId, resolved.level, washed.exp, resolved.sp);
+    await Database.updateCharacterProgress(characterId, { level: resolved.level, exp: washed.exp, sp: resolved.sp, ...resolved.vitals }, true);
     const [repeated] = await Database.execute(['SELECT karma FROM characters WHERE id = ?', [characterId]]);
     assert.strictEqual(repeated.karma, 44, 'unchanged physical XP must not wash karma twice');
+    await Database.updateCharacterProgress(characterId, { level: resolved.level, exp: washed.exp, sp: resolved.sp,
+        ...resolved.vitals, hp: 1 }, true);
+    const [rested] = await Database.execute(['SELECT karma, hp, exp FROM characters WHERE id = ?', [characterId]]);
+    assert.deepStrictEqual([rested.karma, rested.hp, rested.exp], [44, 1, washed.exp], 'a vitals change alone is written and washes no karma');
     console.log('Cold worker karma route and startup recovery integration checks passed');
 })().catch((error) => {
     console.error(error);
