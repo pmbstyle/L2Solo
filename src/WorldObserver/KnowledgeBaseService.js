@@ -95,8 +95,9 @@ function itemDirectorySummary(items) {
     }));
 }
 
-function itemSummary(item, iconFor) {
+function itemSummary(item, iconFor, sources) {
     const template = item?.template || {};
+    const drops = sources.count(item.id, 'drops'), spoils = sources.count(item.id, 'spoils');
     const icon = iconFor?.(null, item.id, item.name, item.kind) || null;
     return {
         id: Number(item.id),
@@ -106,9 +107,9 @@ function itemSummary(item, iconFor) {
         grade: itemGrade(item),
         price: Math.max(0, Number(template?.template?.price || 0)),
         iconUrl: icon?.url || null,
-        hasDropSources: Boolean(item?.sources?.drops?.length),
-        hasSpoilSources: Boolean(item?.sources?.spoils?.length),
-        sourceCount: Number(item?.sources?.drops?.length || 0) + Number(item?.sources?.spoils?.length || 0)
+        hasDropSources: drops > 0,
+        hasSpoilSources: spoils > 0,
+        sourceCount: drops + spoils
     };
 }
 
@@ -261,32 +262,75 @@ function spawnMapPoints(spawn) {
     }];
 }
 
+// Which mobs drop or spoil an item, kept compact: of the generated source records the readers use only the mob id
+// (in catalogue order, which the stable level/name sort of itemDetail keeps for ties) and the count. Owns the
+// layout (one Int32Array of mob ids per item and kind); callers read through count and mobIds only.
+const SOURCE_KINDS = Object.freeze(['drops', 'spoils']);
+function compactItemSources(items) {
+    const byKind = Object.fromEntries(SOURCE_KINDS.map((kind) => [kind, new Map()]));
+    for (const item of items) {
+        for (const kind of SOURCE_KINDS) {
+            const records = item.sources?.[kind] || [];
+            if (!records.length) continue;
+            const ids = new Int32Array(records.length);
+            records.forEach((record, index) => {
+                const mobId = Number(record.mobId);
+                if (!Number.isSafeInteger(mobId) || mobId < 0 || mobId > 0x7fffffff) {
+                    throw new Error(`Knowledge base item ${item.id} has a non-int32 ${kind} mob id ${record.mobId}`);
+                }
+                ids[index] = mobId;
+            });
+            byKind[kind].set(Number(item.id), ids);
+        }
+        // The full records (names, levels, per-rate chances) are ~10 MB that no reader uses.
+        item.sources = null;
+    }
+    const idsOf = (itemId, kind) => byKind[kind]?.get(Number(itemId));
+    return Object.freeze({
+        count: (itemId, kind) => idsOf(itemId, kind)?.length || 0,
+        mobIds: (itemId, kind) => Array.from(idsOf(itemId, kind) || [])
+    });
+}
+
+// One parsed copy per data directory, shared by every service over it (the game's item and drop dialogs and the
+// world observer). Input: the directory's generated JSON, which does not change while the server runs.
+const loadedByDir = new Map();
+function loadData(dataDir) {
+    const key = path.resolve(dataDir);
+    if (loadedByDir.has(key)) return loadedByDir.get(key);
+    const read = (name) => JSON.parse(fs.readFileSync(path.join(key, `${name}.json`), 'utf8'));
+    const items = read('items');
+    const mobs = read('mobs');
+    const skills = read('skills');
+    const spawns = read('spawns');
+    const manifest = read('manifest');
+    const data = Object.freeze({
+        items,
+        mobs,
+        skills,
+        spawns,
+        manifest,
+        itemSources: compactItemSources(items),
+        itemById: new Map(items.map((item) => [Number(item.id), item])),
+        mobById: new Map(mobs.map((mob) => [Number(mob.id), mob])),
+        skillById: new Map(skills.map((skill) => [String(skill.key || `${skill.id}:${skill.level}`), skill])),
+        spawnById: new Map(spawns.map((spawn) => [String(spawn.id), spawn]))
+    });
+    loadedByDir.set(key, data);
+    return data;
+}
+
 function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null,
     catalogueFactory = createExportedCatalogue, nativeCatalogue = null, nativeSkills = null } = {}) {
     if (!dataDir) throw new Error('Knowledge base dataDir is required');
     if (!progressionRates) throw new Error('Knowledge base progressionRates is required');
     let cache = null;
 
+    // The shared data plus this service's catalogue (its native relations); iconFor applies per request.
     function load() {
         if (cache) return cache;
-        const read = (name) => JSON.parse(fs.readFileSync(path.join(dataDir, `${name}.json`), 'utf8'));
-        const items = read('items');
-        const mobs = read('mobs');
-        const skills = read('skills');
-        const spawns = read('spawns');
-        const manifest = read('manifest');
-        cache = {
-            items,
-            mobs,
-            skills,
-            spawns,
-            manifest,
-            itemById: new Map(items.map((item) => [Number(item.id), item])),
-            mobById: new Map(mobs.map((mob) => [Number(mob.id), mob])),
-            skillById: new Map(skills.map((skill) => [String(skill.key || `${skill.id}:${skill.level}`), skill])),
-            spawnById: new Map(spawns.map((spawn) => [String(spawn.id), spawn]))
-        };
-        cache.catalogue = catalogueFactory(cache, { nativeCatalogue });
+        const data = loadData(dataDir);
+        cache = { ...data, catalogue: catalogueFactory(data, { nativeCatalogue }) };
         return cache;
     }
 
@@ -353,7 +397,7 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null,
             .sort((left, right) => (exactFirst && needle
                 ? Number(normalize(right.name) === needle || String(right.id) === needle) - Number(normalize(left.name) === needle || String(left.id) === needle)
                 : 0) || left.name.localeCompare(right.name) || Number(left.id) - Number(right.id))
-            .map((item) => itemSummary(item, iconFor));
+            .map((item) => itemSummary(item, iconFor, data.itemSources));
         return { ...pageResult(results, page, limit), rateProfile: rateProfile() };
     }
 
@@ -450,7 +494,7 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null,
         }).filter(Boolean).sort((left, right) => Number(left.level) - Number(right.level) || left.name.localeCompare(right.name));
 
         return {
-            ...itemSummary(item, iconFor),
+            ...itemSummary(item, iconFor, data.itemSources),
             template: {
                 mass: Number(template?.template?.mass || 0),
                 price: Number(template?.template?.price || 0),
@@ -469,8 +513,9 @@ function createKnowledgeBaseService({ dataDir, progressionRates, iconFor = null,
     }
 
     function itemOverview(id) {
-        const item = load().catalogue.item(id);
-        return item ? itemSummary(item, iconFor) : null;
+        const data = load();
+        const item = data.catalogue.item(id);
+        return item ? itemSummary(item, iconFor, data.itemSources) : null;
     }
 
     function listSkills({ q = '', page = 1, limit = DEFAULT_PAGE_SIZE } = {}) {

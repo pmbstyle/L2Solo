@@ -83,6 +83,7 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
 | History rows | `historyOutboxUnsafe` → `HistoryStore.APPLY` | owner |
 | Stopped-DB integrity check | `DatabaseRestore.quickCheckDatabase` | shared |
 | Generated data | each `scripts/generate-*`; KB checked by `check:knowledge-base` | no manifest (PER-14) |
+| Generated KB in memory | `KnowledgeBaseService` `loadData`: one parsed copy per data directory, shared by `NativeKnowledgeBase` (NPC dialogs, bot dialogue) and the observer's pages (icons per request); item sources kept as mob ids and counts only (`compactItemSources`, ~26 MB heap) | owner |
 
 ## Debt
 

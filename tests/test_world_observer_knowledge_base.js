@@ -109,14 +109,54 @@ try {
     assert.strictEqual(blackWolf.chancePercent, 1.0393); // Lisvus 317: 10393 / 1e6
     const exported = service.catalogue();
     assert.equal(exported.item(1), ownedExport.itemById.get(1));
-    assert.equal(exported.sourcesForItem(1, { kind: 'drop' }), ownedExport.itemById.get(1).sources.drops);
+    assert.equal(nativeSkillService.catalogue().item(1), exported.item(1),
+        'services over one data directory share one parsed copy (the game dialogs and the observer)');
+    const rawItems = JSON.parse(fs.readFileSync(path.join(dataDir, 'items.json'), 'utf8'));
+    const rawShortSword = rawItems.find((item) => item.id === 1);
+    const mobIdRecords = (records) => records.map(({ mobId }) => ({ mobId }));
+    assert.deepEqual(exported.sourcesForItem(1, { kind: 'drop' }), mobIdRecords(rawShortSword.sources.drops));
     assert.equal(exported.sourcesForItem(1), null);
     assert.equal(exported.potentialSpawnData().definitions, ownedExport.spawns);
     assert.deepEqual(service.relations('item', 1, { spots: [] }), { kind: 'item', id: 1, origin: 'exported',
         recipes: { available: false, origin: null, revision: null, producedBy: null, usedBy: null },
         sources: { available: true, origin: 'exported', revision: ownedExport.manifest?.generatedAt || null,
-            drops: ownedExport.itemById.get(1).sources.drops, spoils: ownedExport.itemById.get(1).sources.spoils },
+            drops: mobIdRecords(rawShortSword.sources.drops), spoils: mobIdRecords(rawShortSword.sources.spoils) },
         selectedSources: { available: false, origin: null, revision: null, rows: null } });
+
+    // The service keeps only the mob id and count of each generated source record: the item answers must be the
+    // ones the full records give. Every item's counts and source mobs; full detail for a sample and the largest.
+    const summaryKeys = Object.keys(service.listNpcs({ limit: 1 }).items[0]);
+    const round8 = (value) => Number(Number(value).toFixed(8));
+    const expectedSourceRows = (itemId, kind, records) => records
+        .map(({ mobId }) => service.npcDetail(mobId)).filter(Boolean)
+        .map((npc) => {
+            const rolls = npc[kind].flatMap((group) => group.items).filter((roll) => roll.itemId === itemId);
+            const miss = rolls.reduce((left, roll) => left * (1 - Math.max(0, Math.min(100, roll.chancePercent)) / 100), 1);
+            return { ...Object.fromEntries(summaryKeys.map((key) => [key, npc[key]])),
+                chancePercent: round8((1 - miss) * 100),
+                expectedAmountPerKill: round8(rolls.reduce((sum, roll) => sum + roll.expectedAmountPerKill, 0)) };
+        })
+        .sort((left, right) => left.level - right.level || left.name.localeCompare(right.name));
+    let detailedItems = 0;
+    rawItems.forEach((raw, index) => {
+        const { drops, spoils } = raw.sources;
+        const overview = service.itemOverview(raw.id);
+        assert.deepStrictEqual([overview.hasDropSources, overview.hasSpoilSources, overview.sourceCount],
+            [drops.length > 0, spoils.length > 0, drops.length + spoils.length], `item ${raw.id} source counts`);
+        for (const kind of ['drops', 'spoils']) {
+            assert.deepStrictEqual(exported.sourcesForItem(raw.id, { kind }), mobIdRecords(raw.sources[kind]),
+                `item ${raw.id} ${kind} mobs in catalogue order`);
+        }
+        if (index % 25 && drops.length + spoils.length < 300) return;
+        const detail = service.itemDetail(raw.id);
+        for (const kind of ['drops', 'spoils']) {
+            assert.deepStrictEqual(detail.sources[kind], expectedSourceRows(raw.id, kind, raw.sources[kind]),
+                `item ${raw.id} ${kind} detail`);
+        }
+        detailedItems++;
+    });
+    assert.ok(detailedItems > 200, 'a sample of item details, incl. the largest source lists');
+    service.listItems({ q: 'sword', limit: 100 }).items.forEach((row) => assert.deepStrictEqual(row, service.itemOverview(row.id)));
     assert.equal(exported.recipesForProduct(1), null, 'missing recipe data is unavailable, not an empty recipe list');
     const fixtureRecipes = [{ recipeId: 7, productId: 1 }], fixtureSpots = [{ spot: { id: 'selected' }, count: 0 }];
     const nativeFixture = create({ origin: 'native-fixture',

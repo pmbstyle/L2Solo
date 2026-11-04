@@ -55,7 +55,8 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
   (setImmediate yield), tickers: `NpcAggro` 1 s (also drives wander), `EffectTicker`, `PopulationService` (6
   intervals), per-session `moveTimer`.
 - **DataCache:** frozen datapack; two lookup styles (WOR-14).
-- **WorldObserver:** dev HTTP UI (3.2k lines), reads World, DB, bots; own town list.
+- **WorldObserver:** dev HTTP UI (3.2k lines), reads World, DB, bots; own town list. Its knowledge pages read the
+  game's one KB copy (`KnowledgeBaseService`, persistence.md).
 
 ## Data flow
 

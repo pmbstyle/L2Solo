@@ -1,8 +1,9 @@
 'use strict';
 
-// Wrap the reference service's already-owned Maps and relation lists. No
-// native require/init or extra payload copy: optional native queries are
-// supplied explicitly by a caller that already owns the loaded native data.
+// Wrap the reference service's already-owned Maps, relation lists and item
+// source reader. No native require/init or extra payload copy: optional native
+// queries are supplied explicitly by a caller that already owns the loaded
+// native data.
 const { create } = require('./GameDataCatalogue');
 const EMPTY = Object.freeze([]);
 
@@ -26,9 +27,10 @@ function createExportedCatalogue(data, { nativeCatalogue = null } = {}) {
         npc: id => data.mobById.get(id) || null,
         spawn: id => data.spawnById.get(id) || null,
         spawnsForNpc: id => (data.mobById.get(id)?.spawnIds || []).map(key => data.spawnById.get(String(key))).filter(Boolean),
+        // Exported source records carry the mob id only (the knowledge base keeps no other source field).
         sourcesForItem: (id, { kind } = {}) => {
-            const sources = data.itemById.get(id)?.sources;
-            return sources?.[kind] || EMPTY;
+            const mobIds = data.itemSources.mobIds(id, kind);
+            return mobIds.length ? mobIds.map(mobId => ({ mobId })) : EMPTY;
         },
         recipe: id => hasRecipes() ? nativeCatalogue.recipe(id) : null,
         recipesForProduct: id => hasRecipes() ? nativeCatalogue.recipesForProduct(id) : null,
