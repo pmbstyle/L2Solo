@@ -2,6 +2,7 @@
 const DiagnosticConfig = require('./GameServer/Bot/Population/PopulationConfig');
 
 const path = require('path');
+const FailureLog = require('./FailureLog');
 const { Worker } = require('worker_threads');
 
 const DEFAULT_INTERVAL_MS = 5000;
@@ -126,7 +127,7 @@ function spawn() {
         if (activeRequest?.id === Number(message.id)) activeRequest = null;
         entry.resolve(result);
         for (const listener of resultListeners) {
-            try { listener(result); } catch (_) { /* a listener must not break the checkpoint loop */ }
+            try { listener(result); } catch (error) { FailureLog.note('db.checkpoint_listener', error); } // the loop goes on
         }
     });
     instance.on('error', (error) => {

@@ -10,6 +10,7 @@ const AttackRange    = invoke('GameServer/Actor/AttackRange');
 const ManorData      = invoke('GameServer/Manor/ManorData');
 const NpcSkills      = invoke('GameServer/Npc/NpcSkills');
 const NpcCombatChoice = invoke('GameServer/Npc/NpcCombatChoice');
+const FailureLog     = require('../../FailureLog');
 const EffectStats    = invoke('GameServer/Effects/EffectStats');
 const EffectStore    = invoke('GameServer/Effects/EffectStore');
 const EffectTicker   = invoke('GameServer/Effects/EffectTicker');
@@ -477,7 +478,9 @@ class Npc extends NpcModel {
                                     if (generation !== pathGeneration || !this.state.fetchCombats()) return;
                                     pathFailed();
                                 })
-                                .catch(() => {
+                                .catch((error) => {
+                                    // A throw in the handlers above: count it, retry later.
+                                    FailureLog.note('npc.chase_path', error);
                                     nextPathRetryAt = Date.now() + NPC_PATH_RETRY_INTERVAL_MS;
                                 })
                                 .finally(() => {
