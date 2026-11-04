@@ -145,5 +145,29 @@ assert.strictEqual(FirstPrice.firstPrice(1804, { spots: [] }).price, NpcSellRule
     }
 }
 
+// The kept first price has no clock: it stands as long as the game data it
+// reads stands, and moves when that data does (the spot list arrives, the
+// spot table loads again).
+{
+    FirstPrice.resetCache();
+    const realNow = Date.now, huntIncome = Efficiency.huntIncome;
+    let priced = 0;
+    assert.notStrictEqual(FirstPrice.cachedFirstPrice(itemId, { spots: [] }), first.price, 'fixture: no spots, no drop price');
+    assert.strictEqual(FirstPrice.cachedFirstPrice(itemId, { spots }), first.price, 'the spots arrive: the drop price at once');
+    Efficiency.huntIncome = (...args) => { priced++; return huntIncome(...args); };
+    Date.now = () => realNow() + 48 * 3600 * 1000;
+    try {
+        assert.strictEqual(FirstPrice.cachedFirstPrice(itemId, { spots }), first.price);
+        assert.strictEqual(priced, 0, 'two days later on the same data: not priced again');
+        Table.useFile(path.join(__dirname, 'fixtures', 'spot_table.json'));
+        assert.strictEqual(FirstPrice.cachedFirstPrice(itemId, { spots }), first.price);
+        assert.strictEqual(priced, 1, 'the spot table loads again: priced again');
+    } finally {
+        Date.now = realNow;
+        Efficiency.huntIncome = huntIncome;
+        FirstPrice.resetCache();
+    }
+}
+
 Table.useFile();
 console.log('First price of drops, crafted items, crystals, shots and the rest, inside the NPC walls, passed');
