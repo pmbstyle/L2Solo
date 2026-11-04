@@ -74,7 +74,11 @@ const groups = {
     Progression: [['Level cap', ['contentCap']]]
 };
 
+// [Perf] is the developer's measurement tool (scripts/perf.js), not a player setting.
+const hiddenSections = new Set(['Perf']);
+
 function fieldVisible(section, key) {
+    if (hiddenSections.has(section)) return false;
     return section === 'Database' ? key === 'path' : !hiddenFields[section]?.has(key);
 }
 function fieldLayout(section, key) {
