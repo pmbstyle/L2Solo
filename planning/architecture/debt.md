@@ -71,6 +71,14 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    forever, logged); the checkpoint worker restarts every 250 ms forever, dD only (`DatabaseCheckpointCoordinator`
    ~61), the clan planning worker retries after 5 s (`ClanPlanningCoordinator` ~73). One restart rule for all.
 
+17. **Arrow stock tails (PR #207).** A companion's supply errand for its player (`BotSupplyErrand`, board purchase)
+   meets the companion's own arrow stock at the commit guard (`checkArrowPurchaseUnsafe` checks any `bot_` buyer), so
+   it cannot buy arrows for the player beyond its own room, and a non-archer none. A worker field take refused by
+   the war-ticket guard at meeting accept (`war_supply_*`) still throws out of `BotAfkMarketService.executePlan`
+   (only `arrow_stock_limit` is read as a deferred trade). The arrow gate on the main purchase is
+   `BotLifeState.marketPurchaseBlocker`, but hot buys (`TradeService`, `AfkTradeService.buyFromShop`) reach only the
+   commit guard; their refusal is the writer's error, not a counted reason.
+
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets[6]`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so
 a rich bot there has a null activity (T178): a test expecting "one leaf" from such a scene breaks the same way. Known
