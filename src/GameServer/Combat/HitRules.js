@@ -187,6 +187,9 @@ function weaponVulnStat(weaponKind = '', trait = '', skill = false) {
     if (skill && (trait === 'dagger' || weaponKind === 'Weapon.Knife')) return 'daggerWpnVuln';
     return null;
 }
+// Every weakness of the target targetModifier can read (targetMul's stats).
+const DAMAGE_VULN_STATS = Object.freeze(['bowWpnVuln', 'bluntWpnVuln', 'daggerWpnVuln',
+    ...[...ELEMENTAL_DAMAGE_TRAITS].map(elementVulnStat)]);
 function raceStat(race) {
     return PHYSICAL_RACE_STATS[String(race || '').toLowerCase()] || null;
 }
@@ -282,5 +285,5 @@ function dotOf(semantic, level, power) {
 }
 
 module.exports = { melee, physicalSkill, magicSkill, expectedMelee, expectedPhysicalSkill, expectedMagicSkill, physicalSkillCritRate, blowLandChance, blowLands, resistStats, traitResistModifier,
-    effectLandChance, ELEMENTAL_DAMAGE_TRAITS, elementVulnStat, weaponVulnStat, raceStat, targetModifier, skillPower,
+    effectLandChance, ELEMENTAL_DAMAGE_TRAITS, DAMAGE_VULN_STATS, elementVulnStat, weaponVulnStat, raceStat, targetModifier, skillPower,
     rollsMagicLevel, magicLevelChance, magicLevelLands, lethalStrike, absorbedHp, reflectedDamage, dotOf };

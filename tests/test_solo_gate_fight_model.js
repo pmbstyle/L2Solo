@@ -117,4 +117,26 @@ assert.strictEqual(Pull.packFactor(3, 1), 3);
     assert.strictEqual(Matchup.soloSurvival([archer], { ...mob, engaged: true }).survivalRatio, noOpening.survivalRatio, 'no opening mid-fight');
 }
 
+// 7. The monster's damage the gate expects is the same on each step's new
+// profile with the same numbers, and moves with any number it reads: the
+// bot's evasion, P.Def, a weakness while its effect lasts, the mob's pack.
+{
+    const fresh = (m, profile, at = 0) => Mob.actionMix(m, { profile: { ...profile } }, at).perSecond;
+    const blunt = { ...mob, weaponKind: 'Weapon.Blunt' };
+    const weak = { ...even, effects: [{ key: 'curse', expiresAt: 1000, stats: { bluntWpnVuln: 1.5 } }] };
+    const cases = [[mob, even], [mob, { ...even, evasion: even.evasion + 10 }], [mob, { ...even, pDef: 600 }],
+        [blunt, even], [blunt, weak], [Pull.pullView(mob, 3), even]];
+    const answers = cases.map(([m, profile]) => Mob.incomingPerSecond(m, { ...profile }));
+    cases.forEach(([m, profile], index) => {
+        assert.strictEqual(Mob.incomingPerSecond(m, { ...profile }), answers[index], `case ${index}: the same on a new profile object`);
+        assert.strictEqual(answers[index], fresh(m, profile), `case ${index}: the answer of a fresh mix`);
+    });
+    assert.strictEqual(answers[3], answers[0], 'a blunt weapon without a weakness to it: the same hits');
+    assert.strictEqual(new Set(answers).size, answers.length - 1, 'every other read number moves the answer');
+    const held = { ...weak };
+    assert(Mob.incomingPerSecond(blunt, held, 0) > Mob.incomingPerSecond(blunt, held, 2000), 'the weakness ends with its effect');
+    assert.strictEqual(Mob.incomingPerSecond(blunt, held, 2000), fresh(blunt, weak, 2000));
+    assert.strictEqual(Mob.incomingPerSecond(blunt, held, 2000), answers[3], 'after it: the unweakened answer');
+}
+
 console.log('Solo gate fight model passed');

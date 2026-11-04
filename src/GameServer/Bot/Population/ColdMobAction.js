@@ -244,11 +244,69 @@ function actionMix(mob, target, at = 0, fight = freshFight(mob)) {
 // The monster's expected damage per second on a profile (actionMix), its
 // holder kept per profile so the hits' stat sources are built once
 // (ColdCombatProfile.hitSources): the gate weighs a profile against many mobs.
+// The answers are kept by what actionMix reads (mobPart, defenderPart): a
+// step's and a search's profile arrays are new objects with the same numbers.
+// At most PER_SECOND_ANSWERS, the oldest dropped.
 const holders = new WeakMap();
+const PER_SECOND_ANSWERS = 4096;
+const perSecondAnswers = new Map();
 function incomingPerSecond(mob, profile, at = 0) {
     let holder = holders.get(profile);
     if (!holder) holders.set(profile, holder = { profile });
-    return actionMix(mob, holder, at).perSecond;
+    const mobKey = mobPart(mob), defenderKey = mobKey === null ? null : defenderPart(holder, at);
+    if (defenderKey === null) return actionMix(mob, holder, at).perSecond;
+    const key = `${mobKey}|${defenderKey}`;
+    let answer = perSecondAnswers.get(key);
+    const known = answer !== undefined, counted = Diagnostics.active();
+    if (!known) {
+        answer = actionMix(mob, holder, at).perSecond;
+        perSecondAnswers.set(key, answer);
+        if (perSecondAnswers.size > PER_SECOND_ANSWERS) {
+            perSecondAnswers.delete(perSecondAnswers.keys().next().value);
+            if (counted) Diagnostics.count('cold_mob', 'per_second', 'evicted');
+        }
+    }
+    if (counted) Diagnostics.count('cold_mob', 'per_second', known ? 'hit' : 'built');
+    return answer;
+}
+// One read value in a key: a number (-0 apart), a string quoted, a boolean,
+// null or undefined; null (no key) for anything else.
+function keyPart(value) {
+    if (typeof value === 'number') return Object.is(value, -0) ? '-0' : String(value);
+    if (typeof value === 'string') return JSON.stringify(value);
+    if (value === null || value === undefined || typeof value === 'boolean') return String(value);
+    return null;
+}
+function keyOf(values) {
+    let key = '';
+    for (const value of values) {
+        const part = keyPart(value);
+        if (part === null) return null;
+        key += `${part},`;
+    }
+    return key;
+}
+// The monster's side of actionMix: its fresh fight's inputs (the skills of
+// its id, its AI type and reach), its attacker view, weapon, attack and cast
+// speed, accuracy, level and pack.
+function mobPart(mob) {
+    const view = Profile.attackerView(mob);
+    return keyOf([Number(mob?.selfId) || 0, mob.aiType, mob.atkRadius, mob.weaponKind, mob.atkSpd, mob.castSpd, mob.accur,
+        mob.level, Pull.packOf(mob), view.pAtk, view.pAtkRnd, view.mAtk, view.critRate, view.critDamageMul, view.critDamageAdd,
+        view.mCritRate, view.str]);
+}
+// The fighter's side: its defender view, evasion, M.Def and level, and each
+// weakness a hit can read (HitRules.DAMAGE_VULN_STATS) over its stat sources
+// at the hit's time; kept on the holder while those sources stand.
+function defenderPart(holder, at) {
+    const profile = holder.profile;
+    const sources = Profile.hitSources(holder, at);
+    if (holder.mixSources === holder.statSources) return holder.mixKey;
+    const view = Profile.defenderView(profile, at, holder);
+    holder.mixKey = keyOf([view.pDef, view.mDef, view.shieldPDef, view.shieldRate, view.dex, profile.evasion, profile.mDef,
+        profile.level, ...HitRules.DAMAGE_VULN_STATS.map(stat => Profile.statMultiplier(profile, stat, at, sources))]);
+    holder.mixSources = holder.statSources;
+    return holder.mixKey;
 }
 
 // A monster that fights in melee only: a short weapon reach and no ranged

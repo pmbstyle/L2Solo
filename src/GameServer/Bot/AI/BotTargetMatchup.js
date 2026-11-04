@@ -12,7 +12,7 @@ const Diagnostics = require('../Economy/EconomyDiagnostics');
 
 const MIN_EFFICIENCY = 0.15;
 // The weakness stats a hit's damage reads (HitRules.targetModifier).
-const DAMAGE_VULN_STATS = ['bowWpnVuln', 'bluntWpnVuln', 'daggerWpnVuln', ...[...HitRules.ELEMENTAL_DAMAGE_TRAITS].map(e => `${e}Vuln`)];
+const { DAMAGE_VULN_STATS } = HitRules;
 const DAMAGE_TYPES = new Set([Rules.DAMAGE, Rules.DAMAGE_EFFECT, Rules.DRAIN,
     Rules.DEATH_LINK, Rules.FATAL, Rules.BLOW]);
 const number = (value, fallback = 1) => Number.isFinite(Number(value)) ? Number(value) : fallback;
