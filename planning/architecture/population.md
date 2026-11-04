@@ -82,6 +82,7 @@ thread: our rule, so a far bot does not re-decide on every event ([bot-ai.md](bo
 | Cold trip time | `ColdTrip` |
 | A throwing step or command: hold off, quarantine | `ColdSimulationKernel.fault`, one tracker per bot (per party run): backoff 1 s/5 s/30 s/2 min, quarantine 10 min after 5 faults in a row (`BotFaultHold`, the hot AI state's rule too: `BotAI` `stateFaulted`), first occurrence logged with the stack, `botFaults=` on the health line (limits.md); a command's DB error is no bot fault (`commandDbErrors`) |
 | Failure counts (status line, perf report, e2e players) | `ColdSimulationCoordinator.failureSnapshot` (one record: worker faults by stage, backoff/quarantine, protocol faults, `commandDbErrors`, `swallowed` = main's and the worker's `FailureLog` counts by site, the worker's from its heartbeat `failures.swallowed`); afterCommit errors in `ColdCommitQueue` `failures`. A post-commit step (`step`/`timedStep`) that throws is skipped: a refusal code is logged with the bot, any other throw counts as `cold.postcommit.<step>`; a throw outside a step as `cold.after_commit` (and `afterCommitErrors` for the perf report and e2e); a row merge throw as `cold.owner_row_merge`; `BotRoute` search throws as `route.*` (a bot that never travels is no longer read as "no spot"); a command request the worker built wrong as `cold.request_dropped:<why>` (still no ack) |
+| A wait for an event | no step until a writer changes the row: `lifecycleKind` `event_driven` (meeting, craft shop, held clan wait: the change that ends it steps it at once, `ColdSimulationKernel.upsert`), or the wait's known end as its due (raid supply); the wait is lived, not hunted (`stats.eventWait` set by `prepareResolve` from `result.eventWait`, read by `ColdSoloWindow.livedClock`, solo and party) |
 | Boot recovery of a stale hot row | `BotLifeState.staleHotRowFromRecord` (the record wins, PER-7) |
 | Transition cost (cold ↔ hot time per bot) | `PopulationMetrics.recordActivation`/`recordCooldown` (`transitions` in the summary) |
 
@@ -146,6 +147,13 @@ thread: our rule, so a far bot does not re-decide on every event ([bot-ai.md](bo
   c3fdb8c3) rebuilt every held build and ran the worker at 0.93 on the same world. Growth while seeding: about +6
   points of worker and +2.5 of main per 100 bots; worker heap ~0.08 MB per bot. 5-10k bots still need the cold
   simulation split over several workers (per-thread table copies, TBL-7).
+
+- **POP-24 step polls standing in for events** (limits.md "Wait polls"). Missing events: a board fill for a shopping
+  bot (buyer wakes cover hunting/party_wait only), so the raid supply purchase and the town command retry; the
+  planner's sale or spot choice for survival unload and a refused ground (their inputs crowd/risk have no versions,
+  decision-links plan step 3); main's refusal of a posted occupation plan (the review completion could wake it; one
+  step either way, latency only); a member's arrival or join moving its leader's due (party assembling), whose
+  timeout counts poll attempts and must become time-based first.
 
 ## Open questions
 

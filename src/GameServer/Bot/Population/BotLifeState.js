@@ -2708,6 +2708,10 @@ const BotLifeState = {
         // traveling is a leftover; the route (BotRoute) would skip the bot forever.
         if (patchedStats.travel && state.activity !== 'traveling'
             && (result.patch?.activity || state.activity) !== 'traveling') patchedStats.travel = null;
+        // A hold that waits for an event names it (result.eventWait); any other
+        // round ends the wait (ColdSoloWindow.livedClock reads it).
+        if (result.eventWait) patchedStats.eventWait = result.eventWait;
+        else delete patchedStats.eventWait;
         const stats = {
             ...patchedStats,
             // From the progressed state: a new death has already washed karma there.
@@ -3899,9 +3903,10 @@ const BotLifeState = {
                 || (state.activity === 'crafting' && state.stats?.craftShop)) {
                 return;
             }
-            // An arrived trader waits on the native meeting event; its old
-            // resolve deadline is not a task waiting in the worker's heap.
-            if (state.stats?.tradeMeeting
+            // An arrived trader waits on the native meeting event, a clan
+            // waiter on its party (ClanPartyDuty.held); their old resolve
+            // deadline is not a task waiting in the worker's heap.
+            if ((state.stats?.tradeMeeting || state.stats?.eventWait)
                 && require('./ColdSimulationKernel').lifecycleKind(state) === 'event_driven') return;
             const nextResolveAt = Number(state.timing?.nextResolveAt || 0);
             if (nextResolveAt > timestamp && !hasStaleRateModelPlan(state)) return;

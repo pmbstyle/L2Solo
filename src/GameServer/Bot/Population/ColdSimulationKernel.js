@@ -2,7 +2,7 @@ const { isDeepStrictEqual } = require('node:util');
 const PveEncounter = require('./ColdPveEncounter');
 const ColdEconomyPlan = require('./ColdEconomyPlan');
 const ColdSoloWindow = require('./ColdSoloWindow');
-const { ownClock, stepElapsedMs } = ColdSoloWindow;
+const { ownClock, livedClock, stepElapsedMs } = ColdSoloWindow;
 const DiagnosticConfig = require('./PopulationConfig');
 const CharacterStateSources = require('../../World/CharacterStateSources');
 const SparseNumericStorage = require('./SparseNumericStorage');
@@ -407,7 +407,8 @@ function lifecycleKind(state = {}, facts = NO_FACTS) {
                 : PurchaseFunding.spendable(state, PurchaseFunding.tripEscrow(plan, facts.buyOrderEscrow(state.characterId)),
                     { itemId: plan.target?.selfId })) >= price)) return 'command';
     }
-    if ((ClanPartyDuty ||= require('./ClanPartyDuty')).waiting(state)) return 'resolver';
+    // A published clan wait steps again on its row's next change (ClanPartyDuty.held).
+    if ((ClanPartyDuty ||= require('./ClanPartyDuty')).waiting(state)) return ClanPartyDuty.held(state) ? 'event_driven' : 'resolver';
     if (!SIMPLE_ACTIVITIES.has(String(state.activity || ''))) return 'command';
     // craftReturn is a saved destination, not an outstanding crafting action.
     // Actual crafting is routed by activity, shop/station and plan readiness.
@@ -1006,6 +1007,11 @@ class ColdSimulationKernel {
         // plan sent and its hash, the card it holds and, for a near bot, the
         // last raise applied and the route rows of its last decision
         // (ColdSimulationWorker nearEvents, publish).
+        // A held event wait (lifecycleKind 'event_driven', stats.eventWait) ends
+        // at the write that ends it: that step runs now, not at the hold's due.
+        if (current?.state.stats?.eventWait && lifecycleKind(current.state, this) === 'event_driven') {
+            nextDue = Math.min(nextDue ?? this.dueAt(state), this.now());
+        }
         this.states.set(characterId, { route: null, ...current, state, version }, ownOutput);
         this.occupancy.update(state);
         this.decisionEvents?.ownerChanged(characterId, previousRecord, current);
@@ -2010,7 +2016,8 @@ class ColdSimulationKernel {
             }
 
             if (!this.resolveParty) throw new Error('party_resolver_unavailable');
-            const lastResolvedAt = Math.min(...run.members.map((member) => ownClock(member) || startedAt - 60000));
+            // A member that held for an event (livedClock) lived its wait.
+            const lastResolvedAt = Math.min(...run.members.map((member) => livedClock(member, startedAt) || startedAt - 60000));
             const resolveOptions = {
                 episodeId: stepProposalId(run.party.leaderId, run.startedAt),
                 assessRelationship: this.interactionMemory.assess.bind(this.interactionMemory),

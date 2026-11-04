@@ -2585,9 +2585,17 @@ const BackgroundResolver = {
             if (travelResult) return travelResult;
         }
 
-        if (require('./RaidSupplyPolicy').held(state, timestamp) && state.activity !== 'dead' && Number(state.vitals?.hp) > 0) {
-            return { patch: { activity: ['shopping', 'merchant'].includes(state.activity) ? 'shopping' : 'party_wait' }, events: [],
-                materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 30000,
+        const raidSupply = require('./RaidSupplyPolicy').held(state, timestamp);
+        if (raidSupply && state.activity !== 'dead' && Number(state.vitals?.hp) > 0) {
+            // In town the command retries its purchase (kept, limits.md "Wait
+            // polls"). Parked, the bot waits for main's preparation: its party,
+            // its cancel or an errand trip each write the row with their own
+            // due; the hold ends by itself when the reservation expires.
+            const shopping = ['shopping', 'merchant'].includes(state.activity);
+            return { patch: { activity: shopping ? 'shopping' : 'party_wait' }, events: [],
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                nextResolveAt: shopping ? timestamp + 30000 : Number(raidSupply.expiresAt),
+                ...(shopping ? {} : { eventWait: 'raid_supply_preparing' }),
                 debug: { reason: 'raid_supply_preparing', fights: 0, wins: 0 } };
         }
 
