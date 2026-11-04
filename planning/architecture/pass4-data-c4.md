@@ -48,3 +48,5 @@ read (`tmp/vendor/l2j-lisvus`, `l2j-mobius`) are not on this laptop; nothing was
 Not checked: pets data, weapon SA and soul crystals (python generators), aggro ranges, per-mob NPC skills, quest drop
 rates (in quest code), manor, multisell, buff durations of ~47 skills (Lisvus counts ticks; the `C4SkillRules`
 durations were not compared), Mobius at the pinned revision for most rows.
+
+**Decided 2026-11-04 (maintainer): the current spawns stay as they are** (D-6/D-7 are not changed; recorded for reference only).
