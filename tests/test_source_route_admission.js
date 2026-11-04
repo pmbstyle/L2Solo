@@ -171,4 +171,36 @@ try {
     assert.deepEqual(answers(beside, Planner.sourceGround([field])), first, 'a pet beside the bot and none at no MP read the same');
     assert.deepEqual(answers(warlock, Planner.sourceGround([field])), first, 'and a pet the bot can call now');
 }
+// The readers of one moment share the bot's matchup profiles, yet a state
+// changed in place after a read (a restock plan adds a virtual purchase to its
+// bag) reads its change: each read equals a fresh build (store: false).
+{
+    const escort = { ...spot, id: '99_95', npcEntries: [{ selfId: 239, level: 49, count: 4 }], npcSelfIds: [239] };
+    // Its own id: its kit is first built here, at this timestamp.
+    const bag = { ...state, characterId: 990009, vitals: { ...state.vitals }, stats: { ...state.stats }, inventory: { ...state.inventory } };
+    const read = () => {
+        const profiles = Matchup.stateProfiles(bag, { timestamp, mode: 'solo' });
+        assert.deepEqual(profiles, Matchup.stateProfiles(bag, { timestamp, mode: 'solo', store: false }), 'the read equals a fresh build');
+        return Routes.isSpotAllowedForState(escort, bag, { mode: 'solo', timestamp });
+    };
+    assert.equal(read(), false, 'no shots: the spot is refused');
+    bag.inventory[1464] = { selfId: 1464, amount: 5000 };
+    assert.equal(read(), true, 'shots added to the same bag: the next read takes the spot');
+    delete bag.inventory[1464];
+    assert.equal(read(), false, 'and refuses it when they are gone');
+    bag.inventory[1464] = { selfId: 1464, amount: 5000 };
+    assert.equal(read(), true, 'fixture: shots back');
+    const weapon = bag.inventory[161];
+    bag.inventory[weapon.selfId] = { ...weapon, equipped: false, equippedCount: 0,
+        instances: weapon.instances.map(item => ({ ...item, equipped: false })) };
+    read();
+    bag.inventory[weapon.selfId] = weapon;
+    assert.equal(read(), true, 'the weapon worn again');
+    bag.stats.coldCombat = { ...bag.stats.coldCombat, summon: { active: true, npcId: 12077, skillId: 1111, hp: 5000,
+        maxHp: 5000, pAtk: 3000, pDef: 2000, accur: 200, critical: 10, atkSpd: 400, expiresAt: timestamp + 600000 } };
+    assert.equal(Matchup.stateProfiles(bag, { timestamp, mode: 'solo' }).length, 2, 'a summon written in place stands beside the bot');
+    read();
+    bag.vitals.hp = 0;
+    assert.deepEqual(Matchup.stateProfiles(bag, { timestamp, mode: 'solo' }), [], 'killed in place: no profiles');
+}
 console.log('test_source_route_admission: ok');

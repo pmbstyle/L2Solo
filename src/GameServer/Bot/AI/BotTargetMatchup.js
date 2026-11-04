@@ -8,6 +8,7 @@ const PetTankRule = invoke('GameServer/Bot/AI/PetTankRule');
 const Pull = invoke('GameServer/Bot/AI/BotPullEstimate');
 const HitRules = invoke('GameServer/Combat/HitRules');
 const CombatantView = invoke('GameServer/Combat/CombatantView');
+const Diagnostics = require('../Economy/EconomyDiagnostics');
 
 const MIN_EFFICIENCY = 0.15;
 // The weakness stats a hit's damage reads (HitRules.targetModifier).
@@ -120,12 +121,13 @@ function servitorProfile(profile, state = {}, timestamp = Date.now()) {
 }
 
 // options.shot: the shot supply the caller's fight already holds
-// (BackgroundResolver: its fighter's), instead of a second read of the stock.
+// (BackgroundResolver: its fighter's), instead of a second read of the stock;
+// options.servitor: likewise its servitorProfile (stateProfiles).
 function coldProfiles(profile, state = {}, timestamp = Date.now(), options = {}) {
     const profiles = [{ ...profile, skills: (profile.skills || []).map(skill => ({
         ...skill, semantic: skill.semantic || Rules.resolveCached(skill)
     })) }];
-    const servitor = servitorProfile(profile, state, timestamp);
+    const servitor = 'servitor' in options ? options.servitor : servitorProfile(profile, state, timestamp);
     if (servitor) profiles.push(servitor);
     // The shot the fight loads from the bot's stock (ColdCombatProfile.shotSupply).
     if (state.inventory) profiles[0].shot = 'shot' in options ? options.shot : coldCombatProfile().shotSupply(state, timestamp);
@@ -699,24 +701,72 @@ function stateProfiles(state, options = {}) {
         .filter(member => member.vitals?.hp !== 0 && member.activity !== 'dead');
     // Do not invent the other members of an incomplete party projection.
     if (options.mode === 'party' && states.length === 1) return [];
+    const [member] = states;
+    if (states.length === 1 && typeof member.fetchHp !== 'function' && options.buffed !== true && options.store !== false
+        && Number(member.characterId) > 0 && Number.isFinite(options.timestamp)) return heldSolo(member, options.timestamp);
+    return states.flatMap(member => typeof member.fetchHp === 'function' ? actorProfiles([member])
+        : coldProfiles({ ...matchupKit(member, options), survivalKnown: survivalKnown(member) }, member, options.timestamp));
+}
+function matchupKit(member, options) {
     const Cold = coldCombatProfile();
-    const profiles = states.flatMap(member => typeof member.fetchHp === 'function'
-        ? actorProfiles([member])
-        : coldProfiles({ ...Cold.withBuildSite('matchup', () => (options.buffed === true ? Cold.fightProfile : Cold.profileFor)(
-            member, options.timestamp, { store: options.store })),
-            // Partial route projections must not turn an invented default
-            // class/build into evidence that the real character is too weak.
-            survivalKnown: !!member.stats?.coldCombat
-                || Number.isFinite(Number(member.stats?.classId ?? member.classId))
-        }, member, options.timestamp));
+    return Cold.withBuildSite('matchup', () => (options.buffed === true ? Cold.fightProfile : Cold.profileFor)(
+        member, options.timestamp, { store: options.store }));
+}
+// Partial route projections must not turn an invented default class/build
+// into evidence that the real character is too weak.
+const survivalKnown = member => !!member.stats?.coldCombat || Number.isFinite(Number(member.stats?.classId ?? member.classId));
+
+// The solo kit arrays the latest readers built (stateProfiles), newest last.
+// A step's readers of one bot at one timestamp (income route, source routes,
+// spot search, spot gates) share one array and so its verdicts (npcVerdicts,
+// spotMatchups) instead of a new array each. An array serves only while every
+// input it was built from reads the same now: the stored kit profile
+// (ColdCombatProfile.profileFor: the same object while the kit hash holds),
+// survivalKnown, the timestamp, the shot supply and the servitor (both read
+// anew and compared value by value). A state changed in place after a read (a
+// restock plan's virtual purchase, a wound, a pet) or a copy that differs
+// reads its own. Kept by count, not by bot: at most HELD_PROFILES, the oldest
+// dropped with its verdicts (a spot search leaves ~100 KB of them on its
+// array: kept per bot they would grow with the population).
+const HELD_PROFILES = 8;
+const heldProfiles = [];
+function heldSolo(state, timestamp) {
+    const kit = matchupKit(state, { timestamp }), known = survivalKnown(state);
+    const shot = state.inventory ? coldCombatProfile().shotSupply(state, timestamp) : undefined;
+    // The stored profile stands for the spread one coldProfiles reads: the
+    // servitor reads no survivalKnown.
+    const servitor = servitorProfile(kit, state, timestamp);
+    for (let at = heldProfiles.length - 1; at >= 0; at--) {
+        const held = heldProfiles[at];
+        if (held.kit !== kit || held.timestamp !== timestamp || held.known !== known
+            || !sameData(held.shot, shot) || !sameData(held.servitor, servitor)) continue;
+        if (Diagnostics.active()) Diagnostics.count('matchup_profiles', 'held', 'hit');
+        return held.profiles;
+    }
+    const profiles = coldProfiles({ ...kit, survivalKnown: known }, state, timestamp, { shot, servitor });
+    heldProfiles.push({ kit, timestamp, known, shot, servitor, profiles });
+    if (heldProfiles.length > HELD_PROFILES) heldProfiles.shift();
+    if (Diagnostics.active()) Diagnostics.count('matchup_profiles', 'held', 'built');
     return profiles;
+}
+// Plain data equal value by value, keys in the same order.
+function sameData(left, right) {
+    if (Object.is(left, right)) return true;
+    if (!left || !right || typeof left !== 'object' || typeof right !== 'object'
+        || Array.isArray(left) !== Array.isArray(right)) return false;
+    const keys = Object.keys(left), others = Object.keys(right);
+    if (keys.length !== others.length) return false;
+    for (let at = 0; at < keys.length; at++) {
+        if (keys[at] !== others[at] || !sameData(left[keys[at]], right[keys[at]])) return false;
+    }
+    return true;
 }
 
 // A spot search checks hundreds of spots with one profile array, and each mob
 // species appears on several of them. The verdict depends only on the
 // profiles, the species and the safety options: it is computed when asked and
 // kept only for that array (a WeakMap keyed by it, options.matchupProfiles of
-// one search), so it dies with the search.
+// one search, or a held one: stateProfiles), so it dies with the array.
 const npcVerdicts = new WeakMap();
 
 // Verdicts of one profile array: safety options key -> species id -> verdict.

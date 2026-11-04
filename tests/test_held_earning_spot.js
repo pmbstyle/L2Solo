@@ -196,6 +196,19 @@ function verify() {
         assert.equal(Economy.incomeMoved(state), false, 'and the hold stands again');
         assert.equal(Economy.forState(state, deps(62)).plan, built.plan, 'nothing was rebuilt');
     }
+    // A moved hold inside the found answer's window: a far hunter's builds read
+    // that answer, so a second build of the same moment searches nothing and
+    // serves what the first one left.
+    {
+        const { state } = settled(990211);
+        const turned = sampled(state, 'poor');
+        assert.equal(Economy.basics(turned, deps(31)).hunt.spotId, 'poor', 'fixture: a read moved the hold');
+        const hunting = { ...turned, phase: 'cold', activity: 'hunting' };
+        const first = Economy.forState(hunting, deps(40));
+        const again = count(() => Economy.forState(hunting, deps(41)));
+        assert.equal(again.searches, 0, 'the second build searches nothing');
+        assert.equal(again.result.plan, first.plan, 'and serves the first one\'s build');
+    }
 
     // A search that found nothing is kept until the window ends, and past it
     // a route found is a move. Raid camps are no earning ground.

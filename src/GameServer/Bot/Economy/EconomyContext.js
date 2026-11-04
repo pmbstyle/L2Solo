@@ -1057,11 +1057,7 @@ function holdRead(state, options) {
     if (!hold) { holdStats[party ? 'partyMissed' : 'none'] += 1; return null; }
     const timestamp = Number(options.timestamp) || Date.now();
     const answer = hold.moved || hold;
-    if (!holdDue(answer, state, timestamp, options.goalRevision)) {
-        if (party && !answer.route) { holdStats.partyMissed += 1; return null; }
-        holdStats[party ? 'partyKept' : hold.moved ? 'moved' : answer.route ? 'kept' : 'unrouted'] += 1;
-        return { route: answer.route, searched: !!hold.moved, hold: answer };
-    }
+    if (!holdDue(answer, state, timestamp, options.goalRevision)) return heldAnswer(hold, party);
     if (party) { holdStats.partyMissed += 1; return null; }
     const afterGoal = timestamp - answer.at < HOLD_MS;
     if (afterGoal) holdStats.goal += 1;
@@ -1076,14 +1072,31 @@ function holdRead(state, options) {
     holdStats.moved += 1;
     return { route: found, searched: true, hold: next };
 }
+// A read of the hold's answer inside its window: no search.
+function heldAnswer(hold, party) {
+    const answer = hold.moved || hold;
+    if (party && !answer.route) { holdStats.partyMissed += 1; return null; }
+    holdStats[party ? 'partyKept' : hold.moved ? 'moved' : answer.route ? 'kept' : 'unrouted'] += 1;
+    return { route: answer.route, searched: !!hold.moved, hold: answer };
+}
 // A build's read of the hold (heldVerdictFor): holdRead reached only through
 // basics would leave every bot off the card path (and a build that serves the
 // held plan) without its window or its goal change. Runs after the verdict: a
-// foundation it rebuilds searches anyway. True when the search moved the hold.
-function holdCheck(state, deps, held, verdict) {
+// foundation it rebuilds searches anyway. True when the verdict must be judged
+// again: the search moved the hold, or it stood moved and the verdict is the
+// step's (handed: judged maybe before the move). A hold an earlier search
+// moved, its answer inside its own window, reads that answer and no search
+// (holdRead, when it reads this hold), so it needs no prices; a verdict judged
+// here already saw it.
+function holdCheck(state, deps, held, verdict, judged) {
     const hold = held?.plan.hold, timestamp = Number(deps.timestamp || Date.now());
     if (!hold || verdictMask(state, deps.eventVerdict, verdict) & Sections.COMPUTED.foundation
         || !holdDue(hold, state, timestamp, deps.goalRevision)) return false;
+    if (hold.moved && !holdDue(hold.moved, state, timestamp, deps.goalRevision)
+        && cache.get(`character:${Number(state.characterId) || 0}`)?.plan?.hold === hold) {
+        heldAnswer(hold, deps.party === true);
+        return !judged;
+    }
     const { price } = pricing(state, personaOf(state, deps), deps.board, timestamp, deps);
     holdRead(state, { ...deps, timestamp, required: GearProgression.assess(state).required, price });
     return !!hold.moved;
@@ -1308,7 +1321,7 @@ function heldVerdictFor(state, deps, look = false) {
     const judge = () => heldBuildVerdict(state, held?.plan.eventProof, deps,
         { ...heldOptionsOf(held), facts: reads.facts, collect: true });
     let verdict = handed || judge();
-    if (holdCheck(state, deps, held, verdict)) { verdict = judge(); handed = null; }
+    if (holdCheck(state, deps, held, verdict, !handed)) { verdict = judge(); handed = null; }
     return { held, reads, verdict, handed };
 }
 // The sections a build rebuilds (forState's mask): the raised bits, the
