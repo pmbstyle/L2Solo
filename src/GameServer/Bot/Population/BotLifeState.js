@@ -605,19 +605,6 @@ function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
     };
 }
 
-function compactResolveDebug(debug = {}) {
-    if (Config.developerDiagnostics !== true) return null;
-    return {
-        route: debug.route || null,
-        partyId: debug.partyId || null,
-        targetNpcId: Number(debug.targetNpcId || 0) || null,
-        wins: Number(debug.wins || 0),
-        fights: Number(debug.fights || 0),
-        defeated: Array.isArray(debug.defeatedNpcIds) ? debug.defeatedNpcIds.slice(-8).map(Number) : [],
-        at: now()
-    };
-}
-
 // save()'s own parse of the stats text it bound, kept for the normalize(row)
 // that follows when the row's statsJson (the RETURNING text) is that same text:
 // parsing it again gives an equal object. Taken once (no two states share it).
@@ -630,8 +617,9 @@ function normalize(row) {
     const stats = SpotRiskPolicy.marksInSteps(SavedStats.merge(body, row.mindJson), Date.now());
     delete stats.marketTrades;
     delete stats.priceBeliefs;
-    // The retired combat profile hold record (no reader).
+    // The retired combat profile hold record and last round's debug copy (no reader).
     if (stats.coldCombat) delete stats.coldCombat.profileHold;
+    delete stats.lastResolveDebug;
     const inventory = normalizeInventoryStackability(parseJson(row.inventorySummary, {}));
 
     return ClanMembershipPolicy.reconcileState({
@@ -942,8 +930,8 @@ function save(row, options = {}) {
             nameGeneratorVersion, appearanceVersion, mindJson
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(characterId) DO UPDATE SET
-            accountName = excluded.accountName,
-            characterName = excluded.characterName,
+            -- The indexed columns the row does not already hold (Database.saveBotLifeState).
+            ${Database.HELD_ROW_SET}
             nameGeneratorVersion = excluded.nameGeneratorVersion,
             appearanceVersion = excluded.appearanceVersion,
             level = excluded.level,
@@ -954,9 +942,7 @@ function save(row, options = {}) {
             currentRegion = excluded.currentRegion,
             spotId = excluded.spotId,
             activity = excluded.activity,
-            phase = excluded.phase,
             activityStartedAt = excluded.activityStartedAt,
-            nextResolveAt = excluded.nextResolveAt,
             lastResolvedAt = excluded.lastResolvedAt,
             lastHotAt = excluded.lastHotAt,
             locX = excluded.locX,
@@ -968,7 +954,6 @@ function save(row, options = {}) {
             maxMp = excluded.maxMp,
             targetLevelBand = excluded.targetLevelBand,
             deathCount = excluded.deathCount,
-            partyId = excluded.partyId,
             inventorySummary = excluded.inventorySummary,
             -- Native takeover/release/restore owns player membership. A late
             -- actor snapshot cannot revive or remove that ownership marker.
@@ -2723,7 +2708,6 @@ const BotLifeState = {
             spEarned: Number(state.stats?.spEarned || 0) + Number(result.materialize?.sp || 0),
             adenaEarned: Number(state.stats?.adenaEarned || 0) + Number(result.materialize?.adena || 0) + materializedAdenaItems,
             route: result.debug?.route || state.stats?.route || null,
-            lastResolveDebug: compactResolveDebug(result.debug),
             ...(targetCombat ? { targetCombat } : {})
         };
         const inventory = { ...(state.inventory || {}) };
@@ -2876,7 +2860,6 @@ const BotLifeState = {
                 // that snapshot, which still contains the previous tick's data.
                 ...(targetCombat ? { targetCombat } : {}),
                 ...(nextActivity === 'dead' ? { partyRequest: null } : {}),
-                lastResolveDebug: compactResolveDebug(result.debug),
                 equipment: equipmentSummaryFromInventory(equippedInventory)
             },
             inventory: equippedInventory,

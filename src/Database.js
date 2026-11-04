@@ -2900,6 +2900,36 @@ const COLD_SIMULATION_PATCH_COLUMNS = new Set([
     'targetLevelBand', 'deathCount', 'partyId', 'inventorySummary', 'statsJson', 'mindJson', 'updatedAt'
 ]);
 
+// SQLite rewrites the entry of every index whose column an UPDATE sets,
+// changed or not: a WAL page per index per row. The whole-row writers (the
+// BotLifeState save, the cold commit) name every column, so these indexed ones,
+// still on most writes, are set only when the row does not already hold the
+// value (accountName, characterName, phase+partyId, phase+nextResolveAt). The
+// other indexed columns move on almost every write: updatedAt and the revision
+// in the party candidate projection, statsJson behind the party request ones.
+const HELD_ROW_COLUMNS = Object.freeze(['accountName', 'characterName', 'phase', 'partyId', 'nextResolveAt']);
+
+// Which of the held columns named in `values` the row already holds, compared
+// by SQL `IS` (the column's affinity, as the write would store the value) in
+// the writer's job. None for a missing row.
+function heldRowColumnsUnsafe(characterId, values) {
+    const named = HELD_ROW_COLUMNS.filter((column) => values[column] !== undefined);
+    if (!named.length) return [];
+    const row = one(`SELECT ${named.map((column) => `${column} IS ? AS ${column}`).join(', ')}
+        FROM bot_life_state WHERE characterId = ?`, [...named.map((column) => values[column]), characterId]);
+    return row ? named.filter((column) => Number(row[column]) === 1) : [];
+}
+
+// The BotLifeState save's upsert names the held columns with this marker in
+// its DO UPDATE list; the save puts back the ones the row does not hold. Their
+// places in the save's native ROW (BotLifeState.save).
+const HELD_ROW_SET = '/* held row columns */';
+const SAVE_ROW_HELD_PARAMS = Object.freeze({ accountName: 1, characterName: 2, phase: 11, nextResolveAt: 13, partyId: 25 });
+function heldRowSetSql(sql, held = []) {
+    return sql.replace(HELD_ROW_SET, HELD_ROW_COLUMNS.filter((column) => !held.includes(column))
+        .map((column) => `${column} = excluded.${column},`).join(' '));
+}
+
 // bot_life_state columns (migration 68): the stored bag summary, the learned
 // skills rows and the henna rows of the bot. Only the database moves them.
 const STATE_REVISION_COLUMNS = Object.freeze(['inventoryRevision', 'skillsRevision', 'hennaRevision']);
@@ -3269,10 +3299,11 @@ const COLD_COMMIT_RETURNING = `characterId, simulationRevision, inventoryRevisio
     json_extract(statsJson, '$.economyCommit') AS economyCommit`;
 
 // A cold commit's one write: the UPDATE of the proposal's columns guarded by
-// the far phase and the revision the step started from, with no row read
-// before it. The bag revision moves in this statement: RETURNING does not see
-// what an AFTER trigger writes, and a statement that moved it leaves the
-// trigger nothing to do. Null when the guard refused.
+// the far phase and the revision the step started from; only the held columns
+// are read before it (HELD_ROW_COLUMNS). The bag revision moves in this
+// statement: RETURNING does not see what an AFTER trigger writes, and a
+// statement that moved it leaves the trigger nothing to do. Null when the
+// guard refused.
 // A refused commit writes nothing, the mind included: main moved the row, the
 // refusal hands that row back (coldSimulationRow), the worker rebases on it and
 // builds again (one build per refusal, stale_revision 0.3% of acks). Every mind
@@ -3282,7 +3313,10 @@ const COLD_COMMIT_RETURNING = `characterId, simulationRevision, inventoryRevisio
 // and dropped a raise main made meanwhile.
 function writeColdCommitUnsafe(fields, patch) {
     const { characterId, expectedRevision, timestamp } = fields;
-    const entries = Object.entries({ ...patch, updatedAt: patch.updatedAt ?? timestamp });
+    // The proposal names every column; the held ones the row holds stay out.
+    const held = heldRowColumnsUnsafe(characterId, patch);
+    const entries = Object.entries({ ...patch, updatedAt: patch.updatedAt ?? timestamp })
+        .filter(([column]) => !held.includes(column));
     const assignments = coldPatchAssignments(entries);
     const params = entries.map(([, value]) => value);
     if (patch.inventorySummary !== undefined) {
@@ -4515,8 +4549,9 @@ function publishClanMembership(result) {
 
 
 const Database = {
-    // BotLifeState.save builds its upsert with it.
+    // BotLifeState.save builds its upsert with them.
     MOVE_FAR_REVISION,
+    HELD_ROW_SET,
 
     ...PlayerWarehouse.create({ one, all, write, inTransaction, withCharacterFlush }),
     openClanRaidPartyAtImpact(request) {
@@ -4644,6 +4679,11 @@ const Database = {
                         params[27] = JSON.stringify(stats);
                     }
                 }
+                // The held columns the row already holds stay out of the SET
+                // (HELD_ROW_COLUMNS); another caller's statement sets them all.
+                const held = characterId === undefined ? [] : heldRowColumnsUnsafe(characterId, Object.fromEntries(
+                    Object.entries(SAVE_ROW_HELD_PARAMS).map(([column, index]) => [column, params[index]])));
+                statement = [heldRowSetSql(statement[0], held), ...statement.slice(1)];
                 phase = 'write';
                 const row = one(`${statement[0]} RETURNING ${returning}`, params);
                 phase = 'advance';

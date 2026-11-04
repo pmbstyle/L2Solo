@@ -260,6 +260,45 @@ function state(characterId, revision, activity = 'hunting') {
     assert.deepStrictEqual(metadata(newerMetadataSave), ['MetadataNewest', 5, 4],
         'subsequent migrations must still advance and survive later saves');
 
+    // A save or a commit names an indexed column only when its value moves:
+    // SQLite rewrites the index entry of every column an UPDATE sets (a WAL
+    // page each). The row still reads back as the state that was saved.
+    const heldColumns = ['accountName', 'characterName', 'phase', 'partyId', 'nextResolveAt'];
+    await Database.execute(['CREATE TEMP TABLE held_column_writes (name TEXT)', []]);
+    for (const column of heldColumns) {
+        await Database.execute([`CREATE TEMP TRIGGER held_column_${column} AFTER UPDATE OF ${column} ON bot_life_state
+            BEGIN INSERT INTO held_column_writes VALUES ('${column}'); END`, []]);
+    }
+    const heldWrites = async () => {
+        const rows = await Database.execute(['SELECT name FROM held_column_writes ORDER BY name', []]);
+        await Database.execute(['DELETE FROM held_column_writes', []]);
+        return rows.map((row) => row.name);
+    };
+    const readRow = async () => (await Database.execute([`SELECT accountName, characterName, phase, partyId, nextResolveAt,
+        hp, statsJson FROM bot_life_state WHERE characterId = ?`, [metadataId]]))[0];
+    const vitalsSave = await BotLifeState.upsertState({
+        ...newerMetadataSave, vitals: { ...newerMetadataSave.vitals, hp: 77 }, stats: { ...newerMetadataSave.stats, restUntil: 13000 }
+    }, 'held_columns_still');
+    assert.deepStrictEqual(await heldWrites(), [], 'a save that moves no indexed column sets none');
+    const stillRow = await readRow();
+    assert.deepStrictEqual([stillRow.accountName, stillRow.characterName, stillRow.phase, stillRow.partyId,
+        Number(stillRow.nextResolveAt), Number(stillRow.hp), JSON.parse(stillRow.statsJson).restUntil],
+    ['owner_probe', 'MetadataNewest', 'cold', null, Number(newerMetadataSave.timing.nextResolveAt), 77, 13000],
+    'the row reads back as the saved state');
+    const timingSave = await BotLifeState.upsertState({
+        ...vitalsSave, timing: { ...vitalsSave.timing, nextResolveAt: 14000 }
+    }, 'held_columns_due');
+    assert.deepStrictEqual(await heldWrites(), ['nextResolveAt'], 'a save sets the indexed column that moved');
+    assert.strictEqual(Number((await readRow()).nextResolveAt), 14000);
+    const heldCommit = await commitOn(timingSave.simulation.revision, {
+        ...timingSave, timing: { ...timingSave.timing, nextResolveAt: 15000, lastResolvedAt: 14000 }, updatedAt: 14000
+    }, 14000);
+    assert.strictEqual(heldCommit.ok, true, heldCommit.reason);
+    assert.deepStrictEqual(await heldWrites(), ['nextResolveAt'], 'a commit leaves the phase and party it does not move');
+    const committedHeld = await readRow();
+    assert.deepStrictEqual([committedHeld.phase, committedHeld.partyId, Number(committedHeld.nextResolveAt), Number(committedHeld.hp)],
+        ['cold', null, 15000, 77], 'the commit reads back as proposed');
+
     // Developer diagnostics: an item read counts under its call-site tag.
     await Database.fetchItems(characterId, 'owner_probe');
     assert.strictEqual(invoke('GameServer/Bot/Economy/EconomyDiagnostics').metrics().counts['item_list:call:owner_probe'], 1);

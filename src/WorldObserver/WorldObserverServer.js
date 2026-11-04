@@ -1917,7 +1917,6 @@ async function persistedPlayerDetail(characterId) {
 function compactColdDetail(state, leaderState = null) {
     const stats = state.stats || {};
     const classId = normalizedClassId(stats.classId ?? stats.classProgressionClassId);
-    const lastResolve = stats.lastResolveDebug || null;
     const compact = compactStateBot(state, new Set(), leaderState);
     return {
         ...compact,
@@ -1959,13 +1958,6 @@ function compactColdDetail(state, leaderState = null) {
             adenaEarned: Number(stats.adenaEarned || 0),
             partyGearReceived: Number(stats.partyGearReceived || 0)
         },
-        lastResolve: (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) && lastResolve ? {
-            route: lastResolve.route || null,
-            targetNpcId: Number(lastResolve.targetNpcId || 0) || null,
-            fights: Number(lastResolve.fights || 0),
-            wins: Number(lastResolve.wins || 0),
-            at: lastResolve.at || null
-        } : null,
         plan: compactColdPlan(state),
         travel: stats.travel || null,
         goal: stats.acquisitionGoal || stats.goal || null,

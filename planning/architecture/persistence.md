@@ -56,7 +56,9 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
   writes `characters` in the same transaction (only the moved columns); a resolve copies level, EXP, SP and vitals
   in one guarded UPDATE (`updateCharacterProgress`, nothing written when nothing moved). Items ↔ summary synced both ways. Every index on the row costs a WAL
   page per save (SQLite rewrites the entry of every column the UPDATE sets, changed or not), so no index holds
-  `updatedAt` except the covering `bot_life_state_party_candidate_projection` (read with INDEXED BY);
+  `updatedAt` except the covering `bot_life_state_party_candidate_projection` (read with INDEXED BY), and the
+  whole-row writers (`BotLifeState.save`, the cold commit) set the indexed `accountName`, `characterName`, `phase`,
+  `partyId`, `nextResolveAt` only when the row does not hold the value (`HELD_ROW_COLUMNS`, read in the same job);
   `drop-unused-bot-life-indexes` dropped four that nothing read (42 MB/min, 14 % of the WAL).
 - **History:** outbox in the same transaction → worker moves → main deletes; `readHistory` flushes first.
 - **Schema evolution — five mechanisms:** re-run `sqlite.sql`; numbered then named migrations; `maintenance_tasks`

@@ -289,11 +289,12 @@ try {
                     objectiveKey: 'farm:probe:99'
                 }
             }, inventory: {}
-        }, 'persistence_probe').then(() => {
-            const save = statements.find((entry) => entry.sql.includes('ON CONFLICT(characterId) DO UPDATE'));
-            assert(save.sql.includes('nextResolveAt = excluded.nextResolveAt'), 'persisted cold resolve timing must advance after every tick');
-            assert(save.sql.includes('lastResolvedAt = excluded.lastResolvedAt'), 'persisted cold resolve history must survive an upsert');
-            assert(save.sql.includes('inventorySummary = excluded.inventorySummary'), 'background drop rewards must persist after an upsert');
+        }, 'persistence_probe').then(() => originalExecute([
+            'SELECT nextResolveAt, lastResolvedAt, inventorySummary FROM bot_life_state WHERE characterId = 42', []
+        ])).then(([saved]) => {
+            assert.strictEqual(Number(saved.nextResolveAt), 2, 'persisted cold resolve timing must advance after every tick');
+            assert.strictEqual(Number(saved.lastResolvedAt), 1, 'persisted cold resolve history must survive an upsert');
+            assert.strictEqual(saved.inventorySummary, '{}', 'background drop rewards must persist after an upsert');
         }).then(() => BotLifeState.migrateLegacyClassProgression(1).then((migrated) => {
                 assert.strictEqual(migrated.length, 1, 'legacy cold bots without progression markers must be migrated');
                 const classUpdate = classUpdates.at(-1);
@@ -397,7 +398,6 @@ try {
                             expEarned: 1000,
                             spEarned: 100,
                             adenaEarned: 500,
-                            lastResolveDebug: { targetNpcId: null },
                             targetCombat: { targets: {}, populationTargets: {} }
                         },
                         inventory: {}
@@ -436,7 +436,7 @@ try {
                 }).then(() => {
                     const partySave = statements.filter((entry) => entry.sql.includes('ON CONFLICT(characterId) DO UPDATE')).at(-1);
                     const persistedStats = JSON.parse(partySave.params[27]);
-                    assert.strictEqual(persistedStats.lastResolveDebug.partyId, 'bgp_probe', 'a party result must not be replaced by its previous solo debug snapshot');
+                    assert.strictEqual(persistedStats.lastResolveDebug, undefined, 'the last round\'s debug copy is not persisted');
                     assert.strictEqual(persistedStats.targetCombat.populationTargets['93'].targetKills, 1, 'a party result must retain its shared target telemetry');
                     assert.strictEqual(persistedStats.targetCombat.targets, undefined, 'obsolete per-bot target maps must not be persisted');
                     const deadProbe = {
