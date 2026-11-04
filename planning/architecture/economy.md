@@ -14,8 +14,9 @@ MerchantStoreConfigs}`, `src/Market*`, `src/Economy*`, `Population/ColdEconomy{P
 
 - **Wish engine:** `EconomyContext.forState` (2.1k lines, the most rewritten file) + `WishNetwork`/`WishProviders`/
   `DecisionSections`/`Reaction` (T189). Runs in the worker. Main reads it via `ColdEconomyDecision.economyFor` (far
-  bot → card, near bot → held decision). Main builds only `EconomyContext.basics` (ShotStock, HealingPotionStock,
-  ScrollStock, NpcRestockPlan).
+  bot → card, near bot → held decision). Main builds only `EconomyContext.basics`; the restocks (ShotStock,
+  HealingPotionStock, ScrollStock, NpcRestockPlan, `ColdMarketService` funding) and the sale read the plan's kit
+  instead (`keptKit` / `keptTargets`, see the owners).
 - **Worker market plan:** `ColdEconomyPlan.prepare/decide` → `{take, sell, withdraw, buyAds, shot, bidLimits}` (byte
   capped), from `MarketListingPolicy`, `BuyAdPolicy`, `MarketTownPolicy`, `ReadyTradeChoice`. Main runs it with
   `BotAfkMarketService.executePlan`.
@@ -94,6 +95,7 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
 | Trip cost | `OfferOrder.tripCost` → `EconomicTrip` |
 | Spendable money | `PurchaseFunding` |
 | Survival kit price and reserve (shots, potions, escape scroll) | `EconomyContext.kitReader`: the reserve holds the kit at the NPC table's price (`StaticMerchantPricing.botNpcListPrice`, the cheapest town NPC; the bot's estimate where no town NPC sells it). A restock counter (`PurchaseFunding.survivalTranche` → `spendable`) counts that share beside the queue's money; a town's tax above it comes from that money, and when that falls short the kit at the quote is still paid from the wallet (never refused) |
+| A bot's kit targets on main (what a restock buys, what the sale keeps), hot and cold | `EconomyContext.keptKit` (purchase) / `keptTargets` (sale: `ItemDisposition.keptStock`, read by the listing, `MarketPricing`'s sale count and `ShotMarketIndex`'s own supply), one reader (`publishedKit`) of the worker plan's `stats.stockTargets` over the live bag, priced by `kitReader`; the basics when the row is missing, names another potion or shot, or shots that cannot restock rose since the build, and for a purchase when a scroll is missing and the row has no scroll hours (`[9]` -1: the worker solves no route for the row). The fallback reasons are counted for diagnostics only (`kit:basics:<reason>`, while `EconomyDiagnostics` is active); a row without the restock slots serves the sale only. Our choice, not C4 |
 | Whether a road pays for a funded required kit piece or survival stock (visit, trip, tier) | `EconomicValuation.roadCarried` (read by `visitPays`/`tripPays`; step marked `required` by `WishNetwork`) |
 | What to sell / list / NPC-sell | `MarketListingPolicy.evaluate` / `npcSaleForActor` |
 | Bid lines | `BuyAdPolicy.linesFor/bidFor` |

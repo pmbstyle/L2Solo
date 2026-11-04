@@ -83,6 +83,13 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    `BotLifeState.marketPurchaseBlocker`, but hot buys (`TradeService`, `AfkTradeService.buyFromShop`) reach only the
    commit guard; their refusal is the writer's error, not a counted reason.
 
+20. **Main still builds the basics for a kit value the plan row does not publish.** `ColdShotEconomyService`
+   (~155, a shot crafter's own reserve on `executePlan`'s `plan.shot`) passes `basics(state).stock('shots')` to
+   `ShotCraftPolicy.recipeShotSearch`, which reads `benefitHours` (its target can disagree with `stockTargets[3]`);
+   the card view's `stock()` (`ColdEconomyDecision.view` ~464) gives `worthwhileTravel` its `benefitPerUnit`. Both
+   need the stock's benefit, which `stockTargets` does not carry; publishing it (or the use rate) would move them to
+   `keptKit`.
+
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets[6]`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so
 a rich bot there has a null activity (T178): a test expecting "one leaf" from such a scene breaks the same way. Known

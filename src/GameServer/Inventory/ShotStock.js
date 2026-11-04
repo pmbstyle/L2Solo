@@ -502,14 +502,15 @@ function ensureCharacterStock(characterId, options = {}) {
 // What the bot's healing-potion restock (HealingPotionStock.restockPlan) costs
 // now: survival first, so the shot restock leaves this money for the potions.
 // The potion price is the caller's local NPC price, else the bot's price
-// (StaticMerchantPricing.botPurchasePrice, where a bot may buy it).
-function potionRestockCost(value, inventory, adena, reserve, potionUnitPrice) {
+// (StaticMerchantPricing.botPurchasePrice, where a bot may buy it). context:
+// the shot restock's own kit reader, the same review for both.
+function potionRestockCost(value, inventory, adena, reserve, potionUnitPrice, context) {
     const Potions = invoke('GameServer/Bot/AI/HealingPotionStock');
     const potion = Potions.purchasePotionFor(value);
     const unitPrice = Number(potionUnitPrice ?? invoke('GameServer/Bot/Economy/StaticMerchantPricing')
         .botPurchasePrice(potion.selfId));
     if (!Number.isFinite(unitPrice) || unitPrice <= 0) return 0;
-    return Potions.restockPlan(value, { potion, inventory: inventory || undefined, adena, reserve, unitPrice }).cost;
+    return Potions.restockPlan(value, { potion, inventory: inventory || undefined, adena, reserve, unitPrice, context }).cost;
 }
 
 // One restock rule for hot and cold bots, like HealingPotionStock.restockPlan:
@@ -530,10 +531,10 @@ function restockPlan(value, options = {}) {
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const state = actor ? Economy.stateForActor(value) : value;
     currentAmount += beginnerAmount(state, plan);
-    // Main reads the basics: a near bot's money packet is already in its
-    // state (its held decision), a far bot's in its row.
+    // Main reads the plan's published kit (keptKit): a near bot's money
+    // packet and targets are already in its state (its held decision), a far bot's in its row.
     const onMain = require('node:worker_threads').isMainThread;
-    const context = options.context || (onMain ? Economy.basics(state) : Economy.forState(state));
+    const context = options.context || (onMain ? Economy.keptKit(state) : Economy.forState(state));
     const stock = context.stock('shots');
     const targetAmount = Math.max(0, Number(options.targetAmount ?? stock.target) || 0);
     const reserve = context.survivalReserve;
@@ -556,7 +557,7 @@ function restockPlan(value, options = {}) {
     const boardAllowance = cheapest ? allowanceAt(Number(cheapest.price)) : allowance;
     const needed = Math.max(allowance, boardAllowance) > 0 && currentAmount < (options.targetAmount !== undefined ? targetAmount : stock.survivalTarget);
     const left = needed ? Math.max(0, targetAmount - currentAmount) : 0;
-    const potionCost = needed ? potionRestockCost(value, inventory, adena, reserve, options.potionUnitPrice) : 0;
+    const potionCost = needed ? potionRestockCost(value, inventory, adena, reserve, options.potionUnitPrice, context) : 0;
     const free = Math.max(0, adena - potionCost);
     const money = Math.min(boardAllowance, free);
     const filled = invoke('GameServer/Bot/Economy/OfferQuery').fill(offers, left, { money, maxPrice });

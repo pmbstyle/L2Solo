@@ -631,6 +631,18 @@ function saleFreeAmount(state, item, reserved = {}) {
 }
 
 const { selectedCraftAmounts } = require('./CraftInputReservations');
+// The stock a sale keeps: potions, crafter ammunition and travel scrolls at
+// their restock targets, the held plan's published ones (EconomyContext.keptTargets,
+// L72), else the foundation. Ordinary bots retain their current ammunition
+// independently of forecasts. One reading for the listing (saleCandidates'
+// default) and the board's sale count (MarketPricing), main and worker.
+function keptStock(state, reserved) {
+    const targets = invoke('GameServer/Bot/Economy/EconomyContext').keptTargets(state, { saleReservations: reserved });
+    return {
+        ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: targets.potions }),
+        ...invoke('GameServer/Inventory/ShotStock').keptAmounts(state, null, targets.shots),
+        ...invoke('GameServer/Bot/Travel/ScrollStock').keptAmounts(state) };
+}
 function saleCandidates(state, options = {}) {
     const limit = options.unlimited
         ? Number.MAX_SAFE_INTEGER
@@ -642,15 +654,7 @@ function saleCandidates(state, options = {}) {
         reserved[id] = Math.max(Number(reserved[id] || 0), amount + Number(clan[id] || 0));
     for (const [id, amount] of Object.entries(options.reserved || {}))
         reserved[id] = Math.max(Number(reserved[id] || 0), Number(amount) + Number(clan[id] || 0));
-    // Potions, crafter ammunition and travel scrolls use restock reserves:
-    // the held plan's published targets (L72), else the foundation.
-    // Ordinary bots retain their current ammunition independently of forecasts.
-    const targets = options.keptAmounts ? null
-        : invoke('GameServer/Bot/Economy/EconomyContext').keptTargets(state, { saleReservations: reserved });
-    const kept = options.keptAmounts || {
-        ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: targets.potions }),
-        ...invoke('GameServer/Inventory/ShotStock').keptAmounts(state, null, targets.shots),
-        ...invoke('GameServer/Bot/Travel/ScrollStock').keptAmounts(state) };
+    const kept = options.keptAmounts || keptStock(state, reserved);
     for (const [selfId, amount] of Object.entries(kept)) {
         reserved[selfId] = Math.max(Number(reserved[selfId] || 0), amount + Number(clan[selfId] || 0));
     }
@@ -893,6 +897,7 @@ module.exports = {
     storedEquipmentAmounts,
     reservationInputKey,
     saleCandidates,
+    keptStock,
     selectedCraftAmounts,
     saleFreeAmount,
     saleSummary,

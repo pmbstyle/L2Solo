@@ -44,7 +44,7 @@ function collect(state, options = {}) {
     let preparedState = null, prepared = null;
     const economics = () => {
         if (preparedState !== current) {
-            prepared = require('node:worker_threads').isMainThread ? Economy.basics(current) : Economy.forState(current);
+            prepared = require('node:worker_threads').isMainThread ? Economy.keptKit(current) : Economy.forState(current);
             preparedState = current;
         }
         return prepared;

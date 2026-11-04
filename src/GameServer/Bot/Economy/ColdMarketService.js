@@ -276,7 +276,7 @@ function purchaseMoney(state, plan, spent = 0, price = plan.npcPrice) {
         // An old errand has no valuation. It may still restore its actual
         // missing survival kit, never the former general purchasing cap.
         if (plan.purpose === 'shots' || (terms.r === undefined && terms.valueHours === undefined)) {
-            const context = plan.economy?.kitCost ? plan.economy : invoke('GameServer/Bot/Economy/EconomyContext').basics(state);
+            const context = plan.economy?.kitCost ? plan.economy : invoke('GameServer/Bot/Economy/EconomyContext').keptKit(state);
             const survival = PurchaseFunding.stockTerms(null, plan.selfId, PurchaseFunding.survivalTranche(context, plan.selfId, Number(price) || null));
             options.survivalCost = survival.survivalCost;
             if (survival.survivalShare !== undefined) options.survivalShare = survival.survivalShare;
@@ -296,7 +296,7 @@ function purchaseTerms(state, plan, spent = 0) {
         clanPart: Math.min(PurchaseFunding.budget(state), Math.max(0, Number(plan.tag?.clanPart || 0) - spent)) };
     if (plan.purpose === 'shots' || (terms.r === undefined && terms.valueHours === undefined)) {
         const survival = PurchaseFunding.stockTerms(null, plan.selfId, PurchaseFunding.survivalTranche(
-            invoke('GameServer/Bot/Economy/EconomyContext').basics(state), plan.selfId, Number(plan.npcPrice) || null));
+            invoke('GameServer/Bot/Economy/EconomyContext').keptKit(state), plan.selfId, Number(plan.npcPrice) || null));
         terms.survivalCost = survival.survivalCost;
         if (survival.survivalShare !== undefined) terms.survivalShare = survival.survivalShare;
     }
@@ -341,7 +341,7 @@ function planPurchase(state, selfId, amount, options = {}) {
             && Number(line.count) >= 1 && Number(line.ownerId ?? line.sourceId) !== Number(state.characterId)
             && (!(npcPrice > 0) || Number(line.price) <= npcPrice));
         const price = Number(first?.price || npcPrice || 0);
-        fundingContext ||= options.economy?.kitCost ? options.economy : invoke('GameServer/Bot/Economy/EconomyContext').basics(state);
+        fundingContext ||= options.economy?.kitCost ? options.economy : invoke('GameServer/Bot/Economy/EconomyContext').keptKit(state);
         return purchaseMoney(state, { ...options, economy: fundingContext, selfId: Number(selfId), npcPrice: price });
     };
     let plan;
@@ -534,10 +534,10 @@ async function buyHere(state, plan, options = {}) {
         let bought;
         if (realSeller && (options.goal || options.errand)) {
             const offer = realSeller;
-            const basics = invoke('GameServer/Bot/Economy/EconomyContext').basics(current);
             const baskets = NpcRestock.collect(current, { town: plan.town, seller: offer,
-                shots: !plan.raidPreparationId && basics.stock('shots').itemId !== Number(plan.selfId),
-                potions: !plan.raidPreparationId && basics.stock('potions').itemId !== Number(plan.selfId),
+                shots: !plan.raidPreparationId && ShotStock.planForState(current).selfId !== Number(plan.selfId),
+                potions: !plan.raidPreparationId
+                    && invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(current).selfId !== Number(plan.selfId),
                 scrolls: !plan.raidPreparationId && Number(plan.selfId) !== 736,
                 extras: [{ selfId: plan.selfId, amount: rest, offer, funding: purchaseTerms(current, plan, spent),
                     goal: options.goal, errand: options.errand, autoEquip: options.autoEquip === true }] });
