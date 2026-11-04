@@ -6,6 +6,7 @@ const HallPolicy = require('../ClanHall/Policy');
 const Rules = require('./ClanRules');
 const Contributions = invoke('GameServer/Clan/ClanContributionPolicy');
 const WishProviders = require('../Bot/Economy/WishProviders');
+const Packet = require('../Bot/Economy/StatsPacket');
 const engine = new WishNetwork();
 const positive = value => Math.max(0, Number(value) || 0);
 const trait = (persona, name) => Math.max(0, Math.min(1, Number(persona?.traits?.[name] ?? 0.5)));
@@ -144,21 +145,26 @@ function forClan(clan, inputs = {}) {
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const Valuation = invoke('GameServer/Bot/Economy/EconomicValuation');
     const Decisions = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions;
+    // The basics' own clock: the review's, else now.
+    const timestamp = Number(inputs.timestamp || Date.now());
     const memberContexts = (clan.members || []).map(member => {
         const numbers = Decisions.clanNumbers(member.characterId ?? member.id);
         // ARCH-NOTE: a complete cold decision already supplies the member's
-        // hour and horizon. Compute its network-free fallback only on demand,
-        // at most once in this clan review; retain no additional member cache.
+        // hour and horizon, its published packet the hours a death costs.
+        // Compute its network-free fallback only on demand, at most once in
+        // this clan review; retain no additional member cache.
         let fallback;
         const basics = () => fallback ??= Economy.basics(member, { persona: member.persona, timestamp: inputs.timestamp });
         const clanHorizon = numbers?.horizonHours ?? Valuation.stageHours(member, basics().hunt.expPerHour, basics().persona);
+        const published = Packet.deathHours(member.stats?.dangerPrice);
+        const deathHours = () => Number.isFinite(published) ? published : basics().deathHours;
         const clanItemUsefulness = id => {
             if (!ItemSources.hasSource(id)) return 0;
             if (Number(id) === Number(numbers?.plan?.itemId)) return positive(numbers.plan.valueHours);
             const item = require('../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, id);
             if (!item?.etc?.slot) return 0;
-            const gain = WishProviders.gearGain(member, item, basics().timestamp);
-            return Math.max(0, (gain.attack + gain.defence * basics().deathHours) * clanHorizon);
+            const gain = WishProviders.gearGain(member, item, timestamp);
+            return Math.max(0, (gain.attack + gain.defence * deathHours()) * clanHorizon);
         };
         return { persona: member.persona || basics().persona, clanHorizon,
             hunt: { perHour: numbers?.huntPerHour ?? basics().hunt.perHour },
