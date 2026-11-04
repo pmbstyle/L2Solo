@@ -15,8 +15,11 @@ const put = (file, text) => {
     fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
     fs.writeFileSync(path.join(root, file), text);
 };
+// Off CI: without --strict and without the CI flag the runner sets (CI=true makes every check strict).
+const offCi = { ...process.env };
+delete offCi.CI;
 const check = (strict = true) => spawnSync(process.execPath, [path.join(__dirname, '..', 'scripts', 'check-tables.js'), `--root=${root}`, ...(strict ? ['--strict'] : [])],
-    { encoding: 'utf8' });
+    { encoding: 'utf8', env: strict ? process.env : offCi });
 const table = (file, generator, fingerprint) => put(file, JSON.stringify({ header: { generator, revision: 'abc123', fingerprint }, rows: [] }));
 const SPOT = 'scripts/generate-spot-table.js', HUNT = 'scripts/hunt-tables/build.js';
 
