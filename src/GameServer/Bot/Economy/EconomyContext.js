@@ -1020,8 +1020,19 @@ function incomeRouteFor(state, deps, timestamp, price, keep) {
 function newHold(state, found, at, afterGoal = false) {
     const route = found.route;
     return { at, route: route ? { spot: route.spot, row: route.row, earning: route.earning } : null,
-        economic: IncomeRoute.economicHunt(state), weights: found.weights, bag: bagInputs(state, at),
-        moved: null, afterGoal };
+        ...searchInputs(state, found, at), moved: null, afterGoal };
+}
+// What an earning-spot search read beside the decision sections it is rebuilt
+// on (decision 10-30): the economic hunt, the money weights its answer stands
+// over and what it read of the bag. One rule for the held earning spot and the
+// party comparison's own solo search (PartyIncomeComparison.soloChoice), which
+// keys on it with the facts of those sections itself.
+function searchInputs(state, found, at) {
+    return { economic: IncomeRoute.economicHunt(state), weights: found.weights, bag: bagInputs(state, at) };
+}
+// Which of those inputs moved since the search: 'goal', 'weight', 'bag' or ''.
+function searchMoved(inputs, state, timestamp) {
+    return goalMoved(inputs, state) ? 'goal' : weightMoved(inputs, state) ? 'weight' : bagMoved(inputs, state, timestamp) ? 'bag' : '';
 }
 // What the income search reads of the bag (DecisionSections incomeSearch,
 // its link input bagShot): the shot its prices name and the shot the fight loads.
@@ -2484,5 +2495,5 @@ function reset() {
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
 module.exports = { quietGearBuildCount: () => quietGearBuilds, buildDoors: () => ({ ...doors, ...Agenda.counts() }), countDoor,
-    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), incomeHoldStats, linkStats, holdEndsAt, heldIncomeRoute, incomeMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockFor, stockReader, keptKit, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider, holdAnswerAt, bagInputs,
+    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), incomeHoldStats, linkStats, holdEndsAt, heldIncomeRoute, incomeMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockFor, stockReader, keptKit, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider, holdAnswerAt, bagInputs, searchInputs, searchMoved, HOLD_MS,
     craftIncome };

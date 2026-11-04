@@ -127,7 +127,9 @@ function verify() {
         assert.equal(Economy.incomeMoved(turned), false, 'and the new build holds it');
     }
 
-    // The party read past the window searches for itself and leaves the hold to its owner.
+    // The party read past the window searches for itself and leaves the hold to
+    // its owner. Its own search is kept on what it read (any copy of the bot),
+    // searched again when one of those inputs moves or past its own window.
     {
         const { state } = settled(990203);
         const turned = sampled(state, 'poor');
@@ -135,7 +137,12 @@ function verify() {
             const party = count(() => Party.soloRoute({ ...turned }, spots, time(minute)));
             assert.equal(party.result.spotId, 'poor', `the party read at ${minute} game minutes is a fresh one`);
             assert.equal(party.searches, 1, 'one search');
+            const again = count(() => Party.soloRoute({ ...turned }, spots, time(minute + 1)));
+            assert.equal(again.result.spotId, 'poor', 'a copy of the same bot reads the same answer');
+            assert.equal(again.searches, 0, 'with no second search');
         }
+        const leveled = count(() => Party.soloRoute({ ...turned, level: 11 }, spots, time(302)));
+        assert.equal(leveled.searches, 1, 'a moved input searches again');
         assert.equal(Economy.incomeMoved(turned), false, 'its search does not move the hold');
     }
 

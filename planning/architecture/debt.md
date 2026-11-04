@@ -122,6 +122,11 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    hours, the help fee and buff price thresholds, the 10 % margins), so an interval needs the breakpoints of
    `PartyIncomeComparison.evaluate` per member. A material roster keys its wallets exactly.
 
+24. **The earning-spot searches hear the crowd by a window.** The held earning spot (`EconomyContext` `HOLD_MS`) and
+   the party comparison's own solo search (`PartyIncomeComparison.soloChoice`, same window) search again every 30 game
+   minutes for the crowd, risk exclusions and spawn period at the candidate spots, which have no event
+   (decision-links step 3: per-spot versions).
+
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets`' `gapHorizonHours`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so
 a rich bot there has a null activity (T178): a test expecting "one leaf" from such a scene breaks the same way. Known
