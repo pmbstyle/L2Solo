@@ -17,8 +17,10 @@ overdue max 1-4 (before this release saturated from ~1430-1580 bots). See POP-23
 
 1. Background governor allows a DB queue of **0** while a player is online: any queued write defers safety sweep,
    cold snapshot continuation pages, early commits, clan actions/founders, hot market review (dD only).
-2. State retention and the WAL truncate never run during play (gated on `activity.protected`: a player online + 30 s
-   grace): AI memory/audit/activity tables and the WAL (≥ 256 MB) grow all session. History retention is not gated.
+2. State retention and the WAL truncate share the governor's 50 ms/s with a player (and its DB queue 0, risk 1): under a
+   steady write queue they still defer (counted: `maintenance.refusals`, perf report), and the WAL can grow past
+   256 MB until a quiet second. One retention DELETE is not interruptible: a slow one overruns its 12 ms (governor
+   overrun, dD).
 3. `PriceDecision` reads only the first 40 sell lines of an item (all towns): on the most-traded items the forecast is
    unknown, new asks fall back to NPC buyback (accepted lines keep their price), no counter.
 4. Activation takes the 100 nearest cold states before filtering busy/`pk_hunting`/party duplicates: in crowded towns,
@@ -69,7 +71,7 @@ player online (8 in flight, status `coldDue`).
 | Occupation planner | 64 contexts, 8 owners × 4 units, 4 ms | `ColdOccupationPlanner` ~7 | waiting queue (unbounded) | dD | boot catch-up |
 | Wish route requests | 64 pending | `ColdSimulationWorker` `occupationFor` ~690 | `[]` | none | catch-up |
 | Planner error log | first 32 distinct | ColdOccupationPlanner ~201 | later errors silent; meeting errors never logged | log (32) | long uptime |
-| Governor | 250 / 50 ms per 1 s; DB queue 8 / **0** with player; lag 120 ms | `BackgroundWorkGovernor` ~141 | defer | dD (mode not in the always-on status) | with a player |
+| Governor | 250 / 50 ms per 1 s; DB queue 8 / **0** with player; lag 120 ms | `BackgroundWorkGovernor` ~141 | defer | dD (mode not in the always-on status); state retention and WAL truncate deferrals always (`maintenance.refusals`) | with a player |
 | Activation pool | 100 nearest within 9000 | PopulationService `activateNearPlayers` ~1971 → `BotLifeState.coldNear` ~2246 | busy/`pk_hunting`/party duplicates filtered after the cut | none | Giran, Aden |
 | Activations | 6 per 10 s scan, world-wide (crafters outside; one party may exceed it) | `PopulationService` ~2020 | `activation_budget` returned, recorded by nobody | none | ~36/min |
 | Floor checks | 24 LOS per player per scan; cache 2048 / 30 s | `FloorAwareActivationPolicy` ~75 | `geodata_budget` | dD | multilevel areas |
@@ -168,11 +170,11 @@ player online (8 in flight, status `coldDue`).
 | Limit | Value | Where | When hit | Observable |
 |---|---|---|---|---|
 | Main DB queue | unbounded | `src/Database.js` `enqueue` ~274 | latency grows; governor reads `pending()` | dD (`dbQueue` in the dD summary) |
-| Busy timeout | 5 s (PRAGMA); checkpoint 250 / 50 ms | Database ~4452, `src/DatabaseCheckpointWorker.js` ~10 | transaction rejected | log |
+| Busy timeout | 5 s (PRAGMA); checkpoint 250 / 50 ms (WAL truncate 20 ms with a player) | Database ~4452, `src/DatabaseCheckpointWorker.js` ~10 | transaction rejected | log |
 | Final checkpoint at shutdown | 3 s (timer cleared when the checkpoint answers) | `src/DatabaseCheckpointCoordinator.js` `stop` | `checkpoint_shutdown_timeout`, the worker is terminated | result only |
 | Passive checkpoint | WAL ≥ 4 MB, 5 s | DatabaseCheckpointCoordinator ~7 | skipped | dD |
-| WAL truncate | 256 MB, +64 MB, 60 s (`[Database] checkpointReset*`), tried when a passive checkpoint finishes (`armWalReset`, 5 s); **only without a player** (+30 s grace), empty DB queue, no checkpoint/resolve/retention/party formation running | `PopulationService.runAdaptiveWalReset` ~2743 | silently skipped | success dD; failure log |
-| State retention | 64 rows, 1 s, 12 ms; 60 s pause after a pass, 6 h idle pause | PopulationConfig ~116 | deferred the whole session while a player is online (`player_protected`) | dD |
+| WAL truncate | 256 MB, +64 MB, 60 s cooldown, 5 s retry (`[Database] checkpointReset*`), tried when a passive checkpoint finishes (`armWalReset`, 5 s) that checkpointed every frame, none in flight; governor job `wal_truncate` (resource `db_maintenance`); busy timeout 20 ms with a player, 50 idle: main's DB queue waits that plus the truncate | `PopulationService.runAdaptiveWalReset` ~2752 | skipped, retried at the next passive checkpoint | status `maintenance.refusals` `wal_truncate:<reason>`, `checkpoint.lastResetAttempt` (perf report); failure `db.wal_truncate` (FailureLog) |
+| State retention | 64 rows, 1 s, one DELETE per run; governor job `state_retention` (resource `db_maintenance`) asks 12 ms, at least 4: with a player ≤ 12 ms of main DB queue per slice and the governor's 50 ms/s; 60 s pause after a pass, 6 h idle pause | PopulationConfig ~116, `PopulationService.runStateRetention` ~2819 | deferred to the next 1 s alarm | status `maintenance.refusals` `state_retention:<reason>` (perf report); failure `db.state_retention` (FailureLog) |
 | Retention caps | activity 100k; tool 50k; LLM 50k; conversation 512; 30 days; 128 rows per pair (PopulationConfig keys, e.g. `activityJournalMaxRows`) | PersistentStateRetention ~4 | only when retention runs | dD |
 | Safety sweep | 64 rows/page, 30 min, 240 KB repair | LifecycleSafetySweep ~6, ~109, ~216 | cycle stretches; oversized repair edge skipped, retried after 30 min | dD `deferred` |
 | Party history purge | 1000 (max 5000) / h (`partyHistoryCleanupIntervalMs`), 24 h | ColdSimulationCoordinator ~345, BackgroundPartyState ~335 | backlog grows | log |

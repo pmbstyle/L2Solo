@@ -26,7 +26,10 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
   moves rows, main deletes them; retention in `HistoryStore`.
 - **Journals:** `EconomyJournal` (TEMP triggers sum adena/item flow), `PvpJournal`; one outbox row per flush.
 - **WAL checkpoints:** `DatabaseCheckpointCoordinator` + worker (≥ 4 MB, every 5 s); the WAL truncate
-  (`PopulationService.runAdaptiveWalReset`) is tried when a passive one finishes (`Database.onCheckpoint`, limits.md). Not `NativeWriteCheckpoint` (a
+  (`PopulationService.runAdaptiveWalReset`) is tried when a passive one finishes (`Database.onCheckpoint`, limits.md),
+  during play too. It and state retention (`runStateRetention`) are admitted by `BackgroundWorkGovernor` (resource
+  `db_maintenance`), their refusals counted in `Database.stats().maintenance.refusals` (`job:reason`, diagnostics off
+  too), the truncate's last try in `checkpoint.lastResetAttempt`; both in the perf report. Not `NativeWriteCheckpoint` (a
   revision fence for bot rows).
 - **Saved games:** `scripts/saved-games.js` (v2 = world + history file) via the launcher; `DatabaseRestore` installs
   with a marker and rolls back on next init; lock in `scripts/database-access.js`, which also checks a launcher

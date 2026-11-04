@@ -11,7 +11,7 @@ Scope: `Bot/Population`, `Bot/Travel`, `BotManager`, `BotSession`, worker protoc
 |---|---|---|
 | `BotManager` | Hot sessions: spawn actors, chat, status | `init`, `loadAndSpawnBot` |
 | `BotSession` | Fake socket of a hot bot | — |
-| `PopulationService` | Main owner of the population: coordinator start, hot/cold phase policy, parties, seeding, and **worker lifecycle commands** (town work that needs World/DB) | `start`, `tickPhasePolicy`, `executeWorkerLifecycleCommand` |
+| `PopulationService` | Main owner of the population: coordinator start, hot/cold phase policy, parties, seeding, DB maintenance (state retention, WAL truncate: governor-admitted during play too, refusals in `Database.stats().maintenance`), and **worker lifecycle commands** (town work that needs World/DB) | `start`, `tickPhasePolicy`, `executeWorkerLifecycleCommand` |
 | `BotLifeState` (4.2k lines) | Main cache and DB writer of the cold row — **the cold truth**; `prepareResolve` also runs in the worker; at boot rebuilds rows left hot by a restart from the character record (`recoverStaleHotStates` → `staleHotRowFromRecord`, one transaction `Database.recoverStaleHotLifeStates`) | `upsertState`, `markHot`, `markCold`/`writeColdRow` |
 | `ColdSimulationCoordinator` | Main side of the worker: spawn, page snapshots/tables, commit proposals, commands, fences, watchdog, restart | `start` |
 | `ColdSimulationWorker` | Worker entry; replaces `invoke` with a forbidden-module guard + stubs; holds `planLifecycle` and `projectResolve` inline | `handle` |

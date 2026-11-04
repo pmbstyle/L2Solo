@@ -44,7 +44,8 @@ jsonl('timeline-20261103.jsonl', [
         players: 2, packets: 1200, bytes: 2 * 30 * 1024 * 10, seconds: 30, moves: 2 },
     { type: 'player', t: iso(end + 30000), scheduleMs: [999], handlerMs: [999], errors: 0, hot: 99 },
     { type: 'summary', t: iso(start + 30000), main: { memory: { heapUsed: 100 * MB, rss: 300 * MB }, processCpuMs: { user: 9000, system: 1000 } },
-        vitals: { bots: { hot: 2, cold: 5 }, players: 1, lag: { sustainedMs: 10 }, database: { pending: 3, checkpoint: { last: { at: 1 } } },
+        vitals: { bots: { hot: 2, cold: 5 }, players: 1, lag: { sustainedMs: 10 }, database: { pending: 3, checkpoint: { last: { at: 1 } },
+            maintenance: { refusals: { 'wal_truncate:wal_below_threshold': 2 } } },
             mainHeap: { afterGc: 50 } },
         files: { walMb: 4, worldMb: 20 }, machine: { freeMemMb: 900, majorPageFaults: 2 },
         coordinator: { queue: { depth: 2, bytes: 2048, oldestMs: 100, paused: false, failures: { afterCommitErrors: 0 } },
@@ -53,7 +54,10 @@ jsonl('timeline-20261103.jsonl', [
             cooldown: { count: 1, avgMs: 40, p95Ms: 40, maxMs: 40 } } } },
         coldQueue: { overdue: 1 }, heaps: { main: { usedMb: 100 } }, recorder: { costMs: 60, inspectorMs: 0 } },
     { type: 'summary', t: iso(end), main: { memory: { heapUsed: 120 * MB, rss: 310 * MB }, processCpuMs: { user: 14000, system: 0 } },
-        vitals: { bots: { hot: 4, cold: 3 }, players: 1, lag: { sustainedMs: 30 }, database: { pending: 7, checkpoint: { last: { at: 2 } } },
+        vitals: { bots: { hot: 4, cold: 3 }, players: 1, lag: { sustainedMs: 30 }, database: { pending: 7, checkpoint: { last: { at: 2 },
+            lastResetAttempt: { mode: 'truncate', ok: false, error: 'disk I/O error', at: end - 1000, durationMs: 3.25 },
+            lastReset: { mode: 'truncate', ok: true, busy: 0, at: end - 60000, durationMs: 7 } },
+            maintenance: { refusals: { 'wal_truncate:wal_below_threshold': 5, 'state_retention:governor_database_queue': 1 } } },
             mainHeap: { afterGc: 55 } },
         files: { walMb: 9, worldMb: 20 }, machine: { freeMemMb: 700, majorPageFaults: 5 },
         coordinator: { queue: { depth: 5, bytes: 4096, oldestMs: 900, paused: true, failures: { afterCommitErrors: 2 } },
@@ -105,6 +109,12 @@ try {
     assert.equal(c.database.pendingMax, 7);
     assert.deepEqual(c.database.walMb, { start: 4, end: 9, max: 9 });
     assert.equal(c.database.checkpoints, 1, 'the last checkpoint changed once in the window');
+    assert.deepEqual(c.database.walTruncate, {
+        last: { at: iso(end - 1000), ok: false, busy: 0, durationMs: 3.3, error: 'disk I/O error' },
+        lastEmptied: { at: iso(end - 60000), ok: true, busy: 0, durationMs: 7 }
+    }, 'the WAL truncate\'s last try, failed ones included, and its last success');
+    assert.deepEqual(c.database.maintenanceRefusals, { 'wal_truncate:wal_below_threshold': 3, 'state_retention:governor_database_queue': 1 },
+        'maintenance refusals counted in the window, by job and reason');
     assert.deepEqual(c.commitQueue, { depthMax: 5, bytesMaxKb: 4, oldestMaxMs: 900, pausedShare: 0.5 });
     assert.equal(c.failures.workerFaults, 3, 'faults in the window, not since boot');
     assert.equal(c.failures.afterCommitErrors, 2);

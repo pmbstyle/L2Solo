@@ -4,6 +4,7 @@ const BeginnerShots = require('./GameServer/Items/C4BeginnerShots');
 const InventoryLimits = require('./GameServer/Inventory/InventoryLimits');
 const fs = require('fs');
 const DiagnosticConfig = require('./GameServer/Bot/Population/PopulationConfig');
+const { DiagnosticMetricMap } = require('./GameServer/Bot/Population/DiagnosticMetricMap');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 const { AsyncLocalStorage } = require('node:async_hooks');
@@ -150,8 +151,17 @@ const metrics = {
     byOperation: null
 };
 
+// Why a maintenance pass on this database was not run when it was tried (state retention, the
+// WAL truncate; PopulationService), `job:reason` -> count, governor refusals as `governor_<reason>`.
+// Counted with diagnostics off too: stats().maintenance. Bounded by DiagnosticMetricMap.
+const maintenanceRefusals = new DiagnosticMetricMap();
+
 function now() {
     return Date.now();
+}
+
+function maintenanceSnapshot() {
+    return { refusals: Object.fromEntries(maintenanceRefusals.entries()) };
 }
 
 function yieldToEventLoop() {
@@ -6718,7 +6728,8 @@ const Database = {
     stats({ resetPeak = false } = {}) {
         // Depth and physical checkpoint outcomes are runtime control sources.
         if (!DiagnosticConfig.developerDiagnostics) return { path: databasePath || null, historyPath: historyPath || null,
-            pending: metrics.pending, diagnostics: { enabled: false }, checkpoint: CheckpointCoordinator.snapshot(), history: History.stats() };
+            pending: metrics.pending, diagnostics: { enabled: false }, checkpoint: CheckpointCoordinator.snapshot(),
+            maintenance: maintenanceSnapshot(), history: History.stats() };
         metrics.snapshots += 1;
         const operations = Object.fromEntries(Array.from(metrics.byOperation?.entries() || []).map(([key, value]) => [key, { ...value }]));
         const snapshot = {
@@ -6736,10 +6747,17 @@ const Database = {
             avgRunMs: metrics.total ? Math.round(metrics.runMs / metrics.total) : 0,
             operations,
             checkpoint: CheckpointCoordinator.snapshot(),
+            maintenance: maintenanceSnapshot(),
             history: History.stats()
         };
         if (resetPeak) metrics.maxPending = metrics.pending;
         return snapshot;
+    },
+
+    // A maintenance try that did not run (maintenanceRefusals): one map increment.
+    noteMaintenanceRefusal(job, reason) {
+        const key = `${job}:${reason}`;
+        maintenanceRefusals.set(key, (maintenanceRefusals.get(key) || 0) + 1);
     },
 
     // Operations waiting on the write queue. The schedulers read this on every
