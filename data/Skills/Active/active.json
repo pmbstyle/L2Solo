@@ -25653,8 +25653,8 @@
             "distance": 600
         },
         "time": {
-            "hitTime": 4000,
-            "reuse": 15000,
+            "hitTime": 1500,
+            "reuse": 8000,
             "buff": 120000
         },
         "levels": [

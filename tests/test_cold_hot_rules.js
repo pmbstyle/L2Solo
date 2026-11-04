@@ -330,7 +330,7 @@ function soloFight({ classId, level, skills = [], effects = [], hp = null, mp = 
 // 15. A skill rank's numbers have one owner, the hot Skill model (C4SkillRules over the
 // data row); a cold record of the rank (learned rows, a class tree) carries the same.
 // Summons reuse 6 h at levels 1-4 and 20 s from level 5 (Lisvus #reuseDelay); Return and
-// Party Recall level 2 cast in 1.5 s and 3.5 s.
+// Party Recall level 2 cast in 1.5 s and 3.5 s; Wind Shackle casts in 1.5 s and reuses in 8 s.
 {
     const hotRank = (selfId, level) => {
         const data = DataCache.skills.find(entry => entry.selfId === selfId);
@@ -341,6 +341,7 @@ function soloFight({ classId, level, skills = [], effects = [], hp = null, mp = 
     const cases = [];
     for (const id of [1111, 1128, 1225, 1226, 1227, 1228]) cases.push([id, 4, { reuse: 21600000 }], [id, 5, { reuse: 20000 }]);
     cases.push([1050, 1, { hitTime: 20000 }], [1050, 2, { hitTime: 1500 }], [1255, 1, { hitTime: 20000 }], [1255, 2, { hitTime: 3500 }]);
+    cases.push([1206, 1, { hitTime: 1500, reuse: 8000 }], [1206, 19, { hitTime: 1500, reuse: 8000 }]);
     for (const [id, level, expected] of cases) {
         const hot = hotRank(id, level), cold = coldRank(id, level);
         for (const [field, value] of Object.entries(expected)) {
