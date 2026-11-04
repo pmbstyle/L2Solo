@@ -82,3 +82,61 @@ Inputs marked (E) have an event today, (–) have none, (S) need a significance 
 - Hot bots on main: the same links (one rule) or only the published outputs.
 - Significance thresholds: one rule (`incomeError`) for all continuous inputs, or per input.
 - The supply fact tracks only the paid shot; beginner shots running out changes the matchup without an event.
+
+## Steps 1-2 staged (design 2026-11-04, at cba9319f)
+
+Two layers: layer 1 (should the bot decide now: Reaction, `wishDirty` bits, `heldBuildVerdict`, the advisory card)
+stays; layer 2 (inside a build, which link rebuilds) is new. A link keeps a key beside its output: versions for
+discrete inputs (digests of the input's value on the state, computed the same on both threads; no counters, no
+identity caches), intervals `[low, high]` for continuous inputs (`DecisionSections.bounds` generalised; the money
+weight is the first row), event bits for event-only inputs (one new bit: `observation`). ~0.4 KB per bot.
+
+- A: `DecisionSections.LINK_INPUTS` + `inputVersions(view, state, timestamp)`; shadow counters
+  `link:<name>:<rebuilt|kept>:<first input | mask-only | key-only>` and a 1-in-16 verify mode. No behaviour change.
+- B: income search on its key (after the weight interval); `COMPUTED.incomeSearch` goes. Inputs with no event refresh
+  only by `HOLD_MS` and observation (less often than today; same worst case).
+- C: one foundation path (delete `keptBase`/`foundationFromPlan`): the kit always from the live bag and prices on the
+  held route. Behaviour change (fixes stale counts and prices): maintainer's call.
+- D: workshop on its key; one `noCrafterWorkshop`; `COMPUTED.workshop` goes.
+
+Expected: −12-17 s per 15-min window (2-3 % of the worker). The large costs are elsewhere: the wish projection
+(~90 s) and source facts (~48 s) rebuilt on every unserved build (3.2k per window), i.e. layer 1's refusals and step 5.
+
+## Step 3 list: time windows standing in for events (census 2026-11-04)
+
+None has a limits.md row or a debt line naming its missing event (except TownNavigation 120 s). Biggest work first
+(src/GameServer/...): `EconomyContext` HOLD_MS 30 game min (missing: spot-risk change, occupancy, consumable price,
+beginner-shot runout); `ColdSoloWindow` soft inputs at the window end (market watch has board writes but no wake);
+party member goal review every 60 s (`PopulationService` ~476, `GoalPlanner` ~22, `GoalService` ~41: the inputHash
+already names the inputs); `PartyRequestPlanner` reviewAt + partyWaitReplanMs 5 min; `PopulationService` phase policy
+10 s (player cell change + walker schedule would do); party income review 5 min (`PartyGoalPolicy` ~62,
+`CraftMaterialParty` ~202); REVIEW_MS 5-min holds (`CraftMaterialParty`, `PartyIncomeComparison`: keys miss kit,
+spoiler, route permission); `PartySessionReview` 20/5 min; +10/30 s step polls in `BackgroundResolver`
+(~2543-2699), `BackgroundPartyResolver` (~189-355), `ClanPartyDuty` waiting on outcomes that already fire;
+`ColdMarketService` RETRY_DELAY_MS 15 min (the buyer wake is half-dead: `GoalExecutor` ~43 still refuses until the
+stamp); `ColdMarketListingService` 30 min; `MarketDemandIndex` WANTED_TTL 30 min + a 15-min re-persist that exists to
+beat it; 30-min holds in `ColdShotEconomyService`, `ItemDisposition` ~394, `WishProviders` ~663, `CombinedErrandPolicy`;
+`CraftMarketReview` 15/2 min; `FirstPrice` CACHE_MS 1 h over static inputs; clan reviews (`ClanWarDirector`,
+`ClanActionService`, `ClanEquipmentService`), `ClanGoalCandidateService` 30 s TTL, `ClanWarehouseService` 1 h keyed by
+clan only, clan runtime 5 s DB re-reads; hot AI 0.15-2 s scans (`BotSupportPlanner`, `PartyAwareness`,
+`HotBackgroundParty`, `PartyCompanionService`, `BotStatus`) missing a spatial-cell NPC revision; `HotActorLodPolicy`
+8/10/3/15 s; `GearAcquisitionPlanner` 1-4 h cooldowns; ~15 small ones with an existing revision not in the key.
+Unclear (time may be the real input): hunt evidence aging 6 h, "no progress over N" rules, LLM policy TTL, ColdPve
+10 min, clan rescue duration. Also found: `MarketBuyerActivity.refresh` is never called (its score is dead). ~140
+scheduling/budget limits (B) have no limits.md row.
+
+## Step 5 staged and a measurement note (design 2026-11-04)
+
+Measurement: the first run of a new code identity rebuilds every bot once (`not_retained` ~1746 builds, ~42 % of build
+time in a 17-min run: the save's restart proof belongs to another identity). Compare runs that follow a run of the
+same code, or count the boot rebuilds out. For players it happens once per update: step 6 (keep links across a restart).
+
+Layer 1 cannot be widened safely (almost every refusal can move the focus or the step); the waste is layer 2:
+`Providers.build` rebuilds every node though most refusals move a few items. Stages: S0 counters (every refusal's
+reasons, provider laps, shadow fact keys); S1 keep source facts per item, exact (global digest + crowd reads; ≤2.5 KB
+per bot; −1.3-2 %); S2 spot values on the decision's observation baseline (behaviour change, maintainer's call;
+−4 % with S1); S3 item descriptor closures in an LRU (exact, −1-2 %); S4 gear candidates keyed on kit/level/
+progression/prices/budget interval (exact, −0.6-1 %). Each with a 1-in-16 verify build.
+Step 6 idea: the restart proof is tied to the whole code identity (`RecomputeGeneration`, git sha), so every update
+rebuilds every bot once. Keying the proof on a digest of the modules each link reads (its inputs' code) would keep held
+links across an update that does not touch them.
