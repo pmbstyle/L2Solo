@@ -119,7 +119,8 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
         const ReceivePacket = invoke('Packet/Receive');
         const Frame = invoke('Packet/Frame');
         const speak = Opcodes.table[0x38];
-        const texts = [];
+        const texts = [], before = Frame.refusals();
+        const refusedSince = () => Object.fromEntries(Object.entries(Frame.refusals()).map(([key, value]) => [key, value - before[key]]));
         Opcodes.table[0x38] = (session, packet) => { texts.push(new ReceivePacket(packet).readS().data[0].length); };
         try {
             const big = connectGame('fixture');
@@ -140,7 +141,7 @@ const settle = () => new Promise((resolve) => setImmediate(resolve));
             big.session.dataSendToMe(Buffer.alloc(70000, 0xf8));
             assert.strictEqual(big.socket.written.length, 1, 'a packet over a frame is not sent');
             assert.strictEqual(big.socket.destroyed, false, 'and the player stays connected');
-            assert.deepStrictEqual(Frame.refusals(), { inbound: 0, outbound: 1, unterminated: 1 });
+            assert.deepStrictEqual(refusedSince(), { inbound: 0, outbound: 1, unterminated: 1 });
         } finally {
             Opcodes.table[0x38] = speak;
         }

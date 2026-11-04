@@ -36,13 +36,11 @@ class BoundedPathfindingWorkerPool {
         this.nextId = 1;
         this.started = false;
         this.shuttingDown = false;
-        this.unavailable = false;
         this.townWindowAt = Date.now();
         this.townWorkMs = 0;
         this.budgetTimer = null;
-        // Always counted (status line): worker crashes, respawns, and requests
-        // refused while no slot was up.
-        this.health = { crashes: 0, respawns: 0, refusedDown: 0 };
+        // Always counted (status line): worker crashes and respawns.
+        this.health = { crashes: 0, respawns: 0 };
         this.metrics = {
             queued: 0,
             completed: 0,
@@ -71,7 +69,6 @@ class BoundedPathfindingWorkerPool {
         }
         const slot = { index, worker, task: null, upSince: Date.now() };
         this.workers[index] = slot;
-        this.unavailable = false;
         worker.on('message', (message) => this.onMessage(slot, message));
         worker.on('error', (error) => this.onWorkerFailure(slot, error));
         worker.on('exit', (code) => {
@@ -83,10 +80,6 @@ class BoundedPathfindingWorkerPool {
 
     request(request, options = {}) {
         if (this.shuttingDown) return Promise.reject(taskError('path worker pool is shutting down', 'POOL_SHUTDOWN'));
-        if (this.unavailable) {
-            this.health.refusedDown += 1;
-            return Promise.reject(taskError('path worker pool is unavailable', 'WORKER_UNAVAILABLE'));
-        }
         this.init();
         const key = options.key ? String(options.key) : null;
         const priority = Number(options.priority) || 0;
@@ -216,9 +209,10 @@ class BoundedPathfindingWorkerPool {
         this.dispatch();
     }
 
-    // A crashed slot is down until its respawn, which the shared worker backoff
-    // times (1, 2, 5, 10, then every 30 s, forever). While no slot is up, the
-    // pool refuses requests as WORKER_UNAVAILABLE (counted).
+    // A crashed slot respawns at once on its first crash in a row, then after
+    // the shared worker backoff (1, 2, 5, 10, then every 30 s, forever). The
+    // queue is kept while no slot is up: each task waits for a worker or its
+    // own timeout (PATH_TIMEOUT); only the crashed slot's own task fails.
     onWorkerFailure(slot, error) {
         if (slot.failed) return;
         slot.failed = true;
@@ -233,7 +227,7 @@ class BoundedPathfindingWorkerPool {
         if (this.workers[slot.index] === slot) this.workers[slot.index] = null;
         if (this.shuttingDown) return;
         const index = slot.index;
-        const restart = RestartBackoff.next(this.restartCrashes[index], slot.upSince || 0, Date.now());
+        const restart = RestartBackoff.next(this.restartCrashes[index], slot.upSince || 0, Date.now(), RestartBackoff.AT_ONCE_FIRST_MS);
         this.restartCrashes[index] = restart.crashes;
         this.health.crashes += 1;
         this.logCrash(index, failure, restart);
@@ -246,13 +240,6 @@ class BoundedPathfindingWorkerPool {
             this.dispatch();
         }, restart.delayMs);
         this.restartTimers[index].unref?.();
-        if (this.workers.every((workerSlot) => !workerSlot)) {
-            this.unavailable = true;
-            this.queue.splice(0).forEach((queued) => {
-                this.health.refusedDown += 1;
-                this.finishTask(queued, null, taskError('path worker pool is unavailable', 'WORKER_UNAVAILABLE'));
-            });
-        }
         this.dispatch();
     }
 
@@ -303,7 +290,6 @@ class BoundedPathfindingWorkerPool {
         this.shuttingDown = true;
         clearTimeout(this.budgetTimer);
         this.restartTimers.forEach((timer) => clearTimeout(timer));
-        this.unavailable = true;
         this.queue.splice(0).forEach((task) => this.finishTask(task, null, taskError('path worker pool shut down', 'POOL_SHUTDOWN')));
         this.workers.forEach((slot) => {
             if (slot?.task) {

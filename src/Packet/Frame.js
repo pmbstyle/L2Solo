@@ -4,7 +4,8 @@
 // ways). The length counts itself and is unsigned: a frame is 2..65535 bytes.
 // A packet that does not fit is refused with a counted reason, never cut.
 // Callers: GameServer/Session, AuthenticationServer/Session (both ways),
-// Bot/BotSession (out), Perf/PlayerClient (a scripted client's packets);
+// Bot/BotSession (out), Perf/PlayerClient (a scripted client's packets: frame,
+// fits; its oversize packet is a script error, not a server refusal);
 // Server.packetReceiver splits the stream on the same length. Packet/Receive
 // counts a string without its terminator here too.
 const HEADER_SIZE = 2;
@@ -31,9 +32,22 @@ function body(frame) {
     return frame.subarray(HEADER_SIZE, size);
 }
 
-// The frame for an outbound packet, or null when it is longer than a frame
-// can say: the packet is not sent (the first per opcode logged). Not a throw:
-// many sends run in timers, where a throw ends the process.
+// The frame for a packet that fits one (a caller checked: Frame.fits).
+function frame(data) {
+    const size = data.length + HEADER_SIZE;
+    const framed = Buffer.allocUnsafe(size);
+    framed.writeUInt16LE(size, 0);
+    (Buffer.isBuffer(data) ? data : Buffer.from(data)).copy(framed, HEADER_SIZE);
+    return framed;
+}
+
+function fits(data) {
+    return data.length + HEADER_SIZE <= MAX_FRAME;
+}
+
+// The frame for an outbound server packet, or null when it is longer than a
+// frame can say: the packet is not sent (counted, the first per opcode
+// logged). Not a throw: many sends run in timers, where a throw ends the process.
 function pack(data) {
     const size = data.length + HEADER_SIZE;
     if (size > MAX_FRAME) {
@@ -46,10 +60,7 @@ function pack(data) {
         }
         return null;
     }
-    const frame = Buffer.allocUnsafe(size);
-    frame.writeUInt16LE(size, 0);
-    (Buffer.isBuffer(data) ? data : Buffer.from(data)).copy(frame, HEADER_SIZE);
-    return frame;
+    return frame(data);
 }
 
 // A string field with no terminator before the end of the packet: the packet
@@ -63,4 +74,4 @@ function refusals() {
     return { ...refused };
 }
 
-module.exports = { HEADER_SIZE, MAX_FRAME, body, pack, unterminated, refusals };
+module.exports = { HEADER_SIZE, MAX_FRAME, body, frame, fits, pack, unterminated, refusals };

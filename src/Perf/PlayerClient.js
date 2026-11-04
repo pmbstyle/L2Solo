@@ -46,7 +46,11 @@ class PlayerClient {
 
     // One client packet: [length][opcode][fields], as packetReceiver hands it to dataReceive.
     send(packet) {
-        return Promise.resolve(this.session.dataReceive(Frame.pack(packet.buffer)));
+        const body = packet.buffer;
+        if (!Frame.fits(body)) {
+            throw new RangeError(`scripted client packet 0x${Number(body[0]).toString(16)} of ${body.length} B does not fit a frame (${Frame.MAX_FRAME} B)`);
+        }
+        return Promise.resolve(this.session.dataReceive(Frame.frame(body)));
     }
 
     // 0x01 MoveToLocation: destination, then where the client is.

@@ -148,11 +148,11 @@ const PopulationStatus = {
     },
 
     // pathPool=<slots up>/<size> ('-' before the first path request starts the pool);
-    // pathCrashes=<crashes>/<respawns>/<requests refused while no slot was up> since start
-    // (PathfindingWorkerPool: a crashed slot respawns with the shared worker backoff); 0/0/0 when healthy.
+    // pathCrashes=<crashes>/<respawns> since start (PathfindingWorkerPool: a crashed slot respawns at
+    // once, then with the shared worker backoff); 0/0 when healthy.
     pathPoolText(paths = PathfindingWorkerPool.stats()) {
         return `pathPool=${paths.started ? paths.workers || 0 : '-'}/${paths.size || 0}`
-            + ` pathCrashes=${paths.crashes || 0}/${paths.respawns || 0}/${paths.refusedDown || 0}`;
+            + ` pathCrashes=${paths.crashes || 0}/${paths.respawns || 0}`;
     },
 
     // packetRefused=<inbound frames>/<outbound packets>/<strings without a terminator> refused since
@@ -212,7 +212,7 @@ const PopulationStatus = {
             lag: { nowMs: Math.round(Metrics.currentEventLoopLag()), sustainedMs: Math.round(Metrics.sustainedEventLoopLag()) },
             database: { ...pick(database, ['path', 'historyPath', 'pending', 'maxPending', 'failures', 'avgWaitMs', 'avgRunMs', 'operations']),
                 checkpoint: pick(database.checkpoint, ['inFlight', 'last', 'lastReset']) },
-            pathWorkers: pick(paths, ['workers', 'size', 'busy', 'queue', 'companionBusy', 'companionQueue', 'inFlight', 'crashes', 'respawns', 'refusedDown']),
+            pathWorkers: pick(paths, ['workers', 'size', 'busy', 'queue', 'companionBusy', 'companionQueue', 'inFlight', 'crashes', 'respawns']),
             geodata: GeodataEngine.storageStats(),
             mainHeap: heapRecord(),
             safetyRepairs: Metrics.lastSafetyRepairs || null,

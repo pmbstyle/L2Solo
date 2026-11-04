@@ -85,13 +85,14 @@ async function run() {
     assert.strictEqual(priorityPool.stats().preempted, 1);
     await priorityPool.shutdown();
 
-    // A crashed worker is logged, its slot respawns after the shared worker
-    // backoff (1, 2, 5, 10, then 30 s), forever; while no slot is up the pool
-    // refuses requests, counted.
+    // A crashed worker is logged and its slot respawns forever: at once on the
+    // first crash in a row, then after the shared worker backoff (1, 2, 5, 10,
+    // then 30 s). Queued work waits for the respawn; only the crashed task fails.
     const { mock } = require('node:test');
     mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1_000_000 });
-    const warnings = [], infoWarn = utils.infoWarn;
-    utils.infoWarn = (prefix, ...params) => warnings.push(require('util').format(...params));
+    let warnings = 0;
+    const infoWarn = utils.infoWarn;
+    utils.infoWarn = () => { warnings += 1; };
     const recoveryWorkers = [];
     const recoveryPool = new BoundedPathfindingWorkerPool({
         size: 1,
@@ -102,31 +103,36 @@ async function run() {
             return worker;
         }
     });
+    const pathOf = async (index, startX) => {
+        const pending = recoveryPool.request({ startX }, { key: `npc:${startX}`, timeoutMs: 60000 });
+        const message = recoveryWorkers[index].messages.at(-1);
+        recoveryWorkers[index].emit('message', { id: message.id, ok: true, path: [{ locX: startX }] });
+        return pending;
+    };
     try {
-        const failed = recoveryPool.request({ startX: 6 }, { key: 'npc:6', timeoutMs: 5000 }).catch((error) => error);
+        const failed = recoveryPool.request({ startX: 6 }, { key: 'npc:6', timeoutMs: 60000 }).catch((error) => error);
+        const waiting = recoveryPool.request({ startX: 7 }, { key: 'npc:7', timeoutMs: 60000 });
         recoveryWorkers[0].emit('error', new Error('synthetic worker failure'));
         assert.strictEqual((await failed).message, 'synthetic worker failure', 'worker errors must reject the affected request');
-        assert.match(warnings[0], /path worker 0 crashed \(Error: synthetic worker failure\); restarting in 1000ms, 1 in a row/);
-        assert.match(warnings[0], /at /, 'the first crash of a reason carries its stack');
-        const down = await recoveryPool.request({ startX: 7 }, { key: 'npc:7' }).catch((error) => error);
-        assert.strictEqual(down.code, 'WORKER_UNAVAILABLE', 'no slot is up during the backoff');
-        mock.timers.tick(1000);
-        assert.strictEqual(recoveryWorkers.length, 2, 'the slot respawns after the first delay');
-        for (const [index, delay] of [[1, 2000], [2, 5000], [3, 10000], [4, 30000], [5, 30000]]) {
+        assert.strictEqual(warnings, 1, 'each crash is logged');
+        mock.timers.tick(0);
+        assert.strictEqual(recoveryWorkers.length, 2, 'the first crash in a row respawns at once');
+        const queued = recoveryWorkers[1].messages[0];
+        recoveryWorkers[1].emit('message', { id: queued.id, ok: true, path: [{ locX: 7 }] });
+        assert.deepStrictEqual(await waiting, [{ locX: 7 }], 'work queued during the respawn runs on the new worker');
+        for (const [index, delay] of [[1, 1000], [2, 2000], [3, 5000], [4, 10000], [5, 30000], [6, 30000]]) {
             recoveryWorkers[index].emit('exit', 1);
-            assert.match(warnings.at(-1), new RegExp(`WORKER_EXIT: path worker exited with code 1\\); restarting in ${delay}ms`));
-            mock.timers.tick(delay);
+            mock.timers.tick(delay - 1);
+            assert.strictEqual(recoveryWorkers.length, index + 1, `crash ${index + 1} in a row waits ${delay} ms`);
+            mock.timers.tick(1);
             assert.strictEqual(recoveryWorkers.length, index + 2, 'a crashing slot is never given up');
         }
-        assert.strictEqual(warnings.filter((line) => line.includes('\n')).length, 2, 'the stack once per reason');
-        const recovered = recoveryPool.request({ startX: 8 }, { key: 'npc:8', timeoutMs: 5000 });
-        const recoveredMessage = recoveryWorkers[6].messages[0];
-        recoveryWorkers[6].emit('message', { id: recoveredMessage.id, ok: true, path: [{ locX: 8 }] });
-        assert.deepStrictEqual(await recovered, [{ locX: 8 }], 'a replacement worker must accept subsequent paths');
-        assert.deepStrictEqual([recoveryPool.stats().crashes, recoveryPool.stats().respawns, recoveryPool.stats().refusedDown], [6, 6, 1]);
+        assert.deepStrictEqual(await pathOf(7, 8), [{ locX: 8 }], 'a replacement worker must accept subsequent paths');
+        assert.deepStrictEqual([recoveryPool.stats().crashes, recoveryPool.stats().respawns, warnings], [7, 7, 7]);
         mock.timers.tick(30001);
-        recoveryWorkers[6].emit('exit', 1);
-        assert.match(warnings.at(-1), /restarting in 1000ms, 1 in a row, 7 since start/, 'a slot up 30 s was healthy: back to the first delay');
+        recoveryWorkers[7].emit('exit', 1);
+        mock.timers.tick(0);
+        assert.strictEqual(recoveryWorkers.length, 9, 'a slot up 30 s was healthy: its next crash respawns at once');
     } finally {
         await recoveryPool.shutdown();
         utils.infoWarn = infoWarn;
