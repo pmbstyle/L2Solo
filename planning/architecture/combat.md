@@ -67,6 +67,16 @@ Scope: `Actor`, `Skills`, `Effects`, `Combat`, `Npc`, `RaidBoss`, `Pets`, `Formu
   hate/assistance reaction as other hostile casts. Enemy-targeted casts short-circuit before that work. The shared
   predicate stays pure; the cold fight's damage-only engagement remains CMB-28.
 - **Effects:** `EffectStore` (authoritative), `EffectStats`, `EffectTicker`, `EffectRestrictions`; `BuffCatalog` legacy.
+  Hot NPC control uses `Npc.interruptCombatActions`: it cancels the current swing/path request and sends
+  AutoAttackStop, preserving combat intention, target and every hate entry. The existing combat loop waits on
+  restrictions; expiry, damage wake-up and cleanse all release it without a separate resumption path.
+  `Npc.startCombatActions` restores client attack state on the next admitted swing/cast. Sleep, stun, paralysis
+  and fear share this lifecycle; player stance cancellation stays in `EffectRestrictions.interruptOnApply`.
+  Interrupted chase retries start afresh after control. A hate wipe, invalid target, leash or ordinary attack
+  timeout can still end the fight. Main cost: one attack-state check per existing 100 ms combat step, one guard
+  per swing/cast, and 10 restriction polls/s per controlled NPC instead of losing its loop. Controlled steps
+  return before target/hate scans, distance allocations or pathfinding; no new timers, per-bot fields, DB writes
+  or worker messages. Cold fight rules and measured tables are unaffected (runtime interruption only).
 - **Stats:** hot `CalculateStats`, cold `ColdCombatProfile.powerTerms/formulaPower` — both call `Formulas` but assemble
   separately.
 - **Summons/pets:** servitors are `Npc` with own loop `SummonControl.attackTick` (hit from `Attack.prepareNpcMeleeHit`);
