@@ -83,6 +83,8 @@ is one mechanism per rule.
 
 - Dead code: prove by search that nothing reaches it (`invoke`, `require`, method names, tests, scripts) before
   deleting; batch such deletions.
+- A behaviour change is reviewed on its diff before commit, by a review agent (Claude `/code-review`, Codex review),
+  not by hand.
 - A commit is the work on one problem (one bug, gap or rework) with its tests and map update, not one per edit; it
   builds and passes its own tests. Two problems are two commits.
 
