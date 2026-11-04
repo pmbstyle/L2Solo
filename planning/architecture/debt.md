@@ -127,6 +127,13 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    minutes for the crowd, risk exclusions and spawn period at the candidate spots, which have no event
    (decision-links step 3: per-spot versions).
 
+23. **Clan war reviews run on a window.** `ClanWarDirector.review` visits every autonomous clan each 60 s
+   (`ClanWarConfig.reviewMs`, 4 per pulse) and reads its loss pressure from SQL each time, though most inputs have
+   events (`ClanReviewEvents`, war accept, social relation changes, losses) or a known deadline (quiet withdrawal,
+   ceasefire, loss window, intel TTL). The review is also the only sampler of enemy sightings at a spot (positions,
+   no event), so it needs a sightings sampler of its own before it can wait for its events. An unchanged review is
+   no longer written.
+
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets`' `gapHorizonHours`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so
 a rich bot there has a null activity (T178): a test expecting "one leaf" from such a scene breaks the same way. Known
