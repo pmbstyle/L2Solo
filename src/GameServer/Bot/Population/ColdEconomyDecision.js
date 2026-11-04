@@ -643,7 +643,7 @@ function refusal(state, accepted, deps = {}, options = {}) {
     // A goal change (main's goal revision moved since the build) is seen at
     // the next decision point. No revision on the card (restored after a
     // restart) differs too: one rebuild. The held earning spot does not
-    // compare the revision, no input of its search (EconomyContext.goalMoved).
+    // compare the revision, no input of its search (DecisionSections LINK_INPUTS incomeSearch).
     if (Number.isFinite(deps.goalRevision) && deps.goalRevision !== accepted.goalRevision
         && Reaction.hears('goal_moved', Reaction.place(state))) return 'goal';
     // A far bot's card lives on, so nothing else heals a lost held build: every

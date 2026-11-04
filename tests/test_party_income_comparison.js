@@ -11,6 +11,7 @@ const Route = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
 const Table = invoke('GameServer/Bot/AI/SpotValueTable');
 const Rewards = require('../src/GameServer/Bot/Economy/SpotRewardExpectation');
 const Match = invoke('GameServer/Bot/AI/BotTargetMatchup');
+const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
 const Profiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const Routes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
@@ -160,7 +161,7 @@ try {
             const armed = { ...rich, inventory: gear };
             const shot = invoke('GameServer/Inventory/ShotStock').combatPlanForState(armed).selfId;
             const stocked = { ...armed, inventory: { ...gear, [shot]: { selfId: shot, amount: 5000 } } };
-            assert.notDeepEqual(Economy.bagInputs(stocked, at), Economy.bagInputs(armed, at), 'fixture: the stock loads a shot');
+            assert.notDeepEqual(Sections.shotInputs(stocked, at), Sections.shotInputs(armed, at), 'fixture: the stock loads a shot');
             ask([armed, other]);
             const dry = judged;
             ask([armed, other]);

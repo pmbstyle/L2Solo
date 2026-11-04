@@ -195,9 +195,9 @@ function verify() {
         assert.equal(Economy.forState(holder, { spots, timestamp: time(0) }).hunt.spotId, 'rich', 'held once more');
         assert.equal(Economy.basics(turned, { spots, timestamp: time(31) }).hunt.spotId, 'poor', 'past the window a better spot is found');
         assert.equal(Economy.basics(turned, { spots, timestamp: time(32) }).hunt.spotId, 'poor', 'later reads keep the found spot');
-        assert.equal(Economy.incomeMoved(turned), true, 'the held build is to be rebuilt on it');
+        assert.equal(Economy.heldSpotMoved(turned), true, 'the held build is to be rebuilt on it');
         assert.equal(Economy.forState(turned, { spots, timestamp: time(32) }).hunt.spotId, 'poor', 'and the build moves to it');
-        assert.equal(Economy.incomeMoved(turned), false, 'the rebuilt build holds the new spot');
+        assert.equal(Economy.heldSpotMoved(turned), false, 'the rebuilt build holds the new spot');
         Economy.reset();
     }
     let weak = { ...earning, level: 25, stats: { ...earning.stats, huntEfficiency: [] } };

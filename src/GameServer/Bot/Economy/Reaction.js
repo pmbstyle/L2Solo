@@ -93,7 +93,9 @@ const LINKS = Object.freeze({
     // goal comes in reach; a rest is no review of the purse (user 11-02).
     money: link(['money'], FIELD | VISIT),
     goal: link(['money'], 0),
-    observation: link(OBSERVED, WORK | VISIT),
+    // Its own samples moved: also the observation bit, the earning spot search's
+    // event (DecisionSections SECTIONS); a gear-threat flip raises no such bit.
+    observation: link([...OBSERVED, 'observation'], WORK | VISIT),
     market: link(BOUGHT, 0),
     // The held plan's own proof (EconomyContext.heldBuildVerdict).
     crafter_mp: link(['sources'], FIELD | VISIT),

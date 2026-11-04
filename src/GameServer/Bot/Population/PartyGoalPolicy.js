@@ -154,7 +154,7 @@ function formingHold(inputsOf, site) {
 // quote, planned potion, its party samples at this spot (any sub-roster), the
 // solo side's search (its version: the earning hold's renewal or its own).
 // The fight's moment by what the matchups and buff offers read of it: the
-// shot its prices name and the kind it loads (EconomyContext.bagInputs; none
+// shot its prices name and the kind it loads (DecisionSections.shotInputs; none
 // once the charges end), alive
 // (a dead or 0 HP member leaves the capacity), the effects running at the read,
 // the buffs each seller in the roster would sell it now (ColdBuffOffer.select:
@@ -181,7 +181,7 @@ function verdictInputs(member, context, drift) {
     const summon = stats.coldCombat?.summon;
     const parts = [id, member.level, classId, member.spotId, member.loc?.locX, member.loc?.locY, Sections.kit(member), economic,
         Offer.available(member), Number(member.vitals?.hp === 0 || member.activity === 'dead'), running, sold,
-        invoke('GameServer/Bot/Economy/EconomyContext').bagInputs(member, timestamp).join(':'),
+        Sections.shotInputs(member, timestamp).join(':'),
         summoner ? [member.vitals?.mp, !!(summon?.active && Number(summon.hp ?? summon.maxHp) > 0 && summon.expiresAt > timestamp),
             Object.entries(stats.coldCombat?.cooldowns || {}).filter(([, until]) => Number(until) > timestamp).map(([skill]) => skill).sort().join('+')].join(':') : '',
         JSON.stringify(stats.partyRequest ?? null), plan?.status, plan?.strategy, JSON.stringify(plan?.next ?? null)];

@@ -77,13 +77,13 @@ function soloChoice(state, spots, timestamp) {
     const options = { spots, timestamp, required: true, mode: 'solo', maxChecks: MAX_SOLO_CHECKS };
     const route = Economy.heldIncomeRoute(standalone, { ...options, party: true });
     if (route) return { route, version: `held:${Economy.holdAnswerAt(standalone)}`, own: null };
-    const id = Number(state.characterId) || 0, facts = searchFacts(standalone);
+    const id = Number(state.characterId) || 0;
     let own = soloChoices.get(id);
-    if (!own || own.facts !== facts || own.spots !== spots || timestamp < own.at || timestamp >= own.at + Economy.HOLD_MS
-        || Economy.searchMoved(own, standalone, timestamp)
+    if (!own || own.spots !== spots || timestamp < own.at || timestamp >= own.at + Economy.HOLD_MS
+        || Economy.searchMoved(own, standalone, timestamp, options)
         || invoke('GameServer/Bot/Economy/DecisionSections').observationChanged(standalone, own.observed, timestamp)) {
         const found = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').search(standalone, options);
-        own = { ...Economy.searchInputs(standalone, found, timestamp), facts, observed: observed(standalone, timestamp),
+        own = { ...Economy.searchInputs(standalone, found, timestamp, options), observed: observed(standalone, timestamp),
             spots, at: timestamp, choice: found.route };
     }
     // Least recently used: a read moves the bot to the newest end.
@@ -96,20 +96,13 @@ function soloChoice(state, spots, timestamp) {
 }
 
 // The solo side's own search (EquipmentIncomeRoute.search) is kept on what it
-// reads, as the held earning spot keeps its own: the economic hunt, the money
-// weights its answer stands over and the bag (EconomyContext.searchInputs,
-// searchMoved), and the sections the hold is rebuilt on, read here as facts of
-// the solo copy (soloState): the kit fact and level (build), a death and the
-// spot's risk deaths (combat), the spot it stands at (occupation), the clan
-// (relations); its own samples and time on the spot by the observation
-// event's rule (DecisionSections.observationChanged), as they reach the hold.
-// Crowd, risk exclusions and the spawn period at the candidate spots have no
-// event: the hold's window (HOLD_MS) stands in for them here too.
-function searchFacts(state) {
-    const stats = state.stats || {};
-    return [invoke('GameServer/Bot/Economy/DecisionSections').kit(state), state.level, Number(Number(state.vitals?.hp) <= 0),
-        positive(stats.spotRisk?.windowDeaths), state.spotId, Number(state.clanId ?? stats.clanId ?? 0)].join(',');
-}
+// reads, by the held earning spot's own key (EconomyContext.searchInputs,
+// searchMoved: DecisionSections.LINK_INPUTS incomeSearch on the solo copy,
+// soloState, and the weights its answer stands over); its own samples and
+// time on the spot by the observation event's rule
+// (DecisionSections.observationChanged), as the observation bit reaches the
+// hold. Inputs with no event (crowd, prices, the spawn period): the hold's
+// window (HOLD_MS) stands in for them here too.
 function observed(state, timestamp) {
     return { sample: invoke('GameServer/Bot/Economy/DecisionSections').sample(state, timestamp),
         share: invoke('GameServer/Bot/AI/BotHuntEfficiency').onSpotShare(state),

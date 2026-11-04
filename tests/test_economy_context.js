@@ -606,12 +606,15 @@ async function run() {
                 assert(refreshed, `fixture: the selling card holds (${why[0]})`);
                 assert.equal(refreshed.economy.stock('shots').target, prepared.basics.stock('shots').target, 'fixture: the view reads the basics handed on');
                 const after = Economy.incomeHoldStats();
-                const reads = Object.fromEntries(Object.keys(after).map(key => [key, after[key] - before[key]]).filter(([, n]) => n));
+                // The searches by input as event:<input> beside the read counts.
+                const flat = stats => ({ ...stats, event: 0, ...Object.fromEntries(Object.entries(stats.event).map(([input, n]) => [`event:${input}`, n])) });
+                const was = flat(before), now = flat(after);
+                const reads = Object.fromEntries(Object.keys(now).map(key => [key, now[key] - (was[key] || 0)]).filter(([, n]) => n));
                 return { economy: economyOf(prepared.basics), reads, fresh: economyOf(Economy.basics(state, deps)) };
             };
-            // The first refresh's check searches (the hold's goal turned since the build).
+            // The first refresh's check searches (the hold's economic hunt turned since the build).
             const held1 = refresh(published, T).reads;
-            assert(held1.goal === 1 && held1.renewed === 1, 'fixture: the first check renews the hold');
+            assert(held1['event:economic'] === 1 && held1.renewed === 1, 'fixture: the first check renews the hold');
             const reads = counted => Object.entries(counted).filter(([key]) => ['kept', 'unrouted'].includes(key))
                 .reduce((sum, [, n]) => sum + n, 0);
             const same = refresh(published, T);
@@ -622,6 +625,7 @@ async function run() {
             assert.deepEqual(moved.economy, moved.fresh, 'a moved bag gives the bag\'s answer');
             const later = refresh(published, T + 31 * invoke('GameServer/World/GameTime').GAME_MINUTE_MS);
             assert.equal(later.reads.renewed, 1, 'fixture: the window\'s end searches in the check');
+            assert.equal(later.reads.window, 1, 'fixture: by the window');
             assert.equal(reads(later.reads), 1, 'the view reads the renewed hold anew');
             assert.deepEqual(later.economy, later.fresh, 'the view\'s economy is the renewed hold\'s');
         } finally {
@@ -897,7 +901,7 @@ async function run() {
         assert.deepEqual(soft(richer(5), wallet), [], 'a wallet drift inside the error is no event');
         assert.deepEqual(soft(richer(50), wallet), ['money'], 'a wallet drift beyond the error is an event a second later');
         assert.deepEqual(soft({ ...published, stats: { ...published.stats, frustration: 1 } }, { frustration: 0, incomeError: 0.1 }),
-            ['occupation', 'benefits', 'sources'], 'a frustration beyond the error is an observation event');
+            ['occupation', 'benefits', 'sources', 'observation'], 'a frustration beyond the error is an observation event');
         const [item, , reference, error] = watched, below = Math.floor(reference * (1 - error)) - 1;
         assert(below > 0, 'fixture: a price below the watched reference');
         let record = 1;

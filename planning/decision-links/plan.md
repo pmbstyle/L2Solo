@@ -76,6 +76,12 @@ Inputs marked (E) have an event today, (–) have none, (S) need a significance 
    is not the held leaf's, and a mark's expiry (exclusions); the held leaf's own arrival moves the search's origin
    (spot, own output: decide); the workshop's packet hour/price are the previous build's (one build behind) and its
    wallet, maxMp and own board lines carry no fact; beginner shots running out (bagShot).
+   Stage B done: the earning spot search decides on its key (`EconomyContext.incomeMoved`: the incomeSearch
+   versions, `mode` the party/duo gate, the weight interval, the new `observation` section bit raised by the
+   observation link only); `COMPUTED.incomeSearch`, `goalMoved`/`weightMoved`/`bagMoved` gone; `incomeHold` counts
+   searches by input (`event:<input>`). Behaviour: a section raise that moves no input keeps the held spot (clan,
+   friend, recipe, the income_moved echo, unhuntable on the same spot); a risk mark or its expiry on any candidate
+   searches at the next build; inputs with no event refresh only by `HOLD_MS` and observation.
 2. Per-bot input versions instead of section masks: bag, money, kit, level, occupation, relations, market. A link
    stores the versions it read; `DecisionSections.COMPUTED` becomes these per-link input sets.
 3. Per-spot versions (crowd, risk); then `HOLD_MS` and other windows go.

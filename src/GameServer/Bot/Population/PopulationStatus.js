@@ -188,25 +188,27 @@ const PopulationStatus = {
         return doors ? ` doors=${Object.entries(doors).map(([caller, row]) => `${caller}:${row.join(':')}`).join(',')} raised=${top(raised)} rejected=${top(DecisionEvents.rejections())}` : '';
     },
 
-    // incomeHold=<kept>/<none>,<unrouted>,<renewed>,<moved>,<event>,<goal>,<weight>,<bag>;party<kept>/<missed>: held earning
-    // spot reads and searches since the worker started (EconomyContext holdStats, decision 10-30), diagnostics off too:
-    // event counts a build's own searches (a section, or bag: a supply build whose shot moved, also in event), goal the
-    // searches the economic hunt's turn asked inside the window, weight those the money weight asked by leaving the
-    // weights the held answer stands over.
+    // incomeHold=<kept>/<none>,<unrouted>,<renewed>,<moved>,<window>;event:<input>=<n>+...;party<kept>/<missed>: held
+    // earning spot reads and searches since the worker started (EconomyContext holdStats, decision 10-30), diagnostics
+    // off too: window the searches the 30-min window asked, event the searches each input of the search's key asked
+    // (a build's own and a read's; observation: the bot's own samples), most first.
     incomeHoldText(h) {
-        return h ? ` incomeHold=${h.kept || 0}/${h.none || 0},${h.unrouted || 0},${h.renewed || 0},${h.moved || 0},${h.event || 0},${h.goal || 0},${h.weight || 0},${h.bag || 0};party${h.partyKept || 0}/${h.partyMissed || 0}` : '';
+        if (!h) return '';
+        const events = Object.entries(h.event || {}).sort((a, b) => b[1] - a[1]).map(([input, n]) => `${input}=${n}`).join('+');
+        return ` incomeHold=${h.kept || 0}/${h.none || 0},${h.unrouted || 0},${h.renewed || 0},${h.moved || 0},${h.window || 0}`
+            + `;event:${events || 0};party${h.partyKept || 0}/${h.partyMissed || 0}`;
     },
 
-    // links=<link>:<rebuilt>/<kept>,mask<n>,key<n>,verify<mismatch>/<row>/<checked>,new<n>;...;search=<n>/<ms>ms: the
-    // decision links' shadow keys since the worker started (EconomyContext incomeShadow, buildShadow, workshopShadow; developerDiagnostics only):
-    // rebuilt/kept as a key on the link's inputs would decide; mask: today's mask rebuilt what the key keeps; key: the
-    // key would rebuild what the mask keeps (a possibly stale answer); verify: held answers checked against a fresh one
-    // (mismatch: another spot or recipe, row: another income); new: answers with nothing to compare; search: the
-    // earning spot searches and their time.
+    // links=<link>:<rebuilt>/<kept>[,mask<n>,key<n>],verify<mismatch>/<row>/<checked>,new<n>;...;search=<n>/<ms>ms: the
+    // decision links since the worker started (EconomyContext incomeShadow, buildShadow, workshopShadow; developerDiagnostics
+    // only): rebuilt/kept as the link's key decides (a link still on masks: as it would decide); mask (those only): today's
+    // mask rebuilt what the key keeps; key: the key would rebuild what the mask keeps (a possibly stale answer); verify:
+    // held answers checked against a fresh one (mismatch: another spot or recipe, row: another income); new: answers
+    // with nothing to compare; search: the earning spot searches and their time.
     linksText(links) {
         if (!links) return '';
         const rows = Object.entries(links).filter(([link]) => link !== 'search').map(([link, r]) =>
-            `${link}:${r.rebuilt}/${r.kept},mask${r.maskOnly},key${r.keyOnly},verify${r.mismatch}/${r.row}/${r.verified},new${r.unjudged}`);
+            `${link}:${r.rebuilt}/${r.kept}${r.maskOnly === undefined ? '' : `,mask${r.maskOnly},key${r.keyOnly}`},verify${r.mismatch}/${r.row}/${r.verified},new${r.unjudged}`);
         if (links.search) rows.push(`search=${links.search.searches}/${Math.round(links.search.ms)}ms`);
         return ` links=${rows.join(';')}`;
     },

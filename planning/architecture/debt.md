@@ -98,8 +98,8 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
 21. **The supply fact misses the beginner shots.** `DecisionSections.stockIds` (~387) names the paid shot
    (`ShotStock.planForState`), while a fight loads the beginner grant first (`ShotStock.combatPlanForState`): the
    grant running out turns the shot a fight loads (`ColdCombatProfile.shotSupply`, the matchup's shot kind) with no
-   supply event, so the held earning spot and a kept foundation hear it only at the next search (the window, an
-   event). The source ground compares the kind itself (`sourceRouteReader`).
+   supply event, so a kept foundation hears it only at its next rebuild. The held earning spot's key reads the kind
+   (`bagShot`) at every build, the source ground compares it itself (`sourceRouteReader`).
 
 22. **The wish focus and dormant rows have no layout owner.** `stats.wishFocus` (`[key, sinceHours, price]`) and
    `stats.dormantWishes` rows (`[key, reason, 0, price, playedHours, loyalty]`), written by `WishNetwork` (~1038) and
@@ -133,6 +133,11 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    ceasefire, loss window, intel TTL). The review is also the only sampler of enemy sightings at a spot (positions,
    no event), so it needs a sightings sampler of its own before it can wait for its events. An unchanged review is
    no longer written.
+
+23. **The held earning spot's inputs with no event.** Crowd and room at the candidate spots (`SpotOccupancyIndex`),
+   consumable and loot prices (the market watch names only the wish and sale rows) and the spawn catalogue period
+   carry no version: the held spot refreshes them only by its 30-game-minute window (`EconomyContext.HOLD_MS`,
+   limits.md) and the observation bit (decision-links plan step 3: per-spot versions).
 
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets`' `gapHorizonHours`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so

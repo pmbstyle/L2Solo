@@ -69,9 +69,9 @@ MerchantStoreConfigs}`, `src/Market*`, `src/Economy*`, `Population/ColdEconomy{P
   purchase and wish prices an hour with; shots / potions pay (`ShotStock.usePolicy`, `EconomyContext.foundation`).
   Money of a kill is live (`SpotRewardExpectation.value`). See [tables.md](tables.md).
 - **Observability:** `EconomyDiagnostics`, `MarketTelemetry`, `CraftTelemetry`, `MarketSnapshot`, `src/EconomyJournal`,
-  `src/MarketTradeOverview*`, `src/MarketEconomyOverview`. The decision links' shadow (developerDiagnostics only):
-  `EconomyContext` compares a key on `DecisionSections.LINK_INPUTS` with today's masks (`link:*` counts, the worker's
-  `links=` status line; planning/decision-links).
+  `src/MarketTradeOverview*`, `src/MarketEconomyOverview`. The decision links' counts (developerDiagnostics only):
+  `link:*` and the worker's `links=` status line (planning/decision-links): the earning spot search by the input that
+  asked it, the links still on masks (workshop, route rows) as a shadow of a key on `DecisionSections.LINK_INPUTS`.
 
 ## Data flow
 
@@ -98,6 +98,7 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
 | Which offer to buy | `OfferQuery.bestSellOffer` + `OfferOrder` |
 | Trip cost | `OfferOrder.tripCost` → `EconomicTrip`; the worker's town route table is held by `EconomicTrip.key`, only what its rows read (a visit or a trip to one, the bot's point where no trip end or return point stands for it, a Scroll of Escape present, the karma flip): a rest, a hunt or a scroll used while one is left keeps the table and the held workshop |
 | Spendable money | `PurchaseFunding` |
+| When the held earning spot searches again (decision 10-30), hot and cold | `EconomyContext.incomeMoved` on its key: the versions of the search's inputs (`DecisionSections.LINK_INPUTS` incomeSearch: kit parts, party, the mode gate, adventurer, economic hunt, required gear, origin spot, sampled spot ids, risk exclusions, the bag's shot) and the money weights its answer stands over, plus the `observation` event bit (Reaction's observation link); a rebuilt foundation searches on it, any other read (basics, the party read, a served build through `holdCheck`) asks one search that renews the hold in place or moves it (`heldSpotMoved` → `income_moved`). Inputs with no event refresh by the 30-game-minute window (`HOLD_MS`, limits.md); a section raise that moves no input (a clan or friend change, a learned recipe, a supply build keeping the shot) keeps the held spot |
 | Layout of the stats packet arrays (`stats.money`, `stats.stockTargets`, `stats.dangerPrice`: saved in `mindJson`, sent worker → main), hot and cold | `StatsPacket`: named writers (`money` + `addFunded`, `stockTargets`, `dangerPrice`) and readers (`hourAdena`, `moneyPrice`, `survivalReserve`, `firstUnfundedPrice`, the funded rows, `kitRow`, `deathHours`, `riskWeight`); slots and the unpriced scroll's -1 live only there. The values (rounding, the funded queue) stay with `PurchaseFunding.packetFor` and `EconomyContext.stockTargets` |
 | Survival kit price and reserve (shots, potions, escape scroll) | `EconomyContext.kitReader`: the reserve holds the kit at the NPC table's price (`StaticMerchantPricing.botNpcListPrice`, the cheapest town NPC; the bot's estimate where no town NPC sells it). A restock counter (`PurchaseFunding.survivalTranche` → `spendable`) counts that share beside the queue's money; a town's tax above it comes from that money, and when that falls short the kit at the quote is still paid from the wallet (never refused) |
 | A bot's kit targets on main (what a restock buys, what the sale keeps), hot and cold | `EconomyContext.keptKit` (purchase) / `keptTargets` (sale: `ItemDisposition.keptStock`, read by the listing, `MarketPricing`'s sale count and `ShotMarketIndex`'s own supply), one reader (`publishedKit`) of the worker plan's `stats.stockTargets` over the live bag, priced by `kitReader`; the basics when the row is missing, names another potion or shot, or shots that cannot restock rose since the build, and for a purchase when a scroll is missing and the row has no scroll hours (unpriced: the worker solves no route for the row). The fallback reasons are counted for diagnostics only (`kit:basics:<reason>`, while `EconomyDiagnostics` is active); a row without the restock slots serves the sale only. Our choice, not C4 |
@@ -181,7 +182,7 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
   weight (valueHours = expHours·(1 − w) + incomeHours·w − riskHours, over a walk factor), and nothing else the search
   reads moves with it, so `EquipmentIncomeRoute.search` returns with its answer the weights it stands over (the
   comparisons of lines the answer reads, kept with a rounding margin; plus the packet's hour where the band has no
-  money hour); the held earning spot searches again only when the weight leaves them (EconomyContext `weightMoved`).
+  money hour); the held earning spot searches again only when the weight leaves them (EconomyContext `incomeMoved`).
   A search that moves the route, through the hour the next build publishes, can still ask the next one when that
   moves the weight past a crossing (and a bot's first build, searched with no packet, asks one more). Open: value
   the weight at the band hour.
