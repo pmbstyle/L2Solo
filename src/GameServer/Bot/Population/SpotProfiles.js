@@ -276,10 +276,9 @@ const SpotProfiles = {
         // fallback; a refused candidate counts as absent. A bot's own spot is
         // never full to it; the room is checked again at arrival. The worker
         // passes its own index's filter (options.hasRoom); a search on main
-        // (market return, competition retreat, a command's trip, a party's
-        // formation) reads main's world index (ROUTE-ROOM-4). A party search
-        // counts the whole party (options.capacityStates), its own members
-        // excluded.
+        // (market return, a command's trip, a party's formation) reads main's
+        // world index (ROUTE-ROOM-4). A party search counts the whole party
+        // (options.capacityStates), its own members excluded.
         const hasRoom = options.hasRoom ?? defaultRoomFilter(state, profiles, options.capacityStates);
         const full = (spot) => {
             if (!hasRoom || (currentSpot && spot.id === currentSpot.id)

@@ -1315,8 +1315,8 @@ function soloArrival(state, result) {
 // objective spot (a clan goal, a material party) admits it: a pass read from
 // the goal the party carries, not a place held for it, so a full roster does
 // not bounce between its objective and a fallback spot. cause: the trip's
-// (party.stats.travel.cause): competition_avoid (main's retreat),
-// position_mismatch or death_pressure (the run's search); none: 'route', the
+// (party.stats.travel.cause): position_mismatch or death_pressure (the run's
+// search); none: 'route', the
 // run's search that picked a new spot.
 function partyArrival({ party, members, spotId, cause = null }) {
     const arriving = new Set((party?.memberIds || []).map(String));

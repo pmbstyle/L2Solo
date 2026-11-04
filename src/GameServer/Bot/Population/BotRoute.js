@@ -12,8 +12,7 @@
 // leafChoice: the spot the step's own decision names, when it may go there
 // (leafFitReader: the one fit test, the economy's leaf reads it too).
 // Callers: the worker's trip start (planLifecycle: trip), the party run (the
-// worker's partyRoute, ColdSimulationKernel), the competition retreat on main
-// (ColdSimulationCoordinator retreatRoute). Worker-safe: every spot lookup
+// worker's partyRoute, ColdSimulationKernel). Worker-safe: every spot lookup
 // reads the catalog the caller passes (`spots`, the spot profile array: the
 // worker's planning catalog, SpotProfiles.ensure() on main).
 const FailureLog = invoke('FailureLog');
@@ -284,7 +283,7 @@ function record(state, chosen, party, partyMembers = [], { spots, currentSpot = 
 }
 
 // One search and its trip, nothing kept: the party run (the worker's room
-// filter in hasRoom) and the retreat (main: none, the search reads main's index).
+// filter in hasRoom).
 function route(state, currentSpot, party, partyMembers = [], { spots, timestamp, hasRoom = null, spotHunters = null }) {
     if (!routable(state, party, partyMembers)) return null;
     const frame = frameFor(state, party, partyMembers, timestamp, hasRoom, spotHunters);
