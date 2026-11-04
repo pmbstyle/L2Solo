@@ -69,9 +69,10 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    forever, logged); the checkpoint worker restarts every 250 ms forever, dD only (`DatabaseCheckpointCoordinator`
    ~61), the clan planning worker retries after 5 s (`ClanPlanningCoordinator` ~73). One restart rule for all.
 
-16. **"Is this skill magic" has two owners** (pass4 D-4): 43 skills carry the wrong spell flag in data; the hot path
-   overrides 35 of them, the cold path and the estimates read the raw flag. One owner: fix the data flags and read
-   one rule everywhere.
+17. **One magic flag, two C4 rules.** `Skill.fetchSpell` (Lisvus `isMagic`: cast speed, spiritshot, cast break, MP
+   and land rate) also picks the damage formula (`Attack.prepareSkillDamage`, `ColdMobAction`, `BackgroundResolver`);
+   C4 picks it by skill type (Mdam/Pdam handlers). So Mouth Odor Attack 4110 (MDAM, not magic) keeps `spell: true`
+   (pass4 D-4), and a PDAM skill flagged magic (Die! You fool!) deals magic damage.
 
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets[6]`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so

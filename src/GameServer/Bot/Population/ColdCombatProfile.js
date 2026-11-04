@@ -1436,14 +1436,12 @@ function shotSupply(state, timestamp) {
 // The shot an action loads from a supply (shotSupply), by the hot rule
 // (ShotStock.actionShotKind): a spell a spiritshot, a physical skill a
 // soulshot unless its ssBoost is 0, a normal attack (no skill) a soulshot.
-// The supply when it holds that kind, otherwise null.
+// A record's spell flag is the Skill model's (skillRecord). The supply when it
+// holds that kind, otherwise null.
 function actionShot(shot, skill = null) {
     if (!shot) return null;
     let kind = ShotStock.actionShotKind(false);
-    if (skill) {
-        const semantic = C4SkillRules.resolveCached(skill);
-        kind = ShotStock.actionShotKind(semantic.isMagic ?? skill.spell === true, semantic.ssBoost);
-    }
+    if (skill) kind = ShotStock.actionShotKind(skill.spell === true, C4SkillRules.resolveCached(skill).ssBoost);
     if (kind === 'soulshot') return shot.soulshot ? shot : null;
     return kind && shot.spiritshot ? shot : null;
 }

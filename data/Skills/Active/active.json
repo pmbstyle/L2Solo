@@ -37027,7 +37027,7 @@
         "template": {
             "name": "Magic Haste Potion",
             "passive": false,
-            "spell": false,
+            "spell": true,
             "distance": -1
         },
         "time": {
@@ -42541,7 +42541,7 @@
         "template": {
             "name": "Song of Vitality",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": -1
         },
         "time": {
@@ -42565,7 +42565,7 @@
         "template": {
             "name": "Song of Vengeance",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": -1
         },
         "time": {
@@ -42589,7 +42589,7 @@
         "template": {
             "name": "Song of Flame Guard",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": -1
         },
         "time": {
@@ -42613,7 +42613,7 @@
         "template": {
             "name": "Dance of Aqua Guard",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": -1
         },
         "time": {
@@ -42637,7 +42637,7 @@
         "template": {
             "name": "Song of Storm Guard",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": -1
         },
         "time": {
@@ -42661,7 +42661,7 @@
         "template": {
             "name": "Dance of Earth Guard",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": -1
         },
         "time": {
@@ -42685,7 +42685,7 @@
         "template": {
             "name": "Dance of Vampire",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": -1
         },
         "time": {
@@ -43925,7 +43925,7 @@
         "template": {
             "name": "Dance of Protection",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": -1
         },
         "time": {
@@ -44725,7 +44725,7 @@
         "template": {
             "name": "Touch of Life",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 40
         },
         "levels": [
@@ -44749,7 +44749,7 @@
         "template": {
             "name": "Touch of Death",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 40
         },
         "levels": [
@@ -44773,7 +44773,7 @@
         "template": {
             "name": "Lethal Shot",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 900
         },
         "levels": [
@@ -44797,7 +44797,7 @@
         "template": {
             "name": "Lethal Blow",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 40
         },
         "levels": [
@@ -44821,7 +44821,7 @@
         "template": {
             "name": "Sonic Rage",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 600
         },
         "levels": [
@@ -44845,7 +44845,7 @@
         "template": {
             "name": "Force Rage",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 600
         },
         "levels": [
@@ -44869,7 +44869,7 @@
         "template": {
             "name": "Earthquake",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 40
         },
         "levels": [
@@ -44893,7 +44893,7 @@
         "template": {
             "name": "Spoil Crush",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 40
         },
         "levels": [
@@ -44917,7 +44917,7 @@
         "template": {
             "name": "Song of Renewal",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 40
         },
         "levels": [
@@ -44941,7 +44941,7 @@
         "template": {
             "name": "Physical Mirror",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": -1
         },
         "levels": [
@@ -44965,7 +44965,7 @@
         "template": {
             "name": "Magical Mirror",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": -1
         },
         "levels": [
@@ -44989,7 +44989,7 @@
         "template": {
             "name": "Shield Bash",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 40
         },
         "levels": [
@@ -45013,7 +45013,7 @@
         "template": {
             "name": "Shield Slam",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 40
         },
         "levels": [
@@ -45037,7 +45037,7 @@
         "template": {
             "name": "Hamstring Shot",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 900
         },
         "levels": [
@@ -45061,7 +45061,7 @@
         "template": {
             "name": "Focus Death",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": -1
         },
         "levels": [
@@ -45085,7 +45085,7 @@
         "template": {
             "name": "Focus Chance",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": -1
         },
         "levels": [
@@ -45109,7 +45109,7 @@
         "template": {
             "name": "Focus Power",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": -1
         },
         "levels": [
@@ -45133,7 +45133,7 @@
         "template": {
             "name": "Bluff",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 40
         },
         "levels": [
@@ -45157,7 +45157,7 @@
         "template": {
             "name": "Eye of Hunter",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": -1
         },
         "levels": [
@@ -45181,7 +45181,7 @@
         "template": {
             "name": "Eye of Slayer",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": -1
         },
         "levels": [
@@ -45205,7 +45205,7 @@
         "template": {
             "name": "Shock Blast",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 500
         },
         "levels": [
@@ -45229,7 +45229,7 @@
         "template": {
             "name": "Armor Crush",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 40
         },
         "levels": [
@@ -45253,7 +45253,7 @@
         "template": {
             "name": "Song of Meditation",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 40
         },
         "levels": [
@@ -45277,7 +45277,7 @@
         "template": {
             "name": "Song of Champion",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 40
         },
         "levels": [
@@ -45301,7 +45301,7 @@
         "template": {
             "name": "Dance of Siren",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 40
         },
         "levels": [
@@ -45325,7 +45325,7 @@
         "template": {
             "name": "Dance of Shadow",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 40
         },
         "levels": [
@@ -45349,7 +45349,7 @@
         "template": {
             "name": "Dance of Medusa",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 40
         },
         "levels": [
@@ -45397,7 +45397,7 @@
         "template": {
             "name": "Evade Shot",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 900
         },
         "levels": [
@@ -45685,7 +45685,7 @@
         "template": {
             "name": "Warrior Servitor",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 400
         },
         "levels": [
@@ -45709,7 +45709,7 @@
         "template": {
             "name": "Wizard Servitor",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 400
         },
         "levels": [
@@ -45757,7 +45757,7 @@
         "template": {
             "name": "Final Servitor",
             "passive": false,
-            "spell": true,
+            "spell": false,
             "distance": 400
         },
         "levels": [

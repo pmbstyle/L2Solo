@@ -54,7 +54,6 @@ items are added or removed by priority at any time.
 | Item | P | S | Who |
 |---|---|---|---|
 | Drops not C4 for 70 % of spawns at level ≤ 40 (pass4 D-1: old NodeL2 rewards.json, adena ~0.82× C4, gear drops ~1.6-2×): write Lisvus groups through a generator, rebuild knowledge base and tables | **high** | low |  |
-| Magic flag wrong on 43 skills, two owners of "is magic" (pass4 D-4, debt 16) | mid | low |  |
 | Stackable flag flipped on 222 items, mostly quest items (pass4 D-5); check save rows merge | mid | low |  |
 | Spawn sources disagree (pass4 D-6/D-7: minions spawned twice / standalone; Immortal Plateau density Mobius vs Lisvus) — decide the reference | mid | low |  |
 | D-S shots only via craft/board (decided): make sure bots supply them | high | low |  |

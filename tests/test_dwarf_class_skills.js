@@ -309,7 +309,7 @@ for (const [id, name] of [[13, 'Summon Siege Golem'], [25, 'Summon Mechanic Gole
 assert.strictEqual(C4SkillRules.resolve({ selfId: 60, name: 'Fake Death', level: 1 }).operateType, 'toggle', 'Fake Death should remain activatable');
 for (const [id, name] of [[339, 'Parry Stance'], [340, 'Riposte Stance']]) {
     const toggleActor = actor();
-    const stance = skill(id, name, 1, { spell: true });
+    const stance = skill(id, name);
     assert.strictEqual(stance.fetchSpell(), false, `${name} should use physical toggle timing`);
     ToggleSkills.handleRequest(session(toggleActor), toggleActor, stance);
     assert(EffectStore.list(toggleActor).some((effect) => effect.id === id), `${name} should activate as a maintained toggle`);
@@ -327,7 +327,7 @@ for (const dwarfStun of [stunAttack, hammerCrush]) {
     assert.strictEqual(new Attack().skillUseConditionFailure(actor({ weaponKind: 'Weapon.Sword' }), dwarfStun), 'Incorrect weapon.', `${dwarfStun.fetchName()} should require a blunt weapon`);
 }
 
-const earthquake = skill(347, 'Earthquake', 1, { spell: true, distance: 40, hp: 340, power: 4040 });
+const earthquake = skill(347, 'Earthquake', 1, { distance: 40, hp: 340, power: 4040 });
 assert.strictEqual(earthquake.fetchSpell(), false, 'Earthquake should use physical cast timing');
 assert.strictEqual(earthquake.fetchTargetKind(), 'enemy', 'Earthquake should damage enemies');
 assert.strictEqual(earthquake.fetchSemantic().sourceTarget, 'aura', 'Earthquake should originate from the caster');
@@ -365,7 +365,7 @@ const normalQuakeDamage = skillCritAttack.prepareSkillDamage(skillCritCaster, sk
 const criticalQuakeDamage = skillCritAttack.prepareSkillDamage(skillCritCaster, skillCritTarget, earthquake, false, () => 0);
 assert.strictEqual(criticalQuakeDamage, normalQuakeDamage * 2, 'Earthquake physical skill critical should double final damage without melee critical-power modifiers');
 
-const armorCrush = skill(362, 'Armor Crush', 1, { spell: true, distance: 40, hp: 254, power: 1973, buff: 9000 });
+const armorCrush = skill(362, 'Armor Crush', 1, { distance: 40, hp: 254, power: 1973, buff: 9000 });
 assert.strictEqual(armorCrush.fetchSpell(), false, 'Armor Crush should be a physical skill');
 assert.strictEqual(armorCrush.fetchSkillType(), C4SkillRules.DAMAGE_EFFECT, 'Armor Crush should deal damage and apply a debuff');
 assert.strictEqual(armorCrush.fetchConsumedHp(), 254, 'Armor Crush should consume the sourced 254 HP');
@@ -395,7 +395,7 @@ const spoilTarget = {
     state: { fetchDead() { return spoilTarget.dead; } },
     enterCombatState() {}
 };
-const spoilCrush = skill(348, 'Spoil Crush', 1, { spell: true, distance: 40, power: 5 });
+const spoilCrush = skill(348, 'Spoil Crush', 1, { distance: 40, power: 5 });
 const spoilOutcome = C4SkillEffects.execute(session(auraCaster), auraCaster, spoilTarget, spoilCrush, {
     magicSkill: false,
     rng: () => 0,

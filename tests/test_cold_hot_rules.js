@@ -352,6 +352,14 @@ function soloFight({ classId, level, skills = [], effects = [], hp = null, mp = 
         assert.strictEqual(cold.spell, hot.fetchSpell(), `${id} level ${level}: one cast type hot and cold`);
         assert.strictEqual(cold.mp, hot.fetchConsumedMp(), `${id} level ${level}: one MP cost hot and cold`);
     }
+    // One cast type (Lisvus isMagic): songs, dances, stances, the 3rd-class physical skills and
+    // the servitor buffs are not spells; Magic Haste Potion is.
+    const physical = [304, 305, 306, 307, 308, 309, 310, 311, 349, 363, 364, 365, 366, 367, 339, 340, 341, 342, 343, 344, 345,
+        346, 347, 348, 350, 351, 352, 353, 354, 355, 356, 357, 358, 359, 360, 361, 362, 369, 1346, 1347, 1349];
+    for (const [id, magic] of [...physical.map(id => [id, false]), [2169, true]]) {
+        assert.strictEqual(hotRank(id, 1).fetchSpell(), magic, `hot ${id} magic ${magic}`);
+        assert.strictEqual(coldRank(id, 1).spell, magic, `cold ${id} magic ${magic}`);
+    }
     // The servitor's lifetime and crystal upkeep come with the record, as hot.
     const kat = coldRank(1111, 5);
     assert.deepStrictEqual([kat.totalLifeTime, kat.itemIdOT, kat.itemConsumeSteps], [1200000, 1458, 1], 'Kat the Cat\'s summon terms');

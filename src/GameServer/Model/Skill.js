@@ -30,6 +30,9 @@ class SkillModel {
         return this.model.passive;
     }
 
+    // The one "is magic" answer (cast type: cast speed, spiritshot, cast break,
+    // magic MP and land rate), hot and cold: the data flag (Lisvus isMagic),
+    // unless C4SkillRules overrides it. Cold records copy it (ColdCombatProfile).
     fetchSpell() {
         return this.semantic.isMagic ?? (this.model.spell === true);
     }

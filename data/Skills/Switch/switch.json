@@ -98,7 +98,7 @@
     "template": {
         "name": "Parry Stance",
         "passive": false,
-        "spell": true,
+        "spell": false,
         "distance": -1
     },
     "levels": [
@@ -122,7 +122,7 @@
     "template": {
         "name": "Riposte Stance",
         "passive": false,
-        "spell": true,
+        "spell": false,
         "distance": -1
     },
     "levels": [
