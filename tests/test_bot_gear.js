@@ -64,6 +64,34 @@ const fighterInventory = GearAcquisitionPlanner.equipInventoryUpgrades({
 assert.strictEqual(fighterInventory[String(noGradeShield.selfId)].equipped, true,
     'shield-compatible fighters must retain an equipped shield');
 
+// A cold hunt equips the same gear every round while its loot, shots and
+// Adena move: the same answer each time, a new one when a gear entry moves.
+{
+    const fighter = { level: 10, stats: { classId: 0, role: 'dps' } };
+    const entry = (selfId, amount = 1) => ({ selfId, name: itemTemplate(selfId).template.name, amount });
+    const bag = (extra = {}) => ({ ...shieldInventory, 1: entry(1), 57: { selfId: 57, name: 'Adena', amount: 100 }, ...extra });
+    const first = GearAcquisitionPlanner.equipInventoryUpgrades(fighter, bag());
+    assert.strictEqual(first['1'].equipped, true, 'the short sword is worn');
+    const looted = bag({ 57: { selfId: 57, name: 'Adena', amount: 900 }, 1835: { selfId: 1835, name: 'Soulshot: No Grade', amount: 40, stackable: true } });
+    const again = GearAcquisitionPlanner.equipInventoryUpgrades(fighter, looted);
+    assert.deepStrictEqual(again, { ...first, 57: looted['57'], 1835: looted['1835'] },
+        'loot beside the gear: the same gear answer, the loot copied');
+    again['1'].equipped = false;
+    again['1'].equippedSlots.push(14);
+    assert.deepStrictEqual(GearAcquisitionPlanner.equipInventoryUpgrades(fighter, looted)['1'], first['1'],
+        'an answer is the caller\'s own: editing it changes no later answer');
+    const fresh = DataCache.items;
+    DataCache.items = [...fresh];
+    assert.deepStrictEqual(GearAcquisitionPlanner.equipInventoryUpgrades(fighter, looted), { ...first, 57: looted['57'], 1835: looted['1835'] },
+        'a fresh equip (a new catalogue) gives the kept answer');
+    DataCache.items = fresh;
+    const upgraded = GearAcquisitionPlanner.equipInventoryUpgrades(fighter, bag({ 68: entry(68) }));
+    assert.strictEqual(upgraded['68'].equipped, true, 'a looted falchion is worn');
+    assert.strictEqual(upgraded['1'].equipped, false, 'the short sword comes off');
+    assert.strictEqual(GearAcquisitionPlanner.equipInventoryUpgrades({ ...fighter, stats: { classId: 10, role: 'mage' } }, looted)[String(noGradeShield.selfId)].equipped,
+        false, 'another class on the same bag is answered anew');
+}
+
 const noviceDagger = BotGear.planFor({ classId: 7, level: 16 });
 const weapon = itemTemplate(bySlot(noviceDagger, 7).selfId);
 assert.ok(Number(weapon.stats.pAtk || 0) < 1000, 'no-grade bot gear should ignore anomalous weapon stats');

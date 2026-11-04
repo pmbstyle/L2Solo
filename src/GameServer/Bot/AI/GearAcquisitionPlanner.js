@@ -1,3 +1,4 @@
+const { isDeepStrictEqual } = require('node:util');
 const Sources = require('../../Items/ItemAcquisitionCatalog');
 const ClanCrafting = require('../../Clan/ClanCraftingPolicy');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
@@ -485,9 +486,75 @@ function equipmentItemBetter(item, current, role, classId) {
             && Number(item.template?.price || 0) < Number(current.template?.price || 0);
 }
 
+// An entry equipping never touches: no paperdoll slot in its template or its
+// own record, worn in no slot, no per-copy instances (InventorySummary.
+// completeInstances skips a stackable one). It is never a candidate, never
+// a conflict and never worn, so its answer is its copy (passCopy).
+function passesThrough(value, item) {
+    return !(Number(item?.etc?.slot || 0) > 0) && !(Number(value?.slot || 0) > 0)
+        && !(Array.isArray(value?.equippedSlots) && value.equippedSlots.some(slot => Number(slot) > 0))
+        && (value?.stackable === true || !Array.isArray(value?.instances));
+}
+function passCopy(value) {
+    return { ...value, ...(Array.isArray(value?.equippedSlots) ? { equippedSlots: [...value.equippedSlots] } : {}) };
+}
+// A deep copy of plain data (an inventory entry: its slots, its instances).
+function plainCopy(value) {
+    if (value === null || typeof value !== 'object') return value;
+    if (Array.isArray(value)) return value.map(plainCopy);
+    const out = {};
+    for (const key of Object.keys(value)) out[key] = plainCopy(value[key]);
+    return out;
+}
+// The answers of the latest equips (equipInventoryUpgrades), newest last. One
+// reads, besides the catalogue: the role (roleFor), the class, the grade of
+// the level, whether the state's own bag wears a two-handed weapon (a
+// shield's suitability: read only for a shield user whose bag holds one) and the bag's
+// gear entries (in order, by value; the others pass through, passesThrough).
+// A cold hunt window equips the same gear each round, twice
+// (BotLifeState.prepareResolve). Kept by count, not by bot; a new catalogue
+// (DataCache.items or newbieItems replaced or grown) drops them all.
+const EQUIP_ANSWERS = 16;
+let equipAnswers = { items: null, length: 0, newbie: null, rows: [] };
 function equipInventoryUpgrades(state = {}, inventory = {}) {
     const role = roleFor(state);
     const classId = classIdFor(state);
+    const entries = Object.entries(inventory || {});
+    const gear = [];
+    let shield = false;
+    for (const [key, value] of entries) {
+        const item = ItemTemplateIndex.find(DataCache.items, value?.selfId);
+        if (passesThrough(value, item)) continue;
+        // A gear entry under another key than its id: equip writes its id's key.
+        if (key !== String(value?.selfId)) return equipUpgradesOf(state, inventory, role, classId);
+        if (Number(item?.etc?.slot) === 8) shield = true;
+        gear.push([key, value]);
+    }
+    const grade = gradeForLevel(state.level);
+    const twoHanded = shield && BotEquipmentCompatibility.usesShield(role, classId) ? hasEquippedTwoHandedWeapon(state) : null;
+    if (equipAnswers.items !== DataCache.items || equipAnswers.length !== DataCache.items?.length
+        || equipAnswers.newbie !== DataCache.newbieItems) {
+        equipAnswers = { items: DataCache.items, length: DataCache.items?.length, newbie: DataCache.newbieItems, rows: [] };
+    }
+    const rows = equipAnswers.rows;
+    let row = null;
+    for (let at = rows.length - 1; at >= 0 && !row; at--) {
+        const held = rows[at];
+        if (held.role === role && held.classId === classId && held.grade === grade && held.twoHanded === twoHanded
+            && held.gear.length === gear.length
+            && held.gear.every(([key, value], index) => key === gear[index][0] && isDeepStrictEqual(value, gear[index][1]))) row = held;
+    }
+    if (Diagnostics.active()) Diagnostics.count('equip_upgrades', 'answers', row ? 'hit' : 'built');
+    if (row) {
+        return Object.fromEntries(entries.map(([key, value]) => [key, row.out.has(key) ? plainCopy(row.out.get(key)) : passCopy(value)]));
+    }
+    const next = equipUpgradesOf(state, inventory, role, classId);
+    rows.push({ role, classId, grade, twoHanded, gear: gear.map(([key, value]) => [key, plainCopy(value)]),
+        out: new Map(gear.map(([key]) => [key, plainCopy(next[key])])) });
+    if (rows.length > EQUIP_ANSWERS) rows.shift();
+    return next;
+}
+function equipUpgradesOf(state, inventory, role, classId) {
     const candidates = Object.values(inventory || {}).flatMap((entry) => {
         if (Number(entry?.amount || 0) < 1) return [];
         const item = ItemTemplateIndex.find(DataCache.items, entry.selfId);
@@ -551,10 +618,7 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
         for (const slot of ArmorPolicy.ARMOR_SLOTS) best.delete(String(slot));
         for (const item of chosen) best.set(String(item.etc.slot),availableArmor.find(candidate => candidate.item === item));
     }
-    const next = Object.fromEntries(Object.entries(inventory || {}).map(([key, value]) => [key, {
-        ...value,
-        ...(Array.isArray(value?.equippedSlots) ? { equippedSlots: [...value.equippedSlots] } : {})
-    }]));
+    const next = Object.fromEntries(Object.entries(inventory || {}).map(([key, value]) => [key, passCopy(value)]));
     const setUnequipped = (owned) => {
         owned.equipped = false;
         owned.equippedCount = 0;
