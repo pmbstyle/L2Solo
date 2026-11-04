@@ -50,8 +50,7 @@ const fixtureDatabaseMethods = { ...fixtureDatabase };
         async function run() {
             Database.execute = () => Promise.resolve([]);
             Database.updateCharacterLocation = async () => {};
-            Database.updateCharacterExperience = async () => {};
-            Database.updateCharacterVitals = async () => {};
+            Database.updateCharacterProgress = async () => {};
             Database.reconcileBotClanMembership = async () => ({ repairedMembers: 0, repairedParties: 0 });
             Database.reconcileBotClanGoals = async () => ({ repairedMembers: 0, repairedParties: 0 });
             Database.syncInventorySummary = async () => {};

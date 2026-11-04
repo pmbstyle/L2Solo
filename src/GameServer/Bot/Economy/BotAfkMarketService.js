@@ -153,6 +153,19 @@ function viableSellLine(line) {
         && invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(line.selfId);
 }
 
+// The board writer's "no" to a bot's sell listing (Database.openBoardRecordUnsafe):
+// the bag moved since the review read it, a cap, or a unit held for the bot's
+// own gear, craft or clan (economy_material_protected). Nothing moved; the
+// next visit or review decides again. Returns the counted reason, or null for
+// anything else (a bug, rethrown).
+const LISTING_REFUSALS = new Set(['board_cap_reached', 'board_ad_exists', 'invalid_afk_trade_source',
+    'inventory_item_changed', 'economy_material_protected']);
+function listingRefusal(error) {
+    const reason = staleMove(error) ? 'shop_changed' : LISTING_REFUSALS.has(error?.message) ? error.message : null;
+    if (reason && Diagnostics.active()) Diagnostics.count('market', 'listing_refused', reason);
+    return reason;
+}
+
 async function publishPrunedSellShop(shop, kept, town = shop.town, loc = shop) {
     if (!kept.length) return AfkTrade.stop(shop.ownerId);
     return AfkTrade.publishBot(shop.ownerId, {
@@ -166,6 +179,10 @@ async function publishPrunedSellShop(shop, kept, town = shop.town, loc = shop) {
             ...line, objectId: line.sourceObjectId,
             stackable: Number(line.stackable) === 1
         }))
+    }).catch((error) => {
+        const reason = listingRefusal(error);
+        if (reason) return { reason };
+        throw error;
     });
 }
 
@@ -176,7 +193,8 @@ async function pruneResourceLots(ownerId) {
     const lines = (shop.lines || []).filter((line) => Number(line.count) > 0);
     const kept = lines.filter(viableSellLine);
     if (kept.length === lines.length) return { changed: false };
-    await publishPrunedSellShop(shop, kept);
+    const pruned = await publishPrunedSellShop(shop, kept);
+    if (pruned?.reason) return { changed: false, reason: pruned.reason };
     return { changed: true, removed: lines.length - kept.length, closed: kept.length === 0 };
 }
 
@@ -607,7 +625,8 @@ async function publishSellShop(ownerId, state, stock, lines, town, row, inventor
         }) };
     } catch (error) {
         AfkTrade.restorePlace(ownerId);
-        if (staleMove(error)) return { reason: 'shop_changed' };
+        const reason = listingRefusal(error);
+        if (reason) return { reason };
         throw error;
     }
 }
@@ -721,9 +740,8 @@ async function listSellAds(ownerId, state, listings, shop, inventory, options = 
         const result = await AfkTrade.openBotRecords(ownerId, 'sell_ad', configs);
         return { listed: result.opened.length };
     } catch (error) {
-        if (['board_cap_reached', 'board_ad_exists', 'invalid_afk_trade_source', 'inventory_item_changed'].includes(error.message)) {
-            return { listed: 0, reason: error.message };
-        }
+        const reason = listingRefusal(error);
+        if (reason) return { listed: 0, reason };
         throw error;
     }
 }

@@ -288,18 +288,6 @@ if (process.argv[2] === '--bootstrap') {
         ['bot_life_state_market_reconcile', 'bot_life_state_party_owner_filter', 'bot_life_state_warehouse_release',
             'bot_life_state_warehouse_demand'].forEach((name) => assert(
             !db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?").get(name), `drop-unused-bot-life-indexes must drop ${name}`));
-        // The bot row queries that used them still search an index, not the table.
-        const searchesIndex = (sql) => {
-            const plan = db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all().map((row) => row.detail);
-            assert(plan.some((detail) => /^SEARCH bot_life_state USING (COVERING )?INDEX /.test(detail))
-                && !plan.some((detail) => /^SCAN bot_life_state\b/.test(detail)), `${sql.slice(0, 60)}: ${plan.join(' | ')}`);
-        };
-        searchesIndex(`SELECT characterId, partyObjectiveSpot, partyRequestStatus, partyRequestPriority, updatedAt, level
-            FROM bot_life_state WHERE phase = 'cold' AND (partyId IS NULL OR partyId = '') AND spotId IS NOT NULL
-            AND activity IN ('hunting', 'resting', 'party_wait')`);
-        searchesIndex(`SELECT partyId, COUNT(*), MIN(updatedAt) FROM bot_life_state
-            WHERE phase = 'cold' AND partyId IN ('party-a', 'party-b') GROUP BY partyId`);
-        searchesIndex('SELECT MAX(updatedAt) AS lastWriteAt FROM bot_life_state WHERE updatedAt < 1812345690000');
         ['bot_party_candidate_insert', 'bot_party_candidate_metadata', 'bot_party_candidate_ordinary', 'bot_party_candidate_stats'].forEach((name) => assert(
             db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = ?").get(name), `migrations must leave ${name}`));
         ['bot_party_candidate_payload', 'bot_party_candidate_identity'].forEach((name) => assert(

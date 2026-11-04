@@ -36,8 +36,7 @@ const originals = {
     updateItemAmount: Database.updateItemAmount,
     updateItemEquipState: Database.updateItemEquipState,
     updateCharacterLocation: Database.updateCharacterLocation,
-    updateCharacterExperience: Database.updateCharacterExperience,
-    updateCharacterVitals: Database.updateCharacterVitals,
+    updateCharacterProgress: Database.updateCharacterProgress,
     syncInventorySummary: Database.syncInventorySummary,
     transferInventoryToWarehouse: Database.transferInventoryToWarehouse,
     upsertState: LifeState.upsertState
@@ -48,13 +47,14 @@ async function run() {
     // ARCH-NOTE: native specialized saves cannot be intercepted by an execute spy.
     Database.init();
     const native = require('./helpers/nativeMarketFixture');
-    for (const [id, name] of [[88, 'ColdSeller'], [95, 'PreTradeCleanupSeller'], [87, 'BuyerRoutedSeller'], [86, 'RemoteBuyerSeller']]) {
-        await native.character(Database, id, name, 'seller' + id, { locX: 82698, locY: 148638, locZ: -3473 });
+    for (const [id, name] of [[88, 'ColdSeller'], [95, 'PreTradeCleanupSeller'], [87, 'BuyerRoutedSeller'], [86, 'RemoteBuyerSeller'],
+        [80, 'ProtectedStemSeller']]) {
+        await native.character(Database, id, name, (id === 80 ? 'bot_seller' : 'seller') + id, { locX: 82698, locY: 148638, locZ: -3473 });
     }
     await Database.setItem(95, { selfId: 57, name: 'Adena', amount: 500 });
     await Database.setItem(95, { selfId: spellbook.selfId, name: spellbook.template.name, amount: 1 });
     const stem = DataCache.items.find(item => Number(item.selfId) === 1864);
-    for (const id of [87, 86]) {
+    for (const id of [87, 86, 80]) {
         await Database.setItem(id, { selfId: 57, name: 'Adena', amount: 500 });
         await Database.setItem(id, { selfId: 1864, name: stem.template.name, amount: 10 });
     }
@@ -109,7 +109,7 @@ async function run() {
     Database.reconcileBotClanMembership = async () => ({ repairedMembers: 0, repairedParties: 0 });
     Database.reconcileBotClanGoals = async () => ({ repairedMembers: 0, repairedParties: 0 });
     Database.execute = (query, label) => query[0] === 'SELECT * FROM characters WHERE id = ? LIMIT 1'
-        && [86, 87, 95, 96].includes(Number(query[1]?.[0]))
+        && [80, 86, 87, 95, 96].includes(Number(query[1]?.[0]))
         ? originals.execute(query, label) : Promise.resolve([]);
     Database.fetchItems = (characterId) => Number(characterId) === 88 ? Promise.resolve([
         { id: 20, selfId: 57, amount: 500, equipped: false, slot: 0 },
@@ -124,8 +124,7 @@ async function run() {
     };
     Database.updateItemEquipState = () => Promise.resolve();
     Database.updateCharacterLocation = () => Promise.resolve();
-    Database.updateCharacterExperience = () => Promise.resolve();
-    Database.updateCharacterVitals = () => Promise.resolve();
+    Database.updateCharacterProgress = () => Promise.resolve();
     Database.transferInventoryToWarehouse = () => Promise.resolve({ inventoryAmount: 0 });
     Database.syncInventorySummary = (characterId, inventory) => {
         calls.push({ type: 'inventory-sync', characterId, inventory });
@@ -326,6 +325,24 @@ async function run() {
         stats: { ...buyerRoutedState.stats, marketReturn: { ...buyerRoutedState.stats.marketReturn,
             loc: { ...giranLoc }, regionName: 'Giran' } }
     }, 'remote_buyer_owner_geometry');
+    // The visit decided on a bag with no craft running; the row the writer
+    // checks has since started one (recipe 1 takes 4 Stem). Listing all ten
+    // Stem is the owner's "no" (economy_material_protected): a refused,
+    // deferred visit, not a throw the cold worker would hold the bot off for.
+    await originals.execute(['UPDATE characters SET locX=?,locY=?,locZ=? WHERE id=?',
+        [giranLoc.locX, giranLoc.locY, giranLoc.locZ, 80]]);
+    const protectedSeller = await LifeState.upsertState({ ...remoteBuyerState, characterId: 80, accountName: 'bot_seller80',
+        name: 'ProtectedStemSeller', inventory: LifeState.inventorySummaryFromItems(await originals.fetchItems(80)) }, 'protected_seller_geometry');
+    await LifeState.upsertState({ ...protectedSeller, stats: { ...protectedSeller.stats,
+        shotCraft: { preparing: { recipeId: 1, batches: 1, at: Date.now() } } } }, 'protected_seller_craft_started');
+    const refused = await ListingService.open(protectedSeller, { now: 1000, durationMs: 60000 });
+    assert.strictEqual(refused.listed, false);
+    assert.strictEqual(refused.reason, 'economy_material_protected', 'the protected input is a refusal with its reason');
+    assert.strictEqual(refused.state.stats.marketSellRetryAfter, 1000 + ListingService.SELL_RETRY_DELAY_MS,
+        'the refused sale waits for the next visit');
+    assert.strictEqual((await Database.fetchAfkTradeShops(80)).length, 0, 'no record opens');
+    assert.strictEqual(native.amount(await originals.fetchItems(80), 1864), 10, 'the Stem stay in the bag');
+
     const remoteBuyer = await ListingService.open(remoteBuyerState, { now: 1000, durationMs: 60000 });
     const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
     const remoteRecords = await Database.fetchAfkTradeShops(86);
@@ -423,8 +440,7 @@ run().catch((err) => {
     Database.updateItemAmount = originals.updateItemAmount;
     Database.updateItemEquipState = originals.updateItemEquipState;
     Database.updateCharacterLocation = originals.updateCharacterLocation;
-    Database.updateCharacterExperience = originals.updateCharacterExperience;
-    Database.updateCharacterVitals = originals.updateCharacterVitals;
+    Database.updateCharacterProgress = originals.updateCharacterProgress;
     Database.syncInventorySummary = originals.syncInventorySummary;
     Database.transferInventoryToWarehouse = originals.transferInventoryToWarehouse;
     LifeState.upsertState = originals.upsertState;

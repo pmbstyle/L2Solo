@@ -19,8 +19,7 @@ const originals = {
     execute: Database.execute,
     syncInventorySummary: Database.syncInventorySummary,
     updateCharacterLocation: Database.updateCharacterLocation,
-    updateCharacterExperience: Database.updateCharacterExperience,
-    updateCharacterVitals: Database.updateCharacterVitals
+    updateCharacterProgress: Database.updateCharacterProgress
 };
 
 async function run() {
@@ -68,8 +67,7 @@ async function run() {
     Database.execute = () => Promise.resolve([]);
     Database.syncInventorySummary = () => Promise.resolve();
     Database.updateCharacterLocation = () => Promise.resolve();
-    Database.updateCharacterExperience = () => Promise.resolve();
-    Database.updateCharacterVitals = () => Promise.resolve();
+    Database.updateCharacterProgress = () => Promise.resolve();
 
     const saved = await LifeState.applyResolve(seeded, {
         patch: {
