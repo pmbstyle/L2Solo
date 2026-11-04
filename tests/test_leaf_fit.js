@@ -34,9 +34,11 @@ require('../src/Global');
 invoke('GameServer/DataCache').init();
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Table = invoke('GameServer/Bot/AI/SpotValueTable');
-// A frozen slice of a spot table (81e24715's: the Gladiator line's ten best
+// A frozen slice of a spot table (e5b35a04a's: the Gladiator line's ten best
 // earners for this bot), so a table rebuild cannot take the fixture's picks
-// apart or together; both threads read it.
+// apart or together; both threads read it. Money is priced live from the
+// reward data, so the slice leaves out 5_18:f1, which with the C4 drops both
+// levels and earns best and would make the two picks one.
 Table.useFile(require('node:path').join(__dirname, 'fixtures', 'leaf_fit_spot_table.json'));
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
