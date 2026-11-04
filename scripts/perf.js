@@ -96,7 +96,8 @@ function printBoots() {
 
 function printSpikes(flags) {
     const dir = bootDir(flags);
-    let rows = dayLines(dir, 'spikes');
+    // A captured chunk the profiler starved holds no real spike (CpuProfile).
+    let rows = dayLines(dir, 'spikes').filter(row => !row.starved);
     if (flags.thread) rows = rows.filter(row => row.thread === flags.thread);
     const count = numberFlag(flags, 'top', 20, 1);
     rows = flags.sort === 'ms' ? rows.sort((a, b) => b.ms - a.ms).slice(0, count) : rows.slice(-count);
@@ -127,6 +128,7 @@ function printTimeline(flags) {
     };
     for (const line of lines) {
         const b = bucket(line.t);
+        if (line.type === 'cpu' && line.starved) continue;
         if (line.type === 'cpu') {
             threads.add(line.thread);
             const c = b.cpu[line.thread] || (b.cpu[line.thread] = { ms: 0, busy: 0, gc: 0, longest: 0, long: 0 });

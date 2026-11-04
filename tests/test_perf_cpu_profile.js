@@ -54,6 +54,12 @@ assert.deepEqual(a.owners, [
 ], 'each sample counts for its nearest project frame; one with none (GC) for itself');
 assert.equal(CpuProfile.sourceOf(url('src/NodeL2.js')), 'src/NodeL2.js');
 assert.equal(CpuProfile.sourceOf('node:internal/timers'), 'node:internal/timers');
+// A starved chunk: 3 samples in 60 s (the profiler sampled too rarely), one long "run".
+const starved = CpuProfile.analyze({ nodes: profile.nodes, samples: [3, 6, 3], timeDeltas: [1000, 20e6, 20e6],
+    startTime: 0, endTime: 60e6 });
+assert.equal(starved.samples, 3);
+assert.equal(starved.starved, true, 'fewer than one sample per 20 ms');
+assert.equal(a.starved, false, 'a short chunk is never starved');
 // A run recorded from a worktree names its files under that checkout, wherever it is.
 const worktree = '/tmp/x/src/scratchpad/wt-after';
 assert.equal(CpuProfile.sourceOf(`file://${worktree}/src/GameServer/Bot/AI/BotAI.js`), 'src/GameServer/Bot/AI/BotAI.js');

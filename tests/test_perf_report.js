@@ -39,6 +39,9 @@ jsonl('timeline-20261103.jsonl', [
         longTurns: 2, profile: 'cpu/a.cpuprofile' },
     { type: 'cpu', t: iso(start + 61000), thread: 'main', instance: 0, ms: 60000, busyMs: 6000, gcMs: 0, longestMs: 120,
         longTurns: 4, profile: 'cpu/b.cpuprofile' },
+    // A chunk the profiler starved (CpuProfile): one 60 s "run" that says nothing of the thread.
+    { type: 'cpu', t: iso(start + 62000), thread: 'main', instance: 0, ms: 60000, busyMs: 60000, gcMs: 0, longestMs: 60000,
+        longTurns: 1, starved: true, samples: 110 },
     // The hot scenario's player: 20 probes, one waited 200 ms for the loop.
     { type: 'player', t: iso(start + 30000), scheduleMs: [...Array(19).fill(2), 200], handlerMs: Array(20).fill(1), errors: 0, hot: 30,
         players: 2, packets: 1200, bytes: 2 * 30 * 1024 * 10, seconds: 30, moves: 2 },
@@ -88,6 +91,7 @@ try {
     assert.equal(main.gcPct, 0.5);
     assert.equal(main.longTurnsPerMin, 3);
     assert.equal(main.longestMs, 120);
+    assert.equal(main.starvedChunks, 1, 'a starved chunk is left out of busy, long turns and longest, and counted');
     assert.deepEqual(main.longTurnCode, [{ fn: 'heavy src/GameServer/World/World.js:10', ms: 120 }], 'spikes of the window only');
     assert.deepEqual(main.cpuSelf[0], { fn: 'heavy src/GameServer/World/World.js:10', ms: 60, pct: 100 },
         '40 + 30 busy samples less the 10 the second chunk shares with the first');
