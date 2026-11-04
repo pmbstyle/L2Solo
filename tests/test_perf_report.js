@@ -50,7 +50,8 @@ jsonl('timeline-20261103.jsonl', [
         files: { walMb: 4, worldMb: 20 }, machine: { freeMemMb: 900, majorPageFaults: 2 },
         coordinator: { queue: { depth: 2, bytes: 2048, oldestMs: 100, paused: false, failures: { afterCommitErrors: 0 } },
             failures: { workerFaults: 1, faultBackoff: 1, faultQuarantined: 0, commandDbErrors: 0, swallowed: { 'cold.after_commit': 1 } } },
-        population: { metrics: { delta: { coldOwnerHandoffs: 3, activations: 3, cooldowns: 1 }, transitions: { activation: { count: 3, avgMs: 100, p95Ms: 180, maxMs: 200 },
+        population: { metrics: { delta: { coldOwnerHandoffs: 3, activations: 3, cooldowns: 1, activationRefusals: 2 },
+            activationRefusalReasons: { no_safe_activation_placement: 2 }, transitions: { activation: { count: 3, avgMs: 100, p95Ms: 180, maxMs: 200 },
             cooldown: { count: 1, avgMs: 40, p95Ms: 40, maxMs: 40 } } } },
         coldQueue: { overdue: 1 }, heaps: { main: { usedMb: 100 } }, recorder: { costMs: 60, inspectorMs: 0 } },
     { type: 'summary', t: iso(end), main: { memory: { heapUsed: 120 * MB, rss: 310 * MB }, processCpuMs: { user: 14000, system: 0 } },
@@ -101,7 +102,8 @@ try {
     assert.equal(s.player.kbPerSecond, 10);
     assert.equal(s.player.moves, 2);
     assert.deepEqual(s.transitions, { activation: { count: 3, avgMs: 100, p95Ms: 180, maxMs: 200 },
-        cooldown: { count: 1, avgMs: 40, p95Ms: 40, maxMs: 40 }, handoffs: 3 });
+        cooldown: { count: 1, avgMs: 40, p95Ms: 40, maxMs: 40 }, handoffs: 3,
+        refusals: { count: 2, reasons: { no_safe_activation_placement: 2 } } });
     assert.deepEqual(main.cpuParts, [{ part: 'world, actors, combat', ms: 60, pct: 100 }], 'World.js counts as world');
     assert.deepEqual(s.player.over, ['schedule p99 200 > 120 ms', 'schedule max 200 > 150 ms']);
     const c = s.context;
