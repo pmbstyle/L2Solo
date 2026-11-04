@@ -277,6 +277,34 @@ async function parityAndIntegration() {
     }
 }
 
+// A clan's raid row is a catalogue row with a few fields on top (projection,
+// roster size, estimate): it crosses as those fields, comes back equal in the
+// same key order, and a repeat in a later message is the same row object.
+function spotDecorations() {
+    const { SpotCatalogWriter, SpotCatalogReader } = require('../src/GameServer/Clan/ClanSpotCatalog');
+    const lair = { id: 'raid:1', raidBoss: true, raidBossTemplateId: 1, npcEntries: [{ selfId: 1, count: 1 }],
+        arrivalPoints: Array.from({ length: 40 }, (_, i) => ({ locX: i, locY: i, locZ: 0 })) };
+    const rows = [{ id: 'camp', npcEntries: [] }, lair];
+    const writer = new SpotCatalogWriter(1, rows), reader = new SpotCatalogReader();
+    for (const page of writer.pages()) reader.apply(structuredClone(page));
+    const decorated = { ...lair, raidInstanceId: 'x', raidRosterSize: 9, raidEstimate: { killMs: 5 } };
+    const reordered = { raidEstimate: { killMs: 5 }, ...lair };
+    const send = spots => reader.restore(structuredClone(writer.pack({ spots }))).spots;
+    const [camp, first, other] = send([rows[0], decorated, reordered]);
+    assert.equal(camp, reader.rows[0]);
+    assert.deepEqual(first, decorated);
+    assert.deepEqual(Object.keys(first), Object.keys(decorated));
+    assert.deepEqual(Object.keys(other), Object.keys(reordered), 'a row in another key order crosses whole');
+    const bytes = value => require('node:v8').serialize(value).length;
+    assert(bytes(writer.pack({ spots: [decorated] })) < bytes(decorated) / 3, 'a decoration crosses as its own fields');
+    assert.equal(send([{ ...decorated, raidEstimate: { killMs: 5 } }])[0], first, 'the same decoration is the same row');
+    assert.deepEqual(send([{ ...decorated, raidEstimate: { killMs: 6 } }])[0].raidEstimate, { killMs: 6 });
+    const dropped = { ...decorated };
+    delete dropped.arrivalPoints;
+    assert.deepEqual(send([dropped])[0], dropped, 'a field the row drops stays dropped');
+    console.log('Clan spot decorations cross as their fields and restore equal');
+}
+
 async function workerLifecycle() {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'clan-planning-worker-'));
     const workerFile = path.join(directory, 'worker.cjs');
@@ -351,6 +379,7 @@ parentPort.on('message', (m) => {
         console.log('Clan planning worker job admission, end ACK, error/deadline/shutdown checks passed');
         return;
     }
+    spotDecorations();
     await sharedModulesStayPure();
     await parityAndIntegration();
     await workerLifecycle();

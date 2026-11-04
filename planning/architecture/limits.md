@@ -158,6 +158,7 @@ player online (8 in flight, status `coldDue`).
 | Clan action pass | 8 actions, 80 ms / 20 ms with a player, 60 s | ClanSimulationConfig ~35, ClanActionService ~714 | next pass | dD |
 | Founder pass | 16 per 60 s; 20 ms, 5 ms with a player | ClanSimulationConfig ~36, ClanSimulationService ~351 | deferred | dD |
 | Source index overlays | the selected source index of the catalogue rows, once per row list; 8 raid overlays on it (`MAX_OVERLAYS`) | Knowledge/SourceCatalog `overlayIndexFor` | the oldest overlay is rebuilt (a few raid rows) | none |
+| Clan spot decorations | 4 restored decorations per catalogue row (`MAX_DECORATIONS_PER_ROW`) | Clan/ClanSpotCatalog `decorated` | the oldest dropped: a repeat is a new row and its source overlay is rebuilt | none |
 | Clan goals | top 8 (max 12); candidate cache 128 FIFO | ClanGoalCandidateService ~8, ~83 | rest ignored | none |
 | Orders / wars | 8 deliveries; 4 operations, roster 3-9 | ClanOrderService ~14, ClanWarConfig ~5, ClanWarDirector ~263 | deferred / `operation_capacity` | reason |
 | Action result | 16 KiB; depth 3, 32 keys, 512-char strings, 32 array items | Database ~185 | over 16 KiB `{truncated:true}`; the depth/key/string/array cuts are silent | flag / none |

@@ -19,7 +19,20 @@ const catalogs = { items: [], npcs: [], npcRewards: [], npcSpawns: [], newbieIte
 Object.assign(invoke('GameServer/DataCache'), catalogs);
 let context = {};
 let planner;
-let raidJob = null;
+// The admitted planning job (ClanPlanningCoordinator.withJob): its readiness
+// and own-roster assessments, and the inputs the coordinator sends once per
+// job and then names in `held` (ClanPlanningCoordinator.jobInputs mirrors them).
+let job = null;
+const memberId = member => Number(member?.characterId ?? member?.id);
+function jobFor(key) {
+    if (job?.key !== key) job = { key, readiness: new Map(), actual: new Map(), inputs: {}, prospectById: new Map() };
+    return job;
+}
+function jobInput(current, payload, held, name) {
+    if (!held.has(name)) return payload[name];
+    if (!Object.hasOwn(current.inputs, name)) throw new Error('clan planning job input missing');
+    return current.inputs[name];
+}
 let fixedOffers = new Map();
 let npcOffers = new Map();
 // Tables from the main thread's ColdTableChannel; pages are not answered.
@@ -138,17 +151,34 @@ parentPort.on('message', (message) => {
         } else if (message.type === 'planning_context') {
             useContext(message.context);
         } else if (message.type === 'end_planning_job') {
-            if (raidJob?.key === message.jobKey) raidJob = null;
+            if (job?.key === message.jobKey) job = null;
         } else if (message.type === 'prepare_raids') {
-            const payload = restore(message.payload);
+            // A page of the job's recruitment: the clan, spots, previous goal
+            // and requirements cross once per job (held), prospects as ids of
+            // those already sent plus the new ones.
+            const payload = message.payload;
+            if (!(context.revision >= payload.contextRevision)) throw new Error('stale clan planning context');
             if (payload.deadlineAt && Date.now() >= payload.deadlineAt) throw Error('clan planning deadline');
-            if (raidJob?.key !== payload.jobKey) raidJob = { key: payload.jobKey, readiness: new Map() };
-            raidJob.clan = payload.clan; raidJob.prospects = payload.prospects;
-            raidJob.prepared = require('./ClanRosterDemand').prepare(payload.clan,
-                payload.spots, payload.prospects, payload.previousGoal, raidJob.readiness);
-            raidJob.prepared.economicProspects = require('./ClanRosterDemand').retainedEconomicProspects(payload.prospects,
-                payload.economicRequirements, raidJob.prepared.retainedProspects);
-            parentPort.postMessage({ id: message.id, result: raidJob.prepared });
+            const current = jobFor(payload.jobKey), held = new Set(payload.held || []);
+            const clan = jobInput(current, payload, held, 'clan');
+            const previousGoal = jobInput(current, payload, held, 'previousGoal');
+            const economicRequirements = jobInput(current, payload, held, 'economicRequirements');
+            const spots = held.has('spots') ? jobInput(current, payload, held, 'spots') : restore(payload).spots;
+            const prospects = (payload.prospects || []).map(([sent, value]) => {
+                if (sent !== 1) return value;
+                if (!current.prospectById.has(value)) throw new Error('clan planning job input missing');
+                return current.prospectById.get(value);
+            });
+            if (!held.has('clan') || !held.has('spots') || !held.has('previousGoal')) current.actual = new Map();
+            current.inputs = { clan, previousGoal, economicRequirements, spots };
+            current.prospectById = new Map(prospects.map(member => [memberId(member), member]));
+            current.clan = clan; current.prospects = prospects;
+            const Roster = require('./ClanRosterDemand');
+            current.prepared = Roster.prepare(clan, spots, prospects, previousGoal, current.readiness, current.actual);
+            current.prepared.economicProspects = Roster.retainedEconomicProspects(prospects,
+                economicRequirements, current.prepared.retainedProspects);
+            parentPort.postMessage({ id: message.id, result: { ...current.prepared,
+                raids: current.prepared.raids.map(Roster.raidDecoration) } });
             return;
         } else if (message.type === 'plan') {
             const payload = restore(message.payload);
@@ -158,8 +188,8 @@ parentPort.on('message', (message) => {
             if (forbidden) throw new Error('clan planning worker loaded a live runtime dependency');
             const startedAt = workerData?.developerDiagnostics ? performance.now() : 0;
             const { member, spots, warehouseRows, options } = payload;
-            if (options.economicMode && raidJob?.key !== payload.jobKey) throw Error('economic planning job missing');
-            const plan = options.economicMode ? require('./ClanRosterDemand').economicPlan(planner.planForMember, raidJob,
+            if (options.economicMode && (job?.key !== payload.jobKey || !job.prepared)) throw Error('economic planning job missing');
+            const plan = options.economicMode ? require('./ClanRosterDemand').economicPlan(planner.planForMember, job,
                 member, spots, warehouseRows, { ...options, throwOnError: true })
                 : planner.planForMember(member, spots, warehouseRows, { ...options, throwOnError: true });
             parentPort.postMessage({ id: message.id, result: { plan, ...(workerData?.developerDiagnostics ? { durationMs: performance.now() - startedAt, v8Heap: heapRecord() } : {}) } });

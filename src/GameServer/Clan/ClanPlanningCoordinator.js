@@ -11,6 +11,7 @@ const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const EMPTY_SPOTS = [];
+const memberId = member => Number(member?.characterId ?? member?.id);
 const yieldLoop = () => new Promise((resolve) => setImmediate(resolve));
 // The item-origin catalog (ItemAcquisitionCatalog) reads only which NPCs
 // spawn (total > 0) and the creation grants; ship one row per spawned NPC
@@ -51,6 +52,12 @@ class ClanPlanningCoordinator {
         this.spotGeneration = 0;
         this.retryAt = 0;
         this.closed = false;
+        // What the worker holds for the admitted job, by identity: the
+        // inputs last sent ({ jobKey, worker, values, prospects }). A message
+        // names an unchanged input in `held` instead of cloning it again.
+        // Updated only on a reply, dropped with the job, the worker or a
+        // failed send (the next message then sends everything).
+        this.jobInputs = null;
         this.stats = { completed: 0, failures: 0, timeouts: 0, rejected: 0, restarts: 0, maxRunMs: 0, contextPublishes: 0 };
     }
 
@@ -58,6 +65,7 @@ class ClanPlanningCoordinator {
     // counts any more and every request in flight gets the error.
     release(error) {
         this.worker = null;
+        this.jobInputs = null;
         this.publications.clear();
         this.tableChannel.detach(this);
         for (const entry of this.pending.values()) {
@@ -233,17 +241,51 @@ class ClanPlanningCoordinator {
             return await work(jobKey);
         } finally {
             if (this.worker && !this.closed) await this.send('end_planning_job', { jobKey }).catch(() => {});
+            if (this.jobInputs?.jobKey === jobKey) this.jobInputs = null;
             if (this.activeJob === jobKey) this.activeJob = null;
         }
     }
 
+    inputsFor(jobKey) {
+        if (this.jobInputs?.jobKey !== jobKey || this.jobInputs.worker !== this.worker) {
+            this.jobInputs = { jobKey, worker: this.worker, values: {}, prospects: new Map() };
+        }
+        return this.jobInputs;
+    }
+
+    // One recruitment page (ClanEquipmentService.prepareRecruitment): the
+    // clan, spots, previous goal and requirements are the same objects on
+    // every page of a job and cross once; a prospect already sent crosses as
+    // its id. The worker returns each ready raid's decoration, put back on
+    // the page's own spot row here.
     async prepareRaids(payload, catalogs, spotCatalog) {
         if (!this.activeJob || payload.jobKey !== this.activeJob) throw new Error('clan planning job not admitted');
         const writer = await this.ensureSpotCatalog(spotCatalog);
         const contextRevision = await this.ensureContext();
         if (Date.now() >= payload.deadlineAt) throw new Error('clan planning deadline');
         this.tableChannel.flush();
-        return this.send('prepare_raids', { payload: writer.pack({ ...payload, contextRevision }) });
+        const inputs = this.inputsFor(payload.jobKey);
+        let message = { jobKey: payload.jobKey, deadlineAt: payload.deadlineAt, contextRevision, held: [] };
+        for (const name of ['clan', 'previousGoal', 'economicRequirements', 'spots']) {
+            if (Object.hasOwn(inputs.values, name) && inputs.values[name] === payload[name]) message.held.push(name);
+            else if (name === 'spots') message = writer.pack({ ...message, spots: payload.spots });
+            else message[name] = payload[name];
+        }
+        const prospects = payload.prospects || [];
+        message.prospects = prospects.map(member => member && inputs.prospects.get(memberId(member)) === member
+            ? [1, memberId(member)] : [0, member]);
+        let result;
+        try { result = await this.send('prepare_raids', { payload: message }); }
+        catch (error) {
+            if (this.jobInputs === inputs) this.jobInputs = null;
+            throw error;
+        }
+        inputs.values = { clan: payload.clan, previousGoal: payload.previousGoal,
+            economicRequirements: payload.economicRequirements, spots: payload.spots };
+        inputs.prospects = new Map(prospects.map(member => [memberId(member), member]));
+        const spotById = new Map((payload.spots || []).map(spot => [spot.id, spot]));
+        const Roster = require('./ClanRosterDemand');
+        return { ...result, raids: result.raids.map(raid => Roster.decoratedRaid(spotById.get(raid.id), raid)) };
     }
 
     async shutdown() {
