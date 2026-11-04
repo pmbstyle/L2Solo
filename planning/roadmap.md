@@ -58,6 +58,7 @@ items are added or removed by priority at any time.
 | Magic flag wrong on 43 skills, two owners of "is magic" (pass4 D-4, debt 16) | mid | low |  |
 | Stackable flag flipped on 222 items, mostly quest items (pass4 D-5); check save rows merge | mid | low |  |
 | Wind Shackle 1206 cast 4000 ms / reuse 15 s vs C4 1500 ms / 8 s (pass4 D-3) | mid | low |  |
+| Deep-blue adena at x10/x50 about rate× too rare: `ProgressionRates` ~214 divides the adena rate by the drop rate, a Lisvus step of the seeded/spoil path only (L2Attackable ~966); categorized adena has no divide (~1096-1118). Also cold takes the killer's level for the gap, hot the highest attacker's | mid | low |  |
 | D-S shots only via craft/board (decided): make sure bots supply them | high | low |  |
 | Trade meetings with fighting bots (`fetchAttacks`), moving buffers (`fetchMoves`) | mid | low |  |
 | Archer bots ignore Long Shot; pet ticket "inventory full" at 80 | mid | low |  |
