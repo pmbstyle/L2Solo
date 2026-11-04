@@ -30,7 +30,9 @@ Scope: `Bot/Population`, `Bot/Travel`, `BotManager`, `BotSession`, worker protoc
 ## Lifecycle
 
 1. Seed → `LifeState.upsertState` writes cold rows. Merchants are the only static bots.
-2. Start: `LifeState.init`, `BackgroundPartyState.init`, worker; pages `init` → `catalog_page` → `table_page` →
+2. Start: `LifeState.init` (NodeL2 `startServer`, before `AfkTrade.init`: the board migrations and the meeting
+   marker rewrite and recovery write life rows into its cache; a stale hot copy there failed the init's repair saves),
+   `BackgroundPartyState.init`, worker; pages `init` → `catalog_page` → `table_page` →
    `snapshot_page`; geodata shared through `workerData`.
 3. Worker step: `lifecycleKind` → `resolver` | `command` | `party` | `party_member` | `event_driven` | `inactive`.
    Resolver: `planLifecycle` → `resolveSolo` (a hunting step always runs on round by round in `huntWindow`, each round
