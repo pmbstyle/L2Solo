@@ -509,15 +509,18 @@ function inventoryAdena(inventory) {
     return Number(inventory?.[57]?.amount || inventory?.['57']?.amount || 0);
 }
 
-function marketPurchaseBlocker(state = {}, offer = {}, qty = 1) {
+// The bot's purchase gate on main. A worker command (`commanded`) already passed
+// the gear rules in its plan; the war ticket and the arrow stock still hold,
+// as the bag may have changed since the plan.
+function marketPurchaseBlocker(state = {}, offer = {}, qty = 1, { commanded = false } = {}) {
     const selfId = Number(offer?.selfId || 0);
     const warBlocker = require('./PartyMarketBreak').warSupplyPurchaseBlocker(state, selfId);
     if (warBlocker) return warBlocker;
     const count = Number(qty);
     const template = itemTemplate(selfId);
     if (!template || !Number.isSafeInteger(count) || count <= 0) return null;
-    const Arrows = require('../../Inventory/ArrowStock');
-    if (Arrows.isArrow({ selfId }) && Arrows.purchaseAmount(state, selfId, count) < count) return 'arrow_stock_limit';
+    if (require('../../Inventory/ArrowStock').admitted(state, selfId, count) < count) return 'arrow_stock_limit';
+    if (commanded) return null;
     const slot = Number(template.etc?.slot || 0);
     if (slot <= 0) return null;
 

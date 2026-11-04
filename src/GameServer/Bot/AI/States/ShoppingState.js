@@ -700,12 +700,8 @@ module.exports = {
         const errand = session.companionShopping;
         const unloading = errand?.kind === 'unload_inventory';
         try {
-            const warehouse = unloading ? await InventoryCleanup.deposit(session, bot, target) : await BotWarehouse.depositActorAtWarehouse(
-                bot,
-                session.coldLifeState,
-                session,
-                target
-            );
+            const warehouse = await BotWarehouse.depositActorAtWarehouse(bot, session.coldLifeState, session, target,
+                { unload: unloading });
             if (unloading && (session.actor !== bot || session.companionShopping !== errand || session.plan !== 'shopping')) return;
             session.shoppingWarehouseDone = true;
             session.lastTradeSummary = warehouse.count > 0
@@ -766,13 +762,14 @@ module.exports = {
         const companionErrand = session.companionShopping;
         const visit = { errand: companionErrand, target: session.shoppingTarget, shopTimer: session.shopTimer };
 
+        // The unload's arrows go with the bot's ordinary NPC sale (SellJunk).
         if (companionErrand?.kind === 'sell_unused_arrows') {
             let failed = false;
             try {
-                const sale = await InventoryCleanup.sellUnusedArrows(session, bot, session.shoppingTarget);
+                const sale = await invoke(path.world + 'NpcBypasses/SellJunk').sell(session);
                 if (session.actor !== bot || session.companionShopping !== companionErrand || session.plan !== 'shopping') return;
-                session.lastTradeSummary = `sold ${sale.count} unused arrows for ${sale.payout || 0}a`;
-                session.dataSendToMe(ServerResponse.itemsList(bot.backpack.fetchItems()));
+                failed = !(sale.count > 0);
+                session.lastTradeSummary = `sold ${sale.count} items for ${sale.payout}a`;
             } catch (error) {
                 failed = true;
                 utils.infoWarn('Shopping', 'unused arrow sale failed for %s: %s', bot.fetchName(), error.message);

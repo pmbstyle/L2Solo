@@ -798,9 +798,10 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
                 });
             } catch (error) {
                 // A counterpart may change its need, wallet, stock or route
-                // during bilateral preparation. Keep the old records; do not
+                // during bilateral preparation, and the buyer's bag its arrow
+                // room since the plan (ArrowStock). Keep the old records; do not
                 // turn rejection into new consent or an immediate retry loop.
-                if (/^(trade_meeting_|economy_|afk_trade_|board_|not_enough_adena)/.test(error.message))
+                if (/^(trade_meeting_|economy_|afk_trade_|board_|not_enough_adena|arrow_stock_limit)/.test(error.message))
                     return { state, tradeDeferred: true, reason: error.message };
                 throw error;
             }

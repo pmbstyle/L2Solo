@@ -58,9 +58,6 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
 13. **`BotMarketPricing.useNpcOfferSnapshot(null)`** sets an empty price map instead of returning to main's live prices,
    so afterwards every price reads as none (only `test_first_price` ~104 passes null).
 
-14. **Arrow stock and companion unload (develop PR #207) checked where used.** The arrow cap is re-checked at ~11
-   planner, buyer and writer sites; a companion unloads and sells arrows by its own path (ECO-15).
-
 15. **Picked-tests workflow mixes geodata states in a shard.** A shard that fetched raw geodata for one file runs the
    others with it present, so `test_spawn_drop_height` (asserts the missing-geodata case) fails there while the full
    PR run (raw geodata skipped) passes it. Run raw-geodata files in their own shard.
@@ -74,9 +71,17 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    C4 picks it by skill type (Mdam/Pdam handlers). So Mouth Odor Attack 4110 (MDAM, not magic) keeps `spell: true`
    (pass4 D-4), and a PDAM skill flagged magic (Die! You fool!) deals magic damage.
 
-17. **The native drop tooltip has no pages.** `NativeDropProtocol.encode` refuses more than 64 rows (8192 chars) and
+18. **The native drop tooltip has no pages.** `NativeDropProtocol.encode` refuses more than 64 rows (8192 chars) and
    `NpcBypasses/NativeDrop` then sends the target as unavailable: Antharas 12211 (90 C4 rows since the legacy drops,
    pinned in `test_native_drop_ui`). Pages or a cut with a count, client and server together.
+
+19. **Arrow stock tails (PR #207).** A companion's supply errand for its player (`BotSupplyErrand`, board purchase)
+   meets the companion's own arrow stock at the commit guard (`checkArrowPurchaseUnsafe` checks any `bot_` buyer), so
+   it cannot buy arrows for the player beyond its own room, and a non-archer none. A worker field take refused by
+   the war-ticket guard at meeting accept (`war_supply_*`) still throws out of `BotAfkMarketService.executePlan`
+   (only `arrow_stock_limit` is read as a deferred trade). The arrow gate on the main purchase is
+   `BotLifeState.marketPurchaseBlocker`, but hot buys (`TradeService`, `AfkTradeService.buyFromShop`) reach only the
+   commit guard; their refusal is the writer's error, not a counted reason.
 
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets[6]`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so

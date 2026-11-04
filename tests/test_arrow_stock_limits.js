@@ -72,6 +72,10 @@ async function run() {
         assert.equal(Arrows.keptAmounts(live)[1342], cap);
         assert.equal(Arrows.purchaseAmount(live, 1342, 5000), cap - 100, 'hot restocks honor both count and physical weight');
         assert.equal(Arrows.purchaseAmount(live, 1341, 5000), 0);
+        const loaded = { ...live, fetchMaxLoad: () => 2000 };
+        assert.equal(Arrows.keptAmounts(loaded)[1342], Arrows.KEEP_FLOOR, 'other weight past the limit leaves the floor stock');
+        assert.equal(Arrows.saleAmounts(loaded).get(1342), 0, 'an overloaded archer does not sell its working ammunition');
+        assert.equal(Arrows.purchaseAmount(loaded, 1342, 10), 0, 'nor buys into the overload');
 
         await DB.init(); await Life.init();
         let saved = await seed(945011);
@@ -88,6 +92,9 @@ async function run() {
             extras: [{ selfId: 1342, amount: 5000, offer: quote }] });
         assert.equal(planned.flatMap(row => row.lines).find(row => row.selfId === 1342).amount, 10,
             'the planner buys only the missing working stock');
+        assert.equal(Life.marketPurchaseBlocker(saved, { selfId: 1342 }, 11, { commanded: true }), 'arrow_stock_limit',
+            'a worker command meets the same stock gate as an ordinary purchase');
+        assert.equal(Life.marketPurchaseBlocker(saved, { selfId: 1342 }, 10, { commanded: true }), null);
         const outcomes = await Promise.allSettled([purchase(saved, [{ selfId: 1342, amount: 10, unitPrice: 2 }]),
             purchase(saved, [{ selfId: 1342, amount: 10, unitPrice: 2 }])]);
         assert.equal(outcomes.filter(row => row.status === 'fulfilled').length, 1);
