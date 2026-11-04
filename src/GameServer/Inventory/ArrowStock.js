@@ -4,7 +4,6 @@ const BY_RANK = Object.freeze({ none: 17, d: 1341, c: 1342, b: 1343, a: 1344, s:
 const ARROW_IDS = new Set(Object.values(BY_RANK));
 const MAX_AMOUNT = 2000;
 const Index = require('../Item/ItemTemplateIndex');
-const Data = invoke('GameServer/DataCache');
 
 function isArrow(item) {
     return ARROW_IDS.has(Number(item?.fetchSelfId?.() ?? item?.selfId))
@@ -23,7 +22,8 @@ function items(value) {
 
 const selfId = item => Number(item?.fetchSelfId?.() ?? item?.selfId);
 const amount = item => Math.max(0, Number(item?.fetchAmount?.() ?? item?.amount) || 0);
-const template = item => Index.find(Data.items, typeof item === 'number' ? item : selfId(item));
+// SurvivalFloor is also imported by pure planners before the game is initialized.
+const template = item => Index.find(invoke('GameServer/DataCache').items, typeof item === 'number' ? item : selfId(item));
 const mass = item => Math.max(0, Number(template(item)?.template?.mass ?? item?.fetchMass?.() ?? item?.mass) || 0);
 
 function currentId(value) {
