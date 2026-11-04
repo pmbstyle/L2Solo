@@ -89,6 +89,11 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    the card view's `stock()` (`ColdEconomyDecision.view` ~464) gives `worthwhileTravel` its `benefitPerUnit`. Both
    need the stock's benefit, which `stockTargets` does not carry; publishing it (or the use rate) would move them to
    `keptKit`.
+21. **A hot look reads a built sale-feasibility mask.** `HotBoardReviewService` passes the card's `feasibility`
+   (`ColdOccupationSources.feasibility`, built on the build's state) to `BoardLook.feasibilityPredicate`, which keys it
+   on the owner's lines only, not the reservations and item flags its bits read; a reservation made or ended since
+   the build answers with the old bit until the next near decision. The cold look answers on its own state
+   (`ColdOccupationSources.canSell`); on main the mask stands in for reading the reservations on every look.
 
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets[6]`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so

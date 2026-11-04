@@ -154,9 +154,28 @@ function frame(state) {
                 spotId: travel.spotId == null ? null : String(travel.spotId),
                 arrivalActivity: travel.arrivalActivity == null ? null : String(travel.arrivalActivity), to: point(travel.to) } : null } };
 }
-function key(state) { return JSON.stringify(frame(state)); }
+// What the route table (details with no origin) reads of a state, and nothing
+// else, so the key moves only when a row can: the activity only as a shopping
+// visit, a trip to one (with its town and end) or neither (a rest, a hunt and
+// a trip to a spot read alike), the region only on a visit, the bot's point
+// only where no trip end or return point stands for it, the Scroll of Escape
+// only as present (TripPayment.hasColdScroll), the karma only as its town-closing flip.
+function routeInputs(state) {
+    const travel = state?.stats?.travel, shopping = state?.activity === 'shopping';
+    const accepted = state?.activity === 'traveling' && travel?.arrivalActivity === 'shopping';
+    const back = state?.stats?.marketReturn?.loc ? point(state.stats.marketReturn.loc) : null;
+    const to = accepted ? point(travel.to) : null;
+    return { activity: shopping ? 'shopping' : accepted ? 'traveling' : '',
+        currentRegion: shopping && state.currentRegion != null ? String(state.currentRegion) : null,
+        loc: shopping || accepted && !to || !shopping && !accepted && !back ? point(state?.loc) : null,
+        inventory: { 736: { amount: Number(Payment.hasColdScroll(state)) } },
+        stats: { karma: Number(Karma.closesTowns(state?.stats?.karma)), marketReturn: back ? { loc: back } : null,
+            travel: accepted ? { townName: travel.townName == null ? null : String(travel.townName),
+                arrivalActivity: 'shopping', to } : null } };
+}
+function key(state) { return JSON.stringify(routeInputs(state)); }
 function* prepare(state) {
-    const captured = frame(state), routeKey = key(captured), previous = preparedTables.get(routeKey);
+    const captured = routeInputs(state), routeKey = JSON.stringify(captured), previous = preparedTables.get(routeKey);
     if (previous) {
         preparedTables.delete(routeKey); preparedTables.set(routeKey, previous);
         return previous;

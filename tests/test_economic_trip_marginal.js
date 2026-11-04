@@ -37,4 +37,32 @@ const [coldEdges, cold] = walk(EconomicTrip.details(probe, 'Giran')), [warmEdges
 assert.deepEqual(warm, cold);
 assert.equal(cold.known, true);
 assert.ok(warmEdges < coldEdges, `remembered regions skip the walk (${warmEdges} < ${coldEdges})`);
-console.log('Economic marginal trips: spent outbound, shared visit, extra detour, actual continuation, worker parity and unknown/karma routes passed');
+// The route table moves only with what its rows read: a rest, a hunt and a trip
+// to a spot, a scroll used while one is left, the field region, a trip's spot
+// keep one table; a bot's point moves it unless a return point stands for it.
+// Every table equals the rows read on the full state.
+const rowsOf = value => EconomicTrip.towns.map(town => {
+    const row = EconomicTrip.read(value, town);
+    return row.known ? [true, row.hours, row.fees] : [false, null, null];
+});
+const field = { characterId: 9303, phase: 'cold', activity: 'hunting', currentRegion: 'Field', loc: home, spotId: 7,
+    inventory: { 736: { selfId: 736, amount: 3 } }, stats: {} };
+const fieldRows = EconomicTrip.prepared(field);
+for (const [why, value] of [['a rest', { ...field, activity: 'resting' }],
+    ['a used scroll', { ...field, inventory: { 736: { selfId: 736, amount: 1 } } }],
+    ['the field region', { ...field, currentRegion: 'Dion' }],
+    ['a trip to a spot', { ...field, activity: 'traveling', stats: { travel: { spotId: 8, to: dion, arrivalActivity: 'hunting' } } }]]) {
+    assert.equal(EconomicTrip.key(value), EconomicTrip.key(field), `${why} keeps the route key`);
+    assert.strictEqual(EconomicTrip.prepared(value), fieldRows, `${why} keeps the route table`);
+}
+const returning = { ...field, stats: { marketReturn: { loc: home } } };
+assert.equal(EconomicTrip.key({ ...returning, loc: giran }), EconomicTrip.key(returning), 'a return point stands for the bot\'s point');
+for (const [why, value] of [['the last scroll used', { ...field, inventory: {} }], ['a move', { ...field, loc: giran }],
+    ['a town visit', state], ['an accepted trip', planned], ['karma', { ...field, stats: { karma: 700 } }]])
+    assert.notEqual(EconomicTrip.key(value), EconomicTrip.key(field), `${why} moves the route key`);
+for (const value of [field, { ...field, inventory: {} }, returning, { ...returning, loc: giran }, state, visiting, planned,
+    { ...planned, stats: { ...planned.stats, travel: { ...planned.stats.travel, to: null } } },
+    { ...field, activity: 'traveling', stats: { travel: { spotId: 8, to: dion, arrivalActivity: 'hunting' } } },
+    { ...field, stats: { karma: 700 } }])
+    assert.deepEqual(EconomicTrip.prepared(value), rowsOf(value), 'the route table on its key reads as the full state');
+console.log('Economic marginal trips: spent outbound, shared visit, extra detour, actual continuation, worker parity, unknown/karma routes and the route key passed');

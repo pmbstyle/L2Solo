@@ -125,6 +125,18 @@ assert.deepEqual(publication.feasibility, mask);
 assert.equal(publication.workshop.known, false, 'missing recipe evidence cannot erase independently known protection');
 assert.equal(Look.feasibilityPredicate(allocated, [{ ...lines[0], revision: 3 }], mask)(lines[0]), undefined,
     'a changed physical line does not reuse an accepted old protection mask');
+// A cold look answers on the state it looks at: a reservation that ends or
+// begins after the build (its workshop and mask held, the lines unchanged)
+// flips whether the listed stock may stay on sale.
+const released = { ...allocated, stats: { ...allocated.stats, equipmentPlan: null } };
+assert.equal(Look.feasibilityPredicate(released, lines, mask)(lines[0]), false, 'fixture: the held mask keys only the lines');
+assert.equal(Sources.canSell(released, lines)(lines[0]), true, 'a released reservation lets the listed stock stay on sale');
+assert.equal(Sources.canSell(allocated, lines)(lines[0]), false, 'a reservation made since protects the listed stock');
+const freeMask = drain(Sources.feasibility(released, { board: listed })).value;
+assert.equal(Look.feasibilityPredicate(allocated, lines, freeMask)(lines[0]), true, 'fixture: a mask from before the reservation keeps it on sale');
+for (const value of [allocated, released])
+    assert.equal(Sources.canSell(value, lines)(lines[0]), Look.feasibilityPredicate(value, lines,
+        drain(Sources.feasibility(value, { board: listed })).value)(lines[0]), 'the look answers as a mask built on its own state');
 assert.equal(drain(Sources.prepare({ ...owner, stats: {} }, { board })).value, null);
 const Plan = require('../src/GameServer/Bot/Population/ColdEconomyPlan');
 const Shots = require('../src/GameServer/Bot/Economy/ShotCraftPolicy');

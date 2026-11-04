@@ -444,7 +444,8 @@ function canTravelForPurchase(state, request, options = {}) {
     if (options.economy && (economy.inputKey || economy.inputHash) && board?.itemRevision && !options.cost) {
         const rates = invoke('GameServer/ProgressionRates').profile();
         const token = JSON.stringify([request, Number(state.adena), state.stats?.money,
-            EconomicTrip.key(state), board.itemRevision(id), rates.multiplier, rates.adena,
+            // The whole route frame, not the route key: the funding reads the scroll count.
+            JSON.stringify(EconomicTrip.frame(state)), board.itemRevision(id), rates.multiplier, rates.adena,
             ProductionPolicy.shotsDisabled()]);
         if (token.length <= 2048) key = token;
         const previous = key && deniedTrips.get(economy.plan || economy);

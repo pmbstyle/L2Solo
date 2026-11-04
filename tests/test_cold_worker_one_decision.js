@@ -147,17 +147,28 @@ module.exports.refreshProbe = async id => {
 // A party member's step (no decision before its round): a level gained in
 // its round moves its kit, which its party step reads to open a re-plan (at
 // the party's rest: in its fight the kit waits); a quiet step moves nothing.
+// A member that is no crafter builds with no workshop and asks the
+// occupation planner for none.
 module.exports.kitProbe = async (id) => {
     const entry = kernel.states.get(id), timestamp = Date.now();
     const Data = invoke('GameServer/DataCache');
-    const step = (state, exp, at) => kernel.projectResolve(state, { patch: {}, debug: {}, events: [],
-        materialize: { exp, sp: 0, adena: 0, items: [] }, nextResolveAt: at + 60000 }, at);
-    const member = { ...entry.state, activity: 'grouped', party: { partyId: 'kit-party', leaderId: id } };
-    const first = await step(member, 0, timestamp);
-    const quiet = await step(first.state, 0, timestamp + 1000);
-    const gain = Number(Data.experience[quiet.state.level]) - Number(quiet.state.exp) + 1;
-    const levelUp = await step({ ...quiet.state, activity: 'resting' }, gain, timestamp + 2000);
-    return { quiet: quiet.kitMoved, levelUp: levelUp.kitMoved, levels: [quiet.state.level, levelUp.state.level] };
+    const request = occupationPlanner.request;
+    let workshopAsks = 0;
+    occupationPlanner.request = function (key, input, ...rest) {
+        if (input?.mode === 'occupation') workshopAsks++;
+        return request.call(this, key, input, ...rest);
+    };
+    try {
+        const step = (state, exp, at) => kernel.projectResolve(state, { patch: {}, debug: {}, events: [],
+            materialize: { exp, sp: 0, adena: 0, items: [] }, nextResolveAt: at + 60000 }, at);
+        const member = { ...entry.state, activity: 'grouped', party: { partyId: 'kit-party', leaderId: id } };
+        const first = await step(member, 0, timestamp);
+        const quiet = await step(first.state, 0, timestamp + 1000);
+        const gain = Number(Data.experience[quiet.state.level]) - Number(quiet.state.exp) + 1;
+        const levelUp = await step({ ...quiet.state, activity: 'resting' }, gain, timestamp + 2000);
+        return { quiet: quiet.kitMoved, levelUp: levelUp.kitMoved, levels: [quiet.state.level, levelUp.state.level],
+            workshop: first.economy?.workshop || null, workshopAsks };
+    } finally { occupationPlanner.request = request; }
 };
 module.exports.occupationProbe = async (id) => {
     const saved = kernel.states.get(id), state = saved.state;
@@ -261,6 +272,9 @@ parentPort.on('message', message => {
         assert.equal(kit.levels[1], kit.levels[0] + 1, 'the fixture member levels up in its round');
         assert.equal(kit.quiet, false, 'a quiet party member step moves no kit');
         assert.equal(kit.levelUp, true, 'a level gained in a party round is a kit event for the party step');
+        assert.deepEqual(kit.workshop, { known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0, feasibility: null },
+            'a member that is no crafter builds with no workshop');
+        assert.equal(kit.workshopAsks, 0, 'and asks the occupation planner for none');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'refresh'), refreshProbe: id });
         const refreshResponse = await wait(message => message.probeId === 'refresh'); if (refreshResponse.error) throw Error(refreshResponse.error);
         const moved = { waited: true, ran: true };

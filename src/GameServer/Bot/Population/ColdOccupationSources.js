@@ -70,6 +70,28 @@ function* feasibility(state, { board, read = () => {} }, reserved = null) {
     return [hash, blocked, lines.length];
 }
 
+// Whether a cold look may keep an own SELL line on sale: the mask's rule
+// (feasibility) on the state it looks at, its reservations read once at the
+// first line asked. A built mask describes its build's state and keys only the
+// lines, not the reservations and item flags its bits read, so a held build's
+// mask is no answer for a later state.
+function canSell(state, lines) {
+    const Look = invoke('GameServer/Bot/Economy/BoardLook');
+    let reserved;
+    return line => {
+        if (reserved === undefined) {
+            reserved = null;
+            if (lines.length <= Look.MAX_OWNED_LINES) {
+                const run = reservations(state);
+                let next;
+                do next = run.next(); while (!next.done);
+                reserved = next.value;
+            }
+        }
+        return Look.indexedFeasibility(state, line, reserved);
+    };
+}
+
 const EconomicTrip = require('../Economy/EconomicTrip');
 const { regionalTown, details: tripDetails } = EconomicTrip;
 function recipeIndex(board) {
@@ -270,7 +292,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
         ownLines: board?.ownerLines(Number(state.characterId)) || [] } };
 }
 
-module.exports = { initialise, prepare, exitValue, craftLabour, reservations, feasibility, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
+module.exports = { initialise, prepare, exitValue, craftLabour, reservations, feasibility, canSell, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
     fixedBuyerOffersFor,
     hasNpcSellerInTown: town => { initialise(); return npcOfferView?.hasSellerInTown(town) || false; },
     npcOffersFor,
