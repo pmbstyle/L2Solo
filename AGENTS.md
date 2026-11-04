@@ -97,6 +97,8 @@ is one mechanism per rule.
   not by hand.
 - A commit is the work on one problem (one bug, gap or rework) with its tests and map update, not one per edit; it
   builds and passes its own tests. Two problems are two commits.
+- Fewer commits: review fixes, follow-ups and its map/test edits fold into the problem's one commit before it is
+  shared; no "fix the fix" commits and no merge commits from local work branches (squash them in).
 
 ## Commits and PRs
 
