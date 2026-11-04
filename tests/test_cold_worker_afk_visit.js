@@ -228,10 +228,10 @@ const STATIC_BOUGHT = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871];
         const arrows = await showcaseRunsFor(archerId, 'arrow_cleanup_visit', {}, 9,
             [{ selfId: 1341, amount: 5000 }, { selfId: 1343, amount: 100 }]);
         assert.equal(invoke('GameServer/Inventory/ArrowStock').keptAmounts(arrows.visitState)[1341], 2000);
-        assert.equal(arrows.runs, 0, 'physical arrow cleanup runs before a worker showcase can finish an unrelated town visit');
+        assert.equal(arrows.runs, 1, 'unused arrows do not cost the visit its worker showcase');
         const arrowBag = await Database.fetchItems(archerId);
         assert.equal(arrowBag.filter(item => item.selfId === 1341).reduce((sum, item) => sum + item.amount, 0), 2000);
         assert(!arrowBag.some(item => item.selfId === 1343), 'wrong-grade arrows go to the NPC on an ordinary town errand');
-        console.log('PASS ordinary archer town visit: worker handoff cannot bypass compatible stock cap and wrong-grade NPC sale');
+        console.log('PASS ordinary archer town visit: the showcase runs and the NPC takes surplus and wrong-grade arrows');
     } finally { await world.close(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

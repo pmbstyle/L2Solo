@@ -40,7 +40,7 @@ const warDuty = party => !!party?.stats?.warOperation;
 function arrowUnloadNeed(party, member, now, need = undefined) {
     if (warDuty(party) || clanDuty(party) || party?.stats?.objective?.sourceKind === 'raid'
         || party?.stats?.objective?.raidBoss) return null;
-    if (!require('../../Inventory/ArrowStock').unused(member).length) return null;
+    if (!invoke('GameServer/Bot/Economy/ItemDisposition').unusedArrowCandidates(member).length) return null;
     const bag = need === undefined ? cleanupNeed(member, now) : need;
     return bag?.reason === 'inventory_overweight' ? bag : null;
 }

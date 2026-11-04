@@ -663,7 +663,8 @@ function marketListingIntent(state, goal = null) {
     // already ended the visit or its departure marker was not retained.
     const forcedCleanup = state?.stats?.forcedMarketCleanup
         || (floor?.action === 'unload' ? { cleanupReason: floor.reason } : null)
-        || (ordinaryVisit && require('../../Inventory/ArrowStock').unused(state).length
+        // Arrows the sale takes (its own lines): sold at the NPC beside the worker's board plan.
+        || (ordinaryVisit && invoke('GameServer/Bot/Economy/ItemDisposition').unusedArrowCandidates(state).length
             ? { cleanupReason: 'unused_arrows' } : null);
     const selling = saleVisit(state);
     if (!forcedCleanup && goal?.type !== 'sell_inventory' && !ordinaryVisit && !selling) {
@@ -3220,15 +3221,12 @@ const PopulationService = {
         const checked = await BotAfkMarketService.reviewPurchaseLimits(updatedState);
         updatedState = checked.state || updatedState;
         correctedBids = checked.changed;
-        const improvementService = invoke('GameServer/Bot/Economy/BotImprovementService');
-        const arrowCleanupFirst = updatedState.activity === 'shopping' && improvementService.inTown(updatedState)
-            && require('../../Inventory/ArrowStock').unused(updatedState).length > 0;
         // A correction changed the owner's board revision. Its earlier
         // optional plan waits for fresh preparation, rather than replaying it.
         // A sale trip's own sale (open) decides the bag: the worker showcase
         // first would make two pricers fight over it. A forced cleanup keeps
         // the author's path (E306).
-        if (updatedState.activity === 'shopping' && workerPlan?.economyPlan && !correctedBids && !arrowCleanupFirst
+        if (updatedState.activity === 'shopping' && workerPlan?.economyPlan && !correctedBids
             && (!saleVisit(updatedState) || updatedState.stats?.forcedMarketCleanup)) {
             const sourceWorker = ColdSimulationCoordinator.worker, sourceEpoch = ColdSimulationCoordinator.workerEpoch;
             const beforeWrite = () => {
@@ -3244,6 +3242,7 @@ const PopulationService = {
             updatedState = board.state || updatedState;
         }
 
+        const improvementService = invoke('GameServer/Bot/Economy/BotImprovementService');
         const acquisitionLeaf = ColdSimulationCoordinator.economyDecisions.activity(updatedState);
         if (acquisitionLeaf?.activity === 'improving'
             && ['crystallize', 'luxury_exchange'].includes(acquisitionLeaf.improvement?.kind)

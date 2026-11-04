@@ -130,6 +130,11 @@ function companion(saved) {
         replace(AfkMarket, 'reconcile', () => { throw Error('remote showcase cannot replace physical arrow cleanup'); });
         const ordinaryIntent = Population.marketListingIntent(ordinary, { type: 'buy_craft_material' });
         assert.equal(ordinaryIntent.cleanup.cleanupReason, 'unused_arrows', 'every physical town visit clears surplus arrows regardless of its original goal');
+        const worn = { ...ordinary, inventory: { ...ordinary.inventory,
+            1341: { ...ordinary.inventory[1341], equipped: true, equippedCount: ordinary.inventory[1341].amount } } };
+        assert(Arrows.unused(worn).length, 'the raw count still sees surplus');
+        assert.equal(Population.marketListingIntent(worn, { type: 'buy_craft_material' }).cleanup, undefined,
+            'arrows the NPC sale would not take make no cleanup visit (trigger and sale read one list)');
         await Population.openMarketListing(ordinaryIntent, { type: 'buy_craft_material' });
         assert.equal(Native.amount(await Database.fetchItems(ordinary.characterId), 1341), 2000,
             'an existing remote storefront cannot bypass the NPC cleanup');

@@ -296,7 +296,7 @@ function roomFor(item, stored) {
 }
 
 // A bot in the world seen by the cold rules: its saved life state with the
-// live bag, level and class of the actor.
+// live bag, level, class and load limit of the actor.
 function actorState(session) {
     const actor = session.actor;
     const inventory = invoke('GameServer/Bot/Population/BotLifeState').inventorySummaryFromItems(actor.backpack.fetchItems());
@@ -306,7 +306,8 @@ function actorState(session) {
         level: Number(actor.fetchLevel?.() || session.coldLifeState?.level || 1),
         adena: Number(inventory['57']?.amount || 0),
         inventory,
-        stats: { ...(session.coldLifeState?.stats || {}), classId: Number(actor.fetchClassId?.() || 0) }
+        stats: { ...(session.coldLifeState?.stats || {}), classId: Number(actor.fetchClassId?.() || 0) },
+        ...(actor.fetchMaxLoad?.() > 0 ? { maxLoad: Number(actor.fetchMaxLoad()) } : {})
     };
 }
 
