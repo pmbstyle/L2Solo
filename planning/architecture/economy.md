@@ -84,6 +84,7 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
 | Board ask/bid | `MarketPricing` over `PriceDecision`/`PriceBelief` |
 | First price | `FirstPrice` via `MarketCounters.firstPrice` |
 | Configured merchant price | `StaticMerchantPricing` |
+| What a bot may buy where, and the price it pays | `ProductionPolicy` (`allowsNpcShot`, `allowsFixedShot`: a city store sells a bot only shots), read by `MarketOpportunity.botCanBuy` and `StaticMerchantPricing.cheapestPurchase(forBot)` (`botPurchasePrice`, `botBuyPrice`: the hunt model, potion and shot restock) |
 | An item's NPC price (valuation, first price), main and workers | `BotMarketPricing.npcPrice` over `NpcShopBuyLists.townPrices` (town sellers, cheapest row). The workers get the table as rows (`npcPriceRows`, ~600 rows ≤ ~18 KB, once per worker start or clan context revision): cold in the `npc_offers` catalogue, clan in its planning context; a crafted shot's cost reads its inputs' price there |
 | Adena rate scaling | `BotEconomyPricing.scalePrice/economyRate` |
 | Which offer to buy | `OfferQuery.bestSellOffer` + `OfferOrder` |

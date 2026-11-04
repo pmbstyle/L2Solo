@@ -69,13 +69,15 @@ function refreshFixedOffers() {
     }
 }
 
+// The cheapest repeatable supply of an item: NPC shops and the configured city
+// stores. forBot: only where a bot may buy it (ProductionPolicy: a city store
+// sells a bot only shots), the one price every bot purchase path reads.
 function cheapestPurchase(selfId, { forBot = false } = {}) {
     refreshNpcOffers();
     refreshFixedOffers();
     const id = Number(selfId);
     const production = require('./ProductionPolicy');
-    let minimum = forBot && production.shotsDisabled() && (production.GRADED_SHOTS.has(id) || production.NO_GRADE_SHOTS.has(id))
-        ? Infinity : fixedMinimums.get(id) ?? Infinity;
+    let minimum = !forBot || production.allowsFixedShot(id) ? fixedMinimums.get(id) ?? Infinity : Infinity;
     if (forBot && !production.allowsNpcShot(id)) return minimum;
     for (const line of npcOffers.get(id) || []) {
         minimum = Math.min(minimum, Number(line.price ?? basePrice(id)));
@@ -141,8 +143,8 @@ function priceFor(store, line, { viewerId = 0, actor = null, enchant = 0 } = {})
 }
 
 // An NPC shop's list price of an item for a bot: the cheapest line any NPC
-// sells it to bots at (the configured city stores excluded: a bot buys only
-// shots there, MarketOpportunity.botCanBuy); a town's quote is this or its
+// sells it to bots at (the configured city stores excluded: they sell a bot
+// only shots, ProductionPolicy.allowsFixedShot); a town's quote is this or its
 // tax above it. Infinity where no NPC sells it to bots. Kept per item while
 // the rate and the shot rule it was read under stand (static between them):
 // one Map read per ask, keyed by the item ids asked (the kits' few; at most

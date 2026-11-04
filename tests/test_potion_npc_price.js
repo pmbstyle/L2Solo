@@ -32,5 +32,16 @@ try {
     assert.equal(own.costs, table, 'the own sample costs what the table row costs');
     useRate('x1');
     assert.equal(Potions.purchasePotionFor({ level: 62 }).price, Pricing.botPurchasePrice(potion.selfId));
+    // A city store sells a bot only shots (ProductionPolicy): a young bot's
+    // Lesser Healing Potion and Scroll of Escape cost what an NPC asks, and a
+    // potion only a city store sells has no bot price.
+    const lesser = Potions.purchasePotionFor({ level: 10 });
+    for (const id of [lesser.selfId, 736]) {
+        assert(Pricing.cheapestPurchase(id) < Pricing.botPurchasePrice(id), `fixture: a city store sells ${id} cheaper to a player`);
+        assert.equal(Pricing.botPurchasePrice(id), Pricing.botNpcListPrice(id), `a bot pays the NPC for ${id}`);
+    }
+    assert.equal(lesser.price, Pricing.botPurchasePrice(lesser.selfId));
+    assert(Number.isFinite(Pricing.cheapestPurchase(1539)), 'fixture: a city store sells the Greater Healing Potion');
+    assert.equal(Pricing.botPurchasePrice(1539), Infinity, 'no bot can buy it');
 } finally { useRate(original); }
 console.log('PASS potion NPC price');
