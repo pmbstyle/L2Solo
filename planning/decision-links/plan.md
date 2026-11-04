@@ -53,7 +53,8 @@ Inputs marked (E) have an event today, (–) have none, (S) need a significance 
 1. Packet layouts with one owner (`StatsPacket`: money, stockTargets, dangerPrice), named readers (AGENTS.md).
 2. State replaced, not edited in place (NpcRestockPlan's clone, cached-state repairs), so a link may key on identity.
 3. Per-spot versions: a crowd/room revision in `SpotOccupancyIndex` and a risk-exclusion revision in `SpotRiskPolicy`,
-   read by the links that read those spots (no dispatch to bots needed: the reader compares versions).
+   read by the links that read those spots (no dispatch to bots needed: the reader compares versions). Done
+   (`spotVersion`, `exclusionVersion`); no link reads them yet (income search hold, source facts).
 4. The money weight: decide ECO-15 (search at the band hour, not the bot's own last hour) so the income search does not
    depend on its own previous answer.
 5. Counters per link: built/kept by reason (extend the `doors` row and `incomeHold`), so every step below is measured.

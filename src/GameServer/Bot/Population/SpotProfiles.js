@@ -146,6 +146,13 @@ function spotHunters(spot, state = null) {
     return huntersOn(threadOccupancy(), spot?.id, state);
 }
 
+// A spot's crowd revision in this thread's occupancy
+// (SpotOccupancyIndex.spotVersion): a result held over the spot's hunters
+// (spotHunters, roomFor) stands while it reads the same.
+function spotVersion(spotId) {
+    return threadOccupancy()?.spotVersion(spotId) ?? 0;
+}
+
 // A spot has room for this bot in this thread's occupancy (roomFilterFor's
 // rule for one bot, with no set per search); its own spot always has.
 function roomFor(spot, state) {
@@ -445,6 +452,7 @@ const SpotProfiles = {
 };
 
 SpotProfiles.spotHunters = spotHunters;
+SpotProfiles.spotVersion = spotVersion;
 SpotProfiles.roomFor = roomFor;
 SpotProfiles.useOccupancy = useOccupancy;
 SpotProfiles.spotsNearLevel = spotsNearLevel;

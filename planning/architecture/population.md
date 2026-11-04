@@ -78,6 +78,7 @@ thread: our rule, so a far bot does not re-decide on every event ([bot-ai.md](bo
 | Cold → hot gate | `handoffToMain` (solo); party / PvP: their own DB `transition` (POP-4) |
 | Main → worker data | `ColdTableChannel` (tables), `snapshot_page` (bots); clan social bypasses it (POP-9) |
 | Spot route | `BotRoute` |
+| Versions of a spot's inputs for held results (readers compare, nothing is dispatched) | crowd: `SpotOccupancyIndex.spotVersion` (moves when a bot joins or leaves the spot; this thread's: `SpotProfiles.spotVersion`); a holder's exclusions: `SpotRiskPolicy.exclusionVersion` (revision = the excluded set, untilStep = its first mark's end) |
 | Travel route and fare | `Travel/TravelRoutes`, `TripPayment` |
 | Cold trip time | `ColdTrip` |
 | A throwing step or command: hold off, quarantine | `ColdSimulationKernel.fault`, one tracker per bot (per party run): backoff 1 s/5 s/30 s/2 min, quarantine 10 min after 5 faults in a row (`BotFaultHold`, the hot AI state's rule too: `BotAI` `stateFaulted`), first occurrence logged with the stack, `botFaults=` on the health line (limits.md); a command's DB error is no bot fault (`commandDbErrors`) |
