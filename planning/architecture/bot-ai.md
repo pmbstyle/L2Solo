@@ -84,6 +84,10 @@ deterministic brain; the LLM acts only on explicit player communication.
   moves have no event, and an NPC target change bumps one world-wide `threatRevision`, so any fight anywhere drops
   every party's projection. The event it waits for: a per-target change of who targets an actor (the scan already
   keeps only NPCs targeting a member; measured 2026-11-04: its NPC queries are ~7 % of the scan).
+- **AI-15 `session.botStatus` is a 3 s / 15 s window** (`HotActorLodPolicy.shouldRefreshStatus`, limits.md "Hot LOD"):
+  `BotStatus.getStatus` builds one snapshot (vitals, place, NPCs within 1500, players, trade, persona, target) that
+  `HuntingState` decides on and chat reads; none of those inputs has a revision. Keyed rebuilds need the snapshot
+  split per reader first (0.19 % of main in the 2026-11-04 hot run).
 - **AI-11 ~12 copies of the FNV hash** beside `Bot/Fnv1a.js` (incl. `TendencyRoll`, `SpotService`, `LevelingRoutes`,
   `PartyHuntingTarget`, `ColdOccupationSources`). Matters if hot and cold rolls must agree.
 - **AI-12 two sell-trip checks in HuntingState** (leaf 'selling' and unconditional), each starts shopping.

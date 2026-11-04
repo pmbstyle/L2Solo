@@ -79,6 +79,11 @@ assert.strictEqual(Policy.evaluate(selected, [selectingPlayer], 9001).tier, 'vis
 
 const fighting = botSession(2005, 5000, { hits: true });
 assert.strictEqual(Policy.evaluate(fighting, [player], 1000).tier, 'full', 'visible combat cannot be degraded to far-visible thinking');
+const stance = botSession(2008, 5000, { combat: true });
+assert.strictEqual(Policy.evaluate(stance, [player], 1000).tier, 'full', 'a visible bot in combat stance thinks at full quality');
+assert.strictEqual(Policy.nextTickDelay(stance, Policy.evaluate(stance, [player], 1500), () => 0), 1000, 'visible combat keeps the fast cadence');
+stance.actor = actor(2008, 5000);
+assert.strictEqual(Policy.evaluate(stance, [player], 2000).tier, 'visible', 'visible combat ends with its stance, with no hold after it');
 
 const targetingPlayer = botSession(2006, 5500, { session: { currentTargetId: 1001 } });
 assert.strictEqual(Policy.evaluate(targetingPlayer, [player], 1000).tier, 'full', 'a bot attacking or chasing a real player is promoted');
