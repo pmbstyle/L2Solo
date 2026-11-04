@@ -37,19 +37,23 @@ function regenTerms(profile, seated, timestamp) {
 // level, no bot) its class tree's skills with no kit (once per class and level).
 // A rest reads only the passives' ids and levels (statSources), so the tree
 // profile keeps those alone: whole skill rows of every class at every level
-// held 44 MB of the worker heap (10-30 heap snapshot).
+// held 44 MB of the worker heap (10-30 heap snapshot). Held only for the
+// classes and levels a reader asks (DangerRule, FirstPrice, RestPotion); a
+// one-off sweep (RecoveryCatalog) passes treeProfile's as options.profile.
 const treeProfiles = new Map();
 let profileTree = null;
+function treeProfile(classId, level) {
+    const skills = ColdCombatProfile.skillsFor({ level, stats: { classId } }, classId, level)
+        .filter(skill => skill.passive).map(skill => ({ selfId: skill.selfId, level: skill.level, passive: true }));
+    return { skills, equipment: {}, effects: [] };
+}
 function restProfile(state, classId, level, timestamp) {
     if (state.characterId) return ColdCombatProfile.profileFor(state, timestamp);
     if (profileTree !== DataCache.skillTree) { treeProfiles.clear(); profileTree = DataCache.skillTree; }
+    // Inputs: the class, the level and the skill tree (cleared above).
     const key = `${classId}:${level}`;
     let profile = treeProfiles.get(key);
-    if (!profile) {
-        const skills = ColdCombatProfile.skillsFor({ level, stats: { classId } }, classId, level)
-            .filter(skill => skill.passive).map(skill => ({ selfId: skill.selfId, level: skill.level, passive: true }));
-        treeProfiles.set(key, profile = { skills, equipment: {}, effects: [] });
-    }
+    if (!profile) treeProfiles.set(key, profile = treeProfile(classId, level));
     return profile;
 }
 
@@ -121,4 +125,4 @@ function estimateRestMs(state, vitals, options = {}) {
         line.mp * maxMp - Number(vitals.mp || 0), options), 8) * 1000);
 }
 
-module.exports = { coldRestRegenPerTick, restRegenPerTick, restMpPerTick, requiresManaRecovery, restSeconds, estimateRestMs };
+module.exports = { treeProfile, coldRestRegenPerTick, restRegenPerTick, restMpPerTick, requiresManaRecovery, restSeconds, estimateRestMs };

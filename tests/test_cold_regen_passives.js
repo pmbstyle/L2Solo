@@ -37,6 +37,15 @@ const sorcererRest = BR.resolveRest(short(sorcerer, 1e6, 0), 3000, 0);
 assert.equal(sorcererRest.debug.regen.standing, true, 'a Sorcerer short of MP rests standing');
 near(sorcererRest.debug.regen.mp, standing, 'at its standing tick');
 assert.notEqual(BR.resolveRest(short(wizard, 1e6, 0), 3000, 0).debug.regen.standing, true, 'a Wizard sits');
+// The boot projection of seated MP per hour (the craft labour clock) builds
+// each class tree profile for its tick and drops it; every rate is the one
+// the held profile-less rest gives (DangerRule, FirstPrice).
+const rates = require('../src/GameServer/Knowledge/RecoveryCatalog').seatedMpRates(invoke('GameServer/DataCache').classTemplates, Rest);
+assert(rates.size > 80, 'every class has a clock');
+for (const [classId, perLevel] of rates) for (let level = 1; level <= 80; level++) {
+    assert.equal(perLevel[level], Rest.coldRestRegenPerTick({ level, stats: { classId } }).mp * 1200, `class ${classId} level ${level}`);
+}
+near(rates.get(11)[24] / 1200, 4.52 / 1.2, 'a naked Wizard 24 seated');
 const Policy = invoke('GameServer/Bot/AI/RestPolicy');
 assert.equal(Policy.sitsToRest({ hp: 10, mp: 10 }, { hp: 5, mp: 11 }, 100, 100, true), true, 'HP short: sitting refills it first');
 assert.equal(Policy.sitsToRest({ hp: 10, mp: 10 }, { hp: 5, mp: 11 }, 0, 100, true), false, 'only MP short: standing wins');
