@@ -932,12 +932,19 @@ async function createAndCommitBackgroundParty(members = [], objectiveOverride = 
 // asked like its goals (jointPartyGoals: main for an all-near roster, the worker otherwise). A busy
 // or failed worker defers the roster to the next assembly: no main thought and no build for a far
 // roster. The roster's id is its member set, so a refusal repeated per attempt logs once (logPartyFailure).
+// An answer is held while every member's source identity (PartyGoalCalculation.source: its
+// revision, update stamp, phase and party) and the requested objective stand: a refused roster
+// the assembly asks again (its retry) is not sent again until one of its members changes.
 async function formingVerdict(members, requested, options) {
     const memberIds = members.map(member => Number(member.characterId));
+    const asked = askedVerdicts.inputs(members, requested, { spots: SpotProfiles.ensure() });
+    const timestamp = Date.now(), held = askedVerdicts.read(asked, timestamp);
+    if (held) return held;
     const verdict = await jointPartyGoals({ partyId: `forming_${[...memberIds].sort((a, b) => a - b).join('_')}`,
-        leaderId: memberIds[0], memberIds, stats: { forming: { requested: requested || null } } }, members, Date.now(), options);
-    return Array.isArray(verdict?.formingAccepted) ? verdict : null;
+        leaderId: memberIds[0], memberIds, stats: { forming: { requested: requested || null } } }, members, timestamp, options);
+    return Array.isArray(verdict?.formingAccepted) ? askedVerdicts.write(asked, verdict) : null;
 }
+const askedVerdicts = PartyGoalPolicy.formingHold(member => JSON.stringify(PartyGoalCalculation.source(member)), 'ask');
 
 async function createBackgroundParty(members = [], objectiveOverride = null, options = {}) {
     const requested = objectiveOverride || members.map(partyObjectiveForState).find(objective => objective?.priority === 'required');
@@ -1744,17 +1751,26 @@ const PopulationService = {
             return { deferred: Help.hasPending(), retryAt: Help.nextDeadline() };
         }
         if (this.partyFormationRunning || this.resolving) return { deferred: true };
-        const eligible = candidates.filter(state => LifeState.cachedState(state.characterId) === state
-            && !invoke('GameServer/Bot/Population/PartyAssemblyRecovery').coolingDown(state, timestamp)
+        // A member cooling down or deferred wakes its group at its own end (the
+        // record's dueAt: partyAssemblyInput, refreshPartyAssemblyRequest), so it
+        // asks no retry; a state replaced since the page was read does.
+        const current = candidates.filter(state => LifeState.cachedState(state.characterId) === state);
+        const stale = current.length < candidates.length;
+        const eligible = current.filter(state => !invoke('GameServer/Bot/Population/PartyAssemblyRecovery').coolingDown(state, timestamp)
             && !(state.stats?.partyRequest?.status === 'deferred' && Number(state.stats.partyRequest.deferredUntil || 0) > timestamp));
-        if (!eligible.length) return { deferred: candidates.length > 0 };
+        if (!eligible.length) return { deferred: stale };
         const protectedActivity = this.playerActivityProfile(timestamp).protected;
         if (protectedActivity && timestamp < this.nextProtectedPartyFormationAt) return { deferred: true, retryAt: this.nextProtectedPartyFormationAt };
         if (protectedActivity && !eligible.some(state => RequiredPartyFormation.objectiveFor(state))) return {};
         const result = protectedActivity
             ? await this.formProtectedRequiredParty(timestamp, eligible)
             : await this.formBackgroundParties(eligible);
-        return { deferred: this.partyFormationPending || eligible.length < candidates.length
+        // Retried (PartyAssemblyEvents.retryMs): a busy formation, or a refused roster
+        // (partyFormationPending; the group index wakes on no member's level, kit or
+        // wallet, so the retry asks again and the held refusal answers while its
+        // members stand: formingVerdict), a replaced state, a material group that
+        // formed nothing (the next page offers other supports).
+        return { deferred: this.partyFormationPending || stale
                 || !result.length && eligible.some(state => CraftMaterialParty.isObjective(state.stats?.partyRequest)),
             continuation: result.length > 0,
             retryAt: protectedActivity ? this.nextProtectedPartyFormationAt : 0 };

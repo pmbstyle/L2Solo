@@ -1088,6 +1088,14 @@ const holdDue = (hold, state, timestamp) => !!holdDueWhy(hold, state, timestamp)
 // When the bot's held spot is searched again: a plan deadline of a solo hunt
 // window (ColdSoloWindow); a hold another search moved is due now, a bot with
 // none counts its window from `timestamp`.
+// The search the hold's answer comes from (its time; a moved hold's, the
+// search that moved it), null without a hold: the party comparison names
+// its solo side by it (PartyIncomeComparison.soloChoice), so a reader keyed on
+// it hears every renewal and move, and nothing else.
+function holdAnswerAt(state) {
+    const hold = cache.get(`character:${Number(state.characterId) || 0}`)?.plan?.hold;
+    return hold ? (hold.moved || hold).at : null;
+}
 function holdEndsAt(state, timestamp) {
     const hold = cache.get(`character:${Number(state.characterId) || 0}`)?.plan?.hold;
     if (hold?.moved) return timestamp;
@@ -2476,5 +2484,5 @@ function reset() {
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
 module.exports = { quietGearBuildCount: () => quietGearBuilds, buildDoors: () => ({ ...doors, ...Agenda.counts() }), countDoor,
-    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), incomeHoldStats, linkStats, holdEndsAt, heldIncomeRoute, incomeMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockFor, stockReader, keptKit, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
+    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), incomeHoldStats, linkStats, holdEndsAt, heldIncomeRoute, incomeMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockFor, stockReader, keptKit, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider, holdAnswerAt, bagInputs,
     craftIncome };

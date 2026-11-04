@@ -46,6 +46,7 @@ Inputs marked (E) have an event today, (–) have none, (S) need a significance 
 | Workshop | best recipe, income/hour | money packet, wallet, recipes/craft level, maxMp, class/level, reservations, recipe bag items, board reads, route rows | planner `occupation`, `heldWorkshop` (route key, workshop mask) | party/karma members asked every step (fixed cb292781) |
 | Action plan | buy/sell/craft plan | bag amounts, money/escrow, own board lines and read quotes, wish build, MP only through `floor(mp/mpCost)` and `mpCost ≥ mp` | planner `action` after `ColdEconomyPlan.edges` | bit 8 (rest→hunt) fires every cycle; exact MP refresh |
 | Showcase | shop display | bag, prices, board | planner `showcase` per shopping step | small |
+| Forming verdict | a roster's accepted ids (+ material reviews) | per member: level, class, kit fact, spot, position, request, gear plan, focus and its cash, survival reserve, workshop quote, planned shot and potion, roster samples (E state); alive, running effects, buffs each seller would sell it, a summoner's MP, summon and cooldowns, the night (read results, exact); solo side's search (E hold version); wallet and onSpotShare (S incomeError, debt.md 23) | `PartyGoalPolicy.formingVerdict` held per roster (`formingHold`); main's ask held on the members' sources (`PopulationService.formingVerdict`) | main's held ask hears worker-only inputs (crowd, the hold's renewal) at a member's next change |
 
 ## Cross-cutting fixes the links need
 

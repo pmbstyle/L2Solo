@@ -98,4 +98,4 @@ function recruitCheck(party, members, { spots, timestamp }) {
     return refused ? null : { ...joint, agreement: agreement || null };
 }
 
-module.exports = { sources, sameSource, matches, validMembers, calculate, recruitCheck };
+module.exports = { source, sources, sameSource, matches, validMembers, calculate, recruitCheck };

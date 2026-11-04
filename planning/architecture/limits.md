@@ -148,6 +148,7 @@ player online (8 in flight, status `coldDue`).
 | Group pair events | 64 (9 members = 72 pairs) | SharedHuntMemory ~20 | last members lose `hunted_together` | none |
 | `maxBackgroundParties` | 72 (no default.ini key) | PopulationConfig ~142, PartyAdmission ~27 | party not formed (required clan objectives can reclaim a slot, PopulationService ~881) | none |
 | Assembly recovery | 12 attempts or 6 + 5 min | PartyAssemblyRecovery ~1, ~22 | `party_assembly_timeout` | party history |
+| Held forming verdicts | 256 rosters per hold (`FORMING_HOLD_LIMIT`): main's asks (keyed on the members' sources) and each thread's verdicts (keyed on what the comparison reads) | PartyGoalPolicy `formingHold`, PopulationService `formingVerdict` | oldest roster dropped; asked or judged again on its next attempt | dD `forming_verdict:evicted` (`held` / `judged` beside it) |
 | Party affinity | 16 peers (strong 8) | BackgroundPartyAffinity ~1 | forgotten | none |
 | ClanPartyHelp | 64 pending; 8 parties per request; TTL 10 min, retry 30 s | ClanPartyHelp ~25, ~90 | request refused silently | none |
 | Opportunistic raids | 2 parties, 15 min, search 60 s; per search 8 rosters, 72 bots, 12 forecasts, 12 ms CPU in 2 ms slices (`RaidSearchCounters`) | PopulationConfig ~14, OpportunisticRaidDirector ~105, RaidSearchCounters ~3 | skipped / retry 10 s | status |

@@ -90,7 +90,7 @@ function formingMembers(members, requested, options = {}) {
         return roster.filter(member => {
             if (!invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(member)
                 && member.stats?.partyRequest?.priority === 'required') return true;
-            const decision = decide(member, roster.filter(peer => peer !== member), { prepared, objective: requested });
+            const decision = decide(member, roster.filter(peer => peer !== member), { prepared, objective: requested, solo: options.solo });
             options.onReview?.(member, decision);
             return decision.accept;
         });
@@ -104,15 +104,134 @@ function formingMembers(members, requested, options = {}) {
     return confirmed.length === accepted.length ? confirmed : [];
 }
 
+// A held forming verdict per roster: one mechanism for its two readers, main's
+// ask (PopulationService.formingVerdict: the members' source identity) and the
+// verdict itself (verdictInputs). The key: the requested objective and, in
+// roster order (the verdict reads the first member's spot and profile first),
+// what inputsOf(member, context, drift) reads of each member; the spot
+// catalog by identity. drift: [value, error] pairs a reader adds, held while
+// each moves by at most its error (the observation event's rule, as the held
+// earning spot compares its money weight). A held answer is restamped to the
+// read (a material verdict's review time): it is the verdict on these inputs now.
+// Bounded: FORMING_HOLD_LIMIT rosters, the oldest out.
+const FORMING_HOLD_LIMIT = 256;
+function formingHold(inputsOf, site) {
+    const held = new Map();
+    const Diagnostics = () => invoke('GameServer/Bot/Economy/EconomyDiagnostics');
+    function inputs(members, requested, context) {
+        const drift = [];
+        const key = [JSON.stringify(requested ?? null), ...members.map(member => inputsOf(member, context, drift))].join('|');
+        return { roster: members.map(member => Number(member.characterId)).join(','), key, drift, spots: context.spots };
+    }
+    function read(asked, timestamp) {
+        const entry = held.get(asked.roster);
+        const kept = entry && entry.key === asked.key && entry.spots === asked.spots && entry.drift.length === asked.drift.length
+            && entry.drift.every((value, at) => at % 2 || Math.abs(asked.drift[at] - value) <= Math.abs(value) * entry.drift[at + 1]);
+        Diagnostics().count('forming_verdict', kept ? 'held' : 'judged', site);
+        if (!kept) return null;
+        held.delete(asked.roster); held.set(asked.roster, entry);
+        const verdict = entry.verdict;
+        return verdict.lastIncomeReviewAt === undefined ? verdict : { ...verdict, lastIncomeReviewAt: timestamp,
+            incomeReviews: verdict.incomeReviews.map(row => ({ ...row, at: timestamp })) };
+    }
+    function write(asked, verdict) {
+        held.delete(asked.roster);
+        held.set(asked.roster, { key: asked.key, drift: asked.drift, spots: asked.spots, verdict });
+        if (held.size > FORMING_HOLD_LIMIT) {
+            held.delete(held.keys().next().value);
+            Diagnostics().count('forming_verdict', 'evicted', site);
+        }
+        return verdict;
+    }
+    return { inputs, read, write, clear: () => held.clear(), size: () => held.size };
+}
+
+// What the forming comparison reads of one member (PartyIncomeComparison.compare
+// and prepare; participation when no comparison applies). Exact: level, class,
+// kit fact (gear, skills, craft, the karma flip), spot, the position its trips
+// run from (a cold member moves only on its trips), whether it can sell a buff,
+// its request and gear plan, the focus and its cash, survival reserve, workshop
+// quote, planned potion, its party samples at this spot (any sub-roster), the
+// solo side's search (its version: the earning hold's renewal or its own).
+// The fight's moment by what the matchups and buff offers read of it: the
+// shot its prices name and the kind it loads (EconomyContext.bagInputs; none
+// once the charges end), alive
+// (a dead or 0 HP member leaves the capacity), the effects running at the read,
+// the buffs each seller in the roster would sell it now (ColdBuffOffer.select:
+// the seller's MP, its cooldowns, the buyer's cooldown and its own running
+// buffs), a summoner's MP, summon and running cooldowns (its servitor's cast and
+// heal sustain); the night is the roster's (formingVerdict). By the bot's income
+// error (drift; debt.md 23): the wallet and the time on the spot; a material
+// roster's wallets exactly, as its reviews carry the hours they give.
+function verdictInputs(member, context, drift) {
+    const stats = member.stats || {}, plan = stats.equipmentPlan, id = Number(member.characterId);
+    const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+    const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
+    const Offer = invoke('GameServer/Bot/Economy/ColdBuffOffer');
+    const classId = stats.classId ?? member.classId, timestamp = context.timestamp;
+    const economic = invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(member)
+        && !!member.spotId && Number.isFinite(Number(classId));
+    const running = (stats.coldCombat?.effects || []).filter(effect => !(Number(effect.expiresAt) > 0) || Number(effect.expiresAt) > timestamp)
+        .map(effect => `${effect.key}:${effect.level ?? ''}`).sort().join('+');
+    const recipient = PartyIncomeComparison.soloState(member);
+    const sold = context.members.filter(peer => peer !== member && invoke('GameServer/Bot/Economy/BuffServicePolicy').serviceClass(peer))
+        .map(peer => (Offer.select(PartyIncomeComparison.soloState(peer), recipient, timestamp)?.selected || [])
+            .map(skill => `${skill.fetchSelfId()}:${skill.fetchLevel()}`).join('+')).join('/');
+    const summoner = invoke('GameServer/Bot/AI/BotRoles').isSummoner({ classId, characterId: id }) || !!stats.coldCombat?.summon;
+    const summon = stats.coldCombat?.summon;
+    const parts = [id, member.level, classId, member.spotId, member.loc?.locX, member.loc?.locY, Sections.kit(member), economic,
+        Offer.available(member), Number(member.vitals?.hp === 0 || member.activity === 'dead'), running, sold,
+        invoke('GameServer/Bot/Economy/EconomyContext').bagInputs(member, timestamp).join(':'),
+        summoner ? [member.vitals?.mp, !!(summon?.active && Number(summon.hp ?? summon.maxHp) > 0 && summon.expiresAt > timestamp),
+            Object.entries(stats.coldCombat?.cooldowns || {}).filter(([, until]) => Number(until) > timestamp).map(([skill]) => skill).sort().join('+')].join(':') : '',
+        JSON.stringify(stats.partyRequest ?? null), plan?.status, plan?.strategy, JSON.stringify(plan?.next ?? null)];
+    if (!economic) {
+        // participation: the persona and its roll's seed (decide).
+        parts.push(JSON.stringify(invoke('GameServer/Bot/AI/BotPersona').of(member)?.traits || {}),
+            stats.partyRequest?.requestedAt || member.spotId || member.updatedAt);
+        return parts.join(',');
+    }
+    const side = PartyIncomeComparison.soloChoice(member, context.spots, timestamp);
+    context.solo.set(id, side);
+    const workshop = invoke('GameServer/Bot/Economy/EconomyContext').craftIncome(member);
+    // Every roster's samples at the spot: the second pass prepares a sub-roster.
+    const samples = Hunt.sampledRows(member, timestamp, 'party').filter(row => String(row.spotId) === String(context.spotId));
+    parts.push(side.version, stats.wishFocus?.[0], stats.wishFocus?.[2],
+        require('../Economy/StatsPacket').survivalReserve(stats.money),
+        workshop?.known, workshop?.incomePerHour, workshop?.cycleHours,
+        invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(member)?.selfId,
+        samples.map(row => `${row.partyRoster}@${row.at}:${row.samples}`).join(';'));
+    const error = context.material ? 0
+        : Math.max(positive(stats.wishSections?.incomeError), invoke('GameServer/Bot/AI/KnowledgeLearning').INCOME_ERROR_FLOOR);
+    drift.push(positive(member.adena), error, Hunt.onSpotShare(member), error);
+    return parts.join(',');
+}
+const verdicts = formingHold(verdictInputs, 'verdict');
+
 // The forming verdict of one roster, asked once before main builds the party (main for an
 // all-near roster, the worker's party goal request otherwise): the accepted ids. A material
 // roster also carries its reviews, and only an economic accept admits a material hunt (a member
-// without a camp forecast is refused).
+// without a camp forecast is refused). Held while its inputs stand (verdicts).
 function formingVerdict(members, requested, { spots, timestamp = Date.now() } = {}) {
+    if (verdictFree(requested)) return judgeForming(members, requested, { spots, timestamp });
+    spots ||= invoke('GameServer/Bot/Population/SpotProfiles').ensure();
+    const material = CraftMaterialParty.isObjective(requested)
+        ? CraftMaterialParty.needs(members, requested, CraftMaterialParty.agreement(members, requested)) : null;
+    const context = { spots, timestamp, members, material: !!material, solo: new Map(),
+        roster: PartyIncomeComparison.rosterKey(members), spotId: requested?.spotId || members[0]?.spotId };
+    // The roster's own inputs: the requested objective (a material one with its
+    // members' needs) and the night the fight profiles read.
+    const read = verdicts.inputs(members, { requested, material,
+        night: invoke('GameServer/World/GameTime').isNight(timestamp) }, context);
+    return verdicts.read(read, timestamp)
+        || verdicts.write(read, judgeForming(members, requested, { spots, timestamp, solo: context.solo }));
+}
+
+function judgeForming(members, requested, { spots, timestamp, solo }) {
     if (!CraftMaterialParty.isObjective(requested)) return { formingAccepted: formingMembers(members, requested,
-        { spots, timestamp }).map(member => Number(member.characterId)) };
+        { spots, timestamp, solo }).map(member => Number(member.characterId)) };
     const decisions = new Map();
-    const formed = new Set(formingMembers(members, requested, { spots, timestamp,
+    const formed = new Set(formingMembers(members, requested, { spots, timestamp, solo,
         onReview: (member, decision) => decisions.set(Number(member.characterId), decision) })
         .map(member => Number(member.characterId)));
     const incomeReviews = members.map(member => {
@@ -157,4 +276,4 @@ function itemNeed(state, item, projected) {
 }
 
 module.exports = { declaration, pending, joint, participation, groupContext, decide, verdictFree, formingMembers, formingVerdict,
-    recruitment, itemNeed };
+    formingHold, FORMING_HOLD_LIMIT, recruitment, itemNeed };

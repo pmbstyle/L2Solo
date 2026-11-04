@@ -115,6 +115,13 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    (the material's remaining amount, the camps' forecasts, the source route reader); a time window stands in for
    those events.
 
+23. **The forming verdict hears a member's wallet and time on the spot by its income error.**
+   `PartyGoalPolicy.verdictInputs` re-judges a roster when a member's adena or `onSpotShare` moves beyond its
+   `incomeError` (at least 3 %), not over an interval its answer stands on (as the earning hold's money weights):
+   the comparison is not one line in them (funding delays clipped at zero, the minimum of funding and direct item
+   hours, the help fee and buff price thresholds, the 10 % margins), so an interval needs the breakpoints of
+   `PartyIncomeComparison.evaluate` per member. A material roster keys its wallets exactly.
+
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets`' `gapHorizonHours`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so
 a rich bot there has a null activity (T178): a test expecting "one leaf" from such a scene breaks the same way. Known
