@@ -120,6 +120,7 @@ const { ColdOccupationPlanner } = require('./ColdOccupationPlanner');
 const OccupationSources = require('./ColdOccupationSources');
 const EconomicTrip = require('../Economy/EconomicTrip');
 const { fnv1a32 } = require('../Fnv1a');
+const WealthCraftPolicy = require('../Economy/WealthCraftPolicy');
 const RequiredPartyFormation = require('./RequiredPartyFormation');
 const { ColdCompetitionMonitor } = require('./ColdCompetitionMonitor');
 const ColdCompetitionCandidates = require('./ColdCompetitionCandidates');
@@ -240,8 +241,9 @@ const WORK_STAGES = Object.freeze(['stock', 'recipe', 'ingredient', 'owned', 'qu
 // - occupation (a crafter's workshop): the state's values without its commit
 //   stamps (updatedAt, simulation, timing: no planner rule reads them; the
 //   meeting's authority and diagnostics do), its HP and CP (no workshop rule
-//   reads them) and its saved restart card (stats.wishAdvisory, read by the
-//   card's restore only); the recipe book and known shot recipes, the escrow,
+//   reads them), its MP as the band its craft checks answer alike on
+//   (WealthCraftPolicy.craftMpBand) and its saved restart card
+//   (stats.wishAdvisory, read by the card's restore only); the recipe book and known shot recipes, the escrow,
 //   the route key (the rows), the warehouse and clan supply versions and
 //   whether the board and market copies are whole. Board and market rows are
 //   the job's read tokens (sourceChanged). Not in it: the clock its sale
@@ -250,7 +252,8 @@ const WORK_STAGES = Object.freeze(['stock', 'recipe', 'ingredient', 'owned', 'qu
 //   trades) and through a combat profile's effects when the state stores no
 //   max MP: a finished workshop serves for the earning hold's window
 //   (EconomyContext.HOLD_MS, servesUntil; limits.md "Occupation planner").
-// - action, showcase, craft_market: the same with HP, the step's stock target,
+// - action, showcase, craft_market: the same with HP (and the exact MP of a bot
+//   that rests for mana: SurvivalFloor's cast costs), the step's stock target,
 //   the step's economy (the object the step built) and the step clock, which
 //   the plan reads directly (SurvivalFloor's cooldowns and sale retry, the
 //   errands' expiry, price beliefs): a finished one serves its step only.
@@ -268,7 +271,9 @@ let nextObjectSerial = 0;
 const serialOf = value => value && typeof value === 'object'
     ? objectSerials.get(value) ?? (objectSerials.set(value, ++nextObjectSerial), nextObjectSerial) : 0;
 function stateValues(state, withHp) {
-    const vitals = state.vitals && !withHp ? { ...state.vitals, hp: undefined, cp: undefined } : state.vitals;
+    const mp = withHp && invoke('GameServer/Bot/AI/BotRoles').shouldRestForMana(state) ? state.vitals?.mp
+        : WealthCraftPolicy.craftMpBand(CraftEligibility.craftLevelFor(state), state.vitals?.mp);
+    const vitals = state.vitals && { ...state.vitals, mp, ...(withHp ? {} : { hp: undefined, cp: undefined }) };
     const stats = state.stats && state.stats.wishAdvisory !== undefined ? { ...state.stats, wishAdvisory: undefined } : state.stats;
     return JSON.stringify({ ...state, ...STATE_STAMPS, vitals, stats });
 }
@@ -789,10 +794,15 @@ function stepWorkshop(state, timestamp, deps, caller) {
     economyDiagnostics.count('occupation', 'ask', `occupation|${caller}|no_crafter`);
     return none;
 }
+// The card's craft (its shot step) is prepared again only when the MP moved
+// out of the band its craft checks answer alike on (WealthCraftPolicy
+// craftMpBand; exact for a bot that rests for mana, whose plan reads its MP
+// through SurvivalFloor's cast costs).
 async function refreshCraftPacket(state, timestamp, refreshed) {
     if (!refreshed || !CraftEligibility.isServiceCrafter(state)) return refreshed;
     const mp = Number(state.vitals?.mp), preparedMp = refreshed.advisory.preparedMp ?? refreshed.advisory.mp;
-    if (mp === preparedMp) return refreshed;
+    if (mp === preparedMp || !invoke('GameServer/Bot/AI/BotRoles').shouldRestForMana(state)
+        && WealthCraftPolicy.sameCraftMp(CraftEligibility.craftLevelFor(state), preparedMp, mp)) return refreshed;
     const sourceState = kernel.states.get(Number(state.characterId))?.state;
     const action = await occupationFor(state, timestamp,
         { stock: refreshed.economy.stock('shots'), economy: refreshed.economy, caller: 'craft_mp' }, 'action');

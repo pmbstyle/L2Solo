@@ -110,6 +110,22 @@ module.exports.nativePlannerReuse = async (id, timestamp, moves = {}) => {
         return out;
     } finally { occupationPlanner.create = create; }
 };
+// Whether a crafter's held card prepares its craft again at a new MP
+// (refreshCraftPacket): pairs [preparedMp, mp], the action asks counted.
+module.exports.nativeCraftMpRefresh = async (id, timestamp, pairs) => {
+    const request = occupationPlanner.request, asks = [];
+    occupationPlanner.request = function (key, input) { asks.push(input.mode); return Promise.resolve({}); };
+    try {
+        const state = kernel.states.get(id).state, out = [];
+        for (const [preparedMp, mp] of pairs) {
+            asks.length = 0;
+            const refreshed = { advisory: { preparedMp }, economy: { stock: () => null } };
+            const answer = await refreshCraftPacket({ ...state, vitals: { ...state.vitals, mp } }, timestamp, refreshed);
+            out.push({ asked: [...asks], kept: answer === refreshed });
+        }
+        return { out, forbiddenLoaded: Object.keys(require.cache).filter(key => /\/(?:Database|Network)\/|\/src\/Database\.js$|\/World\/World\.js$|\/Bot\/BotManager\.js$/.test(key)) };
+    } finally { occupationPlanner.request = request; }
+};
 module.exports.nativeEconomyDecision = async (id, timestamp, nativeRoutes = false) => {
     const state = kernel.states.get(Number(id)).state;
     const routeRows = nativeRoutes ? await occupationFor(state, timestamp, {}, 'wish') : undefined;
@@ -144,13 +160,13 @@ loaded._compile(fs.readFileSync(workerData.workerPath, 'utf8') + workerData.obse
 parentPort.on('message', async message => {
     if (!message.nativeEconomyDecision) return;
     try { parentPort.postMessage({ probeId: message.msgId,
-        value: await loaded.exports[message.plannerReuse ? 'nativePlannerReuse' : message.meetingRequest ? 'nativeMeetingPreparation' : message.townVisit ? 'nativeTownVisit' : message.recipeEarning ? 'nativeRecipeEarning' : 'nativeEconomyDecision'](message.characterId, message.timestamp, message.plannerReuse || message.meetingRequest || (message.recipeEarning ? message.refreshEconomy : message.nativeRoutes)) }); }
+        value: await loaded.exports[message.craftMp ? 'nativeCraftMpRefresh' : message.plannerReuse ? 'nativePlannerReuse' : message.meetingRequest ? 'nativeMeetingPreparation' : message.townVisit ? 'nativeTownVisit' : message.recipeEarning ? 'nativeRecipeEarning' : 'nativeEconomyDecision'](message.characterId, message.timestamp, message.craftMp || message.plannerReuse || message.meetingRequest || (message.recipeEarning ? message.refreshEconomy : message.nativeRoutes)) }); }
     catch (error) { parentPort.postMessage({ probeId: message.msgId, error: error.stack, meetingTrace: error.meetingTrace }); }
 });`;
 
 // recipes: the bot's row of main's 'recipes' table ({ recipeBook, knownShotRecipes }), if any.
 module.exports = async function workerEconomyDecision(state, { recipes = null, timestamp = Date.now(),
-    boardRows = [], extraStates = [], tablePages = [], tables = [], recipeEarning = false, refreshEconomy = false, nativeRoutes = false, townVisit = false, meetingRequest = null, duringMeetingMarket = [], plannerReuse = null } = {}) {
+    boardRows = [], extraStates = [], tablePages = [], tables = [], recipeEarning = false, refreshEconomy = false, nativeRoutes = false, townVisit = false, meetingRequest = null, duringMeetingMarket = [], plannerReuse = null, craftMp = null } = {}) {
     const epoch = `native:economy-decision:${state.characterId}`;
     const messages = [];
     const worker = new Worker(wrapper, { eval: true, workerData: { sharedGeodata: Geodata.sharedDescriptor(), workerEpoch: epoch, duringMeetingMarket,
@@ -191,7 +207,7 @@ module.exports = async function workerEconomyDecision(state, { recipes = null, t
         send('snapshot_page', { rows: [{ state }, ...extraStates], ack: true }, 'state');
         await wait(message => message.type === 'ready' && message.msgId === 'state');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'native-economy'), nativeEconomyDecision: true,
-            characterId: state.characterId, timestamp, recipeEarning, refreshEconomy, nativeRoutes, townVisit, meetingRequest, plannerReuse });
+            characterId: state.characterId, timestamp, recipeEarning, refreshEconomy, nativeRoutes, townVisit, meetingRequest, plannerReuse, craftMp });
         const response = await wait(message => message.probeId === 'native-economy');
         if (response.error) {
             const error = Error(response.error); error.meetingTrace = response.meetingTrace; throw error;

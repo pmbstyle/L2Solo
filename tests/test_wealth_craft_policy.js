@@ -140,6 +140,27 @@ if (nativeMargin > 0) {
 const lowGainRatio = Packet.moneyPrice(native.state.stats.money) / 2;
 assert.strictEqual(Funding.spendable(native.state, 0, { r: lowGainRatio }), 0,
     'actual E3 refuses a low-value gain even though the original 100000 wallet pays 27000 physically');
+// A crafter's MP is read only through its craft checks: every MP inside the
+// band of an MP (craftMpBand, over the recipes of the craft level) chooses the
+// same batches as that MP for a catalogue recipe.
+{
+    const Recipes = invoke('GameServer/Items/C4RecipeItems');
+    const real = Recipes.resolveByRecipeId(41), level = Number(real.level);
+    const owned = id => id === real.productId ? null : { count: 100000, unitValue: 1 };
+    const sale = { ...exit, count: 1000000 };
+    const batches = mp => Policy.opportunityFor({ ...state, adena: 1e9, vitals: { mp } }, real, planFor, [sale], owned, paid)?.batches ?? 0;
+    for (const mp of [real.mpCost - 1, real.mpCost, 3 * real.mpCost + 5, 700, 5000]) {
+        const band = Policy.craftMpBand(level, mp);
+        const first = Math.ceil(band[1] ? band[0] : band[0] + 1e-9), last = Math.floor(band[3] ? band[2] : band[2] - 1e-9);
+        const low = Number.isFinite(first) ? first : mp - 50, high = Number.isFinite(last) ? last : mp + 50;
+        for (let at = Math.max(0, low); at <= high; at++) {
+            assert.equal(batches(at), batches(mp), `MP ${at} in the band of ${mp} crafts the same batches`);
+            assert(Policy.sameCraftMp(level, mp, at));
+        }
+        if (Number.isFinite(band[2])) assert(!Policy.sameCraftMp(level, mp, band[3] ? band[2] + 1 : band[2]), 'an MP past the band differs');
+    }
+    assert(Policy.sameCraftMp(0, 10, 900), 'a bot with no craft level reads no MP');
+}
 console.log('Wealth craft policy checks passed');
 } finally {
     Economy.reset();

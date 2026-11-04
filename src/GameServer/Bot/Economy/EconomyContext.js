@@ -192,8 +192,11 @@ const miss = (why, reason) => { why?.push(reason); return false; };
 function heldEventsQuiet(state, held, deps = {}, why = null) {
     const stats = state.stats || {};
     let quiet = true;
-    if (!held.nativeCraftContinuation && Number(state.craftLevel ?? stats.dwarvenCraftLevel) > 0
-        && Number(state.vitals?.mp) !== Number(held.mp)) quiet = miss(why, 'crafter_mp');
+    // A crafter's MP is read by the build only through its craft checks
+    // (WealthCraftPolicy.craftMpBand: the producers' batch capacity).
+    const craftLevel = Number(state.craftLevel ?? stats.dwarvenCraftLevel);
+    if (!held.nativeCraftContinuation && craftLevel > 0
+        && !require('./WealthCraftPolicy').sameCraftMp(craftLevel, held.mp, state.vitals?.mp)) quiet = miss(why, 'crafter_mp');
     if (Sections.moneyChanged(state, held.baseline, deps.buyOrderEscrow, false)) quiet = miss(why, 'funding');
     return quiet;
 }
