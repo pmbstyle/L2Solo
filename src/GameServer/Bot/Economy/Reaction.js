@@ -61,6 +61,10 @@ const LINKS = Object.freeze({
     // A spot too full to enter, and what main refused at the act: the plan cannot stand.
     crowded: link(['occupation', 'sources'], 0),
     rejected: link(['sources'], 0),
+    // A spot whose spawns admit none of the bot's fights alone (a kit or level it
+    // lost, a stand-in ground): the bot stands with nothing to hunt, its plan cannot
+    // stand. The occupation rebuild searches its spot afresh and drops the kept route.
+    unhuntable: link(['occupation', 'sources'], 0),
     // A body's arrival in town.
     town: link(['supply', 'money'], 0),
     // Main moved the bot's goal; its native plan failed or moved; the step's own

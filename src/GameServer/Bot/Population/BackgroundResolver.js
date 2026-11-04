@@ -2343,15 +2343,72 @@ function soloPickOptions(state) {
 // verdict knows (the fight then takes the spot's own mob: resolveFight).
 // profiles: the round's (roundProfiles), else built here.
 function admittedShares(state, spot, timestamp, profiles = roundProfiles(state, timestamp)) {
-    if (!spot?.npcEntries?.length) return null;
-    const options = soloPickOptions(state);
-    let known = false;
-    const shares = new Map(spot.npcEntries.map(entry => {
-        const verdict = TargetMatchup.speciesPulls(profiles, entry, options);
-        known ||= !!verdict;
-        return [entry, verdict?.share ?? 0];
-    }));
-    return known ? shares : null;
+    return TargetMatchup.spotShares(profiles, spot, soloPickOptions(state));
+}
+// A round on a spot that admits none of the bot's fights (admittedShares, or the
+// pick's own refusal on a spot without spawn groups): it stands, and the first
+// such round of a stay raises its ground (debug.unhuntable, read by
+// BotLifeState.prepareResolve): the plan that holds the bot there cannot stand.
+const NO_PREY = 'no_safe_solo_target';
+// Raised only when the route's own view refuses the spot too (readyProfiles: the
+// pet raised, its HP and the MP whole, the shots it carries): a bot short only of
+// what a rest or a summon gives back would get the same spot again. Self-buffs are
+// not read: the route judges its spots unbuffed. Entries of a spot without spawn
+// groups are its species, one each (as npcForSpot reads them).
+// A solo bot on ground its route admits once it is whole, at a round with no
+// fight it may take: it gets ready. C4: a summoner raises its pet before it
+// engages, so a summoner with none casts it out of the fight when its MP and
+// reuse allow (ensureColdSummon, as a raid's preparation); a living pet its
+// owner can heal now is healed, as between fights. Else the rest that changes
+// what the gate reads: the soonest summon's MP and reuse, the reuse of its pet
+// heal, a pet that only its own regeneration makes whole (restMs; 0: no rest helps). patch: the round's, its
+// vitals and coldCombat written in place. Returns { acted, restMs, summonUses,
+// petCasts, ms }.
+function getReady(state, patch, profile, timestamp) {
+    const out = { acted: false, restMs: 0, summonUses: 0, petCasts: 0, ms: 0 };
+    const combat = patch.stats.coldCombat;
+    const living = combat?.summon?.active && Number(combat.summon.expiresAt || Infinity) > timestamp ? combat.summon : null;
+    const skills = !living && BotRoles.isSummoner(profile) ? ColdCombatProfile.summonSkills(profile) : [];
+    if (skills.length) {
+        const fighter = raidPreparationFighters([{ ...state, vitals: patch.vitals, inventory: patch.inventory || state.inventory,
+            stats: patch.stats }], timestamp)[0];
+        if (ensureColdSummon(fighter, timestamp, fighter.cooldowns)) {
+            patch.vitals.mp = fighter.vitals.mp;
+            patch.inventory = fighter.state.inventory;
+            patch.stats.coldCombat = { ...(combat || ColdCombatProfile.seedSnapshot(fighter.state, timestamp)),
+                cooldowns: fighter.cooldowns, summon: fighter.summon };
+            return { ...out, acted: true, summonUses: fighter.summonUses, ms: Number(fighter.readyAt) || 0 };
+        }
+        // The soonest summon: each waits for its MP (a rest to whole MP) and its reuse.
+        const cooldowns = combat?.cooldowns || {};
+        const mp = Number(patch.vitals.mp) || 0;
+        let mpRest = null;
+        out.restMs = Math.min(...skills.map(skill => Math.max(
+            Number(skill.mp || 0) > mp ? (mpRest ??= estimateRestMs(state, patch.vitals, { requireMana: true })) : 0,
+            Math.max(0, Number(cooldowns[skill.selfId] || 0) - timestamp))));
+        return out;
+    }
+    if (!living) return out;
+    const summon = { ...living }, cooldowns = { ...(combat.cooldowns || {}) };
+    const healed = coldHealBetweenFights(profile, patch.vitals, cooldowns, timestamp, summon, { solo: false });
+    if (healed.petCasts > 0) {
+        patch.stats.coldCombat = { ...combat, summon, cooldowns };
+        return { ...out, acted: true, petCasts: healed.petCasts, ms: healed.ms };
+    }
+    const petView = coldPetView(profile, summon, patch.vitals, cooldowns, timestamp);
+    if (!RestPolicy.petRested(petView)) out.restMs = petRestMs(profile, summon, patch.vitals, timestamp);
+    else if (petView?.healable && PetHealRule.wantsHeal(summon.hp, summon.maxHp)) {
+        // A heal it owns on its reuse: it sits until the reuse ends.
+        const heal = PetHealRule.choose(ColdClassPolicy.actorFor(profile, { hp: patch.vitals.hp, mp: patch.vitals.mp, cooldowns, time: timestamp }),
+            { anyReuse: true })?.coldRecord;
+        out.restMs = heal ? Math.max(0, Number(cooldowns[heal.selfId] || 0) - timestamp) : 0;
+    }
+    return out;
+}
+function routeRefuses(state, spot, timestamp, profiles) {
+    const ground = spot.npcEntries?.length ? spot : { npcEntries: (spot.npcSelfIds || []).map(selfId => ({ selfId, count: 1 })) };
+    return TargetMatchup.admitsNone(TargetMatchup.spotShares(TargetMatchup.readyProfiles(profiles, state, timestamp), ground,
+        soloPickOptions(state)));
 }
 
 // The matchup profiles of a solo round, at the round's start: its fights and
@@ -2633,6 +2690,8 @@ const BackgroundResolver = {
         const roundProfile = botCombatStats(state, timestamp);
         const profiles = roundProfiles(state, timestamp, roundProfile);
         const admitted = admittedShares(state, spot, timestamp, profiles);
+        // Nothing here for it to fight alone: no walk, no pick (a fight already begun goes on).
+        let noPrey = !continuing && TargetMatchup.admitsNone(admitted);
         // T106: the round's kills are limited by the walk to each next mob and
         // by the share below; fights, gap heals, buffs and walks run by their
         // own time within the elapsed time. The fights a round may hold at
@@ -2714,7 +2773,7 @@ const BackgroundResolver = {
             return drank.ms;
         };
 
-        for (let i = 0; i < fights; i++) {
+        for (let i = 0; i < fights && !noPrey; i++) {
             // The first fight starts in any round (its readiness may send the bot to rest).
             if (i > 0 && (combatMs >= combatBudgetMs || combatActions >= actionBudget)) break;
             // A mob already engaged is finished; a new one needs a whole mob of the share.
@@ -2753,6 +2812,7 @@ const BackgroundResolver = {
                 maxActions: actionBudget - combatActions, roundProfiles: profiles, round });
             if (result.avoided) {
                 patch.stats.lastReason = result.reason;
+                noPrey = result.reason === NO_PREY;
                 if (result.needsRest) {
                     patch.activity = 'resting';
                     const drinkMs = drinkToRest(roundProfile, true, coldPetView(roundProfile, patch.stats.coldCombat?.summon, patch.vitals,
@@ -2898,6 +2958,33 @@ const BackgroundResolver = {
             }
         }
 
+        // stats.emptyGround: the spot whose emptiness was raised (here or by a hot
+        // body, BotDecisionService), the stay's memory; a round with prey clears it.
+        // The first empty round of a stay that the route also refuses raises the
+        // ground (unhuntable: BotLifeState.prepareResolve).
+        const raised = String(state.stats?.emptyGround ?? '') === String(spot.id);
+        let unhuntable = noPrey && !raised && routeRefuses(state, spot, timestamp, profiles);
+        if (noPrey) patch.stats.lastReason = NO_PREY;
+        // Short only of what the route counts whole (a pet, its HP, a summon's MP or
+        // reuse): the bot gets ready instead of standing (getReady); when nothing it
+        // can do changes what the gate reads, the ground is raised after all.
+        if (noPrey && !raised && !unhuntable) {
+            const ready = getReady(state, patch, roundProfile, timestamp);
+            summonUses += ready.summonUses;
+            petHeals += ready.petCasts;
+            skillUses += ready.summonUses + ready.petCasts;
+            combatMs += ready.ms;
+            if (ready.restMs > 0) {
+                patch.activity = 'resting';
+                patch.stats.lastReason = 'solo_recovery_needed';
+                patch.stats.restUntil = Math.ceil(timestamp + ready.restMs);
+                events.push({ type: 'rest', weight: 2,
+                    summary: `${state.name || 'Bot'} sat down to get ready near ${spot.name}`,
+                    meta: { spotId: spot.id, reason: 'solo_recovery_needed' } });
+            } else if (!ready.acted) unhuntable = true;
+        }
+        if (unhuntable) patch.stats.emptyGround = String(spot.id);
+        else if (!noPrey && patch.stats.emptyGround != null) patch.stats.emptyGround = null;
         if (share !== null) {
             const left = shareMobs - mobsKilled;
             // Whole mobs left unused stay for the other hunters.
@@ -2932,6 +3019,7 @@ const BackgroundResolver = {
             soulCrystals,
             nextResolveAt: patch.stats?.restUntil || timestamp + huntCycleDelayMs(rng()),
             debug: {
+                ...(noPrey ? { reason: NO_PREY, unhuntable } : {}),
                 elapsedMs,
                 combatMs,
                 fights: completedFights,

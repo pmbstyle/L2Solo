@@ -180,6 +180,34 @@ const roundsOf = state => state.stats.stepCount;
     }
 
     {
+        // Ground the bot's kit no longer admits (its gear or level lost, a table
+        // row moved): its round stands with nothing to fight, and though far at
+        // work it raises its ground at once (occupation, sources: the next step's
+        // decision searches its spot afresh); the window ends at that round. A
+        // decision that keeps it there (no other ground) is not asked again by
+        // every empty round of the stay.
+        const occupation = Sections.sectionBit('occupation'), sources = Sections.sectionBit('sources');
+        const Targets = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
+        const strong = Data.npcs.find(entry => Number(entry.template?.level) === 45 && entry.template?.kind === 'Monster' && Targets.canHunt(entry));
+        const beyond = { ...fieldOf(45), npcSelfIds: [strong.selfId], npcEntries: [{ selfId: strong.selfId, count: 30 }] };
+        const { kernel, step } = world({ deadlineMs: 1e7, ground: beyond });
+        const start = await hunter();
+        kernel.upsert({ state: start });
+        const { state } = await step();
+        assert.equal(state.stats.lastReason, 'no_safe_solo_target', 'fixture: no spawn of the spot admits a fight');
+        assert.equal(state.activity, 'hunting', 'the bot stands on the spot');
+        assert.equal(state.stats.fightsResolved, start.stats.fightsResolved, 'no fight');
+        assert.equal(Number(state.stats.wishDirty) & (occupation | sources), occupation | sources, 'the empty spot raises its ground');
+        assert(state.stats.decisionSeq > Number(start.stats.decisionSeq || 0), 'heard far at work: the decision sequence moves');
+        assert.equal(roundsOf(state), 1, 'the window ends at the first empty round');
+        // The decision answered and kept it on the spot: the stay raises nothing more.
+        kernel.upsert({ state: { ...state, stats: { ...state.stats, wishDirty: 0 }, simulation: { revision: 50 } } });
+        const { state: stays } = await step();
+        assert.equal(Number(stays.stats.wishDirty) || 0, 0, 'a later empty round of the stay raises nothing');
+        assert.equal(stays.stats.decisionSeq, state.stats.decisionSeq);
+    }
+
+    {
         // A plan that acts keeps its one round.
         const { kernel, step } = world({ plan: (state, plan) => ({ ...plan, economyPlan: { take: [1] } }) });
         kernel.upsert({ state: await hunter() });

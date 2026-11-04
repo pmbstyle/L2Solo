@@ -440,7 +440,9 @@ function isEmptyWishPlan(plan) {
         && plan.next == null && plan.reason === 'wish_focus'
         && Object.keys(plan).every(key => ['status', 'strategy', 'next', 'reason'].includes(key));
 }
-function events(before, after, escrow = 0, leaf = null) {
+// unhuntable: the round found the bot's spot empty of prey (BackgroundResolver,
+// the first such round of a stay), a fact of the round, not of the two states.
+function events(before, after, escrow = 0, leaf = null, unhuntable = false) {
     // Main may replay a validated worker packet that already describes this
     // same round. Compare its actual baselines, not sequence alone; a packet
     // preceding a new death/level/resource event still raises that event.
@@ -461,6 +463,7 @@ function events(before, after, escrow = 0, leaf = null) {
     const links = [];
     factEvents(previousFact, current, moneyChanged(after, represented || before.stats?.wishSections, escrow, false)
         || !previous.funding && fundingMark(before) !== fundingMark(after), links, occupationPlanned(after, leaf));
+    if (unhuntable) links.push('unhuntable');
     const where = Reaction.place(after, before);
     return Reaction.raise(Reaction.gated(where) ? [...links, ...needsOpened(before, after, links, view)] : links, where);
 }

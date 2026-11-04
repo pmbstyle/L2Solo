@@ -10,7 +10,8 @@ const WishProviders = invoke('GameServer/Bot/Economy/WishProviders');
 // The reasons code raises by name (raiseDecision). A near bot's moved fact
 // raises on the background thread, which compares its posted row with the
 // one before (ColdSimulationWorker's state writer).
-const reasons = new Set(['town', 'revived', 'money', 'build', 'sources', 'supply', 'occupation', 'relations', 'combat', 'benefits']);
+const reasons = new Set(['town', 'revived', 'money', 'build', 'sources', 'supply', 'occupation', 'relations', 'combat', 'benefits',
+    'unhuntable']);
 // Every reason marks a section, so the next build reconsiders the held focus and activity.
 const bit = Sections.sectionBit;
 // A section name (raiseSections) marks its own bit.
@@ -18,7 +19,8 @@ const sectionBits = { ...Object.fromEntries(Sections.SECTIONS.map(name => [name,
 // A named reason marks the sections of its link in the one table (Reaction.LINKS).
 const factBits = fact => Sections.sectionMask(Reaction.sections(fact));
 const reasonBits = { ...sectionBits, money: factBits('funding'), build: factBits('build'),
-    revived: factBits('dead'), relations: factBits('relations'), town: factBits('town'), sources: factBits('rejected') };
+    revived: factBits('dead'), relations: factBits('relations'), town: factBits('town'), sources: factBits('rejected'),
+    unhuntable: factBits('unhuntable') };
 function statsFor(session) {
     return session.coldLifeState ? (session.coldLifeState.stats ||= {}) : (session.decisionStats ||= {});
 }

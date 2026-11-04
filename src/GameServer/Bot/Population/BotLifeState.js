@@ -2892,7 +2892,8 @@ const BotLifeState = {
             // options.leaf: the step's held leaf (the worker's), whose own trip
             // and arrival raise nothing; none (main, a step without a plan):
             // every move is an event.
-            hard = DecisionSections.events(state, nextState, escrow, options.leaf ?? null);
+            // The round found its spot empty of prey (BackgroundResolver, once a stay).
+            hard = DecisionSections.events(state, nextState, escrow, options.leaf ?? null, result.debug?.unhuntable === true);
         }
         // The bot's step counter, the clock of its spot marks (SpotRiskPolicy):
         // +1 once per resolved step, whichever thread resolves it (hot actor

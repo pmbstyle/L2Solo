@@ -1027,6 +1027,13 @@ module.exports = {
                 beginSpotRelocation(session, bot, decision.spot, BotAI, decision.deferredOccupation);
                 return;
             }
+            // Its ground admits it once its pet is up or whole (BotDecisionService): it
+            // raises the pet out of the fight, or sits for the MP or the pet's HP.
+            if (decision.action === 'summon' && SummonerTactics.raisePet(session, bot, Generics)) return;
+            if (decision.action === 'rest' && decision.reason === 'ground_needs_rest') {
+                beginVoluntaryRecovery(session, bot, BotAI);
+                return;
+            }
         }
 
         // 5. Hunt/Attack Combat execution

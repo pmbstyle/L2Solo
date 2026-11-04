@@ -438,6 +438,17 @@ function readyProfiles(profiles, state, timestamp) {
     if (ready[1]) ready[1].summonCastMs = 0;
     return ready;
 }
+// readyProfiles of a body near a player, from the live actor: its living pet at
+// full HP, else the one it can raise, MP, reuse and cast time aside.
+function actorReadyProfiles(actor) {
+    const profiles = actorProfiles([actor]);
+    if (!profiles.length) return profiles;
+    const pet = actor.summon && !actor.summon.isDead?.() && !actor.summon.state?.fetchDead?.();
+    if (pet && profiles[1]) return [profiles[0], { ...profiles[1], hp: undefined }];
+    const ready = coldProfiles(profiles[0], { vitals: {} });
+    if (ready[1]) ready[1].summonCastMs = 0;
+    return ready;
+}
 // The bot's side with no pet, at the HP and MP it has left.
 function ownersAtVitals(profiles, hp, mp) {
     return atVitals(profiles.filter(profile => profile.servitor !== true), hp, mp);
@@ -778,6 +789,29 @@ function speciesPulls(profiles, entry, options = {}) {
         { profiles, soloSafety: options.soloSafety, maxTargetLevel: options.maxTargetLevel });
 }
 
+// Each spawn group of a spot and the share of its pulls the profiles may fight
+// under the safety options (speciesPulls; 0 for a group they may not), or null
+// for a spot without spawn groups or with none a verdict knows. Read by a cold
+// round (BackgroundResolver.admittedShares) and by a hot hunter's look at its
+// ground (BotDecisionService.suggest): one rule.
+function spotShares(profiles, spot, options = {}) {
+    if (!spot?.npcEntries?.length) return null;
+    let known = false;
+    const shares = new Map(spot.npcEntries.map(entry => {
+        const verdict = speciesPulls(profiles, entry, options);
+        known ||= !!verdict;
+        return [entry, verdict?.share ?? 0];
+    }));
+    return known ? shares : null;
+}
+// The spot holds nothing the profiles may fight: every group the verdict knows
+// is refused (spotShares). Unknown (null) is no proof.
+function admitsNone(shares) {
+    if (!shares) return false;
+    for (const share of shares.values()) if (share > 0) return false;
+    return true;
+}
+
 function spotMatchup(spot, profiles, options = {}) {
     if (!profiles?.length) return evaluate([], {});
     let total = 0, effective = 0, eligible = false, safe = 0;
@@ -814,5 +848,5 @@ function damageRate(profiles, target = {}) {
     return rates.reduce((sum, rate) => sum + rate, 0);
 }
 
-module.exports = { MIN_EFFICIENCY, SOLO_GATE_MARGIN, actorProfiles, coldProfiles, servitorProfile, profileKey, shotKindOfKey, readyProfiles, targetView, skillModifier, channels, damageRate, attackRate, spellRate, incomingRate,
-    profileStats, skillStats, evaluate, atVitals, ownersAtVitals, soloSurvival, soloCanHunt, pullVerdict, soloSpotUpperBound, stateProfiles, spotMatchup, speciesPulls, expectedHit, actorHit };
+module.exports = { MIN_EFFICIENCY, SOLO_GATE_MARGIN, actorProfiles, coldProfiles, servitorProfile, profileKey, shotKindOfKey, readyProfiles, actorReadyProfiles, targetView, skillModifier, channels, damageRate, attackRate, spellRate, incomingRate,
+    profileStats, skillStats, evaluate, atVitals, ownersAtVitals, soloSurvival, soloCanHunt, pullVerdict, soloSpotUpperBound, stateProfiles, spotMatchup, speciesPulls, spotShares, admitsNone, expectedHit, actorHit };

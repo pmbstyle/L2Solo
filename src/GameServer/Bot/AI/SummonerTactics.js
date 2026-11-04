@@ -46,6 +46,21 @@ function summonSkill(actor) {
             || Number(b.fetchLevel?.() || 0) - Number(a.fetchLevel?.() || 0))[0] || null;
 }
 
+// The summons the actor knows (no corpse summon), castable now or not.
+function summonSkills(actor) {
+    return skillsFor(actor).filter(isSummonSkill);
+}
+
+// C4: a summoner raises its pet before it engages (the cold round's getReady):
+// a solo one with no pet casts it out of the fight. True when it cast.
+function raisePet(session, actor, Generics) {
+    if (SummonControl.activeSummon(actor) || actor?.state?.fetchSeated?.() === true) return false;
+    const skill = summonSkill(actor);
+    if (!skill) return false;
+    Generics.skillExec(session, actor, { id: actor.fetchId(), selfId: skill.fetchSelfId(), ctrl: true });
+    return true;
+}
+
 function corpseSummonSkill(actor, target = null) {
     if (!BotRoles.isNecromancer(actor)) return null;
     if (SummonControl.activeSummon(actor)) return null;
@@ -246,6 +261,16 @@ function healPetBetweenFights(session, actor, Generics) {
     return heal ? cast(session, actor, summon, heal, Generics).handled : false;
 }
 
+// A living pet below its heal line whose owner's heal is on its reuse (the heal
+// between fights could not cast it).
+function petHealWaits(actor) {
+    const summon = SummonControl.activeSummon(actor);
+    if (!summon || summon.isDead?.()) return false;
+    const maxHp = Number(summon.fetchMaxHp?.() || 0);
+    return PetHealRule.wantsHeal(Number(summon.fetchHp?.() ?? maxHp), maxHp)
+        && !PetHealRule.choose(actor) && !!PetHealRule.choose(actor, { anyReuse: true });
+}
+
 // The actor's living pet as the rest rule reads it (RestPolicy.needsRest
 // options.pet, PetHealRule.restView), or null.
 function petRestView(actor) {
@@ -257,10 +282,13 @@ function petRestView(actor) {
 module.exports = {
     healPetBetweenFights,
     petRestView,
+    petHealWaits,
     PET_BUFF_IDS,
     isSummonSkill,
     isCorpseSummonSkill,
     summonSkill,
+    summonSkills,
+    raisePet,
     corpseSummonSkill,
     corpseTarget,
     combatAction,
