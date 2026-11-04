@@ -88,6 +88,9 @@ async function run() {
             extras: [{ selfId: 1342, amount: 5000, offer: quote }] });
         assert.equal(planned.flatMap(row => row.lines).find(row => row.selfId === 1342).amount, 10,
             'the planner buys only the missing working stock');
+        assert.equal(Life.marketPurchaseBlocker(saved, { selfId: 1342 }, 11, { commanded: true }), 'arrow_stock_limit',
+            'a worker command meets the same stock gate as an ordinary purchase');
+        assert.equal(Life.marketPurchaseBlocker(saved, { selfId: 1342 }, 10, { commanded: true }), null);
         const outcomes = await Promise.allSettled([purchase(saved, [{ selfId: 1342, amount: 10, unitPrice: 2 }]),
             purchase(saved, [{ selfId: 1342, amount: 10, unitPrice: 2 }])]);
         assert.equal(outcomes.filter(row => row.status === 'fulfilled').length, 1);

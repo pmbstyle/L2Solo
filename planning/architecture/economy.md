@@ -92,7 +92,7 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
 | Bid lines | `BuyAdPolicy.linesFor/bidFor` |
 | Shop town | `MarketTownPolicy.chooseTown` (see ECO-5) |
 | Reservations, sale and warehouse candidates | `ItemDisposition` (see ECO-7); a paused or retained gear project's stored share: `ItemDisposition.storedEquipmentAmounts` (bank once across both owners) |
-| A bot's arrow stock (what it keeps, may buy, sells as surplus) | `Inventory/ArrowStock`: one grade, the equipped bow's, up to 2000 and below the first weight penalty (`ceil(maxLoad / 2) − 1`); a bot's bow spends no arrows (`Actor/BowResources`), so the stock is weight only. Read at every purchase planner and writer (ECO-15) |
+| A bot's arrow stock (what it keeps, may buy, sells as surplus) | `Inventory/ArrowStock`: one grade, the equipped bow's, up to 2000 and below the first weight penalty (`ceil(maxLoad / 2) − 1`); a bot's bow spends no arrows (`Actor/BowResources`), so the stock is weight only. Bots only (players are free). A purchase asks `ArrowStock.admitted` once, where its path sizes it: a wish purchase in `WishPurchaseEvidence` (every leaf's units), an NPC basket line in `NpcRestockPlan.collect` (after the basket's other lines), a bid in `BuyAdPolicy.bidFor`, a cold purchase in `BotLifeState.marketPurchaseBlocker` (worker commands too); each writer that credits a bot re-reads it on its rows inside the transaction (`Database` `checkArrowPurchaseUnsafe`: AFK buy, buy-ad fill, private store, NPC basket, meeting accept and arrival), which catches concurrent buys and deliveries in flight |
 | Board state, settlement | `AfkTradeService` + `BoardIndex`; meetings `TradeMeetingService` |
 | Where a new trade meeting can take place | `AfkTrade/MeetingAnchor.compatible`: a side with an accepted meeting meets only in that meeting's town, both anchored sides at one point. Read by every offer chooser through `PartyAdmission.personalOfferAllowed` (hot, cold, main and worker) over the life-state marker `stats.tradeMeeting = [id, revision, town, locX, locY, locZ]` (a player, with no life state: the anchor `TradeMeetingService` keeps for it, mirrored to the cold worker as the `player_anchors` table), and by `TradeMeetingService.prepareTrade` over the fresh meeting rows. At boot `TradeMeetingService.init` rewrites every saved marker from the accepted meetings (`Database.refreshTradeMeetingMarkers` → `TradeMeeting.remark`): an old one gets its anchor, a stale one is cleared |
 | Cold physical purchase | `ColdMarketService.acquire` |
@@ -155,12 +155,7 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
   `economy_plan_need_changed` 11 (a real staleness, counted). The plan's sale keeps the kit of the craft it selects
   (`ColdEconomyPlan.prepare` → `ItemDisposition.recipeInputAmounts`), since `BotAfkMarketService.executePlan` runs
   `plan.shot` first.
-- **ECO-15 arrow cap and companion unload checked in many places** (merged from develop PR #207). The arrow
-  capacity (`ArrowStock.purchaseAmount`) is re-checked at ~11 call sites: planners (`NpcRestockPlan.collect`,
-  `ReadyTradeChoice.purchase`, `WishPurchaseEvidence.reader`, `ColdOccupationSources` `preparePurchase`), buyers
-  (`ColdMarketService.buyOffer`, `BotLifeState.marketPurchaseBlocker`, `TradeService.buyFromStore`) and writers
-  (`Database.checkArrowPurchaseUnsafe` in the AFK buy, buy-ad sale, private store, NPC basket, trade meeting
-  receive/complete), instead of one admission the planners read. A hot companion's unload
+- **ECO-15 companion unload by its own path** (merged from develop PR #207). A hot companion's unload
   (`AI/CompanionInventoryCleanup`) picks its own deposit set by weight and sells arrows through
   `Database.sellItemsToNpc` directly, beside `BotWarehouseService.depositActorAtWarehouse` and `SellJunk` (ECO-7, ECO-2).
   `PopulationService` skips the worker plan for a shopping bot holding surplus arrows (`arrowCleanupFirst`), a main

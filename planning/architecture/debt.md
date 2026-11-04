@@ -63,8 +63,8 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
 13. **`BotMarketPricing.useNpcOfferSnapshot(null)`** sets an empty price map instead of returning to main's live prices,
    so afterwards every price reads as none (only `test_first_price` ~104 passes null).
 
-14. **Arrow stock and companion unload (develop PR #207) checked where used.** The arrow cap is re-checked at ~11
-   planner, buyer and writer sites; a companion unloads and sells arrows by its own path (ECO-15).
+14. **Companion unload (develop PR #207) by its own path.** A companion stores and sells arrows outside the
+   warehouse and NPC sale owners (ECO-15).
 
 15. **Picked-tests workflow mixes geodata states in a shard.** A shard that fetched raw geodata for one file runs the
    others with it present, so `test_spawn_drop_height` (asserts the missing-geodata case) fails there while the full

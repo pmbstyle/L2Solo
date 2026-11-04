@@ -1,5 +1,12 @@
 'use strict';
 
+// A bot's arrow stock: one grade, the equipped bow's, up to MAX_AMOUNT and below
+// the first weight penalty (a bot's bow spends no arrows, Actor/BowResources, so
+// the stock is weight only). Our rule, not C4; players hold what they like.
+// Purchases ask `admitted` where a path sizes its quantity (WishPurchaseEvidence,
+// NpcRestockPlan, BuyAdPolicy, BotLifeState.marketPurchaseBlocker) and the commit
+// re-reads it inside the transaction (Database checkArrowPurchaseUnsafe); the
+// sale reads saleAmounts (ItemDisposition, MarketListingPolicy). Hot, cold, worker.
 const BY_RANK = Object.freeze({ none: 17, d: 1341, c: 1342, b: 1343, a: 1344, s: 1345 });
 const ARROW_IDS = new Set(Object.values(BY_RANK));
 const MAX_AMOUNT = 2000;
@@ -88,4 +95,10 @@ function purchaseAmount(value, id, requested) {
     return Math.max(0, Math.min(Math.floor(Number(requested) || 0), MAX_AMOUNT - owned, capacity));
 }
 
-module.exports = { BY_RANK, MAX_AMOUNT, isArrow, keeps, currentId, keptAmounts, saleAmounts, unused, purchaseAmount };
+// How many of `requested` units of an item a bot may take in: all of an item
+// that is no arrow, else the stock's room.
+function admitted(value, selfId, requested) {
+    return isArrow({ selfId }) ? purchaseAmount(value, selfId, requested) : requested;
+}
+
+module.exports = { BY_RANK, MAX_AMOUNT, isArrow, keeps, currentId, keptAmounts, saleAmounts, unused, purchaseAmount, admitted };

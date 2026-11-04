@@ -6,6 +6,7 @@ const Funding = require('./PurchaseFunding');
 const Economy = require('./EconomyContext');
 const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
 const Diagnostics = require('./EconomyDiagnostics');
+const ArrowStock = require('../../Inventory/ArrowStock');
 const LIMIT = 12;
 const sellerKey = seller => [seller.town, seller.sourceId, seller.locX, seller.locY, seller.locZ].join(':');
 function quoteFor(selfId, town, price = null, seller = null) {
@@ -66,9 +67,8 @@ function collect(state, options = {}) {
         const maximum = template?.etc?.stackable ? Number.MAX_SAFE_INTEGER : 10000;
         const desired = Math.floor(amount);
         const available = Funding.spendable(current, 0, funding);
-        const Arrows = require('../../Inventory/ArrowStock');
         const count = Math.min(maximum, desired, Math.floor(Math.min(cap, available) / price),
-            Arrows.isArrow({ selfId }) ? Arrows.purchaseAmount(current, selfId, desired) : Infinity);
+            ArrowStock.admitted(current, selfId, desired));
         if (!(count > 0)) {
             if (Diagnostics.active()) observePlan(state, current, selfId, amount, 0, available, offer, attribution, 'no_units');
             return;
@@ -119,9 +119,8 @@ function collect(state, options = {}) {
             add(736, plan.amount, offer, plan.funding, { survival: Funding.survivalTranche(context, 736, offer.price) });
         }
     }
-    const Arrows = require('../../Inventory/ArrowStock');
     const extras = (options.extras || []).slice(0, LIMIT);
-    for (const extra of extras.filter(row => !Arrows.isArrow(row))) {
+    for (const extra of extras.filter(row => !ArrowStock.isArrow(row))) {
         const offer = extra.offer || quoteFor(extra.selfId, town, extra.unitPrice ?? null, options.seller);
         add(extra.selfId, extra.amount, offer, extra.funding, extra);
     }
@@ -134,7 +133,7 @@ function collect(state, options = {}) {
         }
     }
     // Arrow capacity sees every other funded item in this restock first.
-    for (const extra of extras.filter(Arrows.isArrow)) {
+    for (const extra of extras.filter(ArrowStock.isArrow)) {
         const offer = extra.offer || quoteFor(extra.selfId, town, extra.unitPrice ?? null, options.seller);
         add(extra.selfId, extra.amount, offer, extra.funding, extra);
     }
