@@ -3021,27 +3021,41 @@ function applySoulCrystalStepsUnsafe(characterId, steps, guard = () => {}) {
     }
 }
 
+// A bot's progress copied to its `characters` row (level, EXP, SP, vitals,
+// class) as one UPDATE. SQLite rewrites the entry of every index whose column
+// the UPDATE sets, changed or not (characters_clan_level_id holds the level),
+// so with the stored row at hand only the moved columns are set; without it
+// the IS NOT guard writes nothing when nothing moved (95 % of cold resolves).
+// washKarma: the EXP gained washes karma (Karma), read from the stored EXP so
+// a repeated write cannot wash twice. Null when nothing is to be written.
+function characterProgressStatement(characterId, values, { washKarma = false, before = null } = {}) {
+    const columns = Object.keys(values).filter((column) => !before || Number(before[column]) !== values[column]);
+    if (!columns.length) return null;
+    const assignments = columns.map((column) => `${escapeIdentifier(column)} = ?`);
+    const params = columns.map((column) => values[column]);
+    if (washKarma && columns.includes('exp')) {
+        assignments.unshift('karma = MAX(0, karma - CAST(MAX(0, ? - exp) / ? AS INTEGER))');
+        params.unshift(values.exp, KARMA_XP_DIVIDER);
+    }
+    const guard = before ? '' : `(${columns.map((column) => `${escapeIdentifier(column)} IS NOT ?`).join(' OR ')}) AND `;
+    return [`UPDATE characters SET ${assignments.join(', ')} WHERE ${guard}id = ?`,
+        [...params, ...(before ? [] : columns.map((column) => values[column])), characterId]];
+}
+
 function applyColdPhysicalStateUnsafe(characterId, physical = {}, parts = null, deathRecord = null) {
     const before = one('SELECT level,exp,sp,hp,maxHp,mp,maxMp,classId FROM characters WHERE id = ?', [characterId]);
     const classId = Number.isFinite(Number(physical.classId)) ? Number(physical.classId) : null;
     const values = {
         level: Number(physical.level || 1), exp: Number(physical.exp || 0), sp: Number(physical.sp || 0),
         hp: Number(physical.hp || 0), maxHp: Number(physical.maxHp || 0),
-        mp: Number(physical.mp || 0), maxMp: Number(physical.maxMp || 0)
+        mp: Number(physical.mp || 0), maxMp: Number(physical.maxMp || 0),
+        ...(classId !== null ? { classId } : {})
     };
-    // The karma wash reads only an EXP gain, so a step that moves none of
-    // these columns leaves the row as it is.
-    const changed = !before || (classId !== null && Number(before.classId) !== classId)
-        || Object.keys(values).some((column) => Number(before[column]) !== values[column]);
-    parts && Diagnostics.count('commit_characters', changed ? 'written' : 'same');
-    // Use the persisted XP delta inside the fenced transaction: unchanged
-    // snapshots cannot wash karma twice, and non-combat updates grant none.
-    if (changed) write(`UPDATE characters SET karma = MAX(0, karma - CAST(MAX(0, ? - exp) / ? AS INTEGER)),
-        level = ?, exp = ?, sp = ?, hp = ?, maxHp = ?, mp = ?, maxMp = ?${classId !== null ? ', classId = ?' : ''} WHERE id = ?`, [
-        values.exp, KARMA_XP_DIVIDER,
-        values.level, values.exp, values.sp, values.hp, values.maxHp, values.mp, values.maxMp,
-        ...(classId !== null ? [classId] : []), characterId
-    ]);
+    // Inside the fenced transaction: an unchanged snapshot cannot wash karma
+    // twice, and a step without an EXP gain washes none.
+    const statement = before ? characterProgressStatement(characterId, values, { washKarma: true, before }) : null;
+    parts && Diagnostics.count('commit_characters', statement ? 'written' : 'same');
+    if (statement) write(...statement);
     if (physical.soulCrystals?.length) applySoulCrystalStepsUnsafe(characterId, physical.soulCrystals);
     parts?.lap('physical');
     if (physical.inventory) syncInventorySummaryUnsafe(characterId, physical.inventory);
@@ -11167,17 +11181,17 @@ const Database = {
                 simulationRevision: Number(state.simulationRevision) };
         }, 'bot-life:generated-appearance'));
     },
-    updateColdCharacterExperience(id, level, exp, sp, options = {}) {
+    // A bot row's level, EXP, SP and vitals copied to `characters` in one
+    // guarded UPDATE; washKarma for a karma bot whose cold EXP washes it.
+    updateCharacterProgress(id, { level, exp, sp, hp, maxHp, mp, maxMp }, washKarma = false, options = {}) {
         const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write', id);
-        return withCharacterFlush(id, () => guardedNativeWrite(`UPDATE characters
-            SET karma = MAX(0, karma - CAST(MAX(0, ? - exp) / ? AS INTEGER)),
-                level = ?, exp = ?, sp = ? WHERE id = ?`,
-            [exp, KARMA_XP_DIVIDER, level, exp, sp, id], 'character:cold-experience', admission));
+        const [sql, params] = characterProgressStatement(id, { level, exp, sp, hp, maxHp, mp, maxMp }, { washKarma });
+        return withCharacterFlush(id, () => guardedNativeWrite(sql, params, 'character:progress', admission));
     },
     updateCharacterExperience(id, level, exp, sp, options = {}) {
         const admission = captureWriteAdmission(options, 'invalid_character_experience_before_write', id);
-        return withCharacterFlush(id, () => guardedNativeWrite('UPDATE "characters" SET "level" = ?, "exp" = ?, "sp" = ? WHERE id = ?',
-            [level, exp, sp, id], 'character:experience', admission));
+        const [sql, params] = characterProgressStatement(id, { level, exp, sp });
+        return withCharacterFlush(id, () => guardedNativeWrite(sql, params, 'character:experience', admission));
     },
     fetchCharacterDeathExperience(id) {
         return selectOne('character_death_experience', ['*'], 'characterId = ?', [Number(id)], 'character:death-exp-fetch')
@@ -11250,8 +11264,8 @@ const Database = {
     },
     updateCharacterVitals(id, hp, maxHp, mp, maxMp, options = {}) {
         const admission = captureWriteAdmission(options, 'invalid_character_vitals_before_write', id);
-        return withCharacterFlush(id, () => guardedNativeWrite('UPDATE "characters" SET "hp" = ?, "maxHp" = ?, "mp" = ?, "maxMp" = ? WHERE id = ?',
-            [hp, maxHp, mp, maxMp, id], 'character:vitals', admission));
+        const [sql, params] = characterProgressStatement(id, { hp, maxHp, mp, maxMp });
+        return withCharacterFlush(id, () => guardedNativeWrite(sql, params, 'character:vitals', admission));
     },
     updateCharacterStatus(id, { hp, mp, cp, effects, skillCooldowns }) { return withCharacterFlush(id, () => update('characters', { hp, mp, cp, effects, ...(skillCooldowns === undefined ? {} : { skillCooldowns }) }, 'id = ?', [id], 'character:status')); },
     updateCharacterPvpPkKarma(id, pvp, pk, karma) { return withCharacterFlush(id, () => update('characters', { pvp, pk, karma }, 'id = ?', [id], 'character:karma')); },
