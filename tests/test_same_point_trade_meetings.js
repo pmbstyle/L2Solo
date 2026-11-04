@@ -50,7 +50,7 @@ const ids = [730221, 730222, 730223], point = { locX: 83396, locY: 147904, locZ:
         const delivered = await Database.arriveTradeMeeting(b);
         assert.equal(delivered.meeting.state, 'completed');
         assert.deepEqual(delivered.coldLifeRows[ids[0]].acceptedIncoming, { 1867: 4 }, 'pending physical delivery remains incoming until settled');
-        assert.deepEqual(JSON.parse(delivered.coldLifeRows[ids[0]].statsJson).tradeMeeting, [a, 1]);
+        assert.deepEqual(JSON.parse(delivered.coldLifeRows[ids[0]].statsJson).tradeMeeting, [a, 1, 'Giran', point.locX, point.locY, point.locZ]);
         for (const actor of [ids[0], ids[2]]) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(b, actor); }
         assert.deepEqual((await Database.prepareTradeParticipant(ids[0])).acceptedIncoming, { 1867: 2 });
         assert.equal((await Database.prepareTradeParticipant(ids[0])).meetingId, a, 'cleaning a later purchase preserves the earlier route');
@@ -64,7 +64,7 @@ const ids = [730221, 730222, 730223], point = { locX: 83396, locY: 147904, locZ:
         const c = (await accept(await prepare())).meeting.id;
         const d = (await accept(await prepare(ids[2]))).meeting.id;
         const cancelled = await Database.cancelTradeMeeting(c, 'fixture');
-        assert.deepEqual(JSON.parse(cancelled.coldLifeRows[ids[0]].statsJson).tradeMeeting, [d, 1]);
+        assert.deepEqual(JSON.parse(cancelled.coldLifeRows[ids[0]].statsJson).tradeMeeting, [d, 1, 'Giran', point.locX, point.locY, point.locZ]);
         assert.deepEqual(cancelled.coldLifeRows[ids[0]].acceptedIncoming, { 1867: 2 });
         assert.equal((await Database.fetchTradeMeeting(d)).routeReserveA, 0);
         for (const actor of [ids[0], ids[1]]) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(c, actor); }
@@ -101,6 +101,61 @@ const ids = [730221, 730222, 730223], point = { locX: 83396, locY: 147904, locZ:
         assert.equal((await Database.fetchAfkTradeShops(ids[1])).some(row => row.id === ad.id), false, 'a filled advertisement is closed');
         assert.deepEqual(sold.closed.map(row => [row.id, row.status, row.lines[0].count]), [[ad.id, 'filled', 0]], 'the closed record reaches board memory');
         for (const actor of [ids[0], ids[1]]) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(filled, actor); }
+        // ECO-14: a seller committed to a meeting in Giran cannot meet in Dion.
+        // A Dion buyer is not offered its Dion ad (so it never picks or retries
+        // it), and finds it again once that meeting ends.
+        const adopt = result => { for (const row of Object.values(result.coldLifeRows || {})) Life.acceptLifecycleRow(row); return result; };
+        const dion = { locX: 15670, locY: 142983, locZ: -2705 };
+        const away = (await Database.fetchItems(ids[1])).find(row => row.selfId === 1867);
+        await Database.replaceBoardRecords(ids[1], 'sell_ad', [{ storeType: 1, title: 'Fixture sale', town: 'Dion', ...dion,
+            lines: [{ objectId: away.id, selfId: 1867, name: 'Animal Skin', count: 2, price: 100, stackable: true }] }], { expected: {} });
+        const dionAd = (await Database.fetchAfkTradeShops(ids[1])).find(row => row.kind === 'sell_ad');
+        const committed = adopt(await accept(await prepare(ids[1], 2))).meeting.id;
+        for (const record of await Database.fetchAfkTradeShops(ids[1])) Afk.refreshRecord(record);
+        const offered = () => Afk.offers(1867, 1, { characterId: ids[2], town: 'Dion' }).some(offer => offer.sourceId === ids[1]);
+        assert.equal(offered(), false, 'a seller anchored in another town is not offered');
+        const Meetings = invoke('GameServer/AfkTrade/TradeMeetingService');
+        await assert.rejects(Meetings.prepareTrade(ids[2], { shopId: dionAd.id }, 1867, 1), /point_changed/, 'preparation reads the same rule');
+        adopt(await Database.cancelTradeMeeting(committed, 'fixture'));
+        for (const actor of [ids[0], ids[1]]) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(committed, actor); }
+        for (const record of await Database.fetchAfkTradeShops(ids[1])) Afk.refreshRecord(record);
+        assert.equal(offered(), true, 'the seller is offered again once its meeting ends');
+        // The anchored side may sort second: a free buyer (lower id) meets a
+        // committed seller (higher id) at the seller's meeting, not at its ad.
+        const anchored = (await accept(await prepare(ids[2], 1))).meeting.id;
+        const stall = (await Database.fetchItems(ids[2])).find(row => row.selfId === 1867);
+        await Database.replaceBoardRecords(ids[2], 'sell_ad', [{ storeType: 1, title: 'Fixture sale', town: 'Giran', ...point, locX: point.locX + 500,
+            lines: [{ objectId: stall.id, selfId: 1867, name: 'Animal Skin', count: 2, price: 100, stackable: true }] }], { expected: {} });
+        const stallAd = (await Database.fetchAfkTradeShops(ids[2])).find(row => row.kind === 'sell_ad');
+        for (const id of ids) Life.acceptLifecycleRow(await Database.fetchTradeMeetingOwnerState(id));
+        const quote = await Meetings.prepareTrade(ids[1], { shopId: stallAd.id }, 1867, 1, { preview: true });
+        assert.deepEqual(quote.point, point, 'the deal meets at the anchored seller\'s meeting point');
+        await Database.cancelTradeMeeting(anchored, 'fixture');
+        for (const actor of [ids[0], ids[2]]) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(anchored, actor); }
+        await Database.replaceBoardRecords(ids[2], 'sell_ad', [], { expected: { [stallAd.id]: (await Database.fetchAfkTradeShop(stallAd.id)).revision } });
+        // Boot: a marker saved without its anchor is rewritten from the accepted
+        // meeting (the seller stays unoffered in Dion), and one left by a
+        // meeting that is gone is cleared (that bot may join a party again).
+        const held = (await accept(await prepare(ids[1], 1))).meeting.id;
+        // The seller waits in Dion, so the recovered meeting does not settle at once.
+        const at = loc => Database.execute(['UPDATE bot_life_state SET locX=?,locY=?,locZ=? WHERE characterId=?', [loc.locX, loc.locY, loc.locZ, ids[1]]]);
+        await at(dion);
+        for (const [id, marker] of [[ids[1], [held, 1]], [ids[2], [held + 1000, 1]]]) {
+            await Database.execute(["UPDATE bot_life_state SET statsJson=json_set(statsJson,'$.tradeMeeting',json(?)) WHERE characterId=?", [JSON.stringify(marker), id]]);
+            Life.acceptLifecycleRow(await Database.fetchTradeMeetingOwnerState(id));
+        }
+        assert.equal(Meetings.canJoinParty(ids[2]), false, 'fixture: the stale marker blocks a party');
+        await Meetings.init();
+        for (const record of await Database.fetchAfkTradeShops(ids[1])) Afk.refreshRecord(record);
+        assert.deepEqual(Life.cachedState(ids[1]).stats.tradeMeeting, [held, 1, 'Giran', point.locX, point.locY, point.locZ], 'an old marker gets its anchor');
+        assert.equal(offered(), false, 'an upgraded marker keeps its seller out of another town');
+        assert.equal(Meetings.canJoinParty(ids[2]), true, 'a stale marker is cleared at boot');
+        Meetings.reset();
+        await Database.cancelTradeMeeting(held, 'fixture');
+        await at(point);
+        for (const actor of [ids[0], ids[1]]) { await Database.settleBoardOwner(actor); await Database.acknowledgeTradeMeeting(held, actor); }
+        const dionLeft = (await Database.fetchAfkTradeShops(ids[1])).find(row => row.kind === 'sell_ad');
+        await Database.replaceBoardRecords(ids[1], 'sell_ad', [], { expected: { [dionLeft.id]: dionLeft.revision } });
         const accepted = [];
         for (let i = 0; i < 8; i++) accepted.push((await accept(await prepare(ids[1], 1))).meeting.id);
         await assert.rejects(accept(await prepare(ids[1], 1)), /backpressure/);

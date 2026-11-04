@@ -117,6 +117,7 @@ player online (8 in flight, status `coldDue`).
 |---|---|---|---|---|
 | `MAX_COMMITMENTS` | 8 per actor | TradeMeeting ~6, ~104 | `trade_meeting_backpressure` | reason |
 | Meeting staging | 64 pages / 48 KiB world (bytes checked only when transport pages change) | TradeMeetingService ~204, ~239, ~273 | backpressure: ≈ 16 max-size preparations (4 pages each), more when small | reason; player "merchant busy"; cold buyer log |
+| Boot marker rewrite page | 64 bots per read, all pages read | Database `refreshTradeMeetingMarkers`, TradeMeetingService `init` | never drops: paging only (one boot pass over marked bots) | none needed |
 | One preparation per actor | 1 | TradeMeetingService ~205 | `trade_meeting_preparation_busy` (cold buyers treat it as pending, no cooldown, ColdMarketService ~183) | reason |
 | Preparation timeout | 15 s | Coordinator ~509 | `trade_meeting_preparation_timeout`, staging discarded; player sees "merchant busy" | reason (no log) |
 | Meeting codec | 768 B × 4 pages, 8 KB raw, 40 incoming rows | TradeMeetingCodec ~25, ~45 | throw backpressure | reason |

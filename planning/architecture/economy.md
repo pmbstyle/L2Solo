@@ -94,6 +94,7 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
 | Reservations, sale and warehouse candidates | `ItemDisposition` (see ECO-7); a paused or retained gear project's stored share: `ItemDisposition.storedEquipmentAmounts` (bank once across both owners) |
 | A bot's arrow stock (what it keeps, may buy, sells as surplus) | `Inventory/ArrowStock`: one grade, the equipped bow's, up to 2000 and below the first weight penalty (`ceil(maxLoad / 2) − 1`); a bot's bow spends no arrows (`Actor/BowResources`), so the stock is weight only. Read at every purchase planner and writer (ECO-15) |
 | Board state, settlement | `AfkTradeService` + `BoardIndex`; meetings `TradeMeetingService` |
+| Where a new trade meeting can take place | `AfkTrade/MeetingAnchor.compatible`: a side with an accepted meeting meets only in that meeting's town, both anchored sides at one point. Read by every offer chooser through `PartyAdmission.personalOfferAllowed` (hot, cold, main and worker) over the life-state marker `stats.tradeMeeting = [id, revision, town, locX, locY, locZ]` (a player, with no life state: the anchor `TradeMeetingService` keeps for it, mirrored to the cold worker as the `player_anchors` table), and by `TradeMeetingService.prepareTrade` over the fresh meeting rows. At boot `TradeMeetingService.init` rewrites every saved marker from the accepted meetings (`Database.refreshTradeMeetingMarkers` → `TradeMeeting.remark`): an old one gets its anchor, a stale one is cleared |
 | Cold physical purchase | `ColdMarketService.acquire` |
 | NPC purchase | `NpcRestockPlan` → `NpcPurchaseBasket` |
 | Plan publication | decided: the worker plan; three paths still publish (ECO-1) |
@@ -148,12 +149,17 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
   (worker), `ShotTradeDemand`, `PriceBelief.demandValue`, `MarketCounters`. `MarketDemand` looks like the entry
   (guess).
 
-- **ECO-14 trades that fail because the plan moved** (measured 2026-11-03, 2 h of a growing 1731-bot world): 548 AFK
-  market purchases and 43 buy-store sales failed with `trade_meeting_point_changed`, plus 126 post-commit economy plans
-  refused (`economy_material_protected` 60, `invalid_afk_trade_source` 55, `economy_plan_need_changed` 11). A deal is
-  agreed, then its meeting point, stock or need moves before it settles: worker and main work spent for nothing, and
-  bots that never get their item. Find why the meeting point changes between agreement and arrival (owner: the trade
-  meeting, `AfkTrade` meeting preparation / `BotAfkMarketService`) and whether the plan can hold it.
+- **ECO-14 post-commit plans refused** (measured 2026-11-03, 2 h of a growing 1731-bot world): 126 post-commit economy
+  plans refused (`economy_material_protected` 60, `invalid_afk_trade_source` 55, `economy_plan_need_changed` 11).
+  `economy_material_protected` is one plan contradicting itself, not two reserve rules: `ColdEconomyPlan.prepare`
+  evaluates its sale lines (reserving `ItemDisposition.productionInputAmounts`, an expired wealth setup reserves
+  nothing) and then picks a wealth craft as `plan.shot`; `BotAfkMarketService.executePlan` runs the shot first
+  (`ColdWealthCraftService.execute` writes a fresh `wealthCraft` 'buying' setup) and then lists the sale, whose
+  inputs the setup now protects (`Database` listing check), so the sale and the rest of the plan are refused. In the
+  perf save every refused bot (25 of 25) holds a `wealthCraft` 'buying' setup. Fix in the plan: the sale reserves the
+  kit of the craft the same plan selects. `invalid_afk_trade_source`: a plan names a stack row that changed (open).
+  The meeting-point refusals of the same run (`trade_meeting_point_changed`) were offer admission ignoring where the
+  counterparty was committed; `MeetingAnchor` above owns that rule now.
 - **ECO-15 arrow cap and companion unload checked in many places** (merged from develop PR #207). The arrow
   capacity (`ArrowStock.purchaseAmount`) is re-checked at ~11 call sites: planners (`NpcRestockPlan.collect`,
   `ReadyTradeChoice.purchase`, `WishPurchaseEvidence.reader`, `ColdOccupationSources` `preparePurchase`), buyers

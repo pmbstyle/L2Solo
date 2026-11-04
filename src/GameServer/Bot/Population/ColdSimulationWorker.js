@@ -937,6 +937,14 @@ tables.watch('meetings', {
     put: key => { playerWaits.add(Number(key)); kernel?.ensureScheduled(Number(key)); },
     remove: key => { playerWaits.delete(Number(key)); kernel?.ensureScheduled(Number(key)); }
 }, { retain: false });
+// A player's meeting anchor ('player_anchors', TradeMeetingService): offer
+// admission reads it for a counterparty with no life state (PartyAdmission).
+const playerAnchors = new Map();
+tables.watch('player_anchors', {
+    reset: () => playerAnchors.clear(),
+    put: (key, row) => playerAnchors.set(Number(key), row),
+    remove: key => playerAnchors.delete(Number(key))
+}, { retain: false });
 // The clan halls ('clan_halls'), by owner clan: VisitNeed.needed reads the
 // row with the hall's catalog definition (bounds, managers).
 const hallById = new Map();
@@ -1979,7 +1987,8 @@ function startKernel(config = {}) {
         routeRequests.clear();
         return nativeClear();
     };
-    invoke('GameServer/Bot/Population/PartyAdmission').configureTradeAdmission(id => kernel.states.get(Number(id))?.state || kernel.states.get(-Number(id))?.state);
+    invoke('GameServer/Bot/Population/PartyAdmission').configureTradeAdmission(id => kernel.states.get(Number(id))?.state || kernel.states.get(-Number(id))?.state,
+        () => null, id => playerAnchors.get(Number(id)) || null);
     kernel.prepareMeeting = (id, meeting) => {
         const entry = kernel.states.get(id);
         const side = meeting.actorA === id ? 0 : 1;

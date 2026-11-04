@@ -9,6 +9,7 @@ let start = { locX: 0, locY: 0, locZ: 0 }, step = { locX: 1000, locY: 0, locZ: 0
 let lifeListener, marketListener;
 const database = {
     withoutMutationAdmission: work => work(),
+    refreshTradeMeetingMarkers: async () => ({ rows: {}, next: null }),
     recoverTradeMeetings: async cursor => cursor ? [] : [{ id: 7, actorA: 1, actorB: 2 }],
     fetchTradeMeeting: async () => row,
     arriveTradeMeeting: async () => ({ meeting: { ...row, arrivalMask: 2 } }),

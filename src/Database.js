@@ -11529,6 +11529,21 @@ Object.assign(Database, {
     },
     cancelTradeMeeting(id, reason) { return withTradeMeetingFlush(id, () => TradeMeetings.terminal(Number(id), false, reason), 'board:meeting-cancel'); },
     acknowledgeTradeMeeting(id, actor) { return withCharacterFlush(actor, () => inTransaction(() => TradeMeetings.acknowledge(Number(id), Number(actor)), 'board:meeting-ack')); },
+    // Boot only, before recovery: one page of bots whose saved state names a
+    // meeting; each marker is rewritten from its accepted meetings when it
+    // differs (TradeMeeting.remark). { rows: changed life rows, next: cursor or null }.
+    refreshTradeMeetingMarkers(afterId = 0) {
+        return inTransaction(() => {
+            const marked = all(`SELECT characterId, json_extract(statsJson,'$.tradeMeeting') marker FROM bot_life_state
+                WHERE characterId>? AND instr(statsJson,'"tradeMeeting":[')>0 ORDER BY characterId LIMIT 64`, [Number(afterId)]);
+            const rows = {};
+            for (const { characterId, marker } of marked) {
+                const row = TradeMeetings.remark(Number(characterId), marker ? JSON.parse(marker) : null);
+                if (row) rows[characterId] = row;
+            }
+            return { rows, next: marked.length === 64 ? Number(marked.at(-1).characterId) : null };
+        }, 'board:meeting-markers');
+    },
     recoverTradeMeetings(afterId = 0) { return inTransaction(() => all('SELECT id,actorA,actorB,state FROM board_trade_meetings WHERE id>? ORDER BY id LIMIT 32', [afterId]), 'board:meeting-recover'); }
 });
 
