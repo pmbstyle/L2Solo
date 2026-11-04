@@ -9,7 +9,7 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
 ## Mechanisms
 
 - **Boot** `src/NodeL2.js`: Global → DB lock → `Database.init` → `DataCache.init` → clan planning worker →
-  `compactStackableInventory` → `ClanService.init` → `GeodataEngine.init` → `NpcInteractionGeometry.init` →
+  `compactStackableInventory` → `ClanService.init` → `GeodataEngine.init` → `NpcInteractionGeometry.init` (a pack without verified counter geometry logs why, once) →
   `World.init` → runtimes (recommendations, clan hall, AFK trade, personas, KB warmup) → TCP servers →
   `BotManager.init` → `WorldObserver.init` → `DevConsole`. `World.init`: indexes, raid state, `spawnNpcs`, minions,
   grid, day/night, aggro ticker. Pathfinding pool starts lazily (first `request`). The perf recorder
@@ -126,8 +126,6 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
   NpcDecay) bypassing `RemoveNpc`; full `npc.spawns` scans by selfId in ~10 files where `NpcObjectIndex` exists.
 - **WOR-12 action deferral three ways:** `Attack.queueEvent` (one slot), `actor.stored*` replayed in
   `UpdatePosition`, `Automation.playerAttackApproach`. Meets combat.
-- **WOR-13 silent catches:** `RaidBossMinionManager`, `NpcInteractionGeometry` (a parse error silently disables
-  counter geometry), `ArenaDuelService`, `TradeDone`; `SpotService.ensureIndexed` `[]` without World.
 - **WOR-14 DataCache API split:** callback + structuredClone (`fetchItemFromSelfId`, 142 uses) vs
   `ItemTemplateIndex.find*` (~170 calls in 126 files) vs `npcRow`.
 - **WOR-15 leftovers:** `Timer.js` reads private timer fields (the "TODO" is in `Automation.timer`); 7 inline

@@ -1,3 +1,4 @@
+const FailureLog = require('../../../FailureLog');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const GatekeeperTeleports = invoke('GameServer/World/C4GatekeeperTeleports');
@@ -152,7 +153,8 @@ function targetFromRow(row, role, options = {}) {
     if (!Array.isArray(worldSpawns)) {
         try {
             worldSpawns = invoke('GameServer/World/World').npc?.spawns || [];
-        } catch (_) {
+        } catch (error) {
+            FailureLog.note('town.spawns', error);
             worldSpawns = [];
         }
     }

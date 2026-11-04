@@ -1,3 +1,4 @@
+const FailureLog = require('../../FailureLog');
 const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const Diagnostics = require('../Bot/Economy/EconomyDiagnostics');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
@@ -167,7 +168,7 @@ function onBossAttacked(world, boss, attacker, sourceSession) {
             try {
                 minion.enterCombatState?.(session, attacker);
                 if (minion.state?.fetchCombats?.() === true) alerted++;
-            } catch (_) {}
+            } catch (error) { FailureLog.note('raid.minion_alert', error); } // this minion does not assist
         });
     });
     // `alerted > 0` is naturally edge-triggered: later hits see the same
@@ -250,7 +251,7 @@ function cleanupMinion(world, minion, sourceSession) {
     const objectId = minion.fetchId?.();
     try {
         minion.destructor?.(sourceSession || { dataSendToMeAndOthers() {}, dataSendToMe() {} });
-    } catch (_) {}
+    } catch (error) { FailureLog.note('raid.minion_cleanup', error); } // removed from the grid anyway, its packets lost
     world.removeNpcFromGrid(minion);
     const index = world.npc.spawns.indexOf(minion);
     if (index >= 0) world.npc.spawns.splice(index, 1);
