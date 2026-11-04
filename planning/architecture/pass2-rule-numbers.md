@@ -1,6 +1,6 @@
 # Second pass: one rule written as a number in several places (2026-11-03, t106dev)
 
-Checked at 5771494a (2026-11-03).
+Checked at 199c3b19 (2026-11-04).
 
 Verified on the main checkout (t106dev + uncommitted). Known (skipped): AI-4, CMB-5, CMB-18, WOR-6, WOR-9, AI-11, WOR-7,
 CMB-1/2/6/17, POP-8, ECO-2/4. Paths relative to `src/GameServer/`.
@@ -24,7 +24,7 @@ CMB-1/2/6/17, POP-8, ECO-2/4. Paths relative to `src/GameServer/`.
 | N15 | Support range | 900 in BotManager, BuffService, BuffServiceChat, BotAgentTools, BotPvpTactics, PlayerPartyRaid, FollowingState; hot party 450 | none | mostly | one SUPPORT_RANGE |
 | N16 | Mob chase break | `Npc` 1500 literal; `DangerRule.CHASE_BREAK_DISTANCE` 1500 | DangerRule | agree | Npc constant |
 | N17 | Hunt level window | SpotService −7/+3; BotTargetScorer −7/+8 + literals; −15 floor in 3 places; LevelingRoutes ±3; SpotProfiles ±4 | SpotService | spot +3 vs target +8 | SpotService |
-| N18 | MP held back from attacks | `BotClassPolicy` support 0.25/0.45/0.30, mage 0, tank 0.20, others 0.10; fallback `BotCombatUtility` mage **0.18**, support 0.45; buff floor 0.35 | BotClassPolicy | **mage 0 vs 0.18** | BotClassPolicy |
+| N18 | MP held back from attacks | `BotClassPolicy.profileFor` support 0.25/0.45/0.30, mage 0, tank 0.20, others 0.10; fallback for a class without a profile `BotClassPolicy.reserveRatio` support 0.45, mage 0.18, others 0.10 (the budget, `offensiveMpReserve`, gives a mage 0; the 0.18 is read only by `BotCombatUtility`'s defensive-stance score); buff floor 0.35 | BotClassPolicy | **solo support 0.25 vs 0.45; mage score 0.18 vs budget 0** | BotClassPolicy |
 | N19 | Party size 9 | `PartyCompanionService.MAX_PARTY_MEMBERS` (no outside reader); ~46 literal 9s | — | agree | one constant |
 | N20 | SoE cast 20 s | C4SkillRules, TripPayment, BotSpotTravel | C4SkillRules | agree | C4SkillRules |
 | N21 | Corpse / sweep window | SpoilSweep 30 s; NpcDied retry 25 s; PendingSweep 30 s | SpoilSweep | minor | SpoilSweep |

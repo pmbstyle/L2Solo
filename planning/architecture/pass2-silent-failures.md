@@ -1,6 +1,6 @@
 # Second pass: silent failures and masking defaults (2026-11-03)
 
-Checked at 5771494a (2026-11-03).
+Checked at 199c3b19 (2026-11-04).
 
 **Re-verified on t106dev** (2026-11-03); line numbers below are approximate, from the first (stale) pass — search by
 name. Open rows only. A floating promise without a catch reaches the process backstop (`NodeL2`: an unhandled

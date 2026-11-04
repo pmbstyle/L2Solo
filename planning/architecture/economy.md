@@ -1,6 +1,6 @@
 # Economy and trade
 
-Checked at 5771494a (2026-11-03).
+Checked at 199c3b19 (2026-11-04).
 
 Survey of t106dev @ 9f27b7fa (2026-11-03). Line numbers drift (~); search by name.
 Scope: `Bot/Economy` (~26k lines), `AfkTrade`, `PrivateStore*`, `Bot/{TradeService,BotTradeService,

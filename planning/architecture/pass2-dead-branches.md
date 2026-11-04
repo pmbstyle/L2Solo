@@ -1,6 +1,6 @@
 # Second pass: dead and always-taken branches (2026-11-03, t106dev @ c29722e7 + uncommitted)
 
-Checked at 5771494a (2026-11-03).
+Checked at 199c3b19 (2026-11-04).
 
 Open rows only. Known items (WOR-4/5, POP-14/17, CMB-9/15/16, ECO-8, AI-8/9/10, PER-4, WOR-3) left out.
 

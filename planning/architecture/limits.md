@@ -1,6 +1,6 @@
 # Hidden limits
 
-Checked at 5771494a (2026-11-03).
+Checked at 199c3b19 (2026-11-04).
 
 Caps, budgets, size bounds, rates and top-K cuts, and what happens at each as the world grows. Survey 2026-11-03,
 kept current with the code. Line numbers are approximate — search by name. Paths relative to `src/GameServer/` unless they start with `src/`. Key in backticks = overridable in `config/default.ini` (`[BotPopulation]` also via `BOT_*` env).
@@ -10,8 +10,8 @@ Observable: **log** (a log line), **reason** (returned to the caller), **status*
 
 Rule (CLAUDE.md): a new or changed limit gets a row here, and hitting it must be observable.
 
-**Measured capacity (2026-11-03, 2015 laptop, x50, before this release):** the cold worker saturates (busy 1.00)
-from ~1430-1580 bots; main 0.56 at 1731. See POP-23.
+**Measured capacity (2026-11-04, 2015 laptop, x50, 1731 bots, detached checkout):** cold worker busy 0.57-0.62,
+overdue max 1-4 (before this release saturated from ~1430-1580 bots). See POP-23.
 
 ## Top 15 risks (silent when hit, likely at ~1700 bots)
 
@@ -80,6 +80,9 @@ handler the player is disconnected).
 | Placement / cooldown | 8 tries in 1400, then the anchor itself; 20 cooled per pass (`cooldownBatchSize`) | `ActivationPlacement` ~114, `HotActivation` ~137, PopulationService ~2108 | anchor fails → activation refused `no_safe_activation_placement`; next pass | none | crowds |
 | Hot AI dispatch | 1 decision per macrotask (≤ ~1000/s), no hot cap; queue coalesced per key (bounded by actors) | `HotAiDispatcher` ~44 | latency grows | dD | 300+ hot bots |
 | Hunt line-of-sight batch | 4 checks per idle tick (`CHECKS_PER_SCAN`); resume within 128 units (`RESUME_RANGE`), else restart at the first | `BotHuntingVisibility.batch`, `select` | scan stays pending, next tick reads on | dD `visibility:batch_blocked:<key>` | idle bots behind walls |
+| Solo fight margin | the fight must end above the potion line with its expected length × (1 + length / 60 s) + 3 s of the mob's damage (`FIGHT_MARGIN_SECONDS`, `SPARE_SECONDS`; our choice, calibrated on the table's sample spots) | `BotEncounterReadiness.covers` (hot `HuntingState`, cold `resolveFight`, route `soloCanHunt`) | mob refused: the bot sits or takes another; the route refuses the spot | reason `no_reserve` | every solo fight |
+| Potion line | melee 0.35, ranged / healer / casters 0.25 of max HP (`MELEE_USE_HP_RATIO`, `RANGED_USE_HP_RATIO`): the fight drinks there, the gate counts only the HP above it | `HealingPotionStock.useThreshold`, `BotEncounterReadiness.atVitals` | at or below the line: no fight (survival `potion_line`) | reason `no_reserve` | every solo fight |
+| Empty ground | hot: a look after 3 empty scans (`EMPTY_HUNT_SCANS`), one per empty streak; a second summon or wait on the stay that changed nothing raises (`session.groundReadying`); hot and cold: one raise per stay (`stats.emptyGround`, cleared by prey) | `BotDecisionService.groundLook`, `BackgroundResolver.resolveSolo` / `getReady` | `unhuntable` raised, the occupation rebuild picks another spot | reason (hot `ground_unhuntable`, cold `debug.unhuntable`, `lastReason no_safe_solo_target`) | gear or level loss, kept routes |
 | Population | 1700, clamp 2000 (`maxPlayingPopulation`) | PopulationConfig ~105, ~330 | silently clamped | none | > 2000 |
 | `allStates` | 2000 most recent (worker feeds use uncapped `everyState()` ~4061) | BotLifeState ~45, ~4055 | oldest missing | none | already near |
 | Seeding | waves of 5 regions × `starterBotsPerRace` 30 = 150, one batch per wave (`seedBatchSize` = max(50, cohort)); next wave when the last cohort averages level 5 (10 at ×50+); checked every 45 s (`generatedColdSeedDelayMs`) | `PopulationSeedPlanner` ~87, ~121, PopulationService ~1252, `GeneratedColdSeeder` | ramp follows levelling (~12 waves to 1700), not time | dD (wave log behind `developerDiagnostics`) | fresh world |

@@ -1,6 +1,6 @@
 # Population, hot/cold, cold worker
 
-Checked at 5771494a (2026-11-03).
+Checked at 199c3b19 (2026-11-04).
 
 Survey of t106dev @ 9f27b7fa (2026-11-03). Line numbers drift; search by name.
 Scope: `Bot/Population`, `Bot/Travel`, `BotManager`, `BotSession`, worker protocol.
@@ -149,3 +149,11 @@ thread: our rule, so a far bot does not re-decide on every event ([bot-ai.md](bo
   c3fdb8c3) rebuilt every held build and ran the worker at 0.93 on the same world. Growth while seeding: about +6
   points of worker and +2.5 of main per 100 bots; worker heap ~0.08 MB per bot. 5-10k bots still need the cold
   simulation split over several workers (per-thread table copies, TBL-7).
+
+## Open questions
+
+1. One mechanism for solo, party and PvP transitions? Which DB primitive stays?
+2. Which cold resolves on main are allowed (karma, raid-supply hold, walker appearance)? Remove the fallbacks?
+3. `LifecycleSafetySweep`: permanent, or a backstop until ownership is proven?
+4. Canonical entry for ordinary background parties: main `formBackgroundParties` or the worker proposal?
+5. Is the class-progression migration done in every live DB?

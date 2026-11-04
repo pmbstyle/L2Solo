@@ -1,6 +1,6 @@
 # Third pass: client entry points — crashes, accidental dupes/losses, bot economy (2026-11-03, t106dev)
 
-Checked at 5771494a (2026-11-03).
+Checked at 199c3b19 (2026-11-04).
 
 Scope: 87 request handlers, NpcTalkResponse + 46 NpcBypasses, Speak `.` commands, UserCommand. Deliberate cheating
 for gain is out of scope (the admin panel is open to all by decision). Ordered by likelihood in normal play.

@@ -1,6 +1,6 @@
 # Second pass: game logic bugs (2026-11-03)
 
-Checked at 5771494a (2026-11-03).
+Checked at 199c3b19 (2026-11-04).
 
 Checked against Lisvus C4 (Mobius C4 not fetched); re-verified on t106dev (2026-11-03, probes rerun there). Open rows only.
 

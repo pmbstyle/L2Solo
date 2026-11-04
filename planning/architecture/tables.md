@@ -1,8 +1,8 @@
 # Bot tables (precomputed)
 
-Checked at 5771494a (2026-11-03).
+Checked at 199c3b19 (2026-11-04).
 
-Survey of `ivan/next-release` @ be97733e (tables of 81e247159, Tables run 41674181585). Line numbers drift; search by
+Survey of `ivan/next-release` @ be97733e; committed tables of 0a4e1c245 (Tables run 41728520994). Line numbers drift; search by
 name. Scope: `data/Bots/*.json`, `data/Bots/hunt/*.json`, `scripts/generate-spot-table.js`,
 `scripts/generate-spot-reward-catalog.js`, `scripts/hunt-tables/*`, `scripts/fight-table/*`,
 `scripts/hunt-cycle-check.js`, `.github/workflows/tables.yml`, reader `Bot/AI/SpotValueTable`.
@@ -17,7 +17,7 @@ they get once there.
 
 | File | What it holds, in a sentence | Size | Built by | Read at runtime |
 |---|---|---|---|---|
-| `data/Bots/spot-table.json` | Per spot × class line × shots (on / off / Blessed): kills, exp, deaths, shots, potions, bag slots per hour of solo hunting, simulated with the real cold fight; per line and 2-level band a level curve; per line and band a kit surface | 23.3 MB; 1603 spots × 31 lines × 3 = 149079 cells, 97262 measured (the rest: the line cannot hunt there alone), 23 fields; 1147 curves; 1147 surface fits | `scripts/generate-spot-table.js` | `SpotValueTable`, main and cold worker |
+| `data/Bots/spot-table.json` | Per spot × class line × shots (on / off / Blessed): kills, exp, deaths, shots, potions, bag slots per hour of solo hunting, simulated with the real cold fight; per line and 2-level band a level curve; per line and band a kit surface | 20.9 MB; 1603 spots × 31 lines × 3 = 149079 cells, 90945 measured (the rest: the line cannot hunt there alone), 23 fields; 1145 curves; 1144 surface fits | `scripts/generate-spot-table.js` | `SpotValueTable`, main and cold worker |
 | `data/Bots/spot-reward-npcs.json` | Per spot its NPC species with counts and the adena range: the spawn catalogue without fights | 98 KB, 1603 rows `[spotId, [[npc, count]], adenaMin, adenaMax]`, no revision | same generator (merge phase) or `scripts/generate-spot-reward-catalog.js` | `SpotValueTable` fallback only (a spot not in the live catalogue); hunt tables (input) |
 | `data/Bots/hunt/*.json` (9) | The offline hunt model: mob cards, spot cards, class base cards, gear ladders, item sources, hennas, damage rotations, formula corrections, mob-level ceilings per kit | 2.4 MB | `scripts/hunt-tables/build.js` | **nothing** ("Offline only; the server does not read them yet", build.js header) |
 | `tmp/fight-table/*.json.gz` | One bot vs one mob at every level, by offence / defence / M.Def points | not committed | `scripts/fight-table/{build,path}.js` | nothing (Python reports, one test) |
@@ -144,11 +144,11 @@ committed. `scripts/hunt-cycle-check.js`: `HuntCycle` against the generator's hu
 
 - CI: `git push fork HEAD:refs/heads/tables/<what>/$sha` (CLAUDE.md "CI on the fork"); `what` = `all` (spot + hunt),
   `spot`, `hunt`, `probe`. Spot: 12 `spot-rows` shards → 12 `spot-curves` shards → `spot-merge` (each ≤ 150 min, 4
-  children each); hunt: one job (≤ 240 min), in parallel with the spot jobs. Last `all` (81e247159): 24 min wall; a
+  children each); hunt: one job (≤ 240 min), in parallel with the spot jobs. Last `all` (0a4e1c245): 19 min wall; a
   `hunt` run ~11 min. Laptop: hours, do not.
 - Artifacts: `spot-table` (`data/Bots/spot-table.json` + `data/Bots/spot-reward-npcs.json`) and `hunt-tables` (the 9 files):
   `gh run download <run-id> -R posukhoff/L2Solo`, copy into `data/Bots/` and `data/Bots/hunt/`, commit "Rebuild the
-  spot and hunt tables on <sha>" with the run id (be97733e). Tests that pin table numbers may move with it.
+  spot and hunt tables on <sha>" with the run id (58916ebe). Tests that pin table numbers may move with it.
 - `probe`: 12 spots, 0.25 h rows and curves, spot jobs only. For comparing a run on CI with the same run elsewhere
   (determinism, timing). Never copy its artifacts into `data/`: the server would warn 1591 of 1603 spots missing and
   value only 12, and the next hunt build would read a 12-spot reward catalogue.
@@ -179,7 +179,7 @@ committed. `scripts/hunt-cycle-check.js`: `HuntCycle` against the generator's hu
 - Serves: spot choice, the value of a bot's hour (every trip, purchase and wish is priced by it), shots / potions /
   bag decisions, death price, first board prices, party-vs-solo.
 - Buys: performance above all. One ranking reads 300-600 spots for a line and level; simulating 2 h on each per decision
-  is out of reach (the table is 247k simulated hours on 12 CI machines). Also determinism (seeded, same answer on
+  is out of reach (the table is 234k simulated hours on 12 CI machines). Also determinism (seeded, same answer on
   every thread and every start) and one answer shared by every bot of a line and level. Trades realism for it.
 - Accuracy lost: one reference bot of the line, alone, in the author's kit, at spot level +6 (curves from ≤ 3 spots
   give other levels); no party buffs, players, PvP or karma; walking by a density formula, not paths; no unload trips;

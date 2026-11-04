@@ -1,6 +1,6 @@
 # Third pass: test suite audit (2026-11-03, t106dev)
 
-Checked at 5771494a (2026-11-03).
+Checked at 199c3b19 (2026-11-04).
 
 1249 test files; per-file CI durations from the last green run 41214661352 (2026-10-31, 12 shards): 1216 files,
 4037 s of test time, 265-439 s per shard; the slowest file 60 s (limit 180 s).

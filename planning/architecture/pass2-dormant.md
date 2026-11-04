@@ -1,6 +1,6 @@
 # Second pass: dormant features and dead config (2026-11-03, t106dev)
 
-Checked at 5771494a (2026-11-03).
+Checked at 199c3b19 (2026-11-04).
 
 Read on the main checkout (t106dev + uncommitted). Open rows only. Known items (POP-17, WOR-5, PER-4, AI-8/9) left out.
 

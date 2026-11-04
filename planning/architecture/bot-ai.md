@@ -1,6 +1,6 @@
 # Bot decision-making (hot)
 
-Checked at 5771494a (2026-11-03).
+Checked at 199c3b19 (2026-11-04).
 
 Survey of t106dev @ 9f27b7fa (2026-11-03). Line numbers drift (~); search by name.
 Scope: `Bot/AI`, `Bot/Goals`, `Bot/BotAI.js`, chat → action. Cold stepping: [population.md](population.md).
@@ -14,7 +14,7 @@ Scope: `Bot/AI`, `Bot/Goals`, `Bot/BotAI.js`, chat → action. Cold stepping: [p
 | Activity / occupation | Which job (hunting, selling, shopping, crafting, improving). **Decided by the worker**; a hot body only reads it | `DecisionEvents.held(session).network.activity` |
 | Re-decision | When the held decision is stale | `DecisionEvents.raiseDecision(session, reason)`; near raise goes to the worker. Whether a far bot hears it now: `Economy/Reaction.js` (T189: only at its player's moment; our rule) |
 | Solo spot step | Go to a spot or search locally | `BotDecisionService.suggest` (from HuntingState only) |
-| Hot target | Which mob | `BotTargetScorer`, `BotHuntingTargetPolicy`, `BotHuntingGroundPolicy`; party: `Population/PartyHuntingTarget` (hot and cold) |
+| Hot target | Which mob | `BotTargetScorer`, `BotHuntingTargetPolicy`, `BotHuntingGroundPolicy`; solo: ready fights first (`HuntingState.readyRanked`), line of sight in bounded batches that resume where a blocked one stopped, over every candidate before the scan gives up (`BotHuntingVisibility.batch` / `select`, limits.md); party: `Population/PartyHuntingTarget` (hot and cold) |
 | Rest | Sit or not | `AI/RestPolicy` (hot, cold, BotStatus) |
 | Far-solo goals | Persisted market goals of cold bots | `Goals/NeedsEvaluator` → `GoalPlanner` → `GoalState` → `GoalExecutor` (`GoalService.review`, null when hot) |
 | Hot bot-only party | Leader, spot return, buffs, raid prep | `AI/HotBackgroundParty` |

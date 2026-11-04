@@ -1,6 +1,6 @@
 # Architecture debt
 
-Checked at 5771494a (2026-11-03).
+Checked at 199c3b19 (2026-11-04).
 
 Index across areas; details and evidence in each area file (ids: AI, POP, ECO, CMB, WOR, PER, TBL).
 Add a line when you find a tail you do not fix. Delete it when it is paid (the area file states the new rule).
@@ -94,7 +94,7 @@ red in `notRunTests`: `test_beginner_shot_policy`, `test_cold_armor_set_effects`
   `gate`, `gateShare`, cycle columns, `mix`, `stacks` (`spot[3] * spot[4]`), and the generator's `mergeStacks`. None
   applies to the committed table: delete with their tests.
 - **TBL-7 A full copy per thread, slow first read** (P low, S mid now, high at 5-10k). Main and the cold worker each
-  parse 23 MB of JSON at their first lookup (~0.3 s, ~100 MB transient heap; on main a stall) and hold ~36 MB of
+  parse 21 MB of JSON at their first lookup (~0.3 s, ~100 MB transient heap; on main a stall) and hold ~36 MB of
   Float64 arrays (values have 4 digits; 3 of 23 columns are NaN placeholders). Float32 without placeholders halves it;
   one `SharedArrayBuffer` copy or a binary pack built by the generator removes the parse and the second copy.
 - **TBL-8 The generator patches live owners** (P mid, S none). In its child it replaces `SurvivalFloor.forState` (no

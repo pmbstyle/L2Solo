@@ -1,6 +1,6 @@
 # Third pass: per-step cost hotspots (2026-11-03, t106dev @ be5c09f7, static read + small probes)
 
-Checked at 5771494a (2026-11-03).
+Checked at 199c3b19 (2026-11-04).
 
 H = hot bots near players (100-300 in a crowd). Cold commits ~25/s idle (limits.md). "est." = reasoned, not measured.
 Measured: 22,348 NPC spawns; NPCs in a 3×3 grid window median 100, max 749; `EffectStore.list` with 25 effects
