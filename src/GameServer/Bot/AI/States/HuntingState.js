@@ -1,3 +1,4 @@
+const FailureLog = require('../../../../FailureLog');
 const ActorQueries = require('../../../World/ActorSpatialQueries');
 const refreshPartyMemberships = require('../../../World/PartyMembershipPublication');
 const NpcObjectIndex = require('../../../World/NpcObjectIndex');
@@ -448,7 +449,8 @@ function currentHuntingGround(session, bot) {
         if (physical) return physical;
         if (session.currentSpot?.id) return SpotService.findById(session.currentSpot.id) || session.currentSpot;
         return session.currentSpot || null;
-    } catch (_) {
+    } catch (error) {
+        FailureLog.note('ai.hunting_ground', error);
         return session.currentSpot || null;
     }
 }

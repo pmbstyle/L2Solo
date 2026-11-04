@@ -57,7 +57,7 @@ function botLocation(bot) {
 }
 
 function recordArrival(bot, spot, method, summary, recoveryReason = null) {
-    Promise.resolve(BotEventJournal.record({
+    BotEventJournal.record({
         botId: bot.fetchId(),
         eventType: 'travel_complete',
         summary,
@@ -65,7 +65,7 @@ function recordArrival(bot, spot, method, summary, recoveryReason = null) {
         dedupeKey: `spot-travel:${bot.fetchId()}:${spot.id}`,
         coalesceWindowMs: 30000,
         meta: { spotId: spot.id, method, ...(recoveryReason ? { recoveryReason } : {}) }
-    })).catch(() => {});
+    });
 }
 
 function completeTeleport(session, bot, spot, relocation, method) {

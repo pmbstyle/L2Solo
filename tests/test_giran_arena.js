@@ -184,7 +184,7 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function arenaLifecycleChecks() {
     const originalBotSessions = BotManager.sessions;
-    const originalAllStates = LifeState.allStates;
+    const originalEveryState = LifeState.everyState;
     const originalExecute = Database.execute;
     const originalFetchItems = Database.fetchItems;
     const originalFetchSkills = Database.fetchSkills;
@@ -215,7 +215,7 @@ async function arenaLifecycleChecks() {
         };
         World.insertUser(player);
         BotManager.sessions = [sourceSession];
-        LifeState.allStates = () => [];
+        LifeState.everyState = () => [];
         ArenaDuelService.render(player);
         assert(renderedHtml.includes('<edit var="arena_name"'),
             'the arena manager should expose nickname search');
@@ -409,7 +409,7 @@ async function arenaLifecycleChecks() {
             String(utils.crushOb(entry).kind || '').startsWith('Weapon.')
         ));
         assert(weaponDefinition, 'the datapack must provide a weapon fixture');
-        LifeState.allStates = () => [{
+        LifeState.everyState = () => [{
             characterId: coldCharacterId,
             name: 'ColdArenaSource',
             characterName: 'ColdArenaSource',
@@ -439,7 +439,7 @@ async function arenaLifecycleChecks() {
     } finally {
         ArenaDuelService.release(player, 'test_cleanup');
         BotManager.sessions = originalBotSessions;
-        LifeState.allStates = originalAllStates;
+        LifeState.everyState = originalEveryState;
         Database.execute = originalExecute;
         Database.fetchItems = originalFetchItems;
         Database.fetchSkills = originalFetchSkills;

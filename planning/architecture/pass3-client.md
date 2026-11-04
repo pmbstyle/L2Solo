@@ -31,7 +31,6 @@ the DB and exits 1; a half-done non-atomic move, PER-1/2/3, stays half done).
 | X19 | `NpcTalkResponse` `activeNpcTalk` never cleared; BuyShop, HennaRemove, NewbieBuff heal | link from an old dialog | stale dialog state: NPC services reachable away from the NPC; henna removal free (C4 charges) | C |
 | X20 | `NpcTalkResponse` ~58 `invoke('…/NpcBypasses/' + name)` | crafted bypass name | the name is not checked against the bypass list, so a path outside `NpcBypasses/` can be loaded; the `html` bypass path is not normalised either | C/P crafted |
 | X21 | `ValidatePosition` ~42 | crafted coordinates | accepted and persisted (note only) | C crafted |
-| X22 | `Session.dataReceive` `readInt16LE` ~205; `packData` `writeInt16LE`; `ReceivePacket.readS` | inbound ≥ 32 KB; outbound > 32767 B; string without terminator | inbound truncated (40000 → 14462); outbound throws (a crash inside a timer); later fields shift | P latent |
 | X23 | `CubicControl.summon` timers | disconnect with cubics | timers keep running on the destroyed actor | G |
 
 Sound: bot trade (clamps, blocks equipped/quest items, repeated confirm joins the commit, DB re-check); live/AFK
@@ -53,5 +52,4 @@ packets drop only the sender.
 7. One crystal rule (`C4EnchantRules.crystalCount`).
 8. Clan: refuse leader delete; batch clan withdraw; one transaction per clan level-up.
 9. One `Session.leaveCharacter` (proposed) teardown for error, Restart and Logout.
-10. Bypass allow-list, `html` path normalised, one interaction guard; `subarray(2)` + `writeUInt16LE` with a counted
-    refusal; `readS` fails the packet; one adena cap 2^31-1.
+10. Bypass allow-list, `html` path normalised, one interaction guard; one adena cap 2^31-1.

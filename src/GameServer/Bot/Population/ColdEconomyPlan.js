@@ -1,3 +1,4 @@
+const FailureLog = require('../../../FailureLog');
 const { SELL } = require('../../AfkTrade/BoardIndex');
 const Funding = require('../Economy/PurchaseFunding');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
@@ -169,7 +170,8 @@ function* prepareNative(state, economy, options) {
             delete plan.shop;
         let batch;
         try { batch = buyBatch(lines); }
-        catch (_) { batch = { buyAds: [null] }; }
+        // A bug in the buy build, kept apart from a refused line (both leave the buy unprepared).
+        catch (error) { FailureLog.note('economy.buy_batch', error); batch = { buyAds: [null] }; }
         Object.assign(plan, batch, { travel: goal?.plan?.marketTown ? goal.plan.wishKey || null : null });
         // A buy part not prepared (the held build's intent pending, or a
         // line buyBatch refused) is absent from the packet, not a page: a

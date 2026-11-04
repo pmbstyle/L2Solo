@@ -1,3 +1,4 @@
+const FailureLog = require('../../../FailureLog');
 const World     = invoke('GameServer/World/World');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const Metrics   = invoke('GameServer/Bot/Population/PopulationMetrics');
@@ -38,8 +39,9 @@ const Cooldown = {
         if (!session || !session.actor || !state) return Promise.resolve({ ok: false, reason: 'missing_state' });
         const transitionStartedAt = Date.now();
         const BotManager = invoke('GameServer/Bot/BotManager');
-        try { invoke('GameServer/Bot/BotTradeService').cleanup(session, 'cold_transition'); } catch (_) { /* optional hot trade modules */ }
-        try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'cold_transition'); } catch (_) { /* optional ambient module */ }
+        // A failed trade cleanup can leave a player's trade window open with a bot that is gone.
+        try { invoke('GameServer/Bot/BotTradeService').cleanup(session, 'cold_transition'); } catch (error) { FailureLog.note('ai.cleanup.trade', error); }
+        try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'cold_transition'); } catch (error) { FailureLog.note('ai.cleanup.ambient', error); }
         // The hand-back of a hot row (a sold-out merchant leaves without markCold).
         return LifeState.upsertState({ ...state, phase: 'cold' }, reason, { releaseHot: true }).then((saved) => {
             if (!saved) return { ok: false, reason: 'state_save_failed' };
@@ -80,6 +82,8 @@ const Cooldown = {
         if (session.plan === 'merchant' && !session.coldMarketState && !session.coldCraftState) return { ok: false, reason: 'merchant' };
         if ((session.pkProfile || session.plan === 'pk_hunting') && !options.allowPk) return { ok: false, reason: 'pk_active' };
         if (session.clanAllianceQuest) return { ok: false, reason: 'player_clan_quest' };
+        // A supply errand on its way back owns the row's hot write (BotTownTravel.returnSupplyHot).
+        if (session.supplyErrandPhase === 'returning') return { ok: false, reason: 'supply_errand_returning' };
         if (session.partyCompanion === true || session.followPlayerSession) return { ok: false, reason: 'player_party' };
         if (session.trade || session.activeTrade) return { ok: false, reason: 'trade_active' };
         if (session.activeNegotiation) return { ok: false, reason: 'negotiation_active' };

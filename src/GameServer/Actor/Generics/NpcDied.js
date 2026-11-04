@@ -194,7 +194,7 @@ function npcDied(session, actor, npc) {
     const rewardActor = ownerSession?.actor || actor;
     const participants = rewardParticipants(session, rewardActor, npc);
     if (session?.accountId?.startsWith?.('bot_')) {
-        Promise.resolve(BotEventJournal.record({
+        BotEventJournal.record({
             botId: session.actor?.fetchId?.(),
             eventType: 'kill',
             summary: `${session.actor?.fetchName?.() || 'Bot'} defeated ${npc.fetchName?.() || 'a monster'}.`,
@@ -202,7 +202,7 @@ function npcDied(session, actor, npc) {
             dedupeKey: `kill:${session.actor?.fetchId?.()}:${npc.fetchTemplateId?.() || npc.fetchId?.()}`,
             coalesceWindowMs: 30000,
             meta: { npcId: npc.fetchId?.(), npcName: npc.fetchName?.() || null }
-        })).catch(() => {});
+        });
     }
     const PetRuntime = invoke('GameServer/Pets/PetRuntime');
     const rewardLevel = Math.max(...participants.map(levelOf), Number(rewardActor.fetchLevel?.() || 1));

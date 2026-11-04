@@ -1,3 +1,4 @@
+const FailureLog = require('../../FailureLog');
 function ensureTimers(actor) {
     if (!actor.effectTimers) actor.effectTimers = {};
     return actor.effectTimers;
@@ -346,7 +347,7 @@ function refreshStats(session, target) {
     if (target?.session) {
         try {
             invoke(path.actor).calculateStats(target?.session || session, target);
-        } catch (_) {}
+        } catch (error) { FailureLog.note('combat.recalc_stats', error); }
     }
     if (target?.statusUpdateVitals) {
         target.statusUpdateVitals(target);
@@ -356,7 +357,7 @@ function refreshStats(session, target) {
         try {
             const ServerResponse = invoke('GameServer/Network/Response');
             session.dataSendToMe(ServerResponse.userInfo(target));
-        } catch (_) {}
+        } catch (error) { FailureLog.note('combat.user_info', error); }
     }
 }
 

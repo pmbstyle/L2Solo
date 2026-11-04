@@ -1,3 +1,4 @@
+const FailureLog = require('../../../FailureLog');
 const { isMainThread } = require('node:worker_threads');
 const Tendency = require('../AI/TendencyRoll');
 const Valuation = require('./EconomicValuation');
@@ -76,7 +77,7 @@ function packQuantityInputs(proof) {
         }
         const bytes = write.finish();
         return bytes.length <= QUANTITY_INPUT_BYTES ? bytes : null;
-    } catch (_) { return null; }
+    } catch (error) { FailureLog.note('economy.codec:quantities', error); return null; }
 }
 // The one decoder: calls visit(row) for each row in order. False on a
 // malformed or over-cap stream, or when visit returns false; a reader

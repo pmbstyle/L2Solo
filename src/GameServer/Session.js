@@ -3,6 +3,7 @@ const Actor   = invoke('GameServer/Actor/Actor');
 const World   = invoke('GameServer/World/World');
 const NpcVisibility = invoke('GameServer/World/NpcVisibility');
 const GroundItemVisibility = invoke('GameServer/World/GroundItemVisibility');
+const Frame = invoke('Packet/Frame');
 
 const TRACE_LIMIT = 40;
 const MOVEMENT_TRACE_LIMIT = 160;
@@ -247,8 +248,7 @@ class Session {
     }
 
     dataReceive(data) {
-        // Weird, sometimes the packet is sent twofold/duplicated. I had to limit it based on the header size...
-        const packet = data.slice(2, data.readInt16LE());
+        const packet = Frame.body(data);
         if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) this.tracePacket('in', packet, packetName(CLIENT_PACKET_NAMES, packetOpcode(packet)));
         if (this.enterWorldReady) {
             const actor = this.actor;
@@ -262,9 +262,10 @@ class Session {
     dataSendToMe(data) {
         if (data?.__relationActor && this.actor) data = invoke('GameServer/Network/Response').relationChanged(data.__relationActor, this.actor);
         if (data?.__movingActor) invoke('GameServer/World/CharacterVisibility').beforeSend(this, data);
+        const packet = this.packData(data);
+        if (!packet) return; // longer than a frame: not sent (counted, Frame.pack)
         NpcVisibility.trackNpcPacket(this, data);
         this.recordOutboundPacket(data);
-        const packet = this.packData(data);
         this.socket.write(packet);
         if (data?.__characterActor && this.actor && invoke('GameServer/Clan/ClanWarRuntime').between(this.actor, data.__characterActor).status !== 'neutral') {
             this.dataSendToMe(invoke('GameServer/Network/Response').relationChanged(data.__characterActor, this.actor));
@@ -281,6 +282,7 @@ class Session {
             return;
         }
         const packet = this.packData(data);
+        if (!packet) return; // longer than a frame: not sent (counted, Frame.pack)
         const visibleUsers = typeof World.fetchVisibleRealPlayers === 'function'
             ? World.fetchVisibleRealPlayers(this, creature)
             : World.fetchVisibleUsers(this, creature);
@@ -305,10 +307,9 @@ class Session {
         this.dataSendToOthers(data, creature);
     }
 
+    // The framed packet, or null when it is longer than a frame (Frame.pack).
     packData(data) {
-        const header = Buffer.alloc(2);
-        header.writeInt16LE(utils.size(data) + 2);
-        return Buffer.concat([header, data]);
+        return Frame.pack(data);
     }
 
     tracePacket(direction, data, name) {

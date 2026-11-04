@@ -79,24 +79,19 @@ thread: our rule, so a far bot does not re-decide on every event ([bot-ai.md](bo
 | Travel route and fare | `Travel/TravelRoutes`, `TripPayment` |
 | Cold trip time | `ColdTrip` |
 | A throwing step or command: hold off, quarantine | `ColdSimulationKernel.fault`, one tracker per bot (per party run): backoff 1 s/5 s/30 s/2 min, quarantine 10 min after 5 faults in a row, first occurrence logged with the stack, `botFaults=` on the health line (`FAULT_*`, limits.md); a command's DB error is no bot fault (`commandDbErrors`) |
-| Failure counts (status line, perf report, e2e players) | `ColdSimulationCoordinator.failureSnapshot` (one record: worker faults by stage, backoff/quarantine, protocol faults, `commandDbErrors`); afterCommit errors in `ColdCommitQueue` `failures` |
+| Failure counts (status line, perf report, e2e players) | `ColdSimulationCoordinator.failureSnapshot` (one record: worker faults by stage, backoff/quarantine, protocol faults, `commandDbErrors`, `swallowed` = main's and the worker's `FailureLog` counts by site, the worker's from its heartbeat `failures.swallowed`); afterCommit errors in `ColdCommitQueue` `failures`. A post-commit step (`step`/`timedStep`) that throws is skipped: a refusal code is logged with the bot, any other throw counts as `cold.postcommit.<step>`; a throw outside a step as `cold.after_commit` (and `afterCommitErrors` for the perf report and e2e); a row merge throw as `cold.owner_row_merge`; `BotRoute` search throws as `route.*` (a bot that never travels is no longer read as "no spot"); a command request the worker built wrong as `cold.request_dropped:<why>` (still no ack) |
 | Boot recovery of a stale hot row | `BotLifeState.staleHotRowFromRecord` (the record wins, PER-7) |
 | Transition cost (cold ↔ hot time per bot) | `PopulationMetrics.recordActivation`/`recordCooldown` (`transitions` in the summary) |
 
 ## Debt
 
-- **POP-2 `afterCommit` errors partly invisible.** Each named step of the coordinator's `afterCommit`
-  (`step`/`timedStep`) catches, logs `postcommit <step> failed` and counts `afterCommitStepErrors` (diagnostics only).
-  A throw outside a step (the diagnostics publish, the cache reads between steps) reaches `ColdCommitQueue.flushBatch`:
-  it is counted always (`failures.afterCommitErrors`, last reason kept; read by the perf report and the e2e scripts),
-  not logged and not on the status line.
-- **POP-3 silent null routes.** `BotRoute.js` wraps `SpotService.findCurrentSpot`/`arrivalPointForState` in
-  `catch → null` — exactly the worker-boundary trap.
 - **POP-4 three hot/cold transition implementations** (solo `HotActivation`/`Cooldown`, party `HotPartyLifecycle`,
   PvP `PvpEncounterLifecycle`), each with its own fence, CAS, spawn, restore. Unification: a solo bot is a group of 1.
 - **POP-5 hot → cold row builder has three branches** in `writeColdRow`; the fallback writes
   `Database.updateCharacter*` directly, bypassing `upsertState`. `BotSupplyErrand` calls `markCold` outside `Cooldown`,
-  with no `acceptColdState` and `.catch(() => {})`.
+  with no `acceptColdState` (its failure is counted, `population.mark_cold`). Its return (`BotTownTravel.returnSupplyHot`)
+  writes the row hot before the AI runs; while that write fails it keeps the bot parked
+  (limits.md "Supply errand return"), and `Cooldown.canCooldown` refuses a returning bot.
 - **POP-6 cold rules also run on main.** `PopulationService.resolveColdState` / `resolveColdEntryBranch`: karma
   (`ColdKarmaPolicy` + `resolveSolo`) duplicates the worker's `planLifecycle` (and is hardly reached: `lifecycleKind`
   sends a karma bot to the resolver before any command); `precomputedResult || resolveSolo(...)` fallbacks (raid-supply

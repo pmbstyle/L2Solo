@@ -271,7 +271,7 @@ const BotLootEtiquette = {
             botSession.lastLootRequestAt = current;
             playerSession.lastLootRequestAt = current;
 
-            Promise.resolve(BotEventJournal.record({
+            BotEventJournal.record({
                 playerId: playerSession.actor.fetchId(),
                 botId: botSession.actor.fetchId(),
                 eventType: 'loot_request',
@@ -280,7 +280,7 @@ const BotLootEtiquette = {
                 dedupeKey: `loot:${botSession.actor.fetchId()}:${selfId}`,
                 coalesceWindowMs: REQUEST_TTL_MS,
                 meta: { itemId: selfId, amount, reason: demand.reason }
-            })).catch(() => {});
+            });
 
             const BotManager = invoke('GameServer/Bot/BotManager');
             BotManager.botTell(botSession, playerSession, `If you don't need ${info.name}, could you trade it to me? I can use it for ${request.reason}.`);
@@ -307,7 +307,7 @@ const BotLootEtiquette = {
 
         request.fulfilled = true;
         removeRequest(playerSession, botSession, request);
-        Promise.resolve(BotEventJournal.record({
+        BotEventJournal.record({
             playerId: playerSession.actor?.fetchId?.(),
             botId: botSession.actor?.fetchId?.(),
             eventType: 'loot_received',
@@ -316,7 +316,7 @@ const BotLootEtiquette = {
             dedupeKey: `loot_received:${botSession.actor?.fetchId?.()}:${request.selfId}`,
             coalesceWindowMs: 30000,
             meta: { itemId: request.selfId, amount: request.amount }
-        })).catch(() => {});
+        });
         if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info("BotLoot :: %s fulfilled %s request from %s", actorName(playerSession), request.itemName, actorName(botSession));
         return request;
     }

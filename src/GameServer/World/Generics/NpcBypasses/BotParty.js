@@ -62,7 +62,7 @@ function candidateCatalog(session) {
     return BotAvailability.catalogForPlayer(
         session,
         BotManager.sessions,
-        BotLifeState.allStates(2000)
+        BotLifeState.everyState()
     ).map((candidate) => ({
         ...candidate,
         profession: BotRoles.presentation(candidate.subject)

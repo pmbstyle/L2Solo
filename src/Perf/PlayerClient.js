@@ -6,6 +6,7 @@
 // server is called directly: a step is a packet, an expectation is a packet back or a state.
 
 const SendPacket = invoke('Packet/Send');
+const Frame = invoke('Packet/Frame');
 
 // What the server wrote: packet name, opcode, time, the packed bytes. A crowd writes thousands of
 // packets a minute; a step's wait reads back through this many.
@@ -46,10 +47,10 @@ class PlayerClient {
     // One client packet: [length][opcode][fields], as packetReceiver hands it to dataReceive.
     send(packet) {
         const body = packet.buffer;
-        const frame = Buffer.alloc(body.length + 2);
-        frame.writeInt16LE(body.length + 2, 0);
-        body.copy(frame, 2);
-        return Promise.resolve(this.session.dataReceive(frame));
+        if (!Frame.fits(body)) {
+            throw new RangeError(`scripted client packet 0x${Number(body[0]).toString(16)} of ${body.length} B does not fit a frame (${Frame.MAX_FRAME} B)`);
+        }
+        return Promise.resolve(this.session.dataReceive(Frame.frame(body)));
     }
 
     // 0x01 MoveToLocation: destination, then where the client is.

@@ -1,3 +1,4 @@
+const FailureLog = require('../../FailureLog');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
@@ -25,7 +26,8 @@ function combatLevel(actor) {
             .map((session) => session?.actor)
             .find((candidate) => actorId(candidate) === ownerId);
         return Math.max(ownLevel, Number(owner?.fetchLevel?.() || 0));
-    } catch (_) {
+    } catch (error) {
+        FailureLog.note('raid.curse_lookup', error);
         return ownLevel;
     }
 }
@@ -70,7 +72,8 @@ function raidBossesAttackedBy(target) {
                 ? boss.model.raidAttackers.has(targetId)
                 : Array.isArray(boss.model?.raidAttackers) && boss.model.raidAttackers.includes(targetId))
         ));
-    } catch (_) {
+    } catch (error) {
+        FailureLog.note('raid.curse_lookup', error);
         return [];
     }
 }
@@ -87,7 +90,7 @@ function applyEffect(session, target, effect) {
     if (Object.keys(applied.stats || {}).length > 0 || applied.removedEffects.some((removed) => Object.keys(removed.stats || {}).length > 0)) {
         try {
             invoke('GameServer/Actor/Generics/CalculateStats')(target?.session || session, target);
-        } catch (_) {}
+        } catch (error) { FailureLog.note('combat.recalc_stats', error); }
     }
     EffectTicker.refreshEffects(session, target);
     return applied;

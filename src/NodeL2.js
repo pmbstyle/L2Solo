@@ -57,30 +57,9 @@ const DRAIN_BUDGET_MS = 10000;
 const EXIT_DEADLINE_MS = 16000;
 // A patch queued while a flush runs is taken by the next round.
 const FINAL_FLUSH_ROUNDS = 3;
-// Distinct failure reasons kept for counting; later ones share one bucket.
-const MAX_FAILURE_REASONS = 64;
-
-const failureReasons = new Map();
-// One failure site is one reason: the error's name and first stack frame
-// (messages often carry ids). The first of each is logged with its stack,
-// repeats are only counted and summed up at exit.
-function noteFailure(kind, error) {
-    const lines = String(error?.stack || error?.message || error).split('\n');
-    const site = error?.stack ? `${error.name || 'Error'} ${(lines[1] || '').trim()}` : lines[0].slice(0, 160);
-    let key = `${kind}: ${site}`;
-    if (!failureReasons.has(key) && failureReasons.size >= MAX_FAILURE_REASONS) key = `${kind}: other reasons`;
-    const count = (failureReasons.get(key) || 0) + 1;
-    failureReasons.set(key, count);
-    if (count === 1) {
-        utils.infoWarn('Process', '%s (repeats are counted, not logged): %s', kind, error?.stack || error);
-    }
-}
-
-function reportFailureCounts() {
-    for (const [key, count] of failureReasons) {
-        if (count > 1) utils.infoWarn('Process', '%s x%d', key, count);
-    }
-}
+// The process backstop counts by site and logs the first of each (the shared failure rule).
+const FailureLog = invoke('FailureLog');
+const noteFailure = (kind, error) => FailureLog.noteUnnamed(kind, error);
 
 let finalWrites = null;
 // The last writes, shared by a clean shutdown and a crash: flush buffered
@@ -105,7 +84,7 @@ function exitAfterFinalWrites() {
     // Exits even if a write hangs; not unref'd, it must fire.
     setTimeout(() => {
         utils.infoWarn('Process', 'final writes did not finish by the exit deadline');
-        reportFailureCounts();
+        FailureLog.report();
         process.exit(exitCode);
     }, EXIT_DEADLINE_MS);
 }
@@ -160,7 +139,7 @@ function shutdown(signal) {
         return writeFinalState();
     }).finally(() => {
         utils.infoWarn('Shutdown', 'done in %d ms', Date.now() - started);
-        reportFailureCounts();
+        FailureLog.report();
         process.exit(exitCode);
     });
 }
@@ -173,7 +152,7 @@ function exitAfterFailure() {
     shuttingDown = true;
     exitAfterFinalWrites();
     writeFinalState().finally(() => {
-        reportFailureCounts();
+        FailureLog.report();
         process.exit(exitCode);
     });
 }

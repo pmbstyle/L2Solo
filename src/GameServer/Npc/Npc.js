@@ -323,6 +323,21 @@ class Npc extends NpcModel {
             let pendingPath = null;
             let pathGeneration = 0;
             let activeTarget = initialTarget;
+            // A chase request that gave no way to the target: an empty path, or a pool
+            // error (queue full, pre-empted, timed out, a crashed worker). Lisvus stops
+            // hating an actor it could not hit for its attack timeout, whatever the cause
+            // (L2AttackableAI.thinkAttack): the 10 s run from the first failed request.
+            const pathFailed = (actor, requestedAt) => {
+                pathFailureStartedAt ||= requestedAt;
+                pathFailureCount++;
+                nextPathRetryAt = Date.now() + Math.min(
+                    NPC_PATH_MAX_RETRY_INTERVAL_MS,
+                    NPC_PATH_RETRY_INTERVAL_MS * (2 ** (pathFailureCount - 1))
+                );
+                if (Date.now() - pathFailureStartedAt >= NPC_PATH_FAILURE_TIMEOUT_MS) {
+                    this.removeAggroTarget(session, actor, 'noPath');
+                }
+            };
 
             this.timer.combat = setInterval(() => {
                 const actor = this.fetchCombatTarget();
@@ -435,6 +450,7 @@ class Npc extends NpcModel {
                         if (!pendingPath) {
                             const requestedTarget = { locX: newDstX, locY: newDstY, locZ: newDstZ };
                             const generation = ++pathGeneration;
+                            const requestedAt = now;
                             pendingPath = this.fetchCombatPathAsync(actor)
                                 .then((path) => {
                                     if (generation !== pathGeneration || !this.state.fetchCombats()) return;
@@ -449,18 +465,7 @@ class Npc extends NpcModel {
                                     ));
                                     if (drift >= CHASE_REPATH_DISTANCE) return;
                                     if (!path || path.length <= 1) {
-                                        pathFailureStartedAt ||= Date.now();
-                                        pathFailureCount++;
-                                        const retryDelay = Math.min(
-                                            NPC_PATH_MAX_RETRY_INTERVAL_MS,
-                                            NPC_PATH_RETRY_INTERVAL_MS * (2 ** (pathFailureCount - 1))
-                                        );
-                                        nextPathRetryAt = Date.now() + retryDelay;
-                                        if (Date.now() - pathFailureStartedAt >= NPC_PATH_FAILURE_TIMEOUT_MS) {
-                                            // Lisvus stops hating an actor it could not hit for
-                                            // its attack timeout (L2AttackableAI.thinkAttack).
-                                            this.removeAggroTarget(session, actor, 'noPath');
-                                        }
+                                        pathFailed(actor, requestedAt);
                                         return;
                                     }
                                     activePathWaypoints = path.slice(1);
@@ -468,11 +473,14 @@ class Npc extends NpcModel {
                                     pathFailureStartedAt = 0;
                                     pathFailureCount = 0;
                                     nextPathRetryAt = 0;
+                                }, (error) => {
+                                    // A newer request replaced this one, or the server stops.
+                                    if (['STALE_PATH', 'POOL_SHUTDOWN'].includes(error?.code)) return;
+                                    if (generation !== pathGeneration || !this.state.fetchCombats()) return;
+                                    pathFailed(actor, requestedAt);
                                 })
-                                .catch((error) => {
-                                    if (!['STALE_PATH', 'POOL_SHUTDOWN'].includes(error?.code)) {
-                                        nextPathRetryAt = Date.now() + NPC_PATH_RETRY_INTERVAL_MS;
-                                    }
+                                .catch(() => {
+                                    nextPathRetryAt = Date.now() + NPC_PATH_RETRY_INTERVAL_MS;
                                 })
                                 .finally(() => {
                                     if (generation === pathGeneration) pendingPath = null;

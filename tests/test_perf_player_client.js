@@ -26,6 +26,12 @@ const SendPacket = invoke('Packet/Send');
     await client.say('hi', 0);
     assert.equal(frames[1][2], 0x38);
     assert.equal(frames[1].toString('ucs2', 3, 7), 'hi');
+    // A scripted packet longer than a frame is a script error, not a server refusal.
+    const Frame = invoke('Packet/Frame');
+    const refusedBefore = Frame.refusals().outbound;
+    assert.throws(() => client.send({ buffer: Buffer.alloc(70000, 0x38) }), RangeError);
+    assert.equal(Frame.refusals().outbound, refusedBefore);
+    assert.equal(frames.length, 2);
 
     // What the server writes is named and kept; a wait resolves on the packet, or times out.
     const html = '<html><a action="bypass -h npc_5_Chat 1">Go</a><a action="bypass -h npc_5_teleport 3">Gludin</a></html>';

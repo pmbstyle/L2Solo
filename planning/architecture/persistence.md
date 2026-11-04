@@ -101,7 +101,7 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
   cold commit and after main's item moves is that, by design). Task: audit and close the one-copy writers (POP-5
   `writeColdRow` fallback, the EXP write paths, karma in two places + PER-6, `BotSupplyErrand.markCold`) and add a
   test that catches the copies diverging. After "make failures visible".
-- **PER-8 class change parallel paths:** `ClassTransfer.transfer` (actor first, rollback write swallowed),
+- **PER-8 class change parallel paths:** `ClassTransfer.transfer` (actor first, a failed rollback write only counted),
   `SecondProfession` → SQL with repeated checks, `BotClassProgression` and `GeneratedColdSeeder` call
   `updateCharacterClassId` with their own pick; `ClassProgression` `lineage`/`coldLineage` differ on purpose.
 - **PER-9 two warehouse stores:** players `account_warehouse_items` (batch), bots per-character `warehouse_items`

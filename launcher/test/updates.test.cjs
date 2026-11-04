@@ -810,7 +810,7 @@ test('a preview server upgrades the previous preview world while stable installa
 });
 
 function prepareStartupFixture(root) {
-    for (const name of ['src/NodeL2.js', 'src/Server.js', 'src/Global.js', 'scripts/database-access.js']) {
+    for (const name of ['src/NodeL2.js', 'src/Server.js', 'src/Packet/Frame.js', 'src/Global.js', 'scripts/database-access.js']) {
         const target = path.join(root, name);
         fs.mkdirSync(path.dirname(target), { recursive: true });
         fs.copyFileSync(path.resolve(__dirname, '../..', name), target);

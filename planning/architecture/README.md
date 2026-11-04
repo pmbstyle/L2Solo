@@ -50,8 +50,8 @@ says the commit it was last checked at.
 - `Cold*` in Economy is usually a main-thread service; the worker planner is `Population/ColdEconomyPlan`.
 - Worker guard wraps only `invoke()`; relative `require()` and lazy invokes slip through. `SpotService` returns `[]`
   without World instead of throwing. ~40 `isMainThread` branches.
-- A worker step or command that throws is held off and quarantined (`ColdSimulationKernel.fault`, `FAULT_*` in limits.md); an `afterCommit`
-  throw outside a named step is only counted (POP-2).
+- A worker step or command that throws is held off and quarantined (`ColdSimulationKernel.fault`, `FAULT_*` in limits.md); a
+  failure a catch survives goes through `FailureLog` (counted by site, the first logged, status `swallowed=`).
 - Cited but missing: `docs/architecture.md` (`BotRoute.js`, `EconomyContext.js`), `docs/t189-plan.md` (T189 commit),
   `docs/game-decisions.md` (`scripts/fight-table`, `ShotStock`).
 - A precomputed table is not checked against the code it measured: after a change listed in tables.md "When to

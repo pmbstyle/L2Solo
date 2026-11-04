@@ -1,4 +1,5 @@
 const DiagnosticConfig = require('./PopulationConfig');
+const FailureLog = require('../../../FailureLog');
 
 const Database = invoke('Database');
 const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
@@ -113,7 +114,9 @@ function withPersistedStats(state, result) {
         // the bag after the proposed state: continue with the committed bag.
         if (!result.settled && !result.pkDrops?.length && !result.partyPayment) return persisted;
         return { ...persisted, adena: Number(row.adena || 0), inventory: JSON.parse(row.inventorySummary || '{}') };
-    } catch (_) {
+    } catch (error) {
+        // The cache keeps the proposed state: it misses this commit's revisions, settlement or drop until a reload.
+        FailureLog.note('cold.owner_row_merge', error);
         return state;
     }
 }

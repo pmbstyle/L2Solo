@@ -2044,11 +2044,9 @@ async function collectWorldActors() {
             BotManager.findSessionById(Number(status.id))
         ));
     const hotIds = new Set(hotBots.map((bot) => Number(bot.id)));
-    // The previous 700-item cap made the observer silently report 735 bots
-    // (35 hot + 700 cold) while PopulationStatus already knew about the full
-    // persisted population. Keep the payload bounded by the cache contract,
-    // but do not hide the rest of the world from the map.
-    const states = LifeState.allStates(2000);
+    // Every cached state: a cut here silently hid the least recently written
+    // bots from the map while PopulationStatus counted them.
+    const states = LifeState.everyState();
     const stateById = new Map(states.map((state) => [Number(state.characterId), state]));
     const stateBots = (await mapCooperatively(states, (state) => compactStateBot(
         state,

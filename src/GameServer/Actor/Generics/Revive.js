@@ -26,14 +26,14 @@ function finishRevive(session, actor, helper) {
     if (session?.accountId?.startsWith?.('bot_') && session.arenaEphemeral !== true) {
         // Every revival passes here (own restart, skill, scroll, companion), alive by now.
         BotLifeState.notifyNearFacts(session, 'revive');
-        Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
+        invoke('GameServer/Bot/AI/BotEventJournal').record({
             botId: actor.fetchId(),
             eventType: 'revive',
             summary: `${actor.fetchName?.() || 'Bot'} revived and is recovering.`,
             weight: 4,
             dedupeKey: `revive:${actor.fetchId()}`,
             coalesceWindowMs: 5000
-        })).catch(() => {});
+        });
     }
 }
 

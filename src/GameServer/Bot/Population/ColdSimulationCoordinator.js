@@ -8,6 +8,7 @@ const { Worker } = require('worker_threads');
 const { performance } = require('perf_hooks');
 
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+const FailureLog = invoke('FailureLog');
 const Database = invoke('Database');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -38,6 +39,7 @@ const { TTL_MS: COMPETITION_TTL_MS } = require('./ColdCompetitionActions');
 const { STEP_MS: PVP_STEP_MS } = require('./PvpEncounterBudget');
 const ColdStateDelta = require('./ColdStateDelta');
 const InventorySummary = require('./InventorySummary');
+const RestartBackoff = require('../../../WorkerRestartBackoff');
 const { ColdCommitQueue, EARLY_COMMIT_ROW_BUDGET_MS } = require('./ColdCommitQueue');
 const { ColdSnapshotQueue } = require('./ColdSnapshotQueue');
 const ColdSafetyTransport = require('./ColdSafetyTransport');
@@ -356,7 +358,7 @@ class ColdSimulationCoordinator {
             this.startWorker();
             this.watchdogTimer = setInterval(() => this.watchdog(), 1000);
             const encounters = invoke('GameServer/Bot/Population/PvpEncounterRuntime');
-            LifeState.allStates(2000).forEach(s => encounters.register(s.stats?.pvpEncounter));
+            LifeState.everyState().forEach(s => encounters.register(s.stats?.pvpEncounter));
             this.pvpEncounterTimer = setInterval(() => {
                 encounters.tick(this.competitionActions)?.catch(error => this.recordError(error));
             }, PVP_STEP_MS);
@@ -1621,11 +1623,15 @@ class ColdSimulationCoordinator {
         return resolvedState;
     }
 
+    // A post-commit step that throws is skipped; the commit stays (it is durable). A refusal its owner
+    // names with a code (`economy_material_protected`, `cold_postcommit_source_retired`) is logged with
+    // the bot; anything else is a bug: counted by step, the first logged with its stack (FailureLog).
     async step(name, characterId, work) {
         try { return await work(); }
         catch (error) {
             DiagnosticConfig.developerDiagnostics && (this.counters.afterCommitStepErrors[name] += 1);
-            utils.infoWarn('ColdWorker', 'postcommit %s failed for %s: %s', name, characterId, error?.message || error);
+            if (FailureLog.refusal(error)) utils.infoWarn('ColdWorker', 'postcommit %s failed for %s: %s', name, characterId, error.message);
+            else FailureLog.note(`cold.postcommit.${name}`, error);
             return undefined;
         }
     }
@@ -1936,8 +1942,13 @@ class ColdSimulationCoordinator {
             const parsed = Protocol.commandIdentity(request);
             const identity = parsed && { characterId: parsed.characterId, commandId: parsed.commandId,
                 commandCheckpoint: parsed.checkpoint };
-            if (!identity || (request.kind !== 'lifecycle' && request.kind !== 'review')
-                || request.kind === 'lifecycle' && !Protocol.sameCommandCheckpoint(identity.commandCheckpoint, request.state)) return [];
+            // A request the worker built wrong (a protocol bug) gets no ack: counted, the first logged.
+            const dropped = !identity ? 'identity' : request.kind !== 'lifecycle' && request.kind !== 'review' ? 'kind'
+                : request.kind === 'lifecycle' && !Protocol.sameCommandCheckpoint(identity.commandCheckpoint, request.state) ? 'checkpoint' : null;
+            if (dropped) {
+                FailureLog.note(`cold.request_dropped:${dropped}`, Error(`command request dropped (${dropped}): ${request?.kind} ${request?.characterId}`));
+                return [];
+            }
             return [{ request, identity }];
         });
         this.commandTail = this.commandTail.then(async () => {
@@ -2303,12 +2314,11 @@ class ColdSimulationCoordinator {
         this.waiters.clear();
         this.pauseReasons.delete('heartbeat_stale');
         if (this.stopping) return;
-        // A run that stayed up 30 s after loading its world was healthy: back off from the first delay again.
-        if (this.loadedAt && Date.now() - this.loadedAt > 30000) this.restartCount = 0;
+        // Healthy means up 30 s after loading its world (the shared restart rule).
+        const restart = RestartBackoff.next(this.restartCount, this.loadedAt, Date.now());
         this.loadedAt = 0;
-        const delays = [1000, 2000, 5000, 10000, 30000];
-        const restartDelay = delays[Math.min(this.restartCount, delays.length - 1)];
-        this.restartCount += 1;
+        const restartDelay = restart.delayMs;
+        this.restartCount = restart.crashes;
         DiagnosticConfig.developerDiagnostics && (this.counters.workerRestarts += 1);
         utils.infoWarn('ColdWorker', 'worker exited code=%d cause=%s last message %s; restarting in %dms',
             Number(code || 0), this.terminateCause || 'worker_own_exit', this.lastWorkerMessage || 'none', restartDelay);
@@ -2409,14 +2419,16 @@ class ColdSimulationCoordinator {
     }
 
     // One failures record (perf report, status line, scripted players): the worker's bot faults
-    // from its heartbeat plus main's protocol faults and database command errors.
+    // from its heartbeat plus main's protocol faults and database command errors; swallowed: the
+    // failures main and the worker survived, by site (FailureLog; the worker's since it started).
     failureSnapshot() {
         const worker = this.lastWorkerSnapshot?.failures || {};
         const faultsByStage = { ...(worker.faultsByStage || {}) };
         for (const [stage, count] of Object.entries(this.failures.faultsByStage)) faultsByStage[stage] = (faultsByStage[stage] || 0) + count;
         return { workerFaults: Number(worker.workerFaults || 0) + this.failures.protocolFaults, faultsByStage,
             lastFault: this.failures.lastFault, faultBackoff: Number(worker.faultBackoff || 0),
-            faultQuarantined: Number(worker.faultQuarantined || 0), commandDbErrors: this.refusals.commandDbErrors };
+            faultQuarantined: Number(worker.faultQuarantined || 0), commandDbErrors: this.refusals.commandDbErrors,
+            swallowed: FailureLog.merge(FailureLog.snapshot(), worker.swallowed) };
     }
 
     snapshot() {

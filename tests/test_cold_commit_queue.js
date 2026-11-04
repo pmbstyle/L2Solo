@@ -1,6 +1,8 @@
 process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 const assert = require('assert');
+require('../src/Global');
 const { ColdCommitQueue } = require('../src/GameServer/Bot/Population/ColdCommitQueue');
+const FailureLog = invoke('FailureLog');
 
 function proposal(characterId, priority = 'P2', revision = 1) {
     return {
@@ -15,6 +17,15 @@ function proposal(characterId, priority = 'P2', revision = 1) {
 }
 
 (async () => {
+    const warnings = [];
+    const info = console.info, warn = console.warn;
+    const site = 'cold.after_commit', counted = () => FailureLog.snapshot()?.[site] || 0, before = counted();
+    const swallowed = () => Object.values(Coordinator.failureSnapshot().swallowed).reduce((sum, n) => sum + n, 0);
+    const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+    const Status = invoke('GameServer/Bot/Population/PopulationStatus');
+    const shownBefore = swallowed();
+    const capture = original => (...line) => (line.join(' ').includes(site) ? warnings.push(line.join(' ')) : original(...line));
+    console.info = capture(info); console.warn = capture(warn);
     for (const single of [false, true]) {
         const acks = [];
         const committedQueue = new ColdCommitQueue({
@@ -31,6 +42,34 @@ function proposal(characterId, priority = 'P2', revision = 1) {
         assert.match(acks[0].afterCommitError, /journal unavailable/);
         assert.strictEqual(committedQueue.snapshot().errors, 1);
     }
+    console.info = info; console.warn = warn;
+    // The failure the commit survived: the first logged with its stack, the second only counted,
+    // both on the status line beside what the cold worker reports from its side.
+    assert.strictEqual(warnings.length, before ? 0 : 1, 'a repeated post-commit failure is logged once');
+    if (!before) assert.match(warnings[0], /journal unavailable[\s\S]*ColdCommitQueue/);
+    assert.strictEqual(counted() - before, 2, 'each post-commit failure is counted');
+    assert.strictEqual(swallowed() - shownBefore, 2);
+    const line = () => Number(Status.goalText({}, Coordinator.snapshot()).match(/ swallowed=(\d+)\/\d+ /)[1]);
+    const shown = line();
+    Coordinator.lastWorkerSnapshot = { failures: { swallowed: { 'route.search': 3 } } };
+    assert.strictEqual(line() - shown, 3, 'the worker\'s sites are summed on the line with main\'s');
+    Coordinator.lastWorkerSnapshot = {};
+    // The shared rule: an owner's refusal code is an outcome, a bug's error is a failure even with a
+    // code for a message; the backstop's unnamed sites (one per distinct throw) never crowd out a named one.
+    assert.strictEqual(FailureLog.refusal(Error('afk_trade_stock_changed')), true);
+    for (const bug of [TypeError('invalid_mutation_admission'), Error('board_revision_exhausted'), Error('Cannot read x')]) {
+        assert.strictEqual(FailureLog.refusal(bug), false, bug.message);
+    }
+    console.warn = console.info = () => {};
+    for (let i = 0; i < 5; i++) FailureLog.noteUnnamed('unhandled rejection', `row ${i} refused`);
+    const letters = i => String.fromCharCode(97 + i % 26) + String.fromCharCode(97 + Math.floor(i / 26));
+    for (let i = 0; i < FailureLog.MAX_SITES + 5; i++) FailureLog.noteUnnamed('unhandled rejection', `thrown ${letters(i)}`);
+    FailureLog.note('test.named_after_flood', Error('a named site'));
+    console.info = info; console.warn = warn;
+    const sites = FailureLog.snapshot();
+    assert.strictEqual(sites['unhandled rejection: row # refused'], 5, 'ids in a message do not split a site');
+    assert.ok(sites['other unnamed sites'] > 0, 'unnamed sites past their cap share one count');
+    assert.strictEqual(sites['test.named_after_flood'], 1, 'a flood of unnamed sites leaves room for a named one');
     const rejectedAcks = [];
     const rejectedQueue = new ColdCommitQueue({ prepare: async () => null, commit: async () => [],
         onResults: rows => rejectedAcks.push(...rows) });

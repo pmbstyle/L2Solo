@@ -16,6 +16,7 @@
 // (ColdSimulationCoordinator retreatRoute). Worker-safe: every spot lookup
 // reads the catalog the caller passes (`spots`, the spot profile array: the
 // worker's planning catalog, SpotProfiles.ensure() on main).
+const FailureLog = invoke('FailureLog');
 const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
@@ -51,7 +52,7 @@ function routable(state, party, partyMembers) {
 // here would schedule another 25-second trip to the same coordinates forever.
 function currentSpotId(state, currentSpot, party, spots) {
     let physical = null;
-    try { physical = SpotService.findCurrentSpot(state.loc, spots); } catch (_) { physical = null; }
+    try { physical = SpotService.findCurrentSpot(state.loc, spots); } catch (error) { FailureLog.note('route.current_spot', error); }
     const declaredSpotId = party?.spotId || state.spotId || null;
     const declaredSpot = declaredSpotId ? SpotIndex.spotById(spots, declaredSpotId) : null;
     return declaredSpot?.raidBoss === true ? declaredSpot.id : physical?.id || currentSpot?.id || declaredSpotId;
@@ -117,7 +118,7 @@ function choose(state, currentSpot, party, partyMembers = [], { spots, timestamp
         try {
             fallbackSpot = PartyWaitFallback.spotFor(state, state.stats?.equipmentPlan, spots,
                 { excludedSpotIds, timestamp, hasRoom: options.hasRoom, spotHunters: options.spotHunters })?.spot || null;
-        } catch (_) { fallbackSpot = null; }
+        } catch (error) { FailureLog.note('route.wait_fallback', error); fallbackSpot = null; }
     }
     const routeState = partyRoute
         ? {
@@ -145,7 +146,7 @@ function choose(state, currentSpot, party, partyMembers = [], { spots, timestamp
             && LevelingRoutes.modeForState(routeState, options) !== 'party'
             ? { ...options, profiles: spots, matchupProfiles: frame.solo().matchupProfiles }
             : { ...options, profiles: spots });
-    } catch (_) { return null; }
+    } catch (error) { FailureLog.note('route.search', error); return null; }
     if (unsafe && selected) {
         const repeatsCurrentGround = String(selected.id || '') === String(currentId || '');
         if (repeatsCurrentGround || !LevelingRoutes.isSpotAllowedForState(selected, state, frame.solo())) selected = null;
@@ -251,7 +252,7 @@ function record(state, chosen, party, partyMembers = [], { spots, currentSpot = 
     if (!destinations) return null;
     for (const member of partyRoute ? [] : members) {
         let destination = null;
-        try { destination = SpotService.arrivalPointForState(member, selected); } catch (_) { destination = null; }
+        try { destination = SpotService.arrivalPointForState(member, selected); } catch (error) { FailureLog.note('route.arrival', error); }
         if (!destination) return null;
         destinations[String(member.characterId)] = destination;
     }

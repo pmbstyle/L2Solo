@@ -8,6 +8,7 @@
 // network again on the main thread (L25). The native actor retains accepted
 // advice; one bounded saved prefix can cross a restart until its original
 // market deadline. Every use still takes the economy owner's event verdict.
+const FailureLog = require('../../../FailureLog');
 const { isMainThread } = require('node:worker_threads');
 const { fnv1a32 } = require('../Fnv1a');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
@@ -581,7 +582,7 @@ function readAdvisoryCard(record) {
         // Validate all binary ranges before this becomes retained native data.
         void card.usefulness; void card.watch; void card.materials; void card.workshop; void card.feasibility; void card.shot;
         return card;
-    } catch (_) { return null; }
+    } catch (error) { FailureLog.note('economy.codec:advisory_card', error); return null; }
 }
 function advisoryMatches(state, accepted) {
     if (!accepted || accepted.characterId !== Number(state?.characterId)) return false;

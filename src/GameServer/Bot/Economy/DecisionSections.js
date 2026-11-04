@@ -3,6 +3,7 @@
 // Facts, reusable calculations and a new character decision are different
 // things. Only these compact boundaries belong to the saved decision; graphs
 // stay in EconomyContext's existing bounded working cache.
+const FailureLog = require('../../../FailureLog');
 const { fnv1a32 } = require('../Fnv1a');
 const { createHash } = require('node:crypto');
 const PurchaseFunding = require('./PurchaseFunding');
@@ -197,7 +198,7 @@ function baselineIdentity(baseline) {
             baseline = { ...baseline, sample: rows };
         }
         return createHash('sha256').update(JSON.stringify(canonical(baseline))).digest('hex');
-    } catch (_) { return null; }
+    } catch (error) { FailureLog.note('economy.codec:baseline_identity', error); return null; }
 }
 function carrySectionBaseline(previous, current, updated) {
     if (!previous || !Number.isFinite(previous.at) || current.at < previous.at) return current;

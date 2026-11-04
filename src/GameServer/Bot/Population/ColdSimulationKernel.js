@@ -7,6 +7,7 @@ const DiagnosticConfig = require('./PopulationConfig');
 const CharacterStateSources = require('../../World/CharacterStateSources');
 const SparseNumericStorage = require('./SparseNumericStorage');
 const { isMainThread } = require('node:worker_threads');
+const FailureLog = require('../../../FailureLog');
 const SIMPLE_ACTIVITIES = new Set(['hunting', 'resting', 'traveling', 'dead']);
 const PROPOSAL_PAYLOAD_LIMIT_BYTES = 240 * 1024;
 // A step not answered by a commit ack this long after its start is requeued
@@ -2776,7 +2777,7 @@ class ColdSimulationKernel {
     }
 
     heartbeatSnapshot(forSizing = false) {
-        const now = this.now(), head = this.heap.peek();
+        const now = this.now(), head = this.heap.peek(), swallowed = isMainThread ? null : FailureLog.snapshot();
         const scheduled = head && head.kind !== 'alarm' ? this.scheduleTokens.get(Number(head.characterId)) : null;
         const current = !!head && (head.kind === 'alarm'
             ? this.alarms.get(head.alarmKey) === head
@@ -2816,8 +2817,10 @@ class ColdSimulationKernel {
             stepsRefused: this.stepsRefused,
             ackUnbuilt: this.ackUnbuilt,
             // Bot faults (FAULT_*): all of them by stage, and the failing bots
-            // held off by a backoff / quarantined.
-            failures: { ...this.failures, faultsByStage: { ...this.failures.faultsByStage }, ...this.faultCounts() },
+            // held off by a backoff / quarantined. swallowed: the failures the worker survived
+            // (FailureLog { site: count }, absent while none); a kernel run on main has none of its own.
+            failures: { ...this.failures, faultsByStage: { ...this.failures.faultsByStage }, ...this.faultCounts(),
+                ...(swallowed ? { swallowed } : {}) },
             stepLeadMs: Math.round(this.stepLeadMs),
             soloWindow: this.soloWindowStats,
             proofOverflows: invoke('GameServer/Bot/Economy/WishNetwork').proofOverflowCount(), // lazy: the kernel's boot order

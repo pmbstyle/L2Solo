@@ -1,3 +1,4 @@
+const FailureLog = require('../../../FailureLog');
 const Policy = require('./WealthCraftPolicy');
 const Profit = require('./CraftProfitPolicy');
 const Workshops = require('./CraftWorkshopService');
@@ -302,8 +303,10 @@ async function execute(state, opportunity, options = {}) {
                     current = done.state || current;
                     if (done.hot) return { state: current, crafted: true, sold, spent, revenue, reason: 'bot_went_hot' };
                 }
-            } catch (_) {
-                // The output remains in inventory for the normal sale policy.
+            } catch (error) {
+                // The output remains in inventory for the normal sale policy. A refused sale is
+                // an outcome; any other throw may follow a committed sale whose revenue is lost here.
+                if (!FailureLog.refusal(error)) FailureLog.note('economy.craft_sale', error);
             }
         }
     }

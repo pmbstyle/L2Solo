@@ -68,6 +68,7 @@ function rows(a, b) {
             ['commit queue oldest max ms', ca.commitQueue?.oldestMaxMs, cb.commitQueue?.oldestMaxMs],
             ['worker faults', ca.failures?.workerFaults, cb.failures?.workerFaults],
             ['afterCommit errors', ca.failures?.afterCommitErrors, cb.failures?.afterCommitErrors],
+            ['swallowed failures', ca.failures?.swallowed, cb.failures?.swallowed],
             ['main heap after GC end MB', ca.memory?.mainHeapAfterGcMb?.end, cb.memory?.mainHeapAfterGcMb?.end],
             ['major page faults', ca.memory?.majorPageFaults, cb.memory?.majorPageFaults]);
     }
