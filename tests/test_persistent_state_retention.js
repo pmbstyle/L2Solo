@@ -134,6 +134,28 @@ async function run() {
     'every pair keeps its 16 newest rows, across window boundaries');
     assert.strictEqual(await scalar('SELECT MIN(updatedAt) value FROM bot_activity_journal WHERE botId = ?', [secondBotId]),
         fresh + 85, 'the pair cap keeps the newest rows of a pair');
+    // One bot whose pairs fill more than a window, none over its cap but the last:
+    // the cap goes on inside that bot instead of jumping past it.
+    const insertCharacter = name => Database.execute([
+        `INSERT INTO characters(username, name, classId, race, maxHp, maxMp, sex, face, hair, hairColor, locX, locY, locZ)
+         VALUES ('retention', ?, 1, 0, 100, 100, 0, 0, 0, 0, 0, 0, 0)`, [name]
+    ]).then(result => Number(result.insertId));
+    const wideBotId = await insertCharacter('RetentionWideBot');
+    const pairPlayers = [];
+    for (let index = 1; index <= 12; index++) pairPlayers.push(await insertCharacter(`RetentionPair${index}`));
+    for (const [index, pairPlayerId] of pairPlayers.entries()) {
+        await Database.execute([
+            `WITH RECURSIVE seq(value) AS (SELECT 1 UNION ALL SELECT value + 1 FROM seq WHERE value < ?)
+             INSERT INTO bot_activity_journal (playerId, botId, eventType, summary, weight, createdAt, updatedAt)
+             SELECT ?, ?, 'test', 'event', 1, ? + value, ? + value FROM seq`,
+            [index === 11 ? 200 : 100, pairPlayerId, wideBotId, fresh, fresh]
+        ]);
+    }
+    await executePolicy('activity_pair_cap', { activityRowsPerPair: 128 });
+    assert.deepStrictEqual(await Database.execute([
+        'SELECT playerId, COUNT(*) AS value FROM bot_activity_journal WHERE botId = ? GROUP BY playerId ORDER BY playerId', [wideBotId]
+    ]).then(rows => rows.map(row => Number(row.value))), [...Array(11).fill(100), 128],
+    'a pair past the first windows of a bot must still be capped');
 
     await Database.execute([
         `WITH RECURSIVE seq(value) AS (SELECT 1 UNION ALL SELECT value + 1 FROM seq WHERE value < 1005)

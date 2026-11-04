@@ -139,6 +139,14 @@ function admit(options = {}) {
     }
 
     state.mode = pressure.playerProtected ? 'player' : 'idle';
+    // A forced job (the WAL truncate past its ceiling) is never deferred: it
+    // takes no resource and charges the window what it takes (complete).
+    if (options.force === true) {
+        const lease = { id: state.nextLeaseId++, job, resource: '', budgetMs: requestedBudgetMs, startedAt: timestamp,
+            generation: state.generation, playerProtected: pressure.playerProtected, forced: true };
+        state.usedMs += requestedBudgetMs;
+        return { ok: true, budgetMs: requestedBudgetMs, pressure, lease };
+    }
     // A job may stop at a lower lag than the governor's own (options.maxLagMs).
     const lagAbortMs = Math.max(1, Math.min(number(Config.backgroundGovernorLagAbortMs, Config.schedulerLagAbortMs || 120),
         number(options.maxLagMs, Infinity)));
