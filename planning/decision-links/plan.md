@@ -74,7 +74,7 @@ Inputs marked (E) have an event today, (–) have none, (S) need a significance 
    cards); `edges` against a baseline of the facts the action reads (MP thresholds included).
 5. Wish projection by node: rebuild only the item nodes whose inputs moved (price of that item, its source facts, the
    wallet cut), keep the rest.
-6. Keep links across a restart (the 1696 full first builds after boot): persist the link versions with the held build.
+6. (Dropped, see below: one rebuild per bot after an update is the honest cost.)
 
 ## Open questions
 
@@ -137,6 +137,7 @@ reasons, provider laps, shadow fact keys); S1 keep source facts per item, exact 
 per bot; −1.3-2 %); S2 spot values on the decision's observation baseline (behaviour change, maintainer's call;
 −4 % with S1); S3 item descriptor closures in an LRU (exact, −1-2 %); S4 gear candidates keyed on kit/level/
 progression/prices/budget interval (exact, −0.6-1 %). Each with a 1-in-16 verify build.
-Step 6 idea: the restart proof is tied to the whole code identity (`RecomputeGeneration`, git sha), so every update
-rebuilds every bot once. Keying the proof on a digest of the modules each link reads (its inputs' code) would keep held
-links across an update that does not touch them.
+Step 6 dropped (2026-11-05): a per-module identity is not exact — the economy decision's require graph reaches 1012 of
+1297 src files with 106 computed requires, and every release since preview.4 touched Bot/Economy or Bot/Population.
+After an update the rules did change, so one rebuild per bot (~1746 × ~30 ms of worker time, once) is the honest cost.
+Perf runs: compare runs that follow a run of the same code.
