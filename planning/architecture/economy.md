@@ -19,7 +19,9 @@ MerchantStoreConfigs}`, `src/Market*`, `src/Economy*`, `Population/ColdEconomy{P
   instead (`keptKit` / `keptTargets`, see the owners).
 - **Worker market plan:** `ColdEconomyPlan.prepare/decide` → `{take, sell, withdraw, buyAds, shot, bidLimits}` (byte
   capped), from `MarketListingPolicy`, `BuyAdPolicy`, `MarketTownPolicy`, `ReadyTradeChoice`. Main runs it with
-  `BotAfkMarketService.executePlan`.
+  `BotAfkMarketService.executePlan`. A sell row carries the width (`sigma`) of the belief its price was decided with
+  (`ColdEconomyPlan.sellSigma`), so main builds no belief to publish it; buy rows still do (`lineState`, ~230 ms of
+  14 main minutes).
 - **Main reconcile:** `BotAfkMarketService.reconcile` → `reconcileBuyAds`/`reconcileSellShop` recomputes lines on main;
   the sell shop only when its bag key moved (`stockSignature`: fired personal and beginner shots stay out while the
   published kit holds and no arrows are held).

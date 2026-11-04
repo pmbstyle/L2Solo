@@ -246,10 +246,12 @@ async function groupedReplacement() {
         listings[0].enchant = 1;
         const enchanted = prepare();
         assert.equal(enchanted.shop, 'Giran', 'a different enchant requires replacement even at the same item, count and price');
-        assert.deepEqual(enchanted.sell, [[626, 1, 93905, 'Giran', 1]]);
+        assert.deepEqual(enchanted.sell.map(row => row.slice(0, 5)), [[626, 1, 93905, 'Giran', 1]]);
+        assert(enchanted.sell[0][5] > 0, 'the row carries the belief width read on the worker');
         await Market.executePlan(state, enchanted);
         const enchantedLine = Afk.findOwnerProjection(owner).shop.lines[0];
         assert.equal(enchantedLine.enchant, 1);
+        assert.equal(enchantedLine.pricing.sigma, enchanted.sell[0][5] / 1e4, 'main publishes the worker belief width');
         assert.equal(enchantedLine.sourceObjectId, shields.find(row => row.enchant === 1).id);
         const remaining = await Database.fetchItems(owner);
         assert.equal(remaining.filter(row => row.selfId === 626 && row.enchant === 0)

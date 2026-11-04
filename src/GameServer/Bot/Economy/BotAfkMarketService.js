@@ -888,8 +888,10 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
     if (plan.sell?.length) await run(async () => {
         // A line's pricing state (MarketPricing.lineState) reads the persona,
         // the board and the item beliefs, never the hunt/stock forecast: the
-        // card context serves it. Only an enchanted line's belief reads
-        // economy.price; that line takes the full context, built once.
+        // card context serves it. The worker's row carries its belief width
+        // (ColdEconomyPlan.sellSigma), so no belief is rebuilt here; a row
+        // without one reads it, and an enchanted line's belief reads
+        // economy.price: that line takes the full context, built once.
         const ctx = ListingPolicy.cardTraderContext(state);
         let full = null;
         const lineContext = enchant => {
@@ -901,7 +903,7 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         // Listings come from MarketListingPolicy.evaluate: sale candidates
         // and classify already admitted their sources.
         let ownSell = null; // read once: the map below writes nothing
-        const listings = plan.sell.slice(0, 8).map(([selfId, count, price, , plannedEnchant]) => {
+        const listings = plan.sell.slice(0, 8).map(([selfId, count, price, , plannedEnchant, plannedSigma]) => {
             const item = ItemTemplateIndex.find(DataCache.items, selfId);
             let enchant = plannedEnchant;
             if (enchant === undefined) {
@@ -916,10 +918,11 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
                 enchant = [...enchants][0];
             }
             if (!Number.isSafeInteger(enchant) || enchant < 0) throw Error('economy_plan_invalid_enchant');
+            const sigma = Number.isSafeInteger(plannedSigma) && plannedSigma > 0 ? plannedSigma / 1e4 : 0;
             return { selfId: Number(selfId), count: Number(count), price: Number(price), enchant,
                 name: item?.template?.name || `Item ${selfId}`, kind: item?.template?.kind || '',
-                pricing: MarketPricing.lineState(selfId, lineContext(enchant),
-                    { price: Number(price), storeType: AfkTrade.SELL, enchant, count: Number(count) }) };
+                pricing: MarketPricing.lineState(selfId, sigma > 0 ? ctx : lineContext(enchant),
+                    { price: Number(price), storeType: AfkTrade.SELL, enchant, count: Number(count), sigma }) };
         });
         const planTowns = new Map(listings.map((line, at) => [lineKey(line), plan.sell[at][3]]));
         // The worker marks promotion at a real visit (or a standing shop's

@@ -18,6 +18,8 @@ const NeedsEvaluator = require('../Goals/NeedsEvaluator');
 const BuyAds = require('../Economy/BuyAdPolicy');
 const TradeIntent = require('../Economy/TradeIntent');
 const Shots = require('../Economy/ShotCraftPolicy');
+const MarketPricing = require('../Economy/MarketPricing');
+const PriceBelief = require('../Economy/PriceBelief');
 
 // Arrival and recovery are natural decision points; ordinary counts/XP/wallet
 // changes do not schedule main-thread economic work. options.buyOrderEscrow:
@@ -148,7 +150,10 @@ function* prepareNative(state, economy, options) {
         if (showcase) { showcaseRows++; showcaseChanged ||= !unchanged; }
         // A shop replacement needs its complete desired stock, including
         // unchanged lines, so it cannot accidentally return the best one.
-        if (showcase || town && !unchanged) sell.push([Number(row.selfId), Number(row.count), Number(row.price), town, enchant]);
+        if (showcase || town && !unchanged) {
+            const sigma = sellSigma(row, ctx);
+            sell.push([Number(row.selfId), Number(row.count), Number(row.price), town, enchant, ...(sigma ? [sigma] : [])]);
+        }
         yield 'stock';
     }
     if (!showcaseChanged) sell.splice(0, showcaseRows);
@@ -217,6 +222,19 @@ function* prepareNative(state, economy, options) {
             item: row[0], planned: row[1], unitPrice: row[2], source: 'board_bid' });
     }
     return plan;
+}
+// A sell row is [selfId, count, price, town, enchant, sigma?]: sigma is the
+// width of the belief the price was decided with (its line pricing,
+// MarketPricing.lineState), in ten-thousandths (5 B a row instead of ~19; a
+// review reads it as the noise band, so 1e-4 is far below a price step).
+// Main publishes it instead of rebuilding the belief (a first price on a cold
+// cache took 300 ms main turns). A kept line was not re-decided: its belief
+// is read here, where the first prices are warm. Absent when unknown.
+function sellSigma(row, ctx) {
+    const known = row.pricing?.sigma > 0 ? row.pricing.sigma : null;
+    const belief = known ? null : MarketPricing.beliefFor(row.selfId, ctx, Number(row.enchant || 0));
+    const sigma = known ?? (belief ? PriceBelief.sigma(belief) : 0);
+    return Number.isFinite(sigma) && sigma > 0 ? Math.max(1, Math.round(sigma * 1e4)) : 0;
 }
 // The buy batch as the plan carries it: each bid's row and, when any is
 // set, the survival tranche each bid was decided with (BuyAdPolicy

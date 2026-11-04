@@ -61,6 +61,8 @@ const STATIC_BOUGHT = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871];
         assert(!shieldPlans.some(row => row[4] === 3), 'the worn shield stays reserved');
         const prices = plan.sell.map(row => row[2]);
         assert.deepEqual(prices.slice(0, 3), prices.slice().sort((a, b) => b - a).slice(0, 3));
+        assert(plan.sell.every(row => Number.isSafeInteger(row[5]) && row[5] > 0),
+            'every quoted row carries the width of the belief its price was decided with');
         const Economy = invoke('GameServer/Bot/Economy/EconomyContext'), saved = Economy.forState;
         let outcome;
         try {
@@ -81,6 +83,10 @@ const STATIC_BOUGHT = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871];
         const own = Afk.boardIndex().ownerLines(id);
         assert.equal(new Set(own.map(line => `${line.selfId}:${line.enchant}`)).size, own.length);
         assert(!own.some(line => line.selfId === 1), 'the worn weapon cannot be offered');
+        for (const row of plan.sell) {
+            const line = own.find(line => line.selfId === row[0] && line.enchant === row[4]);
+            if (line) assert.equal(line.pricing.sigma, row[5] / 1e4, 'the published line keeps the worker belief width');
+        }
         for (const row of shieldPlans) {
             const line = own.find(line => line.selfId === 626 && line.enchant === row[4]);
             assert(line, 'the town lifecycle publishes the worker selected enchant without an ambiguous-copy failure');
