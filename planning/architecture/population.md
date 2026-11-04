@@ -77,7 +77,7 @@ thread: our rule, so a far bot does not re-decide on every event ([bot-ai.md](bo
 | Round → state | `BotLifeState.prepareResolve` |
 | Cold → hot gate | `handoffToMain` (solo); party / PvP: their own DB `transition` (POP-4) |
 | Main → worker data | `ColdTableChannel` (tables), `snapshot_page` (bots); clan social bypasses it (POP-9) |
-| Spot route | `BotRoute` |
+| Spot route | `BotRoute` (the solo trip's kept route and spot verdicts live on the worker's kernel record) |
 | Versions of a spot's inputs for held results (readers compare, nothing is dispatched) | crowd: `SpotOccupancyIndex.spotVersion` (moves when a bot joins or leaves the spot; this thread's: `SpotProfiles.spotVersion`); a holder's exclusions: `SpotRiskPolicy.exclusionVersion` (revision = the excluded set, untilStep = its first mark's end) |
 | Travel route and fare | `Travel/TravelRoutes`, `TripPayment` |
 | Cold trip time | `ColdTrip` |

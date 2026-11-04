@@ -9,6 +9,7 @@ const Pull = invoke('GameServer/Bot/AI/BotPullEstimate');
 const HitRules = invoke('GameServer/Combat/HitRules');
 const CombatantView = invoke('GameServer/Combat/CombatantView');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
+const { fnv1a32 } = require('../Fnv1a');
 
 const MIN_EFFICIENCY = 0.15;
 // The weakness stats a hit's damage reads (HitRules.targetModifier).
@@ -439,6 +440,34 @@ function readyProfiles(profiles, state, timestamp) {
         stats: { coldCombat: { summon: summon && { ...summon, hp: summon.maxHp } } } }, timestamp, { shot });
     if (ready[1]) ready[1].summonCastMs = 0;
     return ready;
+}
+// What a solo bot's matchup verdicts read of it, as one string: a verdict
+// kept over a spot stands while this reads the same. The solo array
+// (stateProfiles at a timestamp, heldSolo's inputs) is the kit (the stored
+// profile, one object while ColdCombatProfile.kitHash's parts hold: class,
+// level, gear, hennas, skills, capture), survivalKnown, the shot and the
+// servitor: of the shot the verdicts read the kind (actionShot), of the
+// servitor its profile at this moment (HP, MP, cooldowns, a summon's
+// expiry). ready: readyProfiles over that array, where the servitor is a live
+// summon's record at full HP, else the one a summoner raises (its kit's).
+// 'dead': no profiles. Null: no stored solo array stands for the state (a
+// live actor, no character id or timestamp, no bag for the ready read).
+function soloVerdictKey(state, timestamp, ready = false) {
+    if (typeof state.fetchHp === 'function' || !(Number(state.characterId) > 0) || !Number.isFinite(timestamp)
+        || !state.inventory) return null;
+    if (state.vitals?.hp === 0 || state.activity === 'dead') return 'dead';
+    const Cold = coldCombatProfile();
+    const kitHashes = Cold.kitHash(Cold.combatView(state));
+    const kit = Cold.profileFor(state, timestamp, { kitHashes });
+    let servitor;
+    if (ready) {
+        const summon = state.stats?.coldCombat?.summon;
+        servitor = summon?.active && number(summon.maxHp, 0) > 0 && summon.expiresAt > timestamp
+            ? JSON.stringify({ ...summon, hp: undefined }) : Roles.isSummoner(kit) ? 'summoner' : '';
+    } else servitor = JSON.stringify(servitorProfile(kit, state, timestamp)) ?? '';
+    // A servitor's record in 53 bits, as the kit store names a kit: a key kept per bot stays small.
+    if (servitor.length > 16) servitor = fnv1a32(servitor) * 2 ** 21 + (fnv1a32(servitor, 0x9e3779b9) & 0x1fffff);
+    return `${kitHashes.join(',')}|${survivalKnown(state) ? 1 : 0}|${shotKind(Cold.shotSupply(state, timestamp))}|${servitor}`;
 }
 // readyProfiles of a body near a player, from the live actor: its living pet at
 // full HP, else the one it can raise, MP, reuse and cast time aside.
@@ -898,5 +927,5 @@ function damageRate(profiles, target = {}) {
     return rates.reduce((sum, rate) => sum + rate, 0);
 }
 
-module.exports = { MIN_EFFICIENCY, SOLO_GATE_MARGIN, actorProfiles, coldProfiles, servitorProfile, profileKey, shotKind, sameData, shotKindOfKey, readyProfiles, actorReadyProfiles, targetView, skillModifier, channels, damageRate, attackRate, spellRate, incomingRate,
+module.exports = { MIN_EFFICIENCY, SOLO_GATE_MARGIN, actorProfiles, coldProfiles, servitorProfile, profileKey, shotKind, sameData, shotKindOfKey, readyProfiles, actorReadyProfiles, targetView, skillModifier, channels, damageRate, attackRate, spellRate, incomingRate, soloVerdictKey,
     profileStats, skillStats, evaluate, atVitals, ownersAtVitals, soloSurvival, soloCanHunt, pullVerdict, soloSpotUpperBound, stateProfiles, spotMatchup, speciesPulls, spotShares, admitsNone, expectedHit, actorHit };
