@@ -22,7 +22,10 @@ MerchantStoreConfigs}`, `src/Market*`, `src/Economy*`, `Population/ColdEconomy{P
 - **Main reconcile:** `BotAfkMarketService.reconcile` → `reconcileBuyAds`/`reconcileSellShop` recomputes lines on main.
 - **Cold town visit:** `ColdMarketListingService.open`: enchant → NPC cleanup → `saleDecision` →
   `ColdMarketBuyStoreService.sellToBestBuyer` → `StaticBuyerService.sell` → NPC liquidation → `depositCold` →
-  `listOnBoard`.
+  `listOnBoard`. The board writer's "no" to a bot's sell listing (a unit held for its gear, craft or clan,
+  `economy_material_protected`; a moved stack; a cap) is a refusal its shop and ad publishers return with the reason
+  (`BotAfkMarketService.listingRefusal`, counted `market:listing_refused:<reason>`): the visit is deferred, never a
+  command fault.
 - **Hot board review:** `HotBoardReviewService` reprices a hot owner's lines. Hot bots never open shops/ads themselves.
 - **Hot shopping:** `AI/States/ShoppingState` with `TradeService`, `AfkTradeService.buyFromShop/sellToShop`,
   `NpcRestockPlan.purchaseForActor`, `MarketOpportunity`.
@@ -159,7 +162,9 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
   (`ColdEconomyPlan.prepare` → `productionKit` → `ItemDisposition.saleReservations`), since
   `BotAfkMarketService.executePlan` runs `plan.shot` first. `saleReservations` owns the sum: reserves of different
   purposes add (gear plan inputs + one production kit, as main's listing check does), the planned kit and the setup in
-  progress are one purpose (the larger per item).
+  progress are one purpose (the larger per item). Open: in a cold town visit (`PopulationService.applyColdResolve` →
+  `executePlan`, no post-commit step around it) the plan's own refusals (`economy_plan_*`, `afk_trade_shop_changed`
+  from its bid, withdraw and buy-ad blocks) still leave the lifecycle command as a worker fault (`main_command`).
 ## Open questions
 
 1. ECO-1: worker `executePlan` only, with `reconcile`/`open` reduced to executors? — decided 2026-11-03: yes (ECO-1).
