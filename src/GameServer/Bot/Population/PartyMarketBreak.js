@@ -37,6 +37,13 @@ function clanDuty(party) {
 }
 // The order owns the roster through its physical return, even after expiry.
 const warDuty = party => !!party?.stats?.warOperation;
+function arrowUnloadNeed(party, member, now, need = undefined) {
+    if (warDuty(party) || clanDuty(party) || party?.stats?.objective?.sourceKind === 'raid'
+        || party?.stats?.objective?.raidBoss) return null;
+    if (!require('../../Inventory/ArrowStock').unused(member).length) return null;
+    const bag = need === undefined ? cleanupNeed(member, now) : need;
+    return bag?.reason === 'inventory_overweight' ? bag : null;
+}
 function warSupplyItem(id) {
     // Check the actual item, never a wish/errand label that can name crafting
     // inputs or equipment. Enchant scrolls are not combat supplies.
@@ -60,6 +67,7 @@ function pending(party, now = Date.now()) {
     return Object.values(party?.stats?.marketAbsences || {}).filter(value => Number(value.until) > now);
 }
 function sessionReady(party, member, goal, now, config) {
+    if (arrowUnloadNeed(party, member, now)) return true;
     // The hour engine has already selected this quote over earning/farming.
     // An ordinary party's minimum session must not postpone a payable kit.
     if (!warDuty(party) && !clanDuty(party) && party?.stats?.objective?.sourceKind !== 'raid'
@@ -77,10 +85,10 @@ function sessionReady(party, member, goal, now, config) {
         && Number(party.stats?.fightsResolved || 0) >= config.partyMarketBreakMinFights
         && now - Number(party.stats?.lastMarketBreakAt || 0) >= config.partyMarketBreakCooldownMs;
 }
-// The bag need a clan-duty break reads; null outside a clan duty. A caller
+// A clan-duty bag need or an ordinary party's excess-arrow unload. A caller
 // that already has it passes it on (`need`) so the bag is walked once.
 function memberNeed(party, member, now = Date.now()) {
-    return clanDuty(party) ? cleanupNeed(member, now) : null;
+    return clanDuty(party) ? cleanupNeed(member, now) : arrowUnloadNeed(party, member, now);
 }
 function shotRestock(party, current) {
     const objective = party?.stats?.objective;
@@ -100,7 +108,10 @@ function allowed(party, member, now = Date.now(), need = undefined, current = nu
 // shot stock. The native purchase/travel gate still checks its quote and cash.
 function goal(party, member, current, now, need = undefined) {
     if (warDuty(party)) return warSupplyGoal(current) ? current : null;
-    if (!clanDuty(party)) return current;
+    if (!clanDuty(party)) {
+        const bag = arrowUnloadNeed(party, member, now, need);
+        return bag ? { ...cleanupGoal(bag), status: 'active' } : current;
+    }
     const bag = need === undefined ? cleanupNeed(member, now) : need;
     if (['inventory_capacity', 'inventory_overweight'].includes(bag?.reason)) return { ...cleanupGoal(bag), status: 'active' };
     return shotRestock(party, current) ? current : null;

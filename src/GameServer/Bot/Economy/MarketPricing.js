@@ -47,22 +47,42 @@ function traderContext(state, deps = {}) {
         return selected ? { ...selected.source, applicableUnits: selected.applicableUnits,
             willingUnits: selected.willingUnits, delayHours: selected.delayHours } : null;
     };
-    let saleAmounts = null;
+    const saleAmounts = new Map();
     const saleCount = line => {
         // Accepted custody keeps its advertised remainder until completion.
-        if (line.storeType !== SELL || line.custodyPolicy !== 1 || state.stats?.tradeMeeting)
+        if (line.storeType !== SELL || state.stats?.tradeMeeting)
             return line.count;
-        if (!saleAmounts) {
+        const backed = line.custodyPolicy !== 1;
+        if (!saleAmounts.has(backed)) {
             const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
-            const candidates = Disposition.saleCandidates(state, { unlimited: true,
+            const board = deps.board || economy.board;
+            const source = backed ? invoke('GameServer/Bot/Economy/MarketListingPolicy')
+                .ownSaleInputs(state, board?.ownerLines?.(Number(state.characterId)) || []).state : state;
+            const candidates = Disposition.saleCandidates(source, { unlimited: true,
                 keptAmounts: {
                     ...invoke('GameServer/Inventory/ShotStock').keptAmounts(state, economy),
                     ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: economy.stock('potions').target }),
                     ...invoke('GameServer/Bot/Travel/ScrollStock').keptAmounts(state)
                 }, reserved: economy.craftReservations || Disposition.selectedCraftAmounts(state, economy.network) });
-            saleAmounts = new Map(candidates.map(item => [`${item.selfId}:${item.enchant || 0}`, item.count]));
+            const amounts = new Map(candidates.map(item => [`${item.selfId}:${item.enchant || 0}`, item.count]));
+            const lines = new Map();
+            if (backed) {
+                const remaining = new Map(amounts);
+                const owned = (board?.ownerLines?.(Number(state.characterId)) || [])
+                    .filter(row => row.storeType === SELL && row.custodyPolicy !== 1)
+                    .sort((a, b) => Number(a.lineId) - Number(b.lineId));
+                for (const row of owned) {
+                    const key = `${row.selfId}:${row.enchant || 0}`;
+                    const amount = Math.min(row.count, remaining.get(key) || 0);
+                    lines.set(row.lineId, amount);
+                    remaining.set(key, Math.max(0, Number(remaining.get(key) || 0) - amount));
+                }
+            }
+            saleAmounts.set(backed, { amounts, lines });
         }
-        return Math.min(line.count, saleAmounts.get(`${line.selfId}:${line.enchant || 0}`) || 0);
+        const available = saleAmounts.get(backed);
+        return Math.min(line.count, available.lines.get(line.lineId)
+            ?? available.amounts.get(`${line.selfId}:${line.enchant || 0}`) ?? 0);
     };
     return {
         state,
@@ -321,8 +341,10 @@ function look(state, lines, ctx) {
             withdrawals.push(move); continue;
         }
         const count = ctx.saleCount?.(line);
-        if (line.storeType === SELL && line.custodyPolicy === 1 && Number.isSafeInteger(count) && count < line.count) {
-            if (!count) withdrawals.push(move);
+        if (line.storeType === SELL && Number.isSafeInteger(count) && count < line.count) {
+            // Return the backed line through native custody before republishing
+            // a smaller surplus; conditional ads can shrink in place.
+            if (!count || line.custodyPolicy !== 1) withdrawals.push(move);
             else reprices.push({ ...move, price: line.price, count,
                 pricing: { ...line.pricing, seenCount: count } });
             continue;

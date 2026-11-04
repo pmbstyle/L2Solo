@@ -61,7 +61,9 @@ function collect(state, options = {}) {
         const maximum = template?.etc?.stackable ? Number.MAX_SAFE_INTEGER : 10000;
         const desired = Math.floor(amount);
         const available = Funding.spendable(current, 0, funding);
-        const count = Math.min(maximum, desired, Math.floor(Math.min(cap, available) / price));
+        const Arrows = require('../../Inventory/ArrowStock');
+        const count = Math.min(maximum, desired, Math.floor(Math.min(cap, available) / price),
+            Arrows.isArrow({ selfId }) ? Arrows.purchaseAmount(current, selfId, desired) : Infinity);
         if (!(count > 0)) {
             if (Diagnostics.active()) observePlan(state, current, selfId, amount, 0, available, offer, attribution, 'no_units');
             return;
@@ -112,7 +114,9 @@ function collect(state, options = {}) {
             add(736, plan.amount, offer, {}, { survivalCost: context.kitCost(736, offer.price) });
         }
     }
-    for (const extra of (options.extras || []).slice(0, LIMIT)) {
+    const Arrows = require('../../Inventory/ArrowStock');
+    const extras = (options.extras || []).slice(0, LIMIT);
+    for (const extra of extras.filter(row => !Arrows.isArrow(row))) {
         const offer = extra.offer || quoteFor(extra.selfId, town, extra.unitPrice ?? null, options.seller);
         add(extra.selfId, extra.amount, offer, extra.funding, extra);
     }
@@ -123,6 +127,11 @@ function collect(state, options = {}) {
             const plan = Shot.restockPlan(current, { plan: shot, unitPrice: offer.price, potionUnitPrice: 0, context });
             add(shot.selfId, plan.npcAmount, offer, {}, { survivalCost: context.kitCost(shot.selfId, offer.price) });
         }
+    }
+    // Arrow capacity sees every other funded item in this restock first.
+    for (const extra of extras.filter(Arrows.isArrow)) {
+        const offer = extra.offer || quoteFor(extra.selfId, town, extra.unitPrice ?? null, options.seller);
+        add(extra.selfId, extra.amount, offer, extra.funding, extra);
     }
     if (Diagnostics.active()) Diagnostics.duration('npc_plan', performance.now() - started);
     return [...baskets.values()];

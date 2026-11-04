@@ -4,6 +4,14 @@ const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const PickupCapacity = require('../../Inventory/PickupCapacity');
 const GroundItemVisibility = require('../GroundItemVisibility');
 
+function rejectCapacity(session, reason) {
+    session.dataSendToMe(ServerResponse.actionFailed());
+    if (reason === 'slots' || reason === 'weight') {
+        ConsoleText.transmit(session, reason === 'slots'
+            ? ConsoleText.caption.inventoryFull : ConsoleText.caption.loadLimitExceeded);
+    }
+}
+
 function pickupItem(session, actor, item) {
     if (!actor || session?.actor !== actor || !actor.backpack ||
         actor.isDead?.() || actor.fetchIsOnline?.() === false) return false;
@@ -15,24 +23,30 @@ function pickupItem(session, actor, item) {
     const canonicalItem = this.items.spawns[spawnIndex];
     const selfId = canonicalItem.fetchSelfId();
     const amount = canonicalItem.fetchAmount();
+    let capacityFailure;
     const allocations = selfId === 57
         ? PartyCompanionService.adenaAllocations(session, amount, canonicalItem)
-        : [{ session: PartyCompanionService.resolveLootSession(session, selfId, canonicalItem), amount }];
+        : [{ session: PartyCompanionService.resolveLootSession(session, selfId, canonicalItem, {
+            canReceive(recipient) {
+                const { reason } = PickupCapacity.check(recipient?.actor, selfId, amount, canonicalItem);
+                if (reason) capacityFailure ||= reason;
+                return !reason;
+            }
+        }), amount }];
     // Validate every recipient before claiming the drop, so a stale session
     // cannot crash the award or consume loot without receiving it.
     if (!allocations.length || allocations.some((entry) => !entry.session?.actor?.backpack ||
-        entry.session.actor.isDead?.() || entry.session.actor.fetchIsOnline?.() === false)) return false;
+        entry.session.actor.isDead?.() || entry.session.actor.fetchIsOnline?.() === false)) {
+        if (capacityFailure) rejectCapacity(session, capacityFailure);
+        return false;
+    }
 
     const releases = [];
     for (const entry of allocations) {
         const reservation = PickupCapacity.reserve(entry.session.actor, selfId, entry.amount, canonicalItem);
         if (!reservation.release) {
             releases.forEach(done => done());
-            session.dataSendToMe(ServerResponse.actionFailed());
-            if (reservation.reason === 'slots' || reservation.reason === 'weight') {
-                ConsoleText.transmit(session, reservation.reason === 'slots'
-                    ? ConsoleText.caption.inventoryFull : ConsoleText.caption.loadLimitExceeded);
-            }
+            rejectCapacity(session, reservation.reason);
             return false;
         }
         releases.push(reservation.release);

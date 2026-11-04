@@ -37,6 +37,23 @@ async function check(label, playerItems, botItems, playerOffer, botOffer, blocke
     if (blocked) assert.deepStrictEqual(result.capacityBlocked, blocked, label);
     Trade.cancel(player);
 }
+async function weightCheck(label, playerLoad, botLoad, outgoing, incoming, expected = null) {
+    const heavy = (id, count, mass) => new Item(id, { selfId: id, name: 'Heavy stack', kind: 'Other.Shot',
+        amount: count, mass, stackable: true, equipped: false });
+    const player = session(900, [heavy(5100, playerLoad, 1)]);
+    const bot = session(901, [heavy(5200, botLoad, 1)], true);
+    player.actor.fetchMaxLoad = bot.actor.fetchMaxLoad = () => 100;
+    bot.partyCompanion = true; bot.followPlayerSession = player;
+    assert(Trade.startBotTrade(bot, player).ok);
+    if (outgoing) assert(Trade.addItem(player, 5100, outgoing).ok);
+    if (incoming) assert(Trade.offerBotItem(bot, 5200, incoming).ok);
+    const before = databaseCalls;
+    const result = await Trade.commit(player);
+    assert.equal(result.reason, expected ? 'inventory_weight' : 'database_failed', label);
+    assert.equal(databaseCalls - before, expected ? 0 : 1, label);
+    if (expected) assert.deepEqual(result.weightBlocked, expected, label);
+    Trade.cancel(player);
+}
 (async () => {
     try {
         await check('83-slot sender can give stockings to 15-slot bot', [...slots(82, 1000), item(5000, 471, 1, false)], slots(15, 2000), [[5000, 1]], []);
@@ -47,6 +64,13 @@ async function check(label, playerItems, botItems, playerOffer, botOffer, blocke
         await check('multiple incoming rows share one new stack', [item(1000, 5000), item(1001, 5000)], slots(79, 2000), [[1000, 1], [1001, 1]], []);
         await check('nonstackable needs its own slot', [item(1000, 5000, 1, false)], slots(80, 2000), [[1000, 1]], [], { player: false, bot: true });
         await check('both receivers blocked', [item(1000, 1000, 2), ...slots(79, 1001)], [item(2000, 2000, 2), ...slots(79, 2001)], [[1000, 1]], [[2000, 1]], { player: true, bot: true });
+        await weightCheck('one stack cannot overload a bot', 80, 90, 20, 0, { player: false, bot: true });
+        await weightCheck('outbound bot gift cannot overload the player', 90, 80, 0, 20, { player: true, bot: false });
+        await weightCheck('exact maximum weight fits', 80, 80, 20, 0);
+        await weightCheck('outgoing weight frees capacity in the same trade', 100, 100, 20, 20);
+        await weightCheck('already overloaded sender can unload', 200, 80, 20, 0);
+        await weightCheck('already overloaded receiver cannot get heavier', 80, 200, 20, 0, { player: false, bot: true });
+        await weightCheck('already overloaded parties can swap equal weight', 200, 200, 20, 20);
         console.log('Bot trade capacity checks passed');
     } finally { Database.transferInventoryBetweenCharacters = original; }
 })().catch((error) => { console.error(error); process.exitCode = 1; });

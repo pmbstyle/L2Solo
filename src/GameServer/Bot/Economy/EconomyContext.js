@@ -355,7 +355,7 @@ function heldBuildVerdict(state, proof, deps = {}, options = {}) {
     if (own !== null && ColdEconomyDecision.heldFor(state, own) < heldUnits && refuse('quantity', ['sources', 'money']) && !collect) return out;
     // The proof is held packed and read as a stream: no rows array.
     const ownRow = own === null ? null : row => ownQuantityRow(row, leaf.rootKey, own);
-    const stock = stockReader(state, key => roots.get(key));
+    const stock = stockReader(state, key => roots.get(key), deps.board);
     // A reserved input's stock row holds while its owned+incoming does not fall.
     const stockFor = !reserved ? stock : (id, rootKey, row) => {
         const current = stock(id, rootKey);
@@ -1427,7 +1427,7 @@ function forState(state = {}, deps = {}) {
     // One stock reader for the provider's gear witnesses and the network
     // build; the projection is read lazily once it exists (stock roots).
     context.wallet = Funding.budget(state, deps.buyOrderEscrow);
-    const nativeStock = stockReader(state, rootKey => context.projection?.nodes.find(node => node.key === rootKey)?.object?.itemId);
+    const nativeStock = stockReader(state, rootKey => context.projection?.nodes.find(node => node.key === rootKey)?.object?.itemId, sourceBoard);
     context.stockFor = (id, rootKey) => quantityInputs.stock(id, rootKey, nativeStock(id, rootKey));
     context.completionKey = Crystallization.completionKey(state, quantityInputs);
     const extra = [...extensions.values()].flatMap(provider => provider(state, context) || []);
@@ -1682,7 +1682,8 @@ function planOf(context, base, { key, tripHour, projection = null, knowledgeEnab
 }
 // What a review's stock reader, usefulness, worth and purchase budget read:
 // one copy for the build and every later view of its plan.
-function stockReader(state, rootItem) {
+function stockReader(state, rootItem, board = null) {
+    board ||= isMainThread ? invoke('GameServer/AfkTrade/AfkTradeService').boardIndex() : null;
     const reserved = invoke('GameServer/Bot/AI/PersonalGearProgression').preparedAmounts(state);
     // Production actions cannot consume the collected personal gear kit.
     // Their purchase graph must see that same free stock, or an input trip
@@ -1693,12 +1694,35 @@ function stockReader(state, rootItem) {
     const active = Warehouse.ready() && Warehouse.hasItems(state) && require('./CraftWarehousePolicy').planFor(state);
     const bank = active ? require('./CraftWarehousePolicy').available(state, Object.values(Warehouse.inventory(state))).warehouse : null;
     const bankRoot = active && `power:${Number(active.plan.target.selfId)}:${Number(active.plan.target.slot)}`;
+    const escrow = new Map();
+    for (const line of board?.ownerLines?.(Number(state.characterId)) || []) {
+        if (line.storeType === SELL && line.custodyPolicy !== 1 && !Number(line.enchant || 0))
+            escrow.set(Number(line.selfId), Number(escrow.get(Number(line.selfId)) || 0) + positive(line.count));
+    }
+    const retainedBanks = new Map();
+    if (Warehouse.ready() && Warehouse.hasItems(state) && state.stats?.equipmentPlan?.inputPreparation) {
+        const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+        const remaining = { ...Disposition.storedEquipmentAmounts(state).retained }, seen = new Set();
+        for (let saved = state.stats.equipmentPlan.inputPreparation; saved && !seen.has(saved); saved = saved.inputPreparation) {
+            seen.add(saved);
+            const assigned = {};
+            for (const [id, need] of Object.entries(Disposition.equipmentMaterialAmounts(state, saved))) {
+                assigned[id] = Math.min(Number(remaining[id] || 0), need);
+                remaining[id] = Number(remaining[id] || 0) - assigned[id];
+            }
+            retainedBanks.set(`power:${Number(saved.target?.selfId)}:${Number(saved.target?.slot)}`, assigned);
+        }
+    }
     return (id, rootKey) => ({ owned: supply?.key === rootKey ? require('./ClanCrystalSupply').stock(state, id)
         : rootKey.startsWith('stock:') && rootItem(rootKey) === id
         ? positive(state.inventory?.[id]?.amount) : invoke('GameServer/Bot/Economy/WealthCraftDecision').freeAmount(state, state.inventory?.[id] || {},
             rootKey.startsWith('resale:') ? productionReserved ||= invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts(state) : reserved),
     incoming: positive(state.acceptedIncoming?.[id]) + (rootKey === bankRoot && Number(id) !== Number(active.plan.target.selfId)
-        ? positive(bank?.[id]) : 0) });
+        ? positive(bank?.[id]) : positive(retainedBanks.get(rootKey)?.[id]))
+        // Own backed quotes remain owned inputs, but must be reclaimed before
+        // execution. Never count a finished item or a conditional ad twice.
+        + (/^power:\d+:\d+$/.test(rootKey) && Number(rootKey.split(':')[1]) !== Number(id)
+            ? positive(escrow.get(Number(id))) : 0) });
 }
 function valueReaders(state, network, values, persona, knowledgeEnabled, kitCost, money) {
     const itemUsefulness = id => invoke('GameServer/Bot/Population/ColdEconomyDecision').personalUsefulness(
@@ -1764,7 +1788,7 @@ function view(state, plan, deps, built = {}) {
         return context;
     }
     context.wallet = Funding.budget(state, deps.buyOrderEscrow);
-    context.stockFor = stockReader(state, rootKey => plan.stockRoots.get(rootKey));
+    context.stockFor = stockReader(state, rootKey => plan.stockRoots.get(rootKey), built.board);
     // A later view of an entry without its nodes (a worker's solo bot) has
     // the usefulness values only; a group solve that needs the members'
     // nodes rebuilds them (forGroup).

@@ -135,6 +135,10 @@ assert.equal(context({ ...stockState, inventory: { 1463: { ...stockState.invento
     .saleCount(advertised), 0, 'consumed stock below the personal reserve has no saleable remainder');
 assert.equal(context({ ...stockState, stats: { tradeMeeting: [1, 1] } }).saleCount(advertised), 100,
     'accepted meeting custody keeps its quote until completion');
-assert.equal(context(stockState).saleCount({ ...advertised, custodyPolicy: 0 }), 100,
+// Backed quantities come from an actual owned record, separate from the bag.
+board.put({ id: 97, ownerId: stockState.characterId, kind: 'shop', custodyPolicy: 0,
+    storeType: 1, town: 'Dwarven Village', lines: [{ lineId: 98, selfId: 1463, count: 100, price: 10 }] });
+const backedStock = board.ownerLines(stockState.characterId).find(line => line.lineId === 98);
+assert.equal(context(stockState).saleCount(backedStock), 100,
     'backed shop stock is independent of ammunition still in the bag');
 console.log('PASS own conditional quantities respect current ammunition and accepted custody');

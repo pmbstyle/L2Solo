@@ -20,6 +20,7 @@ function refusalReason(error) {
         case 'economy_intent_changed': case 'economy_sequence_changed': case 'economy_operation_in_flight':
         case 'economy_admission_pressure': case 'npc_seller_changed': case 'npc_quote_changed':
         case 'npc_item_template_changed': case 'invalid npc basket': case 'invalid npc purchase':
+        case 'arrow_stock_limit':
             return error.message;
         default: return 'native_error';
     }

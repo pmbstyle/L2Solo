@@ -16,6 +16,7 @@ const notRunTests = new Map([
 ]);
 
 const tests = [
+    'tests/test_equipment_input_warehouse.js',
     'tests/test_active_craft_warehouse.js',
     'tests/test_active_craft_warehouse_sqlite.js',
     'tests/test_clan_war_home.js',
@@ -510,6 +511,9 @@ const tests = [
     'tests/test_bot_dye_cleanup.js',
     'tests/test_player_dye_stacking.js',
     'tests/test_bot_inventory_capacity_cleanup.js',
+    'tests/test_companion_inventory_cleanup.js',
+    'tests/test_bot_arrow_cleanup.js',
+    'tests/test_arrow_stock_limits.js',
     'tests/test_bot_goal_copies.js',
     'tests/test_cold_cleanup_keeps_resolve.js',
     'tests/test_cold_cleanup_economy_authority.js',
@@ -598,6 +602,7 @@ const tests = [
     'tests/test_bot_market_listing_policy.js',
     'tests/test_ready_trade_choice.js',
     'tests/test_standing_sale_answer.js',
+    'tests/test_standing_sale_quantity.js',
     'tests/test_bid_sale.js',
     'tests/test_ready_trade_execution.js',
     'tests/test_bot_quest_item_eligibility.js',
@@ -893,6 +898,7 @@ const tests = [
     'tests/test_ground_item_pickup_race.js',
     'tests/test_ground_item_visibility.js',
     'tests/test_pickup_inventory_capacity.js',
+    'tests/test_party_loot_capacity.js',
     'tests/test_pk_drop_pickup_enchant.js',
     'tests/test_pickup_session_lifecycle.js',
     'tests/test_pickup_c4_timing.js',

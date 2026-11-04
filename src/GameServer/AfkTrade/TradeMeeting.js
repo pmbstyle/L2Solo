@@ -110,7 +110,10 @@ function create(io) {
             const life = one("SELECT *, json_extract(statsJson,'$.playerPartyTakeover.playerId') playerPartyId FROM bot_life_state WHERE characterId=?", [id]);
             if (io.canStartTrade && !io.canStartTrade(id, life)) throw Error('trade_meeting_party_busy');
             if (life && io.canReceive) for (const line of request.lines.filter(line => line.payer === side)) {
-                io.canReceive(id, life, line.selfId);
+                const incoming = request.lines.filter(row => row.payer === side);
+                io.canReceive(id, life, line.selfId,
+                    incoming.filter(row => row.selfId === line.selfId).reduce((n, row) => n + row.count, 0),
+                    incoming.filter(row => row.selfId !== line.selfId).map(row => ({ selfId: row.selfId, amount: row.count })));
             }
             if (life && (Number(life.hp) <= 0 || life.activity === 'dead' || Number(life.simulationRevision) !== party.revision || life.phase !== party.phase
                 || Number(life.lastHotAt || 0) !== party.hotAt)) throw Error('trade_meeting_authority_changed');
@@ -223,6 +226,20 @@ function create(io) {
         if (row.state !== 'accepted') return result(row);
         const actors = ids(row), changed = [], closed = [];
         const lines = all('SELECT * FROM board_trade_meeting_lines WHERE meetingId=? ORDER BY ordinal', [id]);
+        if (completed && io.canCompleteReceive) {
+            try {
+                actors.forEach((actor, side) => {
+                    const life = one('SELECT * FROM bot_life_state WHERE characterId=?', [actor]);
+                    const incoming = lines.filter(line => line.custodyType === 'trade' && line.payer === side && line.heldCount > 0);
+                    for (const line of incoming) io.canCompleteReceive(actor, life, line.selfId,
+                        incoming.filter(other => other.selfId === line.selfId).reduce((n, other) => n + other.heldCount, 0),
+                        incoming.filter(other => other.selfId !== line.selfId).map(other => ({ selfId: other.selfId, amount: other.heldCount })), row.id);
+                });
+            } catch (error) {
+                if (error.message === 'arrow_stock_limit') return terminal(id, false, error.message);
+                throw error;
+            }
+        }
         for (const line of lines) {
             if (!line.heldCount) continue;
             const owner = completed && line.custodyType === 'trade' ? line.payer : 1 - line.payer;
