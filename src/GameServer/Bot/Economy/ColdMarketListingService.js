@@ -54,7 +54,9 @@ function marketAwareNpcCandidates(state, options = {}) {
 }
 
 function preTradeNpcCleanup(state, forcedCleanup = {}, timestamp = Date.now()) {
-    const candidates = marketAwareNpcCandidates(state, { allowPreTradeCleanup: true });
+    const candidates = forcedCleanup.cleanupReason === 'unused_arrows'
+        ? ItemDisposition.unusedArrowCandidates(state)
+        : marketAwareNpcCandidates(state, { allowPreTradeCleanup: true });
     const clearedState = {
         ...state,
         stats: {
@@ -98,7 +100,8 @@ function open(state, options = {}) {
         // cleanup marker. Recheck the arrived bag: refusing its unload sends
         // the same overweight bot straight back to town on its next step.
         const floor = options.forcedCleanup ? null : require('../Population/SurvivalFloor').bagFor(state, timestamp);
-        const forcedCleanup = options.forcedCleanup || (floor?.action === 'unload' ? { cleanupReason: floor.reason } : null);
+        const forcedCleanup = options.forcedCleanup || (floor?.action === 'unload' ? { cleanupReason: floor.reason }
+            : ItemDisposition.unusedArrowCandidates(state).length ? { cleanupReason: 'unused_arrows' } : null);
         if (!forcedCleanup) return Promise.resolve({ state, listed: false, reason: 'sell_retry_cooldown' });
         // Cleanup may bypass the travel delay, but must not open another WTS.
         // Learn recipes first, as the sale path does: a learnable one is not junk.
@@ -126,7 +129,7 @@ function open(state, options = {}) {
     options = { ...options, stored, now: timestamp };
     state = preparedState || state;
     const forcedCleanup = options.forcedCleanup || null;
-    if (forcedCleanup?.cleanupReason === 'npc_only_inventory') {
+    if (['npc_only_inventory', 'unused_arrows'].includes(forcedCleanup?.cleanupReason)) {
         return preTradeNpcCleanup(state, forcedCleanup, timestamp);
     }
     const initialItems = ItemDisposition.saleCandidates(state, options);

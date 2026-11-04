@@ -91,7 +91,8 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
 | What to sell / list / NPC-sell | `MarketListingPolicy.evaluate` / `npcSaleForActor` |
 | Bid lines | `BuyAdPolicy.linesFor/bidFor` |
 | Shop town | `MarketTownPolicy.chooseTown` (see ECO-5) |
-| Reservations, sale and warehouse candidates | `ItemDisposition` (see ECO-7) |
+| Reservations, sale and warehouse candidates | `ItemDisposition` (see ECO-7); a paused or retained gear project's stored share: `ItemDisposition.storedEquipmentAmounts` (bank once across both owners) |
+| A bot's arrow stock (what it keeps, may buy, sells as surplus) | `Inventory/ArrowStock`: one grade, the equipped bow's, up to 2000 and below the first weight penalty (`ceil(maxLoad / 2) − 1`); a bot's bow spends no arrows (`Actor/BowResources`), so the stock is weight only. Read at every purchase planner and writer (ECO-15) |
 | Board state, settlement | `AfkTradeService` + `BoardIndex`; meetings `TradeMeetingService` |
 | Cold physical purchase | `ColdMarketService.acquire` |
 | NPC purchase | `NpcRestockPlan` → `NpcPurchaseBasket` |
@@ -157,6 +158,16 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
   agreed, then its meeting point, stock or need moves before it settles: worker and main work spent for nothing, and
   bots that never get their item. Find why the meeting point changes between agreement and arrival (owner: the trade
   meeting, `AfkTrade` meeting preparation / `BotAfkMarketService`) and whether the plan can hold it.
+- **ECO-15 arrow cap and companion unload checked in many places** (merged from develop PR #207). The arrow
+  capacity (`ArrowStock.purchaseAmount`) is re-checked at ~11 call sites: planners (`NpcRestockPlan.collect`,
+  `ReadyTradeChoice.purchase`, `WishPurchaseEvidence.reader`, `ColdOccupationSources` `preparePurchase`), buyers
+  (`ColdMarketService.buyOffer`, `BotLifeState.marketPurchaseBlocker`, `TradeService.buyFromStore`) and writers
+  (`Database.checkArrowPurchaseUnsafe` in the AFK buy, buy-ad sale, private store, NPC basket, trade meeting
+  receive/complete), instead of one admission the planners read. A hot companion's unload
+  (`AI/CompanionInventoryCleanup`) picks its own deposit set by weight and sells arrows through
+  `Database.sellItemsToNpc` directly, beside `BotWarehouseService.depositActorAtWarehouse` and `SellJunk` (ECO-7, ECO-2).
+  `PopulationService` skips the worker plan for a shopping bot holding surplus arrows (`arrowCleanupFirst`), a main
+  decision beside the worker plan (ECO-1).
 ## Open questions
 
 1. ECO-1: worker `executePlan` only, with `reconcile`/`open` reduced to executors? — decided 2026-11-03: yes (ECO-1).

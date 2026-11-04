@@ -357,6 +357,7 @@ function craftBagIdentity(state) {
     ]);
     return require('node:crypto').createHash('sha256').update(JSON.stringify([items,
         plan.recipeId, plan.target, plan.status, plan.strategy, plan.outputAmount, plan.craftProviders, plan.componentRecipes,
+        plan.exchange, plan.materials, plan.heldInputs,
         plan.inputPreparation, state.stats?.shotCraft?.preparing, state.stats?.wealthCraft,
         state.stats?.clanMaterialDemand, invoke('GameServer/Clan/ClanSupplyPolicy').contentIdentity(state)
     ])).digest('hex');
@@ -380,7 +381,8 @@ function beginCraftReturn(state, timestamp = Date.now(), { allowParty = false } 
     const plan = ItemDisposition.equipmentInputPlan(state);
     if (state?.phase !== 'cold' || state.activity !== 'hunting' || !allowParty && (state.party?.partyId || state.partyId)
         || state.stats?.marketReturn || state.stats?.tradeMeeting || plan?.clanGoal
-        || plan?.strategy !== 'craft' || !['active', 'component_ready', 'ready_to_craft'].includes(plan.status)) return null;
+        || state.stats?.equipmentPlan?.status === 'deferred'
+        || !['craft', 'luxury_exchange'].includes(plan?.strategy) || !['active', 'component_ready', 'ready_to_craft'].includes(plan.status)) return null;
     const Index = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
     if (!Index.ready() || !Index.hasItems(state)) return null;
     const identity = Index.contentIdentity(state), previous = state.stats?.craftWarehouseVisit;
@@ -420,8 +422,9 @@ function marketRequests(state, warehouseItems, reserved = new Map(), options = {
     // bag projection alongside them.
     // Warehouse units in this temporary bag are not counted again as occupied
     // room. Only the stock reserved to remain there limits the E keep option.
+    const Index = invoke('GameServer/Bot/Economy/PersonalWarehouseIndex');
     const decision = invoke('GameServer/Bot/Economy/BotAfkMarketService').saleDecision(
-        { ...state, inventory }, { ...options, economy, stored: reserved });
+        { ...state, inventory, [Index.STOCK_INCLUDED]: true }, { ...options, economy, stored: reserved });
     const inBag = new Map(ItemDisposition.saleCandidates(state, { unlimited: true,
         reserved: economy.craftReservations || ItemDisposition.selectedCraftAmounts(state, economy.network) })
         .map((item) => [`${Number(item.selfId)}:${Number(item.enchant || 0)}`, Number(item.count)]));
@@ -500,17 +503,17 @@ function storedReservations(state, warehouseItems, materials) {
     const policy = require('./CraftWarehousePolicy'), active = policy.planFor(state);
     if (active) {
         const stock = policy.available(state, warehouseItems);
-        const demand = ItemDisposition.equipmentMaterialAmounts({ ...state, inventory: stock.combined }, active.plan);
+        const demand = ItemDisposition.equipmentMaterialAmounts({ ...state, inventory: stock.combined }, state.stats.equipmentPlan);
         for (const [id, needed] of Object.entries(demand)) {
             const keep = Math.min(Number(stock.warehouse[id] || 0), Math.max(0, Number(needed) - Number(stock.bag[id] || 0)));
             reserved.set(Number(id), Math.max(Number(reserved.get(Number(id)) || 0), keep));
         }
     }
-    // A paused personal kit owns its stored share too. Active material
-    // withdrawals above take priority when both kits need the same item.
-    for (const [id, held] of Object.entries(ItemDisposition.retainedEquipmentAmounts(state))) {
-        const storedNeed = Math.max(0, Number(held) - Number(state.inventory?.[id]?.amount || 0));
-        reserved.set(Number(id), Number(reserved.get(Number(id)) || 0) + storedNeed);
+    const summary = LifeState.inventorySummaryFromItems(warehouseItems);
+    const parked = ItemDisposition.storedEquipmentAmounts(state, summary);
+    for (const id of new Set([...Object.keys(parked.primary), ...Object.keys(parked.retained)])) {
+        const keep = Number(parked.primary[id] || 0) + Number(parked.retained[id] || 0);
+        reserved.set(Number(id), Math.max(Number(reserved.get(Number(id)) || 0), keep));
     }
     return reserved;
 }

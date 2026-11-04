@@ -181,28 +181,6 @@ async function pruneResourceLots(ownerId) {
 }
 
 const lineKey = line => `${Number(line.selfId)}:${Number(line.enchant || 0)}`;
-function stateWithEscrow(state, stock) {
-    if (Number(stock?.storeType) !== AfkTrade.SELL) return state;
-    const combined = { ...(state.inventory || {}) };
-    for (const line of stock.lines || []) {
-        const selfId = Number(line.selfId || 0);
-        const count = Math.max(0, Number(line.count || 0));
-        if (!selfId || !count) continue;
-        const template = ItemTemplateIndex.find(DataCache.items, selfId);
-        const previous = combined[String(selfId)] || {};
-        combined[String(selfId)] = {
-            ...previous, selfId, name: line.name || previous.name || template?.template?.name,
-            kind: previous.kind || template?.template?.kind,
-            rank: previous.rank || template?.etc?.rank,
-            amount: Math.max(0, Number(previous.amount || 0)) + count,
-            enchant: Math.max(Number(previous.enchant || 0), Number(line.enchant || 0)),
-            instances: [...(previous.instances || []), {id:Number(line.sourceObjectId || line.objectId),amount:count,
-                equipped:false,slot:line.slot,enchant:Number(line.enchant || 0)}]
-        };
-    }
-    return { ...state, inventory: combined };
-}
-
 // The bot's shop lines and what it lists past them (sell ads), from the
 // sale decision (MarketListingPolicy.evaluate) on its bag and its shop: a kept
 // line keeps its price (the bot's own look reprices it, MarketPricing.look); a new
@@ -223,7 +201,7 @@ function sellLines(state, stock, inventory, evaluateOptions = {}) {
             fills: Number(line.fills || 0),
             pricing: line.pricing
         })) : [];
-    const classified = evaluateOptions.decided || decide(state, stock, existing, evaluateOptions);
+    const classified = evaluateOptions.decided || decide(state, evaluateOptions);
     const listings = classified.listings;
     const remaining = new Map(listings.map((item) => [lineKey(item), Number(item.count)]));
     const listed = new Map((classified.decisions || [])
@@ -281,25 +259,19 @@ function sellLines(state, stock, inventory, evaluateOptions = {}) {
 // The sale decision (MarketListingPolicy.evaluate) over the bot's bag and its
 // shop's stock: the shop's lines keep their slot and price, its sell ads
 // take their slots.
-function decide(state, stock, existing, options = {}) {
+function decide(state, options = {}) {
     const own = AfkTrade.boardIndex().ownerLines(Number(state.characterId)).filter(line => line.storeType === AfkTrade.SELL);
-    return ListingPolicy.evaluate(stateWithEscrow(state, stock), {
-        ...options, economy: options.economy || ColdEconomyDecision.economyFor(state),
-        stockQuotes: true, slots: ListingPolicy.BOARD_SLOTS,
-        kept: new Map([...own, ...existing].map((line) => [lineKey(line), line.price])),
-        conditionalKept: new Set(own.filter(line => line.custodyPolicy === 1).map(lineKey))
+    const input = ListingPolicy.ownSaleInputs(state, own, {
+        ...options, economy: options.economy || ColdEconomyDecision.economyFor(state)
     });
+    return ListingPolicy.evaluate(input.state, input.options);
 }
 
 // A market visit's one sale decision (one decision point, evaluated once):
 // what goes into the buy ads of the town, to the NPC, onto the board
 // (listOnBoard takes it as options.decided).
 function saleDecision(state, options = {}) {
-    const shop = AfkTrade.findOwnerProjection(state.characterId)?.shop;
-    const stock = Number(shop?.storeType) === AfkTrade.SELL ? shop : null;
-    const existing = stock ? stock.lines.filter((line) => Number(line.count) > 0)
-        .map((line) => ({ selfId: Number(line.selfId), price: Number(line.price) })) : [];
-    return decide(state, stock, existing, options);
+    return decide(state, options);
 }
 
 // The bot's buy ad lines carry the quote, its authored worth and cursors.

@@ -290,8 +290,11 @@ assert.strictEqual(originalScrollDisposition.decisions[0].priced.market.buyback,
 assert.deepStrictEqual(originalScrollDisposition.warehouse, [],
     'an ordinary adventurer does not warehouse personal surplus');
 assert.strictEqual(originalScrollDisposition.npc[0]?.selfId, dEnchantScroll.selfId);
-assert.strictEqual(originalScrollDisposition.npc[0]?.count, 81,
+assert.strictEqual(originalScrollDisposition.npc.reduce((sum, item) => sum + item.count, 0), 81,
     'all unreserved ordinary scroll surplus finances personal progression');
+const npcScrollIds = originalScrollDisposition.npc.flatMap(item => item.objectIds || []);
+assert.strictEqual(npcScrollIds.length, 81, 'the quote and residual batches include every physical scroll');
+assert.strictEqual(new Set(npcScrollIds).size, 81, 'no copy is selected twice across quote and residual batches');
 assert.deepStrictEqual(scrollState, scrollBefore, 'a disposition quote never mutates the bag');
 const stationScrolls = { ...scrollState,
     stats: { ...scrollState.stats, craftStationId: craftStation.id } };
@@ -299,7 +302,7 @@ const stationScrollBefore = structuredClone(stationScrolls);
 const stationDisposition = MarketListingPolicy.evaluate(stationScrolls, { now });
 assert.strictEqual(stationDisposition.warehouse[0]?.selfId, dEnchantScroll.selfId,
     'the separate native infrastructure owner retains valuable scroll stock');
-assert.strictEqual(stationDisposition.warehouse[0]?.count, 81);
+assert.strictEqual(stationDisposition.warehouse.reduce((sum, item) => sum + item.count, 0), 81);
 assert.deepStrictEqual(stationDisposition.npc, []);
 assert.deepStrictEqual(stationScrolls, stationScrollBefore);
 for (let deal = 0; deal < 12; deal++) MarketCounters.deal(dEnchantScroll.selfId, 6000, 1, now - (12 - deal) * 300000, 999999);

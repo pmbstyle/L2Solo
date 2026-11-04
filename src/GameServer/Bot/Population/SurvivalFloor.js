@@ -2,6 +2,7 @@
 
 const ItemIndex = require('../../Item/ItemTemplateIndex');
 const InventoryLimits = require('../../Inventory/InventoryLimits');
+const ArrowStock = require('../../Inventory/ArrowStock');
 const actorBags = new WeakMap();
 
 // These are C4 limits, not a desired stock or a reason to recover at low HP.
@@ -60,10 +61,11 @@ function stateCastCosts(state, profile, timestamp) {
 
 // Weight penalty 1 is only the C4 walking-speed step. During the sale retry
 // it waits like a half-full bag and the bot hunts on, spending its shots,
-// instead of flying back to a town that bought nothing. A heavier step and a
-// full bag stay the floor.
-function saleRetryWaits(floor, state, timestamp) {
+// instead of flying back to a town that bought nothing. Unused arrows have
+// an executable NPC sale and do not wait; heavier steps and full bags stay the floor.
+function saleRetryWaits(floor, state, timestamp, inventoryOwner = state) {
     return floor?.reason === 'overweight' && floor.weightPenalty === 1
+        && !ArrowStock.unused(inventoryOwner).length
         && Number(state?.stats?.marketSellRetryAfter || 0) > timestamp ? null : floor;
 }
 
@@ -135,7 +137,7 @@ function forActor(actor, state = null, timestamp = Date.now()) {
     return saleRetryWaits(evaluate({ dead: actor.isDead?.() === true, hp: actor.fetchHp?.(), mp: actor.fetchMp?.(),
         manaRequired: Roles.shouldRestForMana(actor), castCosts: costs,
         ...actorInventory(actor), slotLimit: InventoryLimits.forActor(actor), maxLoad: actor.fetchMaxLoad?.() || 0 }),
-    state, timestamp);
+    state, timestamp, actor);
 }
 
 module.exports = { evaluate, forState, bagFor, forActor, bagMarks, stateInventory, inventoryLimit, weightPenalty };
