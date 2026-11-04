@@ -3,6 +3,7 @@ require('../src/Global');
 
 const Party = invoke('GameServer/Bot/AI/PartyCompanionService');
 const World = invoke('GameServer/World/World');
+const GroundItems = require('../src/GameServer/World/GroundItems');
 const BotManager = invoke('GameServer/Bot/BotManager');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const Journal = invoke('GameServer/Bot/AI/BotEventJournal');
@@ -52,14 +53,14 @@ async function main(distribution) {
         replace(Journal, 'record', () => Promise.resolve());
         replace(World, 'user', { sessions: [leader, bot] });
         replace(World, 'fetchNpcsInRadius', () => []);
-        replace(World, 'items', { spawns: [] });
+        replace(World, 'items', { spawns: [], byLeader: new Map() });
         replace(World, 'fetchItem', async (id) => World.items.spawns.find((entry) => entry.fetchId() === id));
         replace(World, 'purchaseItem', (session, selfId, amount) => awarded.push({ session, selfId, amount }));
         replace(Response, 'pickupItem', () => { animations.push('pickup'); return Buffer.alloc(0); });
 
         assert.strictEqual(Party.getSettings(leader).lootPickupEnabled, true);
         const first = item(100);
-        World.items.spawns.push(first);
+        GroundItems.put(World.items, first);
         assert.strictEqual(Party.queueRandomGroundPickup(bot, first), bot);
         await flush();
         assert.strictEqual(arrivals.length, 1, 'enabled pickup starts the real executor');
@@ -98,7 +99,7 @@ async function main(distribution) {
 
         // Toggle before the asynchronous item lookup resolves, then invoke it.
         const second = item(101, 1831);
-        World.items.spawns.push(second);
+        GroundItems.put(World.items, second);
         Party.queueRandomGroundPickup(bot, second);
         command('off');
         await flush();
@@ -108,7 +109,7 @@ async function main(distribution) {
         assert.strictEqual(awarded.length, before + 1);
 
         const third = item(102);
-        World.items.spawns.push(third);
+        GroundItems.put(World.items, third);
         bot.actor.state.fetchCasts = () => true;
         bot.partyGroundPickupInProgress = true;
         bot.partyGroundPickupQueue = [{ id: 102 }];

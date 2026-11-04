@@ -93,6 +93,7 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
 | Player position | `ValidatePosition` → `UpdatePosition` |
 | Bot talk-to-NPC | `TownNpcApproach.canInteract` (player: `AttackRange.TALK_RANGE` 36) |
 | Spawn/respawn | `SpawnNpcs` + `RemoveNpc` |
+| Ground items: add, take, a party's drops by leader | `World/GroundItems` (`put` from SpawnItem, `take` from PickupItem; `ownedBy` read by the party loot scan) |
 | Event-loop yield | `EventLoopTurn` |
 | Process failure backstop, shutdown order | `src/NodeL2.js` (`shutdown`, `writeFinalState`; failures through `src/FailureLog.js`) |
 | Is a bot | **none** (WOR-3) |

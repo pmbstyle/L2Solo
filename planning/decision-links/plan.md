@@ -127,9 +127,9 @@ stamp); `ColdMarketListingService` 30 min; `MarketDemandIndex` WANTED_TTL 30 min
 beat it; 30-min holds in `ColdShotEconomyService`, `ItemDisposition` ~394, `WishProviders` ~663, `CombinedErrandPolicy`;
 `CraftMarketReview` 15/2 min; `FirstPrice` CACHE_MS 1 h over static inputs; clan reviews (`ClanWarDirector`,
 `ClanActionService`, `ClanEquipmentService`), `ClanGoalCandidateService` 30 s TTL, `ClanWarehouseService` 1 h keyed by
-clan only, clan runtime 5 s DB re-reads; hot AI 0.15-2 s scans (`BotSupportPlanner`, `PartyAwareness`,
-`HotBackgroundParty`, `PartyCompanionService`, `BotStatus`) missing a spatial-cell NPC revision; `HotActorLodPolicy`
-8/10/3/15 s; `GearAcquisitionPlanner` 1-4 h cooldowns; ~15 small ones with an existing revision not in the key.
+clan only, clan runtime 5 s DB re-reads; hot AI scans: the 150 ms party threat projection (AI-14; the loot scan now reads only a
+party's own drops, the threat scan only NPCs targeting a member), `BotSupportPlanner` 0.25-1 s, `HotBackgroundParty`
+2 s (≤ 0.01 % of main, 2026-11-04 hot run); `HotActorLodPolicy` 8/10/3/15 s; `GearAcquisitionPlanner` 1-4 h cooldowns; ~15 small ones with an existing revision not in the key.
 Unclear (time may be the real input): hunt evidence aging 6 h, "no progress over N" rules, LLM policy TTL, ColdPve
 10 min, clan rescue duration. Also found: `MarketBuyerActivity.refresh` is never called (its score is dead). ~140
 scheduling/budget limits (B) have no limits.md row.

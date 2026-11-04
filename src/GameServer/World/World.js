@@ -335,7 +335,7 @@ const World = {
         };
         RaidEntityIndex.reset(this);
         this.npc.raidBossState = await RaidBossState.load();
-        this.items = { spawns   : [], nextId: 5000000 };
+        this.items = { spawns   : [], nextId: 5000000, byLeader: new Map() };
 
         World.spawnNpcs();
         RaidBossMinionManager.start(this);

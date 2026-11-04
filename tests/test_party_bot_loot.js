@@ -12,6 +12,15 @@ const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const ActorGenerics = require('../src/GameServer/Actor/Generics');
 const Attack = invoke('GameServer/Actor/Attack');
+const GroundItems = require('../src/GameServer/World/GroundItems');
+
+// The world's ground items as SpawnItem leaves them: GroundItems keeps the
+// party drops by leader, which the loot scan reads.
+function groundItems(...drops) {
+    const items = { spawns: [], byLeader: new Map() };
+    drops.forEach(drop => GroundItems.put(items, drop));
+    return items;
+}
 
 const originalRewards = DataCache.fetchNpcRewardsFromSelfId;
 const originalFetchItem = DataCache.fetchItemFromSelfId;
@@ -43,9 +52,10 @@ try {
 
     const spawned = [];
     const purchased = [];
-    World.items = { spawns: [] };
+    World.items = groundItems();
     const removeWorldItem = (id) => {
-        World.items.spawns = World.items.spawns.filter(item => Number(item.fetchId()) !== Number(id));
+        const index = World.items.spawns.findIndex(item => Number(item.fetchId()) === Number(id));
+        if (index >= 0) GroundItems.take(World.items, index);
     };
     const world = {
         spawnItem(session, selfId, amount, coords, onSpawn) {
@@ -57,7 +67,7 @@ try {
                 fetchLocZ: () => coords.locZ
             };
             spawned.push({ session, selfId, amount, coords });
-            World.items.spawns.push(item);
+            GroundItems.put(World.items, item);
             onSpawn(item);
         },
         purchaseItem(session, selfId, amount) { purchased.push({ session, selfId, amount }); }
@@ -161,7 +171,7 @@ try {
         fetchLocY: () => 200,
         fetchLocZ: () => -310
     };
-    World.items.spawns.push(queuedAdena, queuedItem);
+    GroundItems.put(World.items, queuedAdena); GroundItems.put(World.items, queuedItem);
     PartyCompanionService.queueRandomGroundPickup(botSession, queuedAdena);
     PartyCompanionService.queueRandomGroundPickup(botSession, queuedItem);
     assert.strictEqual(pickupCalls.length, 1, 'a drop arriving while the party is in combat should wait instead of interrupting the fight');
@@ -181,7 +191,7 @@ try {
     assert.strictEqual(pickupCalls.length, 3, 'a pending resurrection must preempt queued loot');
     leaderSession.actor.isDead = () => false;
     leaderSession.partyCompanionSettings = { distribution: 1, pullMode: 'bot', pullerId: closestBot.fetchId() };
-    World.items.spawns.push({
+    GroundItems.put(World.items, {
         partyLootLeaderId: leaderSession.actor.fetchId(),
         fetchId: () => 500007,
         fetchLocX: () => 100,
@@ -198,24 +208,20 @@ try {
 
     // Loot reconciliation may recover an older owned drop, but must ignore a
     // nearby item created by another player or party.
-    World.items = {
-        spawns: [
-            {
-                partyLootLeaderId: 999,
-                fetchId: () => 500012,
-                fetchLocX: () => 120,
-                fetchLocY: () => 200,
-                fetchLocZ: () => -310
-            },
-            {
-                partyLootLeaderId: leaderSession.actor.fetchId(),
-                fetchId: () => 500004,
-                fetchLocX: () => 130,
-                fetchLocY: () => 200,
-                fetchLocZ: () => -310
-            }
-        ]
-    };
+    World.items = groundItems({
+        partyLootLeaderId: 999,
+        fetchId: () => 500012,
+        fetchLocX: () => 120,
+        fetchLocY: () => 200,
+        fetchLocZ: () => -310
+    },
+    {
+        partyLootLeaderId: leaderSession.actor.fetchId(),
+        fetchId: () => 500004,
+        fetchLocX: () => 130,
+        fetchLocY: () => 200,
+        fetchLocZ: () => -310
+    });
     leaderSession.lastGroundLootScanAt = 0;
     PartyCompanionService.reconcileGroundLoot(botSession);
     assert.deepStrictEqual(pickupCalls[4] && { session: pickupCalls[4].session, actor: pickupCalls[4].actor, data: pickupCalls[4].data }, { session: botSession, actor: closestBot, data: { id: 500004 } }, 'an idle hot party should recover only its own reachable ground loot');
@@ -223,15 +229,13 @@ try {
     pickupCalls[4].onComplete();
 
     closestBot.storedPickup = { id: 499999 };
-    World.items = {
-        spawns: [{
-            partyLootLeaderId: leaderSession.actor.fetchId(),
-            fetchId: () => 500008,
-            fetchLocX: () => 130,
-            fetchLocY: () => 200,
-            fetchLocZ: () => -310
-        }]
-    };
+    World.items = groundItems({
+        partyLootLeaderId: leaderSession.actor.fetchId(),
+        fetchId: () => 500008,
+        fetchLocX: () => 130,
+        fetchLocY: () => 200,
+        fetchLocZ: () => -310
+    });
     leaderSession.lastGroundLootScanAt = 0;
     PartyCompanionService.reconcileGroundLoot(botSession);
     assert.deepStrictEqual(pickupCalls[5] && { session: pickupCalls[5].session, actor: pickupCalls[5].actor, data: pickupCalls[5].data }, { session: botSession, actor: closestBot, data: { id: 500008 } }, 'a stale client pickup must not block a companion from collecting later ground loot');
@@ -239,15 +243,17 @@ try {
     removeWorldItem(500008);
     pickupCalls[5].onComplete();
 
+    // With none of its drops on the ground and nothing queued, a party asks
+    // no combat question however often its members tick (another party's drop
+    // nearby changes nothing).
     leaderSession.lastGroundLootScanAt = 0;
-    World.items = { spawns: [] };
-    const emptyScanStartedAt = Date.now();
-    PartyCompanionService.reconcileGroundLoot(botSession);
-    assert.strictEqual(
-        leaderSession.lastGroundLootScanAt >= emptyScanStartedAt,
-        true,
-        'an idle ground-loot scan should retain its shared throttle when no items are available'
-    );
+    World.items = groundItems({
+        partyLootLeaderId: 999,
+        fetchId: () => 500013,
+        fetchLocX: () => 120,
+        fetchLocY: () => 200,
+        fetchLocZ: () => -310
+    });
     const originalFetchNpcsForThrottle = World.fetchNpcsInRadius;
     let throttledThreatScans = 0;
     World.fetchNpcsInRadius = (...args) => {
@@ -255,25 +261,23 @@ try {
         return originalFetchNpcsForThrottle(...args);
     };
     for (let index = 0; index < 8; index += 1) {
-        PartyCompanionService.reconcileGroundLoot(botSession);
+        assert.strictEqual(PartyCompanionService.reconcileGroundLoot(botSession), 0);
     }
     assert.strictEqual(throttledThreatScans, 0,
-        'the shared loot throttle must run before repeated party-wide combat scans');
+        'a party without ground drops of its own must not run party-wide combat scans');
     World.fetchNpcsInRadius = originalFetchNpcsForThrottle;
 
     // A returning puller is travelling, not fighting at camp. It must not
     // block recovery of an older drop that another companion can collect.
     closestBot.state.combat = true;
     leaderSession.partyPullState = { phase: 'return', pullerId: closestBot.fetchId() };
-    World.items = {
-        spawns: [{
-            partyLootLeaderId: leaderSession.actor.fetchId(),
-            fetchId: () => 500005,
-            fetchLocX: () => 130,
-            fetchLocY: () => 200,
-            fetchLocZ: () => -310
-        }]
-    };
+    World.items = groundItems({
+        partyLootLeaderId: leaderSession.actor.fetchId(),
+        fetchId: () => 500005,
+        fetchLocX: () => 130,
+        fetchLocY: () => 200,
+        fetchLocZ: () => -310
+    });
     leaderSession.lastGroundLootScanAt = 0;
     PartyCompanionService.reconcileGroundLoot(botSession);
     assert.deepStrictEqual(pickupCalls[6] && { session: pickupCalls[6].session, actor: pickupCalls[6].actor, data: pickupCalls[6].data }, { session: distantBotSession, actor: distantBot, data: { id: 500005 } }, 'a distant return pull should let another companion collect old loot without interrupting the puller');
@@ -295,15 +299,13 @@ try {
     registerSessions([leaderSession, botSession, distantBotSession]);
     World.fetchNpcsInRadius = () => [incomingThreat];
     PartyAwareness.invalidateThreatProjection(leaderSession);
-    World.items = {
-        spawns: [{
-            partyLootLeaderId: leaderSession.actor.fetchId(),
-            fetchId: () => 500006,
-            fetchLocX: () => 130,
-            fetchLocY: () => 200,
-            fetchLocZ: () => -310
-        }]
-    };
+    World.items = groundItems({
+        partyLootLeaderId: leaderSession.actor.fetchId(),
+        fetchId: () => 500006,
+        fetchLocX: () => 130,
+        fetchLocY: () => 200,
+        fetchLocZ: () => -310
+    });
     leaderSession.lastGroundLootScanAt = 0;
     PartyCompanionService.reconcileGroundLoot(botSession);
     assert.strictEqual(pickupCalls.length, 7, 'an incoming NPC threat must block ground pickup before party members start their own combat action');
@@ -314,13 +316,13 @@ try {
     // completion.
     World.npc = { spawns: [] };
     World.fetchNpcsInRadius = () => [];
-    World.items = { spawns: [{
+    World.items = groundItems({
         partyLootLeaderId: leaderSession.actor.fetchId(),
         fetchId: () => 500009,
         fetchLocX: () => 130,
         fetchLocY: () => 200,
         fetchLocZ: () => -310
-    }] };
+    });
     botSession.partyGroundPickupQueue = [{ id: 500009 }];
     botSession.partyGroundPickupInProgress = false;
     assert.strictEqual(PartyCompanionService.startQueuedGroundPickup(botSession), true, 'a queued pickup should start normally before a simulated cancellation');
@@ -351,15 +353,13 @@ try {
 
     closestBot.fetchCollectiveRunSpd = () => 120;
     closestBot.automation.ticksToMove = () => 21000;
-    World.items = {
-        spawns: [{
-            partyLootLeaderId: leaderSession.actor.fetchId(),
-            fetchId: () => 500010,
-            fetchLocX: () => 2500,
-            fetchLocY: () => 200,
-            fetchLocZ: () => -310
-        }]
-    };
+    World.items = groundItems({
+        partyLootLeaderId: leaderSession.actor.fetchId(),
+        fetchId: () => 500010,
+        fetchLocX: () => 2500,
+        fetchLocY: () => 200,
+        fetchLocZ: () => -310
+    });
     botSession.partyGroundPickupQueue = [{ id: 500010 }];
     botSession.partyGroundPickupInProgress = false;
     assert.strictEqual(PartyCompanionService.startQueuedGroundPickup(botSession), false, 'a queued drop outside the party leash must not send a companion on a long run');
@@ -374,15 +374,13 @@ try {
     // to collect the ground object before the normal distribution resolver
     // assigns it to the current recipient.
     leaderSession.partyCompanionSettings = { distribution: 3 };
-    World.items = {
-        spawns: [{
-            partyLootLeaderId: leaderSession.actor.fetchId(),
-            fetchId: () => 500011,
-            fetchLocX: () => 130,
-            fetchLocY: () => 200,
-            fetchLocZ: () => -310
-        }]
-    };
+    World.items = groundItems({
+        partyLootLeaderId: leaderSession.actor.fetchId(),
+        fetchId: () => 500011,
+        fetchLocX: () => 130,
+        fetchLocY: () => 200,
+        fetchLocZ: () => -310
+    });
     leaderSession.lastGroundLootScanAt = 0;
     PartyCompanionService.reconcileGroundLoot(botSession);
     assert.deepStrictEqual(

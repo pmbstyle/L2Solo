@@ -80,6 +80,10 @@ deterministic brain; the LLM acts only on explicit player communication.
   `fetchUser` first and read its rejection as "not a player", then `fetchNpc`: a session scan, an `Error` and two
   promises per tick with an NPC target (perf, not a failure; the sync `World.registeredActorById` answers it).
   `SpotService.ensureIndexed` returns `[]` without World definitions (a startup window), not counted.
+- **AI-14 the party threat projection is a 150 ms window** (`PartyAwareness`, limits.md): member, NPC and player
+  moves have no event, and an NPC target change bumps one world-wide `threatRevision`, so any fight anywhere drops
+  every party's projection. The event it waits for: a per-target change of who targets an actor (the scan already
+  keeps only NPCs targeting a member; measured 2026-11-04: its NPC queries are ~7 % of the scan).
 - **AI-11 ~12 copies of the FNV hash** beside `Bot/Fnv1a.js` (incl. `TendencyRoll`, `SpotService`, `LevelingRoutes`,
   `PartyHuntingTarget`, `ColdOccupationSources`). Matters if hot and cold rolls must agree.
 - **AI-12 two sell-trip checks in HuntingState** (leaf 'selling' and unconditional), each starts shopping.

@@ -2,6 +2,7 @@ const assert=require('assert');
 require('../src/Global');
 const World=invoke('GameServer/World/World');
 const {registerSessions}=require('./helpers/worldSessions');
+const GroundItems=require('../src/GameServer/World/GroundItems');
 const Bots=invoke('GameServer/Bot/BotManager');
 const Loot=invoke('GameServer/Bot/AI/PartyCompanionService');
 const Policy=invoke('GameServer/Bot/AI/PartyCombatLootPolicy');
@@ -28,7 +29,7 @@ function session(id,x,classId,player=false) {
 }
 const leader=session(2400001,0,5,true),support=session(2400002,-300,30),fighter=session(2400003,-380,5);
 for(const s of [support,fighter]) Object.assign(s,{partyCompanion:true,followPlayerSession:leader,partyCombatLootReadyAt:Date.now()});
-registerSessions(sessions);Bots.sessions=[support,fighter];World.items={spawns:[]};
+registerSessions(sessions);Bots.sessions=[support,fighter];World.items={spawns:[],byLeader:new Map()};
 const enemy={x:800,y:0,z:0,hostile:true,targetId:leader.actor.fetchId(),attacking:true,range:40,skills:[],
     fetchId:()=>3400001,fetchAttackable:()=>true,isDead:()=>false,
     fetchHostile(){return this.hostile;},fetchDestId(){return this.targetId;},fetchStateAttack(){return this.attacking;},
@@ -92,7 +93,7 @@ function allowed(item=drop()){return Policy.allowed(support,leader,item,sessions
 
         // A fighter owns an old queue; combat reconciliation transfers it to
         // the idle support and executes actual native movement and awarding.
-        const item=drop();World.items.spawns.push(item);fighter.partyGroundPickupQueue=[{id:item.fetchId()}];
+        const item=drop();GroundItems.put(World.items,item);fighter.partyGroundPickupQueue=[{id:item.fetchId()}];
         leader.lastGroundLootScanAt=0;ready();Loot.reconcileGroundLoot(support);
         assert.strictEqual(support.partyGroundPickupInProgress,true);
         assert.deepStrictEqual(fighter.partyGroundPickupQueue,[]);
@@ -104,7 +105,7 @@ function allowed(item=drop()){return Policy.allowed(support,leader,item,sessions
         assert.strictEqual(purchases.reduce((sum,p)=>sum+p[2],0),12,'native party distribution conserves the drop');
         assert.strictEqual(purchases.length,3,'party Adena distribution still includes all three members');
 
-        support.actor.x=-300;const unsafe=drop(-500);World.items.spawns.push(unsafe);ready();
+        support.actor.x=-300;const unsafe=drop(-500);GroundItems.put(World.items,unsafe);ready();
         Loot.queueRandomGroundPickup(leader,unsafe);await wait(300);
         enemy.targetId=support.actor.fetchId();ready();
         assert.strictEqual(Loot.startQueuedGroundPickup(support),false,'losing tank aggro interrupts the live pickup');
@@ -114,8 +115,8 @@ function allowed(item=drop()){return Policy.allowed(support,leader,item,sessions
         assert.strictEqual(purchases.length,3);
         enemy.targetId=leader.actor.fetchId();ready();
 
-        support.actor.x=-300;support.partyGroundPickupQueue=[];World.items.spawns=[];
-        const addedAggro=drop(-500);World.items.spawns.push(addedAggro);ready();
+        support.actor.x=-300;support.partyGroundPickupQueue=[];World.items={spawns:[],byLeader:new Map()};
+        const addedAggro=drop(-500);GroundItems.put(World.items,addedAggro);ready();
         Loot.queueRandomGroundPickup(leader,addedAggro);await wait(300);
         hazard.hostile=true;hazard.y=0;World.npc.spawns.push(hazard);
         assert.strictEqual(Loot.startQueuedGroundPickup(support),false,'a free aggressive add still interrupts native pickup');
@@ -125,8 +126,8 @@ function allowed(item=drop()){return Policy.allowed(support,leader,item,sessions
 
         // Arrival must re-check urgent support even when no AI tick runs
         // after the emergency appears. There is no post-arrival award delay.
-        support.actor.x=-300;support.partyGroundPickupQueue=[];World.items.spawns=[];
-        const late=drop(-400);World.items.spawns.push(late);ready();Loot.queueRandomGroundPickup(leader,late);
+        support.actor.x=-300;support.partyGroundPickupQueue=[];World.items={spawns:[],byLeader:new Map()};
+        const late=drop(-400);GroundItems.put(World.items,late);ready();Loot.queueRandomGroundPickup(leader,late);
         await wait(120);leader.actor.hp=40;await wait(550);
         assert(World.items.spawns.includes(late),'new emergency before arrival prevents pickup without an AI tick');
         assert.strictEqual(purchases.length,3);

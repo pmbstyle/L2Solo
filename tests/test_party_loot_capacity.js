@@ -9,6 +9,7 @@ const Backpack = invoke('GameServer/Model/Backpack');
 const Party = invoke('GameServer/Bot/AI/PartyCompanionService');
 const Manager = invoke('GameServer/Bot/BotManager');
 const Pickup = invoke('GameServer/World/Generics/PickupItem');
+const GroundItems = require('../src/GameServer/World/GroundItems');
 Data.init();
 
 let nextId = 870000;
@@ -133,7 +134,7 @@ const originalSessions = Manager.sessions, originalRandom = Math.random;
         Object.assign(blockedDrop, { partyLootLeaderId: 1, fetchLocX: () => 0, fetchLocY: () => 0, fetchLocZ: () => 0 });
         const Combat = invoke('GameServer/Bot/AI/PartyCombatState'), combatActive = Combat.isActive;
         const Generics = invoke(path.actor), actions = { stop: Generics.stopAutomation, pickup: Generics.pickupExec };
-        World.items = { spawns: [blockedDrop] }; Combat.isActive = () => false;
+        World.items = { spawns: [], byLeader: new Map() }; GroundItems.put(World.items, blockedDrop); Combat.isActive = () => false;
         Generics.stopAutomation = () => {}; Generics.pickupExec = () => {};
         try {
             blocked.leader.lastGroundLootScanAt = 0;
