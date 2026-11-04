@@ -142,17 +142,10 @@ thread: our rule, so a far bot does not re-decide on every event ([bot-ai.md](bo
   from the record (`staleHotRowFromRecord`). Not rebuilt at boot: `stats.classId` / `classProgression*` after a class
   change while hot, `stats.pk`, PvP/encounter memory, captured cold-combat base stats/effects/cooldowns.
 
-- **POP-23 the cold worker is the binding limit at ~1430 bots** (measured 2026-11-03, a fresh x50 world grown 231 →
-  1731 bots in 2 h on the 2015 laptop, code before this release, no profiler). Worker busy share 0.09 at 231 bots,
-  0.27 at 681, 0.63 at 1131, 0.93 at 1431, 1.00 from ~1580; main 0.22 → 0.56. Roughly +6 points of worker and +2.5 of
-  main per 100 bots; worker heap ~0.08 MB per bot (124 → 236 MB). At 1731 the worker is saturated: 3-163 bots overdue,
-  oldest up to 67 s, so far bots live slower than planned. The release's coldMomentGate (re-decide only at a player's
-  moment) and the readiness fix should cut this; the next profiled perf run on that world says where the worker's CPU
-  goes. 5-10k bots need the cold simulation split over several workers (per-thread table copies, TBL-7).
-## Open questions
-
-1. One mechanism for solo, party and PvP transitions? Which DB primitive stays?
-2. Which cold resolves on main are allowed (karma, raid-supply hold, walker appearance)? Remove the fallbacks?
-3. `LifecycleSafetySweep`: permanent, or a backstop until ownership is proven?
-4. Canonical entry for ordinary background parties: main `formBackgroundParties` or the worker proposal?
-5. Is the class-progression migration done in every live DB?
+- **POP-23 cold worker capacity** (measured 2026-11-04, 1731-bot x50 world, avg level 25, 2015 laptop, detached
+  checkouts): before this release the worker was saturated from ~1430 bots (busy 0.93 at 1431, 1.00 from ~1580,
+  163-252 far bots overdue up to 67 s). After (c9712816): busy 0.57-0.62 cold / 0.61 hot, overdue max 1-4, worker
+  long turns −52-58 %, process cores 1.88 → 1.27-1.42. A server with no code identity (every launcher install before
+  c3fdb8c3) rebuilt every held build and ran the worker at 0.93 on the same world. Growth while seeding: about +6
+  points of worker and +2.5 of main per 100 bots; worker heap ~0.08 MB per bot. 5-10k bots still need the cold
+  simulation split over several workers (per-thread table copies, TBL-7).
