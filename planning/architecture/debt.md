@@ -139,6 +139,12 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    carry no version: the held spot refreshes them only by its 30-game-minute window (`EconomyContext.HOLD_MS`,
    limits.md) and the observation bit (decision-links plan step 3: per-spot versions).
 
+23. **A drop fact's band depends on the order of the wish build's items.** `WishProviders` `sourcePath` passes
+   `economicLower: progression.required || !!spoiler`, where `spoiler` is read only at the first item with a spoil
+   source (or the spoil-demand roots): for a spoiler the drop facts asked before it take the voluntary band, the
+   ones after the wider equipment one. `KeptSourceFacts` keys each fact on the spoiler as it was read; one rule
+   (read the spoiler once per build, or band by `progression.required` alone) is the owner's choice.
+
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets`' `gapHorizonHours`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so
 a rich bot there has a null activity (T178): a test expecting "one leaf" from such a scene breaks the same way. Known

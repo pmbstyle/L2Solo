@@ -262,9 +262,12 @@ function heldBuildVerdict(state, proof, deps = {}, options = {}) {
     // stops there answers (eventProofHolds); leaf: the identity of the leaf
     // it judged, unset when it stopped before.
     const out = { valid: false, reason: '', touchedSections: 0, movedSections: 0, firstSections: 0, waited: 0, leaf: undefined };
+    // Diagnostics only: every refusal's name in order (context:held_refusal_all).
+    if (Diagnostics.active()) out.reasons = [];
     const refuse = (reason, names, quiet = false) => {
         const first = !out.reason;
         out.reason ||= reason;
+        out.reasons?.push(reason);
         if (reason.startsWith('check:')) out.goalFailed = true;
         if (!names) {
             if (collect) out.touchedSections = Sections.COMPUTED.weighing;
@@ -1638,6 +1641,8 @@ function buildForState(state, deps) {
     const nodes = `nodes:${Sections.partyIdOf(state) ? 'member' : 'candidate'}${held && nodesBuilt.has(held) ? '_again' : ''}`;
     if (!eventVerdict.reason && held && deps.withNodes) nodesBuilt.add(held);
     if (deps.caller !== 'step') (doors[`${deps.caller || 'hidden'}|${eventVerdict.reason || nodes}${movedNames}`] ||= [0])[0]++;
+    // The step's own door is the common one: named by the diagnostics only.
+    else if (diagnostic) Diagnostics.count('context', 'step_door', `${eventVerdict.reason || nodes}${movedNames}`);
     const started = diagnostic ? performance.now() : 0;
     // The build's cause, one of a few names (its duration layer). An
     // input-name mismatch is named as a dependency change; it does not claim
@@ -1646,10 +1651,15 @@ function buildForState(state, deps) {
         : held.key !== key ? 'input_dependency_changed'
         : !eventVerdict.valid ? 'held_refused' : 'nodes_needed';
     if (diagnostic) Diagnostics.count('context', 'miss', diagnosticReason);
-    // A held refusal split by the verdict's first reason and by whether the
-    // caller keeps the build: it picks which refusal to make cheaper.
-    if (diagnosticReason === 'held_refused') {
+    // Every held refusal (also one whose input name moved) split by the
+    // verdict's first reason and by whether the caller keeps the build, by
+    // whether the input name moved, by the raised sections and by every
+    // reason the verdict named: it picks which refusal to make cheaper.
+    if (diagnostic && held && !eventVerdict.valid) {
         Diagnostics.count('context', keeps ? 'held_refusal' : 'held_refusal_unkept', eventVerdict.reason || 'none');
+        Diagnostics.count('context', 'held_refusal_key', held.key === key ? 'same' : 'moved');
+        Diagnostics.count('context', 'held_refusal_dirty', Sections.sectionNames(Number(state.stats?.wishDirty) || 0).join('+') || 'none');
+        for (const reason of eventVerdict.reasons || []) Diagnostics.count('context', 'held_refusal_all', reason);
     }
     let elapsed = 0;
     // The items the review read, each reported once (deps.onSourceRead, the
@@ -1780,8 +1790,9 @@ function buildForState(state, deps) {
         Diagnostics.count('context', 'caller', deps.caller || 'economy_context');
         Diagnostics.count('context', 'foundation', keptBase ? 'kept' : 'built');
     }
-    const projection = Providers.build(state, context, { ...deps, sourceGround: keptGround, nodes: [...(deps.nodes || []), ...extra],
-        soloProfiles: incomeRecord?.route?.matchupProfiles });
+    // The held build's source facts (KeptSourceFacts): each judged by its own inputs.
+    const projection = Providers.build(state, context, { ...deps, sourceGround: keptGround, keptFacts: held?.keptFacts || null,
+        nodes: [...(deps.nodes || []), ...extra], soloProfiles: incomeRecord?.route?.matchupProfiles });
     context.projection = projection;
     if (productive) projection.moneyPaths.push({ activity: 'crafting', kind: 'production', recipeId: workshop.recipeId,
         object: workshop.productId, incomePerHour: workshop.incomePerHour,
@@ -1900,11 +1911,12 @@ function buildForState(state, deps) {
     }
     const repick = plan.network.activity && eventVerdict.dropped?.get(stepPlace(plan.network.activity));
     if (repick) countDoor(`agenda_repick|${repick}`);
-    // The ground verdict belongs only to the held build entry (bounded by
-    // RETAIN_LIMIT, each ground by 2 bits per planning spot). A planning view
-    // or a group closure must never retain a second copy.
-    const retainedGround = projection.sourceGround;
-    projection.sourceGround = null;
+    // The ground verdict and the kept source facts belong only to the held
+    // build entry (bounded by RETAIN_LIMIT, each ground by 2 bits per planning
+    // spot, the facts by KeptSourceFacts.LIMIT). A planning view or a group
+    // closure must never retain a second copy.
+    const retainedGround = projection.sourceGround, retainedFacts = projection.keptFacts;
+    projection.sourceGround = null; projection.keptFacts = null;
     if (keeps) {
         if (diagnostic && !cache.has(actorKey) && cache.size >= RETAIN_LIMIT) Diagnostics.count('context', 'eviction', 'capacity');
         // The main thread keeps the graph nodes as before (its group solve
@@ -1925,7 +1937,7 @@ function buildForState(state, deps) {
             // A quiet build sees only the followed gear: a list it shortened is no review.
             gearFollowed: heldGear ? held.gearFollowed : rootItems(context.projection), goalRevision: deps.goalRevision,
             activity: state.activity,
-            sourceGround: retainedGround, mp: Number(state.vitals?.mp),
+            sourceGround: retainedGround, keptFacts: retainedFacts, mp: Number(state.vitals?.mp),
             projection: (isMainThread || Sections.partyIdOf(state)) ? projection : null }, RETAIN_LIMIT);
     }
     // A party's question built the nodes of a plan that stands: the plan keeps them, as

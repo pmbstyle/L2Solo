@@ -86,10 +86,13 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
     // their own: the cap comes after them, so the crowd is cut once.
     // A crowd cut (crowdFactor < 1) is counted as spot_value:crowd:cut
     // (developer diagnostics).
-    const crowded = (spot, row) => {
+    const huntersOn = spot => {
         let hunters = spotHunters ? spotHunters(spot, state) : 1;
         for (const member of others) if (String(occupiedSpotId(member)) !== String(spot.id)) hunters += 1;
-        const factor = Table.huntShare(row.production, Math.max(1, hunters), row.kills);
+        return hunters;
+    };
+    const crowded = (spot, row) => {
+        const factor = Table.huntShare(row.production, Math.max(1, huntersOn(spot)), row.kills);
         if (factor >= 1) return row;
         if (Diagnostics.active()) Diagnostics.count('spot_value', 'crowd', 'cut');
         const out = { ...row, crowdFactor: factor };
@@ -99,7 +102,7 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
     // A table row as the bot's own samples scale it (calibration).
     const calibrated = row => row && (calibration === 1 ? row : { ...row, exp: row.exp * calibration,
         adena: row.adena * calibration, loot: row.loot * calibration, kills: row.kills * calibration });
-    return (spot, shots = hunt.useShots !== false) => {
+    const reader = (spot, shots = hunt.useShots !== false) => {
         // Charged observations cannot estimate a deliberately uncharged hunt.
         const observed = shots ? own.find(row => row.spotId === spot.id) : null;
         const rate = observed ? 3600000 / observed.cycleMs : 0;
@@ -134,5 +137,19 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
         row.valueHours = row.expHours * (1 - weight) + row.incomeHours * weight - row.riskHours;
         return row;
     };
+    // What a row reads beside the static table (SpotValueTable.value of the
+    // spot, role, level, shots and Spoil level) and the crowd on its spot
+    // (reader.hunters): named, for a holder that keeps what it made of the
+    // rows (KeptSourceFacts). A row read with the default shots.
+    reader.inputs = () => [['weight', weight], ['role', tableRole], ['level', Number(state.level)],
+        ['shots', hunt.useShots !== false], ['expHour', Math.max(1, hour?.exp || hunt.expPerHour)],
+        ['hourAdena', hour?.adena > 0 ? hour.adena : hourAdena], ['deathHours', deathHours], ['riskWeight', riskWeight],
+        ['prices', [costs.shots, costs.potions]], ['spoilSkill', rewardOptions.spoilSkillLevel],
+        ['samples', own.map(row => [row.spotId, row.exp, row.adena, row.loot, row.kills, row.costs, row.cycleMs])],
+        ['calibration', calibration], ['incomeError', incomeError], ['owner', state.characterId],
+        ['spotRisk', [state.stats?.spotRisk?.spotId, state.stats?.spotRisk?.windowFights, state.stats?.spotRisk?.windowDeaths]]];
+    // The hunters a row of this spot shares it with, the bot among them.
+    reader.hunters = huntersOn;
+    return reader;
 }
 module.exports = { create, moneyWeight, moneyShort };

@@ -346,11 +346,24 @@ function buildProjection(state, ctx, deps) {
     // This local map dies at return: ~468 KB transient per measured build,
     // zero ArrayBuffers and zero maps retained after return + GC; no owner store.
     const sourceValues = new Map();
+    // The crowd reads of the fact being built (KeptSourceFacts): each spot whose
+    // value it read once, as [spot ordinal, hunters] (null: a spot off the list).
+    let crowdReads = null;
+    const sourceHunters = new Map();
+    const readCrowd = spot => {
+        if (!crowdReads || crowdReads.seen.has(spot)) return;
+        crowdReads.seen.add(spot);
+        const at = need('../AI/SpotIndex').ordinalFor(deps.spots, spot), hunters = ctx.spotValue.hunters;
+        if (at < 0 || !hunters || !crowdReads.pairs) { crowdReads.pairs = null; return; }
+        if (!sourceHunters.has(spot)) sourceHunters.set(spot, hunters(spot));
+        crowdReads.pairs.push(at, sourceHunters.get(spot));
+    };
     // ARCH-NOTE: PERF: native same-input provider replay (60 builds/variant)
     // 124.56 -> 27.28 ms; nine complete projections byte-equal. Reuse the
     // existing 16,384-entry yield bound and atlas counts, no per-bot retention.
     // Shared-host offline result only; not a live throughput/budget claim.
     const spotValue = spot => {
+        readCrowd(spot);
         if (!sourceValues.has(spot)) sourceValues.set(spot, ctx.spotValue(spot));
         return sourceValues.get(spot);
     };
@@ -366,6 +379,19 @@ function buildProjection(state, ctx, deps) {
     // source section moved (deps.sourceGround, EconomyContext's).
     const sourceGround = Planner.sourceGround(deps.spots || [], deps.sourceGround);
     const routeAllowed = Planner.sourceRouteReader(state, { timestamp, matchupProfiles: deps.soloProfiles, ground: sourceGround });
+    // The source facts the held build kept, judged against this build's
+    // (KeptSourceFacts; diagnostics only: the shadow stage). The inputs every
+    // fact reads: the band's progression, the hour, the bot's Spoil, the trip
+    // rows and what the walk, the route reader and the spot values read.
+    const factTrip = deps.tripCost || ctx.trip;
+    const keptFacts = Diagnostics.active() ? need('./KeptSourceFacts').session(deps.keptFacts || null, {
+        spots: deps.spots, index: sourceIndex, cells: sourceGround.cells, fields: () => {
+            const routes = !factTrip ? 'none' : Array.isArray(factTrip.rows) ? factTrip.rows : null;
+            if (routes === null || !ctx.spotValue?.inputs || !routeAllowed.inputs) return null;
+            const spoils = !!invoke('GameServer/Bot/Population/ColdKillRewards').spoilerFor(state, { skills: Profile.skillsFor(state) });
+            return [['required', !!progression.required], ['hourAdena', ctx.hourAdena], ['spoils', spoils], ['routes', routes],
+                ...Planner.sourceFactInputs(state), ...routeAllowed.inputs(), ...ctx.spotValue.inputs()];
+        } }) : null;
     const knownRecipes = new Set(recipeIds(state, deps));
     const preparingItems = new Set();
     const purchaseFor = need('./WishPurchaseEvidence').reader(state, ctx, deps);
@@ -410,20 +436,30 @@ function buildProjection(state, ctx, deps) {
             // Only the best ready fact comes back; with diagnostics every record is
             // also counted as ready or by its reason (refusals only as counts).
             const diagnostic = Diagnostics.active(), reasons = diagnostic ? new Map() : null;
+            const started = diagnostic ? performance.now() : 0;
+            // The spoiler as this fact reads it: the band widens for a spoiler
+            // once the build has read one (economicLower).
+            const spoilerSeen = spoiler === undefined ? 0 : spoiler ? 2 : 1;
+            if (keptFacts) crowdReads = { seen: new Set(), pairs: [] };
             const steps = Planner.sourceFacts(state, id, 1, { spots: deps.spots, spotValue,
-                trips: sourceTrips, trip: deps.tripCost || ctx.trip || { details: () => ({ known: false }) }, spoiler, timestamp,
+                trips: sourceTrips, trip: factTrip || { details: () => ({ known: false }) }, spoiler, timestamp,
                 economicLower: progression.required || !!spoiler, readyOnly: true, counts: reasons, routeAllowed,
                 bestForWish: { spoilOnly, progressionRequired: progression.required, hourAdena: ctx.hourAdena } });
             let step;
             do step = steps.next(); while (!step.done);
             const best = step.value[0] || null;
+            const fact = { best, inputs: input && { items: [...input.items], bag: [...input.bag] } };
             // One count per reason and item: a per-fact count cost 4% of the worker.
             if (diagnostic) {
                 for (const [reason, amount] of reasons) Diagnostics.count('provider', 'source_fact', reason, amount);
                 Diagnostics.count('provider', 'source_path', best ? 'ready' : reasons.size ? 'refused' : 'no_source');
+                const elapsed = performance.now() - started;
+                Diagnostics.duration('provider:fact', elapsed);
+                keptFacts?.built(factsKey, spoilerSeen, best, fact.inputs, crowdReads.pairs, elapsed);
+                crowdReads = null;
             }
-            farmFacts.set(factsKey, { best, inputs: input && { items: [...input.items], bag: [...input.bag] } });
-            } finally { if (input) ctx.nodeInputs.end(); }
+            farmFacts.set(factsKey, fact);
+            } finally { crowdReads = null; if (input) ctx.nodeInputs.end(); }
         }
         const { best, inputs } = farmFacts.get(factsKey);
         // A later retained candidate may reuse a fact first read in a rejected
@@ -942,6 +978,7 @@ function buildProjection(state, ctx, deps) {
                 paths: [{ requirements: [{ key, amount: 1 }] }] } });
         admission.maxScratch = Math.max(admission.maxScratch, keys.length);
     }
+    blocks?.lap('arenas');
     admission.candidates = gear.length;
     // A throw of the solver's own bounds or an arena over forty descriptors
     // is `limit`: unresolved, never an unavailable item or a zero cost.
@@ -1252,7 +1289,8 @@ function buildProjection(state, ctx, deps) {
     const keptNodes = nodes.filter(node => cut.kept.has(node.key));
     if (nodeCapped) nodeCapBuilds++;
     blocks?.lap('tail'); blocks?.done();
-    return { nodes: keptNodes, roots: cut.roots, values, moneyPaths, horizon, admission, sourceGround };
+    return { nodes: keptNodes, roots: cut.roots, values, moneyPaths, horizon, admission, sourceGround,
+        keptFacts: keptFacts?.finish() || null };
 }
 // Only public recipe rows and a prepared route can prove a usable service.
 // This bounded indexed read is shared by visible and distant bots. No private

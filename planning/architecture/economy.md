@@ -72,10 +72,12 @@ MerchantStoreConfigs}`, `src/Market*`, `src/Economy*`, `Population/ColdEconomy{P
   precomputed spot table through `SpotValueTable`), `SpotEconomics.create` (crowding, calibration) — what every trip,
   purchase and wish prices an hour with; shots / potions pay (`ShotStock.usePolicy`, `EconomyContext.foundation`).
   Money of a kill is live (`SpotRewardExpectation.value`). See [tables.md](tables.md).
-- **Observability:** `EconomyDiagnostics`, `MarketTelemetry`, `CraftTelemetry`, `MarketSnapshot`, `src/EconomyJournal`,
-  `src/MarketTradeOverview*`, `src/MarketEconomyOverview`. The decision links' counts (developerDiagnostics only):
-  `link:*` and the worker's `links=` status line (planning/decision-links): the earning spot search and the workshop by
-  the input that asked them, the route rows as a shadow of a key on `DecisionSections.LINK_INPUTS`.
+- **Observability:** `EconomyDiagnostics` (the wish build's source facts judged against the held build's by
+  `KeptSourceFacts`, a shadow: `projection:fact:<kept|moved:<input>|absent>`, `projection:verify`), `MarketTelemetry`,
+  `CraftTelemetry`, `MarketSnapshot`, `src/EconomyJournal`, `src/MarketTradeOverview*`, `src/MarketEconomyOverview`.
+  The decision links' counts (developerDiagnostics only): `link:*` and the worker's `links=` status line
+  (planning/decision-links): the earning spot search and the workshop by the input that asked them, the route rows as
+  a shadow of a key on `DecisionSections.LINK_INPUTS`.
 
 ## Data flow
 

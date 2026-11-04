@@ -1831,16 +1831,35 @@ function startKernel(config = {}) {
             const where = Reaction.place(state);
             // A native plan that failed or moved is a real review: every gear candidate.
             deps.fullReview = (previousPlan !== originalPlan || !nativeHolds || solo && !planHolds()) && Reaction.hears('native', where);
+            // Diagnostics only: why the card did not serve the step, its own
+            // refusal (advisory:refused:<reason>) or a skip around it
+            // (advisory:skip:<why>; wish_focus: a refused card of a deferred
+            // wish-focus plan, whose verdict the build on its copy cannot take).
+            const advisory = economyDiagnostics.active() ? (outcome, reason) => economyDiagnostics.count('advisory', outcome, reason) : null;
+            const why = advisory ? [] : undefined;
             let refreshed = solo && !deps.fullReview
-                ? ColdEconomyDecision.refreshAdvisory(state, record?.wishAdvisory, deps, { prepared, collect: !wishFocus }) : null;
+                ? ColdEconomyDecision.refreshAdvisory(state, record?.wishAdvisory, deps, { prepared, collect: !wishFocus, why }) : null;
+            if (advisory && !refreshed) {
+                if (!solo) advisory('skip', 'party');
+                else if (deps.fullReview) advisory('skip', 'full_review');
+                else {
+                    advisory('refused', why[0] || 'unknown');
+                    if (wishFocus) advisory('skip', 'wish_focus');
+                }
+            }
             // A compact advisory contains no quantitative project needs.
             // The bounded clan-market review needs the full current graph.
             const marketReview = refreshed && (craftBidReview ? 'craft_bid' : clanMarketReviewDue(state) ? 'clan_market' : '');
-            if (marketReview && Reaction.woke(marketReview, where)) refreshed = null;
-            if (refreshed) refreshed = await refreshCraftPacket(state, timestamp, refreshed);
+            if (marketReview && Reaction.woke(marketReview, where)) { refreshed = null; advisory?.('skip', 'market_review'); }
+            if (refreshed) {
+                refreshed = await refreshCraftPacket(state, timestamp, refreshed);
+                if (!refreshed) advisory?.('skip', 'craft_packet');
+            }
             // Compact advice has no full money queue for clan acquisition.
             // A null intention takes its ordinary native selection there.
-            if (refreshed?.economy.network.activity === null && GearAcquisitionPlanner.isClanOwnedPlan(previousPlan) && Reaction.woke('clan_market', where)) refreshed = null;
+            if (refreshed?.economy.network.activity === null && GearAcquisitionPlanner.isClanOwnedPlan(previousPlan) && Reaction.woke('clan_market', where)) {
+                refreshed = null; advisory?.('skip', 'clan_market');
+            }
             const nullReuse = refreshed?.economy.network.activity === null;
             // Build the renewed proof against the native live history, so a
             // consumed wake/expiry does not invalidate it again on publication.
