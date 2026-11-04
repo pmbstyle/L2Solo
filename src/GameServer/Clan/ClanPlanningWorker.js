@@ -34,7 +34,8 @@ tables.watch('personal_warehouse', { reset() {}, remove() {}, put: (_key, row) =
 ClanSupplies.useRowSource(id => tables.rows('clan_supplies').get(id), () => tables.ready('clan_supplies'));
 PersonalWarehouse.useRowSource(id => tables.rows('personal_warehouse').get(id), () => tables.ready('personal_warehouse'));
 const boardIndex = new BoardIndex();
-tables.watch('board', boardIndex.follower());
+// The index keeps its own record per row; the mirror keeps only the version.
+tables.watch('board', boardIndex.follower(), { retain: false });
 // The channel sends every table to every worker; this one reads none of the
 // cold worker's tables (memory ~one row per bot, parties, goals,
 // raids, meetings, player anchors, clan halls, recipes),
