@@ -1,3 +1,4 @@
+const FailureLog = require('../../FailureLog');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const NpcHate = invoke('GameServer/Npc/NpcHate');
@@ -423,7 +424,8 @@ function applyAggroPoints(session, actor, target, skill, semantic) {
     try {
         npcs = fetchNpcsInRadius.call(World, actorX, actorY, 1000) || [];
     }
-    catch {
+    catch (error) {
+        FailureLog.note('combat.npcs_in_radius', error);
         return 0;
     }
     let applied = 0;
@@ -1293,7 +1295,7 @@ function refreshStats(session, target) {
     if (target?.session) {
         try {
             invoke(path.actor).calculateStats(target?.session || session, target);
-        } catch (_) {}
+        } catch (error) { FailureLog.note('combat.recalc_stats', error); }
     }
     target.statusUpdateVitals?.(target);
 }

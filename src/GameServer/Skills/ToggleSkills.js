@@ -1,3 +1,4 @@
+const FailureLog = require('../../FailureLog');
 const ConsoleText = invoke('GameServer/ConsoleText');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const EffectTicker = invoke('GameServer/Effects/EffectTicker');
@@ -174,7 +175,7 @@ function refreshActor(session, actor) {
         session.dataSendToMe(ServerResponse.abnormalStatusUpdate.fromActor(actor));
         try {
             session.dataSendToMe(ServerResponse.userInfo(actor));
-        } catch (_) {}
+        } catch (error) { FailureLog.note('combat.user_info', error); }
     }
 }
 

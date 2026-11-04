@@ -113,8 +113,9 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
   PartyCompanionService…; `NpcDied` → EconomicValuation, KnowledgeLearning, BotAI…; `Die.js` → EconomyContext,
   EconomicValuation, BotLifeState. Layering.
 - **CMB-13 two player-vs-NPC tests:** `fetchId() >= 2000000` vs presence of `fetchKind`.
-- **CMB-14 silent catches** around stat recalculation (`EffectStore`, `C4SkillEffects`) — stale stats unnoticed; also
-  RaidCurse, ToggleSkills, EffectTicker.
+- **CMB-27 `RaidCurse` scans the world per cast.** A non-offensive skill reads `raidBossesAttackedBy` for each target,
+  a filter over every `World.npc.spawns`, and `combatLevel` of a summon scans every session (perf; their throws
+  are counted, `raid.curse_lookup`). `World/RaidEntityIndex` already holds the bosses.
 - **CMB-15 local patches:** skill 84 in `finalizeSkillResult`, skills 109/121 in HEAL_PERCENT, weapon 5606 in
   `C4WeaponSA`, duck-type guard in `Npc.hit` for stale aggro entries (crashed the process).
 - **CMB-16 dead:** `Attack.physicalRaceModifier` test only (`test_melee_dd_class_skills`). (`Formulas.calcMagicSuccess`

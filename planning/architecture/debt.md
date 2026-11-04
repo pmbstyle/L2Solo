@@ -9,7 +9,7 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
 
 1. **Failures that do not show.** The owner is `src/FailureLog.js` (a survived failure counts by site, the first
    is logged with its stack, status `swallowed=`; main and the cold worker). Sites not yet through it:
-   stat recalculation (CMB-14), geometry parse (WOR-13). A cold command
+   geometry parse (WOR-13). A cold command
    request dropped as malformed is counted but still gets no ack (the worker's command waits). A rejected
    `World.fetchUser` read as "not a player" in two AI states (AI-13, perf). Every other fix is guesswork while these
    hide the cause.

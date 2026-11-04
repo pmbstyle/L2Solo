@@ -20,5 +20,5 @@ rejection is logged once per reason and counted).
 | `ProgressionRates` ~227, `NpcShopPriceScale` ~2, `BotEconomyPricing` ~7 | `Math.max(1, rate \|\| 1)` | rates below 1 ignored | low | new |
 | `PopulationService` ~2895 vs ~2459, `BackgroundWorkGovernor` ~142, `FloorAwareActivationPolicy` ~57 | `\|\| 40` vs `\|\| 0` for the same "0 = off" config | config 0 means off in one place, default in another | low | new |
 
-Known items also confirmed: CMB-14 stat-recalc catches, WOR-13 minion/geometry/arena catches.
+Known items also confirmed: WOR-13 minion/geometry/arena catches.
 The scan flagged 210 catches; the list above is the ones that matter.
