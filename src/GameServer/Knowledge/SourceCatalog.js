@@ -18,6 +18,8 @@ function rewardForNpc(npcId) {
 // cache holds one list, and the next wish review would rebuild it in full.
 const NO_SOURCES = new Map();
 let sourceIndexCache = { spots: null, rewards: null, npcs: null, byItemId: NO_SOURCES };
+// Each index record's reward ordinal, for merging two indexes in reward order.
+const recordOrdinals = new WeakMap();
 // Reward relations belong to their source array, including cold-combat name
 // lookups. NPC metadata is prepared only for readers that need it. Weak keys
 // release replaced sources; no atlas retains actors or selected spots.
@@ -114,17 +116,9 @@ function rewardSelectedAtSpot(spot, reward) {
     return (spot.npcEntries || []).some(entry => entry.selfId && Number(entry.selfId) === Number(reward.selfId)
         || name && entry.name && String(entry.name).trim().toLowerCase() === name);
 }
-function sourcesByItem(spots = []) {
-    if (!spots?.length) return NO_SOURCES;
-    const rewards = DataCache.npcRewards || [];
-    const npcs = DataCache.npcs;
-    if (sourceIndexCache.spots === spots && sourceIndexCache.rewards === rewards && sourceIndexCache.npcs === npcs
-        && sourceIndexCache.spotsLength === spots.length && sourceIndexCache.rewardsLength === rewards.length
-        && sourceIndexCache.npcsLength === npcs?.length) {
-        return sourceIndexCache.byItemId;
-    }
-
-    const atlas = sourceRewardAtlasFor(rewards, npcs);
+// One index over a spot list (the shape every reader gets): item id ->
+// records in reward order, then spot order within a reward.
+function indexSpots(spots, atlas) {
     const selectedRewards = new Set();
     const spotByNpc = new Map();
     const spotByName = new Map();
@@ -170,7 +164,7 @@ function sourcesByItem(spots = []) {
     // after construction, leaving only the current selected view.
     const recordsByReward = new Map();
     // Union ID/name matches, retaining original reward order for ties and aliases.
-    [...selectedRewards].sort((left, right) => left.ordinal - right.ordinal).forEach(({ reward, npcLevel, protectedRaid }) => {
+    [...selectedRewards].sort((left, right) => left.ordinal - right.ordinal).forEach(({ reward, ordinal, npcLevel, protectedRaid }) => {
         const spotsForNpc = [...new Map([
             ...(spotByNpc.get(Number(reward.selfId)) || []),
             ...(spotByName.get(String(reward.template?.name || '').trim().toLowerCase()) || [])
@@ -206,6 +200,7 @@ function sourcesByItem(spots = []) {
                     const counts = spotCounts.get(spot);
                     const record = { reward, spot, kind, npcLevel, totalCount: counts.total,
                         sourceCount: counts.byNpc.get(Number(reward.selfId)) ?? 0 };
+                    recordOrdinals.set(record, ordinal);
                     entry = { record, itemIds: new Set() };
                     records.set(kind, entry);
                 }
@@ -218,6 +213,78 @@ function sourcesByItem(spots = []) {
         });
     });
 
+    return byItemId;
+}
+
+function sameRows(left, right) {
+    if (left.length !== right.length) return false;
+    for (let index = 0; index < left.length; index++) if (left[index] !== right[index]) return false;
+    return true;
+}
+
+// A protected raid reward is eligible only at its own raid spot and every
+// other reward only at a non-raid spot (rewardAllowedAtSpot), so a list's
+// index is the index of its non-raid rows merged, by reward order, with the
+// index of its raid rows. The non-raid rows are the spot catalogue, the same
+// rows in every clan worker plan message (each message brings a new array):
+// their index is built once per row list, rewards and NPCs. Each clan's raid
+// decorations are a few rows on top (a small overlay, the last few held).
+const MAX_OVERLAYS = 8;
+const NO_ROWS = Object.freeze({ byItemId: NO_SOURCES, ids: new Set() });
+let baseIndex = null;
+let overlays = [];
+function baseIndexFor(rows, rewards, npcs, atlas) {
+    const held = baseIndex;
+    if (held && held.rewards === rewards && held.npcs === npcs && held.rewardsLength === rewards.length
+        && held.npcsLength === npcs?.length && sameRows(held.rows, rows)) return held;
+    baseIndex = { rows, rewards, npcs, rewardsLength: rewards.length, npcsLength: npcs?.length,
+        ids: new Set(rows.map(spot => spot.id)), byItemId: indexSpots(rows, atlas) };
+    overlays = [];
+    return baseIndex;
+}
+
+function mergeByOrdinal(base = EMPTY, extra) {
+    const merged = [];
+    let left = 0, right = 0;
+    while (left < base.length || right < extra.length) {
+        if (right >= extra.length || left < base.length
+            && recordOrdinals.get(base[left]) < recordOrdinals.get(extra[right])) merged.push(base[left++]);
+        else merged.push(extra[right++]);
+    }
+    return merged;
+}
+
+function overlayIndexFor(base, raids, atlas) {
+    const held = overlays.find(entry => entry.base === base && sameRows(entry.raids, raids));
+    if (held) return held.byItemId;
+    const byItemId = new Map(base.byItemId);
+    for (const [itemId, records] of indexSpots(raids, atlas)) {
+        byItemId.set(itemId, mergeByOrdinal(base.byItemId.get(itemId), records));
+    }
+    overlays.push({ base, raids, byItemId });
+    if (overlays.length > MAX_OVERLAYS) overlays.shift();
+    return byItemId;
+}
+
+function sourcesByItem(spots = []) {
+    if (!spots?.length) return NO_SOURCES;
+    const rewards = DataCache.npcRewards || [];
+    const npcs = DataCache.npcs;
+    if (sourceIndexCache.spots === spots && sourceIndexCache.rewards === rewards && sourceIndexCache.npcs === npcs
+        && sourceIndexCache.spotsLength === spots.length && sourceIndexCache.rewardsLength === rewards.length
+        && sourceIndexCache.npcsLength === npcs?.length) {
+        return sourceIndexCache.byItemId;
+    }
+    const atlas = sourceRewardAtlasFor(rewards, npcs);
+    const rows = [], raids = [];
+    for (const spot of spots) (spot?.raidBoss === true ? raids : rows).push(spot);
+    // A raid-only list (no catalogue rows) keeps the held catalogue index.
+    const base = rows.length ? baseIndexFor(rows, rewards, npcs, atlas) : NO_ROWS;
+    // A raid row sharing a non-raid row's id would be deduplicated against it
+    // in one joint list: index such a list as a whole.
+    const byItemId = !raids.length ? base.byItemId
+        : raids.some(spot => base.ids.has(spot.id)) ? indexSpots(spots, atlas)
+            : overlayIndexFor(base, raids, atlas);
     sourceIndexCache = { spots, rewards, npcs, spotsLength: spots.length, rewardsLength: rewards.length,
         npcsLength: npcs?.length, byItemId };
     return byItemId;

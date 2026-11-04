@@ -157,6 +157,7 @@ player online (8 in flight, status `coldDue`).
 | Clans | 40 bot clans (`CLAN_SIMULATION_MAX_BOT_CLANS`); 70 % members; 10/15/20/30/40 per clan by level | Database `createAutonomousClan` ~9478, ClanSimulationConfig ~5, ClanRules `memberLimit` ~19 | `founder_clan_limit` / clan limits | reason; dD |
 | Clan action pass | 8 actions, 80 ms / 20 ms with a player, 60 s | ClanSimulationConfig ~35, ClanActionService ~714 | next pass | dD |
 | Founder pass | 16 per 60 s; 20 ms, 5 ms with a player | ClanSimulationConfig ~36, ClanSimulationService ~351 | deferred | dD |
+| Source index overlays | the selected source index of the catalogue rows, once per row list; 8 raid overlays on it (`MAX_OVERLAYS`) | Knowledge/SourceCatalog `overlayIndexFor` | the oldest overlay is rebuilt (a few raid rows) | none |
 | Clan goals | top 8 (max 12); candidate cache 128 FIFO | ClanGoalCandidateService ~8, ~83 | rest ignored | none |
 | Orders / wars | 8 deliveries; 4 operations, roster 3-9 | ClanOrderService ~14, ClanWarConfig ~5, ClanWarDirector ~263 | deferred / `operation_capacity` | reason |
 | Action result | 16 KiB; depth 3, 32 keys, 512-char strings, 32 array items | Database ~185 | over 16 KiB `{truncated:true}`; the depth/key/string/array cuts are silent | flag / none |
