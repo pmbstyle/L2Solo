@@ -100,7 +100,7 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
   `calcPhysicalDamage`/`calcMagicDamage`; `BotEmergencyFinisher`, `WishProviders`, `ClanRaidEstimate` are raw.
   Use `HitRules.expected*`.
 - **CMB-7 hot NPC and hot servitor melee have no weapon spread** (`prepareNpcMeleeHit` passes no `pAtkRnd`); cold mobs
-  (`ColdMobAction`) and cold servitors (`ColdSummonProfile`) do. C4 (c4-check): +0..10 % for every attacker.
+  (`ColdMobAction`) and cold servitors (`ColdSummonProfile`) do. C4 check below: +0..10 % for every attacker.
 - **CMB-8 stat assembly twice.** Hot `CalculateStats` rounds twice, runs `C4GradePenalty` and item skills; cold rounds
   once, no grade penalty.
 - **CMB-9 half-migration: legacy buff markers.** `BuffCatalog.ALL_BUFFS`, `actor.activeBuffs` (written by
@@ -125,7 +125,7 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
   `calcMagicSuccessRate`.)
 - **CMB-17 cold rewards copy:** `BackgroundDropResolver.progressionForFight` inlines `level*level*mod` instead of
   `Formulas.calcAcquiredExp`. (Cold drops do apply deep blue; a party passes its highest
-  member's level as `killerLevel`, slightly broader than C4, c4-check.)
+  member's level as `killerLevel`, slightly broader than C4, C4 check below.)
 - **CMB-18 raid gap `+8/+7` literal** in `OpportunisticRaidPolicy` instead of `RaidCurse.RAID_LEVEL_MAX_DIFFERENCE`.
 - **CMB-19 peace zone checked in the request layer twice and in cold separately;** skills do not use the client-view
   rule of weapon hits.
@@ -140,12 +140,33 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
 - **CMB-20 hot-only rules with no cold counterpart** (may be intended): cast break, transfer pain, petrification,
   grade penalty, raid curse, position, C4 pets.
 
+## C4 check (2026-11-03)
+
+Read from source: Lisvus `gitlab.com/TheDnR/l2j-lisvus` @ fdc7e33 (the revision the project uses) and L2J Mobius
+master 245bc80a `L2J_Mobius_C4_ScionsOfDestiny`. Mobius "C4" carries later-chronicle code (it says "Interlude
+adjustment", "H5 Damage Formula"); where they differ, **Lisvus is taken as C4**.
+
+| # | Rule | C4 | Project now | Verdict |
+|---|---|---|---|---|
+| CMB-1 | Skill reuse | `L2Character.doCast`: reuse × m/pReuseRate × 333/MAtkSpd or PAtkSpd; Skill Mastery (players) → 100 ms. NPCs: same formula, no Mastery, no floor | Hot player `Actor.markSkillReuse` matches. NPC `NpcCombatChoice.reuseMs` = max(1000, raw); pets raw reuse, cold the Skill model's base reuse (`ColdCombatProfile.skillRecord`), no speed scaling | Player OK. NPC 1000 ms floor is ours, not C4. One shared reuse function (Mastery as a flag) for player, NPC, pet, cold |
+| CMB-2 | MP cost | `CharStat.getMpConsume/getMpInitialConsume`: initial part paid at cast start (lost on interrupt), rest at hit; dance + n × nextDanceCost; consume-rate stats | Hot formula matches but pays all at landing (interrupt loses nothing). Cold the record's base `skill.mp` (the Skill model's) | Hot: split initial/rest (needs per-level `mpInitialConsume` from the Lisvus datapack). Cold: use the shared function |
+| CMB-4 | PvP flag | `updatePvPStatus`: attacker flagged only if target karma == 0; at swing start, hit or miss; summon flags owner; Lisvus 40 s / 20 s | `PvpRules.flagsAttacker`, hot `PvpFlag.attack` at swing start (hit or miss) and offensive skill landing (Lisvus `callSkill`), summon/pet flags owner; cold same rule. 15 s | OK. 15 s is ours |
+| CMB-4 | PvP kill | `onKillUpdatePvPKarma`: flagged target + killer without karma → PvP+1; war → PvP+1; karma target → PvP+1 (`AwardPKKillPVPPoint=True`); white → PK+1 + karma 240 × max(1,pk/2) × max(1,lvl ratio) ≤ 10000; killing a summon gives karma, no PK | `PvpRules.killOutcome` + `tallyAfterKill`, hot `ReceivedHit.creditKill` (also a summon's/pet's death), cold resolver + commit | OK |
+| CMB-4 | CP | `PcStatus.reduceHp`: transfer pain, then CP absorbs when attacker is playable (player, summon, pet), then HP | `PvpRules.shieldDamage` after transfer pain, playable = character, summon or pet (`PvpRules.isPlayable`) | OK |
+| CMB-7 | Monster melee spread | Lisvus `calcPhysDam`: +0..10 % for every attacker | Hot NPC and hot servitor (`Attack.prepareNpcMeleeHit`): no spread; player ±pAtkRnd % (Mobius shape); cold mobs ±30 %, cold servitors ±template pAtkRnd | One rule in HitRules for all attackers (Lisvus +0..10 %); player rule differs from Lisvus too |
+| CMB-20 | Grade penalty | skill 4267 level 1: ×0.22 to atk/cast speed, evasion, EXP/SP, run speed, regen | `C4GradePenalty` matches (hot only) | OK. Cold only matters if cold bots can wear over-grade gear (unchecked) |
+| CMB-3 | Servitor attack | No overrides: `L2Character.onHitTimer` — reflect, absorb, cast/attack break, owner flag, target CP | `SummonControl.attackTick` calls `receivedHit` directly: no cast break, reflect, arena check (owner flag and CP applied) | **Not C4:** route the servitor swing through `Attack.hit` with `Formulas` timing |
+| CMB-17 | Deep blue | Drops: highest level of all attackers (raid: skip > raid+8); EXP: (5/6)^(diff−5) over 5, highest rewarded member in range | `ProgressionRates.deepBlueRule`, `MobExperience.gapFactor` match | OK. Cold party counts a member who never hit (slightly broader) |
+
+Not verified: retail itself (code + shipped settings used); Mobius pinned 6bc10d28 vs master; whether a healer joins
+`_attackByList`; source of NPC `pAtkRnd` = 30 in `data/Npcs`; whether cold bots equip over-grade gear.
+
 ## Open questions
 
-1. CMB-1/2: base reuse and MP (no multipliers) in cold — simplification or gap? One function for hot, cold and estimates? (c4-check:
+1. CMB-1/2: base reuse and MP (no multipliers) in cold — simplification or gap? One function for hot, cold and estimates? (C4 check:
    gap; one shared reuse and MP function, the NPC 1000 ms floor is ours.)
-2. CMB-7: does a C4 monster hit have weapon spread? (c4-check: yes, Lisvus +0..10 % for every attacker.)
-3. CMB-3: should a servitor swing go through `Attack.hit`? (c4-check: yes, C4 has no servitor override.)
+2. CMB-7: does a C4 monster hit have weapon spread? (C4 check: yes, Lisvus +0..10 % for every attacker.)
+3. CMB-3: should a servitor swing go through `Attack.hit`? (C4 check: yes, C4 has no servitor override.)
 4. CMB-20: grade penalty, transfer pain, cast break absent in cold — by design?
 5. Do cold bots fight with C4 pets, or servitors only by design?
 6. CMB-9: can `BuffCatalog`/`activeBuffs` go, or do packets need them? (Stats still read them, CMB-9.)

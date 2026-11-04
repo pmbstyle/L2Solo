@@ -8,6 +8,9 @@ The map of what exists, who owns each rule and which path is canonical: `plannin
 `README.md`; read the area you touch before changing it).
 `planning/` holds open work only: a finished plan, audit or report is deleted in the commit that finishes it
 (what was done lives in the commits and the code).
+`planning/architecture/` keeps only README.md, bot-ai.md, combat.md, economy.md, population.md, persistence.md, world.md,
+debt.md, limits.md, tables.md, e2e.md, findings.md and check.js; no other md under `planning/` is committed except an
+open plan for a large item, deleted when it is done.
 
 ## Performance is a primary criterion
 

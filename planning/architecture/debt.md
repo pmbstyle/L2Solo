@@ -35,7 +35,7 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    `Database.js` holds game rules (PER-10); town navigation (world rules) lives under `Bot/AI`.
 8. **Repairs that hide bugs.** `LifecycleSafetySweep`, orphan-party reconcile, stall recovery (POP-15); start-up
    item repairs (PER-11); duck-type guard in `Npc.hit` (CMB-15).
-9. **Item-skill cast tails** (beside `Backpack.castItemSkill`, [pass3-client.md](pass3-client.md)). Bots recall with
+9. **Item-skill cast tails** (beside `Backpack.castItemSkill`; client findings in [findings.md](findings.md)). Bots recall with
    their own Scroll of Escape cast in `BotTownTravel.beginEscape` (fake skill, plain `setTimeout`, scroll paid by
    TripPayment) beside `Backpack.castItemSkill` (a parallel path; `BotTownTravel.js` ~113); item casts never
    `dequeueEvent`, so a click queued during an item cast (move, attack, skill) is dropped; `Backpack.deleteItem` still
@@ -69,7 +69,7 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
 17. **One magic flag, two C4 rules.** `Skill.fetchSpell` (Lisvus `isMagic`: cast speed, spiritshot, cast break, MP
    and land rate) also picks the damage formula (`Attack.prepareSkillDamage`, `ColdMobAction`, `BackgroundResolver`);
    C4 picks it by skill type (Mdam/Pdam handlers). So Mouth Odor Attack 4110 (MDAM, not magic) keeps `spell: true`
-   (pass4 D-4), and a PDAM skill flagged magic (Die! You fool!) deals magic damage.
+   ([findings.md](findings.md) D-4), and a PDAM skill flagged magic (Die! You fool!) deals magic damage.
 
 18. **The native drop tooltip has no pages.** `NativeDropProtocol.encode` refuses more than 64 rows (8192 chars) and
    `NpcBypasses/NativeDrop` then sends the target as unavailable: Antharas 12211 (90 C4 rows since the legacy drops,
@@ -88,7 +88,7 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
 a rich bot there has a null activity (T178): a test expecting "one leaf" from such a scene breaks the same way. Known
 red in `notRunTests`: `test_beginner_shot_policy`, `test_cold_armor_set_effects`, `test_finite_market_income`,
 `test_gear_intermediate_candidates`, `test_npc_purchase_consumers`, `test_task4_b5_hot_cold_same`,
-`test_task4_survival_tranche` (verdicts: [pass3-tests.md](pass3-tests.md)).
+`test_task4_survival_tranche` (verdicts: [findings.md](findings.md) TS6).
 
 ## Bot tables (TBL)
 
@@ -128,7 +128,7 @@ red in `notRunTests`: `test_beginner_shot_policy`, `test_cold_armor_set_effects`
    the named-migration scheme is agreed with Slava).
 2. Make failures visible (theme 1).
 3. Atomic value moves (PER-1, PER-2).
-4. C4 check against L2J Mobius C4 (combat checked: [c4-check.md](c4-check.md); open from it: support casts do not
+4. C4 check against L2J Mobius C4 (combat checked: [combat.md](combat.md) "C4 check"; open from it: support casts do not
    flag (CMB-21), owned quest NPCs count as summons in PvP memory (CMB-22)), then one function per hot/cold rule
    (theme 2).
 5. Large plans, each after the perf tool: board publication (ECO-1), cold-bot record audit (PER-7), bot warehouse
@@ -153,11 +153,11 @@ Each area file ends with its open questions; none blocks the order above.
   D-S come from crafting, the board or the admin panel. `staticShotsDisabled`, `FixedShotOffers` and the
   `allowsFixedShot` branches go: one rule for bots and the player.
 - Disabled quests: add the missing quest-item templates (7077, 7162, 7173-7181, from the Lisvus datapack), enable
-  Q035, Q038, Q039, re-check the reasons of the other 13 (pass2-dormant D4).
+  Q035, Q038, Q039, re-check the reasons of the other 13 ([findings.md](findings.md) D4).
 - Death wait: no fixed number. One function for hot, cold and `EconomicValuation`: wait while a realistic revive
   chance exists (a living party/clan member nearby with a resurrection skill and MP, or a scroll, not in combat), capped
   by a config limit (e.g. 2 min, in limits.md); without a chance, a short pause from the persona via `TendencyRoll`
-  (~2-15 s). Replaces 12 s hot / 90 s cold (pass2-rule-numbers N1).
+  (~2-15 s). Replaces 12 s hot / 90 s cold ([findings.md](findings.md) N1).
 
 ## Found by the perf tool and e2e runs (2026-11-03)
 
