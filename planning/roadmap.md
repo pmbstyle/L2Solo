@@ -26,12 +26,11 @@ items are added or removed by priority at any time.
 
 | Item | P | S | Who |
 |---|---|---|---|
-| WAL grows ~600 MB in the first minutes after a boot (perf on fc07acea: max 231 → 720 MB) | mid | **high** | ivan |
 | PR #207 code brought in line with the rules: one arrow-cap admission point (ArrowStock), companion unload through the shared warehouse/sale owners, arrowCleanupFirst decision out of main (ECO-15) | low | mid | ivan |
 | Architecture passes this round: data vs C4 (pass4-data-c4), logic (pass2-logic), races (pass3-races) | mid | mid | ivan |
 | One poison value stops buffered persistence for every character (`CharacterWriteQueue`, races R11) | mid | **high** |  |
 | Fence without an owner (races R6): a release by id can drop another owner's fence; owner tokens | mid | mid |  |
-| Retention and WAL truncate never run during play: state retention deferred 29× 'player_protected' in a 15-min hot run, WAL 387+ MB (tables and WAL grow all session); run them through the governor, measure the truncate stall | low | **high** | ivan |
+| Retention and WAL truncate never run during play: state retention deferred 29× 'player_protected' in a 15-min hot run, WAL 387+ MB (tables and WAL grow all session); run them through the governor, measure the truncate stall; count the truncate gate's refusals (silent today) | low | **high** | ivan |
 
 **2. Performance**
 
@@ -40,7 +39,7 @@ items are added or removed by priority at any time.
 | Cold worker headroom (POP-23): ~40 % at 1731 bots after R1; profile its top costs and plan several workers for 5-10k | mid | mid |  |
 | Static merchants and service bots (46) hot all the time: measure in that run; if notable, spawn a town's merchants when a player comes near (decided: keep hot until measured) | low | low-mid |  |
 | Delete the actor-publication pipeline (~1000 lines, WOR-5, decided): less work on every actor move | low | mid |  |
-| Then, as the profile confirms (pass3-step-cost): C1 cold commit writes only changed stats keys (WAL, main JSON); C2 no full `calculateStats` on every hit/regen; C3/C4 vitals and broadcast fan-out by the player index; C5 `sigma` carried in plan lines (the 350-500 ms main turns); C6 visible bot routes to the path pool | mid | **high** |  |
+| Then, as the profile confirms (pass3-step-cost): C1 cold commit writes only changed stats keys (measured: `bot-life:save` rewrites the whole ~19 KB row, ~72 KB of WAL per save, ~4 MB/s in warm-up) (WAL, main JSON); C2 no full `calculateStats` on every hit/regen; C3/C4 vitals and broadcast fan-out by the player index; C5 `sigma` carried in plan lines (the 350-500 ms main turns); C6 visible bot routes to the path pool | mid | **high** |  |
 | Later perf: hot interaction queue drops, EconomyContext LRU thrash above 64 hot bots, board scan windows, wish route request cap, socket backpressure, incremental decision, sync A* on main for hot bots (WOR-2) | mid | mid |  |
 
 **3. One rule, data that knows it is stale**
