@@ -1881,22 +1881,8 @@ function applySchemaMigrations() {
             if (columns.has(column)) connection.exec(`ALTER TABLE bot_life_state DROP COLUMN ${column}`);
         }
         connection.exec(`
-            CREATE INDEX bot_life_state_party_owner_filter
-                ON bot_life_state(phase, partyId, activity, spotId, updatedAt);
             CREATE INDEX bot_life_state_party_request_expiry
                 ON bot_life_state(phase, partyRequestStatus, partyRequestedAt, partyRequestPriority);
-            CREATE INDEX bot_life_state_warehouse_release
-                ON bot_life_state(characterId, updatedAt)
-                WHERE phase = 'cold'
-                AND accountName NOT LIKE 'bot_craft_%'
-                AND (partyId IS NULL OR partyId = '')
-                AND activity IN ('hunting', 'resting');
-            CREATE INDEX bot_life_state_warehouse_demand
-                ON bot_life_state(updatedAt, characterId)
-                WHERE phase = 'cold'
-                AND accountName NOT LIKE 'bot_craft_%'
-                AND (partyId IS NULL OR partyId = '')
-                AND activity IN ('hunting', 'resting');
         `);
         PartyCandidateProjection.createIndex(connection);
         const projection = connection.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'bot_party_candidate_projection'").get();
@@ -1947,6 +1933,17 @@ function applySchemaMigrations() {
         }
         require('./GameServer/Clan/ClanJoinPenaltyMigration')(connection, now());
     }]);
+    // Four bot row indexes no query needs (their readers left with the goal
+    // reconcile and warehouse passes). Each holds updatedAt, which every save
+    // moves, so each cost a page per bot save: 42 MB/min of WAL (14 %) on the
+    // 1731-bot save. The queries that used them by chance take phase_partyId
+    // or the covering party candidate projection index.
+    migrations.push([84, () => connection.exec(`
+        DROP INDEX IF EXISTS bot_life_state_market_reconcile;
+        DROP INDEX IF EXISTS bot_life_state_party_owner_filter;
+        DROP INDEX IF EXISTS bot_life_state_warehouse_demand;
+        DROP INDEX IF EXISTS bot_life_state_warehouse_release;
+    `)]);
     const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
     migrations.forEach(([version, apply]) => {
         if (applied.has(version)) return;
