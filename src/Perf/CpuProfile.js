@@ -8,16 +8,23 @@ const { fileURLToPath } = require('url');
 // get back to waiting for I/O, so on main it is a turn of the event loop that every player packet
 // waited for. Pure; shared by the live recorder and scripts/perf.js.
 
-const ROOT = path.resolve(__dirname, '..', '..');
 const IDLE = '(idle)', GC = '(garbage collector)', PROGRAM = '(program)', ROOT_NODE = '(root)';
+// A run recorded from another checkout (a worktree, also one inside this checkout) names its files
+// under that checkout's root: a node_modules folder, or else the last top-level code folder in the
+// path, marks where the repository's own path starts.
+const CHECKOUT_TAIL = /\/(?:src|scripts|tests)\/(?!.*\/(?:src|scripts|tests)\/)/;
 
 function sourceOf(url) {
     let file = String(url || '');
     if (file.startsWith('file://')) {
         try { file = fileURLToPath(file); } catch { /* keep the raw url */ }
     }
-    if (file.startsWith(ROOT + path.sep)) return path.relative(ROOT, file).split(path.sep).join('/');
-    return file;
+    if (!path.isAbsolute(file)) return file;
+    file = file.split(path.sep).join('/');
+    const modules = file.indexOf('/node_modules/');
+    if (modules >= 0) return file.slice(modules + 1);
+    const tail = CHECKOUT_TAIL.exec(file);
+    return tail ? file.slice(tail.index + 1) : file;
 }
 
 // Project code is what a fix can change: files of this repository outside node_modules.

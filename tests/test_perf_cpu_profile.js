@@ -54,6 +54,15 @@ assert.deepEqual(a.owners, [
 ], 'each sample counts for its nearest project frame; one with none (GC) for itself');
 assert.equal(CpuProfile.sourceOf(url('src/NodeL2.js')), 'src/NodeL2.js');
 assert.equal(CpuProfile.sourceOf('node:internal/timers'), 'node:internal/timers');
+// A run recorded from a worktree names its files under that checkout, wherever it is.
+const worktree = '/tmp/x/src/scratchpad/wt-after';
+assert.equal(CpuProfile.sourceOf(`file://${worktree}/src/GameServer/Bot/AI/BotAI.js`), 'src/GameServer/Bot/AI/BotAI.js');
+assert.equal(CpuProfile.sourceOf(`${worktree}/scripts/perf.js`), 'scripts/perf.js');
+assert.equal(CpuProfile.frameOf({ functionName: 'tick', url: `${worktree}/src/NodeL2.js`, lineNumber: 4 }).key, 'tick src/NodeL2.js:5');
+assert.equal(CpuProfile.frameOf({ url: `${worktree}/src/NodeL2.js` }).project, true);
+assert.equal(CpuProfile.frameOf({ url: `${worktree}/node_modules/better-sqlite3/lib/index.js` }).project, false);
+assert.equal(CpuProfile.sourceOf(url('.claude/worktrees/x/src/NodeL2.js')), 'src/NodeL2.js', 'a worktree inside this checkout too');
+assert.equal(CpuProfile.sourceOf('/usr/lib/node/x.js'), '/usr/lib/node/x.js', 'a file outside any checkout keeps its path');
 
 // The next chunk overlaps this one up to +3 ms: those samples are left out, so the 5 ms run counts
 // once (here: its last 2 ms only).
