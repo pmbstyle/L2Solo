@@ -49,6 +49,17 @@ const BackgroundWorkGovernor = invoke('GameServer/Bot/Population/BackgroundWorkG
 const BackgroundJobRegistry = invoke('GameServer/Bot/Population/BackgroundJobRegistry');
 const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
 const STATE_RETENTION_KEY = Symbol('state-retention');
+// The WAL truncate's budget before one was measured: under the governor's 50 ms
+// player budget, so the first truncate (and its measurement) can happen in play.
+const WAL_TRUNCATE_FIRST_ESTIMATE_MS = 40;
+// A player stays online for hours: a truncate estimated over the player budget
+// is tried again once per this period (its new measurement replaces the
+// estimate), and past this WAL size it runs anyway (one bounded pause is
+// better than an unbounded file). The size, not the period, bounds the file:
+// at ~55 MB/min (hot run, 1731 bots) 10 min is ~550 MB, the ceiling holds it
+// at 512 MB whatever the write rate, about one ~80 ms pause per 9 min there.
+const WAL_TRUNCATE_ESTIMATE_RETRY_MS = 10 * 60 * 1000;
+const WAL_TRUNCATE_FORCE_WAL_BYTES = 512 * 1024 * 1024;
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const PartyGoalCalculation = invoke('GameServer/Bot/Population/PartyGoalCalculation');
 const PartyGoalPolicy = invoke('GameServer/Bot/Population/PartyGoalPolicy');
@@ -1061,6 +1072,7 @@ const PopulationService = {
     stateRetentionPassRows: 0,
     walResetUnsubscribe: null,
     walResetRunning: false,
+    walResetEstimateRetryAt: 0,
     nextWalResetAt: 0,
     personaBackfillTimer: null,
     personaBackfillRunning: false,
@@ -1219,6 +1231,7 @@ const PopulationService = {
         this.walResetUnsubscribe = null;
         this.walResetRunning = false;
         this.nextWalResetAt = 0;
+        this.walResetEstimateRetryAt = 0;
         PersistentStateRetention.reset();
         this.nextProtectedPartyFormationAt = 0;
         this.protectedPartyFormationFailures = 0;
@@ -2740,12 +2753,34 @@ const PopulationService = {
         });
     },
 
-    // The WAL truncate. It runs during play too: it waits on the checkpoint
-    // worker, but Database.checkpoint queues it behind main's DB queue, so it
-    // stalls that queue for its busy timeout (20 ms with a player, 50 idle)
-    // plus the truncate, and takes that time from the governor's background
-    // budget ('db_maintenance', shared with state retention). The gates kept
-    // here are about the WAL: big and grown enough, the last passive
+    // Admission of a DB maintenance pass (state retention, the WAL truncate)
+    // on the governor's 'db_maintenance' resource. With a player online and
+    // the governor off (BOT_BACKGROUND_GOVERNOR_ENABLED=false) nothing bounds
+    // the pass, so it is refused. A refusal is counted with its reason.
+    admitMaintenance(job, activity, admit) {
+        if (activity.protected && Config.backgroundGovernorEnabled === false) {
+            Database.noteMaintenanceRefusal(job, 'governor_off');
+            return null;
+        }
+        const admission = BackgroundWorkGovernor.admit({
+            ...admit, job, resource: 'db_maintenance',
+            playerProtected: !!activity.protected, realPlayers: activity.realPlayers
+        });
+        if (admission.ok) return admission;
+        Database.noteMaintenanceRefusal(job, `governor_${admission.reason}`);
+        return null;
+    },
+
+    // The WAL truncate, during play too. It runs on the checkpoint worker, but
+    // Database.checkpoint queues it behind main's DB queue, which waits for the
+    // whole of it: the IPC round trip, the busy wait for readers (20 ms with a
+    // player, 50 idle), backfill, fsync and ftruncate. Its budget is the last
+    // measured truncate (checkpoint.lastResetAttempt.durationMs, at least the
+    // busy wait; WAL_TRUNCATE_FIRST_ESTIMATE_MS before any), and with a player a
+    // truncate estimated over the governor's player budget is skipped, retried
+    // every WAL_TRUNCATE_ESTIMATE_RETRY_MS and forced past
+    // WAL_TRUNCATE_FORCE_WAL_BYTES. The
+    // gates kept here are about the WAL: big and grown enough, the last passive
     // checkpoint complete, none in flight. Every refusal is counted
     // (Database.noteMaintenanceRefusal); a failed truncate goes to FailureLog.
     runAdaptiveWalReset(timestamp = Date.now()) {
@@ -2772,12 +2807,26 @@ const PopulationService = {
         const activity = this.playerActivityProfile(timestamp);
         const configuredBusyMs = Math.max(1, Math.min(250, Number(options.default.Database?.checkpointResetBusyTimeoutMs) || 50));
         const busyTimeoutMs = activity.protected ? Math.min(20, configuredBusyMs) : configuredBusyMs;
-        const admission = BackgroundWorkGovernor.admit({
-            job: 'wal_truncate', resource: 'db_maintenance',
-            playerProtected: !!activity.protected, realPlayers: activity.realPlayers,
-            requestedBudgetMs: busyTimeoutMs, minimumBudgetMs: busyTimeoutMs
-        });
-        if (!admission.ok) return refuse(`governor_${admission.reason}`);
+        const measuredMs = Number(checkpoint.lastResetAttempt?.durationMs);
+        const estimateMs = Math.ceil(Math.max(busyTimeoutMs,
+            Number.isFinite(measuredMs) ? measuredMs : WAL_TRUNCATE_FIRST_ESTIMATE_MS));
+        const playerBudgetMs = Math.max(1, Number(Config.backgroundGovernorPlayerBudgetMs) || 50);
+        if (activity.protected && estimateMs > playerBudgetMs) {
+            // Over budget with a player: skipped, except past the WAL ceiling
+            // and once per retry period (counted as such); the governor gets
+            // its player budget and records the overrun.
+            if (walBytes >= WAL_TRUNCATE_FORCE_WAL_BYTES) Database.noteMaintenanceRefusal('wal_truncate', 'forced_over_ceiling');
+            else if (!this.walResetEstimateRetryAt) {
+                this.walResetEstimateRetryAt = timestamp + WAL_TRUNCATE_ESTIMATE_RETRY_MS;
+                return refuse('estimate_over_budget');
+            } else if (timestamp < this.walResetEstimateRetryAt) return refuse('estimate_over_budget');
+            else Database.noteMaintenanceRefusal('wal_truncate', 'estimate_retry');
+        }
+        const budgetMs = activity.protected ? Math.min(estimateMs, playerBudgetMs) : estimateMs;
+        const admission = this.admitMaintenance('wal_truncate', activity,
+            { requestedBudgetMs: budgetMs, minimumBudgetMs: budgetMs });
+        if (!admission) return Promise.resolve(null);
+        this.walResetEstimateRetryAt = 0;
 
         const retryMs = Math.max(1000, Number(options.default.Database?.checkpointResetRetryMs) || 5000);
         const cooldownMs = Math.max(retryMs, Number(options.default.Database?.checkpointResetCooldownMs) || 60000);
@@ -2809,12 +2858,14 @@ const PopulationService = {
         });
     },
 
-    // One bounded DELETE (PersistentStateRetention) per 1 s alarm, during play
-    // too: it runs on main's DB queue, where the player's writes wait behind
-    // it, so it goes through the governor ('db_maintenance', with a player at
-    // most its 50 ms per second) and its cooperative slice is the granted
-    // budget (<= 12 ms of queue held before it yields). Refusals are counted
-    // (Database.noteMaintenanceRefusal), failures go to FailureLog.
+    // One retention step (PersistentStateRetention: one policy, at most two
+    // statements, each bounded by construction to fit the slice) per 1 s
+    // alarm, during play too: it runs on main's DB queue, where the player's
+    // writes wait behind it, so it goes through the governor ('db_maintenance',
+    // with a player at most its 50 ms per second), its cooperative slice is the
+    // granted budget (<= 12 ms; the queue yields between its statements) and
+    // it waits while main lags past schedulerLagThrottleMs. Refusals are
+    // counted (Database.noteMaintenanceRefusal), failures go to FailureLog.
     runStateRetention(timestamp = Date.now()) {
         if (Config.stateRetentionEnabled === false || Config.enabled === false
             || this.stateRetentionRunning
@@ -2827,15 +2878,11 @@ const PopulationService = {
         }
         const activity = this.playerActivityProfile(timestamp);
         const requestedBudgetMs = Math.max(4, Math.min(50, Number(Config.stateRetentionBudgetMs) || 12));
-        const admission = BackgroundWorkGovernor.admit({
-            job: 'state_retention', resource: 'db_maintenance',
-            playerProtected: !!activity.protected, realPlayers: activity.realPlayers,
-            requestedBudgetMs, minimumBudgetMs: 4
+        const admission = this.admitMaintenance('state_retention', activity, {
+            requestedBudgetMs, minimumBudgetMs: 4,
+            maxLagMs: Math.max(1, Number(Config.schedulerLagThrottleMs) || 40)
         });
-        if (!admission.ok) {
-            Database.noteMaintenanceRefusal('state_retention', `governor_${admission.reason}`);
-            return Promise.resolve(null);
-        }
+        if (!admission) return Promise.resolve(null);
 
         const startedAt = Date.now();
         const budgetMs = admission.budgetMs;
@@ -2858,7 +2905,7 @@ const PopulationService = {
             if (result?.cycleComplete) {
                 const pauseMs = this.stateRetentionPassRows > 0
                     ? Math.max(1000, Number(Config.stateRetentionPassPauseMs) || 60000)
-                    : Math.max(60000, Number(Config.stateRetentionIdlePauseMs) || (6 * 60 * 60 * 1000));
+                    : Math.max(60000, Number(Config.stateRetentionIdlePauseMs) || (10 * 60 * 1000));
                 this.stateRetentionPassRows = 0;
                 this.nextStateRetentionAt = Date.now() + pauseMs;
             }
