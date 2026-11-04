@@ -131,9 +131,7 @@ None has a limits.md row or a debt line naming its missing event (except TownNav
 beginner-shot runout); `ColdSoloWindow` soft inputs at the window end (market watch has board writes but no wake);
 party member goal review every 60 s (`PopulationService` ~476, `GoalPlanner` ~22, `GoalService` ~41: the inputHash
 already names the inputs); `PartyRequestPlanner` reviewAt + partyWaitReplanMs 5 min; `PopulationService` phase policy
-10 s (POP-24: 0.003 % of main, kept); party income review 5 min (`PartyGoalPolicy` ~62,
-`CraftMaterialParty` ~202); REVIEW_MS 5-min holds (`CraftMaterialParty`, `PartyIncomeComparison`: keys miss kit,
-spoiler, route permission); `PartySessionReview` 20/5 min; +10/30 s step polls in `BackgroundResolver`
+10 s (POP-24: 0.003 % of main, kept); `PartySessionReview` 20/5 min; +10/30 s step polls in `BackgroundResolver`
 (~2543-2699), `BackgroundPartyResolver` (~189-355), `ClanPartyDuty` waiting on outcomes that already fire;
 `ColdMarketService` RETRY_DELAY_MS 15 min (the buyer wake is half-dead: `GoalExecutor` ~43 still refuses until the
 stamp); 30-min holds in `ColdShotEconomyService`, `ItemDisposition` ~394, `WishProviders` ~663 (its preparing and
