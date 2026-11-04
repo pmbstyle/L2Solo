@@ -66,4 +66,4 @@ function statsColumns(stats) {
     return { statsJson: JSON.stringify(body), mindJson: JSON.stringify(mind) };
 }
 
-module.exports = { compact, MIND_KEYS, split, merge, statsColumns };
+module.exports = { compact, MIND_KEYS, split, parsedObject, merge, statsColumns };

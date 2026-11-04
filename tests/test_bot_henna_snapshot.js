@@ -24,6 +24,9 @@ async function assertCachedAsStored(saved) {
     assert.deepEqual(saved.stats, stored.stats);
     assert.deepEqual(saved.inventory, stored.inventory);
     assert.equal(saved.simulation.revision, stored.simulation.revision);
+    // Both are what the stored texts parse to now (a parse handed on is that parse).
+    assert.deepEqual(stored.inventory, Life.normalizeInventoryStackability(JSON.parse(row.inventorySummary)));
+    for (const [key, value] of Object.entries(JSON.parse(row.mindJson || '{}'))) assert.deepEqual(stored.stats[key], value, key);
 }
 async function run() {
     try {
@@ -49,6 +52,13 @@ async function run() {
         await assertCachedAsStored(state);
         state = await Life.upsertState(Life.cachedState(id), 'kit_unchanged');
         assert.deepEqual(state.stats.hennas, slots);
+        await assertCachedAsStored(state);
+        // A save that moves the bag and the mind reads back the moved ones.
+        state = await Life.upsertState({ ...state, inventory: { ...state.inventory, 1835: { selfId: 1835, amount: 100 } },
+            stats: { ...state.stats, decisionSeq: Number(state.stats.decisionSeq || 0) + 1 } }, 'bag_and_mind_moved');
+        assert.equal(state.inventory[1835].amount, 100);
+        assert.equal(state.inventory[1835].stackable, true);
+        assert.equal(Life.cachedState(id).stats.decisionSeq, state.stats.decisionSeq);
         await assertCachedAsStored(state);
         const stepped = Life.cachedState(id);
         // The worker writes the kit of the row it stepped from: a henna writer

@@ -605,24 +605,34 @@ function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
     };
 }
 
-// save()'s own parse of the stats text it bound, kept for the normalize(row)
-// that follows when the row's statsJson (the RETURNING text) is that same text:
-// parsing it again gives an equal object. Taken once (no two states share it).
-const parsedStats = new WeakMap();
+// Parses main already holds of the texts a row carries, by the object they came with:
+// a row save() bound keeps save()'s stats parse ({ statsJson, stats }), taken once
+// (no two states share it); a state normalize() built keeps its mind parse and its
+// bag ({ mindJson, mind, inventorySummary, inventory }). normalize(row) takes a
+// parse while the row's text is the parsed text (parsing it again gives an equal
+// object): the RETURNING stats, and the mind and bag of the cached state the row
+// replaces (a review, a resolve that moved no item, a row read back unchanged),
+// which the new state then shares (a state is replaced, never edited). Costs the
+// two texts per cached state (~6 KB a bot in a 1731-bot world).
+const parsedColumns = new WeakMap();
 
 function normalize(row) {
-    const parsed = parsedStats.get(row);
-    if (parsed) parsedStats.delete(row);
+    const parsed = parsedColumns.get(row);
+    if (parsed) parsedColumns.delete(row);
+    const prior = parsedColumns.get(cache.get(Number(row.characterId)));
     const body = parsed && parsed.statsJson === row.statsJson ? parsed.stats : row.statsJson;
-    const stats = SpotRiskPolicy.marksInSteps(SavedStats.merge(body, row.mindJson), Date.now());
+    const mind = prior && prior.mindJson === row.mindJson ? prior.mind : SavedStats.parsedObject(row.mindJson);
+    const stats = SpotRiskPolicy.marksInSteps(SavedStats.merge(body, mind), Date.now());
     delete stats.marketTrades;
     delete stats.priceBeliefs;
     // The retired combat profile hold record and last round's debug copy (no reader).
     if (stats.coldCombat) delete stats.coldCombat.profileHold;
     delete stats.lastResolveDebug;
-    const inventory = normalizeInventoryStackability(parseJson(row.inventorySummary, {}));
+    // The bag is a pure function of its text (item templates do not change at run time).
+    const inventory = prior && prior.inventorySummary === row.inventorySummary ? prior.inventory
+        : normalizeInventoryStackability(parseJson(row.inventorySummary, {}));
 
-    return ClanMembershipPolicy.reconcileState({
+    const state = ClanMembershipPolicy.reconcileState({
         characterId: Number(row.characterId),
         accountName: row.accountName || '',
         name: row.characterName || '',
@@ -669,6 +679,8 @@ function normalize(row) {
         simulation: { revision: Math.max(0, Number(row.simulationRevision || 0)) },
         updatedAt: Number(row.updatedAt || 0)
     });
+    parsedColumns.set(state, { mindJson: row.mindJson, mind, inventorySummary: row.inventorySummary, inventory });
+    return state;
 }
 
 // A main write that moved a far row's revision hands back the written number
@@ -1038,7 +1050,7 @@ function save(row, options = {}) {
         }
         Metrics.recordDbFlush();
         row.statsJson = result.statsJson;
-        if (parsed) parsedStats.set(row, parsed);
+        if (parsed) parsedColumns.set(row, parsed);
         if (result.mindJson !== undefined) row.mindJson = result.mindJson;
         // The cache built from this row takes the row's revision (moved by
         // this write on a far row), not the older one the caller's state carried.
