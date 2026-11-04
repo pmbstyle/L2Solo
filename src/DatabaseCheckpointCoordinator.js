@@ -36,7 +36,10 @@ const counters = {
     resetErrors: 0
 };
 let last = null;
+// lastReset: the last reset that emptied the WAL (the truncate's growth baseline);
+// lastResetAttempt: the last reset tried, failed or busy included.
 let lastReset = null;
+let lastResetAttempt = null;
 // Told each finished checkpoint, after it is recorded and no longer in flight
 // (onResult): the WAL truncate decides on a fresh passive result there.
 const resultListeners = new Set();
@@ -48,6 +51,7 @@ function resetState() {
     durations.length = 0;
     last = null;
     lastReset = null;
+    lastResetAttempt = null;
 }
 
 function percentile(values, fraction) {
@@ -90,6 +94,7 @@ function record(result = {}) {
         if (durations.length > SAMPLE_LIMIT) durations.shift();
     }
     if (reset) {
+        lastResetAttempt = normalized;
         if (!normalized.ok) DiagnosticConfig.developerDiagnostics && (counters.resetErrors += 1);
         else if (Number(normalized.busy || 0) > 0) DiagnosticConfig.developerDiagnostics && (counters.resetBusy += 1);
         else {
@@ -248,7 +253,8 @@ function snapshot() {
         v8Heap: workerHeap,
         } : { diagnosticsEnabled: false }),
         last: last ? { ...last } : null,
-        lastReset: lastReset ? { ...lastReset } : null
+        lastReset: lastReset ? { ...lastReset } : null,
+        lastResetAttempt: lastResetAttempt ? { ...lastResetAttempt } : null
     };
 }
 

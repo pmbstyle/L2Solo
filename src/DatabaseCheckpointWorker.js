@@ -51,7 +51,9 @@ function checkpoint(message = {}) {
     if (resetMode) {
         connection.exec(`PRAGMA busy_timeout = ${Math.max(0, Math.min(250, Number(message.busyTimeoutMs) || 50))};`);
     }
-    const startedAt = workerData?.developerDiagnostics ? process.hrtime.bigint() : null;
+    // A reset (rare: the WAL truncate) is always timed, it is shown with diagnostics off.
+    const timed = resetMode || workerData?.developerDiagnostics;
+    const startedAt = timed ? process.hrtime.bigint() : null;
     try {
         const row = connection.prepare(`PRAGMA wal_checkpoint(${mode})`).get() || {};
         const logFrames = Math.max(0, Number(row.log || 0));
@@ -61,7 +63,7 @@ function checkpoint(message = {}) {
             mode: mode.toLowerCase(),
             beforeBytes,
             afterBytes: walBytes(),
-            ...(workerData?.developerDiagnostics ? { durationMs: Number(process.hrtime.bigint() - startedAt) / 1e6 } : {}),
+            ...(timed ? { durationMs: Number(process.hrtime.bigint() - startedAt) / 1e6 } : {}),
             busy: Math.max(0, Number(row.busy || 0)),
             logFrames,
             checkpointedFrames: Math.max(0, Number(row.checkpointed || 0)),

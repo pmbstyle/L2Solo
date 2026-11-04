@@ -57,7 +57,6 @@ function emptyCounters() {
         legacyOwnershipConflicts: 0,
         stateRetentionRuns: 0,
         stateRetentionRows: 0,
-        stateRetentionDeferrals: 0,
         stateRetentionErrors: 0,
         stateRetentionOverruns: 0
     };
@@ -115,7 +114,6 @@ const PopulationMetrics = {
         coldOwnerLegacyReasons: new DiagnosticMetricMap(),
         coldOwnerRejectReasons: new DiagnosticMetricMap(),
         stateRetentionDurationsMs: [],
-        stateRetentionDeferralReasons: new DiagnosticMetricMap(),
         stateRetentionPolicyRows: new DiagnosticMetricMap()
     },
     timer: null,
@@ -381,16 +379,6 @@ const PopulationMetrics = {
         }
     },
 
-    recordStateRetentionDeferral(reason = 'unknown') {
-        if (!Config.developerDiagnostics) return;
-        const key = String(reason || 'unknown');
-        this.counters.stateRetentionDeferrals += 1;
-        this.interval.stateRetentionDeferralReasons.set(
-            key,
-            Number(this.interval.stateRetentionDeferralReasons.get(key) || 0) + 1
-        );
-    },
-
     recordActivationFloorScan(scan = {}) {
         if (!Config.developerDiagnostics) return;
         const candidates = Math.max(0, Number(scan.candidates) || 0);
@@ -510,7 +498,6 @@ const PopulationMetrics = {
         const coldOwnerLegacyReasons = Object.fromEntries(this.interval.coldOwnerLegacyReasons.entries());
         const coldOwnerRejectReasons = Object.fromEntries(this.interval.coldOwnerRejectReasons.entries());
         const stateRetentionStats = stats(this.interval.stateRetentionDurationsMs);
-        const stateRetentionDeferralReasons = Object.fromEntries(this.interval.stateRetentionDeferralReasons.entries());
         const stateRetentionPolicyRows = Object.fromEntries(this.interval.stateRetentionPolicyRows.entries());
         this.interval.resolveDurationsMs = [];
         this.interval.partyFormationDurationsMs = [];
@@ -524,7 +511,6 @@ const PopulationMetrics = {
         this.interval.coldOwnerLegacyReasons = new DiagnosticMetricMap();
         this.interval.coldOwnerRejectReasons = new DiagnosticMetricMap();
         this.interval.stateRetentionDurationsMs = [];
-        this.interval.stateRetentionDeferralReasons = new DiagnosticMetricMap();
         this.interval.stateRetentionPolicyRows = new DiagnosticMetricMap();
         this.interval.partyFormationStageDurationsMs = new DiagnosticMetricMap();
         this.interval.skippedResolveReasons = new DiagnosticMetricMap();
@@ -555,7 +541,6 @@ const PopulationMetrics = {
                 ...stateRetentionStats,
                 policy: this.schedulerState.stateRetentionPolicy || 'none',
                 nextPolicy: this.schedulerState.stateRetentionNextPolicy || 'none',
-                deferralReasons: stateRetentionDeferralReasons,
                 policyRows: stateRetentionPolicyRows
             },
             partyFormationStages,

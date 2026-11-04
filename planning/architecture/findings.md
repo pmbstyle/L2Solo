@@ -111,7 +111,7 @@ A failure a catch survives goes through `FailureLog` (counted by site, the first
 | S4 | `Inventory/ShotStock` ~651 + `Bot/TradeService` ~425-443 | catch-all around buys; failed refund only attached to the error (counted, `shots.store_buy`) | med-high: adena lost, no item | PER-2 |
 | S5 | `Database` ~3597/3630 | AFK credit `Math.max(1, … \|\| 1)` | low: 0/NaN becomes 1 (latent) | refuse a bad amount |
 | S6 | `ProgressionRates` ~79, ~227, `NpcShopPriceScale` ~2 | `Math.max(1, rate \|\| 1)` | low: rates below 1 ignored | allow rates below 1 or say so |
-| S7 | `PopulationService` ~2810 vs ~2411 (`schedulerLagThrottleMs`), `ColdSimulationCoordinator` ~317 vs ~2263, `BackgroundWorkGovernor` ~142, `FloorAwareActivationPolicy` | `\|\| 40` vs `\|\| 0` for the same "0 = off" config | low: config 0 means off in one place, default in another | one reader per key |
+| S7 | `PopulationService` ~2411 (`schedulerLagThrottleMs`) vs `ColdSimulationCoordinator` ~317, ~2263, `BackgroundWorkGovernor` ~142, `FloorAwareActivationPolicy` | `\|\| 40` vs `\|\| 0` for the same "0 = off" config | low: config 0 means off in one place, default in another | one reader per key |
 
 ## Client entry points: crashes, accidental dupes and losses
 

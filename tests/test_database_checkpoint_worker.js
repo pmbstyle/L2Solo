@@ -106,6 +106,9 @@ async function run() {
     assert.strictEqual(truncatedWalSize, 0, 'TRUNCATE must release the physical WAL file after the generation is drained');
     assert.strictEqual(CheckpointCoordinator.snapshot().resets, 2);
     assert.strictEqual(CheckpointCoordinator.snapshot().lastReset.mode, 'truncate');
+    assert(Number.isFinite(CheckpointCoordinator.snapshot().lastResetAttempt.durationMs),
+        'the truncate\'s last result must carry its duration for the perf report');
+    assert(Database.stats().maintenance.refusals, 'maintenance refusals must be part of the database stats');
     const beforeCrash = CheckpointCoordinator.snapshot();
 
     await CheckpointCoordinator.terminateForTest();
@@ -179,6 +182,9 @@ async function run() {
         assert.strictEqual(failedReset.mode, 'restart', 'failed checkpoint results must retain their requested mode');
         assert.strictEqual(ErrorCoordinator.snapshot().resetErrors, 1,
             'a failed RESTART must increment reset-specific error telemetry');
+        assert.deepStrictEqual([ErrorCoordinator.snapshot().lastResetAttempt.ok, ErrorCoordinator.snapshot().lastResetAttempt.error],
+            [false, 'synthetic_checkpoint_failure'], 'a failed reset must show as the last reset tried');
+        assert.strictEqual(ErrorCoordinator.snapshot().lastReset, null, 'a failed reset must not move the growth baseline');
         await ErrorCoordinator.stop({ final: false });
     } finally {
         workerThreads.Worker = OriginalWorker;

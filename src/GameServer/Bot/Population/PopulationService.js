@@ -2741,36 +2741,56 @@ const PopulationService = {
         });
     },
 
+    // The WAL truncate. It runs during play too: it waits on the checkpoint
+    // worker, but Database.checkpoint queues it behind main's DB queue, so it
+    // stalls that queue for its busy timeout (20 ms with a player, 50 idle)
+    // plus the truncate, and takes that time from the governor's background
+    // budget ('db_maintenance', shared with state retention). The gates kept
+    // here are about the WAL: big and grown enough, the last passive
+    // checkpoint complete, none in flight. Every refusal is counted
+    // (Database.noteMaintenanceRefusal); a failed truncate goes to FailureLog.
     runAdaptiveWalReset(timestamp = Date.now()) {
         const resetWalBytes = Math.max(0, Number(options.default.Database?.checkpointResetWalBytes) || 0);
-        if (!resetWalBytes || this.walResetRunning || timestamp < Number(this.nextWalResetAt || 0)) {
+        if (!resetWalBytes) return Promise.resolve(null);
+        const refuse = (reason) => {
+            Database.noteMaintenanceRefusal('wal_truncate', reason);
             return Promise.resolve(null);
-        }
-        const activity = this.playerActivityProfile(timestamp);
-        if (activity.protected) return Promise.resolve(null);
-        if (this.resolving || this.stateRetentionRunning || this.partyFormationRunning) {
-            return Promise.resolve(null);
-        }
+        };
+        if (this.walResetRunning) return refuse('running');
+        if (timestamp < Number(this.nextWalResetAt || 0)) return refuse('retry_window');
 
         const pressure = this.checkpointPressure();
         const { checkpoint, last, lastReset, walBytes, growthBytes, resetGrowthBytes } = pressure;
-        if (walBytes < resetWalBytes || Number(Database.pending() || 0) > 0 || checkpoint.inFlight) {
-            return Promise.resolve(null);
-        }
-        if (lastReset.at && growthBytes < resetGrowthBytes) return Promise.resolve(null);
+        if (walBytes < resetWalBytes) return refuse('wal_below_threshold');
+        if (checkpoint.inFlight) return refuse('checkpoint_in_flight');
+        if (lastReset.at && growthBytes < resetGrowthBytes) return refuse('growth_below_threshold');
         const logFrames = Math.max(0, Number(last.logFrames || 0));
         const checkpointedFrames = Math.max(0, Number(last.checkpointedFrames || 0));
         if (!last.ok || last.mode !== 'passive' || Number(last.busy || 0) > 0 || checkpointedFrames < logFrames) {
-            return Promise.resolve(null);
+            return refuse('passive_incomplete');
         }
+
+        const activity = this.playerActivityProfile(timestamp);
+        const configuredBusyMs = Math.max(1, Math.min(250, Number(options.default.Database?.checkpointResetBusyTimeoutMs) || 50));
+        const busyTimeoutMs = activity.protected ? Math.min(20, configuredBusyMs) : configuredBusyMs;
+        const admission = BackgroundWorkGovernor.admit({
+            job: 'wal_truncate', resource: 'db_maintenance',
+            playerProtected: !!activity.protected, realPlayers: activity.realPlayers,
+            requestedBudgetMs: busyTimeoutMs, minimumBudgetMs: busyTimeoutMs
+        });
+        if (!admission.ok) return refuse(`governor_${admission.reason}`);
 
         const retryMs = Math.max(1000, Number(options.default.Database?.checkpointResetRetryMs) || 5000);
         const cooldownMs = Math.max(retryMs, Number(options.default.Database?.checkpointResetCooldownMs) || 60000);
-        const busyTimeoutMs = Math.max(1, Math.min(250, Number(options.default.Database?.checkpointResetBusyTimeoutMs) || 50));
+        const startedAt = Date.now();
         this.walResetRunning = true;
         this.nextWalResetAt = timestamp + retryMs;
         return Database.checkpoint({ mode: 'truncate', busyTimeoutMs }).then((result) => {
-            if (result?.ok && Number(result.busy || 0) === 0) {
+            if (!result?.ok) {
+                FailureLog.note('db.wal_truncate', new Error(result?.error || 'wal_truncate_failed'));
+            } else if (Number(result.busy || 0) > 0) {
+                Database.noteMaintenanceRefusal('wal_truncate', 'busy');
+            } else {
                 this.nextWalResetAt = Date.now() + cooldownMs;
                 Config.developerDiagnostics && console.info(
                     'DB          :: adaptive WAL truncate complete wal=%dMB frames=%d/%d duration=%dms',
@@ -2782,43 +2802,44 @@ const PopulationService = {
             }
             return result;
         }).catch((error) => {
-            utils.infoWarn('DB', 'adaptive WAL restart failed: %s', error?.message || error);
+            FailureLog.note('db.wal_truncate', error);
             return null;
         }).finally(() => {
+            BackgroundWorkGovernor.complete(admission.lease, { durationMs: Date.now() - startedAt });
             this.walResetRunning = false;
         });
     },
 
+    // One bounded DELETE (PersistentStateRetention) per 1 s alarm, during play
+    // too: it runs on main's DB queue, where the player's writes wait behind
+    // it, so it goes through the governor ('db_maintenance', with a player at
+    // most its 50 ms per second) and its cooperative slice is the granted
+    // budget (<= 12 ms of queue held before it yields). Refusals are counted
+    // (Database.noteMaintenanceRefusal), failures go to FailureLog.
     runStateRetention(timestamp = Date.now()) {
         if (Config.stateRetentionEnabled === false || Config.enabled === false
             || this.stateRetentionRunning
             || timestamp < Number(this.nextStateRetentionAt || 0)) {
             return Promise.resolve(null);
         }
-
-        const activity = this.playerActivityProfile(timestamp);
-        if (activity.protected) {
-            Config.developerDiagnostics && Metrics.recordBackgroundDeferral();
-            Config.developerDiagnostics && Metrics.recordStateRetentionDeferral('player_protected');
-            return Promise.resolve(null);
-        }
         if (this.checkpointPressure().resetDue) {
-            Config.developerDiagnostics && Metrics.recordStateRetentionDeferral('wal_pressure');
+            Database.noteMaintenanceRefusal('state_retention', 'wal_pressure');
             return this.runAdaptiveWalReset(timestamp);
         }
-        const lagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
-        const lagLimit = Math.max(1, Number(Config.schedulerLagThrottleMs) || 40);
-        if (lagMs >= lagLimit) {
-            Config.developerDiagnostics && Metrics.recordStateRetentionDeferral('event_loop_lag');
-            return Promise.resolve(null);
-        }
-        if (Database.pending() > 0) {
-            Config.developerDiagnostics && Metrics.recordStateRetentionDeferral('database_queue');
+        const activity = this.playerActivityProfile(timestamp);
+        const requestedBudgetMs = Math.max(4, Math.min(50, Number(Config.stateRetentionBudgetMs) || 12));
+        const admission = BackgroundWorkGovernor.admit({
+            job: 'state_retention', resource: 'db_maintenance',
+            playerProtected: !!activity.protected, realPlayers: activity.realPlayers,
+            requestedBudgetMs, minimumBudgetMs: 4
+        });
+        if (!admission.ok) {
+            Database.noteMaintenanceRefusal('state_retention', `governor_${admission.reason}`);
             return Promise.resolve(null);
         }
 
-        const startedAt = Config.developerDiagnostics ? Date.now() : 0;
-        const budgetMs = Math.max(1, Math.min(50, Number(Config.stateRetentionBudgetMs) || 12));
+        const startedAt = Date.now();
+        const budgetMs = admission.budgetMs;
         this.stateRetentionRunning = true;
         return Database.cooperatively(() => PersistentStateRetention.runNextBatch({
             timestamp,
@@ -2832,8 +2853,8 @@ const PopulationService = {
             staleLlmTurnMs: Config.staleLlmTurnMs,
             compactedConversationRetentionMs: Config.compactedConversationRetentionMs,
             conversationMaxUncompactedRows: Config.conversationMaxUncompactedRows
-        }), Math.min(budgetMs, Math.max(1, Number(Config.schedulerSliceMs) || 12))).then((result) => {
-            const durationMs = Config.developerDiagnostics ? Date.now() - startedAt : null;
+        }), budgetMs).then((result) => {
+            const durationMs = Date.now() - startedAt;
             this.stateRetentionPassRows += Math.max(0, Number(result?.rowsRemoved || 0));
             if (result?.cycleComplete) {
                 const pauseMs = this.stateRetentionPassRows > 0
@@ -2846,9 +2867,10 @@ const PopulationService = {
             return result;
         }).catch((error) => {
             Config.developerDiagnostics && Metrics.recordStateRetention({ errors: 1 }, Date.now() - startedAt);
-            utils.infoWarn('BotPopulation', 'bounded persistent-state retention failed: %s', error?.message || error);
+            FailureLog.note('db.state_retention', error);
             return null;
         }).finally(() => {
+            BackgroundWorkGovernor.complete(admission.lease, { durationMs: Date.now() - startedAt });
             this.stateRetentionRunning = false;
         });
     },
