@@ -9,7 +9,8 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
 ## Mechanisms
 
 - **World DB** `src/Database.js` (11.4k lines, ~195 methods): one `node:sqlite` connection, WAL, every call through one
-  promise queue (`enqueue`, `run`, `performTransaction`). Also holds game rules (clan join, AFK board, quest steps,
+  promise queue (`enqueue`, `run`, `performTransaction`); its drain gives the event loop a turn after 12 ms of jobs,
+  never inside one, so order and atomicity hold. Also holds game rules (clan join, AFK board, quest steps,
   NPC baskets, cold commits) — PER-10.
 - **Schema:** `database/sql/sqlite.sql` re-run on every start + numbered migrations 1–83 in `applySchemaMigrations`
   (`schema_migrations`); some migrations live in modules (`PartyCandidateProjection`, `PlayerWarehouse`,
@@ -19,7 +20,8 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
   `DatabasePlayerWarehouse`, `ClanLevelSpRepository`, `ClanWarRepository`, `DatabaseRecommendations`,
   `ClanAllianceRepository`, `ClanHall/Repository`, trade meetings).
 - **Buffered hot writes** `Persistence/CharacterWriteQueue`: per-character field patches (exp, location, vitals, karma,
-  item amount) flushed every 750 ms; `withCharacterFlush` flushes before any transactional method. One character's
+  item amount) flushed every 750 ms; `withCharacterFlush` flushes before any transactional method, and that method's own job
+  first writes what was buffered while it waited in the queue (`CharacterWriteQueue.applyInJob`). One character's
   bad patch never holds back the others: a failed batch is written again per character; a bad value (TypeError,
   SQLITE_CONSTRAINT) drops that patch, any other fault puts it back for the next tick; each is counted (FailureLog).
 - **History DB:** second file `<world>.history.sqlite`; world transactions write `history_outbox`, `HistoryWorker`

@@ -78,7 +78,7 @@ const DEFAULTS = {
     backgroundGovernorIdleBudgetMs: 250,
     backgroundGovernorPlayerBudgetMs: 50,
     backgroundGovernorIdleDbQueueMax: 8,
-    backgroundGovernorPlayerDbQueueMax: 0,
+    backgroundGovernorPlayerDbQueueMax: 8,
     backgroundGovernorLagAbortMs: 120,
     partyFormationIdleBudgetMs: 3000,
     partyFormationPlayerBudgetMs: 600,

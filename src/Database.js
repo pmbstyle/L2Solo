@@ -129,12 +129,29 @@ let historyPath;
 let boardDealCountsReady = false;
 let boardCounterCountsReady = false;
 let flushPendingCharacterWrites = null;
+// CharacterWriteQueue.applyInJob(characterId, apply): hands over and clears the
+// character's buffered snapshot. jobCharacterIds: the characters whose snapshot
+// the job enqueued now writes first (set while a withCharacterFlush work runs).
+let applyPendingCharacterWrite = null;
+let jobCharacterIds = null;
 const MARKET_TRADE_RETENTION_MS = HistoryStore.MARKET_TRADE_RETENTION_MS;
 const cooperative = {
     depth: 0,
     sliceStartedAt: 0,
     sliceMs: 0
 };
+// The queue runs its jobs back to back in one microtask chain; after this much
+// of it (jobs and their callers' continuations) the drain gives the event loop
+// a turn (setImmediate) before the next job. A job is never split, so order and
+// atomicity hold. A slice starts at the first job of a turn and ends at the
+// next event-loop boundary (an immediate armed with it), so a chain of awaited
+// calls with nothing else queued accumulates within its turn and yields too.
+const DB_QUEUE_SLICE_MS = 12;
+let drainSliceStartedAt = 0;
+
+function endDrainSlice() {
+    drainSliceStartedAt = 0;
+}
 
 const metrics = {
     pending: 0,
@@ -146,6 +163,8 @@ const metrics = {
     waitMs: 0,
     runMs: 0,
     maxPending: 0,
+    // Drain yields to the event loop (counted with diagnostics off too).
+    queueYields: 0,
     // Diagnostic snapshots built by stats(); control reads use pending().
     snapshots: 0,
     byOperation: null
@@ -166,6 +185,20 @@ function maintenanceSnapshot() {
 
 function yieldToEventLoop() {
     return new Promise((resolve) => setImmediate(resolve));
+}
+
+// After a job: yield when the drain slice (or a cooperatively() caller's
+// slice) is spent, then settle the job's promise.
+function afterQueueJob(settle) {
+    const at = now();
+    const cooperativeSpent = cooperative.depth > 0 && at - cooperative.sliceStartedAt >= cooperative.sliceMs;
+    if (!cooperativeSpent && !(drainSliceStartedAt > 0 && at - drainSliceStartedAt >= DB_QUEUE_SLICE_MS)) return settle();
+    metrics.queueYields += 1;
+    // The slice's own immediate, armed before this one, has ended it.
+    return yieldToEventLoop().then(() => {
+        if (cooperative.depth > 0) cooperative.sliceStartedAt = now();
+        return settle();
+    });
 }
 
 function normalizeValue(value) {
@@ -290,7 +323,13 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
     const queuedAt = timed ? now() : 0;
     metrics.pending += 1;
     if (timed) metrics.maxPending = Math.max(metrics.maxPending, metrics.pending);
+    const characterIds = jobCharacterIds;
+    const job = characterIds ? () => { applyJobCharacterWrites(characterIds); return work(); } : work;
     const execute = () => {
+        if (drainSliceStartedAt === 0) {
+            drainSliceStartedAt = now();
+            setImmediate(endDrainSlice);
+        }
         const startedAt = timed ? now() : 0;
         const wait = startedAt - queuedAt;
         EconomyJournal.begin(operation);
@@ -298,7 +337,7 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
         if (!connection?.isTransaction) ClanReviewInputs.beginCandidateCommit();
         let committed = false;
         try {
-            const result = work();
+            const result = job();
             EconomyJournal.commit();
             if (!connection?.isTransaction) ClanReviewInputs.commitCandidateInputs();
             committed = true;
@@ -324,16 +363,8 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
         }
     };
     const queued = queryTail.then(execute, execute);
-    const cooperativeQueue = cooperative.depth > 0;
-    const result = cooperativeQueue
-        ? queued.then((value) => {
-            if (cooperative.depth <= 0 || now() - cooperative.sliceStartedAt < cooperative.sliceMs) return value;
-            return yieldToEventLoop().then(() => {
-                cooperative.sliceStartedAt = now();
-                return value;
-            });
-        })
-        : queued;
+    const result = queued.then((value) => afterQueueJob(() => value),
+        (error) => afterQueueJob(() => { throw error; }));
     queryTail = result.catch(() => null);
     return result;
 }
@@ -656,18 +687,46 @@ async function inPreparedTransactionBatch(items, prepare, hooks, operation) {
     });
 }
 
+// The buffered snapshot written by the job itself, before its work, in its own
+// transaction: what was buffered while the job waited in the queue (a drain
+// slice, a timer, a packet) is in the rows the work reads. Inside a raw
+// transaction it stays buffered (a rollback there would lose it).
+function applyJobCharacterWrites(characterIds) {
+    if (!applyPendingCharacterWrite || !connection || connection.isTransaction) return;
+    for (const id of characterIds) applyPendingCharacterWrite(id, state => mutationAdmission.run(undefined, () => {
+        connection.exec('BEGIN IMMEDIATE');
+        try {
+            applyBufferedCharacterStateUnsafe(id, state);
+            connection.exec('COMMIT');
+        } catch (error) {
+            if (connection.isTransaction) connection.exec('ROLLBACK');
+            throw error;
+        }
+    }));
+}
+
+// The work's job writes these characters' snapshots first; a nested call keeps
+// the outer characters (captured when it is called, inside the outer work).
+function withJobCharacterIds(ids, work) {
+    const outer = jobCharacterIds;
+    jobCharacterIds = ids;
+    try { return work(); } finally { jobCharacterIds = outer; }
+}
+
 function withCharacterFlush(characterId, work) {
     if (!flushPendingCharacterWrites || !Number(characterId)) return work();
-    return Promise.resolve(flushPendingCharacterWrites(Number(characterId))).then(work);
+    const ids = [...new Set([...(jobCharacterIds || []), Number(characterId)])];
+    return Promise.resolve(flushPendingCharacterWrites(Number(characterId))).then(() => withJobCharacterIds(ids, work));
 }
 
 function withCharacterFlushes(characterIds, work) {
     if (!flushPendingCharacterWrites) return work();
     const ids = [...new Set((characterIds || []).map(Number).filter(Boolean))];
+    const jobIds = [...new Set([...(jobCharacterIds || []), ...ids])];
     return ids.reduce(
         (pending, characterId) => pending.then(() => flushPendingCharacterWrites(characterId)),
         Promise.resolve()
-    ).then(work);
+    ).then(() => withJobCharacterIds(jobIds, work));
 }
 
 function applySchemaMigrations() {
@@ -6657,8 +6716,10 @@ const Database = {
         if (revisionTrace.size < 4 && !revisionTrace.has(characterId)) revisionTrace.set(characterId, 60);
     },
 
-    registerCharacterWriteFlush(flush) {
+    // applyInJob is kept when only flush is replaced (fixtures stub the flush).
+    registerCharacterWriteFlush(flush, applyInJob) {
         flushPendingCharacterWrites = typeof flush === 'function' ? flush : null;
+        if (applyInJob !== undefined) applyPendingCharacterWrite = typeof applyInJob === 'function' ? applyInJob : null;
     },
 
     admitEconomyCommand(characterId, kind, { authority, original = null, acknowledged = null, reconcilePending = false } = {}) {
@@ -6709,11 +6770,11 @@ const Database = {
         return mutationAdmission.run(undefined, work);
     },
 
-    cooperatively(work, sliceMs = 12) {
+    cooperatively(work, sliceMs = DB_QUEUE_SLICE_MS) {
         const outermost = cooperative.depth === 0;
         if (outermost) {
             cooperative.sliceStartedAt = now();
-            cooperative.sliceMs = Math.max(1, Number(sliceMs) || 12);
+            cooperative.sliceMs = Math.max(1, Number(sliceMs) || DB_QUEUE_SLICE_MS);
         }
         cooperative.depth += 1;
         return Promise.resolve().then(work).finally(() => {
@@ -6728,8 +6789,8 @@ const Database = {
     stats({ resetPeak = false } = {}) {
         // Depth and physical checkpoint outcomes are runtime control sources.
         if (!DiagnosticConfig.developerDiagnostics) return { path: databasePath || null, historyPath: historyPath || null,
-            pending: metrics.pending, diagnostics: { enabled: false }, checkpoint: CheckpointCoordinator.snapshot(),
-            maintenance: maintenanceSnapshot(), history: History.stats() };
+            pending: metrics.pending, queueYields: metrics.queueYields, diagnostics: { enabled: false },
+            checkpoint: CheckpointCoordinator.snapshot(), maintenance: maintenanceSnapshot(), history: History.stats() };
         metrics.snapshots += 1;
         const operations = Object.fromEntries(Array.from(metrics.byOperation?.entries() || []).map(([key, value]) => [key, { ...value }]));
         const snapshot = {
@@ -6737,6 +6798,7 @@ const Database = {
             historyPath: historyPath || null,
             pending: metrics.pending,
             maxPending: metrics.maxPending,
+            queueYields: metrics.queueYields,
             total: metrics.total,
             reads: metrics.reads,
             writes: metrics.writes,

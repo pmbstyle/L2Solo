@@ -149,11 +149,29 @@ async function applyEach(entries) {
     throw Object.assign(new Error(`buffered write failed for ${failed.length} of ${entries.length} characters: ${first?.message || first}`), { failed });
 }
 
+// The job of a transaction behind Database.withCharacterFlush first writes the
+// character's snapshot merged up to that moment (apply, synchronous), so a value
+// buffered while the transaction waited in the DB queue cannot land after it. A
+// flush taken while the job waited and queued behind it is written here too and
+// emptied, so it does not write its older values afterwards either.
+function applyInJob(characterId, apply) {
+    const id = Number(characterId || 0);
+    const waiting = queued.get(id), state = take(id);
+    if (!waiting && !state) return;
+    const merged = { character: { ...waiting?.character, ...state?.character }, items: { ...waiting?.items, ...state?.items } };
+    if (waiting) { waiting.character = {}; waiting.items = {}; }
+    try { apply(merged); }
+    catch (error) {
+        settle([[[id, merged], error]]);
+        throw error;
+    }
+}
+
 function pendingCount() {
     return pending.size;
 }
 
-Database.registerCharacterWriteFlush?.(flushCharacter);
+Database.registerCharacterWriteFlush?.(flushCharacter, applyInJob);
 
 module.exports = {
     itemAmount: queueItemAmount,
