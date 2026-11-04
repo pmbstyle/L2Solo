@@ -60,9 +60,9 @@ function hunt(spotId, roles) {
     let count = 0;
     for (const role of roles) {
         const level = SpotValueTable.referenceLevel(spotId, role, true);
-        const hour = level === null ? null : SpotValueTable.value(spotId, role, level, true);
-        if (!hour) continue;
-        kills += hour.kills;
+        const perHour = level === null ? null : SpotValueTable.kills(spotId, role, level, true);
+        if (!perHour) continue;
+        kills += perHour;
         levels += level;
         count += 1;
     }

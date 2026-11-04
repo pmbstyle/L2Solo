@@ -44,6 +44,11 @@ assert.strictEqual(Table.value('X', 'dps', 24), null, 'unknown spot');
 assert.strictEqual(Table.value('S', 'healer', 24), null, 'unknown role');
 near(Table.value('S', 'spoiler', 18).kills, 150, 'a role without a measured curve keeps its row at every level');
 assert.strictEqual(Table.referenceLevel('S', 'spoiler'), 24, 'the level the row was measured at');
+// The kill rate alone (FirstPrice's hunt) is value()'s, null where value() is.
+for (const [spot, role, level, shots] of [['S', 'dps', 24, true], ['S', 'dps', 18], ['S', 'dps', 19], ['S', 'dps', 28],
+    ['T', 'dps', 24], ['S', 'dps', 15], ['S', 'dps', 24, false], ['X', 'dps', 24], ['S', 'healer', 24], ['S', 'spoiler', 18]]) {
+    assert.strictEqual(Table.kills(spot, role, level, shots), Table.value(spot, role, level, shots)?.kills ?? null, `${spot} ${role} ${level}`);
+}
 assert.strictEqual(Table.spotLevel('T'), 18);
 
 // Combat rates remain independent of native reward availability.
