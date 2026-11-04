@@ -341,7 +341,8 @@ try {
         cast.calculatedSkillHitTime = () => 1000;
         caster.bot.session.dataSendToMe = caster.bot.session.dataSendToMeAndOthers = () => {};
         Response.skillStarted = Response.skillDurationBar = () => Buffer.alloc(0);
-        const skill = { fetchTargetKind: () => 'enemy', setCalculatedHitTime() {}, fetchCalculatedHitTime: () => 1000 };
+        const skill = { fetchSelfId: () => 1177, fetchLevel: () => 1,
+            fetchTargetKind: () => 'enemy', setCalculatedHitTime() {}, fetchCalculatedHitTime: () => 1000 };
         cast.remoteHit(caster.bot.session, caster.mob, skill);
         assert(Competition.record(caster.rival, caster.mob, Date.now(), () => 0), 'accepted hostile cast claims before damage');
     } finally {
