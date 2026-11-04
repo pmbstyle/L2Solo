@@ -133,8 +133,6 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
 - **CMB-22 `BotPvpThreats.character` maps any NPC with an owner to its owner**, a quest monster too (`QuestService`
   spawns with `ownerId`): its attacks are remembered as the owner's aggression. `PvpRules.isPlayable` gates the flag and
   the kill tally, not that memory.
-- **CMB-23 "rest until" 0.95 copied inline** in `RestingState` (twice) and `BackgroundResolver.resolveRest` beside
-  `RestPolicy.THRESHOLDS.locked`, each with its own mana rule; `HotBackgroundParty` uses the RestPolicy line.
 - **CMB-24 pet revival is not C4 doRevive.** `PetRuntime.revive` and `SummonControl.revivePet` (which calls it, then
   sets HP/MP again) give full HP and MP; Lisvus pets revive at 70 % HP like players (`Formulas.respawnHp`).
 - **CMB-25 resurrection's EXP restore does not wash karma** (Lisvus `restoreExp` -> `addExp` does).

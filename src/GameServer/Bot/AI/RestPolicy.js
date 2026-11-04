@@ -90,6 +90,22 @@ function petRested(pet) {
     return !petNeedsRest(pet, THRESHOLDS.locked.hp);
 }
 
+// When a rest is over, hot (RestingState) and cold (BackgroundResolver.resolveRest)
+// alike: a rest for a fight readiness refused ends where that fight is admitted
+// (target: BotEncounterReadiness.restTarget, capped at whole) once the bot is
+// above its rest lines; any other rest ends whole: full HP, and full MP when it
+// rests for mana (mana: restWaitsForMana / ColdRest.requiresManaRecovery). A
+// party member's whole is the locked line (nearly full: its camp and its
+// healers see to the rest). The pet rested either way (petRested).
+function restOver(subject, vitals, { target = null, mana = false, pet = null, party = false } = {}) {
+    if (!petRested(pet)) return false;
+    const hp = Number(vitals?.hp) || 0, mp = Number(vitals?.mp) || 0;
+    const maxHp = Math.max(1, Number(vitals?.maxHp) || 0), maxMp = Math.max(1, Number(vitals?.maxMp) || 0);
+    if (target) return hp >= target.hp && mp >= target.mp && !needsRest(subject, hp / maxHp, mp / maxMp, { pet });
+    const whole = party ? THRESHOLDS.locked : { hp: 1, mp: 1 };
+    return hp / maxHp >= whole.hp && (!mana || mp / maxMp >= whole.mp);
+}
+
 function raidReady(subject, vitals = subject?.vitals || {}, paidCost = null) {
     // A native cast pays immediately before effects, in the same callback.
     // Admission requires the reserve before that one payment; this credits
@@ -112,4 +128,4 @@ function sitsToRest(seated, standing, missingHp, missingMp, mana) {
     return ticks(seated) <= ticks(standing);
 }
 
-module.exports = { THRESHOLDS, restsForMana, sitsForMana, restWaitsForMana, needsRest, needsRetreat, petRested, raidReady, sitsToRest };
+module.exports = { THRESHOLDS, restsForMana, sitsForMana, restWaitsForMana, needsRest, needsRetreat, petRested, restOver, raidReady, sitsToRest };

@@ -69,11 +69,24 @@ function restsSeated(session, bot) {
         bot.fetchMaxHp() - bot.fetchHp(), bot.fetchMaxMp() - bot.fetchMp(), waitsForMana(session, bot));
 }
 
-// Does this rest last until MP is back (RestPolicy.restWaitsForMana)? The
-// party state is the fight mode's (BotClassPolicy.modeFor): a player's
+// The party state is the fight mode's (BotClassPolicy.modeFor): a player's
 // companion, a bot party with a member beside it.
+function inParty(session, bot) {
+    return BotClassPolicy.modeFor(bot, { session }) !== 'solo_pve';
+}
+
+// Does this rest last until MP is back (RestPolicy.restWaitsForMana)?
 function waitsForMana(session, bot) {
-    return RestPolicy.restWaitsForMana(bot, BotClassPolicy.modeFor(bot, { session }) !== 'solo_pve');
+    return RestPolicy.restWaitsForMana(bot, inParty(session, bot));
+}
+
+// Is the rest over (RestPolicy.restOver, the cold rest's rule): at the vitals
+// its refused fight is admitted (session.restTo), else whole.
+function rested(session, bot) {
+    const party = inParty(session, bot);
+    return RestPolicy.restOver(bot, { hp: bot.fetchHp(), maxHp: bot.fetchMaxHp(), mp: bot.fetchMp(), maxMp: bot.fetchMaxMp() },
+        { target: party ? null : session.restTo, mana: RestPolicy.restWaitsForMana(bot, party), party,
+            pet: SummonerTactics.petRestView(bot) });
 }
 
 function maybeCastManaRegeneration(session, bot, Generics) {
@@ -186,10 +199,7 @@ module.exports = {
                 : (!leaderTargetIsHeldPull ? leaderTargetId : undefined);
             const leaderSeated = player.state?.fetchSeated?.() === true;
             const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
-            const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
-            const recovered = hpRatio >= 0.95 && (
-                !waitsForMana(session, bot) || mpRatio >= 0.95
-            ) && RestPolicy.petRested(SummonerTactics.petRestView(bot));
+            const recovered = rested(session, bot);
 
             // A companion can join while it is already sitting from a prior
             // hunt. If it is in a starter town, send low-level bots to the
@@ -280,14 +290,11 @@ module.exports = {
             return; // Stay seated and do nothing else
         }
 
-        const hpRatio = bot.fetchHp() / bot.fetchMaxHp();
-        const mpRatio = bot.fetchMp() / bot.fetchMaxMp();
         const restingWithLeader = session.partyCompanion === true
             && session.followPlayerSession?.actor?.state?.fetchSeated?.() === true;
-        if (hpRatio >= 0.95 && (
-            !waitsForMana(session, bot) || mpRatio >= 0.95
-        ) && RestPolicy.petRested(SummonerTactics.petRestView(bot)) && !restingWithLeader) {
+        if (rested(session, bot) && !restingWithLeader) {
             session.recoveryLocked = false;
+            session.restTo = null;
             delete session.explicitRestOrder;
             bot.state.setSeated(false);
             session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);

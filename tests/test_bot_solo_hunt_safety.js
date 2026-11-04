@@ -276,6 +276,25 @@ try {
     assert.strictEqual(recover.debug.attemptedFights, 0);
     assert.strictEqual(recover.materialize.exp, 0);
     assert(recover.nextResolveAt > at && recover.events.some(event => event.type === 'rest'));
+    // Above its rest lines, a bot the next fight refuses rests until that fight is admitted
+    // (RestPolicy.restOver, the hot rest's rule), not to whole: at that deadline it gets up short
+    // of full HP and takes the fight.
+    const worn = { ...hurt, vitals: { ...hurt.vitals, hp: 215, mp: 300 } };
+    const refused = Resolver.resolveSolo({ state: worn, spot: easy, elapsedMs: 0, timestamp: at, rng: () => 0.5 });
+    assert.strictEqual(refused.patch.stats.lastReason, 'solo_recovery_needed');
+    const restUntil = refused.patch.stats.restUntil;
+    assert(restUntil - at < Resolver.estimateRestMs(worn, worn.vitals) / 10,
+        `a rest for a fight is far shorter than one to whole (${restUntil - at} ms)`);
+    const sat = { ...worn, activity: 'resting', vitals: refused.patch.vitals, timing: { lastResolvedAt: at },
+        stats: { ...worn.stats, ...refused.patch.stats } };
+    const early = Resolver.resolveRest(sat, (restUntil - at) / 2, at + (restUntil - at) / 2);
+    assert.strictEqual(early.patch.activity, 'resting', 'halfway there the bot rests on');
+    const up = Resolver.resolveRest(sat, restUntil - at, restUntil);
+    assert.strictEqual(up.patch.activity, 'hunting', 'at its deadline the rest is over');
+    assert(up.patch.vitals.hp < mage.maxHp, `short of full HP (${up.patch.vitals.hp})`);
+    const next = Resolver.resolveSolo({ state: { ...sat, activity: 'hunting', vitals: up.patch.vitals,
+        stats: { ...sat.stats, ...up.patch.stats } }, spot: easy, elapsedMs: 0, timestamp: restUntil, rng: () => 0.5 });
+    assert(next.debug.attemptedFights > 0, 'the bot that got up takes the fight it rested for');
     const inCombat = { ...hurt, stats: { ...hurt.stats, pveEncounter: Encounter.save(null,
         Encounter.key([hurt], easy), Cold.npcForSpot(), 1, at, { botReadyAt: 0, mobReadyAt: 10000 }) } };
     const continued = Resolver.resolveSolo({ state: inCombat, spot: easy, elapsedMs: 0, timestamp: at, rng: () => 0.5 });

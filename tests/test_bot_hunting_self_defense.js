@@ -397,7 +397,10 @@ assert.strictEqual(oldAggroSeated, false, 'a hunter must never sit while an NPC 
 let prematureAttacks = 0;
 let reserveSeated = false;
 const reserveBot = actor(2000017);
-reserveBot.fetchHp = () => 60;
+let reserveHp = 60;
+reserveBot.fetchHp = () => reserveHp;
+// Seated regen a tick (Automation), the way a rest's end is found on.
+reserveBot.automation = { fetchRevHpAmount: () => 2, fetchRevMpAmount: () => 2, abortAll() {} };
 reserveBot.fetchPDef = () => 40;
 reserveBot.fetchPAtk = () => 100;
 reserveBot.state.fetchSeated = () => reserveSeated;
@@ -432,6 +435,45 @@ assert.strictEqual(reserveSession.plan, 'resting',
 assert.strictEqual(reserveSeated, true, 'pre-encounter recovery should seat the safe idle hunter');
 assert.strictEqual(prematureAttacks, 0, 'pre-encounter readiness must block the opening attack');
 assert.strictEqual(reserveSession.lastDecision.reason, 'no_reserve', 'the blocked pull should expose its reason');
+// The rest ends where that fight is admitted (RestPolicy.restOver, the cold rest's rule), not at
+// a fixed line: below it the bot stays seated, there it stands up and takes the mob.
+{
+    const Resting = invoke('GameServer/Bot/AI/States/RestingState');
+    const restTick = () => Resting.tick(reserveSession, reserveBot, {}, { say() {} });
+    reserveHp = 75;
+    restTick();
+    assert.strictEqual(reserveSession.plan, 'resting', 'short of the HP its next fight needs, the bot rests on');
+    assert.strictEqual(reserveSeated, true);
+    reserveHp = 77;
+    restTick();
+    assert.strictEqual(reserveSession.plan, 'hunting', 'at the HP its next fight needs, the rest is over');
+    assert.strictEqual(reserveSeated, false);
+    tickHunting(reserveSession, reserveBot, {}, { say() {}, getStatus() { return {}; }, executeCombat() { prematureAttacks++; } });
+    assert.strictEqual(prematureAttacks, 1, 'the bot that stood up takes the fight it rested for');
+    assert.strictEqual(reserveSession.plan, 'hunting');
+    // A fight that needs more than 95 % HP: the bot does not stand up at 95 % only to be refused and
+    // sit again on the next tick; it rests until the fight is admitted.
+    const harderNpc = { ...fullHealthNpc, fetchId: () => 1105, fetchPAtk: () => 15 };
+    const harderSession = { accountId: 'bot_encounter_reserve_harder', actor: reserveBot, plan: 'hunting', dataSendToOthers() {} };
+    World.npc = { spawns: [harderNpc] };
+    World.fetchNpcsInRadius = () => [harderNpc];
+    reserveHp = 60;
+    tickHunting(harderSession, reserveBot, {}, { say() {}, getStatus() { return {}; }, executeCombat() { prematureAttacks++; } });
+    assert.strictEqual(harderSession.plan, 'resting');
+    let stands = 0;
+    for (const hp of [95, 96]) {
+        reserveHp = hp;
+        Resting.tick(harderSession, reserveBot, {}, { say() {} });
+        if (harderSession.plan !== 'resting') stands++;
+    }
+    assert.strictEqual(stands, 0, 'no sit and stand at 95 % while the fight needs more');
+    reserveHp = 97;
+    Resting.tick(harderSession, reserveBot, {}, { say() {} });
+    assert.strictEqual(harderSession.plan, 'hunting', 'the rest ends once the harder fight is admitted');
+    World.npc = { spawns: [fullHealthNpc] };
+    World.fetchNpcsInRadius = () => [fullHealthNpc];
+    reserveHp = 60;
+}
 
 let lowManaPulls = 0;
 const lowManaMage = actor(2000019);

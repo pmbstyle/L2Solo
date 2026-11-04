@@ -10,7 +10,7 @@ CMB-1/2/6/17, POP-8, ECO-2/4. Paths relative to `src/GameServer/`.
 | N1 | Wait after death before town restart | hot `BotAI` ~591 = 12 s; cold `BackgroundResolver` ~331 = 90 s; `EconomicValuation` ~150 prices 90 s | none | **12 s vs 90 s** | one death-recovery constant (check C4) |
 | N2 | Newbie Guide level cap | NPC `NpcBypasses/NewbieBuff` 25; bots `BotBuffs.NEWBIE_GUIDE_MAX_LEVEL` 20 | BotBuffs | **25 vs 20** | one constant (check C4) |
 | N3 | Bow range | `AttackRange` 700 + `pAtkRangeAdd`; `BotAI` ~783/944 passes fixed 700 (drops Long Shot); cold keeps the bonus; `PartyPulling` 700 | AttackRange | **hot archers ignore Long Shot** | AttackRange |
-| N4 | Rest "done" line | `RestPolicy` locked 0.95; literal copies in BackgroundResolver, RestingState, BotAgentTools, FollowingState, VisitNeed; `ClanAllianceQuestAI` wakes at **0.85/0.8** | RestPolicy | yes (alliance) | RestPolicy |
+| N4 | Rest "done" line | `RestPolicy.restOver` (solo whole, party locked 0.95; `RestingState`, `resolveRest`); literal copies in BotAgentTools, FollowingState, VisitNeed; `ClanAllianceQuestAI` wakes at **0.85/0.8** | RestPolicy | yes (alliance) | RestPolicy |
 | N5 | Solo rest line | RestPolicy 0.35/0.20; copies in BotAmbientDirector, ClanAllianceQuestAI, BotPvpTactics, PartyCombatLootPolicy | RestPolicy | agree | RestPolicy |
 | N6 | Emergency heal | 0.45 in FollowingState, ClanAllianceSupportAI, PlayerPartyRaid, PartyClassTactics; `PartyHealPolicy` treats HP ≤ 0.35 | PartyHealPolicy | **0.45 vs 0.35** | `PartyHealPolicy.EMERGENCY_BELOW` (proposed) |
 | N7 | Party heal line | HEAL_BELOW 0.7; literals in BackgroundResolver, PlayerPartyRaid, PartyRevivalService, PartyCombatLootPolicy; `ClanAllianceSupportAI` **0.85** | PartyHealPolicy | yes (alliance) | PartyHealPolicy |
