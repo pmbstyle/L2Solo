@@ -51,6 +51,9 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
   `NpcVisibility`, `GroundItemVisibility`, clan war); area refresh `UpdateEnvironment` on ≥ 1000 moved. No DeleteObject
   when someone walks out of range.
 - **Spawns:** `SpawnNpcs`, `RemoveNpc`, `NpcDecay`, `DayNightSpawnManager`, `RaidBossMinionManager`, `RaidBossState`.
+  An NPC's model inherits its template (`SpawnNpcs.npcModel`: the row flattened once per frozen datapack row, 2.7k
+  for 33k NPCs); every write lands on the NPC's own model. Own-key reads of a model (keys, spread, JSON, clone, a
+  worker message) miss template fields and `delete` uncovers them: no code does either; keep it so.
 - **Timers:** no central scheduler. `Timer.js` (reads Node internals `_idleStart`/`_idleTimeout`, used by Automation only), `EventLoopTurn`
   (setImmediate yield), tickers: `NpcAggro` 1 s (also drives wander), `EffectTicker`, `PopulationService` (6
   intervals), per-session `moveTimer`.
