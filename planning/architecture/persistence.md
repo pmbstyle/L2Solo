@@ -19,7 +19,9 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
   `DatabasePlayerWarehouse`, `ClanLevelSpRepository`, `ClanWarRepository`, `DatabaseRecommendations`,
   `ClanAllianceRepository`, `ClanHall/Repository`, trade meetings).
 - **Buffered hot writes** `Persistence/CharacterWriteQueue`: per-character field patches (exp, location, vitals, karma,
-  item amount) flushed every 750 ms; `withCharacterFlush` flushes before any transactional method.
+  item amount) flushed every 750 ms; `withCharacterFlush` flushes before any transactional method. One character's
+  bad patch never holds back the others: a failed batch is written again per character; a bad value (TypeError,
+  SQLITE_CONSTRAINT) drops that patch, any other fault puts it back for the next tick; each is counted (FailureLog).
 - **History DB:** second file `<world>.history.sqlite`; world transactions write `history_outbox`, `HistoryWorker`
   moves rows, main deletes them; retention in `HistoryStore`.
 - **Journals:** `EconomyJournal` (TEMP triggers sum adena/item flow), `PvpJournal`; one outbox row per flush.
