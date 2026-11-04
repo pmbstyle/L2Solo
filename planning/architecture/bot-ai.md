@@ -9,7 +9,7 @@ Scope: `Bot/AI`, `Bot/Goals`, `Bot/BotAI.js`, chat → action. Cold stepping: [p
 
 | Mechanism | Decides | Entry |
 |---|---|---|
-| `BotAI.tick` | Order of guards per hot tick: PvP defense, board meeting, clan-alliance AI, trade, buff duty, LOD gate, chat arrival, auto-buy, far-away gate, death, loot, clan hall, hot competition, hot bot-party, then `States[session.plan]` | `BotAI.scheduleTick` via `HotAiDispatcher` |
+| `BotAI.tick` | Order of guards per hot tick: PvP defense, board meeting, clan-alliance AI, trade, buff duty, LOD gate, chat arrival, auto-buy, far-away gate, death, loot, clan hall, hot competition, hot bot-party, then `States[session.plan]` (a state that throws is held off and leaves its plan at the 5th fault in a row: `stateFaulted`, `BotFaultHold`) | `BotAI.scheduleTick` via `HotAiDispatcher` |
 | `AI/States/*` | What the body does: hunting, following, resting, shopping, getting_buffed, fleeing, pk_* | `state.tick(...)` from `BotAI.tick` |
 | Activity / occupation | Which job (hunting, selling, shopping, crafting, improving). **Decided by the worker**; a hot body only reads it | `DecisionEvents.held(session).network.activity` |
 | Re-decision | When the held decision is stale | `DecisionEvents.raiseDecision(session, reason)`; near raise goes to the worker. Whether a far bot hears it now: `Economy/Reaction.js` (T189: only at its player's moment; our rule) |
