@@ -294,16 +294,27 @@ function verifyOutOfReachForget() {
 }
 
 // No way to the target, an empty path or a path pool that cannot answer (queue
-// full, timed out, a crashed worker): the mob forgets it after the 10 s attack
-// timeout (Lisvus L2AttackableAI.thinkAttack drops hate whatever the cause).
+// full, timed out, a crashed worker): the mob keeps hating it and backs its
+// requests off; only its attack timeout (2 min without a hit, a cast or a blow
+// taken, Lisvus L2AttackableAI.thinkAttack) drops that target, and the mob turns
+// to the next hated actor with a timeout of its own.
 function verifyNoPathForget(request = () => Promise.resolve(null), what = 'no path') {
     const originalRequest = PathfindingWorkerPool.request;
-    PathfindingWorkerPool.request = request;
+    let requests = 0;
+    PathfindingWorkerPool.request = (...args) => { requests++; return request(...args); };
     return withCombatStubs(async () => {
         assert.strictEqual(npc.addDamageHate(damageDealerSession, damageDealer, 500, 500), true);
-        assert.strictEqual(await waitFor(() => !npc.state.fetchCombats(), 15000), true,
-            `a target with ${what} must end the chase after the path timeout`);
-        assert.strictEqual(npc.getHating(damageDealer), 0, `a chase with ${what} must forget its actor`);
+        assert.strictEqual(npc.addDamageHate(tankSession, tank, 0, 100), true);
+        await new Promise((resolve) => setTimeout(resolve, 2500));
+        assert.strictEqual(npc.state.fetchCombats(), true, `a target with ${what} does not end the chase`);
+        assert(npc.getHating(damageDealer) > 0, `a chase with ${what} keeps hating its actor`);
+        assert(requests >= 1 && requests <= 4, `a chase with ${what} backs its requests off (${requests} in 1.5 s of chase)`);
+        npc.combatActiveAt = Date.now() - 120000;
+        assert.strictEqual(await waitFor(() => npc.getHating(damageDealer) === 0), true,
+            `the attack timeout drops a target with ${what}`);
+        assert.strictEqual(npc.state.fetchCombats(), true, 'the mob turns to the next hated actor');
+        assert.strictEqual(npc.fetchDestId(), tank.fetchId(), 'the next hated actor becomes the target');
+        assert(Date.now() - npc.combatActiveAt < 60000, 'the next target gets an attack timeout of its own');
     }, { lineOfSight: false }).finally(() => { PathfindingWorkerPool.request = originalRequest; });
 }
 

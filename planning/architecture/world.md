@@ -66,7 +66,8 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
   main-thread `findPath`** (the rest) → fallbacks `TownPathfinder`, then straight LOS line, else no move. Segment loop on 100/250 ms with Z snap and `TownTraffic.steer`. Bots skip
   `updateEnvironment` while moving; their aggro comes from the 1 s ticker.
 - **NPC chase:** worker path → `Automation.scheduleMoveToCoords` (linear, no Z snap) → `scheduleAction` approach.
-  No way for 10 s (empty paths or pool errors, `Npc` `pathFailed`) drops the target's hate (`noPath`, Lisvus attack timeout).
+  A request with no usable way (an empty path, one the target outran by 120, a pool error; `Npc` `pathFailed`, counted
+  `noPath`) retries after 0.5/1/2/4 s; the mob keeps hating until the 2 min attack timeout drops that target (Lisvus).
 - **Broadcast:** `dataSendToMeAndOthers` → `World.fetchVisibleRealPlayers` (index + `inClientView`); bots
   `BotSession.dataSendToOthers` (real sockets only).
 

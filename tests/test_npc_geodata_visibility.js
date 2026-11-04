@@ -180,9 +180,10 @@ const npc = new Npc(990001, {
     locZ: 0,
     head: 0
 });
+let targetX = 20;
 const target = {
     fetchId: () => 990002,
-    fetchLocX: () => 20,
+    fetchLocX: () => targetX,
     fetchLocY: () => 0,
     fetchLocZ: () => 0,
     state: { fetchDead: () => false }
@@ -287,6 +288,39 @@ try {
     assert.strictEqual(npc.fetchLocX(), 32, 'the NPC must arrive at the second cached waypoint');
     assert.strictEqual(npc.state.fetchTowards(), false, 'arrival must clear the movement state');
     assert.strictEqual(timeouts.size, 0, 'completed movement must leave no interpolation or arrival callbacks');
+
+    // A target the mob cannot reach (a player running out of sight, a path the pool cannot give):
+    // a path that comes back after the target moved on waits for the retry as an empty one does,
+    // and the mob keeps hating it past 10 s, until Lisvus's attack timeout (2 min without a hit,
+    // a cast or a blow taken) drops the target.
+    const settle = async () => { for (let i = 0; i < 4; i++) await Promise.resolve(); };
+    let stalePathCalls = 0;
+    npc.fetchCombatPathAsync = () => {
+        stalePathCalls++;
+        targetX = targetX === 20 ? 170 : 20;
+        return Promise.resolve(cachedRoute);
+    };
+    combatTickCallback();
+    await settle();
+    now += 100;
+    combatTickCallback();
+    await settle();
+    assert.strictEqual(stalePathCalls, 1, 'a path the target outran is retried after a backoff, not on the next tick');
+    assert.strictEqual(npc.state.inMotion(), false, 'the mob does not walk a path to where the target was');
+    npc.fetchCombatPathAsync = () => { stalePathCalls++; return Promise.resolve(null); };
+    const chaseStartedAt = now;
+    while (now - chaseStartedAt < 30000) {
+        now += 100;
+        combatTickCallback();
+        await settle();
+    }
+    assert(stalePathCalls < 15, `an unreachable target is asked for at most every 4 s, not every tick (${stalePathCalls} requests)`);
+    assert.strictEqual(abortCalls, 0, 'no way to the target for 30 s does not end the fight');
+    assert(npc.aggroList.has(990002), 'the mob keeps hating a target it has no way to');
+    now = npc.combatActiveAt + 120000;
+    combatTickCallback();
+    assert.strictEqual(npc.aggroList.has(990002), false, 'the attack timeout drops the target');
+    assert.strictEqual(abortCalls, 1, 'with no one else hated the mob leaves the fight');
 } finally {
     global.setTimeout = originalSetTimeout;
     global.clearTimeout = originalClearTimeout;
