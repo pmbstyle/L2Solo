@@ -1842,7 +1842,7 @@ function startKernel(config = {}) {
             const preparedEconomy = nullReuse ? refreshed.economy
                 : Economy.forState(preparationState, withIncomeRoute(withEventVerdict(deps, prepared), prepared.basics));
             const selectedAcquisition = nullReuse ? {
-                acquisitionPlan: GearPlanSelection.deferredWishPlan(previousPlan, nativeReplan, state, timestamp),
+                acquisitionPlan: GearPlanSelection.deferredAcquisitionPlan(state, previousPlan, preparedEconomy, nativeReplan, timestamp),
                 replanContext: nativeReplan, reusablePartyRequest: false,
                 excludedSpotIds: SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp), economy: preparedEconomy
             } : GearPlanSelection

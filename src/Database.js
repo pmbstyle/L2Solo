@@ -2498,6 +2498,28 @@ function checkWarSupplyPurchaseUnsafe(characterId, itemId, source = null) {
     if (reason) throw Error(reason);
 }
 
+function checkArrowPurchaseUnsafe(characterId, itemId, count, source = null, pending = [], excludeMeeting = 0) {
+    const Arrows = require('./GameServer/Inventory/ArrowStock');
+    if (!Arrows.isArrow({ selfId: itemId })) return;
+    const character = one('SELECT username,classId,level FROM characters WHERE id=?', [characterId]);
+    if (!String(character?.username || '').startsWith('bot_')) return;
+    const row = source || one('SELECT statsJson,mindJson FROM bot_life_state WHERE characterId=?', [characterId]);
+    const inventory = invoke('GameServer/Bot/Population/BotLifeState').inventorySummaryFromItems(
+        all('SELECT * FROM items WHERE characterId=?', [characterId]));
+    const incoming = all('SELECT selfId,SUM(amount) amount FROM board_settlements WHERE ownerId=? GROUP BY selfId', [characterId]);
+    for (const meeting of TradeMeetings.active(characterId)) if (meeting.id !== excludeMeeting)
+        incoming.push(...all("SELECT selfId,heldCount amount FROM board_trade_meeting_lines WHERE meetingId=? AND payer=? AND custodyType='trade' AND heldCount>0",
+            [meeting.id, Number(meeting.actorB === characterId)]));
+    for (const line of [...pending, ...incoming]) {
+        const id = Number(line.selfId);
+        inventory[id] = { ...inventory[id], selfId: id,
+            amount: Number(inventory[id]?.amount || 0) + Number(line.amount || 0) };
+    }
+    const state = { characterId, level: character.level, inventory,
+        stats: { ...SavedStats.merge(row?.statsJson, row?.mindJson), classId: character.classId } };
+    if (Arrows.purchaseAmount(state, itemId, count) < count) throw Error('arrow_stock_limit');
+}
+
 function checkEconomyFundingUnsafe(characterId, step, amount, funding = {}, walletOverride = null, packetOverride = null) {
     if (!step) return;
     const stats = SavedStats.merge(step.row.statsJson, step.row.mindJson), packet = packetOverride || stats.money;
@@ -5345,6 +5367,7 @@ const Database = {
             if (details.expectedPrice !== undefined && Number(details.expectedPrice) !== Number(line.price)) throw new Error('afk_trade_price_changed');
             if (details.expectedRevision !== undefined && Number(details.expectedRevision) !== Number(shop.revision)) throw new Error('afk_trade_shop_changed');
             checkWarSupplyPurchaseUnsafe(buyerId, line.selfId, step?.row);
+            checkArrowPurchaseUnsafe(buyerId, line.selfId, quantity, step?.row);
             const total = Number(line.price) * quantity;
             if (!Number.isSafeInteger(total) || total < 0) throw new Error('invalid_afk_trade_total');
             checkEconomyFundingUnsafe(buyerId, step, total, { ...details.funding, itemId: line.selfId });
@@ -5421,6 +5444,7 @@ const Database = {
             if (details.expectedRevision !== undefined && Number(details.expectedRevision) !== Number(shop.revision)) throw new Error('afk_trade_shop_changed');
             const total = Number(line.price) * quantity;
             if (!Number.isSafeInteger(total) || total < 1 || Number(shop.escrowAdena) < total) throw new Error('afk_trade_budget_changed');
+            checkArrowPurchaseUnsafe(shop.ownerId, line.selfId, quantity);
             checkEconomyMaterialProtectionUnsafe(sellerId, step, line.selfId, quantity, true);
             const timestamp = now();
             const source = afkTradeTakeItemUnsafe(
@@ -6898,6 +6922,7 @@ const Database = {
                 || Number(source.equipped) !== 0 || Number(source.selfId) === 57) throw Error('private_store_stock_changed');
             const template = ItemTemplateIndex.findStrict(DataCache.items, Number(source.selfId));
             if (!template) throw Error('private_store_item_unavailable');
+            checkArrowPurchaseUnsafe(buyerId, source.selfId, quantity);
             const sellerAdena = afkTradeAdenaRowsUnsafe(sellerId).reduce((sum, row) => sum + Number(row.amount), 0);
             if (!Number.isSafeInteger(sellerAdena + total)) throw Error('private_store_adena_overflow');
             if (details.fundingPacket) {
@@ -6924,7 +6949,7 @@ const Database = {
         }, 'private-store:purchase'));
     },
 
-    transferInventoryBetweenCharacters(transfers = []) {
+    transferInventoryBetweenCharacters(transfers = [], { validate = null } = {}) {
         const entries = (transfers || []).map((transfer) => ({
             fromCharacterId: Number(transfer.fromCharacterId),
             toCharacterId: Number(transfer.toCharacterId),
@@ -6940,6 +6965,7 @@ const Database = {
         }));
         const characterIds = entries.flatMap((entry) => [entry.fromCharacterId, entry.toCharacterId]);
         return withCharacterFlushes(characterIds, () => inTransaction(() => {
+            validate?.();
             if (!entries.length) throw new Error('empty inventory transfer');
 
             const sources = entries.map((entry) => {
@@ -7207,9 +7233,10 @@ const Database = {
             .then(result => { invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').changed(characterId); return result; });
     },
 
-    transferInventoryToWarehouse(characterId, item, { coldState = null, craftDepositTarget = 0, craftDepositKind = null } = {}) {
+    transferInventoryToWarehouse(characterId, item, { coldState = null, craftDepositTarget = 0, craftDepositKind = null, validate = null } = {}) {
         if (coldState && Number(coldState.characterId) !== Number(characterId)) return Promise.reject(new Error('economy_state_changed'));
         return withCharacterFlush(characterId, () => inTransaction(() => {
+            validate?.();
             const source = one('SELECT id, amount, enchant FROM items WHERE id = ? AND characterId = ?', [item.id, characterId]);
             if (!source || Number(source.amount) < Number(item.amount)) throw new Error('inventory item changed');
             const sourceEnchant = Math.max(0, Number(source.enchant) || 0);
@@ -7830,6 +7857,8 @@ const Database = {
             }
             if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'npc_basket', 'planned',
                 { requested: units, planned: units, cost: total, npcId: seller ? Number(seller.sourceId) : undefined, town: seller?.town });
+            for (const line of lines) checkArrowPurchaseUnsafe(characterId, line.selfId, line.amount, step?.row,
+                lines.filter(other => !require('./GameServer/Inventory/ArrowStock').isArrow(other)));
             const wallet = one('SELECT id, amount FROM items WHERE characterId=? AND selfId=57 ORDER BY id LIMIT 1', [characterId]);
             let remainingWallet = Number(wallet?.amount || 0);
             let remainingPacket = step ? SavedStats.merge(step.row.statsJson, step.row.mindJson).money : null;
@@ -11234,7 +11263,11 @@ const TradeMeetings = require('./GameServer/AfkTrade/TradeMeeting').create({
         if (!Number.isSafeInteger(bag + pending + count)) throw Error('trade_meeting_integer');
         return creditRecordOwnerUnsafe(owner, item, count, at);
     }, funding: checkEconomyFundingUnsafe,
-    canReceive: (id, life, itemId) => checkWarSupplyPurchaseUnsafe(id, itemId, life),
+    canReceive: (id, life, itemId, count, pending) => {
+        checkWarSupplyPurchaseUnsafe(id, itemId, life);
+        checkArrowPurchaseUnsafe(id, itemId, count, life, pending);
+    },
+    canCompleteReceive: (id, life, itemId, count, pending, meetingId) => checkArrowPurchaseUnsafe(id, itemId, count, life, pending, meetingId),
     protection: (id, step, selfId, used) => checkEconomyMaterialProtectionUnsafe(id, step, selfId, used, true),
     position: tradeMeetingPositionUnsafe,
     canStartTrade: (id, state) => require('./GameServer/Bot/Population/PartyAdmission').partyTradeAllowed(

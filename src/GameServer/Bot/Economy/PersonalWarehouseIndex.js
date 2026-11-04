@@ -2,6 +2,7 @@
 const { isMainThread } = require('node:worker_threads');
 const { createHash } = require('node:crypto');
 const CONTENT_IDENTITY = Symbol('warehouse_content_identity');
+const STOCK_INCLUDED = Symbol('warehouse_stock_included');
 const EMPTY_IDENTITY = createHash('sha256').update('[]').digest('hex');
 let ItemTemplateIndex = null;
 const records = new Map(), pending = new Set();
@@ -88,7 +89,7 @@ function inventory(state) {
 if (isMainThread) require('../Population/ColdTableChannel').shared.register('personal_warehouse', {
     key: row => row[0], allRows: () => records.values(), eventDriven: true, ready: () => initialized
 });
-module.exports = { init, inventory, LIMIT, prepareRow,
+module.exports = { init, inventory, LIMIT, prepareRow, STOCK_INCLUDED,
     ready() { return sourceReady() === true; },
     contentIdentity(state) {
         if (sourceReady() !== true) return null;
@@ -105,7 +106,7 @@ module.exports = { init, inventory, LIMIT, prepareRow,
                 ...(item.instances ? { instances: [...(held?.instances || (held ? [{ id: 0, amount: held.amount,
                     enchant: held.enchant || 0, equipped: held.equipped }] : [])), ...item.instances] } : {}) };
         }
-        return { ...state, inventory: bag };
+        return { ...state, inventory: bag, [STOCK_INCLUDED]: true };
     },
     version(state) { return Number(source(Number(state?.characterId))?.[1] || 0); },
     hasItems(state) { return !!source(Number(state?.characterId))?.[2]?.length; },

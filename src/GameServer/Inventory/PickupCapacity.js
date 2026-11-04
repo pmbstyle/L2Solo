@@ -3,10 +3,11 @@ const ItemIndex = require('../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const pending = new WeakMap();
 
-// Several ground claims can arrive before the first award reaches the live
-// backpack. Count their reserved slots and weight until each award settles.
-function reserve(actor, selfId, amount, groundItem) {
-    const backpack = actor.backpack;
+// Selection and the final claim must use the same capacity rules, including
+// awards that have not reached the live backpack yet. A check reserves nothing.
+function check(actor, selfId, amount, groundItem) {
+    const backpack = actor?.backpack;
+    if (!backpack) return { reason: 'invalid_recipient' };
     if (!Number.isSafeInteger(amount) || amount < 1) return { reason: 'invalid_amount' };
     const template = ItemIndex.find(DataCache.items, selfId);
     const stackable = template?.etc?.stackable ?? groundItem.fetchStackable?.() ?? (selfId === 57);
@@ -30,8 +31,18 @@ function reserve(actor, selfId, amount, groundItem) {
     const addedSlots = stackable ? Number(!stacks.has(selfId)) : amount;
     const maxLoad = actor.fetchMaxLoad?.();
     if (slots + addedSlots > Limits.forActor(actor)) return { reason: 'slots' };
-    if (Number.isFinite(maxLoad) && load + mass * amount > maxLoad) return { reason: 'weight' };
-    const reservation = { selfId, amount, stackable, mass };
+    // Weightless drops (notably Adena) do not worsen an existing overload.
+    if (mass > 0 && Number.isFinite(maxLoad) && load + mass * amount > maxLoad) return { reason: 'weight' };
+    return { selfId, amount, stackable, mass };
+}
+
+// Several ground claims can arrive before the first award reaches the live
+// backpack. Count their reserved slots and weight until each award settles.
+function reserve(actor, selfId, amount, groundItem) {
+    const reservation = check(actor, selfId, amount, groundItem);
+    if (reservation.reason) return reservation;
+    const backpack = actor.backpack;
+    const reservations = pending.get(backpack) || new Set();
     reservations.add(reservation);
     pending.set(backpack, reservations);
     return { release() {
@@ -40,4 +51,4 @@ function reserve(actor, selfId, amount, groundItem) {
     } };
 }
 
-module.exports = { reserve };
+module.exports = { check, reserve };

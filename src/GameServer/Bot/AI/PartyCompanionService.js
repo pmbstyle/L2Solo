@@ -261,15 +261,19 @@ function randomMember(members) {
     return members[index];
 }
 
-function nextTurnMember(leaderSession, members) {
+function nextTurnMember(leaderSession, members, canReceive = () => true) {
     if (members.length === 0) return null;
 
     const settings = settingsForLeader(leaderSession);
     const rawLastIndex = Number(settings.itemLastLootIndex);
     const lastIndex = Number.isFinite(rawLastIndex) ? rawLastIndex : -1;
-    const nextIndex = (lastIndex + 1) % members.length;
-    settings.itemLastLootIndex = nextIndex;
-    return members[nextIndex];
+    for (let offset = 1; offset <= members.length; offset++) {
+        const nextIndex = (lastIndex + offset) % members.length;
+        if (!canReceive(members[nextIndex])) continue;
+        settings.itemLastLootIndex = nextIndex;
+        return members[nextIndex];
+    }
+    return null;
 }
 
 function canPickupLoot(session) {
@@ -977,7 +981,7 @@ const PartyCompanionService = {
         return false;
     },
 
-    resolveLootSession(looterSession, selfId, target, { spoil = false } = {}) {
+    resolveLootSession(looterSession, selfId, target, { spoil = false, canReceive = () => true } = {}) {
         const leaderSession = partyLeaderSession(looterSession);
         const members = lootMembersForLeader(leaderSession, target);
         if (!leaderSession || members.length <= 1) return looterSession;
@@ -990,8 +994,8 @@ const PartyCompanionService = {
                 ? members.find(member => Number(member.actor.fetchId()) === Number(agreement.help.payerId)) : null;
             if (payer) return payer;
             if (spoil && agreement.spoil === 'spoiler') return looterSession;
-            if (agreement.mode === 'turn') return nextTurnMember(leaderSession, members) || looterSession;
-            if (agreement.mode === 'random') return randomMember(members) || looterSession;
+            if (agreement.mode === 'turn') return nextTurnMember(leaderSession, members, canReceive);
+            if (agreement.mode === 'random') return randomMember(members.filter(canReceive));
             if (agreement.mode === 'need') {
                 // Each bot's item value from the decision its body holds
                 // (DecisionEvents.held): an item outside its listed values
@@ -999,18 +1003,18 @@ const PartyCompanionService = {
                 // (reached only with a party agreement, which player parties do not carry).
                 // lazy: cycle DecisionEvents loads this module through its economy imports.
                 const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
-                const scores = members.map(session => ({ session, value: world().isBotSession(session)
+                const scores = members.filter(canReceive).map(session => ({ session, value: world().isBotSession(session)
                     ? DecisionEvents.held(session).itemUsefulness(Number(selfId)) : 0 }));
                 const best = Math.max(...scores.map(entry => Number(entry.value) || 0));
-                return randomMember(scores.filter(entry => Number(entry.value) === best).map(entry => entry.session)) || looterSession;
+                return randomMember(scores.filter(entry => Number(entry.value) === best).map(entry => entry.session));
             }
         }
         const distribution = distributionForLeader(leaderSession);
         if (distribution === 1 || distribution === 2) {
-            return randomMember(members) || looterSession;
+            return randomMember(members.filter(canReceive));
         }
         if (distribution === 3 || distribution === 4) {
-            return nextTurnMember(leaderSession, members) || looterSession;
+            return nextTurnMember(leaderSession, members, canReceive);
         }
         return members.includes(looterSession) ? looterSession : (leaderSession || looterSession);
     },

@@ -38,6 +38,7 @@ const Decision = { economyFor: () => { throw Error('arrival builds no economy vi
     remainingToOrder: require(root + '/src/GameServer/Bot/Population/ColdEconomyDecision').remainingToOrder };
 const sandbox = { module: { exports: {} }, invoke: global.invoke, utils: { infoWarn: () => {} }, Date, Promise, console,
     require: name => name === './EconomyDiagnostics' ? { active: () => false, enabled: () => false }
+        : name === '../../Inventory/ArrowStock' ? require(root + '/src/GameServer/Inventory/ArrowStock')
         : name === '../Population/ColdEconomyDecision' ? Decision
         : name === '../Population/CombinedErrandPolicy' ? { pending: () => [], ERRAND_MS: 1 }
         : name === './OfferOrder' ? { farmingOrigin: () => null, tripCost: () => () => 0 }

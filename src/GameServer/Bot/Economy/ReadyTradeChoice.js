@@ -25,7 +25,9 @@ function purchase(state, economy, board) {
         || leaf.kind !== 'buy' || leaf.sourceType !== 'afk' || leaf.quoted !== true
         || leaf.executable !== true || !positive(leaf.itemId) || !positive(leaf.amount)
         || !positive(leaf.unitPrice) || !leaf.town || !board?.heads) return null;
-    const count = require('../Population/ColdEconomyDecision').remainingToOrder(leaf, state, economy.state || state);
+    const requested = require('../Population/ColdEconomyDecision').remainingToOrder(leaf, state, economy.state || state);
+    const Arrows = require('../../Inventory/ArrowStock');
+    const count = Arrows.isArrow({ selfId: leaf.itemId }) ? Arrows.purchaseAmount(state, leaf.itemId, requested) : requested;
     if (!positive(count)) return null;
     const line = board.heads(leaf.itemId, SELL, { towns: [leaf.town], excludeOwner: state.characterId,
         maxInspected: MAX_INSPECTED, accept: row => personalOfferAllowed(row, state) && !row.enchant && row.custodyPolicy === 1

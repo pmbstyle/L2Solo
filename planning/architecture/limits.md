@@ -109,6 +109,8 @@ handler the player is disconnected).
 | Plaza | 40-unit grid; Giran ≈ 1.8k, Gludio ≈ 280 (square sizes; after geodata filter not verified) | ShopPlaces ~20, ~509 | `plaza_full:<town>` | reason | Gludio |
 | Cold buffs | 6 sales / 60 s world | ColdBuffService ~6, ~70 | `sale_limit`, discarded by the Coordinator (~2072) | dD (`dropped`, reasons not split) | ~10 providers |
 | NPC basket | 12 lines (NpcPurchaseBasket); restock 12 (NpcRestockPlan); funding 8 rows (PurchaseFunding `PACKET_ROWS`) | NpcPurchaseBasket ~6, NpcRestockPlan ~9, PurchaseFunding ~219 | throw `invalid npc basket` / extra lines skipped / tail merged into last row | throw / none | many consumables |
+| Arrow stock (bots) | one grade, ≤ 2000 and below the first weight penalty (`ArrowStock.MAX_AMOUNT`, `ceil(maxLoad / 2) − 1`) | Inventory/ArrowStock ~5, ~52 | a purchase above it: writers throw `arrow_stock_limit` (reason), planners buy fewer or none (NpcRestockPlan `no_units` dD only; ReadyTradeChoice, WishPurchaseEvidence, ColdOccupationSources silently none); the surplus is sold to the NPC | reason / dD / none | archers |
+| Companion unload retry | 5 min (`CompanionInventoryCleanup.RETRY_MS`) | AI/CompanionInventoryCleanup ~7 | an overweight companion with nothing to store, no town target or a failed visit waits 5 min | none | overweight companions |
 | Trade chat | global 100 s (`marketTradeChatGlobalMinIntervalMs`), per bot 8 min (`marketTradeChatIntervalMs`) | PopulationConfig ~187 | suppressed | none | always |
 
 ## Trades and meetings

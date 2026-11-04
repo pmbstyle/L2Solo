@@ -10,6 +10,9 @@ const ColdEconomyDecision = invoke('GameServer/Bot/Population/ColdEconomyDecisio
 const KnowledgeLearning = invoke('GameServer/Bot/AI/KnowledgeLearning');
 const { MAX_GEAR_COPIES_PER_TYPE } = require('./WarehouseRules');
 const TradeDemand = require('./MarketTradeDemand');
+const ArrowStock = require('../../Inventory/ArrowStock');
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
+const DataCache = invoke('GameServer/DataCache');
 
 
 function isGear(item = {}) {
@@ -50,6 +53,8 @@ function classify(state, item) {
     }
     if (BeginnerShots.isRestricted(item.selfId)) return { action: 'ignore', reason: 'beginner_shot' };
     if (ItemDisposition.isQuestItem(item)) return { action: 'ignore', reason: 'quest_item' };
+    if (ArrowStock.isArrow(item) && !(ArrowStock.saleAmounts(state).get(Number(item.selfId)) > 0))
+        return { action: 'keep', reason: 'archer_ammunition' };
     if (!invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(item.selfId))
         return { action: 'ignore', reason: 'no_acquisition_source' };
     if (!LotPolicy.viable(item)) return { action: 'ignore', reason: 'invalid_item' };
@@ -103,6 +108,28 @@ function cardTraderContext(state, options = {}) {
 // Board slots of a bot (user, 2026-10-05): 3 shop lines + 5 sell ads.
 const BOARD_SLOTS = BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.sell_ad;
 
+function listedAmounts(lines) {
+    const amounts = new Map();
+    for (const line of lines) {
+        if (line.storeType !== BoardRules.SELL || !(line.count > 0)) continue;
+        const key = `${line.selfId}:${line.enchant || 0}`;
+        amounts.set(key, Number(amounts.get(key) || 0) + Number(line.count));
+    }
+    return amounts;
+}
+
+function saleLot(item, offset, count) {
+    const lot = { ...item, count };
+    if (item.objectIds?.length === item.count) {
+        lot.objectIds = item.objectIds.slice(offset, offset + count);
+        lot.objectId = lot.objectIds[0];
+    } else {
+        delete lot.objectIds;
+        delete lot.objectId;
+    }
+    return lot;
+}
+
 // The bot's sale at a market visit or a review (group E): the author's hard
 // rules first; every other item goes by one expected-value decision (the
 // board at its best ask, the NPC buy-back now, a buy ad answered in its town,
@@ -110,8 +137,10 @@ const BOARD_SLOTS = BoardRules.BOT_SHOP_LINES + BoardRules.BOT_RECORDS.sell_ad;
 // bounded slots, including held listings, before the unknown waiting stock.
 // A line the bot already has keeps its price
 // (its own look reprices it or takes it back, MarketPricing.look). options: now
-// (the decision point), slots (board slots), kept (selfId -> price of its
-// lines), stored (selfId -> units in the warehouse), plus traderContext's.
+// (the decision point), slots (board slots), kept (item/enchant -> price),
+// keptCounts (item/enchant -> actual listed units), stored (warehouse units),
+// plus traderContext's. Without an escrow projection only conditional lines
+// retain bag stock; a backed shop has already removed its own units.
 // Returns { candidates, decisions, listings, npc, warehouse, answers };
 // selected listings carry their line pricing state. Answers are the buy
 // ads it chose to sell into ({ item, line, count }: the bot sells there when
@@ -123,24 +152,56 @@ function evaluate(state, options = {}) {
     const candidates = ItemDisposition.saleCandidates(state, { ...options, unlimited: true,
         reserved: { ...options.reserved, ...craftReservations } });
     const decisionPoint = options.decisionPoint ?? (Number(options.now) || ctx.timestamp);
-    const kept = options.kept || new Map((ctx.board?.ownerLines?.(Number(state.characterId)) || [])
-        .filter(line => line.storeType === BoardRules.SELL)
+    const owned = (ctx.board?.ownerLines?.(Number(state.characterId)) || [])
+        .filter(line => line.storeType === BoardRules.SELL);
+    const kept = options.kept || new Map(owned
         .map(line => [`${line.selfId}:${line.enchant || 0}`, line.price]));
+    const keptCounts = options.keptCounts || listedAmounts(owned.filter(line => line.custodyPolicy === 1));
     const liquidate = invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(state);
     const decisions = [];
     const forBoard = [];
+    const dispose = (item, canList) => {
+        const marketOnly = ItemDisposition.isGradeCrystal(item);
+        const town = MarketTownPolicy.targetTownForItems(state, [item], options);
+        const chosen = MarketPricing.disposition(item, ctx, {
+            town, room: canList && (options.stockQuotes === true || marketOnly) ? 1
+                : liquidate ? 0 : roomFor(item, options.stored),
+            stockQuote: canList && (options.stockQuotes === true || marketOnly),
+            rollKey: ['dispose', ctx.characterId, item.selfId, decisionPoint],
+            selectedAnswerRecord: Number(options.selectedAnswer?.selfId) === Number(item.selfId)
+                && Number(options.selectedAnswer?.enchant || 0) === Number(item.enchant || 0)
+                ? Number(options.selectedAnswer.recordId) : 0
+        });
+        const ask = chosen.priced?.ask;
+        let action = (ask?.stockQuote || marketOnly && ask?.price > 0 && !ask.npc) && chosen.action !== 'ad' ? 'list'
+            : marketOnly && ['keep', 'npc'].includes(chosen.action) ? 'keep'
+            : chosen.action === 'keep' ? liquidate ? 'npc' : 'warehouse' : chosen.action;
+        // One non-stackable instance fits a new line. An existing line cannot
+        // silently acquire the rest of the bag at its standing price either.
+        const blocked = action === 'list' && !canList;
+        if (blocked) action = marketOnly ? 'keep' : liquidate ? 'npc' : 'warehouse';
+        const decision = { action,
+            reason: blocked ? 'no_board_slot' : ask?.stockQuote ? 'stock_quote' : 'expected_value', item,
+            priced: chosen.priced, gain: chosen.gain, answer: chosen.answer,
+            slotWeight: ask?.stockQuote
+                ? Math.max(0, ask.price - chosen.priced.market.buyback) : chosen.gain };
+        decisions.push(decision);
+        if (decision.action === 'list') forBoard.push(decision);
+    };
     for (const item of candidates) {
         const selectedAnswerRecord = Number(options.selectedAnswer?.selfId) === Number(item.selfId)
             && Number(options.selectedAnswer?.enchant || 0) === Number(item.enchant || 0)
             ? Number(options.selectedAnswer.recordId) : 0;
-        const marketOnly = ItemDisposition.isGradeCrystal(item);
         const hard = classify(state, item);
         if (hard.action !== 'market') {
             decisions.push({ ...hard, item });
             continue;
         }
         const keptKey = `${item.selfId}:${item.enchant || 0}`;
-        if (kept.has(keptKey) || !item.enchant && kept.has(Number(item.selfId))) {
+        const standing = kept.has(keptKey) || !item.enchant && kept.has(Number(item.selfId));
+        const held = standing ? Math.min(item.count, Math.max(0, Math.floor(
+            Number(keptCounts.get(keptKey) ?? (!item.enchant ? keptCounts.get(Number(item.selfId)) : 0)) || 0))) : 0;
+        if (held > 0) {
             // Only unreserved conditional stock can answer from the field.
             // Reuse the sale decision, preserving the held ask unless it
             // actually chooses the opposite bid. Backed custody stays native.
@@ -157,32 +218,15 @@ function evaluate(state, options = {}) {
                     continue;
                 }
             }
-            decisions.push({ action: 'list', reason: 'kept_line', item: { ...item, price: kept.get(keptKey) ?? kept.get(Number(item.selfId)),
+            decisions.push({ action: 'list', reason: 'kept_line', item: { ...saleLot(item, 0, held), price: kept.get(keptKey) ?? kept.get(Number(item.selfId)),
                 marketReason: 'kept_line' } });
-            continue;
         }
-        const town = MarketTownPolicy.targetTownForItems(state, [item], options);
-        const chosen = MarketPricing.disposition(item, ctx, {
-            // A market quote can wait for a buyer even when this adventurer
-            // otherwise liquidates surplus instead of warehousing it.
-            town, room: options.stockQuotes === true || marketOnly ? 1 : liquidate ? 0 : roomFor(item, options.stored),
-            stockQuote: options.stockQuotes === true || marketOnly,
-            rollKey: ['dispose', ctx.characterId, item.selfId, decisionPoint], selectedAnswerRecord
-        });
-        // A valid ask without a known buyer waits on the market. It creates
-        // no assumed receipts; physical reservations were removed above.
-        const ask = chosen.priced?.ask;
-        const action = (ask?.stockQuote || marketOnly && ask?.price > 0 && !ask.npc) && chosen.action !== 'ad' ? 'list'
-            : marketOnly && ['keep', 'npc'].includes(chosen.action) ? 'keep'
-            : chosen.action === 'keep' ? liquidate ? 'npc' : 'warehouse' : chosen.action;
-        const decision = { action,
-            reason: chosen.priced?.ask?.stockQuote ? 'stock_quote' : 'expected_value', item,
-            priced: chosen.priced, gain: chosen.gain, answer: chosen.answer,
-            // Attention to a free quote uses its possible spread, never expected receipts.
-            slotWeight: chosen.priced?.ask?.stockQuote
-                ? Math.max(0, chosen.priced.ask.price - chosen.priced.market.buyback) : chosen.gain };
-        decisions.push(decision);
-        if (decision.action === 'list') forBoard.push(decision);
+        const remaining = item.count - held;
+        if (!remaining) continue;
+        const stackable = ItemTemplateIndex.find(DataCache.items, item.selfId)?.etc?.stackable === true;
+        const listingCount = standing ? 0 : stackable ? remaining : 1;
+        if (listingCount) dispose(saleLot(item, held, listingCount), true);
+        if (remaining > listingCount) dispose(saleLot(item, held + listingCount, remaining - listingCount), false);
     }
     for (const decision of forBoard) {
         const price = decision.priced.ask.price;
@@ -224,14 +268,17 @@ function ownSaleInputs(state, own, options = {}) {
         if (line.storeType !== BoardRules.SELL || line.custodyPolicy === 1) continue;
         const row = inventory[line.selfId] || { selfId: line.selfId, amount: 0 };
         inventory[line.selfId] = { ...row, amount: Number(row.amount || 0) + line.count,
-            instances: [...(row.instances || []), { id: -line.lineId, amount: line.count, enchant: line.enchant, equipped: false }] };
+            // Escrow is retained before the free bag copies of this type.
+            instances: [{ id: -line.lineId, amount: line.count, enchant: line.enchant, equipped: false },
+                ...(row.instances || (row.amount > 0 ? [{ id: 0, amount: row.amount,
+                    enchant: row.enchant || 0, equipped: row.equipped }] : []))] };
     }
     const conditionalKept = new Set(own.filter(line => line.storeType === BoardRules.SELL && line.custodyPolicy === 1)
         .map(line => `${line.selfId}:${line.enchant || 0}`));
     for (const line of own) if (line.storeType === BoardRules.SELL && line.custodyPolicy !== 1)
         conditionalKept.delete(`${line.selfId}:${line.enchant || 0}`);
     return { state: { ...state, inventory }, options: { ...options, stockQuotes: true,
-        slots: BOARD_SLOTS, kept, conditionalKept, stored: new Map() } };
+        slots: BOARD_SLOTS, kept, keptCounts: listedAmounts(own), conditionalKept, stored: options.stored || new Map() } };
 }
 
 // Room to keep an item: gear keeps two copies in the warehouse
@@ -263,12 +310,15 @@ function actorState(session) {
 // before it stores.
 function npcSaleForActor(session) {
     const sale = new Map();
-    if (!session?.actor?.backpack?.fetchItems) return sale;
-    const state = actorState(session);
-    for (const line of evaluate(state, { unlimited: true, allowPreTradeCleanup: true }).npc) {
+    for (const line of npcSaleCandidatesForActor(session)) {
         sale.set(Number(line.selfId), Number(sale.get(Number(line.selfId)) || 0) + Number(line.count || 0));
     }
     return sale;
+}
+
+function npcSaleCandidatesForActor(session) {
+    if (!session?.actor?.backpack?.fetchItems) return [];
+    return evaluate(actorState(session), { unlimited: true, allowPreTradeCleanup: true }).npc;
 }
 
 module.exports = {
@@ -281,5 +331,6 @@ module.exports = {
     traderContext,
     cardTraderContext,
     actorState,
-    npcSaleForActor
+    npcSaleForActor,
+    npcSaleCandidatesForActor
 };
