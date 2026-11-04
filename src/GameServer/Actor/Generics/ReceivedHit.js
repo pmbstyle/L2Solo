@@ -1,4 +1,5 @@
 const BOT_WAKEUP_THROTTLE_MS = 750;
+const FailureLog = require('../../../FailureLog');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 const PvpRules = invoke('GameServer/PvpRules');
 
@@ -119,7 +120,9 @@ function creditKill(session, source, victim) {
         attackerSession.dataSendToMe(ServerResponse.userInfo(attacker));
         attackerSession.dataSendToOthers(ServerResponse.charInfo(attacker), attacker);
         attackerSession.dataSendToOthers(ServerResponse.relationChanged(attacker), attacker);
-        Database.updateCharacterPvpPkKarma(attacker.fetchId(), attacker.fetchPvp(), attacker.fetchPk(), attacker.fetchKarma());
+        // A lost write rolls the tally back at the next restart: counted, the first logged.
+        Database.updateCharacterPvpPkKarma(attacker.fetchId(), attacker.fetchPvp(), attacker.fetchPk(), attacker.fetchKarma())
+            .catch(error => FailureLog.note('db.write:character_karma', error));
     }
     if (victim !== owner) return outcome;
 

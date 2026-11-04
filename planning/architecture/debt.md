@@ -162,4 +162,7 @@ Each area file ends with its open questions; none blocks the order above.
   `BotTradeService`, `BotBrain`, `BotAgentTools`, `DevConsole`, `World`); part of WOR-3.
 - `Request/Appeared` sends the player's UserInfo to others too.
 - Adena is granted by three paths (`TradeService.giveAdena`, `AdminGiveAdena`, ...), each writing DB and backpack.
-- `awardBaseGear` exists twice (`BotManager`, `CreateNewChar`).
+- The starter kit is written by three copies (`awardBaseGear`/`awardBaseSkills` in `BotManager`, `CreateNewChar`,
+  `GeneratedColdSeeder`), each with its own two-handed and level rule.
+- `HotBackgroundParty` ~328 calls `HotPartyLifecycle.confirmMarkedRaidStart`, a compatibility reader that only
+  returns `Roster.nativeHotStarted`, and drops the result (a dead call).

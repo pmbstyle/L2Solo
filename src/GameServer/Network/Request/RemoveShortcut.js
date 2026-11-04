@@ -1,3 +1,4 @@
+const FailureLog = require('../../../FailureLog');
 const ReceivePacket = invoke('Packet/Receive');
 const Database      = invoke('Database');
 
@@ -13,7 +14,7 @@ function removeShortcut(session, buffer) {
 }
 
 function consume(session, data) {
-    Database.deleteShortcut(session.actor.fetchId(), data.slot);
+    Database.deleteShortcut(session.actor.fetchId(), data.slot).catch(error => FailureLog.note('db.write:shortcut_delete', error));
 }
 
 module.exports = removeShortcut;

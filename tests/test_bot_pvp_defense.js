@@ -411,7 +411,8 @@ function skill(id, type, target, effect, power = 100) {
         userInfo: Response.userInfo, charInfo: Response.charInfo, relation: Response.relationChanged };
     try {
         Generics.die = (_session, victim) => { victim.dead = true; };
-        Database.updateCharacterPvpPkKarma = () => Promise.resolve();
+        // The tally's write fails: the fight still settles, the lost write is counted (status swallowed=).
+        Database.updateCharacterPvpPkKarma = () => Promise.reject(new Error('disk I/O error'));
         Response.userInfo = Response.charInfo = Response.relationChanged = () => Buffer.alloc(0);
         own.dataSendToMe = attacker.dataSendToMe = () => {};
         enemy.fetchPvp = enemy.fetchPk = () => 0;
@@ -432,4 +433,8 @@ utils.isInPeaceZone = originalPeace;
 BotAI.promoteForPlayerInteraction = originalPromote;
 Response.speak = originalSpeak;
 GlobalChat.announceAttack = originalAnnounce;
-console.log('Bot PvP defense checks passed');
+// The tally write's rejection settled before this microtask.
+queueMicrotask(() => {
+    assert.strictEqual(invoke('FailureLog').snapshot()['db.write:character_karma'], 1, 'a failed PvP tally write is counted');
+    console.log('Bot PvP defense checks passed');
+});

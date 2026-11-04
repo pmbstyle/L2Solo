@@ -1,3 +1,4 @@
+const FailureLog = require('./FailureLog');
 const ItemTemplateIndex = require('./GameServer/Item/ItemTemplateIndex');
 const BeginnerShots = require('./GameServer/Items/C4BeginnerShots');
 const InventoryLimits = require('./GameServer/Inventory/InventoryLimits');
@@ -4451,7 +4452,11 @@ const Database = {
                     [JSON.stringify(stats), at, row.partyId, row.revision]);
                 return { ok: true, party: one('SELECT * FROM bot_background_parties WHERE partyId=?', [row.partyId]) };
             }, 'party:marked-raid-impact');
-        } catch (_) { return { ok: false, reason: 'party_opening_rollback' }; }
+        } catch (error) {
+            // The attacker tries again on its next action; a write that always throws would never open the raid.
+            FailureLog.note('db.party_opening', error);
+            return { ok: false, reason: 'party_opening_rollback' };
+        }
     },
     reconcileBotClanMembership: ClanMembership.reconcile,
     reconcileBotClanGoals: ClanMembership.reconcileGoals,
