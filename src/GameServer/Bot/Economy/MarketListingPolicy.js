@@ -176,8 +176,8 @@ function evaluate(state, options = {}) {
         let action = (ask?.stockQuote || marketOnly && ask?.price > 0 && !ask.npc) && chosen.action !== 'ad' ? 'list'
             : marketOnly && ['keep', 'npc'].includes(chosen.action) ? 'keep'
             : chosen.action === 'keep' ? liquidate ? 'npc' : 'warehouse' : chosen.action;
-        // One non-stackable instance fits a new line. An existing line cannot
-        // silently acquire the rest of the bag at its standing price either.
+        // One non-stackable instance fits a new line. An existing gear line
+        // cannot silently acquire the bag's other copies at its standing price either.
         const blocked = action === 'list' && !canList;
         if (blocked) action = marketOnly ? 'keep' : liquidate ? 'npc' : 'warehouse';
         const decision = { action,
@@ -199,8 +199,11 @@ function evaluate(state, options = {}) {
         }
         const keptKey = `${item.selfId}:${item.enchant || 0}`;
         const standing = kept.has(keptKey) || !item.enchant && kept.has(Number(item.selfId));
-        const held = standing ? Math.min(item.count, Math.max(0, Math.floor(
-            Number(keptCounts.get(keptKey) ?? (!item.enchant ? keptCounts.get(Number(item.selfId)) : 0)) || 0))) : 0;
+        const stackable = ItemTemplateIndex.find(DataCache.items, item.selfId)?.etc?.stackable === true;
+        // A stackable line takes the bag's further units at its price (its own look
+        // reprices it); a gear line keeps its listed copies and the rest are disposed.
+        const held = !standing ? 0 : stackable ? item.count : Math.min(item.count, Math.max(0, Math.floor(
+            Number(keptCounts.get(keptKey) ?? (!item.enchant ? keptCounts.get(Number(item.selfId)) : 0)) || 0)));
         if (held > 0) {
             // Only unreserved conditional stock can answer from the field.
             // Reuse the sale decision, preserving the held ask unless it
@@ -223,7 +226,6 @@ function evaluate(state, options = {}) {
         }
         const remaining = item.count - held;
         if (!remaining) continue;
-        const stackable = ItemTemplateIndex.find(DataCache.items, item.selfId)?.etc?.stackable === true;
         const listingCount = standing ? 0 : stackable ? remaining : 1;
         if (listingCount) dispose(saleLot(item, held, listingCount), true);
         if (remaining > listingCount) dispose(saleLot(item, held + listingCount, remaining - listingCount), false);
