@@ -113,7 +113,8 @@ const DEFAULTS = {
     stateRetentionStartDelayMs: 90000,
     stateRetentionIntervalMs: 1000,
     stateRetentionPassPauseMs: 60000,
-    stateRetentionIdlePauseMs: 6 * 60 * 60 * 1000,
+    // After a pass that removed nothing (not a server without players): a pass is ~12 bounded statements.
+    stateRetentionIdlePauseMs: 10 * 60 * 1000,
     stateRetentionBatchSize: 64,
     stateRetentionBudgetMs: 12,
     activityJournalRetentionMs: 30 * 24 * 60 * 60 * 1000,

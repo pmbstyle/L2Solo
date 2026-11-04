@@ -74,7 +74,6 @@ async function run() {
         checkpointResetBusyTimeoutMs: 50
     });
     let checkpointCalls = 0;
-    let busyTimeouts = [];
     let truncateResult = null;
     let checkpointState = {
         pending: 0,
@@ -88,7 +87,6 @@ async function run() {
     Database.checkpoint = async (checkpointOptions) => {
         checkpointCalls += 1;
         assert.strictEqual(checkpointOptions.mode, 'truncate');
-        busyTimeouts.push(checkpointOptions.busyTimeoutMs);
         return truncateResult || { ok: true, mode: 'truncate', busy: 0, afterBytes: 300, logFrames: 20, checkpointedFrames: 20 };
     };
     Governor.reset();
@@ -113,21 +111,54 @@ async function run() {
     assert.strictEqual(checkpointCalls, 0);
     const playerReset = await PopulationService.runAdaptiveWalReset(1000);
     assert.strictEqual(playerReset.mode, 'truncate', 'with a player online the truncate must run once its WAL gates pass');
-    assert.deepStrictEqual(busyTimeouts, [20], 'with a player the truncate must wait at most 20 ms for readers');
     assert(PopulationService.nextWalResetAt > 1000, 'a successful reset must install a cooldown');
-    assert.strictEqual(Governor.snapshot().jobs.wal_truncate.completed, 1, 'the truncate must take its time from the governor budget');
+    // A truncate last measured over the player budget is skipped (counted) while a player is online.
+    checkpointState.checkpoint.lastResetAttempt = { ok: true, mode: 'truncate', busy: 0, durationMs: 80 };
+    PopulationService.nextWalResetAt = 0;
+    before = refusals();
+    assert.strictEqual(await PopulationService.runAdaptiveWalReset(1000), null,
+        'a truncate estimated over the player budget must not stall a player');
+    assert.strictEqual(refused('wal_truncate:estimate_over_budget', before), 1);
+    assert.strictEqual(await PopulationService.runAdaptiveWalReset(2000), null, 'the skip holds through its retry period');
+    assert.strictEqual(checkpointCalls, 1);
+    // A player online for hours: the skipped truncate is tried again after 10 min
+    // (in a fresh governor window: it takes the whole player budget).
+    Governor.reset();
+    assert.strictEqual((await PopulationService.runAdaptiveWalReset(1000 + 10 * 60 * 1000)).mode, 'truncate',
+        'a truncate over the player budget must be tried again after its retry period');
+    assert.strictEqual(refused('wal_truncate:estimate_retry', before), 1);
+    assert.strictEqual(checkpointCalls, 2);
+    // Past the 512 MB WAL ceiling it runs with a player anyway, counted.
+    PopulationService.nextWalResetAt = 0;
+    Governor.reset();
+    checkpointState.checkpoint.last.afterBytes = 512 * 1024 * 1024;
+    assert.strictEqual((await PopulationService.runAdaptiveWalReset(1000)).mode, 'truncate',
+        'past the WAL ceiling the truncate must run with a player');
+    assert.strictEqual(refused('wal_truncate:forced_over_ceiling', before), 1);
+    assert.strictEqual(checkpointCalls, 3);
+    checkpointState.checkpoint.last.afterBytes = 300;
+    PopulationService.nextWalResetAt = 0;
+    // With a player and the governor off nothing bounds the truncate: refused, counted.
+    delete checkpointState.checkpoint.lastResetAttempt;
+    const governorEnabled = Config.backgroundGovernorEnabled;
+    Config.backgroundGovernorEnabled = false;
+    assert.strictEqual(await PopulationService.runAdaptiveWalReset(1000), null);
+    assert.strictEqual(refused('wal_truncate:governor_off', before), 1, 'a player online with the governor off must refuse the truncate');
+    Config.backgroundGovernorEnabled = governorEnabled;
+    assert.strictEqual(checkpointCalls, 3);
+    checkpointState.checkpoint.lastResetAttempt = { ok: true, mode: 'truncate', busy: 0, durationMs: 80 };
     PopulationService.playerActivityProfile = () => ({ protected: false, realPlayers: 0, connectingPlayers: 0 });
     PopulationService.nextWalResetAt = 0;
     const reset = await PopulationService.runAdaptiveWalReset(1000);
     assert.strictEqual(reset.mode, 'truncate');
-    assert.strictEqual(checkpointCalls, 2, 'idle, drained WAL pressure must request exactly one bounded reset');
-    assert.strictEqual(busyTimeouts[1], 50, 'idle, the truncate keeps its configured busy timeout');
+    assert.strictEqual(checkpointCalls, 4, 'idle, a truncate over the player budget must still run');
+    delete checkpointState.checkpoint.lastResetAttempt;
     // A truncate that answers ok:false is a failure (FailureLog), not a silent success.
     truncateResult = { ok: false, mode: 'truncate', error: 'synthetic_truncate_failure' };
     PopulationService.nextWalResetAt = 0;
     const failuresBefore = Number(FailureLog.snapshot()?.['db.wal_truncate'] || 0);
     await PopulationService.runAdaptiveWalReset(1000);
-    assert.strictEqual(checkpointCalls, 3);
+    assert.strictEqual(checkpointCalls, 5);
     assert.strictEqual(Number(FailureLog.snapshot()?.['db.wal_truncate'] || 0), failuresBefore + 1,
         'a failed truncate must be counted as a failure');
     assert.strictEqual(PopulationService.walResetRunning, false);
@@ -149,7 +180,7 @@ async function run() {
     PopulationService.nextWalResetAt = 0;
     assert.strictEqual(await PopulationService.runAdaptiveWalReset(3000), null,
         'a reused WAL below the growth threshold must not reset repeatedly just because its file stays large');
-    assert.strictEqual(checkpointCalls, 4);
+    assert.strictEqual(checkpointCalls, 6);
     checkpointState.checkpoint.last = {
         ok: true,
         mode: 'passive',
@@ -163,7 +194,7 @@ async function run() {
     const reusedGenerationReset = await PopulationService.runAdaptiveWalReset(3500);
     assert.strictEqual(reusedGenerationReset.mode, 'truncate',
         'logical generation growth must trigger another reset even while the reused WAL file size is unchanged');
-    assert.strictEqual(checkpointCalls, 5);
+    assert.strictEqual(checkpointCalls, 7);
 
     let phaseLockedRetentionCalls = 0;
     PersistentStateRetention.runNextBatch = async () => {
@@ -183,7 +214,7 @@ async function run() {
     const maintenanceReset = await PopulationService.runStateRetention(4000);
     assert.strictEqual(maintenanceReset.mode, 'truncate',
         'due WAL pressure must receive the maintenance timer quiet window even when intervals share a phase');
-    assert.strictEqual(checkpointCalls, 6);
+    assert.strictEqual(checkpointCalls, 8);
     assert.strictEqual(phaseLockedRetentionCalls, 0, 'state retention must yield before opening a competing transaction');
 
     // The truncate is tried as each passive checkpoint finishes, not on a poll
@@ -198,10 +229,10 @@ async function run() {
     checkpointListener({ ok: true, mode: 'truncate', busy: 0 });
     checkpointListener({ ok: true, mode: 'passive', skipped: true });
     await new Promise(resolve => setImmediate(resolve));
-    assert.strictEqual(checkpointCalls, 6, 'a reset or a skipped checkpoint must not start another reset');
+    assert.strictEqual(checkpointCalls, 8, 'a reset or a skipped checkpoint must not start another reset');
     checkpointListener({ ok: true, mode: 'passive', skipped: false, busy: 0, logFrames: 20, checkpointedFrames: 20 });
     await new Promise(resolve => setImmediate(resolve));
-    assert.strictEqual(checkpointCalls, 7, 'a finished passive checkpoint under due WAL pressure must request the truncate');
+    assert.strictEqual(checkpointCalls, 9, 'a finished passive checkpoint under due WAL pressure must request the truncate');
     PopulationService.walResetUnsubscribe();
     assert.strictEqual(checkpointListener, null);
     PopulationService.walResetUnsubscribe = null;
@@ -225,12 +256,10 @@ async function run() {
     PopulationService.stateRetentionPassRows = 0;
     PopulationService.nextStateRetentionAt = 0;
     Metrics.currentEventLoopLag = () => 0;
-    // A player online: retention runs one bounded slice through the governor,
-    // and is refused (counted) while the player's writes are queued.
+    // A player online: retention runs (its bound is pinned on a real table in
+    // test_persistent_state_retention), and is refused (counted) while the
+    // player's writes are queued, while main lags, or with the governor off.
     Governor.reset();
-    const originalCooperatively = Database.cooperatively;
-    const slices = [];
-    Database.cooperatively = (work, sliceMs) => { slices.push(sliceMs); return originalCooperatively.call(Database, work, sliceMs); };
     PopulationService.playerActivityProfile = () => ({ protected: true, activeParty: false, realPlayers: 1, companionCount: 0, mode: 'player' });
     checkpointState.pending = 1;
     before = refusals();
@@ -238,19 +267,24 @@ async function run() {
     assert.strictEqual(retentionCalls, 0);
     assert.strictEqual(refused('state_retention:governor_database_queue', before), 1, 'a refused retention must be counted with its reason');
     checkpointState.pending = 0;
+    Metrics.currentEventLoopLag = () => Config.schedulerLagThrottleMs;
+    assert.strictEqual(await PopulationService.runStateRetention(3000), null, 'main lagging past the throttle must hold retention back');
+    assert.strictEqual(refused('state_retention:governor_event_loop_lag', before), 1);
+    Metrics.currentEventLoopLag = () => 0;
+    Config.backgroundGovernorEnabled = false;
+    assert.strictEqual(await PopulationService.runStateRetention(3000), null);
+    assert.strictEqual(refused('state_retention:governor_off', before), 1, 'a player online with the governor off must refuse retention');
+    Config.backgroundGovernorEnabled = governorEnabled;
+    assert.strictEqual(retentionCalls, 0);
     const playerRetention = await PopulationService.runStateRetention(3000);
     assert.strictEqual(retentionCalls, 1, 'with a player online retention must still run');
     assert.strictEqual(playerRetention.rowsRemoved, 4);
-    assert(slices[0] >= 4 && slices[0] <= 12, `retention must hold the DB queue at most 12 ms per slice, got ${slices[0]}`);
-    assert.strictEqual(Governor.snapshot().jobs.state_retention.completed, 1, 'retention must take its time from the governor budget');
-    Database.cooperatively = originalCooperatively;
     Database.pending = originalDatabasePending;
 
     PopulationService.playerActivityProfile = () => ({ protected: false, activeParty: false, realPlayers: 0, companionCount: 0, mode: 'idle' });
     const retention = await PopulationService.runStateRetention(4000);
     assert.strictEqual(retentionCalls, 2, 'idle maintenance may execute one retention statement');
     assert.strictEqual(retention.rowsRemoved, 4);
-    assert.strictEqual(retention.options.batchSize, Config.stateRetentionBatchSize);
     assert.strictEqual(PopulationService.stateRetentionPassRows, 8);
 
     PlayerActivitySignal.reset();

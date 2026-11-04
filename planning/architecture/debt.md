@@ -172,3 +172,7 @@ Each area file ends with its open questions; none blocks the order above.
 - `BotAI.scheduleTick` catches a throw from the rest of the hot tick (outside `States[plan]`) with a bare
   `console.error("Bot AI Tick Error")` every tick, not `FailureLog` and not `BotFaultHold`: a guard before the state
   (party sync, ground loot, chat) that throws every tick is logged every tick and never held off.
+- Two one-time data migrations still wait for a server without players (`activity.protected`): the persona backfill
+  (`PopulationService.schedulePersonaBackfill`) and the legacy class progression migration
+  (`migrateLegacyClassProgression`); with a player always online they never finish. Bring them under the governor
+  (`db_maintenance`) as state retention is.

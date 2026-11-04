@@ -906,9 +906,9 @@ function applySchemaMigrations() {
             `);
         }],
         [16, () => {
-            // Retention is deliberately incremental. These indexes keep each
-            // idle-only delete batch on a narrow age/group range instead of
-            // turning maintenance into a main-thread table scan.
+            // Retention is deliberately incremental (PersistentStateRetention):
+            // these indexes keep each step, during play too, on a narrow
+            // age/group range instead of a main-thread table scan.
             connection.exec(`
                 CREATE INDEX IF NOT EXISTS bot_conversation_messages_compacted_age
                     ON bot_conversation_messages(compacted, createdAt, id);

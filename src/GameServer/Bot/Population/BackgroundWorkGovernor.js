@@ -139,7 +139,9 @@ function admit(options = {}) {
     }
 
     state.mode = pressure.playerProtected ? 'player' : 'idle';
-    const lagAbortMs = Math.max(1, number(Config.backgroundGovernorLagAbortMs, Config.schedulerLagAbortMs || 120));
+    // A job may stop at a lower lag than the governor's own (options.maxLagMs).
+    const lagAbortMs = Math.max(1, Math.min(number(Config.backgroundGovernorLagAbortMs, Config.schedulerLagAbortMs || 120),
+        number(options.maxLagMs, Infinity)));
     if (pressure.lagMs >= lagAbortMs) return defer(job, 'event_loop_lag', pressure, timestamp);
 
     const dbQueueMax = Math.max(0, Math.floor(number(pressure.playerProtected
