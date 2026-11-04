@@ -1342,8 +1342,10 @@ function hitsArea(semantic = {}) {
 
 // Lisvus callSkill notifies the target before the success roll. Hate removal
 // must stay quiet, and a dagger blow provokes only through its landed damage.
+// A corpse-centred area cast attacks its living victims; the corpse itself
+// is excluded by the execution layer's living-target check.
 function provokesNpc(semantic) {
-    if (semantic.target !== 'enemy') return false;
+    if (semantic.target !== 'enemy' && (semantic.target !== 'corpse_mob' || !hitsArea(semantic))) return false;
     switch (semantic.skillType) {
         case AGGRO_REMOVE:
         case AGGRO_REDUCE:

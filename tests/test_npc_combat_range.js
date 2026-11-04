@@ -174,6 +174,82 @@ function actorAt(x, id = 2000001, cp = 0) {
     }
 }
 
+// The corpse selects the centre; each living victim must retaliate at
+// impact, before any poison tick and independently of its effect roll.
+{
+    const savedRandom = Math.random;
+    const savedRadiusLookup = World.fetchNpcsInRadius;
+    const savedUsers = World.user;
+    const data = require('../data/Skills/Active/active.json').find(entry => entry.selfId === 103);
+    try {
+        for (const resisted of [false, true]) {
+            const caster = Object.assign(actorAt(0), {
+                mp: 1000,
+                fetchLevel: () => 46,
+                fetchName: () => 'Corpse Plague Caster',
+                fetchMp() { return this.mp; },
+                setMp(value) { this.mp = value; },
+                fetchCollectiveMAtk: () => 100,
+                fetchCollectiveCastSpd: () => 333,
+                fetchCollectiveAtkSpd: () => 333,
+                backpack: {}
+            });
+            const castSession = { actor: caster, packets: [],
+                dataSendToMe(packet) { this.packets.push(packet); },
+                dataSendToMeAndOthers(packet) { this.packets.push(packet); } };
+            const mobs = [100, 150, 500, 501, 200].map((x, index) => {
+                const mob = npcWithRange(40);
+                mob.setId(900100 + index);
+                mob.setLocX(x);
+                mob.setLevel(46);
+                mob.model.hostile = false;
+                return mob;
+            });
+            const [corpse, nearby, boundary, outside, neutral] = mobs;
+            corpse.setHp(0);
+            corpse.state.setDead(true);
+            neutral.fetchAttackable = () => false;
+            const skill = new SkillModel({ selfId: 103, ...data.template, ...data.time, ...data.levels[0] });
+            const cast = new Attack();
+            caster.attack = cast;
+            const callbacks = [];
+            cast.queueTimer = callback => callbacks.push(callback);
+            World.user = { sessions: [castSession] };
+            World.fetchNpcsInRadius = (x, y, radius) => mobs.filter(mob =>
+                Math.hypot(mob.fetchLocX() - x, mob.fetchLocY() - y) <= radius);
+            Math.random = () => resisted ? 0.999999 : 0.25;
+            try {
+                cast.remoteHit(castSession, corpse, skill);
+                assert(mobs.every(mob => !mob.state.fetchCombats()), 'starting a cast must not provoke before impact');
+                while (callbacks.length) callbacks.shift()();
+                for (const victim of [nearby, boundary]) {
+                    assert.strictEqual(victim.state.fetchCombats(), true, 'Corpse Plague must provoke each living victim on impact, including a resisted poison');
+                    assert.strictEqual(victim.fetchCombatTarget(), caster);
+                    assert.strictEqual(victim.getHating(caster), 1, 'cast engagement must add hate without an invented damage hit');
+                    assert.strictEqual(victim.fetchHp(), 100, 'immediate engagement must not wait for or deal poison damage');
+                    assert.strictEqual(EffectStore.hasDebuff(victim, 'poison'), !resisted);
+                }
+                for (const ignored of [corpse, outside, neutral]) {
+                    assert.strictEqual(ignored.state.fetchCombats(), false, 'the corpse, non-attackable NPCs and mobs outside the area must stay passive');
+                    assert.strictEqual(EffectStore.hasDebuff(ignored, 'poison'), false);
+                }
+                assert.strictEqual(corpse.fetchHp(), 0);
+                assert.strictEqual(caster.mp, 1000 - skill.fetchConsumedMp());
+                const messages = castSession.packets.filter(packet => packet[0] === 0x64).map(packet => packet.readInt32LE(1));
+                assert.deepStrictEqual(messages, resisted ? [46, 158, 158] : [46]);
+            } finally {
+                mobs.forEach(mob => mob.destructor(castSession));
+                cast.destructor();
+                invoke('GameServer/Actor/CombatStance').clear(caster);
+            }
+        }
+    } finally {
+        Math.random = savedRandom;
+        World.fetchNpcsInRadius = savedRadiusLookup;
+        World.user = savedUsers;
+    }
+}
+
 const rangedNpc = npcWithRange(500);
 const target = actorAt(1000);
 

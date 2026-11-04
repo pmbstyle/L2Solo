@@ -50,7 +50,10 @@ Scope: `Actor`, `Skills`, `Effects`, `Combat`, `Npc`, `RaidBoss`, `Pets`, `Formu
   More landed hot effects use the existing effect/DoT timers and ticks. Cold still excludes standalone debuffs (CMB-28).
 - **NPC attack reaction:** hot `Npc/Attacked` owns hate and the leader/minion + clan assistance notification for
   `ReceivedHit` and `C4SkillEffects`. A dying minion calls its leader before removal; a dying leader calls nobody.
-  `C4SkillRules.provokesNpc` owns cast engagement (hate removal/reduction and dagger blows excluded).
+  `C4SkillRules.provokesNpc` owns cast engagement for enemy-targeted skills and corpse-targeted area skills
+  (hate removal/reduction and dagger blows excluded). A corpse selects the area centre; the existing living,
+  attackable-target gate in `C4SkillEffects.execute` excludes it from the reaction. Corpse Plague's living victims
+  receive engagement at impact even when their poison is resisted, before any damage tick.
   `C4SkillEffects.execute` calls the reaction before the success roll, including a resisted debuff. Its result's
   `npcAttacked` flag crosses the native/proc/cubic HP-hit boundary so damage credits its hate without calling
   assistance twice. `Attack.beginRemoteCast` sends the player's use message;
@@ -60,6 +63,9 @@ Scope: `Actor`, `Skills`, `Effects`, `Combat`, `Npc`, `RaidBoss`, `Pets`, `Formu
   walk and one indexed clan-neighbour query (only with clan/help radius), one use packet per player cast and one
   failure packet per resisted target. The subsequent HP hit only adds damage hate; no duplicate assistance walk,
   global world scan, DB write, worker message, per-bot state or per-tick work is added.
+  Corpse-area casts add one target-kind comparison and one existing area-set lookup per recipient, then the same
+  hate/assistance reaction as other hostile casts. Enemy-targeted casts short-circuit before that work. The shared
+  predicate stays pure; the cold fight's damage-only engagement remains CMB-28.
 - **Effects:** `EffectStore` (authoritative), `EffectStats`, `EffectTicker`, `EffectRestrictions`; `BuffCatalog` legacy.
 - **Stats:** hot `CalculateStats`, cold `ColdCombatProfile.powerTerms/formulaPower` — both call `Formulas` but assemble
   separately.
@@ -184,10 +190,6 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
   `C4WeaponSA.procSkill` overlays generated `data/Items/weapon_sa.json` semantics on the same skill: Magic Poison's 1168
   level 6 still has base chance 7 after its independent 6-8% trigger roll. The generator duplicates the skill
   chance owner (`generate-c4-weapon-sa.py`); align that ownership before migrating the weapon proc.
-- **CMB-31 Corpse Plague does not engage its living area victims on impact.** `C4SkillRules.provokesNpc` accepts
-  only `enemy`, while skill 103 retains `corpse_mob` for every area recipient. A landed poison provokes at its first
-  damage tick instead; a resisted poison never provokes. Native cast reproduction confirms both outcomes. Extend
-  the cast-engagement owner to distinguish the corpse anchor from living hostile victims when fixing this rule.
 
 ## Open questions
 
