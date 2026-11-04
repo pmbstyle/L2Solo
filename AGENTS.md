@@ -6,6 +6,8 @@ build step. These rules apply to every agent and every change, whoever wrote the
 
 The map of what exists, who owns each rule and which path is canonical: `planning/architecture/` (start with
 `README.md`; read the area you touch before changing it).
+`planning/` holds open work only: a finished plan, audit or report is deleted in the commit that finishes it
+(what was done lives in the commits and the code).
 
 ## Performance is a primary criterion
 
