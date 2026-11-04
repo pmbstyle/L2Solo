@@ -423,15 +423,16 @@ async function activate(partyId, reason = 'near_player', options = {}) {
     if (encounter) return invoke('GameServer/Bot/Population/PvpEncounterLifecycle').activate(encounter, reason, options);
     if (pending.has(partyId)) return { ok: false, reason: 'party_transition_pending' };
     pending.add(partyId);
-    let party, states, reserved = false;
-    const sessions = [];
+    let party, states, reserved = false, activated = false;
+    const sessions = [], fenced = [];
     try {
         party = Parties.find(partyId);
         states = members(party);
         if (!ready(party, states)) {
             return { ok: false, reason: 'party_not_ready', detail: readinessReason(party, states) };
         }
-        const fences = await Promise.all(states.map(s => Coordinator.fenceBot(s.characterId)));
+        fenced.push(...states.map(s => s.characterId));
+        const fences = await Promise.all(fenced.map(memberId => Coordinator.fenceBot(memberId)));
         if (fences.some(f => !f.ok)) throw Error('party_fence_failed');
         await Life.settleWrites(party.memberIds);
         party = Parties.find(partyId);
@@ -504,12 +505,13 @@ async function activate(partyId, reason = 'near_player', options = {}) {
                 await activate(competitor.partyId, reason, { ...options, raidFanout: false });
             }
         }
+        activated = true;
         return { ok: true, party, states, count: states.length, reason };
     } catch (error) {
         discard(sessions);
         if (reserved) {
-            // Keep a failed reservation fenced until the full rollback commits.
-            // A failed DB rollback leaves an explicit hot reservation for retry/restart.
+            // The fences are released in finally, after this rollback settles.
+            // A failed DB rollback leaves an explicit hot reservation for restart.
             try {
                 party = Parties.find(partyId);
                 states = members(party);
@@ -519,9 +521,16 @@ async function activate(partyId, reason = 'near_player', options = {}) {
                 return { ok: false, reason: 'party_rollback_failed' };
             }
         }
-        for (const state of members(Parties.find(partyId)) || []) Coordinator.notifyState(state);
         return { ok: false, reason: error.message };
-    } finally { pending.delete(partyId); }
+    } finally {
+        pending.delete(partyId);
+        // A failed activation hands back every bot it fenced, by id: a member
+        // that left the party meanwhile is no longer in its roster, and a bot
+        // left fenced is out of the worker (commands refused, the safety sweep
+        // skips it). A failed rollback's hot rows need no fence: cold writers
+        // check the phase.
+        if (!activated) for (const memberId of fenced) Coordinator.releaseFence(memberId);
+    }
 }
 
 async function cooldown(partyId, reason = 'policy', options = {}) {

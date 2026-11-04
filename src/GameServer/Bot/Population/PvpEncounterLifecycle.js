@@ -60,14 +60,15 @@ async function activate(e, reason = 'near_player', options = {}) {
     const transitionStartedAt = Date.now();
     if (Runtime.pending.has(e.key)) return { ok: false, reason: 'encounter_transition_pending' };
     Runtime.pending.add(e.key);
-    let reserved = false, states = [], original = [];
-    const roster = [];
+    let reserved = false, activated = false, states = [], original = [];
+    const roster = [], fenced = [];
     try {
         states = statesFor(e);
         const eligible = () => states.every(s => s?.phase === 'cold' && s.accountName && s.vitals.hp > 0
             && Runtime.active(s)?.key === e.key && !s.stats?.travel && !s.stats?.supplyErrand);
         if (!eligible()) throw Error('encounter_not_ready');
-        const fences = await Promise.all(states.map(s => coordinator().fenceBot(s.characterId)));
+        fenced.push(...states.map(s => s.characterId));
+        const fences = await Promise.all(fenced.map(n => coordinator().fenceBot(n)));
         if (fences.some(f => !f.ok)) throw Error('encounter_fence_failed');
         await life().settleWrites(Runtime.ids(e));
         states = statesFor(e);
@@ -101,6 +102,7 @@ async function activate(e, reason = 'near_player', options = {}) {
         publish(e, roster, states);
         Runtime.register(e);
         states.forEach(() => invoke('GameServer/Bot/Population/PopulationMetrics').recordActivation(Date.now() - transitionStartedAt));
+        activated = true;
         return { ok: true, count: states.length, states, encounter: e, reason };
     } catch (error) {
         discard(roster);
@@ -108,9 +110,12 @@ async function activate(e, reason = 'near_player', options = {}) {
             try { await transition(e, statesFor(e), original, 'cold', 'encounter_activation_rollback'); }
             catch (rollback) { return { ok: false, reason: 'encounter_rollback_failed', error: rollback.message }; }
         }
-        statesFor(e).filter(Boolean).forEach(s => coordinator().notifyState(s));
         return { ok: false, reason: error.message };
-    } finally { Runtime.pending.delete(e.key); }
+    } finally {
+        Runtime.pending.delete(e.key);
+        // As a failed party activation: every bot fenced is handed back by id.
+        if (!activated) fenced.forEach(n => coordinator().releaseFence(n));
+    }
 }
 function cooldownEligible(e, roster, options) {
     const ids = Runtime.ids(e), Cooldown = invoke('GameServer/Bot/Population/Cooldown');

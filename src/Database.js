@@ -5643,6 +5643,10 @@ const Database = {
                 || !require('./GameServer/Clan/ClanRaidRoster').same(previousStats.objective?.fullRoster, nextStats.objective?.fullRoster)))
                 return { affectedRows: 0, reason: 'raid_admission' };
             if (previous?.status === 'hot') return { affectedRows: 0, reason: 'party_hot' };
+            // Dissolution is final: a write prepared from the party before it
+            // (a worker step's afterCommit, a review) would bring back a roster
+            // whose members already left.
+            if (previous?.status === 'dissolved' && row.status !== 'dissolved') return { affectedRows: 0, reason: 'party_dissolved' };
             if (Number(previousStats.clanGoalInvalidationVersion || 0) > Number(nextStats.clanGoalInvalidationVersion || 0))
                 return { affectedRows: 0, reason: 'goal_invalidated' };
             const payment = partyAgreementUnsafe(previous, row);
