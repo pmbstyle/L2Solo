@@ -167,7 +167,7 @@ player online (8 in flight, status `coldDue`).
 | NPC grid | 3×3 cells of 6000 (`NPC_GRID_SIZE`) | WorldConstants ~24, `World.fetchNpcsInRadius` ~1174 | radius > ~6000 clipped silently (the 8486 hunt search is; mostly harmless, bounded by the spot cell) | none |
 | Hot LOD | full ≤ 3500, exit 4000; ticks 3/7/30 s; far-visible tick budget 6 ms | HotActorLodPolicy ~5 | lower detail | dD |
 | Spot room | explicit `spot.capacity` (only raid sources: 999; raid boss spots ∞), else clamp(round(density × 0.75), 9, 36); own spot always has room | LevelingRoutes `capacityForSpot` ~259, `roomForSpot` ~271, SpotProfiles ~162 | full spots skipped, bots go off-band | dD (`spot_list skip full`, `farmCapacity` in the dD summary) |
-| Effects | 20 buffs + 10 debuffs (extra debuffs take buff slots); skill cache 20000 | EffectStore ~2, C4SkillRules ~1326 | oldest buff removed; skill cache cleared when full | none / dD (cache clear) |
+| Effects | 20 buffs + 10 debuffs (extra debuffs take buff slots); skill cache 20000 keys (`RESOLVED_LIMIT`) and its field index 20000 entries (`resolveCached`) | EffectStore ~2, C4SkillRules ~1326 | oldest buff removed; skill cache full: both cleared; index full: the index alone cleared (the next calls rebuild it from the cache) | none / dD (`skill_rules:cache:clear`, `skill_rules:field_index:clear`) |
 
 ## Persistence and DB
 

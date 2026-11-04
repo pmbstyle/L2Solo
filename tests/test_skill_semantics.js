@@ -7635,6 +7635,28 @@ EffectStore.apply(transferOwner, { key: 'transfer_pain', id: 1262, type: 'buff',
 assert.strictEqual(receivedHit.applyTransferPain(session(), transferOwner, 80), 40, 'Transfer Pain must leave the untransferred half on the owner');
 assert.strictEqual(servitor.fetchHp(), 60, 'Transfer Pain must transfer its sourced share of incoming damage to the servitor');
 
+// The shared semantics a skill reads (resolveCached) are its rule's whatever
+// carries the skill (a bare rank, a data row, a cold record), call after call,
+// and a carrier changed in place reads its new rank.
+for (const carrier of [
+    { selfId: 1229, level: 4 },
+    { selfId: 1229, level: 4, name: 'Chant of Life', power: 1, spell: true, distance: 600 },
+    { selfId: 1177, level: 5, passive: false, spell: true, power: 21, mp: 15 },
+    { selfId: 1177, level: 5, name: 'Wind Strike', spell: false, distance: 600, buff: false }
+]) {
+    const expected = C4SkillRules.resolve(carrier);
+    assert.deepStrictEqual(C4SkillRules.resolveCached(carrier), expected, `skill ${carrier.selfId} semantics`);
+    assert.deepStrictEqual(C4SkillRules.resolveCached({ ...carrier }), expected, `skill ${carrier.selfId} semantics again`);
+}
+const rankedChant = { selfId: 1229, level: 1 };
+const chantRankOne = C4SkillRules.resolveCached(rankedChant);
+rankedChant.level = 4;
+assert.deepStrictEqual(C4SkillRules.resolveCached(rankedChant), C4SkillRules.resolve({ selfId: 1229, level: 4 }),
+    'a rank learnt on the same skill object reads the new rank');
+assert.notDeepStrictEqual(C4SkillRules.resolveCached(rankedChant), chantRankOne, 'Chant of Life ranks differ');
+rankedChant.level = 1;
+assert.deepStrictEqual(C4SkillRules.resolveCached(rankedChant), chantRankOne, 'and the old rank back');
+
 console.log('Skill semantic checks passed');
 
 function statActor() {
