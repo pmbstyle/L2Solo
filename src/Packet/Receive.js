@@ -1,3 +1,5 @@
+const Frame = require('./Frame');
+
 class ReceivePacket {
     constructor(buffer) {
         this.buffer = buffer;
@@ -50,12 +52,11 @@ class ReceivePacket {
             }
         }
 
-        if (index >= 0) {
-            this.data.push(utils.stripNull(
-                this.buffer.toString('ucs2', this.offset, index)
-            ));
-            this.offset = index + 2;
-        }
+        if (index < 0) throw Frame.unterminated(this.offset);
+        this.data.push(utils.stripNull(
+            this.buffer.toString('ucs2', this.offset, index)
+        ));
+        this.offset = index + 2;
         return this;
     }
 }

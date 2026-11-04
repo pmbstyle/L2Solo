@@ -139,16 +139,13 @@ for (const selfId of [1864, 1872, 9000]) {
 }
 
 const DataCache = invoke('GameServer/DataCache');
-const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const Database = invoke('Database');
 const World = invoke('GameServer/World/World');
-const originalAllStates = LifeState.allStates;
 const originalFetchAfkTradeShops = Database.fetchAfkTradeShops;
 const originalUser = World.user;
 
 (async () => {
     DataCache.init();
-    LifeState.allStates = () => states;
     Database.fetchAfkTradeShops = () => Promise.resolve([]);
     World.user = { sessions: [] };
     const liveDetail = await MarketSnapshot.detail();
@@ -159,7 +156,6 @@ const originalUser = World.user;
     console.error(error);
     process.exitCode = 1;
 }).finally(() => {
-    LifeState.allStates = originalAllStates;
     Database.fetchAfkTradeShops = originalFetchAfkTradeShops;
     World.user = originalUser;
 });

@@ -1,3 +1,4 @@
+const FailureLog = require('../../FailureLog');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 // ARCH-NOTE: Pure stock plans also run in guarded workers; load SQL only
 // when an existing persistence branch is reached, before actor mutations.
@@ -643,8 +644,10 @@ async function purchaseActorRestock(actor, options = {}) {
                 plan, amount: shotAmount(actor, plan), delta, cost };
             delta += line.amount;
             cost += line.cost;
-        } catch (_) {
-            // An AFK listing may change between selection and purchase.
+        } catch (error) {
+            // An AFK listing may change between selection and purchase (a refusal code);
+            // anything else (a DB error, a failed refund) is counted.
+            if (!FailureLog.refusal(error)) FailureLog.note('shots.store_buy', error);
         }
     }
     const adenaItem = actor.backpack.fetchItemFromSelfId(57);

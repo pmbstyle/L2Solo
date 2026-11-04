@@ -33,7 +33,6 @@ const originals = {
     applyNpcLiquidation: LifeState.applyNpcLiquidation,
     findByCharacterId: LifeState.findByCharacterId,
     statesByIds: LifeState.statesByIds,
-    allStates: LifeState.allStates,
     bestBuyOffer: MarketOpportunity.bestBuyOffer,
     activeBuyDemandSelfIds: MarketOpportunity.activeBuyDemandSelfIds,
     saleDecision: BotMarket.saleDecision,
@@ -435,7 +434,6 @@ run().catch((err) => {
     LifeState.applyNpcLiquidation = originals.applyNpcLiquidation;
     LifeState.findByCharacterId = originals.findByCharacterId;
     LifeState.statesByIds = originals.statesByIds;
-    LifeState.allStates = originals.allStates;
     MarketOpportunity.bestBuyOffer = originals.bestBuyOffer;
     MarketOpportunity.activeBuyDemandSelfIds = originals.activeBuyDemandSelfIds;
     BotMarket.saleDecision = originals.saleDecision;

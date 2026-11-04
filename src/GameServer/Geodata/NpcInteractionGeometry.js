@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const FailureLog = require('../../FailureLog');
 const Geodata = invoke('GameServer/Geodata/GeodataEngine');
 
 const EYE_HEIGHT = 48;
@@ -8,35 +9,47 @@ let cachedKey, cached;
 const digest = bytes => crypto.createHash('sha256').update(bytes).digest('hex');
 const keyFor = target => `${Number(target.npcSelfId)}:${Math.round(target.locX)}:${Math.round(target.locY)}`;
 
+// The pack's verified client geometry, or null: then every counter keeps strict walking line of sight.
+// Why it is off is logged once per pack (a pack may ship without it); an unreadable file is a failure.
 function geometry() {
     const directory = Geodata.getGeodataDir();
     const key = `${directory}:${Geodata.navigationRevision || 0}`;
     if (key === cachedKey) return cached;
     cachedKey = key;
     cached = null;
+    const off = (reason) => {
+        utils.infoWarn('Geodata', 'NPC interaction geometry off (%s): strict line of sight at every counter', reason);
+        return null;
+    };
     try {
         const manifest = JSON.parse(fs.readFileSync(path.join(directory, '.l2solo-geodata-manifest.json')));
         const info = manifest.interactionGeometry;
-        if (info?.file !== 'npc-interaction-geometry.json' || !Number.isSafeInteger(info.bytes)
-            || info.bytes <= 0 || !/^[a-f0-9]{64}$/.test(info.sha256)) return null;
+        if (!info) return off('not_in_manifest');
+        if (info.file !== 'npc-interaction-geometry.json' || !Number.isSafeInteger(info.bytes)
+            || info.bytes <= 0 || !/^[a-f0-9]{64}$/.test(info.sha256)) return off('bad_manifest_entry');
         const bytes = fs.readFileSync(path.join(directory, info.file));
-        if (bytes.length !== info.bytes || digest(bytes) !== info.sha256) return null;
+        if (bytes.length !== info.bytes) return off('size_mismatch');
+        if (digest(bytes) !== info.sha256) return off('hash_mismatch');
         const data = JSON.parse(bytes);
         if (data.schemaVersion !== 1 || !Number.isFinite(data.radius) || data.radius < 144 || !Array.isArray(data.records)
             || !Array.isArray(data.triangles) || data.triangles.length % 9 !== 0
-            || !data.triangles.every(Number.isFinite)) return null;
+            || !data.triangles.every(Number.isFinite)) return off('bad_schema');
         const records = new Map();
         for (const record of data.records) {
             if (![record.id, record.x, record.y, record.z].every(Number.isFinite)
                 || record.region !== Geodata.getRegionKey(record.x, record.y)
                 || !Array.isArray(record.triangles) || !record.triangles.length
-                || !record.triangles.every(i => Number.isSafeInteger(i) && i >= 0 && i < data.triangles.length / 9)) return null;
+                || !record.triangles.every(i => Number.isSafeInteger(i) && i >= 0 && i < data.triangles.length / 9)) return off('bad_record');
             const targetKey = keyFor({ npcSelfId: record.id, locX: record.x, locY: record.y });
-            if (records.has(targetKey)) return null;
+            if (records.has(targetKey)) return off('duplicate_record');
             records.set(targetKey, { ...record, triangles: Uint32Array.from(record.triangles) });
         }
         cached = { records, triangles: Float64Array.from(data.triangles), regions: new Map(), sourceRegions: data.sourceRegions || {} };
-    } catch (_) { /* Packs without verified client geometry retain strict walking LOS. */ }
+    } catch (error) {
+        if (error?.code === 'ENOENT') return off('missing_file');
+        FailureLog.note('geodata.interaction_geometry', error);
+        return off('unreadable');
+    }
     return cached;
 }
 

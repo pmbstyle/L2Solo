@@ -270,19 +270,22 @@ function nameDistance(left, right) {
     return previous[b.length];
 }
 
+// One pass over hot and cold names keeping the closest (a tie: the smaller name).
 function nearestBotName(lookup, BotManager, LifeState) {
-    const hotNames = (BotManager.sessions || [])
-        .map((session) => session?.actor?.fetchName?.())
-        .filter(Boolean);
-    const coldNames = LifeState.allStates(2000).map((state) => state?.name).filter(Boolean);
-    const names = [...new Set([...hotNames, ...coldNames].map((name) => String(name)))];
-    const ranked = names
-        .map((name) => ({ name, distance: nameDistance(lookup, name) }))
-        .sort((left, right) => left.distance - right.distance || left.name.localeCompare(right.name));
-    const best = ranked[0];
-    if (!best) return null;
-    const maxDistance = Math.max(2, Math.floor(Math.max(String(lookup).length, best.name.length) * 0.3));
-    return best.distance <= maxDistance ? best.name : null;
+    let best = null, bestDistance = Infinity;
+    const consider = (value) => {
+        if (!value) return;
+        const name = String(value), distance = nameDistance(lookup, name);
+        if (distance < bestDistance || (distance === bestDistance && name < best)) {
+            best = name;
+            bestDistance = distance;
+        }
+    };
+    for (const session of BotManager.sessions || []) consider(session?.actor?.fetchName?.());
+    for (const state of LifeState.everyState()) consider(state?.name);
+    if (best === null) return null;
+    const maxDistance = Math.max(2, Math.floor(Math.max(String(lookup).length, best.length) * 0.3));
+    return bestDistance <= maxDistance ? best : null;
 }
 
 function unknownBotReply(session, lookup, BotManager, LifeState) {

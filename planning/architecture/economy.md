@@ -97,7 +97,7 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
 | Cold physical purchase | `ColdMarketService.acquire` |
 | NPC purchase | `NpcRestockPlan` → `NpcPurchaseBasket` |
 | Plan publication | decided: the worker plan; three paths still publish (ECO-1) |
-| Whether a held economy build may be served (its event proof) | `EconomyContext.heldBuildVerdict` over the proof's code/config/rates identity, `RecomputeGeneration.current`: a detached checkout's commit or a launcher install's the install marker .l2solo/installation.json `sourceCommit`; a branch tree gets a process-local identity (held builds hold in the process). A proof saved for a restart only under a published identity (`restorable`); the identity is the claimed commit plus config and rates, not a content hash: a hand-edited install or a dirty detached tree keeps the release sha (startup logs the source: `Recompute :: code identity`) |
+| Whether a held economy build may be served (its event proof) | `EconomyContext.heldBuildVerdict` over the proof's code/config/rates identity, `RecomputeGeneration.current`: a detached checkout's commit or a launcher install's the install marker .l2solo/installation.json `sourceCommit`; a branch tree gets a process-local identity (held builds hold in the process). A proof saved for a restart only under a published identity (`restorable`); the identity is the claimed commit plus config and rates, not a content hash: a hand-edited install or a dirty detached tree keeps the release sha (startup logs the source: `Recompute :: code identity`). A throw in a proof or advisory codec costs a full rebuild and counts as `economy.codec:<which>` (a negative or non-finite quantity included: its producer is wrong); a saved advisory that inflates past its cap is refused uncounted, like the other shape checks |
 
 ## Debt
 
@@ -139,10 +139,6 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
   it as an occupation event. Review whether the pairing goes or the pull becomes a link. A required item's bid worth
   has two readings: `TradeIntent.wishRows` (the queue row's value, lifted to price × floor) and
   `itemUsefulness`/`worth` (`demands`, the wish's own weighted benefit).
-- **ECO-11 silent catches.** `ColdEconomyPlan.prepare`: a throwing `buyBatch` → `buy_error`, counted only with
-  diagnostics on, no log; `PopulationService` ~345 `reconcile(...).catch(() => null)`; per-owner queue in
-  `BotAfkMarketService.reconcile` swallows; `BotNegotiationService` persistence (`.catch(() => {})`);
-  `TradeMeetingService` `entry.ready.catch(() => {})` (the rest there logs via `infoWarn`).
 - **ECO-12 worker hazard (a trap, none live).** Both worker callers pass `findSpot`
   (`ColdEconomyPlan.prepare` → `MarketListingPolicy.evaluate` and `BuyAdPolicy.linesFor` via `buyAdTown`;
   `ColdSimulationWorker` ~405, trade-meeting seller). The `SpotService.findById` fallback in `targetTownForItems` (and

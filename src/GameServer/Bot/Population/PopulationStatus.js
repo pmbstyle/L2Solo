@@ -31,6 +31,7 @@ const HistoryDatabase = invoke('HistoryDatabase');
 const CheckpointCoordinator = invoke('DatabaseCheckpointCoordinator');
 const MarketTradeOverviewReader = invoke('MarketTradeOverviewReader');
 const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool');
+const PacketFrame = invoke('Packet/Frame');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
@@ -133,16 +134,42 @@ const PopulationStatus = {
         // botFaults=<backing off>/<quarantined>/<faults since start>: bots whose steps or
         // commands throw, held off until one succeeds (ColdSimulationKernel FAULT_*); 0/0/0 when healthy.
         // commandDbErrors: commands that failed on the database, not the bot (a plain retry).
+        // swallowed: swallowedText; pathPool, pathCrashes: pathPoolText; packetRefused: packetRefusedText.
         return `coldDue=${queue.overdue || 0} coldDueAll=${queue.due || 0} coldDueAge=${Math.round((queue.oldestAgeMs || 0) / 1000)}s`
             + ` noCheckpoint=${worker.checkpointsRefused || 0} stepsRefused=${worker.stepsRefused || 0}`
             + ` botFaults=${failures.faultBackoff || 0}/${failures.faultQuarantined || 0}/${failures.workerFaults || 0}`
-            + ` commandDbErrors=${failures.commandDbErrors || 0}`
+            + ` ${this.swallowedText(failures.swallowed)}`
+            + ` commandDbErrors=${failures.commandDbErrors || 0} ${this.pathPoolText()} ${this.packetRefusedText()}`
             + ` ${this.workerBusyText()} mainElu=${mainElu.utilization.toFixed(2)} workerHeapGc=${mb(worker.heapAfterGc)}/${mb(worker.heapAfterGcMax10)}MB`
             + ` stepLead=${worker.stepLeadMs || 0}ms pvp=${pvp.live}/${pvp.steps}/${pvp.ms}ms/${pvp.left}`
             + ` geo=${mb(geodata.loadedBytes)}MB/${geodata.loadedRegions} geoViews=${mb(geodata.attachedBytes)}+${mb(worker.geodata?.attachedBytes)}MB`
             + ` geoRaw=${geodata.rawRegions || 0} geoIndexOnly=${geodata.indexOnlyRegions || 0}`
             + ` geoHeightReads=${geodata.heightFileReads || 0}+${worker.geodata?.heightFileReads || 0} ${this.npcHateText()}`
             + this.incomeHoldText(worker.incomeHold) + (worker.proofOverflows === undefined ? '' : ` proofOver=${worker.proofOverflows} nodeCap=${worker.nodeCapBuilds} asksDeep=${worker.asksPastDepth} shotFlips=${worker.sourceShotFlips} quietGear=${worker.quietGearBuilds}`) + this.doorsText(worker.buildDoors, worker.raisedLinks) + this.soloWindowText(worker.soloWindow);
+    },
+
+    // swallowed=<failures>/<sites>: failures main and the cold worker survived since start (FailureLog:
+    // a catch that kept its fallback, a lost write, an unhandled rejection), each site's first one
+    // logged with its stack; 0/0 when healthy.
+    swallowedText(swallowed = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').failureSnapshot().swallowed) {
+        const counts = Object.values(swallowed || {});
+        return `swallowed=${counts.reduce((sum, count) => sum + count, 0)}/${counts.length}`;
+    },
+
+    // pathPool=<slots up>/<size> ('-' before the first path request starts the pool);
+    // pathCrashes=<crashes>/<respawns> since start (PathfindingWorkerPool: a crashed slot respawns at
+    // once, then with the shared worker backoff); 0/0 when healthy.
+    pathPoolText(paths = PathfindingWorkerPool.stats()) {
+        return `pathPool=${paths.started ? paths.workers || 0 : '-'}/${paths.size || 0}`
+            + ` pathCrashes=${paths.crashes || 0}/${paths.respawns || 0}`;
+    },
+
+    // packetRefused=<inbound frames>/<outbound packets>/<strings without a terminator> refused since
+    // start (Packet/Frame: a bad inbound frame or string fails its packet, an outbound packet over
+    // 65535 B is not sent); 0/0/0 when healthy.
+    packetRefusedText() {
+        const refused = PacketFrame.refusals();
+        return `packetRefused=${refused.inbound}/${refused.outbound}/${refused.unterminated}`;
     },
 
     // huntSteps=<steps per hunting bot-hour>/<rounds per step>: solo hunting steps since the worker
@@ -194,7 +221,7 @@ const PopulationStatus = {
             lag: { nowMs: Math.round(Metrics.currentEventLoopLag()), sustainedMs: Math.round(Metrics.sustainedEventLoopLag()) },
             database: { ...pick(database, ['path', 'historyPath', 'pending', 'maxPending', 'failures', 'avgWaitMs', 'avgRunMs', 'operations']),
                 checkpoint: pick(database.checkpoint, ['inFlight', 'last', 'lastReset']) },
-            pathWorkers: pick(paths, ['workers', 'busy', 'queue', 'companionBusy', 'companionQueue', 'inFlight']),
+            pathWorkers: pick(paths, ['workers', 'size', 'busy', 'queue', 'companionBusy', 'companionQueue', 'inFlight', 'crashes', 'respawns']),
             geodata: GeodataEngine.storageStats(),
             mainHeap: heapRecord(),
             safetyRepairs: Metrics.lastSafetyRepairs || null,
@@ -336,7 +363,7 @@ const PopulationStatus = {
             market,
             hotLod,
             hotDispatch,
-            line: `hot=${counts.hot} warm=${counts.warm} cold=${counts.cold} parties=${counts.parties} persisted=${counts.persisted} merchants=${counts.merchants} coldDue=${counts.coldQueue.overdue} coldDueAll=${counts.coldQueue.due} coldDueHigh=${counts.coldQueue.highLevel} coldReplans=${counts.coldQueue.replans} coldDueAge=${Math.round(counts.coldQueue.oldestAgeMs / 1000)}s partyRequests=${counts.partyRequests.total} partyRequired=${counts.partyRequests.required} partyPreferred=${counts.partyRequests.preferred} partyBlocked=${counts.partyRequests.blocked} partyMaxAge=${Math.round(counts.partyRequests.maxAgeMs / 1000)}s partyRequiredReasons=${partyRequiredReasons} marketListings=${market.delta.listingsOpened} marketSpeculative=${market.delta.speculativeListings} marketBuyStores=${market.delta.buyStoresOpened} marketBuys=${market.delta.purchases} marketItems=${market.delta.itemsSold} marketAdena=${market.delta.adenaTraded} dynamicBuyerSales=${market.delta.dynamicBuyerSales} dynamicBuyerItems=${market.delta.dynamicBuyerItems} dynamicBuyerAdena=${market.delta.dynamicBuyerAdena} staticBuyerSales=${market.delta.staticBuyerSales} staticBuyerItems=${market.delta.staticBuyerItems} staticBuyerAdena=${market.delta.staticBuyerAdena} marketNoOffer=${market.delta.noOffer} marketSoldOut=${market.delta.soldOut} marketExpired=${market.delta.expired} marketDemandClosed=${market.delta.demandClosed} marketDemandPruned=${market.delta.demandPrunedItems} ticks=${metrics.delta.hotTicks} resolves=${metrics.delta.backgroundResolves} partyResolves=${metrics.delta.partyResolves} combatActions=${metrics.delta.combatActions} skillUses=${metrics.delta.skillUses} heals=${metrics.delta.heals} skipped=${metrics.delta.skippedResolves} skipReasons=${skipReasons} activations=${metrics.delta.activations} cooldowns=${metrics.delta.cooldowns} partyForms=${metrics.delta.partyFormations} partyRecruits=${metrics.delta.partyRecruits} partyDissolves=${metrics.delta.partyDissolutions} partyFormP95=${partyFormation.p95Ms || 0}ms partyAssembly=${assembly.events || 0}/${assembly.attempts || 0} partyFormBudgetStops=${metrics.delta.partyFormationBudgetStops || 0} partyFormDeferrals=${metrics.delta.partyFormationDeferrals || 0} partyFormStages=${Object.entries(partyFormationStages).map(([stage, value]) => `${stage}:${value.p95Ms || 0}`).join('|') || 'none'} dbFlushes=${metrics.delta.dbFlushes} resolveAvg=${resolve.avgMs || 0}ms resolveP95=${resolve.p95Ms || 0}ms schedulerMode=${scheduler.mode || 'unknown'} playerMode=${scheduler.playerMode || 'idle'} realPlayers=${scheduler.realPlayers || 0} connectingPlayers=${scheduler.connectingPlayers || 0} companions=${scheduler.companions || 0} schedulerLag=${scheduler.lagMs || 0}ms backgroundDeferrals=${metrics.delta.backgroundDeferrals || 0} slowResolves=${metrics.delta.slowResolves || 0} actorPath=${actorPath.count || 0}/${actorPath.p95Ms || 0}/${actorPath.maxMs || 0}ms companionPath=${companionPath.count || 0}/${companionPath.p95Ms || 0}/${companionPath.maxMs || 0}ms pathWorkers=${pathWorkers.workers || 0}w/${pathWorkers.busy || 0}b/${pathWorkers.queue || 0}q/${pathWorkers.maxQueue || 0}mq/${pathWorkers.completed || 0}ok/${pathWorkers.errors || 0}err/${pathWorkers.rejected || 0}rej/${pathWorkers.stale || 0}stale raidAggro=${raidAggro.engagements || 0}/${raidAggro.minionsAlerted || 0} raidMinions=${raidAggro.refills || 0}/${raidAggro.groupVisits || 0}/${raidAggro.removalFeeds || 0} raidIndex=${raidIndex.bosses || 0}b/${raidIndex.minions || 0}m/${raidIndex.rebuilds || 0}r/${raidIndex.objectsScanned || 0}s npcDecay=${npcDecay.scheduled || 0}s/${npcDecay.expired || 0}e/${npcDecay.retries || 0}r/${npcDecay.discarded || 0}d ${this.npcHateText()} heap=${heapMb}MB lag=${lag}ms lagSustained=${Metrics.sustainedEventLoopLag()}ms maxLag=${maxLag}ms`
+            line: `hot=${counts.hot} warm=${counts.warm} cold=${counts.cold} parties=${counts.parties} persisted=${counts.persisted} merchants=${counts.merchants} coldDue=${counts.coldQueue.overdue} coldDueAll=${counts.coldQueue.due} coldDueHigh=${counts.coldQueue.highLevel} coldReplans=${counts.coldQueue.replans} coldDueAge=${Math.round(counts.coldQueue.oldestAgeMs / 1000)}s partyRequests=${counts.partyRequests.total} partyRequired=${counts.partyRequests.required} partyPreferred=${counts.partyRequests.preferred} partyBlocked=${counts.partyRequests.blocked} partyMaxAge=${Math.round(counts.partyRequests.maxAgeMs / 1000)}s partyRequiredReasons=${partyRequiredReasons} marketListings=${market.delta.listingsOpened} marketSpeculative=${market.delta.speculativeListings} marketBuyStores=${market.delta.buyStoresOpened} marketBuys=${market.delta.purchases} marketItems=${market.delta.itemsSold} marketAdena=${market.delta.adenaTraded} dynamicBuyerSales=${market.delta.dynamicBuyerSales} dynamicBuyerItems=${market.delta.dynamicBuyerItems} dynamicBuyerAdena=${market.delta.dynamicBuyerAdena} staticBuyerSales=${market.delta.staticBuyerSales} staticBuyerItems=${market.delta.staticBuyerItems} staticBuyerAdena=${market.delta.staticBuyerAdena} marketNoOffer=${market.delta.noOffer} marketSoldOut=${market.delta.soldOut} marketExpired=${market.delta.expired} marketDemandClosed=${market.delta.demandClosed} marketDemandPruned=${market.delta.demandPrunedItems} ticks=${metrics.delta.hotTicks} resolves=${metrics.delta.backgroundResolves} partyResolves=${metrics.delta.partyResolves} combatActions=${metrics.delta.combatActions} skillUses=${metrics.delta.skillUses} heals=${metrics.delta.heals} skipped=${metrics.delta.skippedResolves} skipReasons=${skipReasons} activations=${metrics.delta.activations} cooldowns=${metrics.delta.cooldowns} partyForms=${metrics.delta.partyFormations} partyRecruits=${metrics.delta.partyRecruits} partyDissolves=${metrics.delta.partyDissolutions} partyFormP95=${partyFormation.p95Ms || 0}ms partyAssembly=${assembly.events || 0}/${assembly.attempts || 0} partyFormBudgetStops=${metrics.delta.partyFormationBudgetStops || 0} partyFormDeferrals=${metrics.delta.partyFormationDeferrals || 0} partyFormStages=${Object.entries(partyFormationStages).map(([stage, value]) => `${stage}:${value.p95Ms || 0}`).join('|') || 'none'} dbFlushes=${metrics.delta.dbFlushes} resolveAvg=${resolve.avgMs || 0}ms resolveP95=${resolve.p95Ms || 0}ms schedulerMode=${scheduler.mode || 'unknown'} playerMode=${scheduler.playerMode || 'idle'} realPlayers=${scheduler.realPlayers || 0} connectingPlayers=${scheduler.connectingPlayers || 0} companions=${scheduler.companions || 0} schedulerLag=${scheduler.lagMs || 0}ms backgroundDeferrals=${metrics.delta.backgroundDeferrals || 0} slowResolves=${metrics.delta.slowResolves || 0} actorPath=${actorPath.count || 0}/${actorPath.p95Ms || 0}/${actorPath.maxMs || 0}ms companionPath=${companionPath.count || 0}/${companionPath.p95Ms || 0}/${companionPath.maxMs || 0}ms pathWorkers=${pathWorkers.workers || 0}w/${pathWorkers.busy || 0}b/${pathWorkers.queue || 0}q/${pathWorkers.maxQueue || 0}mq/${pathWorkers.completed || 0}ok/${pathWorkers.errors || 0}err/${pathWorkers.rejected || 0}rej/${pathWorkers.stale || 0}stale ${this.pathPoolText(pathWorkers)} ${this.packetRefusedText()} ${this.swallowedText()} raidAggro=${raidAggro.engagements || 0}/${raidAggro.minionsAlerted || 0} raidMinions=${raidAggro.refills || 0}/${raidAggro.groupVisits || 0}/${raidAggro.removalFeeds || 0} raidIndex=${raidIndex.bosses || 0}b/${raidIndex.minions || 0}m/${raidIndex.rebuilds || 0}r/${raidIndex.objectsScanned || 0}s npcDecay=${npcDecay.scheduled || 0}s/${npcDecay.expired || 0}e/${npcDecay.retries || 0}r/${npcDecay.discarded || 0}d ${this.npcHateText()} heap=${heapMb}MB lag=${lag}ms lagSustained=${Metrics.sustainedEventLoopLag()}ms maxLag=${maxLag}ms`
         };
         const missingTotal = require('../Economy/PurchaseFunding').summary().moneyPacketMissing;
         summary.moneyPacketMissing = Math.max(0, missingTotal - lastMoneyPacketMissing);

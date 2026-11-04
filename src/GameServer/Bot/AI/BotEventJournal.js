@@ -1,3 +1,4 @@
+const FailureLog = require('../../../FailureLog');
 const Database = invoke('Database');
 
 const DEFAULT_LIMIT = 12;
@@ -77,7 +78,15 @@ function copy(row) {
     return row ? { ...row, meta: row.meta ? { ...row.meta } : null } : null;
 }
 
-async function record(input = {}) {
+// Callers fire and forget, so it never rejects: a failure is counted (FailureLog) and the event lost.
+function record(input = {}) {
+    return recordEvent(input).catch((error) => {
+        FailureLog.note('journal.record', error);
+        return { ok: false, reason: 'journal_error' };
+    });
+}
+
+async function recordEvent(input = {}) {
     const botId = numberId(input.botId);
     if (!botId) return { ok: false, reason: 'invalid_bot' };
     const playerId = numberId(input.playerId);
@@ -145,9 +154,10 @@ async function record(input = {}) {
                 dedupeKey, count: 1, createdAt, updatedAt: createdAt, meta
             };
             return { ok: true, inserted: true, event };
-        } catch (_) {
+        } catch (error) {
             // A transient DB issue must not make a bot lose the event needed for
             // its next hot decision. Keep a bounded in-memory copy instead.
+            FailureLog.note('journal.write', error);
         }
     }
 

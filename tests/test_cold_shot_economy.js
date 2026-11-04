@@ -84,7 +84,7 @@ async function images(ids) {
         const supplier = await seed([cash(1000000), { selfId: 45, name: 'Bone Helmet', amount: 1 }], { name: 'Supplier' });
         let buyer = await seed([cash(1000000), { selfId: 129, name: 'Sword of Revolution', amount: 1, equipped: true, slot: 7 }], { name: 'Buyer' });
         // Publish the same funded native shots signal the retained lifecycle
-        // publishes in production. An allStates mock cannot populate the index.
+        // publishes in production. A state-list mock cannot populate the index.
         // MVP-1: the buyer's shots are funded only behind a step now, so its
         // review sees a finite D-shot seller; the seller leaves before
         // production, so only the funded signal remains.

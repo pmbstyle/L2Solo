@@ -1,3 +1,4 @@
+const FailureLog = require('../../../FailureLog');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -224,7 +225,9 @@ async function obtainRecipe(state, selected, now) {
             ...(learned.stats || {}), shotRecipeDemand: null
         } }, 'shot_recipe_acquired') || learned;
         return acquired;
-    } catch (_) {
+    } catch (error) {
+        // After a paid buy the cache's adena and recipe disagree with the row until the next read.
+        if (!FailureLog.refusal(error)) FailureLog.note('economy.recipe_buy', error);
         return state;
     }
 }

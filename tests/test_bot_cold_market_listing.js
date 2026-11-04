@@ -40,7 +40,6 @@ const originals = {
     updateCharacterVitals: Database.updateCharacterVitals,
     syncInventorySummary: Database.syncInventorySummary,
     transferInventoryToWarehouse: Database.transferInventoryToWarehouse,
-    allStates: LifeState.allStates,
     upsertState: LifeState.upsertState
 };
 const calls = [];
@@ -428,7 +427,6 @@ run().catch((err) => {
     Database.updateCharacterVitals = originals.updateCharacterVitals;
     Database.syncInventorySummary = originals.syncInventorySummary;
     Database.transferInventoryToWarehouse = originals.transferInventoryToWarehouse;
-    LifeState.allStates = originals.allStates;
     LifeState.upsertState = originals.upsertState;
     LifeState.reset?.();
     await Database.close();

@@ -9,12 +9,12 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
 ## Mechanisms
 
 - **Boot** `src/NodeL2.js`: Global → DB lock → `Database.init` → `DataCache.init` → clan planning worker →
-  `compactStackableInventory` → `ClanService.init` → `GeodataEngine.init` → `NpcInteractionGeometry.init` →
+  `compactStackableInventory` → `ClanService.init` → `GeodataEngine.init` → `NpcInteractionGeometry.init` (a pack without verified counter geometry logs why, once) →
   `World.init` → runtimes (recommendations, clan hall, AFK trade, personas, KB warmup) → TCP servers →
   `BotManager.init` → `WorldObserver.init` → `DevConsole`. `World.init`: indexes, raid state, `spawnNpcs`, minions,
   grid, day/night, aggro ticker. Pathfinding pool starts lazily (first `request`). The perf recorder
-  (`Perf/LiveRecorder`, `[Perf] live`) starts before any worker. Backstop: an unhandled rejection is logged
-  once per reason and counted (`noteFailure`); an uncaught exception, or any failure before startup finishes, flushes
+  (`Perf/LiveRecorder`, `[Perf] live`) starts before any worker. Backstop: an unhandled rejection is counted by
+  site, the first of each logged with its stack (`FailureLog`, the shared failure rule; status `swallowed=`); an uncaught exception, or any failure before startup finishes, flushes
   `CharacterWriteQueue`, closes the DB and exits 1. Shutdown (`NodeL2` `shutdown`): service drains capped at 10 s,
   then flush + close, forced exit by 16 s (limits.md).
 - **Launcher** (`launcher/`, merged from develop): desktop server management, saves, preview releases; starts the
@@ -23,8 +23,9 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
 - **Globals** `src/Global.js`: `invoke`, `utils`, INI layering (default → `L2NODE_SHARED_CONFIG_FILE` → local.ini, or
   `L2NODE_CONFIG_FILE` instead of local), `path.*`. Also holds
   game data: `PEACE_ZONES` circles and `utils.isInPeaceZone`.
-- **Network:** `Server.packetReceiver` frames; `Session.dataReceive` → `Network/Opcodes` → `Network/Request/*` (87);
-  out `Packet/Send`, `Network/Response/*`. Auth separate. The packet trace names server packets by the
+- **Network:** `Server.packetReceiver` splits the stream; `Packet/Frame` owns the unsigned 2-byte length both ways
+  (game, login, bot sessions; over a frame: refused and counted); `Session.dataReceive` → `Network/Opcodes` →
+  `Network/Request/*` (87); out `Packet/Send`, `Network/Response/*`. Auth separate. The packet trace names server packets by the
   `Network/Response/*` file that sends them (`Session` `SERVER_PACKET_NAMES`, kept in step by
   `tests/test_server_packet_names.js`).
 - **World singleton** `World/World.js`: user sessions + `CharacterLocationIndex` (and a legacy `World.user.sessions`
@@ -35,6 +36,7 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
   `VirtualObstacles/*` per town.
 - **Pathfinding pool** `Geodata/PathfindingWorkerPool` (≤ 2 workers) → `PathfindingWorker`. Callers: `MoveTo`
   (companions, long routes; town routes through the `TownNavigation.forPool` wrapper), NPC chase (`Npc.fetchCombatPathAsync`).
+  A crashed worker is logged and respawned forever after the shared `WorkerRestartBackoff` (the cold worker's rule).
 - **Movement — three engines (WOR-1):** players client-driven (`MoveToLocation` → broadcast; `ValidatePosition` →
   `UpdatePosition`); bots server-simulated `MoveTo.startPathMovement`; NPC/summon/pawn `Automation.scheduleAction`/
   `scheduleMoveToCoords`/`startMoveInterpolation`. Wander `NpcWander` is not its own engine: it drives
@@ -64,6 +66,7 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
   main-thread `findPath`** (the rest) → fallbacks `TownPathfinder`, then straight LOS line, else no move. Segment loop on 100/250 ms with Z snap and `TownTraffic.steer`. Bots skip
   `updateEnvironment` while moving; their aggro comes from the 1 s ticker.
 - **NPC chase:** worker path → `Automation.scheduleMoveToCoords` (linear, no Z snap) → `scheduleAction` approach.
+  No way for 10 s (empty paths or pool errors, `Npc` `pathFailed`) drops the target's hate (`noPath`, Lisvus attack timeout).
 - **Broadcast:** `dataSendToMeAndOthers` → `World.fetchVisibleRealPlayers` (index + `inClientView`); bots
   `BotSession.dataSendToOthers` (real sockets only).
 
@@ -82,7 +85,7 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
 | Bot talk-to-NPC | `TownNpcApproach.canInteract` (player: `AttackRange.TALK_RANGE` 36) |
 | Spawn/respawn | `SpawnNpcs` + `RemoveNpc` |
 | Event-loop yield | `EventLoopTurn` |
-| Process failure backstop, shutdown order | `src/NodeL2.js` (`noteFailure`, `shutdown`, `writeFinalState`) |
+| Process failure backstop, shutdown order | `src/NodeL2.js` (`shutdown`, `writeFinalState`; failures through `src/FailureLog.js`) |
 | Is a bot | **none** (WOR-3) |
 | Town identity | **none** (WOR-6) |
 
@@ -123,8 +126,6 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
   NpcDecay) bypassing `RemoveNpc`; full `npc.spawns` scans by selfId in ~10 files where `NpcObjectIndex` exists.
 - **WOR-12 action deferral three ways:** `Attack.queueEvent` (one slot), `actor.stored*` replayed in
   `UpdatePosition`, `Automation.playerAttackApproach`. Meets combat.
-- **WOR-13 silent catches:** `RaidBossMinionManager`, `NpcInteractionGeometry` (a parse error silently disables
-  counter geometry), `ArenaDuelService`, `TradeDone`; `SpotService.ensureIndexed` `[]` without World.
 - **WOR-14 DataCache API split:** callback + structuredClone (`fetchItemFromSelfId`, 142 uses) vs
   `ItemTemplateIndex.find*` (~170 calls in 126 files) vs `npcRow`.
 - **WOR-15 leftovers:** `Timer.js` reads private timer fields (the "TODO" is in `Automation.timer`); 7 inline

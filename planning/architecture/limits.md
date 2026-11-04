@@ -13,45 +13,41 @@ Rule (CLAUDE.md): a new or changed limit gets a row here, and hitting it must be
 **Measured capacity (2026-11-04, 2015 laptop, x50, 1731 bots, detached checkout):** cold worker busy 0.57-0.62,
 overdue max 1-4 (before this release saturated from ~1430-1580 bots). See POP-23.
 
-## Top 15 risks (silent when hit, likely at ~1700 bots)
+## Top risks (silent when hit, likely at ~1700 bots)
 
-1. `BotLifeState.allStates` returns at most 2000 states: name lookup (`World`), `BotParty` bypass, startup PvP
-   re-register (Coordinator), `ArenaDuelService`, observer silently miss the oldest; the appearance migration asks
-   50000, gets 2000. Total states are near 2000. (The worker feeds use the uncapped `everyState()`.)
-2. Background governor allows a DB queue of **0** while a player is online: any queued write defers safety sweep,
+1. Background governor allows a DB queue of **0** while a player is online: any queued write defers safety sweep,
    cold snapshot continuation pages, early commits, clan actions/founders, hot market review (dD only).
-3. State retention and the WAL truncate never run during play (gated on `activity.protected`: a player online + 30 s
+2. State retention and the WAL truncate never run during play (gated on `activity.protected`: a player online + 30 s
    grace): AI memory/audit/activity tables and the WAL (≥ 256 MB) grow all session. History retention is not gated.
-4. `PriceDecision` reads only the first 40 sell lines of an item (all towns): on the most-traded items the forecast is
+3. `PriceDecision` reads only the first 40 sell lines of an item (all towns): on the most-traded items the forecast is
    unknown, new asks fall back to NPC buyback (accepted lines keep their price), no counter.
-5. Activation takes the 100 nearest cold states before filtering busy/`pk_hunting`/party duplicates: in crowded towns,
+4. Activation takes the 100 nearest cold states before filtering busy/`pk_hunting`/party duplicates: in crowded towns,
    few or zero activations near the player, unrecorded (travellers are shown by `showWalkersNear` instead).
-6. Board scan windows: 20 lines (`ReadyTradeChoice`, `BidPurchaseAlternative`, `MarketPricing`, `WishPurchaseEvidence`),
+5. Board scan windows: 20 lines (`ReadyTradeChoice`, `BidPurchaseAlternative`, `MarketPricing`, `WishPurchaseEvidence`),
    quote depth 5, top-5 buy exits; own/rejected/custody lines use the window, ready trades quietly fail.
-7. `ColdBuffService`: 6 cold buff sales per minute for the whole world; extra refused as `sale_limit`, which the
+6. `ColdBuffService`: 6 cold buff sales per minute for the whole world; extra refused as `sale_limit`, which the
    Coordinator discards (only an unsplit dD `dropped` total).
-8. Worker: 64 pending wish route requests; past that `[]`, reviews run without trip data in catch-up bursts.
-9. Hot interaction event queue drops events above 1024 pending, drains ~64/s: social memory lost in crowded fights.
-10. Path pool (≤ 2 workers, queue 128) pre-empts/rejects (dD); NPC chases lose first and drop aggro after 10 s; after
-    3 consecutive failures per slot the slot is gone, all gone = every request `WORKER_UNAVAILABLE` until reboot,
-    **no log** (only dD `pathWorkers=0w`).
-11. Sockets: no write backpressure, no broadcast fan-out cap; write buffer grows without bound for a slow client in a
+7. Worker: 64 pending wish route requests; past that `[]`, reviews run without trip data in catch-up bursts.
+8. Hot interaction event queue drops events above 1024 pending, drains ~64/s: social memory lost in crowded fights.
+9. Path pool (≤ 2 workers, queue 128) pre-empts/rejects (dD); NPC chases lose first: an empty path or a pool error
+   (rejected, timed out, a crashed worker) counts toward the 10 s give-up, so under a busy pool mobs without line of
+   sight drop aggro after 10 s (`noPath`, dD npcHate), as in C4.
+10. Sockets: no write backpressure, no broadcast fan-out cap; write buffer grows without bound for a slow client in a
     dense zone.
-12. Sale candidates cut to top N by unit price (8; StaticBuyer 20 then materials only; town choice 8): cheap stacks
+11. Sale candidates cut to top N by unit price (8; StaticBuyer 20 then materials only; town choice 8): cheap stacks
     never sold, bags fill.
-13. `EconomyContext` LRU: 2048 plans in the worker vs 1700 bots, 64 on main; above ~2000 bots or > 64 hot bots,
+12. `EconomyContext` LRU: 2048 plans in the worker vs 1700 bots, 64 on main; above ~2000 bots or > 64 hot bots,
     full rebuild every time (dD).
-14. `PersonalWarehouseIndex` keeps 64 kinds per owner, cut on every publish (lowest selfIds at init, table order on
+13. `PersonalWarehouseIndex` keeps 64 kinds per owner, cut on every publish (lowest selfIds at init, table order on
     refresh): long-lived bots lose sight of the rest of their stock.
-15. An incremental snapshot row over 256 KB blocks every row queued behind it (Coordinator
+14. An incremental snapshot row over 256 KB blocks every row queued behind it (Coordinator
     `sendIncrementalEntries`): later hot→cold snapshots stall until that state shrinks (dD `send_failed`).
 
 Next in line: InteractionMemory evicting relations at 32/8/8 (real players exempt); group pair events cut at 64
 (9-member raids); clan goal candidates top 8, ClanPartyHelp 64 pending (refused silently); spot-room clamp 9-36
 sending bots off-band; oversized proposals requeued every 5 s forever; oversized states dropped once via
 `postCollections` (`state:null`, the 10 s retry is never read). Not silent but binding: cold-step throughput with a
-player online (8 in flight, status `coldDue`); signed int16 outbound frames throwing above 32767 B (in a request
-handler the player is disconnected).
+player online (8 in flight, status `coldDue`).
 
 ## Cold worker and scheduling
 
@@ -84,7 +80,6 @@ handler the player is disconnected).
 | Potion line | melee 0.35, ranged / healer / casters 0.25 of max HP (`MELEE_USE_HP_RATIO`, `RANGED_USE_HP_RATIO`): the fight drinks there, the gate counts only the HP above it | `HealingPotionStock.useThreshold`, `BotEncounterReadiness.atVitals` | at or below the line: no fight (survival `potion_line`) | reason `no_reserve` | every solo fight |
 | Empty ground | hot: a look after 3 empty scans (`EMPTY_HUNT_SCANS`), one per empty streak; a second summon or wait on the stay that changed nothing raises (`session.groundReadying`); hot and cold: one raise per stay (`stats.emptyGround`, cleared by prey) | `BotDecisionService.groundLook`, `BackgroundResolver.resolveSolo` / `getReady` | `unhuntable` raised, the occupation rebuild picks another spot | reason (hot `ground_unhuntable`, cold `debug.unhuntable`, `lastReason no_safe_solo_target`) | gear or level loss, kept routes |
 | Population | 1700, clamp 2000 (`maxPlayingPopulation`) | PopulationConfig ~105, ~330 | silently clamped | none | > 2000 |
-| `allStates` | 2000 most recent (worker feeds use uncapped `everyState()` ~4061) | BotLifeState ~45, ~4055 | oldest missing | none | already near |
 | Seeding | waves of 5 regions × `starterBotsPerRace` 30 = 150, one batch per wave (`seedBatchSize` = max(50, cohort)); next wave when the last cohort averages level 5 (10 at ×50+); checked every 45 s (`generatedColdSeedDelayMs`) | `PopulationSeedPlanner` ~87, ~121, PopulationService ~1252, `GeneratedColdSeeder` | ramp follows levelling (~12 waves to 1700), not time | dD (wave log behind `developerDiagnostics`) | fresh world |
 | Decision deadlines | 64 per scheduler tick | Kernel `tick` ~1700, `dueCandidates` ~1217 | rest wait for the next 20 ms tick | none | boot catch-up |
 | Incremental snapshot row | 256 KB message | Coordinator `sendIncrementalEntries` ~1129 | page refused, job ok:false, oldest-first queue stops at that row each run | dD `send_failed` | rare huge state |
@@ -142,6 +137,7 @@ handler the player is disconnected).
 | Party affinity | 16 peers (strong 8) | BackgroundPartyAffinity ~1 | forgotten | none |
 | ClanPartyHelp | 64 pending; 8 parties per request; TTL 10 min, retry 30 s | ClanPartyHelp ~25, ~90 | request refused silently | none |
 | Opportunistic raids | 2 parties, 15 min, search 60 s; per search 8 rosters, 72 bots, 12 forecasts, 12 ms CPU in 2 ms slices (`RaidSearchCounters`) | PopulationConfig ~14, OpportunisticRaidDirector ~105, RaidSearchCounters ~3 | skipped / retry 10 s | status |
+| Supply errand return | 4 hot writes (`SUPPLY_RETURN_ATTEMPTS`) 5 s apart (`SUPPLY_RETURN_RETRY_MS`), each from the latest cached row, while the return is still `returning` with the same actor; timers cleared at shutdown | BotTownTravel `returnSupplyHot` | the companion stays parked up to ~15 s, then resumes with its row cold (the old behaviour) | status `swallowed=` (`population.mark_hot`, `population.supply_return_cold`), first logged |
 | Clans | 40 bot clans (`CLAN_SIMULATION_MAX_BOT_CLANS`); 70 % members; 10/15/20/30/40 per clan by level | Database `createAutonomousClan` ~9478, ClanSimulationConfig ~5, ClanRules `memberLimit` ~19 | `founder_clan_limit` / clan limits | reason; dD |
 | Clan action pass | 8 actions, 80 ms / 20 ms with a player, 60 s | ClanSimulationConfig ~35, ClanActionService ~714 | next pass | dD |
 | Founder pass | 16 per 60 s; 20 ms, 5 ms with a player | ClanSimulationConfig ~36, ClanSimulationService ~351 | deferred | dD |
@@ -154,9 +150,9 @@ handler the player is disconnected).
 | Limit | Value | Where | When hit | Observable |
 |---|---|---|---|---|
 | Path pool | min(2, cores − 1) workers; queue 128; priority NPC 0 < bot 50 < companion 100 | PathfindingWorkerPool ~16, MoveTo ~633, Npc ~640 | lowest-priority queued task pre-empted (`PATH_PREEMPTED`) or new one rejected (`QUEUE_FULL`) | dD |
-| Path timeout | 2 s (`COMPANION_PATH_TIMEOUT_MS`); NPC 10 s of failures (`NPC_PATH_FAILURE_TIMEOUT_MS`) | PathfindingWorkerPool ~95, MoveTo ~15, Npc ~38, ~459 | retry; NPC drops aggro (`noPath`) | dD (npcHate) |
+| Path timeout | 2 s (`COMPANION_PATH_TIMEOUT_MS`); NPC 10 s from the first failed request (`NPC_PATH_FAILURE_TIMEOUT_MS`) | PathfindingWorkerPool ~108, MoveTo ~15, Npc ~38, `pathFailed` ~330 | retry (NPC: 0.5, 1, 2, 4 s); an NPC whose requests give an empty path or a pool error for 10 s drops aggro (`noPath`) | dD (npcHate) |
 | Corridor budget | 80 ms per 1 s for non-priority town-corridor tasks; 150 ms per request | PathfindingWorkerPool ~162, PathfindingWorker ~26 | over budget: wait for the next second; > 150 ms: `PATH_BUDGET` error (companion recovery retries) | dD `budgetDeferrals` |
-| Pool restarts | 3 consecutive failures per slot (a good path resets) | PathfindingWorkerPool ~23, ~194, ~217 | slot gone; all gone = `unavailable`, every request `WORKER_UNAVAILABLE` until reboot | **none** (dD `pathWorkers=0w` only) |
+| Pool restarts | none: a crashed slot respawns forever, at once on its first crash in a row, then after the shared worker backoff 1/2/5/10/30 s (resets after 30 s up; `RestartBackoff.AT_ONCE_FIRST_MS`) | PathfindingWorkerPool `onWorkerFailure` ~214, `src/WorkerRestartBackoff.js` | the slot is down until its respawn; its running task fails with the crash; the queue is kept, each task waits for a worker or its own timeout (`PATH_TIMEOUT`) | log (each crash with its reason, the stack once per reason); status `pathPool=<up>/<size> pathCrashes=<crashes>/<respawns>` |
 | Sync A* | 2000 nodes (`findPath` default) | GeodataEngine ~501, MoveTo ~728 | null → `TownPathfinder` waypoint → straight line if LOS → empty | `lastPathfinding` |
 | Worker A* | companion 4000; errand 30000 → 120000 on recovery; NPC 8000 | MoveTo ~16, `CompanionNavigationRecovery` ~8, Npc ~35 | recovery; after 3 route failures `exhausted` | reason / none |
 | Town route caches | 256 entries / 32768 points, TTL 120 s; corridor 128 points (`TownPathCorridor.MAX_POINTS`) | TownNavigation ~5, ~79, TownPathCorridor ~4 | LRU evict; route > 32768 points never cached; corridor > 128 → raw path, no lanes | dD |
@@ -184,15 +180,15 @@ handler the player is disconnected).
 | Statement cache | 256 LRU; SQL > 16 KB uncached | `src/DatabaseStatements.js` ~4 | re-prepare | none |
 | Char write-behind | 750 ms, batch unbounded | CharacterWriteQueue ~3 | patch put back, retried forever | log |
 | Shutdown budget | drains 10 s (`DRAIN_BUDGET_MS`), then flush (`FINAL_FLUSH_ROUNDS` 3) + close; exit at 16 s (`EXIT_DEADLINE_MS`); launcher SIGKILL at 18 s (run-server) / 20 s (start); each cold coordinator stop wait ≤ 10 s, its timer cleared | `src/NodeL2.js` `shutdown` | later drain steps skipped, the DB is still flushed and closed | log (step named; unsaved character count) |
-| Process failure reasons | 64 distinct (`MAX_FAILURE_REASONS`), keyed by error name + first frame | `src/NodeL2.js` `noteFailure` | later reasons share one "other reasons" count | log (first of each with stack; counts at exit) |
+| Survived failure sites | per thread: 128 named sites (`MAX_SITES`, `area.what`) and apart 32 unnamed backstop sites (`MAX_UNNAMED_SITES`: kind + error name + first frame, or the message with digits masked) | `src/FailureLog.js` `note` / `noteUnnamed` (main, cold worker) | later sites share one "other sites" / "other unnamed sites" count (only its first is logged) | status `swallowed=<failures>/<sites>` (main + worker), log (first of each with stack; counts at exit) |
 | PvP journal | 5000 rows (`MAX_PENDING`), flushed every 60 s (`ECONOMY_JOURNAL_FLUSH_MS`) | `src/PvpJournal.js` ~6, Database ~378 | buffer kept on a failed flush; over the cap rows **dropped silently** | none |
 
 ## Network and packets
 
 | Limit | Value | Where | When hit | Observable |
 |---|---|---|---|---|
-| Inbound frame | uint16 ≤ 65535 by construction; `Session.dataReceive` re-slices by **signed** `readInt16LE` | `src/Server.js` `packetReceiver` ~10, Session ~205 | size < 2: buffer reset + log; a 32768-65535 B packet is silently truncated before its handler | log / none |
-| Outbound frame | **signed** int16 ≤ 32767 B | Session `packData` ~264, BotSession ~80 | `ERR_OUT_OF_RANGE`: in a request handler `Server` logs "dropped a packet" and disconnects the player; from bot AI it throws into the caller | log / exception |
+| Inbound frame | unsigned 2..65535 B (`Packet/Frame.body`, game and login); a string field must end in its terminator (`Packet/Receive.readS`) | `src/Server.js` `packetReceiver` ~10, `src/Packet/Frame.js` | size < 2 in the stream: buffer reset + log, connection closed; a length past its frame or a string without a terminator fails the packet (the connection is dropped, "dropped a packet") | log; status `packetRefused=<in>/<out>/<unterminated>` |
+| Outbound frame | unsigned ≤ 65535 B (`Packet/Frame.pack`: Session, BotSession, login Session) | `src/Packet/Frame.js` | packet not sent, the connection stays (the first per opcode logged) | log + status `packetRefused` |
 | Warehouse slots | players `[GameServer] playerWarehouseSlots` 300 (1..1000); bots 100 (dwarf 120) + 6 per Expand Warehouse level, up to 8 | PersonalWarehouseLimits ~9 | out of range → 300 silently | none |
 | HTML | 8192 chars | NpcHtml ~6 | "Page is too large" | log |
 | Socket backpressure | none (no `writableLength`/drain check in src) | Session ~222 | buffer grows | none |

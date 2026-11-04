@@ -1,3 +1,4 @@
+const FailureLog = require('../../FailureLog');
 const StarterItemCatalog = invoke('GameServer/Knowledge/StarterItemCatalog');
 const refreshPartyMemberships = require('../World/PartyMembershipPublication');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
@@ -418,13 +419,12 @@ const BotManager = {
                         const charId = Number(packet.insertId);
                         this.applyProfileLevel({ id: charId }, effectiveBotData)
                             .then(() => this.awardProfileSkills(charId, effectiveBotData))
-                            .then(() => {
-                                this.awardBaseGear(charId, effectiveBotData.classId);
-                                if (Number(effectiveBotData.level || 1) <= 1) {
-                                    this.awardBaseSkills(charId, effectiveBotData.classId);
-                                }
-                                this.loadAndSpawnBot(username, effectiveBotData);
-                            });
+                            // The bot loads after its starter kit is written; a failed write is counted and
+                            // the bot still spawns, without what was lost.
+                            .then(() => Promise.all([this.awardBaseGear(charId, effectiveBotData.classId),
+                                Number(effectiveBotData.level || 1) <= 1 ? this.awardBaseSkills(charId, effectiveBotData.classId) : null])
+                                .catch(error => FailureLog.note('db.write:base_kit', error)))
+                            .then(() => this.loadAndSpawnBot(username, effectiveBotData));
                     });
                 });
             });
@@ -560,7 +560,7 @@ const BotManager = {
                             session.actor.fetchPvp(),
                             session.actor.fetchPk(),
                             session.actor.fetchKarma()
-                        );
+                        ).catch(error => FailureLog.note('db.write:character_karma', error));
                     }
 
                     session.homeRegion = botData.homeRegion || null;
@@ -699,15 +699,16 @@ const BotManager = {
             return Number(template?.etc?.slot || 0) === 14 &&
                 String(template?.template?.kind || '').startsWith('Weapon.');
         });
-        items.forEach((item) => {
+        return Promise.all(items.map((item) => {
             item.slot = ItemTemplateIndex.findStrict(DataCache.items, item.selfId)?.etc?.slot ?? 0;
             // Equip weapons/armors automatically for bots
             item.equipped = !(hasTwoHandedWeapon && Number(item.slot) === 8);
-            Database.setItem(id, item);
-        });
+            return Database.setItem(id, item);
+        }));
     },
 
     awardBaseSkills(id, classId, level = 1) {
+        const writes = [];
         DataCache.fetchSkillTreeFromClassId(classId, (skillTree) => {
             const skills = skillTree.skills ?? [];
             const eligibleSkills = skills.filter((ob) => ob.levels.find((ob) => ob.pLevel <= level));
@@ -716,10 +717,11 @@ const BotManager = {
                 skill.levels = skill.levels.filter((ob) => ob.pLevel <= level).slice(-1);
                 DataCache.fetchSkillFromSelfId(skill.selfId, (skillDetails) => {
                     skill = { ...utils.crushOb(skill), passive: skillDetails.template?.passive ?? false };
-                    Database.setSkill(skill, id);
+                    writes.push(Database.setSkill(skill, id));
                 });
             });
         });
+        return Promise.all(writes);
     },
 
     handlePlayerSpeak(playerSession, data) {

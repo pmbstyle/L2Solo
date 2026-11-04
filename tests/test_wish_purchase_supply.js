@@ -84,6 +84,7 @@ const network = load('WishNetwork.js', name => {
     if (name === './EconomyDiagnostics') return { active: () => false };
     if (name === './PurchaseFunding') return require('../src/GameServer/Bot/Economy/PurchaseFunding');
     if (name === './CompactBytes') return require('../src/GameServer/Bot/Economy/CompactBytes');
+    if (name === '../../../FailureLog') return require('../src/FailureLog');
     if (name === './EconomicValuation') return valuation;
     if (name.endsWith('TendencyRoll')) return tendency;
     if (name.endsWith('Fnv1a')) return { fnv1a32: () => 1 };

@@ -1,3 +1,4 @@
+const FailureLog = require('../../FailureLog');
 const BeginnerShots = require('../Items/C4BeginnerShots');
 require('../Item/ItemTemplateIndex');
 invoke('GameServer/DataCache');
@@ -131,7 +132,7 @@ function cancelTrade(trade, reason = 'cancelled', notify = true) {
     }
     recordSupplyTrade(trade, 'cancelled', reason, true);
     if (trade.negotiationId) {
-        try { invoke('GameServer/Bot/Economy/BotNegotiationService').cancelForTrade(trade, reason); } catch (_) { /* optional negotiation module */ }
+        try { invoke('GameServer/Bot/Economy/BotNegotiationService').cancelForTrade(trade, reason); } catch (error) { FailureLog.note('ai.cleanup.negotiation', error); }
     }
     releaseReservations(trade);
     if (notify) sendToPlayer(trade, ServerResponse.tradeDone(false));
@@ -683,7 +684,7 @@ async function finishCommit(trade, playerSession, entries, databaseTransfers) {
             moved: result.moved
         });
         if (trade.negotiationId) {
-            try { invoke('GameServer/Bot/Economy/BotNegotiationService').completeTrade(trade); } catch (_) { /* optional negotiation module */ }
+            try { invoke('GameServer/Bot/Economy/BotNegotiationService').completeTrade(trade); } catch (error) { FailureLog.note('ai.cleanup.negotiation', error); }
         }
     } finally {
         if (trade.botSession.pendingResourceDelivery?.tradeId === trade.id) {

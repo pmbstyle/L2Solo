@@ -1,3 +1,4 @@
+const FailureLog = require('../../../FailureLog');
 const Parties = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const World = invoke('GameServer/World/World');
 const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
@@ -325,7 +326,7 @@ function tick(session, bot, Generics, AI, now = Date.now()) {
         const marker = Roster.markerFor(party);
         const Lifecycle = invoke('GameServer/Bot/Population/HotPartyLifecycle');
         if (Roster.admitted(party) && Roster.nativeHotStarted(party)) {
-            Lifecycle.confirmMarkedRaidStart(party, registered, now).catch(() => {});
+            Lifecycle.confirmMarkedRaidStart(party, registered, now).catch(error => FailureLog.note('raid.marked_start', error));
             return true;
         }
         if (!Roster.exact(registered.map(member => Number(member.actor.fetchId())), marker.memberIds)

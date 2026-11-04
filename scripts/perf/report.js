@@ -201,6 +201,9 @@ function contextSummary(summaries, timeline, start, end) {
         failures: { workerFaults: grown(line => line.coordinator?.failures?.workerFaults), faultBots: max(failures.map(f => (f.faultBackoff || 0) + (f.faultQuarantined || 0))),
             quarantinedMax: max(failures.map(f => f.faultQuarantined || 0)), commandDbErrors: grown(line => line.coordinator?.failures?.commandDbErrors),
             lastFault: failures.at(-1)?.lastFault || null, afterCommitErrors: grown(line => line.coordinator?.queue?.failures?.afterCommitErrors),
+            // Failures the code survived (FailureLog by site, main + worker): grown in the window, and the sites.
+            swallowed: grown(line => (line.coordinator?.failures?.swallowed ? swallowedTotal(line.coordinator.failures.swallowed) : NaN)),
+            swallowedSites: failures.at(-1)?.swallowed || null,
             safetyRepairs: vitals.at(-1)?.safetyRepairs || null, pathQueueMax: max(values(line => line.vitals?.pathWorkers?.queue)),
             restarts },
         memory: { mainHeapAfterGcMb: range(values(line => line.vitals?.mainHeap?.afterGc)),
@@ -208,6 +211,10 @@ function contextSummary(summaries, timeline, start, end) {
             freeMemMinMb: min(values(line => line.machine?.freeMemMb)),
             majorPageFaults: grown(line => line.machine?.majorPageFaults) }
     };
+}
+
+function swallowedTotal(sites) {
+    return Object.values(sites).reduce((sum, count) => sum + (Number(count) || 0), 0);
 }
 
 function range(values) {
@@ -309,7 +316,8 @@ function print(s) {
         const q = c.commitQueue, f = c.failures;
         console.log(`commit queue: depth max ${q.depthMax ?? '-'}, ${q.bytesMaxKb ?? '-'} KB, oldest ${q.oldestMaxMs ?? '-'} ms, paused ${Math.round(100 * q.pausedShare)} % of lines`);
         console.log(`failures: worker faults ${f.workerFaults} (${f.faultBots ?? 0} bots held, ${f.quarantinedMax ?? 0} quarantined${f.lastFault ? `; last ${f.lastFault.stage}: ${f.lastFault.reason}` : ''}),`
-            + ` command DB errors ${f.commandDbErrors ?? 0}, afterCommit errors ${f.afterCommitErrors}, safety repairs ${JSON.stringify(f.safetyRepairs)}, path queue max ${f.pathQueueMax ?? '-'}`
+            + ` command DB errors ${f.commandDbErrors ?? 0}, afterCommit errors ${f.afterCommitErrors},`
+            + ` swallowed ${f.swallowed ?? 0}${f.swallowedSites && Object.keys(f.swallowedSites).length ? ` ${JSON.stringify(f.swallowedSites)}` : ''}, safety repairs ${JSON.stringify(f.safetyRepairs)}, path queue max ${f.pathQueueMax ?? '-'}`
             + `${f.restarts.length ? `, restarted: ${f.restarts.join(', ')}` : ''}`);
     }
     const m = s.memory, line = (v) => (v ? `${v.start}->${v.end} MB (max ${v.max})` : '-');

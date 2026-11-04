@@ -2,6 +2,7 @@ const Actor = invoke('GameServer/Actor/Actor');
 const World = invoke('GameServer/World/World');
 const NpcVisibility = invoke('GameServer/World/NpcVisibility');
 const GroundItemVisibility = invoke('GameServer/World/GroundItemVisibility');
+const Frame = invoke('Packet/Frame');
 
 class BotSession {
     constructor(username) {
@@ -51,6 +52,7 @@ class BotSession {
             return;
         }
         const packet = this.packData(data);
+        if (!packet) return; // longer than a frame: not sent (counted, Frame.pack)
         recipients.forEach((user) => {
             if (user.socket && typeof user.socket.write === 'function') {
                 if (data?.__movingActor) invoke('GameServer/World/CharacterVisibility').beforeSend(user, data);
@@ -75,10 +77,9 @@ class BotSession {
         this.dataSendToOthers(data, creature);
     }
 
+    // The framed packet, or null when it is longer than a frame (Frame.pack).
     packData(data) {
-        const header = Buffer.alloc(2);
-        header.writeInt16LE(utils.size(data) + 2);
-        return Buffer.concat([header, data]);
+        return Frame.pack(data);
     }
 
     error() {

@@ -1,4 +1,4 @@
-const HEADER_SIZE = 2;
+const { HEADER_SIZE } = require('./Packet/Frame');
 
 function packetReceiver(onPacket, onInvalidPacket = () => {}) {
     let pending = Buffer.alloc(0);

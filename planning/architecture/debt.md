@@ -7,9 +7,11 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
 
 ## Themes
 
-1. **Failures that do not show.** `afterCommit` errors outside a named step only counted (POP-2), `catch → null`
-   routes (POP-3), economy catches (ECO-11), AI empty catches (AI-10), stat recalculation (CMB-14), geometry parse
-   (WOR-13). Every other fix is guesswork while these hide the cause.
+1. **Failures that do not show.** The owner is `src/FailureLog.js` (a survived failure counts by site, the first
+   is logged with its stack, status `swallowed=`; main and the cold worker). Left: a cold command
+   request dropped as malformed is counted but still gets no ack (the worker's command waits). A rejected
+   `World.fetchUser` read as "not a player" in two AI states (AI-13, perf). Every other fix is guesswork while these
+   hide the cause.
 2. **Hot and cold disagree on one rule.** Skill reuse (CMB-1), MP cost (CMB-2), NPC
    weapon spread (CMB-7), stat assembly (CMB-8), summon stats (CMB-10), karma wash (PER-6), spot ranking (AI-2),
    travel time (WOR-7), buyer choice (ECO-2), merchant buy (ECO-3), party admission (AI-6), transitions (POP-4).
@@ -68,6 +70,10 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
 15. **Picked-tests workflow mixes geodata states in a shard.** A shard that fetched raw geodata for one file runs the
    others with it present, so `test_spawn_drop_height` (asserts the missing-geodata case) fails there while the full
    PR run (raw geodata skipped) passes it. Run raw-geodata files in their own shard.
+
+16. **Worker restart policies.** The cold worker and the path pool slots share `WorkerRestartBackoff` (1/2/5/10/30 s,
+   forever, logged); the checkpoint worker restarts every 250 ms forever, dD only (`DatabaseCheckpointCoordinator`
+   ~61), the clan planning worker retries after 5 s (`ClanPlanningCoordinator` ~73). One restart rule for all.
 
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets[6]`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so
@@ -156,4 +162,7 @@ Each area file ends with its open questions; none blocks the order above.
   `BotTradeService`, `BotBrain`, `BotAgentTools`, `DevConsole`, `World`); part of WOR-3.
 - `Request/Appeared` sends the player's UserInfo to others too.
 - Adena is granted by three paths (`TradeService.giveAdena`, `AdminGiveAdena`, ...), each writing DB and backpack.
-- `awardBaseGear` exists twice (`BotManager`, `CreateNewChar`).
+- The starter kit is written by three copies (`awardBaseGear`/`awardBaseSkills` in `BotManager`, `CreateNewChar`,
+  `GeneratedColdSeeder`), each with its own two-handed and level rule.
+- `HotBackgroundParty` ~328 calls `HotPartyLifecycle.confirmMarkedRaidStart`, a compatibility reader that only
+  returns `Roster.nativeHotStarted`, and drops the result (a dead call).

@@ -188,7 +188,6 @@ assert.ok(new Set(generatedNames.map((name) => name.toLowerCase())).size > 700, 
         SpotProfiles.ensure = () => profiles;
         GeneratedColdSeeder.ensureCraftServices = async () => ({ created: 0, seeded: 0 });
         Database.fetchUserPassword = async () => { throw new Error('Unexpected population account creation'); };
-        assert.strictEqual(LifeState.allStates(1800).length, 1800);
         assert.strictEqual(LifeState.populationSeedStates().length, 2274,
             'population accounting must not inherit recent-state limits');
         const result = await GeneratedColdSeeder.seedPopulation();

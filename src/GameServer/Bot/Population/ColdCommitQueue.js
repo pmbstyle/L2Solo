@@ -1,4 +1,5 @@
 const DiagnosticConfig = require('./PopulationConfig');
+const FailureLog = require('../../../FailureLog');
 const Protocol = require('./ColdSimulationProtocol');
 const { MAX_BATCH: MAX_MEMORY_EVENTS } = require('../../Social/InteractionMemoryPolicy');
 
@@ -462,6 +463,7 @@ class ColdCommitQueue {
                         } catch (error) {
                             // Persistence already succeeded. A failed journal or
                             // world notification must never become a rejected ACK.
+                            FailureLog.note('cold.after_commit', error);
                             DiagnosticConfig.developerDiagnostics && (this.counters.errors += 1);
                             result.afterCommitError = error?.message || 'after_commit_error';
                             this.failures.afterCommitErrors += 1;

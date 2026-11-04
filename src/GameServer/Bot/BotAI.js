@@ -1,3 +1,4 @@
+const FailureLog = require('../../FailureLog');
 const ClassProgression = invoke('GameServer/ClassProgression');
 const DiagnosticConfig = require('./Population/PopulationConfig');
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
@@ -253,8 +254,8 @@ const BotAI = {
         session.pendingBrainTurn = null;
         HotBotPolicyOverlay.clearForCold(session);
         ChatArrivalState.clear(session, 'ai_stop');
-        try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'ai_stop'); } catch (_) { /* optional ambient module */ }
-        try { invoke('GameServer/Bot/AI/BotInferenceBudget').reset(session); } catch (_) { /* optional budget module */ }
+        try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'ai_stop'); } catch (error) { FailureLog.note('ai.cleanup.ambient', error); }
+        try { invoke('GameServer/Bot/AI/BotInferenceBudget').reset(session); } catch (error) { FailureLog.note('ai.cleanup.budget', error); }
         this.cancelScheduledTick(session);
     },
 
@@ -438,7 +439,7 @@ const BotAI = {
             BotTradeService.cleanup(session, 'death');
             invoke('GameServer/Bot/AI/TownNpcApproach').reset(session);
             invoke('GameServer/Bot/AI/TownTraffic').remove(Number(bot.fetchId()));
-            try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'death'); } catch (_) { /* optional ambient module */ }
+            try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'death'); } catch (error) { FailureLog.note('ai.cleanup.ambient', error); }
             if (session.clanAllianceQuest && invoke('GameServer/Clan/ClanAllianceService').recoverDeadCourier(session)) return;
         } else {
             // TTL expiry is intentionally lazy and bounded to hot ticks; no
@@ -695,7 +696,8 @@ const BotAI = {
             try {
                 state.tick(session, bot, Generics, BotAI);
             } catch (err) {
-                console.error(`Error in Bot AI State (${session.plan}) tick:`, err);
+                // A state that throws on every tick: counted, its first stack logged.
+                FailureLog.note(`ai.state.${stateName}`, err);
             } finally {
                 DiagnosticConfig.developerDiagnostics && recordHotStage(`state.${stateName}`, stateStartedAt);
             }

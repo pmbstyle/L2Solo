@@ -1,3 +1,4 @@
+const FailureLog = require('../../../FailureLog');
 const PartyMarketBreak = require('./PartyMarketBreak');
 const { stepElapsedMs } = require('./ColdSoloWindow');
 const { WorkerCommandAdmissionRefusal, checkWorkerCommandAdmission } = require('./WorkerCommandAdmission');
@@ -342,7 +343,9 @@ async function marketTravelWithRefund(state, goal, timestamp = Date.now(), econo
     const travel = GoalExecutor.beginMarketTravel(state, goal, timestamp, { economy });
     if (!travel || BotAfkMarketService.desiredSide(goal) !== AfkTrade.BUY
         || BotAfkMarketService.buyOrderEscrow(state.characterId) <= 0) return travel;
-    const remote = await BotAfkMarketService.reconcile(state, goal).catch(() => null);
+    const remote = await BotAfkMarketService.reconcile(state, goal).catch((error) => {
+        if (!FailureLog.refusal(error)) FailureLog.note('economy.trip_refund', error);
+    });
     const refunded = remote?.withdrawn ? remote.state || state : null;
     if (!refunded || refunded.phase !== 'cold' || joinedBackgroundParty(refunded)) return null;
     return GoalExecutor.beginMarketTravel(refunded, goal, timestamp);
@@ -1194,6 +1197,7 @@ const PopulationService = {
         this.stopPartyAssemblyEvents();
         this.stopLifecycleSafetySweep();
         this.stopHotBoardReviews();
+        invoke('GameServer/Bot/AI/BotTownTravel').stopSupplyReturns();
         const coldStop = ColdSimulationCoordinator.stop();
         if (this.initialSummaryTimer) {
             clearTimeout(this.initialSummaryTimer);

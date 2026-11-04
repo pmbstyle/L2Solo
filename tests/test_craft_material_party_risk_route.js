@@ -58,7 +58,7 @@ replace(Service, 'findCurrentSpot', () => byId.get(physicalSpotId));
 replace(Service, 'arrivalPointsForParty', roster => Object.fromEntries(roster.map(s => [s.characterId, { ...point, locX: point.locX + 100 }])));
 replace(Spots, 'findForState', () => byId.get('cash-field'));
 // All row reads must go through the material source index, not population scans.
-replace(invoke('GameServer/Bot/Population/BotLifeState'), 'allStates', () => { throw Error('no population scan'); });
+replace(invoke('GameServer/Bot/Population/BotLifeState'), 'everyState', () => { throw Error('no population scan'); });
 
 async function proposalsFor(currentParty, roster, route, timestamp) {
     const messages = [], kernel = new ColdSimulationKernel({ now: () => timestamp,
