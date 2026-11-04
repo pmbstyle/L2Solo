@@ -29,6 +29,8 @@ const ShotCraftPolicy = require('./ShotCraftPolicy');
 const ColdShotEconomyService = require('./ColdShotEconomyService');
 const TradeMeetingService = require('../../AfkTrade/TradeMeetingService');
 const BuyAdPolicy = require('./BuyAdPolicy');
+const ArrowStock = require('../../Inventory/ArrowStock');
+const BeginnerShots = require('../../Items/C4BeginnerShots');
 const MAX_LINES = BoardRules.BOT_SHOP_LINES;
 const reviewedInventory = new Map();
 const pending = new Map();
@@ -128,11 +130,30 @@ function standingBuyNeed(state, lines, candidates) {
         && items.has(Number(need.target?.itemId)));
 }
 
+// The bag a sell-shop review read (MarketListingPolicy.evaluate): every stack but
+// Adena, its amount, enchant and worn count. The shots a bot fires stay out while
+// they cannot move a listing: ItemDisposition.saleCandidates never lists the
+// personal shot or a beginner shot, whatever their amounts, which reach the other
+// stacks only through the kit the sale keeps (the published kit's targets and the
+// shot's own reserve, while that kit holds: the key carries it) and an archer's
+// arrow room (ArrowStock.keptAmounts: the weight of the rest), so not with arrows.
 function stockSignature(state) {
-    return Object.values(state?.inventory || {})
-        .filter((item) => Number(item.selfId) !== 57 && Number(item.amount || 0) > 0)
-        .map((item) => `${item.selfId}:${item.amount}:${item.enchant ?? ''}:${item.equippedCount || 0}`)
-        .sort().join('|');
+    const items = Object.values(state?.inventory || {})
+        .filter((item) => Number(item.selfId) !== 57 && Number(item.amount || 0) > 0);
+    const fired = firedShots(state, items);
+    const rows = items.filter((item) => !fired.has(Number(item.selfId)))
+        .map((item) => `${item.selfId}:${item.amount}:${item.enchant ?? ''}:${item.equippedCount || 0}`);
+    if (fired.size) rows.push('kit');
+    return rows.sort().join('|');
+}
+
+const NO_SHOTS = new Set();
+function firedShots(state, items) {
+    if (items.some(ArrowStock.isArrow)) return NO_SHOTS;
+    const ShotStock = invoke('GameServer/Inventory/ShotStock'), plan = ShotStock.planForState(state);
+    if (!ShotStock.isPersonalShot(state, plan.selfId)
+        || !invoke('GameServer/Bot/Economy/EconomyContext').saleKitPublished(state)) return NO_SHOTS;
+    return new Set([Number(plan.selfId), BeginnerShots.SOULSHOT, BeginnerShots.SPIRITSHOT]);
 }
 
 function rememberInventory(ownerId, state) {

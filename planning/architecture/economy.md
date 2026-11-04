@@ -20,7 +20,9 @@ MerchantStoreConfigs}`, `src/Market*`, `src/Economy*`, `Population/ColdEconomy{P
 - **Worker market plan:** `ColdEconomyPlan.prepare/decide` → `{take, sell, withdraw, buyAds, shot, bidLimits}` (byte
   capped), from `MarketListingPolicy`, `BuyAdPolicy`, `MarketTownPolicy`, `ReadyTradeChoice`. Main runs it with
   `BotAfkMarketService.executePlan`.
-- **Main reconcile:** `BotAfkMarketService.reconcile` → `reconcileBuyAds`/`reconcileSellShop` recomputes lines on main.
+- **Main reconcile:** `BotAfkMarketService.reconcile` → `reconcileBuyAds`/`reconcileSellShop` recomputes lines on main;
+  the sell shop only when its bag key moved (`stockSignature`: fired personal and beginner shots stay out while the
+  published kit holds and no arrows are held).
 - **Cold town visit:** `ColdMarketListingService.open`: enchant → NPC cleanup → `saleDecision` →
   `ColdMarketBuyStoreService.sellToBestBuyer` → `StaticBuyerService.sell` → NPC liquidation → `depositCold` →
   `listOnBoard`. The board writer's "no" to a bot's sell listing (a unit held for its gear, craft or clan,

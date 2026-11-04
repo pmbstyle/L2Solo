@@ -2227,19 +2227,20 @@ function shotDemand(economy, state, timestamp, previous = null) {
 // it), and for a purchase when a scroll is missing and the row has no scroll
 // hours (unpriced). A row from before the restock slots (not complete) serves the sale
 // only. The reasons are counted for diagnostics only (kit:basics:<reason>).
-const keptMiss = reason => { if (Diagnostics.active()) Diagnostics.count('kit', 'basics', reason); return null; };
-function publishedKit(state, purchase) {
+// quiet: a question about the row, not a kit read (nothing counted).
+const keptMiss = (reason, quiet) => { if (!quiet && Diagnostics.active()) Diagnostics.count('kit', 'basics', reason); return null; };
+function publishedKit(state, purchase, quiet = false) {
     const row = Packet.kitRow(state.stats?.stockTargets), ShotStock = invoke('GameServer/Inventory/ShotStock'), plan = ShotStock.planForState(state);
-    if (!row) return keptMiss('none');
-    if (row.potionId !== HealingPotionStock.purchasePotionFor(state).selfId || row.shotId !== plan.selfId) return keptMiss('item');
+    if (!row) return keptMiss('none', quiet);
+    if (row.potionId !== HealingPotionStock.purchasePotionFor(state).selfId || row.shotId !== plan.selfId) return keptMiss('item', quiet);
     const full = row.complete;
-    if (purchase && !full) return keptMiss('old');
+    if (purchase && !full) return keptMiss('old', quiet);
     const scrolls = positive(state.inventory?.[736]?.amount);
-    if (purchase && row.scrollHours === null && scrolls < invoke('GameServer/Bot/Travel/ScrollStock').TARGET_AMOUNT) return keptMiss('scroll_unpriced');
+    if (purchase && row.scrollHours === null && scrolls < invoke('GameServer/Bot/Travel/ScrollStock').TARGET_AMOUNT) return keptMiss('scroll_unpriced', quiet);
     const beginnerCurrent = ShotStock.beginnerAmount(state, plan);
     const shots = positive(state.inventory?.[plan.selfId]?.amount) + beginnerCurrent, canRestock = full && row.shotsCanRestock;
-    if (!canRestock && shots > row.shotCurrentAtBuild) return keptMiss('shots_rose');
-    if (Diagnostics.active()) Diagnostics.count('kit', 'published', purchase ? 'purchase' : 'sale');
+    if (!canRestock && shots > row.shotCurrentAtBuild) return keptMiss('shots_rose', quiet);
+    if (!quiet && Diagnostics.active()) Diagnostics.count('kit', 'published', purchase ? 'purchase' : 'sale');
     return { scrolls, closed: invoke('GameServer/Karma').closesTowns(state.stats?.karma),
         scrollHours: full ? positive(row.scrollHours) : 0,
         shots: { itemId: row.shotId, current: shots, beginnerCurrent, target: canRestock ? row.shotTarget : Math.min(shots, row.shotTarget),
@@ -2264,6 +2265,11 @@ function keptTargets(state = {}, deps = {}) {
     if (data) return { potions: data.potions.target, shots: data.shots };
     const base = basics(state, deps);
     return { potions: base.stock('potions').target, shots: base.stock('shots') };
+}
+// Whether the sale keeps the published kit now (keptTargets reads its row, not the
+// basics): BotAfkMarketService's shop key leaves the fired shots out only then.
+function saleKitPublished(state = {}) {
+    return publishedKit(state, false, true) !== null;
 }
 function survivalReserve(state = {}) {
     return Array.isArray(state.stats?.money) ? positive(Packet.survivalReserve(state.stats.money)) : basics(state).survivalReserve;
@@ -2468,5 +2474,5 @@ function reset() {
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
 module.exports = { quietGearBuildCount: () => quietGearBuilds, buildDoors: () => ({ ...doors, ...Agenda.counts() }), countDoor,
-    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), incomeHoldStats, linkStats, holdEndsAt, heldIncomeRoute, incomeMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockFor, stockReader, keptKit, keptTargets, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
+    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), incomeHoldStats, linkStats, holdEndsAt, heldIncomeRoute, incomeMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockFor, stockReader, keptKit, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
     craftIncome };
