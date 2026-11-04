@@ -180,7 +180,7 @@ player online (8 in flight, status `coldDue`).
 | Statement cache | 256 LRU; SQL > 16 KB uncached | `src/DatabaseStatements.js` ~4 | re-prepare | none |
 | Char write-behind | 750 ms, batch unbounded | CharacterWriteQueue ~3 | patch put back, retried forever | log |
 | Shutdown budget | drains 10 s (`DRAIN_BUDGET_MS`), then flush (`FINAL_FLUSH_ROUNDS` 3) + close; exit at 16 s (`EXIT_DEADLINE_MS`); launcher SIGKILL at 18 s (run-server) / 20 s (start); each cold coordinator stop wait ≤ 10 s, its timer cleared | `src/NodeL2.js` `shutdown` | later drain steps skipped, the DB is still flushed and closed | log (step named; unsaved character count) |
-| Survived failure sites | 128 distinct per thread (`MAX_SITES`): named sites (`area.what`) and the backstop's kind + error name + first frame | `src/FailureLog.js` `note` (main, cold worker) | later sites share one "other sites" count (only its first is logged) | status `swallowed=<failures>/<sites>` (main + worker), log (first of each with stack; counts at exit) |
+| Survived failure sites | per thread: 128 named sites (`MAX_SITES`, `area.what`) and apart 32 unnamed backstop sites (`MAX_UNNAMED_SITES`: kind + error name + first frame, or the message with digits masked) | `src/FailureLog.js` `note` / `noteUnnamed` (main, cold worker) | later sites share one "other sites" / "other unnamed sites" count (only its first is logged) | status `swallowed=<failures>/<sites>` (main + worker), log (first of each with stack; counts at exit) |
 | PvP journal | 5000 rows (`MAX_PENDING`), flushed every 60 s (`ECONOMY_JOURNAL_FLUSH_MS`) | `src/PvpJournal.js` ~6, Database ~378 | buffer kept on a failed flush; over the cap rows **dropped silently** | none |
 
 ## Network and packets

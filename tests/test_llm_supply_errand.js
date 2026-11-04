@@ -18,6 +18,7 @@ const BotPartyChat = invoke('GameServer/Bot/AI/BotPartyChat');
 const BotAgentTools = invoke('GameServer/Bot/AI/BotAgentTools');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const BotAI = invoke('GameServer/Bot/BotAI');
+const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 
 function item(id, selfId, amount, name = 'Soulshot: D-grade') {
     let count = amount;
@@ -44,8 +45,11 @@ async function main() {
         botAiStop: BotAI.stop,
         botAiInit: BotAI.init,
         botAiWakeup: BotAI.wakeup,
-        meetingReceipt: invoke('GameServer/AfkTrade/TradeMeetingService').receipt
+        meetingReceipt: invoke('GameServer/AfkTrade/TradeMeetingService').receipt,
+        partyThreat: PartyAwareness.findThreatTargetingPartyProjected
     };
+    // This fixture has no NPC grid: the delivery sees no threat to the party.
+    PartyAwareness.findThreatTargetingPartyProjected = () => null;
     const adena = item(10, 57, 100000, 'Adena');
     const shots = item(11, 1463, 991);
     const bySelfId = new Map([[57, adena], [1463, shots]]);
@@ -273,6 +277,7 @@ async function main() {
         BotAI.init = originals.botAiInit;
         BotAI.wakeup = originals.botAiWakeup;
         invoke('GameServer/AfkTrade/TradeMeetingService').receipt = originals.meetingReceipt;
+        PartyAwareness.findThreatTargetingPartyProjected = originals.partyThreat;
         DataCache.items = originalItems;
     }
     console.log('LLM supply errand checks passed');

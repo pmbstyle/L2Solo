@@ -10,34 +10,55 @@
 // ColdSimulationCoordinator.failureSnapshot merges them with main's.
 const { format } = require('node:util');
 
+// Named sites (`area.what`, fixed in the code) and the backstop's unnamed ones are capped apart, so
+// unnamed sites (one per distinct throw) cannot crowd the named ones out.
 const MAX_SITES = 128;
-const OTHER_SITES = 'other sites';
+const MAX_UNNAMED_SITES = 32;
+const OTHER_SITES = 'other sites', OTHER_UNNAMED = 'other unnamed sites';
 
 const counts = new Map();
+let named = 0, unnamed = 0;
 // The server's warning line; modules loaded without Global (unit fixtures) still get the line.
 const warn = (...params) => (global.utils ? utils.infoWarn('Failure', ...params) : console.warn('Failure ::', format(...params)));
 
-// A failure at `site` (a fixed name, `area.what`): counted; the first one is logged with its stack.
-// Returns nothing, so `promise.catch(error => note(site, error))` resolves to undefined, not the error.
-function note(site, error) {
-    const key = counts.has(site) || counts.size < MAX_SITES ? site : OTHER_SITES;
+function record(site, error, isNamed) {
+    let key = site;
+    if (!counts.has(site)) {
+        if (isNamed ? named >= MAX_SITES : unnamed >= MAX_UNNAMED_SITES) key = isNamed ? OTHER_SITES : OTHER_UNNAMED;
+        else if (isNamed) named += 1;
+        else unnamed += 1;
+    }
     const count = (counts.get(key) || 0) + 1;
     counts.set(key, count);
     if (count === 1) warn('%s (repeats are counted, not logged): %s', site, error?.stack || error);
 }
 
-// A refusal its owner throws as a bare code (`afk_trade_demand_changed`, `economy_material_protected`):
-// an outcome the caller handles, not a failure. A catch that takes both counts only what is not one.
-const REFUSAL_CODE = /^[a-z][a-z0-9_]*$/;
-function refusal(error) {
-    return typeof error?.message === 'string' && REFUSAL_CODE.test(error.message);
+// A failure at `site` (a fixed name, `area.what`): counted; the first one is logged with its stack.
+// Returns nothing, so `promise.catch(error => note(site, error))` resolves to undefined, not the error.
+function note(site, error) {
+    record(site, error, true);
 }
 
-// The backstop's site for an error nobody named: its kind, the error's name and first stack frame
-// (messages often carry ids, so they would split one site into many).
+// The process backstop (NodeL2): an error nobody named, its site taken from the error (siteOf).
+function noteUnnamed(kind, error) {
+    record(siteOf(kind, error), error, false);
+}
+
+// A refusal its owner throws as a bare code in a plain Error (`afk_trade_demand_changed`,
+// `economy_material_protected`): an outcome the caller handles, not a failure. A catch that takes
+// both counts only what is not one. A TypeError or RangeError is a bug whatever its message, and
+// a code ending in `_exhausted` or `_overflow` names a limit or an invariant that broke.
+const REFUSAL_CODE = /^[a-z][a-z0-9_]*$/, BROKEN_LIMIT = /_(exhausted|overflow)$/;
+function refusal(error) {
+    return error instanceof Error && error.name === 'Error' && typeof error.message === 'string'
+        && REFUSAL_CODE.test(error.message) && !BROKEN_LIMIT.test(error.message);
+}
+
+// The backstop's site: its kind, the error's name and first stack frame (messages often carry
+// ids, which would split one site into many); without a stack, its first line with digits masked.
 function siteOf(kind, error) {
     const lines = String(error?.stack || error?.message || error).split('\n');
-    return `${kind}: ${error?.stack ? `${error.name || 'Error'} ${(lines[1] || '').trim()}` : lines[0].slice(0, 160)}`;
+    return `${kind}: ${error?.stack ? `${error.name || 'Error'} ${(lines[1] || '').trim()}` : lines[0].slice(0, 160).replace(/\d+/g, '#')}`;
 }
 
 // { site: count } since the thread started; null while nothing failed (a healthy heartbeat carries nothing).
@@ -61,4 +82,4 @@ function report() {
     }
 }
 
-module.exports = { note, refusal, siteOf, snapshot, merge, report, MAX_SITES };
+module.exports = { note, noteUnnamed, refusal, snapshot, merge, report, MAX_SITES, MAX_UNNAMED_SITES };

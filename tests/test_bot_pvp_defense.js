@@ -68,6 +68,7 @@ function session(actor, options = {}) {
 
 let now = Date.now();
 let nextId = 2100000;
+let karmaWritesLost = 0;
 function setup(options = {}, mode = 'hunting') {
     const bot = actor(nextId++, options);
     const own = session(bot, { plan: mode });
@@ -361,20 +362,20 @@ function skill(id, type, target, effect, power = 100) {
     const lod = invoke('GameServer/Bot/AI/HotActorLodPolicy');
     const Upgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
     const saved = { tick: Resting.tick, refresh: lod.shouldRefreshStatus, warn: utils.infoWarn, upgrade: Upgrade.applyBestUpgrades };
-    const logged = [];
+    const logged = [], before = FailureLog.snapshot()?.['ai.state.resting'] || 0;
     try {
         Upgrade.applyBestUpgrades = () => {};
         Resting.tick = () => { throw new TypeError('resting state broken'); };
         lod.shouldRefreshStatus = () => false;
-        utils.infoWarn = (prefix, ...line) => { if (prefix === 'Failure') logged.push(line.join(' ')); };
+        utils.infoWarn = (...line) => { if (line.join(' ').includes('ai.state.resting')) logged.push(line.join(' ')); };
         BotAI.tick(own); BotAI.tick(own); BotAI.tick(own);
     } finally {
         Resting.tick = saved.tick; lod.shouldRefreshStatus = saved.refresh; utils.infoWarn = saved.warn;
         Upgrade.applyBestUpgrades = saved.upgrade;
     }
-    assert.strictEqual(FailureLog.snapshot()['ai.state.resting'], 3, 'every failing tick is counted');
-    assert.strictEqual(logged.length, 1, 'only the first failing tick is logged');
-    assert.match(logged[0], /ai\.state\.resting[\s\S]*resting state broken/);
+    assert.strictEqual(FailureLog.snapshot()['ai.state.resting'] - before, 3, 'every failing tick is counted');
+    assert.strictEqual(logged.length, before ? 0 : 1, 'only the first failing tick is logged');
+    if (!before) assert.match(logged[0], /resting state broken/);
 }
 {
     const { own, bot, enemy } = setup();
@@ -412,6 +413,7 @@ function skill(id, type, target, effect, power = 100) {
     try {
         Generics.die = (_session, victim) => { victim.dead = true; };
         // The tally's write fails: the fight still settles, the lost write is counted (status swallowed=).
+        karmaWritesLost = invoke('FailureLog').snapshot()?.['db.write:character_karma'] || 0;
         Database.updateCharacterPvpPkKarma = () => Promise.reject(new Error('disk I/O error'));
         Response.userInfo = Response.charInfo = Response.relationChanged = () => Buffer.alloc(0);
         own.dataSendToMe = attacker.dataSendToMe = () => {};
@@ -435,6 +437,6 @@ Response.speak = originalSpeak;
 GlobalChat.announceAttack = originalAnnounce;
 // The tally write's rejection settled before this microtask.
 queueMicrotask(() => {
-    assert.strictEqual(invoke('FailureLog').snapshot()['db.write:character_karma'], 1, 'a failed PvP tally write is counted');
+    assert.strictEqual(invoke('FailureLog').snapshot()['db.write:character_karma'] - karmaWritesLost, 1, 'a failed PvP tally write is counted');
     console.log('Bot PvP defense checks passed');
 });

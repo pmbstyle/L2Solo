@@ -64,7 +64,11 @@ function decode(value, timestamp, maxCardBytes, characterId, baseline, baselineI
         return { data, decisionSeq: row[0], activityLeaf: row[1], focus: row[2], baseline,
             activity: row[3], mp: row[4], eventProof: Uint8Array.from(plain.subarray(cardAt + cardSize)),
             characterId: row[5], saved: value };
-    } catch (error) { FailureLog.note('economy.codec:advisory_decode', error); return null; }
+    } catch (error) {
+        // A saved card that inflates past the cap is refused like the checks above; anything else is a bug.
+        if (error?.code !== 'ERR_BUFFER_TOO_LARGE') FailureLog.note('economy.codec:advisory_decode', error);
+        return null;
+    }
 }
 
 module.exports = { encode, decode, cardData, MAX_BYTES };

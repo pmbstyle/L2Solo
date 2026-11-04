@@ -59,7 +59,7 @@ const EXIT_DEADLINE_MS = 16000;
 const FINAL_FLUSH_ROUNDS = 3;
 // The process backstop counts by site and logs the first of each (the shared failure rule).
 const FailureLog = invoke('FailureLog');
-const noteFailure = (kind, error) => FailureLog.note(FailureLog.siteOf(kind, error), error);
+const noteFailure = (kind, error) => FailureLog.noteUnnamed(kind, error);
 
 let finalWrites = null;
 // The last writes, shared by a clean shutdown and a crash: flush buffered
