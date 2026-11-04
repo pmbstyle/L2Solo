@@ -13,8 +13,8 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
   `World.init` → runtimes (recommendations, clan hall, AFK trade, personas, KB warmup) → TCP servers →
   `BotManager.init` → `WorldObserver.init` → `DevConsole`. `World.init`: indexes, raid state, `spawnNpcs`, minions,
   grid, day/night, aggro ticker. Pathfinding pool starts lazily (first `request`). The perf recorder
-  (`Perf/LiveRecorder`, `[Perf] live`) starts before any worker. Backstop: an unhandled rejection is logged
-  once per reason and counted (`noteFailure`); an uncaught exception, or any failure before startup finishes, flushes
+  (`Perf/LiveRecorder`, `[Perf] live`) starts before any worker. Backstop: an unhandled rejection is counted by
+  site, the first of each logged with its stack (`FailureLog`, the shared failure rule; status `swallowed=`); an uncaught exception, or any failure before startup finishes, flushes
   `CharacterWriteQueue`, closes the DB and exits 1. Shutdown (`NodeL2` `shutdown`): service drains capped at 10 s,
   then flush + close, forced exit by 16 s (limits.md).
 - **Launcher** (`launcher/`, merged from develop): desktop server management, saves, preview releases; starts the
@@ -85,7 +85,7 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
 | Bot talk-to-NPC | `TownNpcApproach.canInteract` (player: `AttackRange.TALK_RANGE` 36) |
 | Spawn/respawn | `SpawnNpcs` + `RemoveNpc` |
 | Event-loop yield | `EventLoopTurn` |
-| Process failure backstop, shutdown order | `src/NodeL2.js` (`noteFailure`, `shutdown`, `writeFinalState`) |
+| Process failure backstop, shutdown order | `src/NodeL2.js` (`shutdown`, `writeFinalState`; failures through `src/FailureLog.js`) |
 | Is a bot | **none** (WOR-3) |
 | Town identity | **none** (WOR-6) |
 

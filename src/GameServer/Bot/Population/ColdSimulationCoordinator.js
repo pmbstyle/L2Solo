@@ -8,6 +8,7 @@ const { Worker } = require('worker_threads');
 const { performance } = require('perf_hooks');
 
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
+const FailureLog = invoke('FailureLog');
 const Database = invoke('Database');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -2409,14 +2410,16 @@ class ColdSimulationCoordinator {
     }
 
     // One failures record (perf report, status line, scripted players): the worker's bot faults
-    // from its heartbeat plus main's protocol faults and database command errors.
+    // from its heartbeat plus main's protocol faults and database command errors; swallowed: the
+    // failures main and the worker survived, by site (FailureLog; the worker's since it started).
     failureSnapshot() {
         const worker = this.lastWorkerSnapshot?.failures || {};
         const faultsByStage = { ...(worker.faultsByStage || {}) };
         for (const [stage, count] of Object.entries(this.failures.faultsByStage)) faultsByStage[stage] = (faultsByStage[stage] || 0) + count;
         return { workerFaults: Number(worker.workerFaults || 0) + this.failures.protocolFaults, faultsByStage,
             lastFault: this.failures.lastFault, faultBackoff: Number(worker.faultBackoff || 0),
-            faultQuarantined: Number(worker.faultQuarantined || 0), commandDbErrors: this.refusals.commandDbErrors };
+            faultQuarantined: Number(worker.faultQuarantined || 0), commandDbErrors: this.refusals.commandDbErrors,
+            swallowed: FailureLog.merge(FailureLog.snapshot(), worker.swallowed) };
     }
 
     snapshot() {

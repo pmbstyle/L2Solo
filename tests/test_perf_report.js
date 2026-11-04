@@ -48,7 +48,7 @@ jsonl('timeline-20261103.jsonl', [
             mainHeap: { afterGc: 50 } },
         files: { walMb: 4, worldMb: 20 }, machine: { freeMemMb: 900, majorPageFaults: 2 },
         coordinator: { queue: { depth: 2, bytes: 2048, oldestMs: 100, paused: false, failures: { afterCommitErrors: 0 } },
-            failures: { workerFaults: 1, faultBackoff: 1, faultQuarantined: 0, commandDbErrors: 0 } },
+            failures: { workerFaults: 1, faultBackoff: 1, faultQuarantined: 0, commandDbErrors: 0, swallowed: { 'cold.after_commit': 1 } } },
         population: { metrics: { delta: { coldOwnerHandoffs: 3, activations: 3, cooldowns: 1 }, transitions: { activation: { count: 3, avgMs: 100, p95Ms: 180, maxMs: 200 },
             cooldown: { count: 1, avgMs: 40, p95Ms: 40, maxMs: 40 } } } },
         coldQueue: { overdue: 1 }, heaps: { main: { usedMb: 100 } }, recorder: { costMs: 60, inspectorMs: 0 } },
@@ -57,7 +57,8 @@ jsonl('timeline-20261103.jsonl', [
             mainHeap: { afterGc: 55 } },
         files: { walMb: 9, worldMb: 20 }, machine: { freeMemMb: 700, majorPageFaults: 5 },
         coordinator: { queue: { depth: 5, bytes: 4096, oldestMs: 900, paused: true, failures: { afterCommitErrors: 2 } },
-            failures: { workerFaults: 4, faultBackoff: 1, faultQuarantined: 1, commandDbErrors: 2, lastFault: { stage: 'solo_project', reason: 'boom' } } },
+            failures: { workerFaults: 4, faultBackoff: 1, faultQuarantined: 1, commandDbErrors: 2, lastFault: { stage: 'solo_project', reason: 'boom' },
+                swallowed: { 'cold.after_commit': 3, 'route.search': 2 } } },
         coldQueue: { overdue: 3 }, heaps: { main: { usedMb: 120 } }, recorder: { costMs: 60, inspectorMs: 0 } }
 ]);
 jsonl('spikes-20261103.jsonl', [
@@ -110,6 +111,8 @@ try {
     assert.equal(c.failures.lastFault.reason, 'boom');
     assert.equal(c.failures.faultBots, 2, 'bots held off: backing off + quarantined');
     assert.equal(c.failures.commandDbErrors, 2);
+    assert.equal(c.failures.swallowed, 4, 'failures the code survived, grown in the window');
+    assert.deepEqual(c.failures.swallowedSites, { 'cold.after_commit': 3, 'route.search': 2 }, 'by site, as of the last line');
     assert.deepEqual(c.memory.mainHeapAfterGcMb, { start: 50, end: 55, max: 55 });
     assert.equal(c.memory.freeMemMinMb, 700);
     assert.equal(c.memory.majorPageFaults, 3, 'totals since start: the last line in the window minus the first');

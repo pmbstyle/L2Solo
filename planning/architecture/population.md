@@ -79,7 +79,7 @@ thread: our rule, so a far bot does not re-decide on every event ([bot-ai.md](bo
 | Travel route and fare | `Travel/TravelRoutes`, `TripPayment` |
 | Cold trip time | `ColdTrip` |
 | A throwing step or command: hold off, quarantine | `ColdSimulationKernel.fault`, one tracker per bot (per party run): backoff 1 s/5 s/30 s/2 min, quarantine 10 min after 5 faults in a row, first occurrence logged with the stack, `botFaults=` on the health line (`FAULT_*`, limits.md); a command's DB error is no bot fault (`commandDbErrors`) |
-| Failure counts (status line, perf report, e2e players) | `ColdSimulationCoordinator.failureSnapshot` (one record: worker faults by stage, backoff/quarantine, protocol faults, `commandDbErrors`); afterCommit errors in `ColdCommitQueue` `failures` |
+| Failure counts (status line, perf report, e2e players) | `ColdSimulationCoordinator.failureSnapshot` (one record: worker faults by stage, backoff/quarantine, protocol faults, `commandDbErrors`, `swallowed` = main's and the worker's `FailureLog` counts by site, the worker's from its heartbeat `failures.swallowed`); afterCommit errors in `ColdCommitQueue` `failures` |
 | Boot recovery of a stale hot row | `BotLifeState.staleHotRowFromRecord` (the record wins, PER-7) |
 | Transition cost (cold ↔ hot time per bot) | `PopulationMetrics.recordActivation`/`recordCooldown` (`transitions` in the summary) |
 
