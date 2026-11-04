@@ -64,6 +64,10 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
   whole-row writers (`BotLifeState.save`, the cold commit) set the indexed `accountName`, `characterName`, `phase`,
   `partyId`, `nextResolveAt` only when the row does not hold the value (`HELD_ROW_COLUMNS`, read in the same job);
   `drop-unused-bot-life-indexes` dropped four that nothing read (42 MB/min, 14 % of the WAL).
+  A save rewrites the whole row whenever its length moves (almost always), so the WAL per save is the row's size:
+  the kit's skill records are saved as their ranks (`SavedSkills`: `[[selfId, level], ...]` when every record is
+  its rank's data, else whole), written by `SavedStats.compact` and the kit rebuild, unpacked by
+  `SavedStats.body`/`merge` and the raw kit readers (clan candidate trigger, buff seller check, clan member combat).
 - **History:** outbox in the same transaction → worker moves → main deletes; `readHistory` flushes first.
 - **Schema evolution — five mechanisms:** re-run `sqlite.sql`; numbered then named migrations; `maintenance_tasks`
   one-shots; `world_meta` flags; service start-up migrations (`ClanService.migrateAutonomousClanNames`,

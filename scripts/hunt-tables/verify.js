@@ -58,7 +58,7 @@ function strengthCheck(file, count) {
     const picked = rows.filter((_, index) => index % step === 0).slice(0, count);
     const out = { bots: 0, maxRel: 0, worst: null, outsideTable: 0, perField: {}, mismatched: 0 };
     for (const row of picked) {
-        const stats = JSON.parse(row.statsJson || '{}');
+        const stats = require('../../src/GameServer/Bot/SavedStats').body(row.statsJson);
         const inventory = JSON.parse(row.inventorySummary || '{}');
         const classId = invoke('GameServer/Bot/Population/ColdCombatProfile').classIdOf({ stats });
         const state = { characterId: Number(row.characterId), level: Number(row.level), classId, stats, inventory };

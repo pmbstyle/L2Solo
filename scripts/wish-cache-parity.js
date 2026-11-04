@@ -2,6 +2,7 @@
 // Read a fixed world save without opening the game's database writer.
 // Usage: L2NODE_CONFIG_FILE=config/default.ini node scripts/wish-cache-parity.js <save.sqlite> [300]
 require('../src/Global');
+const SavedStats = require('../src/GameServer/Bot/SavedStats');
 const { DatabaseSync } = require('node:sqlite');
 const crypto = require('node:crypto');
 const db = new DatabaseSync(process.argv[2], { readOnly: true });
@@ -17,7 +18,7 @@ const decisions = rows.map(row => {
         sp: row.sp, adena: row.adena, phase: row.phase, activity: row.activity, currentRegion: row.currentRegion,
         spotId: row.spotId, loc: { locX: row.locX, locY: row.locY, locZ: row.locZ },
         vitals: { hp: row.hp, maxHp: row.maxHp, mp: row.mp, maxMp: row.maxMp }, timing: {},
-        party: { partyId: row.partyId }, stats: json(row.statsJson), inventory: json(row.inventorySummary) };
+        party: { partyId: row.partyId }, stats: SavedStats.merge(row.statsJson, row.mindJson), inventory: json(row.inventorySummary) };
     const network = Economy.forState(state, { timestamp: 1e12 }).network;
     return { id: row.characterId, queue: network.queue.map(wish => [wish.key, wish.price, wish.funded]), focus: network.focus };
 });

@@ -16,6 +16,7 @@ const Events = invoke('GameServer/Clan/ClanReviewEvents');
 const Raid = invoke('GameServer/Clan/ClanRaidPolicy');
 const Capabilities = invoke('GameServer/Clan/ClanCandidateCapabilities');
 const Combat = invoke('GameServer/Bot/Population/ColdCombatProfile');
+const SavedSkills = require('../src/GameServer/Bot/SavedSkills');
 const Gear = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const seed = new DatabaseSync(world);
 seed.exec(fs.readFileSync(path.join(__dirname, '../database/sql/sqlite.sql'), 'utf8'));
@@ -152,6 +153,11 @@ async function main() {
         assert.deepEqual(await events(), [820500], 'same learned array becomes real capability when its native source becomes database');
         await query("UPDATE bot_life_state SET statsJson=json_set(statsJson,'$.coldCombat.skillSource','hot') WHERE characterId=?", [skillSourceId]);
         assert.deepEqual(await events(), [], 'database to hot with the same learned skills changes no capability');
+        const savedRanks = SavedSkills.pack(learnedHeal);
+        assert.deepEqual(savedRanks, [[1015, 1]]);
+        await query("UPDATE bot_life_state SET statsJson=json_set(statsJson,'$.coldCombat.skills',json(?)) WHERE characterId=?",
+            [JSON.stringify(savedRanks), skillSourceId]);
+        assert.deepEqual(await events(), [], 'the same learned skills saved as their ranks change no capability');
         await query('UPDATE bot_life_state SET sp=sp+1 WHERE characterId=?', [skillSourceId]);
         assert.deepEqual(await events(), []);
         await query('BEGIN IMMEDIATE');

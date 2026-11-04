@@ -46,6 +46,7 @@ const EconomyCommit = require('./GameServer/Bot/Economy/EconomyCommit');
 const Diagnostics = require('./GameServer/Bot/Economy/EconomyDiagnostics');
 const ColdCombatProfile = require('./GameServer/Bot/Population/ColdCombatProfile');
 const SavedStats = require('./GameServer/Bot/SavedStats');
+const SavedSkills = require('./GameServer/Bot/SavedSkills');
 const PartyCandidateProjection = require('./DatabasePartyCandidateProjection');
 const PlayerWarehouse = require('./DatabasePlayerWarehouse');
 const DataCache = invoke('GameServer/DataCache');
@@ -2990,16 +2991,16 @@ function heldSkillCurrent(held, fresh) {
     return index === heldKeys.length;
 }
 
-// The kit from the learned rows. Returns `combat` itself when the rows rebuild
-// it unchanged, so the caller re-serializes stats only after a skill move (a
-// level-up, a grant).
+// The kit from the learned rows, as saved (SavedSkills). Returns `combat`
+// itself (packed or whole) when the rows rebuild it unchanged, so the caller
+// re-serializes stats only after a skill move (a level-up, a grant).
 function nativeColdCombatSkillsUnsafe(characterId, combat) {
     if (!combat || typeof combat !== 'object' || Array.isArray(combat)) return combat;
     const learned = ColdCombatProfile.skillSnapshotsFromRecords(all('SELECT selfId, level FROM skills WHERE characterId = ? ORDER BY selfId', [characterId]));
-    const held = Array.isArray(combat.skills) ? combat.skills : null;
+    const held = Array.isArray(combat.skills) ? SavedSkills.unpack(combat.skills) : null;
     if (held && combat.version === ColdCombatProfile.PROFILE_VERSION && combat.skillSource === 'database'
         && held.length === learned.length && learned.every((skill, index) => heldSkillCurrent(held[index], skill))) return combat;
-    return { ...combat, version: ColdCombatProfile.PROFILE_VERSION, skillSource: 'database', skills: learned };
+    return SavedSkills.packKit({ ...combat, version: ColdCombatProfile.PROFILE_VERSION, skillSource: 'database', skills: learned });
 }
 
 // Whether a cold bot's items rows match its stored bag summary: a cold commit
@@ -4488,7 +4489,7 @@ function recruitmentRows(where, params) {
         FROM characters c LEFT JOIN bot_life_state l ON l.characterId=c.id
         LEFT JOIN bot_party_candidate_projection p ON p.characterId=c.id WHERE ${where}`, params).map(row => ({ ...row,
             phase: row.phase || '', activity: row.activity || '', spotId: row.spotId || null, partyId: row.partyId || null,
-            stats: jsonObject(row.statsJson), inventory: jsonObject(row.inventorySummary) }));
+            stats: SavedStats.body(row.statsJson), inventory: jsonObject(row.inventorySummary) }));
 }
 function recruitmentSourceCurrent(source) {
     if (source?.kind === 'economic') {
@@ -4834,7 +4835,7 @@ const Database = {
             const buyerStats = parsedObject(buyer.statsJson), sellerStats = parsedObject(seller.statsJson);
             if (!buyerStats || !sellerStats) return { ok: false, reason: 'invalid_stats' };
             const sellerSkills = sellerStats.coldCombat?.skills?.length
-                ? sellerStats.coldCombat.skills
+                ? SavedSkills.unpack(sellerStats.coldCombat.skills)
                 : invoke('GameServer/Bot/Population/ColdCombatProfile').skillRecordsFromTree(
                     Number(sellerStats.classId || sellerStats.classProgressionClassId || 0), Number(seller.level || 1));
             const known = new Map(sellerSkills.map(skill => [Number(skill.selfId), Number(skill.level)]));
@@ -6488,7 +6489,7 @@ const Database = {
                 const snapshots = members.map(member => ({ characterId: member.characterId, level: member.patch.level,
                     phase: request.phase, vitals: { hp: member.patch.hp, maxHp: member.patch.maxHp,
                         mp: member.patch.mp, maxMp: member.patch.maxMp },
-                    classId: jsonObject(member.patch.statsJson).classId, inventory: jsonObject(member.patch.inventorySummary), stats: jsonObject(member.patch.statsJson) }));
+                    classId: jsonObject(member.patch.statsJson).classId, inventory: jsonObject(member.patch.inventorySummary), stats: SavedStats.body(member.patch.statsJson) }));
                 const reason = raidRosterCommitReason(party, jsonObject(request.statsJson), null, snapshots);
                 if (reason) return { ok: false, reason };
             }
@@ -7335,7 +7336,7 @@ const Database = {
                 all('SELECT * FROM skills WHERE characterId = ?', [characterId]), now());
             checkCapturedWriteAdmission(admission, characterId);
             write('UPDATE bot_life_state SET sp = ?, inventorySummary = ?, statsJson = ?, simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?',
-                [character.sp, JSON.stringify(inventory), JSON.stringify(stats), now(), characterId]);
+                [character.sp, JSON.stringify(inventory), JSON.stringify(SavedSkills.packStats(stats)), now(), characterId]);
             return one('SELECT * FROM bot_life_state WHERE characterId = ?', [characterId]);
         }, 'cold:automatic-skills'));
     },
@@ -8838,7 +8839,7 @@ const Database = {
                     throw new Error('workshop unavailable');
                 }
                 const stateOf = row => ({ characterId: Number(row.characterId), clanId: Number(row.clanId),
-                    stats: jsonObject(row.statsJson) });
+                    stats: SavedStats.body(row.statsJson) });
                 const quote = invoke('GameServer/Bot/Economy/CraftWorkshopService').quote(stateOf(workshopCrafter), stateOf(customer), recipe.recipeId);
                 if (!quote || Number(price) !== quote.price * batches || Number(workshop.fee) !== Number(price)
                     || !Number.isSafeInteger(Number(price)) || Number(price) < 0) throw new Error('workshop price changed');
@@ -10532,7 +10533,7 @@ const Database = {
                     return { ok: false, code: 'clan_goal_changed' };
                 const members = goals.map(goal => {
                     const row = one('SELECT characterId, inventorySummary, statsJson FROM bot_life_state WHERE characterId = ?', [Number(goal.target?.memberId || 0)]);
-                    return row && { characterId: row.characterId, inventory: jsonObject(row.inventorySummary), stats: jsonObject(row.statsJson) };
+                    return row && { characterId: row.characterId, inventory: jsonObject(row.inventorySummary), stats: SavedStats.body(row.statsJson) };
                 }).filter(Boolean);
                 const gap = invoke('GameServer/Clan/ClanSupplyPolicy').requirements(
                     { id: clan, level: clanRow.level, state: previousState, members },

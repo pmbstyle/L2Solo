@@ -7,6 +7,8 @@ const Config = invoke('GameServer/Clan/ClanSimulationConfig');
 const Contracts = invoke('GameServer/Clan/ClanSimulationContracts');
 const Policy = invoke('GameServer/Clan/ClanSimulationPolicy');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
+const SavedStats = require('../Bot/SavedStats');
+const SavedSkills = require('../Bot/SavedSkills');
 const ClanCrestService = invoke('GameServer/Clan/ClanCrestService');
 const StageMetrics = invoke('GameServer/Clan/ClanStageMetrics');
 
@@ -63,7 +65,7 @@ function socialRelations(characterId, now = Date.now()) {
 }
 
 function normalizeCandidate(row = {}) {
-    const stats = parseJson(row.statsJson, {});
+    const stats = SavedStats.body(row.statsJson);
     const storedPersona = row.traitsJson
         ? {
             characterId: Number(row.characterId),
@@ -167,7 +169,7 @@ async function autonomousClanProjection() {
                     clanId: number(row.memberClanId),
                     // Strategic recruitment needs learned abilities, not the
                     // hypothetical class tree. Other clan projections stay lean.
-                    ...(row.memberCombat ? { stats: { coldCombat: parseJson(row.memberCombat) } } : {})
+                    ...(row.memberCombat ? { stats: { coldCombat: SavedSkills.unpackKit(parseJson(row.memberCombat)) } } : {})
                 });
             }
         });

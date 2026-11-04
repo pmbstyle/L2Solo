@@ -6,6 +6,7 @@ const path = require('node:path'), fs = require('node:fs'), assert = require('no
 const { Worker } = require('node:worker_threads');
 const { DatabaseSync } = require('node:sqlite');
 require('../src/Global');
+const SavedStats = require('../src/GameServer/Bot/SavedStats');
 const Data = invoke('GameServer/DataCache'); Data.init();
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Decision = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
@@ -22,7 +23,7 @@ const states = rows.map(row => ({ characterId: row.characterId, name: row.charac
     vitals: { hp: row.hp, maxHp: row.maxHp, mp: row.mp, maxMp: row.maxMp },
     timing: { lastResolvedAt: row.lastResolvedAt, nextResolveAt: row.nextResolveAt },
     simulation: { revision: row.simRevision || 0 },
-    party: row.partyId ? { partyId: row.partyId } : null, stats: json(row.statsJson), inventory: json(row.inventorySummary) }));
+    party: row.partyId ? { partyId: row.partyId } : null, stats: SavedStats.merge(row.statsJson, row.mindJson), inventory: json(row.inventorySummary) }));
 db.close();
 const spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure(), catalog = npcPlanningCatalogRows();
 const board = new (invoke('GameServer/AfkTrade/BoardIndex').BoardIndex)();

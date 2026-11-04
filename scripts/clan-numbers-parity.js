@@ -7,6 +7,7 @@ const path = require('node:path'), fs = require('node:fs'), assert = require('no
 const { Worker } = require('node:worker_threads');
 const { DatabaseSync } = require('node:sqlite');
 require('../src/Global');
+const SavedStats = require('../src/GameServer/Bot/SavedStats');
 const Data = invoke('GameServer/DataCache'); Data.init();
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Context = invoke('GameServer/Clan/ClanEconomyContext');
@@ -28,7 +29,7 @@ const states = rows.map(row => ({ characterId: row.characterId, name: row.charac
     vitals: { hp: row.hp, maxHp: row.maxHp, mp: row.mp, maxMp: row.maxMp },
     timing: { lastResolvedAt: row.lastResolvedAt, nextResolveAt: row.nextResolveAt },
     simulation: { revision: row.simulationRevision || 0 },
-    party: row.partyId ? { partyId: row.partyId } : null, stats: { ...json(row.statsJson), clanId: membership.get(row.characterId).clanId },
+    party: row.partyId ? { partyId: row.partyId } : null, stats: { ...SavedStats.merge(row.statsJson, row.mindJson), clanId: membership.get(row.characterId).clanId },
     classId: membership.get(row.characterId).classId, inventory: json(row.inventorySummary), persona: personas.get(row.characterId) }));
 assert.ok(states.length, 'native saved clan members are required');
 const warehouse = db.prepare('SELECT * FROM clan_warehouse_items ORDER BY clanId,id').all();
