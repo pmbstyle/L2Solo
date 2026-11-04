@@ -73,6 +73,8 @@ is one mechanism per rule.
   changed limit gets a row, and hitting it must be observable (a counted reason, not a silent drop).
 - A survived failure is never silent: count it through `src/FailureLog.js` (site + first stack), never rethrow from a
   timer.
+- A schema change is a new named migration in `src/Database.js`'s named list (`namedMigrations`), never a new
+  number.
 - Secrets and machine paths go only in `config/local.ini` (gitignored).
 
 ## Tests

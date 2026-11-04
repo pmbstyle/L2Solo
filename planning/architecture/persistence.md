@@ -12,10 +12,10 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
   promise queue (`enqueue`, `run`, `performTransaction`); its drain gives the event loop a turn after 12 ms of jobs,
   never inside one, so order and atomicity hold. Also holds game rules (clan join, AFK board, quest steps,
   NPC baskets, cold commits) — PER-10.
-- **Schema:** `database/sql/sqlite.sql` re-run on every start + numbered migrations 1–84 in `applySchemaMigrations`
-  (`schema_migrations`); some migrations live in modules (`PartyCandidateProjection`, `PlayerWarehouse`,
-  `ClanRaidFailureMigration`, `BotClanConversationStore`, `DatabaseRecommendations`, `ClanWarRepository`,
-  `ClanWarCombat`, `ClanJoinPenaltyMigration`).
+- **Schema:** `database/sql/sqlite.sql` re-run on every start + numbered migrations 1–83, then named ones (PER-5), in
+  `applySchemaMigrations` (`schema_migrations`, `named_migrations`); some migrations live in modules
+  (`PartyCandidateProjection`, `PlayerWarehouse`, `ClanRaidFailureMigration`, `BotClanConversationStore`,
+  `DatabaseRecommendations`, `ClanWarRepository`, `ClanWarCombat`, `ClanJoinPenaltyMigration`).
 - **Repositories** get injected internals and are merged onto `Database` (`ClanMembershipRepository`,
   `DatabasePlayerWarehouse`, `ClanLevelSpRepository`, `ClanWarRepository`, `DatabaseRecommendations`,
   `ClanAllianceRepository`, `ClanHall/Repository`, trade meetings).
@@ -56,11 +56,11 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
   writes `characters` in the same transaction (only the moved columns); a resolve copies level, EXP, SP and vitals
   in one guarded UPDATE (`updateCharacterProgress`, nothing written when nothing moved). Items ↔ summary synced both ways. Every index on the row costs a WAL
   page per save (SQLite rewrites the entry of every column the UPDATE sets, changed or not), so no index holds
-  `updatedAt` except the covering `bot_life_state_party_candidate_projection` (read with INDEXED BY); v84 dropped
-  four that nothing read (42 MB/min, 14 % of the WAL).
+  `updatedAt` except the covering `bot_life_state_party_candidate_projection` (read with INDEXED BY);
+  `drop-unused-bot-life-indexes` dropped four that nothing read (42 MB/min, 14 % of the WAL).
 - **History:** outbox in the same transaction → worker moves → main deletes; `readHistory` flushes first.
-- **Schema evolution — five mechanisms:** re-run `sqlite.sql`; numbered migrations; `maintenance_tasks` one-shots;
-  `world_meta` flags; service start-up migrations (`ClanService.migrateAutonomousClanNames`,
+- **Schema evolution — five mechanisms:** re-run `sqlite.sql`; numbered then named migrations; `maintenance_tasks`
+  one-shots; `world_meta` flags; service start-up migrations (`ClanService.migrateAutonomousClanNames`,
   `AfkTradeService.migrateBoardWorld`, `GiranShopDistribution`), plus `cleanZeroAmountItems` every init.
 - **Migration numbers collided with upstream** (upstream's migration 67 "numbered after ours", "Early cooldown deployments
   occupied 81"; 74 and 75 run the same function; 83 repairs 81).
@@ -96,12 +96,15 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
 - **PER-4 dead: social graph.** `Social/SocialGraphRepository`, `Database.ensureSocialEntity`/
   `commitSocialGraphEvent`, tables `social_entities/events/relations/projection_cursors`. Only a test uses it: a
   foundation never wired. Live memory is `InteractionMemory*`. **Decided 2026-11-03: delete code, drop the tables by
-  a new migration, own change with review** (check migration numbers against `origin/develop`).
+  a new migration, own change with review** (a named one, PER-5).
 - **PER-5 five schema mechanisms**; `sqlite.sql` drifts from the migrated shape; tables created both there and in
-  migrations. Fresh and upgraded DBs reach the final shape by different routes. **Decided 2026-11-03:** new
-  migrations are keyed by name (not number) in one ordered list; 1-84 stay. To agree with Slava before the first named
-  one (social graph drop). The other mechanisms (re-run `sqlite.sql`, `maintenance_tasks`, `world_meta` flags, service
-  start-up migrations) move into that list over time.
+  migrations. Fresh and upgraded DBs reach the final shape by different routes. **Decided 2026-11-03, agreed
+  with Slava 2026-11-04:** new migrations are keyed by name, not number: `namedMigrations` in `applySchemaMigrations`,
+  run after the numbered ones in list order, each recorded once in `named_migrations` (a name this build does not know
+  is logged and kept). To add one, append `['what-it-does', () => …]`; numbered 1–83 stay. The first,
+  `drop-unused-bot-life-indexes`, ran as numbered 84 on a few early worlds; that row is ignored. The other mechanisms
+  (re-run `sqlite.sql`, `maintenance_tasks`, `world_meta` flags, service start-up migrations) move into that list over
+  time.
 - **PER-6 karma wash three copies** (`Karma.karmaWashForExperience`, `BotLifeState.prepareResolve`, SQL in
   `characterProgressStatement`, shared by `updateCharacterProgress` and the cold commit); karma stored in `characters.karma` and
   `statsJson.karma`. A death's wash is one rule (`DeathExperience.karmaLost`): hot via the death

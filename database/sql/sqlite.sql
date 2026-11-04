@@ -5,6 +5,12 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     appliedAt INTEGER NOT NULL
 );
 
+-- Migrations after 83 (src/Database.js applySchemaMigrations, namedMigrations).
+CREATE TABLE IF NOT EXISTS named_migrations (
+    name TEXT PRIMARY KEY,
+    appliedAt INTEGER NOT NULL
+);
+
 -- History rows on their way to the history file (src/HistoryStore.js,
 -- database/sql/history.sql): written in the world transaction, moved and
 -- deleted by the history thread.

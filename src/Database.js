@@ -1992,24 +1992,28 @@ function applySchemaMigrations() {
         }
         require('./GameServer/Clan/ClanJoinPenaltyMigration')(connection, now());
     }]);
-    // Four bot row indexes no query needs (their readers left with the goal
-    // reconcile and warehouse passes). Each holds updatedAt, which every save
-    // moves, so each cost a page per bot save: 42 MB/min of WAL (14 %) on the
-    // 1731-bot save. The queries that used them by chance take phase_partyId
-    // or the covering party candidate projection index.
-    migrations.push([84, () => connection.exec(`
-        DROP INDEX IF EXISTS bot_life_state_market_reconcile;
-        DROP INDEX IF EXISTS bot_life_state_party_owner_filter;
-        DROP INDEX IF EXISTS bot_life_state_warehouse_demand;
-        DROP INDEX IF EXISTS bot_life_state_warehouse_release;
-    `)]);
-    const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
-    migrations.forEach(([version, apply]) => {
-        if (applied.has(version)) return;
+    // New migrations are keyed by name (named_migrations), never by a new
+    // number, so a branch's migration cannot collide with upstream's: append
+    // [name, apply] here. They run after the numbered ones, in list order.
+    const namedMigrations = [
+        // Four bot row indexes no query needs (their readers left with the goal
+        // reconcile and warehouse passes). Each holds updatedAt, which every save
+        // moves, so each cost a page per bot save: 42 MB/min of WAL (14 %) on the
+        // 1731-bot save. The queries that used them by chance take phase_partyId
+        // or the covering party candidate projection index. Worlds saved on an
+        // early build ran this as numbered 84; that row is ignored.
+        ['drop-unused-bot-life-indexes', () => connection.exec(`
+            DROP INDEX IF EXISTS bot_life_state_market_reconcile;
+            DROP INDEX IF EXISTS bot_life_state_party_owner_filter;
+            DROP INDEX IF EXISTS bot_life_state_warehouse_demand;
+            DROP INDEX IF EXISTS bot_life_state_warehouse_release;
+        `)]
+    ];
+    const migrate = (apply, record) => {
         connection.exec('BEGIN IMMEDIATE');
         try {
             apply();
-            connection.prepare('INSERT INTO schema_migrations(version, appliedAt) VALUES (?, ?)').run(version, now());
+            record();
             connection.exec('COMMIT');
         } catch (error) {
             try {
@@ -2020,6 +2024,21 @@ function applySchemaMigrations() {
             }
             throw error;
         }
+    };
+    const applied = new Set(connection.prepare('SELECT version FROM schema_migrations').all().map((row) => Number(row.version)));
+    migrations.forEach(([version, apply]) => {
+        if (applied.has(version)) return;
+        migrate(apply, () => connection.prepare('INSERT INTO schema_migrations(version, appliedAt) VALUES (?, ?)').run(version, now()));
+    });
+    const names = new Set(namedMigrations.map(([name]) => name));
+    if (names.size !== namedMigrations.length) throw new Error('named migrations repeat a name');
+    const appliedNames = new Set(connection.prepare('SELECT name FROM named_migrations').all().map((row) => row.name));
+    // A world saved by a newer build: its extra migrations are kept, not undone.
+    const unknown = [...appliedNames].filter((name) => !names.has(name));
+    if (unknown.length) console.warn('DB          :: named migrations unknown to this build %s', unknown.join(', '));
+    namedMigrations.forEach(([name, apply]) => {
+        if (appliedNames.has(name)) return;
+        migrate(apply, () => connection.prepare('INSERT INTO named_migrations(name, appliedAt) VALUES (?, ?)').run(name, now()));
     });
 }
 
