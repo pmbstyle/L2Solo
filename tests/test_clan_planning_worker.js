@@ -208,6 +208,34 @@ async function parityAndIntegration() {
         }
     } finally { await worker.shutdown(); }
 
+    // In an admitted job the clan's craft options and warehouse rows cross
+    // with its first plan only; every member still plans as on main.
+    {
+        const jobWorker = new ClanPlanningCoordinator({ restartDelayMs: 0 });
+        const Shops = invoke('GameServer/Bot/Economy/CraftShopService');
+        const craftRecipes = Shops.availableRecipes(Shops.STATION_CRAFTER);
+        assert(craftRecipes.length > 100, 'the fixture plans with the real recipe list');
+        const craft = { craftRecipes, allowedRecipeIds: craftRecipes.map(recipe => recipe.recipeId), craftProviders: {} };
+        const warehouseRows = [{ selfId: 1864, amount: 20 }];
+        const sizes = [], send = jobWorker.send;
+        jobWorker.send = (type, payload) => {
+            if (type === 'plan') sizes.push(require('node:v8').serialize(payload).length);
+            return send.call(jobWorker, type, payload);
+        };
+        try {
+            await jobWorker.withJob(Date.now() + 30000, DataCache, async jobKey => {
+                for (const [classId, level] of [[56, 40], [57, 52], [4, 20]]) {
+                    const member = { characterId: 990001 + level, classId, level, phase: 'cold',
+                        stats: { classId }, inventory: {}, adena: 100000, currentRegion: 'Giran' };
+                    const options = { ...craft, maxExpectedKills: 1500, clanShare: 50000 };
+                    assert.deepEqual(await jobWorker.plan({ member, spots: [], warehouseRows, options, jobKey }, DataCache),
+                        planForMember(member, [], warehouseRows, options), `job plan for class ${classId} matches main`);
+                }
+            });
+            assert(sizes[1] < sizes[0] / 4 && sizes[2] < sizes[0] / 4, `later plans of a job skip the craft options (${sizes})`);
+        } finally { await jobWorker.shutdown(); }
+    }
+
     // Two plans in flight across a context revision change: the worker gets
     // revision 1, then 2, then plan A made under 1. Both plan with the
     // newest static context it holds.

@@ -12,6 +12,10 @@ const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const EMPTY_SPOTS = [];
 const memberId = member => Number(member?.characterId ?? member?.id);
+// Plan inputs the same for every member of a job (ClanEquipmentService
+// planningForClanAdmitted): the clan's craft options (~780 recipes with
+// providers) and warehouse rows, read once per run.
+const JOB_PLAN_OPTIONS = ['craftRecipes', 'allowedRecipeIds', 'craftProviders'];
 const yieldLoop = () => new Promise((resolve) => setImmediate(resolve));
 // The item-origin catalog (ItemAcquisitionCatalog) reads only which NPCs
 // spawn (total > 0) and the creation grants; ship one row per spawned NPC
@@ -223,7 +227,36 @@ class ClanPlanningCoordinator {
         const contextRevision = await this.ensureContext();
         if (payload.deadlineAt && Date.now() >= payload.deadlineAt) throw new Error('clan planning deadline');
         this.tableChannel.flush();
-        const result = await this.send('plan', { payload: writer.pack({ ...payload, contextRevision }) });
+        // In an admitted job the craft options and warehouse rows cross with
+        // its first plan and are then named as held: `jobOptions` (moved out
+        // of options, put back first by the worker) and `warehouseRows`.
+        const inputs = payload.jobKey ? this.inputsFor(payload.jobKey) : null;
+        let message = payload;
+        if (inputs) {
+            const options = { ...payload.options }, jobOptions = {}, held = [];
+            for (const name of JOB_PLAN_OPTIONS) {
+                if (!Object.hasOwn(options, name)) continue;
+                jobOptions[name] = options[name];
+                delete options[name];
+            }
+            message = { ...payload, options, held };
+            const sent = inputs.values.jobOptions;
+            if (sent && Object.keys(sent).length === Object.keys(jobOptions).length
+                && Object.keys(jobOptions).every(name => sent[name] === jobOptions[name])) held.push('jobOptions');
+            else message.jobOptions = jobOptions;
+            if (Object.hasOwn(inputs.values, 'warehouseRows') && inputs.values.warehouseRows === payload.warehouseRows) {
+                held.push('warehouseRows');
+                delete message.warehouseRows;
+            }
+        }
+        let result;
+        try { result = await this.send('plan', { payload: writer.pack({ ...message, contextRevision }) }); }
+        catch (error) {
+            if (inputs && this.jobInputs === inputs) this.jobInputs = null;
+            throw error;
+        }
+        if (inputs) Object.assign(inputs.values, { jobOptions: message.jobOptions || inputs.values.jobOptions,
+            warehouseRows: payload.warehouseRows });
         DiagnosticConfig.developerDiagnostics && (this.stats.completed++);
         DiagnosticConfig.developerDiagnostics && (this.stats.maxRunMs = Math.max(this.stats.maxRunMs, result.durationMs));
         // The worker's heap after this run (WorkerHeapTelemetry.heapRecord).
@@ -280,8 +313,8 @@ class ClanPlanningCoordinator {
             if (this.jobInputs === inputs) this.jobInputs = null;
             throw error;
         }
-        inputs.values = { clan: payload.clan, previousGoal: payload.previousGoal,
-            economicRequirements: payload.economicRequirements, spots: payload.spots };
+        Object.assign(inputs.values, { clan: payload.clan, previousGoal: payload.previousGoal,
+            economicRequirements: payload.economicRequirements, spots: payload.spots });
         inputs.prospects = new Map(prospects.map(member => [memberId(member), member]));
         const spotById = new Map((payload.spots || []).map(spot => [spot.id, spot]));
         const Roster = require('./ClanRosterDemand');

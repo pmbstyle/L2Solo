@@ -170,7 +170,7 @@ parentPort.on('message', (message) => {
                 return current.prospectById.get(value);
             });
             if (!held.has('clan') || !held.has('spots') || !held.has('previousGoal')) current.actual = new Map();
-            current.inputs = { clan, previousGoal, economicRequirements, spots };
+            Object.assign(current.inputs, { clan, previousGoal, economicRequirements, spots });
             current.prospectById = new Map(prospects.map(member => [memberId(member), member]));
             current.clan = clan; current.prospects = prospects;
             const Roster = require('./ClanRosterDemand');
@@ -187,7 +187,17 @@ parentPort.on('message', (message) => {
                 /[\\/]src[\\/]Database\.js$|[\\/]World[\\/]World\.js$|[\\/]Bot[\\/]BotManager\.js$/.test(filename));
             if (forbidden) throw new Error('clan planning worker loaded a live runtime dependency');
             const startedAt = workerData?.developerDiagnostics ? performance.now() : 0;
-            const { member, spots, warehouseRows, options } = payload;
+            const { member, spots } = payload;
+            let { warehouseRows, options } = payload;
+            if (payload.jobKey) {
+                // The job's craft options and warehouse rows: sent with its
+                // first plan, then named as held (ClanPlanningCoordinator.plan).
+                const current = jobFor(payload.jobKey), held = new Set(payload.held || []);
+                const jobOptions = jobInput(current, payload, held, 'jobOptions');
+                warehouseRows = jobInput(current, payload, held, 'warehouseRows');
+                Object.assign(current.inputs, { jobOptions, warehouseRows });
+                options = { ...jobOptions, ...options };
+            }
             if (options.economicMode && (job?.key !== payload.jobKey || !job.prepared)) throw Error('economic planning job missing');
             const plan = options.economicMode ? require('./ClanRosterDemand').economicPlan(planner.planForMember, job,
                 member, spots, warehouseRows, { ...options, throwOnError: true })
