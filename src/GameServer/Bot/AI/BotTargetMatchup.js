@@ -898,5 +898,5 @@ function damageRate(profiles, target = {}) {
     return rates.reduce((sum, rate) => sum + rate, 0);
 }
 
-module.exports = { MIN_EFFICIENCY, SOLO_GATE_MARGIN, actorProfiles, coldProfiles, servitorProfile, profileKey, shotKind, shotKindOfKey, readyProfiles, actorReadyProfiles, targetView, skillModifier, channels, damageRate, attackRate, spellRate, incomingRate,
+module.exports = { MIN_EFFICIENCY, SOLO_GATE_MARGIN, actorProfiles, coldProfiles, servitorProfile, profileKey, shotKind, sameData, shotKindOfKey, readyProfiles, actorReadyProfiles, targetView, skillModifier, channels, damageRate, attackRate, spellRate, incomingRate,
     profileStats, skillStats, evaluate, atVitals, ownersAtVitals, soloSurvival, soloCanHunt, pullVerdict, soloSpotUpperBound, stateProfiles, spotMatchup, speciesPulls, spotShares, admitsNone, expectedHit, actorHit };
