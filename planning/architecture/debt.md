@@ -92,7 +92,7 @@ red in `notRunTests`: `test_beginner_shot_policy`, `test_cold_armor_set_effects`
 
 ## Bot tables (TBL)
 
-**P** = player impact, **S** = server impact (roadmap.md). Evidence and the assessment: [tables.md](tables.md).
+**P** = player impact, **S** = server impact. Evidence and the assessment: [tables.md](tables.md).
 
 - **TBL-2 Kit surface measured, never read** (P mid, S none at runtime; CI ~60 % of the curves phase). Only
   `HuntCycle.reader` reads `SpotValueTable.kitSurface`, and nothing in `src/` calls it. So the gear a bot really wears

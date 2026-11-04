@@ -5,9 +5,7 @@ Lineage II Chronicle 4 server emulator (a NodeL2 fork) for a solo MMO: the world
 build step. These rules apply to every agent and every change, whoever wrote the code being changed.
 
 The map of what exists, who owns each rule and which path is canonical: `planning/architecture/` (start with
-`README.md`; read the area you touch before changing it). Open work in priority order: `planning/roadmap.md`.
-Before taking an item there, put your name in its Who column and push; do not take an item someone else holds; the
-commit that finishes it deletes the row.
+`README.md`; read the area you touch before changing it).
 
 ## Performance is a primary criterion
 
@@ -85,8 +83,8 @@ is one mechanism per rule.
 
 - Dead code: prove by search that nothing reaches it (`invoke`, `require`, method names, tests, scripts) before
   deleting; batch such deletions.
-- A behaviour change: one change at a time, reviewed on its diff before commit.
-- One commit per finished, self-contained unit; each commit builds and passes its own tests.
+- A commit is the work on one problem (one bug, gap or rework) with its tests and map update, not one per edit; it
+  builds and passes its own tests. Two problems are two commits.
 
 ## Commits and PRs
 

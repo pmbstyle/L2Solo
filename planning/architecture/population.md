@@ -134,7 +134,7 @@ thread: our rule, so a far bot does not re-decide on every event ([bot-ai.md](bo
 - **POP-21 static merchants are hot without a session** for ~5 s after boot (until `BotManager.init` spawns them).
   The 46 static merchants and service bots stay hot all the time (a store must be an actor in the World to be seen
   and clicked); `MerchantState.tick` is empty, the cost is the actor's own timers and sweeps. Decided 2026-11-03:
-  keep them hot until a perf run measures that cost (roadmap R2).
+  keep them hot until a perf run measures that cost.
 - **POP-22 a hot row is not kept current during the session** (main item moves skip non-cold rows); boot rebuilds it
   from the record (`staleHotRowFromRecord`). Not rebuilt at boot: `stats.classId` / `classProgression*` after a class
   change while hot, `stats.pk`, PvP/encounter memory, captured cold-combat base stats/effects/cooldowns.
