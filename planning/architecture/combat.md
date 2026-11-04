@@ -40,6 +40,14 @@ Scope: `Actor`, `Skills`, `Effects`, `Combat`, `Npc`, `RaidBoss`, `Pets`, `Formu
   (shared), aggro `NpcAggro` + `NpcAggroRange`, `SocialAggro`, `SpoilSweep`.
 - **Skills:** `C4SkillRules` (per-skill semantics, hot and cold), `C4SkillEffects.execute` (hot effects, one long
   `skillType` chain), `ChargeLifecycle`, `ToggleSkills`, `CubicControl`, `SkillReuse` (persistence only).
+- **Playable poison chances:** `C4SkillRules` separates Mobius C4's base chances from legacy poison strength:
+  Poison Blade Dance 84, Corpse Plague 103 and Poisonous Cloud 1167 use 35%; Venom 1095 and Curse: Poison 1168
+  use 70%; Seal of Poison 1209 uses 60%. Ordinary Poison 129 already uses 70%. Each carries its source magic
+  levels and level dependence 1; `HitRules.effectLandChance` remains the shared formula owner for hot and cold.
+  This explicitly selects Mobius's chance over Lisvus's 1..8 values. Damage, duration and existing resistance
+  modifiers are unchanged. Cost on main/worker: for 103/1095/1168 the existing chance calculation adds one addition
+  and one division for the restored magic level; no extra rolls, scans, per-bot state, DB writes or worker messages.
+  More landed hot effects use the existing effect/DoT timers and ticks. Cold still excludes standalone debuffs (CMB-28).
 - **NPC attack reaction:** hot `Npc/Attacked` owns hate and the leader/minion + clan assistance notification for
   `ReceivedHit` and `C4SkillEffects`. A dying minion calls its leader before removal; a dying leader calls nobody.
   `C4SkillRules.provokesNpc` owns cast engagement (hate removal/reduction and dagger blows excluded).
@@ -170,6 +178,16 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
 - **CMB-29 Requiem is missing its aura shape.** Lisvus skill 1049 is `TARGET_AURA_UNDEAD`, but
   `C4SkillRules` preserves only `undeadOnly`, not `sourceTarget` or `radius`. Native requests still select a single
   enemy; its execution-only semantic test does not pin caster-centred casting or nearby aggro removal.
+- **CMB-30 NPC and weapon poison chances still differ from the native player rules.** NPC skills
+  4035/4036/4182/4198 use Lisvus's strength as chance instead of Mobius's 70/35/90/90; Toxic Smoke 4259 is 80 here
+  vs 35 there, and 4649 is 100 vs 35. Choose the remaining data source before changing world difficulty.
+  `C4WeaponSA.procSkill` overlays generated `data/Items/weapon_sa.json` semantics on the same skill: Magic Poison's 1168
+  level 6 still has base chance 7 after its independent 6-8% trigger roll. The generator duplicates the skill
+  chance owner (`generate-c4-weapon-sa.py`); align that ownership before migrating the weapon proc.
+- **CMB-31 Corpse Plague does not engage its living area victims on impact.** `C4SkillRules.provokesNpc` accepts
+  only `enemy`, while skill 103 retains `corpse_mob` for every area recipient. A landed poison provokes at its first
+  damage tick instead; a resisted poison never provokes. Native cast reproduction confirms both outcomes. Extend
+  the cast-engagement owner to distinguish the corpse anchor from living hostile victims when fixing this rule.
 
 ## Open questions
 

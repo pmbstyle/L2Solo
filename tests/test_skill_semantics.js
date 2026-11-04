@@ -1166,14 +1166,14 @@ corpsePlagueTarget.fetchAttackable = () => true;
 const corpsePlague = skill({ selfId: 103, name: 'Corpse Plague', spell: true, power: 8, level: 4, distance: 400, buff: 30000 });
 const corpsePlagueOutcome = SkillEffects.execute(session(), caster, corpsePlagueTarget, corpsePlague, {
     magicSkill: true,
-    rng: () => 0,
+    rng: () => 0.25,
     attack: { clearLoadedShot() {} }
 });
 assert.strictEqual(corpsePlague.fetchSkillType(), C4SkillRules.EFFECT, 'Corpse Plague should resolve as a sourced poison effect');
 assert.strictEqual(corpsePlague.fetchTargetKind(), 'corpse_mob', 'Corpse Plague should preserve sourced TARGET_AREA_CORPSE_MOB target semantics');
 assert.strictEqual(corpsePlague.fetchSemantic().sourceTarget, 'area', 'Corpse Plague should preserve sourced area corpse semantics');
 assert.strictEqual(corpsePlague.fetchSemantic().radius, 400, 'Corpse Plague should preserve sourced skillRadius 400');
-assert.strictEqual(corpsePlague.fetchSemantic().baseLandRate, 8, 'Corpse Plague level 4 should use sourced power 8 as land rate');
+assert(corpsePlagueOutcome.effect, 'Corpse Plague should land on an ordinary roll independently of poison strength');
 assert.strictEqual(corpsePlague.fetchSemantic().levelDepend, 1, 'Corpse Plague should preserve sourced lvlDepend metadata');
 assert.strictEqual(corpsePlague.fetchSemantic().castRange, 400, 'Corpse Plague should preserve sourced castRange metadata');
 assert.strictEqual(corpsePlague.fetchSemantic().effectRange, 900, 'Corpse Plague should preserve sourced effectRange metadata');
@@ -4481,14 +4481,14 @@ const poisonBladeDance = skill({ selfId: 84, name: 'Poison Blade Dance', spell: 
 const poisonBladeTarget = statActor();
 const poisonBladeOutcome = SkillEffects.execute(session(), caster, poisonBladeTarget, poisonBladeDance, {
     magicSkill: false,
-    rng: () => 0,
+    rng: () => 0.25,
     attack: { clearLoadedShot() {} }
 });
 assert.strictEqual(poisonBladeDance.fetchTargetKind(), 'enemy', 'Poison Blade Dance should resolve as an enemy aura poison');
 assert.strictEqual(poisonBladeDance.fetchSemantic().sourceTarget, 'aura', 'Poison Blade Dance should preserve sourced TARGET_AURA semantics');
 assert.strictEqual(poisonBladeDance.fetchSemantic().radius, 150, 'Poison Blade Dance should preserve sourced skillRadius 150');
 assert.deepStrictEqual(poisonBladeDance.fetchSemantic().requires, { weaponsAllowed: 512 }, 'Poison Blade Dance should preserve sourced dual weapon requirement');
-assert.strictEqual(poisonBladeDance.fetchSemantic().baseLandRate, 8, 'Poison Blade Dance should use sourced level 3 power as land rate');
+assert(poisonBladeOutcome.effect, 'Poison Blade Dance should land on an ordinary roll independently of poison strength');
 assert.strictEqual(poisonBladeOutcome.effect.key, 'poison', 'Poison Blade Dance should apply the structured poison effect');
 assert.strictEqual(poisonBladeOutcome.effect.dot.damage, 48, 'Poison Blade Dance level 3 should use sourced DamOverTime value 48');
 assert.strictEqual(poisonBladeOutcome.effect.dot.count, 10, 'Poison Blade Dance should use sourced 10 damage ticks');
@@ -4498,18 +4498,22 @@ EffectStore.remove(poisonBladeTarget, 'poison');
 for (const [level, magicLevel] of [[1, 55], [2, 60], [3, 72]]) {
     assert.strictEqual(skill({ selfId: 84, level }).fetchSemantic().magicLevel, magicLevel, 'Poison Blade Dance must use its sourced magic level');
 }
-for (const resisted of [false, true]) {
-    const target = statActor();
-    const hateEvents = [];
-    target.fetchAttackable = () => true;
-    target.addDamageHate = (castSession, source, damage, hate) => hateEvents.push({ source, damage, hate });
-    const outcome = SkillEffects.execute(session(), caster, target, poisonBladeDance, {
-        magicSkill: false, rng: () => resisted ? 1 : 0, attack: { clearLoadedShot() {} }
-    });
-    assert.strictEqual(outcome.effectResisted, resisted);
-    assert.deepStrictEqual(hateEvents, [{ source: caster, damage: 0, hate: 1 }], 'Successful and resisted poison casts must immediately provoke the target without dealing direct damage');
-    assert.strictEqual(EffectStore.hasDebuff(target, 'poison'), !resisted);
-    EffectStore.remove(target, 'poison');
+for (const id of [84, 129, 1095, 1167, 1168, 1209]) {
+    const data = activeSkills.find(entry => entry.selfId === id);
+    const poison = skill({ selfId: id, ...data.template, ...data.time, ...data.levels[0] });
+    for (const resisted of [false, true]) {
+        const target = statActor();
+        const hateEvents = [];
+        target.fetchAttackable = () => true;
+        target.addDamageHate = (castSession, source, damage, hate) => hateEvents.push({ source, damage, hate });
+        const outcome = SkillEffects.execute(session(), caster, target, poison, {
+            magicSkill: data.template.spell, rng: () => resisted ? 1 : 0, attack: { clearLoadedShot() {} }
+        });
+        assert.strictEqual(outcome.effectResisted, resisted);
+        assert.deepStrictEqual(hateEvents, [{ source: caster, damage: 0, hate: 1 }], 'Successful and resisted poison casts must immediately provoke the target without dealing direct damage');
+        assert.strictEqual(EffectStore.hasDebuff(target, 'poison'), !resisted);
+        EffectStore.remove(target, 'poison');
+    }
 }
 
 const poisonCloudData = activeSkills.find((entry) => entry.selfId === 1167);
@@ -4521,11 +4525,11 @@ const poisonCloud = skill({ selfId: 1167, name: 'Poisonous Cloud', spell: true, 
 const poisonCloudTarget = statActor();
 const poisonCloudOutcome = SkillEffects.execute(session(), caster, poisonCloudTarget, poisonCloud, {
     magicSkill: true,
-    rng: () => 0,
+    rng: () => 0.25,
     attack: { clearLoadedShot() {} }
 });
 assert.strictEqual(poisonCloud.fetchTargetKind(), 'enemy', 'Poisonous Cloud should resolve as an enemy poison effect');
-assert.strictEqual(poisonCloud.fetchSemantic().baseLandRate, 8, 'Poisonous Cloud should use sourced level 6 power as land rate');
+assert(poisonCloudOutcome.effect, 'Poisonous Cloud should land on an ordinary roll independently of poison strength');
 assert.strictEqual(poisonCloudOutcome.effect.key, 'poison', 'Poisonous Cloud should apply the structured poison effect');
 assert.strictEqual(poisonCloudOutcome.effect.dot.damage, 48, 'Poisonous Cloud level 6 should use sourced DamOverTime value 48');
 assert.strictEqual(poisonCloudOutcome.effect.dot.count, 10, 'Poisonous Cloud should use sourced 10 damage ticks');
@@ -4541,11 +4545,11 @@ const cursePoison = skill({ selfId: 1168, name: 'Curse:Poison', spell: true, pow
 const curseTarget = statActor();
 const curseOutcome = SkillEffects.execute(session(), caster, curseTarget, cursePoison, {
     magicSkill: true,
-    rng: () => 0,
+    rng: () => 0.5,
     attack: { clearLoadedShot() {} }
 });
 assert.strictEqual(cursePoison.fetchTargetKind(), 'enemy', 'Curse: Poison should resolve as an enemy poison effect');
-assert.strictEqual(cursePoison.fetchSemantic().baseLandRate, 5, 'Curse: Poison level 4 should use sourced power as land rate');
+assert(curseOutcome.effect, 'Curse: Poison should land on an ordinary roll instead of treating poison strength as its chance');
 assert.strictEqual(curseOutcome.effect.dot.damage, 31, 'Curse: Poison level 4 should use the sourced L2J damage table');
 
 const strongerPoisonTicker = curseTarget.effectTimers.poison;
@@ -4559,6 +4563,57 @@ assert.strictEqual(weakerPoisonOutcome.effect, null, 'a lower-level poison shoul
 assert.strictEqual(curseTarget.effectTimers.poison, strongerPoisonTicker, 'a rejected poison must not restart the stronger poison ticker');
 assert.strictEqual(EffectStore.list(curseTarget).find((effect) => effect.key === 'poison').level, 4, 'a rejected poison must retain the stronger effect level');
 EffectStore.remove(curseTarget, 'poison');
+
+const starterCursePoison = skill({ selfId: 1168, name: 'Curse:Poison', spell: true, power: 1, level: 1, buff: 30000 });
+for (const [level, roll, landed] of [[7, 0.7, true], [7, 0.75, false], [20, 0.47, true], [20, 0.48, false], [60, 0.1, false]]) {
+    const source = creature({ level });
+    const target = statActor();
+    target.level = level;
+    const outcome = SkillEffects.execute(session(), source, target, starterCursePoison, {
+        magicSkill: true, rng: () => roll, attack: { clearLoadedShot() {} }
+    });
+    assert.strictEqual(!!outcome.effect, landed,
+        'Starter Curse: Poison should use the 70% base chance and retain magic level 7 after class progression');
+    assert.strictEqual(outcome.effectResisted, !landed);
+    if (outcome.effect) assert.strictEqual(outcome.effect.dot.damage, 8, 'A higher land chance must preserve first-level poison damage');
+    EffectStore.remove(target, 'poison');
+}
+
+// At equal levels and MAtk/MDef the existing formula adds its small level
+// bonus; ten levels later the same skill rank must instead suffer a penalty.
+for (const [id, magicLevel, rate, damage] of [
+    [84, 55, 35, 38], [103, 46, 35, 31], [129, 20, 70, 18],
+    [1095, 7, 70, 8], [1167, 25, 35, 18], [1168, 7, 70, 8], [1209, 20, 60, 18]
+]) {
+    const data = activeSkills.find(entry => entry.selfId === id);
+    const poison = skill({ selfId: id, ...data.template, ...data.time, ...data.levels[0] });
+    for (const [level, roll, resistedByBuff, landed] of [
+        [magicLevel, rate * 0.009, false, true],
+        [magicLevel, rate * 0.011, false, false],
+        [magicLevel + 10, rate * 0.009, false, false],
+        [magicLevel, rate * 0.009, true, false]
+    ]) {
+        const source = creature({ level });
+        const target = statActor();
+        target.level = level;
+        if (resistedByBuff) EffectStore.apply(target, {
+            key: 'resist_poison', id: 1033, level: 3, type: 'buff', durationMs: 30000, stats: { poisonResist: 50 }
+        });
+        const outcome = SkillEffects.execute(session(), source, target, poison, {
+            magicSkill: data.template.spell, rng: () => roll, attack: { clearLoadedShot() {} }
+        });
+        assert.strictEqual(!!outcome.effect, landed, `${data.template.name} must use its own chance, magic level and poison resistance`);
+        assert.strictEqual(outcome.effectResisted, !landed);
+        assert.strictEqual(outcome.damage, 0, 'Poison must retain delayed damage instead of becoming a direct hit');
+        if (outcome.effect) {
+            assert.strictEqual(outcome.effect.dot.damage, damage, `${data.template.name} must preserve its first-rank tick damage`);
+            assert.strictEqual(outcome.effect.dot.count, 10);
+            assert.strictEqual(outcome.effect.dot.intervalMs, 3000);
+        }
+        EffectStore.remove(target, 'poison');
+        EffectStore.remove(target, 'resist_poison');
+    }
+}
 
 const curseDiscordData = activeSkills.find((entry) => entry.selfId === 1163);
 assert(curseDiscordData, 'Curse Discord should be present in active skills data');
@@ -4626,12 +4681,12 @@ const venom = skill({ selfId: 1095, name: 'Venom', spell: true, power: 6, level:
 const venomTarget = statActor();
 const venomOutcome = SkillEffects.execute(session(), caster, venomTarget, venom, {
     magicSkill: true,
-    rng: () => 0,
+    rng: () => 0.25,
     attack: { clearLoadedShot() {} }
 });
 assert.strictEqual(venom.fetchSkillType(), C4SkillRules.EFFECT, 'Venom should preserve sourced POISON effect semantics');
 assert.strictEqual(venom.fetchTargetKind(), 'enemy', 'Venom should preserve sourced TARGET_ONE offensive semantics');
-assert.strictEqual(venom.fetchSemantic().baseLandRate, 6, 'Venom level 5 should use sourced power as land rate');
+assert(venomOutcome.effect, 'Venom should land on an ordinary roll independently of poison strength');
 assert.strictEqual(venom.fetchSemantic().levelDepend, 1, 'Venom should preserve sourced lvlDepend 1');
 assert.strictEqual(venom.fetchSemantic().castRange, 600, 'Venom should preserve sourced castRange metadata');
 assert.strictEqual(venom.fetchSemantic().effectRange, 1100, 'Venom should preserve sourced effectRange metadata');
@@ -5406,11 +5461,11 @@ const sealPoison = skill({ selfId: 1209, name: 'Seal of Poison', spell: true, po
 const sealPoisonTarget = statActor();
 const sealPoisonOutcome = SkillEffects.execute(session(), caster, sealPoisonTarget, sealPoison, {
     magicSkill: true,
-    rng: () => 0,
+    rng: () => 0.25,
     attack: { clearLoadedShot() {} }
 });
 assert.strictEqual(sealPoison.fetchTargetKind(), 'enemy', 'Seal of Poison should resolve as an enemy poison effect');
-assert.strictEqual(sealPoison.fetchSemantic().baseLandRate, 8, 'Seal of Poison should use sourced level 6 power as land rate');
+assert(sealPoisonOutcome.effect, 'Seal of Poison should land on an ordinary roll independently of poison strength');
 assert.strictEqual(sealPoisonOutcome.effect.key, 'poison', 'Seal of Poison should apply the structured poison effect');
 assert.strictEqual(sealPoisonOutcome.effect.dot.damage, 48, 'Seal of Poison level 6 should use sourced DamOverTime value 48');
 assert.strictEqual(sealPoisonOutcome.effect.dot.count, 10, 'Seal of Poison should use sourced 10 damage ticks');
