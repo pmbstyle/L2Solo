@@ -41,9 +41,6 @@ const workerProjectorRole = CharacterLocationRuntime.workerProjectorRole();
 const cache = new LifeStateCache({ locationIndex: CharacterLocationRuntime.index, workerProjectorRole });
 const marketCounts = new Map();
 
-function recentLimit(limit) {
-    return Math.max(1, Math.min(2000, Number(limit) || 500));
-}
 const pendingWrites = new Map();
 const changeListeners = new Set();
 const marketReviewListeners = new Set();
@@ -4083,12 +4080,9 @@ const BotLifeState = {
         return next;
     },
 
-    allStates(limit = 500) {
-        return cache.recent(recentLimit(limit));
-    },
-
-    // Every cached state, newest first, with no 2000 bound: for the feeds to
-    // the cold worker, which must see the whole population.
+    // Every cached state, newest first, with no bound: a reader that must see
+    // the whole population (a cut drops the least recently written, the idle
+    // bots a player looks for, first).
     everyState() {
         return cache.recent(cache.size);
     },

@@ -675,7 +675,7 @@ const GeneratedColdSeeder = {
         this.running = true;
         return Promise.resolve()
             .then(() => migratePopulationNames(LifeState.populationSeedStates()))
-            .then(() => migratePopulationAppearances(LifeState.allStates(50000)))
+            .then(() => migratePopulationAppearances(LifeState.everyState()))
             .then(() => {
             const states = LifeState.populationSeedStates();
             const plan = SeedPlanner.plan(

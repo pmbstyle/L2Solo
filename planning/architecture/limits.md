@@ -13,37 +13,34 @@ Rule (CLAUDE.md): a new or changed limit gets a row here, and hitting it must be
 **Measured capacity (2026-11-04, 2015 laptop, x50, 1731 bots, detached checkout):** cold worker busy 0.57-0.62,
 overdue max 1-4 (before this release saturated from ~1430-1580 bots). See POP-23.
 
-## Top 15 risks (silent when hit, likely at ~1700 bots)
+## Top risks (silent when hit, likely at ~1700 bots)
 
-1. `BotLifeState.allStates` returns at most 2000 states: name lookup (`World`), `BotParty` bypass, startup PvP
-   re-register (Coordinator), `ArenaDuelService`, observer silently miss the oldest; the appearance migration asks
-   50000, gets 2000. Total states are near 2000. (The worker feeds use the uncapped `everyState()`.)
-2. Background governor allows a DB queue of **0** while a player is online: any queued write defers safety sweep,
+1. Background governor allows a DB queue of **0** while a player is online: any queued write defers safety sweep,
    cold snapshot continuation pages, early commits, clan actions/founders, hot market review (dD only).
-3. State retention and the WAL truncate never run during play (gated on `activity.protected`: a player online + 30 s
+2. State retention and the WAL truncate never run during play (gated on `activity.protected`: a player online + 30 s
    grace): AI memory/audit/activity tables and the WAL (≥ 256 MB) grow all session. History retention is not gated.
-4. `PriceDecision` reads only the first 40 sell lines of an item (all towns): on the most-traded items the forecast is
+3. `PriceDecision` reads only the first 40 sell lines of an item (all towns): on the most-traded items the forecast is
    unknown, new asks fall back to NPC buyback (accepted lines keep their price), no counter.
-5. Activation takes the 100 nearest cold states before filtering busy/`pk_hunting`/party duplicates: in crowded towns,
+4. Activation takes the 100 nearest cold states before filtering busy/`pk_hunting`/party duplicates: in crowded towns,
    few or zero activations near the player, unrecorded (travellers are shown by `showWalkersNear` instead).
-6. Board scan windows: 20 lines (`ReadyTradeChoice`, `BidPurchaseAlternative`, `MarketPricing`, `WishPurchaseEvidence`),
+5. Board scan windows: 20 lines (`ReadyTradeChoice`, `BidPurchaseAlternative`, `MarketPricing`, `WishPurchaseEvidence`),
    quote depth 5, top-5 buy exits; own/rejected/custody lines use the window, ready trades quietly fail.
-7. `ColdBuffService`: 6 cold buff sales per minute for the whole world; extra refused as `sale_limit`, which the
+6. `ColdBuffService`: 6 cold buff sales per minute for the whole world; extra refused as `sale_limit`, which the
    Coordinator discards (only an unsplit dD `dropped` total).
-8. Worker: 64 pending wish route requests; past that `[]`, reviews run without trip data in catch-up bursts.
-9. Hot interaction event queue drops events above 1024 pending, drains ~64/s: social memory lost in crowded fights.
-10. Path pool (≤ 2 workers, queue 128) pre-empts/rejects (dD); NPC chases lose first and drop aggro after 10 s; after
-    3 consecutive failures per slot the slot is gone, all gone = every request `WORKER_UNAVAILABLE` until reboot,
-    **no log** (only dD `pathWorkers=0w`).
-11. Sockets: no write backpressure, no broadcast fan-out cap; write buffer grows without bound for a slow client in a
+7. Worker: 64 pending wish route requests; past that `[]`, reviews run without trip data in catch-up bursts.
+8. Hot interaction event queue drops events above 1024 pending, drains ~64/s: social memory lost in crowded fights.
+9. Path pool (≤ 2 workers, queue 128) pre-empts/rejects (dD); NPC chases lose first and drop aggro after 10 s; after
+   3 consecutive failures per slot the slot is gone, all gone = every request `WORKER_UNAVAILABLE` until reboot,
+   **no log** (only dD `pathWorkers=0w`).
+10. Sockets: no write backpressure, no broadcast fan-out cap; write buffer grows without bound for a slow client in a
     dense zone.
-12. Sale candidates cut to top N by unit price (8; StaticBuyer 20 then materials only; town choice 8): cheap stacks
+11. Sale candidates cut to top N by unit price (8; StaticBuyer 20 then materials only; town choice 8): cheap stacks
     never sold, bags fill.
-13. `EconomyContext` LRU: 2048 plans in the worker vs 1700 bots, 64 on main; above ~2000 bots or > 64 hot bots,
+12. `EconomyContext` LRU: 2048 plans in the worker vs 1700 bots, 64 on main; above ~2000 bots or > 64 hot bots,
     full rebuild every time (dD).
-14. `PersonalWarehouseIndex` keeps 64 kinds per owner, cut on every publish (lowest selfIds at init, table order on
+13. `PersonalWarehouseIndex` keeps 64 kinds per owner, cut on every publish (lowest selfIds at init, table order on
     refresh): long-lived bots lose sight of the rest of their stock.
-15. An incremental snapshot row over 256 KB blocks every row queued behind it (Coordinator
+14. An incremental snapshot row over 256 KB blocks every row queued behind it (Coordinator
     `sendIncrementalEntries`): later hot→cold snapshots stall until that state shrinks (dD `send_failed`).
 
 Next in line: InteractionMemory evicting relations at 32/8/8 (real players exempt); group pair events cut at 64
@@ -84,7 +81,6 @@ handler the player is disconnected).
 | Potion line | melee 0.35, ranged / healer / casters 0.25 of max HP (`MELEE_USE_HP_RATIO`, `RANGED_USE_HP_RATIO`): the fight drinks there, the gate counts only the HP above it | `HealingPotionStock.useThreshold`, `BotEncounterReadiness.atVitals` | at or below the line: no fight (survival `potion_line`) | reason `no_reserve` | every solo fight |
 | Empty ground | hot: a look after 3 empty scans (`EMPTY_HUNT_SCANS`), one per empty streak; a second summon or wait on the stay that changed nothing raises (`session.groundReadying`); hot and cold: one raise per stay (`stats.emptyGround`, cleared by prey) | `BotDecisionService.groundLook`, `BackgroundResolver.resolveSolo` / `getReady` | `unhuntable` raised, the occupation rebuild picks another spot | reason (hot `ground_unhuntable`, cold `debug.unhuntable`, `lastReason no_safe_solo_target`) | gear or level loss, kept routes |
 | Population | 1700, clamp 2000 (`maxPlayingPopulation`) | PopulationConfig ~105, ~330 | silently clamped | none | > 2000 |
-| `allStates` | 2000 most recent (worker feeds use uncapped `everyState()` ~4061) | BotLifeState ~45, ~4055 | oldest missing | none | already near |
 | Seeding | waves of 5 regions × `starterBotsPerRace` 30 = 150, one batch per wave (`seedBatchSize` = max(50, cohort)); next wave when the last cohort averages level 5 (10 at ×50+); checked every 45 s (`generatedColdSeedDelayMs`) | `PopulationSeedPlanner` ~87, ~121, PopulationService ~1252, `GeneratedColdSeeder` | ramp follows levelling (~12 waves to 1700), not time | dD (wave log behind `developerDiagnostics`) | fresh world |
 | Decision deadlines | 64 per scheduler tick | Kernel `tick` ~1700, `dueCandidates` ~1217 | rest wait for the next 20 ms tick | none | boot catch-up |
 | Incremental snapshot row | 256 KB message | Coordinator `sendIncrementalEntries` ~1129 | page refused, job ok:false, oldest-first queue stops at that row each run | dD `send_failed` | rare huge state |

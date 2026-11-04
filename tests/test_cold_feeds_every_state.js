@@ -3,8 +3,7 @@ const assert = require('assert');
 require('../src/Global');
 
 // L13: the two feeds to the cold worker, the full snapshot and the orphan
-// party check, see every cached state, not only the newest 2,000 that a
-// bounded allStates() view returns.
+// party check, see every cached state, the oldest too (past 2,000).
 
 const ClanService = invoke('GameServer/Clan/ClanService');
 ClanService.syncColdMember = () => {};
@@ -27,9 +26,8 @@ for (let id = 1; id <= COUNT; id++) {
 }
 
 (async () => {
-    assert.strictEqual(LifeState.allStates(5000).length, 2000, 'the bounded view stays bounded');
     assert.strictEqual(LifeState.everyState().length, COUNT);
-    assert.strictEqual(LifeState.everyState()[0].characterId, COUNT, 'newest first, as allStates');
+    assert.strictEqual(LifeState.everyState()[0].characterId, COUNT, 'newest first');
 
     const statuses = [];
     BackgroundPartyState.active = () => [{ partyId: 'bgp_old', leaderId: 1, memberIds: [1, 2], status: 'active' }];

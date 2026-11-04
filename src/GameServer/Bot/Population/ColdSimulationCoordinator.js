@@ -356,7 +356,7 @@ class ColdSimulationCoordinator {
             this.startWorker();
             this.watchdogTimer = setInterval(() => this.watchdog(), 1000);
             const encounters = invoke('GameServer/Bot/Population/PvpEncounterRuntime');
-            LifeState.allStates(2000).forEach(s => encounters.register(s.stats?.pvpEncounter));
+            LifeState.everyState().forEach(s => encounters.register(s.stats?.pvpEncounter));
             this.pvpEncounterTimer = setInterval(() => {
                 encounters.tick(this.competitionActions)?.catch(error => this.recordError(error));
             }, PVP_STEP_MS);

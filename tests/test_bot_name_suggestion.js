@@ -17,7 +17,7 @@ async function main() {
     const originalFindSessionByName = BotManager.findSessionByName;
     const originalSessions = BotManager.sessions;
     const originalFindByName = LifeState.findByName;
-    const originalAllStates = LifeState.allStates;
+    const originalEveryState = LifeState.everyState;
     const packets = [];
     const player = {
         actor: { fetchId: () => 9910, fetchName: () => 'NameTester' },
@@ -27,7 +27,7 @@ async function main() {
         BotManager.sessions = [{ actor: { fetchName: () => 'FennaHaven' } }];
         BotManager.findSessionByName = () => null;
         LifeState.findByName = async () => null;
-        LifeState.allStates = () => [{ name: 'EloraHaven' }];
+        LifeState.everyState = () => [{ name: 'EloraHaven' }];
 
         const handled = await World.messageBotByName(player, player.actor, 'FenaHaven', 'hello', 'client_tell');
         assert.strictEqual(handled, false);
@@ -38,7 +38,7 @@ async function main() {
         BotManager.findSessionByName = originalFindSessionByName;
         BotManager.sessions = originalSessions;
         LifeState.findByName = originalFindByName;
-        LifeState.allStates = originalAllStates;
+        LifeState.everyState = originalEveryState;
     }
     console.log('Bot name suggestion checks passed');
 }

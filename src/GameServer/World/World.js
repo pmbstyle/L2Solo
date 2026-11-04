@@ -274,7 +274,7 @@ function nearestBotName(lookup, BotManager, LifeState) {
     const hotNames = (BotManager.sessions || [])
         .map((session) => session?.actor?.fetchName?.())
         .filter(Boolean);
-    const coldNames = LifeState.allStates(2000).map((state) => state?.name).filter(Boolean);
+    const coldNames = LifeState.everyState().map((state) => state?.name).filter(Boolean);
     const names = [...new Set([...hotNames, ...coldNames].map((name) => String(name)))];
     const ranked = names
         .map((name) => ({ name, distance: nameDistance(lookup, name) }))

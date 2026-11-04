@@ -46,12 +46,12 @@ const at = Date.now(), ids = [];
         'startup copies the party destination into no member');
 
     const party = Parties.find('old-assembly');
-    const allStates = Life.allStates;
-    Life.allStates = () => { throw Error('party gathering scanned the population'); };
+    const everyState = Life.everyState;
+    Life.everyState = () => { throw Error('party gathering scanned the population'); };
     let route;
     try {
         route = BotRoute.route(members[0], null, party, members, { spots: [spot], timestamp: at });
-    } finally { Life.allStates = allStates; }
+    } finally { Life.everyState = everyState; }
     assert(route?.needed && route.mode === 'party');
     const departed = members.map(state => beginHuntingTrip(state, route, at));
     assert(departed.every(state => state.loc.locX === 0 && state.stats.backgroundPartySpotId === undefined));

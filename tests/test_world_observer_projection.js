@@ -49,7 +49,7 @@ console.log('World observer projection checks passed');
     const Observer = invoke('WorldObserver/WorldObserverServer');
     const State = require('../src/WorldObserver/public/worldState');
     const Pages = require('../src/WorldObserver/public/playerPages');
-    const saved = { sync: Clan.syncColdMember, execute: Database.execute, allStates: Life.allStates,
+    const saved = { sync: Clan.syncColdMember, execute: Database.execute, everyState: Life.everyState,
         statuses: Manager.getAllBotStatuses, session: Manager.findSessionById, user: World.user,
         diagnostics: Config.developerDiagnostics, counts: PopulationStatus.counts };
     let scans = 0, statuses = [], hotSession = null;
@@ -78,9 +78,9 @@ console.log('World observer projection checks passed');
             inventory: {}, stats: { classId: 5, role: 'tank' }, vitals: {} };
         publish(id, { ...base, name: 'KROvnik' });
         publish(peer, { ...base, name: 'Vincent', party: { ...base.party, role: 'healer' } });
-        Life.allStates = (...args) => {
+        Life.everyState = (...args) => {
             scans++;
-            const captured = saved.allStates.apply(Life, args);
+            const captured = saved.everyState.apply(Life, args);
             // A committed update can arrive after bootstrap captured the rows
             // but before its cooperative compaction has finished.
             publish(id, { level: 56 });
@@ -148,7 +148,7 @@ console.log('World observer projection checks passed');
         assert.strictEqual(scans, 1, 'subsequent polls must not scan the whole cold population');
         console.log('Observer native publications: bootstrap race, live progression, party departure/regrouping and hot/cold handoff passed');
     } finally {
-        Clan.syncColdMember = saved.sync; Database.execute = saved.execute; Life.allStates = saved.allStates;
+        Clan.syncColdMember = saved.sync; Database.execute = saved.execute; Life.everyState = saved.everyState;
         Manager.getAllBotStatuses = saved.statuses; Manager.findSessionById = saved.session;
         World.user = saved.user; Config.developerDiagnostics = saved.diagnostics; PopulationStatus.counts = saved.counts;
     }
