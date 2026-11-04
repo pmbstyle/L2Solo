@@ -21,6 +21,9 @@ much as behaviour:
 - Prefer the cheaper of two correct rules; reuse a computed result instead of recomputing; no work on the main thread
   that the worker can do; no per-tick scans over all bots.
 - Development is a balance between simulation, realism and performance. Say which one a choice trades.
+- A player can be online all the time. No work waits for an idle server (no player): maintenance, cleanup and
+  repairs run with a player online within a stated stall budget; only what cannot (e.g. VACUUM) runs at boot or
+  shutdown.
 - Keep game rules pure functions of plain data (no World or DB inside a rule), deterministic (seeded rolls), owned
   once, crossing the worker boundary as explicit plain messages. Do not grow per-bot state or per-step work without
   need: it multiplies with the population.
