@@ -12,7 +12,6 @@ const Database = invoke('Database');
 
 const originalRealPlayerSessions = PopulationService.realPlayerSessions;
 const originalEventLoopLag = Metrics.currentEventLoopLag;
-const originalIdleMaxResolves = Config.schedulerIdleMaxResolvesPerTick;
 const originalLagAbort = Config.schedulerLagAbortMs;
 const originalActivityProfile = PopulationService.playerActivityProfile;
 const originalStateRetention = PersistentStateRetention.runNextBatch;
@@ -25,23 +24,13 @@ const originalDatabaseCheckpointSnapshot = Database.checkpointSnapshot;
 const originalDatabaseCheckpoint = Database.checkpoint;
 const originalWalResetRunning = PopulationService.walResetRunning;
 const originalNextWalResetAt = PopulationService.nextWalResetAt;
-const originalLastWalResetResult = PopulationService.lastWalResetResult;
 
 async function run() {
     PopulationService.playerActivityProfile = () => ({ protected: false, activeParty: false, realPlayers: 0, companionCount: 0, mode: 'idle' });
     Metrics.currentEventLoopLag = () => 0;
-    Config.schedulerIdleMaxResolvesPerTick = 1000;
-    const idleProfile = PopulationService.schedulerProfile();
-    assert.strictEqual(idleProfile.idle, true, 'no real players must select the idle scheduler profile');
-    assert.strictEqual(idleProfile.budgetMs, Config.schedulerIdleBudgetMs, 'idle scheduler must use the larger background budget');
-    assert.strictEqual(idleProfile.maxResolvesPerTick, 100, 'idle scheduler must not exceed the cold query cap');
     assert.strictEqual(PopulationService.partyFormationBudgetMs(), Config.partyFormationIdleBudgetMs, 'idle party formation must use its larger budget');
 
     PopulationService.playerActivityProfile = () => ({ protected: true, activeParty: false, realPlayers: 1, companionCount: 0, mode: 'player' });
-    const playerProfile = PopulationService.schedulerProfile();
-    assert.strictEqual(playerProfile.idle, false, 'a real player must select the player scheduler profile');
-    assert.strictEqual(playerProfile.budgetMs, Config.schedulerPlayerBudgetMs, 'player scheduler must use the conservative budget');
-    assert.strictEqual(playerProfile.maxResolvesPerTick, Config.schedulerPlayerMaxResolvesPerTick, 'player scheduler must use the smaller cold batch cap');
     assert.strictEqual(PopulationService.partyFormationBudgetMs(), Config.partyFormationPlayerBudgetMs,
         'player presence must keep a bounded background party formation budget');
     PopulationService.resolving = false;
@@ -52,23 +41,16 @@ async function run() {
     assert.strictEqual(PopulationService.partyFormationPending, true,
         'deferred party formation must remain pending for the next idle interval');
 
-    PopulationService.playerActivityProfile = () => ({ protected: true, activeParty: true, realPlayers: 1, companionCount: 8, mode: 'party' });
-    const partyProfile = PopulationService.schedulerProfile();
-    assert.strictEqual(partyProfile.budgetMs, Config.schedulerPartyBudgetMs, 'an active player party must receive the strictest background budget');
-    assert.strictEqual(partyProfile.allowBackgroundParties, false, 'player party protection must defer background party resolves');
-    assert.strictEqual(partyProfile.allowAuxiliaryBackground, false, 'player party protection must defer auxiliary background work');
-
     PopulationService.playerActivityProfile = () => ({ protected: false, activeParty: false, realPlayers: 0, companionCount: 0, mode: 'idle' });
+    const idleBudget = PopulationService.partyFormationBudgetMs();
     Metrics.currentEventLoopLag = () => Config.schedulerLagThrottleMs + 40;
-    const throttledProfile = PopulationService.schedulerProfile();
-    assert(throttledProfile.budgetMs > 0 && throttledProfile.budgetMs < idleProfile.budgetMs, 'event-loop lag must taper idle work before the hard stop');
+    const throttledBudget = PopulationService.partyFormationBudgetMs();
+    assert(throttledBudget > 0 && throttledBudget < idleBudget, 'event-loop lag must taper idle work before the hard stop');
     Config.schedulerLagAbortMs = 0;
-    const throttleOnlyProfile = PopulationService.schedulerProfile();
-    assert(throttleOnlyProfile.budgetMs >= 0 && throttleOnlyProfile.budgetMs < idleProfile.budgetMs,
+    assert(PopulationService.partyFormationBudgetMs() < idleBudget,
         'a throttle threshold must still reduce idle work when no abort threshold is configured');
     Config.schedulerLagAbortMs = originalLagAbort;
     Metrics.currentEventLoopLag = () => Config.schedulerLagAbortMs;
-    assert.strictEqual(PopulationService.schedulerProfile().budgetMs, 0, 'critical event-loop lag must stop background work');
     assert.strictEqual(PopulationService.partyFormationBudgetMs(), 0, 'critical event-loop lag must stop party formation too');
 
     const databaseConfig = options.default.Database;
@@ -104,7 +86,6 @@ async function run() {
     };
     PopulationService.walResetRunning = false;
     PopulationService.nextWalResetAt = 0;
-    PopulationService.lastWalResetResult = null;
     PopulationService.resolving = false;
     PopulationService.stateRetentionRunning = false;
     PopulationService.partyFormationRunning = false;
@@ -245,7 +226,6 @@ run()
         process.exitCode = 1;
     })
     .finally(() => {
-        Config.schedulerIdleMaxResolvesPerTick = originalIdleMaxResolves;
         Config.schedulerLagAbortMs = originalLagAbort;
         PopulationService.realPlayerSessions = originalRealPlayerSessions;
         PopulationService.playerActivityProfile = originalActivityProfile;
@@ -256,7 +236,6 @@ run()
         PopulationService.partyFormationPending = originalPartyFormationPending;
         PopulationService.walResetRunning = originalWalResetRunning;
         PopulationService.nextWalResetAt = originalNextWalResetAt;
-        PopulationService.lastWalResetResult = originalLastWalResetResult;
         Database.pending = originalDatabasePending;
         Database.checkpointSnapshot = originalDatabaseCheckpointSnapshot;
         Database.checkpoint = originalDatabaseCheckpoint;

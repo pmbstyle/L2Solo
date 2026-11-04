@@ -19,7 +19,12 @@ assert(necklace, 'fixture item');
 const loot = Object.fromEntries([[1864, 60], [1865, 15], [1866, 26], [1868, 108], [1869, 23], [1871, 49]]
     .map(([selfId, amount]) => [String(selfId), { selfId, amount,
         name: DataCache.items.find((item) => Number(item.selfId) === selfId)?.template?.name }]));
-const bot = (persona, equipmentPlan, adena = 2000000) => ({
+// Its healing potions at the stock's own target, whatever use the table gives
+// them: the gear is what the wallet weighs.
+const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+const stocked = state => ({ ...state, inventory: { ...state.inventory,
+    1061: { selfId: 1061, amount: Economy.stockFor(state, 'potions').target } } });
+const bot = (persona, equipmentPlan, adena = 2000000) => stocked({
     // Purchases are executable only over prepared routes from where the bot
     // stands (5e91bb1c): the hunting bot is near Giran.
     characterId: 7, name: 'Saver', accountName: 'bot_7', phase: 'cold', activity: 'hunting', level: 30, adena,
@@ -46,7 +51,6 @@ async function choice(state, label) {
     if (leaf.activity === 'shopping') {
         assert.strictEqual(goal.target.itemId, leaf.itemId);
         assert.strictEqual(goal.plan.estimatedCost, leaf.price);
-        assert.strictEqual(goal.plan.requiredAdena, 0);
         assert.strictEqual(goal.type, Number(DataCache.items.find(row => Number(row.selfId) === leaf.itemId)?.etc?.slot || 0)
             ? 'upgrade_gear' : 'buy_craft_material');
         assert(Funding.spendable(result.state, 0, { itemId: leaf.itemId }) >= leaf.price,

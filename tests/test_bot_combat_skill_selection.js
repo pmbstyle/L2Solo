@@ -89,8 +89,10 @@ try {
     });
     const spoiler = bot(55, [spoilSkill], 100);
     spoiler.fetchId = () => 11000;
+    invoke('GameServer/DataCache').fetchNpcRewardsFromSelfId = (_selfId, callback) => callback({ spoils: [{ items: [{}] }] });
     const spoilTarget = {
         ...npc(11001),
+        fetchSelfId: () => 777,
         fetchAttackable: () => true,
         isDead: () => false
     };
@@ -143,6 +145,7 @@ try {
 
     const automaticCorpse = {
         ...npc(11006),
+        fetchSelfId: () => 777,
         fetchAttackable: () => true,
         isDead: () => true,
         state: { fetchDead: () => true },

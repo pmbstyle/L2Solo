@@ -50,6 +50,9 @@ const Demand = require('../src/GameServer/Bot/Economy/ShotTradeDemand');
                     selfId: Recipes.resolveByRecipeId(id).productId, count: 100000, price: 10000, enchant: 0 }] }));
             const investing = { ...state, level: 52, stats: { ...state.stats,
                 shotRecipeDemand: { itemId: recipe.recipeItemId, at: Date.now(), amount: 1, maxSpend: 1000 } } };
+            // Its healing potions at the stock's own target, whatever use the table gives them.
+            const potions = invoke('GameServer/Bot/Economy/EconomyContext').stockFor(investing, 'potions');
+            investing.inventory = { ...investing.inventory, [potions.itemId]: { selfId: potions.itemId, amount: potions.target } };
             const wishes = await probe(investing, { nativeRoutes: true, recipes: { recipeBook: Codec.pack([]) },
                 boardRows: [...records, ...competitors].map(row => [row.id, rowOf(row)]) });
             assert(wishes.queue.some(row => row.key === `resale:${recipe.productId}`), 'recipe investment has a native earning root');

@@ -453,8 +453,9 @@ try {
         const Kernel = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
         const departing = require('../src/GameServer/Bot/Population/HuntingTravel').beginHuntingTrip(displacedMembers[1], repairedRoute, 1000);
         assert.strictEqual(departing.loc.locZ, 160, 'repair uses ordinary travel, not an instant move');
-        assert.strictEqual(Kernel.finishPartyRouteTravelState(departing, 2000), null);
-        const arrived = Kernel.finishPartyRouteTravelState(departing, 1000 + repairedRoute.travelMs);
+        const arrivalAt = departing.stats.travel.arrivalAt;
+        assert.strictEqual(Kernel.finishPartyRouteTravelState(departing, arrivalAt - 1), null);
+        const arrived = Kernel.finishPartyRouteTravelState(departing, arrivalAt);
         assert(SpotService.containsLocation(lair, arrived.loc));
         assert.strictEqual(arrived.spotId, lair.id);
         for (const patch of [{ phase: 'hot' }, { activity: 'resting' }, { stats: { pvpEncounter: { key: 'fighting' } } }]) {

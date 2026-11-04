@@ -106,8 +106,10 @@ async function main() {
         travelMs: 25000, to: point, destinations: { 1: point, 2: point } };
     const travelling = scattered.map(s => beginHuntingTrip(s, route, at));
     assert.deepStrictEqual(travelling[1].loc, scattered[1].loc, 'departure does not teleport');
-    const arrived = travelling.map(s => finishPartyRouteTravelState(s, at + 25000));
-    const hunt = resolve(arrived, { timestamp: at + 25000 });
+    // Without a shared party time each member runs its own way; all are there by the last arrival.
+    const arrivedAt = Math.max(...travelling.map(s => s.stats.travel.arrivalAt));
+    const arrived = travelling.map(s => finishPartyRouteTravelState(s, arrivedAt));
+    const hunt = resolve(arrived, { timestamp: arrivedAt });
     assert(hunt.partyPatch.stats.partySpotRisk, 'actual party combat records a party-owned risk window');
     assert.strictEqual(hunt.partyPatch.stats.partySpotRisk.partyId, party.partyId);
     assert(hunt.debug.wins > 0 && hunt.memberResults.some(e => e.result.materialize.exp > 0), 'arrived party resumes ordinary combat');

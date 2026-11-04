@@ -186,7 +186,7 @@ function attention(state, line, ctx, observed) {
     const understanding = Math.max(0, Math.min(1, finite(ctx.understanding, 0.3)));
     const value = Math.max(0, finite(line.price) * finite(line.count))
         * Math.abs(Counters.moveOf(counter.key || Counters.counterOf(line.selfId)))
-        * hours * understanding * (1 + SpotEconomics.moneyWeight(state));
+        * hours * understanding * (1 + SpotEconomics.moneyShort(state));
     const cost = Math.max(0, finite(ctx.hour)) / 60;
     return { value, cost, probability: value + cost > 0 ? value / (value + cost) : 0,
         deals: counter.deals, itemDeals };

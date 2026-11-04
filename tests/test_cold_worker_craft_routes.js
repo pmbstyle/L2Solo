@@ -23,9 +23,8 @@ const readyInventory = target.recipe.materials.reduce((inventory, material) => (
     [material.selfId]: { selfId: material.selfId, amount: material.amount }
 }), {});
 const atubaMace = C4RecipeItems.resolveByRecipeId(189);
-const crystalSupplement = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
 const componentInventory = atubaMace.materials.reduce((inventory, material) => {
-    if (Number(material.selfId) === 1879 || crystalSupplement.isSupplementalMaterial(material.selfId)) return inventory;
+    if (Number(material.selfId) === 1879) return inventory;
     inventory[material.selfId] = { selfId: material.selfId, amount: material.amount };
     return inventory;
 }, { 1870: { selfId: 1870, amount: 3 }, 1871: { selfId: 1871, amount: 3 } });

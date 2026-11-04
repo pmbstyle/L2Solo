@@ -133,9 +133,13 @@ function authoredKitInputs(actor, session) {
     const escapeHeld = positive(state.inventory[736]?.amount);
     const escapeCost = invoke('GameServer/Karma').closesTowns(state.stats.karma) ? 0
         : escapePrice * Math.max(0, 1 - escapeHeld);
-    // The protected survival kit is one hour of use in whole purchasable units.
-    const survivalReserve = escapeCost + Math.max(0, Math.ceil(shotUse) - shotHeld) * shotPrice
-        + Math.max(0, Math.ceil(potionUse) - potionHeld) * potionPrice;
+    // The protected survival kit is one hour of use in whole purchasable units, at
+    // the NPC's list price (the bot's estimate where no NPC sells it).
+    const listPrice = id => { const list = invoke('GameServer/Bot/Economy/StaticMerchantPricing').botNpcListPrice(id);
+        return Number.isFinite(list) && list > 0 ? list : price(id); };
+    const survivalReserve = (escapeCost > 0 ? listPrice(736) * Math.max(0, 1 - escapeHeld) : 0)
+        + Math.max(0, Math.ceil(shotUse) - shotHeld) * listPrice(plan.selfId)
+        + Math.max(0, Math.ceil(potionUse) - potionHeld) * listPrice(potionId);
     const potionUnitPrice = invoke('GameServer/Bot/Economy/StaticMerchantPricing').cheapestPurchase(potionId);
     const potionReserve = Math.max(0, Math.ceil(potionUse) - potionHeld) * potionUnitPrice;
     return { state, tableRole, spotId, huntSource: hunt.source, hourAdena, tableRow, withoutExp: without?.exp || 0,
@@ -153,6 +157,15 @@ function fundAuthoredKit(actor, session, extraCost, label) {
     console.log('AUTHORED_FUNDED_INPUTS', JSON.stringify({ label, characterId: actor.fetchId(), level: actor.fetchLevel(),
         ...values, fundedAdena: amount }));
     return inputs;
+}
+
+// A companion's town purchase is budgeted on the money packet its worker
+// decision writes (CompanionEquipmentShopping.companionBudget): with none it
+// plans nothing. The packet's reserve is the authored survival reserve.
+function workerMoneyPacket(session, inputs) {
+    const previous = session.coldLifeState || {};
+    session.coldLifeState = { ...previous, stats: { ...previous.stats, money: [Math.round(inputs.hourAdena),
+        1 / Math.max(1, inputs.hourAdena), Math.round(inputs.survivalReserve), 0] } };
 }
 
 function publishNativeEquipmentShop(actor, town) {
@@ -2546,7 +2559,7 @@ try {
     marketSession.coldLifeState = { stats: { equipmentPlan: { strategy: 'market', target: { selfId: 1 } } } };
     const giranAd = publishNativeEquipmentShop(marketSeller, 'Giran');
     marketSeller = giranAd.projection.actor;
-    fundAuthoredKit(marketBot, marketSession, () => giranAd.lines[0].price, 'Giran physical Short Sword ask');
+    workerMoneyPacket(marketSession, fundAuthoredKit(marketBot, marketSession, () => giranAd.lines[0].price, 'Giran physical Short Sword ask'));
     const assertMarketKitUnchanged = recordPhysicalKit(marketBot, marketSession.accountId);
     publishSessions([errandLeaderSession, marketSession]);
     FollowingState.tick(marketSession, marketBot, {}, {
@@ -2572,7 +2585,7 @@ try {
     starterTownSession.coldLifeState = { stats: { equipmentPlan: { strategy: 'market', target: { selfId: 1 } } } };
     const elvenAd = publishNativeEquipmentShop(starterTownSeller, 'Elven Village');
     starterTownSeller = elvenAd.projection.actor;
-    fundAuthoredKit(starterTownBot, starterTownSession, () => elvenAd.lines[0].price, 'Elven Village physical Short Sword ask');
+    workerMoneyPacket(starterTownSession, fundAuthoredKit(starterTownBot, starterTownSession, () => elvenAd.lines[0].price, 'Elven Village physical Short Sword ask'));
     const assertStarterKitUnchanged = recordPhysicalKit(starterTownBot, starterTownSession.accountId);
     publishSessions([starterTownLeaderSession, starterTownSession]);
     World.fetchNpcsInRadius = () => [];
@@ -2593,8 +2606,9 @@ try {
     fieldNearStarterSession.followPlayerSession = fieldNearStarterLeaderSession;
     fieldNearStarterSession.partyCompanion = true;
     fieldNearStarterSession.plan = 'following';
-    fundAuthoredKit(fieldNearStarterBot, fieldNearStarterSession, () => elvenAd.lines[0].price, 'Field negative control with the same physical ask');
+    const fieldInputs = fundAuthoredKit(fieldNearStarterBot, fieldNearStarterSession, () => elvenAd.lines[0].price, 'Field negative control with the same physical ask');
     fieldNearStarterSession.coldLifeState = { stats: { equipmentPlan: { strategy: 'market', target: { selfId: 1 } } } };
+    workerMoneyPacket(fieldNearStarterSession, fieldInputs);
     const assertFieldKitUnchanged = recordPhysicalKit(fieldNearStarterBot, fieldNearStarterSession.accountId);
     publishSessions([fieldNearStarterLeaderSession, fieldNearStarterSession]);
     FollowingState.tick(fieldNearStarterSession, fieldNearStarterBot, {}, {

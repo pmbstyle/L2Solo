@@ -163,8 +163,9 @@ assert.equal(weaponFirst.network.activity?.itemId, 281,
     'C weapon precedes even extremely cheap armour and missing jewellery');
 const cWeapon = Planner.equipInventoryUpgrades(progressionState, { ...progressionState.inventory,
     281: { selfId: 281, amount: 1, equipped: false } });
-const armorState = { ...progressionState, inventory: cWeapon };
-const armorNext = Economy.forState(armorState, deps);
+// Its rest reads the new kit (on the hunt it waits).
+const armorState = { ...progressionState, activity: 'resting', inventory: cWeapon };
+const armorNext = Economy.forState(armorState, { ...deps, caller: 'step' });
 const armorWish = armorNext.network.queue.find(row => row.key === armorNext.network.activity?.rootKey);
 assert.equal(armorWish?.object?.slot, 12, 'after the C weapon, available C armour precedes jewellery');
 const cKit = {};
@@ -181,7 +182,7 @@ for (const id of Object.keys(progressionState.inventory)) if (cKit[id] === undef
 const jewels = Progression.assess(jewelryState);
 assert(jewels.required && [...jewels.gaps.values()].every(row => row.slot >= 1 && row.slot <= 5 && row.priority === 1),
     'after a full C weapon/body kit, only jewellery remains');
-const jewelryLast = Economy.forState(jewelryState, deps);
+const jewelryLast = Economy.forState({ ...jewelryState, activity: 'resting' }, { ...deps, caller: 'step' });
 const jewelryWish = jewelryLast.network.queue.find(row => row.key === jewelryLast.network.activity?.rootKey);
 assert.equal(jewelryWish?.object?.slot, 2, 'the same native network finally purchases the missing C earring');
 board.remove(772);

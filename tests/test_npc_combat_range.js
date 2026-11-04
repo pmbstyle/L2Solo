@@ -234,6 +234,30 @@ meleeNpc.setCollectiveAtkSpd(999999);
 meleeNpc.meleeHit(session, meleeNpc, target);
 Formulas.calcHitChance = originalCalcHitChance;
 
+// A started monster swing reaches a target that stepped away, not one out of view.
+const originalTimeout = global.setTimeout;
+const swingTimers = [], victims = [];
+global.setTimeout = (callback) => { swingTimers.push(callback); return { unref() {} }; };
+const swinger = npcWithRange(40, 900003);
+const swingAt = (x) => {
+    let locX = 20;
+    const victim = { ...actorAt(20), fetchLocX: () => locX };
+    victims.push(victim);
+    Formulas.calcHitChance = () => true;
+    swingTimers.length = 0;
+    swinger.meleeHit(session, swinger, victim);
+    locX = x;
+    swingTimers[0]();
+    Formulas.calcHitChance = originalCalcHitChance;
+};
+swingAt(300);
+global.setTimeout = originalTimeout;
+assert(victims[0].fetchHp() < 1000, 'a monster swing lands on a target that stepped out of range');
+global.setTimeout = (callback) => { swingTimers.push(callback); return { unref() {} }; };
+swingAt(7000);
+global.setTimeout = originalTimeout;
+assert.strictEqual(victims[1].fetchHp(), 1000, 'a monster swing takes nothing from a target that left the view');
+
 const npcPhysicalSkill = new SkillModel({
     selfId: 4032,
     name: 'NPC Strike',

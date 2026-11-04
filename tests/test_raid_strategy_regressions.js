@@ -188,6 +188,14 @@ try {
     const fast = Estimate.estimate([tank, healer, { ...mage, profile: { ...mage.profile, castSpd: 900 } }], spot);
     assert(fast.damagePerSecond > slow.damagePerSecond && fast.fightSeconds < slow.fightSeconds,
         'mage damage follows learned spell casting speed, not melee attack speed');
+    // One planning job asks every raid spot about one roster: what a member
+    // casts carries over, each boss still takes its own damage.
+    Combat.npcForSpot = picked => ({ maxHp: 150000, pAtk: 2000, pDef: 300, mDef: picked.mDef, atkSpd: 300 });
+    const softSpot = { ...spot, id: 'soft', raidBossTemplateId: 1, mDef: 100 }, hardSpot = { ...spot, id: 'hard', raidBossTemplateId: 2, mDef: 900 };
+    const job = new Map(), party = [tank, healer, mage];
+    assert.equal(Estimate.estimate(party, softSpot, job).damagePerSecond, Estimate.estimate(party, softSpot).damagePerSecond);
+    assert.equal(Estimate.estimate(party, hardSpot, job).damagePerSecond, Estimate.estimate(party, hardSpot).damagePerSecond);
+    Combat.npcForSpot = () => ({ maxHp: 150000, pAtk: 2000, pDef: 300, mDef: 200, atkSpd: 300 });
     const reused = Estimate.estimate([tank, healer, { ...mage, profile: { ...mage.profile,
         skills: [{ ...nuke, reuse: 12000 }] } }], spot);
     assert(reused.damagePerSecond < slow.damagePerSecond, 'spell reuse limits damage');

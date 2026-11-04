@@ -24,7 +24,6 @@ const Sell = invoke('GameServer/Network/Request/Sell');
 const Response = invoke('GameServer/Network/Response');
 const Select = invoke('GameServer/Actor/Generics/Select');
 const PrivateSell = invoke('GameServer/Network/Request/PrivateStoreSell');
-const HtmlSell = invoke('GameServer/World/Generics/NpcBypasses/SellToMerchantItem');
 const ITEM = 1867;
 let sequence = 0;
 const previousUser = World.user;
@@ -189,23 +188,6 @@ async function run() {
         assert.equal(refreshed.readInt32LE(23), 2); assert.equal(refreshed.readInt32LE(39), buyback);
         await privateSale(player, 2, buyback);
         assert.equal(money(player) - balance, 300 + 2 * buyback); assert.equal(await held(player.actor.fetchId()), 0);
-    });
-    await check('HTML quantity links retain their price and reject a stale click', async () => {
-        const player = await character({ skins: 5 }), merchant = await character({ bot: true });
-        const bid = await order(100, 3), balance = money(player);
-        openWindow(player, merchant);
-        await HtmlSell(player, ['sell-to-merchant-item']);
-        const html = player.packets.findLast(row => row[0] === 0x0f).subarray(5).toString('utf16le');
-        assert(html.includes(`sell-to-merchant-item ${ITEM} 3 100`), html);
-        assert(!html.includes(`sell-to-merchant-item ${ITEM} 5 `), 'HTML cannot quote all five at the best bid');
-        const changed = await Database.repriceAfkTradeShop(bid.session.actor.fetchId(), bid.shop.lines[0].id, 110);
-        Afk.refreshRecord(changed.shop);
-        await HtmlSell(player, ['sell-to-merchant-item', String(ITEM), '3', '100']);
-        assert.equal(money(player), balance); assert.equal(await held(player.actor.fetchId()), 5);
-        assert.equal(await remaining(bid.shop), 3, 'a stale HTML price moves no stock or money');
-        await privateSale(player, 3, 100);
-        assert.equal(money(player), balance); assert.equal(await held(player.actor.fetchId()), 5,
-            'the old native price also moves nothing');
     });
     await check('one click fills at most five orders', async () => {
         const player = await character({ skins: 6 }), bids = [];

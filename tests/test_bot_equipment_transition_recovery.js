@@ -90,8 +90,8 @@ const Membership = invoke('GameServer/Clan/ClanMembershipPolicy');
 assert.strictEqual(Membership.reconcileState({ ...bought, stats: { ...bought.stats, equipmentPlan: ready } }, 7).stats.equipmentPlan, ready,
     'membership reconciliation must preserve a personal NPC exchange');
 const Needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
-// ARCH-NOTE: E3/C1/E5 retain one native chosen leaf. A forced blade plan
-// cannot outrank funded shot stock through the retired weapon priority ladder.
+// ARCH-NOTE: E3/C1/E5: only the native chosen leaf makes a goal. A forced blade
+// plan makes none through the retired weapon priority ladder.
 const nativeDualState = { ...dual, phase: 'cold', activity: 'hunting', updatedAt: at,
     vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 },
     stats: { ...dual.stats, exp: Data.experience[58] + 1, equipmentPlan: forced,
@@ -141,31 +141,14 @@ async function verifyNativeTransitionGoal() {
     const decisions = new ColdEconomyDecisions();
     decisions.accept(state.characterId, native.decision);
     const leaf = compact(native.decision).activity;
-    assert(leaf, 'the real healthy dual buyer must retain a native activity');
+    // Nobody here sells its kit piece or its shots: the money waits for the kit and
+    // stock nobody supplies holds no focus (T178), so no native step is left.
+    assert.strictEqual(leaf, null, 'no seller for its kit or its stock: no native activity');
     const build = Economy.forState;
     try {
         Economy.forState = () => { throw Error('cold transition goal rebuilt its network on main'); };
-        const goals = Needs.evaluate(state, { now: at, decisions });
-        assert.strictEqual(goals.length, 1);
-        assert.strictEqual(goals[0].priority, 50);
-        assert.strictEqual(goals[0].plan.wishKey, leaf.rootKey);
-        assert.strictEqual(goals[0].plan.economyActivity, leaf.activity);
-        if (leaf.activity === 'shopping') {
-            assert.strictEqual(goals[0].target.itemId, leaf.itemId);
-            assert.strictEqual(goals[0].target.amount, Math.max(1, Math.ceil(leaf.amount)));
-            assert.strictEqual(goals[0].plan.estimatedCost, leaf.price);
-            assert(Number.isFinite(leaf.price) && leaf.price > 0, 'the native shopping quote is finite and positive');
-            assert(Funding.spendable(state, 0, { itemId: leaf.itemId }) >= leaf.price,
-                'the chosen shopping quote fits the native funded queue after reserve and prior wishes');
-            const stockKind = require('../src/GameServer/Bot/Population/ColdEconomyDecision').kindFor(compact(native.decision).wish?.[0]);
-            if (['shots', 'potions'].includes(stockKind)) {
-                const stock = Economy.basics(state, { timestamp: at }).stock(stockKind);
-                assert.strictEqual(leaf.itemId, stock.itemId);
-                assert.strictEqual(stock.target, Math.ceil(stock.usePerHour * stock.targetHours));
-                assert.strictEqual(leaf.amount, stock.missing, 'E5 buys the native interval gap above the survival hour');
-                assert.strictEqual(stock.survivalMissing, Math.max(0, Math.ceil(stock.usePerHour) - stock.current));
-            }
-        }
+        assert.deepStrictEqual(Needs.evaluate(state, { now: at, decisions }), [],
+            'the forced blade plan makes no goal of its own on main: no weapon priority ladder');
         const poor = { ...state, adena: 0 };
         assert.strictEqual(Funding.spendable(poor, 0, { itemId: forced.target.selfId }), 0,
             'an empty wallet cannot fund the synthetic second-blade purchase');

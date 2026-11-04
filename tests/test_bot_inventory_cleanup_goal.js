@@ -389,7 +389,8 @@ assert.strictEqual(ItemDisposition.inventoryCleanupNeed(loadedBag(0.55, retryUnt
 assert(weightTrip(0.55, retryUntil, npcJunk), 'NPC-only junk in a weight penalty 1 bag still bypasses the sale retry');
 const huntSpot = { id: 'starter_gremlin', name: 'Gremlin field', avgLevel: 1, density: 1, npcSelfIds: [1],
     rewards: { exp: 10, sp: 2, adenaMin: 7, adenaMax: 10 }, mob: { hp: 8, damage: 1 } };
-const hunt = (share) => BackgroundResolver.resolveSolo({ state: { ...loadedBag(share, retryUntil), level: 1, levelBand: '1-3',
+// Level 3: a weaponless level-1 bag holder would end no gremlin fight above its potion line (BotEncounterReadiness).
+const hunt = (share) => BackgroundResolver.resolveSolo({ state: { ...loadedBag(share, retryUntil), level: 3, levelBand: '1-3',
     currentRegion: undefined, loc: undefined, party: { role: 'dps' } }, spot: huntSpot, elapsedMs: 60000, timestamp: now, rng: () => 0 });
 const slowHunt = hunt(0.55);
 assert(slowHunt.debug?.reason !== 'survival_overweight' && slowHunt.debug?.fights > 0,

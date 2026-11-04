@@ -10,7 +10,7 @@ function shift(value, elapsed) {
     if (Array.isArray(value)) return value.map(item => shift(item, elapsed));
     if (!value || typeof value !== 'object') return value;
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key,
-        CLOCKS.has(key) && typeof item === 'number' && item > 0 ? item + elapsed : shift(item, elapsed)]));
+        CLOCKS.has(key) && typeof item === 'number' && item > 0 ? Math.ceil(item + elapsed) : shift(item, elapsed)]));
 }
 function object(text) { return typeof text === 'string' ? JSON.parse(text || '{}') : text || {}; }
 function marker(row) { return object(row?.statsJson).constPartySession; }
@@ -109,7 +109,7 @@ function native({ one, all, write, row: getRow, now }) {
         delete stats.playerPartyTakeover;
         // A cancelled deal cannot regain custody, a receipt or its old escrow.
         delete stats.tradeMeeting;
-        const due = saved.nextResolveAt ? Math.max(timestamp + 1000, saved.nextResolveAt + elapsed) : timestamp + 1000;
+        const due = saved.nextResolveAt ? Math.ceil(Math.max(timestamp + 1000, saved.nextResolveAt + elapsed)) : timestamp + 1000;
         const activity = saved.activity === 'following' || (!groupId && saved.activity === 'grouped') ? 'hunting' : saved.activity;
         if (!groupId) { delete stats.backgroundPartyId; delete stats.leaderId; }
         const columns = SavedStats.statsColumns(stats);
@@ -117,7 +117,7 @@ function native({ one, all, write, row: getRow, now }) {
             locX=?,locY=?,locZ=?,activityStartedAt=?,nextResolveAt=?,lastResolvedAt=?,
             statsJson=?,mindJson=?,updatedAt=?,simulationRevision=simulationRevision+1 WHERE characterId=?`,
         [activity, groupId, saved.currentRegion ?? null, saved.spotId ?? null, saved.locX, saved.locY, saved.locZ,
-            saved.activityStartedAt ? saved.activityStartedAt + elapsed : timestamp, due, timestamp,
+            saved.activityStartedAt ? Math.round(saved.activityStartedAt + elapsed) : timestamp, due, timestamp,
             columns.statsJson, columns.mindJson, timestamp, row.characterId]);
         // Activation reads the character table as well as the lifecycle row.
         write('UPDATE characters SET locX=?,locY=?,locZ=? WHERE id=?', [saved.locX, saved.locY, saved.locZ, row.characterId]);
@@ -144,7 +144,7 @@ function native({ one, all, write, row: getRow, now }) {
             resumed.hotLifecycle = null;
             write(`UPDATE bot_background_parties SET status='active',nextResolveAt=?,statsJson=?,
                 updatedAt=?,revision=revision+1 WHERE partyId=?`,
-            [Math.max(timestamp + 1000, Number(pause.nextResolveAt || pause.at) + elapsed), JSON.stringify(resumed), timestamp, groupId]);
+            [Math.ceil(Math.max(timestamp + 1000, Number(pause.nextResolveAt || pause.at) + elapsed)), JSON.stringify(resumed), timestamp, groupId]);
         } else if (party?.status === 'const_paused') {
             write("UPDATE bot_background_parties SET status='dissolved',updatedAt=?,revision=revision+1 WHERE partyId=?", [timestamp, party.partyId]);
         }

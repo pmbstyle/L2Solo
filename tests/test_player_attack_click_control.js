@@ -13,6 +13,7 @@ const Backpack = invoke('GameServer/Actor/Backpack');
 const Item = invoke('GameServer/Item/Item');
 const { packetReceiver } = invoke('Server');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
+const PvpFlag = invoke('GameServer/Actor/PvpFlag');
 
 // Lisvus fdc7e33a: L2CharacterAI.onIntentionAttack acknowledges an unchanged
 // target with ActionFailed (otherwise the client freezes until deselection).
@@ -89,11 +90,12 @@ function fixture(kind = 'Weapon.Sword', targetX = 40, entity = 'npc') {
 (async () => {
     const saved = { npc: World.fetchNpc, item: World.fetchItem, user: World.fetchUser,
         chance: Formulas.calcHitChance, peace: utils.isInPeaceZone,
-        timeout: global.setTimeout, clear: global.clearTimeout, interval: global.clearInterval };
+        timeout: global.setTimeout, clear: global.clearTimeout, interval: global.clearInterval, mark: PvpFlag.mark };
     const fixtures = [];
     const make = (...args) => { const f = fixture(...args); fixtures.push(f); return f; };
     let checks = 0;
     try {
+        PvpFlag.mark = () => {}; // a swing on a player flags the attacker; its packets are not under test
         global.setTimeout = (callback, ms) => ({ callback, ms, _idleTimeout: ms, unref() {} });
         global.clearTimeout = timer => { if (timer) timer.cancelled = true; };
         global.clearInterval = global.clearTimeout;
@@ -245,11 +247,27 @@ function fixture(kind = 'Weapon.Sword', targetX = 40, entity = 'npc') {
         assert.equal(replaced.count(0x60), 0, 'a retired actor cannot resume an async attack');
         checks++;
 
+        // Talking does not depend on the weapon; a bow must not talk from its attack range.
+        const talkNpcTalk = World.npcTalk;
+        let talked = 0;
+        World.npcTalk = () => { talked++; };
+        const far = make('Weapon.Bow', 500);
+        far.target.fetchAttackable = () => false;
+        far.sendClick(0x04); await drain();
+        assert.equal(talked, 0, 'a bow does not open a dialog from far away');
+        const close = make('Weapon.Bow', 30);
+        close.target.fetchAttackable = () => false;
+        close.sendClick(0x04); await drain();
+        assert.equal(talked, 1, 'a close NPC talks with any weapon');
+        World.npcTalk = talkNpcTalk;
+        checks++;
+
         console.log(`Player click control: ${checks} command ordering, chase acknowledgement and bow reload checks passed`);
     } finally {
         fixtures.forEach(f => f.actor.automation.abortAll(f.actor, { notifyClient: false }));
         World.fetchNpc = saved.npc; World.fetchItem = saved.item; World.fetchUser = saved.user;
         Formulas.calcHitChance = saved.chance; utils.isInPeaceZone = saved.peace;
         global.setTimeout = saved.timeout; global.clearTimeout = saved.clear; global.clearInterval = saved.interval;
+        PvpFlag.mark = saved.mark;
     }
 })().catch(error => { console.error(error); process.exitCode = 1; });

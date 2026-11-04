@@ -43,7 +43,7 @@ class LifeStateCache extends Map {
         this.orderEntries = new Map();
         this.nextSequence = 0;
         this.occupancy = new SpotOccupancyIndex({ locationIndex });
-        // Walkers (honest travel, ColdTrip): cold bots running the last part of
+        // Walkers (ColdTrip): cold bots running the last part of
         // a trip to a spot, by id -> travel.run { from, to, startAt, endAt }.
         // Kept on every write like the cells; read only by walkersNear.
         this.walkers = new Map();

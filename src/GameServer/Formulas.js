@@ -24,6 +24,10 @@ const Formulas = {
     DEFAULT_PERFECT_SHIELD_BLOCK_RATE: 0,
     // A player's HP and MP regain one tick every 3 s (Automation.replenishVitals).
     REGEN_TICK_MS: 3000,
+    // Lisvus L2Character.doRevive (RespawnRestoreHPMultiplier 0.7): every
+    // revival, a restart or a resurrection, sets HP to 70 % of max; MP and CP
+    // stay as death left them. Hot Revive and cold resolveDeathRecovery.
+    respawnHp: (maxHp) => Math.max(1, Math.round((Number(maxHp) || 0) * 0.7)),
 
     calcBaseMod: (() => {
         function func(start, end, base, multiplier) {
@@ -198,10 +202,6 @@ const Formulas = {
         chance -= (this.calcBaseMod.MEN(Math.max(0, Number(men) || 0)) * 100) - 100;
         chance += Number(cancelAdd) || 0;
         return Math.max(1, Math.min(99, chance));
-    },
-
-    calcMeleeHit(pAtk, pAtkRnd, pDef) {
-        return this.calcMeleeDamage(pAtk, pAtkRnd, pDef);
     },
 
     calcMeleeDamage(pAtk, pAtkRnd, pDef, { critical = false, soulshot = false, skillPower = 0, criticalDamageMultiplier = 1, criticalDamageAdd = 0, rng } = {}) {
@@ -467,14 +467,6 @@ const Formulas = {
 
         rate = Math.max(1, Math.min(rate, 99));
         return rate * Math.max(0, Number(resistModifier) || 0);
-    },
-
-    calcRemoteHit(mAtk, power, mDef) {
-        return this.calcMagicDamage(mAtk, power, mDef);
-    },
-
-    calcHitMiss(attacker, target, rng = Math.random, context = {}) {
-        return !this.calcHitChance(attacker, target, rng, context);
     }
 };
 

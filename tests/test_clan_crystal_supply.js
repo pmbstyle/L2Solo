@@ -46,7 +46,7 @@ async function seed(id, targetId) {
     return Life.upsertState(state, 'clan_crystal_fixture');
 }
 function context(state, options = {}) {
-    return Economy.forState(state, { board: options.board || new BoardIndex(), spots: [], rememberContext: false,
+    return Economy.forState(state, { board: options.board || new BoardIndex(), spots: [], caller: 'meeting_prepare',
         npcOffersFor: invoke('GameServer/Bot/Population/ColdOccupationSources').npcOffersFor,
         routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
         workshop: null, knownRecipes: [], ...options });
@@ -112,7 +112,7 @@ async function run() {
         console.log(targetId, operations.join(' -> '));
     }
     const waiting = await seed(98106, 608), board = new BoardIndex();
-    const beforeSupply = context(waiting, { board, rememberContext: true });
+    const beforeSupply = context(waiting, { board, caller: 'step' });
     const supplied = { ...waiting, inventory: { ...waiting.inventory,
         1458: { selfId: 1458, amount: 310, stackable: true } },
         stats: { ...waiting.stats, ...beforeSupply.statsPacket }, updatedAt: waiting.updatedAt + 1 };
@@ -122,7 +122,7 @@ async function run() {
     assert.equal(Sections.semanticFacts(supplied).stores, Sections.semanticFacts({ ...supplied,
         inventory: { ...supplied.inventory, 1458: { ...supplied.inventory[1458], amount: 400 } } }).stores,
         'surplus crystals beyond this owner requirement do not rebuild its supply route');
-    const afterSupply = context(supplied, { board, rememberContext: true });
+    const afterSupply = context(supplied, { board, caller: 'step' });
     assert.equal(afterSupply.network.activity?.kind, 'luxury_exchange',
         'a held crystal purchase advances to delivery when its physical crystals arrive');
     const crowded = await seed(98105, 608);

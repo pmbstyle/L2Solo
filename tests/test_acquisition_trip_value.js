@@ -8,6 +8,16 @@ const tiny = Valuation.acquisition(context, { selfId: 1835, units: 1, cost: 1 },
 assert(tiny.known && tiny.valueHours < 0, 'one unit cannot pay for a separate round trip');
 const useful = Valuation.acquisition(context, { selfId: 1835, units: 100, cost: 100 }, route);
 assert(useful.known && useful.valueHours > 0, 'an executable useful stack can justify the same trip');
+// One look a visit: the visit's steps in one town pay its one trip together.
+const step = (amount, valueHours) => ({ itemId: 1835, amount, unitPrice: 1, valueHours });
+assert.equal(Valuation.visitPays(context, [step(1, 0.02)], route), false, 'one unit alone does not pay the road');
+assert.equal(Valuation.visitPays(context, [step(1, 0.02), step(100, 2)], route), true, 'the visit\'s other steps carry it');
+assert.equal(Valuation.visitPays(context, [step(1, 0.02)], { known: true, hours: 0, fees: 0 }), true, 'in town it costs no road');
+// A required purchase's road (hot and cold alike): its share of the whole need still to buy.
+const kitUnit = { selfId: 1835, units: 1, amount: 1, cost: 1000 };
+assert.equal(Valuation.tripPays(context, kitUnit, route, { required: true, valueHours: 0.05 }), true, 'the whole need carries its road');
+assert.equal(Valuation.tripPays(context, kitUnit, route, { required: true, valueHours: 0.05, wanted: 10 }), false,
+    'a tenth of the need does not, as a visit\'s step of it would not');
 assert.equal(useful.valueHours, 2 - 0.105 - 0.1);
 assert.equal(useful.cashNow, 105, 'transport fees consume money once');
 assert.equal(useful.cycleHours, 0.1);
@@ -72,6 +82,15 @@ try {
         plan: { expectedBenefit: 'market_sale_inventory', marketTown: 'Giran' } };
     assert.equal(GoalExecutor.beginMarketTravel(state, sale, now).activity, 'traveling');
     assert.equal(checks, 2, 'forced unloading keeps its existing independent owner');
+    // The plan's own shopping step travels on the visit its build asked.
+    const stepGoal = { type: 'buy_craft_material', target: { itemId: 1835, amount: 100 },
+        plan: { expectedBenefit: 'market_buy_craft_material', marketTown: 'Giran', economyActivity: 'shopping', valueRate: 0.02 } };
+    let asked = 0;
+    Market.canTravelForPurchase = () => { asked++; return false; };
+    const plain = { ...state, stats: {} };
+    const went = GoalExecutor.beginMarketTravel(plain, stepGoal, now);
+    assert.equal(went?.activity, 'traveling', 'the plan\'s step goes and reads the market there');
+    assert.equal(asked, 0, 'no second trip question from the field');
 } finally {
     Market.canTravelForPurchase = saved.check;
     Remote.canTradeRemotely = saved.remote;

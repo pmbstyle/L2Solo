@@ -4,6 +4,7 @@ const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const SpotValueTable = invoke('GameServer/Bot/AI/SpotValueTable');
 const BotHuntEfficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const SpotEconomics = require('./SpotEconomics');
+const WalkBack = require('./WalkBack');
 
 // Only economic errands may deliberately hunt below the ordinary XP band.
 // Deep-blue drop/spoil penalties still apply in the native reward facts.
@@ -42,7 +43,12 @@ function select(state, { spots = [], timestamp = Date.now(), price, required = f
     const Match = invoke('GameServer/Bot/AI/BotTargetMatchup');
     const Index = invoke('GameServer/Bot/AI/SpotIndex');
     const Risk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
-    const evaluate = SpotEconomics.create(state, { timestamp, price, moneyWeight: 1 });
+    // Values in the role's best hour of the band, not the bot's own: an hour
+    // read at the spot it stands on makes two spots each look better from the
+    // other (own outputs are not inputs).
+    const role = SpotValueTable.roleFor(state), bestIncome = SpotValueTable.best(role, state.level, true, 'income');
+    const evaluate = SpotEconomics.create(state, { timestamp, price, hour: {
+        adena: (bestIncome?.adena || 0) + (bestIncome?.loot || 0), exp: SpotValueTable.best(role, state.level, true, 'exp')?.exp } });
     const excluded = Risk.excludedSpotIdsForStates([state], timestamp);
     const options = { timestamp, mode: 'solo', matchupProfiles: Match.stateProfiles(state, { timestamp }) };
     const survives = Match.soloSpotUpperBound(options.matchupProfiles);
@@ -67,9 +73,7 @@ function select(state, { spots = [], timestamp = Date.now(), price, required = f
                 const row = evaluate(spot, shots);
                 let walkFactor = spotFactors.get(spot);
                 if (walkFactor === undefined) {
-                    const walkHours = origin && spot.center ? Math.hypot(origin.locX - spot.center.locX,
-                        origin.locY - spot.center.locY) / (120 * 3600) : 0;
-                    walkFactor = 1 + walkHours / 0.5;
+                    walkFactor = 1 + WalkBack.tripHours(origin, spot, state, spots) / 0.5;
                     spotFactors.set(spot, walkFactor);
                 }
                 // Amortize relocation over a half-hour earning visit. Actual
@@ -87,10 +91,22 @@ function select(state, { spots = [], timestamp = Date.now(), price, required = f
     // route carries its solo profiles: the same build's source route reader
     // (GearAcquisitionPlanner.sourceRouteReader) reads the same ones.
     const allowed = Routes.spotAllowedReaderFor(state, options);
-    for (const candidate of shortlist.slice(0, Math.max(1, maxChecks))) {
-        if (allowed(candidate.spot)) { candidate.matchupProfiles = options.matchupProfiles; return candidate; }
+    // A spot full of other bots is no pick (the search's room rule): the bot
+    // takes its next best now, not a refused trip.
+    const Spots = invoke('GameServer/Bot/Population/SpotProfiles'); // lazy: cycle SpotProfiles' search calls this select
+    const open = shortlist.filter(candidate => Spots.roomFor(candidate.spot, state));
+    const checks = Math.max(1, maxChecks);
+    const pick = open.slice(0, checks).find(candidate => allowed(candidate.spot));
+    if (!pick) return null;
+    pick.matchupProfiles = options.matchupProfiles;
+    // The bot's hour (hourAdena, the unit of every value) stays what it could
+    // earn: its best income among the spots it may hunt, wherever it levels.
+    pick.earning = pick.row.income;
+    for (const candidate of open.toSorted((a, b) => b.row.income - a.row.income).slice(0, checks)) {
+        if (candidate.row.income <= pick.earning) break;
+        if (allowed(candidate.spot)) { pick.earning = candidate.row.income; break; }
     }
-    return null;
+    return pick;
 }
 
 module.exports = { select, economicHunt, spotList };

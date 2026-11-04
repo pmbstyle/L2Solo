@@ -29,7 +29,7 @@ function makeSession(id) {
         fetchLocX: () => 0, fetchLocY: () => 0, fetchLocZ: () => 0, fetchIsOnline: () => true,
         fetchClanId: () => 0, fetchPrivateStoreType: () => 0, isDead: () => false,
         state: { fetchCombats: () => false, fetchHits: () => false, fetchCasts: () => false },
-        backpack: new Backpack({ items: [], paperdoll: {} }) },
+        backpack: new Backpack({ id, items: [], paperdoll: {} }) },
         dataSendToMe(packet) { this.packets.push(packet); } };
 }
 async function add(session, selfId, amount = 1, enchant = 0) {
@@ -108,7 +108,7 @@ async function questToWeapon(session) {
     Equipment.sync(actor, actor.backpack.fetchItems());
     assert.equal(Stats.add(actor, 'pCritRateAdd'), 0);
     const restored = makeSession(actor.fetchId());
-    restored.actor.backpack = new Backpack({ items: await Database.fetchItems(actor.fetchId()), paperdoll: {} });
+    restored.actor.backpack = new Backpack({ id: actor.fetchId(), items: await Database.fetchItems(actor.fetchId()), paperdoll: {} });
     await Quest.ensureLoaded(restored);
     assert(restored.questStates.get(350).isStarted());
     const restoredWeapon = restored.actor.backpack.fetchItemRaw(weaponId);

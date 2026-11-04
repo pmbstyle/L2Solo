@@ -29,6 +29,8 @@ try {
         'two actually executable units justify the same journey');
     assert.equal(Market.canTravelForPurchase({ ...state, adena: 10 }, { selfId: 1835, amount: 200, town: 'Dion' }), false,
         'desired 200 units never grant their benefit to an affordable one-unit fill');
+    assert.equal(Market.canTravelForPurchase(state, { selfId: 1835, amount: 1, town: 'Dion', purpose: 'wealth_craft' }), true,
+        'a craft input travels on the basket that chose it: its value already paid the trip');
     travelHours = 0;
     assert.equal(Market.canTravelForPurchase(state, { selfId: 1835, amount: 1, town: 'Dion' }), true,
         'the already justified town visit can buy one unit');

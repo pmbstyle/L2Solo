@@ -36,6 +36,7 @@ function create(adapter) {
         npcShopRow: (npcId, itemId) => adapter.npcShopRow?.(Number(npcId), Number(itemId)) ?? null,
         npcTownOffers: () => adapter.npcTownOffers?.() ?? null,
         npcPriceForItem: id => adapter.npcPriceForItem?.(Number(id)) ?? null,
+        npcPrices: () => adapter.npcPrices?.() ?? null,
         sourceIndexFor: spots => adapter.sourceIndexFor?.(spots) ?? null,
         sourcesForItem: (id, options = {}) => {
             const kind = options.kind === 'drop' ? 'drops' : options.kind === 'spoil' ? 'spoils' : options.kind;
@@ -116,6 +117,7 @@ function native() {
         npcShopRow: (npcId, itemId) => shops().rowForNpc(npcId, itemId),
         npcTownOffers: () => shops().townOffers(),
         npcPriceForItem: id => shops().townPriceForItem(id),
+        npcPrices: () => shops().townPrices(),
         sourceIndexFor: spots => sources().sourcesByItem(spots),
         sourcesForItem: (id, { kind } = {}) => sources().rawSourcesForItem(id, kind),
         selectedSourcesForItem: (id, spots) => hasSelectedSources(spots) ? sources().sourcesByItem(spots).get(id) || EMPTY : null,

@@ -8,8 +8,14 @@
 // pulls the mob off its pet. Pure: the hot adapter reads Npc.getHating and
 // SummonControl.canTake, the cold one the fight's two hate counts and the
 // pet's hold; both price a hit by BotTargetMatchup.expectedHit before the cast.
+// With its pet dead and the mob on it, a solo owner strikes while it wins alone
+// (winsAlone): the recast waits.
 
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
+const Diagnostics = require('../Economy/EconomyDiagnostics');
+let TargetMatchup = null;
+// lazy: BotTargetMatchup loads this file at its own load (ownerCap, binds), resolved on first use.
+const targetMatchup = () => TargetMatchup || (TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup'));
 
 // The classes that send a pet ahead: a summoner, a necromancer.
 function binds(value) {
@@ -36,4 +42,17 @@ function ownerCap(petDamage, ownerHit) {
     return ownerHit > 0 ? Math.floor(petDamage / ownerHit) * ownerHit : petDamage;
 }
 
-module.exports = { binds, ownerWaits, ownerCap };
+// Does a solo owner under the mob, its pet dead, win with no pet? Then it strikes
+// and the recast waits (docs/game-decisions.md, T163): the cast is long, a new pet
+// starts from no hate and cannot take the mob. Below that it recasts, as striking
+// on regardless dies far more. The solo gate's own read, at the HP and MP left:
+// profiles, the bot's side (a pet to raise does not count); enemy, the mob with
+// its HP left as maxHp. Each adapter asks only with the mob on the owner.
+function winsAlone({ profiles, hp, mp, enemy }) {
+    const Matchup = targetMatchup();
+    const wins = Matchup.soloSurvival(Matchup.ownersAtVitals(profiles, hp, mp), { ...enemy, engaged: true }).eligible === true;
+    if (Diagnostics.active()) Diagnostics.count('pet_tank', wins ? 'strikes_alone' : 'recasts_under_mob', 'all');
+    return wins;
+}
+
+module.exports = { binds, ownerWaits, ownerCap, winsAlone };

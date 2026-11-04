@@ -1,0 +1,73 @@
+name: Picked tests
+
+# Runs chosen test files of one commit, each as PR checks runs it
+# (scripts/run-tests.js --only: databaseIsolation, 180 s per file, the raw
+# geodata when a picked file needs it). Started by a push to
+# tests/<name>/<a,b,c> (names as --only takes them: x for tests/test_x.js),
+# or to tests/<name> whose commit holds ci-tests.txt (names by line or comma).
+# Up to 8 files a shard, at most 12 shards.
+
+on:
+  push:
+    branches: ['tests/**']
+
+jobs:
+  plan:
+    name: Plan
+    runs-on: ubuntu-latest
+    outputs:
+      only: ${{ steps.plan.outputs.only }}
+      count: ${{ steps.plan.outputs.count }}
+      shards: ${{ steps.plan.outputs.shards }}
+      geodata: ${{ steps.plan.outputs.geodata }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: plan
+        env:
+          REF: ${{ github.ref_name }}
+        run: |
+          list=$(echo "$REF" | cut -d/ -f3-)
+          if [ -z "$list" ]; then
+            [ -f ci-tests.txt ] || { echo "push to tests/<name>/<a,b> or commit ci-tests.txt"; exit 1; }
+            list=@ci-tests.txt
+          fi
+          only=$(node scripts/run-tests.js --only="$list" --list | paste -sd, -)
+          n=$(echo "$only" | tr ',' '\n' | wc -l)
+          count=$(( (n + 7) / 8 )); [ "$count" -le 12 ] || count=12
+          echo "$n files in $count shards: $only"
+          echo "only=$only" >> $GITHUB_OUTPUT
+          echo "count=$count" >> $GITHUB_OUTPUT
+          echo "shards=[$(seq -s, 1 "$count")]" >> $GITHUB_OUTPUT
+          echo "geodata=$(node scripts/run-tests.js --only="$only" --needs-geodata)" >> $GITHUB_OUTPUT
+
+  tests:
+    name: Tests (${{ matrix.shard }}/${{ needs.plan.outputs.count }})
+    needs: plan
+    runs-on: ubuntu-latest
+    # As PR checks: a file that never exits must not hold its shard for 6 h.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.plan.outputs.shards) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - if: needs.plan.outputs.geodata == 'true'
+        uses: actions/cache@v4
+        with:
+          path: data/Geodata
+          key: geodata-${{ hashFiles('scripts/geodata-release.json') }}
+      - if: needs.plan.outputs.geodata == 'true'
+        run: npm run geodata
+      - name: Run tests
+        env:
+          L2NODE_TEST_TIMEOUT_MS: 180000
+          ONLY: ${{ needs.plan.outputs.only }}
+        run: node scripts/run-tests.js --keep-going --only="$ONLY" --shard=${{ matrix.shard }}/${{ needs.plan.outputs.count }}

@@ -148,6 +148,11 @@ try {
     searchTick(leader, 42000);
     assert.strictEqual(leader.lastDecision.action, 'party_recovery');
     assert.strictEqual(wideScans, scansBeforeRecovery, 'recovery takes priority over exploring');
+    // Once sitting, the party rests to RestPolicy's "rest until" line (95 %), as a cold party does.
+    leader.actor.hp = 40;
+    searchTick(leader, 42500);
+    assert.strictEqual(leader.lastDecision.action, 'party_recovery', 'a resting party does not stand at 40% HP');
+    leader.actor.hp = 29;
     leader.incoming = other;
     searchTick(leader, 44000);
     assert.strictEqual(attacks.at(-1)[1], other.fetchId(), 'incoming combat interrupts recovery and exploration');

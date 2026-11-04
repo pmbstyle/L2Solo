@@ -14,8 +14,7 @@ const Walk = invoke('GameServer/Bot/Economy/WalkBack');
 const Trip = invoke('GameServer/Bot/Population/ColdTrip');
 const Routes = invoke('GameServer/Bot/Travel/TravelRoutes');
 const Karma = invoke('GameServer/Karma');
-const Config = invoke('GameServer/Bot/Population/PopulationConfig');
-const original = { random: Math.random, honest: Config.coldHonestTravel, plan: Trip.spotPlan };
+const original = { random: Math.random, plan: Trip.spotPlan };
 let seed = 20261005;
 Math.random = () => {
     seed = (seed + 0x6D2B79F5) | 0;
@@ -39,18 +38,16 @@ try {
     assert(raw.length > 1500 && profiles.length > raw.length);
     Math.random = original.random;
     let compared = 0;
-    for (const honest of [false, true]) for (const karma of [0, 3000]) {
-        Config.coldHonestTravel = honest;
+    for (const karma of [0, 3000]) {
         for (const catalog of catalogs) for (const spot of catalog) {
             const from = Routes.landingTown(spot.center), state = { stats: { karma } };
             const expectedMs = Karma.closesTowns(karma) ? Trip.runMs(from, spot.center)
-                : honest ? original.plan({ loc: from, stats: {} }, spot.center).durationMs : Trip.AUTHOR_TRIP_MS;
+                : original.plan({ loc: from, stats: {} }, spot.center).durationMs;
             assert.equal(Walk.hours(spot.id, state, catalog), expectedMs / 3600000);
             compared++;
         }
     }
-    assert.equal(compared, (raw.length + profiles.length) * 4);
-    Config.coldHonestTravel = true;
+    assert.equal(compared, (raw.length + profiles.length) * 2);
     Walk.reset();
     let calls = 0;
     Trip.spotPlan = (...args) => { calls++; return original.plan(...args); };
@@ -83,7 +80,7 @@ try {
     console.log(JSON.stringify({ profiles: profiles.length, raw: raw.length, exactNativeComparisons: compared,
         alternatingBuilds: 2, nativePlanCalls: warmedCalls, reset: true }));
 } finally {
-    Math.random = original.random; Config.coldHonestTravel = original.honest; Trip.spotPlan = original.plan;
+    Math.random = original.random; Trip.spotPlan = original.plan;
     fs.rmSync(isolated.directory, { recursive: true, force: true });
 }
 process.exit(0);

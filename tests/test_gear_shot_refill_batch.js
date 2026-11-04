@@ -42,7 +42,7 @@ try {
     assert(Progression.assess(state).required, 'the Tyrant still needs its C-grade legs');
     const before = Economy.forState(state, deps), stock = before.stock('shots');
     assert.equal(stock.survivalTarget, 100); assert.equal(stock.target, 400);
-    assert.equal(before.network.focus[0], 'stock:shots');
+    assert.equal(before.network.activity.rootKey, 'stock:shots');
     assert.equal(before.network.activity.amount, 390,
         'one available market lot fills the four-hour outing instead of only the missing survival tranche');
     const decision = invoke('GameServer/Bot/Population/ColdEconomyDecision').capture(before, state);
@@ -52,7 +52,8 @@ try {
     for (const held of [100, 400]) {
         const filled = { ...state, inventory: { ...inventory, 1464: { ...inventory[1464], amount: held } },
             stats: { ...state.stats, ...before.statsPacket } };
-        const after = Economy.forState(filled, deps);
+        // The bot's own step reads the fill (another's question reads the held plan).
+        const after = Economy.forState(filled, { ...deps, caller: 'step' });
         assert.equal(after.network.focus[0], 'power:420:11',
             'both a partial survival fill and a full outing restore the remembered Theca equipment goal');
         assert.notEqual(after.network.activity.rootKey, 'stock:shots');

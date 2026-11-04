@@ -117,11 +117,9 @@ function standingBuyNeed(state, lines, candidates) {
     const items = new Set(lines.filter((line) => Number(line.count) > 0).map((line) => Number(line.selfId)));
     if (!items.size) return false;
     const needs = candidates || invoke('GameServer/Bot/Goals/NeedsEvaluator').evaluate(state);
-    // ARCH-NOTE: NeedsEvaluator's native survival floor carries rest/revive
-    // in plan.kind; it no longer sets the retired target.condition field.
+    // NeedsEvaluator's survival floor carries rest/revive in plan.kind.
     // Recovery defers wish judgement, while a native store plan holds no WTB.
-    if (needs.length === 1 && (needs[0].target?.condition === 'alive_and_recovered'
-        || needs[0].type === 'recover' && ['rest', 'revive'].includes(needs[0].plan?.kind))) {
+    if (needs.length === 1 && needs[0].type === 'recover' && ['rest', 'revive'].includes(needs[0].plan?.kind)) {
         return !isNativeSource(state.stats?.equipmentPlan?.market?.sourceType);
     }
     // A purchase planned at a native store never holds a WTB, rest or not.

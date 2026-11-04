@@ -89,6 +89,7 @@ function restoreColdAfterActivationFailure(state) {
 
 const HotActivation = {
     activate(stateOrName, reason = 'activation', options = {}) {
+        const transitionStartedAt = Date.now();
         const loadState = typeof stateOrName === 'string'
             ? LifeState.findByName(stateOrName)
             : Promise.resolve(stateOrName);
@@ -112,11 +113,11 @@ const HotActivation = {
                 && options.interruptBackgroundActivity !== true) {
                 return { ok: false, reason: 'pk_encounter_only', state };
             }
-            // With honest travel a traveller a player invites or calls leaves its
-            // trip, as a hunter leaves its spot (design 5.9).
+            // A traveller a player invites or calls leaves its trip, as a hunter
+            // leaves its spot (design 5.9).
             const leavesTrip = options.interruptBackgroundActivity === true
                 || (['remote_invite', 'party_invite', 'remote_chat_come'].includes(reason)
-                    && invoke('GameServer/Bot/Population/ColdTrip').travellerAnswers(state));
+                    && state.activity === 'traveling');
             if (state.activity === 'traveling' && !leavesTrip) {
                 return { ok: false, reason: 'in_transit', state };
             }
@@ -206,7 +207,6 @@ const HotActivation = {
                 return recipesReady.then(() => Promise.resolve(BotManager.loadAndSpawnBot(state.accountName, {
                         name: state.name,
                         homeRegion: state.homeRegion,
-                        newbieAnchor: !!state.stats?.newbieAnchor,
                         plan,
                         backgroundActivity: state.activity || 'hunting',
                         currentSpot: spotSnapshot(placement.spot),
@@ -248,7 +248,7 @@ const HotActivation = {
                         activationDistance(placement, options),
                         (options.recoverOnActivation || options.readyOnActivation) ? 'yes' : 'no'
                     );
-                    Metrics.recordActivation();
+                    Metrics.recordActivation(Date.now() - transitionStartedAt);
                     return { ok: true, state, reason };
                 }));
             }).catch((error) => {

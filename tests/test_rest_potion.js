@@ -130,6 +130,9 @@ try {
     assert(Math.abs(shortened - hotBottles * 336 / seatedPerSecond * 1000) < 2000,
         `the rest is shorter by the seconds the bottles saved (${shortened} ms, from ${sitting.hp} HP)`);
     assert(rest.patch.stats.restUntil - T >= hotBottles * Potions.HOT_MS, 'the rest lasts while the bottles run');
+    // A step time fed by a saved fraction: the deadline stays whole, or the bot takes no command.
+    const fractional = round(tired.state, T + 0.5);
+    assert(Number.isSafeInteger(fractional.patch.stats.restUntil), `a rest deadline is whole milliseconds (${fractional.patch.stats.restUntil})`);
 
     // The potion stock (part 2): a solo hunter at a 0-death spot whose rest HP
     // holds owns the bottles the rule drinks; the survival tranche stays apart.

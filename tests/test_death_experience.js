@@ -142,7 +142,21 @@ async function run() {
     persistentActor.deathExperience = null;
     persistentActor.setExpSp(exp, 77);
     persistentActor.setLevel(level);
+    // C4 PcStat.addExp(-lost): the EXP a death takes washes karma by 1 per 260.
+    let karma = 500;
+    persistentActor.fetchKarma = () => karma;
+    persistentActor.setKarma = (value) => { karma = value; };
     await DeathExperience.applyDeathPenalty(null, persistentActor, { timestamp: 300 }).persistence;
+    const washed = Math.floor(expectedLoss / 260);
+    assert(washed > 0);
+    assert.strictEqual(karma, 500 - washed, 'a death with karma washes karma');
+    [storedCharacter] = await Database.execute(['SELECT karma FROM characters WHERE id = ?', [id]]);
+    assert.strictEqual(Number(storedCharacter.karma), 500 - washed, 'the washed karma persists with the death');
+    const coldKarma = DeathExperience.applyColdDeath({ level, exp, stats: { karma: 500 } }, { timestamp: 20 });
+    assert.strictEqual(coldKarma.state.stats.karma, 500 - washed, 'a cold death washes karma by the same rule');
+    assert.strictEqual(coldKarma.state.stats.deathExperience.karmaLost, washed);
+    assert.strictEqual(DeathExperience.applyColdDeath({ level, exp, stats: { karma: 500 } }, { timestamp: 20, pvpZone: true })
+        .state.stats.karma, 500, 'no karma wash inside a PvP zone');
     await DeathExperience.clearPendingRestoration(persistentActor, 'restart_to_town', 301);
     storedDeath = await Database.fetchCharacterDeathExperience(id);
     assert.strictEqual(storedDeath.resolutionReason, 'restart_to_town');

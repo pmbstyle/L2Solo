@@ -44,9 +44,9 @@ function world(spawns, sessions = []) {
     return {
         user: { sessions },
         npc: { spawns, grid: {} },
-        indexCalls: 0,
-        indexSpawnsInGrid() {
-            this.indexCalls += 1;
+        gridRemovals: 0,
+        removeNpcFromGrid() {
+            this.gridRemovals += 1;
         }
     };
 }
@@ -64,7 +64,7 @@ function wait(ms) {
     assert.strictEqual(NpcDecay.schedule(directWorld, directViewer, directNpc, 5), true);
     await wait(30);
     assert.strictEqual(directWorld.npc.spawns.length, 0, 'a corpse timer must remove the NPC from the world');
-    assert.strictEqual(directWorld.indexCalls, 1, 'corpse removal must rebuild the NPC grid');
+    assert.strictEqual(directWorld.gridRemovals, 1, 'corpse removal must take the NPC out of the grid');
     assert.strictEqual(
         directViewer.sent.map(deleteObjectId).filter((id) => id === directNpc.fetchId()).length,
         1,
@@ -106,8 +106,8 @@ function wait(ms) {
     const gridFailureNpc = npc(9100006);
     NpcVisibility.trackNpcPacket(gridFailureViewer, npcInfo(gridFailureNpc.fetchId()));
     const gridFailureWorld = world([gridFailureNpc], [gridFailureViewer]);
-    gridFailureWorld.indexSpawnsInGrid = () => {
-        throw new Error('grid rebuild failed');
+    gridFailureWorld.removeNpcFromGrid = () => {
+        throw new Error('grid removal failed');
     };
     assert.doesNotThrow(() => NpcDecay.decay(gridFailureWorld, gridFailureNpc), 'grid failure must not abort corpse deletion');
     assert.strictEqual(gridFailureWorld.npc.spawns.length, 0, 'grid failure must not retain the corpse');

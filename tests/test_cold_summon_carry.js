@@ -133,6 +133,62 @@ assert.strictEqual(lowMpPreparation.summonCasts, 0, 'below the authored MP cost 
 assert.strictEqual(lowMpPreparation.memberResults[0].state.inventory[1459].amount, 1);
 assert.strictEqual(lowMpPreparation.memberResults[0].result.patch.vitals.mp, ownedSnapshot.skills[0].mp - 1);
 
+// A summoner whose servitor is gone, on ground it may hunt only with its pet up
+// (the gate, stubbed here, admits a side whose pet stands beside it, not one it
+// would still cast in the fight: its cast time counts against it). C4: a
+// summoner raises its pet before it engages. With MP and reuse it casts the pet
+// out of the fight and fights the next round; short of the summon's MP it sits
+// until it has it, then summons; on the summon's reuse it sits exactly until the
+// reuse ends, then summons. Its ground is not raised: the route sees it whole.
+const Match = invoke('GameServer/Bot/AI/BotTargetMatchup'), spotShares = Match.spotShares;
+Match.spotShares = profiles => new Map([[{ selfId: 0 },
+    profiles.some(profile => profile.servitor === true && !(Number(profile.summonCastMs) > 0)) ? 1 : 0]]);
+try {
+    const round = (state, at, elapsedMs = 12000) => BackgroundResolver.resolveSolo({ state, spot, elapsedMs, timestamp: at, rng: () => 0.1 });
+    const next = (state, result) => ({ ...state, ...result.patch, stats: result.patch.stats });
+    // Rests until up again; returns the state and the time it is up.
+    const restOut = (state, at, until) => {
+        for (let rests = 0; state.activity === 'resting' && rests < 4; rests++) {
+            const rest = round(state, until, until - at);
+            state = next(state, rest);
+            at = until;
+            until = rest.nextResolveAt;
+        }
+        assert.strictEqual(state.activity, 'hunting', 'the rest ends');
+        return { state, at, until };
+    };
+    // Raised out of the fight, then a fight with the pet up.
+    const raisesThenFights = (state, at, label) => {
+        const summoned = round(state, at);
+        assert.strictEqual(summoned.debug.summonUses, 1, `${label}: it raises its pet out of the fight`);
+        assert.strictEqual(summoned.debug.attemptedFights, 0, `${label}: before it engages`);
+        assert.strictEqual(summoned.debug.unhuntable, false, `${label}: its ground is not raised`);
+        assert.strictEqual(summoned.patch.activity, 'hunting');
+        const fought = round(next(state, summoned), summoned.nextResolveAt, summoned.nextResolveAt - at);
+        assert(fought.debug.attemptedFights > 0, `${label}: the next round fights with its pet`);
+        assert.strictEqual(fought.debug.summonUses || 0, 0, `${label}: the pet is not cast again`);
+    };
+    raisesThenFights(alreadyOwned, timestamp, 'full MP');
+
+    // Far below the cost: the round's standing regeneration does not bring it there.
+    const drained = { ...alreadyOwned, vitals: { ...alreadyOwned.vitals, mp: 0 } };
+    const short = round(drained, timestamp);
+    assert.strictEqual(short.patch.activity, 'resting', 'short of the summon\'s MP it sits instead of standing');
+    assert.strictEqual(short.debug.unhuntable, false, 'its ground is not raised');
+    assert(short.patch.stats.restUntil > timestamp && short.nextResolveAt === short.patch.stats.restUntil);
+    const fromShort = restOut(next(drained, short), timestamp, short.nextResolveAt);
+    raisesThenFights(fromShort.state, fromShort.until, 'rested for MP');
+
+    const reuseEnds = timestamp + 5000;
+    const cooling = { ...alreadyOwned, stats: { ...alreadyOwned.stats,
+        coldCombat: { ...alreadyOwned.stats.coldCombat, cooldowns: { 1276: reuseEnds } } } };
+    const waiting = round(cooling, timestamp);
+    assert.strictEqual(waiting.patch.activity, 'resting', 'on the summon\'s reuse it sits');
+    assert.strictEqual(waiting.patch.stats.restUntil, reuseEnds, 'exactly until the reuse ends');
+    const fromReuse = restOut(next(cooling, waiting), timestamp, waiting.nextResolveAt);
+    raisesThenFights(fromReuse.state, fromReuse.until, 'after the reuse');
+} finally { Match.spotShares = spotShares; }
+
 
 // Coming back near the player: charges return with their deadline, the
 // servitor returns once with its HP and remaining life.

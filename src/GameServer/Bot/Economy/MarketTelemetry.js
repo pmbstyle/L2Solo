@@ -121,7 +121,7 @@ function recordTrade(details = {}) {
     // AFK settlement writes its own canonical trade row in the same SQLite
     // transaction. Telemetry still updates live counters, but must not journal
     // the same exchange again with a second event key.
-    if (Database.isReady?.() && !String(trade.sourceType || '').startsWith('afk_')) {
+    if (Database.isReady() && !String(trade.sourceType || '').startsWith('afk_')) {
         Database.recordMarketTrade(trade).catch((error) => {
             add('journalWriteFailures');
             if (Date.now() - lastJournalWarningAt < 60_000) return;

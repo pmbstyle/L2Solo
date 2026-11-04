@@ -228,7 +228,9 @@ function privateSession(name, id, selfId) {
                 backpack: { fetchItems: () => [], fetchItemFromSelfId: () => ({ fetchAmount: () => 100000 }) } };
             try {
                 // ARCH-NOTE: E3 keeps player-assigned errands; autonomous actors use their funded leaf.
-                const errand = Shopping.planErrand({ actor: bot, partyCompanion: true, coldLifeState: { stats: {} } }, bot, { name: 'Giran' });
+                // The companion spends from its money packet: no packet, no budget, no errand.
+                const errand = Shopping.planErrand({ actor: bot, partyCompanion: true,
+                    coldLifeState: { stats: { money: [1000, 0, 0, 0] } } }, bot, { name: 'Giran' });
                 assert(queried > 0 && errand?.itemId === 1);
             } finally { Market.bestOffer = originalBest; Market.hotOffers = originalHot; }
         });

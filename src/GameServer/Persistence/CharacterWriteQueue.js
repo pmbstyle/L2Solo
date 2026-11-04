@@ -47,7 +47,7 @@ function take(characterId) {
 }
 
 function databaseReady() {
-    return typeof Database.isReady !== 'function' || Database.isReady();
+    return Database.isReady();
 }
 
 // A failed write puts its snapshots back: under a newer snapshot already

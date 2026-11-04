@@ -29,6 +29,12 @@ const solo = BackgroundResolver.resolveSolo({ state: exhausted, spot: null, elap
 assert.strictEqual(solo.patch.activity, 'resting');
 assert.strictEqual(solo.nextResolveAt, restUntil, 'a resting solo bot must sleep until its persisted recovery deadline');
 
+// A pet's regen and a potion's ms are fractions; a fractional clock fails the
+// command checkpoint, so the deadline that carries them is whole, and not early.
+const fractional = BackgroundResolver.resolveRest({ ...exhausted, stats: { ...exhausted.stats, restUntil: restUntil + 0.25 } },
+    0, timestamp, { requireMana: true });
+assert.strictEqual(fractional.patch.stats.restUntil, restUntil + 1, 'a rest deadline is whole milliseconds, rounded up');
+
 const party = { partyId: 'rest-scheduling', cohesion: 0.7, risk: 0.2, stats: { restUntil } };
 const spot = { id: 'test_spot', name: 'Test Spot', center: {}, rewards: { exp: 1, sp: 1, adenaMin: 1, adenaMax: 1 } };
 const restedParty = BackgroundPartyResolver.resolve({

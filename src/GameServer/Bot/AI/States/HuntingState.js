@@ -196,6 +196,7 @@ function limitTargetCandidates(session, bot, candidates) {
         ? VISIBLE_TARGET_CANDIDATE_LIMIT
         : FULL_TARGET_CANDIDATE_LIMIT;
     if (candidates.length <= limit) return candidates;
+    Diagnostics.count('target_scan', 'capped', session.hotActorLod?.tier === 'visible' ? 'visible' : 'full');
     return candidates
         .map((npc) => ({ npc, distance: targetDistance(bot, npc) }))
         .sort((first, second) => first.distance - second.distance)
@@ -290,8 +291,8 @@ function findPreferredMonster(session, bot, radius, options = {}) {
             return {
                 npc,
                 evaluation: BotTargetScorer.score(scoreContext),
-                readiness: options.readyOnly ? encounterReadiness(bot, npc) : null,
                 scoreContext,
+                matchupTarget,
                 claimed
             };
         })
@@ -318,10 +319,12 @@ function findPreferredMonster(session, bot, radius, options = {}) {
     }
     // Prefer a fight we can finish, but retain a visible unready candidate
     // so the caller can recover instead of wandering while exhausted.
-    const ordered = options.readyOnly
-        ? [...ranked.filter(candidate => candidate.readiness.ready), ...ranked.filter(candidate => !candidate.readiness.ready)]
-        : ranked;
-    const scan = HuntingVisibility.select(session, 'solo', bot, ordered, candidate => candidate.npc);
+    // A solo scan's matchup is the bot's own: readiness reads the same profiles and views.
+    const ready = options.readyOnly ? readyRanked(bot, ranked, HuntingVisibility.batch(session, 'solo', bot),
+        partyActors.length ? readinessProfiles(bot) : readinessProfiles(bot, matchupProfiles, matchupStats), !partyActors.length) : null;
+    const ordered = ready ? ready.ordered : ranked;
+    const scan = HuntingVisibility.select(session, 'solo', bot, ordered, candidate => candidate.npc,
+        ready ? { start: ready.start, tail: ready.tail } : {});
     session.huntTargetScanPending = scan.pending;
     session.huntingTargetScan = { at: Date.now(), loc: botLocation(bot), radius,
         attackableNpcs: eligibleNearbyNpcs.length, eligibleAttackableNpcs: ranked.length };
@@ -359,11 +362,40 @@ function liveCurrentNpcTarget(session, bot, radius = session.huntingSearchRadius
     return targetDistance(bot, target) <= radius ? target : null;
 }
 
-function encounterReadiness(bot, target) {
-    return EncounterReadiness.evaluate({
-        hp: bot.fetchHp(), maxHp: bot.fetchMaxHp(), mp: bot.fetchMp(), maxMp: bot.fetchMaxMp(),
-        level: bot.fetchLevel(), manaDependent: RestPolicy.sitsForMana(bot)
-    }, { hp: target?.fetchHp?.(), maxHp: target?.fetchMaxHp?.(), level: target?.fetchLevel?.() });
+// What the bot has now, once per scan; a pet keeps its own HP (actorProfiles).
+function readinessProfiles(bot, profiles = TargetMatchup.actorProfiles([bot]), stats = TargetMatchup.profileStats(profiles)) {
+    return { stats, remaining: EncounterReadiness.atVitals(profiles, bot.fetchHp(), bot.fetchMp(),
+        profiles.find(profile => profile.servitor === true)) };
+}
+// A mob the bot would take as it stands: a wounded one asks what is left of it.
+// view: the scan's own view of the target, when it was read with these stats.
+function encounterReadiness(bot, target, own = readinessProfiles(bot), view = TargetMatchup.targetView(target, own.stats)) {
+    return EncounterReadiness.evaluate(own.remaining, { ...view, maxHp: target.fetchHp?.() ?? view.maxHp });
+}
+// The scan's fights, ready ones first, and where the next visibility batch starts
+// in that order. The batch resumes where a blocked one stopped (batch.resumeId).
+// Before the refused tail: at that mob among the ready ones, or, when it is no
+// longer ready, at the first ready mob ranked after it, else at the first refused
+// one. Readiness is read up to the batch's checks and the one after it (the next
+// resume point); the fights past it stay unread between the ready and the refused,
+// so a blocked batch leaves the scan pending and the next tick reads on. Once the
+// batches reached the refused tail (batch.inTail) every fight is read and the batch
+// goes on at the resume mob's place among the refused, so the ready ones already
+// checked are not checked again and the scan ends. tail: where the refused start.
+function readyRanked(bot, ranked, batch, own, sameView = false) {
+    const resumeAt = batch.resumeId === null ? -1 : ranked.findIndex(candidate => candidate.npc.fetchId() === batch.resumeId);
+    const ready = [], refused = [], all = batch.inTail && resumeAt >= 0;
+    let start = resumeAt < 0 ? 0 : null, index = 0;
+    for (; index < ranked.length && (all || !(start !== null && ready.length > start + batch.checks)); index++) {
+        const candidate = ranked[index];
+        candidate.readiness = encounterReadiness(bot, candidate.npc, own, sameView ? candidate.matchupTarget : undefined);
+        if (!candidate.readiness.ready) { refused.push(candidate); continue; }
+        ready.push(candidate);
+        if (!all && start === null && index >= resumeAt) start = ready.length - 1;
+    }
+    if (all) start = ready.length + Math.max(0, refused.indexOf(ranked[resumeAt]));
+    const unread = ranked.slice(index);
+    return { ordered: [...ready, ...unread, ...refused], start: start ?? ready.length, tail: ready.length + unread.length };
 }
 
 function rememberEncounterReadiness(session, target, readiness) {
@@ -635,6 +667,7 @@ module.exports = {
     sellTripDue,
     pauseSelling,
     findPreferredMonster,
+    readinessProfiles,
     limitTargetCandidates,
     claimedTargetIds,
     tick(session, bot, Generics, BotAI) {
@@ -713,7 +746,9 @@ module.exports = {
                 const amount = invoke('GameServer/Bot/Population/ColdEconomyDecision').remainingToOrder(leaf, state);
                 if (amount > 0 && invoke('GameServer/Bot/Economy/ColdMarketService').canTravelForPurchase(state,
                     { selfId: Number(leaf.itemId || leaf.object?.itemId || leaf.object),
-                        amount, town: leaf.town, valueHours: leaf.valueHours,
+                        amount, town: leaf.town, valueHours: leaf.valueHours, required: leaf.required === true,
+                        // The root's whole need still to buy: a part fill weighs its road as the visit does.
+                        wanted: amount + Math.max(0, Number(leaf.wanted || 0) - Number(leaf.amount || 0)),
                         ...(!/^stock:/.test(String(leaf.rootKey)) && leaf.r > 0 ? { r: leaf.r } : {}) }, { economy })) {
                     const trip = startShopping(session, bot, BotAI, 'Heading to town for my next planned purchase.', leaf.town);
                     if (trip !== 'deferred' && trip !== false) return;
@@ -990,6 +1025,13 @@ module.exports = {
                 session.lastDecision = { action: decision.action, reason: decision.reason,
                     spotId: decision.spot.id, spotName: decision.spot.name };
                 beginSpotRelocation(session, bot, decision.spot, BotAI, decision.deferredOccupation);
+                return;
+            }
+            // Its ground admits it once its pet is up or whole (BotDecisionService): it
+            // raises the pet out of the fight, or sits for the MP or the pet's HP.
+            if (decision.action === 'summon' && SummonerTactics.raisePet(session, bot, Generics)) return;
+            if (decision.action === 'rest' && decision.reason === 'ground_needs_rest') {
+                beginVoluntaryRecovery(session, bot, BotAI);
                 return;
             }
         }

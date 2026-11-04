@@ -24,6 +24,7 @@ function die(session, actor, npc) {
         RaidBossMinionManager.onBossDeath(invoke('GameServer/World/World'), npc, session);
     }
     npc.state.setDead(true);
+    if (npc.fetchIsSummon?.() === true) invoke('GameServer/Actor/Generics/ReceivedHit').creditKill(session, actor, npc);
     invoke('GameServer/Bot/AI/HotPartyCastTracker').cancelForDeadNpc(npc);
     clearEffectsOnDeath(npc);
     invoke('GameServer/Pets/FairyTrees').onDeath(session, actor, npc);

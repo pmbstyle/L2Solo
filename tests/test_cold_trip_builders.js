@@ -7,8 +7,7 @@ require('../src/Global');
 // Pins every cold trip a builder starts (U18): the market trip and its return
 // (GoalExecutor), the craft station trip and its three returns
 // (ColdCraftingService), the Mammon trip and its return (BotMammonUnseal), the
-// hunting route (HuntingTravel) and the karma washing walk (ColdKarmaPolicy),
-// with [BotPopulation] coldHonestTravel off (the default).
+// hunting route (HuntingTravel) and the karma washing walk (ColdKarmaPolicy).
 // Each case records the trip, the timing and the stats the builder writes; the
 // digest lives in tests/fixtures/cold_trip_builders.json. Run with --record to
 // rewrite it after a decided change, and review the diff.
@@ -177,8 +176,8 @@ async function cases() {
         loc: { locX: Mammon.loc.locX + 5000, locY: Mammon.loc.locY, locZ: Mammon.loc.locZ },
         stats: { ...mammonTrip.stats, travel: null } }, T)));
 
-    // The hunting route (solo and party) and the karma washing walk: with
-    // coldHonestTravel off these keep the author's times.
+    // The hunting route (solo: its own time; party: the route's shared time)
+    // and the karma washing walk.
     const { beginHuntingTrip } = require('../src/GameServer/Bot/Population/HuntingTravel');
     const route = { needed: true, mode: 'solo', spotId: SPOT.id, regionName: SPOT.name, travelMs: 25000, to: { ...SPOT.center } };
     out.hunting_solo = digest(beginHuntingTrip(hunter(), route, T));

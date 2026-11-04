@@ -25,6 +25,6 @@ function route({ leader, party, members, spot, timestamp, spots, wars }) {
     if (!destinations) return { active: true, route: null };
     const to = destinations[String(leader.characterId)];
     return { active: true, route: { ...movement, to, destinations,
-        travelMs: require('./ColdTrip').spotTripMs(leader, to), cause: returning ? 'clan_war_return' : 'clan_war_attack' } };
+        travelMs: require('./ColdTrip').spotPlan(leader, to).durationMs, cause: returning ? 'clan_war_return' : 'clan_war_attack' } };
 }
 module.exports = { route };

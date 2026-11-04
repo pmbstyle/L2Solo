@@ -157,6 +157,11 @@ try {
     assert.strictEqual(Hunting.findPreferredMonster(tiredSession, tiredHunter, 2500,
         { ...recovery, readyOnly: true }), null, 'easier recovery must wait for HP before the next fight');
     assert.strictEqual(tiredSession.lastEncounterReadiness.ready, false);
+    // A pet beside its owner keeps its own HP: the owner's vitals do not cut it.
+    const pet = { ...hunter, summon: undefined, fetchHp: () => 5000, fetchMaxHp: () => 5000 };
+    const remaining = Hunting.readinessProfiles({ ...hunter, fetchHp: () => 1, summon: pet }).remaining;
+    assert.strictEqual(remaining.at(-1).servitor, true, 'a summoner is judged with its pet');
+    assert.strictEqual(remaining.at(-1).maxHp, 5000);
     World.fetchNpcsInRadius = () => [easier, hidden];
     assert.strictEqual(Hunting.findPreferredMonster(session, hunter, 2500, recovery), hidden,
         'an ordinary eligible target wins before easier-ground recovery');
@@ -178,8 +183,10 @@ try {
 
     // One pull rule (T140): a hot hunter judges the mob and the pack it stands
     // before, not a spot's mean. The same species alone is a fight it takes.
+    // Lean: it beats one mob three times over, so it ends that fight above its
+    // potion line (BotEncounterReadiness), and no pack.
     const full = Matchup.soloSurvival(Matchup.actorProfiles([hunter]), Matchup.targetView(neutralNpc)).survivalRatio;
-    const scale = 1.5 / full;
+    const scale = 3 / full;
     const lean = { ...hunter, fetchMaxHp: () => hunter.fetchMaxHp() * scale };
     const packMate = (id, x) => Object.assign(candidate(id, x), { fetchHostile: () => false, fetchClanName: () => 'pack', fetchClanHelpRadius: () => 600 });
     const pack = [1, 2, 3, 4, 5, 6].map(n => packMate(930000 + n, 300 + n));
@@ -234,6 +241,11 @@ const immuneSpot = { id: 'resist-test', minLevel: 35, maxLevel: 45, avgLevel: 40
     for (let pass = 0; pass < 6; pass++) {
         const ratio = Matchup.soloSurvival([safeArcher], resistantTarget).survivalRatio;
         safeArcher = { ...safeArcher, maxHp: safeArcher.maxHp * 1.6 / ratio };
+    }
+    // Then enough more that it ends the slow resisted fight above its potion line,
+    // with the margin a long fight asks (BotEncounterReadiness).
+    for (let pass = 0; pass < 40 && !Matchup.soloCanHunt([safeArcher], resistantTarget).eligible; pass++) {
+        safeArcher = { ...safeArcher, maxHp: safeArcher.maxHp * 1.25 };
     }
     assert(Matchup.spotMatchup(immuneSpot, [safeArcher], { soloSafety: true }).eligible);
     assert(!Matchup.spotMatchup(immuneSpot, [safeArcher], { soloSafety: false }).eligible,

@@ -10,17 +10,18 @@ const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const Spots = invoke('GameServer/Bot/Population/SpotProfiles');
 const timestamp = 1793485080000;
 const inventory = {};
-// Native level-29 archer kit from a field that is safe overall but whose
+// Native archer kit (of a level-29 archer; at 31 it ends a lone Basilisk's fight above
+// its potion line, BotEncounterReadiness) from a field that is safe overall but whose
 // paired Basilisk spawn the archer cannot hunt. No live database or world.
 for (const [id, slots] of [[43, [6]], [50, [9]], [274, [14]], [390, [10]], [412, [11]],
     [847, [1, 2]], [890, [4, 5]], [907, [3]], [1122, [12]]]) {
     inventory[id] = { selfId: id, amount: slots.length, equipped: true,
         equippedCount: slots.length, equippedSlots: slots, slot: slots[0] };
 }
-const state = { characterId: 990501, phase: 'cold', activity: 'hunting', level: 29,
+const state = { characterId: 990501, phase: 'cold', activity: 'hunting', level: 31,
     stats: { classId: 35, role: 'archer', wishFocus: ['power:45:6', 1, 100000] },
     inventory, spotId: 'source-home', loc: {}, vitals: { hp: 1000, mp: 500 }, timing: {} };
-state.stats.coldCombat = Cold.legacySnapshot(state, Cold.skillRecordsFromTree(35, 29), timestamp);
+state.stats.coldCombat = Cold.legacySnapshot(state, Cold.skillRecordsFromTree(35, 31), timestamp);
 const profiles = Match.stateProfiles(state, { timestamp });
 const watcher = { selfId: 67, level: 25, count: 11, pulls: [[1, 1]] };
 const basilisk = { selfId: 72, level: 28, count: 2, pulls: [[2, 1]] };
@@ -64,7 +65,7 @@ for (let i = 0; i < 100; i++) {
 // taking the first source. The saved source is deliberately the bad one.
 const plan = { status: 'active', strategy: 'direct_drop', target: { selfId: 45, slot: 6 },
     next: { spotId: unsafe.id, npcId: 72, itemId: 45, amount: 1 } };
-const alternative = field('source-other-species', [{ selfId: 208, level: 26, count: 5, pulls: [[1, 1]] }]);
+const alternative = field('source-other-species', [{ selfId: 1099, level: 25, count: 5, pulls: [[1, 1]] }]);
 const routeSpots = [unsafe, mixed, alternative, home];
 const hunting = { ...state, stats: { ...state.stats, equipmentPlan: plan } };
 const original = Spots.cache;
@@ -74,9 +75,9 @@ try {
         'a stored unsafe source cannot hold its advisory fast path');
     const nativeSource = Planner.bestSourceForPlan(hunting, plan, routeSpots, { timestamp });
     assert.equal(nativeSource?.spotId, alternative.id, 'the native plan owner chooses the same alternative');
-    assert.equal(nativeSource?.npcId, 208, 'the alternative has a different target species');
+    assert.equal(nativeSource?.npcId, 1099, 'the alternative has a different target species');
     const retargeted = Planner.retargetPlanSource(hunting, plan, nativeSource);
-    assert.equal(retargeted.next.npcId, 208, 'native plan retargeting updates the combat target with the spot');
+    assert.equal(retargeted.next.npcId, 1099, 'native plan retargeting updates the combat target with the spot');
     assert.equal(Planner.isPlanSourceViableForState(hunting, retargeted, { spots: routeSpots, timestamp }), true);
     const options = { profiles: routeSpots, timestamp, hasRoom: () => true };
     assert.equal(Spots.findForState(hunting, options)?.id, alternative.id,

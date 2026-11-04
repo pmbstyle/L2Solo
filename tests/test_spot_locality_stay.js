@@ -6,12 +6,14 @@ const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const Spots = invoke('GameServer/Bot/Population/SpotProfiles');
 Data.init();
 
-// A level 6 orc mystic on its starter fists (no attack spell before level 7):
-// it survives level 1-2 keltirs, not the level 3-4 mobs mixed into the orc
-// starter fields (survival 1.75 and 0.93 against the gate's 1.0, T132).
+// A level 6 orc mystic on Training Gloves (no attack spell before level 7): it
+// takes level 1-2 keltirs, not the level 4 Kasha Wolves mixed into the orc
+// starter fields. A fight is taken if it ends above the potion line with a
+// margin by its length (BotEncounterReadiness); bare fists (pAtk 6) fight a
+// Longtail Keltir too long for that.
 const at = 1800000000000;
 const mystic = { classId: 49, level: 6, role: 'buffer', maxHp: 140, maxMp: 150,
-    pDef: 56, pAtk: 6, mAtk: 6, castSpd: 333, atkSpd: 325, weaponMask: 0,
+    pDef: 56, pAtk: 10, mAtk: 6, castSpd: 333, atkSpd: 325, weaponMask: 0,
     equipment: { weaponKind: 'Weapon.DualFist' }, skills: [] };
 const state = { characterId: 990108, level: 6, exp: Number(Data.experience[5]) + 1000, sp: 0, adena: 0,
     phase: 'cold', activity: 'hunting', spotId: 'dwarf-keltir', inventory: {}, timing: {},

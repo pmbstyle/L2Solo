@@ -107,13 +107,14 @@ function publicPrice(id, buyer, context) {
 }
 
 // E1: an SoE plus the actual missing one-hour kit, not a wallet percentage.
+// The kit at its NPC list price (survivalPrice), the price the reserve holds it at.
 function kitReserve(buyer, context) {
-    const escape = context.price(736) * Math.max(0, 1 - Number(buyer.inventory?.[736]?.amount || 0));
+    const escape = context.stock('scrolls').survivalPrice * Math.max(0, 1 - Number(buyer.inventory?.[736]?.amount || 0));
     return ['shots', 'potions'].reduce((sum, kind) => {
         const stock = context.stock(kind);
         const held = Number(buyer.inventory?.[stock.itemId]?.amount || 0);
         // Whole units since 080f085b: the survival stock is ceil(use per hour).
-        return sum + Math.max(0, Math.ceil(stock.usePerHour) - held) * stock.unitPrice;
+        return sum + Math.max(0, Math.ceil(stock.usePerHour) - held) * stock.survivalPrice;
     }, escape);
 }
 
@@ -151,7 +152,7 @@ function purchaseFor(buyer) {
     // The forecast only finds which candidates to stock; it is a probe, not
     // the bot's decision. Held as a decision, the new lines on its read items
     // would be a soft market change that waits 10 min (L70, principles 3.5).
-    const forecast = Economy.forState(buyer, { ...deps, rememberContext: false });
+    const forecast = Economy.forState(buyer, { ...deps, caller: 'meeting_prepare' });
     for (const wish of forecast.network.queue) {
         const id = Number(wish.object?.itemId);
         if (!id || wish.object?.kind || !template(id)?.etc?.slot) continue;
@@ -178,7 +179,6 @@ function purchaseFor(buyer) {
     assert.strictEqual(goal.target.amount, 1, 'this gear purchase needs one physical copy');
     assert(economy.network.queue.some((wish) => wish.key === goal.plan.wishKey && wish.funded),
         'a native shopping leaf comes from the funded queue');
-    assert.strictEqual(goal.plan.requiredAdena, 0, 'a funded shopping leaf has no funding shortfall');
     const reserve = kitReserve(buyer, economy);
     close(economy.survivalReserve, reserve, 'one-hour survival reserve');
     assert.strictEqual(economy.statsPacket.money[2], Math.round(reserve), 'native saved reserve rounding');
@@ -417,12 +417,23 @@ try {
     DataCache.npcSpawns = originalSpawns;
     assert.strictEqual(Pricing.npcPrice(npcItem), 899800, 'NPC price cache must refresh when spawns reload');
 
+    // The cold worker prices every NPC-sold item as main does, not only the gear
+    // it plans to buy: Soul Ore's NPC price is a crafted D soulshot's cost
+    // (FirstPrice), and without it the worker fell back to the buy-back.
+    const shopIds = [...new Set(invoke('GameServer/World/Generics/NpcShopBuyLists').allEntries().map(row => Number(row.selfId)))];
+    const mainPrices = shopIds.map(selfId => Pricing.npcPrice({ selfId }));
+    assert(shopIds.includes(1785) && Number.isFinite(Pricing.npcPrice({ selfId: 1785 })), 'Soul Ore has an NPC price on main');
+    const coldCatalog = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').npcPlanningCatalogRows();
+
     const originalInvoke = global.invoke;
     global.invoke = (name) => {
         assert(!name.startsWith('GameServer/World/'), 'snapshot pricing must not load live world dependencies');
         return originalInvoke(name);
     };
     try {
+        Pricing.useNpcOfferSnapshot(coldCatalog);
+        assert.deepStrictEqual(shopIds.map(selfId => Pricing.npcPrice({ selfId })), mainPrices,
+            'the cold worker reads the NPC price main reads, for a craft input as for gear');
         Pricing.useNpcOfferSnapshot([{ selfId: 178, price: 490800 }, { selfId: 178, price: 449900 }]);
         DataCache.npcSpawns = [];
         assert.strictEqual(Pricing.referencePrice(npcItem), 449900, 'worker snapshots must use the same cheapest NPC price');

@@ -210,10 +210,13 @@ async function stop(options = {}) {
     const id = ++sequence;
     const final = new Promise((resolve) => pending.set(id, { resolve, reject: resolve }));
     instance.postMessage({ type: 'shutdown', id, final: options.final !== false });
+    // The timeout is cleared once the final checkpoint answers: a pending timer kept
+    // the process (and every test) alive 3 s after shutdown.
+    let timeout = null;
     const result = await Promise.race([
         final,
-        new Promise((resolve) => setTimeout(() => resolve({ ok: false, error: 'checkpoint_shutdown_timeout' }), 3000))
-    ]);
+        new Promise((resolve) => { timeout = setTimeout(() => resolve({ ok: false, error: 'checkpoint_shutdown_timeout' }), 3000); })
+    ]).finally(() => clearTimeout(timeout));
     if (worker === instance) {
         await instance.terminate().catch(() => {});
         worker = null;

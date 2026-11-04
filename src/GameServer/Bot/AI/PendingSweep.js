@@ -1,4 +1,5 @@
 const NpcObjectIndex = require('../../World/NpcObjectIndex');
+const SpoilSweep = invoke('GameServer/Npc/SpoilSweep');
 
 // Death notifications enqueue work; issuing a skill is not proof of collection.
 // Keep the live corpse identity across route completion and combat interruptions.
@@ -17,11 +18,10 @@ function prune(session, bot, now = Date.now()) {
     const world = invoke('GameServer/World/World');
     for (const [id, entry] of pending) {
         const npc = entry.npc;
-        const spoil = npc.model?.spoil;
         if (now >= entry.deadlineAt || npc.corpseDecayState === 'removed'
             || NpcObjectIndex.find(world, id) !== npc || !npc.isDead?.()
-            || !npc.fetchAttackable?.() || !spoil?.spoiled || spoil.swept
-            || Number(spoil.spoilerId) !== Number(bot.fetchId())
+            || !npc.fetchAttackable?.() || !SpoilSweep.isUnswept(npc)
+            || SpoilSweep.spoilerId(npc) !== Number(bot.fetchId())
             || !bot.skillset?.fetchSkill?.(42)) {
             pending.delete(id);
         }

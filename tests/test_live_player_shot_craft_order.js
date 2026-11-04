@@ -22,7 +22,7 @@ function stub(object, key, value) {
 function refillContext(state) {
     const routing = Trip.prepare(state);
     let step; do { step = routing.next(); } while (!step.done);
-    const context = Economy.forState(state, { spots: [], routeRows: step.value, withNodes: true, rememberContext: false });
+    const context = Economy.forState(state, { spots: [], routeRows: step.value, withNodes: true, caller: 'meeting_prepare' });
     // Isolate the refill need from unrelated equipment upgrades. Public
     // providers, native prices, material stock, route and funding stay real.
     const network = new WishNetwork().build({ ...context.projection, roots: ['stock:shots'],

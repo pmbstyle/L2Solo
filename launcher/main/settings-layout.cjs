@@ -7,10 +7,10 @@ const hiddenFields = {
         'backgroundResolverEnabled', 'backgroundPartyEnabled', 'opportunisticRaidsEnabled', 'opportunisticRaidAliveFraction',
         'opportunisticRaidSearchIntervalMs', 'opportunisticRaidIntervalMs', 'opportunisticRaidMemberCooldownMs',
         'opportunisticRaidMaxParties', 'opportunisticRaidMaxFightSeconds', 'opportunisticRaidShotReserve', 'opportunisticRaidExpeditionMs',
-        'phasePolicyEnabled', 'directorEnabled', 'backgroundGovernorEnabled', 'backgroundJobTickMs', 'backgroundGovernorWindowMs',
+        'phasePolicyEnabled', 'backgroundGovernorEnabled', 'backgroundJobTickMs', 'backgroundGovernorWindowMs',
         'backgroundGovernorIdleBudgetMs', 'backgroundGovernorPlayerBudgetMs', 'backgroundGovernorIdleDbQueueMax',
         'backgroundGovernorPlayerDbQueueMax', 'backgroundGovernorLagAbortMs', 'partyHistoryRetentionMs', 'partyHistoryCleanupBatchSize',
-        'activationRadius', 'activationLevelRange', 'maxActivationsPerScan', 'activationFloorDirectZ',
+        'activationRadius', 'maxActivationsPerScan', 'activationFloorDirectZ',
         'activationFloorGeoChecksPerScan', 'activationFloorCacheMs', 'activationFloorCacheLimit'
     ]),
     General: new Set(['protocol']),
@@ -37,14 +37,14 @@ const groups = {
     ],
     BotPopulation: [
         ['Population & seeding', ['maxPlayingPopulation', 'starterBotsPerRace', 'generatedColdBatchSize', 'generatedColdSeedDelayMs']],
-        ['Behavior & travel', ['pvpAggression', 'knowledgeErrorsEnabled', 'coldHonestTravel']],
+        ['Behavior & travel', ['pvpAggression', 'knowledgeErrorsEnabled']],
         ['Social scenes', ['ambientScenesEnabled', 'ambientSceneCooldownMs', 'ambientPairCooldownMs', 'ambientSceneTtlMs']],
-        ['Logging', ['devLogPlayerChat', 'debug']]
+        ['Logging', ['devLogPlayerChat']]
     ],
     ClanSimulation: [
         ['Clans & recruitment', ['enabled', 'maxBotClans', 'founderMinLevel', 'founderTopShare', 'founderQuorum', 'founderMinPartyHistory', 'existingClanSuitabilityThreshold']],
         ['Treasury & contributions', ['levelOneAdenaBase', 'levelTwoAdenaBase', 'adenaRateExponent', 'personalAdenaReserveMultiplier', 'contributionMaxFraction']],
-        ['Warehouse & market', ['warehouseDepositBatchSize', 'bloodMarkMaxPrice', 'marketDemandTimeoutMs']],
+        ['Warehouse & market', ['warehouseDepositBatchSize', 'bloodMarkMaxPrice']],
         ['Strategy & goals', ['strategicManagementEnabled', 'llmGoalManagementEnabled', 'llmTitleManagementEnabled', 'catastrophicFailureThreshold', 'strategyMinHoldMs', 'strategyStallMs', 'goalReviewMs']],
         ['Equipment planning', ['equipmentReviewMs', 'equipmentPartyStallMs', 'equipmentHardStallMs', 'equipmentMaxExpectedKills']],
         ['Clan operations', ['operationMinMembers', 'operationMaxMembers', 'operationMaxTargetLevelGap']],
@@ -74,7 +74,11 @@ const groups = {
     Progression: [['Level cap', ['contentCap']]]
 };
 
+// [Perf] is the developer's measurement tool (scripts/perf.js), not a player setting.
+const hiddenSections = new Set(['Perf']);
+
 function fieldVisible(section, key) {
+    if (hiddenSections.has(section)) return false;
     return section === 'Database' ? key === 'path' : !hiddenFields[section]?.has(key);
 }
 function fieldLayout(section, key) {

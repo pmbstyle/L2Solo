@@ -574,11 +574,6 @@ function capture(actor, timestamp = Date.now()) {
     };
 }
 
-function needsDatabaseBackfill(snapshot = {}) {
-    return snapshot?.skillSource !== 'hot'
-        && (snapshot?.skillSource !== 'database' || number(snapshot?.version) < PROFILE_VERSION);
-}
-
 function hasInventory(state) {
     return !!state.inventory && typeof state.inventory === 'object';
 }
@@ -1502,7 +1497,7 @@ function forgetBuild(characterId) {
 function kitStoreSize() { return kitProfiles.size; }
 
 module.exports = {
-    PROFILE_VERSION, classIdOf, capture, legacySnapshot, treeSnapshot, needsDatabaseBackfill, profileFor, buildCount, buildMs, withBuildSite,
+    PROFILE_VERSION, classIdOf, capture, legacySnapshot, treeSnapshot, profileFor, buildCount, buildMs, withBuildSite,
     fightProfile, heldFightProfile, currentCp, seedSnapshot, oldSeedRepair, candidateProfiles, fightSources, combatView, kitHash, skillsFor, forgetBuild, kitStoreSize,
     isAttackSkill, offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect, normalAttackMs,
     spotSpawns, npcForSpot, killDraw, killChances, npcCombatStats, npcVulnerability, npcTraitResist, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,

@@ -82,14 +82,11 @@ async function parityAndIntegration() {
     DataCache.init();
     const context = await Runtime.context();
     const pricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
-    const wearableIds = new Set(DataCache.items.filter(item => Number(item.etc?.slot) > 0)
-        .map(item => Number(item.selfId)));
-    const expectedPrices = [...new Set(invoke('GameServer/World/Generics/NpcShopBuyLists').allEntries()
-        .map(entry => Number(entry.selfId)))].filter(id => !wearableIds.has(id))
-        .map(selfId => ({ selfId, price: pricing.npcPrice({ selfId }) }))
-        .filter(row => Number.isFinite(row.price) && row.price > 0);
-    assert.deepEqual(context.npcPriceRows, expectedPrices,
-        'the compact snapshot covers every native positive nonwearable NPC quote');
+    const shopIds = [...new Set(invoke('GameServer/World/Generics/NpcShopBuyLists').allEntries()
+        .map(entry => Number(entry.selfId)))];
+    const snapshot = new Map(context.npcPriceRows.map(row => [row.selfId, row.price]));
+    assert.deepEqual(shopIds.map(selfId => snapshot.get(selfId) ?? Infinity), shopIds.map(selfId => pricing.npcPrice({ selfId })),
+        'the compact snapshot holds main\'s NPC price of every NPC-sold item, gear and craft inputs alike');
     assert.equal((await Runtime.context()).npcPriceRows, context.npcPriceRows,
         'scalar NPC quotes reuse the existing static rate cache');
     const ore = DataCache.items.find(item => Number(item.selfId) === 1785);

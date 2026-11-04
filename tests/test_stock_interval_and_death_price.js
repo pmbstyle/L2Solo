@@ -10,7 +10,6 @@ const Providers = invoke('GameServer/Bot/Economy/WishProviders');
 const Table = invoke('GameServer/Bot/AI/SpotValueTable');
 const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const Valuation = invoke('GameServer/Bot/Economy/EconomicValuation');
-const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Events = invoke('GameServer/Bot/AI/DecisionEvents');
 const Visit = require('../src/GameServer/Bot/Economy/TownVisitInterval');
 const Walk = require('../src/GameServer/Bot/Economy/WalkBack');
@@ -27,6 +26,11 @@ for (const [, items] of Providers.gearCandidates(warrior)) {
     const item = items[0]; if (item) warrior.inventory[item.selfId] = { selfId: item.selfId,
         amount: 1, equipped: true, equippedCount: 1, slot: Number(item.etc.slot), enchant: 0 };
 }
+// A started potion stack: its slot is in the bag whatever the table's potion use
+// (survival bottles or the rest bottles RestPotion adds), so the bag interval below
+// turns on the shot stack's planned slot alone.
+const potionId = Number(invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(warrior).selfId);
+warrior.inventory[potionId] = { selfId: potionId, amount: 1 };
 const native = Economy.basics(warrior, deps), stock = native.stock('shots');
 const withShots = Table.value(native.bestSpotId, native.tableRole, warrior.level, true);
 // ARCH-NOTE: the use is the table's exact rate at the best spot (read from the table: a regenerated table moves it).
@@ -91,8 +95,9 @@ assert(Math.abs(poorContext.hunt.perHour - 1) < 1e-12);
 assert.equal(poorContext.stock('shots').usePerHour, 0);
 assert.equal(poorContext.kitCost(stock.itemId), 0);
 assert(!poorContext.projection.nodes.some(row => row.key === 'stock:shots'));
-const noShotReserve = poorContext.stock('potions').survivalMissing * poorContext.stock('potions').unitPrice
-    + poorContext.price(736);
+// The kit at its NPC list price (survivalPrice), the price the reserve holds it at.
+const noShotReserve = poorContext.stock('potions').survivalMissing * poorContext.stock('potions').survivalPrice
+    + poorContext.stock('scrolls').survivalPrice;
 assert.equal(poorContext.survivalReserve, noShotReserve);
 
 {
@@ -129,13 +134,13 @@ assert.equal(poorContext.survivalReserve, noShotReserve);
     assert(intent?.amount >= own.survivalMissing && intent.valueHours > 0, 'a meeting can certify the survival tranche');
 }
 
-const plan = Trip.spotPlan, honest = Config.coldHonestTravel;
+const plan = Trip.spotPlan;
 try {
     const center = { locX: 88000, locY: 151904, locZ: -3400 };
     const probe = [{ id: 'return-probe', center }];
     let calls = 0;
     Trip.spotPlan = (...args) => { calls++; return plan(...args); };
-    Walk.reset(); Config.coldHonestTravel = true;
+    Walk.reset();
     const walk = Walk.hours('return-probe', warrior, probe);
     assert(walk > 0);
     assert.equal(calls, 1);
@@ -144,8 +149,6 @@ try {
     const expOnly = Valuation.deathHours(warrior, { expPerHour: native.hunt.expPerHour, walkBackHours: 0 });
     const returned = Valuation.deathHours(warrior, { expPerHour: native.hunt.expPerHour, walkBackHours: walk });
     assert(Math.abs(returned - expOnly - walk) < 1e-12);
-    Config.coldHonestTravel = false;
-    assert.equal(Walk.hours('return-probe', warrior, probe), 25 / 3600);
     assert.equal(Walk.hours('return-probe', { stats: { karma: 100 } }, probe),
         Trip.runMs(Routes.landingTown(center), center) / 3600000);
     assert.equal(Walk.hours(null, warrior, probe), 0);
@@ -155,6 +158,6 @@ try {
     for (let i = 0; i < 100; i++) Economy.basics(warrior, deps);
     assert.equal(calls, spots.length);
     console.log(`Stock/death: native ${Math.round(use)}/h, profitable-shot gate, town clocks, cached ${spots.length} return routes in ${Walk.summary().buildMs.toFixed(1)} ms passed`);
-} finally { Trip.spotPlan = plan; Config.coldHonestTravel = honest; Walk.reset(); }
+} finally { Trip.spotPlan = plan; Walk.reset(); }
 coldVisits().then(() => { assert.equal(invoke('Database').isReady(), false); console.log('Cold visit end interval writer passed'); })
     .catch(error => { console.error(error); process.exitCode = 1; });

@@ -188,13 +188,13 @@ test('presentation hides the requested settings, groups related fields and prese
     const root = await installed();
     const defaults = await fs.promises.readFile(path.resolve(__dirname, '../../config/default.ini'), 'utf8');
     await put(root, 'config/default.ini', defaults);
-    const original = '; Hidden settings remain configured here\n[BotPopulation]\nenabled = false\ndeveloperDiagnostics = true\ndirectorEnabled = false\nmaxPlayingPopulation = 1700\n[Database]\npath = tmp/world.sqlite\nhistoryPath = tmp/custom-history.sqlite\ncheckpointIntervalMs = 7777\ncustomPrivateOption = keep-me\n[General]\nprotocol = 656\n[GameServer]\nid = 23\nmaxOnline = 250\npvp = true\n[AuthServer]\nprotocol = 0xc621\nblowfishKey = local-test-key\n[Enchant]\ncrystalWeaponChance = 12\n[ClanSimulation]\nbloodMarkItemId = 1419\nactionLeaseMs = 3456\n[ClanWars]\nreviewMs = 12345\nintelTtlMs = 56789\n';
+    const original = '; Hidden settings remain configured here\n[BotPopulation]\nenabled = false\ndeveloperDiagnostics = true\nbackgroundResolverEnabled = false\nmaxPlayingPopulation = 1700\n[Database]\npath = tmp/world.sqlite\nhistoryPath = tmp/custom-history.sqlite\ncheckpointIntervalMs = 7777\ncustomPrivateOption = keep-me\n[General]\nprotocol = 656\n[GameServer]\nid = 23\nmaxOnline = 250\npvp = true\n[AuthServer]\nprotocol = 0xc621\nblowfishKey = local-test-key\n[Enchant]\ncrystalWeaponChance = 12\n[ClanSimulation]\nbloodMarkItemId = 1419\nactionLeaseMs = 3456\n[ClanWars]\nreviewMs = 12345\nintelTtlMs = 56789\n';
     await put(root, 'config/local.ini', original);
     const groups = settings(root);
     const fields = section => groups.find(group => group.id === section).fields;
     const keys = section => fields(section).map(field => field.key);
     assert.deepEqual(keys('BotPopulation'), ['maxPlayingPopulation','starterBotsPerRace','generatedColdBatchSize','generatedColdSeedDelayMs',
-        'pvpAggression','knowledgeErrorsEnabled','coldHonestTravel','ambientScenesEnabled','ambientSceneCooldownMs','ambientPairCooldownMs','ambientSceneTtlMs','devLogPlayerChat','debug']);
+        'pvpAggression','knowledgeErrorsEnabled','ambientScenesEnabled','ambientSceneCooldownMs','ambientPairCooldownMs','ambientSceneTtlMs','devLogPlayerChat']);
     assert.deepEqual(keys('General'), ['maxLevel','progressionPreset','expRate','spRate','adenaRate','dropChanceRate','spoilRate','newbieRewardPolicy','pkDeathDropChance','showMonsterLevel']);
     assert.deepEqual(keys('GameServer'), ['hostname','port','advertisedHostname','playerWarehouseSlots']);
     assert.deepEqual(keys('AuthServer'), ['hostname','port','autoCreate']);

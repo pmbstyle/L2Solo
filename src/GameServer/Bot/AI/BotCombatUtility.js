@@ -33,12 +33,6 @@ function distance2d(a, b) {
     return Math.sqrt((dx * dx) + (dy * dy));
 }
 
-function reserveRatio(role) {
-    if (role === 'healer' || role === 'buffer') return 0.45;
-    if (role === 'mage') return 0.18;
-    return 0.10;
-}
-
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
 }
@@ -184,7 +178,7 @@ function policyAdjustment(skill, role, range, cost, maxMp, policy = {}) {
         adjustment += Math.min(18, Math.max(0, Number(skill.fetchPower?.() || 0) / 40));
     } else if (stance === 'defensive') {
         const affordableReserve = (maxMp - cost) / Math.max(1, maxMp);
-        adjustment += affordableReserve >= reserveRatio(role) ? 10 : -8;
+        adjustment += affordableReserve >= ClassPolicy.reserveRatio(role) ? 10 : -8;
     } else if (stance === 'ranged') {
         adjustment += range >= 400 ? 18 : -18;
     }
@@ -247,8 +241,8 @@ function evaluateCandidate(bot, target, skill, role, policy = {}, plannedCharges
     // A mage's staff is the primary weapon. Keeping a generic MP reserve made
     // a mage walk into melee even though it could still afford a nuke.
     const classProfile = policy.classProfile || ClassPolicy.profileFor(bot, policy);
-    const reserve = classProfile.supported ? classProfile.manaReserve : (policy.pvp ? 0 : reserveRatio(role));
-    if (cost > mp || (role !== 'mage' && (mp - cost) / maxMp < reserve)) return reject('mp_budget');
+    const reserve = ClassPolicy.offensiveMpReserve(classProfile, role, !!policy.pvp);
+    if (cost > mp || (mp - cost) / maxMp < reserve) return reject('mp_budget');
 
     const type = skill.fetchSkillType();
     const basePower = Math.max(0, Number(skill.fetchPower?.() || 0));
@@ -355,7 +349,7 @@ function chargePlanAgainst(bot, role, policy, target, ready) {
     const mp = Math.max(0, Number(bot.fetchMp?.()) || 0);
     const maxMp = Math.max(1, Number(bot.fetchMaxMp?.()) || mp || 1);
     const profile = policy.classProfile || ClassPolicy.profileFor(bot, policy);
-    const reserve = profile.supported ? profile.manaReserve : (policy.pvp ? 0 : reserveRatio(role));
+    const reserve = ClassPolicy.offensiveMpReserve(profile, role, !!policy.pvp);
     const preparation = skills
         .filter((skill) => {
             if (!skill || skill.fetchPassive?.() || bot.canUseSkill?.(skill) === false || Feedback.blocked(bot,bot,skill)) return false;

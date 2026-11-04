@@ -258,7 +258,6 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.strictEqual(travelState.activity, 'traveling', 'an outleveled solo bot must enter a finite travel state');
     assert.strictEqual(travelState.spotId, 'starter-field', 'the old spot remains current until arrival');
     assert.strictEqual(travelState.stats.travel.spotId, 'mid-level-field');
-    assert.strictEqual(travelState.stats.travel.arrivalAt, 30000);
 
     const deathPressureRoute = {
         ...route,
@@ -293,7 +292,7 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
                 arrivalActivity: 'grouped'
             }
         }
-    }, 30000);
+    }, travelState.stats.travel.arrivalAt);
     assert.strictEqual(arrivedPartyMember.activity, 'grouped', 'party travel must arrive as a grouped member');
     assert.strictEqual(arrivedPartyMember.spotId, 'mid-level-field');
     assert.deepStrictEqual(arrivedPartyMember.loc, route.to);
@@ -360,7 +359,7 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     for (const economyPlan of [undefined, { sell: [], withdraw: [], travel: null }]) {
         let combats = 0;
         const planless = recordingKernel({ now: () => 5000,
-            resolveSolo: input => { combats++; assert.equal(input.lastFight, false, 'an empty plan allows new fights'); return resolver(input); },
+            resolveSolo: input => { combats++; assert.equal(input.lastFight, false, 'no occupation waits for this fight'); return resolver(input); },
             planLifecycle: ({ state: current }) => ({ plannedState: current, activityPick: { activity: 'shopping' }, economyPlan }),
             projectResolve: current => current, emit: () => {} });
         planless.upsert(standOn(planless, { state: state(90003, { vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 } }) }, { id: 'planless-field' }));
@@ -418,8 +417,10 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         equipmentPlan: { strategy: 'craft', status: 'ready_to_craft' } } })), 'command',
     'ready crafting still uses the main-thread crafting workflow');
     assert.strictEqual(lifecycleKind(state(2, { stats: { equipmentPlan: { strategy: 'market' } } })), 'resolver');
+    // A wallet of 1000 above its survival reserve (the kit the table's use asks for) funds the piece.
+    const fundedWallet = invoke('GameServer/Bot/Economy/PurchaseFunding').operatingReserve(state(2)) + 1000;
     assert.strictEqual(lifecycleKind(state(2, {
-        adena: 1000,
+        adena: fundedWallet,
         stats: { equipmentPlan: { strategy: 'market', market: { price: 500, reserve: 100 } } }
     })), 'command');
     assert.strictEqual(lifecycleKind(state(2, { party: { partyId: 'party' } }), leading({ partyId: 'party', leaderId: 2 })), 'party');
@@ -1350,6 +1351,57 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert.strictEqual(errorKernel.scheduleTokens.get(30).dueAt, now + 1000, 'a resolver error requeues the bot');
     assert.strictEqual(errorKernel.snapshot().errors, 1);
 
+    {
+        // A deterministic throw is not retried at every due: the bot waits 1 s,
+        // 5 s, 30 s, 2 min, then from the fifth fault in a row 10 min at a time
+        // (logged once with its stack and once on quarantine, repeats only
+        // counted), until a step of it commits; then a new fault waits 1 s again.
+        let clock = 10000, failing = true, revision = 3;
+        const tries = [], faults = [];
+        const faultKernel = recordingKernel({
+            resolveSolo: input => {
+                tries.push(clock);
+                if (failing) throw new Error('synthetic_deterministic_error');
+                return resolver(input);
+            },
+            emit: (type, payload) => { if (type === 'fault') faults.push(payload); },
+            now: () => clock
+        });
+        faultKernel.upsert(standOn(faultKernel, { state: state(31) }, { id: 'spot' }));
+        // Until `ms` passed or the bot tried `untilTries` times.
+        const runFor = async (ms, untilTries = Infinity) => {
+            for (const end = clock + ms; clock < end && tries.length < untilTries; clock += 500) {
+                faultKernel.tick();
+                await faultKernel.resolveChain;
+                // Main changes the bot every 10 s (a new revision, due long ago):
+                // that brings no early retry.
+                if (clock % 10000 === 0 && !faultKernel.busy(31)) faultKernel.upsert({ state: {
+                    ...faultKernel.states.get(31).state, simulation: { revision: ++revision } } });
+            }
+        };
+        await runFor(20 * 60 * 1000);
+        assert.deepStrictEqual(tries.slice(1).map((at, index) => at - tries[index]), [1000, 5000, 30000, 120000, 600000],
+            'faults in a row back off, then quarantine the bot for 10 min');
+        assert.strictEqual(faults.length, 2, 'the first fault and the quarantine are logged, repeats only counted');
+        assert.match(faults[0].stack, /synthetic_deterministic_error/);
+        assert.deepStrictEqual(faults[1], { reason: 'synthetic_deterministic_error',
+            stage: 'solo_project', characterId: 31, quarantined: true, faults: 5, holdMs: 600000 });
+        assert.deepStrictEqual(faultKernel.heartbeatSnapshot().failures,
+            { workerFaults: 6, faultsByStage: { solo_project: 6 }, faultBackoff: 0, faultQuarantined: 1 });
+        failing = false;
+        const before = tries.length;
+        await runFor(20 * 60 * 1000, before + 1);
+        assert.strictEqual(tries.at(-1) - tries.at(-2), 600000, 'a quarantined bot tries once per 10 min');
+        faultKernel.flush(null, true);
+        commitAck(faultKernel, { results: [{ ok: true, characterId: 31, state: { ...faultKernel.states.get(31).state,
+            simulation: { revision: ++revision }, timing: { lastResolvedAt: clock, nextResolveAt: clock + 30000 } } }] });
+        const { faultBackoff, faultQuarantined } = faultKernel.heartbeatSnapshot().failures;
+        assert.deepStrictEqual([faultBackoff, faultQuarantined], [0, 0], 'a committed step clears the bot\'s faults');
+        failing = true;
+        await runFor(60 * 1000, tries.length + 2);
+        assert.strictEqual(tries.at(-1) - tries.at(-2), 1000, 'after a success a new fault waits 1 s again');
+    }
+
     // The bot's look at its board lines (group E) leaves the worker with its
     // proposal: the main thread applies the new asks after the commit.
     const marketMessages = [];
@@ -1519,6 +1571,53 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
         commitWithPlan(74, ['plan']);
         assert.strictEqual(sent(74), null, 'a review skipped on a full window forgets its plan as sent');
         assert.strictEqual(planKernel.reviewsSkipped, 2);
+    }
+
+    // A bot whose state the command checkpoint refuses (a fractional clock)
+    // keeps its turn: once its kind no longer needs a command, it steps.
+    {
+        const at = 1800000000000, consoleError = console.error;
+        let clock = at, hallNeeded = true, steps = 0;
+        console.error = () => {};
+        const refusedKernel = new ColdSimulationKernel({ now: () => clock, maxInFlight: 8, maxBatch: 8, hallNeeded: () => hallNeeded,
+            resolveSolo: async () => {
+                steps += 1;
+                return { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: clock + 30000 };
+            }, emit: () => true });
+        refusedKernel.upsert({ state: { characterId: 2001000, name: 'Fraction', level: 20, phase: 'cold', activity: 'hunting', stats: {},
+            inventory: {}, simulation: { revision: 3 }, updatedAt: at - 90000,
+            timing: { activityStartedAt: at - 89999.5, nextResolveAt: at - 60000, lastResolvedAt: at - 90000 } } });
+        refusedKernel.tick();
+        await new Promise(resolve => setTimeout(resolve, 20));
+        console.error = consoleError;
+        assert.strictEqual(steps, 0, 'no step while the bot waits for a command it cannot begin');
+        const traced = [], consoleInfo = console.info;
+        console.info = (...line) => traced.push(line.join(' '));
+        refusedKernel.traceBot(2001000, { nextResolveAt: at - 60000 });
+        console.info = consoleInfo;
+        assert.match(traced.join(), /"id":2001000,"main".*"kind":"command"/, 'the worker says why an overdue bot waits');
+        hallNeeded = false;
+        clock += 30001;
+        refusedKernel.tick();
+        await new Promise(resolve => setTimeout(resolve, 20));
+        assert.strictEqual(steps, 1, 'the refused bot is still queued and steps');
+
+        // A market wake on such a bot does not hold it on commands forever.
+        steps = 0;
+        const woken = 2001001;
+        console.error = () => {};
+        refusedKernel.upsert({ state: { characterId: woken, name: 'Woken', level: 20, phase: 'cold', activity: 'hunting', stats: {},
+            inventory: {}, simulation: { revision: 3 }, updatedAt: clock - 90000,
+            timing: { activityStartedAt: clock - 89999.5, nextResolveAt: clock + 10000, lastResolvedAt: clock - 90000 } } });
+        assert.strictEqual(refusedKernel.wakeBuyer(woken), true, 'an idle hunter takes a market wake');
+        refusedKernel.tick();
+        await new Promise(resolve => setTimeout(resolve, 20));
+        console.error = consoleError;
+        assert.strictEqual(refusedKernel.wakeBuyer(woken), false, 'a refused bot takes no second wake');
+        clock += 30001;
+        refusedKernel.tick();
+        await new Promise(resolve => setTimeout(resolve, 20));
+        assert.strictEqual(steps, 1, 'a refused wake leaves the bot its resolver steps');
     }
 
     // A party run with no member result (no spot): the whole roster commits

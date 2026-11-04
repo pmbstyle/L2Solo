@@ -36,6 +36,7 @@ const Cooldown = {
     removeFromClientWorld,
     transitionToColdState(session, state, reason = 'transition') {
         if (!session || !session.actor || !state) return Promise.resolve({ ok: false, reason: 'missing_state' });
+        const transitionStartedAt = Date.now();
         const BotManager = invoke('GameServer/Bot/BotManager');
         try { invoke('GameServer/Bot/BotTradeService').cleanup(session, 'cold_transition'); } catch (_) { /* optional hot trade modules */ }
         try { invoke('GameServer/Bot/AI/BotAmbientDirector').cleanup(session, 'cold_transition'); } catch (_) { /* optional ambient module */ }
@@ -64,7 +65,7 @@ const Cooldown = {
                 session.actor = null;
 
                 if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BotPopulation :: cooled %s reason=%s', saved.name, reason);
-                Metrics.recordCooldown();
+                Metrics.recordCooldown(Date.now() - transitionStartedAt);
                 return { ok: true, state: saved, reason };
             });
         });

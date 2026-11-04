@@ -19,7 +19,8 @@ DataCache.init();
 const world = {
     user: { sessions: [] },
     npc: { spawns: [], grid: {}, nextId: 3000000, periodMode: 'night', periodRevision: 0, periodDefinitions: [] },
-    indexSpawnsInGrid() {}
+    addNpcToGrid() {},
+    removeNpcFromGrid() {}
 };
 const session = { dataSendToMeAndOthers() {}, dataSendToMe() {} };
 

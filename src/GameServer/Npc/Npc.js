@@ -16,6 +16,7 @@ const EffectTicker   = invoke('GameServer/Effects/EffectTicker');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const TownGuard = invoke('GameServer/Npc/TownGuard');
 const NpcHate = invoke('GameServer/Npc/NpcHate');
+const NpcWander = invoke('GameServer/Npc/NpcWander');
 const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool');
 const AttackHelper   = new Attack();
 // Dropped chases and mobs left out of combat still hating (sleep, stun, fake death).
@@ -104,6 +105,10 @@ class Npc extends NpcModel {
         }
     }
 
+    isSpoil() {
+        return this.model.spoil?.spoiled === true;
+    }
+
     isConfusionTarget(actor) {
         return !!actor && actor !== this && actor === this.confusionTarget
             && this.fetchAttackable() && actor.fetchAttackable?.() === true
@@ -126,11 +131,6 @@ class Npc extends NpcModel {
         // back to the actor's online flag.
         if (actor.session && actor.session.actor !== actor) return false;
         if (typeof actor.fetchIsOnline === 'function' && actor.fetchIsOnline() === false) return false;
-
-        // NPCs and lightweight test actors may not expose StateModel. Only
-        // use the generic isDead() fallback when it cannot trigger the player
-        // ActionFailed side effect implemented by Actor.isDead().
-        if (!actor.state && actor.isDead?.() === true) return false;
         return true;
     }
 
@@ -265,7 +265,7 @@ class Npc extends NpcModel {
             return true;
         }
 
-        if (this.state.fetchCombats()) this.abortCombatState(session);
+        if (this.state.fetchCombats()) this.endFight(session);
         return false;
     }
 
@@ -290,7 +290,7 @@ class Npc extends NpcModel {
             return true;
         }
 
-        invoke('GameServer/Npc/NpcWander').cancel(this, session);
+        NpcWander.cancel(this, session);
         this.switchCombatTarget(target);
         this.state.setCombats(true);
         this.combatActiveAt = Date.now();
@@ -304,7 +304,7 @@ class Npc extends NpcModel {
             this.timer.combatStart = undefined;
             const initialTarget = this.fetchCombatTarget();
             if (!this.state.fetchCombats() || !initialTarget) {
-                if (this.state.fetchCombats()) this.abortCombatState(session);
+                if (this.state.fetchCombats()) this.endFight(session);
                 return;
             }
 
@@ -327,7 +327,7 @@ class Npc extends NpcModel {
             this.timer.combat = setInterval(() => {
                 const actor = this.fetchCombatTarget();
                 if (!actor) {
-                    this.abortCombatState(session);
+                    this.endFight(session);
                     return;
                 }
 
@@ -348,7 +348,7 @@ class Npc extends NpcModel {
                 // combat here pins its target to the corpse indefinitely and
                 // makes party resurrection believe the fight never ended.
                 if (actor?.isDead?.() || actor?.state?.fetchDead?.() || actor?.fakeDeath) {
-                    this.abortCombatState(session);
+                    this.endFight(session);
                     return;
                 }
 
@@ -361,7 +361,7 @@ class Npc extends NpcModel {
 
                 if (EffectRestrictions.canMove(this) && Date.now() - this.combatActiveAt >= ATTACK_TIMEOUT_MS) {
                     hateStats.attackTimeout += 1;
-                    this.abortCombatState(session);
+                    this.endFight(session);
                     return;
                 }
 
@@ -771,6 +771,13 @@ class Npc extends NpcModel {
         }, actor, skill);
     }
 
+    // The fight is over: no target left, or the timeout. abortCombatState alone is
+    // no such thing: death, confusion and skills that clear hate go through it too.
+    endFight(session) {
+        this.abortCombatState(session);
+        NpcWander.leaveFight(this);
+    }
+
     abortCombatState(session, { preserveAggro = false } = {}) {
         delete this.confusionTarget;
         const wasMoving = this.state.inMotion();
@@ -829,7 +836,8 @@ class Npc extends NpcModel {
         clearTimeout(this.timer.hit);
         this.timer.hit = setTimeout(() => {
             this.timer.hit = undefined;
-            if (!EffectRestrictions.canAttack(src) || this.checkParticipants(session, src, dst)) {
+            if (!EffectRestrictions.canAttack(src) || this.checkParticipants(session, src, dst)
+                || AttackRange.lostFromView(src, dst)) {
                 return;
             }
 
@@ -857,7 +865,7 @@ class Npc extends NpcModel {
                 this.switchCombatTarget(replacement);
                 return true;
             }
-            this.abortCombatState(session);
+            this.endFight(session);
             return true;
         }
         return false;

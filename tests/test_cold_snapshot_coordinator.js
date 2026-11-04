@@ -216,6 +216,39 @@ function setup() {
         if (mode === 'full') assert.strictEqual(messages[0].payload.done, true);
     }
 
+    // A bot seeded while the worker's full snapshot is on the wire (the seeder
+    // runs beside the worker's boot) is not in the rows the snapshot read at
+    // its start; it still reaches the worker and gets its first step.
+    const seededDuringFull = setup();
+    LifeState.everyState = () => [{ characterId: 501, phase: 'cold', activity: 'hunting',
+        timing: { nextResolveAt: 1000 }, simulation: { revision: 1 } }];
+    const seeded = { characterId: 502, phase: 'cold', activity: 'hunting',
+        timing: { nextResolveAt: 1000 }, simulation: { revision: 0 } };
+    seededDuringFull.coordinator.reconcileOrphanedBackgroundParties = async () => [];
+    let seededMarked = false;
+    seededDuringFull.coordinator.ensureCraftRecipes = async () => {
+        if (!seededMarked) seededDuringFull.coordinator.markDirty(seeded, { reason: 'seed' });
+        seededMarked = true;
+    };
+    await seededDuringFull.coordinator.sendSnapshots(true);
+    const seededDeadline = Date.now() + 3000;
+    const sentIds = () => seededDuringFull.messages.flatMap(message => message.payload.rows.map(row => row.state.characterId));
+    while (!sentIds().includes(502)) {
+        assert(Date.now() < seededDeadline, 'a bot seeded during the full snapshot must reach the worker');
+        await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    // The page is posted before its job settles (it yields to the loop first);
+    // the job's lease must not complete inside the next fixture's governor.
+    await seededDuringFull.coordinator.snapshotInFlight;
+    {
+        const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
+        const kernel = new ColdSimulationKernel({ now: () => 2000, resolveSolo: () => null });
+        kernel.upsertMany(seededDuringFull.messages.flatMap(message => message.payload.rows));
+        assert(kernel.dueCandidates(2000, 8).some(entry => entry.characterId === 502),
+            'the seeded bot is due for its first step in the worker');
+    }
+    clearTimeout(seededDuringFull.coordinator.snapshotContinuationTimer);
+
     LifeState.everyState = originalEveryState;
     const sliced = setup();
     const governor = invoke('GameServer/Bot/Population/BackgroundWorkGovernor');

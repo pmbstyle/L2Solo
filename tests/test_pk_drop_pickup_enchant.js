@@ -23,7 +23,7 @@ async function session(id) {
         fetchId: () => id, fetchKarma: () => 100, fetchPk: () => 6,
         fetchLocX: () => 0, fetchLocY: () => 0, fetchLocZ: () => 0,
         isDead: () => false, fetchIsOnline: () => true,
-        backpack: new Backpack({ items: await Database.fetchItems(id), paperdoll: utils.tupleAlloc(16, {}) })
+        backpack: new Backpack({ id, items: await Database.fetchItems(id), paperdoll: utils.tupleAlloc(16, {}) })
     }, dataSendToMe() {}, dataSendToMeAndOthers() {} };
 }
 

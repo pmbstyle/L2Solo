@@ -97,6 +97,12 @@ function armSpawnGrace(npc, now = Date.now()) {
     return npc.aggroEligibleAt;
 }
 
+// A red name standing still never reaches the movement gate: guards look too.
+function engageGuards(session, actor, world) {
+    if (!(Number(actor.fetchKarma?.()) > 0)) return;
+    TownGuard.engageNearby(session, actor, world.fetchNpcsInRadius(actor.fetchLocX(), actor.fetchLocY(), TownGuard.AGGRO_RADIUS));
+}
+
 // Lisvus runs L2AttackableAI once per second. Sweep live actors at the same
 // cadence: this catches both a bot entering range and a stationary actor
 // whose nearby NPC has just completed its spawn grace, without doing a world
@@ -104,7 +110,10 @@ function armSpawnGrace(npc, now = Date.now()) {
 function tickLiveActors(world = invoke('GameServer/World/World'), now = Date.now()) {
     return (world?.user?.sessions || [])
         .filter(isLiveSession)
-        .flatMap((session) => engageNearby(session, session.actor, { world, now }));
+        .flatMap((session) => {
+            engageGuards(session, session.actor, world);
+            return engageNearby(session, session.actor, { world, now });
+        });
 }
 
 function startAggroTicker(world = invoke('GameServer/World/World'), {

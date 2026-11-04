@@ -20,7 +20,7 @@ function item(selfId, amount = 1) {
     return new Item(++nextObject, { ...utils.crushOb(template), amount });
 }
 function session(items = [], race = 0, maxLoad = 1000000, expand = 0) {
-    const backpack = new Backpack({ items: [], paperdoll: {} });
+    const backpack = new Backpack({ id: 9601, items: [], paperdoll: {} });
     backpack.items = items;
     return { accountId: 'pickup_test', actor: {
         fetchId: () => 9601, fetchRace: () => race, fetchMaxLoad: () => maxLoad,
@@ -127,7 +127,7 @@ function filled(count) { return Array.from({ length: count }, () => item(955)); 
         await Native.character(Database, 9601, 'Capacity', 'capacity_test');
         for (let index = 0; index < 79; index++) await Database.setItem(9601, { selfId: 955, amount: 1 });
         const persisted = session([]);
-        persisted.actor.backpack = new Backpack({ items: await Database.fetchItems(9601), paperdoll: {} });
+        persisted.actor.backpack = new Backpack({ id: 9601, items: await Database.fetchItems(9601), paperdoll: {} });
         const awards = [];
         const accepted = item(955), rejected = item(955);
         const actualWorld = world([accepted, rejected], (...args) => {

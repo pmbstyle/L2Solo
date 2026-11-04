@@ -104,7 +104,7 @@ const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const gremlins = pull => ({ id: 'starter_gremlin', name: 'Gremlin field', avgLevel: 1, density: 1, npcSelfIds: [1],
     npcEntries: [{ selfId: 1, count: 3, ...(pull ? { pull } : {}) }],
     rewards: { exp: 10, sp: 2, adenaMin: 7, adenaMax: 10 }, mob: { hp: 8, damage: 1 } });
-const hunter = () => ({ characterId: 71, name: 'ColdHunter', level: 6, levelBand: '4-8', activity: 'hunting',
+const hunter = () => ({ characterId: 71, name: 'ColdHunter', level: 9, levelBand: '8-12', activity: 'hunting',
     vitals: { hp: 99999, maxHp: 99999, mp: 99999, maxMp: 99999 }, stats: {}, party: { role: 'dps' } });
 const hunt = pull => Resolver.resolveSolo({ state: hunter(), spot: gremlins(pull), elapsedMs: 60000, rng: () => 0 });
 // T106: the walk between mobs sets the fights of the minute; each counts per won fight.
@@ -118,7 +118,7 @@ assert.strictEqual(two.materialize.items.length / two.debug.wins, one.materializ
     'each mob rolls its drops');
 const fightMs = result => (result.debug.combatMs - result.debug.walkedMs) / result.debug.wins;
 assert(fightMs(two) > fightMs(one), 'two mobs take longer to kill');
-// User 10-29: the bot fights only the pull sizes it survives. The weaponless level-6 hunter survives a
+// User 10-29: the bot fights only the pull sizes it survives. The weaponless level-9 hunter survives a
 // gremlin pair but not a trio; on a field of 70% pairs and 30% trios, a roll that would draw a trio
 // draws among the pairs, and the field is still hunted.
 const mixed = { ...gremlins(0), npcEntries: [{ selfId: 1, count: 3, pulls: [[2, 0.7], [3, 0.3]] }] };
@@ -158,13 +158,14 @@ try {
 // T106 (user 10-29): a species whose usual pull the hunter cannot survive is not hunted, as one mob it would be.
 const pack = hunt(3);
 assert.deepStrictEqual([pack.debug.pulls, pack.patch.stats.lastReason], [0, 'no_safe_solo_target'],
-    'a weaponless level-6 hunter leaves a field of gremlin trios alone');
-// After a win the hunter's remaining HP meets the usual pull too: a level-8 hunter takes
-// gremlin trios at full HP (262), but at 150 HP it takes a lone gremlin and rests before a trio.
-const hurt = { ...hunter(), level: 8, vitals: { hp: 150, maxHp: 99999, mp: 99999, maxMp: 99999 } };
+    'a weaponless level-9 hunter leaves a field of gremlin trios alone');
+// After a win the hunter's remaining HP meets the usual pull too: a level-16 hunter takes
+// gremlin trios at full HP (429), but at 250 HP it takes a lone gremlin and rests before a trio
+// (it would end the trio below its potion line: BotEncounterReadiness).
+const hurt = { ...hunter(), level: 16, vitals: { hp: 250, maxHp: 99999, mp: 99999, maxMp: 99999 } };
 const nextFight = pull => Resolver.resolveFight({ state: hurt, spot: gremlins(pull), rng: () => 0, timestamp: 1e12 });
-assert(!nextFight(0).avoided, 'a lone gremlin is fought at 150 HP');
-assert.strictEqual(nextFight(3).reason, 'solo_recovery_needed', 'a usual trio is rested for at 150 HP');
+assert(!nextFight(0).avoided, 'a lone gremlin is fought at 250 HP');
+assert.strictEqual(nextFight(3).reason, 'solo_recovery_needed', 'a usual trio is rested for at 250 HP');
 
 // Area and aura skills hit every mob of the pull (F20, plan 3.3(в)): a nuker whose
 // only spell strikes an area kills a pull of three about as fast as one mob, while

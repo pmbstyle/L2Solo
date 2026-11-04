@@ -47,6 +47,14 @@ const owned = { ...state, inventory: { [recipe.recipeItemId]: { selfId: recipe.r
 chosen = Decision.chooseOpportunity(owned, [], { ...context, independentPrice: () => 2000 }, options);
 assert.equal(chosen, null, 'learning consumes the owned scroll sale opportunity');
 const known = Decision.chooseOpportunity(state, [{ recipeId: recipe.recipeId }], context, options);
+// A craft refused at the act is not picked again until the bot's next town look.
+{
+    const look = n => ({ townLook: { n } });
+    const marked = { ...state, stats: { ...state.stats, ...look(1), wealthRefused: Decision.refusedMark({ stats: look(1) }, recipe.recipeId) } };
+    assert.equal(Decision.chooseOpportunity(marked, [{ recipeId: recipe.recipeId }], context, options), null, 'it is not picked again');
+    assert(Decision.chooseOpportunity({ ...marked, stats: { ...marked.stats, ...look(2) } }, [{ recipeId: recipe.recipeId }], context, options),
+        'the next town look reads the market anew');
+}
 assert(known && !known.learning);
 assert(!known.basket.purchases.some(row => row.selfId === recipe.recipeItemId), 'known recipes pay no scroll twice');
 for (const id of [1786, 1787, 1788]) {

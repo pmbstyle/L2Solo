@@ -10,14 +10,30 @@ const notRunTests = new Map([
     ['tests/test_finite_market_income.js', 'new red 2026-10-14: AssertionError: a stored shop town is read as its town name'],
     ['tests/test_gear_intermediate_candidates.js', 'new red 2026-10-14: AssertionError: same event reuses the decision and held roll'],
     ['tests/test_npc_purchase_consumers.js', 'E195: base red, first error: AssertionError: cold caller propagates activation after the committed NPC await'],
-    ['tests/test_scroll_stock_economy.js', 'E202: base red, first error: AssertionError: strictEqual 1 !== 9'],
     ['tests/test_task4_b5_hot_cold_same.js', 'new red 2026-10-14: AssertionError: cold publishes one buy ad'],
     ['tests/test_task4_survival_tranche.js', 'new red 2026-10-14: AssertionError: the tranche funds a shot bid'],
 ]);
 
 const tests = [
+    'tests/test_perf_cpu_profile.js',
+    'tests/test_perf_live_recorder.js',
+    'tests/test_perf_heap_profile.js',
+    'tests/test_perf_report.js',
+    'tests/test_perf_compare.js',
+    'tests/test_perf_hot_crowd.js',
+    'tests/test_perf_player_client.js',
+    'tests/test_e2e_scripts.js',
+    'tests/test_worker_heap_telemetry_handles.js',
+    'tests/test_server_packet_names.js',
+    'tests/test_scroll_stock_economy.js',
+    'tests/test_wish_focus_supply.js',
+    'tests/test_wish_goal_loyalty.js',
     'tests/test_equipment_input_warehouse.js',
     'tests/test_active_craft_warehouse.js',
+    'tests/test_personal_craft_selection.js',
+    'tests/test_player_moment.js',
+    'tests/test_agenda.js',
+    'tests/test_goal_revision.js',
     'tests/test_active_craft_warehouse_sqlite.js',
     'tests/test_clan_war_home.js',
     'tests/test_clan_war_return_geodata.js',
@@ -122,6 +138,7 @@ const tests = [
     'tests/test_bot_armor_policy.js',
     'tests/test_bot_hunt_efficiency.js',
     'tests/test_leaf_fit.js',
+    'tests/test_spot_choice.js',
     'tests/test_personal_gear_progression.js',
     'tests/test_weapon_grade_progression.js',
     'tests/test_clan_personal_surplus.js',
@@ -449,8 +466,6 @@ const tests = [
     'tests/test_bot_persona_types.js',
     'tests/test_bot_persona_migration.js',
     'tests/test_bot_persona_background_intent.js',
-    'tests/test_bot_persona_economic_policy.js',
-    'tests/test_wealth_investment_policy.js',
     'tests/test_support_no_solo_ground.js',
     'tests/test_wealth_craft_policy.js',
     'tests/test_craft_facts.js',
@@ -465,7 +480,6 @@ const tests = [
     'tests/test_cold_occupation_sources.js',
     'tests/test_economy_commit_native.js',
     'tests/test_bot_spot_risk_baseline.js',
-    'tests/test_bot_persona_party_decision.js',
     'tests/test_persona_party_copies.js',
     'tests/test_bot_remote_chat_persona.js',
     'tests/test_cold_bot_chat.js',
@@ -524,6 +538,7 @@ const tests = [
     'tests/test_cold_exchange_wait_once.js',
     'tests/test_e314_sale_visit_shot_pending.js',
     'tests/test_meeting_stage_last.js',
+    'tests/test_meeting_outlives_command.js',
     'tests/test_cold_safe_enchant.js',
     'tests/test_bot_static_buyer_sale.js',
     'tests/test_bot_market_town_routing.js',
@@ -678,7 +693,6 @@ const tests = [
     'tests/test_pk_profiles.js',
     'tests/test_bot_social_memory_events.js',
     'tests/test_social_graph_repository.js',
-    'tests/test_bot_simulation_kernel.js',
     'tests/test_bot_support_planner.js',
     'tests/test_party_buff_loadout.js',
     'tests/test_bot_loot_etiquette.js',
@@ -1039,6 +1053,7 @@ const tests = [
     'tests/test_clan_order_crafting.js',
     'tests/test_cold_snapshot_queue.js',
     'tests/test_cold_solo_combat_budget.js',
+    'tests/test_cold_solo_window.js',
     'tests/test_cold_worker_pressure.js',
     'tests/test_private_store_limits.js',
     'tests/test_update_environment_visibility.js',
@@ -1149,6 +1164,7 @@ const tests = [
     'tests/test_walkback_catalog_cache.js',
     'tests/test_source_facts.js',
     'tests/test_source_route_admission.js',
+    'tests/test_full_source_keeps_plan.js',
     'tests/test_spot_source_targets.js',
     'tests/test_market_return_hunting_origin.js',
     'tests/test_stock_bag_fill_interval.js',
@@ -1217,7 +1233,6 @@ const tests = [
     'tests/test_beginner_shot_restrictions.js',
     'tests/test_buy_ad_source_ownership.js',
     'tests/test_buy_ad_town_look.js',
-    'tests/test_buy_bot_shop_sources.js',
     'tests/test_cold_warehouse_deposit_transaction.js',
     'tests/test_craft_input_quantities.js',
     'tests/test_current_board_quotes.js',
@@ -1228,7 +1243,6 @@ const tests = [
     'tests/test_field_trade_ads.js',
     'tests/test_first_price_made.js',
     'tests/test_game_data_catalogue.js',
-    'tests/test_gear_plan_selection_sections.js',
     'tests/test_market_arrival_goal_refresh.js',
     'tests/test_market_lot_policy.js',
     'tests/test_meeting_arrival_events.js',
@@ -1476,7 +1490,6 @@ const defaultConfigTests = new Set([
     'tests/test_beginner_shot_restrictions.js',
     'tests/test_buy_ad_source_ownership.js',
     'tests/test_buy_ad_town_look.js',
-    'tests/test_buy_bot_shop_sources.js',
     'tests/test_cold_warehouse_deposit_transaction.js',
     'tests/test_craft_input_quantities.js',
     'tests/test_current_board_quotes.js',
@@ -1487,7 +1500,6 @@ const defaultConfigTests = new Set([
     'tests/test_field_trade_ads.js',
     'tests/test_first_price_made.js',
     'tests/test_game_data_catalogue.js',
-    'tests/test_gear_plan_selection_sections.js',
     'tests/test_market_arrival_goal_refresh.js',
     'tests/test_market_lot_policy.js',
     'tests/test_meeting_arrival_events.js',
@@ -1548,9 +1560,31 @@ const defaultConfigTests = new Set([
         process.exit(1);
     }
 }
-const selectedTests = tests.filter((testFile) => geodataOnly
+// --only=a,b (or --only=@list.txt: names by comma, space or line, # comments)
+// runs just those files, in that order, each as the suite runs it; a name is
+// tests/test_x.js, test_x.js, test_x or x (.github/workflows/tests.yml).
+const onlyArg = process.argv.find((arg) => arg.startsWith('--only='));
+let onlyTests = null;
+if (onlyArg) {
+    let text = onlyArg.slice('--only='.length);
+    if (text.startsWith('@')) text = fs.readFileSync(text.slice(1), 'utf8').replace(/#.*$/gm, '');
+    const names = text.split(/[\s,]+/).filter(Boolean)
+        .map((name) => `tests/${path.basename(name).replace(/^(test_)?/, 'test_').replace(/(\.js)?$/, '.js')}`);
+    const listed = new Set(tests);
+    const unknown = names.filter((testFile) => !listed.has(testFile));
+    if (!names.length || unknown.length) {
+        console.error(names.length ? `--only: not in the suite:\n${unknown.map((f) => `  ${f}${notRunTests.has(f) ? ` (notRunTests: ${notRunTests.get(f)})` : ''}`).join('\n')}`
+            : '--only: no test files given');
+        process.exit(2);
+    }
+    onlyTests = [...new Set(names)];
+}
+const selectedTests = onlyTests || tests.filter((testFile) => geodataOnly
     ? geodataTests.has(testFile) || optionalGeodataTests.has(testFile)
     : !geodataTests.has(testFile));
+// A geodata test always runs on the raw map (only --only picks one without
+// --geodata); the optional ones read it with --geodata.
+const rawGeodata = (testFile) => geodataOnly || geodataTests.has(testFile);
 // --shard=K/N keeps every N-th file starting at K, so CI can run N parts on
 // separate machines at once; the interleave spreads the slow files evenly.
 const shardArg = process.argv.find((arg) => arg.startsWith('--shard='));
@@ -1567,6 +1601,11 @@ if (process.argv.includes('--list')) {
     selectedTests.forEach((testFile) => console.log(testFile));
     process.exit(0);
 }
+// --needs-geodata: whether a selected file reads the raw map (CI fetches it then).
+if (process.argv.includes('--needs-geodata')) {
+    console.log(selectedTests.some(rawGeodata) ? 'true' : 'false');
+    process.exit(0);
+}
 
 fs.mkdirSync('tmp', { recursive: true });
 const keepGoing = process.argv.includes('--keep-going');
@@ -1576,7 +1615,7 @@ const timeoutMs = Number(process.env.L2NODE_TEST_TIMEOUT_MS) > 0 ? Number(proces
 const failedTests = [];
 for (const testFile of selectedTests) {
     console.log(`\n> node ${testFile}`);
-    const env = { ...process.env, L2NODE_SKIP_RAW_GEODATA_TESTS: geodataOnly ? '0' : '1' };
+    const env = { ...process.env, L2NODE_SKIP_RAW_GEODATA_TESTS: rawGeodata(testFile) ? '0' : '1' };
     if (defaultConfigTests.has(testFile)) {
         env.L2NODE_CONFIG_FILE = 'config/default.ini';
         delete env.L2NODE_SHARED_CONFIG_FILE;

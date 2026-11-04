@@ -37,7 +37,8 @@ async function createWorld(id) {
 
 // Runs inside the worker: the kernel's own decision point and projection, in
 // the order a solo step runs them, with a round that looted an escape scroll
-// the bot did not carry (new loot and a supply event).
+// the bot did not carry (new loot and a supply event, which far from a player
+// waits through the hunt and the rest for the bot's arrival in town).
 const observer = String.raw`
 module.exports.stepProbe = async (id) => {
     const entry = kernel.states.get(id), timestamp = Date.now();
@@ -52,12 +53,22 @@ module.exports.stepProbe = async (id) => {
             materialize: { exp: 0, sp: 0, adena: 0, items: [{ selfId: 736, amount: 1 }] },
             nextResolveAt: timestamp + 60000 }, timestamp, plan);
         const ColdEconomyDecision = invoke('GameServer/Bot/Population/ColdEconomyDecision');
-        return { decided, afterRound: builds - decided, activity: state.activity,
+        const afterRound = builds - decided;
+        // The next rounds, from the projected state, on the same step decision: one ends
+        // at the rest, then a trip arrives in town.
+        const round = (from, patch, at) => kernel.projectResolve(from, { patch, debug: {}, events: [],
+            materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: at + 60000 }, at, plan);
+        const rest = await round(projection.state, { activity: 'resting' }, timestamp + 1000);
+        const town = await round({ ...rest.state, activity: 'traveling' }, { activity: 'shopping' }, timestamp + 2000);
+        const supply = invoke('GameServer/Bot/Economy/DecisionSections').sectionBit('supply');
+        const raised = next => [Number(next.state.stats.wishDirty || 0) & supply, Number(next.state.stats.decisionSeq || 0)];
+        return { decided, afterRound, activity: state.activity,
+            wishDirty: Number(projection.state.stats.wishDirty || 0),
+            seq: [Number(plan.statsPacket.decisionSeq || 0), Number(projection.state.stats.decisionSeq || 0)],
+            rest: raised(rest), town: raised(town),
             selectedActivity: plan.economy.network.activity?.activity,
             selectedRoot: plan.economy.network.activity?.rootKey,
             execution: plan.economyPlan?.travel,
-            wishDirty: Number(projection.state.stats.wishDirty || 0),
-            seq: [Number(plan.statsPacket.decisionSeq || 0), Number(projection.state.stats.decisionSeq || 0)],
             baseline: [plan.statsPacket.wishSections?.at, projection.state.stats.wishSections?.at],
             edges: projection.economyEdges,
             card: { updatedAt: projection.economyDecision?.updatedAt, echo: projection.economyDecision?.echo,
@@ -98,9 +109,44 @@ module.exports.goalProbe = async (id) => {
         return { same, held, refusal, moved };
     } finally { Economy.forState = original; }
 };
+// A refresh of a dirty bot waits for its step, whose build it would repeat, and
+// runs on that step's output.
+module.exports.refreshProbe = async id => {
+    const asked = () => occupationPlanner.waiting.has(id) || occupationPlanner.slots.has(id);
+    const record = (stats, economyPending) => { const entry = kernel.states.get(id);
+        return { ...entry, economyPending, state: { ...entry.state, phase: 'cold', stats: { ...entry.state.stats, ...stats } } }; };
+    const run = (pending, ask) => {
+        occupationPlanner.cancel(id);
+        kernel.states.set(id, record({ wishDirty: 1 }, pending));
+        ask?.();
+        const waited = !asked();
+        kernel.states.set(id, record({ wishDirty: 0 }, pending), 'commit');
+        return { waited, ran: asked() };
+    };
+    // A plan that does not stand: the request leaves it to the step, which answers.
+    const left = async () => {
+        occupationPlanner.cancel(id);
+        const worker = record({ wishDirty: 0 }, 0);
+        kernel.states.set(id, { ...worker, state: { ...worker.state, activity: 'hunting', party: null, partyId: null } });
+        EconomyContext.forget(id);
+        const door = () => (EconomyContext.buildDoors().economy_refresh || [0, 0, 0]).slice();
+        const before = door();
+        occupationOwnerChanged(id, true);
+        for (let tries = 0; tries < 500 && !kernel.states.get(id).refreshWaits; tries++) await new Promise(done => setTimeout(done, 10));
+        const waited = kernel.states.get(id).refreshWaits === true && !asked();
+        const after = door();
+        const own = kernel.states.get(id);
+        kernel.states.set(id, { ...own, state: { ...own.state } }, 'commit');
+        const ran = asked();
+        occupationPlanner.cancel(id);
+        return { waited, ran, built: after[0] - before[0], left: after[2] - before[2] };
+    };
+    // Main's reconcile asks with no pending count.
+    return { pending: run(1), reconcile: run(0, () => occupationOwnerChanged(id, true)), left: await left() };
+};
 // A party member's step (no decision before its round): a level gained in
-// its round moves its kit, which its party step reads to open a re-plan; a
-// quiet step moves nothing.
+// its round moves its kit, which its party step reads to open a re-plan (at
+// the party's rest: in its fight the kit waits); a quiet step moves nothing.
 module.exports.kitProbe = async (id) => {
     const entry = kernel.states.get(id), timestamp = Date.now();
     const Data = invoke('GameServer/DataCache');
@@ -110,7 +156,7 @@ module.exports.kitProbe = async (id) => {
     const first = await step(member, 0, timestamp);
     const quiet = await step(first.state, 0, timestamp + 1000);
     const gain = Number(Data.experience[quiet.state.level]) - Number(quiet.state.exp) + 1;
-    const levelUp = await step(quiet.state, gain, timestamp + 2000);
+    const levelUp = await step({ ...quiet.state, activity: 'resting' }, gain, timestamp + 2000);
     return { quiet: quiet.kitMoved, levelUp: levelUp.kitMoved, levels: [quiet.state.level, levelUp.state.level] };
 };
 module.exports.occupationProbe = async (id) => {
@@ -134,7 +180,7 @@ const loaded = new Module(workerData.workerPath, module);
 loaded.filename = workerData.workerPath; loaded.paths = Module._nodeModulePaths(path.dirname(workerData.workerPath));
 loaded._compile(fs.readFileSync(workerData.workerPath, 'utf8') + workerData.observer, workerData.workerPath);
 parentPort.on('message', message => {
-    const probe = ['stepProbe', 'goalProbe', 'kitProbe', 'occupationProbe'].find(name => message[name]);
+    const probe = ['stepProbe', 'goalProbe', 'kitProbe', 'occupationProbe', 'refreshProbe'].find(name => message[name]);
     if (!probe) return;
     loaded.exports[probe](message[probe]).then(value => parentPort.postMessage({ probeId: message.msgId, value }))
         .catch(error => parentPort.postMessage({ probeId: message.msgId, error: error.stack }));
@@ -193,8 +239,10 @@ parentPort.on('message', message => {
         assert.equal(step.decided, 1, 'a bot without a held decision builds its economy once, before the round');
         assert.equal(step.afterRound, 0, 'the projection after the round builds no economy');
         assert(step.edges & 1, 'the looted scroll is an edge the round acts on with the step decision');
-        assert.notEqual(step.wishDirty, 0, 'the supply event of the round waits for the next decision point');
-        assert(step.seq[1] > step.seq[0], 'the event check after the round moves the decision sequence');
+        assert.equal(step.wishDirty, 0, 'on the hunt the round\'s supply event raises nothing');
+        assert.equal(step.seq[1], step.seq[0], 'and the decision sequence stands');
+        assert.equal(step.rest[0], 0, 'nor does the round that ends at the rest');
+        assert(step.town[0] !== 0 && step.town[1] > step.seq[1], 'the arrival in town raises it and moves the sequence');
         assert.equal(step.baseline[1], step.baseline[0], 'the projected state keeps the baseline of the step decision');
         assert.equal(step.card.updatedAt, step.card.projectedAt, 'main gets the step card stamped to the projected state');
         assert.deepEqual(step.card.echo, step.card.projectedEcho, 'main gets the step card with the projected decision echo');
@@ -213,6 +261,11 @@ parentPort.on('message', message => {
         assert.equal(kit.levels[1], kit.levels[0] + 1, 'the fixture member levels up in its round');
         assert.equal(kit.quiet, false, 'a quiet party member step moves no kit');
         assert.equal(kit.levelUp, true, 'a level gained in a party round is a kit event for the party step');
+        worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'refresh'), refreshProbe: id });
+        const refreshResponse = await wait(message => message.probeId === 'refresh'); if (refreshResponse.error) throw Error(refreshResponse.error);
+        const moved = { waited: true, ran: true };
+        assert.deepEqual(refreshResponse.value, { pending: moved, reconcile: moved, left: { ...moved, built: 0, left: 1 } },
+            'a dirty bot refreshes after its step, not beside it, and no ask is lost');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'occupation'), occupationProbe: id });
         const occupationResponse = await wait(message => message.probeId === 'occupation');
         if (occupationResponse.error) throw Error(occupationResponse.error);

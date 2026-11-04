@@ -356,19 +356,18 @@ function attackTick(session, summon, target) {
     invoke('GameServer/Bot/AI/BotMobCompetition').record(summon, target);
     session.dataSendToMeAndOthers(ServerResponse.attack(summon, target.fetchId(), hit), summon);
     summon.state.setHits(true);
+    invoke('GameServer/Actor/PvpFlag').attack(session, summon, target);
 
     summon.attack.queueTimer(() => {
         if (summon.controlMode !== 'attack' || summon.isDead?.()
             || target.isDead?.() || target.state?.fetchDead?.() === true) return;
         if (!isValidEnemyTarget(session.actor, target) || !Restrictions.canAttack(summon) ||
-            !AttackRange.isWithinRange(summon, target, range)) return;
+            AttackRange.lostFromView(summon, target)) return;
         if (hitLanded) {
             if (target.fetchKind) invoke(path.npc).receivedHit(session, summon, target, hit.damage);
             else invoke(path.actor).receivedHit(session, target, hit.damage, { source: summon });
             attackHelper.applyDamageAbsorb(session, summon, hit.damage);
-        } else if (!target.fetchKind && invoke('GameServer/Bot/AI/BotPvpThreats').record(target, summon)) {
-            invoke('GameServer/Actor/PvpFlag').mark(session, session.actor);
-        }
+        } else if (!target.fetchKind) invoke('GameServer/Bot/AI/BotPvpThreats').record(target, summon);
     }, speed * 0.644);
 
     summon.attack.queueTimer(() => {

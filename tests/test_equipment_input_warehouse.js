@@ -123,7 +123,11 @@ async function run() {
         assert.equal(Crystals.freeReader(separateConversion)(178), 0,
             'a new exchange cannot crystallize an older project’s prepared weapon');
         const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
-        const context = Economy.forState(native, { timestamp: 1800000000000, board: new BoardIndex(), spots: [],
+        // Stock nobody sells takes no focus (T178): another bot sells the shots.
+        const shotBoard = new BoardIndex();
+        shotBoard.put({ id: 938050, ownerId: id + 9, storeType: 1, kind: 'shop', town: 'Giran',
+            lines: [{ lineId: 938051, selfId: 3949, count: 100000, price: 90, enchant: 0 }] });
+        const context = Economy.forState(native, { timestamp: 1800000000000, board: shotBoard, spots: [],
             routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
             rememberContext: false, withNodes: true, knowledgeEnabled: false });
         assert.equal(context.network.activity.rootKey, 'stock:shots');

@@ -7,6 +7,20 @@ const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 const { AsyncLocalStorage } = require('node:async_hooks');
 const mutationAdmission = new AsyncLocalStorage();
+// Bots the overdue line named: who moves their revision, with the caller (a
+// worker step begun before the move is refused). Four bots, 60 lines each.
+const revisionTrace = new Map();
+function traceRevisionWrite(sql, params) {
+    if (!revisionTrace.size || !sql.includes('simulationRevision')) return;
+    const id = params.find(value => revisionTrace.has(Number(value)));
+    if (id === undefined) return;
+    const left = revisionTrace.get(Number(id));
+    if (left <= 0) return;
+    revisionTrace.set(Number(id), left - 1);
+    console.info('Database :: overdue revision %s', JSON.stringify({ id: Number(id), at: Date.now(),
+        sql: sql.replace(/\s+/g, ' ').slice(0, 70), by: new Error().stack.split('\n').slice(3, 9)
+            .map(line => line.trim().replace(/^at /, '').replace(/\(?\/.*\/src\//, '(')) }));
+}
 function checkMutationAdmission() {
     const guard = mutationAdmission.getStore();
     if (guard && guard() !== undefined) throw new TypeError('invalid_mutation_admission');
@@ -20,6 +34,7 @@ const CheckpointCoordinator = require('./DatabaseCheckpointCoordinator');
 const HistoryStore = require('./HistoryStore');
 const History = require('./HistoryDatabase');
 const { XP_DIVIDER: KARMA_XP_DIVIDER } = require('./GameServer/Karma');
+const PvpRules = require('./GameServer/PvpRules');
 const InteractionMemoryPolicy = require('./GameServer/Social/InteractionMemoryPolicy');
 const ClanNameCatalog = require('./GameServer/Clan/ClanNameCatalog');
 const BoardRules = require('./GameServer/AfkTrade/BoardRules');
@@ -314,6 +329,7 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
 
 function run(sql, params = [], operation, readOverride = null, onTiming = null) {
     const read = readOverride === null ? isReadStatement(sql) : !!readOverride;
+    if (!read) traceRevisionWrite(sql, params);
     return enqueue(() => {
         if (!connection) throw new Error(`SQLite is not initialized (${operation || operationName(sql)})`);
         // Read integers as BigInts before existing Number normalization.
@@ -1952,6 +1968,7 @@ function all(sql, params = []) {
 
 function write(sql, params = []) {
     checkMutationAdmission();
+    traceRevisionWrite(sql, params);
     const result = Statements.prepare(connection, sql).run(...params);
     return { affectedRows: Number(result.changes || 0), insertId: Number(result.lastInsertRowid || 0) };
 }
@@ -2508,13 +2525,13 @@ function checkEconomyFundingUnsafe(characterId, step, amount, funding = {}, wall
     const stats = SavedStats.merge(step.row.statsJson, step.row.mindJson), packet = packetOverride || stats.money;
     if (!Array.isArray(packet) || packet.length < 4) throw Error('economy_funding_missing');
     const wallet = walletOverride === null ? Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=57', [characterId]).amount) : walletOverride;
-    const { r, itemId, valueHours, survivalCost, clanPart, raidPreparationId } = funding;
+    const { r, itemId, valueHours, side, survivalCost, survivalShare, clanPart, raidPreparationId } = funding;
     const fundingCapture = Diagnostics.active() && Diagnostics.enabled(characterId) ? {} : null;
     const budget = PurchaseFunding.spendable({
         adena: wallet, stats: raidPreparationId ? { ...stats, money: packet } : { money: packet },
         ...(raidPreparationId ? { inventory: { [itemId]: { amount: Number(one(
             'SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=?', [characterId, itemId]).amount) } } } : {})
-    }, 0, { r, itemId, valueHours, survivalCost, clanPart, raidPreparationId, free: funding.free === true }, fundingCapture);
+    }, 0, { r, itemId, valueHours, side, survivalCost, survivalShare, clanPart, raidPreparationId, free: funding.free === true }, fundingCapture);
     if (Diagnostics.active()) stageNativeDiagnostic(characterId, step, 'native_funding', amount <= budget ? 'allowed' : 'funding_changed',
         { item: Number(funding.itemId), cost: amount, wallet, budget, available: budget, reserve: Number(packet[2]),
             priorityReserve: fundingCapture?.priorityReserve, moneyPrice: Number(packet[1]), escrow: 0,
@@ -2539,10 +2556,12 @@ function prepareCraftReservationsUnsafe(step, recipe) {
         && !unsealSource
         && Number(plan.componentRecipes?.[recipe.productId]) === Number(recipe.recipeId);
     if (!final && !component) return;
+    // A bot's own craft spends its own bag: a clan goal's reserve binds what the
+    // bot sells or trades, not this plan (docs/game-decisions.md, 11-02).
     step.reserved = invoke('GameServer/Bot/Economy/ItemDisposition').reservedEquipmentAmounts({
         level: Number(step.row.level), phase: step.row.phase, stats,
         inventory: jsonObject(step.row.inventorySummary)
-    }, { craft: false });
+    }, { craft: false, clan: false });
 }
 
 function checkEconomyMaterialProtectionUnsafe(characterId, step, selfId, used, sale = false) {
@@ -3003,7 +3022,7 @@ function applySoulCrystalStepsUnsafe(characterId, steps, guard = () => {}) {
     }
 }
 
-function applyColdPhysicalStateUnsafe(characterId, physical = {}, parts = null) {
+function applyColdPhysicalStateUnsafe(characterId, physical = {}, parts = null, deathRecord = null) {
     const before = one('SELECT level,exp,sp,hp,maxHp,mp,maxMp,classId FROM characters WHERE id = ?', [characterId]);
     const classId = Number.isFinite(Number(physical.classId)) ? Number(physical.classId) : null;
     const values = {
@@ -3034,27 +3053,34 @@ function applyColdPhysicalStateUnsafe(characterId, physical = {}, parts = null) 
         const current = one('SELECT level, pvp, pk, karma FROM characters WHERE id = ?', [characterId]);
         for (const kill of physical.pvpKills) {
             if (!Number.isSafeInteger(kill.victimId) || kill.victimId === characterId
-                || !Number.isSafeInteger(kill.victimLevel) || kill.victimLevel < 1 || typeof kill.pvp !== 'boolean') {
+                || !Number.isSafeInteger(kill.victimLevel) || kill.victimLevel < 1 || !PvpRules.KILL_OUTCOMES.includes(kill.outcome)) {
                 throw Error('cold PvP: invalid kill');
             }
-            if (kill.pvp) current.pvp++;
-            else {
-                current.karma += require('./GameServer/Karma').pkKillKarma({ fetchPk: () => current.pk,
-                    fetchLevel: () => current.level }, { fetchLevel: () => kill.victimLevel });
-                current.pk++;
-            }
+            Object.assign(current, PvpRules.tallyAfterKill(current, kill.outcome, kill.victimLevel));
         }
         write('UPDATE characters SET pvp = ?, pk = ?, karma = ? WHERE id = ?',
             [current.pvp, current.pk, current.karma, characterId]);
         write("UPDATE bot_life_state SET statsJson = json_set(statsJson, '$.karma', ?, '$.pk', ?) WHERE characterId = ?",
             [current.karma, current.pk, characterId]);
     }
-    // A PvP tally and a PK death drop (tried on the step that ends at 0 HP; it
-    // returns its death sequence only when it wrote) rewrite this bot's life
-    // state after the commit's UPDATE.
+    // A PvP tally, a PK death drop (tried on the step that ends at 0 HP; it
+    // returns its death sequence only when it wrote) and a death's karma wash
+    // rewrite this bot's life state after the commit's UPDATE.
     const dropped = Number(before?.hp) > 0 && Number(physical.hp) <= 0 ? dropPkDeathItemsUnsafe(characterId) : null;
+    // A new cold death's EXP loss washes karma (DeathExperience.applyColdDeath
+    // names how much), after the drop read the karma it died with.
+    // The wash is capped by the karma held now, after this commit's own kills.
+    const washed = Number(deathRecord?.karmaLost) > 0 && deathRecord.pendingRestoration
+        && Number(one('SELECT karma FROM characters WHERE id = ?', [characterId])?.karma) > 0
+        && !(Number(one('SELECT penaltyAppliedAt FROM character_death_experience WHERE characterId = ?',
+            [characterId])?.penaltyAppliedAt) >= Number(deathRecord.penaltyAppliedAt));
+    if (washed) {
+        write('UPDATE characters SET karma = MAX(0, karma - ?) WHERE id = ?', [Number(deathRecord.karmaLost), characterId]);
+        write("UPDATE bot_life_state SET statsJson = json_set(statsJson, '$.karma', (SELECT karma FROM characters WHERE id = ?)) WHERE characterId = ?",
+            [characterId, characterId]);
+    }
     return { drops: dropped?.drops || [],
-        rewrote: dropped?.deathSequence !== undefined || physical.pvpKills?.length > 0 };
+        rewrote: dropped?.deathSequence !== undefined || physical.pvpKills?.length > 0 || washed };
 }
 
 // The row is already moved when this runs: by the commit's own UPDATE, or by
@@ -3508,7 +3534,7 @@ function repriceAfkTradeLineUnsafe(characterId, id, unitPrice, expectedRevision,
     if (!Number.isSafeInteger(reserved) || reserved < 0) throw new Error('invalid_afk_trade_budget');
     if (difference > 0) afkTradeDebitAdenaUnsafe(characterId, difference);
     if (difference < 0) afkTradeCreditAdenaUnsafe(characterId, -difference);
-    const changedIds = [];
+    const changedIds = difference ? [57] : [];
     if (returned > 0 && shop.custodyPolicy !== 1 && Number(shop.storeType) === 1) {
         afkTradeCreditItemUnsafe(characterId, line, returned);
         changedIds.push(Number(line.selfId));
@@ -3530,7 +3556,7 @@ function repriceAfkTradeLineUnsafe(characterId, id, unitPrice, expectedRevision,
     return {
         shop: filled ? closedRecord(current) : afkTradeShopUnsafe(shop.id),
         changedIds,
-        moved: changedIds.length > 0 || difference !== 0
+        moved: changedIds.length > 0
     };
 }
 
@@ -3725,7 +3751,7 @@ function closeBoardRecordUnsafe(shop, { ownMove = true, at = now() } = {}) {
             if (give(line, line.count) === 'bag') changed.push(Number(line.selfId));
         });
     }
-    if (Number(shop.escrowAdena || 0) > 0) give({ selfId: 57 }, shop.escrowAdena);
+    if (Number(shop.escrowAdena || 0) > 0 && give({ selfId: 57 }, shop.escrowAdena) === 'bag') changed.push(57);
     deleteBoardRecordUnsafe(shop.id, at);
     return changed;
 }
@@ -4970,7 +4996,8 @@ const Database = {
                 shop: opened.shop,
                 closedRecords,
                 ownerInventory: afkTradeInventoryUnsafe(characterId),
-                coldLifeRows: fenceAfkTradePartiesUnsafe([characterId], opened.changedIds)
+                // An ad with no custody moved nothing: the worker's step stands.
+                coldLifeRows: opened.changedIds.length ? fenceAfkTradePartiesUnsafe([characterId], opened.changedIds) : {}
             };
         }, 'afk-trade:create'));
     },
@@ -5035,10 +5062,11 @@ const Database = {
         }
         return withCharacterFlush(characterId, () => inTransaction(() => {
             const opened = list.map((config) => openBoardRecordUnsafe(characterId, { ...config, kind }, config.lines));
+            const changedIds = opened.flatMap((record) => record.changedIds);
             return {
                 opened: opened.map((record) => record.shop),
                 ownerInventory: afkTradeInventoryUnsafe(characterId),
-                coldLifeRows: fenceAfkTradePartiesUnsafe([characterId], opened.flatMap((record) => record.changedIds))
+                coldLifeRows: changedIds.length ? fenceAfkTradePartiesUnsafe([characterId], changedIds) : {}
             };
         }, 'board:open'));
     },
@@ -6015,7 +6043,7 @@ const Database = {
             parts?.lap('row_write');
             const physical = request.physical || null;
             EconomyJournal.detail(request.journalReason || 'resolve');
-            const { drops: pkDrops, rewrote } = physical ? applyColdPhysicalStateUnsafe(characterId, physical, parts) : { drops: [], rewrote: false };
+            const { drops: pkDrops, rewrote } = physical ? applyColdPhysicalStateUnsafe(characterId, physical, parts, request.stats?.deathExperience) : { drops: [], rewrote: false };
             parts?.lap('physical');
             // What deals and closed records left for the bot on the board while
             // the worker held it reaches its bag with this save.
@@ -6277,6 +6305,42 @@ const Database = {
         return inTransaction(() => require('./GameServer/Bot/Population/ConstPartyActivity').native({
             one, all, write, row: coldSimulationRow, now
         }).release(request), 'bot-life:const-party-resume');
+    },
+
+    // Boot only, before the worker: every row left hot by a restart, rebuilt
+    // by `fromRecord` (BotLifeState) from its character record in one
+    // transaction. Configured static merchants stay hot: BotManager spawns them.
+    recoverStaleHotLifeStates(fromRecord, timestamp) {
+        return inTransaction(() => {
+            const rows = all(`SELECT * FROM bot_life_state WHERE phase = 'hot'
+                AND (activity <> 'merchant' OR statsJson LIKE '%"marketStore"%')`);
+            let withoutRecord = 0;
+            for (const row of rows) {
+                const id = Number(row.characterId);
+                const character = one('SELECT level, exp, sp, hp, maxHp, mp, maxMp FROM characters WHERE id = ?', [id]);
+                if (!character) {
+                    // No record to rebuild from (the cascade should prevent it):
+                    // cool the row as it is rather than fail every bot's boot.
+                    write(`UPDATE bot_life_state SET phase = 'cold', nextResolveAt = COALESCE(nextResolveAt, ?),
+                        updatedAt = ? WHERE characterId = ?`, [timestamp + 30000, timestamp, id]);
+                    withoutRecord += 1;
+                    continue;
+                }
+                const next = fromRecord(row, { character, items: all('SELECT * FROM items WHERE characterId = ? ORDER BY id', [id]),
+                    coldCombat: combat => nativeColdCombatSkillsUnsafe(id, combat) }, timestamp);
+                write(`UPDATE bot_life_state SET level = ?, exp = ?, sp = ?, adena = ?,
+                    activity = ?, phase = 'cold', nextResolveAt = ?, hp = ?, maxHp = ?, mp = ?, maxMp = ?,
+                    targetLevelBand = ?, inventorySummary = ?, statsJson = ?, mindJson = ?,
+                    simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?`,
+                [next.level, next.exp, next.sp, next.adena, next.activity, next.nextResolveAt,
+                    next.hp, next.maxHp, next.mp, next.maxMp, next.targetLevelBand,
+                    next.inventorySummary, next.statsJson, next.mindJson, timestamp, id]);
+                // The row's background position stays (its activation policy is
+                // not saved); the record takes it, as markCold writes it back.
+                write('UPDATE characters SET locX = ?, locY = ?, locZ = ? WHERE id = ?', [next.locX, next.locY, next.locZ, id]);
+            }
+            return { recovered: rows.length - withoutRecord, withoutRecord };
+        }, 'bot-life:stale-hot-recovery');
     },
 
     recoverConstPartyActivities() {
@@ -6579,6 +6643,10 @@ const Database = {
         return closePromise;
     },
 
+    traceRevisions(characterId) {
+        if (revisionTrace.size < 4 && !revisionTrace.has(characterId)) revisionTrace.set(characterId, 60);
+    },
+
     registerCharacterWriteFlush(flush) {
         flushPendingCharacterWrites = typeof flush === 'function' ? flush : null;
     },
@@ -6618,7 +6686,12 @@ const Database = {
 
     withMutationAdmission(beforeWrite, work) {
         if (typeof beforeWrite !== 'function' || typeof work !== 'function') throw new TypeError('invalid_mutation_admission');
-        return mutationAdmission.run(beforeWrite, () => Promise.resolve().then(work));
+        // The guard ends with its scope. What the scope left running (a trade
+        // meeting waiting for two workers, a timer it armed) inherits the store
+        // and answers to its own checks, not to a command that has ended.
+        let open = true;
+        const guard = () => (open ? beforeWrite() : undefined);
+        return mutationAdmission.run(guard, () => Promise.resolve().then(work)).finally(() => { open = false; });
     },
 
     withoutMutationAdmission(work) {

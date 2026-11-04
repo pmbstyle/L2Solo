@@ -31,7 +31,7 @@ async function session(stock, adena = 100) {
     await Native.character(Database, id, `Sale${id}`, `sale_${id}`);
     if (adena) await Database.setItem(id, { selfId: 57, name: 'Adena', amount: adena });
     for (const [selfId, amount] of stock) await Database.setItem(id, { selfId, amount });
-    const backpack = new Backpack({ items: await Database.fetchItems(id), paperdoll: {} });
+    const backpack = new Backpack({ id, items: await Database.fetchItems(id), paperdoll: {} });
     const result = { actor: { fetchId: () => id, backpack }, packets: [], dataSendToMe(data) { this.packets.push(data); } };
     result.activeNpcSellShop = { items: new Map(Rules.rows(result.actor).map(row =>
         [row.item.fetchId(), { selfId: row.item.fetchSelfId(), price: row.price }])) };

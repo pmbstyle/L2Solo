@@ -179,7 +179,7 @@ try {
     const packets = [Response.userInfo, Response.charInfo, Response.relationChanged];
     killer.pvp = 0;
     killer.fetchPvp = () => killer.pvp; killer.setPvp = n => { killer.pvp = n; };
-    killer.fetchPk = () => 0;
+    killer.fetchPk = () => 0; killer.setPk = killer.setKarma = () => {};
     doomed.setPvpFlag = n => { doomed.flag = n; };
     killer.session.dataSendToMe = doomed.session.dataSendToMe = () => {};
     Response.userInfo = Response.charInfo = Response.relationChanged = () => Buffer.alloc(0);

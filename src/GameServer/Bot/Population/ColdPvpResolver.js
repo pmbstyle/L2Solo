@@ -10,7 +10,8 @@ const Tendency = require('../AI/TendencyRoll');
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const DeathExperience = invoke('GameServer/Progression/DeathExperience');
 const { MAX_ACTIONS, INITIAL_MS: MAX_DURATION_MS } = require('./PvpEncounterBudget');
-const FLAG_MS = 15000;
+const PvpRules = invoke('GameServer/PvpRules');
+const { FLAG_MS } = PvpRules;
 const RECOVERY_MS = 90000;
 const clamp = (n, low, high) => Math.max(low, Math.min(high, n));
 const clan = state => Number(state.stats?.clanId || state.clanId || 0);
@@ -136,7 +137,7 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
             }
             next.heals++;
         } else {
-            if (!(Number(target.state.stats?.karma || 0) > 0)) {
+            if (PvpRules.flagsAttacker(target.state.stats?.karma)) {
                 next.flagged = true;
                 next.flagUntil = Math.ceil(timestamp + time + FLAG_MS);
             }
@@ -146,10 +147,11 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
             let damage = combat.attackDamage(next, selected, target.profile, rng);
             combat.settleCharges(next, skill ? Rules.resolve(skill) : {}, timestamp + time);
             damage = Math.max(0, Math.round(damage));
-            const shield = Math.min(target.cp, damage);
-            target.cp -= shield;
+            // Every cold PvP attacker is a character: CP first.
+            const shielded = PvpRules.shieldDamage(target.cp, damage, true);
+            target.cp = shielded.cp;
             const hpBefore = target.vitals.hp;
-            target.vitals.hp = Math.max(0, target.vitals.hp - (damage - shield));
+            target.vitals.hp = Math.max(0, target.vitals.hp - shielded.hp);
             if (target.vitals.hp < hpBefore) { next.lastVictimId = target.id; next.lastVictimAt = timestamp + time; }
             if (target.vitals.hp <= 0) {
                 const rescued = fighters.find(f => f.id === target.lastVictimId && f.side === next.side && f.id !== next.id);
@@ -159,9 +161,14 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
                     help.set(`${rescued.id}:${next.id}:helped_in_combat`, { sourceId: rescued.id, targetId: next.id, type: 'helped_in_combat' });
                 }
                 incident(target, next, true);
+                // { victimId, victimLevel, outcome: PvpRules.KILL_OUTCOMES }
+                // goes to the main thread as durable.pvpKills; the cold commit
+                // applies the outcome (PvpRules.tallyAfterKill). The killer's
+                // karma is the one it came with: a kill ends the fight, except
+                // a war campaign's, whose kills are all war kills.
                 next.kills.push({ victimId: target.id, victimLevel: target.state.level,
-                    pvp: target.flagged || Number(target.state.stats?.karma || 0) > 0
-                        || !!wars?.between(clan(next.state), clan(target.state)).mutual });
+                    outcome: PvpRules.killOutcome({ killerKarma: next.state.stats?.karma, victimKarma: target.state.stats?.karma,
+                        victimFlagged: target.flagged, mutualWar: !!wars?.between(clan(next.state), clan(target.state)).mutual }) });
                 // Stepped encounters close on a casualty; campaigns can engage
                 // survivors again without materializing a dead actor at handoff.
                 if (!war || step || !fighters.some(f => f.side === target.side && f.vitals.hp > 0)) {
@@ -216,4 +223,4 @@ function resolve({ sides, roles, timestamp, rng, personaFor, step = null, openin
             preparations: f.preparations, charges: f.charges, heals: f.heals, kills: f.kills })), actions };
 }
 
-module.exports = { resolve, allowed, ownSide, clearlyWeaker, CLEAR_GAP, MAX_ACTIONS, MAX_DURATION_MS, FLAG_MS, RECOVERY_MS };
+module.exports = { resolve, allowed, ownSide, clearlyWeaker, CLEAR_GAP, MAX_ACTIONS, MAX_DURATION_MS, RECOVERY_MS };

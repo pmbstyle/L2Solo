@@ -108,8 +108,6 @@ function evaluate(session, bot, target) {
 
 function tryFinish(session, bot, target, Generics, BotAI) {
     const decision = evaluate(session, bot, target);
-    session.lastFinisherDecision = { ...(decision || {}), allowed: !!decision,
-        targetId: target?.fetchId?.(), at: Date.now() };
     if (!decision) return false;
     session.currentTargetId = target.fetchId();
     bot.select({ id: target.fetchId() });

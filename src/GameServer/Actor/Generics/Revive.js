@@ -3,7 +3,6 @@ const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
 
 function finishRevive(session, actor, helper) {
     const wasDead = actor.state.fetchDead?.() === true;
-    if (actor.fetchHp && !(actor.fetchHp() > 0)) actor.setHp(1);
     actor.state.setDead(false);
     actor.statusUpdateVitals?.(actor);
     if (helper && wasDead) invoke('GameServer/Social/CombatHelpMemory').record(helper, actor, { resurrected: true });
@@ -40,7 +39,6 @@ function finishRevive(session, actor, helper) {
 
 function revive(session, actor, {
     delayMs = 2500,
-    restoreFullVitals = false,
     helper = null,
     restoreExpPercent = null,
     recoveryReason = 'non_resurrection_recovery'
@@ -49,12 +47,8 @@ function revive(session, actor, {
     const experience = restoreExpPercent === null
         ? { persistence: DeathExperience.clearPendingRestoration(actor, recoveryReason) }
         : DeathExperience.restoreFromResurrection(session, actor, { restoreExpPercent });
-    if (restoreFullVitals) {
-        actor.automation.stopReplenish();
-        actor.fillupVitals();
-    } else {
-        actor.automation.replenishVitals(actor);
-    }
+    actor.setHp(invoke('GameServer/Formulas').respawnHp(actor.fetchMaxHp()));
+    actor.automation.replenishVitals(actor);
 
     if (delayMs <= 0) {
         finishRevive(session, actor, helper);

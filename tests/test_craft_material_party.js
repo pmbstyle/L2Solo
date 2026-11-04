@@ -120,7 +120,7 @@ try {
     const checksBeforeSupplies = [inspected, routeChecks];
     for (const [offset, activity, focus] of [[100, 'hunting', 'stock:shots'], [1000, 'traveling', 'stock:scrolls'],
         [2000, 'shopping', 'stock:shots'], [61000, 'resting', 'stock:shots']]) {
-        const stockEconomy = { ...economy, network: { ...economy.network, focus: [focus] } };
+        const stockEconomy = { ...economy, network: { ...economy.network, activity: { rootKey: focus } } };
         const parked = Request.partyRequestForPlan({ ...resupplying, activity }, plan, timestamp + offset,
             { spots, economy: stockEconomy });
         assert.equal(parked.status, 'deferred', 'supply priority never reopens the material request');
@@ -147,7 +147,7 @@ try {
     assert.equal(assemblyReturn.status, 'deferred');
     assert.equal(assemblyReturn.attempts, 3);
     assert.equal(assemblyReturn.suspendedFor, undefined, 'returning from supplies restores the ordinary safe waiting route');
-    const stockEconomy = { ...economy, network: { ...economy.network, focus: ['stock:shots'] } };
+    const stockEconomy = { ...economy, network: { ...economy.network, activity: { rootKey: 'stock:shots' } } };
     for (const [label, next, nextPlan, context] of [
         ['target complete', resupplying, { ...plan, status: 'complete' }, stockEconomy],
         ['changed target', resupplying, { ...plan, target: { selfId: 5730, slot: 12 } }, stockEconomy],

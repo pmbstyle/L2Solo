@@ -21,18 +21,12 @@ const DEFAULTS = {
     opportunisticRaidShotReserve: 1.3,
     opportunisticRaidExpeditionMs: 45 * 60000,
     phasePolicyEnabled: true,
-    directorEnabled: false,
     summaryIntervalMs: 30000,
+    // How often the player-activity and lag signal is published (the cold
+    // worker pressure and the background work admissions read it).
     schedulerIntervalMs: 5000,
-    // Cold simulation is invisible to players. Keep its total throughput
-    // bounded, while allowing a larger catch-up slice when no real player is
-    // online. The player-aware budget remains intentionally conservative.
+    // One cooperative main-thread slice of background work.
     schedulerSliceMs: 12,
-    schedulerIdleBudgetMs: 2500,
-    schedulerPlayerBudgetMs: 100,
-    schedulerPartyBudgetMs: 75,
-    schedulerIdleMaxResolvesPerTick: 100,
-    schedulerPlayerMaxResolvesPerTick: 12,
     coldOwnerResolveTimeoutMs: 10000,
     coldWorkerBatchSize: 64,
     coldWorkerCommitBatchSize: 32,
@@ -63,6 +57,10 @@ const DEFAULTS = {
     // A full 1,700-bot world with warm economic caches exceeds 256 MiB
     // after major GC. Leave headroom for transient planning/clone allocations.
     coldWorkerHeapMb: 512,
+    // The worker's young generation, three semi-spaces. V8's 48 MB let a plan
+    // build's short-lived objects reach the old space: a major GC every 3 s
+    // (gc-trace 11-01). Restart to apply.
+    coldWorkerYoungMb: 192,
     // Diagnostics: the cold worker writes one heap snapshot per server boot as its heap nears
     // coldWorkerHeapMb (into tmp/heap/ of the server root). Off by default; restart to apply.
     coldWorkerHeapSnapshot: false,
@@ -89,9 +87,6 @@ const DEFAULTS = {
     // in small batches so restart never becomes a database migration spike.
     classProgressionMigrationIntervalMs: 10000,
     classProgressionMigrationBatchSize: 5,
-    coldCombatProfileMigrationIntervalMs: 10000,
-    coldCombatProfileMigrationBatchSize: 5,
-    partyFormationIntervalMs: 45000,
     // A protected player session may replenish only required parties. The
     // worker finds candidates; the main loop performs one guarded atomic write.
     protectedPartyFormationPollMs: 5000,
@@ -104,7 +99,6 @@ const DEFAULTS = {
     // replan/review cadence, not a period during which the bot is blocked.
     partyWaitReplanMs: 5 * 60 * 1000,
     phasePolicyIntervalMs: 10000,
-    directorIntervalMs: 30000,
     // Start with every level-one hunting sector. Waves open every five levels
     // at x1-x10, or every ten levels at x50 and above. This is a cap for
     // generated adventurers only; shop services are not part of it.
@@ -112,9 +106,6 @@ const DEFAULTS = {
     starterBotsPerRace: 30,
     generatedColdBatchSize: 50,
     generatedColdSeedDelayMs: 45000,
-    // The persistent world is resolved in bounded batches so population
-    // expansion never becomes a database spike after a restart.
-    maxResolvesPerTick: 25,
     // Append-only diagnostics and AI memory have explicit lifecycles. Run a
     // single indexed delete statement per idle tick, delayed after start so it
     // never joins the startup write burst.
@@ -144,10 +135,6 @@ const DEFAULTS = {
     coldCompetitionConflictsEnabled: true,
     coldCompetitionPvpEnabled: true,
     pvpAggression: 0.5,
-    // Honest cold travel (step 3.2): off = the author's trip times (a 25 s
-    // transit); on = scroll cast + gatekeeper hops + run time by distance, and
-    // a bot running to a spot is a walker that appears near the player.
-    coldHonestTravel: false,
     partyMinSize: 2,
     partyMaxSize: 5,
     // Shared safety ceiling for every background party. Admission never
@@ -171,7 +158,6 @@ const DEFAULTS = {
     cooldownBatchSize: 20,
     cooldownRadius: 11000,
     activationRadius: 9000,
-    activationLevelRange: 5,
     maxActivationsPerScan: 6,
     activationPlacementRadius: 1400,
     activationMinPlayerDistance: 450,
@@ -183,12 +169,6 @@ const DEFAULTS = {
     activationFloorGeoChecksPerScan: 24,
     activationFloorCacheMs: 30000,
     activationFloorCacheLimit: 2048,
-    directorTargetBandRadius: 2,
-    directorMaxCatchUpMultiplier: 1.35,
-    directorSlowdownMultiplier: 0.85,
-    newbieAnchorMaxLevel: 5,
-    newbieAnchorExpMultiplier: 0.2,
-    newbieAnchorFloorRatio: 0.12,
     globalChatEnabled: true,
     clanChatEnabled: true,
     clanChatMinIntervalMs: 15000,
@@ -202,9 +182,6 @@ const DEFAULTS = {
     marketTradeChatEnabled: true,
     marketTradeChatIntervalMs: 8 * 60 * 1000,
     marketTradeChatGlobalMinIntervalMs: 100000,
-    partyRecruitmentChatEnabled: true,
-    partyRecruitmentChatIntervalMs: 12 * 60 * 1000,
-    partyRecruitmentChatGlobalMinIntervalMs: 90000,
     partyMarketBreakMinSessionMs: 10 * 60 * 1000,
     partyMarketBreakMinFights: 8,
     partyMarketBreakCooldownMs: 5 * 60 * 1000,
@@ -212,8 +189,7 @@ const DEFAULTS = {
     resolveSlowMs: 250,
     resolveSampleLimit: 200,
     eventLoopSampleMs: 1000,
-    slowEventLoopLagMs: 75,
-    debug: false
+    slowEventLoopLagMs: 75
 };
 
 const ENV_KEYS = {
@@ -226,7 +202,6 @@ const ENV_KEYS = {
     backgroundResolverEnabled: 'BOT_BACKGROUND_RESOLVER_ENABLED',
     backgroundPartyEnabled: 'BOT_BACKGROUND_PARTY_ENABLED',
     phasePolicyEnabled: 'BOT_POPULATION_PHASE_POLICY_ENABLED',
-    directorEnabled: 'BOT_POPULATION_DIRECTOR_ENABLED',
     maxPlayingPopulation: 'BOT_POPULATION_MAX_PLAYING',
     starterBotsPerRace: 'BOT_POPULATION_STARTER_BOTS_PER_RACE',
     generatedColdBatchSize: 'BOT_POPULATION_BATCH_SIZE',
@@ -234,18 +209,12 @@ const ENV_KEYS = {
     cooldownGraceMs: 'BOT_COOLDOWN_GRACE_MS',
     cooldownRadius: 'BOT_COOLDOWN_RADIUS',
     activationRadius: 'BOT_ACTIVATION_RADIUS',
-    activationLevelRange: 'BOT_ACTIVATION_LEVEL_RANGE',
     maxActivationsPerScan: 'BOT_MAX_ACTIVATIONS_PER_SCAN',
     activationFloorDirectZ: 'BOT_ACTIVATION_FLOOR_DIRECT_Z',
     activationFloorGeoChecksPerScan: 'BOT_ACTIVATION_FLOOR_GEO_CHECKS_PER_SCAN',
     activationFloorCacheMs: 'BOT_ACTIVATION_FLOOR_CACHE_MS',
     activationFloorCacheLimit: 'BOT_ACTIVATION_FLOOR_CACHE_LIMIT',
     schedulerSliceMs: 'BOT_POPULATION_SCHEDULER_SLICE_MS',
-    schedulerIdleBudgetMs: 'BOT_POPULATION_SCHEDULER_IDLE_BUDGET_MS',
-    schedulerPlayerBudgetMs: 'BOT_POPULATION_SCHEDULER_PLAYER_BUDGET_MS',
-    schedulerPartyBudgetMs: 'BOT_POPULATION_SCHEDULER_PARTY_BUDGET_MS',
-    schedulerIdleMaxResolvesPerTick: 'BOT_POPULATION_SCHEDULER_IDLE_MAX_RESOLVES',
-    schedulerPlayerMaxResolvesPerTick: 'BOT_POPULATION_SCHEDULER_PLAYER_MAX_RESOLVES',
     coldOwnerResolveTimeoutMs: 'BOT_POPULATION_COLD_OWNER_TIMEOUT_MS',
     coldWorkerBatchSize: 'BOT_POPULATION_COLD_WORKER_BATCH_SIZE',
     coldWorkerCommitBatchSize: 'BOT_POPULATION_COLD_WORKER_COMMIT_BATCH_SIZE',
@@ -267,6 +236,7 @@ const ENV_KEYS = {
     coldWorkerQueueMaxEntries: 'BOT_POPULATION_COLD_WORKER_QUEUE_ENTRIES',
     coldWorkerQueueMaxBytes: 'BOT_POPULATION_COLD_WORKER_QUEUE_BYTES',
     coldWorkerHeapMb: 'BOT_POPULATION_COLD_WORKER_HEAP_MB',
+    coldWorkerYoungMb: 'BOT_POPULATION_COLD_WORKER_YOUNG_MB',
     coldWorkerHeapSnapshot: 'BOT_POPULATION_COLD_WORKER_HEAP_SNAPSHOT',
     playerProtectionGraceMs: 'BOT_POPULATION_PLAYER_PROTECTION_GRACE_MS',
     schedulerLagThrottleMs: 'BOT_POPULATION_SCHEDULER_LAG_THROTTLE_MS',
@@ -290,8 +260,6 @@ const ENV_KEYS = {
     marketTradeChatEnabled: 'BOT_MARKET_TRADE_CHAT_ENABLED',
     marketTradeChatIntervalMs: 'BOT_MARKET_TRADE_CHAT_INTERVAL_MS',
     marketTradeChatGlobalMinIntervalMs: 'BOT_MARKET_TRADE_CHAT_GLOBAL_MIN_INTERVAL_MS',
-    partyRecruitmentChatEnabled: 'BOT_PARTY_RECRUITMENT_CHAT_ENABLED',
-    partyRecruitmentChatIntervalMs: 'BOT_PARTY_RECRUITMENT_CHAT_INTERVAL_MS',
     partyMarketBreakMinSessionMs: 'BOT_PARTY_MARKET_BREAK_MIN_SESSION_MS',
     partyHistoryRetentionMs: 'BOT_PARTY_HISTORY_RETENTION_MS',
     partyHistoryCleanupBatchSize: 'BOT_PARTY_HISTORY_CLEANUP_BATCH_SIZE',
@@ -312,8 +280,7 @@ const ENV_KEYS = {
     staleLlmTurnMs: 'BOT_STALE_LLM_TURN_MS',
     compactedConversationRetentionMs: 'BOT_COMPACTED_CONVERSATION_RETENTION_MS',
     conversationMaxUncompactedRows: 'BOT_CONVERSATION_MAX_UNCOMPACTED_ROWS',
-    devLogPlayerChat: 'BOT_DEV_LOG_PLAYER_CHAT',
-    debug: 'BOT_POPULATION_DEBUG'
+    devLogPlayerChat: 'BOT_DEV_LOG_PLAYER_CHAT'
 };
 
 function asBoolean(value, fallback) {

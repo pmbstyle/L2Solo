@@ -1,11 +1,15 @@
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
+const { inClientView } = require('../World/WorldConstants');
 
 const BOW_ATTACK_RANGE = 700;
 const MELEE_ATTACK_RANGE = 40;
 const POLEARM_ATTACK_RANGE = 66;
+// Talking to an NPC does not depend on the weapon (Mobius C4 PlayerAI.thinkInteract).
+const TALK_RANGE = 36;
 const npcRadiusMaxima = new WeakMap();
+let viewLosses = 0;
 
 function equippedWeapon(actor) {
     return actor?.backpack?.fetchEquippedWeapon?.() || null;
@@ -88,6 +92,21 @@ function isWithinRange(source, target, attackRange) {
     return distance2d(source, target) <= effectiveRange(source, target, attackRange);
 }
 
+// Range decides whether a weapon attack starts; a started attack (melee, arrow,
+// monster, servitor) lands unless its target left the attacker's view (Lisvus
+// L2Character.onHitTimer: knowsObject, no range). Every attack path asks here.
+function lostFromView(source, target) {
+    const lost = !inClientView(Number(source?.fetchLocX?.()) || 0, Number(source?.fetchLocY?.()) || 0,
+        Number(target?.fetchLocX?.()) || 0, Number(target?.fetchLocY?.()) || 0);
+    if (lost) viewLosses += 1;
+    return lost;
+}
+
+// Started attacks dropped because the target left the view (status line).
+function lostFromViewCount() {
+    return viewLosses;
+}
+
 function maxKnownTargetRadius() {
     const npcs = DataCache.npcs;
     if (!Array.isArray(npcs)) {
@@ -112,12 +131,15 @@ module.exports = {
     BOW_ATTACK_RANGE,
     MELEE_ATTACK_RANGE,
     POLEARM_ATTACK_RANGE,
+    TALK_RANGE,
     collisionRadius,
     effectiveRange,
     distance2d,
     fetchNormalAttackRange,
     kindRange,
     isWithinRange,
+    lostFromView,
+    lostFromViewCount,
     maxKnownTargetRadius,
     targetQueryRadius,
     weaponKind,

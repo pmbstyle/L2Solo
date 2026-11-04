@@ -1,6 +1,9 @@
 const assert = require('assert');
 
 require('../src/Global');
+// An attack on a character flags the attacker at the swing or the skill's
+// landing (PvpFlag.attack); the flag packets are not under test here.
+invoke('GameServer/Actor/PvpFlag').mark = () => {};
 
 const Attack = invoke('GameServer/Actor/Attack');
 const SkillModel = invoke('GameServer/Model/Skill');

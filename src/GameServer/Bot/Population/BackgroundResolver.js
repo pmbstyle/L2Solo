@@ -212,7 +212,9 @@ function resolveRest(state, elapsedMs, timestamp, options = {}) {
         ? Math.max(estimateRestMs(state, vitals, options), scheduledRemainingMs, petReady ? 0 : petRestMs(combat, summon, vitals, timestamp))
         : 0;
     const resting = recoveryNeeded;
-    const restUntil = resting ? timestamp + remainingMs : null;
+    // ARCH-NOTE: Native checkpoints require integer milliseconds. A pet's regen
+    // and a potion's ms are fractions; ceil the deadline so a rest never ends early.
+    const restUntil = resting ? Math.ceil(timestamp + remainingMs) : null;
 
     return {
         patch: {
@@ -328,14 +330,16 @@ function resolveDeathRecovery(state, timestamp = Date.now()) {
     const combat = botCombatStats(state, timestamp);
     const respawnDelayMs = pvpRecovery ? 1000 : 90000;
 
+    // The town restart, as hot Revive: 70 % HP (Formulas.respawnHp), MP and
+    // CP as death left them.
     return {
         patch: {
             activity: 'resting',
             clearDeathExperience: 'restart_to_town',
             vitals: {
-                hp: combat.maxHp,
+                hp: Formulas.respawnHp(combat.maxHp),
                 maxHp: combat.maxHp,
-                mp: combat.maxMp,
+                mp: Math.max(0, Math.min(combat.maxMp, Number(state.vitals?.mp) || 0)),
                 maxMp: combat.maxMp
             },
             stats: {
@@ -345,7 +349,9 @@ function resolveDeathRecovery(state, timestamp = Date.now()) {
                 restUntil: timestamp + respawnDelayMs,
                 coldCombat: {
                     ...(state.stats?.coldCombat || {}),
-                    ...(pvpRecovery ? { cp: combat.maxCp, cpAt: timestamp, effects: [] } : {}),
+                    ...(pvpRecovery ? { effects: [] } : {}),
+                    // No CP regained while dead: it regenerates from the respawn.
+                    ...(Number.isFinite(state.stats?.coldCombat?.cp) ? { cpAt: timestamp } : {}),
                     charges: 0,
                     chargeExpiresAt: null,
                     summon: null
@@ -1242,11 +1248,16 @@ function setPersistedSummon(fighter, summon) {
     };
 }
 
-function startColdSummon(fighter, timestamp, cooldowns, skills = ColdCombatProfile.summonSkills(fighter.profile)) {
-    const skill = skills.find((candidate) => (
+// The summon the fighter can cast now (its reuse over, its MP there).
+function castableSummon(fighter, timestamp, cooldowns, skills = ColdCombatProfile.summonSkills(fighter.profile)) {
+    return skills.find((candidate) => (
         Number(cooldowns[candidate.selfId] || 0) <= timestamp
         && Number(candidate.mp || 0) <= fighter.vitals.mp
     ));
+}
+
+function startColdSummon(fighter, timestamp, cooldowns, skills) {
+    const skill = castableSummon(fighter, timestamp, cooldowns, skills);
     if (!skill) return false;
 
     const details = ColdCombatProfile.summonDetails(skill);
@@ -1302,17 +1313,33 @@ function heldSummon(fighter, timestamp) {
         && Number(summon.expiresAt) === Number(saved.expiresAt) && Number(saved.expiresAt) > timestamp;
 }
 
-function ensureColdSummon(fighter, timestamp, cooldowns) {
-    if (heldSummon(fighter, timestamp)) return false;
+// The fighter's pet at its side: the held one or the saved one brought back;
+// false without one, a new one is a cast (startColdSummon).
+function keepColdSummon(fighter, timestamp) {
+    if (heldSummon(fighter, timestamp)) return true;
     const existing = persistedSummon(fighter, timestamp);
     if (existing) {
         fighter.summon = existing;
         fighter.summonReadyAt = Number(fighter.readyAt || 0) + summonAttackDelay(existing);
-        return false;
+        return true;
     }
     if (fighter.state.stats?.coldCombat?.summon?.active) setPersistedSummon(fighter, null);
     fighter.summon = null;
-    return startColdSummon(fighter, timestamp, cooldowns);
+    return false;
+}
+
+function ensureColdSummon(fighter, timestamp, cooldowns) {
+    return !keepColdSummon(fighter, timestamp) && startColdSummon(fighter, timestamp, cooldowns);
+}
+
+// The cold adapter of PetTankRule.winsAlone: an owner with no pet and a summon to
+// cast, the mob on it. With no pet the cold mob comes on to the owner (mobHolder)
+// once the fight is under way: its hate, or the mob its dead pet left wounded; a
+// mob not yet met is not on it. The owner's profiles are built once a fight.
+function strikesAlone(fighter, mob, mobHp, at) {
+    if (!(fighter.hate > 0 || mobHp < mob.maxHp) || !castableSummon(fighter, at, fighter.cooldowns)) return false;
+    fighter.ownerProfiles ??= TargetMatchup.coldProfiles(fighter.profile, fighter.state, at, { shot: fighter.shot });
+    return PetTankRule.winsAlone({ profiles: fighter.ownerProfiles, hp: fighter.vitals.hp, mp: fighter.vitals.mp, enemy: { ...mob, maxHp: mobHp } });
 }
 
 function summonDamage(fighter, mob, rng) {
@@ -1398,7 +1425,8 @@ function coldBotTurn(fighter, { allies, mob, mobFight = null, mobHp, at, time, r
     // its class mode, MP price and songs (T100) are a solo bot's, as a hot bot
     // alone in its party (BotClassPolicy.modeFor, T126).
     const solo = !allies.some((ally) => ally !== fighter && ally.vitals.hp > 0);
-    if (ensureColdSummon(fighter, at, fighter.cooldowns)) return null;
+    if (!keepColdSummon(fighter, at) && !(solo && strikesAlone(fighter, mob, mobHp, at))
+        && startColdSummon(fighter, at, fighter.cooldowns)) return null;
     expireCharges(fighter, at);
     if (startColdPotion(fighter, time)) {
         fighter.readyAt += 250;
@@ -1573,7 +1601,7 @@ function coldDangerMoment(fighter, mob, mobHp, { profiles, time, at, rng }) {
     const price = hp < maxHp ? coldDangerPrice(state.stats) : null;
     let moment = null;
     if (price) {
-        const owners = TargetMatchup.atVitals(profiles.filter(profile => profile.servitor !== true), hp, mp);
+        const owners = TargetMatchup.ownersAtVitals(profiles, hp, mp);
         const pet = TargetMatchup.servitorProfile(bot, { ...state, vitals, stats: { ...state.stats,
             coldCombat: { ...state.stats?.coldCombat, cooldowns: fighter.cooldowns, ...(fighter.summon ? { summon: fighter.summon } : {}) } } }, at);
         const bottle = coldBottleFree(fighter) ? HealingPotionStock.selectPotion(state.inventory, hp, maxHp, state, { dangerMoment: true }) : null;
@@ -1665,7 +1693,7 @@ function countHitRule(rule) {
 // inventory copy they spend from (with the shot supply drawn from it), the
 // fight profile while it holds (ColdCombatProfile.heldFightProfile) and its
 // hits' stat sources; each fight leaves its own there.
-function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp = Date.now(), roundAt = timestamp, fightLimitMs = 12000, maxActions = 48,
+function resolveFight({ state, spot, targetNpcId = 0, rng, timestamp = Date.now(), roundAt = timestamp, fightLimitMs = 12000, maxActions = 48,
     roundProfiles = null, round = null }) {
     const fightState = mutableCombatState(state, round);
     let bot;
@@ -1696,25 +1724,21 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
     // together keeps its mobs standing together (BotPullEstimate.pullView).
     let areaShare = 0, petNear = null;
     if (!pending && !picked.aggressiveInterruption) {
-        const readiness = EncounterReadiness.evaluate({
-            hp: state.vitals?.hp ?? bot.maxHp, maxHp: bot.maxHp,
-            mp: state.vitals?.mp ?? bot.maxMp, maxMp: bot.maxMp, level: bot.level,
-            manaDependent: RestPolicy.sitsForMana(state)
-        }, picked);
         // A full-health route verdict cannot admit the next mob after a win
         // depleted the owner. Keep the same damage margin with the HP/MP that
         // remain now; pending fights and aggressive interruptions still run.
         // The pet is the one beside the bot now (TargetMatchup.servitorProfile:
         // alive with the HP it has left, or one to raise), not the round's.
-        const remaining = TargetMatchup.atVitals(matchupProfiles.filter(profile => profile.servitor !== true),
-            state.vitals?.hp ?? Infinity, state.vitals?.mp ?? Infinity);
         petNear = TargetMatchup.servitorProfile(bot, state, timestamp);
-        if (petNear) remaining.push(petNear);
         // One mob carries no pull: channels count area skills by target.pull.
         const usual = BotPullEstimate.pullView({ ...picked, pull: 1 }, Number(picked.usualPull) || 1);
-        const survival = TargetMatchup.soloSurvival(remaining, usual);
-        areaShare = Number(survival.areaShare) || 0;
-        if (!readiness.ready || !survival.eligible) {
+        const readiness = EncounterReadiness.evaluate(EncounterReadiness.atVitals(matchupProfiles,
+            state.vitals?.hp ?? Infinity, state.vitals?.mp ?? Infinity, petNear), usual);
+        areaShare = Number(readiness.survival.areaShare) || 0;
+        // Below its rest line a bot sits whatever the mob, as it would after a fight.
+        const now = { hp: state.vitals?.hp ?? bot.maxHp, maxHp: bot.maxHp, mp: state.vitals?.mp ?? bot.maxMp, maxMp: bot.maxMp };
+        const combat = state.stats?.coldCombat;
+        if (!readiness.ready || needsRest(state, now, { pet: coldPetView(bot, combat?.summon, now, combat?.cooldowns, timestamp) })) {
             return { avoided: true, needsRest: true, reason: 'solo_recovery_needed' };
         }
     }
@@ -1952,7 +1976,6 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         exp: rewards.progression.reduce((sum, item) => sum + item.exp, 0),
         sp: rewards.progression.reduce((sum, item) => sum + item.sp, 0)
     }, {
-        expMultiplier: Number(pressure?.expMultiplier || 1),
         rates: ProgressionRates.profile(),
         profile: soloFighter.profile,
         timestamp
@@ -1981,7 +2004,8 @@ function resolveFight({ state, spot, pressure, targetNpcId = 0, rng, timestamp =
         effects: soloFighter.profile.effects,
         inventory: soloFighter.state.inventory,
         soulCrystals: soloFighter.soulCrystals || [],
-        summon: soloFighter.summon || null,
+        // Won before the bot's first turn (a DoT tick): its saved pet was never loaded.
+        summon: soloFighter.summon === undefined ? soloFighter.state.stats?.coldCombat?.summon ?? null : soloFighter.summon,
         debug: { actions, durationMs: time, skillUses: soloFighter.skillUses, shotActions: soloFighter.shotActions, heals: soloFighter.heals,
             musicUses: soloFighter.musicUses, summonUses: soloFighter.summonUses, summonActions: soloFighter.summonActions, petTaken, petHeals: soloFighter.petHeals || 0, summonDeaths: soloFighter.summonDeaths || 0, petWaits: soloFighter.petWaits || 0,
             potionsUsed: soloFighter.potionsUsed, drunkPotions: soloFighter.drunkPotions || null,
@@ -2319,15 +2343,72 @@ function soloPickOptions(state) {
 // verdict knows (the fight then takes the spot's own mob: resolveFight).
 // profiles: the round's (roundProfiles), else built here.
 function admittedShares(state, spot, timestamp, profiles = roundProfiles(state, timestamp)) {
-    if (!spot?.npcEntries?.length) return null;
-    const options = soloPickOptions(state);
-    let known = false;
-    const shares = new Map(spot.npcEntries.map(entry => {
-        const verdict = TargetMatchup.speciesPulls(profiles, entry, options);
-        known ||= !!verdict;
-        return [entry, verdict?.share ?? 0];
-    }));
-    return known ? shares : null;
+    return TargetMatchup.spotShares(profiles, spot, soloPickOptions(state));
+}
+// A round on a spot that admits none of the bot's fights (admittedShares, or the
+// pick's own refusal on a spot without spawn groups): it stands, and the first
+// such round of a stay raises its ground (debug.unhuntable, read by
+// BotLifeState.prepareResolve): the plan that holds the bot there cannot stand.
+const NO_PREY = 'no_safe_solo_target';
+// Raised only when the route's own view refuses the spot too (readyProfiles: the
+// pet raised, its HP and the MP whole, the shots it carries): a bot short only of
+// what a rest or a summon gives back would get the same spot again. Self-buffs are
+// not read: the route judges its spots unbuffed. Entries of a spot without spawn
+// groups are its species, one each (as npcForSpot reads them).
+// A solo bot on ground its route admits once it is whole, at a round with no
+// fight it may take: it gets ready. C4: a summoner raises its pet before it
+// engages, so a summoner with none casts it out of the fight when its MP and
+// reuse allow (ensureColdSummon, as a raid's preparation); a living pet its
+// owner can heal now is healed, as between fights. Else the rest that changes
+// what the gate reads: the soonest summon's MP and reuse, the reuse of its pet
+// heal, a pet that only its own regeneration makes whole (restMs; 0: no rest helps). patch: the round's, its
+// vitals and coldCombat written in place. Returns { acted, restMs, summonUses,
+// petCasts, ms }.
+function getReady(state, patch, profile, timestamp) {
+    const out = { acted: false, restMs: 0, summonUses: 0, petCasts: 0, ms: 0 };
+    const combat = patch.stats.coldCombat;
+    const living = combat?.summon?.active && Number(combat.summon.expiresAt || Infinity) > timestamp ? combat.summon : null;
+    const skills = !living && BotRoles.isSummoner(profile) ? ColdCombatProfile.summonSkills(profile) : [];
+    if (skills.length) {
+        const fighter = raidPreparationFighters([{ ...state, vitals: patch.vitals, inventory: patch.inventory || state.inventory,
+            stats: patch.stats }], timestamp)[0];
+        if (ensureColdSummon(fighter, timestamp, fighter.cooldowns)) {
+            patch.vitals.mp = fighter.vitals.mp;
+            patch.inventory = fighter.state.inventory;
+            patch.stats.coldCombat = { ...(combat || ColdCombatProfile.seedSnapshot(fighter.state, timestamp)),
+                cooldowns: fighter.cooldowns, summon: fighter.summon };
+            return { ...out, acted: true, summonUses: fighter.summonUses, ms: Number(fighter.readyAt) || 0 };
+        }
+        // The soonest summon: each waits for its MP (a rest to whole MP) and its reuse.
+        const cooldowns = combat?.cooldowns || {};
+        const mp = Number(patch.vitals.mp) || 0;
+        let mpRest = null;
+        out.restMs = Math.min(...skills.map(skill => Math.max(
+            Number(skill.mp || 0) > mp ? (mpRest ??= estimateRestMs(state, patch.vitals, { requireMana: true })) : 0,
+            Math.max(0, Number(cooldowns[skill.selfId] || 0) - timestamp))));
+        return out;
+    }
+    if (!living) return out;
+    const summon = { ...living }, cooldowns = { ...(combat.cooldowns || {}) };
+    const healed = coldHealBetweenFights(profile, patch.vitals, cooldowns, timestamp, summon, { solo: false });
+    if (healed.petCasts > 0) {
+        patch.stats.coldCombat = { ...combat, summon, cooldowns };
+        return { ...out, acted: true, petCasts: healed.petCasts, ms: healed.ms };
+    }
+    const petView = coldPetView(profile, summon, patch.vitals, cooldowns, timestamp);
+    if (!RestPolicy.petRested(petView)) out.restMs = petRestMs(profile, summon, patch.vitals, timestamp);
+    else if (petView?.healable && PetHealRule.wantsHeal(summon.hp, summon.maxHp)) {
+        // A heal it owns on its reuse: it sits until the reuse ends.
+        const heal = PetHealRule.choose(ColdClassPolicy.actorFor(profile, { hp: patch.vitals.hp, mp: patch.vitals.mp, cooldowns, time: timestamp }),
+            { anyReuse: true })?.coldRecord;
+        out.restMs = heal ? Math.max(0, Number(cooldowns[heal.selfId] || 0) - timestamp) : 0;
+    }
+    return out;
+}
+function routeRefuses(state, spot, timestamp, profiles) {
+    const ground = spot.npcEntries?.length ? spot : { npcEntries: (spot.npcSelfIds || []).map(selfId => ({ selfId, count: 1 })) };
+    return TargetMatchup.admitsNone(TargetMatchup.spotShares(TargetMatchup.readyProfiles(profiles, state, timestamp), ground,
+        soloPickOptions(state)));
 }
 
 // The matchup profiles of a solo round, at the round's start: its fights and
@@ -2420,7 +2501,7 @@ const BackgroundResolver = {
     resolveFight,
     // spotHunters: the bots on the spot, from the caller's occupancy (E69).
     // lastFight: the bot's next act waits for the engaged fight: the round starts no new one (PveEncounter.holdsTrip).
-    resolveSolo({ state, spot, pressure = {}, targetNpcId = 0, lastFight = false, elapsedMs = 60000, spotHunters = 1, rng = Math.random, timestamp = Date.now() }) {
+    resolveSolo({ state, spot, targetNpcId = 0, lastFight = false, elapsedMs = 60000, spotHunters = 1, rng = Math.random, timestamp = Date.now() }) {
         if (!state) {
             return {
                 patch: {},
@@ -2489,7 +2570,7 @@ const BackgroundResolver = {
                     spotId: spot.id,
                     currentRegion: state.homeRegion || state.currentRegion,
                     loc: { ...spot.center },
-                    stats: { ...(state.stats || {}), legacyShoppingRecoveredAt: timestamp }
+                    stats: { ...(state.stats || {}) }
                 },
                 events: [{
                     type: 'shopping_recovered',
@@ -2609,6 +2690,8 @@ const BackgroundResolver = {
         const roundProfile = botCombatStats(state, timestamp);
         const profiles = roundProfiles(state, timestamp, roundProfile);
         const admitted = admittedShares(state, spot, timestamp, profiles);
+        // Nothing here for it to fight alone: no walk, no pick (a fight already begun goes on).
+        let noPrey = !continuing && TargetMatchup.admitsNone(admitted);
         // T106: the round's kills are limited by the walk to each next mob and
         // by the share below; fights, gap heals, buffs and walks run by their
         // own time within the elapsed time. The fights a round may hold at
@@ -2690,7 +2773,7 @@ const BackgroundResolver = {
             return drank.ms;
         };
 
-        for (let i = 0; i < fights; i++) {
+        for (let i = 0; i < fights && !noPrey; i++) {
             // The first fight starts in any round (its readiness may send the bot to rest).
             if (i > 0 && (combatMs >= combatBudgetMs || combatActions >= actionBudget)) break;
             // A mob already engaged is finished; a new one needs a whole mob of the share.
@@ -2724,16 +2807,17 @@ const BackgroundResolver = {
                 inventory: patch.inventory || state.inventory,
                 stats: { ...(state.stats || {}), ...(patch.stats || {}) }
             };
-            const result = countedBuilds('fight', 'solo', resolveFight, { state: fightState, spot, pressure, targetNpcId, rng,
+            const result = countedBuilds('fight', 'solo', resolveFight, { state: fightState, spot, targetNpcId, rng,
                 timestamp: timestamp + combatMs, roundAt: timestamp, fightLimitMs: Math.max(1, combatBudgetMs - combatMs),
                 maxActions: actionBudget - combatActions, roundProfiles: profiles, round });
             if (result.avoided) {
                 patch.stats.lastReason = result.reason;
+                noPrey = result.reason === NO_PREY;
                 if (result.needsRest) {
                     patch.activity = 'resting';
                     const drinkMs = drinkToRest(roundProfile, true, coldPetView(roundProfile, patch.stats.coldCombat?.summon, patch.vitals,
                         patch.stats.coldCombat?.cooldowns, timestamp + combatMs));
-                    patch.stats.restUntil = timestamp + Math.max(estimateRestMs(fightState, patch.vitals), drinkMs);
+                    patch.stats.restUntil = Math.ceil(timestamp + Math.max(estimateRestMs(fightState, patch.vitals), drinkMs));
                     events.push({ type: 'rest', weight: 2,
                         summary: `${state.name || 'Bot'} sat down before another fight near ${spot.name}`,
                         meta: { spotId: spot.id, reason: result.reason } });
@@ -2851,8 +2935,8 @@ const BackgroundResolver = {
                 patch.activity = 'resting';
                 patch.stats = {
                     ...(patch.stats || state.stats || {}),
-                    restUntil: timestamp + Math.round(result.runMs || 0) + Math.max(estimateRestMs(fightState, patch.vitals), drinkMs,
-                        RestPolicy.petRested(petView) ? 0 : petRestMs(fightProfile, summonLeft, patch.vitals, timestamp + combatMs))
+                    restUntil: Math.ceil(timestamp + Math.round(result.runMs || 0) + Math.max(estimateRestMs(fightState, patch.vitals), drinkMs,
+                        RestPolicy.petRested(petView) ? 0 : petRestMs(fightProfile, summonLeft, patch.vitals, timestamp + combatMs)))
                 };
                 events.push({
                     type: 'rest',
@@ -2874,6 +2958,33 @@ const BackgroundResolver = {
             }
         }
 
+        // stats.emptyGround: the spot whose emptiness was raised (here or by a hot
+        // body, BotDecisionService), the stay's memory; a round with prey clears it.
+        // The first empty round of a stay that the route also refuses raises the
+        // ground (unhuntable: BotLifeState.prepareResolve).
+        const raised = String(state.stats?.emptyGround ?? '') === String(spot.id);
+        let unhuntable = noPrey && !raised && routeRefuses(state, spot, timestamp, profiles);
+        if (noPrey) patch.stats.lastReason = NO_PREY;
+        // Short only of what the route counts whole (a pet, its HP, a summon's MP or
+        // reuse): the bot gets ready instead of standing (getReady); when nothing it
+        // can do changes what the gate reads, the ground is raised after all.
+        if (noPrey && !raised && !unhuntable) {
+            const ready = getReady(state, patch, roundProfile, timestamp);
+            summonUses += ready.summonUses;
+            petHeals += ready.petCasts;
+            skillUses += ready.summonUses + ready.petCasts;
+            combatMs += ready.ms;
+            if (ready.restMs > 0) {
+                patch.activity = 'resting';
+                patch.stats.lastReason = 'solo_recovery_needed';
+                patch.stats.restUntil = Math.ceil(timestamp + ready.restMs);
+                events.push({ type: 'rest', weight: 2,
+                    summary: `${state.name || 'Bot'} sat down to get ready near ${spot.name}`,
+                    meta: { spotId: spot.id, reason: 'solo_recovery_needed' } });
+            } else if (!ready.acted) unhuntable = true;
+        }
+        if (unhuntable) patch.stats.emptyGround = String(spot.id);
+        else if (!noPrey && patch.stats.emptyGround != null) patch.stats.emptyGround = null;
         if (share !== null) {
             const left = shareMobs - mobsKilled;
             // Whole mobs left unused stay for the other hunters.
@@ -2908,6 +3019,7 @@ const BackgroundResolver = {
             soulCrystals,
             nextResolveAt: patch.stats?.restUntil || timestamp + huntCycleDelayMs(rng()),
             debug: {
+                ...(noPrey ? { reason: NO_PREY, unhuntable } : {}),
                 elapsedMs,
                 combatMs,
                 fights: completedFights,

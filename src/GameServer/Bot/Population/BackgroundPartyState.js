@@ -296,6 +296,7 @@ const BackgroundPartyState = {
 
         initPromise = Database.execute(['SELECT 1', []], 'schema:bot-parties')
             .then(() => Database.execute([`UPDATE ${TABLE} SET status = 'active', nextResolveAt = ?, updatedAt = ?, revision = revision + 1 WHERE status = 'hot'`, [now() + 30000, now()]], 'bot-party:startup-recovery'))
+            .then(() => BotLifeState.wholeClocks(TABLE, ['startedAt', 'nextResolveAt', 'updatedAt']))
             .then(() => shiftDueTimesByDowntime())
             .then(() => this.loadActive()).then(() => {
             initialized = true;

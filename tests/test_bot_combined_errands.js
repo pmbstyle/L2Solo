@@ -110,8 +110,12 @@ async function run() {
         town: 'Dion', locX: 15631, locY: 142885, locZ: -2704, title: 'Materials',
         lines: [{ objectId: source.id, selfId: 1869, name: 'Iron Ore', count: 3, price: 60, enchant: 0, slot: 0, stackable: true }] }]);
     assert.equal(records.opened.length, 1);
-    let buyer = await seed([{ selfId: 57, name: 'Adena', amount: 500000 }, { selfId: 736, name: 'Scroll of Escape', amount: 3 },
-        { selfId: 86, name: 'Sword of Revolution', amount: 1, equipped: true, slot: 7 }]);
+    const buyerItems = [{ selfId: 57, name: 'Adena', amount: 500000 }, { selfId: 736, name: 'Scroll of Escape', amount: 3 },
+        { selfId: 86, name: 'Sword of Revolution', amount: 1, equipped: true, slot: 7 }];
+    // Its healing potions at the stock's own target as it arrives (EXP 0: level 1),
+    // whatever use the table gives them: the errands alone decide what the visit buys.
+    const potions = invoke('GameServer/Bot/Economy/EconomyContext').stockFor({ ...await seed(buyerItems), level: 1 }, 'potions');
+    let buyer = await seed([...buyerItems, { selfId: potions.itemId, name: 'Lesser Healing Potion', amount: potions.target }]);
     const now = Date.now();
     // A trip must pay for itself before travel (24512a44); a planned errand
     // carries its originating value (ColdMarketService.fundingTerms).
@@ -151,7 +155,7 @@ async function run() {
     assert.equal(basics.kitCost(736), 0, 'the existing escape scroll stack supplies the kit');
     assert.equal(basics.stock('shots').target, 0, 'these unchanged arrival facts supply no economic shot stock');
     assert.equal(physical(beforeExecution, 1869), 0, 'changed quote remains refused');
-    assert.equal(physical(beforeExecution, 1060), 0, 'an unvalued legacy healing errand is not funded');
+    assert.equal(physical(beforeExecution, 1060), held(arrived, 1060), 'an unvalued legacy healing errand is not funded');
     assert.equal(physical(beforeExecution, 736), held(arrived, 736), 'the unneeded scroll errand makes no purchase');
     assert.equal(policyFinished.adena, arrived.adena, 'no selected budget means no automatic payment');
 
@@ -181,7 +185,7 @@ async function run() {
     }
     const bag = await Database.fetchItems(buyer.characterId);
     assert.equal(physical(bag, 1869), 0, 'changed offer is rechecked against its authored price cap');
-    assert.equal(physical(bag, 1060), 2, 'other same-town NPC errand is completed');
+    assert.equal(physical(bag, 1060), held(arrived, 1060) + 2, 'other same-town NPC errand is completed');
     assert.equal(physical(bag, 736), held(arrived, 736) + 1, 'scroll errand is not another town payment');
     assert.equal(Errands.pending(finished, Date.now(), 'Dion').length, 0);
     assert.equal(Errands.pending(finished).length, 1, 'a different town does not get smuggled into this visit');

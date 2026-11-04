@@ -38,31 +38,32 @@ assert.strictEqual(
     'Quick Healing Potion must remain reserved for genuinely critical HP'
 );
 
-const cautiousRestock = HealingPotionStock.restockPlan({
-    level: 20,
-    adena: 2000,
-    stats: { classId: 0 },
-    inventory: inventory([[57, 2000]])
-}, { unitPrice: 330 });
-assert.strictEqual(cautiousRestock.amount, 0, 'restocking must not touch the operational wallet reserve');
-assert.strictEqual(cautiousRestock.cost, 0);
+// A wallet that is all survival reserve (the kit's own price: the scroll, the
+// potions and shots for an hour) buys only the survival bottles, at the NPC's
+// price the reserve held (one price for the reserve and the counter).
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
-const cautiousState = { level: 20, adena: 2000, stats: { classId: 0 }, inventory: inventory([[57, 2000]]) };
+const reserveOf = state => Economy.basics(state).survivalReserve;
+const walletFor = adena => ({ level: 20, adena, stats: { classId: 0 }, inventory: inventory([[57, adena]]) });
+const reserve = reserveOf(walletFor(0));
+const cautiousState = walletFor(reserve);
 const basics = Economy.basics(cautiousState);
 const stock = basics.stock('potions');
 const shots = basics.stock('shots');
-assert.strictEqual(cautiousRestock.reserve, basics.price(736) + Math.max(0, stock.usePerHour - stock.current) * stock.unitPrice + Math.max(0, shots.usePerHour - shots.current) * shots.unitPrice);
+assert.strictEqual(reserveOf(cautiousState), reserve, 'fixture: the reserve does not move with the wallet');
+assert.strictEqual(reserve, basics.kitCost(736) + basics.kitCost(stock.itemId) + basics.kitCost(shots.itemId));
+const cautiousRestock = HealingPotionStock.restockPlan(cautiousState, { unitPrice: stock.survivalPrice });
+assert.strictEqual(cautiousRestock.reserve, reserve);
+assert.strictEqual(cautiousRestock.amount, stock.survivalMissing, 'restocking spends of the operational wallet reserve only its survival bottles');
+assert.strictEqual(cautiousRestock.cost, basics.kitCost(stock.itemId));
 
-const affordableRestock = HealingPotionStock.restockPlan({
-    level: 20,
-    adena: 10000,
-    stats: { classId: 0 },
-    inventory: inventory([[57, 10000], [1061, 2]])
-}, { unitPrice: 330, targetAmount: 8 });
+const affordableState = { level: 20, adena: 10000, stats: { classId: 0 }, inventory: inventory([[57, 10000], [1061, 2]]) };
+const affordableRestock = HealingPotionStock.restockPlan(affordableState, { unitPrice: 330, targetAmount: 8 });
 // ARCH-NOTE: explicit target isolates the original purchase/conservation fixture from the table-driven stock rule.
 assert.strictEqual(affordableRestock.amount, 6, 'melee restocking must stop at its small target stock');
 assert.strictEqual(affordableRestock.cost, 1980);
-assert(affordableRestock.adena - affordableRestock.cost >= affordableRestock.reserve);
+// What is left covers the reserve (what of it the wallet holds), less the survival bottles it held for and bought now.
+assert(affordableRestock.adena - affordableRestock.cost >= Math.min(affordableRestock.adena, affordableRestock.reserve)
+    - Math.min(affordableRestock.cost, Economy.basics(affordableState).kitCost(1061, 330)));
 
 const coldInventory = inventory([[1060, 2]]);
 const coldPotion = HealingPotionStock.consumeColdPotion(coldInventory, 30, 100, 'dps');

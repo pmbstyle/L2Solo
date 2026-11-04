@@ -13,7 +13,6 @@ const BotEquipmentCompatibility = invoke('GameServer/Bot/AI/BotEquipmentCompatib
 const BotWeaponCompatibility = invoke('GameServer/Bot/AI/BotWeaponCompatibility');
 const { GRADES: RANKS, rankOf: rankIndex, gradeForLevel } = invoke('GameServer/Bot/AI/GearGradeRule');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
-const CraftSupplementMaterials = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
 // Common materials have hundreds of sources. Retain only their sorted index
 // positions per shared input key, rather than a plain source object per row.
 // ARCH-NOTE: PERF on 1,000 native states/2,045 spots: retained heap plus
@@ -415,7 +414,7 @@ function candidateEffort(candidate, state, options = {}) {
     const allowedRecipeIds = options.allowedRecipeIds || stationRecipeIds();
     let missingRoute = false;
     const materialEffort = missingMaterials(candidate.recipe, state.inventory)
-        .filter((material) => material.missing > 0 && !CraftSupplementMaterials.isSupplementalMaterial(material.selfId))
+        .filter((material) => material.missing > 0)
         .reduce((sum, material) => {
             const source = farmSourceForMaterial(material.selfId, state, spots, allowedRecipeIds, material.missing, new Set(), options);
             if (!source) {
@@ -894,7 +893,6 @@ function marketPlan(state = {}, target, offer, options = {}) {
         grade: Progression.acquisitionRankFor(state),
         role,
         strategy: 'market',
-        soloSafe: true,
         partyNeed: 'solo_ok',
         partyNeedReason: options.reason || 'market_fallback',
         requiresParty: false,
@@ -1411,7 +1409,6 @@ function craftProgress(state, plan) {
         if (!recipe || seen.has(recipe.recipeId)) return;
         const nextSeen = new Set(seen).add(recipe.recipeId);
         for (const material of recipe.materials || []) {
-            if (CraftSupplementMaterials.isSupplementalMaterial(material.selfId)) continue;
             const required = Number(material.amount || 0) * crafts;
             requirements[material.selfId] = (requirements[material.selfId] || 0) + required;
             const component = C4RecipeItems.resolveByProductId(material.selfId);
@@ -1581,7 +1578,6 @@ function finalizePlan(state = {}, previousPlan = null, rawPlan = {}, context = {
         ...(sameClanTarget ? { clanGoal: { ...previousPlan.clanGoal } } : {}),
         startedAt: samePlan ? Number(previousPlan?.startedAt || timestamp) : timestamp,
         plannedForLevel: Number(state.level || 1),
-        plannedForGrade: gradeForLevel(state.level),
         progressionBaseline: samePlan && previousPlan?.progressionBaseline
             ? previousPlan.progressionBaseline
             : { level: Number(state.level || 1), exp: Number(state.exp || 0) },
@@ -1835,12 +1831,11 @@ function soloPlanSourceReader(state, plan, spots, options = {}) {
         || plan.requiresParty || plan.partyNeed && plan.partyNeed !== 'solo_ok'
         || options.clanCrafting || plan.next.sourceKind === 'raid' || plan.next.raidBoss) return null;
     const allowed = sourceRouteReader(state, { ...options, spots });
-    const Profiles = invoke('GameServer/Bot/Population/SpotProfiles');
+    // The crowd is read at arrival (design rules): only the spot search asks for room.
     return (spot, npcId) => !!spot && allowed(spot, npcId)
-        && (String(state.spotId) === String(spot.id)
+        && (!options.hasRoom || String(state.spotId) === String(spot.id)
             && !['shopping', 'merchant', 'crafting', 'traveling'].includes(state.activity)
-            || (options.hasRoom ? options.hasRoom(spot.id)
-                : Profiles.spotHunters(spot, state) <= LevelingRoutes.roomForSpot(spot)));
+            || options.hasRoom(spot.id));
 }
 
 function bestSourceForPlan(state = {}, plan = {}, spots = [], options = {}) {
@@ -1896,7 +1891,6 @@ function retargetPlanSource(state = {}, plan = {}, source = null) {
         ...plan,
         next,
         materials,
-        soloSafe: assessment.need === 'solo_ok',
         partyNeed: assessment.need,
         partyNeedReason: assessment.reason,
         requiresParty: assessment.need === 'required',
@@ -2141,12 +2135,15 @@ function writeReadySourceFact(fact, kind, spotId, npcId, itemId, units, expected
 // bot's wish focus), the matchup's highest target level (LevelingRoutes
 // safetyOptions: the recovery penalty, whose clean wins move no section, and
 // the route mode), the party ground flag (BotHuntingGroundPolicy) and the
-// solo profile key (BotTargetMatchup.profileKey: alive, the summon beside it).
+// solo profile key (BotTargetMatchup.profileKey: alive, the summon beside it,
+// the kind of shot), read with the bot ready (BotTargetMatchup.readyProfiles).
 // The spot exclusions (step-counted marks, no section) are never kept.
 const GROUND_ALLOWED = 1, GROUND_REFUSED = 2;
+// Kept verdicts dropped because shots ended or came back (the health line).
+let sourceShotFlips = 0;
 function sourceGround(spots = [], kept = null) {
-    return kept?.spots === spots ? kept : { spots, length: -1, economicHunt: null, targetLevel: -1, grouped: null,
-        solo: null, cells: null };
+    return kept?.spots === spots ? kept : { spots, length: -1, targetLevel: -1, grouped: null,
+        solo: null, cells: null, economicCells: null, species: null };
 }
 // Diagnostics only: one reused reader in 64 also checks its kept cells
 // against a fresh verdict (source_route:ground:checked|disagree).
@@ -2155,6 +2152,24 @@ let groundShadows = 0;
 // source_route:ground:reuse|build); without one a call-local record over
 // options.spots. options.matchupProfiles: the state's solo profiles at this
 // timestamp, when the caller already read them (the build's income route).
+// Each (spot, species) of a spot list has one ordinal: a kept ground holds two
+// bits per pair, shared by no bot, indexed by this one table per list.
+const SPECIES_SPOT_SHIFT = 2 ** 20;
+const speciesIndexes = new WeakMap();
+function speciesPairs(spots) {
+    let index = speciesIndexes.get(spots);
+    if (!index) {
+        index = new Map();
+        spots.forEach((spot, at) => {
+            for (const id of spot.npcEntries?.length ? spot.npcEntries.map(row => row.selfId) : spot.npcSelfIds || [])
+                if (!index.has(at * SPECIES_SPOT_SHIFT + Number(id))) index.set(at * SPECIES_SPOT_SHIFT + Number(id), index.size);
+        });
+        speciesIndexes.set(spots, index);
+    }
+    return index;
+}
+const speciesPair = (spots, at, npcId) => speciesPairs(spots).get(at * SPECIES_SPOT_SHIFT + Number(npcId));
+
 function sourceRouteReader(state, options = {}) {
     const timestamp = options.timestamp ?? Date.now();
     const excluded = SpotRiskPolicy.excludedSpotIdsForStates([state], timestamp);
@@ -2167,17 +2182,29 @@ function sourceRouteReader(state, options = {}) {
     const level = Number(state.level || 1);
     // The solo profiles, read once per reader: up front for a kept record
     // (their key is one of its copies), else at the first matchup clause.
-    let profiles = options.matchupProfiles || (options.ground ? BotTargetMatchup.stateProfiles(state, soloOptions) : null);
+    // A source is a spot picked ahead: the bot's side reads ready, so a
+    // fight's HP and MP move no verdict and shots only when they end or return.
+    const readProfiles = () => BotTargetMatchup.readyProfiles(
+        options.matchupProfiles || BotTargetMatchup.stateProfiles(state, soloOptions), state, timestamp);
+    let profiles = options.matchupProfiles || options.ground ? readProfiles() : null;
     const solo = profiles && BotTargetMatchup.profileKey(profiles);
     const ground = options.ground || sourceGround(options.spots || []);
     const spots = ground.spots;
+    // The level clause reads the economic hunt, which turns with the bot's
+    // focus: each side keeps its own cells, so the turn moves neither.
     const reused = ground.cells !== null && ground.length === spots.length
-        && ground.economicHunt === economicHunt && ground.targetLevel === targetLevel
-        && ground.grouped === grouped && ground.solo === solo;
-    if (!reused) Object.assign(ground, { length: spots.length, economicHunt, targetLevel, grouped, solo,
-        cells: new Uint8Array((spots.length + 3) >> 2) });
-    const cells = ground.cells, diagnostic = Diagnostics.active();
+        && ground.targetLevel === targetLevel && ground.grouped === grouped && ground.solo === solo;
+    // Diagnostics: what moved the kept cells.
+    const moved = Diagnostics.active() && !reused ? ground.cells === null ? 'first'
+        : ground.targetLevel !== targetLevel ? 'target_level' : ground.grouped !== grouped ? 'grouped' : ground.solo !== solo ? 'kit' : 'spots' : '';
+    if (!reused && ground.cells !== null && ground.solo >= 0 && solo >= 0
+        && BotTargetMatchup.shotKindOfKey(ground.solo) !== BotTargetMatchup.shotKindOfKey(solo)) sourceShotFlips++;
+    if (!reused) Object.assign(ground, { length: spots.length, targetLevel, grouped, solo,
+        cells: new Uint8Array((spots.length + 3) >> 2), economicCells: null, species: null });
+    const cells = economicHunt ? ground.economicCells ||= new Uint8Array(ground.cells.length) : ground.cells;
+    const diagnostic = Diagnostics.active();
     if (diagnostic && options.ground) Diagnostics.count('source_route', 'ground', reused ? 'reuse' : 'build');
+    if (diagnostic && options.ground && !reused) Diagnostics.count('source_route', 'ground_moved', moved);
     // A sampled reader notes the ordinals it checked or filled itself.
     const shadow = diagnostic && reused && (Diagnostics.enabled(state.characterId) || (++groundShadows & 63) === 0)
         ? new Set() : null;
@@ -2189,7 +2216,7 @@ function sourceRouteReader(state, options = {}) {
         if (spot.raidBoss === true) return 'raid';
         if (!Spots.isSuitable(spot, level, soloOptions)
             && !(economicHunt && Number(spot.avgLevel || spot.minLevel || 1) >= level - 15)) return 'level';
-        profiles ||= BotTargetMatchup.stateProfiles(state, soloOptions);
+        profiles ||= readProfiles();
         if (!LevelingRoutes.isSpotAllowedForState(spot, state, { ...soloOptions, matchupProfiles: profiles })) return 'matchup';
         return null;
     };
@@ -2224,10 +2251,25 @@ function sourceRouteReader(state, options = {}) {
             ? spot.npcEntries.find(row => Number(row.selfId) === Number(npcId))
             : spot.npcSelfIds?.some(id => Number(id) === Number(npcId)) ? { selfId: npcId, count: 1 } : null;
         if (!entry) return false;
-        profiles ||= BotTargetMatchup.stateProfiles(state, soloOptions);
-        if (!profiles.length) return true;
-        return BotTargetMatchup.speciesPulls(profiles, entry,
+        const verdict = () => BotTargetMatchup.speciesPulls(profiles, entry,
             { soloSafety: true, maxTargetLevel: targetLevel || null })?.canHunt === true;
+        const pair = options.ground && at >= 0 ? speciesPair(spots, at, npcId) : undefined;
+        if (pair !== undefined) {
+            ground.species ||= new Uint8Array((speciesPairs(spots).size + 3) >> 2);
+            const known = ground.species[pair >> 2] >> ((pair & 3) << 1) & 3;
+            if (known) {
+                if (shadow) {
+                    Diagnostics.count('source_route', 'species', 'checked');
+                    if ((verdict() ? GROUND_ALLOWED : GROUND_REFUSED) !== known) Diagnostics.count('source_route', 'species', 'disagree');
+                }
+                return known === GROUND_ALLOWED;
+            }
+        }
+        profiles ||= readProfiles();
+        if (!profiles.length) return true;
+        const can = verdict();
+        if (pair !== undefined) ground.species[pair >> 2] |= (can ? GROUND_ALLOWED : GROUND_REFUSED) << ((pair & 3) << 1);
+        return can;
     };
 }
 
@@ -2751,7 +2793,7 @@ function farmSourceForMaterial(itemId, state, spots, allowedRecipeIds, requiredA
     for (const ingredient of component.materials || []) {
         const owned = Number(state.inventory?.[ingredient.selfId]?.amount || 0);
         const required = Number(ingredient.amount || 0) * crafts;
-        if (owned >= required || CraftSupplementMaterials.isSupplementalMaterial(ingredient.selfId)) continue;
+        if (owned >= required) continue;
         const source = farmSourceForMaterial(ingredient.selfId, state, spots, allowedRecipeIds, required - owned, nextVisited, options);
         // A recipe is viable only if every missing ingredient has a route.
         if (!source) return directRoute;
@@ -2853,7 +2895,7 @@ function dualSwordBridgePlan(state, options = {}) {
     return { status: 'ready_to_craft', strategy: 'craft', role, phase: GearLifecycle.phaseFor(state),
         target: { selfId: Number(target.item.selfId), name: target.item.template.name, slot: Number(target.item.etc.slot) },
         recipeId: target.recipe.recipeId, materials: target.materials, next: null,
-        soloSafe: true, requiresParty: false, partyNeed: 'solo_ok', expectedKills: 0,
+        requiresParty: false, partyNeed: 'solo_ok', expectedKills: 0,
         rateModelVersion: RATE_MODEL_VERSION, ...common };
 }
 
@@ -2916,7 +2958,7 @@ function rawPlanFor(state = {}, options = {}) {
         : null;
     const preparedCraftReady = preparedTarget?.recipe
         && missingMaterials(preparedTarget.recipe, state.inventory)
-            .every((material) => material.missing <= 0 || CraftSupplementMaterials.isSupplementalMaterial(material.selfId));
+            .every((material) => material.missing <= 0);
     const forcedMarketPlan = marketRecoveryPlanForTarget(state, options.forceMarketTargetId, options);
     if (forcedMarketPlan) return forcedMarketPlan;
     if (!options.recipeId && !options.wishTargetId && !preparedCraftReady) {
@@ -2939,14 +2981,14 @@ function rawPlanFor(state = {}, options = {}) {
         const buy = offer && marketEffort(offer, state) <= directEffort;
         const sourceAssessment = source ? partyNeedAssessmentForSource(state, source) : null;
         return target && buy ? {
-            status: 'active', phase: GearLifecycle.phaseFor(state), grade: 'none', role: roleFor(state), strategy: 'market', soloSafe: true, requiresParty: false,
+            status: 'active', phase: GearLifecycle.phaseFor(state), grade: 'none', role: roleFor(state), strategy: 'market', requiresParty: false,
             rateModelVersion: RATE_MODEL_VERSION,
             expectedKills: Math.ceil(marketEffort(offer, state)),
             target: { selfId: Number(target.selfId), name: target.template?.name || `Item ${target.selfId}`, slot: Number(target.etc?.slot || 0) },
             market: marketTerms(state, offer, { buyOrderEscrow: planningOptions.buyOrderEscrow }),
             recipeId: null, materials: [], next: null
         } : source ? {
-            status: 'active', grade: 'none', role: roleFor(state), strategy: 'direct_drop', soloSafe: sourceAssessment.need === 'solo_ok',
+            status: 'active', grade: 'none', role: roleFor(state), strategy: 'direct_drop',
             partyNeed: sourceAssessment.need,
             partyNeedReason: sourceAssessment.reason,
             requiresParty: sourceAssessment.need === 'required',
@@ -2973,7 +3015,7 @@ function rawPlanFor(state = {}, options = {}) {
             ? farmSourceForMaterial(material.selfId, state, spots, allowedRecipeIds, material.missing, new Set(), planningOptions)
             : null
     }));
-    const missingMaterialPlans = materialPlans.filter((material) => material.missing > 0 && !CraftSupplementMaterials.isSupplementalMaterial(material.selfId));
+    const missingMaterialPlans = materialPlans.filter((material) => material.missing > 0);
     const canonical = target.recipe && C4RecipeItems.resolveByRecipeId(target.recipe.recipeId);
     const part = canonical?.materials?.find(row => Number(row.selfId) !== Number(canonical.recipeItemId));
     const partItem = part && catalogItem(part.selfId);
@@ -3031,7 +3073,6 @@ function rawPlanFor(state = {}, options = {}) {
         target: { selfId: Number(target.item.selfId), name: target.item.template?.name || `Item ${target.item.selfId}`, slot: Number(target.slot || target.item.etc?.slot || 0) },
         recipeId: target.recipe ? Number(target.recipe.recipeId) : null,
         strategy,
-        soloSafe,
         partyNeed,
         partyNeedReason,
         requiresParty,
@@ -3129,6 +3170,7 @@ module.exports.sourceYieldReaderFor = sourceYieldReaderFor;
 module.exports.sourceFacts = sourceFacts;
 module.exports.sourceRouteReader = sourceRouteReader;
 module.exports.sourceGround = sourceGround;
+module.exports.sourceShotFlipCount = () => sourceShotFlips;
 
 // Only the exports that judge a bot against several sources share readiness.
 for (const name of ['preferredTarget', 'preferredDropTarget', 'preferredNoGradeTarget', 'staticNpcUpgradePlan',

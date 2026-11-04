@@ -1,4 +1,5 @@
 const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
+const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
 const MarketTownPolicy = invoke('GameServer/Bot/Economy/MarketTownPolicy');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
@@ -11,9 +12,6 @@ const BotLifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const CombinedErrands = require('../Population/CombinedErrandPolicy');
 // Other errands are excluded by the activity check and the goal planner.
 const MARKET_TRIP_BUSY_FLAGS = ['partyMarketReturn'];
-
-const MARKET_TRAVEL_MS = ColdTrip.AUTHOR_TRIP_MS;
-const GATEKEEPER_SPOT_TRAVEL_MS = ColdTrip.AUTHOR_TRIP_MS;
 
 function marketTown(name = 'Giran') {
     const town = Object.values(TownRespawn.towns).find((candidate) => candidate.name === name);
@@ -55,8 +53,15 @@ function beginMarketTravel(state, goal, timestamp = Date.now(), { economy = null
             if (goal.plan?.[field] !== undefined) request[field] = goal.plan[field];
         }
         if (goal.plan?.valueRate !== undefined) request.r = goal.plan.valueRate;
-        if (!invoke('GameServer/Bot/Economy/ColdMarketService').canTravelForPurchase(state, request,
-            economy ? { timestamp, economy } : { timestamp })) return null;
+        // The plan's own shopping step: the build asked its visit (EconomicValuation.visitPays)
+        // and who sells what is read at the market, on arrival (decision 11-02).
+        const planned = !errand && goal.plan?.economyActivity === 'shopping';
+        // lazy: cycle ColdMarketService reads this module at its load
+        if (!planned && !invoke('GameServer/Bot/Economy/ColdMarketService').canTravelForPurchase(state, request,
+            economy ? { timestamp, economy } : { timestamp })) {
+            DecisionEvents.refused(`trip:${request.purpose || goal.type}`);
+            return null;
+        }
     }
 
     // A sale goes where its goal says (the town the shop opens in), else to
@@ -189,4 +194,4 @@ function finishVisit(state, timestamp, options) {
     }, timestamp, { extraStats: clanReturn ? { shopTown: null } : { partyMarketReturn: null, shopTown: null } });
 }
 
-module.exports = { MARKET_TRAVEL_MS, GATEKEEPER_SPOT_TRAVEL_MS, beginMarketTravel, finishMarketVisit, marketTownForSale: MarketTownPolicy.targetTownForSale };
+module.exports = { beginMarketTravel, finishMarketVisit, marketTownForSale: MarketTownPolicy.targetTownForSale };

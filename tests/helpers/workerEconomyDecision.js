@@ -68,9 +68,10 @@ module.exports.nativeEconomyDecision = async (id, timestamp, nativeRoutes = fals
         stocks: ['shots', 'potions'].map(kind => {
             const stock = economy.stock(kind);
             return { selfId: stock.itemId, perHour: stock.usePerHour,
-                held: Number(state.inventory?.[stock.itemId]?.amount || 0), unitPrice: stock.unitPrice };
+                held: Number(state.inventory?.[stock.itemId]?.amount || 0), unitPrice: stock.survivalPrice };
         }),
-        escape: { held: Number(state.inventory?.[736]?.amount || 0), unitPrice: economy.price(736),
+        // The kit at the merchant's price (EconomyContext.survivalPrice), the reserve's own.
+        escape: { held: Number(state.inventory?.[736]?.amount || 0), unitPrice: economy.stock('scrolls').survivalPrice,
             usable: !invoke('GameServer/Karma').closesTowns(state.stats?.karma) }
     };
     return { ...(nativeRoutes ? { watchList: economy.watchList } : {}),

@@ -144,11 +144,11 @@ const BotAvailability = {
         const timestamp = Number(options.timestamp ?? Date.now());
         if (!player || !state) return result;
 
-        // With honest travel a trip is no "busy" reason (design 5.9): the
-        // traveller answers from where it is now on its road.
-        const ColdTrip = invoke('GameServer/Bot/Population/ColdTrip');
-        const traveller = ColdTrip.travellerAnswers(state);
-        result.distance = distance(actorLocation(player), traveller ? ColdTrip.positionAt(state, timestamp) : state.loc);
+        // A trip is no "busy" reason (design 5.9): the traveller answers from
+        // where it is now on its road.
+        const traveller = state.activity === 'traveling';
+        result.distance = distance(actorLocation(player), traveller
+            ? invoke('GameServer/Bot/Population/ColdTrip').positionAt(state, timestamp) : state.loc);
         result.clanmate = sameClan(player, state);
         const staticService = BotServiceIdentity.isStaticService(state);
 

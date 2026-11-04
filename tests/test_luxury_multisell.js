@@ -38,7 +38,7 @@ function sessionFor(id) {
         x: 79599, maxLoad: 1000000, fetchLocX: () => actor.x, fetchLocY: () => 145522, fetchLocZ: () => -3494,
         fetchMaxLoad: () => actor.maxLoad, fetchPrivateStoreType: () => 0, isDead: () => false,
         state: { fetchCombats: () => false, fetchHits: () => false, fetchCasts: () => false },
-        backpack: new Backpack({ items: [], paperdoll: {} }), statusUpdateVitals() { this.loadUpdated = true; } };
+        backpack: new Backpack({ id, items: [], paperdoll: {} }), statusUpdateVitals() { this.loadUpdated = true; } };
     return { actor, packets: [], dataSendToMe(packet) { this.packets.push(packet); } };
 }
 async function add(session, selfId, amount) {

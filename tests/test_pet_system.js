@@ -36,7 +36,7 @@ async function main() {
     options.default.Database.path = dbPath;
     Database.init();
     const read = new DatabaseSync(dbPath);
-    const backpack = new Backpack({ paperdoll: [], items: read.prepare('SELECT * FROM items').all() });
+    const backpack = new Backpack({ id: 2000001, paperdoll: [], items: read.prepare('SELECT * FROM items').all() });
     const session = owner(backpack);
     World.user = { sessions: [session] };
     World.npc = { spawns: [], grid: {}, nextId: 9000001 };
@@ -149,7 +149,7 @@ async function main() {
     assert.strictEqual(saved.exp, earned);
     assert.strictEqual(saved.name, 'Fang');
     assert(saved.inventory.some(item => item.equipped));
-    const reloaded = new Backpack({ paperdoll: [], items: read.prepare('SELECT * FROM items WHERE characterId=2000001').all() });
+    const reloaded = new Backpack({ id: 2000001, paperdoll: [], items: read.prepare('SELECT * FROM items WHERE characterId=2000001').all() });
     session.actor.backpack = reloaded;
     reloaded.spawnPetFromItem(session, { itemObjectId: 100, npcId: 12077 });
     const restored = session.actor.pet;

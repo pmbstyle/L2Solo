@@ -8,6 +8,7 @@
 //
 // Usage: node scripts/generate-spot-table.js [--jobs=4] [--hours=2] [--curve-hours=1]
 //        [--out=data/Bots/spot-table.json] [--spots=N]   (N: first N spots only, for tests)
+//        [--spot-ids=id,id] [--lines=2,12]   (only these spots / class lines: a pick, not a table)
 //        --merge-stacks-from=old.json --stacks-table=measured.json [--out=...]
 //        [--phase=rows|curves|merge --shard=i/n --parts=dir]   (split runs, .github/workflows/tables.yml)
 //
@@ -120,7 +121,7 @@ const START = 1_750_000_000_000;
 
 function args() {
     const out = { jobs: Math.max(1, Math.min(6, os.cpus().length - 2)), hours: 2, curveHours: 1,
-        out: path.join(root, 'data', 'Bots', 'spot-table.json'), spots: 0, child: null, revision: null,
+        out: path.join(root, 'data', 'Bots', 'spot-table.json'), spots: 0, spotIds: null, lines: null, child: null, revision: null,
         mergeStacksFrom: null, stacksTable: null, phase: 'all', shard: null, parts: null };
     for (const arg of process.argv.slice(2)) {
         const [key, value] = arg.replace(/^--/, '').split('=');
@@ -129,6 +130,8 @@ function args() {
         else if (key === 'curve-hours') out.curveHours = Number(value);
         else if (key === 'out') out.out = path.resolve(value);
         else if (key === 'spots') out.spots = Number(value);
+        else if (key === 'spot-ids') out.spotIds = value.split(',').filter(Boolean);
+        else if (key === 'lines') out.lines = value.split(',').filter(Boolean);
         else if (key === 'child') out.child = value;
         else if (key === 'revision') out.revision = value;
         else if (key === 'merge-stacks-from') out.mergeStacksFrom = path.resolve(value);
@@ -141,6 +144,9 @@ function args() {
     if (!['all', 'rows', 'curves', 'merge'].includes(out.phase)) throw new Error(`unknown phase ${out.phase}`);
     if (out.shard && !(out.shard[1] >= 1 && out.shard[0] >= 1 && out.shard[0] <= out.shard[1])) throw new Error('bad --shard');
     if (out.phase !== 'all' && out.phase !== 'rows' && !out.parts) throw new Error(`phase ${out.phase} needs --parts`);
+    if (out.spotIds && out.spots) throw new Error('--spot-ids and --spots exclude each other');
+    // A pick is not the world's table: it never lands where the server reads one.
+    if ((out.spotIds || out.lines) && out.out === path.join(root, 'data', 'Bots', 'spot-table.json')) throw new Error('a pick (--spot-ids, --lines) needs its own --out');
     return out;
 }
 
@@ -187,7 +193,7 @@ async function phaseResults(phase, tasks, options, catalogueFile) {
 // The hash of a phase's task list: each task's kind, spot, point key (a
 // curve or kit point) and hours, in order.
 function tasksHash(tasks) {
-    return hash(tasks.map((task) => `${task.kind}|${task.spotId}|${task.point || ''}|${task.hours}`).join('\n'));
+    return hash(tasks.map((task) => `${task.kind}|${task.spotId}|${task.point || ''}|${task.hours}${task.lines ? `|${task.lines}` : ''}`).join('\n'));
 }
 
 // ARCH-NOTE: full regeneration exceeded the FX-E9 tolerance for XP/SP,
@@ -596,7 +602,8 @@ function gapGate(spot, role, shots, botLevel, species, pull) {
 
 // A row: the lowest level gap at which the role finds a safe target, then the
 // hunt at the reference gap (or that lowest gap when it is higher).
-function rowTask({ spotId, hours }) {
+// lines: a pick's class lines (--lines), else every line.
+function rowTask({ spotId, hours, lines = roles() }) {
     const spot = sim.profiles.get(spotId);
     const level = Number(spot.avgLevel);
     const rows = [];
@@ -609,7 +616,7 @@ function rowTask({ spotId, hours }) {
         if (!memo.has(key)) memo.set(key, compute());
         return memo.get(key);
     };
-    for (const role of roles()) {
+    for (const role of lines) {
         for (const shots of SHOTS) rows.push(lineRow(spot, role, level, shots, hours, once));
     }
     return rows;
@@ -957,16 +964,24 @@ async function main() {
         .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     const catalogueSpots = spots.length;
     if (options.spots > 0) spots = spots.slice(0, options.spots);
+    if (options.spotIds) {
+        const missing = options.spotIds.filter((id) => !spots.some((spot) => spot.id === id));
+        if (missing.length) throw new Error(`--spot-ids: not hunting spots of the catalogue: ${missing.join(', ')}`);
+        spots = spots.filter((spot) => options.spotIds.includes(spot.id));
+    }
+    const lines = options.lines || roles();
+    const unknownLines = lines.filter((line) => !roles().includes(line));
+    if (unknownLines.length) throw new Error(`--lines: not class lines (${roles().join(',')}): ${unknownLines.join(', ')}`);
     const catalogueFile = path.join(os.tmpdir(), `spot-table-catalogue-${process.pid}.json`);
     fs.writeFileSync(catalogueFile, JSON.stringify({ spots: catalogue.spots, profiles: catalogue.profiles }));
     process.stderr.write(`catalogue: ${catalogue.spawned} spawns, ${catalogueSpots} hunting spots, ${Math.round((Date.now() - started) / 1000)} s\n`);
 
     try {
         // Rows.
-        const rowTasks = spots.map((spot) => ({ kind: 'row', spotId: spot.id, hours: options.hours }));
+        const rowTasks = spots.map((spot) => ({ kind: 'row', spotId: spot.id, hours: options.hours, ...(options.lines && { lines }) }));
         const rowResults = await phaseResults('rows', rowTasks, options, catalogueFile);
         if (!rowResults) return;
-        if (rowResults.length !== spots.length || rowResults.some((rows) => rows.length !== roles().length * SHOTS.length)) {
+        if (rowResults.length !== spots.length || rowResults.some((rows) => rows.length !== lines.length * SHOTS.length)) {
             throw new Error('row results do not match the spots');
         }
 
@@ -978,7 +993,7 @@ async function main() {
         // and bends the whole band's curve, T43), then a fixed hashed order.
         const curveSpots = new Map(), minGaps = new Map();
         spots.forEach((spot, index) => {
-            roles().forEach((role, roleIndex) => {
+            lines.forEach((role, roleIndex) => {
                 const row = rowResults[index][roleIndex * SHOTS.length];
                 if (!row || row.refGap !== REF_GAP) return;
                 const key = `${role}|${bandOf(Number(spot.avgLevel))}`;
@@ -1071,13 +1086,14 @@ async function main() {
                 inputs: { hours: options.hours, curveHours: options.curveHours, catalogueSeed: CATALOGUE_SEED, geodata: catalogue.geodata,
                     periodMode: CATALOGUE_PERIODS, rate: 'x1', maxLevel: MAX_LEVEL, refGap: REF_GAP, bandLevels: BAND_LEVELS,
                     curveSpots: CURVE_SPOTS, roleClasses: roleClasses(), roleLines: ROLE_LINES,
-                    spotLimit: options.spots || null },
-                counts: { catalogueSpots, spots: spots.length, rows: spots.length * roles().length * SHOTS.length,
+                    spotLimit: options.spots || null,
+                    ...(options.spotIds && { spotIds: options.spotIds }), ...(options.lines && { lines: options.lines }) },
+                counts: { catalogueSpots, spots: spots.length, rows: spots.length * lines.length * SHOTS.length,
                     huntableRows: rowResults.flat().filter(Boolean).length, curves: curveCount,
                     simulatedHours: rowResults.flat().filter(Boolean).length * options.hours
                         + curveResults.filter(Boolean).length * options.curveHours }
             },
-            roles: roles(),
+            roles: lines,
             shots: SHOTS,
             gaps: GAPS,
             rowFields: ROW_FIELDS,

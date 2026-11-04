@@ -86,7 +86,7 @@ class ColdCompetitionActions {
                     DiagnosticConfig.developerDiagnostics && (this.report.pvpFights++);
                     const kills = result.combat.fighters.flatMap(f => f.kills);
                     DiagnosticConfig.developerDiagnostics && (this.report.pvpDeaths += kills.length);
-                    DiagnosticConfig.developerDiagnostics && (this.report.pkKills += kills.filter(k => !k.pvp).length);
+                    DiagnosticConfig.developerDiagnostics && (this.report.pkKills += kills.filter(k => k.outcome === 'pk').length);
                     if (!result.encounter) { DiagnosticConfig.developerDiagnostics && (this.report.pvpCompleted++); count(this.report.pvpOutcomes, result.outcome || 'finished'); }
                 }
                 if (DiagnosticConfig.developerDiagnostics && result.ok && event.spotId) {
@@ -222,7 +222,7 @@ class ColdCompetitionActions {
         }
         const kills = result.combat?.fighters.flatMap(f => f.kills) || [];
         DiagnosticConfig.developerDiagnostics && (this.report.pvpDeaths += kills.length);
-        DiagnosticConfig.developerDiagnostics && (this.report.pkKills += kills.filter(k => !k.pvp).length);
+        DiagnosticConfig.developerDiagnostics && (this.report.pkKills += kills.filter(k => k.outcome === 'pk').length);
         if (!result.encounter) { DiagnosticConfig.developerDiagnostics && (this.report.pvpCompleted++); count(this.report.pvpOutcomes, result.outcome || 'finished'); }
         DiagnosticConfig.developerDiagnostics && (this.report.lastPvpStep = { at: this.now(), ...result });
     }

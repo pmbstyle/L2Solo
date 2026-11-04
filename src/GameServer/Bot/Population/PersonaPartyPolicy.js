@@ -1,7 +1,6 @@
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const PartyAffinity = invoke('GameServer/Bot/Population/BackgroundPartyAffinity');
 const TendencyRoll = require('../AI/TendencyRoll');
-const PartyMemoryPreference = require('./PartyMemoryPreference');
 const PartyRequestPlanner = require('./PartyRequestPlanner');
 
 function supportCount(coverage = {}) {
@@ -12,9 +11,8 @@ function profileFor(state) {
     return BotPersona.of(state);
 }
 
-// How much a persona wants a party, before the situation: shared by the
-// bot-to-bot intent below and the answer to a player's invite
-// (PersonaPartyDecisionPolicy). Not rounded.
+// How much a persona wants a party, before the situation (the bot-to-bot
+// intent below). Not rounded.
 function baseScore(persona) {
     const traits = persona.traits;
     const driveBonus = persona.primaryDrive === 'social' ? 18
@@ -72,19 +70,4 @@ function preference(state, peers = [], coverage = {}) {
     return { score, reasons: reasons.slice(0, 3), persona };
 }
 
-function explain(state, peers = [], coverage = {}) {
-    const result = preference(state, peers, coverage);
-    const intent = backgroundIntent(state);
-    const memoryScore = PartyMemoryPreference.create().score(state, peers);
-    const memoryReason = memoryScore > 0 ? 'positive_interactions' : memoryScore < 0 ? 'personal_conflict' : null;
-    return {
-        score: result.score,
-        memoryScore,
-        reasons: [...(memoryReason ? [memoryReason] : []), ...result.reasons].slice(0, 3),
-        primaryDrive: result.persona?.primaryDrive || null,
-        archetype: result.persona?.archetype || null,
-        partyIntent: intent.reason
-    };
-}
-
-module.exports = { baseScore, backgroundIntent, preference, explain };
+module.exports = { baseScore, backgroundIntent, preference };

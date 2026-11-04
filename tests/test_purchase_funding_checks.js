@@ -60,6 +60,11 @@ assert.deepEqual(originalPacket, [1000, .001, 0, 0, .1, 100, 2509, .05, 200, 106
 for (const terms of [{ r: .2 }, { r: 0, itemId: 2509 }, { r: .1, free: true }, { valueHours: 10 }, { itemId: 999 }]) {
     assert.equal(Funding.packetAfterPurchase(originalPacket, 100, terms), originalPacket, 'an unmatched expense cannot release another wish');
 }
+// A companion buys ahead of the queue: the wish's own row is paid, no other row moves.
+assert.deepEqual(Funding.packetAfterPurchase(originalPacket, 40, Funding.companionTerms(1060)).slice(4), [.1, 100, 2509, .05, 160, 1060]);
+assert.equal(Funding.packetAfterPurchase(originalPacket, 40, Funding.companionTerms(999)), originalPacket);
+assert.equal(Funding.spendable({ adena: 1000, stats: { money: [1000, .001, 300, 0, .1, 600, 2509] } }, 0, Funding.companionTerms(999)), 700,
+    'a companion spends everything above the reserve');
 const inputs = Funding.packetAfterPurchase(originalPacket, 25, { r: .1, itemId: 1785 });
 assert.equal(inputs[5], 75, 'paid craft input consumes the same admitted priority bucket as its different final root item');
 assert.equal(Funding.packetAfterPurchase(inputs, 75, { r: .1, itemId: 2508 })[5], 0);

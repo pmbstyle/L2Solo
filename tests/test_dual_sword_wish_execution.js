@@ -42,7 +42,7 @@ function review(state) {
     return Economy.forState(state, { timestamp, board: new BoardIndex(), spots: [],
         npcOffersFor: () => [], workshop: null, knownRecipes: [], withNodes: true,
         knowledgeEnabled: false, routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
-        workshops: () => [], rememberContext: false });
+        workshops: () => [], caller: 'meeting_prepare' });
 }
 
 async function seed(state) {

@@ -13,7 +13,6 @@ const Profit = require('./CraftProfitPolicy');
 const Production = require('./ProductionPolicy');
 const Workshops = require('./CraftWorkshopService');
 
-const NATIVE_TRAVEL_MS = ColdTrip.AUTHOR_TRIP_MS;
 const CLAN_CRAFTER_RETRY_MS = 5 * 60 * 1000;
 
 const isStationService = state => CraftShopService.isStationService(state);
@@ -494,4 +493,4 @@ async function craft(state, random = Math.random) {
     };
 }
 
-module.exports = { NATIVE_TRAVEL_MS, isStationService, stationForRecipe, crafterAccount, recipeForState, hasMaterials, hasNonSupplementalMaterials, hasCombinationIngredients, readyRecipeFor, waitForWarehouseStage, supplementMaterials, craftableBatchCount, requiredCraftCount, beginTravel, craft };
+module.exports = { isStationService, stationForRecipe, crafterAccount, recipeForState, hasMaterials, hasNonSupplementalMaterials, hasCombinationIngredients, readyRecipeFor, waitForWarehouseStage, supplementMaterials, craftableBatchCount, requiredCraftCount, beginTravel, craft };

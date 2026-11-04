@@ -276,7 +276,7 @@ async function main() {
 
         const armorRecipe = Recipes.resolveByProductId(439);
         for (const material of armorRecipe.materials) {
-            if (!Policy.isSupplement(material.selfId)) await stock(material.selfId, material.amount);
+            await stock(material.selfId, material.amount);
         }
         await stock(armorRecipe.recipeItemId, 1);
         const armor = await OrderService.create(await projection(), { itemId: 439, amount: 1, strategy: 'craft', memberIds: members });

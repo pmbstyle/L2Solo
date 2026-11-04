@@ -52,7 +52,7 @@ try {
     invoke('GameServer/Skills/C4SkillEffects').execute(helper.session, helper, corpse, skill);
     assert(complete); assert.strictEqual(events.length, 1, 'cast acceptance is not completed resurrection');
     complete();
-    assert.strictEqual(corpse.hp, 1); assert(!corpse.state.dead);
+    assert.strictEqual(corpse.hp, invoke('GameServer/Formulas').respawnHp(100), 'C4 revives at 70 % HP'); assert(!corpse.state.dead);
     assert.strictEqual(events.length, 2); assert.strictEqual(events[1].type, 'resurrected');
     complete(); assert.strictEqual(events.length, 2, 'duplicate completion earns no second gratitude');
     console.log('Support memory: real HoT ticks, cumulative usefulness, restored caster and remaining ticks, native resurrection completion passed');

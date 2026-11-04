@@ -273,7 +273,8 @@ const keltirNpc = DataCache.npcs.find(npc => npc.template?.name === 'Bearded Kel
 assert(keltirNpc);
 Table.useSpots([{ id: '-15_42', npcEntries: [{ selfId: keltirNpc.selfId, count: 1 }] }]);
 const keltir = Table.value('-15_42', 'dps', 5, true);
-assert(keltir && keltir.kills > 100 && keltir.kills <= 275.2 && keltir.exp > 0 && keltir.adena > 0, 'a low field gives a dps kills, exp and adena');
+const keltirCap = Table.cycle('-15_42', 'dps', 5, true)?.cap;
+assert(keltir && keltir.kills > 100 && keltir.kills <= keltirCap && keltir.exp > 0 && keltir.adena > 0, 'a low field gives a dps kills, exp and adena');
 assert(Table.value('-15_42', 'dps', 5, false).kills <= keltir.kills, 'shots do not slow a dps');
 assert(Table.value('-15_42', 'dps', 12, true).kills >= keltir.kills, 'a higher dps kills at least as fast');
 assert(raw.roles.every((role) => Table.value('-15_42', role, 8, true)), 'every role hunts the newbie field');

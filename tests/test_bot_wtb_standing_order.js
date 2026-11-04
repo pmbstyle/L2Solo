@@ -156,8 +156,9 @@ try {
     stops.length = 0;
 
     // At40+ the physical worn weapon leaves class-build candidates available.
-    // The actual accepted one-leaf decision determines which order stands.
-    // T43 table: at 40 no stock pays and the bot's gear wishes have no leaf; at 46 its C shots give one.
+    // The actual accepted native decision determines which order stands. In this
+    // world nobody sells its C kit pieces or its stock: the money waits for the kit,
+    // stock nobody supplies holds no focus (T178), so no step and no leaf is left.
     const weapon = BotGear.planFor({ classId: 0, level: 46 }).items.find((item) => Number(item.slot) === 7);
     const chest = BotGear.planFor({ classId: 0, level: 46 }).items.find((item) => Number(item.slot) === 10);
     const buildGoalBot = {
@@ -169,20 +170,13 @@ try {
             equippedCount: 1, equippedSlots: [7], slot: 7 } }
     };
     const buildNative = await nativeChoice.capture(buildGoalBot, {}, 'original_build_driven_chest_order');
-    assert.strictEqual(buildNative.goals.length, 1, 'one actual native leaf reaches the reader');
-    assert.strictEqual(buildNative.goals[0].priority, 50);
-    const expectedKeep = buildNative.read.activity.activity === 'shopping'
-        && Number(buildNative.read.activity.itemId) === Number(chest.selfId)
-        && buildNative.goals[0].plan?.sourceType !== 'npc';
-    if (expectedKeep) assert(Funding.spendable(buildNative.state, 37213, { itemId: chest.selfId }) > 0,
-        'a native selected chest has actual funding; the old class-build target alone is insufficient');
+    assert.strictEqual(buildNative.read.activity, null, 'no seller for its kit or its stock: no native leaf');
+    assert.deepStrictEqual(buildNative.goals, [], 'no goal reaches the reader');
     order.lines = [{ id: 2, selfId: chest.selfId, name: chest.name, count: 1, price: 1000 }];
     state = buildNative.state;
     result = await BotAfkMarket.reconcile(state, recover);
-    assert.strictEqual(stops.length, expectedKeep ? 0 : 1, 'the original chest order follows the actual accepted native leaf');
-    assert.strictEqual(result.changed, !expectedKeep);
-    console.log('Native original build-order choice:', JSON.stringify({ chestId: chest.selfId, weaponId: weapon.selfId,
-        nativeLeaf: buildNative.read.activity, goals: buildNative.goals, expectedKeep, closed: stops.length }));
+    assert.deepStrictEqual(stops, [7], 'the class-build chest alone does not hold the order: it follows the native leaf');
+    assert.strictEqual(result.changed, true);
     // An order for an NPC-shop plan is withdrawn even during a rest: that
     // purchase is made at the NPC (E4).
     order.lines = [{ id: 1, selfId: PIECE_BONE_GAITERS, name: 'Piece Bone Gaiters', count: 1, price: 37213 }];

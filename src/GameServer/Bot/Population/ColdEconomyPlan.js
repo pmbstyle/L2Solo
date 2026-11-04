@@ -48,6 +48,13 @@ function edges(before, after, options = {}) {
     return bits;
 }
 
+// Whether a step's plan is worth a held round: something BotAfkMarketService.executePlan
+// carries out for the bot. plan.shop only names the town of plan.sell, buyKit and
+// buyCaps go with buyAds; bidLimits ride every proposal and hold nothing.
+function acts(plan) {
+    return !!plan && !!(plan.take || plan.travel || plan.shot || plan.sell?.length || plan.withdraw?.length || plan.buyAds?.length);
+}
+
 // Same native sale/bid policies as a town/remote review, with the worker's
 // mirrors supplied explicitly. No warehouse or life-state/database reader.
 function prepare(state, economy, options = {}) {
@@ -173,7 +180,7 @@ function* prepareNative(state, economy, options) {
         const unprepared = !economy.intentPending ? (plan.buyAds.some(row => row === null) ? 'buy_error' : null)
             : state.incomingPending ? 'intent_incoming' : 'intent_root';
         if (unprepared) {
-            delete plan.buyAds; delete plan.buyKit; delete plan.buyCaps;
+            dropBuyBatch(plan);
             if (unprepared === 'intent_incoming') plan.d = 1;
             if (Diagnostics.active()) Diagnostics.count('economy_plan', 'deferred', unprepared);
         }
@@ -184,23 +191,10 @@ function* prepareNative(state, economy, options) {
     // existing dirty preparation owner; absent buyAds means not prepared.
     if (Buffer.byteLength(JSON.stringify({ buyAds: plan.buyAds, buyKit: plan.buyKit, buyCaps: plan.buyCaps,
         bidLimits: plan.bidLimits })) > MAX_PLAN_PAYLOAD_BYTES) {
-        delete plan.buyAds; delete plan.buyKit; delete plan.buyCaps; plan.d = (plan.d || 0) | 1;
+        dropBuyBatch(plan); plan.d = (plan.d || 0) | 1;
         if (Diagnostics.active()) Diagnostics.count('economy_plan', 'deferred', 'bytes');
     }
-    while (Buffer.byteLength(JSON.stringify(plan)) > MAX_PLAN_PAYLOAD_BYTES) {
-        if (plan.sell.length) {
-            plan.sell.pop(); plan.d = (plan.d || 0) | 2;
-            // A truncated replacement cannot remove unchanged valuable
-            // stock. Keep the existing records until the whole showcase fits.
-            if (plan.shop && plan.sell.length < showcaseRows) {
-                plan.sell = []; delete plan.shop;
-            }
-        }
-        else if (plan.withdraw.length) { plan.withdraw.pop(); plan.d = (plan.d || 0) | 4; }
-        else if (plan.travel) { plan.travel = null; plan.d = (plan.d || 0) | 8; }
-        else if (plan.shot) { delete plan.shot; plan.d = (plan.d || 0) | 16; }
-        else throw Error('economy_plan_payload_overflow');
-    }
+    fit(plan, showcaseRows);
     if (plan.d > 1 && Diagnostics.active()) Diagnostics.count('economy_plan', 'deferred', `bytes_${plan.d & ~1}`);
     if (Diagnostics.active() && Diagnostics.enabled(state.characterId)) {
         const trace = { owner: state.characterId, caller: options.caller || 'cold_plan',
@@ -221,6 +215,9 @@ function* prepareNative(state, economy, options) {
 // set, the survival tranche each bid was decided with (BuyAdPolicy
 // survivalCost) and executable purchase limits. Native publication reuses
 // these scalars, never another route or price calculation.
+function dropBuyBatch(plan) {
+    delete plan.buyAds; delete plan.buyKit; delete plan.buyCaps;
+}
 function buyBatch(lines) {
     const rows = lines.slice(0, MAX_BUYS);
     const buyAds = rows.map(row => row.intent ? TradeIntent.encode(row.intent) : [row.selfId, row.count, row.price]);
@@ -228,6 +225,25 @@ function buyBatch(lines) {
     const buyCaps = rows.map(row => Number.isFinite(row.purchaseCap) ? Math.floor(row.purchaseCap) : null);
     return { buyAds, ...(buyKit.some(Boolean) ? { buyKit } : {}),
         ...(buyCaps.some(cap => cap !== null) ? { buyCaps } : {}) };
+}
+// One command's room: what can wait leaves, last the buy batch, whole (absent buyAds means
+// not prepared): a batch that fit alone can overflow beside the plan's other fields.
+function fit(plan, showcaseRows = 0) {
+    while (Buffer.byteLength(JSON.stringify(plan)) > MAX_PLAN_PAYLOAD_BYTES) {
+        if (plan.sell.length) {
+            plan.sell.pop(); plan.d = (plan.d || 0) | 2;
+            // A truncated replacement cannot remove unchanged valuable
+            // stock. Keep the existing records until the whole showcase fits.
+            if (plan.shop && plan.sell.length < showcaseRows) {
+                plan.sell = []; delete plan.shop;
+            }
+        }
+        else if (plan.withdraw.length) { plan.withdraw.pop(); plan.d = (plan.d || 0) | 4; }
+        else if (plan.travel) { plan.travel = null; plan.d = (plan.d || 0) | 8; }
+        else if (plan.shot) { delete plan.shot; plan.d = (plan.d || 0) | 16; }
+        else if (plan.buyAds) { dropBuyBatch(plan); plan.d = (plan.d || 0) | 1; }
+        else throw Error('economy_plan_payload_overflow');
+    }
 }
 function decide(state, economy, options = {}) {
     const iterator = prepare(state, economy, options);
@@ -249,4 +265,4 @@ function decideShot(state, economy, options = {}) {
     // a recipe/gear/quote scan by falling through this publication adapter.
     return { unknown: true };
 }
-module.exports = { edges, decide, prepare, buyBatch, decideShot, MAX_BYTES, MAX_SHOT_BYTES, MAX_PLAN_PAYLOAD_BYTES, MAX_SHOT_PAYLOAD_BYTES };
+module.exports = { edges, acts, decide, prepare, fit, buyBatch, decideShot, MAX_BYTES, MAX_SHOT_BYTES, MAX_PLAN_PAYLOAD_BYTES, MAX_SHOT_PAYLOAD_BYTES };

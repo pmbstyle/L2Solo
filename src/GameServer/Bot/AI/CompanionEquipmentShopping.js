@@ -43,10 +43,14 @@ function currentState(session, bot, town, economy = null) {
     };
 }
 
-function affordableOffers(target, state, town, session) {
-    // ARCH-NOTE: Player companion errands use the player's choice; autonomous bots spend only on their funded item.
-    const budget = PurchaseFunding.spendable(state, 0, session.partyCompanion === true
-        ? { upperBound: true } : { itemId: target.selfId });
+// The purchase writers refuse a wallet with no money packet: such a companion
+// plans nothing until its first worker decision writes one.
+function companionBudget(state, itemId) {
+    return Array.isArray(state.stats?.money) ? PurchaseFunding.spendable(state, 0, PurchaseFunding.companionTerms(itemId)) : 0;
+}
+
+function affordableOffers(target, state, town) {
+    const budget = companionBudget(state, target.selfId);
     const offer = MarketOpportunity.bestHotOffer(target.selfId, {
         town: town.name,
         buyerCharacterId: state.characterId,
@@ -104,7 +108,7 @@ function checkedPlan(session, state, town, options = {}) {
     const offerCache = new Map();
     const offersFor = (target) => {
         const selfId = Number(target?.selfId || 0);
-        if (!offerCache.has(selfId)) offerCache.set(selfId, affordableOffers(target, state, town, session));
+        if (!offerCache.has(selfId)) offerCache.set(selfId, affordableOffers(target, state, town));
         return offerCache.get(selfId);
     };
     const previousOffers = previous?.target?.selfId ? offersFor(previous.target) : [];
@@ -184,7 +188,8 @@ function planErrand(session, bot, town, purchaseCount = 0, excludedSlots = [], e
         price: Number(offer.price),
         amount: Math.min(Number(offer.count || Infinity), Number(plan.amount || 1)),
         // The native writer checks the same terms the plan was budgeted with.
-        funding: PurchaseFunding.nativeTerms(PurchaseFunding.goalTerms({ plan }), plan.target.selfId),
+        funding: session.partyCompanion === true ? PurchaseFunding.companionTerms(plan.target.selfId)
+            : PurchaseFunding.nativeTerms(PurchaseFunding.goalTerms({ plan }), plan.target.selfId),
         purchaseCount,
         excludedSlots: [...excludedSlots],
         target: offer.sourceType === 'npc'
@@ -196,8 +201,7 @@ function planErrand(session, bot, town, purchaseCount = 0, excludedSlots = [], e
 function alternateNpcErrand(session, bot, town, errand) {
     if (errand?.kind !== 'npc_equipment_purchase' || !town?.name) return null;
     const state = currentState(session, bot, town);
-    const budget = PurchaseFunding.spendable(state, 0, session.partyCompanion === true
-        ? { upperBound: true } : { itemId: errand.itemId });
+    const budget = companionBudget(state, errand.itemId);
     const failedSourceIds = new Set([
         ...(errand.failedSourceIds || []).map(Number),
         Number(errand.sourceId || 0)

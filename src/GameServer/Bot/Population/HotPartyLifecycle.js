@@ -366,7 +366,7 @@ async function releaseUnsafeHunt(partyId) {
             return Life.preparePartyReview(state, next);
         });
         const dissolved = Parties.prepareCommit({ ...party, status: 'dissolved', memberIds: [], nextResolveAt: null,
-            stats: { ...party.stats, hotLifecycle: null, partyBreakReason: reason, dissolvedAt: timestamp } });
+            stats: { ...party.stats, hotLifecycle: null, partyBreakReason: reason } });
         if (!dissolved || releases.some(row => !row)) return { ok: false, reason: 'invalid_party_review' };
         const result = await Database.commitBackgroundPartyMembership({ party: dissolved.row, members: releases,
             review: true, expectedPhase: 'hot', expectedPartyRevision: party.revision, canCommitHot: ready,
@@ -418,6 +418,7 @@ function publish(sessions, states, party) {
 }
 
 async function activate(partyId, reason = 'near_player', options = {}) {
+    const transitionStartedAt = Date.now();
     const encounter = members(Parties.find(partyId))?.map(s => s.stats?.pvpEncounter).find(Boolean);
     if (encounter) return invoke('GameServer/Bot/Population/PvpEncounterLifecycle').activate(encounter, reason, options);
     if (pending.has(partyId)) return { ok: false, reason: 'party_transition_pending' };
@@ -495,7 +496,7 @@ async function activate(partyId, reason = 'near_player', options = {}) {
         const prepared = sessions.map(session => Life.partySessionSnapshot(session, states.find(s => s.characterId === id(session)), 'hot', reason));
         ({ party, states } = await transition(Parties.find(partyId), states, prepared, 'hot', reason));
         publish(sessions, states, party);
-        for (const state of states) invoke('GameServer/Bot/Population/PopulationMetrics').recordActivation();
+        for (const state of states) invoke('GameServer/Bot/Population/PopulationMetrics').recordActivation(Date.now() - transitionStartedAt);
         if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BotPopulation :: activated party %s members=%d reason=%s', partyId, states.length, reason);
         if (raidObjective(party) && options.raidFanout !== false) {
             const competitors = Parties.raidCompetitors(Parties.raidBossKey(party), 'active', party.partyId, 'raid_fanout_activate');
@@ -524,6 +525,7 @@ async function activate(partyId, reason = 'near_player', options = {}) {
 }
 
 async function cooldown(partyId, reason = 'policy', options = {}) {
+    const transitionStartedAt = Date.now();
     const encounter = members(Parties.find(partyId))?.map(s => s.stats?.pvpEncounter).find(Boolean);
     if (encounter) return invoke('GameServer/Bot/Population/PvpEncounterLifecycle').cooldown(encounter, reason, options);
     if (pending.has(partyId)) return { ok: false, reason: 'party_transition_pending' };
@@ -566,7 +568,7 @@ async function cooldown(partyId, reason = 'policy', options = {}) {
                 ...result.party,
                 status: 'dissolved',
                 nextResolveAt: null,
-                stats: { ...(result.party.stats || {}), partyBreakReason: 'raid_failed', dissolvedAt: Date.now() }
+                stats: { ...(result.party.stats || {}), partyBreakReason: 'raid_failed' }
             });
             if (dissolved) {
                 await invoke('GameServer/Clan/ClanEquipmentService').recordRaidFailure(dissolved);
@@ -582,7 +584,7 @@ async function cooldown(partyId, reason = 'policy', options = {}) {
             }
         }
         result.states.forEach(state => Coordinator.notifyState(state));
-        for (const state of result.states) invoke('GameServer/Bot/Population/PopulationMetrics').recordCooldown();
+        for (const state of result.states) invoke('GameServer/Bot/Population/PopulationMetrics').recordCooldown(Date.now() - transitionStartedAt);
         if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) console.info('BotPopulation :: cooled party %s members=%d reason=%s', partyId, next.length, reason);
         return { ok: true, ...result, count: next.length };
     } catch (error) {

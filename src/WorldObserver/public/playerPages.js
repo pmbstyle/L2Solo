@@ -8,13 +8,16 @@
         actors.forEach((actor) => {
             if (!actor.party?.id) return;
             const id = String(actor.party.id);
-            if (!parties.has(id)) parties.set(id, { id, leaderId: actor.party.leaderId || actor.party.leader?.id || null, members: [] });
+            if (!parties.has(id)) parties.set(id, { id, named: new Set(), members: [] });
             const party = parties.get(id);
+            party.named.add(Number(actor.party.leaderId || actor.party.leader?.id || 0));
             if (!party.members.some((member) => member.kind === actor.kind && member.id === actor.id)) party.members.push(actor);
         });
-        return [...parties.values()].map((party) => {
-            const leader = party.members.find((actor) => Number(actor.id) === Number(party.leaderId));
-            return { ...party, leader, name: leader?.name || party.members[0]?.party?.leader?.name || 'Adventuring party',
+        return [...parties.values()].map(({ named, ...party }) => {
+            // The leader is a member a member names: a copy naming someone
+            // outside the group shows no one, not a departed leader's name.
+            const leader = party.members.find((actor) => named.has(Number(actor.id)));
+            return { ...party, leaderId: leader?.id ?? null, leader, name: leader?.name || 'Adventuring party',
                 averageLevel: Math.round(party.members.reduce((sum, actor) => sum + Number(actor.level || 1), 0) / party.members.length),
                 location: leader?.area?.name || leader?.region || party.members[0]?.area?.name || party.members[0]?.region || 'Unknown location' };
         }).sort((a, b) => b.averageLevel - a.averageLevel || a.name.localeCompare(b.name));
@@ -124,7 +127,7 @@
             return heading('Better together', 'Adventuring parties', 'Meet the groups exploring Aden. Open a member to see their equipment and current activity.') + `<div class="directory-controls"><label class="directory-search"><input type="search" id="partySearch" aria-label="Find a party" placeholder="Leader, member or location…" value="${escape(filters.query || '')}"></label><span id="partyCount">${number(groups.length)} parties</span></div><div class="party-grid" id="partyResults">${partyCards(groups)}</div>`;
         }
         function partyCards(groups) {
-            return groups.map((party) => `<section class="party-card"><header><div><h2>${escape(party.name)}'s party</h2><p>${escape(party.location)} · average level ${number(party.averageLevel)}</p></div><span>${party.members.length} members</span></header><div class="party-members">${party.members.map((actor) => `<a href="${href(actor)}">${escape(actor.name)}<br><span>Lv ${number(actor.level)} · ${escape(roleLabel(actor.party?.role || actor.role))}</span></a>`).join('')}</div></section>`).join('') || '<div class="directory-empty">No parties match this view.</div>';
+            return groups.map((party) => `<section class="party-card"><header><div><h2>${escape(party.leader ? `${party.name}'s party` : party.name)}</h2><p>${escape(party.location)} · average level ${number(party.averageLevel)}</p></div><span>${party.members.length} members</span></header><div class="party-members">${party.members.map((actor) => `<a href="${href(actor)}">${escape(actor.name)}<br><span>Lv ${number(actor.level)} · ${escape(roleLabel(actor.party?.role || actor.role))}</span></a>`).join('')}</div></section>`).join('') || '<div class="directory-empty">No parties match this view.</div>';
         }
         function dungeon() {
             const snapshot = getSnapshot();

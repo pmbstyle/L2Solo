@@ -91,4 +91,9 @@ const coldContext = OverhitReward.contextForHit({
 assert.deepStrictEqual(OverhitReward.resolveContext(coldContext, 1000),
     OverhitReward.resolveContext(captured, 1000), 'hot and cold fixtures must share the authoritative formula');
 
+// L2J Lisvus C4 skills data sets overHit on these; a rule that omits it gives no bonus.
+for (const selfId of [1, 3, 48, 120, 280, 281, 1339, 1340, 1341, 1342, 1343]) {
+    assert.strictEqual(invoke('GameServer/Skills/C4SkillRules').resolve({ selfId }).overHit, true, `skill ${selfId} is an over-hit skill`);
+}
+
 console.log('C4 Over-hit runtime and reward checks passed');

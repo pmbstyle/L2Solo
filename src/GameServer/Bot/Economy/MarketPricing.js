@@ -12,6 +12,8 @@ const Profit = require('./CraftProfitPolicy');
 const BidPurchaseAlternative = require('./BidPurchaseAlternative');
 const { npcOwnsPurchase } = require('./TradeIntent');
 const { MAX_INSPECTED } = require('./ReadyTradeChoice');
+const MeetingPriceRefusals = require('./MeetingPriceRefusals');
+const PartyAdmission = require('../Population/PartyAdmission');
 const ColdEconomyDecision = require('../Population/ColdEconomyDecision');
 const BoardLook = require('./BoardLook');
 
@@ -25,7 +27,7 @@ function traderContext(state, deps = {}) {
     const adena = Math.max(0, Number(state?.adena ?? state?.inventory?.[57]?.amount ?? 0));
     const origin = deps.findSpot ? OfferOrder.farmingOrigin(state, deps.findSpot) : null;
     const economicTrip = deps.tripCost?.details ? deps.tripCost : economy.trip?.details ? economy.trip
-        : Profit.tripFor(state, { ...economy, origin });
+        : Profit.tripFor(state, { hourAdena: hour, origin });
     const trip = economicTrip;
     const persona = deps.persona || economy.persona;
     const trader = PriceDecision.traderOf(persona, { hourAdena: hour, moneyPrice: economy.moneyPrice, gapHorizonHours: economy.gapHorizonHours });
@@ -143,9 +145,9 @@ function bestAnswer(selfId, ctx, { units = 1, enchant = 0, residualUnitValue = 0
     const seller = { characterId: Number(ctx.characterId), marketTrades: ctx.marketTrades || {} };
     for (const line of lines) {
         if (line.ownerId === Number(ctx.characterId) || line.enchant !== Number(enchant || 0)) continue;
-        if (line.custodyPolicy === 1 && !require('../Population/PartyAdmission').personalOfferAllowed(line, ctx.state)) continue;
-        if (line.custodyPolicy === 1 && require('./MeetingPriceRefusals').rejects(line,
-            Math.min(units, line.count), require('../Population/PartyAdmission').counterpartyState(line.ownerId))) continue;
+        if (line.custodyPolicy === 1 && !PartyAdmission.personalOfferAllowed(line, ctx.state)) continue;
+        if (line.custodyPolicy === 1 && MeetingPriceRefusals.rejects(line,
+            Math.min(units, line.count), PartyAdmission.counterpartyState(line.ownerId))) continue;
         const sale = PriceDecision.bidSale(seller, line, { board: ctx.board, persona: ctx.persona,
             timestamp: ctx.timestamp, units, residualUnitValue, belief });
         const outcome = sale.after;

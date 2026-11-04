@@ -1,0 +1,95 @@
+// What a far bot hears where it stands (Reaction): a change waits for its player's moment.
+'use strict';
+const assert = require('node:assert/strict');
+require('./helpers/databaseIsolation');
+require('../src/Global');
+const Reaction = invoke('GameServer/Bot/Economy/Reaction');
+
+const hunter = { characterId: 7, activity: 'hunting', spotId: 's', stats: {} };
+const leaf = { activity: 'hunting', spotId: 's' };
+
+const at = activity => Reaction.place({ phase: 'cold', activity, stats: {} });
+assert.equal(Reaction.hears('stores', at('resting')), true, 'a rest reads the clan\'s demand');
+assert.equal(Reaction.hears('warehouse', at('resting')), false, 'its own deposit and take raise nothing on a rest');
+assert.equal(Reaction.hears('warehouse', at('shopping')), false, 'nor on a town visit');
+assert.equal(Reaction.hears('warehouse', Reaction.place({ phase: 'cold', activity: 'shopping', stats: {} }, { activity: 'traveling' })), true, 'it is read as the bot arrives in town');
+// A bot at work weighs only the gear it follows; a real review weighs every candidate.
+const far = { ...hunter, phase: 'cold' };
+assert.equal(Reaction.quiet(far, 'wish_dirty'), true, 'a soft event on the spot');
+assert.equal(Reaction.quiet({ ...far, activity: 'traveling' }, 'refresh'), true, 'and on the road');
+assert.equal(Reaction.quiet({ ...far, activity: 'resting' }, 'wish_dirty'), true, 'a rest reads no gear');
+assert.equal(Reaction.quiet({ ...far, activity: 'shopping' }, 'wish_dirty'), false, 'so is the town');
+assert.equal(Reaction.quiet({ ...far, activity: 'grouped', partyId: 3 }, 'wish_dirty'), true, 'a party fight is work too');
+assert.equal(Reaction.quiet(far, 'check:short'), false, 'a failed goal chooses again');
+assert.equal(Reaction.quiet(far, 'goal'), false, 'a goal main moved too');
+assert.equal(Reaction.quiet(far, undefined), false, 'no card stood: no held build to follow');
+// Away on a solo hunt only the next wish within reach raises money; in reach of town the drift does too.
+const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+const moneyBaseline = { wallet: 1000, moneyError: 100, cashBounds: [0, 5000], goalBudget: 5000, funding: 0 };
+const hunting = adena => ({ characterId: 7, phase: 'cold', activity: 'hunting', adena, stats: {} });
+const soft = state => Sections.softEvents(state, moneyBaseline, { buyOrderEscrow: 0, timestamp: 1 });
+assert(!soft(hunting(1500)).includes('money'), 'a drift away on the hunt is no event');
+assert(soft(hunting(6000)).includes('money'), 'its goal in reach is');
+assert(!soft({ ...hunting(1500), partyId: 'bgp_1' }).includes('money'), 'a party member holds its plan too');
+assert.deepEqual(Sections.softEvents(hunting(1000), { ...moneyBaseline, share: 0.5, incomeError: 0 }, { buyOrderEscrow: 0, timestamp: 1 }), [],
+    'nor does the income reach it on the hunt');
+// The one table: what a bot hears where it stands.
+const cold = (activity, extra = {}) => ({ ...hunter, phase: 'cold', activity, ...extra });
+const waitsFor = (state, ...links) => links.every(link => !Reaction.hears(link, Reaction.place(state)));
+const hearsAll = (state, ...links) => links.every(link => Reaction.hears(link, Reaction.place(state)));
+assert(waitsFor(cold('hunting'), 'funding', 'money', 'supply', 'bag', 'quantity', 'stores', 'relations', 'observation'), 'at work the links wait');
+assert(waitsFor(cold('hunting'), 'build') && hearsAll(cold('resting'), 'build'), 'a new level waits for the rest');
+assert(hearsAll(cold('hunting'), 'dead', 'riskDeaths', 'occupation', 'need_supply', 'need_bag', 'goal', 'market'), 'its fight, its place and a condition do not');
+assert(waitsFor(cold('resting'), 'supply', 'bag', 'quantity') && hearsAll(cold('resting'), 'funding', 'relations', 'stores'), 'a rest reads the money, the people and the clan');
+assert(waitsFor(cold('shopping'), 'funding', 'money', 'supply', 'bag', 'quantity', 'stores', 'build', 'recipes', 'relations', 'income_moved'), 'a visit works down its list');
+assert(hearsAll(cold('shopping'), 'filled', 'short', 'offer_gone'), 'its list\'s end does not wait');
+assert(hearsAll(cold('resting'), 'income_moved') && waitsFor(cold('resting'), 'income_later'), 'a better spot reaches a rest on a hunt, not one on another job');
+assert(waitsFor(cold('resting'), 'offer_gone') && waitsFor(cold('traveling'), 'offer_gone'), 'who sells what is read at the market');
+assert.equal(Reaction.place({ ...cold('shopping') }, cold('traveling')), 0, 'arriving hears all that waited');
+assert(hearsAll(cold('crafting'), 'funding', 'money', 'supply', 'quantity'), 'a craft has no check for its end');
+assert(waitsFor(cold('resting'), 'money', 'short') && hearsAll(cold('resting'), 'funding', 'relations', 'stores', 'build'), 'a rest is no review of the purse');
+assert(Reaction.readsFacts(cold('traveling'), cold('shopping')), 'the step that arrives in town reads its facts');
+assert(!Reaction.readsFacts(cold('shopping'), cold('shopping')) && !Reaction.readsFacts(cold('traveling'), cold('traveling')), 'and only that step');
+assert(Reaction.readsFacts(cold('grouped', { partyId: 'p' }), cold('grouped', { partyId: 'p' })), 'a party reads its round');
+assert.deepEqual(Sections.softEvents(cold('shopping', { adena: 1500 }), moneyBaseline, { buyOrderEscrow: 0, timestamp: 1 }, cold('traveling')), ['money'], 'town reads the purse on arrival');
+assert.deepEqual(Sections.softEvents(cold('shopping', { adena: 1500 }), moneyBaseline, { buyOrderEscrow: 0, timestamp: 1 }), [], 'and not again on the visit');
+assert(hearsAll(cold('merchant'), 'funding', 'money'), 'a stall hears its money');
+assert(waitsFor(cold('crafting'), 'own_move', 'own_preparation'), 'its own doing is no event anywhere');
+assert(hearsAll(cold('hunting', { stats: { tradeMeeting: [1] } }), 'funding', 'supply', 'relations'), 'nor on the way to a meeting');
+assert(waitsFor(cold('grouped', { partyId: 'p' }), 'build', 'money', 'quantity', 'own_move'), 'a party fight waits as a hunt');
+assert(hearsAll(cold('resting', { partyId: 'p' }), 'build', 'relations'), 'and a party reads at its rest');
+assert(hearsAll(cold('grouped', { partyId: 'p' }), 'party', 'dead', 'occupation'), 'a join, a role, a death do not wait');
+assert(hearsAll({ ...hunter, phase: 'hot' }, 'funding', 'quantity', 'own_move'), 'nor near a player');
+assert(hearsAll(cold('hunting'), 'threat', 'excluded', 'material_done', 'filled', 'sale', 'craft', 'target'), 'a failed check goes at once');
+assert(waitsFor(cold('hunting'), 'short', 'money') && waitsFor(cold('crafting'), 'short') && hearsAll(cold('shopping'), 'short'), 'short of a price it earns on: the shop reads its purse');
+assert(waitsFor(cold('hunting'), 'income_moved') && hearsAll(cold('resting'), 'income_moved'), 'a better spot waits for the rest');
+assert.equal(Reaction.placeName(Reaction.place(cold('traveling'))), 'work', 'a hunt or the road is work');
+// Own trips: the bot's way out and back is no event far from a player; the world's push is.
+const trip = (travel, extra = {}) => cold('traveling', { stats: { travel }, ...extra });
+const back = { reason: 'return_after_market', spotId: 'other', townName: 'Giran', arrivalActivity: 'hunting' };
+assert.equal(Sections.occupationPlanned(trip(back), leaf), true, 'the way back from town is its own');
+assert.equal(Sections.occupationPlanned(trip({ reason: 'market_sale_inventory', townName: 'Giran' }), leaf), true, 'so is a trip to sell');
+assert.equal(Sections.occupationPlanned(trip({ reason: 'level_replan', spotId: 'x' }), null), true, 'and its own route with no leaf');
+assert.equal(Sections.occupationPlanned(trip({ reason: 'unsafe_ground_evacuation' }), leaf), false, 'a flight stays an event');
+assert.equal(Sections.occupationPlanned(trip({ reason: 'death_pressure_replan', cause: 'death_pressure' }), leaf), false, 'and a death pressure');
+assert.equal(Sections.occupationPlanned(trip({ reason: 'competition_avoid', cause: 'competition_avoid' }), leaf), false, 'and a pushed-out spot');
+assert.equal(Sections.occupationPlanned(trip({ reason: 'party_spot_replan' }, { partyId: 'p' }), leaf), false, 'a party\'s call stays an event');
+assert.equal(Sections.occupationPlanned(cold('hunting', { spotId: 'x' }), { activity: 'shopping' }), true, 'reaching its ground is no second event');
+assert.equal(Sections.occupationPlanned(cold('grouped', { spotId: 'x', partyId: 'p' }), { activity: 'shopping' }), true, 'nor a party\'s fight');
+assert.equal(Sections.occupationPlanned(cold('shopping'), leaf), false, 'and town is a moment');
+assert.equal(Sections.occupationPlanned({ ...trip(back), phase: 'hot' }, leaf), false, 'nor a near bot');
+// At work money speaks when it reaches the goal, not at each price the last review read.
+const purse = adena => cold('hunting', { adena, stats: {} });
+const wallet = { wallet: 50, moneyError: -1, cashBounds: [0, 100], budgetBounds: [0, 100], goalBudget: 500 };
+const moneyHeard = state => Sections.softEvents(state, wallet, { board: null });
+assert.deepEqual([...moneyHeard(purse(150))], [], 'a next price is no event at work');
+assert.deepEqual([...moneyHeard(purse(500))], ['money'], 'the goal within reach is');
+assert.deepEqual([...moneyHeard({ ...purse(150), activity: 'resting' })], [], 'nor at a rest');
+assert.deepEqual([...moneyHeard({ ...purse(500), activity: 'resting' })], ['money'], 'there the goal speaks too');
+// The bot's own craft preparation asks no review far from a player; it stands in its state.
+const Events = invoke('GameServer/Bot/AI/DecisionEvents');
+const preparing = cold('crafting', { stats: { decisionSeq: 3 } }), bits = Sections.sectionMask(['sources', 'benefits', 'money']);
+assert.deepEqual(Events.applyOwnRaise(preparing), preparing.stats, 'its own preparation raises nothing');
+assert.equal(Events.applyOwnRaise({ ...preparing, phase: 'hot' }).wishDirty, bits, 'a near bot raises');
+console.log('player moment ok');
+process.exit(0);

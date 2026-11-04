@@ -59,10 +59,21 @@ async function main() {
     assert.equal(restored.level, 25); assert.equal(restored.exp, 12345); assert.equal(restored.adena, 999);
     assert.equal(resumed.constPartySession, undefined); assert.equal(resumed.equipmentPlan.strategy, 'market');
 
+    // A session saved with fractional clocks resumes whole: a bot takes no command otherwise.
+    await seed(191);
+    await query(`UPDATE bot_life_state SET activityStartedAt=activityStartedAt+0.7,nextResolveAt=?,
+        statsJson=json_set(statsJson,'$.restUntil',?) WHERE characterId=191`, [at + 600000.5, at + 600000.5]);
+    assert.equal((await DB.pauseConstPartyActivity({ characterId: 191, playerId: 9001 })).ok, true);
+    await DB.releaseConstPartyActivity({ characterId: 191, playerId: 9001 });
+    const wholeClocks = await row(191);
+    assert(Number.isSafeInteger(Number(wholeClocks.activityStartedAt)), `resumed start is whole (${wholeClocks.activityStartedAt})`);
+    assert(Number.isSafeInteger(Number(wholeClocks.nextResolveAt)), `resumed due is whole (${wholeClocks.nextResolveAt})`);
+    assert(Number.isSafeInteger(stats(wholeClocks).restUntil), `resumed rest deadline is whole (${stats(wholeClocks).restUntil})`);
+
     for (const id of [201, 202, 203]) await seed(id, 'grouped', { role: 'dps', leaderId: 201, backgroundPartyId: 'const-group' });
     await query("UPDATE bot_life_state SET partyId='const-group' WHERE characterId IN (201,202,203)");
     await query(`INSERT INTO bot_background_parties(partyId,leaderId,memberIdsJson,status,nextResolveAt,statsJson)
-        VALUES ('const-group',201,'[201,202,203]','active',?,'{"objective":{"kind":"raid","npcId":123}}')`, [at + 60000]);
+        VALUES ('const-group',201,'[201,202,203]','active',?,'{"objective":{"kind":"raid","npcId":123}}')`, [at + 60000.5]);
     paused = await DB.pauseConstPartyActivity({ characterId: 201, playerId: 9001 });
     assert.equal(paused.rows.length, 3); assert.equal(paused.party.status, 'const_paused');
     assert(paused.rows.every(row => row.phase === 'hot' && !row.partyId));
@@ -71,6 +82,7 @@ async function main() {
     assert(result.waiting, 'the original group stays paused while another member is with a player');
     result = await DB.releaseConstPartyActivity({ characterId: 202, playerId: 9001 });
     assert.equal(result.party.status, 'active'); assert.equal(JSON.parse(result.party.statsJson).objective.npcId, 123);
+    assert(Number.isSafeInteger(Number(result.party.nextResolveAt)), `resumed party due is whole (${result.party.nextResolveAt})`);
     assert(result.rows.every(row => row.partyId === 'const-group' && row.phase === 'cold' && row.activity === 'grouped'));
     assert.equal((await DB.pauseConstPartyActivity({ characterId: 201, playerId: 9001 })).ok, true);
     assert.equal(await DB.recoverConstPartyActivities(), 3, 'a restart also resumes unselected paused group members');

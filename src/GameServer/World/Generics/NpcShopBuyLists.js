@@ -1257,7 +1257,11 @@ function townOffers() {
 // Market valuation uses TownServiceCatalog's seller admission (including
 // numeric coordinates), then folds all full shop rows by numeric item ID.
 // rowForNpc keeps the FIRST numeric row; this minimum-positive view must not.
-function townPriceForItem(selfId) {
+// townPrices() is the whole table (item id -> price, rebuilt when the rate or
+// spawns change): what main prices with and what the workers receive
+// (BotMarketPricing.npcPriceRows). The Map is the live cache: read only, never
+// modify it, or main and the workers' rows split silently.
+function townPrices() {
     DataCache ||= invoke('GameServer/DataCache');
     const rate = progressionMultiplier();
     if (!sameInputs(townPriceView, rate)) {
@@ -1270,7 +1274,11 @@ function townPriceForItem(selfId) {
         }
         townPriceView = { ...inputs, prices };
     }
-    return townPriceView.prices.get(Number(selfId)) ?? null;
+    return townPriceView.prices;
+}
+
+function townPriceForItem(selfId) {
+    return townPrices().get(Number(selfId)) ?? null;
 }
 
 const EMPTY = Object.freeze([]);
@@ -1290,6 +1298,7 @@ module.exports = {
     // Numeric aliases remain separate for consumers which fold prices.
     rowsForNpc(npcSelfId) { return rowIndexForNpc(npcSelfId).rows; },
     townOffers,
+    townPrices,
     townPriceForItem,
 
     npcIds() {

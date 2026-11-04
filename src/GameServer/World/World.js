@@ -223,8 +223,7 @@ function coldBotTell(playerSession, state, text) {
     });
 }
 
-const { CLIENT_VISIBILITY_RADIUS, NPC_GRID_SIZE } = invoke('GameServer/World/WorldConstants');
-const CLIENT_VISIBILITY_RADIUS_SQUARED = CLIENT_VISIBILITY_RADIUS * CLIENT_VISIBILITY_RADIUS;
+const { CLIENT_VISIBILITY_RADIUS, NPC_GRID_SIZE, inClientView } = invoke('GameServer/World/WorldConstants');
 
 function isBotSession(session) {
     return !!session && (
@@ -235,9 +234,8 @@ function isBotSession(session) {
 }
 
 function isVisibleFrom(creature, candidate) {
-    const dx = Number(candidate.actor.fetchLocX() ?? 0) - Number(creature.fetchLocX());
-    const dy = Number(candidate.actor.fetchLocY() ?? 0) - Number(creature.fetchLocY());
-    return (dx * dx) + (dy * dy) < CLIENT_VISIBILITY_RADIUS_SQUARED;
+    return inClientView(Number(creature.fetchLocX()), Number(creature.fetchLocY()),
+        Number(candidate.actor.fetchLocX() ?? 0), Number(candidate.actor.fetchLocY() ?? 0));
 }
 
 function visibleUserSessions(user, session, creature, realOnly) {
@@ -276,9 +274,7 @@ function nearestBotName(lookup, BotManager, LifeState) {
     const hotNames = (BotManager.sessions || [])
         .map((session) => session?.actor?.fetchName?.())
         .filter(Boolean);
-    const coldNames = typeof LifeState.allStates === 'function'
-        ? LifeState.allStates(2000).map((state) => state?.name).filter(Boolean)
-        : [];
+    const coldNames = LifeState.allStates(2000).map((state) => state?.name).filter(Boolean);
     const names = [...new Set([...hotNames, ...coldNames].map((name) => String(name)))];
     const ranked = names
         .map((name) => ({ name, distance: nameDistance(lookup, name) }))

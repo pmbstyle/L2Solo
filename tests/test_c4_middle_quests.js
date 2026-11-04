@@ -22,7 +22,7 @@ async function sessionFor(id) {
     const actor = { ...row, fetchId: () => id, fetchName: () => `Quest${id}`, fetchClanId: () => 0,
         fetchLevel() { return this.level; }, fetchRace() { return this.race; }, fetchClassId() { return this.classId; },
         fetchExp() { return this.exp; }, fetchSp() { return this.sp; }, setExpSp(exp, sp) { this.exp = exp; this.sp = sp; },
-        backpack: new Backpack({ items: await Database.fetchItems(id), paperdoll: {} }) };
+        backpack: new Backpack({ id, items: await Database.fetchItems(id), paperdoll: {} }) };
     const session = { actor, dataSendToMe() {} };
     await Service.ensureLoaded(session);
     return session;

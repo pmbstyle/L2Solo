@@ -14,6 +14,9 @@ const Attack = invoke('GameServer/Actor/Attack');
 const receivedHit = invoke('GameServer/Actor/Generics/ReceivedHit');
 const Automation = invoke('GameServer/Automation');
 const ServerResponse = invoke('GameServer/Network/Response');
+// The creature fixtures carry no fetchKind, so an offensive cast on any of
+// them counts as one on a character; the PvP flag packets are not under test.
+invoke('GameServer/Actor/PvpFlag').mark = () => {};
 const activeSkills = require('../data/Skills/Active/active.json');
 const passiveSkills = require('../data/Skills/Passive/passive.json');
 const switchSkills = require('../data/Skills/Switch/switch.json');

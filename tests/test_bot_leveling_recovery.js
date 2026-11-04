@@ -11,7 +11,7 @@ DataCache.init();
 const now = Date.now();
 const plan = {
     status: 'active', strategy: 'direct_drop', grade: 'c', plannedForLevel: 40,
-    plannedForGrade: 'c', startedAt: now - 100000,
+    startedAt: now - 100000,
     target: { selfId: 192, name: 'Crystal Staff', slot: 14 },
     next: { spotId: 'ghosts', npcId: 636, itemId: 192 },
     partyNeed: 'required', requiresParty: true,
@@ -43,7 +43,7 @@ const afterDelevel = { ...state, level: 39, exp: 13000000,
         deathExperience: { expBeforeDeath: 14000000, expLost: 1000000, penaltyAppliedAt: now } } };
 assert.strictEqual(Planner.replanContextFor(afterDelevel, plan, now).levelingRecovery.reason, 'level_regression',
     'one death crossing a level boundary must prioritize regaining the lost level');
-const legacyPlan = { ...plan, plannedForLevel: 29, plannedForGrade: 'd' };
+const legacyPlan = { ...plan, plannedForLevel: 29 };
 const legacy = { ...afterDelevel, level: 29, exp: 4189999, stats: { ...afterDelevel.stats,
     equipmentPlan: legacyPlan, deathExperience: { expBeforeDeath: 4217089, expLost: 27090, penaltyAppliedAt: now } } };
 const legacyContext = Planner.replanContextFor(legacy, legacyPlan, now);

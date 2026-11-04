@@ -266,7 +266,8 @@ new Function('require', 'invoke', 'module', 'exports', fs.readFileSync(path.join
     name => name.endsWith('SurvivalFloor') ? { forState: () => null }
         : name.endsWith('EconomyContext') ? { survivalReserve: () => 0 }
         : name.endsWith('PurchaseFunding') ? { rootRatio: () => 0, leafRatio: () => 0 }
-        : name.endsWith('DataCache') ? { items: [] } : (() => { throw Error(name); })(),
+        : name.endsWith('DataCache') ? { items: [] }
+        : name.endsWith('WishNetwork') ? invoke('GameServer/Bot/Economy/WishNetwork') : (() => { throw Error(name); })(),
     goalsModule, goalsModule.exports);
 const otherTownBoard = new BoardIndex();
 otherTownBoard.put({ id: 2, ownerId: 3, storeType: 1, town: 'Dion', kind: 'sell_ad',
@@ -335,14 +336,7 @@ assert(invoke('GameServer/Bot/Economy/PriceDecision').waitRate(richView) > 0,
 const waitingTransport = ColdDecision.capture({ ...richNative, network: { ...richNative.network, activity: null } }, committedRich);
 assert.equal(ColdDecision.view(committedRich, waitingTransport, nativeDeps).gapHorizonHours, richView.gapHorizonHours,
     'waiting for prepared source evidence does not remove an existing wish urgency');
-for (const kind of ['shots', 'potions']) {
-    const key = `stock:${kind}`, stockWish = { key, object: { kind, amount: 10 }, price: 100 };
-    const stockTransport = ColdDecision.capture({ ...richNative, network: {
-        queue: [stockWish], focus: [key, 0, 100], gap: null, activity: null } }, committedRich);
-    assert.equal(ColdDecision.view(committedRich, stockTransport, nativeDeps).gapHorizonHours,
-        NativeEconomy.basics(committedRich, nativeDeps).stock(kind).targetHours,
-        'funded stock keeps its own consumption horizon through transport');
-}
+// A funded stock's horizon travels in the plan's own packet (T189): pinned in test_agenda.
 const emptyTransport = ColdDecision.capture({ ...richNative, network: {
     queue: [], focus: null, gap: null, activity: null } }, committedRich);
 assert.equal(ColdDecision.view(committedRich, emptyTransport, nativeDeps).gapHorizonHours, 0,

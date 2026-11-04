@@ -212,7 +212,7 @@ async function deposit(clan, goal, itemId, buyer, purchase, offer, { playerContr
         metrics.levelUps += 1;
         await ClanCrestService.ensureAutonomousCrest(clan.id);
         recordReason(Contracts.REASON_CODES.CONTRIBUTION_LEVEL_UP);
-        if (typeof ClanService.reload === 'function') await ClanService.reload();
+        await ClanService.reload();
     }
     return { ok: true, purchased: true, deposited, advanced, offer };
 }

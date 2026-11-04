@@ -4,7 +4,6 @@ require('../src/Global');
 
 const Planner = invoke('GameServer/Bot/Population/PopulationSeedPlanner');
 const GeneratedColdSeeder = invoke('GameServer/Bot/Population/GeneratedColdSeeder');
-const BotPopulation = invoke('GameServer/Bot/BotPopulation');
 
 const profiles = Planner.STARTER_REGIONS.map((region) => ({
     id: `starter_${region.id}`,
@@ -36,20 +35,6 @@ Object.entries(starterRaces).forEach(([starterRegion, race]) => {
             `${starterRegion} population slots must use only that race`);
     });
 });
-
-const staticStarterRaces = {
-    'Talking Island': 0,
-    'Elven Village': 1,
-    'Dark Elven Village': 2,
-    'Orc Village': 3,
-    'Dwarven Village': 4
-};
-BotPopulation.buildStarterBots()
-    .filter((bot) => Object.hasOwn(staticStarterRaces, bot.homeRegion))
-    .forEach((bot) => {
-        assert.strictEqual(bot.race, staticStarterRaces[bot.homeRegion],
-            `${bot.homeRegion} static starter cohort must use the local race`);
-    });
 
 const legacyPopulation = Planner.plan(profiles, Array.from({ length: 132 }, (_, index) => ({
     characterId: index + 1,

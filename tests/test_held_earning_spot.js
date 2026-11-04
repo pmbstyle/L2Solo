@@ -16,6 +16,8 @@ const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const Party = invoke('GameServer/Bot/Population/PartyIncomeComparison');
 const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Route = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
+const Sources = invoke('GameServer/Bot/Population/ColdOccupationSources');
+const Trip = invoke('GameServer/Bot/Economy/EconomicTrip');
 const GameTime = invoke('GameServer/World/GameTime');
 const started = 1791335800000;
 const time = minutes => started + minutes * GameTime.GAME_MINUTE_MS;
@@ -31,10 +33,11 @@ function sampled(state, better) {
     let next = { ...state, stats: { ...state.stats, huntEfficiency: [] } };
     for (let n = 0; n < 3; n++) for (const spot of spots) next = { ...next, stats: { ...next.stats,
         huntEfficiency: Hunt.record(next, { spotId: spot.id, timestamp: started, cycleMs: 60000,
-            adena: spot.id === better ? 1200 : 750, costs: 100, loot: 0, exp: 100, kills: 10 }) } };
+            adena: spot.id === better ? 1200 : 750, costs: 100, loot: 0, exp: spot.id === better ? 200 : 100, kills: 10 }) } };
     return next;
 }
 // complete: a working kit; else one earring short, so a search runs whatever the goal.
+// Near a player, where every read hears a change at once (far: Reaction, below).
 function fighter(characterId, { complete = false } = {}) {
     const inventory = {};
     for (const entry of Gear.planFor({ classId: 0, level: 10 }).items) {
@@ -47,7 +50,7 @@ function fighter(characterId, { complete = false } = {}) {
         const ear = Object.values(inventory).find(row => row.equippedSlots.includes(2));
         inventory[ear.selfId] = { ...ear, amount: 1, equippedCount: 1, equippedSlots: [1], slot: 1 };
     }
-    const state = { characterId, level: 10, adena: 1000000, phase: 'cold', activity: 'hunting', currentRegion: 'Gludin',
+    const state = { characterId, level: 10, adena: 1000000, phase: 'hot', activity: 'hunting', currentRegion: 'Gludin',
         spotId: 'poor', loc: spots[0].center, timing: {}, vitals: { hp: 500, maxHp: 500, mp: 300, maxMp: 300 },
         stats: { classId: 0, wishFocus: ['power:200:14', 1, 1000000] }, inventory };
     state.stats.coldCombat = Profile.legacySnapshot(state, Profile.skillRecordsFromTree(0, 10), started);
@@ -165,6 +168,19 @@ function verify() {
         assert.equal(later.searches, 0, 'with no new search');
         assert.equal(Economy.incomeMoved(turned), true, 'the held build is to be rebuilt on it');
         assert.equal(Card.refusal(turned, accepted, deps(45)), 'events:income_moved', 'its card refuses');
+        // At work the bot finishes where it stands; its rest hears the better spot.
+        const at = activity => Card.refusal({ ...turned, phase: 'cold', activity }, accepted, deps(45));
+        assert.notEqual(at('hunting'), 'events:income_moved', 'a hunt does not hear it');
+        assert.equal(at('resting'), 'events:income_moved', 'its rest does');
+        // A job that is no hunt ends first: the same rest on a craft does not hear it.
+        const proof = built.eventProof(), resting = { ...turned, phase: 'cold', activity: 'resting' };
+        const heardOn = leaf => {
+            const options = { baseline: resting.stats.wishSections, leaf, collect: true };
+            const first = Economy.heldBuildVerdict(resting, proof, deps(45), options);
+            return Economy.heldBuildVerdict(resting, { ...proof, activity: first.leaf }, deps(45), options).reason;
+        };
+        assert.equal(heardOn({ activity: 'hunting', spotId: 'poor' }), 'income_moved', 'fixture: a hunter hears it');
+        assert.notEqual(heardOn({ activity: 'crafting', recipeId: 1 }), 'income_moved', 'a crafter finishes');
         const rebuilt = Economy.forState(turned, deps(45));
         assert.notEqual(rebuilt.plan, built.plan, 'the build refuses');
         assert.equal(rebuilt.hunt.spotId, 'poor', 'and moves to it');
@@ -203,23 +219,35 @@ function verify() {
     }
 
     // The bot's own build leaves the search's economic band (a complete kit, a
-    // stock focus): no route. The rebuild keeps that focus: re-weighed, it could
+    // focus off gear and resale): no route. The rebuild keeps that focus: re-weighed, it could
     // flip back and ask the next search, a rebuild per step.
+    // Stock nobody sells takes no focus (T178), so this bot needs a seller: the
+    // worker's real supply, the towns' NPC shops and the routes to them (main
+    // alone builds with an unknown route, and an unknown route is no offer).
     {
+        Sources.initialise();
+        const supplied = { npcOffersFor: Sources.npcOffersFor, routeRows: Trip.prepared };
         let bot = null;
         for (let id = 990210; !bot && id < 990240; id++) {
-            const held = heldBot(id, {}, { complete: true });
-            if (/^stock:/.test(held.state.stats.wishFocus?.[0])) bot = held;
+            const held = heldBot(id, supplied, { complete: true });
+            if (!/^(power:|resale:)/.test(held.state.stats.wishFocus?.[0] ?? 'power:')) bot = held;
         }
-        assert(bot, 'fixture: a build that chose a stock focus');
+        assert(bot, 'fixture: a build that chose a focus outside the band');
         const { state } = bot, focus = state.stats.wishFocus[0];
-        const left = count(() => Economy.forState(state, deps(1)));
+        const left = count(() => Economy.forState(state, deps(1, supplied)));
         assert(left.searches >= 1, 'the goal change searches');
         assert.notEqual(left.result.hunt.source, 'route', 'the bot leaves the route chosen for the old focus');
         assert.equal(left.result.statsPacket.wishFocus[0], focus, 'the rebuild re-weighs nothing');
-        const next = count(() => Economy.forState(published(state, left.result), deps(2)));
+        const next = count(() => Economy.forState(published(state, left.result), deps(2, supplied)));
         assert.equal(next.result.plan, left.result.plan, 'the next read serves it');
         assert.equal(next.searches, 0, 'with no search');
+    }
+    // A far bot in the field needs no bag rows: a read list past its bound leaves it its proof.
+    {
+        const { built, state } = heldBot(990250);
+        const plan = { ...built.plan, quantityInputs: null };
+        assert(Economy.captureEventProof({ ...state, phase: 'cold' }, deps(0), { plan }), 'a hunter keeps its proof');
+        assert.equal(Economy.captureEventProof(state, deps(0), { plan }), null, 'a bot near a player does not');
     }
     Economy.reset();
     console.log(`PASS held earning spot: window on every path, goal change, moved hold, held null ${isMainThread ? 'main' : 'worker'}`);

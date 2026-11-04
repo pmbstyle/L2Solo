@@ -62,8 +62,7 @@ function* region(loc) {
 
 function* forwardTrip(state, from, to) {
     if (Karma.closesTowns(state.stats?.karma)) return to.name === Karma.TOWN_NAME
-        ? { route: { fee: 0, hops: 0 }, durationMs: Trip.honest() ? Trip.runMs(from, to)
-            : Math.max(Trip.AUTHOR_TRIP_MS, Trip.runMs(from, to)) } : null;
+        ? { route: { fee: 0, hops: 0 }, durationMs: Trip.runMs(from, to) } : null;
     const origin = yield* region(from), start = Towns.towns[origin?.respawnTown] || origin;
     const destination = yield* region(to), destinationKey = townKeys.get(destination);
     const gateKey = destinationKey === 'floran_village' ? 'dion_town' : destinationKey;
@@ -72,16 +71,14 @@ function* forwardTrip(state, from, to) {
     const distance = Math.hypot(Number(from.locX) - start.locX, Number(from.locY) - start.locY);
     const inStart = distance <= Trip.TOWN_RADIUS;
     const scroll = !inStart && Payment.hasColdScroll(state);
-    const honestMs = (scroll ? Payment.SCROLL_CAST_MS : Trip.runMs(from, start))
+    const durationMs = (scroll ? Payment.SCROLL_CAST_MS : Trip.runMs(from, start))
         + route.hops * Trip.HOP_MS + Trip.runMs(gate, to);
     yield 'trip';
-    return { route, durationMs: Trip.honest() ? honestMs : !inStart && !scroll
-        ? Math.max(Trip.AUTHOR_TRIP_MS, Trip.runMs(from, start)) : Trip.AUTHOR_TRIP_MS };
+    return { route, durationMs };
 }
 
 
 function* returnMs(state, from, to, tailScope = null) {
-    if (!Trip.honest()) return Trip.AUTHOR_TRIP_MS;
     let best = Trip.runMs(from, to);
     if (Karma.closesTowns(state.stats?.karma)) return best;
     const regional = yield* region(from), start = Towns.towns[regional?.respawnTown] || regional;
@@ -157,7 +154,7 @@ function frame(state) {
                 spotId: travel.spotId == null ? null : String(travel.spotId),
                 arrivalActivity: travel.arrivalActivity == null ? null : String(travel.arrivalActivity), to: point(travel.to) } : null } };
 }
-function key(state) { return JSON.stringify([Trip.honest(), frame(state)]); }
+function key(state) { return JSON.stringify(frame(state)); }
 function* prepare(state) {
     const captured = frame(state), routeKey = key(captured), previous = preparedTables.get(routeKey);
     if (previous) {
@@ -196,7 +193,7 @@ function preparedReader(rows, { hourAdena } = {}) {
 }
 function reader(state, { hourAdena, origin = null } = {}) {
     const pointKey = loc => [loc?.locX, loc?.locY, loc?.locZ];
-    const key = JSON.stringify([hourAdena, Trip.honest(), state?.activity, state?.currentRegion,
+    const key = JSON.stringify([hourAdena, state?.activity, state?.currentRegion,
         Karma.closesTowns(state?.stats?.karma), state?.inventory?.[736]?.amount, pointKey(state?.loc), pointKey(origin),
         pointKey(state?.stats?.marketReturn?.loc), state?.stats?.travel?.townName,
         state?.stats?.travel?.arrivalActivity, pointKey(state?.stats?.travel?.to)]);

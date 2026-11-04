@@ -8,6 +8,7 @@ const World = invoke('GameServer/World/World');
 const PetHealRule = invoke('GameServer/Bot/AI/PetHealRule');
 const PetTankRule = invoke('GameServer/Bot/AI/PetTankRule');
 const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
+const DangerMoment = invoke('GameServer/Bot/AI/DangerMoment');
 const PET_BUFF_IDS = new Set([1139, 1140, 1141, 1144, 1145, 1146, 1299, 1301]);
 
 function skillsFor(actor) {
@@ -43,6 +44,21 @@ function summonSkill(actor) {
         .filter((skill) => Number(skill.fetchConsumedMp?.() || 0) <= Number(actor.fetchMp?.() || 0))
         .sort((a, b) => Number(b.fetchSelfId?.() || 0) - Number(a.fetchSelfId?.() || 0)
             || Number(b.fetchLevel?.() || 0) - Number(a.fetchLevel?.() || 0))[0] || null;
+}
+
+// The summons the actor knows (no corpse summon), castable now or not.
+function summonSkills(actor) {
+    return skillsFor(actor).filter(isSummonSkill);
+}
+
+// C4: a summoner raises its pet before it engages (the cold round's getReady):
+// a solo one with no pet casts it out of the fight. True when it cast.
+function raisePet(session, actor, Generics) {
+    if (SummonControl.activeSummon(actor) || actor?.state?.fetchSeated?.() === true) return false;
+    const skill = summonSkill(actor);
+    if (!skill) return false;
+    Generics.skillExec(session, actor, { id: actor.fetchId(), selfId: skill.fetchSelfId(), ctrl: true });
+    return true;
 }
 
 function corpseSummonSkill(actor, target = null) {
@@ -133,19 +149,35 @@ function cast(session, actor, summon, skill, Generics) {
     };
 }
 
+// PetTankRule binds a solo fight only: in a party the tank holds the mob, the owner fights.
+function fightsSolo(session, actor) {
+    return BotClassPolicy.modeFor(actor, { session }).startsWith('solo');
+}
+
+// Does target's hate table put it on the actor?
+function isOnOwner(target, actor) {
+    return Number(target.fetchMostHated?.()?.fetchId?.()) === Number(actor.fetchId?.());
+}
+
 // The hot adapter of PetTankRule.ownerWaits, once the owner has chosen its next
 // hit: action, combatAction's answer with its pet (ordered: the pet's order
-// given this tick); skill, the hit, none for its weapon. A solo fight only: in a
-// party the tank holds the mob, the owner fights. A target without a hate table
-// (a player in PvP) has no tank to wait for.
+// given this tick); skill, the hit, none for its weapon. A target without a hate
+// table (a player in PvP) has no tank to wait for.
 function ownerWaits(session, actor, target, action, skill = null) {
     const summon = action?.summon;
-    if (!summon || typeof target?.getHating !== 'function' || !BotClassPolicy.modeFor(actor, { session }).startsWith('solo')) return false;
+    if (!summon || typeof target?.getHating !== 'function' || !fightsSolo(session, actor)) return false;
     const view = TargetMatchup.targetView(target);
-    const onOwner = Number(target.fetchMostHated?.()?.fetchId?.()) === Number(actor.fetchId?.());
+    const onOwner = isOnOwner(target, actor);
     return PetTankRule.ownerWaits({ petCanTake: SummonControl.canTake(summon, target, action.ordered === true), onOwner,
         ownerHate: target.getHating(actor), petHate: target.getHating(summon),
         nextHit: TargetMatchup.actorHit(actor, view, skill), petHit: onOwner ? TargetMatchup.actorHit(summon, view) : 0 });
+}
+
+// The hot adapter of PetTankRule.winsAlone: an owner with no pet, the mob on it.
+function strikesAlone(session, actor, target) {
+    if (!target || !isOnOwner(target, actor) || !fightsSolo(session, actor)) return false;
+    return PetTankRule.winsAlone({ profiles: TargetMatchup.actorProfiles([actor]), hp: Number(actor.fetchHp?.() || 0),
+        mp: Number(actor.fetchMp?.() || 0), enemy: DangerMoment.enemyOn(actor, target) });
 }
 
 function combatAction(session, actor, target, Generics) {
@@ -173,6 +205,7 @@ function combatAction(session, actor, target, Generics) {
 
         const skill = summonSkill(actor);
         if (!skill) return { handled: false, reason: 'summon_unavailable' };
+        if (strikesAlone(session, actor, target)) return { handled: false, reason: 'strikes_alone' };
         Generics.skillExec(session, actor, {
             id: actor.fetchId(),
             selfId: skill.fetchSelfId(),
@@ -228,6 +261,16 @@ function healPetBetweenFights(session, actor, Generics) {
     return heal ? cast(session, actor, summon, heal, Generics).handled : false;
 }
 
+// A living pet below its heal line whose owner's heal is on its reuse (the heal
+// between fights could not cast it).
+function petHealWaits(actor) {
+    const summon = SummonControl.activeSummon(actor);
+    if (!summon || summon.isDead?.()) return false;
+    const maxHp = Number(summon.fetchMaxHp?.() || 0);
+    return PetHealRule.wantsHeal(Number(summon.fetchHp?.() ?? maxHp), maxHp)
+        && !PetHealRule.choose(actor) && !!PetHealRule.choose(actor, { anyReuse: true });
+}
+
 // The actor's living pet as the rest rule reads it (RestPolicy.needsRest
 // options.pet, PetHealRule.restView), or null.
 function petRestView(actor) {
@@ -239,10 +282,13 @@ function petRestView(actor) {
 module.exports = {
     healPetBetweenFights,
     petRestView,
+    petHealWaits,
     PET_BUFF_IDS,
     isSummonSkill,
     isCorpseSummonSkill,
     summonSkill,
+    summonSkills,
+    raisePet,
     corpseSummonSkill,
     corpseTarget,
     combatAction,

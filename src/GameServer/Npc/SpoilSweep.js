@@ -13,6 +13,7 @@ const SPOIL_SKILL_ID = 254;
 const SPOIL_FESTIVAL_SKILL_ID = 302;
 const SWEEP_SKILL_ID = 42;
 const SPOILED_CORPSE_TIME = 30000;
+let sparedSpoils = 0;
 
 function fetchSpoilGroups(npc) {
     let spoils = [];
@@ -108,8 +109,14 @@ function spoilRecipientSession(session, npc, selfId) {
     return session;
 }
 
+// Spoil lands on any live monster, an empty spoil list included: Path of the
+// Scavenger reads it on the Honey Bear, which has none. Only Sweep needs a list.
+function canSpoil(npc) {
+    return !!npc?.fetchAttackable?.() && !npc.isDead?.() && !npc.model?.spoil?.spoiled;
+}
+
 function markSpoiled(session, actor, npc, skill, { announce = false, festival = false } = {}) {
-    if (!npc?.fetchAttackable?.() || npc.isDead?.() || !hasSpoils(npc) || npc.model?.spoil?.spoiled) return false;
+    if (!canSpoil(npc)) return false;
 
     npc.model = npc.model || {};
     npc.model.spoil = {
@@ -159,8 +166,30 @@ const SpoilSweep = {
         return Number(selfId) === SWEEP_SKILL_ID;
     },
 
+    // A list of its own to sweep: a bot spares its MP on a monster without one.
+    hasSpoilList(npc) {
+        const listed = hasSpoils(npc);
+        if (!listed) sparedSpoils += 1;
+        return listed;
+    },
+
+    // Spoil casts bots left out on monsters with no list (status line).
+    sparedSpoils() {
+        return sparedSpoils;
+    },
+
+    // Spoiled and not swept yet. The list check costs a copy of the rewards, so
+    // a per-tick read stops here; isSweepable adds it for the sweep itself.
+    isUnswept(npc) {
+        return !!npc?.model?.spoil?.spoiled && !npc.model.spoil.swept;
+    },
+
+    spoilerId(npc) {
+        return Number(npc?.model?.spoil?.spoilerId || 0);
+    },
+
     isSweepable(npc) {
-        return !!npc.model.spoil?.spoiled && !npc.model.spoil?.swept && hasSpoils(npc);
+        return this.isUnswept(npc) && hasSpoils(npc);
     },
 
     markSpoiled(session, actor, npc, skill, options) {
@@ -168,7 +197,7 @@ const SpoilSweep = {
     },
 
     trySpoilCrush(session, actor, npc, skill, rng = Math.random) {
-        if (!npc?.fetchAttackable?.() || npc.isDead?.() || !hasSpoils(npc) || npc.model?.spoil?.spoiled) return false;
+        if (!canSpoil(npc)) return false;
         if (!spoilLands(actor, npc, skill, rng)) return false;
         return markSpoiled(session, actor, npc, skill, { announce: true });
     },
@@ -185,14 +214,14 @@ const SpoilSweep = {
     castSpoilTargets(session, actor, targets, skill) {
         const eligible = [...new Map((targets || []).filter(Boolean)
             .map((npc) => [npc.fetchId?.(), npc]))].map(([, npc]) => npc)
-            .filter((npc) => npc.fetchAttackable?.() && !npc.isDead?.() && hasSpoils(npc) && !npc.model?.spoil?.spoiled);
+            .filter(canSpoil);
         if (eligible.length === 0) {
             session.dataSendToMe(ServerResponse.actionFailed());
             return;
         }
 
         castUtilitySkill(session, actor, eligible[0], skill, () => {
-            const spoiled = eligible.filter((npc) => !npc.isDead?.() && !npc.model?.spoil?.spoiled);
+            const spoiled = eligible.filter(canSpoil);
             if (spoiled.length === 0) {
                 session.dataSendToMe(ServerResponse.actionFailed());
                 return;
@@ -231,7 +260,7 @@ const SpoilSweep = {
             return;
         }
 
-        if (npc.model.spoil?.spoilerId && npc.model.spoil.spoilerId !== actor.fetchId()) {
+        if (this.spoilerId(npc) && this.spoilerId(npc) !== actor.fetchId()) {
             session.dataSendToMe(ServerResponse.actionFailed());
             return;
         }

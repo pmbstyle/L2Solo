@@ -306,11 +306,22 @@ function skill(id, type, target, effect, power = 100) {
     marker.mark = (_session, actor) => { actor.flag = 1; flagged++; };
     enemy.flag = 0;
     assert.strictEqual(attack.recordPlayerAggression(attacker, enemy, bot), true);
-    assert.strictEqual(flagged, 1, 'a missed hit or resisted control still flags the actual aggressor');
-    assert(own.pvpAggressors.has(enemy.id));
-    const pet = { fetchKind: () => 'Npc', fetchOwnerId: () => enemy.id, fetchId: () => 100001 };
+    assert(own.pvpAggressors.has(enemy.id), 'a missed hit or resisted control still alerts the victim party');
+    // C4 updatePvPStatus: the attack's start flags the acting player, a
+    // summon's or pet's owner, unless the target has karma.
+    assert.strictEqual(marker.attack(attacker, enemy, bot), true);
+    assert.strictEqual(flagged, 1, 'an attack on a white character flags the aggressor');
+    const pet = { fetchKind: () => 'Pet', fetchIsSummon: () => true, fetchOwnerId: () => enemy.id, fetchId: () => 100001 };
+    assert.strictEqual(marker.attack(attacker, pet, bot), true);
+    assert.strictEqual(flagged, 2, 'a pet\'s attack flags its owner');
+    bot.karma = 500;
+    assert.strictEqual(marker.attack(attacker, enemy, bot), false);
+    assert.strictEqual(marker.attack(attacker, pet, bot), false);
+    assert.strictEqual(flagged, 2, 'an attack on a character with karma flags nobody');
+    bot.karma = 0;
+    const questMonster = { fetchKind: () => 'Monster', fetchOwnerId: () => enemy.id, fetchId: () => 100002 };
+    assert.strictEqual(marker.attack(attacker, questMonster, bot), false, 'an owned quest monster is not its owner\'s summon');
     ReceivedHit(attacker, bot, 1, { source: pet });
-    assert.strictEqual(flagged, 2, 'a summon hit attributes the aggression and PvP flag to its owner');
     tick(own);
     assert.strictEqual(attack.blockedPvpDefense(own, bot, enemy), false);
     enemy.flag = 0;
@@ -380,7 +391,7 @@ function skill(id, type, target, effect, power = 100) {
         Response.userInfo = Response.charInfo = Response.relationChanged = () => Buffer.alloc(0);
         own.dataSendToMe = attacker.dataSendToMe = () => {};
         enemy.fetchPvp = enemy.fetchPk = () => 0;
-        enemy.setPvp = () => {};
+        enemy.setPvp = enemy.setPk = enemy.setKarma = () => {};
         bot.setPvpFlag = flag => { bot.flag = flag; };
         ReceivedHit(attacker, bot, 20);
         assert(bot.dead);

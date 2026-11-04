@@ -110,10 +110,11 @@ class ColdOccupationPlanner {
             if (entry.reads.get(id) === token) continue;
             // Coalesce by the exact used item revision. Updating this token is
             // safe only together with dirty: the obsolete work is never applied.
+            const wasDirty = entry.dirty;
             entry.reads.set(id, token); entry.dirty = true;
             entry.cursor[14] = 1; DiagnosticConfig.developerDiagnostics && (this.stats.invalidations++);
             if (!entry.done) this.ready.add(owner);
-            else this.publish(entry.id, entry.input, unknownWorkshop(), { stale: true });
+            else if (!wasDirty) this.publish(entry.id, entry.input, unknownWorkshop(), { stale: true });
         }
         this.kick();
     }
@@ -143,6 +144,9 @@ class ColdOccupationPlanner {
         this.kick();
     }
     markReset(entry) {
+        // A source table was replaced, no board move: a build kept on the input
+        // may have read it empty (ColdSimulationWorker, refresh).
+        entry.input.builtRefresh = null;
         entry.dirty = true; entry.cursor[14] = 2; DiagnosticConfig.developerDiagnostics && (this.stats.invalidations++);
         if (entry.done) this.publish(entry.id, entry.input, unknownWorkshop(), { stale: true });
     }

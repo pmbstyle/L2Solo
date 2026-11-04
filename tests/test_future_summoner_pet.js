@@ -175,6 +175,63 @@ assert.equal(Tactics.combatAction({}, hotWizard(sorcererId, { botSession: true }
 assert.equal(Tactics.combatAction({}, hotWizard(warlockId, {}), mob, Generics).reason, 'not_summoner',
     'a player picks its second class itself');
 
+// T163 (docs/game-decisions.md): an owner with no pet and the mob on it strikes
+// while it wins alone (soloSurvival at its HP and the mob's HP left), hot and
+// cold; it recasts once it cannot, and a mob not yet on it is no reason to wait.
+{
+    const profile = Cold.profileFor(warlock, TS);
+    const met = Cold.npcForSpot(spot, () => 0.5, { preferredNpcId: MOB });
+    const wounded = Math.ceil(met.maxHp / 2);
+    const under = ({ hp = profile.maxHp, ownerHate = 100, mobHp = wounded, summon = null }) => {
+        const state = { ...warlock, vitals: { ...warlock.vitals, hp }, stats: { ...warlock.stats,
+            coldCombat: { ...warlock.stats.coldCombat, summon } } };
+        const encounter = PveEncounter.save(null, PveEncounter.key([state], spot), met, mobHp, TS,
+            { botReadyAt: 0, mobReadyAt: 0, ownerHate, petHate: 0 });
+        let seed = 7;
+        const rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+        return resolveFight({ state: { ...state, stats: { ...state.stats, pveEncounter: encounter } }, spot, pressure: {},
+            targetNpcId: MOB, rng, timestamp: TS, fightLimitMs: 60000, maxActions: 400 });
+    };
+    assert.equal(under({}).debug.summonUses, 0, 'cold: it wins alone, no recast');
+    assert.equal(under({ ownerHate: 0 }).debug.summonUses, 0, 'cold: the mob its dead pet left wounded comes on to it');
+    assert.equal(under({ hp: 1 }).debug.summonUses, 1, 'cold: it cannot win alone, it recasts');
+    assert.equal(under({ ownerHate: 0, mobHp: met.maxHp }).debug.summonUses, 1, 'cold: a mob not met yet takes the first cast');
+    // In a party the rule does not bind: with an ally up it recasts, its ally down it strikes.
+    const inParty = (allyHp) => {
+        const members = [warlock, { ...sorcerer, vitals: { ...sorcerer.vitals, hp: allyHp } }];
+        const encounter = PveEncounter.save(null, PveEncounter.key(members, spot), met, wounded, TS,
+            { mobReadyAt: 0, hate: { [warlock.characterId]: 1e9 } });
+        let seed = 7;
+        const rng = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+        return Resolver.resolvePartyFight({ members, spot, targetNpcId: MOB, rng, timestamp: TS, encounter }).debug.summonUses;
+    };
+    assert.equal(inParty(sorcerer.vitals.hp), 1, 'cold: in a party it recasts');
+    assert.equal(inParty(0), 0, 'cold: alone in its party it strikes');
+    const saved = { active: true, skillId: KAT, expiresAt: TS + 1e6, hp: 500 };
+    const kept = under({ summon: saved });
+    assert.equal(kept.debug.summonUses, 0);
+    assert(kept.summon?.active, 'cold: a living saved pet stays at its side');
+
+    const blazeRow = DataCache.skills.find((row) => Number(row.selfId) === 1220);
+    const blaze = new Skill({ selfId: 1220, ...blazeRow.template, ...blazeRow.time, ...blazeRow.levels.find((row) => Number(row.level) === 6) });
+    const owner = (hp) => ({ ...hotWizard(warlockId, { botSession: true }), skillset: { fetchSkills: () => [kat, blaze] },
+        fetchHp: () => hp, fetchMaxHp: () => profile.maxHp,
+        fetchMaxMp: () => profile.maxMp, fetchPAtk: () => profile.pAtk, fetchMAtk: () => profile.mAtk, fetchPDef: () => profile.pDef,
+        fetchMDef: () => profile.mDef, fetchEvasion: () => profile.evasion, fetchAccur: () => profile.accur,
+        fetchCritical: () => profile.critical, fetchLocX: () => 0, fetchLocY: () => 0 });
+    invoke('GameServer/World/World').fetchNpcsInRadius = () => [];
+    const hot = (actor, onOwner, session = {}) => {
+        const target = { ...mob, matchupTarget: met, fetchHp: () => wounded / 4, fetchMostHated: () => onOwner ? actor : null };
+        casts.length = 0;
+        return Tactics.combatAction(session, actor, target, Generics).reason;
+    };
+    assert.equal(hot(owner(profile.maxHp), true), 'strikes_alone', 'hot: it wins alone, no recast');
+    assert.deepEqual(casts, [], 'hot: no cast');
+    assert.equal(hot(owner(1), true), 'summon_servitor', 'hot: it cannot win alone, it recasts');
+    assert.equal(hot(owner(profile.maxHp), false), 'summon_servitor', 'hot: the mob off it, it recasts');
+    assert.equal(hot(owner(profile.maxHp), true, { partyCompanion: true }), 'summon_servitor', 'hot: in a party it recasts');
+}
+
 // The table: a future Warlock reads the Warlock line, whose reference summons.
 assert.equal(Table.roleFor(warlock), String(WARLOCK));
 assert.equal(Table.roleFor(sorcerer), String(SORCERER));

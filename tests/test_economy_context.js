@@ -134,17 +134,44 @@ async function run() {
     warrior.stats.persona = { ...warrior.stats.persona, understanding: .5 };
     const kitDeps = { knowledgeEnabled: true };
     const warriorContext = Economy.forState(warrior, kitDeps);
+    // Decision 11-02: a quiet build weighs only the gear the bot follows and keeps
+    // what it follows; a move of the kit or of the goal weighs everything.
+    {
+        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+        const rich = { ...base, characterId: 1301, level: 46, adena: 3000000, inventory: {}, phase: 'cold', activity: 'hunting',
+            stats: { ...base.stats, classId: 2, exp: Data.experience[45] + 1 } };
+        const dirty = name => ({ ...rich, stats: { ...rich.stats, wishDirty: Sections.sectionBit(name) } });
+        Economy.forState(rich, { ...kitDeps, goalRevision: 1 });
+        const full = Economy.forState(dirty('money'), { ...kitDeps, goalRevision: 1 });
+        const atWork = (state, goalRevision) => Economy.forState(state, { ...kitDeps, goalRevision, caller: 'step' });
+        const quiet = atWork(dirty('money'), 1);
+        const weighed = context => context.projection.admission.candidates;
+        assert(weighed(quiet) < weighed(full), `a quiet build weighs fewer candidates: ${weighed(quiet)} of ${weighed(full)}`);
+        assert.deepEqual(quiet.projection.roots, full.projection.roots, 'and keeps every root the bot follows');
+        const rare = full.projection.admission.rare;
+        assert(rare > 0 && quiet.projection.admission.rare === rare, 'the rare piece stays followed');
+        assert(quiet.projection.roots.some(key => invoke('GameServer/Bot/Economy/WishNetwork').rootItem(key) === rare), 'and keeps its root');
+        assert.deepEqual(quiet.network.focus, full.network.focus, 'and its goal');
+        assert.equal(weighed(atWork(dirty('build'), 1)), weighed(full),
+            'a kit move is a real review');
+        assert.equal(weighed(atWork(dirty('money'), 2)), weighed(full),
+            'a goal main moved too');
+        atWork({ ...dirty('money'), adena: 0 }, 2);
+        assert.deepEqual(atWork(dirty('money'), 2).projection.roots, full.projection.roots,
+            'a poor quiet build drops nothing the bot follows');
+        Economy.forget(rich.characterId);
+    }
     const reserve = warriorContext.survivalReserve, warriorStock = warriorContext.stock('shots');
-    assert(reserve >= warriorStock.usePerHour * warriorStock.unitPrice,
-        'the protected wallet covers one hunting hour at the bot’s current price estimate');
+    assert(reserve >= warriorStock.usePerHour * warriorStock.survivalPrice,
+        'the protected wallet covers one hunting hour at the merchant’s price');
     assert(reserve < warrior.adena, 'this native fixture still has money beyond its mandatory kit');
     assert.equal(reserve, warriorContext.kitCost(warriorStock.itemId)
         + warriorContext.kitCost(warriorContext.stock('potions').itemId) + warriorContext.kitCost(736));
     const escapeBag = amount => ({ ...warrior, inventory: { ...warrior.inventory, 736: { selfId: 736, amount } } });
     assert.equal(Economy.basics(escapeBag(1), kitDeps).survivalReserve, reserve - warriorContext.kitCost(736));
     assert.equal(Economy.basics(escapeBag(2), kitDeps).survivalReserve, Economy.basics(escapeBag(1), kitDeps).survivalReserve);
-    // One hour of the table's 1261.5/h (T43 table).
-    assert(warriorContext.purchaseBudget(warriorStock.itemId) >= 1261 * warriorStock.unitPrice);
+    // One hour of the table's shot use (T43).
+    assert(warriorContext.purchaseBudget(warriorStock.itemId) >= Math.floor(warriorStock.usePerHour) * warriorStock.unitPrice);
     assert(warriorContext.purchaseBudget(warriorStock.itemId) <= warrior.adena);
     assert(warriorContext.purchaseBudget(1) <= warrior.adena - reserve);
     assert(warriorContext.statsPacket.money.length >= 4 && warriorContext.statsPacket.money.length <= 28);
@@ -173,7 +200,7 @@ async function run() {
         [warriorStock.itemId]: { selfId: warriorStock.itemId, amount: Math.ceil(warriorStock.usePerHour) },
         [warriorPotions.itemId]: { selfId: warriorPotions.itemId, amount: warriorPotions.survivalTarget } } };
     assert.equal(Economy.basics(stocked, kitDeps).kitCost(warriorStock.itemId), 0);
-    assert.equal(Economy.basics(stocked, kitDeps).survivalReserve, warriorContext.price(736),
+    assert.equal(Economy.basics(stocked, kitDeps).survivalReserve, warriorContext.kitCost(736),
         'own one-hour shot stock releases its wallet reserve and retains the escape scroll');
     const criminal = Economy.basics({ ...warrior, stats: { ...warrior.stats, karma: 100 } }, kitDeps);
     assert.equal(criminal.kitCost(736), 0);
@@ -206,13 +233,15 @@ async function run() {
     // A hit needs the build's own output published (its decision echo).
     const published = { ...base, stats: { ...base.stats, ...context.statsPacket } };
     assert.equal(Economy.forState(published).plan, context.plan, 'unchanged own inputs reuse the complete context');
-    assert.equal(Economy.forState(published, { rememberContext: false }).plan, context.plan,
+    assert.equal(Economy.forState(published, { caller: 'meeting_prepare' }).plan, context.plan,
         'an unkept caller can read an existing valid decision');
-    const temporary = Economy.forState({ ...published, level: base.level + 1 }, { rememberContext: false });
+    // Near a player a deal's look builds (far, the held plan answers it).
+    const temporary = Economy.forState({ ...published, phase: 'hot', level: base.level + 1 }, { caller: 'meeting_prepare' });
     assert.notEqual(temporary.plan, context.plan);
     assert.equal(Economy.forState(published).plan, context.plan, 'an unkept build never replaces the held decision');
     {
-        const T = Date.now(), native = { ...base, characterId: 990021 };
+        // Near a player every reader hears a refusal (far, a look reads the held plan).
+        const T = Date.now(), native = { ...base, characterId: 990021, phase: 'hot' };
         const held = Economy.forState(native, { timestamp: T });
         const spotId = held.network.activity?.spotId, published = { ...native, stats: { ...native.stats, ...held.statsPacket } };
         assert(held.network.activity?.activity === 'hunting' && spotId, 'fixture: a hunting decision at a spot');
@@ -226,7 +255,7 @@ async function run() {
     let clanRow = Supply.prepareRow([9, 1, [], 1]);
     Supply.useRowSource(id => id === 9 ? clanRow : undefined, () => true);
     try {
-        const T = Date.now(), native = { ...base, characterId: 990023, stats: { ...base.stats, clanId: 9 },
+        const T = Date.now(), native = { ...base, characterId: 990023, phase: 'hot', stats: { ...base.stats, clanId: 9 },
             party: { partyId: 'bgp_x_17', role: 'dd', leaderId: 17 } };
         const held = Economy.forState(native, { timestamp: T });
         // The worker keeps a held entry's graph nodes for a party member only
@@ -238,7 +267,7 @@ async function run() {
         assert.equal(Sections.partyIdOf(base), '', 'a solo bot keeps the plan only off the main thread');
         const published = { ...native, stats: { ...native.stats, ...held.statsPacket } };
         const with_ = stats => ({ ...published, stats: { ...published.stats, ...stats } });
-        const verdict = (state, deps = {}) => Economy.forState(state, { timestamp: T, rememberContext: false, ...deps }).plan;
+        const verdict = (state, deps = {}) => Economy.forState(state, { timestamp: T, caller: 'meeting_prepare', ...deps }).plan;
         assert.equal(verdict(published), held.plan, 'fixture: the published decision holds');
         assert.equal(verdict(with_({ visitEvery: 7 })), held.plan, 'a new town rhythm keeps the decision');
         assert.equal(verdict(with_({ travel: { from: 'Giran', to: 'Dion', at: T } })), held.plan, 'a moved trip keeps the decision');
@@ -258,6 +287,18 @@ async function run() {
         const keptRow = clanRow;
         clanRow = Supply.prepareRow([9, 1, [[1864, 5]], 2]);
         assert.notEqual(verdict(published), held.plan, 'a new clan supply demand refuses the decision');
+        // A far member hears its clan's request open or close, not each count.
+        const Moments = invoke('GameServer/Bot/Economy/DecisionSections');
+        const heard = (demand = { 1864: 10 }) => Moments.semanticFacts({ ...published, phase: 'cold', party: null, partyId: null,
+            stats: { ...published.stats, clanMaterialDemand: demand } }).stores;
+        clanRow = Supply.prepareRow([9, 1, [[1864, 3]], 3]);
+        const gatedRequest = heard();
+        clanRow = Supply.prepareRow([9, 1, [[1864, 5]], 4]);
+        assert.equal(heard({ 1864: 4 }), gatedRequest, 'a member hears no count');
+        clanRow = Supply.prepareRow([9, 1, [[1864, 5], [1865, 2]], 5]);
+        assert.notEqual(heard(), gatedRequest, 'a new item is heard');
+        clanRow = Supply.prepareRow([9, 1, [], 6]);
+        assert.notEqual(heard(), gatedRequest, 'and a closed request');
         clanRow = keptRow;
         assert.equal(Economy.forState(published, { timestamp: T }).plan, held.plan, 'the refused readers left the held decision');
         Economy.forget(native.characterId);
@@ -295,6 +336,99 @@ async function run() {
         } finally { Generation.configure(kept); }
         assert(Economy.restoreEventProof(bytes, accepted), 'fixture: the generation is back');
         Economy.forget(native.characterId);
+        // A server with no published code identity (a branch tree) holds its
+        // decisions within the process, but saves none for a restart.
+        try {
+            Generation.configure({ code: '4'.repeat(40), config: '2'.repeat(64), local: true });
+            const local = Economy.forState(native, deps());
+            const localPacket = local.statsPacket, localState = { ...native, stats: { ...native.stats, ...localPacket } };
+            const localProof = local.eventProof();
+            assert(localProof, 'a local identity still proves the decision');
+            assert.equal(Economy.eventProofHolds(localState, localProof, { ...deps(), gearThreatMask: local.gearThreatMask },
+                { baseline: localPacket.wishSections, leaf: local.network.activity, timestamp: T }), true,
+                'the held decision holds within the process');
+            assert.equal(Economy.restartEventProof(localProof, { ...accepted, decisionSeq: localPacket.decisionSeq,
+                activityLeaf: localPacket.activityLeaf, focus: localPacket.wishFocus?.[0] ?? null, baseline: localPacket.wishSections,
+                card: { activity: local.network.activity } }), null, 'and saves no prefix for a restart');
+            assert.equal(Economy.restoreEventProof(bytes, accepted), null, 'nor restores one');
+        } finally { Generation.configure(kept); Economy.forget(native.characterId); }
+    }
+    // Away from town a bag count is no moment (T174): loot keeps a far bot's decision on the
+    // field, a bot in town or near a player reads it at once.
+    {
+        const T = Date.now(), native = { ...base, characterId: 990025,
+            inventory: { ...base.inventory, 1864: { selfId: 1864, amount: 50 } } };
+        const deps = () => ({ timestamp: T, memoryIdentity: 'fixture-memory', sourceReady: true });
+        const held = Economy.forState(native, deps());
+        const packet = held.statsPacket, published = { ...native, stats: { ...native.stats, ...packet } };
+        const proof = held.eventProof();
+        assert(proof?.liquidation.rows.some(row => row[0] === 1864), 'fixture: the loot is a sale input');
+        const looted = { ...published, inventory: { ...published.inventory, 1865: { selfId: 1865, amount: 5 } } };
+        const refusal = (state, read = proof) => {
+            const why = [];
+            const holds = Economy.eventProofHolds(state, read, deps(), { baseline: packet.wishSections,
+                leaf: held.network.activity, timestamp: T, why });
+            return holds ? '' : why[0];
+        };
+        assert.equal(refusal(looted), '', 'loot on the field keeps the decision');
+        assert.equal(refusal({ ...looted, phase: 'hot' }), 'liquidation', 'near a player it is read at once');
+        assert.equal(refusal({ ...looted, party: { partyId: 'bgp_x_17', role: 'dd', leaderId: 17 } }) === '', false, 'a party member reads it');
+        // A free stack's band: far from a player, a rise waits for the bot's moment, a fall stays hard.
+        const stack = amount => ({ ...published, inventory: { ...published.inventory, 1865: { selfId: 1865, amount } } });
+        const banded = { ...proof, bands: [...proof.bands, [1865, 5, 10, 7]] };
+        const Gate = invoke('GameServer/Bot/Economy/DecisionSections'), Reaction = invoke('GameServer/Bot/Economy/Reaction');
+        assert.equal(refusal(stack(20), banded), '', 'at work the loot waits');
+        assert.equal(refusal(stack(2), banded), '', 'and so does a stock falling inside the need');
+        assert.equal(refusal({ ...stack(20), activity: 'resting' }, banded), '', 'at rest too');
+        assert.equal(refusal({ ...stack(20), party: { partyId: 'bgp_x_17', role: 'dd', leaderId: 17 } }, banded) === '', false, 'joining a party is heard at once');
+        // A need that opens goes at once, one raise; what merely moved stays against the baseline.
+        const Shots = invoke('GameServer/Inventory/ShotStock'), shot = Shots.planForState(published).selfId;
+        const carrying = amount => ({ ...published, inventory: { ...published.inventory, [shot]: { selfId: shot, amount } } });
+        const atBaseline = state => ({ ...state, stats: { ...state.stats, wishSections: { ...state.stats.wishSections, ...Gate.semanticFacts(carrying(50)) } } });
+        const raisedBy = (before, after) => Gate.events(atBaseline(before), atBaseline(after), 0, held.network.activity);
+        assert(raisedBy(carrying(50), carrying(0)).includes('supply'), 'the last shot gone is a need');
+        assert.deepEqual([...raisedBy(carrying(0), carrying(0))], [], 'it raises once');
+        // Potions under what the survival drink keeps: a need far from a player.
+        const potion = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(published).selfId;
+        const drinks = amount => ({ ...published, stats: { ...published.stats, stockTargets: [0, 0, 0, 0, 0, 10] },
+            inventory: { ...published.inventory, [potion]: { selfId: potion, amount } } });
+        const atDrinks = state => ({ ...state, stats: { ...state.stats, wishSections: { ...state.stats.wishSections, ...Gate.semanticFacts(drinks(12)) } } });
+        const onHuntLeaf = (before, after) => Gate.events(atDrinks(before), atDrinks(after), 0, { activity: 'hunting', spotId: published.spotId });
+        assert(onHuntLeaf(drinks(12), drinks(8)).includes('supply'), 'a need opens');
+        const higher = { ...published, level: published.level + 1 };
+        assert.deepEqual(Reaction.heard(['build'], Reaction.place(higher)), [], 'a new level waits on the hunt');
+        assert(Reaction.heard(['build'], Reaction.place({ ...higher, activity: 'resting' })).includes('build'), 'and is read at the rest');
+        // A visit to town: one look on arrival, then its own buying raises nothing.
+        const visit = { ...published, activity: 'shopping' };
+        const asked = { ...visit, stats: { ...visit.stats, clanMaterialDemand: { 1865: 5 } } };
+        const onVisit = state => ({ ...state, stats: { ...state.stats, wishSections: { ...state.stats.wishSections, ...Gate.semanticFacts(visit) } } });
+        const visitRaises = (before, after) => Gate.events(onVisit(before), onVisit(after), 0, held.network.activity);
+        assert.deepEqual(visitRaises(visit, asked), [], 'its list stands while the rest moves');
+        assert(visitRaises({ ...visit, activity: 'traveling' }, asked).includes('sources'), 'arriving reads what waited');
+        // Who sells what is read at the market: the field learns of a gone offer on arrival.
+        const buy = { activity: 'shopping', kind: 'buy', itemId: 990777, amount: 1, unitPrice: 1, price: 1, sourceType: 'afk', town: 'Giran', rootKey: 'power:990777:6' };
+        const noOffers = { ...deps(), tripCost: Object.assign(() => 0, { details: () => ({ known: true, fees: 0, hours: 0 }) }) };
+        const offerVerdict = state => {
+            const options = { baseline: packet.wishSections, leaf: buy, collect: true };
+            const first = Economy.heldBuildVerdict(state, proof, noOffers, options);
+            return Economy.heldBuildVerdict(state, { ...proof, activity: first.leaf }, noOffers, options);
+        };
+        assert.equal(offerVerdict({ ...published, activity: 'hunting' }).goalFailed, undefined, 'on the hunt a gone offer waits');
+        assert.equal(offerVerdict({ ...published, activity: 'resting' }).goalFailed, undefined, 'and at the rest');
+        assert.equal(offerVerdict(visit).goalFailed, true, 'at the market it fails the goal');
+        // Only a bot's own moment decides: another's question reads the plan as it holds it.
+        const stale = { ...published, stats: { ...published.stats, wishDirty: Gate.sectionBit('money') } };
+        const askedBy = caller => Economy.forState(stale, { ...deps(), caller });
+        assert.equal(askedBy('item_need').plan, held.plan, 'a look builds nothing');
+        assert.equal(askedBy(undefined).plan, held.plan, 'a reader with no row looks');
+        assert.equal(askedBy('meeting_prepare').plan, held.plan, 'a deal is a look');
+        // A card with no held build behind it heals by one build.
+        const Card = invoke('GameServer/Bot/Population/ColdEconomyDecision');
+        const card = Card.advisory(held, published, published.activity, deps());
+        assert.equal(Card.refusal(published, card, deps()), '', 'fixture: the card holds');
+        Economy.forget(native.characterId);
+        assert.equal(Card.refusal(published, card, deps()), 'no_held', 'a lost held build takes one build');
+        Economy.forget(native.characterId);
     }
     // The sections mask decides which held piece a rebuild reuses: a source
     // raise keeps the foundation (hunt, kit) and rebuilds the source walk; a
@@ -308,9 +442,10 @@ async function run() {
             const T = Date.now();
             // T43 table: the focus is now a power wish, which the ground keys on (economicHunt), so the bot
             // carries its own published focus, as a live bot does, and a raise does not move that key.
-            const focus = Economy.forState({ ...base, characterId: 990027 }, { timestamp: T }).statsPacket.wishFocus;
+            // Near a player, where every raise is heard at once.
+            const focus = Economy.forState({ ...base, characterId: 990027, phase: 'hot' }, { timestamp: T }).statsPacket.wishFocus;
             Economy.forget(990027);
-            const native = { ...base, characterId: 990027, stats: { ...base.stats, wishFocus: focus } };
+            const native = { ...base, characterId: 990027, phase: 'hot', stats: { ...base.stats, wishFocus: focus } };
             const counts = () => invoke('GameServer/Bot/Economy/EconomyDiagnostics').metrics().counts || {};
             const delta = (before, key) => (counts()[key] || 0) - (before[key] || 0);
             const held = Economy.forState(native, { timestamp: T });
@@ -324,7 +459,6 @@ async function run() {
             assert.notEqual(sources.plan, held.plan, 'a raised source section rebuilds');
             assert.equal(sources.plan.hunt, held.plan.hunt, 'a source raise keeps the foundation hunt');
             assert.equal(sources.plan.kit, held.plan.kit, 'a source raise keeps the foundation kit');
-            assert.equal(delta(before, 'source_memo:miss:sections'), 1, 'a source raise rebuilds the source walk');
             assert.equal(delta(before, 'source_route:ground:reuse'), 1, 'a source raise keeps the ground verdict');
             assert.equal(delta(before, 'context:foundation:kept'), 1, 'the kept foundation is counted');
             assert.notDeepEqual(sources.statsPacket.wishSections.cashBounds, stale.cashBounds,
@@ -341,7 +475,6 @@ async function run() {
             before = counts();
             const build = Economy.forState(raised(again, 'build'), { timestamp: T });
             assert.notEqual(build.plan.hunt, again.plan.hunt, 'a build raise rebuilds the foundation');
-            assert.equal(delta(before, 'source_memo:miss:sections'), 1, 'a build raise rebuilds the source walk');
             assert.equal(delta(before, 'source_route:ground:build'), 1, 'a build raise rebuilds the ground verdict');
             assert.equal(delta(before, 'context:foundation:built'), 1, 'the rebuilt foundation is counted');
             // No held entry (a deploy, an eviction) and nothing raised: every
@@ -371,7 +504,8 @@ async function run() {
         const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
         const diagnosticsBefore = Config.developerDiagnostics;
         Config.developerDiagnostics = true;
-        const T = Date.now(), native = { ...base, characterId: 990028, adena: 1000000 };
+        // Near a player, where both refusals are heard at once.
+        const T = Date.now(), native = { ...base, characterId: 990028, phase: 'hot', adena: 1000000 };
         try {
             const counts = () => invoke('GameServer/Bot/Economy/EconomyDiagnostics').metrics().counts || {};
             const delta = (before, key) => (counts()[key] || 0) - (before[key] || 0);
@@ -391,7 +525,7 @@ async function run() {
                     'fixture: a learned skill refuses the card');
                 return prepared.eventVerdict;
             };
-            const build = (state, eventVerdict) => Economy.forState(state, { ...deps, rememberContext: false, eventVerdict });
+            const build = (state, eventVerdict) => Economy.forState(state, { ...deps, caller: 'meeting_prepare', eventVerdict });
             const reused = (state, card) => {
                 const before = counts();
                 build(state, refused(state, { collect: true }, card));
@@ -495,7 +629,8 @@ async function run() {
         // or without the card refused before; a wallet below the decision's
         // bounds (money) asks.
         const Card = invoke('GameServer/Bot/Population/ColdEconomyDecision');
-        const T = Date.now(), crafter = { ...base, characterId: 990032, craftLevel: 1, adena: 1000000 };
+        // Near a player, where a drop of MP is heard at once.
+        const T = Date.now(), crafter = { ...base, characterId: 990032, phase: 'hot', craftLevel: 1, adena: 1000000 };
         const deps = { timestamp: T, routeRows: Trip.prepared(crafter) };
         const counts = () => invoke('GameServer/Bot/Economy/EconomyDiagnostics').metrics().counts || {};
         const delta = (before, key) => (counts()[key] || 0) - (before[key] || 0);
@@ -601,8 +736,8 @@ async function run() {
         assert(sources.has(990001) && !sources.has(990002), 'only the kept scope subscribes its sources');
     } finally { ScopedProviders.build = build; }
     console.log('PASS candidate read scopes');
-    // The build's memos (inventory row keys, the kit fact, the bag tokens)
-    // end with it: a row changed after the build reads fresh.
+    // The build's memos (inventory row keys, the kit fact) end with it: a row
+    // changed after the build reads fresh.
     // A nested build of another bot leaves the outer build's keys exact.
     {
         const T = Date.now(), deps = { timestamp: T }, Sections = invoke('GameServer/Bot/Economy/DecisionSections');
@@ -610,29 +745,24 @@ async function run() {
         const worn = Object.keys(fixture.inventory).find(id => fixture.inventory[id].equipped);
         const state = { ...fixture, inventory: { ...fixture.inventory, [worn]: { ...fixture.inventory[worn] } } };
         const kitBefore = Sections.kit(state);
-        const bagRead = ctx => { const local = ctx.nodeInputs.begin(); ctx.nodeInputs.bag(worn); ctx.nodeInputs.end();
-            return local.bag.get(Number(worn)); };
-        let outer = null, nested = null, bagDuring = null;
+        let outer = null, nested = null;
         try {
             ScopedProviders.build = (subject, ctx, buildDeps) => {
                 if (subject === state && outer === null) {
-                    outer = ctx; bagDuring = bagRead(ctx);
+                    outer = ctx;
                     Economy.forState(equippedFixture(1311, 1, 32, 30000), deps);
-                    nested = [Sections.kit(state), bagRead(ctx)];
+                    nested = Sections.kit(state);
                 }
                 return build(subject, ctx, buildDeps);
             };
             Economy.forState(state, deps);
         } finally { ScopedProviders.build = build; }
         assert(outer, 'the build reached its providers');
-        assert.deepEqual(nested, [kitBefore, bagDuring],
-            'a nested build of another bot leaves the outer build\'s keys');
+        assert.equal(nested, kitBefore, 'a nested build of another bot leaves the outer build\'s keys');
         state.inventory[worn].enchant = 3;
         const fresh = structuredClone(state);
         assert.equal(Sections.kit(state), Sections.kit(fresh), 'the kit reads the changed row');
         assert.notEqual(Sections.kit(state), kitBefore);
-        assert.equal(bagRead(outer), JSON.stringify([state.inventory[worn], 0]), 'a late bag read reads the changed row');
-        assert.notEqual(bagRead(outer), bagDuring);
         Economy.forget(state.characterId);
     }
     console.log('PASS build memos end with the build / nested build');
@@ -675,7 +805,8 @@ async function run() {
         const published = { ...native, stats: { ...native.stats, ...held.statsPacket } };
         const watched = baseline.marketWatch?.find(row => row[1] === 1);
         assert(watched && watched[2] > 0 && watched[3] >= 0, `a build watches its wish roots on the sell side: ${JSON.stringify(baseline.marketWatch)}`);
-        const soft = (state, more = {}, board = softBoard) => Sections.softEvents(state, { ...baseline, ...more },
+        // Read at a stall, where money and observation are heard at once (on a hunt they wait).
+        const soft = (state, more = {}, board = softBoard) => Sections.softEvents({ ...state, activity: 'merchant' }, { ...baseline, ...more },
             { board, buyOrderEscrow: 0, timestamp: T + 1000, memory: () => null });
         assert.deepEqual(soft(published), [], 'fixture: the published decision is quiet');
         const wallet = { moneyError: 10, cashBounds: [-1, null], budgetBounds: [-1, null] };
@@ -748,7 +879,8 @@ async function run() {
     const physicalSpot = { id: 'gear-physical', npcEntries: [{ selfId: 130 }] };
     const mixedSpot = { id: 'gear-mixed', npcEntries: [{ selfId: 130 }, { selfId: 264 }] };
     const threatSpots = [physicalSpot, mixedSpot];
-    const threatBot = { ...base, characterId: 1901, spotId: physicalSpot.id,
+    // Near a player a reader hears what the bot observed (far, it reads the held plan).
+    const threatBot = { ...base, characterId: 1901, phase: 'hot', spotId: physicalSpot.id,
         stats: { ...base.stats, decisionSeq: 7, activityLeaf: 88,
             targetCombat: { lastDefeatedNpcIds: [130] } } };
     const threatDeps = { spots: threatSpots };
@@ -775,7 +907,7 @@ async function run() {
     assert.equal(Economy.forState(threatBot, threatDeps).gearThreatMask, 3, 'hostile intent prevents physical-only valuation');
     Economy.forget(threatBot.characterId);
     console.log('PASS contextual gear projection / own observation / unchanged tendency roll');
-    const rich = { ...base, adena: 1e12 };
+    const rich = { ...base, phase: 'hot', adena: 1e12 };
     const richContext = Economy.forState(rich);
     assert.equal(richContext.moneyPrice, 1 / richContext.hourAdena);
     const PriceDecision = invoke('GameServer/Bot/Economy/PriceDecision');
@@ -936,7 +1068,8 @@ async function run() {
     assert.equal(actualDeath.stats.decisionSeq, 10, 'actual death creates one meaningful decision');
     assert.equal(actualDeath.stats.activityLeaf, resolveInput.stats.activityLeaf, 'death keeps the held step for the next build to reconsider');
     const levelExpGain = Math.max(1, Data.experience[base.level] - resolveInput.exp + 1);
-    const levelGain = await Life.prepareResolve(resolveInput, { ...resolveResult,
+    // A far bot hears its new level at the rest (on the hunt it waits).
+    const levelGain = await Life.prepareResolve(resolveInput, { ...resolveResult, patch: { activity: 'resting' },
         materialize: { ...resolveResult.materialize, exp: levelExpGain } }, resolveOptions);
     assert(levelGain.level > resolveInput.level, 'the fixture really earns a new level');
     assert.equal(levelGain.stats.decisionSeq, 10, 'actual level gain updates dependent calculations once');

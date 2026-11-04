@@ -132,7 +132,7 @@ const originals = {
         ? { reason: 'inventory_capacity', slots: 81, limit: 80 } : null;
     const emergency = await PopulationService.reconcileWorkerPartyGoals(party, now);
     assert.strictEqual(emergency.departed.stats.partyMarketReturn.partyId, party.partyId);
-    assert.strictEqual(emergency.departed.stats.lastPartyMarketBreak.slots, 81);
+    assert.strictEqual(emergency.departed.stats.partyMarketReturn.slots, 81);
     assert.strictEqual(savedParty.stats.marketAbsences[2].objective.clanGoalKey, 'clan:1:gear');
     assert.deepStrictEqual(savedParty.memberIds, [1, 3]);
     assert.strictEqual(require('../src/GameServer/Bot/Population/PartyMarketBreak').pending(savedParty, now + 16 * 60000).length, 0,

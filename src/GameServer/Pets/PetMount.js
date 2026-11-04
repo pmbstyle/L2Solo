@@ -20,7 +20,7 @@ function mount(session,actor) {
         !Restrictions.canMove(pet) || pet.fetchCurrentFeed()<pet.fetchMaxFeed()*0.55 ||
         Math.hypot(actor.fetchLocX()-pet.fetchLocX(),actor.fetchLocY()-pet.fetchLocY(),actor.fetchLocZ()-pet.fetchLocZ())>100) return false;
     Control.stop(session,pet);
-    World.removeNpcFromGrid?.(pet);
+    World.removeNpcFromGrid(pet);
     World.npc.spawns=World.npc.spawns.filter(n=>n!==pet);
     session.dataSendToMeAndOthers(Response.deleteOb(pet.fetchId()),pet);
     set(actor,true,pet.fetchSelfId());

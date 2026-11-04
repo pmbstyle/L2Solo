@@ -955,7 +955,6 @@ const travel = ColdCraftingService.beginTravel({
 assert.strictEqual(travel.stats.travel.stationId, station.id, 'ready materials must route the bot to the station that publishes its recipe');
 assert.strictEqual(travel.stats.travel.arrivalActivity, 'crafting', 'arrival must enter the cold manufacture state');
 assert.strictEqual(travel.stats.travel.method, 'soe_gatekeeper', 'a remote craft station visit must use SoE and the Giran gatekeeper rather than map-walking');
-assert.strictEqual(travel.stats.travel.arrivalAt - travel.stats.travel.startedAt, ColdCraftingService.NATIVE_TRAVEL_MS, 'craft station transit must remain a short native-travel sequence');
 assert.strictEqual(travel.stats.craftReturn.spotId, null, 'craft travel must preserve the previous hunting destination for the return trip');
 const readyPlan = GearAcquisitionPlanner.planFor({ ...mage, inventory: readyInventory }, { spots: [] });
 assert.strictEqual(readyPlan.status, 'ready_to_craft', 'a complete material list must become a station visit, not a blocked farming plan');
@@ -964,9 +963,8 @@ const oriharkonRecipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipe
 const syntheticCokesRecipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(36);
 const atubaMaceRecipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(189);
 const steelRecipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(30);
-const crystalSupplement = invoke('GameServer/Bot/Economy/CraftSupplementMaterials');
 const atubaWithCokesIngredients = atubaMaceRecipe.materials.reduce((inventory, material) => {
-    if (Number(material.selfId) === 1879 || crystalSupplement.isSupplementalMaterial(material.selfId)) return inventory;
+    if (Number(material.selfId) === 1879) return inventory;
     inventory[material.selfId] = { selfId: material.selfId, amount: material.amount };
     return inventory;
 }, {
@@ -1012,12 +1010,6 @@ const resourceState = {
 // This bounded Iron5/Crystal99 recipe is a synthetic readiness contract, not
 // an authored C4 recipe. test_cold_craft_cash_receipt.js covers the published
 // recipe with authored quantities and a real customer transaction.
-assert.strictEqual(crystalSupplement.isSupplementalMaterial(1458), false,
-    'crystals must be acquired as physical recipe inputs');
-assert.strictEqual(crystalSupplement.isSupplementalMaterial(2130), false,
-    'gemstones must be acquired as physical recipe inputs');
-assert.strictEqual(crystalSupplement.isSupplementalMaterial(1869), false,
-    'farmable craft resources must never be supplemented');
 const boundedRecipe = {
     materials: [{ selfId: 1869, amount: 5 }, { selfId: 1458, amount: 99 }]
 };

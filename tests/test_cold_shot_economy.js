@@ -121,8 +121,14 @@ async function images(ids) {
         const refusedBefore = await images([crafter.characterId, supplier.characterId]);
         assert.equal(Shots.craftCandidate(crafter, recipe, Shots.marketSnapshot(now)), null);
         await Shots.execute(crafter, { craft: { recipeId: 20, batches: 7 } }, now);
-        assert.deepEqual(await images([crafter.characterId, supplier.characterId]), refusedBefore,
+        // The refusal is heard (the bot's mind and stats, below); no goods move.
+        const goods = rows => rows.map(({ items, character, life }) => ({ items, character,
+            life: { ...life, mindJson: null, statsJson: null, simulationRevision: null, updatedAt: null } }));
+        assert.deepEqual(goods(await images([crafter.characterId, supplier.characterId])), goods(refusedBefore),
             'below-floor production cannot debit, crystallize or consume materials');
+        const refused = await Shots.execute(crafter, { craft: { recipeId: 20, batches: 65 } }, now);
+        assert(refused.stats.wishDirty, 'what the act refuses is heard, the plan does not ask it again');
+        assert(invoke('GameServer/Bot/Economy/WealthCraftDecision').refused(refused, 20), 'its recipe waits for the next town look');
 
         const oldOffer = Afk.offers(45, Afk.SELL).find(row => Number(row.sourceId) === supplier.characterId);
         assert(oldOffer, 'the expensive physical helmet remains in its seller escrow');

@@ -121,7 +121,6 @@ try {
     // Accepted miss/control path and a summon both attribute to the real owner.
     const owner = actor(true), controlled = actor();
     const Attack = invoke('GameServer/Actor/Attack');
-    patch(invoke('GameServer/Actor/PvpFlag'), 'mark', () => {});
     assert(Attack.prototype.recordPlayerAggression(owner.session, owner, controlled));
     assert.strictEqual(lastEvent(controlled, owner).clan.responsibility, 'aggression');
     const summonVictim = actor();

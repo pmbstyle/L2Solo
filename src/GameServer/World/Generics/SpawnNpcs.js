@@ -11,17 +11,10 @@ const MinionManager = invoke('GameServer/World/RaidBossMinionManager');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 const TendencyRoll = invoke('GameServer/Bot/AI/TendencyRoll');
 
-const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
-
-function distanceSquared(first, second) {
-    const dx = first.fetchLocX() - second.fetchLocX();
-    const dy = first.fetchLocY() - second.fetchLocY();
-    return (dx * dx) + (dy * dy);
-}
+const { inClientView } = invoke('GameServer/World/WorldConstants');
 
 function notifyNearby(world, npc, response = ServerResponse) {
     if (!world?.user?.sessions || !npc) return;
-    const radiusSquared = CLIENT_VISIBILITY_RADIUS * CLIENT_VISIBILITY_RADIUS;
     const packet = response.npcInfo(npc);
 
     world.user.sessions.forEach((session) => {
@@ -29,7 +22,7 @@ function notifyNearby(world, npc, response = ServerResponse) {
         if (
             actor?.fetchIsOnline?.() === true &&
             typeof session.dataSendToMe === 'function' &&
-            distanceSquared(actor, npc) <= radiusSquared
+            inClientView(actor.fetchLocX(), actor.fetchLocY(), npc.fetchLocX(), npc.fetchLocY())
         ) {
             session.dataSendToMe(packet);
         }
@@ -80,8 +73,7 @@ function spawnChildNpc(world, npc, coords, metadata = {}) {
     if (!world?.npc?.spawns || !npc) return null;
     const instance = createNpc(world, npc, coords, null);
     Object.assign(instance, metadata);
-    if (world.addNpcToGrid) world.addNpcToGrid(instance);
-    else world.indexSpawnsInGrid?.();
+    world.addNpcToGrid(instance);
     notifyNearby(world, instance);
     return instance;
 }
@@ -204,8 +196,7 @@ function spawnNpc(world, definition, options = {}) {
     const coords = randomCoords(definition);
     const npc = spawnDefinition(world, definition, coords, options);
     if (!npc) return null;
-    if (world.addNpcToGrid) world.addNpcToGrid(npc);
-    else world.indexSpawnsInGrid?.();
+    world.addNpcToGrid(npc);
     // Respawns happen independently of player movement.  Announce the new
     // object immediately, otherwise it can aggro a nearby player before that
     // player next crosses UpdateEnvironment's movement refresh threshold.
@@ -253,8 +244,7 @@ function spawnQuestNpc(world, {
     if (Number(despawnDelay) > 0) {
         npc.questSpawn.timer = setTimeout(() => despawnQuestNpc(world, npc), Number(despawnDelay));
     }
-    if (world.addNpcToGrid) world.addNpcToGrid(npc);
-    else world.indexSpawnsInGrid?.();
+    world.addNpcToGrid(npc);
     notifyNearby(world, npc);
     return npc;
 }
@@ -273,10 +263,9 @@ function despawnQuestNpc(world, npc, sourceSession = null) {
     clearQuestSpawn(npc);
     npc.destructor?.(sourceSession || { dataSendToMeAndOthers: () => {}, dataSendToMe: () => {} });
     NpcVisibility.deleteKnownNpc(world, sourceSession, objectId);
-    if (world.removeNpcFromGrid) world.removeNpcFromGrid(npc);
+    world.removeNpcFromGrid(npc);
     const index = world.npc.spawns.indexOf(npc);
     if (index >= 0) world.npc.spawns.splice(index, 1);
-    if (!world.removeNpcFromGrid) world.indexSpawnsInGrid?.();
     return true;
 }
 

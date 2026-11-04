@@ -3,11 +3,14 @@
 let SpotRewardExpectation = null;
 const Diagnostics = require('./EconomyDiagnostics');
 const { occupiedSpotId } = require('../Population/SpotOccupancyIndex');
+const { powerWeight } = require('./EconomicValuation');
+const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 // The hour fields of a table row that follow its kills (SpotValueTable.value).
 const PER_KILL_FIELDS = ['kills', 'deaths', 'exp', 'sp', 'adena', 'dropLoot', 'spoilLoot', 'loot', 'shots', 'potions'];
 // Shared table evaluation. It depends on native facts and own samples,
 // never on Context or pricing, so route and wish readers cannot recurse.
-function moneyWeight(state) {
+// 1: the bot lacks money for a wish it wants now, by its packet, else its focus.
+function moneyShort(state) {
     const packet = state.stats?.money;
     if (Array.isArray(packet)) {
         const gapPrice = Number(packet[3]);
@@ -18,6 +21,16 @@ function moneyWeight(state) {
     return Number.isFinite(price) && price > Math.max(0, Number(state.adena) || 0) ? 1 : 0;
 }
 
+// The share of money in a bot's spot value, 0..1 (decision 10-28, T53): what an
+// hour of its income is worth to it (the packet's hour x its money price, at
+// least the hour itself, the money queue's floor; the hour itself before its
+// first build) against what an hour of its progress is (the level wish's).
+function moneyWeight(state, persona = BotPersona.of(state)) {
+    const packet = state.stats?.money;
+    const money = Array.isArray(packet) ? Math.max(1, Number(packet[0]) * Number(packet[1]) || 0) : 1;
+    return money / (money + powerWeight(persona));
+}
+
 // hunt: the build's own hunt (EconomyContext), so one build reads one hour;
 // a caller outside a build leaves it out and gets the bot's bare hunt.
 // spotHunters(spot, state): the hunters on a spot with the bot among them,
@@ -25,8 +38,10 @@ function moneyWeight(state) {
 // SpotProfiles.spotHunters, this thread's occupancy (main's world index, a
 // worker's kernel index). members: the bots the search routes (a party's
 // capacityStates, the room filter's members, SpotProfiles.roomFilterFor),
-// the bot among them; each takes its own share.
-function create(state, { timestamp = Date.now(), mode, persona, deathHours, moneyWeight: weight = moneyWeight(state), price, hunt,
+// the bot among them; each takes its own share. hour: { adena, exp }, the hour
+// valueHours counts in when the caller compares spots whatever the bot stands
+// on (EquipmentIncomeRoute.select); by default the bot's own.
+function create(state, { timestamp = Date.now(), mode, persona, deathHours, moneyWeight: weight, price, hunt, hour = null,
     spotHunters = invoke('GameServer/Bot/Population/SpotProfiles').spotHunters, members = null } = {}) { // lazy: cycle SpotProfiles' route search builds this reader
     const Table = invoke('GameServer/Bot/AI/SpotValueTable');
     const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
@@ -35,6 +50,7 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
     const Tendency = invoke('GameServer/Bot/AI/TendencyRoll');
     const positive = value => Math.max(0, Number(value) || 0);
     persona ||= invoke('GameServer/Bot/AI/BotPersona').of(state) || { traits: {}, understanding: 0.3 };
+    weight ??= moneyWeight(state, persona);
     const tableRole = Table.roleFor(state);
     hunt ??= Hunt.huntIncome(state, timestamp, mode);
     // The previous build's packet hour comes first, by design; the hunt only fills a missing packet.
@@ -108,9 +124,9 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
         row.costs = observed ? Number(observed.costs || 0) * rate
             : (Number(base.shots || 0) * costs.shots + Number(base.potions || 0) * costs.potions) * calibration;
         row.income = row.adena + row.loot - row.costs;
-        row.valueHours = row.exp / Math.max(1, hunt.expPerHour) * (1 - weight)
-            + row.income / hourAdena * weight - row.riskHours;
+        row.valueHours = row.exp / Math.max(1, hour?.exp || hunt.expPerHour) * (1 - weight)
+            + row.income / (hour?.adena > 0 ? hour.adena : hourAdena) * weight - row.riskHours;
         return row;
     };
 }
-module.exports = { create, moneyWeight };
+module.exports = { create, moneyWeight, moneyShort };

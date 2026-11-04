@@ -26,6 +26,10 @@ const huntingTargetPolicy = () => HuntingTargetPolicy
 const coldCombatProfile = () => ColdCombatProfile
     || (ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile'));
 const coldMobAction = () => ColdMobAction;
+let ClassPolicy, EncounterReadiness;
+// lazy: BotEncounterReadiness reads this module.
+const encounterReadiness = () => EncounterReadiness || (EncounterReadiness = invoke('GameServer/Bot/AI/BotEncounterReadiness'));
+const classPolicy = () => ClassPolicy || (ClassPolicy = invoke('GameServer/Bot/AI/BotClassPolicy'));
 
 function npcTemplate(id) {
     return ItemTemplateIndex.findLastByLength(dataCache().npcs, id, npcTemplate);
@@ -133,15 +137,22 @@ function coldProfiles(profile, state = {}, timestamp = Date.now(), options = {})
     return profiles;
 }
 
+// The kind of shot a fight loads: 0 none, 1 soulshot, 2 spiritshot, 3 blessed.
+function shotKind(shot) {
+    return !shot ? 0 : shot.blessedSpiritshot ? 3 : shot.spiritshot ? 2 : 1;
+}
+
 // What of a bot's solo profile array (stateProfiles) moves with no build
-// section: whether the bot is alive (a dead bot has no profiles) and the
-// summon beside it (coldProfiles: its live cold summon, or the servitor a
-// summoner can cast now). -1 dead, 0 alone, else the summon's npc id (1 for
-// a live summon whose profile names none, the hot path's actorProfile).
+// section: whether the bot is alive (a dead bot has no profiles), the summon
+// beside it (coldProfiles: its live cold summon, or the servitor a summoner
+// can cast now) and the kind of shot it holds. -1 dead, else the summon's npc
+// id (0 alone, 1 for a live summon whose profile names none, the hot path's
+// actorProfile) over the shot kind in the low two bits.
 function profileKey(profiles) {
     if (!profiles.length) return -1;
-    return profiles.length > 1 ? Number(profiles[1].npcId) || 1 : 0;
+    return (profiles.length > 1 ? Number(profiles[1].npcId) || 1 : 0) * 4 + shotKind(profiles[0].shot);
 }
+const shotKindOfKey = key => key & 3;
 
 // The weakness stats a kit's hits read (HitRules.targetModifier): its weapon's
 // and each skill's.
@@ -250,6 +261,7 @@ function incomingRate(target, profile) {
 // weight: damage per second; hit: of one action on one mob; struck: the mobs
 // it hits; survivalWeight: bounded by the skill's reuse; damageBudget: what
 // the MP bar pays for; area: an area skill on a pull.
+// spendableMp: the MP its attacks may spend (channels).
 function channelContext(profile, target, shot = profile.shot) {
     const Cold = coldCombatProfile();
     const kind = profile.equipment?.weaponKind || '';
@@ -266,7 +278,7 @@ function normalChannel(profile, target, { Cold, shot: supply, kind, bow, attacke
     return { weight: hit * 1000 / swingMs, hit, modifier: modifier(target, {}, false, kind, false, bonus), magic: false, normal: true };
 }
 
-function skillChannel(profile, target, skill, { Cold, shot: supply, kind, bow, attacker, defender, bonus }) {
+function skillChannel(profile, target, skill, { Cold, shot: supply, kind, bow, attacker, defender, bonus, spendableMp = number(profile.maxMp, 0) }) {
     const semantic = skill.semantic || Rules.resolve(skill);
     const magic = skill.spell === true;
     // At full HP, as the gate judges (Death Link and Fatal by the caster's HP: HitRules.skillPower).
@@ -292,12 +304,34 @@ function skillChannel(profile, target, skill, { Cold, shot: supply, kind, bow, a
         soloScore: profile.soloAttackScores?.[skill.selfId],
         survivalWeight: Math.min(weight, hitDamage / Math.max(0.25, number(skill.reuse, 0) / 1000)),
         damageBudget: number(skill.mp, 0) > 0
-            ? Math.floor(number(profile.maxMp, 0) / skill.mp) * hitDamage : Infinity };
+            ? Math.floor(spendableMp / skill.mp) * hitDamage : Infinity };
 }
 
+// The MP a profile's attacks may spend: what it has now (mp, atVitals; else a
+// full bar) above the share an offensive skill leaves (BotClassPolicy's
+// reserve, the executor's own, BotCombatUtility): a solo healer keeps a
+// quarter of its bar for its heals and fights with its weapon below it. A
+// servitor has no such rule. 0 without a known bar.
+function spendableMp(profile, role) {
+    const maxMp = number(profile.maxMp, 0);
+    if (!(maxMp > 0)) return 0;
+    const mp = Math.min(maxMp, number(profile.mp, maxMp));
+    if (profile.servitor === true) return mp;
+    let reserve = mpReserves.get(profile);
+    if (reserve === undefined) {
+        const Policy = classPolicy();
+        mpReserves.set(profile, reserve = Policy.offensiveMpReserve(Policy.profileFor(profile, { mode: 'solo_pve' }), role));
+    }
+    return Math.max(0, mp - reserve * maxMp);
+}
+// The reserve share per profile object (fixed once built; a scan's atVitals
+// copy is one object for all its candidates): dies with the profile.
+const mpReserves = new WeakMap();
+
 function channels(profile, target) {
-    const context = channelContext(profile, target);
     const role = profile.role || Roles.combatRoleFor(profile);
+    const context = channelContext(profile, target);
+    context.spendableMp = spendableMp(profile, role);
     const result = [];
     if (role !== 'mage') result.push(normalChannel(profile, target, context));
     for (const skill of profile.skills || []) {
@@ -305,7 +339,7 @@ function channels(profile, target) {
         if (skill.passive || !DAMAGE_TYPES.has(semantic.skillType) || semantic.target !== 'enemy'
             || semantic.notUsedInC4 || (role === 'mage' && skill.spell !== true)
             || (semantic.undeadOnly && target.undead !== true)
-            || (number(profile.maxMp, 0) > 0 && number(skill.mp, 0) > profile.maxMp)
+            || (number(profile.maxMp, 0) > 0 && number(skill.mp, 0) > context.spendableMp)
             || (semantic.requires?.weaponsAllowed && !(semantic.requires.weaponsAllowed & profile.weaponMask))
             || (context.bow && number(semantic.castRange ?? skill.distance, 0) < 400)) continue;
         const channel = skillChannel(profile, target, skill, context);
@@ -381,9 +415,43 @@ function ownerReceivers(profiles) {
     return profiles?.filter(profile => profile.soloDamageReceiver !== false && profile.servitor !== true);
 }
 // A bot's solo profiles at the HP and MP it has left: a pet keeps its own HP.
+// The HP left is the life the gate counts (maxHp); the bar stays whole, the
+// MP left is mp (spendableMp: the reserve is a share of the whole bar).
 function atVitals(profiles, hp, mp) {
     return profiles.map(profile => profile.soloDamageReceiver === false || profile.servitor === true ? profile
-        : { ...profile, maxHp: Math.min(profile.maxHp, hp), maxMp: Math.min(profile.maxMp, mp) });
+        : { ...profile, maxHp: Math.min(profile.maxHp, hp), mp: Math.min(profile.maxMp, mp) });
+}
+// A bot's solo profiles for a spot it picks ahead, not for the fight of this
+// moment: its pet up at full HP and its own MP full, so the summoner has a pet
+// (no cooldown, cast MP or cast time stands in the way), with the shots it
+// holds now (the array can be an older search's, EquipmentIncomeRoute).
+function readyProfiles(profiles, state, timestamp) {
+    const owner = profiles[0];
+    if (!owner || !state.inventory) return profiles;
+    const shot = coldCombatProfile().shotSupply(state, timestamp);
+    const summon = state.stats?.coldCombat?.summon;
+    if (profiles.length === 1 && !summon?.active && !Roles.isSummoner(owner)) {
+        return shotKind(owner.shot) === shotKind(shot) ? profiles : [{ ...owner, shot }];
+    }
+    const ready = coldProfiles(owner, { inventory: state.inventory, vitals: {},
+        stats: { coldCombat: { summon: summon && { ...summon, hp: summon.maxHp } } } }, timestamp, { shot });
+    if (ready[1]) ready[1].summonCastMs = 0;
+    return ready;
+}
+// readyProfiles of a body near a player, from the live actor: its living pet at
+// full HP, else the one it can raise, MP, reuse and cast time aside.
+function actorReadyProfiles(actor) {
+    const profiles = actorProfiles([actor]);
+    if (!profiles.length) return profiles;
+    const pet = actor.summon && !actor.summon.isDead?.() && !actor.summon.state?.fetchDead?.();
+    if (pet && profiles[1]) return [profiles[0], { ...profiles[1], hp: undefined }];
+    const ready = coldProfiles(profiles[0], { vitals: {} });
+    if (ready[1]) ready[1].summonCastMs = 0;
+    return ready;
+}
+// The bot's side with no pet, at the HP and MP it has left.
+function ownersAtVitals(profiles, hp, mp) {
+    return atVitals(profiles.filter(profile => profile.servitor !== true), hp, mp);
 }
 // The pair PetTankRule binds: one owner of a class that sends a pet ahead and
 // its one pet, their indices in profiles; null for anything else (a party's
@@ -400,10 +468,12 @@ function bestRate(attacks) {
     return best;
 }
 
-// The solo hunt gate (T132, docs/game-decisions.md): the damage a bot deals
-// over the target's HP before its own runs out, needed to fight alone. Cold
-// hunt deaths do not fall above 1.0 (gate sweep, 700 kit and mob pairs), so no
-// extra margin is bought on top.
+// The survival ratio (T132, docs/game-decisions.md): the damage a bot deals
+// over the target's HP before its own runs out. Cold hunt deaths do not fall
+// above 1.0 (gate sweep, 700 kit and mob pairs): the ratio a fight is won at,
+// which DangerRule's lose chance reads. Whether a bot starts a fight alone is
+// BotEncounterReadiness's (soloCanHunt): it ends that fight above its potion
+// line, with a margin by its length.
 const SOLO_GATE_MARGIN = 1.0;
 
 function soloSurvival(profiles, target, minimum = SOLO_GATE_MARGIN, attacksOf = channels) {
@@ -421,30 +491,72 @@ function soloSurvival(profiles, target, minimum = SOLO_GATE_MARGIN, attacksOf = 
         const side = sideLifetime(view, profiles, Mob, openingSeconds);
         const seconds = Math.max(0, side.total - castSeconds), petSeconds = Math.max(0, side.pet - castSeconds);
         let damage = 0, area = 0, petDealt = 0;
+        // Every attack of every attacker as its damage curve by time t (dealtBy):
+        // the fight time reads their envelope, not the attack that deals most by
+        // the end of the side's life (a slow free hit overtakes a fast budgeted
+        // skill only late).
+        const curves = [];
         // The pair's pet first: it strikes while it stands, and its hate caps its owner's damage.
         for (const index of pair ? [pair.pet, pair.owner] : lists.keys()) {
             const onPet = pair?.pet === index, ownerOfPet = pair?.owner === index;
             const time = onPet ? petSeconds : seconds;
+            const own = [];
             let best = 0, bestArea = false;
             for (const attack of lists[index]) {
                 const rate = (attack.survivalWeight ?? attack.weight) * attack.modifier;
-                let dealt = Math.min(rate * time, (attack.damageBudget ?? Infinity) * attack.modifier);
-                // Once the pet is down nothing holds the owner back.
-                if (ownerOfPet) dealt = Math.min(dealt, PetTankRule.ownerCap(petDealt, number(attack.hit, 0) * attack.modifier) * number(attack.struck, 1)
-                    + rate * (seconds - petSeconds));
+                const budget = (attack.damageBudget ?? Infinity) * attack.modifier;
+                // Once the pet is down nothing holds the owner back: till then its pet's hate does.
+                const hold = ownerOfPet ? PetTankRule.ownerCap(petDealt, number(attack.hit, 0) * attack.modifier) * number(attack.struck, 1) : Infinity;
+                const curve = { rate, budget, until: onPet ? petSeconds : Infinity, hold, holdFrom: petSeconds };
+                own.push(curve);
+                const dealt = dealtBy(curve, time);
                 if (dealt > best) { best = dealt; bestArea = attack.area === true; }
             }
             if (onPet) petDealt = best;
             damage += best;
             if (bestArea) area += best;
+            if (own.length) curves.push(own);
         }
-        return { damage, areaShare: damage > 0 ? area / damage : 0 };
+        return { damage, seconds, curves, areaShare: damage > 0 ? area / damage : 0 };
     };
     let result = plan(target);
     if (result.areaShare > 0 && Number(target.pull) > 1) result = plan(Pull.repack(target, result.areaShare));
     const survivalRatio = result.damage / target.maxHp;
-    return { eligible: survivalRatio >= minimum, survivalRatio, areaShare: result.areaShare,
+    // seconds: how long the bot's side stands, the time its damage is dealt in;
+    // fightSeconds: the time its attacks take to deal the target's HP, at most
+    // seconds; it does not grow with the side's life (more HP never refuses).
+    return { eligible: survivalRatio >= minimum, survivalRatio, areaShare: result.areaShare, seconds: result.seconds,
+        fightSeconds: survivalRatio >= 1 ? dealSeconds(result.curves, target.maxHp, result.seconds) : result.seconds,
         reason: survivalRatio >= minimum ? 'solo_survival_ready' : 'insufficient_survival_margin' };
+}
+// One attack's damage by time t: its rate while it acts (a pet's till it falls,
+// until), at most its MP budget, and an owner's held under its pet's hate (hold
+// by the time the pet falls, holdFrom, growing as the pet's damage does), then free.
+function dealtBy(curve, t) {
+    const held = curve.hold === Infinity ? Infinity
+        : curve.hold * (curve.holdFrom > 0 ? Math.min(t, curve.holdFrom) / curve.holdFrom : 1) + curve.rate * Math.max(0, t - curve.holdFrom);
+    return Math.min(curve.rate * Math.min(t, curve.until), curve.budget, held);
+}
+// The side's damage by time t: each attacker's best attack by then (the envelope).
+function sideDealtBy(curves, t) {
+    let sum = 0;
+    for (const own of curves) {
+        let best = 0;
+        for (const curve of own) best = Math.max(best, dealtBy(curve, t));
+        sum += best;
+    }
+    return sum;
+}
+// The first time the side has dealt hp, within limit (its damage only grows
+// with time): a bisection of 24 halvings (limit / 16M, well under a tick).
+function dealSeconds(curves, hp, limit) {
+    if (!(limit > 0) || sideDealtBy(curves, limit) < hp) return limit;
+    let low = 0, high = limit;
+    for (let step = 0; step < 24; step++) {
+        const middle = (low + high) / 2;
+        if (sideDealtBy(curves, middle) >= hp) high = middle; else low = middle;
+    }
+    return high;
 }
 
 function soloChannels(profile, target, attacksOf = channels) {
@@ -472,8 +584,21 @@ function soloChannels(profile, target, attacksOf = channels) {
     return (profile.role || Roles.combatRoleFor(profile)) === 'mage' ? [] : attacks.slice(0, 1);
 }
 
+// The route's gate: would the bot, whole, start this fight alone
+// (BotEncounterReadiness, the rule a hunting bot admits its next mob by)? It
+// fights from its whole bar above its potion line; its attacks are its own
+// profile's (the copy differs only in the HP it counts). Several owners (a
+// party's members, HotBackgroundParty) keep the survival ratio: a party's
+// heals and its members' turns are not that solo rule's.
 function soloCanHunt(profiles, target, { maxTargetLevel, npcLevel, attacksOf = channels } = {}) {
-    const survival = soloSurvival(profiles, target, SOLO_GATE_MARGIN, attacksOf);
+    const owners = profiles.filter(profile => profile.servitor !== true);
+    let survival;
+    if (owners.length === 1) {
+        const remaining = encounterReadiness().atWholeBar(profiles);
+        const readiness = encounterReadiness().evaluate(remaining, target, profile => attacksOf(profile === remaining[0] ? owners[0] : profile, target));
+        survival = { ...readiness.survival, eligible: readiness.ready,
+            reason: readiness.ready ? readiness.survival?.reason : 'insufficient_survival_margin' };
+    } else survival = soloSurvival(profiles, target, SOLO_GATE_MARGIN, attacksOf);
     if (maxTargetLevel && Number(npcLevel || 0) > maxTargetLevel) {
         return { ...survival, eligible: false, reason: 'recovery_level' };
     }
@@ -501,6 +626,9 @@ function soloSpotUpperBound(profiles) {
         return () => true;
     }
     const neutral = { basePDef: 1, pDef: 1, baseMDef: 1, mDef: 1, undead: true };
+    // The life the exact gate counts: a lone owner's above its potion line (soloCanHunt).
+    const owners = profiles.filter(profile => profile.servitor !== true);
+    const living = owners.length === 1 ? encounterReadiness().atWholeBar(profiles) : profiles;
     const bounds = profiles.map(profile => {
         const bound = { continuous: 0, physicalRate: 0, physicalBudget: 0, magicRate: 0, magicBudget: 0 };
         for (const attack of channels(profile, neutral)) {
@@ -534,8 +662,8 @@ function soloSpotUpperBound(profiles) {
         const target = coldCombatProfile().npcCombatStats(npc);
         if (!(target?.maxHp > 0) || !(target.pAtk > 0)
             || !(target.basePDef > 0) || !(target.baseMDef > 0)) return true;
-        // The gate's own lifetime and opening (soloSurvival), no summon cast.
-        const seconds = sideLifetime(target, profiles, coldMobAction(), coldCombatProfile().openingMs(receivers[0], target) / 1000).total;
+        // The gate's own lifetime (above the potion line) and opening, no summon cast.
+        const seconds = sideLifetime(target, living, coldMobAction(), coldCombatProfile().openingMs(receivers[0], target) / 1000).total;
         // The largest term a hit of theirs can meet: a damage weakness of the
         // target, times a profile's bonus against its race or undead kind.
         let vulnerability = 1, bonus = 1;
@@ -661,6 +789,29 @@ function speciesPulls(profiles, entry, options = {}) {
         { profiles, soloSafety: options.soloSafety, maxTargetLevel: options.maxTargetLevel });
 }
 
+// Each spawn group of a spot and the share of its pulls the profiles may fight
+// under the safety options (speciesPulls; 0 for a group they may not), or null
+// for a spot without spawn groups or with none a verdict knows. Read by a cold
+// round (BackgroundResolver.admittedShares) and by a hot hunter's look at its
+// ground (BotDecisionService.suggest): one rule.
+function spotShares(profiles, spot, options = {}) {
+    if (!spot?.npcEntries?.length) return null;
+    let known = false;
+    const shares = new Map(spot.npcEntries.map(entry => {
+        const verdict = speciesPulls(profiles, entry, options);
+        known ||= !!verdict;
+        return [entry, verdict?.share ?? 0];
+    }));
+    return known ? shares : null;
+}
+// The spot holds nothing the profiles may fight: every group the verdict knows
+// is refused (spotShares). Unknown (null) is no proof.
+function admitsNone(shares) {
+    if (!shares) return false;
+    for (const share of shares.values()) if (share > 0) return false;
+    return true;
+}
+
 function spotMatchup(spot, profiles, options = {}) {
     if (!profiles?.length) return evaluate([], {});
     let total = 0, effective = 0, eligible = false, safe = 0;
@@ -697,5 +848,5 @@ function damageRate(profiles, target = {}) {
     return rates.reduce((sum, rate) => sum + rate, 0);
 }
 
-module.exports = { MIN_EFFICIENCY, SOLO_GATE_MARGIN, actorProfiles, coldProfiles, servitorProfile, profileKey, targetView, skillModifier, channels, damageRate, attackRate, spellRate, incomingRate,
-    profileStats, skillStats, evaluate, atVitals, soloSurvival, soloCanHunt, pullVerdict, soloSpotUpperBound, stateProfiles, spotMatchup, speciesPulls, expectedHit, actorHit };
+module.exports = { MIN_EFFICIENCY, SOLO_GATE_MARGIN, actorProfiles, coldProfiles, servitorProfile, profileKey, shotKindOfKey, readyProfiles, actorReadyProfiles, targetView, skillModifier, channels, damageRate, attackRate, spellRate, incomingRate,
+    profileStats, skillStats, evaluate, atVitals, ownersAtVitals, soloSurvival, soloCanHunt, pullVerdict, soloSpotUpperBound, stateProfiles, spotMatchup, speciesPulls, spotShares, admitsNone, expectedHit, actorHit };

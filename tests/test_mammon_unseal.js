@@ -46,7 +46,7 @@ async function run() {
     await Database.setItem(id,{selfId:5290,name:'Sealed Dark Crystal Gloves',amount:1,enchant:7,slot:9});
     await Database.setItem(id,{selfId:57,name:'Adena',amount:123,slot:0});
     const rows = await Database.fetchItems(id);
-    const backpack = new Backpack({items:rows,paperdoll:Object.fromEntries(Array.from({length:16},(_,i)=>[i,{}]))});
+    const backpack = new Backpack({id,items:rows,paperdoll:Object.fromEntries(Array.from({length:16},(_,i)=>[i,{}]))});
     const actor = {backpack,fetchId:()=>id,fetchName:()=> 'MammonTest',fetchLevel:()=>76,fetchClassId:()=>2,
         fetchLocX:()=>Mammon.loc.locX,fetchLocY:()=>Mammon.loc.locY,fetchLocZ:()=>Mammon.loc.locZ,
         isDead:()=>false,state:{fetchCombats:()=>false,fetchHits:()=>false,fetchCasts:()=>false,fetchTowards:()=>false}};
@@ -98,7 +98,8 @@ async function run() {
     const cold = {...session.coldLifeState,inventory:{6674:{selfId:6674,amount:1},736:{selfId:736,amount:1}},
         loc:{locX:90000,locY:148000,locZ:-3400}};
     const trip = Bot.beginTravel(cold,1000);
-    assert(trip && trip.stats.travel.arrivalAt===26000);
+    assert(trip);
+    const arrivalAt = trip.stats.travel.arrivalAt;
     // Karma keeps the bot from the Giran trip: any karma above 0 blocks it;
     // none, zero or negative karma does not.
     for (const [karma, blocked] of [[undefined, false], [null, false], [0, false], [-5, false], ['0', false], [NaN, false], [1, true], ['7', true], [45, true]]) {
@@ -124,10 +125,10 @@ async function run() {
     const travelResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
     const early = travelResolver.resolveSolo({state:trip,timestamp:2000,elapsedMs:1000});
     assert.strictEqual(early.patch.activity,'traveling');
-    const arrival = travelResolver.resolveSolo({state:trip,timestamp:26000,elapsedMs:25000});
+    const arrival = travelResolver.resolveSolo({state:trip,timestamp:arrivalAt,elapsedMs:arrivalAt-1000});
     assert.strictEqual(arrival.patch.activity,'crafting');
     const arrived = {...trip,...arrival.patch};
-    const returning = await Bot.finish(arrived,27000);
+    const returning = await Bot.finish(arrived,arrivalAt+1000);
     assert.strictEqual(returning.stats.travel.reason,'mammon_unseal_return');
     assert.deepStrictEqual(returning.stats.travel.to,cold.loc);
     assert((await Database.fetchItems(id)).some(i=>i.selfId===6373));

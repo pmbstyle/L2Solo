@@ -60,10 +60,25 @@ function recordEquipmentEvent(session, item, action) {
 
 const MANUFACTURE_STORE_TYPES = [5, 6];
 
+// Failures the bag refuses instead of acting on the wrong character. Each
+// reason is logged once and counted (Backpack.refusals()).
+const refusals = {};
+function refuse(reason, detail) {
+    refusals[reason] = (refusals[reason] || 0) + 1;
+    if (refusals[reason] === 1) utils.infoWarn('Backpack', 'refused %s (%s); later ones are counted, not logged', reason, detail);
+}
+
 class Backpack extends BackpackModel {
+    static refusals() {
+        return { ...refusals };
+    }
+
     constructor(data) {
         // Parent inheritance
         super(data.paperdoll);
+        // The character this bag belongs to. Its stack changes are saved
+        // under this id, whoever the session shows by the time they land.
+        this.ownerId = Number(data.id) || 0;
 
         data.items.forEach((item) => {
             this.insertItem(item.id, item.selfId, item);
@@ -91,6 +106,9 @@ class Backpack extends BackpackModel {
             const total = item.fetchAmount() - amount;
             const diagnosticBefore = diagnosticReason && DiagnosticConfig.developerDiagnostics === true && session?.accountId?.startsWith?.('bot_') ? total + amount : null;
             this.inventoryRevision = Number(this.inventoryRevision || 0) + 1;
+            if (!this.ownerId && session?.persistenceMode !== 'ephemeral') {
+                refuse('unowned_bag_write', `item ${item.fetchSelfId()}`);
+            }
             if (total > 0) {
                 // Update memory state instantly
                 item.setAmount(total);
@@ -99,7 +117,7 @@ class Backpack extends BackpackModel {
                 callback(item.fetchSelfId());
 
                 if (session?.persistenceMode !== 'ephemeral') {
-                    CharacterWriteQueue.itemAmount(session.actor.fetchId(), item.fetchId(), total);
+                    CharacterWriteQueue.itemAmount(this.ownerId, item.fetchId(), total);
                 }
             }
             else {
@@ -126,7 +144,7 @@ class Backpack extends BackpackModel {
                 callback(item.fetchSelfId());
 
                 if (session?.persistenceMode !== 'ephemeral') {
-                    CharacterWriteQueue.itemAmount(session.actor.fetchId(), item.fetchId(), 0);
+                    CharacterWriteQueue.itemAmount(this.ownerId, item.fetchId(), 0);
                 }
             }
         });
@@ -356,7 +374,7 @@ class Backpack extends BackpackModel {
             return true;
         }
 
-        return this.castTargetedItemSkill(session, target, skill, () => {
+        return this.castItemSkill(session, target, skill, () => {
             if (session.actor.isDead() || !this.canFeedBeastTarget(session.actor, target, skill)) {
                 return;
             }
@@ -640,48 +658,28 @@ class Backpack extends BackpackModel {
             return true;
         }
 
-        const castTime = skill.fetchHitTime() || 0;
-        session.actor.markSkillReuse?.(skill);
-        session.actor.state.setCasts(true);
-        session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, session.actor.fetchId(), skill), session.actor);
-        if (castTime > 0) {
-            session.dataSendToMe(ServerResponse.skillDurationBar(castTime));
+        const coords = itemSkill.teleport === 'skillCoords' ? this.resolveItemTeleportCoords(session.actor, itemSkill, skill) : null;
+        if (itemSkill.teleport === 'skillCoords' && !coords) {
+            return true;
         }
-
-        const apply = () => {
-            session.actor.state.setCasts(false);
+        const cast = () => this.castItemSkill(session, session.actor, skill, () => {
             if (session.actor.isDead()) {
                 return;
             }
-
-            if (itemSkill.teleport === 'skillCoords') {
-                const coords = this.resolveItemTeleportCoords(session.actor, itemSkill, skill);
-                if (!coords) {
-                    return;
-                }
-                this.deleteItem(session, id, 1, () => {
-                    const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
-                    TeleportTo(session, session.actor, coords);
-                }, 'item_skill');
+            if (coords) {
+                const TeleportTo = invoke('GameServer/Actor/Generics/TeleportTo');
+                TeleportTo(session, session.actor, coords);
                 return;
             }
-
-            if (itemSkill.consume) {
-                this.deleteItem(session, id, 1, () => {
-                    this.applySelfItemSkill(session, skill);
-                }, 'potion');
-                return;
-            }
-
             this.applySelfItemSkill(session, skill);
-        };
-
-        if (castTime > 0) {
-            setTimeout(apply, castTime);
+        });
+        // C4 (Lisvus ItemSkills, ScrollOfEscape): the item is spent when it
+        // is used, before the cast; a cancelled cast does not give it back.
+        if (coords || itemSkill.consume) {
+            this.deleteItem(session, id, 1, cast, coords ? 'item_skill' : 'potion');
         } else {
-            apply();
+            cast();
         }
-
         return true;
     }
 
@@ -808,8 +806,7 @@ class Backpack extends BackpackModel {
             });
 
             World.npc.spawns.push(npc);
-            if (World.addNpcToGrid) World.addNpcToGrid(npc);
-            else World.indexSpawnsInGrid?.();
+            World.addNpcToGrid(npc);
             this.deleteItem(session, id, itemSkill.consumeCount || 1, () => {
                 session.dataSendToMeAndOthers(ServerResponse.npcInfo(npc), npc);
             }, 'item_skill');
@@ -839,17 +836,8 @@ class Backpack extends BackpackModel {
             return true;
         }
 
-        const castTime = skill.fetchHitTime() || 0;
-        session.actor.markSkillReuse?.(skill);
-        session.actor.state.setCasts(true);
-        session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, session.actor.fetchId(), skill), session.actor);
-        if (castTime > 0) {
-            session.dataSendToMe(ServerResponse.skillDurationBar(castTime));
-        }
-
-        const apply = () => {
-            session.actor?.state.setCasts(false);
-            if (!session.actor || session.actor.backpack !== this || session.actor.isDead() || !this.fetchItemRaw(id)) {
+        return this.castItemSkill(session, session.actor, skill, () => {
+            if (session.actor.isDead() || !this.fetchItemRaw(id)) {
                 return;
             }
             const payload = {
@@ -865,15 +853,7 @@ class Backpack extends BackpackModel {
             }
 
             this.spawnPetFromItem(session, payload);
-        };
-
-        if (castTime > 0) {
-            setTimeout(apply, castTime);
-        } else {
-            apply();
-        }
-
-        return true;
+        });
     }
 
     spawnPetFromItem(session, payload) {
@@ -890,8 +870,7 @@ class Backpack extends BackpackModel {
             if (!npc) return;
 
             World.npc.spawns.push(npc);
-            if (World.addNpcToGrid) World.addNpcToGrid(npc);
-            else World.indexSpawnsInGrid?.();
+            World.addNpcToGrid(npc);
             session.actor.pet = npc;
             session.pet = npc;
             session.dataSendToMeAndOthers?.(ServerResponse.npcInfo(npc), npc);
@@ -985,7 +964,7 @@ class Backpack extends BackpackModel {
         }
 
         this.setManorSeedPending(target, seedId, session.actor);
-        return this.castTargetedItemSkill(session, target, skill, () => {
+        return this.castItemSkill(session, target, skill, () => {
             if (session.actor.isDead()) {
                 this.clearManorSeedPending(target, session.actor, seedId);
                 return;
@@ -1025,7 +1004,7 @@ class Backpack extends BackpackModel {
             return true;
         }
 
-        return this.castTargetedItemSkill(session, target, skill, () => {
+        return this.castItemSkill(session, target, skill, () => {
             if (session.actor.isDead() || !this.canHarvestTarget(session.actor, target, skill)) {
                 return;
             }
@@ -1053,37 +1032,56 @@ class Backpack extends BackpackModel {
             return true;
         }
 
-        return this.castTargetedItemSkill(session, target, skill, () => {
+        // Spent at use, as every C4 ItemSkills item (Lisvus ItemSkills).
+        this.deleteItem(session, id, 1, () => this.castItemSkill(session, target, skill, () => {
             if (session.actor.isDead() || !this.canCleanseTarget(session.actor, target, skill)) {
                 return;
             }
-
-            this.deleteItem(session, id, 1, () => {
-                SkillEffects.execute(session, session.actor, target, skill, {
-                    magicSkill: skill.fetchSpell(),
-                    rng: () => Math.random(),
-                    attack: { clearLoadedShot() {} }
-                });
-            }, 'item_skill');
-        });
+            SkillEffects.execute(session, session.actor, target, skill, {
+                magicSkill: skill.fetchSpell(),
+                rng: () => Math.random(),
+                attack: { clearLoadedShot() {} }
+            });
+        }), 'item_skill');
+        return true;
     }
 
-    castTargetedItemSkill(session, target, skill, apply) {
+    // An item skill is the caster's own cast, like any other C4 skill cast
+    // (Scroll of Escape is skill 2013 with a 20 s hit time). It runs on the
+    // caster's attack timers, so whatever cancels a cast cancels it: a stun,
+    // Restart, a disconnect (the actor destructor clears those timers). It
+    // lands only while the same character is still casting with this bag in
+    // the session; `land` may then use session.actor as that character.
+    castItemSkill(session, target, skill, land) {
+        const actor = session.actor;
         const castTime = skill.fetchHitTime() || 0;
-        session.actor.markSkillReuse?.(skill);
-        session.actor.state.setCasts(true);
-        session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, target.fetchId(), skill), session.actor);
+        actor.markSkillReuse?.(skill);
+        actor.state.setCasts(true);
+        // The active cast tells a hit whether it may break it (a spell only).
+        const cast = { target, skill, landsAt: Date.now() + castTime };
+        actor.attack.activeCast = cast;
+        session.dataSendToMeAndOthers(ServerResponse.skillStarted(actor, target.fetchId(), skill), actor);
         if (castTime > 0) {
             session.dataSendToMe(ServerResponse.skillDurationBar(castTime));
         }
 
         const finish = () => {
-            session.actor.state.setCasts(false);
-            apply();
+            if (session.actor !== actor || actor.backpack !== this) {
+                // The destructor clears the timers of a character that left,
+                // so reaching this means a teardown path skipped it.
+                refuse('item_cast_after_leave', `skill ${skill.fetchSelfId?.()}`);
+                return;
+            }
+            if (actor.attack.activeCast === cast) actor.attack.activeCast = null;
+            // Cancelled without clearing the timer: some bot travel states
+            // reset the casting flag alone (HuntingState relocation expiry).
+            if (!actor.state.fetchCasts()) return;
+            actor.state.setCasts(false);
+            land();
         };
 
         if (castTime > 0) {
-            setTimeout(finish, castTime);
+            actor.attack.queueTimer(finish, castTime);
         } else {
             finish();
         }
@@ -1101,10 +1099,12 @@ class Backpack extends BackpackModel {
         if (target.fetchKind?.() === 'Boss') {
             return false;
         }
+        // C4 (Lisvus Seed/Sow, L2Attackable.setSeeded): only a sown mob
+        // refuses a seed. A seed still being cast is no reservation: the next
+        // sow takes the mark over and the earlier cast lands on nothing. So a
+        // sow cancelled by a stun, Esc or Restart, whose cast never returns
+        // to clear its mark, does not lock the mob.
         if (this.isManorSeeded(target)) {
-            return false;
-        }
-        if (!options.allowPending && this.fetchManorSeedId(target)) {
             return false;
         }
         if (options.allowPending && !this.isOwnPendingManorSeed(actor, target, seedId)) {
@@ -1252,17 +1252,7 @@ class Backpack extends BackpackModel {
             return true;
         }
 
-        const castTime = skill.fetchHitTime() || 0;
-        session.actor.markSkillReuse?.(skill);
-        session.actor.state.setCasts(true);
-        session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, target.fetchId(), skill), session.actor);
-        if (castTime > 0) {
-            session.dataSendToMe(ServerResponse.skillDurationBar(castTime));
-        }
-
-        const apply = () => {
-            if (session.actor !== actor || !actor.state.fetchCasts()) return;
-            actor.state.setCasts(false);
+        return this.castItemSkill(session, target, skill, () => {
             if (actor.isDead() || actor.fetchIsOnline?.() === false || !progression.canUse(session, crystal, target)) {
                 return;
             }
@@ -1282,16 +1272,7 @@ class Backpack extends BackpackModel {
                 soulCrystalItemId: id,
                 attack: { clearLoadedShot() {} }
             });
-        };
-
-        if (castTime > 0) {
-            if (actor.attack?.queueTimer) actor.attack.queueTimer(apply, castTime);
-            else setTimeout(apply, castTime);
-        } else {
-            apply();
-        }
-
-        return true;
+        });
     }
 
     useResurrectionItem(session, id, itemSkill, skill) {
@@ -1304,34 +1285,19 @@ class Backpack extends BackpackModel {
             return true;
         }
 
-        const startCast = () => {
-            const castTime = skill.fetchHitTime() || 0;
-            session.actor.markSkillReuse?.(skill);
-            session.actor.state.setCasts(true);
-            session.dataSendToMeAndOthers(ServerResponse.skillStarted(session.actor, target.fetchId(), skill), session.actor);
-            if (castTime > 0) {
-                session.dataSendToMe(ServerResponse.skillDurationBar(castTime));
+        const startCast = () => this.castItemSkill(session, target, skill, () => {
+            if (session.actor.isDead()) {
+                return;
             }
-
-            const apply = () => {
-                session.actor.state.setCasts(false);
-                if (session.actor.isDead()) {
-                    return;
-                }
-                if (!this.canResurrectTarget(session.actor, target, skill)) {
-                    return;
-                }
-                this.applyResurrection(session, target, Number(skill.fetchPower?.()) || 0);
-            };
-
-            if (castTime > 0) {
-                setTimeout(apply, castTime);
-            } else {
-                apply();
+            if (!this.canResurrectTarget(session.actor, target, skill)) {
+                return;
             }
-        };
+            this.applyResurrection(session, target, Number(skill.fetchPower?.()) || 0);
+        });
 
-        if (itemSkill.consumeAtStart) {
+        // The skill's item consume is taken when the cast starts (Lisvus
+        // doCast), as for every spent item skill.
+        if (itemSkill.consume) {
             const consumeCount = skill.fetchSemantic().itemConsumeCount || itemSkill.consumeCount || 1;
             this.deleteItem(session, id, consumeCount, startCast, 'item_skill');
         } else {

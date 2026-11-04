@@ -223,15 +223,12 @@ function deferredAcquisitionPlan(state, previous, economy, replanContext = {}, t
 function selectAcquisitionPlan(state, previousPlan, { spots = [], timestamp = Date.now(), planningOptions = {}, preparedEconomy = null, preparedReplanContext = null } = {}) {
     if (previousPlan?.economyInputKey !== undefined) { previousPlan = { ...previousPlan }; delete previousPlan.economyInputKey; }
     const economy = preparedEconomy || invoke('GameServer/Bot/Economy/EconomyContext').forState(state, {
-        spots, timestamp, board: planningOptions.board, buyOrderEscrow: planningOptions.buyOrderEscrow
+        spots, timestamp, board: planningOptions.board, buyOrderEscrow: planningOptions.buyOrderEscrow, caller: 'gear_plan'
     });
     const preparedAcquisition = invoke('GameServer/Bot/Economy/WishProviders').personalCraftPlan(state, economy);
-    const preparedB = preparedAcquisition?.strategy === 'craft'
-        && ['b', 'a', 's'].includes(invoke('GameServer/Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items,
-            preparedAcquisition.target?.selfId)?.etc?.rank);
     const lockedClan = GearAcquisitionPlanner.isClanOwnedPlan(previousPlan)
         && GearAcquisitionPlanner.clanGoalPlanLocked(state, previousPlan);
-    if (!lockedClan && (preparedAcquisition?.strategy === 'luxury_exchange' || preparedB || preparedAcquisition?.combine?.type === 'dual_sword')) return {
+    if (!lockedClan && (['luxury_exchange', 'craft'].includes(preparedAcquisition?.strategy) || preparedAcquisition?.combine?.type === 'dual_sword')) return {
         acquisitionPlan: withRetainedCraftPreparation(state, previousPlan, { ...preparedAcquisition,
             ...(previousPlan?.clanGoal && Number(previousPlan.target?.selfId) === Number(preparedAcquisition.target?.selfId)
                 ? { clanGoal: previousPlan.clanGoal } : {}) }, timestamp), replanContext: {}, reusablePartyRequest: false,

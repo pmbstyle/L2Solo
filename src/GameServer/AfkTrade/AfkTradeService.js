@@ -13,7 +13,7 @@ const World = invoke('GameServer/World/World');
 const SELL = BoardRules.SELL;
 const BUY = BoardRules.BUY;
 const PROJECTION_ID_BASE = 900000000;
-const { CLIENT_VISIBILITY_RADIUS } = invoke('GameServer/World/WorldConstants');
+const { CLIENT_VISIBILITY_RADIUS, inClientView } = invoke('GameServer/World/WorldConstants');
 const ShopPlaces = invoke('GameServer/Bot/Economy/ShopPlaces');
 const VISIBILITY_CELL_SIZE = CLIENT_VISIBILITY_RADIUS;
 // The board in memory (design section 4). A shop stands in the world as a
@@ -318,18 +318,12 @@ function buildProjection(shop) {
     return { shop, session, actor: session.actor };
 }
 
-function distance2d(left, right) {
-    return Math.hypot(
-        Number(left.fetchLocX?.() || 0) - Number(right.fetchLocX?.() || 0),
-        Number(left.fetchLocY?.() || 0) - Number(right.fetchLocY?.() || 0)
-    );
-}
-
 function visibleTo(viewer, actor) {
     return !!viewer?.actor
         && viewer.actor.fetchIsOnline?.() === true
         && !isBotSession(viewer)
-        && distance2d(viewer.actor, actor) <= CLIENT_VISIBILITY_RADIUS;
+        && inClientView(Number(viewer.actor.fetchLocX?.() || 0), Number(viewer.actor.fetchLocY?.() || 0),
+            Number(actor.fetchLocX?.() || 0), Number(actor.fetchLocY?.() || 0));
 }
 
 function sendProjection(viewer, projection) {
@@ -1010,7 +1004,7 @@ function offerOf(line, town = null) {
         ...offerFields(line, town),
         available: PartyAdmission.personalOfferAllowed(line, null,
             invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(line.ownerId), null,
-            World.registeredActorById?.(line.ownerId)?.session),
+            World.registeredActorById(line.ownerId)?.session),
         sourceName: projection ? projection.actor.fetchName() : (entry.shop.ownerName || `Trader ${store.ownerId}`),
         itemName: storeItem.name || itemName(line.selfId),
         projection,
@@ -1030,7 +1024,7 @@ function offerOf(line, town = null) {
 function offers(selfId, storeType, options = {}) {
     const excluded = Number(options.characterId || 0);
     const ownState = excluded ? invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(excluded) : null;
-    const ownSession = excluded ? World.registeredActorById?.(excluded)?.session : null;
+    const ownSession = excluded ? World.registeredActorById(excluded)?.session : null;
     const enchant = options.enchant === undefined || options.enchant === null ? null : Number(options.enchant);
     const limit = Number(options.limit) > 0 ? Number(options.limit) : Infinity;
     const result = [];

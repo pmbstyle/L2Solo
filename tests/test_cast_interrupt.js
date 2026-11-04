@@ -2,6 +2,9 @@ process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects packet 
 const assert = require('assert');
 
 require('../src/Global');
+// An attack on a character flags the attacker at the swing or the skill's
+// landing (PvpFlag.attack); the flag packets are not under test here.
+invoke('GameServer/Actor/PvpFlag').mark = () => {};
 
 const Attack = invoke('GameServer/Actor/Attack');
 const State = invoke('GameServer/Model/State');

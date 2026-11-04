@@ -35,6 +35,16 @@ function decidedEconomy(session) {
     return economy?.decided && economy.deathHours >= 0 ? economy : null;
 }
 
+// The mobs on the bot as one mob with their HP left and attack summed (minimum.md #3).
+// An area skill hits each of them (F20: BotTargetMatchup reads `pull`).
+// They are in the fight: no opening before they close in (engaged).
+function enemyOn(actor, target, attackers = attackersOf(actor, target)) {
+    const view = TargetMatchup.targetView(target);
+    const atkSpd = Math.max(1, Number(view.atkSpd || 253));
+    return { ...view, maxHp: attackers.reduce((sum, npc) => sum + npcHp(npc), 0),
+        pAtk: attackers.reduce((sum, npc) => sum + npcPAtk(npc, view), 0) / atkSpd, atkSpd, pull: attackers.length, engaged: true };
+}
+
 // The hot moment for a bot fighting target: the held economy gives the death
 // price, the price of money and the trait weight; the live fight gives the
 // survival ratio at the HP and MP left against every mob hitting the bot.
@@ -48,14 +58,8 @@ function forActor(session, actor, target, options = {}) {
     const mp = Number(actor.fetchMp?.() || 0), maxMp = Number(actor.fetchMaxMp?.() || 0);
     // A pet keeps its own HP (BotTargetMatchup.actorProfiles; it tanks first).
     const profiles = TargetMatchup.atVitals(options.profiles || TargetMatchup.actorProfiles([actor]), hp, mp);
-    const view = TargetMatchup.targetView(target);
     const attackers = options.attackers || attackersOf(actor, target);
-    const atkSpd = Math.max(1, Number(view.atkSpd || 253));
-    // The mobs on the bot are judged as one mob with their HP and attack summed (minimum.md #3).
-    // An area skill hits each of them (F20: BotTargetMatchup reads `pull`).
-    // They are in the fight: no opening before they close in (engaged).
-    const enemy = { ...view, maxHp: attackers.reduce((sum, npc) => sum + npcHp(npc), 0),
-        pAtk: attackers.reduce((sum, npc) => sum + npcPAtk(npc, view), 0) / atkSpd, atkSpd, pull: attackers.length, engaged: true };
+    const enemy = enemyOn(actor, target, attackers);
     // A potion still working or a cast in flight leaves no bottle to drink now.
     const potion = options.potion === null || actor.state?.fetchCasts?.() || HealingPotionStock.activePotionHot(actor) ? null
         : HealingPotionStock.selectPotion(options.bag ? options.bag() : HealingPotionStock.actorInventory(actor), hp, maxHp, actor,
@@ -115,4 +119,4 @@ function take(session, actor, target, options = {}) {
     return counted(forActor(session, actor, target, { profiles, attackers, attacked: options.attacked, potion: null })?.action);
 }
 
-module.exports = { ATTACKER_RADIUS, forActor, applies, take };
+module.exports = { ATTACKER_RADIUS, enemyOn, forActor, applies, take };

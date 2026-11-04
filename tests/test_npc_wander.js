@@ -453,6 +453,58 @@ try {
         assert.notEqual(inside.state.fetchTowards(), 'wander');
         stop(inside); stop(outside);
     });
+    check('a mob leaving a fight with no real player in view is back at once, one in view walks', () => {
+        const bot = observer(3000, { accountId: 'bot_1' });
+        const unseen = npcAt({ hostile: true }); const world = worldFor([unseen], [bot]);
+        Geo.hasLineOfSight = () => true;
+        unseen.enterCombatState(bot, bot.actor);
+        unseen.model.locX = 3000; World.addNpcToGrid(unseen);
+        unseen.removeAggroTarget(bot, bot.actor);
+        assert.equal(unseen.fetchLocX(), 8, 'nobody sees it: it is home');
+        assert(world.npc.grid[world.npc.gridKeys.get(unseen)].includes(unseen), 'the grid follows it');
+        const player = observer(3000);
+        const seen = npcAt({ hostile: true }); worldFor([seen], [player]);
+        seen.enterCombatState(player, player.actor);
+        seen.model.locX = 3000;
+        seen.removeAggroTarget(player, player.actor);
+        assert.equal(seen.fetchLocX(), 3000, 'a real player watches: it stays for the walk home');
+        stop(unseen); stop(seen);
+    });
+    check('a kill, an aborted fight and a leader with minions stay where they are', () => {
+        const bot = observer(3000, { accountId: 'bot_1' });
+        const killed = npcAt({ hostile: true }), confused = npcAt({ hostile: true }), leader = npcAt({ hostile: true });
+        worldFor([killed, confused, leader], [bot]);
+        for (const npc of [killed, confused, leader]) { npc.enterCombatState(bot, bot.actor); npc.model.locX = 3000; }
+        killed.destructor(bot);
+        assert.equal(killed.fetchLocX(), 3000, 'the corpse and its drops stay at the kill');
+        confused.abortCombatState(bot);
+        assert.equal(confused.fetchLocX(), 3000, 'an abort is not the end of a fight');
+        leader.minionState = { groups: [] };
+        leader.removeAggroTarget(bot, bot.actor);
+        assert.equal(leader.fetchLocX(), 3000, 'a leader stays with its minions');
+        delete leader.minionState;
+        stop(confused); stop(leader);
+    });
+    check('a walk home with no clear way ends in a teleport the watching player sees', () => {
+        const npc = npcAt(); npc.model.locX = 2000;
+        const player = wireObserver(); player.knownNpcIds.add(npc.fetchId());
+        player.actor.fetchLocX = () => 2000;
+        const world = worldFor([npc], [player]);
+        Geo.hasLineOfSight = () => false;
+        assert.equal(Wander.tick(world, { random: () => 0.99 }), 1);
+        assert.equal(npc.fetchLocX(), 8);
+        assert.equal(player.packets.filter(packet => packet[0] === 0x28).length, 1, 'TeleportToLocation');
+        Geo.hasLineOfSight = () => true;
+        stop(npc);
+    });
+    check('a mob at home with a blocked random step stays put', () => {
+        const npc = npcAt(); const world = worldFor([npc], [observer()]);
+        Geo.hasLineOfSight = () => false;
+        assert.equal(Wander.tick(world, { random: () => 0 }), 0);
+        assert.equal(npc.fetchLocX(), 8);
+        Geo.hasLineOfSight = () => true;
+        stop(npc);
+    });
     console.log(`NPC wander: ${assertions} scenario groups passed`);
 } finally {
     for (const npc of created) stop(npc);

@@ -140,7 +140,6 @@ async function run() {
     assert.strictEqual(cold.sp, 10);
     assert.strictEqual(cold.stats.karma, 1000, 'discarded cold EXP must not reduce karma');
     assert.strictEqual(cold.stats.expEarned, 0);
-    assert.deepStrictEqual(cold.stats.lastExperienceAward, { requested: 1000, accepted: 0, discarded: 1000 });
 
     const belowCap = ProgressionCap.applyAward(Number(DataCache.experience[39]),
         level40Maximum, config(78, 40));

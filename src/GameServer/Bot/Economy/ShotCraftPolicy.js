@@ -232,7 +232,7 @@ function nativeShotOptions(state, index, context) {
             }, { board: index.board, timestamp: index.at }));
             yield 'quote';
         }
-        exits.push(...yield* require('./ShotSalePolicy').exits(owner, recipe, { board: index.board, timestamp: index.at,
+        exits.push(...yield* require('./ProductionSalePolicy').exits(owner, recipe, { board: index.board, timestamp: index.at,
             trip, npcOffersFor: id => require('../Population/ColdOccupationSources').npcOffersFor(id),
             reserve: Number(stock?.itemId) === Number(recipe.productId)
                 ? Math.max(0, Number(stock.target || 0) - Number(state.inventory?.[recipe.productId]?.amount || 0)
@@ -496,7 +496,7 @@ function* shotSearch(state, knownRecipes, context, options) {
     for (const id of SHOT_RECIPE_IDS) {
         const recipe = Recipes.resolveByRecipeId(id);
         yield 'recipe';
-        if (!recipe || !CraftShopService.canCraft(state, recipe)) continue;
+        if (!recipe || !CraftShopService.canCraft(state, recipe) || Wealth.refused(state, id)) continue;
         const route = yield* recipeShotSearch(state, recipe, context, shared);
         if (!route) continue;
         if (ids.has(id)) {

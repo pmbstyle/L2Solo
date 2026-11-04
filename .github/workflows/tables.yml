@@ -6,6 +6,9 @@ name: Tables
 # (~/Games/tools/tables.sh), what = all | spot | hunt | probe (12 spots,
 # short hunts: compares a run here with the same run elsewhere). The tables
 # come back as the run's artifacts spot-table and hunt-tables.
+# tables/pick/<name>/<spot ids>[/<class lines>] (ids by comma, ':' in an id
+# written '@'; pick-full: the table's hours, pick: probe hours) measures only
+# those spots' rows and curves: the artifact spot-pick, never a spot table.
 
 on:
   push:
@@ -25,6 +28,8 @@ jobs:
       spot: ${{ steps.plan.outputs.spot }}
       hunt: ${{ steps.plan.outputs.hunt }}
       args: ${{ steps.plan.outputs.args }}
+      merge: ${{ steps.plan.outputs.merge }}
+      pick: ${{ steps.plan.outputs.pick }}
     steps:
       - id: plan
         env:
@@ -37,7 +42,16 @@ jobs:
             hunt) echo "hunt=true" >> $GITHUB_OUTPUT ;;
             probe) echo "spot=true" >> $GITHUB_OUTPUT
                    echo "args=--spots=12 --hours=0.25 --curve-hours=0.25" >> $GITHUB_OUTPUT ;;
-            *) echo "unknown tables '$what' (all, spot, hunt, probe)"; exit 1 ;;
+            pick|pick-full)
+                   ids=$(echo "$REF" | cut -d/ -f4 | tr '@' ':'); lines=$(echo "$REF" | cut -d/ -f5)
+                   if ! [[ "$ids" =~ ^[-A-Za-z0-9_:,]+$ && "$lines" =~ ^[0-9,]*$ ]]; then
+                     echo "tables/$what/<name>/<spot ids>[/<class lines>], got '$REF'"; exit 1
+                   fi
+                   args="--spot-ids=$ids${lines:+ --lines=$lines}"
+                   [ "$what" = pick ] && args="$args --hours=0.25 --curve-hours=0.25"
+                   echo "spot=true" >> $GITHUB_OUTPUT; echo "pick=true" >> $GITHUB_OUTPUT
+                   echo "args=$args" >> $GITHUB_OUTPUT; echo "merge=--out=pick/spot-pick.json" >> $GITHUB_OUTPUT ;;
+            *) echo "unknown tables '$what' (all, spot, hunt, probe, pick, pick-full)"; exit 1 ;;
           esac
 
   spot-rows:
@@ -105,7 +119,7 @@ jobs:
           retention-days: 3
 
   spot-merge:
-    name: Spot table
+    name: ${{ needs.plan.outputs.pick == 'true' && 'Spot pick' || 'Spot table' }}
     needs: [plan, spot-curves]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -132,8 +146,15 @@ jobs:
           pattern: curves-*
           path: parts
           merge-multiple: true
-      - run: node scripts/generate-spot-table.js ${{ needs.plan.outputs.args }} --phase=merge --parts=parts
-      - uses: actions/upload-artifact@v4
+      - run: node scripts/generate-spot-table.js ${{ needs.plan.outputs.args }} --phase=merge --parts=parts ${{ needs.plan.outputs.merge }}
+      - if: needs.plan.outputs.pick == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: spot-pick
+          path: pick/spot-pick.json
+          retention-days: 14
+      - if: needs.plan.outputs.pick != 'true'
+        uses: actions/upload-artifact@v4
         with:
           name: spot-table
           path: |

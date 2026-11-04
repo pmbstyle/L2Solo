@@ -36,7 +36,6 @@ async function form(sides, context, valid) {
             status: 'hot', spotId: context.spotId, nextResolveAt: null,
             startedAt: existing?.startedAt || context.at, roleCoverage: Composition.roleCoverage(states),
             stats: { ...existing?.stats, formedAt: existing?.stats?.formedAt || context.at,
-                memberNames: sessions.map(s => s.actor.fetchName()),
                 objective: existing?.stats?.objective || { kind: 'shared_target', npcId: context.npcId, spotId: context.spotId },
                 hotLifecycle: { startedAt: existing?.stats?.hotLifecycle?.startedAt || context.at, reason: 'hot_competition' } } });
         prepared.row.updatedAt = Math.max(prepared.row.updatedAt, Number(existing?.updatedAt || 0) + 1);

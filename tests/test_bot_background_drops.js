@@ -66,6 +66,10 @@ const state = {
     levelBand: '1-3',
     activity: 'hunting',
     vitals: { hp: 100, maxHp: 100, mp: 50, maxMp: 50 },
+    // A Human Fighter's starter Squire's Sword: unarmed, a level 1 bot does
+    // not take a Gremlin (BotEncounterReadiness: the fight must end above its
+    // potion line with a margin).
+    inventory: { 2369: { selfId: 2369, amount: 1, equipped: true, equippedCount: 1, equippedSlots: [7], slot: 7 } },
     stats: {},
     party: { role: 'dps' }
 };

@@ -189,7 +189,7 @@ const PartyAdmission = require('../Population/PartyAdmission');
 function hotOffers(selfId, options = {}) {
     const town = options.town || null;
     const ownState = invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(Number(options.buyerCharacterId));
-    const ownSession = World.registeredActorById?.(Number(options.buyerCharacterId))?.session;
+    const ownSession = World.registeredActorById(Number(options.buyerCharacterId))?.session;
     return [
         ...AfkTrade.offers(selfId, 1, { town, characterId: options.buyerCharacterId }),
         ...privateOffers(selfId, town),
@@ -221,8 +221,8 @@ function bestOffer(selfId, options = {}) {
             && PartyAdmission.personalOfferAllowed(offer,
                 invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(Number(options.buyerCharacterId)),
                 invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(Number(offer.sourceId)),
-                World.registeredActorById?.(Number(options.buyerCharacterId))?.session,
-                World.registeredActorById?.(Number(offer.sourceId))?.session) && (!options.accept || options.accept(offer)),
+                World.registeredActorById(Number(options.buyerCharacterId))?.session,
+                World.registeredActorById(Number(offer.sourceId))?.session) && (!options.accept || options.accept(offer)),
         toOffer: AfkTrade.offerOf,
         others: OfferQuery.othersIn(towns, fixed, npc)
     });
@@ -286,7 +286,7 @@ function findBuyOffers(selfId, options = {}) {
     return AfkTrade.offers(selfId, 3, { town, characterId: options.sellerCharacterId })
         .filter((offer) => offer.available && PartyAdmission.personalOfferAllowed(offer,
             invoke('GameServer/Bot/Population/BotLifeState').cachedState?.(Number(options.sellerCharacterId)), null,
-            World.registeredActorById?.(Number(options.sellerCharacterId))?.session));
+            World.registeredActorById(Number(options.sellerCharacterId))?.session));
 }
 
 function bestBuyOffer(selfId, options = {}) {

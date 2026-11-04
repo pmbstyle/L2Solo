@@ -54,7 +54,7 @@ function syncPartyCompanions(leaderSession, destination, Generics, companions = 
         // TeleportTo deliberately rejects dead actors, then place every active
         // companion beside the leader instead of leaving it on the former spot.
         if (companion.isDead?.()) {
-            Generics.revive(companionSession, companion, { delayMs: 0, restoreFullVitals: true });
+            Generics.revive(companionSession, companion, { delayMs: 0 });
         }
 
         companionSession.deathTimerStart = undefined;

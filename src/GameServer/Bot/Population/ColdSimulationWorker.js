@@ -107,6 +107,7 @@ const DecisionEvents = require('../AI/DecisionEvents');
 const SavedStats = require('../SavedStats');
 const { stateKey } = require('./SpotOccupancyIndex');
 const DecisionSections = invoke('GameServer/Bot/Economy/DecisionSections');
+const Reaction = invoke('GameServer/Bot/Economy/Reaction');
 const PartyWaitFallback = invoke('GameServer/Bot/Population/PartyWaitFallback');
 const Protocol = require('./ColdSimulationProtocol');
 const ColdEconomyDecision = require('./ColdEconomyDecision');
@@ -121,7 +122,7 @@ const EconomicTrip = require('../Economy/EconomicTrip');
 const RequiredPartyFormation = require('./RequiredPartyFormation');
 const { ColdCompetitionMonitor } = require('./ColdCompetitionMonitor');
 const ColdCompetitionCandidates = require('./ColdCompetitionCandidates');
-const { ColdSimulationKernel } = require('./ColdSimulationKernel');
+const { ColdSimulationKernel, lifecycleKind } = require('./ColdSimulationKernel');
 const PartyGoalCalculation = require('./PartyGoalCalculation');
 const { beginHuntingTrip } = require('./HuntingTravel');
 const PveEncounter = require('./ColdPveEncounter');
@@ -151,8 +152,7 @@ if (forbiddenLoaded.length) throw new Error(`cold worker loaded forbidden module
 
 let kernel = null;
 // The scheduler wakes at kernel.nextWakeAt() (one timer on the nearest
-// deadline). false restores the fixed loopIntervalMs poll.
-const LOOP_ALARM = true;
+// deadline).
 // Longest idle sleep: the bound on a wake missed by a path that adds work
 // without a re-arm (a resolve finishing between messages).
 const LOOP_IDLE_CAP_MS = 250;
@@ -274,7 +274,7 @@ const occupationPlanner = new ColdOccupationPlanner({
             if (itemId > 0 && !exactReads.has(itemId)) exactReads.set(itemId, boardIndex.itemFingerprint(itemId));
             read(itemId);
         } : read;
-        return { state: input.state, board: boardReady(), timestamp: input.timestamp, read: readItem, readScope, exactReads,
+        return { source: input, state: input.state, board: boardReady(), timestamp: input.timestamp, read: readItem, readScope, exactReads,
             knownRecipes: book || input.state.stats?.workshop?.entries || [], knownShotRecipes: input.knownShotRecipes || [],
             recipesKnown: book !== null || Array.isArray(input.state.stats?.workshop?.entries), bookKnown: book !== null,
             buyOrderEscrow: input.buyOrderEscrow, stock: input.stock || null, economy: input.economy || null,
@@ -310,7 +310,7 @@ const occupationPlanner = new ColdOccupationPlanner({
                 buyOrderEscrow: input.buyOrderEscrow, npcOffersFor: OccupationSources.npcOffersFor,
                 // A meeting review (its own workshop input, maybe the meeting's incoming) never
                 // replaces the bot's held plan: its next request still finds it (L133).
-                rememberContext: false, caller: 'meeting_prepare', trigger: request.token });
+                caller: 'meeting_prepare', trigger: request.token, deal: new Set(request.lines.filter(line => line.payer === side).map(line => line.selfId)) });
             yield 'candidate';
             if (economy.intentPending) throw Error('trade_meeting_preparation_pending');
             const intents = invoke('GameServer/Bot/Economy/TradeIntent').project(input.state, economy.network, economy.projection,
@@ -493,13 +493,18 @@ const occupationPlanner = new ColdOccupationPlanner({
         // (mode near) build the economy on the same inputs.
         if (input.mode === 'refresh' || input.mode === 'near') {
             const routeRows = input.routeRows = input.routeRows || (yield* EconomicTrip.prepare(input.state));
-            input.economy = invoke('GameServer/Bot/Economy/EconomyContext').forState(input.state, {
+            // A board move restarts a refresh of the same state: its plan reads the board
+            // again, its build stands, a bot in the field does not weigh for a price.
+            input.economy = input.source.builtRefresh || EconomyContext.forState(input.state, {
                 board: input.board, routeRows, workshops: workshopsFor,
                 timestamp: input.timestamp, onSourceRead: input.read, onSourceScope: input.readScope, knownRecipes: input.knownRecipes, npcOffersFor: OccupationSources.npcOffersFor,
                 buyOrderEscrow: input.buyOrderEscrow, workshop: noWorkshop(),
-                // A refresh keeps no context; a near post is held and its clean repeat hits the verdict.
-                ...(input.mode === 'refresh' ? { rememberContext: false } : {}),
                 caller: `economy_${input.mode}`, trigger: 'native_own_action' });
+            // The plan does not stand and the bot is at work: its step decides and answers.
+            if (!input.economy) { input.source.leftToStep = true; return noWorkshop(); }
+            if (input.mode === 'refresh' && !input.source.builtRefresh) {
+                if (DecisionSections.FIELD_ACTIVITIES.has(input.state.activity)) input.source.builtRefresh = input.economy;
+            }
             // The shared money packet is derived from this same graph. Use it
             // in preparation only; the native writer owns physical funding.
             input.state = { ...input.state, stats: { ...input.state.stats, ...input.economy.statsPacket } };
@@ -596,7 +601,12 @@ const occupationPlanner = new ColdOccupationPlanner({
             occupationPlanner.release(id); return;
         }
         if (input.mode === 'refresh') {
+            input.builtRefresh = null;
             const entry = kernel?.states.get(id);
+            if (input.leftToStep) {
+                if (entry?.state === input.sourceState) entry.refreshWaits = true;
+                occupationPlanner.release(id); return;
+            }
             // The plan was already sent; a source change does not re-request
             // a refresh for the same native state (the next state does).
             if (meta.stale && entry?.state === input.sourceState && entry.economyPending) {
@@ -625,7 +635,7 @@ const occupationPlanner = new ColdOccupationPlanner({
         }
         // The action result is the existing compact native plan. Its derived
         // network is needed while preparing it, never by the completed cache.
-        if (input.mode === 'action' || input.mode === 'showcase') input.economy = null;
+        if (input.mode === 'action' || input.mode === 'showcase' || input.mode === 'craft_market') input.economy = null;
         const owner = kernel?.states.get(id);
         if (shuttingDown || owner?.state !== input.sourceState) return;
         if (meta.stale) {
@@ -752,12 +762,23 @@ const standingSpot = state => SpotService.standingSpot(state, planningSpots);
 // A far bot's economy refresh, or a near bot's decision on its post (mode
 // near): the raise it consumed (raiseSeq) and the route rows of its last
 // decision while its route key holds.
-function occupationOwnerChanged(id, refresh = false) {
+function occupationOwnerChanged(id, refresh = false, afterStep = false) {
     const entry = kernel?.states.get(Number(id));
     if (!entry || entry.state.phase !== 'hot' && !refresh) return;
+    // A dirty bot's next step builds this same decision: the refresh runs after
+    // it, on that step's held build, not as a second build beside it. A bot with
+    // no step coming (a shop, a meeting) answers here.
+    if (refresh && !afterStep && entry.state.phase === 'cold'
+        && Number(entry.state.stats?.wishDirty) && lifecycleKind(entry.state) !== 'event_driven') {
+        entry.refreshWaits = true;
+        return;
+    }
+    if (refresh) entry.refreshWaits = false;
     // One economy refresh per native state object.
     if (refresh && refreshedStates.has(entry.state)) return;
-    if (refresh) { refreshedStates.add(entry.state); economyDiagnostics.count('occupation', 'refresh', 'main_state'); }
+    if (refresh) {
+        refreshedStates.add(entry.state); economyDiagnostics.count('occupation', 'refresh', 'main_state');
+    }
     const routeKey = EconomicTrip.key(entry.state);
     occupationPlanner.request(id, { state: entry.state, sourceState: entry.state, assetsKey: assetsKey(entry.state),
         timestamp: Date.now(), mode: refresh ? 'refresh' : 'near', pending: entry.economyPending || 0,
@@ -846,8 +867,8 @@ tables.watch('board', {
         if (ownerId) pruneLookSeen(ownerId);
     }
 });
-// Parties, memory and pressure are main's tables the kernel keeps
-// (ColdSimulationKernel.partyPut, InteractionMemory.accept, pressureFor).
+// Parties and memory are main's tables the kernel keeps
+// (ColdSimulationKernel.partyPut, InteractionMemory.accept).
 // A party's competition side is read through its leader: a row that changes
 // leaders moves both the old and the new leader's candidate.
 tables.watch('parties', {
@@ -876,11 +897,6 @@ tables.watch('clan_wars', {
     put: (_key, row) => kernel?.interactionMemory.clanWars.accept(row),
     remove() {}
 }, { retain: false });
-tables.watch('pressure', {
-    reset: () => { if (kernel) kernel.pressureRow = null; },
-    put: (_key, row) => { if (kernel) kernel.pressureRow = row; },
-    remove: () => { if (kernel) kernel.pressureRow = null; }
-});
 // The market counters come from the main thread's 'market' table.
 MarketCounters.useTable(() => tables.rows('market'));
 MarketCounters.useSpots(() => planningSpots);
@@ -1093,11 +1109,48 @@ function stepStatsPacket(state, economy, timestamp) {
 function samePlanJson(a, b) {
     return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
+// The options of a step's projection (BotLifeState.prepareResolve), a window's
+// round or the step's own.
+function roundProjection(state, timestamp, writtenAt, plan) {
+    return { persist: false, timestamp, writtenAt, projectClassProgression: true,
+        moneyEscrowFor: () => escrowFor(state.characterId),
+        // The step's held leaf: the round's check reads its own trip and
+        // arrival as no event (DecisionSections.events).
+        leaf: plan?.economy?.network?.activity ?? null };
+}
+// The economy edges of a held decision over a stretch of rounds.
+function stockEdges(before, after, economy) {
+    return ColdEconomyPlan.edges(before, after,
+        { buyOrderEscrow: escrowFor(after.characterId), stockFor: (_state, kind) => economy.stock(kind) });
+}
+// What the step's decision counts its own item's progress from (a material
+// hunt's), for a leaf that does not carry it.
+function heldAtStep(plan) {
+    return ColdEconomyDecision.heldAtDecisionOf(plan.economy.network?.activity, plan.plannedState);
+}
+// The native facts that hold a plan with no planner run: failure counters and
+// recovery deadlines, live even while the wish calculation holds.
+function nativeFactsHold(replan) {
+    return !replan.failure && !replan.invalidSource && !replan.levelingRecovery;
+}
+// A plan's source is judged when it or the bot's level moves: a kit moves the
+// build facts, and that build judges it (GearPlanSelection). A matchup read on
+// every step of every hunter answers what already stands.
+function planSourceHolds(state, plan, timestamp) {
+    if (plan?.status !== 'active') return true;
+    const record = kernel?.states.get(Number(state.characterId));
+    const source = `${plan.next?.spotId}:${plan.next?.npcId}:${state.level}`;
+    if (record?.planSource === source) return true;
+    // Read live (the health line): how often a source or a level moved and the matchup was read again.
+    EconomyContext.countDoor(`plan_source|${record?.planSource ? 'moved' : 'first'}`);
+    if (!GearAcquisitionPlanner.isPlanSourceViableForState(state, plan, { spots: planningSpots, timestamp })) return false;
+    if (record) record.planSource = source;
+    return true;
+}
 // The existing native plan verdict. It grants no economy command or social
 // interaction.
 function nativePlanHolds(state, previousPlan, nativeReplan, timestamp, onFinalize = null) {
-    if (previousPlan?.status === 'active' && !GearAcquisitionPlanner.isPlanSourceViableForState(state, previousPlan,
-        { spots: planningSpots, timestamp })) return false;
+    if (!planSourceHolds(state, previousPlan, timestamp)) return false;
     const wishFocus = previousPlan?.status === 'deferred' && previousPlan.strategy === 'none'
         && previousPlan.next == null && previousPlan.reason === 'wish_focus';
     const wishHolds = (wishFocus || previousPlan?.source === 'wish_network')
@@ -1172,7 +1225,7 @@ function pruneLookSeen(ownerId) {
 // there is indexed at its destination but does not stand there yet. Read once
 // when a trip ends; no place is held for a bot on its way. A raid boss spot or
 // a spot the catalog does not know has room.
-const ROOM_SECTIONS = Object.freeze(['occupation', 'sources']);
+const ROOM_SECTIONS = Reaction.sections('crowded');
 function roomAtArrival(spotId, arriving, overflow = 0) {
     const room = SpotProfiles.spotRoom(planningSpots, spotId);
     if (room === Infinity) return true;
@@ -1368,7 +1421,7 @@ function requestPartyGoals(payload, msgId, admitted = false) {
             // answers it with no workshop (its occupation branch), and the
             // feasibility mask that answer carries is not read by the goal.
             const deps = { timestamp, spots: planningSpots, board: boardReady(), routeRows,
-                buyOrderEscrow: options.buyOrderEscrow, rememberContext: false, caller: 'workerPartyGoal' };
+                buyOrderEscrow: options.buyOrderEscrow, caller: 'workerPartyGoal' };
             const verdict = {};
             const workshop = EconomyContext.heldWorkshop(member, deps, verdict)
                 || (CraftEligibility.isServiceCrafter(member)
@@ -1463,7 +1516,7 @@ function runLoop() {
 // Every path that can add earlier work (a message, the heartbeat's competition
 // review arming a decision deadline) calls this: the timer moves only sooner.
 function wakeLoopIfSooner() {
-    if (!LOOP_ALARM || !loopTimer || shuttingDown || loopWakeAt(Date.now()) >= loopArmedAt) return;
+    if (!loopTimer || shuttingDown || loopWakeAt(Date.now()) >= loopArmedAt) return;
     clearTimeout(loopTimer);
     Config.developerDiagnostics && economyDiagnostics.count('worker_wake', 'rearmed', 'sooner');
     armLoop();
@@ -1471,7 +1524,6 @@ function wakeLoopIfSooner() {
 
 function startKernel(config = {}) {
     if (kernel) return;
-    if (typeof config.coldHonestTravel === 'boolean') Config.coldHonestTravel = config.coldHonestTravel;
     Config.developerDiagnostics = config.developerDiagnostics === true;
     Config.economyDiagnostics = Config.developerDiagnostics && config.economyDiagnostics === true;
     // Busy share and heap after GC are two of the goal's three numbers (read with diagnostics off): always on, one
@@ -1527,7 +1579,8 @@ function startKernel(config = {}) {
         },
         // writtenAt: the row's write stamp, the real now (timestamp is the
         // round's time, the bot's due for a step started its lead early).
-        projectResolve: async (state, result, timestamp, lifecyclePlan = null, writtenAt = timestamp) => {
+        // windowStart: the state a hunt window (ColdSoloWindow) started on: `state` is its last round's.
+        projectResolve: async (state, result, timestamp, lifecyclePlan = null, writtenAt = timestamp, windowStart = state) => {
             const owner = kernel.states.get(Number(state.characterId));
             // Room at arrival, before the projection: a full spot's mark rides
             // the patch, its sections join the step's one raise.
@@ -1542,15 +1595,8 @@ function startKernel(config = {}) {
             let economy = stepEconomy, seenEcho = null, refreshed = null, observedDeps = null, economyEdges = null;
             const ownEscrow = () => escrowFor(state.characterId);
             const base = {
-                persist: false,
-                timestamp,
-                writtenAt,
-                projectClassProgression: true,
+                ...roundProjection(state, timestamp, writtenAt, lifecyclePlan),
                 ...(crowded ? { checkSections: ROOM_SECTIONS } : {}),
-                moneyEscrowFor: ownEscrow,
-                // The step's held leaf: the round's check reads its own trip and
-                // arrival as no event (DecisionSections.events).
-                leaf: stepEconomy?.network?.activity ?? null,
                 // The soft point's inputs (BotLifeState.prepareResolve, every
                 // step): the board mirror (null until ready), the escrow and
                 // the bot's memory rows, read only when its bond is compared.
@@ -1563,7 +1609,7 @@ function startKernel(config = {}) {
                 : { ...base,
                     // The workshop is asked by economyFor, only for a build.
                     economyDepsFor: async projected => ({ spots: planningSpots, routeRows: await occupationFor(projected, timestamp, {}, 'wish'),
-                        board: boardReady(), buyOrderEscrow: escrowFor(state.characterId), goalRevision: goalRevision(state.characterId) }),
+                        board: boardReady(), buyOrderEscrow: escrowFor(state.characterId), goalRevision: goalRevision(state.characterId), caller: 'member' }),
                     economyFor: async (projected, deps) => {
                         observedDeps = deps;
                         const prepared = {};
@@ -1598,8 +1644,7 @@ function startKernel(config = {}) {
             const projected = ClanMembershipPolicy.reconcileState(resolved);
             if (stepEconomy) {
                 seenEcho = ColdEconomyDecision.stateEcho(projected);
-                economyEdges = ColdEconomyPlan.edges(state, projected,
-                    { buyOrderEscrow: ownEscrow(), stockFor: (_state, kind) => stepEconomy.stock(kind) });
+                economyEdges = stockEdges(windowStart, projected, stepEconomy);
             }
             const beforeLevel = Number(state.stats?.classProgressionLevel || 0);
             const beforeClassId = Number(state.stats?.classProgressionClassId ?? state.stats?.classId ?? 0);
@@ -1649,6 +1694,27 @@ function startKernel(config = {}) {
                 ...(economyDecision ? { economyDecision } : {})
             };
         },
+        soloWindow: {
+            // One round of a window: the step's projection without its soft
+            // point and what follows it (ColdSoloWindow, the window's end has them).
+            projectRound: (state, result, timestamp, plan, writtenAt) => LifeStateProjector.prepareResolve(state, result,
+                { ...roundProjection(state, timestamp, writtenAt, plan), statsPacket: plan.statsPacket, statsPacketBeforeResolve: true }),
+            deadline: (state, timestamp) => EconomyContext.holdEndsAt(state, timestamp),
+            readers: plan => ({
+                edges: (before, after) => stockEdges(before, after, plan.economy),
+                moneyBound: after => DecisionSections.moneyReached(after, after.stats?.wishSections, escrowFor(after.characterId)),
+                feasible: after => {
+                    const leaf = plan.economy.network?.activity, failed = EconomyContext.leafCheck(after, leaf, {}, { heldUnits: heldAtStep(plan) });
+                    return !failed || !Reaction.hears(failed.link, Reaction.place(after));
+                },
+                // The native facts planLifecycle reads, on the round's end.
+                planHolds: (after, at) => {
+                    const held = after.stats?.equipmentPlan || null;
+                    const replan = GearAcquisitionPlanner.replanContextFor(after, held, at);
+                    return nativeFactsHold(replan) && nativePlanHolds(after, held, replan, at);
+                }
+            })
+        },
         // The member's own build of this step (projectResolve) while the
         // projection after it (class training, equipped upgrades) left its kit
         // (the build's baseline build fact); else one build on the same board
@@ -1680,7 +1746,7 @@ function startKernel(config = {}) {
             const routeRows = await occupationFor(state, timestamp, {}, 'wish');
             const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
             // deps.workshop: asked below, only for a build.
-            const deps = { spots, timestamp, board: boardReady(),
+            const deps = { spots, timestamp, board: boardReady(), caller: 'step',
                 buyOrderEscrow: escrowFor(state.characterId), goalRevision: goalRevision(state.characterId), routeRows };
             const wishFocus = previousPlan?.status === 'deferred' && previousPlan.strategy === 'none'
                 && previousPlan.next == null && previousPlan.reason === 'wish_focus';
@@ -1688,7 +1754,7 @@ function startKernel(config = {}) {
             // below (PartyRequestPlanner, decision 10-30): no card reuse.
             const solo = !state.party?.partyId && !state.partyId && !state.stats?.partyRequest
                 && !PartyRequestPlanner.supportWithoutGround(state, spots, routeSearch(state, timestamp));
-            const nativeHolds = !nativeReplan.failure && !nativeReplan.invalidSource && !nativeReplan.levelingRecovery;
+            const nativeHolds = nativeFactsHold(nativeReplan);
             // An active current plan: before, finalizePlan re-finalized it on
             // every such step. Its steps count as plan_holds finalized (paid)
             // + skipped (saved).
@@ -1723,15 +1789,19 @@ function startKernel(config = {}) {
             // A refused card's verdict serves the build below, which reads
             // this state, or a copy of it with a wish-focus plan deferred.
             const prepared = {};
-            let refreshed = previousPlan === originalPlan && solo && nativeHolds && planHolds()
+            const where = Reaction.place(state);
+            // A native plan that failed or moved is a real review: every gear candidate.
+            deps.fullReview = (previousPlan !== originalPlan || !nativeHolds || solo && !planHolds()) && Reaction.hears('native', where);
+            let refreshed = solo && !deps.fullReview
                 ? ColdEconomyDecision.refreshAdvisory(state, record?.wishAdvisory, deps, { prepared, collect: !wishFocus }) : null;
             // A compact advisory contains no quantitative project needs.
             // The bounded clan-market review needs the full current graph.
-            if (refreshed && (craftBidReview || clanMarketReviewDue(state, timestamp))) refreshed = null;
+            const marketReview = refreshed && (craftBidReview ? 'craft_bid' : clanMarketReviewDue(state, timestamp) ? 'clan_market' : '');
+            if (marketReview && Reaction.woke(marketReview, where)) refreshed = null;
             if (refreshed) refreshed = await refreshCraftPacket(state, timestamp, refreshed);
             // Compact advice has no full money queue for clan acquisition.
             // A null intention takes its ordinary native selection there.
-            if (refreshed?.economy.network.activity === null && GearAcquisitionPlanner.isClanOwnedPlan(previousPlan)) refreshed = null;
+            if (refreshed?.economy.network.activity === null && GearAcquisitionPlanner.isClanOwnedPlan(previousPlan) && Reaction.woke('clan_market', where)) refreshed = null;
             const nullReuse = refreshed?.economy.network.activity === null;
             // Build the renewed proof against the native live history, so a
             // consumed wake/expiry does not invalidate it again on publication.
@@ -1823,6 +1893,9 @@ function startKernel(config = {}) {
                     ? await occupationFor(routedState, timestamp, { economy }, 'action') : null;
             if (!preparedOccupation?.economyPlan && !(nullReuse && refreshed?.economyPlan))
                 preparedOccupation = await clanMarketPlan(routedState, economy, timestamp);
+            // The review stands aside for a plan of its own: it counts as done, or
+            // the bot would rebuild on every step while that plan waits.
+            else if (record && clanMarketReviewDue(routedState, timestamp)) record.clanMarketReviewAt = timestamp;
             if (!preparedOccupation?.economyPlan && craftBidReview && routedState.activity === 'hunting')
                 preparedOccupation = await occupationFor(routedState, timestamp, { economy }, 'craft_market');
             const seen = { ...routedState, stats: { ...routedState.stats, ...statsPacket } };
@@ -1832,7 +1905,7 @@ function startKernel(config = {}) {
                 : ColdEconomyDecision.advisory(economy, seen, preparationState.activity, deps);
             rememberWishAdvisory(kernel.states.get(Number(state.characterId)), advice, seen, deps);
             if (nullReuse && economyDiagnostics.active()) economyDiagnostics.count('advisory', 'reuse', 'lifecycle');
-            return {
+            const stepPlan = {
                 ...(preparedOccupation?.economyPlan || nullReuse && refreshed?.economyPlan
                     ? { economyPlan: preparedOccupation?.economyPlan || refreshed.economyPlan } : {}),
                 statsPacket,
@@ -1850,6 +1923,7 @@ function startKernel(config = {}) {
                 route,
                 lastFight
             };
+            return stepPlan;
         },
         emit: send,
         maxBatch: config.maxBatch,
@@ -1891,7 +1965,10 @@ function startKernel(config = {}) {
                 // commit or review; economyPending stays for main's next refresh.
                 if (ownOutput && entry.economyPending) economyDiagnostics.count('occupation', 'refresh',
                     ownOutput === 'review' ? 'own_review_skipped' : 'own_commit_skipped');
-                occupationOwnerChanged(id, !ownOutput && Boolean(entry.economyPending));
+                // A refresh that waited runs whatever the pending count: main's
+                // reconcile asks with none.
+                const waits = entry.refreshWaits === true;
+                occupationOwnerChanged(id, waits || !ownOutput && Boolean(entry.economyPending), waits && !!ownOutput);
             }
         }
         return result;
@@ -1959,10 +2036,7 @@ function startKernel(config = {}) {
     });
     OccupationSources.initialise();
     loopIntervalMs = Math.max(5, Number(config.loopIntervalMs) || 20);
-    if (LOOP_ALARM) armLoop();
-    else loopTimer = setInterval(() => {
-        kernel.tick();
-    }, loopIntervalMs);
+    armLoop();
     if (Config.coldCompetitionObserveEnabled) {
         const allowed = new Set((DataCache.npcs || []).filter(npc => npc.template?.kind === 'Monster'
             && !invoke('GameServer/Bot/AI/BotRaidSafety').isProtectedRaidEntity(npc)).map(npc => Number(npc.selfId)));
@@ -2184,6 +2258,9 @@ async function handle(message) {
         break;
     case 'resume':
         kernel?.resume();
+        break;
+    case 'overdue_trace':
+        kernel?.traceBot(payload.characterId, payload.main);
         break;
     case 'throttle':
         kernel?.setMaxInFlight(payload.maxInFlight);

@@ -52,19 +52,9 @@ function currentCombatTargetId(target) {
 
 function isCurrentlyAttackingBoss(target, boss) {
     const bossId = Number(boss?.fetchId?.() || 0);
-    const currentTargetId = currentCombatTargetId(target);
-    if (currentTargetId !== null) return currentTargetId === bossId;
-
-    // Real actors expose at least one live target API. Once that API reports
-    // no combat target, a historical raidBossAttackTargetId must not keep
-    // cursing support casters after they retarget or leave combat.
-    const hasTargetApi = typeof target?.automation?.fetchDestId === 'function'
-        || typeof target?.fetchDestId === 'function'
-        || typeof target?.state?.fetchCombats === 'function';
-    if (hasTargetApi) return false;
-
-    // Keep compatibility with lightweight actors used by isolated tests.
-    return Number(target?.model?.raidBossAttackTargetId || 0) === bossId;
+    // Only the live combat target counts: a support caster that retargets or
+    // leaves combat stops counting as attacking the boss.
+    return currentCombatTargetId(target) === bossId;
 }
 
 function raidBossesAttackedBy(target) {

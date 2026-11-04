@@ -85,7 +85,8 @@ async function run() {
     assert.strictEqual((await Repository.load(1)).relations.length, 0, 'rejected action cannot leave gratitude');
     const accepted = await commit(resolve()); assert(accepted.every(r => r.ok), JSON.stringify(accepted));
     assert.strictEqual(Life.cachedState(2).vitals.mp, 441);
-    assert.strictEqual(Life.cachedState(1).vitals.hp, 1);
+    const revivedHp = Math.round(Life.cachedState(1).vitals.maxHp * 0.7);
+    assert.strictEqual(Life.cachedState(1).vitals.hp, revivedHp, 'a resurrection gives 70 % HP (Lisvus doRevive)');
     assert(states().every(s => !Object.hasOwn(s.stats, 'coldRevival')), 'the outcome creates no intermediate cast state');
     assert.strictEqual(Life.cachedState(1).stats.coldPvp.recoverUntil, 0);
     assert((await Repository.load(1)).relations.some(r => r.targetId === 2 && r.lastHelpAt.resurrected === at));
@@ -94,7 +95,7 @@ async function run() {
     await DB.close(); DB.init();
     assert.deepStrictEqual(await Repository.load(1), memory);
     const rows = await DB.execute(['SELECT id,hp,mp FROM characters WHERE id IN (1,2) ORDER BY id', []]);
-    assert.strictEqual(rows[0].hp, 1); assert.strictEqual(rows[1].mp, 441, 'one committed outcome survives SQLite reopen');
+    assert.strictEqual(rows[0].hp, revivedHp); assert.strictEqual(rows[1].mp, 441, 'one committed outcome survives SQLite reopen');
     console.log('Cold resurrection: one atomic outcome, actual skill/MP, recovery pause, rejected ownership and persisted gratitude passed');
 }
 run().catch(e => { console.error(e); process.exitCode = 1; }).finally(async () => {

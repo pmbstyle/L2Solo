@@ -29,6 +29,7 @@ Risk.backoffForStates = () => { throw new Error('must not apply solo bans to a c
     assert.strictEqual(lifecycleKind(returning), 'command', 'shopping must execute economy, not clan waiting');
     const arrived = { ...returning, activity: 'party_wait', stats: { partyMarketReturn: token } };
     assert.strictEqual(lifecycleKind(arrived), 'command', 'arrival must attempt membership before any solo resolver');
+    require('./helpers/recordedPartyCommit').install();
     Life.statesForParty = async () => [leader, { ...leader, characterId: 2 }];
     Parties.createOrUpdate = async value => (party = value);
     const assigned = [];
