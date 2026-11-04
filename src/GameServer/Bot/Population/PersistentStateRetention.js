@@ -80,20 +80,27 @@ function ageStep(name, statement) {
 // Keep the newest `keep` rows of each group: one window of index entries per
 // run, ranked in index order (newest first within a group). The last group of a
 // full window may be cut: its ranks are still exact for the rows seen, and the
-// next window starts at it again.
-function groupCap(name, { table, filter, key, indexOrder, partition, rankOrder, columns, keep }) {
+// next window starts at it again. A window that holds one key only (one bot's
+// pairs, `subKey` the pair's other column) goes on inside that key from its last
+// sub-key until the key's rows end, then past the key.
+function groupCap(name, { table, filter, key, subKey, indexOrder, partition, rankOrder, columns, keep }) {
     const where = filter ? `${filter} AND ` : '';
-    const windowSql = `SELECT id, ${columns} FROM ${table} WHERE ${where}${key} > ? ORDER BY ${indexOrder} LIMIT ?`;
+    const range = cursor => (cursor.sub === null
+        ? { sql: `${where}${key} > ?`, params: [cursor.key] }
+        : { sql: `${where}${key} = ? AND ${subKey} >= ?`, params: [cursor.key, cursor.sub] });
     return {
         name,
         async step(options) {
             const keepRows = keep(options);
             const windowRows = Math.max(GROUP_WINDOW_ROWS, keepRows + options.batchSize);
-            const cursor = cursors.has(name) ? cursors.get(name) : -1;
+            const cursor = cursors.get(name) || { key: -1, sub: null };
+            const { sql, params } = range(cursor);
+            const windowSql = `SELECT id, ${columns} FROM ${table} WHERE ${sql} ORDER BY ${indexOrder} LIMIT ?`;
+            const lastSub = subKey ? `(SELECT ${subKey} FROM span ORDER BY ${key} DESC, ${subKey} DESC LIMIT 1)` : 'NULL';
             const [span] = await Database.execute([
-                `SELECT MIN(${key}) AS lowKey, MAX(${key}) AS highKey, COUNT(*) AS seen
-                 FROM (SELECT ${key} FROM ${table} WHERE ${where}${key} > ? ORDER BY ${indexOrder} LIMIT ?)`,
-                [cursor, windowRows]
+                `WITH span AS MATERIALIZED (${windowSql})
+                 SELECT MIN(${key}) AS lowKey, MAX(${key}) AS highKey, COUNT(*) AS seen, ${lastSub} AS lastSub FROM span`,
+                [...params, windowRows], { read: true }
             ], `state-retention:${name}`);
             const seen = Number(span?.seen || 0);
             let rowsRemoved = 0;
@@ -105,17 +112,28 @@ function groupCap(name, { table, filter, key, indexOrder, partition, rankOrder, 
                              FROM (${windowSql})
                          ) WHERE position > ? LIMIT ?
                      )`,
-                    [cursor, windowRows, keepRows, options.batchSize]
+                    [...params, windowRows, keepRows, options.batchSize]
                 ], `state-retention:${name}`);
                 rowsRemoved = Math.max(0, Number(result?.affectedRows || 0));
             }
             if (rowsRemoved >= options.batchSize) return { rowsRemoved, more: true };
             if (seen < windowRows) {
+                // Inside one key: its rows ended, go past it. Otherwise the sweep ended.
+                if (cursor.sub !== null) {
+                    cursors.set(name, { key: cursor.key, sub: null });
+                    return { rowsRemoved, more: true };
+                }
                 cursors.delete(name);
                 return { rowsRemoved, more: false };
             }
             const lowKey = Number(span.lowKey), highKey = Number(span.highKey);
-            cursors.set(name, highKey > lowKey ? highKey - 1 : highKey);
+            const sub = span.lastSub === null || span.lastSub === undefined ? null : Number(span.lastSub);
+            if (highKey > lowKey) cursors.set(name, { key: highKey - 1, sub: null });
+            // One key fills the window: go on inside it from its last sub-key
+            // (a full window of one group always removes a batch, so the last
+            // sub-key moves on; equal to the start, nothing is left to resume).
+            else if (subKey && sub !== null && sub !== cursor.sub) cursors.set(name, { key: highKey, sub });
+            else cursors.set(name, { key: highKey, sub: null });
             return { rowsRemoved, more: true };
         }
     };
@@ -197,7 +215,7 @@ const POLICIES = [
         [options.timestamp - options.activityRetentionMs, options.batchSize]
     ]),
     groupCap('activity_pair_cap', {
-        table: 'bot_activity_journal', filter: '', key: 'botId',
+        table: 'bot_activity_journal', filter: '', key: 'botId', subKey: 'playerId',
         indexOrder: 'botId, playerId, updatedAt DESC, id DESC', partition: 'botId, playerId',
         rankOrder: 'updatedAt DESC, id DESC', columns: 'botId, playerId, updatedAt',
         keep: options => options.activityRowsPerPair

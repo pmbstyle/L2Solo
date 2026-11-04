@@ -1070,6 +1070,8 @@ const PopulationService = {
     walResetUnsubscribe: null,
     walResetRunning: false,
     walResetEstimateRetryAt: 0,
+    // The last completed truncate's hold on main's DB queue (ms, 0 = none yet).
+    walTruncateEstimateMs: 0,
     nextWalResetAt: 0,
     personaBackfillTimer: null,
     personaBackfillRunning: false,
@@ -1229,6 +1231,7 @@ const PopulationService = {
         this.walResetRunning = false;
         this.nextWalResetAt = 0;
         this.walResetEstimateRetryAt = 0;
+        this.walTruncateEstimateMs = 0;
         PersistentStateRetention.reset();
         this.nextProtectedPartyFormationAt = 0;
         this.protectedPartyFormationFailures = 0;
@@ -2772,9 +2775,10 @@ const PopulationService = {
     // The WAL truncate, during play too. It runs on the checkpoint worker, but
     // Database.checkpoint queues it behind main's DB queue, which waits for the
     // whole of it: the IPC round trip, the busy wait for readers (20 ms with a
-    // player, 50 idle), backfill, fsync and ftruncate. Its budget is the last
-    // measured truncate (checkpoint.lastResetAttempt.durationMs, at least the
-    // busy wait; WAL_TRUNCATE_FIRST_ESTIMATE_MS before any), and with a player a
+    // player, 50 idle), backfill, fsync and ftruncate. Its budget is the hold on
+    // main of the last completed truncate, queued to resolved (a busy or failed
+    // try keeps the previous; at least the busy wait;
+    // WAL_TRUNCATE_FIRST_ESTIMATE_MS before any), and with a player a
     // truncate estimated over the governor's player budget is skipped, retried
     // every WAL_TRUNCATE_ESTIMATE_RETRY_MS and forced past
     // WAL_TRUNCATE_FORCE_WAL_BYTES. The
@@ -2789,13 +2793,15 @@ const PopulationService = {
             return Promise.resolve(null);
         };
         if (this.walResetRunning) return refuse('running');
-        if (timestamp < Number(this.nextWalResetAt || 0)) return refuse('retry_window');
-
         const pressure = this.checkpointPressure();
         const { checkpoint, last, lastReset, walBytes, growthBytes, resetGrowthBytes } = pressure;
+        // Past the ceiling only the WAL's own correctness gates hold it back
+        // (one in flight, the last passive checkpoint incomplete).
+        const forced = walBytes >= WAL_TRUNCATE_FORCE_WAL_BYTES;
+        if (!forced && timestamp < Number(this.nextWalResetAt || 0)) return refuse('retry_window');
         if (walBytes < resetWalBytes) return refuse('wal_below_threshold');
         if (checkpoint.inFlight) return refuse('checkpoint_in_flight');
-        if (lastReset.at && growthBytes < resetGrowthBytes) return refuse('growth_below_threshold');
+        if (!forced && lastReset.at && growthBytes < resetGrowthBytes) return refuse('growth_below_threshold');
         const logFrames = Math.max(0, Number(last.logFrames || 0));
         const checkpointedFrames = Math.max(0, Number(last.checkpointedFrames || 0));
         if (!last.ok || last.mode !== 'passive' || Number(last.busy || 0) > 0 || checkpointedFrames < logFrames) {
@@ -2805,24 +2811,24 @@ const PopulationService = {
         const activity = this.playerActivityProfile(timestamp);
         const configuredBusyMs = Math.max(1, Math.min(250, Number(options.default.Database?.checkpointResetBusyTimeoutMs) || 50));
         const busyTimeoutMs = activity.protected ? Math.min(20, configuredBusyMs) : configuredBusyMs;
-        const measuredMs = Number(checkpoint.lastResetAttempt?.durationMs);
-        const estimateMs = Math.ceil(Math.max(busyTimeoutMs,
-            Number.isFinite(measuredMs) ? measuredMs : WAL_TRUNCATE_FIRST_ESTIMATE_MS));
+        const estimateMs = Math.ceil(Math.max(busyTimeoutMs, this.walTruncateEstimateMs || WAL_TRUNCATE_FIRST_ESTIMATE_MS));
         const playerBudgetMs = Math.max(1, Number(Config.backgroundGovernorPlayerBudgetMs) || 50);
-        if (activity.protected && estimateMs > playerBudgetMs) {
-            // Over budget with a player: skipped, except past the WAL ceiling
-            // and once per retry period (counted as such); the governor gets
-            // its player budget and records the overrun.
-            if (walBytes >= WAL_TRUNCATE_FORCE_WAL_BYTES) Database.noteMaintenanceRefusal('wal_truncate', 'forced_over_ceiling');
-            else if (!this.walResetEstimateRetryAt) {
+        // Over budget with a player: skipped, but tried once per retry period
+        // (with the player budget; the governor records the overrun).
+        let ranAs = forced ? 'forced_over_ceiling' : null;
+        if (!forced && activity.protected && estimateMs > playerBudgetMs) {
+            if (!this.walResetEstimateRetryAt) {
                 this.walResetEstimateRetryAt = timestamp + WAL_TRUNCATE_ESTIMATE_RETRY_MS;
                 return refuse('estimate_over_budget');
-            } else if (timestamp < this.walResetEstimateRetryAt) return refuse('estimate_over_budget');
-            else Database.noteMaintenanceRefusal('wal_truncate', 'estimate_retry');
+            }
+            if (timestamp < this.walResetEstimateRetryAt) return refuse('estimate_over_budget');
+            ranAs = 'estimate_retry';
         }
         const budgetMs = activity.protected ? Math.min(estimateMs, playerBudgetMs) : estimateMs;
-        const admission = this.admitMaintenance('wal_truncate', activity,
-            { requestedBudgetMs: budgetMs, minimumBudgetMs: budgetMs });
+        const admission = forced
+            ? BackgroundWorkGovernor.admit({ job: 'wal_truncate', force: true, requestedBudgetMs: estimateMs,
+                playerProtected: !!activity.protected, realPlayers: activity.realPlayers })
+            : this.admitMaintenance('wal_truncate', activity, { requestedBudgetMs: budgetMs, minimumBudgetMs: budgetMs });
         if (!admission) return Promise.resolve(null);
         this.walResetEstimateRetryAt = 0;
 
@@ -2832,11 +2838,14 @@ const PopulationService = {
         this.walResetRunning = true;
         this.nextWalResetAt = timestamp + retryMs;
         return Database.checkpoint({ mode: 'truncate', busyTimeoutMs }).then((result) => {
+            // A forced or retried truncate is counted once it ran, whatever its result.
+            if (ranAs) Database.noteMaintenanceRefusal('wal_truncate', ranAs);
             if (!result?.ok) {
                 FailureLog.note('db.wal_truncate', new Error(result?.error || 'wal_truncate_failed'));
             } else if (Number(result.busy || 0) > 0) {
                 Database.noteMaintenanceRefusal('wal_truncate', 'busy');
             } else {
+                this.walTruncateEstimateMs = Math.max(1, Date.now() - startedAt);
                 this.nextWalResetAt = Date.now() + cooldownMs;
                 Config.developerDiagnostics && console.info(
                     'DB          :: adaptive WAL truncate complete wal=%dMB frames=%d/%d duration=%dms',
@@ -2848,6 +2857,7 @@ const PopulationService = {
             }
             return result;
         }).catch((error) => {
+            if (ranAs) Database.noteMaintenanceRefusal('wal_truncate', ranAs);
             FailureLog.note('db.wal_truncate', error);
             return null;
         }).finally(() => {
@@ -2871,8 +2881,13 @@ const PopulationService = {
             return Promise.resolve(null);
         }
         if (this.checkpointPressure().resetDue) {
-            Database.noteMaintenanceRefusal('state_retention', 'wal_pressure');
-            return this.runAdaptiveWalReset(timestamp);
+            // A truncate that starts takes this tick; one refused (counted
+            // there, e.g. over budget for up to 10 min) leaves it to retention.
+            const reset = this.runAdaptiveWalReset(timestamp);
+            if (this.walResetRunning) {
+                Database.noteMaintenanceRefusal('state_retention', 'wal_pressure');
+                return reset;
+            }
         }
         const activity = this.playerActivityProfile(timestamp);
         const requestedBudgetMs = Math.max(4, Math.min(50, Number(Config.stateRetentionBudgetMs) || 12));

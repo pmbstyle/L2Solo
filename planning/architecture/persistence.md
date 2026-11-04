@@ -27,7 +27,8 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
 - **Journals:** `EconomyJournal` (TEMP triggers sum adena/item flow), `PvpJournal`; one outbox row per flush.
 - **WAL checkpoints:** `DatabaseCheckpointCoordinator` + worker (≥ 4 MB, every 5 s); the WAL truncate
   (`PopulationService.runAdaptiveWalReset`) is tried when a passive one finishes (`Database.onCheckpoint`, limits.md),
-  during play too, budgeted at its last measured duration. It and state retention (`runStateRetention`, every
+  during play too, budgeted at the last completed truncate's hold on main's DB queue; a skipped truncate leaves state
+  retention its turn. It and state retention (`runStateRetention`, every
   `PersistentStateRetention` statement bounded by a LIMIT on an indexed range or a cursor that resumes next run) are
   admitted by `BackgroundWorkGovernor` (resource `db_maintenance`, refused with a player when the governor is off), their refusals counted in `Database.stats().maintenance.refusals` (`job:reason`, diagnostics off
   too), the truncate's last try in `checkpoint.lastResetAttempt`; both in the perf report. Not `NativeWriteCheckpoint` (a

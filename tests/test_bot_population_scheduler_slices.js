@@ -75,6 +75,7 @@ async function run() {
     });
     let checkpointCalls = 0;
     let truncateResult = null;
+    let truncateDelayMs = 0;
     let checkpointState = {
         pending: 0,
         checkpoint: {
@@ -87,6 +88,7 @@ async function run() {
     Database.checkpoint = async (checkpointOptions) => {
         checkpointCalls += 1;
         assert.strictEqual(checkpointOptions.mode, 'truncate');
+        if (truncateDelayMs) await new Promise(resolve => setTimeout(resolve, truncateDelayMs));
         return truncateResult || { ok: true, mode: 'truncate', busy: 0, afterBytes: 300, logFrames: 20, checkpointedFrames: 20 };
     };
     Governor.reset();
@@ -112,63 +114,94 @@ async function run() {
     const playerReset = await PopulationService.runAdaptiveWalReset(1000);
     assert.strictEqual(playerReset.mode, 'truncate', 'with a player online the truncate must run once its WAL gates pass');
     assert(PopulationService.nextWalResetAt > 1000, 'a successful reset must install a cooldown');
-    // A truncate last measured over the player budget is skipped (counted) while a player is online.
-    checkpointState.checkpoint.lastResetAttempt = { ok: true, mode: 'truncate', busy: 0, durationMs: 80 };
+    // A completed truncate that held main's DB queue 60 ms is over the 50 ms
+    // player budget: with a player online it is skipped (counted).
+    const idleProfile = () => ({ protected: false, realPlayers: 0, connectingPlayers: 0 });
+    const playerProfile = () => ({ protected: true, realPlayers: 1, connectingPlayers: 0 });
+    PopulationService.playerActivityProfile = idleProfile;
+    truncateDelayMs = 60;
+    PopulationService.nextWalResetAt = 0;
+    assert.strictEqual((await PopulationService.runAdaptiveWalReset(1000)).mode, 'truncate',
+        'idle, a truncate over the player budget must still run');
+    truncateDelayMs = 0;
+    assert.strictEqual(checkpointCalls, 2);
+    PopulationService.playerActivityProfile = playerProfile;
     PopulationService.nextWalResetAt = 0;
     before = refusals();
     assert.strictEqual(await PopulationService.runAdaptiveWalReset(1000), null,
         'a truncate estimated over the player budget must not stall a player');
     assert.strictEqual(refused('wal_truncate:estimate_over_budget', before), 1);
-    assert.strictEqual(await PopulationService.runAdaptiveWalReset(2000), null, 'the skip holds through its retry period');
-    assert.strictEqual(checkpointCalls, 1);
-    // A player online for hours: the skipped truncate is tried again after 10 min
-    // (in a fresh governor window: it takes the whole player budget).
-    Governor.reset();
-    assert.strictEqual((await PopulationService.runAdaptiveWalReset(1000 + 10 * 60 * 1000)).mode, 'truncate',
-        'a truncate over the player budget must be tried again after its retry period');
-    assert.strictEqual(refused('wal_truncate:estimate_retry', before), 1);
-    assert.strictEqual(checkpointCalls, 2);
-    // Past the 512 MB WAL ceiling it runs with a player anyway, counted.
+    // A busy or a failed try does not replace that estimate.
+    PopulationService.playerActivityProfile = idleProfile;
+    truncateResult = { ok: true, mode: 'truncate', busy: 1 };
     PopulationService.nextWalResetAt = 0;
-    Governor.reset();
-    checkpointState.checkpoint.last.afterBytes = 512 * 1024 * 1024;
-    assert.strictEqual((await PopulationService.runAdaptiveWalReset(1000)).mode, 'truncate',
-        'past the WAL ceiling the truncate must run with a player');
-    assert.strictEqual(refused('wal_truncate:forced_over_ceiling', before), 1);
-    assert.strictEqual(checkpointCalls, 3);
-    checkpointState.checkpoint.last.afterBytes = 300;
-    PopulationService.nextWalResetAt = 0;
-    // With a player and the governor off nothing bounds the truncate: refused, counted.
-    delete checkpointState.checkpoint.lastResetAttempt;
-    const governorEnabled = Config.backgroundGovernorEnabled;
-    Config.backgroundGovernorEnabled = false;
-    assert.strictEqual(await PopulationService.runAdaptiveWalReset(1000), null);
-    assert.strictEqual(refused('wal_truncate:governor_off', before), 1, 'a player online with the governor off must refuse the truncate');
-    Config.backgroundGovernorEnabled = governorEnabled;
-    assert.strictEqual(checkpointCalls, 3);
-    checkpointState.checkpoint.lastResetAttempt = { ok: true, mode: 'truncate', busy: 0, durationMs: 80 };
-    PopulationService.playerActivityProfile = () => ({ protected: false, realPlayers: 0, connectingPlayers: 0 });
-    PopulationService.nextWalResetAt = 0;
-    const reset = await PopulationService.runAdaptiveWalReset(1000);
-    assert.strictEqual(reset.mode, 'truncate');
-    assert.strictEqual(checkpointCalls, 4, 'idle, a truncate over the player budget must still run');
-    delete checkpointState.checkpoint.lastResetAttempt;
+    await PopulationService.runAdaptiveWalReset(1000);
+    assert.strictEqual(refused('wal_truncate:busy', before), 1, 'a truncate kept out by a reader must be counted');
     // A truncate that answers ok:false is a failure (FailureLog), not a silent success.
     truncateResult = { ok: false, mode: 'truncate', error: 'synthetic_truncate_failure' };
     PopulationService.nextWalResetAt = 0;
     const failuresBefore = Number(FailureLog.snapshot()?.['db.wal_truncate'] || 0);
     await PopulationService.runAdaptiveWalReset(1000);
-    assert.strictEqual(checkpointCalls, 5);
     assert.strictEqual(Number(FailureLog.snapshot()?.['db.wal_truncate'] || 0), failuresBefore + 1,
         'a failed truncate must be counted as a failure');
     assert.strictEqual(PopulationService.walResetRunning, false);
     assert.strictEqual(PopulationService.nextWalResetAt, 2000, 'a failed truncate retries after the retry window (1 s minimum), not the cooldown');
-    truncateResult = { ok: true, mode: 'truncate', busy: 1 };
-    PopulationService.nextWalResetAt = 0;
-    before = refusals();
-    await PopulationService.runAdaptiveWalReset(1000);
-    assert.strictEqual(refused('wal_truncate:busy', before), 1, 'a truncate kept out by a reader must be counted');
     truncateResult = null;
+    assert.strictEqual(checkpointCalls, 4);
+    PopulationService.playerActivityProfile = playerProfile;
+    PopulationService.nextWalResetAt = 0;
+    assert.strictEqual(await PopulationService.runAdaptiveWalReset(2000), null, 'busy and failed tries must keep the estimate');
+    assert.strictEqual(refused('wal_truncate:estimate_over_budget', before), 2);
+    // Under WAL pressure a skipped truncate does not take retention's turn.
+    let retentionSteps = 0;
+    PersistentStateRetention.runNextBatch = async () => {
+        retentionSteps += 1;
+        return { policy: 'none', nextPolicy: 'none', rowsRemoved: 0, cycleComplete: false };
+    };
+    PopulationService.stateRetentionRunning = false;
+    PopulationService.nextStateRetentionAt = 0;
+    Governor.reset();
+    await PopulationService.runStateRetention(3000);
+    assert.strictEqual(retentionSteps, 1, 'retention must run its step while the truncate is skipped');
+    assert.strictEqual(refused('wal_truncate:estimate_over_budget', before), 3);
+    assert.strictEqual(checkpointCalls, 4);
+    // A player online for hours: the skipped truncate is tried again 10 min after
+    // its first skip since the last try (at 2000), in a fresh governor window: it
+    // takes the whole player budget.
+    Governor.reset();
+    truncateDelayMs = 60;
+    assert.strictEqual(await PopulationService.runAdaptiveWalReset(2000 + 10 * 60 * 1000 - 1), null);
+    assert.strictEqual((await PopulationService.runAdaptiveWalReset(2000 + 10 * 60 * 1000)).mode, 'truncate',
+        'a truncate over the player budget must be tried again after its retry period');
+    truncateDelayMs = 0;
+    assert.strictEqual(refused('wal_truncate:estimate_retry', before), 1);
+    assert.strictEqual(checkpointCalls, 5);
+    // Past the 512 MB WAL ceiling it runs with a player anyway, counted once it
+    // ran: over its estimate, inside the cooldown, with the player budget spent.
+    Governor.reset();
+    const spent = Governor.admit({ job: 'other_background_work', requestedBudgetMs: 50, playerProtected: true });
+    assert.strictEqual(spent.ok, true);
+    checkpointState.checkpoint.last.afterBytes = 512 * 1024 * 1024;
+    const forcedReset = PopulationService.runAdaptiveWalReset(1000);
+    assert.strictEqual(refused('wal_truncate:forced_over_ceiling', before), 0, 'a forced truncate is counted once it ran');
+    assert.strictEqual((await forcedReset).mode, 'truncate',
+        'past the WAL ceiling the truncate must run with a player and an exhausted budget');
+    assert.strictEqual(refused('wal_truncate:forced_over_ceiling', before), 1);
+    assert.strictEqual(checkpointCalls, 6);
+    checkpointState.checkpoint.inFlight = true;
+    assert.strictEqual(await PopulationService.runAdaptiveWalReset(1000), null, 'a forced truncate still waits for a checkpoint in flight');
+    checkpointState.checkpoint.inFlight = false;
+    Governor.complete(spent.lease, { durationMs: 50 });
+    checkpointState.checkpoint.last.afterBytes = 300;
+    PopulationService.nextWalResetAt = 0;
+    // With a player and the governor off nothing bounds the truncate: refused, counted.
+    const governorEnabled = Config.backgroundGovernorEnabled;
+    Config.backgroundGovernorEnabled = false;
+    assert.strictEqual(await PopulationService.runAdaptiveWalReset(1000), null);
+    assert.strictEqual(refused('wal_truncate:governor_off', before), 1, 'a player online with the governor off must refuse the truncate');
+    Config.backgroundGovernorEnabled = governorEnabled;
+    assert.strictEqual(checkpointCalls, 6);
+    PopulationService.playerActivityProfile = idleProfile;
     checkpointState = {
         pending: 0,
         checkpoint: {
