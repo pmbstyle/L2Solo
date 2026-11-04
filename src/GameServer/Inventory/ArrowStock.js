@@ -10,6 +10,9 @@
 const BY_RANK = Object.freeze({ none: 17, d: 1341, c: 1342, b: 1343, a: 1344, s: 1345 });
 const ARROW_IDS = new Set(Object.values(BY_RANK));
 const MAX_AMOUNT = 2000;
+// Kept whatever else the bag weighs (our choice): selling these never clears a
+// load the other items make, it only sends the archer to town to sell its ammunition.
+const KEEP_FLOOR = 500;
 const Index = require('../Item/ItemTemplateIndex');
 
 function isArrow(item) {
@@ -55,16 +58,17 @@ function totalLoad(value) {
     return items(value).reduce((sum, item) => sum + amount(item) * mass(item), 0);
 }
 
-// A single compatible grade, with room below the first native weight penalty.
-// Wrong grades are excluded from the retained kit because this same cleanup
-// sells them; a purchase still counts their physical weight until that sale.
+// A single compatible grade, with room below the first native weight penalty
+// and never below KEEP_FLOOR. Wrong grades are excluded from the retained kit
+// because this same cleanup sells them; a purchase still counts their physical
+// weight until that sale, and buys only into the room.
 function keptAmounts(value) {
     const id = currentId(value);
     if (!id) return {};
     const otherLoad = items(value).reduce((sum, item) => sum + (isArrow(item) ? 0 : amount(item) * mass(item)), 0);
     const unitMass = mass(id);
     const capacity = unitMass > 0 ? Math.floor(Math.max(0, loadLimit(value) - otherLoad) / unitMass) : MAX_AMOUNT;
-    return { [id]: Math.min(MAX_AMOUNT, capacity) };
+    return { [id]: Math.min(MAX_AMOUNT, Math.max(KEEP_FLOOR, capacity)) };
 }
 
 function saleAmounts(value) {
@@ -101,4 +105,4 @@ function admitted(value, selfId, requested) {
     return isArrow({ selfId }) ? purchaseAmount(value, selfId, requested) : requested;
 }
 
-module.exports = { BY_RANK, MAX_AMOUNT, isArrow, keeps, currentId, keptAmounts, saleAmounts, unused, purchaseAmount, admitted };
+module.exports = { BY_RANK, MAX_AMOUNT, KEEP_FLOOR, isArrow, keeps, currentId, keptAmounts, saleAmounts, unused, purchaseAmount, admitted };
