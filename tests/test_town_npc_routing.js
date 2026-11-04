@@ -69,6 +69,43 @@ const nearestGenericToCooper = TownServiceCatalog.targetFor(
 assert(nearestGenericToCooper && Number(nearestGenericToCooper.npcSelfId) !== 7829,
     'a generic errand beside Cooper must select an ordinary merchant instead');
 
+// A town errand walks to the live NPC of its row nearest the row's place, the
+// first spawned when two are as near; the same with the world's NPC index (a
+// set whose order differs from the spawn list: a leader joins it after its
+// minions), without it, and after one spawns or leaves.
+{
+    const World = invoke('GameServer/World/World');
+    const NpcIndex = invoke('GameServer/World/NpcObjectIndex');
+    const saved = World.npc;
+    const live = (id, selfId, dx, dy) => ({ fetchId: () => id, fetchSelfId: () => selfId, fetchName: () => `npc ${id}`,
+        fetchTitle: () => '', fetchLocX: () => cooper.locX + dx, fetchLocY: () => cooper.locY + dy, fetchLocZ: () => cooper.locZ,
+        fetchHead: () => 0 });
+    const far = live(1, 7829, 900, 0), east = live(2, 7829, 300, 400), other = live(3, 7830, 1, 0),
+        west = live(4, 7829, -500, 0), near = live(5, 7829, 0, 120);
+    const spawns = [far, other, east, west];
+    // The rule as written before the index: the stable sort of the spawn list.
+    const sorted = list => list.filter(npc => npc.fetchSelfId() === 7829)
+        .sort((a, b) => Math.hypot(a.fetchLocX() - cooper.locX, a.fetchLocY() - cooper.locY)
+            - Math.hypot(b.fetchLocX() - cooper.locX, b.fetchLocY() - cooper.locY))[0].fetchId();
+    const role = TownServiceCatalog.ROLES.SELLER;
+    try {
+        World.npc = { spawns };
+        assert.strictEqual(TownServiceCatalog.targetFromRow(cooper, role).actorId, 2, 'unindexed: the first of two as near');
+        NpcIndex.reset(World);
+        for (const npc of [west, other, far, east]) NpcIndex.add(World, npc);
+        assert.strictEqual(TownServiceCatalog.targetFromRow(cooper, role).actorId, sorted(spawns), 'indexed: the same tie');
+        assert.strictEqual(TownServiceCatalog.targetFromRow(cooper, role, { worldSpawns: spawns }).actorId, 2);
+        spawns.push(near); NpcIndex.add(World, near);
+        assert.strictEqual(TownServiceCatalog.targetFromRow(cooper, role).actorId, 5, 'a nearer one spawned');
+        spawns.splice(spawns.indexOf(near), 1); NpcIndex.remove(World, near);
+        spawns.splice(spawns.indexOf(east), 1); NpcIndex.remove(World, east);
+        assert.strictEqual(TownServiceCatalog.targetFromRow(cooper, role).actorId, sorted(spawns), 'the tie gone');
+        assert.strictEqual(TownServiceCatalog.targetFromRow({ ...cooper, npcSelfId: 7831 }, role).actorId, null, 'none live');
+    } finally {
+        World.npc = saved;
+    }
+}
+
 const specializedPetManagers = rows.filter((row) => row.title === 'Pet Manager');
 assert.strictEqual(specializedPetManagers.length, 9, 'the datapack pet shop network must include Goddard and Rune');
 for (const town of ['Goddard', 'Rune']) {

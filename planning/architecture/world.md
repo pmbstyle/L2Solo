@@ -78,7 +78,7 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
 |---|---|
 | Is visible | `WorldConstants.inClientView` |
 | Who is near | `World.fetchVisibleUsers/fetchVisibleRealPlayers/actorSessionsNear/nearestRealPlayer` |
-| NPC by id / near a point | `NpcObjectIndex.find` (`World.fetchNpc`) / `World.fetchNpcsInRadius` |
+| NPC by id / near a point / nearest of a template | `NpcObjectIndex.find` (`World.fetchNpc`) / `World.fetchNpcsInRadius` / `NpcObjectIndex.nearestOfTemplate` (town service targets) |
 | NPC add/remove | `World.addNpcToGrid/removeNpcFromGrid` + `World.removeNpc` |
 | Height, LOS, A* | `GeodataEngine`; off-thread `PathfindingWorkerPool` |
 | Bot movement | `MoveTo` |
@@ -125,7 +125,7 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
 - **WOR-10 per-location geodata fixes in three places:** `PlayerTransitionRecovery` (players), `VirtualObstacles`
   (everyone), `TownNpcSlots`/`TownGateCatalog` (bots).
 - **WOR-11 direct `World.npc.spawns = …filter`** in 6 files (PetTravel, PetMount, C4SkillEffects, NpcDied, SpoilSweep,
-  NpcDecay) bypassing `RemoveNpc`; full `npc.spawns` scans by selfId in ~10 files where `NpcObjectIndex` exists.
+  NpcDecay) bypassing `RemoveNpc`; full `npc.spawns` scans by selfId in ~9 files where `NpcObjectIndex` exists (`TownServiceCatalog` reads `nearestOfTemplate`).
 - **WOR-12 action deferral three ways:** `Attack.queueEvent` (one slot), `actor.stored*` replayed in
   `UpdatePosition`, `Automation.playerAttackApproach`. Meets combat.
 - **WOR-14 DataCache API split:** callback + structuredClone (`fetchItemFromSelfId`, 142 uses) vs

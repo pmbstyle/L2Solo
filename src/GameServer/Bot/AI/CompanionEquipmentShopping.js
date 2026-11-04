@@ -1,5 +1,4 @@
 const refreshPartyMemberships = require('../../World/PartyMembershipPublication');
-const World = invoke('GameServer/World/World');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
@@ -134,8 +133,7 @@ function checkedPlan(session, state, town, options = {}) {
 
 function npcTarget(offer, bot, town) {
     return TownNpcCatalog.targetForNpc(town.name, offer.sourceId, {
-        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
-        worldSpawns: World.npc?.spawns || []
+        from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() }
     }) || {
         actorId: null,
         npcSelfId: Number(offer.sourceId),
