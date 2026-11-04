@@ -38,6 +38,7 @@ const originalFetchVisibleUsers = World.fetchVisibleUsers;
 const originalFetchVisibleRealPlayers = World.fetchVisibleRealPlayers;
 const originalCharInfo = Response.charInfo;
 const originalRelationChanged = Response.relationChanged;
+const originalNpcInfo = Response.npcInfo;
 const originalBotWakeup = BotAI.wakeup;
 const originalNpcEngage = NpcAggro.engageNearby;
 const originalGuardEngage = TownGuard.engageNearby;
@@ -55,7 +56,12 @@ try {
     botObserver.dataSendToMe = () => { botObserver.packetCount += 1; };
     realObserver.actor = actorAt(300, 100);
 
-    World.fetchNpcsInRadius = () => [];
+    const npc = { state: { fetchDead: () => false } };
+    World.fetchNpcsInRadius = () => [npc];
+    Response.npcInfo = () => {
+        packetKinds.push({ kind: 'npcInfo' });
+        return Buffer.from([0x16]);
+    };
     World.fetchVisibleUsers = () => [botObserver, realObserver];
     World.fetchVisibleRealPlayers = () => [realObserver];
     Response.charInfo = (actor) => {
@@ -78,7 +84,7 @@ try {
     assert.deepStrictEqual(
         packetKinds.map(({ kind }) => kind),
         ['charInfo', 'relationChanged'],
-        'a bot source must only build visibility packets for the real player observer'
+        'a bot source must only build visibility packets for the real player observer (no NpcInfo for its own discarded session)'
     );
     assert.strictEqual(realObserver.packets.length, 2, 'the real observer must receive the moving bot snapshot');
     assert.strictEqual(botObserver.packetCount, 0, 'bot observers must not receive discarded visibility packets');
@@ -100,7 +106,8 @@ try {
         3,
         'a real source must build snapshots for both visible users and the real observer'
     );
-    assert.strictEqual(realSource.packets.length, 4, 'the real source must receive both visible-user snapshots');
+    assert.strictEqual(packetKinds.filter(({ kind }) => kind === 'npcInfo').length, 1, 'a real source sees the NPCs around it');
+    assert.strictEqual(realSource.packets.length, 5, 'the real source must receive both visible-user snapshots and the NPC');
     assert.strictEqual(realObserver.packets.length, 4, 'the real observer must receive the moving player snapshot twice across refreshes');
     assert.strictEqual(botObserver.packetCount, 0, 'bot observers must remain packet-free for real sources too');
     assert.deepStrictEqual(wakeups, [], 'real movement must not fan out AI wakeups to every visible bot');
@@ -124,6 +131,7 @@ try {
     World.fetchVisibleRealPlayers = originalFetchVisibleRealPlayers;
     Response.charInfo = originalCharInfo;
     Response.relationChanged = originalRelationChanged;
+    Response.npcInfo = originalNpcInfo;
     BotAI.wakeup = originalBotWakeup;
     NpcAggro.engageNearby = originalNpcEngage;
     TownGuard.engageNearby = originalGuardEngage;
