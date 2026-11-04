@@ -1,4 +1,5 @@
 const Database = invoke('Database');
+const FailureLog = invoke('FailureLog');
 
 const FLUSH_INTERVAL_MS = 750;
 const pending = new Map();
@@ -19,7 +20,8 @@ function schedule() {
     if (timer) return;
     timer = setTimeout(() => {
         timer = null;
-        flushAll().catch((error) => utils.infoWarn('DB', 'buffered persistence flush failed: %s', error.message));
+        // A per-character failure is already counted where it settled.
+        flushAll().catch((error) => { if (!error.failed) FailureLog.note('db.buffered_character_flush', error); });
     }, FLUSH_INTERVAL_MS);
     timer.unref?.();
 }
@@ -70,12 +72,33 @@ function restore(entries) {
     if (requeued) schedule();
 }
 
+// A bad value (a null or NaN in a NOT NULL column, a value SQLite cannot
+// bind) fails the same way on every retry: its snapshot is dropped and
+// counted, so the character's next transaction is not refused forever. Any
+// other fault (busy, I/O) may pass: the snapshot goes back for the next tick.
+function valueFault(error) {
+    return error instanceof TypeError || (Number(error?.errcode) & 0xff) === 19; // SQLITE_CONSTRAINT
+}
+
+function settle(failed) {
+    const retry = [];
+    for (const [entry, error] of failed) {
+        if (valueFault(error)) {
+            FailureLog.note('db.buffered_character_dropped', error);
+            continue;
+        }
+        FailureLog.note('db.buffered_character_retry', error);
+        retry.push(entry);
+    }
+    if (retry.length) restore(retry);
+}
+
 // The returned write rejects when it fails; the shared chain does not, so one
 // failure does not block the flushes and dependent work queued after it.
 function write(entries, apply) {
     const result = flushing.then(apply)
         .catch((error) => {
-            restore(entries);
+            settle(error.failed || entries.map((entry) => [entry, error]));
             throw error;
         })
         .finally(() => {
@@ -111,7 +134,19 @@ function flushAll() {
         .map((id) => [id, take(id)])
         .filter(([, state]) => state);
     if (!entries.length) return flushing;
-    return write(entries, () => Database.applyBufferedCharacterStates(entries));
+    return write(entries, () => Database.applyBufferedCharacterStates(entries).catch(() => applyEach(entries)));
+}
+
+// A failed batch rolls back every character in it: each one is written alone
+// then, so one bad snapshot does not hold back the others. Rejects with the
+// failed entries (`failed: [[entry, error], ...]`) when any is left.
+async function applyEach(entries) {
+    const results = await Promise.allSettled(entries.map(([id, state]) => Database.applyBufferedCharacterState(id, state)));
+    const failed = [];
+    results.forEach((result, index) => { if (result.status === 'rejected') failed.push([entries[index], result.reason]); });
+    if (!failed.length) return results.map((result) => result.value);
+    const first = failed[0][1];
+    throw Object.assign(new Error(`buffered write failed for ${failed.length} of ${entries.length} characters: ${first?.message || first}`), { failed });
 }
 
 function pendingCount() {
