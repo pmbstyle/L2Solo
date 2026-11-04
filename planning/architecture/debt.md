@@ -236,3 +236,7 @@ Each area file ends with its open questions; none blocks the order above.
   new board offer for a set-aside target or material (`market_alternative`, `craft_stalled`) wakes nothing (the planner
   reads no board revision); `abandonAcquisition` has no game caller (tests only). A party route set aside
   (`party_route_unavailable`) has no event for a recruit pool that could now form it: a 1 h window stands in.
+- A completed economy intent keeps its `bot_economy_intents` row (`[S,0,X]`); the stats receipt `[S+1,1,X]` supersedes
+  it by sequence or by id (`Database` `economyTupleUnsafe`). A writer that put an older receipt back (one not naming
+  X; `EconomyCommit.preserveLeafSql` keeps every whole-stats writer from it today) would let the intent win again and
+  a retry of X run twice. Nothing checks this beyond that rule.

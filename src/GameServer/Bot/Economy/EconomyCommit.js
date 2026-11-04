@@ -1,7 +1,8 @@
 'use strict';
 
 // One original identity for a concrete optional native step. The DB owns the
-// protected receipt; this module keeps no per-owner result cache or history.
+// protected receipt (the stats leaf) and the pending intent (its own table,
+// never in a state); this module keeps no per-owner result cache or history.
 const { randomUUID } = require('node:crypto');
 const KINDS = Object.freeze({ craft: 1, learn: 2, npcBuy: 3, afkBuy: 4, afkSell: 5 });
 const MAX_BYTES = 384;
@@ -71,8 +72,7 @@ async function admit(state, kind, original = null) {
             authority: authority(state), original,
             // Replacing a completed receipt requires the native result already
             // reconciled into the accepted current holdings, not a guessed success.
-            acknowledged: state.stats?.economyCommit,
-            reconcilePending: !original && state.stats?.economyCommit?.[1] === 0
+            acknowledged: state.stats?.economyCommit
         });
         active.set(id, admitted.command);
     } catch (error) {

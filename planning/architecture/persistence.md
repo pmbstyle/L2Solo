@@ -58,7 +58,10 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
   a cold commit reads and compares only the stacks its step moved (`InventorySummary.bagChange` `changedItemIds`) while
   the rows still match the stored summary (`bot_items_synced`, named migration `bot-items-synced`: a row per bot written
   by the commit at its `inventoryRevision`, deleted by an `items` trigger on any write of a row the sync reads, raw SQL
-  too; a summary moved by another writer leaves it behind), else every stack. Every index on the row costs a WAL
+  too; a summary moved by another writer leaves it behind), else every stack. An economy step's pending intent
+  (`EconomyCommit`, written alone at admission) is a `bot_economy_intents` row (named migration
+  `bot-economy-intents`), its completed receipt the stats leaf the step writes; `economyTupleUnsafe` reads the
+  newer, and no state holds the intent. Every index on the row costs a WAL
   page per save (SQLite rewrites the entry of every column the UPDATE sets, changed or not), so no index holds
   `updatedAt` except the covering `bot_life_state_party_candidate_projection` (read with INDEXED BY), and the
   whole-row writers (`BotLifeState.save`, the cold commit) set the indexed `accountName`, `characterName`, `phase`,
@@ -86,6 +89,7 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
 | Value-moving item operation | one transactional Database method per operation (`sellItemsToNpc`, `buyFromLivePrivateStore`, `applyQuestStep`) | half-migrated |
 | Cold persisted state | `bot_life_state` + revision fence | owner |
 | Saved row layout (kit ranks, bag items without template fields) | `SavedSkills`, `InventorySummary.saved`/`read` | owner |
+| Economy step tuple (receipt in stats, pending intent in `bot_economy_intents`) | `EconomyCommit`, `Database` `economyTupleUnsafe` | owner |
 | Join cooldown | `Clan/ClanRules.JOIN_COOLDOWN_MS` | shared |
 | Clan-hall visit hot/cold | `ClanHall/VisitPolicy`, `VisitNeed` | shared |
 | Death EXP | `Progression/DeathExperience` | shared |

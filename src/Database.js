@@ -2034,6 +2034,16 @@ function applySchemaMigrations() {
             BEGIN DELETE FROM bot_items_synced WHERE characterId IN (OLD.characterId, NEW.characterId); END;
             CREATE TRIGGER IF NOT EXISTS items_unsync_delete AFTER DELETE ON items
             BEGIN DELETE FROM bot_items_synced WHERE characterId = OLD.characterId; END;
+        `)],
+        // A bot's pending economy intent (EconomyCommit, economyTupleUnsafe):
+        // admission writes it alone, so it is a small row here instead of a
+        // rewrite of the wide life row. A table only: an intent saved in the
+        // row by an older build is read there until the next admission.
+        ['bot-economy-intents', () => connection.exec(`
+            CREATE TABLE IF NOT EXISTS bot_economy_intents (
+                characterId INTEGER PRIMARY KEY REFERENCES bot_life_state(characterId) ON DELETE CASCADE,
+                tuple TEXT NOT NULL
+            );
         `)]
     ];
     const migrate = (apply, record) => {
@@ -2522,6 +2532,30 @@ function economyOwnerUnsafe(characterId, authority, fresh = false) {
     return row;
 }
 
+// A bot's economy tuple (EconomyCommit): the completed receipt is the row's
+// stats leaf, written by the step that completed it; a pending intent is its
+// bot_economy_intents row, written alone at admission. The newer one holds: a
+// receipt is one sequence past the intent it completed (or names its id), an
+// intent admitted after a receipt carries the receipt's sequence. An intent
+// that does not read as one is counted and taken as absent: the next
+// admission writes over it.
+function economyTupleUnsafe(characterId, row) {
+    const receipt = jsonObject(row.statsJson).economyCommit ?? null;
+    const saved = one('SELECT tuple FROM bot_economy_intents WHERE characterId=?', [Number(characterId)])?.tuple;
+    let intent = null;
+    if (saved) {
+        try {
+            intent = JSON.parse(saved);
+            if (!EconomyCommit.valid(intent) || intent[1] !== 0) throw Error('invalid_economy_intent');
+        } catch (error) {
+            FailureLog.note('db.economy_intent', error);
+            intent = null;
+        }
+    }
+    const completed = receipt && (Number(receipt[0]) > Number(intent?.[0]) || receipt[2] === intent?.[2]);
+    return { receipt, tuple: intent && !completed ? intent : receipt };
+}
+
 // Read a saved completion before examining the now-consumed physical inputs.
 // Authority is still checked first; an obsolete session/worker cannot spend.
 function economyStepUnsafe(characterId, command, kind) {
@@ -2532,7 +2566,7 @@ function economyStepUnsafe(characterId, command, kind) {
     const row = economyOwnerUnsafe(characterId, command.authority);
     if (Diagnostics.active()) stageNativeDiagnostic(characterId, { row, command }, 'native_admission', 'authority_checked',
         { commandKind: command[1] });
-    const tuple = jsonObject(row.statsJson).economyCommit;
+    const { tuple } = economyTupleUnsafe(characterId, row);
     if (!EconomyCommit.valid(tuple) || tuple[2] !== command[0] || tuple[3] !== command[1]) throw Error('economy_intent_changed');
     if (tuple[1] === 1 && command[2] === tuple[0] - 1) {
         if (Diagnostics.active()) stageNativeDiagnostic(characterId, { row, command }, 'native_replay', 'saved_receipt',
@@ -6990,15 +7024,15 @@ const Database = {
         if (applyInJob !== undefined) applyPendingCharacterWrite = typeof applyInJob === 'function' ? applyInJob : null;
     },
 
-    admitEconomyCommand(characterId, kind, { authority, original = null, acknowledged = null, reconcilePending = false } = {}) {
+    admitEconomyCommand(characterId, kind, { authority, original = null, acknowledged = null } = {}) {
         const beforeWrite = mutationAdmission.getStore();
         // Admission metadata is saved BEFORE the concrete physical step is
         // guarded. The synchronous guard never enqueues another DB mutation.
         return mutationAdmission.run(undefined, () => inTransaction(() => {
             if (beforeWrite && beforeWrite() !== undefined) throw Error('invalid_economy_admission');
             const row = economyOwnerUnsafe(characterId, authority, !original);
-            const previous = jsonObject(row.statsJson).economyCommit;
-            if (previous && !EconomyCommit.valid(previous)) throw Error('invalid_economy_receipt');
+            const { receipt, tuple: previous } = economyTupleUnsafe(characterId, row);
+            if ([receipt, previous].some(tuple => tuple && !EconomyCommit.valid(tuple))) throw Error('invalid_economy_receipt');
             const sequence = previous?.[0] || 0;
             if (original) {
                 const command = EconomyCommit.header(original[0], original[1], original[2], authority);
@@ -7007,8 +7041,11 @@ const Database = {
                 return { command, row: normalizeRow(row) };
             }
             if (sequence >= Number.MAX_SAFE_INTEGER) throw Error('economy_sequence_exhausted');
-            if (previous && JSON.stringify(previous) !== JSON.stringify(acknowledged)) throw Error('economy_result_unacknowledged');
-            if (previous?.[1] === 0 && !reconcilePending) throw Error('economy_intent_pending');
+            // Replacing a receipt needs the state that reconciled its result.
+            // A pending intent moved nothing: a new admission replaces it (one
+            // still in flight is refused by EconomyCommit.admit, and its step
+            // by its own check of the intent's id, economy_intent_changed).
+            if (receipt && JSON.stringify(receipt) !== JSON.stringify(acknowledged)) throw Error('economy_result_unacknowledged');
             // A recovered pending intent has no physical commit. Its arguments
             // are not reconstructed; the new step is planned from actual state.
             const command = EconomyCommit.create(kind, sequence, authority);
@@ -7016,10 +7053,11 @@ const Database = {
             // authority holds the revision read before this write, and the
             // step's economyOwnerUnsafe refuses a moved one (economy_owner_changed).
             // The step's own write moves the row.
-            write("UPDATE bot_life_state SET statsJson=json_set(COALESCE(statsJson,'{}'),'$.economyCommit',json(?)) WHERE characterId=?",
-                [JSON.stringify(EconomyCommit.pending(command)), Number(characterId)]);
-            return { command, row: normalizeRow(one('SELECT * FROM bot_life_state WHERE characterId=?', [Number(characterId)])),
-                recovered: previous?.[1] === 0 ? 'pending_aborted' : null };
+            write('INSERT INTO bot_economy_intents(characterId, tuple) VALUES (?, ?) ON CONFLICT(characterId) DO UPDATE SET tuple = excluded.tuple',
+                [Number(characterId), JSON.stringify(EconomyCommit.pending(command))]);
+            // The row is as the caller's state saw it (same revision, nothing
+            // written to it): no row goes back, the caller keeps its state.
+            return { command, row: null, recovered: previous?.[1] === 0 ? 'pending_aborted' : null };
         }, 'economy:intent'));
     },
 

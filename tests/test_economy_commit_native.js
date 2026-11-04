@@ -185,6 +185,10 @@ async function run() {
         'the cold snapshot holds no product after the failed roll');
     // A pending intent without a commit survives restart, but recovery never
     // recreates its old arguments. Replan a different native step from stock.
+    await Database.execute(['INSERT INTO bot_economy_intents(characterId, tuple) VALUES (1, ?) ON CONFLICT(characterId) DO UPDATE SET tuple = excluded.tuple', ['[1,0,"broken"']]);
+    const overwritten = await step(1, Commit.KINDS.npcBuy);
+    Commit.finish(1, overwritten.command);
+    assert.equal(overwritten.recovered, null, 'an intent that does not read is taken as absent and written over');
     const pending = await step(1, Commit.KINDS.npcBuy);
     Commit.finish(1, pending.command);
     const recovered = await step(1, Commit.KINDS.npcBuy);
