@@ -22,13 +22,15 @@ const assert=require('node:assert/strict');
 parentPort.on('message',message=>{
     if(!message.queryProbe)return;
     if(message.queryProbe==='hold-meeting'||message.queryProbe==='hold-refresh') {
-        const held={input:{mode:message.queryProbe==='hold-meeting'?'meeting':'refresh',state:kernel.states.get(701).state}};
-        occupationPlanner.waiting.set(701,held);
+        const mode=message.queryProbe==='hold-meeting'?'meeting':'refresh';
+        const held={id:701,mode,input:{mode,state:kernel.states.get(701).state}};
+        occupationPlanner.waiting.set(occupationPlanner.keyOf(701,mode),held);
         module.exports.heldMeeting=held;
     }
     if(message.queryProbe==='release-meeting'||message.queryProbe==='release-refresh') {
-        assert.strictEqual(occupationPlanner.waiting.get(701),module.exports.heldMeeting);
-        occupationPlanner.waiting.delete(701);
+        const key=occupationPlanner.keyOf(701,module.exports.heldMeeting.mode);
+        assert.strictEqual(occupationPlanner.waiting.get(key),module.exports.heldMeeting);
+        occupationPlanner.waiting.delete(key);
     }
     if(message.queryProbe==='hold-lifecycle') {
         kernel.commanding.add(701);kernel.commandStartedAt.set(701,{kind:'lifecycle'});
@@ -36,8 +38,8 @@ parentPort.on('message',message=>{
     if(message.queryProbe==='release-lifecycle') {
         kernel.commanding.delete(701);kernel.commandStartedAt.delete(701);
     }
-    parentPort.postMessage({probe:message.queryProbe,slots:[...occupationPlanner.slots.values()].map(entry=>({
-        id:entry.id,recipeBook:entry.input.recipeBook,knownShotRecipes:entry.input.knownShotRecipes,
+    parentPort.postMessage({probe:message.queryProbe,slots:[...occupationPlanner.slots.values(),...occupationPlanner.cards.values()].map(entry=>({
+        id:entry.id,mode:entry.mode,recipeBook:entry.input.recipeBook,knownShotRecipes:entry.input.knownShotRecipes,
         canonical:entry.input.state===kernel.states.get(entry.id)?.state}))});
 });`;
 const wrapper = String.raw`
@@ -110,8 +112,8 @@ function post(type, payload, id) { worker.postMessage(Protocol.envelope(type, ep
     assert.equal(admission.incomeReviews.length, 2);
     worker.postMessage({ queryProbe: 'canonical' });
     const prepared = await wait(message => message.probe === 'canonical');
-    assert.equal(prepared.slots.filter(row => row.id > 0).length, 2);
-    assert(prepared.slots.filter(row => row.id > 0).every(row => row.knownShotRecipes.length === 0),
+    assert.equal(prepared.slots.filter(row => row.mode !== 'wish').length, 2);
+    assert(prepared.slots.filter(row => row.mode !== 'wish').every(row => row.knownShotRecipes.length === 0),
         'current query knowledge replaces the worker\'s recipes row');
     // A crafter at its station that requires the party joins without weighing income.
     const required = { status: 'open', priority: 'required', spotId: 'execution-ground', requestedAt: timestamp };
@@ -150,7 +152,7 @@ function post(type, payload, id) { worker.postMessage(Protocol.envelope(type, ep
     assert.deepEqual(fresh.payload.sources, Calculation.sources(changed));
     worker.postMessage({ queryProbe: 'private-release' });
     const released = await wait(message => message.probe === 'private-release');
-    assert(released.slots.every(row => row.id <= 0 || row.canonical), 'no completed planner slot retains a private query snapshot');
+    assert(released.slots.every(row => row.mode === 'wish' || row.canonical), 'no completed planner slot retains a private query snapshot');
     worker.postMessage({queryProbe:'hold-meeting'});
     await wait(message=>message.probe==='hold-meeting');
     post('party_goal_request',{...request,replyBy:Date.now()+5000},'during-meeting');

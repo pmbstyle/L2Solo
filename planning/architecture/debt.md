@@ -145,6 +145,12 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    ones after the wider equipment one. `KeptSourceFacts` keys each fact on the spoiler as it was read; one rule
    (read the spoiler once per build, or band by `progression.required` alone) is the owner's choice.
 
+25. **The demand forecasts age by the clock with no event.** `MarketTradeDemand.forecast` decays an item's trades by
+   an e-fold per uptime hour between two trades, so a workshop priced on them (`ProductionSalePolicy.exit`) moves
+   with no input moving; the planner's workshop card serves for the earning hold's window instead
+   (`ColdSimulationWorker` `servesUntil`, limits.md "Occupation planner"). The forecast's breakpoints (its units
+   floor, a town dropping below one unit) would give the time the answer stands until.
+
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets`' `gapHorizonHours`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so
 a rich bot there has a null activity (T178): a test expecting "one leaf" from such a scene breaks the same way. Known

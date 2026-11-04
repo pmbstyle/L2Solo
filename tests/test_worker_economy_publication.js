@@ -71,8 +71,15 @@ async function runWorker(state, predicate, followUp = null) {
     const far = { ...state, characterId: 765414, name: 'PublicationFar', phase: 'cold', nearSeq: undefined,
         timing: { nextResolveAt: now - 1, lastResolvedAt: now - 60000 },
         stats: { classId: 0, clanId: 9, generatedCold: true, dwarvenCraftLevel: 1, workshop: { entries: [] }, money: [1000, .001, 0, 0] } };
-    const hot = await runWorker(state, message => message.type === 'ready' && message.payload.phase === 'economy_decided',
-        async ({ seen, post, table }) => {
+    const decidedFor = id => message => message.type === 'ready' && message.payload.phase === 'economy_decided'
+        && message.payload.characterId === id;
+    const hot = await runWorker(state, decidedFor(state.characterId),
+        async ({ result, until, seen, post, table }) => {
+            // A clan member's deposit moves the clan supply the near decision
+            // reads: the same post is decided again on it.
+            table([{ name: 'clan_supplies', from: null, to: 0, full: true, last: 1, removed: [],
+                rows: [[9, [9, 1, [[1864, 3]], 5]]] }]);
+            await until(message => message !== result && decidedFor(state.characterId)(message));
             post(far);
             // A moved item marks a done slot only: pages repeat until the far one has finished.
             for (let version = 0; !seen(staleFor(far.characterId)); version++) {

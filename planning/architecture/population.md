@@ -78,6 +78,7 @@ thread: our rule, so a far bot does not re-decide on every event ([bot-ai.md](bo
 | Cold → hot gate | `handoffToMain` (solo); party / PvP: their own DB `transition` (POP-4) |
 | Main → worker data | `ColdTableChannel` (tables), `snapshot_page` (bots); clan social bypasses it (POP-9) |
 | Spot route | `BotRoute` (the solo trip's kept route and spot verdicts live on the worker's kernel record) |
+| A planner answer (workshop, route rows, action plan) kept for a bot | `ColdOccupationPlanner`, one job per bot per mode, held on the value of what the mode reads (`ColdSimulationWorker.plannerInputKey`: the route key for rows; the state's values but its commit stamps for the workshop; plus the step clock and economy for the action plans; the asked state object and the inputs asked beside it (warehouse and clan supply versions, escrow, recipes, whole copies, pending pages) for near, refresh and meeting, which read worker inputs beside the state) and its read board tokens; a new state that reads the same keeps it, in flight too (its publication names the new state); a workshop card serves 30 game min (limits.md) |
 | Versions of a spot's inputs for held results (readers compare, nothing is dispatched) | crowd: `SpotOccupancyIndex.spotVersion` (moves when a bot joins or leaves the spot; this thread's: `SpotProfiles.spotVersion`); a holder's exclusions: `SpotRiskPolicy.exclusionVersion` (revision = the excluded set, untilStep = its first mark's end) |
 | Travel route and fare | `Travel/TravelRoutes`, `TripPayment` |
 | Cold trip time | `ColdTrip` |

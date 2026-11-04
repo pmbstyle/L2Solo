@@ -112,7 +112,7 @@ module.exports.goalProbe = async (id) => {
 // A refresh of a dirty bot waits for its step, whose build it would repeat, and
 // runs on that step's output.
 module.exports.refreshProbe = async id => {
-    const asked = () => occupationPlanner.waiting.has(id) || occupationPlanner.slots.has(id);
+    const asked = () => !!occupationPlanner.entry(id, 'refresh');
     const record = (stats, economyPending) => { const entry = kernel.states.get(id);
         return { ...entry, economyPending, state: { ...entry.state, phase: 'cold', stats: { ...entry.state.stats, ...stats } } }; };
     const run = (pending, ask) => {
