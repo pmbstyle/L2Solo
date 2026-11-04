@@ -83,8 +83,10 @@ async function run() {
     replace(World, 'fetchVisibleRealPlayers', () => []);
     replace(World, 'fetchNpcsInRadius', () => []);
     replace(Placement, 'resolve', state => ({ loc: { ...state.loc }, spot: { id: state.spotId } }));
-    replace(Coordinator, 'fenceBot', async () => ({ ok: true }));
-    replace(Coordinator, 'notifyState', state => { notifications.push(state); });
+    // The fence as the worker holds it; notifyState is the real release.
+    replace(Coordinator, 'fenceBot', async memberId => { Coordinator.fencedBots.add(Number(memberId)); return { ok: true }; });
+    const releaseFence = Coordinator.notifyState.bind(Coordinator);
+    replace(Coordinator, 'notifyState', state => { notifications.push(state); return releaseFence(state); });
     replace(AI, 'stop', session => { session.aiActive = false; });
     replace(AI, 'init', session => {
         assert(activeParty.memberIds.every(id => World.user.sessions.some(s => s.actor?.fetchId() === id)), 'AI starts only after full publication');
@@ -160,6 +162,20 @@ async function run() {
     assert.strictEqual(Parties.find(party.partyId).status, 'active');
     assert(!World.user.sessions.length && !Manager.sessions.length);
     assert(!Lifecycle.pending.size);
+    assert(party.memberIds.every(id => !Coordinator.fencedBots.has(id)), 'a rolled back activation hands every member back');
+
+    // A member leaves the party while the fences settle: the activation is
+    // refused and still hands back every bot it fenced, the leaver included.
+    const settleBeforeLeave = Life.settleWrites;
+    Life.settleWrites = async ids => {
+        Life.settleWrites = settleBeforeLeave;
+        await settleBeforeLeave.call(Life, ids);
+        await Life.leaveParty(Life.cachedState(6), 'test_member_left');
+    };
+    assert.strictEqual((await Lifecycle.activate(party.partyId)).reason, 'party_changed');
+    assert.strictEqual(Life.cachedState(6).party.partyId, null);
+    assert([4, 5, 6].every(id => !Coordinator.fencedBots.has(id) && Life.cachedState(id).phase === 'cold'),
+        'an activation whose member left mid-way leaves no bot fenced');
 
     party = await createParty([7, 8]); spawnCount = 0; failAt = 0;
     let release, entered;
@@ -297,6 +313,10 @@ async function run() {
     assert.strictEqual(dissolvedHistory.status, 'dissolved', 'durable party history records dissolution');
     assert.strictEqual(JSON.parse(dissolvedHistory.statsJson).partyBreakReason, 'raid_failed');
     assert.strictEqual(recordedFailure, party.partyId);
+    assert.strictEqual(await Parties.createOrUpdate({ ...failedCooldown.party, status: 'active' }), null,
+        'a stale party write cannot bring back a dissolved party');
+    assert.strictEqual((await Database.execute(['SELECT status FROM bot_background_parties WHERE partyId=?', [party.partyId]]))[0].status, 'dissolved');
+    assert.strictEqual(Parties.find(party.partyId), null);
     assert([18, 19, 20].every(id => !Life.cachedState(id).party.partyId),
         'failed raid dissolution releases the complete roster');
 

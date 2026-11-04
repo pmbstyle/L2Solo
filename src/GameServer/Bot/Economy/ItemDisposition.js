@@ -392,16 +392,24 @@ function productionInputAmounts(state, timestamp = Date.now()) {
     const shot = state?.stats?.shotCraft?.preparing;
     const wealth = state?.stats?.wealthCraft?.outcome === 'buying' ? state.stats.wealthCraft : null;
     const setup = shot && Number(shot.at) + 30 * 60 * 1000 > timestamp ? shot : wealth;
-    const recipe = C4RecipeItems.resolveByRecipeId(Number(setup?.recipeId));
-    const batches = Number(setup?.batches);
-    if (!recipe || !(Number(setup.at) + 30 * 60 * 1000 > timestamp)
-        || !Number.isSafeInteger(batches) || batches < 1 || batches > 64) return {};
-    return Object.fromEntries(recipe.materials.map(row => [row.selfId, Number(row.amount) * batches]));
+    if (!setup || !(Number(setup.at) + 30 * 60 * 1000 > timestamp)) return {};
+    return recipeInputAmounts(setup.recipeId, setup.batches);
+}
+// A production kit: the recipe's materials for its batches.
+function recipeInputAmounts(recipeId, batches) {
+    const recipe = C4RecipeItems.resolveByRecipeId(Number(recipeId));
+    if (!recipe || !Number.isSafeInteger(Number(batches)) || batches < 1 || batches > 64) return {};
+    return Object.fromEntries(recipe.materials.map(row => [row.selfId, Number(row.amount) * Number(batches)]));
 }
 
-function saleReservations(state, reserved = reservedEquipmentAmounts(state), timestamp = Date.now()) {
-    const result = { ...reserved };
-    for (const [id, amount] of Object.entries(productionInputAmounts(state, timestamp)))
+// Reserves of different purposes add: the gear plan's inputs and one
+// production kit (main's listing check sums them the same way). The kit of a
+// craft a plan is about to run (plannedKit) replaces the setup in progress
+// when main runs it, so the two kits are one purpose: each item keeps the larger.
+function saleReservations(state, reserved = reservedEquipmentAmounts(state), timestamp = Date.now(), plannedKit = null) {
+    const result = { ...reserved }, kit = productionInputAmounts(state, timestamp);
+    for (const [id, amount] of Object.entries(plannedKit || {})) kit[id] = Math.max(Number(kit[id] || 0), Number(amount) || 0);
+    for (const [id, amount] of Object.entries(kit))
         result[id] = Number(result[id] || 0) + amount;
     return result;
 }
@@ -627,7 +635,8 @@ function saleCandidates(state, options = {}) {
     const limit = options.unlimited
         ? Number.MAX_SAFE_INTEGER
         : Math.max(1, Math.min(20, Number(options.limit) || 8));
-    const reserved = saleReservations(state, options.preparedReservations || reservedEquipmentAmounts(state), options.now);
+    const reserved = saleReservations(state, options.preparedReservations || reservedEquipmentAmounts(state), options.now,
+        options.productionKit);
     const clan = invoke('GameServer/Clan/ClanSupplyPolicy').reservedAmounts(state);
     for (const [id, amount] of Object.entries(reservedHennaAmounts(state)))
         reserved[id] = Math.max(Number(reserved[id] || 0), amount + Number(clan[id] || 0));
@@ -876,6 +885,7 @@ module.exports = {
     equipmentMaterialAmounts,
     collectedEquipmentInputs,
     productionInputAmounts,
+    recipeInputAmounts,
     saleReservations,
     capDeferredInputs,
     equipmentInputPlan,

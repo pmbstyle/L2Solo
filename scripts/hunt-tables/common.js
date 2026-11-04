@@ -2,12 +2,12 @@
 
 // Shared plumbing of the offline hunt tables (scripts/hunt-tables/build.js):
 // the game-data boot at rate x1, deterministic randomness, rounding and the
-// table file with its header of input fingerprints (pattern spot-table.json).
+// table file with its header and the fingerprint of its inputs (TableFingerprint).
 
 const childProcess = require('child_process');
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const TableFingerprint = require('../../src/GameServer/Bot/AI/TableFingerprint');
 
 const root = path.resolve(__dirname, '..', '..');
 const OUT_DIR = path.join(root, 'data', 'Bots', 'hunt');
@@ -56,27 +56,6 @@ function round(value, digits = 4) {
     return value === 0 ? 0 : Number(value.toPrecision(digits));
 }
 
-function files(target) {
-    const full = path.join(root, target);
-    if (!fs.existsSync(full)) return [];
-    if (fs.statSync(full).isFile()) return [target];
-    return fs.readdirSync(full).sort().flatMap(name => files(path.join(target, name)));
-}
-
-// A short sha1 of each input path (file or directory, recursive).
-function fingerprints(inputs) {
-    const out = {};
-    for (const input of inputs) {
-        const sha = crypto.createHash('sha1');
-        for (const file of files(input)) {
-            sha.update(file);
-            sha.update(fs.readFileSync(path.join(root, file)));
-        }
-        out[input] = sha.digest('hex').slice(0, 12);
-    }
-    return out;
-}
-
 function gitRevision() {
     try {
         const head = childProcess.execSync('git rev-parse --short=9 HEAD', { cwd: root }).toString().trim();
@@ -88,18 +67,20 @@ function gitRevision() {
     }
 }
 
-// The game data every table reads (DataCache) and the code that reads it.
-const GAME_INPUTS = ['data/Npcs', 'data/Items', 'data/Skills', 'data/Templates', 'data/Henna', 'data/Recipes',
-    'data/Bots/spot-reward-npcs.json', 'data/Bots/spot-table.json'];
+// The files the hunt tables are simulated by, hashed once per build.
+let fingerprint = null;
+function inputsFingerprint() {
+    return fingerprint || (fingerprint = TableFingerprint.fingerprint('hunt'));
+}
 
 function tablePath(name) {
     return path.join(OUT_DIR, `${name}.json`);
 }
 
 // Writes data/Bots/hunt/<name>.json: { header, ...body }. Returns its size in bytes.
-function writeTable(name, { inputs = {}, counts = {}, startedAt, extraInputs = [] }, body) {
+function writeTable(name, { inputs = {}, counts = {}, startedAt }, body) {
     const header = { schema: SCHEMA, table: name, generator: 'scripts/hunt-tables/build.js', revision: gitRevision(),
-        fingerprints: fingerprints([...GAME_INPUTS, ...extraInputs]), inputs, counts,
+        fingerprint: inputsFingerprint(), inputs, counts,
         buildSeconds: round((Date.now() - startedAt) / 1000, 3) };
     const text = `${JSON.stringify({ header, ...body })}\n`;
     fs.mkdirSync(OUT_DIR, { recursive: true });
@@ -165,4 +146,4 @@ function kitCharacterId(key) {
 }
 
 module.exports = { root, OUT_DIR, MAX_LEVEL, boot, hash, mulberry, seeded, round, writeTable, readTable, tablePath, c4ClassIds,
-    fingerprints, kitKey, parseKitKey, kitFutures, kitKeys, rowOfKey, kitCharacterId };
+    kitKey, parseKitKey, kitFutures, kitKeys, rowOfKey, kitCharacterId };

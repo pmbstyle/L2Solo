@@ -126,7 +126,7 @@ function botCanBuy(offer) {
     const fixed = offer.sourceType === 'configured_store' || offer.sellerKind === 'fixed'
         || (offer.sourceType === 'private_store' && MerchantStoreConfigs[offer.sourceName]);
     if (offer.sourceType === 'npc' && !ProductionPolicy.allowsNpcShot(offer.selfId)) return false;
-    return !fixed || (SHOT_IDS.has(Number(offer.selfId)) && ProductionPolicy.allowsFixedShot(offer.selfId));
+    return !fixed || ProductionPolicy.allowsFixedShot(offer.selfId);
 }
 
 // A live private store's line as an offer: a configured city merchant is

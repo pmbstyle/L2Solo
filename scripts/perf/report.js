@@ -151,7 +151,13 @@ function transitionsSummary(lines) {
         return { count: delta(counter), avgMs: timed ? round(windows.reduce((sum, t) => sum + t.avgMs * t.count, 0) / timed) : 0,
             p95Ms: Math.max(0, ...windows.map(t => t.p95Ms)), maxMs: Math.max(0, ...windows.map(t => t.maxMs)) };
     };
-    return { activation: of('activation', 'activations'), cooldown: of('cooldown', 'cooldowns'), handoffs: delta('coldOwnerHandoffs') };
+    // Refused activations by reason (HotActivation), summed over the windows.
+    const refusalReasons = {};
+    metrics.forEach(m => Object.entries(m.activationRefusalReasons || {}).forEach(([reason, count]) => {
+        refusalReasons[reason] = (refusalReasons[reason] || 0) + (Number(count) || 0);
+    }));
+    return { activation: of('activation', 'activations'), cooldown: of('cooldown', 'cooldowns'), handoffs: delta('coldOwnerHandoffs'),
+        refusals: { count: delta('activationRefusals'), reasons: refusalReasons } };
 }
 
 // The live server's context over the window (PopulationStatus.vitals, the recorder's files and
@@ -180,6 +186,15 @@ function contextSummary(summaries, timeline, start, end) {
             waitMs: Math.round((after.waitMs || 0) - (before.waitMs || 0)) };
     }).filter(row => row.count > 0).sort((a, b) => b.runMs - a.runMs).slice(0, 8) : [];
     const checkpoints = new Set(vitals.map(v => v.database?.checkpoint?.last && JSON.stringify(v.database.checkpoint.last)).filter(Boolean));
+    // The WAL truncate's last try and last success (time, ok, busy, duration) as of the last line, and the
+    // maintenance refusals (state retention, WAL truncate: job:reason) counted in the window.
+    const reset = (entry) => (entry ? { at: entry.at ? new Date(entry.at).toISOString() : null, ok: !!entry.ok, busy: entry.busy || 0,
+        durationMs: entry.durationMs != null ? round(entry.durationMs, 1) : null, ...(entry.error ? { error: entry.error } : {}) } : null);
+    const lastCheckpoint = vitals.at(-1)?.database?.checkpoint || {};
+    const refusalsAt = (line) => line?.vitals?.database?.maintenance?.refusals || null;
+    const refusalsBase = refusalsAt(before) || refusalsAt(summaries.find(refusalsAt)) || {};
+    const refusals = Object.fromEntries(Object.entries(refusalsAt(summaries.findLast(refusalsAt)) || {})
+        .map(([key, count]) => [key, count - (refusalsBase[key] || 0)]).filter(([, count]) => count > 0).sort((a, b) => b[1] - a[1]));
     // A restart is a start of a thread whose same name exited before (a shutdown's exits are not).
     const exited = new Set(), restarts = [];
     for (const mark of timeline.filter(line => line.type === 'thread' && Date.parse(line.t) <= end)) {
@@ -195,7 +210,8 @@ function contextSummary(summaries, timeline, start, end) {
             playersMax: max(values(line => line.vitals?.players)), lagSustainedMaxMs: max(values(line => line.vitals?.lag?.sustainedMs)) },
         database: { pendingMax: max(values(line => line.vitals?.database?.pending)), maxPending: max(values(line => line.vitals?.database?.maxPending)),
             walMb: range(values(line => line.files?.walMb)), worldMb: range(values(line => line.files?.worldMb)),
-            historyWalMb: range(values(line => line.files?.historyWalMb)), checkpoints: Math.max(0, checkpoints.size - 1), operations },
+            historyWalMb: range(values(line => line.files?.historyWalMb)), checkpoints: Math.max(0, checkpoints.size - 1), operations,
+            walTruncate: { last: reset(lastCheckpoint.lastResetAttempt), lastEmptied: reset(lastCheckpoint.lastReset) }, maintenanceRefusals: refusals },
         commitQueue: { depthMax: max(queue.map(q => q.depth)), bytesMaxKb: max(queue.map(q => Math.round((q.bytes || 0) / 1024))),
             oldestMaxMs: max(queue.map(q => q.oldestMs)), pausedShare: queue.length ? round(queue.filter(q => q.paused).length / queue.length, 2) : 0 },
         failures: { workerFaults: grown(line => line.coordinator?.failures?.workerFaults), faultBots: max(failures.map(f => (f.faultBackoff || 0) + (f.faultQuarantined || 0))),
@@ -287,7 +303,9 @@ function print(s) {
     }
     if (s.transitions) {
         const t = s.transitions, line = (x) => `${x.count} (avg ${x.avgMs} / p95 ${x.p95Ms} / max ${x.maxMs} ms)`;
-        console.log(`\ntransitions: cold -> hot ${line(t.activation)}; hot -> cold ${line(t.cooldown)}; handoffs ${t.handoffs}`);
+        const refused = Object.entries(t.refusals?.reasons || {}).map(([reason, count]) => `${reason} ${count}`).join(', ');
+        console.log(`\ntransitions: cold -> hot ${line(t.activation)}; hot -> cold ${line(t.cooldown)}; handoffs ${t.handoffs}; `
+            + `refused ${t.refusals?.count || 0}${refused ? ` (${refused})` : ''}`);
     } else if (s.run.scenario === 'hot') console.log('\ntransitions: none recorded (run with --diagnostics)');
     if (s.run.scenario === 'hot' && !s.player) console.log('\nplayer: none in the window: the hot scenario did not start (server.log, "hot scenario")');
     // A short window (a script that ends before a CPU chunk does) has no chunk of its own to show.
@@ -312,6 +330,9 @@ function print(s) {
         const d = c.database;
         console.log(`database: queue max ${d.pendingMax ?? '-'}${d.maxPending != null ? ` (peak ${d.maxPending})` : ''}, WAL ${span(d.walMb)} MB,`
             + ` world ${span(d.worldMb)} MB, history WAL ${span(d.historyWalMb)} MB, checkpoints ${d.checkpoints}`);
+        const truncate = (r) => (r ? `${r.at} ${r.ok ? (r.busy ? 'busy' : 'ok') : `failed${r.error ? ` (${r.error})` : ''}`}${r.durationMs != null ? ` ${r.durationMs} ms` : ''}` : 'none');
+        console.log(`  WAL truncate: last ${truncate(d.walTruncate.last)}, last emptied ${truncate(d.walTruncate.lastEmptied)};`
+            + ` maintenance refused in the window: ${Object.entries(d.maintenanceRefusals).map(([key, count]) => `${key} ${count}`).join(', ') || 'none'}`);
         for (const op of d.operations.slice(0, 6)) console.log(`  ${String(op.runMs).padStart(8)} ms run, ${String(op.waitMs).padStart(8)} ms wait  ${op.count}x ${op.op}`);
         const q = c.commitQueue, f = c.failures;
         console.log(`commit queue: depth max ${q.depthMax ?? '-'}, ${q.bytesMaxKb ?? '-'} KB, oldest ${q.oldestMaxMs ?? '-'} ms, paused ${Math.round(100 * q.pausedShare)} % of lines`);

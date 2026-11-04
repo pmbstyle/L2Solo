@@ -8,20 +8,17 @@ const CharacterStateSources = require('../../World/CharacterStateSources');
 const SparseNumericStorage = require('./SparseNumericStorage');
 const { isMainThread } = require('node:worker_threads');
 const FailureLog = require('../../../FailureLog');
+const FaultHold = require('../BotFaultHold');
 const SIMPLE_ACTIVITIES = new Set(['hunting', 'resting', 'traveling', 'dead']);
 const PROPOSAL_PAYLOAD_LIMIT_BYTES = 240 * 1024;
 // A step not answered by a commit ack this long after its start is requeued
 // (a party by its leader); a late ack then misses its proposal and is dropped.
 const STEP_STALL_MS = 30000;
 // A bot whose step or command throws again and again (a deterministic bug in
-// its state or a rule) is held off, not retried at every due: its next try
-// waits 1 s, 5 s, 30 s, then 2 min per fault in a row, and from the fifth it
-// is quarantined for 10 min at a time until a step or command of it succeeds.
-// The first fault of each message is logged with its stack, entering
-// quarantine once; repeats are only counted (status `botFaults`).
-const FAULT_BACKOFF_MS = [1000, 5000, 30000, 120000];
-const FAULT_QUARANTINE_AFTER = 5;
-const FAULT_QUARANTINE_MS = 10 * 60 * 1000;
+// its state or a rule) is held off, not retried at every due (BotFaultHold:
+// longer per fault in a row, quarantined from the fifth) until a step or
+// command of it succeeds. The first fault of each message is logged with its
+// stack, entering quarantine once; repeats are only counted (status `botFaults`).
 // Distinct messages logged per failing bot; others are only counted.
 const FAULT_LOGGED_MESSAGES = 4;
 // A solo hunt window's most rounds (typically 3-10 inside its ~300 s hold).
@@ -751,7 +748,7 @@ class ColdSimulationKernel {
         // Ok commit acks with numbers only whose state this thread could not
         // rebuild (no proposal kept, a bad number): always counted.
         this.ackUnbuilt = 0;
-        // Failing bots and parties only (FAULT_*): bot id, or `party:<id>` for a
+        // Failing bots and parties only (BotFaultHold): bot id, or `party:<id>` for a
         // party run (whoever leads it) -> { count, holdUntil, logged messages }.
         this.faults = new Map();
         // Every bot fault, repeats included, counted always (only on a fault):
@@ -2688,7 +2685,7 @@ class ColdSimulationKernel {
 
     // A step or command of this bot (key: its id) or a party run (`party:<id>`)
     // threw (here or, sent back in its command ack, on main): when it may try
-    // again (FAULT_*). Faults in a row count whatever their message (a message
+    // again (BotFaultHold). Faults in a row count whatever their message (a message
     // with an id in it must not reset the backoff); only a success clears them
     // (clearFault). Returns the hold's end.
     fault(key, error, stage) {
@@ -2697,20 +2694,17 @@ class ColdSimulationKernel {
         const who = party ? { partyId: id.slice(6) } : { characterId: id };
         let entry = this.faults.get(id);
         if (!entry) this.faults.set(id, entry = { count: 0, holdUntil: 0, logged: [] });
-        entry.count += 1;
         this.failures.workerFaults += 1;
         this.failures.faultsByStage[stage] = (this.failures.faultsByStage[stage] || 0) + 1;
-        const quarantined = entry.count >= FAULT_QUARANTINE_AFTER;
-        entry.holdUntil = this.now() + (quarantined ? FAULT_QUARANTINE_MS
-            : FAULT_BACKOFF_MS[Math.min(entry.count, FAULT_BACKOFF_MS.length) - 1]);
+        FaultHold.fault(entry, this.now());
         if (!entry.logged.includes(message) && entry.logged.length < FAULT_LOGGED_MESSAGES) {
             entry.logged.push(message);
             this.emit('fault', { reason: message, stage, ...who,
                 stack: String(error?.stack || '').split('\n').slice(0, 10).join('\n').slice(0, 2000) || null });
         }
-        if (entry.count === FAULT_QUARANTINE_AFTER) {
+        if (entry.count === FaultHold.QUARANTINE_AFTER) {
             this.emit('fault', { reason: message, stage, ...who, quarantined: true,
-                faults: entry.count, holdMs: FAULT_QUARANTINE_MS });
+                faults: entry.count, holdMs: FaultHold.QUARANTINE_MS });
         }
         return entry.holdUntil;
     }
@@ -2718,7 +2712,7 @@ class ColdSimulationKernel {
     faultCounts() {
         let faultBackoff = 0, faultQuarantined = 0;
         for (const entry of this.faults.values()) {
-            if (entry.count >= FAULT_QUARANTINE_AFTER) faultQuarantined += 1;
+            if (FaultHold.quarantined(entry)) faultQuarantined += 1;
             else faultBackoff += 1;
         }
         return { faultBackoff, faultQuarantined };
@@ -2816,7 +2810,7 @@ class ColdSimulationKernel {
             checkpointsRefused: this.checkpointsRefused,
             stepsRefused: this.stepsRefused,
             ackUnbuilt: this.ackUnbuilt,
-            // Bot faults (FAULT_*): all of them by stage, and the failing bots
+            // Bot faults (BotFaultHold): all of them by stage, and the failing bots
             // held off by a backoff / quarantined. swallowed: the failures the worker survived
             // (FailureLog { site: count }, absent while none); a kernel run on main has none of its own.
             failures: { ...this.failures, faultsByStage: { ...this.failures.faultsByStage }, ...this.faultCounts(),

@@ -353,29 +353,55 @@ function skill(id, type, target, effect, power = 100) {
     lod.shouldRefreshStatus = refresh;
     BotAI.executePvPCombat = combat;
 }
-// A state that throws on every hot tick: the bot keeps ticking, the first failure is logged with
-// its stack, the rest only counted (status line swallowed=).
+// A state that throws on every hot tick gets the cold step's answer (BotFaultHold): each fault
+// is counted (the first logged with its stack) and holds the state off longer, 1 s, 5 s, 30 s,
+// 2 min; at the fifth in a row the bot leaves that plan for its own, which runs at once, and its
+// held decision is taken again. A state tick that returns ends the run.
 {
     const { own } = setup({}, 'resting');
     const FailureLog = invoke('FailureLog');
+    const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
     const Resting = invoke('GameServer/Bot/AI/States/RestingState');
+    const Hunting = invoke('GameServer/Bot/AI/States/HuntingState');
     const lod = invoke('GameServer/Bot/AI/HotActorLodPolicy');
     const Upgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
-    const saved = { tick: Resting.tick, refresh: lod.shouldRefreshStatus, warn: utils.infoWarn, upgrade: Upgrade.applyBestUpgrades };
-    const logged = [], before = FailureLog.snapshot()?.['ai.state.resting'] || 0;
+    const saved = { tick: Resting.tick, hunt: Hunting.tick, refresh: lod.shouldRefreshStatus, warn: utils.infoWarn,
+        upgrade: Upgrade.applyBestUpgrades, now: Date.now };
+    const count = site => FailureLog.snapshot()?.[site] || 0;
+    const logged = [], before = count('ai.state.resting'), leftBefore = count('ai.state_left');
+    const seqBefore = Number(DecisionEvents.statsFor(own).decisionSeq || 0);
+    let clock = saved.now(), restTicks = 0, huntTicks = 0;
     try {
+        Date.now = () => clock;
         Upgrade.applyBestUpgrades = () => {};
-        Resting.tick = () => { throw new TypeError('resting state broken'); };
+        Resting.tick = () => { restTicks++; throw new TypeError('resting state broken'); };
+        Hunting.tick = () => { huntTicks++; };
         lod.shouldRefreshStatus = () => false;
         utils.infoWarn = (...line) => { if (line.join(' ').includes('ai.state.resting')) logged.push(line.join(' ')); };
         BotAI.tick(own); BotAI.tick(own); BotAI.tick(own);
+        assert.strictEqual(restTicks, 1, 'a state that threw is held off, not run on the next ticks');
+        assert.strictEqual(count('ai.state.resting') - before, 1, 'the fault is counted');
+        assert.strictEqual(logged.length, before ? 0 : 1, 'only the first failing tick is logged');
+        if (!before) assert.match(logged[0], /resting state broken/);
+        for (const hold of [1000, 5000, 30000]) {
+            clock += hold - 1; BotAI.tick(own);
+            clock += 1; BotAI.tick(own);
+        }
+        assert.strictEqual(restTicks, 4, 'each fault in a row holds the state longer: 1 s, 5 s, 30 s');
+        assert.strictEqual(own.plan, 'resting', 'four faults in a row keep the plan');
+        clock += 120000; BotAI.tick(own);
+        assert.strictEqual(restTicks, 5);
+        assert.strictEqual(count('ai.state.resting') - before, 5, 'every fault is counted');
+        assert.strictEqual(own.plan, 'hunting', 'the fifth fault in a row leaves the plan for the bot\'s own');
+        assert.strictEqual(count('ai.state_left') - leftBefore, 1, 'leaving the plan is counted');
+        assert(Number(DecisionEvents.statsFor(own).decisionSeq || 0) > seqBefore, 'the held decision is taken again');
+        BotAI.tick(own);
+        assert.strictEqual(huntTicks, 1, 'the bot\'s own plan runs at once');
+        assert.strictEqual(own.stateFault, null, 'a state tick that returns ends the run');
     } finally {
-        Resting.tick = saved.tick; lod.shouldRefreshStatus = saved.refresh; utils.infoWarn = saved.warn;
-        Upgrade.applyBestUpgrades = saved.upgrade;
+        Resting.tick = saved.tick; Hunting.tick = saved.hunt; lod.shouldRefreshStatus = saved.refresh;
+        utils.infoWarn = saved.warn; Upgrade.applyBestUpgrades = saved.upgrade; Date.now = saved.now;
     }
-    assert.strictEqual(FailureLog.snapshot()['ai.state.resting'] - before, 3, 'every failing tick is counted');
-    assert.strictEqual(logged.length, before ? 0 : 1, 'only the first failing tick is logged');
-    if (!before) assert.match(logged[0], /resting state broken/);
 }
 {
     const { own, bot, enemy } = setup();

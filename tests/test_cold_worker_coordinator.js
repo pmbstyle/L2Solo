@@ -129,6 +129,11 @@ let coordinator = null;
     const stopped = await coordinator.stop();
     assert.strictEqual(stopped.stopped, true);
     assert.strictEqual(stopped.queue.drained, true, 'shutdown must drain the commit queue');
+    // A fence handed back while no worker runs (a restart) still ends: the
+    // next worker gets the row from its boot snapshot.
+    coordinator.fencedBots.add(characterId);
+    assert.strictEqual((await coordinator.acceptColdState(LifeState.cachedState(characterId))).reason, 'worker_not_ready');
+    assert(!coordinator.fencedBots.has(characterId), 'a fence released with no worker running still ends');
     console.log('Cold worker coordinator durable-progress integration checks passed');
 })().catch((error) => {
     console.error(error);

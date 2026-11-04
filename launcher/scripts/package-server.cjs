@@ -23,6 +23,18 @@ async function collect(directory, base, files = []) {
     return files;
 }
 
+// Read from the source text: loading src/Database.js would start the server's
+// module graph. Numbered migrations end at a fixed number; newer ones are named
+// (`namedMigrations` entries written as ['name', () => ...]).
+function databaseSchema(source) {
+    const versions = [...source.matchAll(/migrations\.push\(\[(\d+),/g)].map(match => Number(match[1]));
+    const start = source.indexOf('const namedMigrations = [');
+    const end = source.indexOf('\n    ];', start);
+    if (!versions.length || start < 0 || end < 0) throw new Error('Cannot determine the packaged database schema version.');
+    const names = [...source.slice(start, end).matchAll(/^\s*\['([^'\n]*)',\s*\(\)\s*=>/gm)].map(match => match[1]);
+    return { databaseSchemaVersion: Math.max(...versions), databaseMigrationNames: names };
+}
+
 async function main() {
     const pkg = require(path.join(root, 'package.json'));
     const tag = process.env.RELEASE_TAG || `server-v${pkg.version}`;
@@ -64,15 +76,15 @@ async function main() {
             for (const file of files) zip.file(path.join(stage, file.path), { name: file.path, mode: 0o644 });
             zip.finalize().catch(reject);
         });
-        const migrations = [...(await fs.promises.readFile(path.join(stage, 'src/Database.js'), 'utf8')).matchAll(/migrations\.push\(\[(\d+),/g)].map(match => Number(match[1]));
-        if (!migrations.length) throw new Error('Cannot determine the packaged database schema version.');
+        const schema = databaseSchema(await fs.promises.readFile(path.join(stage, 'src/Database.js'), 'utf8'));
         const manifest = validateManifest({ schemaVersion: 2, component: 'server', tag, version: pkg.version, channel: release.channel,
             sourceCommit: process.env.RELEASE_SOURCE_SHA || execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
-            databaseSchemaVersion: Math.max(...migrations), startupProtocolVersion: 2,
+            ...schema, startupProtocolVersion: 2,
             minimumLauncherVersion: pkg.l2soloRelease.minimumLauncherVersion, runtime: { version: pkg.l2soloRelease.runtimeVersion },
             archive: { name, bytes: (await fs.promises.stat(archivePath)).size, sha256: await sha256(archivePath) }, files }, tag);
         await writeJson(path.join(output, 'l2solo-release.json'), manifest);
         console.log(`Packaged ${tag}: ${files.length} verified files, ${(manifest.archive.bytes / 1024 ** 2).toFixed(1)} MB`);
     } finally { await fs.promises.rm(stage, { recursive: true, force: true }); }
 }
-main().catch(error => { console.error(error); process.exitCode = 1; });
+if (require.main === module) main().catch(error => { console.error(error); process.exitCode = 1; });
+module.exports = { databaseSchema };

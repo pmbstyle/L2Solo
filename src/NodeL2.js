@@ -227,6 +227,14 @@ async function startServer() {
         await World.init();
         await invoke('GameServer/Recommendations/Runtime').start();
         await invoke('GameServer/ClanHall/Runtime').start();
+        // The bot life cache before any boot pass writes life rows: its init
+        // rebuilds a restart's stale hot rows cold and saves the load repairs
+        // (hennas, seeds, skills), which refuse a cold row over a cached hot
+        // copy. The board migrations and the meeting marker rewrite and
+        // recovery in AfkTrade.init write rows into this cache (R16). A failed
+        // init logs and leaves no population, as before; it does not stop the
+        // server. PopulationService.init (BotManager.init) reuses this init.
+        await invoke('GameServer/Bot/Population/BotLifeState').init();
         const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
         await AfkTrade.init();
         // Every bot's persona before any bot decides (BotPersona.of).

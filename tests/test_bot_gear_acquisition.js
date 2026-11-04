@@ -24,10 +24,11 @@ const stoneGolemSpot = {
     npcEntries: [{ selfId: 16, name: 'Stone Golem', count: 8 }]
 };
 
-const ironSources = GearAcquisitionPlanner.sourceForItem(1869, [stoneGolemSpot]);
-assert(ironSources.length > 0, 'known material drops must resolve to their real NPC source');
-assert.strictEqual(ironSources[0].spotId, stoneGolemSpot.id, 'source lookup must retain the matching farming spot');
-assert(ironSources[0].chance > 0, 'source lookup must retain an expected drop chance');
+// Stone Golem drops Charcoal in C4 (Lisvus droplist: 4.76 %), not Iron Ore.
+const materialSources = GearAcquisitionPlanner.sourceForItem(1871, [stoneGolemSpot]);
+assert(materialSources.length > 0, 'known material drops must resolve to their real NPC source');
+assert.strictEqual(materialSources[0].spotId, stoneGolemSpot.id, 'source lookup must retain the matching farming spot');
+assert(materialSources[0].chance > 0, 'source lookup must retain an expected drop chance');
 const antharasSpot = {
     id: 'antharas-nest',
     avgLevel: 70,
@@ -415,19 +416,19 @@ assert.strictEqual(capacityMarketFallback.target.selfId, failedTarget.selfId,
 const excludedSourcePlan = {
     status: 'active',
     strategy: 'direct_drop',
-    target: { selfId: 1869, name: 'Iron Ore', slot: 1 },
-    next: { spotId: stoneGolemSpot.id, npcId: 16, itemId: 1869 }
+    target: { selfId: 1871, name: 'Charcoal', slot: 1 },
+    next: { spotId: stoneGolemSpot.id, npcId: 16, itemId: 1871 }
 };
 const excludedSourceReplacement = GearAcquisitionPlanner.replacementPlanFor(
     { ...failedDropState, level: 19 },
     excludedSourcePlan,
     [stoneGolemSpot],
     {
-        excludedTargetIds: [1869],
+        excludedTargetIds: [1871],
         findMarketOffer: () => null
     }
 );
-assert.notStrictEqual(excludedSourceReplacement?.target?.selfId, 1869,
+assert.notStrictEqual(excludedSourceReplacement?.target?.selfId, 1871,
     'a failure-excluded target must not reuse its still-available farming source');
 
 const finalizedReplacement = GearAcquisitionPlanner.finalizePlan(
@@ -436,8 +437,8 @@ const finalizedReplacement = GearAcquisitionPlanner.finalizePlan(
     {
         status: 'active',
         strategy: 'direct_drop',
-        target: { selfId: 1869, name: 'Iron Ore', slot: 1 },
-        next: { spotId: stoneGolemSpot.id, npcId: 16, itemId: 1869 }
+        target: { selfId: 1871, name: 'Charcoal', slot: 1 },
+        next: { spotId: stoneGolemSpot.id, npcId: 16, itemId: 1871 }
     },
     failedContext,
     20 * 60 * 1000

@@ -1,6 +1,6 @@
 # Bot decision-making (hot)
 
-Checked at 199c3b19 (2026-11-04).
+Checked at 39e43408 (2026-11-04).
 
 Survey of t106dev @ 9f27b7fa (2026-11-03). Line numbers drift (~); search by name.
 Scope: `Bot/AI`, `Bot/Goals`, `Bot/BotAI.js`, chat → action. Cold stepping: [population.md](population.md).
@@ -9,7 +9,7 @@ Scope: `Bot/AI`, `Bot/Goals`, `Bot/BotAI.js`, chat → action. Cold stepping: [p
 
 | Mechanism | Decides | Entry |
 |---|---|---|
-| `BotAI.tick` | Order of guards per hot tick: PvP defense, board meeting, clan-alliance AI, trade, buff duty, LOD gate, chat arrival, auto-buy, far-away gate, death, loot, clan hall, hot competition, hot bot-party, then `States[session.plan]` | `BotAI.scheduleTick` via `HotAiDispatcher` |
+| `BotAI.tick` | Order of guards per hot tick: PvP defense, board meeting, clan-alliance AI, trade, buff duty, LOD gate, chat arrival, auto-buy, far-away gate, death, loot, clan hall, hot competition, hot bot-party, then `States[session.plan]` (a state that throws is held off and leaves its plan at the 5th fault in a row: `stateFaulted`, `BotFaultHold`) | `BotAI.scheduleTick` via `HotAiDispatcher` |
 | `AI/States/*` | What the body does: hunting, following, resting, shopping, getting_buffed, fleeing, pk_* | `state.tick(...)` from `BotAI.tick` |
 | Activity / occupation | Which job (hunting, selling, shopping, crafting, improving). **Decided by the worker**; a hot body only reads it | `DecisionEvents.held(session).network.activity` |
 | Re-decision | When the held decision is stale | `DecisionEvents.raiseDecision(session, reason)`; near raise goes to the worker. Whether a far bot hears it now: `Economy/Reaction.js` (T189: only at its player's moment; our rule) |
@@ -34,8 +34,8 @@ deterministic brain; the LLM acts only on explicit player communication.
 | When to re-decide | `DecisionEvents.raiseDecision` + `Reaction.js` (where a far bot stands) |
 | Solo hunting spot | Worker leaf `spotId`: `Population/BotRoute.choose`/`leafChoice` over `LevelingRoutes.scoreSpot`/`bestSpot` with `SpotEconomics` income (decided, AI-2); values from the spot table, [tables.md](tables.md) |
 | Party target | `Population/PartyHuntingTarget` |
-| Rest thresholds | `AI/RestPolicy` |
-| Solo fight admission: start the next mob, and the route's solo gate (the same rule at full HP and MP) | `AI/BotEncounterReadiness` (hot `HuntingState`, cold `BackgroundResolver.resolveFight`, route `BotTargetMatchup.soloCanHunt`): the fight must end above the potion line (`HealingPotionStock.useThreshold`), with a margin that grows with its length; attacks count only the MP above `BotClassPolicy.offensiveMpReserve` |
+| Rest thresholds; when a rest ends (`restOver`, hot `RestingState` and cold `BackgroundResolver.resolveRest` / `soloRestMs`): solo at the rested line `THRESHOLDS.rested` 0.95 HP (MP too for mana sitters), moved ±0.03 by the persona's caution (`restedLine`; the tables' reference bot has none: 0.95); a party member at the locked 0.95; a rest the next fight sent an already rested bot to ends on a full bar, HP and MP (hot `session.restWhole`, cold a full-bar deadline), so it does not stand, get refused and sit again | `AI/RestPolicy` |
+| Solo fight admission: start the next mob, and the route's solo gate (the same rule at full HP and MP) | `AI/BotEncounterReadiness` (hot `HuntingState`, cold `BackgroundResolver.resolveFight`, route `BotTargetMatchup.soloCanHunt`), judging the pull the bot would fight (hot: the scan's `SpotService.livePull`; cold: its rolled `usualPull`): the fight must end above the potion line (`HealingPotionStock.useThreshold`), with a margin that grows with its length; attacks count only the MP above `BotClassPolicy.offensiveMpReserve` |
 | Empty ground: a solo hunter's spot whose spawn groups admit none of its fights (`BotTargetMatchup.spotShares` / `admitsNone`, the gate above at the whole bar) | One rule hot and cold, raised as `unhuntable` (Reaction: occupation + sources, heard everywhere): raised only when the route's view (`readyProfiles`: pet raised, MP whole) refuses too, once per stay (`stats.emptyGround`, written by both sides, cleared by prey). Cold `BackgroundResolver.resolveSolo` (no walk, no pick; `debug.unhuntable`) → `BotLifeState.prepareResolve` → `DecisionSections.events` (ends the hunt window: `event`); hot `BotDecisionService.suggest` after `EMPTY_HUNT_SCANS`, one look per empty streak (`raiseDecision`). The rebuild searches the spot afresh and drops the kept route. A bot short only of what the route counts whole gets ready instead (C4: a summoner raises its pet before it engages): cold `BackgroundResolver.getReady` casts the pet out of the fight (`ensureColdSummon`), heals a living pet, or sits only when the rest changes what the gate reads (the summon's MP or reuse, a pet that only regenerates), else raises; hot `BotDecisionService.readyLook` → `SummonerTactics.raisePet` / sit / wait on a summon's or pet heal's reuse, one look per streak, a second summon or wait on the stay that changed nothing raises (`session.groundReadying`); its ready view from the live body (`actorReadyProfiles`) |
 | Party heal line | `AI/PartyHealPolicy` (`HEAL_BELOW`, `score`): cold `BackgroundResolver`, hot `BotPvpTactics.support` |
 | Party admission | `AI/BotAvailability` |
@@ -76,7 +76,7 @@ deterministic brain; the LLM acts only on explicit player communication.
   dead/resting/following likely unreachable; `MerchantState` empty.
 - **AI-9 two ambient engines.** `BotAmbientDirector` (default, `ambientScenesEnabled`) and legacy `BotConversation` path;
   `checkAndStartConversation` asks `BotConversation.canStart` even when the director runs.
-- **AI-13 `World.fetchUser` as control flow.** `HuntingState` (~1035) and `FollowingState` (~2018) ask
+- **AI-13 `World.fetchUser` as control flow.** `HuntingState` (~1082) and `FollowingState` (~1981) ask
   `fetchUser` first and read its rejection as "not a player", then `fetchNpc`: a session scan, an `Error` and two
   promises per tick with an NPC target (perf, not a failure; the sync `World.registeredActorById` answers it).
   `SpotService.ensureIndexed` returns `[]` without World definitions (a startup window), not counted.

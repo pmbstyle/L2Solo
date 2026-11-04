@@ -17,6 +17,7 @@ const PartyHealPolicy = invoke('GameServer/Bot/AI/PartyHealPolicy');
 const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const RestPolicy = invoke('GameServer/Bot/AI/RestPolicy');
+const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const RestPotion = invoke('GameServer/Bot/AI/RestPotion');
@@ -179,6 +180,17 @@ function applyStandingRegen(state, sourceVitals, elapsedMs, timestamp = Date.now
     return vitals;
 }
 
+// The rest a solo cold bot sits down to (RestPolicy.restOver, the hot rest's rule):
+// to its rested line; one its next fight sent it to when it was already rested
+// (refused at its line) goes on to a full bar, HP and MP.
+function soloRestMs(state, vitals, { refused = false } = {}) {
+    const persona = BotPersona.of(state);
+    if (refused && RestPolicy.restOver(vitals, { mana: requiresManaRecovery(state), persona })) {
+        return estimateRestMs(state, vitals, { requireMana: true });
+    }
+    return estimateRestMs(state, vitals, { line: RestPolicy.restedLine(persona) });
+}
+
 function resolveRest(state, elapsedMs, timestamp, options = {}) {
     const combat = botCombatStats(state, timestamp);
     const vitals = {
@@ -193,15 +205,15 @@ function resolveRest(state, elapsedMs, timestamp, options = {}) {
     vitals.hp = Math.min(vitals.maxHp, vitals.hp + regen.hp * ticks);
     vitals.mp = Math.min(vitals.maxMp, vitals.mp + regen.mp * ticks);
 
-    const hpReady = vitals.hp / Math.max(1, vitals.maxHp) >= 0.95;
     const requireMana = requiresManaRecovery(state, options);
-    const mpReady = !requireMana || vitals.mp / Math.max(1, vitals.maxMp) >= 0.95;
     // The pet rests too (RestPolicy.petRested): one its owner cannot heal waits to be whole.
     const rested = petRegen(state, elapsedMs, combat);
     const summon = rested.stats?.coldCombat?.summon;
     const petView = coldPetView(combat, summon, vitals, rested.stats?.coldCombat?.cooldowns, timestamp);
     const petReady = RestPolicy.petRested(petView);
-    const recoveryNeeded = !hpReady || !mpReady || !petReady;
+    // Solo to the bot's rested line, a party at its locked line (RestPolicy.restOver).
+    const party = options.party === true, persona = party ? null : BotPersona.of(state);
+    const recoveryNeeded = !RestPolicy.restOver(vitals, { mana: requireMana, pet: petView, party, persona });
     // The deadline is an estimate, not an additional readiness condition.
     // Regeneration can fill the member slightly before that deadline; keeping
     // the deadline alive in that case would move it forward on every resolve.
@@ -209,7 +221,8 @@ function resolveRest(state, elapsedMs, timestamp, options = {}) {
         ? Math.max(0, Number(state.stats?.restUntil || 0) - timestamp)
         : 0;
     const remainingMs = recoveryNeeded
-        ? Math.max(estimateRestMs(state, vitals, options), scheduledRemainingMs, petReady ? 0 : petRestMs(combat, summon, vitals, timestamp))
+        ? Math.max(estimateRestMs(state, vitals, party ? options : { ...options, line: RestPolicy.restedLine(persona) }),
+            scheduledRemainingMs, petReady ? 0 : petRestMs(combat, summon, vitals, timestamp))
         : 0;
     const resting = recoveryNeeded;
     // ARCH-NOTE: Native checkpoints require integer milliseconds. A pet's regen
@@ -2817,7 +2830,7 @@ const BackgroundResolver = {
                     patch.activity = 'resting';
                     const drinkMs = drinkToRest(roundProfile, true, coldPetView(roundProfile, patch.stats.coldCombat?.summon, patch.vitals,
                         patch.stats.coldCombat?.cooldowns, timestamp + combatMs));
-                    patch.stats.restUntil = Math.ceil(timestamp + Math.max(estimateRestMs(fightState, patch.vitals), drinkMs));
+                    patch.stats.restUntil = Math.ceil(timestamp + Math.max(soloRestMs(fightState, patch.vitals, { refused: true }), drinkMs));
                     events.push({ type: 'rest', weight: 2,
                         summary: `${state.name || 'Bot'} sat down before another fight near ${spot.name}`,
                         meta: { spotId: spot.id, reason: result.reason } });
@@ -2935,7 +2948,7 @@ const BackgroundResolver = {
                 patch.activity = 'resting';
                 patch.stats = {
                     ...(patch.stats || state.stats || {}),
-                    restUntil: Math.ceil(timestamp + Math.round(result.runMs || 0) + Math.max(estimateRestMs(fightState, patch.vitals), drinkMs,
+                    restUntil: Math.ceil(timestamp + Math.round(result.runMs || 0) + Math.max(soloRestMs(fightState, patch.vitals), drinkMs,
                         RestPolicy.petRested(petView) ? 0 : petRestMs(fightProfile, summonLeft, patch.vitals, timestamp + combatMs)))
                 };
                 events.push({

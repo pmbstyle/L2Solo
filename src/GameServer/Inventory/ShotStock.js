@@ -501,12 +501,13 @@ function ensureCharacterStock(characterId, options = {}) {
 
 // What the bot's healing-potion restock (HealingPotionStock.restockPlan) costs
 // now: survival first, so the shot restock leaves this money for the potions.
-// The potion price is the caller's local NPC price, else the cheapest NPC price.
+// The potion price is the caller's local NPC price, else the bot's price
+// (StaticMerchantPricing.botPurchasePrice, where a bot may buy it).
 function potionRestockCost(value, inventory, adena, reserve, potionUnitPrice) {
     const Potions = invoke('GameServer/Bot/AI/HealingPotionStock');
     const potion = Potions.purchasePotionFor(value);
     const unitPrice = Number(potionUnitPrice ?? invoke('GameServer/Bot/Economy/StaticMerchantPricing')
-        .cheapestPurchase(potion.selfId));
+        .botPurchasePrice(potion.selfId));
     if (!Number.isFinite(unitPrice) || unitPrice <= 0) return 0;
     return Potions.restockPlan(value, { potion, inventory: inventory || undefined, adena, reserve, unitPrice }).cost;
 }

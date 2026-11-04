@@ -374,13 +374,25 @@ function queuedGroundLootIds(leaderSession) {
         .filter(Boolean));
 }
 
+// The party's bags as the pickup claim reads them (PickupCapacity): a drop the
+// claim refused for room (PickupItem) waits until this changes, instead of
+// sending a companion to it again on every scan.
+function lootBagsKey(leaderSession) {
+    return [leaderSession, ...membersForLeader(leaderSession)].map(member => {
+        const backpack = member?.actor?.backpack;
+        return `${backpack?.fetchItems?.().length}:${backpack?.fetchTotalLoad?.()}:${member?.actor?.fetchMaxLoad?.()}`;
+    }).join('|');
+}
+
 function availableGroundLoot(leaderSession) {
     const members = [leaderSession, ...membersForLeader(leaderSession)]
         .filter(isAliveOnline);
     const queuedIds = queuedGroundLootIds(leaderSession);
+    let bags;
     return (world().items?.spawns || [])
         .filter((item) => item?.fetchId && item?.fetchLocX && item?.fetchLocY)
         .filter((item) => !queuedIds.has(Number(item.fetchId())))
+        .filter((item) => item.partyLootRefusedBags === undefined || item.partyLootRefusedBags !== (bags ??= lootBagsKey(leaderSession)))
         .filter((item) => isOwnedPartyGroundLoot(leaderSession, item))
         .filter((item) => isInsidePartyGroundLootLeash(leaderSession, item))
         .filter((item) => members.some((memberSession) => distance2d(memberSession.actor, item) <= PARTY_GROUND_LOOT_LEASH_RADIUS))
@@ -1047,6 +1059,7 @@ const PartyCompanionService = {
 
     reconcileGroundLoot,
     groundLootLeader: partyLeaderSession,
+    lootBagsKey,
 
     bringToLeader(leaderSession, companionSession) {
         if (!isActiveCompanion(companionSession, leaderSession)) return false;

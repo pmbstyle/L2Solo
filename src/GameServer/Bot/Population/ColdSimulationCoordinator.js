@@ -1476,8 +1476,23 @@ class ColdSimulationCoordinator {
         return this.markDirty(state, { ...options, critical: options.critical !== false });
     }
 
+    // An owner's release of the fence it took, by id: the fence goes even when
+    // the bot has no cached row; a row there is goes back to the worker.
+    releaseFence(characterId, state = LifeState.cachedState(Number(characterId))) {
+        if (state) return this.notifyState(state);
+        this.fencedBots.delete(Number(characterId));
+        return { ok: false, reason: 'missing_state' };
+    }
+
     async acceptColdState(state, timeoutMs = 500) {
-        if (!state || !this.worker || !this.ready) return { ok: false, reason: 'worker_not_ready' };
+        if (!state) return { ok: false, reason: 'worker_not_ready' };
+        // The caller's fence ends here even with no worker: a fence held across
+        // a worker restart would refuse the bot's commands for good, while the
+        // new worker already holds its row from the boot snapshot.
+        if (!this.worker || !this.ready) {
+            this.fencedBots.delete(Number(state.characterId));
+            return { ok: false, reason: 'worker_not_ready' };
+        }
         await invoke('GameServer/Social/InteractionMemoryRuntime').ensureMany([Number(state.characterId)]);
         await this.ensureCraftRecipes(state);
         this.fencedBots.delete(Number(state.characterId));

@@ -1,6 +1,6 @@
 # Population, hot/cold, cold worker
 
-Checked at 199c3b19 (2026-11-04).
+Checked at 39e43408 (2026-11-04).
 
 Survey of t106dev @ 9f27b7fa (2026-11-03). Line numbers drift; search by name.
 Scope: `Bot/Population`, `Bot/Travel`, `BotManager`, `BotSession`, worker protocol.
@@ -11,7 +11,7 @@ Scope: `Bot/Population`, `Bot/Travel`, `BotManager`, `BotSession`, worker protoc
 |---|---|---|
 | `BotManager` | Hot sessions: spawn actors, chat, status | `init`, `loadAndSpawnBot` |
 | `BotSession` | Fake socket of a hot bot | — |
-| `PopulationService` | Main owner of the population: coordinator start, hot/cold phase policy, parties, seeding, and **worker lifecycle commands** (town work that needs World/DB) | `start`, `tickPhasePolicy`, `executeWorkerLifecycleCommand` |
+| `PopulationService` | Main owner of the population: coordinator start, hot/cold phase policy, parties, seeding, DB maintenance (state retention, WAL truncate: governor-admitted during play too, refusals in `Database.stats().maintenance`), and **worker lifecycle commands** (town work that needs World/DB) | `start`, `tickPhasePolicy`, `executeWorkerLifecycleCommand` |
 | `BotLifeState` (4.2k lines) | Main cache and DB writer of the cold row — **the cold truth**; `prepareResolve` also runs in the worker; at boot rebuilds rows left hot by a restart from the character record (`recoverStaleHotStates` → `staleHotRowFromRecord`, one transaction `Database.recoverStaleHotLifeStates`) | `upsertState`, `markHot`, `markCold`/`writeColdRow` |
 | `ColdSimulationCoordinator` | Main side of the worker: spawn, page snapshots/tables, commit proposals, commands, fences, watchdog, restart | `start` |
 | `ColdSimulationWorker` | Worker entry; replaces `invoke` with a forbidden-module guard + stubs; holds `planLifecycle` and `projectResolve` inline | `handle` |
@@ -25,12 +25,14 @@ Scope: `Bot/Population`, `Bot/Travel`, `BotManager`, `BotSession`, worker protoc
 | `LifecycleSafetySweep` | Every 30 min: rows not covered by the worker get repaired | `startLifecycleSafetySweep` |
 | Seeding | `GeneratedColdSeeder` + `PopulationSeedPlanner` | `scheduleGeneratedColdSeed` |
 | `Travel/` | `TravelRoutes`, `TripPayment`, `ScrollStock` — shared by hot and cold, done right | — |
-| `ColdTrip` | Cold trip time, honest: scroll cast, 5 s per hop, run at 120 u/s, walkers; a traveller answers an invite | `townPlan`, `spotPlan`, `toSpot` |
+| `ColdTrip` | Cold trip time, honest: scroll cast, 5 s per hop, run at 120 u/s, walkers (a walker near a player leaves its trip in `HotActivation` at an endpoint of its run within the activation radius of the player, the arrival first, else the teleport point (`walkerAppearance`, on the resolver's arrival, read after the fence); neither in reach: it stays cold, `walker_endpoint_far`; refusals are counted by reason, `activationRefusals`); a traveller answers an invite | `townPlan`, `spotPlan`, `toSpot` |
 
 ## Lifecycle
 
 1. Seed → `LifeState.upsertState` writes cold rows. Merchants are the only static bots.
-2. Start: `LifeState.init`, `BackgroundPartyState.init`, worker; pages `init` → `catalog_page` → `table_page` →
+2. Start: `LifeState.init` (NodeL2 `startServer`, before `AfkTrade.init`: the board migrations and the meeting
+   marker rewrite and recovery write life rows into its cache; a stale hot copy there failed the init's repair saves),
+   `BackgroundPartyState.init`, worker; pages `init` → `catalog_page` → `table_page` →
    `snapshot_page`; geodata shared through `workerData`.
 3. Worker step: `lifecycleKind` → `resolver` | `command` | `party` | `party_member` | `event_driven` | `inactive`.
    Resolver: `planLifecycle` → `resolveSolo` (a hunting step always runs on round by round in `huntWindow`, each round
@@ -78,7 +80,7 @@ thread: our rule, so a far bot does not re-decide on every event ([bot-ai.md](bo
 | Spot route | `BotRoute` |
 | Travel route and fare | `Travel/TravelRoutes`, `TripPayment` |
 | Cold trip time | `ColdTrip` |
-| A throwing step or command: hold off, quarantine | `ColdSimulationKernel.fault`, one tracker per bot (per party run): backoff 1 s/5 s/30 s/2 min, quarantine 10 min after 5 faults in a row, first occurrence logged with the stack, `botFaults=` on the health line (`FAULT_*`, limits.md); a command's DB error is no bot fault (`commandDbErrors`) |
+| A throwing step or command: hold off, quarantine | `ColdSimulationKernel.fault`, one tracker per bot (per party run): backoff 1 s/5 s/30 s/2 min, quarantine 10 min after 5 faults in a row (`BotFaultHold`, the hot AI state's rule too: `BotAI` `stateFaulted`), first occurrence logged with the stack, `botFaults=` on the health line (limits.md); a command's DB error is no bot fault (`commandDbErrors`) |
 | Failure counts (status line, perf report, e2e players) | `ColdSimulationCoordinator.failureSnapshot` (one record: worker faults by stage, backoff/quarantine, protocol faults, `commandDbErrors`, `swallowed` = main's and the worker's `FailureLog` counts by site, the worker's from its heartbeat `failures.swallowed`); afterCommit errors in `ColdCommitQueue` `failures`. A post-commit step (`step`/`timedStep`) that throws is skipped: a refusal code is logged with the bot, any other throw counts as `cold.postcommit.<step>`; a throw outside a step as `cold.after_commit` (and `afterCommitErrors` for the perf report and e2e); a row merge throw as `cold.owner_row_merge`; `BotRoute` search throws as `route.*` (a bot that never travels is no longer read as "no spot"); a command request the worker built wrong as `cold.request_dropped:<why>` (still no ack) |
 | Boot recovery of a stale hot row | `BotLifeState.staleHotRowFromRecord` (the record wins, PER-7) |
 | Transition cost (cold ↔ hot time per bot) | `PopulationMetrics.recordActivation`/`recordCooldown` (`transitions` in the summary) |
@@ -132,7 +134,7 @@ thread: our rule, so a far bot does not re-decide on every event ([bot-ai.md](bo
 - **POP-21 static merchants are hot without a session** for ~5 s after boot (until `BotManager.init` spawns them).
   The 46 static merchants and service bots stay hot all the time (a store must be an actor in the World to be seen
   and clicked); `MerchantState.tick` is empty, the cost is the actor's own timers and sweeps. Decided 2026-11-03:
-  keep them hot until a perf run measures that cost (roadmap R2).
+  keep them hot until a perf run measures that cost.
 - **POP-22 a hot row is not kept current during the session** (main item moves skip non-cold rows); boot rebuilds it
   from the record (`staleHotRowFromRecord`). Not rebuilt at boot: `stats.classId` / `classProgression*` after a class
   change while hot, `stats.pk`, PvP/encounter memory, captured cold-combat base stats/effects/cooldowns.

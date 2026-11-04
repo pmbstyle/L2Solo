@@ -159,7 +159,8 @@ async function applyRelease(root, stage, manifest, progress = () => {}, options 
     // Persist the full rollback plan before the first modification. Recovery is
     // idempotent, including a process interruption during recovery itself.
     const databaseBackup = options.trial && operations.length ? await options.snapshotDatabases(id,
-        { databasePath, historyPath: config.Database?.historyPath || '', maximumSchemaVersion: manifest.databaseSchemaVersion }) : null;
+        { databasePath, historyPath: config.Database?.historyPath || '', maximumSchemaVersion: manifest.databaseSchemaVersion,
+            knownMigrationNames: manifest.databaseMigrationNames || [] }) : null;
     await writeJson(journalPath(root), { id, previous, operations, databasePath, databaseBackup,
         startupProtocolVersion: manifest.startupProtocolVersion || 1, phase: 'applying' });
     try {

@@ -15,7 +15,7 @@
         "geodata": "node scripts/ensure-geodata.js",
         "generate:knowledge-base": "node scripts/generate-knowledge-base.js",
         "check:knowledge-base": "node scripts/generate-knowledge-base.js --check",
-        "check": "node scripts/check-syntax.js",
+        "check": "node scripts/check-syntax.js && node scripts/check-tables.js",
         "test": "node scripts/run-tests.js",
         "test:geodata": "npm run geodata && node scripts/run-tests.js --geodata",
         "wipe:bots": "node scripts/wipe-bots.js"

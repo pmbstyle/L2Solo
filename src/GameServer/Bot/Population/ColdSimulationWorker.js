@@ -937,6 +937,14 @@ tables.watch('meetings', {
     put: key => { playerWaits.add(Number(key)); kernel?.ensureScheduled(Number(key)); },
     remove: key => { playerWaits.delete(Number(key)); kernel?.ensureScheduled(Number(key)); }
 }, { retain: false });
+// A player's meeting anchor ('player_anchors', TradeMeetingService): offer
+// admission reads it for a counterparty with no life state (PartyAdmission).
+const playerAnchors = new Map();
+tables.watch('player_anchors', {
+    reset: () => playerAnchors.clear(),
+    put: (key, row) => playerAnchors.set(Number(key), row),
+    remove: key => playerAnchors.delete(Number(key))
+}, { retain: false });
 // The clan halls ('clan_halls'), by owner clan: VisitNeed.needed reads the
 // row with the hall's catalog definition (bounds, managers).
 const hallById = new Map();
@@ -1979,7 +1987,8 @@ function startKernel(config = {}) {
         routeRequests.clear();
         return nativeClear();
     };
-    invoke('GameServer/Bot/Population/PartyAdmission').configureTradeAdmission(id => kernel.states.get(Number(id))?.state || kernel.states.get(-Number(id))?.state);
+    invoke('GameServer/Bot/Population/PartyAdmission').configureTradeAdmission(id => kernel.states.get(Number(id))?.state || kernel.states.get(-Number(id))?.state,
+        () => null, id => playerAnchors.get(Number(id)) || null);
     kernel.prepareMeeting = (id, meeting) => {
         const entry = kernel.states.get(id);
         const side = meeting.actorA === id ? 0 : 1;
@@ -2000,17 +2009,8 @@ function startKernel(config = {}) {
         frame => Protocol.envelope('command_request', epoch, { requests: [{ kind: 'meeting', characterId: id, commandId: token, frame }] },
             `meeting-result:${id}:${token}:3`), result.dependencies);
     kernel.buyerEvents = buyerWaiters;
-    // Craft input shops are authored data, separate from gear planning rows.
-    // This pure catalogue needs neither World actors nor a new IPC table.
-    let craftNpcRows = null, craftNpcRate = null;
-    invoke('GameServer/Bot/Economy/ShotMarketIndex').configure({ board: boardReady, stateFor: id => kernel.states.get(Number(id))?.state, npcOffers: () => {
-        const rate = invoke('GameServer/ProgressionRates').profile().multiplier;
-        if (rate !== craftNpcRate) {
-            craftNpcRate = rate;
-            craftNpcRows = require('../../World/Generics/NpcShopBuyLists').allOffers();
-        }
-        return craftNpcRows;
-    } });
+    // Craft input prices read the npc_offers snapshot, as main's table.
+    invoke('GameServer/Bot/Economy/ShotMarketIndex').configure({ board: boardReady, stateFor: id => kernel.states.get(Number(id))?.state });
     EconomyContext.configure({
         board: boardReady,
         knownRecipes: id => RecipeBookCodec.unpack(recipeKnowledgeOf(kernel.states.get(Number(id))?.state).recipeBook) ?? undefined,

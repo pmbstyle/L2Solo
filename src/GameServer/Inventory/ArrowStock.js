@@ -1,8 +1,18 @@
 'use strict';
 
+// A bot's arrow stock: one grade, the equipped bow's, up to MAX_AMOUNT and below
+// the first weight penalty (a bot's bow spends no arrows, Actor/BowResources, so
+// the stock is weight only). Our rule, not C4; players hold what they like.
+// Purchases ask `admitted` where a path sizes its quantity (WishPurchaseEvidence,
+// NpcRestockPlan, BuyAdPolicy, BotLifeState.marketPurchaseBlocker) and the commit
+// re-reads it inside the transaction (Database checkArrowPurchaseUnsafe); the
+// sale reads saleAmounts (ItemDisposition, MarketListingPolicy). Hot, cold, worker.
 const BY_RANK = Object.freeze({ none: 17, d: 1341, c: 1342, b: 1343, a: 1344, s: 1345 });
 const ARROW_IDS = new Set(Object.values(BY_RANK));
 const MAX_AMOUNT = 2000;
+// Kept whatever else the bag weighs (our choice): selling these never clears a
+// load the other items make, it only sends the archer to town to sell its ammunition.
+const KEEP_FLOOR = 500;
 const Index = require('../Item/ItemTemplateIndex');
 
 function isArrow(item) {
@@ -39,7 +49,8 @@ function currentId(value) {
 }
 
 function loadLimit(value) {
-    const maximum = typeof value?.fetchMaxLoad === 'function' ? value.fetchMaxLoad()
+    // A live actor's limit (buffs included), as a state carries it (MarketListingPolicy.actorState), else the cold profile's.
+    const maximum = typeof value?.fetchMaxLoad === 'function' ? value.fetchMaxLoad() : value?.maxLoad > 0 ? value.maxLoad
         : invoke('GameServer/Bot/Population/ColdCombatProfile').profileFor(value).maxLoad;
     return maximum > 0 ? Math.ceil(maximum / 2) - 1 : 0;
 }
@@ -48,16 +59,17 @@ function totalLoad(value) {
     return items(value).reduce((sum, item) => sum + amount(item) * mass(item), 0);
 }
 
-// A single compatible grade, with room below the first native weight penalty.
-// Wrong grades are excluded from the retained kit because this same cleanup
-// sells them; a purchase still counts their physical weight until that sale.
+// A single compatible grade, with room below the first native weight penalty
+// and never below KEEP_FLOOR. Wrong grades are excluded from the retained kit
+// because this same cleanup sells them; a purchase still counts their physical
+// weight until that sale, and buys only into the room.
 function keptAmounts(value) {
     const id = currentId(value);
     if (!id) return {};
     const otherLoad = items(value).reduce((sum, item) => sum + (isArrow(item) ? 0 : amount(item) * mass(item)), 0);
     const unitMass = mass(id);
     const capacity = unitMass > 0 ? Math.floor(Math.max(0, loadLimit(value) - otherLoad) / unitMass) : MAX_AMOUNT;
-    return { [id]: Math.min(MAX_AMOUNT, capacity) };
+    return { [id]: Math.min(MAX_AMOUNT, Math.max(KEEP_FLOOR, capacity)) };
 }
 
 function saleAmounts(value) {
@@ -88,4 +100,10 @@ function purchaseAmount(value, id, requested) {
     return Math.max(0, Math.min(Math.floor(Number(requested) || 0), MAX_AMOUNT - owned, capacity));
 }
 
-module.exports = { BY_RANK, MAX_AMOUNT, isArrow, keeps, currentId, keptAmounts, saleAmounts, unused, purchaseAmount };
+// How many of `requested` units of an item a bot may take in: all of an item
+// that is no arrow, else the stock's room.
+function admitted(value, selfId, requested) {
+    return isArrow({ selfId }) ? purchaseAmount(value, selfId, requested) : requested;
+}
+
+module.exports = { BY_RANK, MAX_AMOUNT, KEEP_FLOOR, isArrow, keeps, currentId, keptAmounts, saleAmounts, unused, purchaseAmount, admitted };

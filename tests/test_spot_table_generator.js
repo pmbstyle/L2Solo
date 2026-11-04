@@ -77,6 +77,8 @@ try {
     assert.deepStrictEqual(table.spots.map((spot) => spot[0]), night.slice(0, 2), 'the table keys the server\'s spot ids');
     assert.strictEqual(table.header.inputs.rate, 'x1');
     assert(/^[0-9a-f]{7,}/.test(table.header.revision), 'the revision is recorded');
+    assert.deepStrictEqual(table.header.fingerprint, require('../src/GameServer/Bot/AI/TableFingerprint').fingerprint('spot'),
+        'the files it was simulated by are recorded (npm run check compares them)');
     assert(table.spots.every((spot) => spot.length === 9 && spot[3] > 0 && spot[4] === 1 && spot[5] > 0 && spot[6] > 0
         && spot[7] > 0 && spot[8] > 0),
         'every spot has its level, density, kill cap, a pull of one monster, its loot response to the rate and its kills\' accuracy and evasion');

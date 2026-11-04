@@ -15,6 +15,7 @@ const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const BotTargetScorer = invoke('GameServer/Bot/AI/BotTargetScorer');
 const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const EncounterReadiness = invoke('GameServer/Bot/AI/BotEncounterReadiness');
+const BotPullEstimate = invoke('GameServer/Bot/AI/BotPullEstimate');
 const BotPvpRisk      = invoke('GameServer/Bot/AI/BotPvpRisk');
 const BotRoles        = invoke('GameServer/Bot/AI/BotRoles');
 const RestPolicy      = invoke('GameServer/Bot/AI/RestPolicy');
@@ -44,6 +45,7 @@ const SurvivalFloor = invoke('GameServer/Bot/Population/SurvivalFloor');
 const DecisionEvents = require('../DecisionEvents');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const ShoppingState = invoke('GameServer/Bot/AI/States/ShoppingState');
+const RestingState = invoke('GameServer/Bot/AI/States/RestingState');
 const { SPOT_CELL_SIZE } = invoke('GameServer/World/WorldConstants');
 
 const TARGET_STALL_TICKS = 5;
@@ -294,6 +296,7 @@ function findPreferredMonster(session, bot, radius, options = {}) {
                 evaluation: BotTargetScorer.score(scoreContext),
                 scoreContext,
                 matchupTarget,
+                pull,
                 claimed
             };
         })
@@ -339,6 +342,8 @@ function findPreferredMonster(session, bot, radius, options = {}) {
     session.lastTargetEvaluation = selected ? {
         targetId: selected.npc.fetchId(),
         targetName: selected.npc.fetchName(),
+        // The mobs that come with it (SpotService.livePull): its readiness reads them until the fight.
+        pull: selected.pull,
         score: selected.evaluation.score,
         reasons: selected.evaluation.reasons,
         at: Date.now()
@@ -368,10 +373,14 @@ function readinessProfiles(bot, profiles = TargetMatchup.actorProfiles([bot]), s
     return { stats, remaining: EncounterReadiness.atVitals(profiles, bot.fetchHp(), bot.fetchMp(),
         profiles.find(profile => profile.servitor === true)) };
 }
-// A mob the bot would take as it stands: a wounded one asks what is left of it.
+// The fight the bot would take as it stands: the mob with the pull that comes
+// with it (SpotService.livePull, the size pullVerdict judged; a cold fight's
+// readiness judges its rolled pull the same way, BackgroundResolver.resolveFight),
+// a wounded mob with what is left of it.
 // view: the scan's own view of the target, when it was read with these stats.
-function encounterReadiness(bot, target, own = readinessProfiles(bot), view = TargetMatchup.targetView(target, own.stats)) {
-    return EncounterReadiness.evaluate(own.remaining, { ...view, maxHp: target.fetchHp?.() ?? view.maxHp });
+function encounterReadiness(bot, target, own = readinessProfiles(bot), view = TargetMatchup.targetView(target, own.stats), pull = 1) {
+    const fight = BotPullEstimate.pullView(view, pull);
+    return EncounterReadiness.evaluate(own.remaining, { ...fight, maxHp: fight.maxHp - view.maxHp + (target.fetchHp?.() ?? view.maxHp) });
 }
 // The scan's fights, ready ones first, and where the next visibility batch starts
 // in that order. The batch resumes where a blocked one stopped (batch.resumeId).
@@ -389,7 +398,7 @@ function readyRanked(bot, ranked, batch, own, sameView = false) {
     let start = resumeAt < 0 ? 0 : null, index = 0;
     for (; index < ranked.length && (all || !(start !== null && ready.length > start + batch.checks)); index++) {
         const candidate = ranked[index];
-        candidate.readiness = encounterReadiness(bot, candidate.npc, own, sameView ? candidate.matchupTarget : undefined);
+        candidate.readiness = encounterReadiness(bot, candidate.npc, own, sameView ? candidate.matchupTarget : undefined, candidate.pull);
         if (!candidate.readiness.ready) { refused.push(candidate); continue; }
         ready.push(candidate);
         if (!all && start === null && index >= resumeAt) start = ready.length - 1;
@@ -397,6 +406,15 @@ function readyRanked(bot, ranked, batch, own, sameView = false) {
     if (all) start = ready.length + Math.max(0, refused.indexOf(ranked[resumeAt]));
     const unread = ranked.slice(index);
     return { ordered: [...ready, ...unread, ...refused], start: start ?? ready.length, tail: ready.length + unread.length };
+}
+
+// The pull of the bot's target: the one the scan that chose it counted, else
+// the mobs around it now (the scan's own count, SpotService.livePull).
+function targetPull(session, npc) {
+    const scanned = session.lastTargetEvaluation;
+    if (scanned && Number(scanned.targetId) === Number(npc.fetchId()) && scanned.pull > 0) return scanned.pull;
+    return SpotService.livePull(npc, SpotService.idlePack(World.fetchNpcsInRadius(npc.fetchLocX(), npc.fetchLocY(),
+        LOCAL_TARGET_SEARCH_RADIUS)));
 }
 
 function rememberEncounterReadiness(session, target, readiness) {
@@ -407,7 +425,12 @@ function rememberEncounterReadiness(session, target, readiness) {
     };
 }
 
+// readiness: the refused fight's. A bot it refused at its rested line rests to
+// a full bar (session.restWhole, RestPolicy.restOver; the next hunting tick
+// drops it), else it would stand, be refused and sit again every tick.
 function beginVoluntaryRecovery(session, bot, BotAI, readiness = null) {
+    session.restWhole = false;
+    session.restWhole = !!readiness && RestingState.rested(session, bot);
     if (session.currentTargetId) clearTarget(session, bot, session.currentTargetId);
     TownNpcApproach.reset(session);
     session.lastTargetEvaluation = undefined;
@@ -674,6 +697,8 @@ module.exports = {
     claimedTargetIds,
     tick(session, bot, Generics, BotAI) {
         session.deferredOccupation = null;
+        // A rest's full bar lives while the bot rests (beginVoluntaryRecovery).
+        if (session.restWhole) session.restWhole = false;
         if (session.pendingTownTrip) {
             const trip = startShopping(session, bot, BotAI, session.pendingTownTrip.reason);
             if (trip !== 'deferred') return;
@@ -1083,7 +1108,7 @@ module.exports = {
                         }
                         if (isSoloHunter(session) && !npcAggroedOnBot &&
                             !bot.state.fetchTowards() && !bot.state.fetchHits() && !bot.state.fetchCasts()) {
-                            const readiness = encounterReadiness(bot, npc);
+                            const readiness = encounterReadiness(bot, npc, undefined, undefined, targetPull(session, npc));
                             rememberEncounterReadiness(session, npc, readiness);
                             if (!readiness.ready) {
                                 beginVoluntaryRecovery(session, bot, BotAI, readiness);

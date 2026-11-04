@@ -3085,7 +3085,8 @@ assert.strictEqual(deadly.fetchSkillType(), C4SkillRules.BLOW, 'Deadly Blow shou
 assert.strictEqual(blowOutcome.lethal, false, 'Deadly Blow must not inherit Lethal Blow mechanics');
 assert.strictEqual(blowOutcome.damage, 200, 'Deadly Blow should preserve its ordinary blow damage');
 
-const lethalBlow = skill({ selfId: 344, name: 'Lethal Blow', spell: true, power: 5773, distance: 40 });
+const lethalBlow = skill({ selfId: 344, name: 'Lethal Blow', spell: activeSkills.find((entry) => entry.selfId === 344).template.spell,
+    power: 5773, distance: 40 });
 const lethalOutcome = SkillEffects.execute(session(), blowCaster, blowTarget, lethalBlow, {
     rng: () => 0,
     attack: {
@@ -3093,7 +3094,7 @@ const lethalOutcome = SkillEffects.execute(session(), blowCaster, blowTarget, le
         prepareSkillDamage: () => 200
     }
 });
-assert.strictEqual(lethalBlow.fetchSpell(), false, 'Lethal Blow should be a physical skill even when raw data marks it as spell-like');
+assert.strictEqual(lethalBlow.fetchSpell(), false, 'Lethal Blow should be a physical skill (Lisvus isMagic false)');
 assert.strictEqual(lethalOutcome.lethal, true, 'Only Lethal Blow should trigger the sourced level-based lethal roll');
 assert.strictEqual(lethalOutcome.damage, 200, 'Lethal Blow should keep its ordinary hit damage for reflect, overhit, and combat reporting');
 assert.strictEqual(lethalOutcome.forceLethalVitals, true, 'A successful Lethal Blow should request the separate post-hit one-HP lethal effect');

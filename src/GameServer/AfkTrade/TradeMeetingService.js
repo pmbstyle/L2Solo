@@ -1,6 +1,7 @@
 'use strict';
 const { randomUUID } = require('node:crypto');
 const { MAX_COMMITMENTS } = require('./TradeMeeting');
+const MeetingAnchor = require('./MeetingAnchor');
 const { partyTradeAllowed } = require('../Bot/Population/PartyAdmission');
 const EconomyCommit = require('../Bot/Economy/EconomyCommit');
 const TableChannel = require('../Bot/Population/ColdTableChannel').shared;
@@ -16,6 +17,24 @@ TableChannel.register('meetings', { key: row => row.characterId,
 function publishWaiting(actor) {
     TableChannel.changed('meetings', playerWaiters.get(actor)?.size
         ? { characterId: actor } : { key: actor, removed: true });
+}
+// A player has no life-state marker: its anchor (earliest accepted meeting)
+// is kept here for offer admission on main and published to the cold worker
+// as the 'player_anchors' table (PartyAdmission, MeetingAnchor). Players only.
+const playerAnchors = new Map();
+TableChannel.register('player_anchors', { key: row => row.characterId,
+    allRows: () => [...playerAnchors.values()], eventDriven: true });
+function publishPlayerAnchor(id, anchor) {
+    const row = anchor?.state === 'accepted' ? { characterId: Number(id), town: anchor.town,
+        locX: anchor.locX, locY: anchor.locY, locZ: anchor.locZ } : null;
+    const previous = playerAnchors.get(Number(id));
+    if (JSON.stringify(previous || null) === JSON.stringify(row)) return;
+    if (row) playerAnchors.set(row.characterId, row); else playerAnchors.delete(Number(id));
+    TableChannel.changed('player_anchors', row || { key: Number(id), removed: true });
+}
+function clearPlayerAnchors() {
+    for (const id of playerAnchors.keys()) TableChannel.changed('player_anchors', { key: id, removed: true });
+    playerAnchors.clear();
 }
 function clearWaiters() {
     for (const actor of playerWaiters.keys()) TableChannel.changed('meetings', { key: actor, removed: true });
@@ -163,9 +182,11 @@ function setPresenceMarker(session, id, anchor) {
 }
 async function syncActors(row) {
     for (const id of [row.actorA, row.actorB]) {
-        const session = sessionFor(id), actor = session?.actor;
-        if (!session || Number(actor?.fetchId?.()) !== Number(id)) continue;
+        const session = sessionFor(id), actor = session?.actor, player = !life().cachedState(id);
+        // An offline player meets nobody: its meetings are being cancelled.
+        if (!session || Number(actor?.fetchId?.()) !== Number(id)) { if (player) publishPlayerAnchor(id, null); continue; }
         const anchor = await db().fetchTradeMeetingForOwner?.(id) || (row.state === 'accepted' ? row : null);
+        if (player) publishPlayerAnchor(id, anchor);
         // The connection may hold another character after the wait: its marker,
         // travel and window stay untouched; the inventory sync is bound to the ID.
         if (session.actor === actor) {
@@ -336,9 +357,10 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
     const buyer = record.storeType === 1 ? characterId : record.ownerId, seller = record.storeType === 1 ? record.ownerId : characterId;
     const actors = [buyer, seller].sort((a, b) => a - b), sides = await Promise.all(actors.map(id => db().prepareTradeParticipant(id)));
     if (sides.some((side, index) => !partyTradeAllowed('trade', side, sessionFor(actors[index])))) throw Error('trade_meeting_party_busy');
-    const anchors = sides.filter(side => side.meetingId).map(side => side.anchor);
-    if (anchors.some(anchor => !anchor || anchor.town !== record.town)
-        || anchors.some(anchor => ['locX', 'locY', 'locZ'].some(k => anchor[k] !== anchors[0][k]))) throw Error('trade_meeting_point_changed');
+    // The offer choosers read the same rule over the life-state markers; this
+    // refusal is left for a race between two preparations.
+    const anchors = sides.map(side => side.meetingId ? side.anchor || MeetingAnchor.UNKNOWN : null);
+    if (!MeetingAnchor.compatible(record.town, anchors)) throw Error('trade_meeting_point_changed');
     // Preserve the caller's decision authority across asynchronous native reads.
     // Freshly reading a participant must not turn a stale decision into consent.
     const sourceState = options.coldState || life().cachedState(characterId);
@@ -368,7 +390,7 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
         }
         throw Error('trade_meeting_stock_changed');
     }
-    const destination = anchors[0] || record;
+    const destination = anchors.find(Boolean) || record;
     const point = { locX: destination.locX, locY: destination.locY, locZ: destination.locZ };
     if (options.expectedPoint && ['locX', 'locY', 'locZ'].some(key => options.expectedPoint[key] !== point[key]))
         throw Error('trade_meeting_point_changed');
@@ -544,7 +566,7 @@ function reset() {
     for (const token of [...staged.keys()]) discard(token);
     for (const [token, listeners] of [...resultListeners])
         notifyResult(token, [...listeners].map(listener => listener.actorId), null);
-    staged.clear(); preparedActors.clear(); refusedAds.clear(); pages = 0; transportPages = 0; transportBytes = 0; enrolled.clear(); clearWaiters(); travelNotices.clear(); queue.clear();
+    staged.clear(); preparedActors.clear(); refusedAds.clear(); pages = 0; transportPages = 0; transportBytes = 0; enrolled.clear(); clearWaiters(); clearPlayerAnchors(); travelNotices.clear(); queue.clear();
 }
 function wake(id) {
     if (!enrolled.has(Number(id))) return;
@@ -686,7 +708,7 @@ async function drain() {
     } finally { draining = false; if (queue.size) scheduleDrain(); }
 }
 async function init() {
-    unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.(); enrolled.clear(); clearWaiters(); travelNotices.clear(); queue.clear();
+    unsubscribeLife?.(); unsubscribeMarketLife?.(); unsubscribePlayer?.(); unsubscribeBoard?.(); enrolled.clear(); clearWaiters(); clearPlayerAnchors(); travelNotices.clear(); queue.clear();
     unsubscribeLife = life().subscribeChanges(change => {
         const id = Number(typeof change === 'number' ? change : change.characterId);
         // Only bounded unaccepted preparations are replaceable. The durable
@@ -709,6 +731,14 @@ async function init() {
         if (!sessionFor(id)) for (const [key, entry] of staged) if (entry.actors.includes(Number(id))) discard(key);
         wake(id);
     });
+    // Markers saved before they carried their anchor, or left by a meeting
+    // that is gone, are rewritten first: offer admission reads only markers.
+    for (let after = 0; after !== null;) {
+        const page = await db().refreshTradeMeetingMarkers(after);
+        acceptRows({ coldLifeRows: page.rows });
+        after = page.next;
+        await new Promise(resolve => setImmediate(resolve));
+    }
     let cursor = 0;
     for (;;) {
         const rows = await db().recoverTradeMeetings(cursor);
@@ -725,6 +755,6 @@ async function init() {
         await new Promise(resolve => setImmediate(resolve));
     }
 }
-module.exports = { stage, discard, hasPreparation, preparationOf, canJoinParty, prepareForPlayerParty, accept, cancel, receipt, waitForResult, prepareTrade, trade, wake, init, reset, presenceChanged,
+module.exports = { playerAnchor: id => playerAnchors.get(Number(id)) || null, stage, discard, hasPreparation, preparationOf, canJoinParty, prepareForPlayerParty, accept, cancel, receipt, waitForResult, prepareTrade, trade, wake, init, reset, presenceChanged,
     adjustTransportPages,
     counters: () => ({ preparations: staged.size, pages: pages + transportPages, bytes: transportBytes + [...staged.values()].reduce((total, row) => total + row.bytes, 0), queued: queue.size, participants: enrolled.size }) };

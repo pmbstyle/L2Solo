@@ -4,6 +4,7 @@ const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const { isNativeSource, purchaseWorth } = require('./TradeIntent');
 const Diagnostics = require('./EconomyDiagnostics');
 const BoardRules = require('../../AfkTrade/BoardRules');
+const ArrowStock = require('../../Inventory/ArrowStock');
 const nativeGoal = goal => isNativeSource(goal?.plan?.sourceType);
 
 function templateFor(selfId) {
@@ -110,9 +111,11 @@ function bidFor(state, goal, { money = Infinity, ...options } = {}) {
         && Number(goal.plan?.estimatedCost) === basePrice;
     const referenceEstimate = goal.plan?.priceSource === 'reference' || legacyEstimate;
     const requestedPrice = referenceEstimate ? 0 : Math.max(0, Number(goal.target.adena || goal.plan?.estimatedCost || 0));
-    const requestedCount = goal.type === 'buy_craft_material'
+    // A bid asks for no more units than the bot may take in.
+    const requestedCount = ArrowStock.admitted(state, selfId, goal.type === 'buy_craft_material'
         ? Math.max(1, Math.floor(Number(goal.target.amount) || 1))
-        : 1;
+        : 1);
+    if (!(requestedCount > 0)) return null;
     // The bid (group E): the bot's belief of the item and the mirror of its
     // ask; the item is worth its plan's price to it, or its own belief's
     // centre when the plan only estimated; never more than it can spend on

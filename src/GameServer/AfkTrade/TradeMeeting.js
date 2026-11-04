@@ -3,6 +3,7 @@ const BeginnerShots = require('../Items/C4BeginnerShots');
 // Native board custody. Every method is called within Database's one write
 // transaction, using its existing inventory, settlement and fencing owners.
 const Intent = require('../Bot/Economy/TradeIntent');
+const MeetingAnchor = require('./MeetingAnchor');
 const MAX_COMMITMENTS = 8;
 const ascii = value => typeof value === 'string' && /^[\x20-\x7e]*$/.test(value);
 const safe = (n, positive = false) => Number.isSafeInteger(n) && n >= (positive ? 1 : 0);
@@ -56,12 +57,17 @@ function create(io) {
             UNION ALL SELECT * FROM board_trade_meetings WHERE actorB=?${stateFilter}
             ORDER BY id LIMIT ${MAX_COMMITMENTS}`, [id, id]);
     }
-    const samePoint = (a, b) => a.town === b.town && ['locX', 'locY', 'locZ'].every(k => a[k] === b[k]);
     function anchor(id) { return active(id)[0] || null; }
     function anchorMarker(id) {
         const row = anchor(id);
         write('UPDATE board_trade_participants SET meetingId=? WHERE characterId=?', [row?.id || null, id]);
-        return row ? [row.id, row.revision] : null;
+        return MeetingAnchor.marker(row);
+    }
+    // Boot: a marker saved before it carried its anchor, or left behind by a
+    // meeting that is gone, is rewritten from the actor's accepted meetings.
+    function remark(id, saved) {
+        if (JSON.stringify(MeetingAnchor.marker(anchor(id))) === JSON.stringify(saved ?? null)) return null;
+        return snapshot(id, [], { tradeMeeting: anchorMarker(id) });
     }
     function participant(id) {
         const character = one('SELECT id FROM characters WHERE id=?', [id]);
@@ -103,7 +109,7 @@ function create(io) {
             const party = request.parties[side], commitments = active(id), existing = commitments[0];
             if (active(id, true).length >= MAX_COMMITMENTS) throw Error('trade_meeting_backpressure');
             if (existing) {
-                if (!samePoint(existing, { town: request.town, ...request.point })) throw Error('trade_meeting_point_changed');
+                if (!MeetingAnchor.samePoint(existing, { town: request.town, ...request.point })) throw Error('trade_meeting_point_changed');
                 if (party.route.method !== `meeting:${existing.id}` || party.route.fee !== 0
                     || party.route.scroll || party.route.durationMs !== 0) throw Error('trade_meeting_route_changed');
             } else if (party.route.method.startsWith('meeting:')) throw Error('trade_meeting_route_changed');
@@ -295,7 +301,7 @@ function create(io) {
         }
         return { acknowledged: true, cleaned: mask === 3 };
     }
-    return { accept, leg, terminal, present, acknowledge, participant, meeting, active, anchor };
+    return { accept, leg, terminal, present, acknowledge, participant, meeting, active, anchor, remark };
 }
 function projectIncoming(incoming) {
     // Leave room for the existing numeric agreement reference inside the

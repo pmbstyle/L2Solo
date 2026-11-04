@@ -49,6 +49,17 @@ const BackgroundWorkGovernor = invoke('GameServer/Bot/Population/BackgroundWorkG
 const BackgroundJobRegistry = invoke('GameServer/Bot/Population/BackgroundJobRegistry');
 const Diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
 const STATE_RETENTION_KEY = Symbol('state-retention');
+// The WAL truncate's budget before one was measured: under the governor's 50 ms
+// player budget, so the first truncate (and its measurement) can happen in play.
+const WAL_TRUNCATE_FIRST_ESTIMATE_MS = 40;
+// A player stays online for hours: a truncate estimated over the player budget
+// is tried again once per this period (its new measurement replaces the
+// estimate), and past this WAL size it runs anyway (one bounded pause is
+// better than an unbounded file). The size, not the period, bounds the file:
+// at ~55 MB/min (hot run, 1731 bots) 10 min is ~550 MB, the ceiling holds it
+// at 512 MB whatever the write rate, about one ~80 ms pause per 9 min there.
+const WAL_TRUNCATE_ESTIMATE_RETRY_MS = 10 * 60 * 1000;
+const WAL_TRUNCATE_FORCE_WAL_BYTES = 512 * 1024 * 1024;
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const PartyGoalCalculation = invoke('GameServer/Bot/Population/PartyGoalCalculation');
 const PartyGoalPolicy = invoke('GameServer/Bot/Population/PartyGoalPolicy');
@@ -105,28 +116,25 @@ function hasFiniteCoordinate(value) {
         && Number.isFinite(Number(value));
 }
 
-// A walker a player comes near (ColdTrip) shows itself at the
-// teleport point it ran from or at the spot edge it runs to, whichever is
-// nearer its place on the road, never on the straight line between them; the
-// author's hot movement takes over from there. At the spot edge the trip is
-// done (resolveTravel's arrival); at the teleport point the bot stands with
-// its destination spot and hunts or walks on as a hot bot decides.
-function walkerAppearance(state, timestamp = Date.now()) {
+// A walker a player at `playerLoc` comes near (ColdTrip) shows itself at an
+// endpoint of its run, never on the straight line between them (a walker on its
+// road is open work): at the spot edge it runs to when that is within the
+// activation radius of the player, else at the teleport point it ran from when
+// that is; the author's hot movement takes over from there. Either way the trip
+// is done (resolveTravel's arrival: activity, spot, region, a detour's standIn);
+// at the teleport point only its place differs, where the bot hunts or walks on
+// as a hot bot decides. null: no walker; false: neither endpoint in reach (on a
+// run longer than twice the radius, a player by its middle), it stays cold.
+function walkerAppearance(state, playerLoc) {
     const travel = state?.stats?.travel;
     const run = travel?.run;
     if (state?.activity !== 'traveling' || !run) return null;
-    if ((timestamp - run.startAt) / Math.max(1, run.endAt - run.startAt) >= 0.5) {
-        const arrival = BackgroundResolver.resolveSolo({ state, spot: null, timestamp: Number(travel.arrivalAt) });
-        return { ...state, ...arrival.patch };
-    }
-    return {
-        ...state,
-        activity: travel.arrivalActivity || 'hunting',
-        loc: { ...run.from },
-        spotId: travel.spotId || state.spotId,
-        currentRegion: travel.regionName || state.currentRegion,
-        stats: { ...state.stats, travel: null, ...(travel.clearMarketReturn ? { marketReturn: null } : {}) }
-    };
+    const inReach = (loc) => !!loc && !!playerLoc && Math.hypot(Number(loc.locX) - Number(playerLoc.locX),
+        Number(loc.locY) - Number(playerLoc.locY)) <= Config.activationRadius;
+    const arrival = BackgroundResolver.resolveSolo({ state, spot: null, timestamp: Number(travel.arrivalAt) });
+    const shown = { ...state, ...arrival.patch };
+    if (inReach(shown.loc)) return shown;
+    return inReach(run.from) ? { ...shown, loc: { ...run.from } } : false;
 }
 
 // Main's trip to a spot it chose itself: the trip a coordinator route to the
@@ -663,7 +671,8 @@ function marketListingIntent(state, goal = null) {
     // already ended the visit or its departure marker was not retained.
     const forcedCleanup = state?.stats?.forcedMarketCleanup
         || (floor?.action === 'unload' ? { cleanupReason: floor.reason } : null)
-        || (ordinaryVisit && require('../../Inventory/ArrowStock').unused(state).length
+        // Arrows the sale takes (its own lines): sold at the NPC beside the worker's board plan.
+        || (ordinaryVisit && invoke('GameServer/Bot/Economy/ItemDisposition').unusedArrowCandidates(state).length
             ? { cleanupReason: 'unused_arrows' } : null);
     const selling = saleVisit(state);
     if (!forcedCleanup && goal?.type !== 'sell_inventory' && !ordinaryVisit && !selling) {
@@ -1058,8 +1067,11 @@ const PopulationService = {
     classProgressionMigrationTimer: null,
     nextStateRetentionAt: 0,
     stateRetentionPassRows: 0,
-    walResetTimer: null,
+    walResetUnsubscribe: null,
     walResetRunning: false,
+    walResetEstimateRetryAt: 0,
+    // The last completed truncate's hold on main's DB queue (ms, 0 = none yet).
+    walTruncateEstimateMs: 0,
     nextWalResetAt: 0,
     personaBackfillTimer: null,
     personaBackfillRunning: false,
@@ -1163,15 +1175,7 @@ const PopulationService = {
                 () => this.nextStateRetentionAt, timestamp => this.runStateRetention(timestamp));
         }
 
-        // The WAL reset stays a poll: its gate (WAL bytes past a threshold, an
-        // idle write queue, no checkpoint in flight) has no event to wait for.
-        const walResetIntervalMs = Math.max(1000, Number(options.default.Database?.checkpointResetIntervalMs) || 5000);
-        if (Number(options.default.Database?.checkpointResetWalBytes) > 0) {
-            this.walResetTimer = setInterval(() => {
-                this.runAdaptiveWalReset();
-            }, walResetIntervalMs);
-            if (typeof this.walResetTimer.unref === 'function') this.walResetTimer.unref();
-        }
+        this.armWalReset();
 
         if (Config.phasePolicyEnabled !== false) {
             this.phasePolicyTimer = setInterval(() => {
@@ -1222,12 +1226,12 @@ const PopulationService = {
         this.stateRetentionRunning = false;
         this.stateRetentionPassRows = 0;
         this.nextStateRetentionAt = 0;
-        if (this.walResetTimer) {
-            clearInterval(this.walResetTimer);
-            this.walResetTimer = null;
-        }
+        this.walResetUnsubscribe?.();
+        this.walResetUnsubscribe = null;
         this.walResetRunning = false;
         this.nextWalResetAt = 0;
+        this.walResetEstimateRetryAt = 0;
+        this.walTruncateEstimateMs = 0;
         PersistentStateRetention.reset();
         this.nextProtectedPartyFormationAt = 0;
         this.protectedPartyFormationFailures = 0;
@@ -2061,9 +2065,9 @@ const PopulationService = {
         return LifeState.walkersNear(loc, Config.activationRadius, timestamp).reduce((chain, state) => chain.then(() => {
             if (ambientActivated.length >= Config.maxActivationsPerScan) return null;
             if (!state || state.phase !== 'cold' || BotErrands.busyWith(state, ACTIVATION_BUSY_FLAGS)) return null;
-            const shown = walkerAppearance(state, timestamp);
-            if (!shown) return null;
-            return this.requestActivation(shown, 'near_player', { readyOnActivation: true, preferAnchor: true })
+            // HotActivation leaves the trip at walkerAppearance's endpoint in reach of this
+            // player, read after its fence; with neither in reach the walker stays cold.
+            return this.requestActivation(state, 'near_player', { readyOnActivation: true, preferAnchor: true, playerLoc: loc })
                 .then((result) => {
                     if (!result.ok) return;
                     activated.push(result);
@@ -2735,36 +2739,113 @@ const PopulationService = {
         };
     },
 
+    // The WAL truncate is tried when a passive checkpoint finishes (every
+    // checkpointIntervalMs while the WAL is past checkpointMinWalBytes): the
+    // gate wants that fresh, complete result and no checkpoint in flight. Not a
+    // poll: one on the checkpoint's own period phase-locks with it after a long
+    // main turn (both due in one timer pass, the checkpoint first), then sees a
+    // checkpoint in flight on every try and the WAL never truncates.
+    armWalReset() {
+        this.walResetUnsubscribe?.();
+        this.walResetUnsubscribe = null;
+        if (!(Number(options.default.Database?.checkpointResetWalBytes) > 0)) return;
+        this.walResetUnsubscribe = Database.onCheckpoint((result) => {
+            if (result?.mode === 'passive' && result.ok && !result.skipped) this.runAdaptiveWalReset();
+        });
+    },
+
+    // Admission of a DB maintenance pass (state retention, the WAL truncate)
+    // on the governor's 'db_maintenance' resource. With a player online and
+    // the governor off (BOT_BACKGROUND_GOVERNOR_ENABLED=false) nothing bounds
+    // the pass, so it is refused. A refusal is counted with its reason.
+    admitMaintenance(job, activity, admit) {
+        if (activity.protected && Config.backgroundGovernorEnabled === false) {
+            Database.noteMaintenanceRefusal(job, 'governor_off');
+            return null;
+        }
+        const admission = BackgroundWorkGovernor.admit({
+            ...admit, job, resource: 'db_maintenance',
+            playerProtected: !!activity.protected, realPlayers: activity.realPlayers
+        });
+        if (admission.ok) return admission;
+        Database.noteMaintenanceRefusal(job, `governor_${admission.reason}`);
+        return null;
+    },
+
+    // The WAL truncate, during play too. It runs on the checkpoint worker, but
+    // Database.checkpoint queues it behind main's DB queue, which waits for the
+    // whole of it: the IPC round trip, the busy wait for readers (20 ms with a
+    // player, 50 idle), backfill, fsync and ftruncate. Its budget is the hold on
+    // main of the last completed truncate, queued to resolved (a busy or failed
+    // try keeps the previous; at least the busy wait;
+    // WAL_TRUNCATE_FIRST_ESTIMATE_MS before any), and with a player a
+    // truncate estimated over the governor's player budget is skipped, retried
+    // every WAL_TRUNCATE_ESTIMATE_RETRY_MS and forced past
+    // WAL_TRUNCATE_FORCE_WAL_BYTES. The
+    // gates kept here are about the WAL: big and grown enough, the last passive
+    // checkpoint complete, none in flight. Every refusal is counted
+    // (Database.noteMaintenanceRefusal); a failed truncate goes to FailureLog.
     runAdaptiveWalReset(timestamp = Date.now()) {
         const resetWalBytes = Math.max(0, Number(options.default.Database?.checkpointResetWalBytes) || 0);
-        if (!resetWalBytes || this.walResetRunning || timestamp < Number(this.nextWalResetAt || 0)) {
+        if (!resetWalBytes) return Promise.resolve(null);
+        const refuse = (reason) => {
+            Database.noteMaintenanceRefusal('wal_truncate', reason);
             return Promise.resolve(null);
-        }
-        const activity = this.playerActivityProfile(timestamp);
-        if (activity.protected) return Promise.resolve(null);
-        if (this.resolving || this.stateRetentionRunning || this.partyFormationRunning) {
-            return Promise.resolve(null);
-        }
-
+        };
+        if (this.walResetRunning) return refuse('running');
         const pressure = this.checkpointPressure();
         const { checkpoint, last, lastReset, walBytes, growthBytes, resetGrowthBytes } = pressure;
-        if (walBytes < resetWalBytes || Number(Database.pending() || 0) > 0 || checkpoint.inFlight) {
-            return Promise.resolve(null);
-        }
-        if (lastReset.at && growthBytes < resetGrowthBytes) return Promise.resolve(null);
+        // Past the ceiling only the WAL's own correctness gates hold it back
+        // (one in flight, the last passive checkpoint incomplete).
+        const forced = walBytes >= WAL_TRUNCATE_FORCE_WAL_BYTES;
+        if (!forced && timestamp < Number(this.nextWalResetAt || 0)) return refuse('retry_window');
+        if (walBytes < resetWalBytes) return refuse('wal_below_threshold');
+        if (checkpoint.inFlight) return refuse('checkpoint_in_flight');
+        if (!forced && lastReset.at && growthBytes < resetGrowthBytes) return refuse('growth_below_threshold');
         const logFrames = Math.max(0, Number(last.logFrames || 0));
         const checkpointedFrames = Math.max(0, Number(last.checkpointedFrames || 0));
         if (!last.ok || last.mode !== 'passive' || Number(last.busy || 0) > 0 || checkpointedFrames < logFrames) {
-            return Promise.resolve(null);
+            return refuse('passive_incomplete');
         }
+
+        const activity = this.playerActivityProfile(timestamp);
+        const configuredBusyMs = Math.max(1, Math.min(250, Number(options.default.Database?.checkpointResetBusyTimeoutMs) || 50));
+        const busyTimeoutMs = activity.protected ? Math.min(20, configuredBusyMs) : configuredBusyMs;
+        const estimateMs = Math.ceil(Math.max(busyTimeoutMs, this.walTruncateEstimateMs || WAL_TRUNCATE_FIRST_ESTIMATE_MS));
+        const playerBudgetMs = Math.max(1, Number(Config.backgroundGovernorPlayerBudgetMs) || 50);
+        // Over budget with a player: skipped, but tried once per retry period
+        // (with the player budget; the governor records the overrun).
+        let ranAs = forced ? 'forced_over_ceiling' : null;
+        if (!forced && activity.protected && estimateMs > playerBudgetMs) {
+            if (!this.walResetEstimateRetryAt) {
+                this.walResetEstimateRetryAt = timestamp + WAL_TRUNCATE_ESTIMATE_RETRY_MS;
+                return refuse('estimate_over_budget');
+            }
+            if (timestamp < this.walResetEstimateRetryAt) return refuse('estimate_over_budget');
+            ranAs = 'estimate_retry';
+        }
+        const budgetMs = activity.protected ? Math.min(estimateMs, playerBudgetMs) : estimateMs;
+        const admission = forced
+            ? BackgroundWorkGovernor.admit({ job: 'wal_truncate', force: true, requestedBudgetMs: estimateMs,
+                playerProtected: !!activity.protected, realPlayers: activity.realPlayers })
+            : this.admitMaintenance('wal_truncate', activity, { requestedBudgetMs: budgetMs, minimumBudgetMs: budgetMs });
+        if (!admission) return Promise.resolve(null);
+        this.walResetEstimateRetryAt = 0;
 
         const retryMs = Math.max(1000, Number(options.default.Database?.checkpointResetRetryMs) || 5000);
         const cooldownMs = Math.max(retryMs, Number(options.default.Database?.checkpointResetCooldownMs) || 60000);
-        const busyTimeoutMs = Math.max(1, Math.min(250, Number(options.default.Database?.checkpointResetBusyTimeoutMs) || 50));
+        const startedAt = Date.now();
         this.walResetRunning = true;
         this.nextWalResetAt = timestamp + retryMs;
         return Database.checkpoint({ mode: 'truncate', busyTimeoutMs }).then((result) => {
-            if (result?.ok && Number(result.busy || 0) === 0) {
+            // A forced or retried truncate is counted once it ran, whatever its result.
+            if (ranAs) Database.noteMaintenanceRefusal('wal_truncate', ranAs);
+            if (!result?.ok) {
+                FailureLog.note('db.wal_truncate', new Error(result?.error || 'wal_truncate_failed'));
+            } else if (Number(result.busy || 0) > 0) {
+                Database.noteMaintenanceRefusal('wal_truncate', 'busy');
+            } else {
+                this.walTruncateEstimateMs = Math.max(1, Date.now() - startedAt);
                 this.nextWalResetAt = Date.now() + cooldownMs;
                 Config.developerDiagnostics && console.info(
                     'DB          :: adaptive WAL truncate complete wal=%dMB frames=%d/%d duration=%dms',
@@ -2776,43 +2857,48 @@ const PopulationService = {
             }
             return result;
         }).catch((error) => {
-            utils.infoWarn('DB', 'adaptive WAL restart failed: %s', error?.message || error);
+            if (ranAs) Database.noteMaintenanceRefusal('wal_truncate', ranAs);
+            FailureLog.note('db.wal_truncate', error);
             return null;
         }).finally(() => {
+            BackgroundWorkGovernor.complete(admission.lease, { durationMs: Date.now() - startedAt });
             this.walResetRunning = false;
         });
     },
 
+    // One retention step (PersistentStateRetention: one policy, at most two
+    // statements, each bounded by construction to fit the slice) per 1 s
+    // alarm, during play too: it runs on main's DB queue, where the player's
+    // writes wait behind it, so it goes through the governor ('db_maintenance',
+    // with a player at most its 50 ms per second), its cooperative slice is the
+    // granted budget (<= 12 ms; the queue yields between its statements) and
+    // it waits while main lags past schedulerLagThrottleMs. Refusals are
+    // counted (Database.noteMaintenanceRefusal), failures go to FailureLog.
     runStateRetention(timestamp = Date.now()) {
         if (Config.stateRetentionEnabled === false || Config.enabled === false
             || this.stateRetentionRunning
             || timestamp < Number(this.nextStateRetentionAt || 0)) {
             return Promise.resolve(null);
         }
-
-        const activity = this.playerActivityProfile(timestamp);
-        if (activity.protected) {
-            Config.developerDiagnostics && Metrics.recordBackgroundDeferral();
-            Config.developerDiagnostics && Metrics.recordStateRetentionDeferral('player_protected');
-            return Promise.resolve(null);
-        }
         if (this.checkpointPressure().resetDue) {
-            Config.developerDiagnostics && Metrics.recordStateRetentionDeferral('wal_pressure');
-            return this.runAdaptiveWalReset(timestamp);
+            // A truncate that starts takes this tick; one refused (counted
+            // there, e.g. over budget for up to 10 min) leaves it to retention.
+            const reset = this.runAdaptiveWalReset(timestamp);
+            if (this.walResetRunning) {
+                Database.noteMaintenanceRefusal('state_retention', 'wal_pressure');
+                return reset;
+            }
         }
-        const lagMs = Math.max(0, Number(Metrics.currentEventLoopLag()) || 0);
-        const lagLimit = Math.max(1, Number(Config.schedulerLagThrottleMs) || 40);
-        if (lagMs >= lagLimit) {
-            Config.developerDiagnostics && Metrics.recordStateRetentionDeferral('event_loop_lag');
-            return Promise.resolve(null);
-        }
-        if (Database.pending() > 0) {
-            Config.developerDiagnostics && Metrics.recordStateRetentionDeferral('database_queue');
-            return Promise.resolve(null);
-        }
+        const activity = this.playerActivityProfile(timestamp);
+        const requestedBudgetMs = Math.max(4, Math.min(50, Number(Config.stateRetentionBudgetMs) || 12));
+        const admission = this.admitMaintenance('state_retention', activity, {
+            requestedBudgetMs, minimumBudgetMs: 4,
+            maxLagMs: Math.max(1, Number(Config.schedulerLagThrottleMs) || 40)
+        });
+        if (!admission) return Promise.resolve(null);
 
-        const startedAt = Config.developerDiagnostics ? Date.now() : 0;
-        const budgetMs = Math.max(1, Math.min(50, Number(Config.stateRetentionBudgetMs) || 12));
+        const startedAt = Date.now();
+        const budgetMs = admission.budgetMs;
         this.stateRetentionRunning = true;
         return Database.cooperatively(() => PersistentStateRetention.runNextBatch({
             timestamp,
@@ -2826,13 +2912,13 @@ const PopulationService = {
             staleLlmTurnMs: Config.staleLlmTurnMs,
             compactedConversationRetentionMs: Config.compactedConversationRetentionMs,
             conversationMaxUncompactedRows: Config.conversationMaxUncompactedRows
-        }), Math.min(budgetMs, Math.max(1, Number(Config.schedulerSliceMs) || 12))).then((result) => {
-            const durationMs = Config.developerDiagnostics ? Date.now() - startedAt : null;
+        }), budgetMs).then((result) => {
+            const durationMs = Date.now() - startedAt;
             this.stateRetentionPassRows += Math.max(0, Number(result?.rowsRemoved || 0));
             if (result?.cycleComplete) {
                 const pauseMs = this.stateRetentionPassRows > 0
                     ? Math.max(1000, Number(Config.stateRetentionPassPauseMs) || 60000)
-                    : Math.max(60000, Number(Config.stateRetentionIdlePauseMs) || (6 * 60 * 60 * 1000));
+                    : Math.max(60000, Number(Config.stateRetentionIdlePauseMs) || (10 * 60 * 1000));
                 this.stateRetentionPassRows = 0;
                 this.nextStateRetentionAt = Date.now() + pauseMs;
             }
@@ -2840,9 +2926,10 @@ const PopulationService = {
             return result;
         }).catch((error) => {
             Config.developerDiagnostics && Metrics.recordStateRetention({ errors: 1 }, Date.now() - startedAt);
-            utils.infoWarn('BotPopulation', 'bounded persistent-state retention failed: %s', error?.message || error);
+            FailureLog.note('db.state_retention', error);
             return null;
         }).finally(() => {
+            BackgroundWorkGovernor.complete(admission.lease, { durationMs: Date.now() - startedAt });
             this.stateRetentionRunning = false;
         });
     },
@@ -3220,15 +3307,12 @@ const PopulationService = {
         const checked = await BotAfkMarketService.reviewPurchaseLimits(updatedState);
         updatedState = checked.state || updatedState;
         correctedBids = checked.changed;
-        const improvementService = invoke('GameServer/Bot/Economy/BotImprovementService');
-        const arrowCleanupFirst = updatedState.activity === 'shopping' && improvementService.inTown(updatedState)
-            && require('../../Inventory/ArrowStock').unused(updatedState).length > 0;
         // A correction changed the owner's board revision. Its earlier
         // optional plan waits for fresh preparation, rather than replaying it.
         // A sale trip's own sale (open) decides the bag: the worker showcase
         // first would make two pricers fight over it. A forced cleanup keeps
         // the author's path (E306).
-        if (updatedState.activity === 'shopping' && workerPlan?.economyPlan && !correctedBids && !arrowCleanupFirst
+        if (updatedState.activity === 'shopping' && workerPlan?.economyPlan && !correctedBids
             && (!saleVisit(updatedState) || updatedState.stats?.forcedMarketCleanup)) {
             const sourceWorker = ColdSimulationCoordinator.worker, sourceEpoch = ColdSimulationCoordinator.workerEpoch;
             const beforeWrite = () => {
@@ -3244,6 +3328,7 @@ const PopulationService = {
             updatedState = board.state || updatedState;
         }
 
+        const improvementService = invoke('GameServer/Bot/Economy/BotImprovementService');
         const acquisitionLeaf = ColdSimulationCoordinator.economyDecisions.activity(updatedState);
         if (acquisitionLeaf?.activity === 'improving'
             && ['crystallize', 'luxury_exchange'].includes(acquisitionLeaf.improvement?.kind)

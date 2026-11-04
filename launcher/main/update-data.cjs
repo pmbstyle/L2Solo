@@ -21,14 +21,23 @@ function check(file) {
         if (db.prepare('PRAGMA quick_check').get()?.quick_check !== 'ok') throw new Error('Database integrity check failed.');
     } finally { db.close(); }
 }
-function checkPair(worldPath, historyPath, maximumSchemaVersion) {
+// A newer world: a numbered migration above the release's last one, or a
+// named migration the release does not list (a release manifest without the
+// list predates named migrations and knows none).
+function checkPair(worldPath, historyPath, maximumSchemaVersion, knownMigrationNames) {
     if (!fs.existsSync(worldPath)) return;
     const world = new DatabaseSync(worldPath, { readOnly: true });
+    const has = table => world.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table);
     let token;
     try {
-        if (Number.isSafeInteger(maximumSchemaVersion) && world.prepare("SELECT 1 FROM sqlite_master WHERE name='schema_migrations'").get()) {
+        if (Number.isSafeInteger(maximumSchemaVersion) && has('schema_migrations')) {
             const current = Number(world.prepare('SELECT MAX(version) AS version FROM schema_migrations').get()?.version || 0);
             if (current > maximumSchemaVersion) throw new Error(`World database schema ${current} requires a newer server (this release supports ${maximumSchemaVersion}).`);
+        }
+        if (Number.isSafeInteger(maximumSchemaVersion) && has('named_migrations')) {
+            const known = new Set(Array.isArray(knownMigrationNames) ? knownMigrationNames : []);
+            const unknown = world.prepare('SELECT name FROM named_migrations ORDER BY name').all().map(row => row.name).filter(name => !known.has(name));
+            if (unknown.length) throw new Error(`World database migration ${unknown.join(', ')} requires a newer server.`);
         }
         if (world.prepare("SELECT 1 FROM sqlite_master WHERE name='world_meta'").get()) token = world.prepare("SELECT value FROM world_meta WHERE key='historyToken'").get()?.value;
     } finally { world.close(); }
@@ -61,7 +70,7 @@ function main() {
             return { path: file, existed, name: index ? 'history.sqlite' : 'world.sqlite',
                 identity: stat ? { device: String(stat.dev), inode: String(stat.ino) } : null };
         });
-        checkPair(world, history, options.maximumSchemaVersion);
+        checkPair(world, history, options.maximumSchemaVersion, options.knownMigrationNames);
         for (const file of files.filter(file => file.existed)) {
             const target = path.join(directory, file.name);
             fs.copyFileSync(file.path, target, fs.constants.COPYFILE_EXCL);
