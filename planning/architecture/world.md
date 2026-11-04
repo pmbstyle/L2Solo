@@ -66,6 +66,7 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
   main-thread `findPath`** (the rest) → fallbacks `TownPathfinder`, then straight LOS line, else no move. Segment loop on 100/250 ms with Z snap and `TownTraffic.steer`. Bots skip
   `updateEnvironment` while moving; their aggro comes from the 1 s ticker.
 - **NPC chase:** worker path → `Automation.scheduleMoveToCoords` (linear, no Z snap) → `scheduleAction` approach.
+  No way for 10 s (empty paths or pool errors, `Npc` `pathFailed`) drops the target's hate (`noPath`, Lisvus attack timeout).
 - **Broadcast:** `dataSendToMeAndOthers` → `World.fetchVisibleRealPlayers` (index + `inClientView`); bots
   `BotSession.dataSendToOthers` (real sockets only).
 

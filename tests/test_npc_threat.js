@@ -293,15 +293,23 @@ function verifyOutOfReachForget() {
     });
 }
 
-function verifyNoPathForget() {
+// No way to the target, an empty path or a path pool that cannot answer (queue
+// full, timed out, a crashed worker): the mob forgets it after the 10 s attack
+// timeout (Lisvus L2AttackableAI.thinkAttack drops hate whatever the cause).
+function verifyNoPathForget(request = () => Promise.resolve(null), what = 'no path') {
     const originalRequest = PathfindingWorkerPool.request;
-    PathfindingWorkerPool.request = () => Promise.resolve(null);
+    PathfindingWorkerPool.request = request;
     return withCombatStubs(async () => {
         assert.strictEqual(npc.addDamageHate(damageDealerSession, damageDealer, 500, 500), true);
         assert.strictEqual(await waitFor(() => !npc.state.fetchCombats(), 15000), true,
-            'a target with no path must end the chase after the path timeout');
-        assert.strictEqual(npc.getHating(damageDealer), 0, 'a chase with no path must forget its actor');
+            `a target with ${what} must end the chase after the path timeout`);
+        assert.strictEqual(npc.getHating(damageDealer), 0, `a chase with ${what} must forget its actor`);
     }, { lineOfSight: false }).finally(() => { PathfindingWorkerPool.request = originalRequest; });
+}
+
+function verifyPoolErrorForget() {
+    const full = () => Promise.reject(Object.assign(new Error('path worker queue is full'), { code: 'QUEUE_FULL' }));
+    return verifyNoPathForget(full, 'only path pool errors');
 }
 
 function verifyAggroMutations() {
@@ -356,7 +364,8 @@ assert.strictEqual(npc.fetchMostHated(), damageDealer, 'a hate tie must keep the
 npc.abortCombatState(tankSession);
 verifyCombatRetarget()
     .then(verifyOutOfReachForget)
-    .then(verifyNoPathForget)
+    .then(() => verifyNoPathForget())
+    .then(verifyPoolErrorForget)
     .then(() => console.log('NPC threat transfer checks passed'))
     .catch((error) => {
         console.error(error);

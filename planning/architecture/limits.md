@@ -29,10 +29,9 @@ overdue max 1-4 (before this release saturated from ~1430-1580 bots). See POP-23
    Coordinator discards (only an unsplit dD `dropped` total).
 7. Worker: 64 pending wish route requests; past that `[]`, reviews run without trip data in catch-up bursts.
 8. Hot interaction event queue drops events above 1024 pending, drains ~64/s: social memory lost in crowded fights.
-9. Path pool (≤ 2 workers, queue 128) pre-empts/rejects (dD); NPC chases lose first. A rejected or timed-out NPC
-   request only retries every 500 ms (the 10 s give-up counts only empty paths), so a mob without line of sight
-   stands at the wall **holding aggro** while the pool cannot answer, also while a crashed slot waits its respawn
-   (from the second crash in a row up to 30 s; on a 2-core machine the pool has one slot) (debt 17).
+9. Path pool (≤ 2 workers, queue 128) pre-empts/rejects (dD); NPC chases lose first: an empty path or a pool error
+   (rejected, timed out, a crashed worker) counts toward the 10 s give-up, so under a busy pool mobs without line of
+   sight drop aggro after 10 s (`noPath`, dD npcHate), as in C4.
 10. Sockets: no write backpressure, no broadcast fan-out cap; write buffer grows without bound for a slow client in a
     dense zone.
 11. Sale candidates cut to top N by unit price (8; StaticBuyer 20 then materials only; town choice 8): cheap stacks
@@ -150,7 +149,7 @@ player online (8 in flight, status `coldDue`).
 | Limit | Value | Where | When hit | Observable |
 |---|---|---|---|---|
 | Path pool | min(2, cores − 1) workers; queue 128; priority NPC 0 < bot 50 < companion 100 | PathfindingWorkerPool ~16, MoveTo ~633, Npc ~640 | lowest-priority queued task pre-empted (`PATH_PREEMPTED`) or new one rejected (`QUEUE_FULL`) | dD |
-| Path timeout | 2 s (`COMPANION_PATH_TIMEOUT_MS`); NPC 10 s of empty paths (`NPC_PATH_FAILURE_TIMEOUT_MS`) | PathfindingWorkerPool ~108, MoveTo ~15, Npc ~38, ~459 | retry; NPC drops aggro (`noPath`) after 10 s of empty paths; a rejected or timed-out NPC request retries in 500 ms and keeps aggro | dD (npcHate) |
+| Path timeout | 2 s (`COMPANION_PATH_TIMEOUT_MS`); NPC 10 s from the first failed request (`NPC_PATH_FAILURE_TIMEOUT_MS`) | PathfindingWorkerPool ~108, MoveTo ~15, Npc ~38, `pathFailed` ~330 | retry (NPC: 0.5, 1, 2, 4 s); an NPC whose requests give an empty path or a pool error for 10 s drops aggro (`noPath`) | dD (npcHate) |
 | Corridor budget | 80 ms per 1 s for non-priority town-corridor tasks; 150 ms per request | PathfindingWorkerPool ~162, PathfindingWorker ~26 | over budget: wait for the next second; > 150 ms: `PATH_BUDGET` error (companion recovery retries) | dD `budgetDeferrals` |
 | Pool restarts | none: a crashed slot respawns forever, at once on its first crash in a row, then after the shared worker backoff 1/2/5/10/30 s (resets after 30 s up; `RestartBackoff.AT_ONCE_FIRST_MS`) | PathfindingWorkerPool `onWorkerFailure` ~214, `src/WorkerRestartBackoff.js` | the slot is down until its respawn; its running task fails with the crash; the queue is kept, each task waits for a worker or its own timeout (`PATH_TIMEOUT`) | log (each crash with its reason, the stack once per reason); status `pathPool=<up>/<size> pathCrashes=<crashes>/<respawns>` |
 | Sync A* | 2000 nodes (`findPath` default) | GeodataEngine ~501, MoveTo ~728 | null → `TownPathfinder` waypoint → straight line if LOS → empty | `lastPathfinding` |

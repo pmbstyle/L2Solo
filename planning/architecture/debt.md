@@ -73,11 +73,6 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    forever, logged); the checkpoint worker restarts every 250 ms forever, dD only (`DatabaseCheckpointCoordinator`
    ~61), the clan planning worker retries after 5 s (`ClanPlanningCoordinator` ~73). One restart rule for all.
 
-17. **NPC chase keeps aggro while the path pool cannot answer.** A rejected or timed-out request (queue full,
-   pre-empted, no slot up during a crash backoff) only sets a 500 ms retry (`Npc.js` ~470); the 10 s give-up
-   (`noPath`) counts only empty paths. A mob without line of sight stands at the wall holding aggro meanwhile. Lisvus
-   drops hate after its attack timeout whatever the cause (`L2AttackableAI.thinkAttack`).
-
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets[6]`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so
 a rich bot there has a null activity (T178): a test expecting "one leaf" from such a scene breaks the same way. Known
