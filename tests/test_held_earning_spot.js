@@ -2,7 +2,8 @@
 // Decision 10-30: a bot keeps its earning spot. A held build with a valid event
 // proof: inside the window nothing searches, on any path; the window's end and
 // a goal change that can change the answer (the focus into or out of gear and
-// resale) ask one search on any path, the same answer renews in place, a new one
+// resale, the money weight past the range its answer stands over) ask one
+// search on any path, the same answer renews in place, a new one
 // rebuilds; a search that found nothing is kept like a route.
 const assert = require('node:assert/strict');
 const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
@@ -68,9 +69,15 @@ function heldBot(characterId, extra = {}, shape = {}) {
     assert(built.eventProof(), 'fixture: the build has its event proof');
     return { native, built, state: published(native, built) };
 }
-let searches = 0;
-const nativeSelect = Route.select;
+let searches = 0, lastSearch = null;
+const nativeSelect = Route.select, nativeSearch = Route.search;
 Route.select = (...args) => { searches += 1; return nativeSelect(...args); };
+Route.search = (state, options) => {
+    searches += 1;
+    const found = nativeSearch(state, options);
+    lastSearch = { options, weights: found.weights };
+    return found;
+};
 // How many searches a read made.
 function count(read) {
     const before = searches, result = read();
@@ -172,37 +179,47 @@ function verify() {
         assert.equal(moved.result.plan, built.plan, 'and the held build stands');
     }
 
-    // The money weight the search valued spots with (SpotEconomics.moneyWeight:
-    // the packet's hour times its money price) is the goal's other input: a
-    // move inside the bot's own income error keeps the hold, one beyond it
-    // searches once. With knowledge errors off (the baseline's error 0) the
-    // error a learned bot keeps stands in: the weight moves on every build.
+    // The money weight (SpotEconomics.moneyWeight: the packet's hour times its
+    // money price) enters the search only through each spot's score, a line in
+    // the weight: the answer stands over the weights up to the nearest crossing
+    // (EquipmentIncomeRoute.search), and the hold searches when the weight
+    // leaves them, however far it moved inside. Two spots, one paying exp, the
+    // other money: the range ends where their scores cross.
     {
         const Economics = invoke('GameServer/Bot/Economy/SpotEconomics');
-        const Learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
-        const { state } = heldBot(990260);
-        const hour = Packet.hourAdena(state.stats.money);
-        assert(state.stats.wishSections.incomeError > Learning.INCOME_ERROR_FLOOR && hour > 0,
-            'fixture: the bot has an income error above the floor and an hour');
+        const bot = fighter(990260);
+        let native = { ...bot, stats: { ...bot.stats, huntEfficiency: [] } };
+        for (let n = 0; n < 3; n++) for (const spot of spots) native = { ...native, stats: { ...native.stats,
+            huntEfficiency: Hunt.record(native, { spotId: spot.id, timestamp: started, cycleMs: 60000,
+                adena: spot.id === 'rich' ? 1500 : 600, costs: 100, loot: 0, exp: spot.id === 'rich' ? 100 : 14000, kills: 10 }) } };
+        const built = Economy.forState(native, deps(0));
+        assert.equal(built.hunt.spotId, 'poor', 'fixture: at its first weight the bot levels');
+        const state = published(native, built), hour = Packet.hourAdena(state.stats.money);
         const base = Economics.moneyWeight(state), money = Math.max(1, hour * Packet.moneyPrice(state.stats.money));
         const power = money * (1 - base) / base;
-        const weighed = (weight, incomeError) => ({ ...state, stats: { ...state.stats,
-            wishSections: { ...state.stats.wishSections, incomeError },
+        const weighed = weight => ({ ...state, stats: { ...state.stats,
             money: [hour, weight * power / (1 - weight) / hour, ...state.stats.money.slice(2)] } });
-        for (const [minute, incomeError, error] of [[31, state.stats.wishSections.incomeError, state.stats.wishSections.incomeError],
-            [64, 0, Learning.INCOME_ERROR_FLOOR]]) {
-            // A search past the window holds the weight this state reads.
-            assert.equal(count(() => Economy.basics(weighed(base, incomeError), deps(minute))).searches, 1, 'fixture: the window\'s search');
-            const up = base * (1 + 2 * error) < 0.99;
-            const small = base * (1 + (up ? 1 : -1) * error / 2), large = base * (1 + (up ? 1 : -1) * 2 * error);
-            assert(Math.abs(Economics.moneyWeight(weighed(large, incomeError)) - large) < 1e-9 && large * power / (1 - large) >= 1,
-                'fixture: the packet carries the weight');
-            const kept = count(() => Economy.basics(weighed(small, incomeError), deps(minute + 1)));
-            assert.equal(kept.searches, 0, `a weight move inside the error (${error}) does not search`);
-            assert.equal(kept.result.hunt.spotId, 'rich', 'and the bot keeps its spot');
-            assert.equal(count(() => Economy.basics(weighed(large, incomeError), deps(minute + 2))).searches, 1, 'a move beyond it searches');
-            assert.equal(count(() => Economy.basics(weighed(large, incomeError), deps(minute + 3))).searches, 0, 'once');
-        }
+        const held = count(() => Economy.basics(weighed(0.9), deps(31)));
+        assert.equal(held.searches, 1, 'fixture: the window\'s search');
+        assert.equal(held.result.hunt.spotId, 'rich', 'fixture: a high money weight earns');
+        const { low, high } = lastSearch.weights;
+        assert(low > base && low < 0.9 && high === 1, 'fixture: the range ends where the spots cross');
+        // Tight: the search answers the same anywhere inside, the other spot just past it.
+        const inside = low + 1e-12, past = low - 1e-12;
+        assert(Economics.moneyWeight(weighed(inside)) >= low && Economics.moneyWeight(weighed(past)) < low,
+            'fixture: the packet carries the weight');
+        const answer = weight => nativeSelect(weighed(weight), lastSearch.options)?.spot.id;
+        for (const weight of [inside, (low + 0.9) / 2, 0.999]) assert.equal(answer(weight), 'rich', `the search keeps its answer at ${weight}`);
+        assert.equal(answer(past), 'poor', 'and changes it just past the range');
+        // A move inside, wider than the bot's own income error, keeps the hold.
+        assert(0.9 - inside > 0.9 * state.stats.wishSections.incomeError, 'fixture: a move beyond the bot\'s income error');
+        const kept = count(() => Economy.basics(weighed(inside), deps(32)));
+        assert.equal(kept.searches, 0, 'a weight move inside the range does not search');
+        assert.equal(kept.result.hunt.spotId, 'rich', 'and the bot keeps its spot');
+        const moved = count(() => Economy.basics(weighed(past), deps(33)));
+        assert.equal(moved.searches, 1, 'a move just past it searches');
+        assert.equal(moved.result.hunt.spotId, 'poor', 'and finds the other spot');
+        assert.equal(count(() => Economy.basics(weighed(past), deps(34))).searches, 0, 'once');
     }
 
     // A supply build (DecisionSections incomeSearch) rebuilds the foundation on
@@ -352,7 +369,7 @@ function verify() {
     Economy.reset();
     console.log(`PASS held earning spot: window on every path, goal change, moved hold, held null ${isMainThread ? 'main' : 'worker'}`);
 }
-try { verify(); } finally { Route.select = nativeSelect; Generation.configure(generation); }
+try { verify(); } finally { Route.select = nativeSelect; Route.search = nativeSearch; Generation.configure(generation); }
 if (isMainThread) {
     const worker = new Worker(__filename);
     worker.on('error', error => { console.error(error); process.exitCode = 1; });

@@ -79,7 +79,8 @@ function sectionMask(names) {
 // survival reserve (kit, profile, consumables, the observation). Of money it
 // reads the wallet only for the rest bottles' cap, read anew on a kept
 // foundation (EconomyContext.foundationFromPlan), and the money weight of its
-// income search, which the held earning spot follows itself (weightMoved).
+// income search, which the held earning spot follows itself (weightMoved:
+// the weights its answer stands over).
 // Of the relations fact it reads only the party role (its spot value table
 // and hunt income); relations is in its list for it, so a party join
 // rebuilds it (a deviation from the spec's four sections).

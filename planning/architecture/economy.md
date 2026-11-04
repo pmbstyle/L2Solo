@@ -173,11 +173,14 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
   packet's hour (`stats.money` `hourAdena`, the last build's, i.e. the last search's `earning`) × money price
   (its `moneyPrice`, the gap wish's ratio, at least 1 / hour). For a bot whose gap ratio is above that floor (~half of
   the 1700-bot save) the answer depends on the previous answer, and the weight moves with every build (between two
-  saves 100 min apart, same-focus bots: median |Δweight| 0.015, p90 0.39). The held earning spot searches again
-  when the weight moved beyond the bot's income error (EconomyContext `weightMoved`, as the observation event; never
-  below `INCOME_ERROR_FLOOR`, also with knowledge errors off), so a
-  search that moves the route, through the hour the next build publishes, can ask the next one (and a bot's first
-  build, searched with no packet, asks one more). Open: value the weight at the band hour.
+  saves 100 min apart, same-focus bots: median |Δweight| 0.015, p90 0.39). Each spot's score is a line in the
+  weight (valueHours = expHours·(1 − w) + incomeHours·w − riskHours, over a walk factor), and nothing else the search
+  reads moves with it, so `EquipmentIncomeRoute.search` returns with its answer the weights it stands over (the
+  comparisons of lines the answer reads, kept with a rounding margin; plus the packet's hour where the band has no
+  money hour); the held earning spot searches again only when the weight leaves them (EconomyContext `weightMoved`).
+  A search that moves the route, through the hour the next build publishes, can still ask the next one when that
+  moves the weight past a crossing (and a bot's first build, searched with no packet, asks one more). Open: value
+  the weight at the band hour.
 ## Open questions
 
 1. ECO-1: worker `executePlan` only, with `reconcile`/`open` reduced to executors? — decided 2026-11-03: yes (ECO-1).

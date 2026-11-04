@@ -125,8 +125,13 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
         row.costs = observed ? Number(observed.costs || 0) * rate
             : (Number(base.shots || 0) * costs.shots + Number(base.potions || 0) * costs.potions) * calibration;
         row.income = row.adena + row.loot - row.costs;
-        row.valueHours = row.exp / Math.max(1, hour?.exp || hunt.expPerHour) * (1 - weight)
-            + row.income / (hour?.adena > 0 ? hour.adena : hourAdena) * weight - row.riskHours;
+        // The value is linear in the money weight, its only use: expHours and
+        // incomeHours are the hour's exp and income in units of the hour
+        // (EquipmentIncomeRoute.search reads them for the weights its answer
+        // stands over).
+        row.expHours = row.exp / Math.max(1, hour?.exp || hunt.expPerHour);
+        row.incomeHours = row.income / (hour?.adena > 0 ? hour.adena : hourAdena);
+        row.valueHours = row.expHours * (1 - weight) + row.incomeHours * weight - row.riskHours;
         return row;
     };
 }

@@ -8,8 +8,10 @@ Drafted 2026-11-04 from the cold-worker perf passes (diagnostic run `2db814359-c
 
 A bot's decision is a chain of links. Each link is a pure function of named inputs. A link is recomputed when one of
 its inputs changes, and only then: an event raises the input, the link reads the input's version and rebuilds on read.
-No time windows (AGENTS.md). An input that moves continuously (crowd, a money weight) gets a significance rule against
-the bot's own error (`incomeError`), the same measure the observation event already uses.
+No time windows (AGENTS.md). An input that moves continuously (crowd, a money weight) is significant when it moves far
+enough to change the link's answer: the money weight enters the income search linearly, so the search returns the
+weights its answer stands over (`EquipmentIncomeRoute.search`); where no such range is computable, a significance rule
+against the bot's own error (`incomeError`), the measure the observation event uses.
 
 ## Why (measured)
 
@@ -36,7 +38,7 @@ Inputs marked (E) have an event today, (–) have none, (S) need a significance 
 | Pricing | price(id), persona | board beliefs per item (E market watch), persona traits (E), frustration (E observation) | `EconomyContext.pricing`, `PriceBelief.prior` per build | rebuilt per build; board reads not keyed on item revision |
 | Route rows | trip table per town | activity class (shopping / shop trip / other), region while shopping, loc where read, marketReturn, karma flip, scroll present (E state) | `EconomicTrip.key` = `routeInputs` (cb292781) | was keyed on raw activity + scroll count |
 | Matchup profiles | profile array + verdict caches | kit profile object (E build), shot kind loaded, servitor (mp, summon, cooldowns), timestamp | `BotTargetMatchup.stateProfiles` ring of 8 (c2d035d2) | ring misses basics→forState across an await; verdicts die with the array |
-| Income search | held earning spot, row, hour | level/kit/matchup (E build, combat), loaded shot kind (–, beginner shots run out silently), origin spot/loc and samples/exclusions (E occupation), party (E relations), consumable prices (E market), `economicHunt` gate (E), money weight (S), crowd/room at candidate spots (–), risk exclusions there (–), spawn catalog period (–) | `holdRead`/`HOLD_MS` 30 game min, sections `COMPUTED.foundation` | window stands in for crowd/risk events; reads its own previous output (money[0], ECO-15) |
+| Income search | held earning spot, row, hour | level/kit/matchup (E build, combat), loaded shot kind (–, beginner shots run out silently), origin spot/loc and samples/exclusions (E occupation), party (E relations), consumable prices (E market), `economicHunt` gate (E), money weight (the weights the answer stands over), crowd/room at candidate spots (–), risk exclusions there (–), spawn catalog period (–) | `holdRead`/`HOLD_MS` 30 game min, sections `COMPUTED.foundation` | window stands in for crowd/risk events; reads its own previous output (money[0], ECO-15) |
 | Hunt / death / karma hours | hunt income, deathHours, karmaHours, riskWeight | income route + onSpotShare (E observation), exp/level (E), karma (E), lostGearHours (bag × prices, PK only) | `foundation` | rebuilt with the whole foundation |
 | Kit and stock targets | shots/potions/scrolls targets, survival reserve, bag hours | live bag counts (E supply/bag), `visitEvery` (E town), slots and sale candidates (E bag), restCap = wallet (E money: not wired, kept foundation keeps a stale restCap) | `foundation` → `kitReader` | needs only the bag/money, rebuilt with the income search |
 | Source facts | where to get each wished item | level/kill band/spoiler (E build), sourceRouteReader (exclusions, economicHunt, grouped), trips + hourAdena, spot values (crowd –, samples E, deathHours/riskWeight drift every round) | `WishProviders.sourcePath` → `GearAcquisitionPlanner.sourceFacts` per build, ~9 % | values move every round: hold gains < 0.5 % until crowd/risk are versioned |
@@ -60,14 +62,14 @@ Inputs marked (E) have an event today, (–) have none, (S) need a significance 
 0. Done 2026-11-04: main reads the worker's kit targets (7a86e9c6); one matchup array per step and no moved-hold
    recheck (c2d035d2); skill/model keys (6cccd76d); route key on what rows read, member workshop hold, feasibility
    from the current state (b2de9c9c). In review (branch ivan/worker-source-hold): the hold searches when the economic
-   gate flips or the money weight moves beyond the bot's error; the income search only on the sections it reads
-   (`COMPUTED.incomeSearch` + the loaded shot), a supply build rebuilds the rest of the foundation on the held route;
-   restCap follows money.
+   gate flips or the money weight leaves the weights the held answer stands over; the income search only on the
+   sections it reads (`COMPUTED.incomeSearch` + the loaded shot), a supply build rebuilds the rest of the foundation
+   on the held route; restCap follows money.
 1. Declare inputs in code: each link's key lists its inputs (comment + one test that changing each input rebuilds and
    changing anything else does not). Start with income search, kit, route rows, workshop.
 2. Per-bot input versions instead of section masks: bag, money, kit, level, occupation, relations, market. A link
    stores the versions it read; `DecisionSections.COMPUTED` becomes these per-link input sets.
-3. Per-spot versions (crowd, risk) and the money-weight significance; then `HOLD_MS` and other windows go.
+3. Per-spot versions (crowd, risk); then `HOLD_MS` and other windows go.
 4. Planner results keyed by input versions per mode (one slot per bot per mode, outside the 64-slot pool for finished
    cards); `edges` against a baseline of the facts the action reads (MP thresholds included).
 5. Wish projection by node: rebuild only the item nodes whose inputs moved (price of that item, its source facts, the

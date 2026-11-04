@@ -190,8 +190,9 @@ const PopulationStatus = {
 
     // incomeHold=<kept>/<none>,<unrouted>,<renewed>,<moved>,<event>,<goal>,<weight>,<bag>;party<kept>/<missed>: held earning
     // spot reads and searches since the worker started (EconomyContext holdStats, decision 10-30), diagnostics off too:
-    // event counts a build's own searches (a section, or bag: a supply build whose shot moved, also in event), goal and
-    // weight the searches a goal input's move asked inside the window.
+    // event counts a build's own searches (a section, or bag: a supply build whose shot moved, also in event), goal the
+    // searches the economic hunt's turn asked inside the window, weight those the money weight asked by leaving the
+    // weights the held answer stands over.
     incomeHoldText(h) {
         return h ? ` incomeHold=${h.kept || 0}/${h.none || 0},${h.unrouted || 0},${h.renewed || 0},${h.moved || 0},${h.event || 0},${h.goal || 0},${h.weight || 0},${h.bag || 0};party${h.partyKept || 0}/${h.partyMissed || 0}` : '';
     },
