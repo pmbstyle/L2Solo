@@ -2,6 +2,7 @@
 
 // The existing stats update carries one bounded decision, never its graph.
 // The economy owner validates the saved proof.
+const FailureLog = require('../../../FailureLog');
 const { deflateRawSync, inflateRawSync } = require('node:zlib');
 const MAX_BYTES = 1024, MAX_PLAIN_BYTES = 16384;
 // 5: the metadata row without the card key (the card carries its echo, the
@@ -32,7 +33,7 @@ function encode(accepted, baselineIdentity) {
         metadata.copy(plain, 36); card.copy(plain, 36 + metadata.length); proof.copy(plain, 36 + metadata.length + card.length);
         const value = [VERSION, deflateRawSync(plain, { level: 6 }).toString('base64')];
         return Buffer.byteLength(JSON.stringify({ wishAdvisory: value })) <= MAX_BYTES ? value : null;
-    } catch (_) { return null; }
+    } catch (error) { FailureLog.note('economy.codec:advisory_encode', error); return null; }
 }
 
 function decode(value, timestamp, maxCardBytes, characterId, baseline, baselineIdentity) {
@@ -63,7 +64,7 @@ function decode(value, timestamp, maxCardBytes, characterId, baseline, baselineI
         return { data, decisionSeq: row[0], activityLeaf: row[1], focus: row[2], baseline,
             activity: row[3], mp: row[4], eventProof: Uint8Array.from(plain.subarray(cardAt + cardSize)),
             characterId: row[5], saved: value };
-    } catch (_) { return null; }
+    } catch (error) { FailureLog.note('economy.codec:advisory_decode', error); return null; }
 }
 
 module.exports = { encode, decode, cardData, MAX_BYTES };

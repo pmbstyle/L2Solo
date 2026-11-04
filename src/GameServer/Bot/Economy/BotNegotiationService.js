@@ -1,3 +1,4 @@
+const FailureLog = require('../../../FailureLog');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const crypto = require('crypto');
 const DataCache = invoke('GameServer/DataCache');
@@ -229,7 +230,7 @@ function persist(negotiation) {
                 listingUnitPrice: negotiation.listingUnitPrice || null
             }).slice(0, 1200)
         ]
-    ], 'bot-negotiation:upsert').then(() => true).catch(() => false);
+    ], 'bot-negotiation:upsert').then(() => true).catch(error => { FailureLog.note('negotiation.persist', error); return false; });
     const pending = Promise.resolve(negotiation.persistPromise).catch(() => false).then(write);
     negotiation.persistPromise = pending;
     return pending;
@@ -244,7 +245,7 @@ function audit(negotiation, outcome, reason, meta = {}) {
         outcome,
         reason,
         meta: { negotiationId: negotiation.id, ...meta }
-    }).catch(() => {});
+    }).catch(error => FailureLog.note('negotiation.audit', error));
 }
 
 function journal(negotiation, event, detail) {

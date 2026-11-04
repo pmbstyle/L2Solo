@@ -8,8 +8,8 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
 ## Themes
 
 1. **Failures that do not show.** The owner is `src/FailureLog.js` (a survived failure counts by site, the first
-   is logged with its stack, status `swallowed=`; main and the cold worker). Sites not yet through it: economy
-   catches (ECO-11), AI empty catches (AI-10), stat recalculation (CMB-14), geometry parse (WOR-13). A cold command
+   is logged with its stack, status `swallowed=`; main and the cold worker). Sites not yet through it: AI
+   empty catches (AI-10), stat recalculation (CMB-14), geometry parse (WOR-13). A cold command
    request dropped as malformed is counted but still gets no ack (the worker's command waits). Every other fix is
    guesswork while these hide the cause.
 2. **Hot and cold disagree on one rule.** Skill reuse (CMB-1), MP cost (CMB-2), NPC

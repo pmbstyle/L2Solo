@@ -139,10 +139,6 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
   it as an occupation event. Review whether the pairing goes or the pull becomes a link. A required item's bid worth
   has two readings: `TradeIntent.wishRows` (the queue row's value, lifted to price × floor) and
   `itemUsefulness`/`worth` (`demands`, the wish's own weighted benefit).
-- **ECO-11 silent catches.** `ColdEconomyPlan.prepare`: a throwing `buyBatch` → `buy_error`, counted only with
-  diagnostics on, no log; `PopulationService` ~345 `reconcile(...).catch(() => null)`; per-owner queue in
-  `BotAfkMarketService.reconcile` swallows; `BotNegotiationService` persistence (`.catch(() => {})`);
-  `TradeMeetingService` `entry.ready.catch(() => {})` (the rest there logs via `infoWarn`).
 - **ECO-12 worker hazard (a trap, none live).** Both worker callers pass `findSpot`
   (`ColdEconomyPlan.prepare` → `MarketListingPolicy.evaluate` and `BuyAdPolicy.linesFor` via `buyAdTown`;
   `ColdSimulationWorker` ~405, trade-meeting seller). The `SpotService.findById` fallback in `targetTownForItems` (and

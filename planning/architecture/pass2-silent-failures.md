@@ -11,9 +11,7 @@ rejection is logged once per reason and counted).
 | `BackgroundResolver` ~1167, ~1515 | `npcForSpot(...) \|\| { maxHp: max(1, spot.mob?.hp \|\| 1), pDef: 1, … }` | no template → a 1-HP mob with the spot's real rewards: free cold EXP and drops | high | new |
 | `BotAI/SpotValueTable` ~123 | geodata manifest read → null | spot values missing | low | new |
 | `ColdSimulationCoordinator` ~1945 | `flatMap → []` drops bad requests with no ack (counted, `cold.request_dropped:<why>`) | worker waits on a command that never returns | med | new |
-| `Inventory/ShotStock` ~553 + `Bot/TradeService` ~425-443 | catch-all around buys; failed refund only attached to the error | adena lost, no item, no log | med-high | new (PER-2) |
-| `ColdShotEconomyService` ~224 | `catch → return state` after a paid recipe buy | may re-buy or mismatch adena | med | new |
-| `ColdWealthCraftService` ~390 | catch after committed sale | revenue lost from accounting | low-med | new |
+| `Inventory/ShotStock` ~646 + `Bot/TradeService` ~425-443 | catch-all around buys; failed refund only attached to the error (counted, `shots.store_buy`) | adena lost, no item | med-high | new (PER-2) |
 | `Cooldown` ~40, `PartyCompanionService` ~862 | `try { BotTradeService.cleanup } catch {}` | player's trade window stays open with a gone bot | med | new |
 | `BotTownTravel` ~96, `ShoppingState` ~1189/1206 | `markHot(...).catch(() => null).then(BotAI.init)` | bot hot in memory while row cold: two owners | med | new |
 | `Database` ~4402 + `HotBackgroundParty` ~326 | errors flattened to `party_opening_rollback`, caller `.catch(() => {})` | marked raid never starts, no log | med | new |
@@ -26,5 +24,5 @@ rejection is logged once per reason and counted).
 | `ProgressionRates` ~227, `NpcShopPriceScale` ~2, `BotEconomyPricing` ~7 | `Math.max(1, rate \|\| 1)` | rates below 1 ignored | low | new |
 | `PopulationService` ~2895 vs ~2459, `BackgroundWorkGovernor` ~142, `FloorAwareActivationPolicy` ~57 | `\|\| 40` vs `\|\| 0` for the same "0 = off" config | config 0 means off in one place, default in another | low | new |
 
-Known items also confirmed: ECO-11 set, CMB-14 stat-recalc catches, WOR-13 minion/geometry/arena catches, AI-10.
+Known items also confirmed: CMB-14 stat-recalc catches, WOR-13 minion/geometry/arena catches, AI-10.
 The scan flagged 210 catches; the list above is the ones that matter.

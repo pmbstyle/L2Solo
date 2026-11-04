@@ -1,4 +1,5 @@
 'use strict';
+const FailureLog = require('../../../FailureLog');
 const ClassProgression = invoke('GameServer/ClassProgression');
 const DataCache = invoke('GameServer/DataCache');
 const Knowledge = require('../AI/KnowledgeLearning');
@@ -525,7 +526,7 @@ function restartEventProof(proof, accepted) {
         write.raw(quantities);
         const bytes = write.finish();
         return bytes.byteLength <= PROOF_RAW_BYTES ? bytes : null;
-    } catch (_) { return null; }
+    } catch (error) { FailureLog.note('economy.codec:proof_pack', error); return null; }
 }
 function restoreEventProof(prefix, accepted) {
     const generation = RecomputeGeneration.restorable();
@@ -550,7 +551,7 @@ function restoreEventProof(prefix, accepted) {
             decision: Object.freeze([accepted.decisionSeq, accepted.activityLeaf, accepted.focus]),
             activity: activityIdentity(accepted.card.activity), generation,
             quantities, liquidation, stockRoots, bands, hourAdena });
-    } catch (_) { return null; }
+    } catch (error) { FailureLog.note('economy.codec:proof_restore', error); return null; }
 }
 function wireEventProof(proof) {
     if (!proof || proof.version !== 2
@@ -561,7 +562,7 @@ function wireEventProof(proof) {
         // this JSON size is the wire's.
         const wire = { ...proof, quantities: Buffer.from(proof.quantities).toString('base64') };
         return Buffer.byteLength(JSON.stringify(wire)) <= PROOF_RAW_BYTES ? wire : null;
-    } catch (_) { return null; }
+    } catch (error) { FailureLog.note('economy.codec:proof_wire', error); return null; }
 }
 // The proof from its wire form or in process; null when its packed
 // quantities are malformed or above their bound.
