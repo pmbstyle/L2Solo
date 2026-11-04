@@ -19,7 +19,15 @@ much as behaviour:
 - A change states its cost: what it adds or removes per bot per step (computations, allocations, DB writes,
   messages to the worker), and on the main thread vs the worker.
 - Prefer the cheaper of two correct rules; reuse a computed result instead of recomputing; no work on the main thread
-  that the worker can do; no per-tick scans over all bots.
+  that the worker can do, and main never rebuilds a decision the worker published (it reads it); no per-tick scans
+  over all bots.
+- A held or cached result names its inputs (a comment at the key) and its key is exactly those inputs: a key finer
+  than what the result reads throws work away (an object identity, `updatedAt`, a raw activity string, an exact MP
+  value), a coarser one serves a stale answer. It is recomputed when one of its inputs changes, by an event; a time
+  window is not a substitute. A window only for an input that has no event yet, with the reason and a limits.md row,
+  and the missing event as a debt line.
+- A change for speed that claims the same behaviour proves it: it lists the inputs it relies on and a test pins the
+  same result, also after an input changes. Otherwise it says what goes stale and by how much.
 - Development is a balance between simulation, realism and performance. Say which one a choice trades.
 - A player can be online all the time. No work waits for an idle server (no player): maintenance, cleanup and
   repairs run with a player online within a stated stall budget; only what cannot (e.g. VACUUM) runs at boot or
@@ -44,6 +52,10 @@ is one mechanism per rule.
   concept, not by the name) and reuse or extend it.
 - When a new path replaces an old one, the old one is removed in the same change, with its tests and config keys.
 - Hot and cold share the rule (one function both call), not two copies.
+- Data that crosses a module, the worker boundary or storage has named fields, or one owner of its layout with
+  named readers and writers; positional slots (`money[2]`) and sentinel values (`-1`) live only inside that owner.
+- A bot state object is replaced, not edited in place; code that must edit one owns it, and no cache keyed by object
+  identity reads it while it changes.
 - Tails found but not fixed (duplicate path, dead code, half-migration): add a line to
   `planning/architecture/debt.md`; do not fix them inside an unrelated change.
 - The map holds the current state and open work only: a paid debt item is deleted, an area line is rewritten to the
@@ -73,6 +85,7 @@ is one mechanism per rule.
   changed limit gets a row, and hitting it must be observable (a counted reason, not a silent drop).
 - A survived failure is never silent: count it through `src/FailureLog.js` (site + first stack), never rethrow from a
   timer.
+- A counter counts one named thing (a restart, not an event that may repeat for it); its name says which.
 - A schema change is a new named migration in `src/Database.js`'s named list (`namedMigrations`), never a new
   number.
 - Secrets and machine paths go only in `config/local.ini` (gitignored).
