@@ -40,6 +40,11 @@ try {
     assert.ok(lines.some(line => line.includes('10 -> <=5') && line.includes('walk')), lines.join('\n'));
     const other = compare(a, folder(summary(20, 400, [], 's2')));
     assert.deepEqual(other.differs.map(([what]) => what), ['save'], 'another save is not comparable');
+    // A run on the remote machine against one on the laptop: the hardware, not the commit, would show.
+    const on = (host) => { const s = summary(20, 400, []); s.run.host = host; return folder(s); };
+    assert.deepEqual(compare(on('laptop'), on('vps')).differs.map(([what]) => what), ['machine'], 'another machine is not comparable');
+    // A run from before the machine was recorded names none: not flagged against either.
+    assert.deepEqual(compare(a, on('vps')).differs, []);
 } finally {
     console.log = log;
     for (const dir of dirs) fs.rmSync(dir, { recursive: true, force: true });

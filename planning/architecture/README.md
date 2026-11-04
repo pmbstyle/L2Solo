@@ -28,7 +28,7 @@ Only these files are kept here; each file's first line says the commit it was la
 
 Measurement (CPU, lag, memory, e2e) has no map file: `scripts/perf.js`, `src/Perf/*` — `LiveRecorder` (the one
 recorder, `[Perf] live`; `Threads`, `CpuProfile`, `HeapProfile`, `ChunkWorker`), window runs
-`scripts/perf/{window,report,compare}.js` on a launcher save, players `HotCrowd` (hot scenario), scripted client
+`scripts/perf/{window,report,compare}.js` on a launcher save (also on another machine over ssh: `scripts/perf/remote.js`), players `HotCrowd` (hot scenario), scripted client
 `PlayerClient` + `PlayerScript`; numbers come from `PopulationMetrics`/`logSummary` and
 `ColdSimulationCoordinator.failureSnapshot`, the recorder adds no counter.
 

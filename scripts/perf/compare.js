@@ -100,7 +100,8 @@ function compare(dirA, dirB, { top = 8 } = {}) {
     const a = load(dirA), b = load(dirB);
     const name = (s) => `${s.run.folder}: ${s.run.sha}${s.run.dirty ? ' (uncommitted)' : ''}, ${s.run.scenario}, ${s.run.save.name}`;
     console.log(`A ${name(a)}\nB ${name(b)}`);
-    const differs = [['save', a.run.save.id, b.run.save.id], ['scenario', a.run.scenario, b.run.scenario],
+    // The machine only when both runs name it (runs before it was recorded name none).
+    const differs = [...(a.run.host && b.run.host ? [['machine', a.run.host, b.run.host]] : []), ['save', a.run.save.id, b.run.save.id], ['scenario', a.run.scenario, b.run.scenario],
         ['window minutes', a.run.windowMinutes, b.run.windowMinutes], ['warm-up minutes', a.run.warmupMinutes, b.run.warmupMinutes],
         ['diagnostics', a.run.diagnostics, b.run.diagnostics],
         ['players', JSON.stringify(a.run.crowd || null), JSON.stringify(b.run.crowd || null)],

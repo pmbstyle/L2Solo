@@ -74,8 +74,8 @@ const groups = {
     Progression: [['Level cap', ['contentCap']]]
 };
 
-// [Perf] is the developer's measurement tool (scripts/perf.js), not a player setting.
-const hiddenSections = new Set(['Perf']);
+// [Perf] and [PerfRemote] are the developer's measurement tool (scripts/perf.js), not player settings.
+const hiddenSections = new Set(['Perf', 'PerfRemote']);
 
 function fieldVisible(section, key) {
     if (hiddenSections.has(section)) return false;

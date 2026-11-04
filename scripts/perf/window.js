@@ -8,6 +8,7 @@
 // run starts from the same rows. A run: boot, warm-up, heap dump, window, heap dump, stop.
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawn, execFileSync } = require('child_process');
 const { DatabaseSync } = require('node:sqlite');
@@ -159,6 +160,8 @@ async function run(flags) {
     writeIni(dir, { live: true, dir, keepProfileMs: 0, keepProfilesPerDay: 100000, heapEveryMinutes: 100000 });
     const meta = { sha, dirty, scenario, save: { id: flags.save, name: save.name }, bots, warmupMinutes: warmup,
         windowMinutes: minutes, diagnostics, crowd, script: script && path.relative(ROOT, script), node: process.version,
+        // The machine: runs of two machines do not compare (compare says so); load at the start shows a busy one.
+        host: os.hostname(), cpus: `${os.cpus().length}x ${os.cpus()[0]?.model || '?'}`, loadAtStart: +os.loadavg()[0].toFixed(2),
         startedAt: new Date().toISOString() };
     fs.writeFileSync(path.join(dir, 'run.json'), `${JSON.stringify(meta, null, 2)}\n`);
     say(`${path.relative(ROOT, dir)}: ${save.name}, bots ${JSON.stringify(bots)}; ${warmup} min warm-up, ${minutes} min window`);
@@ -192,4 +195,4 @@ async function run(flags) {
     return dir;
 }
 
-module.exports = { prepare, run, savesDir, PERF_DIR };
+module.exports = { prepare, run, savesDir, stamp, PERF_DIR };

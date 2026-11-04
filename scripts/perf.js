@@ -19,6 +19,10 @@
 //       script: --script=tests/e2e/<name>.js   (an end-to-end player scenario; the window ends when it does)
 //   node scripts/perf.js report [<run folder>]
 //   node scripts/perf.js compare <run A> <run B>   (folders, or names under tmp/perf/runs)
+// Remote (window runs on another machine over ssh, [PerfRemote]; scripts/perf/remote.js):
+//   node scripts/perf.js remote setup
+//   node scripts/perf.js remote run --save=<id> [--ref=<commit>[,<commit>]] [run flags]   (two refs: compare at the end)
+//   node scripts/perf.js remote status | pull [<job>] | saves | upload-save <id>
 
 const fs = require('fs');
 const path = require('path');
@@ -30,6 +34,7 @@ const SavedGames = require('./saved-games');
 const Window = require('./perf/window');
 const Report = require('./perf/report');
 const Compare = require('./perf/compare');
+const Remote = require('./perf/remote');
 
 const ROOT = path.resolve(__dirname, '..');
 
@@ -262,7 +267,7 @@ function runDir(words) {
     if (words[1]) return path.resolve(words[1]);
     const runs = path.join(Window.PERF_DIR, 'runs');
     const newest = fs.existsSync(runs) ? fs.readdirSync(runs).map(name => path.join(runs, name))
-        .filter(dir => fs.existsSync(path.join(dir, 'run.json')))
+        .filter(dir => fs.existsSync(path.join(dir, 'run.json')) && !fs.existsSync(path.join(dir, 'remote.json')))
         .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)[0] : null;
     if (!newest) throw new Error('no run yet: node scripts/perf.js run --save=<id>');
     return newest;
@@ -280,14 +285,22 @@ async function main() {
     if (command === 'saves') return printSaves(flags);
     if (command === 'prepare') return Window.prepare(flags);
     if (command === 'run') return Report.report(await Window.run(flags));
-    if (command === 'report') return Report.report(runDir(words));
+    if (command === 'report') {
+        const dir = runDir(words), pulled = path.join(dir, 'remote.json');
+        if (fs.existsSync(pulled)) {
+            const { host, job } = JSON.parse(fs.readFileSync(pulled, 'utf8'));
+            throw new Error(`a run pulled from ${host}: its report is in the job's log (perf.js remote pull ${job})`);
+        }
+        return Report.report(dir);
+    }
+    if (command === 'remote') return Remote.main(words.slice(1), flags);
     if (command === 'compare') {
         if (!words[1] || !words[2]) throw new Error('Use: perf.js compare <run A> <run B>');
         const find = (name) => (fs.existsSync(name) ? path.resolve(name) : path.join(Window.PERF_DIR, 'runs', name));
         return Compare.compare(find(words[1]), find(words[2]), { top: numberFlag(flags, 'top', 8, 1) });
     }
     console.log('Use: perf.js boots | spikes | timeline | heap [a b] | capture cpu|heap|snapshot | analyze <file>'
-        + ' | saves | prepare | run --save=<id> | report [<run>] | compare <a> <b>');
+        + ' | saves | prepare | run --save=<id> | report [<run>] | compare <a> <b> | remote setup|run|status|pull|saves|upload-save');
     process.exitCode = command ? 1 : 0;
 }
 
