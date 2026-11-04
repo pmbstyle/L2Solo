@@ -137,13 +137,13 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
         row.valueHours = row.expHours * (1 - weight) + row.incomeHours * weight - row.riskHours;
         return row;
     };
-    // What a row reads beside the static table (SpotValueTable.value of the
-    // spot, role, level, shots and Spoil level) and the crowd on its spot
-    // (reader.hunters): named, for a holder that keeps what it made of the
-    // rows (KeptSourceFacts). A row read with the default shots.
-    reader.inputs = () => [['weight', weight], ['role', tableRole], ['level', Number(state.level)],
+    // What a row reads (SpotValueTable.value of the spot, role, level, shots
+    // and Spoil level from the table at its revision) and the crowd on its
+    // spot (reader.hunters): named, for a holder that keeps what it made of
+    // the rows (KeptSourceFacts). A row read with the default shots.
+    reader.inputs = () => [['table', Table.revision()], ['weight', weight], ['role', tableRole], ['tableLevel', Number(state.level)],
         ['shots', hunt.useShots !== false], ['expHour', Math.max(1, hour?.exp || hunt.expPerHour)],
-        ['hourAdena', hour?.adena > 0 ? hour.adena : hourAdena], ['deathHours', deathHours], ['riskWeight', riskWeight],
+        ['moneyHour', hour?.adena > 0 ? hour.adena : hourAdena], ['deathHours', deathHours], ['riskWeight', riskWeight],
         ['prices', [costs.shots, costs.potions]], ['spoilSkill', rewardOptions.spoilSkillLevel],
         ['samples', own.map(row => [row.spotId, row.exp, row.adena, row.loot, row.kills, row.costs, row.cycleMs])],
         ['calibration', calibration], ['incomeError', incomeError], ['owner', state.characterId],

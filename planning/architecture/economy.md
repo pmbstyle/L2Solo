@@ -72,12 +72,12 @@ MerchantStoreConfigs}`, `src/Market*`, `src/Economy*`, `Population/ColdEconomy{P
   precomputed spot table through `SpotValueTable`), `SpotEconomics.create` (crowding, calibration) — what every trip,
   purchase and wish prices an hour with; shots / potions pay (`ShotStock.usePolicy`, `EconomyContext.foundation`).
   Money of a kill is live (`SpotRewardExpectation.value`). See [tables.md](tables.md).
-- **Observability:** `EconomyDiagnostics` (the wish build's source facts judged against the held build's by
-  `KeptSourceFacts`, a shadow: `projection:fact:<kept|moved:<input>|absent>`, `projection:verify`), `MarketTelemetry`,
-  `CraftTelemetry`, `MarketSnapshot`, `src/EconomyJournal`, `src/MarketTradeOverview*`, `src/MarketEconomyOverview`.
-  The decision links' counts (developerDiagnostics only): `link:*` and the worker's `links=` status line
+- **Decision links' counts** (developerDiagnostics only): `link:*` and the worker's `links=` status line
   (planning/decision-links): the earning spot search and the workshop by the input that asked them, the route rows as
   a shadow of a key on `DecisionSections.LINK_INPUTS`.
+- **Observability:** `EconomyDiagnostics` (kept source facts: `projection:fact:<kept|moved:<input>|absent>`, one in
+  16 verified against a fresh walk, `projection:verify`), `MarketTelemetry`, `CraftTelemetry`, `MarketSnapshot`, `src/EconomyJournal`,
+  `src/MarketTradeOverview*`, `src/MarketEconomyOverview`.
 
 ## Data flow
 
@@ -122,6 +122,7 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
 | Cold physical purchase | `ColdMarketService.acquire` |
 | NPC purchase | `NpcRestockPlan` → `NpcPurchaseBasket` |
 | Plan publication | decided: the worker plan; three paths still publish (ECO-1) |
+| A wish build's source fact (where to farm or spoil an item) served from the bot's held build | `KeptSourceFacts`: kept beside the held build's source ground, served while every input its walk read is the same: one digest of the build's inputs the facts read, each named by its reader (`GearAcquisitionPlanner.sourceFactInputs`, `sourceRouteReader` `.inputs`, `SpotEconomics.create` `.inputs`, the trip reader's `rows`, the provider's band, hour and Spoil), the spot list, its source index and the route reader's ground cells, and per fact the spoiler as read and the crowd of each spot it read (`.hunters`). A fact that read a price or a bag count, or whose reader names no inputs, is walked every build |
 | Whether a held economy build may be served (its event proof) | `EconomyContext.heldBuildVerdict` over the proof's code/config/rates identity, `RecomputeGeneration.current`: a detached checkout's commit or a launcher install's the install marker .l2solo/installation.json `sourceCommit`; a branch tree gets a process-local identity (held builds hold in the process). A proof saved for a restart only under a published identity (`restorable`); the identity is the claimed commit plus config and rates, not a content hash: a hand-edited install or a dirty detached tree keeps the release sha (startup logs the source: `Recompute :: code identity`). A throw in a proof or advisory codec costs a full rebuild and counts as `economy.codec:<which>` (a negative or non-finite quantity included: its producer is wrong); a saved advisory that inflates past its cap is refused uncounted, like the other shape checks |
 
 ## Debt
