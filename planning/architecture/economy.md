@@ -149,17 +149,12 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
   (worker), `ShotTradeDemand`, `PriceBelief.demandValue`, `MarketCounters`. `MarketDemand` looks like the entry
   (guess).
 
-- **ECO-14 post-commit plans refused** (measured 2026-11-03, 2 h of a growing 1731-bot world): 126 post-commit economy
-  plans refused (`economy_material_protected` 60, `invalid_afk_trade_source` 55, `economy_plan_need_changed` 11).
-  `economy_material_protected` is one plan contradicting itself, not two reserve rules: `ColdEconomyPlan.prepare`
-  evaluates its sale lines (reserving `ItemDisposition.productionInputAmounts`, an expired wealth setup reserves
-  nothing) and then picks a wealth craft as `plan.shot`; `BotAfkMarketService.executePlan` runs the shot first
-  (`ColdWealthCraftService.execute` writes a fresh `wealthCraft` 'buying' setup) and then lists the sale, whose
-  inputs the setup now protects (`Database` listing check), so the sale and the rest of the plan are refused. In the
-  perf save every refused bot (25 of 25) holds a `wealthCraft` 'buying' setup. Fix in the plan: the sale reserves the
-  kit of the craft the same plan selects. `invalid_afk_trade_source`: a plan names a stack row that changed (open).
-  The meeting-point refusals of the same run (`trade_meeting_point_changed`) were offer admission ignoring where the
-  counterparty was committed; `MeetingAnchor` above owns that rule now.
+- **ECO-14 post-commit plans refused** (measured 2026-11-03, 2 h of a growing 1731-bot world):
+  `invalid_afk_trade_source` 55 (a plan names a stack row that changed; open: the plan's craft step runs before its
+  sale and can consume a listed stack, so part of these may be gone with the craft kit reserve below) and
+  `economy_plan_need_changed` 11 (a real staleness, counted). The plan's sale keeps the kit of the craft it selects
+  (`ColdEconomyPlan.prepare` → `ItemDisposition.recipeInputAmounts`), since `BotAfkMarketService.executePlan` runs
+  `plan.shot` first.
 - **ECO-15 arrow cap and companion unload checked in many places** (merged from develop PR #207). The arrow
   capacity (`ArrowStock.purchaseAmount`) is re-checked at ~11 call sites: planners (`NpcRestockPlan.collect`,
   `ReadyTradeChoice.purchase`, `WishPurchaseEvidence.reader`, `ColdOccupationSources` `preparePurchase`), buyers

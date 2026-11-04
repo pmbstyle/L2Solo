@@ -105,7 +105,10 @@ function* prepareNative(state, economy, options) {
     const bidLimits = limits.length ? { bidLimits: limits } : {};
     const purchase = canAct && !options.showcaseOnly
         ? Ready.purchase(state, economy, options.board) || Ready.clanCraftPurchase(state, economy, options.board) : null;
-    const saleInput = Listing.ownSaleInputs(state, own, { ...options, economy });
+    // Main runs the plan's craft (plan.shot) before its sale: the sale keeps
+    // that craft's kit, which the craft consumes or holds (productionInputAmounts).
+    const saleInput = Listing.ownSaleInputs(state, own, { ...options, economy,
+        reserved: Listing.maxReserved(options.reserved, shotKit(state, options)) });
     const sale = Listing.evaluate(saleInput.state, saleInput.options);
     // A profitable surplus sale uses a meeting or a backed shop in the town
     // already reached. Leave the selected purchase/focus intact for review.
@@ -251,6 +254,15 @@ function decide(state, economy, options = {}) {
     const iterator = prepare(state, economy, options);
     let next; do { next = iterator.next(); } while (!next.done);
     return next.value;
+}
+// The inputs of the craft decideShot publishes from the worker's selection.
+function shotKit(state, options = {}) {
+    if (options.showcaseOnly || !options.preparedCraft
+        || !invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(state)) return {};
+    const selected = options.preparedCraft;
+    const action = selected.craft || selected.wealth || (selected.recipeTarget ? selected.recipeRoute : null)
+        || (selected.recipeId > 0 ? selected : null);
+    return action ? invoke('GameServer/Bot/Economy/ItemDisposition').recipeInputAmounts(action.recipeId, action.batches || 1) : {};
 }
 function decideShot(state, economy, options = {}) {
     if (!invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(state)) return null;

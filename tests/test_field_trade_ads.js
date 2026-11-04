@@ -52,6 +52,18 @@ const id = 730062;
             let hot;
             do { hot = visible.next(); } while (!hot.done);
             assert.deepEqual(hot.value.sell, prepared.value.sell, 'visible and far owners quote the same physical stock');
+            // The plan's own craft (plan.shot) keeps its kit: main crafts
+            // first, so the same plan never lists the inputs it consumes.
+            const Crafters = invoke('GameServer/Bot/Economy/CraftShopService'), crafter = Crafters.isServiceCrafter;
+            Crafters.isServiceCrafter = () => true; // fixture: this holder crafts Leather (6 Animal Skin a batch)
+            try {
+                const it = Plan.prepare(state, economy, { ...options, preparedCraft: { wealth: { recipeId: 25, batches: 64 } } });
+                let crafting; do { crafting = it.next(); } while (!crafting.done);
+                const skins = plan => plan.sell.filter(row => row[0] === 1867).reduce((n, row) => n + row[1], 0);
+                assert(crafting.value.shot?.wealth, 'the plan runs the selected craft');
+                assert(skins(prepared.value) > 500 - 384, 'fixture: without a craft the skins are offered');
+                assert(skins(crafting.value) <= 500 - 384, 'the craft kit is not offered by the same plan');
+            } finally { Crafters.isServiceCrafter = crafter; }
         } finally { Roll.roll = roll; }
         assert(prepared.value.sell.length > 0, 'the native field owner selects WTS without a supplied buyer forecast');
         const nativeBefore = await Database.fetchItems(id);

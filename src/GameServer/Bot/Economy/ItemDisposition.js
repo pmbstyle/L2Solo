@@ -392,11 +392,14 @@ function productionInputAmounts(state, timestamp = Date.now()) {
     const shot = state?.stats?.shotCraft?.preparing;
     const wealth = state?.stats?.wealthCraft?.outcome === 'buying' ? state.stats.wealthCraft : null;
     const setup = shot && Number(shot.at) + 30 * 60 * 1000 > timestamp ? shot : wealth;
-    const recipe = C4RecipeItems.resolveByRecipeId(Number(setup?.recipeId));
-    const batches = Number(setup?.batches);
-    if (!recipe || !(Number(setup.at) + 30 * 60 * 1000 > timestamp)
-        || !Number.isSafeInteger(batches) || batches < 1 || batches > 64) return {};
-    return Object.fromEntries(recipe.materials.map(row => [row.selfId, Number(row.amount) * batches]));
+    if (!setup || !(Number(setup.at) + 30 * 60 * 1000 > timestamp)) return {};
+    return recipeInputAmounts(setup.recipeId, setup.batches);
+}
+// A production kit: the recipe's materials for its batches.
+function recipeInputAmounts(recipeId, batches) {
+    const recipe = C4RecipeItems.resolveByRecipeId(Number(recipeId));
+    if (!recipe || !Number.isSafeInteger(Number(batches)) || batches < 1 || batches > 64) return {};
+    return Object.fromEntries(recipe.materials.map(row => [row.selfId, Number(row.amount) * Number(batches)]));
 }
 
 function saleReservations(state, reserved = reservedEquipmentAmounts(state), timestamp = Date.now()) {
@@ -876,6 +879,7 @@ module.exports = {
     equipmentMaterialAmounts,
     collectedEquipmentInputs,
     productionInputAmounts,
+    recipeInputAmounts,
     saleReservations,
     capDeferredInputs,
     equipmentInputPlan,

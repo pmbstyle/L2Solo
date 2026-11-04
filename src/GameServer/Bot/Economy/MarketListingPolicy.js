@@ -150,7 +150,7 @@ function evaluate(state, options = {}) {
     const craftReservations = ctx.economy?.craftReservations
         || ItemDisposition.selectedCraftAmounts(state, ctx.economy?.network);
     const candidates = ItemDisposition.saleCandidates(state, { ...options, unlimited: true,
-        reserved: { ...options.reserved, ...craftReservations } });
+        reserved: maxReserved(options.reserved, craftReservations) });
     const decisionPoint = options.decisionPoint ?? (Number(options.now) || ctx.timestamp);
     const owned = (ctx.board?.ownerLines?.(Number(state.characterId)) || [])
         .filter(line => line.storeType === BoardRules.SELL);
@@ -260,6 +260,12 @@ function evaluate(state, options = {}) {
 // Both the economy plan and bilateral consent evaluate the same physical bag
 // and held lines. Backed stock is shown only for listing reconciliation;
 // meeting admission still separately checks the seller's actual free stock.
+// Two reservations of one bag: each item keeps the larger.
+function maxReserved(a = {}, b = {}) {
+    const result = { ...a };
+    for (const [id, amount] of Object.entries(b || {})) result[id] = Math.max(Number(result[id] || 0), Number(amount) || 0);
+    return result;
+}
 function ownSaleInputs(state, own, options = {}) {
     const kept = new Map(own.filter(line => line.storeType === BoardRules.SELL)
         .map(line => [`${line.selfId}:${line.enchant || 0}`, line.price]));
@@ -326,6 +332,7 @@ module.exports = {
     classify,
     evaluate,
     ownSaleInputs,
+    maxReserved,
     isGear,
     prioritizeListings,
     traderContext,
