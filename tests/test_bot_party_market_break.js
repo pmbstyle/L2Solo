@@ -176,7 +176,9 @@ async function run() {
         inventory: { [bow.selfId]: { selfId: bow.selfId, amount: 1, equipped: true, equippedCount: 1, slot: 14 },
             1341: { selfId: 1341, amount: 11000, stackable: true, kind: 'Other.Arrow' } } };
     assert.equal(Break.memberNeed(party, overloadedArcher, now).reason, 'inventory_overweight');
-    assert(Break.sessionReady(party, overloadedArcher, null, now, config), 'excess arrow weight bypasses the ordinary party session timer');
+    assert(!Break.sessionReady(party, overloadedArcher, null, now, config), 'a break a moment ago holds the arrow unload to the cooldown');
+    const rested = { ...party, stats: { ...party.stats, lastMarketBreakAt: now - config.partyMarketBreakCooldownMs } };
+    assert(Break.sessionReady(rested, overloadedArcher, null, now, config), 'excess arrow weight bypasses the ordinary party session timer');
     const arrowGoal = Break.goal(party, overloadedArcher, gearGoal, now);
     assert.equal(arrowGoal.type, 'sell_inventory', 'the selected gear wish cannot hide an actionable arrow unload');
     assert.equal(arrowGoal.target.cleanupReason, 'inventory_overweight');

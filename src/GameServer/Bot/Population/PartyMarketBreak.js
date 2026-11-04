@@ -67,7 +67,10 @@ function pending(party, now = Date.now()) {
     return Object.values(party?.stats?.marketAbsences || {}).filter(value => Number(value.until) > now);
 }
 function sessionReady(party, member, goal, now, config) {
-    if (arrowUnloadNeed(party, member, now)) return true;
+    // Excess arrows break a session early, but not again within the cooldown:
+    // a visit that could not sell them must not loop the party town <-> spot.
+    if (arrowUnloadNeed(party, member, now))
+        return now - Number(party.stats?.lastMarketBreakAt || 0) >= config.partyMarketBreakCooldownMs;
     // The hour engine has already selected this quote over earning/farming.
     // An ordinary party's minimum session must not postpone a payable kit.
     if (!warDuty(party) && !clanDuty(party) && party?.stats?.objective?.sourceKind !== 'raid'
