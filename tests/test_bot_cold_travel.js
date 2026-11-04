@@ -154,13 +154,15 @@ try {
             }
         }
     }, Date.now());
-    assert.strictEqual(rerouted.stats.travel.spotId, availableSpot.id,
-        'a market return must honor the current capacity-aware route instead of feeding an old overloaded spot');
-    assert.strictEqual(rerouted.stats.travel.regionName, availableSpot.name);
+    // Main searches no spot for a return: the worker re-routes the bot at its
+    // next trip start and meets a full spot at arrival.
+    assert.strictEqual(rerouted.stats.travel.spotId, legacyMineSpot.id,
+        'a market return goes back to the spot it left, never a spot main searched');
+    assert.strictEqual(rerouted.stats.travel.regionName, legacyMineSpot.name);
     assert.deepStrictEqual(rerouted.stats.travel.to, {
-        locX: availableSpot.center.locX + 137,
-        locY: availableSpot.center.locY - 91,
-        locZ: availableSpot.center.locZ
+        locX: legacyMineSpot.center.locX + 137,
+        locY: legacyMineSpot.center.locY - 91,
+        locZ: legacyMineSpot.center.locZ
     }, 'market returns must use a distributed spawn-aware arrival point');
 
     const deathRerouted = GoalExecutor.finishMarketVisit({
