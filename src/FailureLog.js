@@ -26,6 +26,13 @@ function note(site, error) {
     if (count === 1) warn('%s (repeats are counted, not logged): %s', site, error?.stack || error);
 }
 
+// A refusal its owner throws as a bare code (`afk_trade_demand_changed`, `economy_material_protected`):
+// an outcome the caller handles, not a failure. A catch that takes both counts only what is not one.
+const REFUSAL_CODE = /^[a-z][a-z0-9_]*$/;
+function refusal(error) {
+    return typeof error?.message === 'string' && REFUSAL_CODE.test(error.message);
+}
+
 // The backstop's site for an error nobody named: its kind, the error's name and first stack frame
 // (messages often carry ids, so they would split one site into many).
 function siteOf(kind, error) {
@@ -54,4 +61,4 @@ function report() {
     }
 }
 
-module.exports = { note, siteOf, snapshot, merge, report, MAX_SITES };
+module.exports = { note, refusal, siteOf, snapshot, merge, report, MAX_SITES };

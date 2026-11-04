@@ -10,11 +10,8 @@ rejection is logged once per reason and counted).
 |---|---|---|---|---|
 | `BackgroundResolver` ~1167, ~1515 | `npcForSpot(...) \|\| { maxHp: max(1, spot.mob?.hp \|\| 1), pDef: 1, … }` | no template → a 1-HP mob with the spot's real rewards: free cold EXP and drops | high | new |
 | `BotAI/SpotValueTable` ~123 | geodata manifest read → null | spot values missing | low | new |
-| `ColdSimulationCoordinator` ~1889 | `flatMap → []` drops bad requests with no ack | worker waits on a command that never returns | med | new |
-| `ColdSimulationKernel` ~1519 | a refused command post → requeue +5 s, no log (a throw is a bot fault) | loop every 5 s | med | — |
-| `ColdCommitQueue` ~459 | an `afterCommit` throw outside a named step is counted (`failures.afterCommitErrors`), not logged | training/review/events after commit lost | high | POP-2 |
+| `ColdSimulationCoordinator` ~1945 | `flatMap → []` drops bad requests with no ack (counted, `cold.request_dropped:<why>`) | worker waits on a command that never returns | med | new |
 | `Inventory/ShotStock` ~553 + `Bot/TradeService` ~425-443 | catch-all around buys; failed refund only attached to the error | adena lost, no item, no log | med-high | new (PER-2) |
-| `ColdSimulationOwner` ~116 | `catch → return state` on row parse | cache misses settlements, PK drops, revisions | med | new |
 | `ColdShotEconomyService` ~224 | `catch → return state` after a paid recipe buy | may re-buy or mismatch adena | med | new |
 | `ColdWealthCraftService` ~390 | catch after committed sale | revenue lost from accounting | low-med | new |
 | `Cooldown` ~40, `PartyCompanionService` ~862 | `try { BotTradeService.cleanup } catch {}` | player's trade window stays open with a gone bot | med | new |

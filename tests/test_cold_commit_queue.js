@@ -1,6 +1,8 @@
 process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture inspects optional developer metrics.
 const assert = require('assert');
+require('../src/Global');
 const { ColdCommitQueue } = require('../src/GameServer/Bot/Population/ColdCommitQueue');
+const FailureLog = invoke('FailureLog');
 
 function proposal(characterId, priority = 'P2', revision = 1) {
     return {
@@ -15,6 +17,9 @@ function proposal(characterId, priority = 'P2', revision = 1) {
 }
 
 (async () => {
+    const warnings = [];
+    const info = console.info;
+    console.info = (...line) => (String(line[0]).includes('Failure') ? warnings.push(line.join(' ')) : info(...line));
     for (const single of [false, true]) {
         const acks = [];
         const committedQueue = new ColdCommitQueue({
@@ -31,6 +36,18 @@ function proposal(characterId, priority = 'P2', revision = 1) {
         assert.match(acks[0].afterCommitError, /journal unavailable/);
         assert.strictEqual(committedQueue.snapshot().errors, 1);
     }
+    console.info = info;
+    // The failure the commit survived: the first logged with its stack, the second only counted,
+    // both on the status line beside what the cold worker reports from its side.
+    assert.strictEqual(warnings.length, 1, 'a repeated post-commit failure is logged once');
+    assert.match(warnings[0], /cold\.after_commit[\s\S]*journal unavailable[\s\S]*ColdCommitQueue/);
+    assert.deepStrictEqual(FailureLog.snapshot(), { 'cold.after_commit': 2 });
+    const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+    const Status = invoke('GameServer/Bot/Population/PopulationStatus');
+    assert.strictEqual(Status.swallowedText(), 'swallowed=2/1');
+    Coordinator.lastWorkerSnapshot = { failures: { swallowed: { 'route.search': 3, 'cold.after_commit': 1 } } };
+    assert.match(Status.goalText({}, Coordinator.snapshot()), / swallowed=6\/2 /, 'main and worker sites summed on the line');
+    Coordinator.lastWorkerSnapshot = {};
     const rejectedAcks = [];
     const rejectedQueue = new ColdCommitQueue({ prepare: async () => null, commit: async () => [],
         onResults: rows => rejectedAcks.push(...rows) });

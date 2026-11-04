@@ -1623,11 +1623,15 @@ class ColdSimulationCoordinator {
         return resolvedState;
     }
 
+    // A post-commit step that throws is skipped; the commit stays (it is durable). A refusal its owner
+    // names with a code (`economy_material_protected`, `cold_postcommit_source_retired`) is logged with
+    // the bot; anything else is a bug: counted by step, the first logged with its stack (FailureLog).
     async step(name, characterId, work) {
         try { return await work(); }
         catch (error) {
             DiagnosticConfig.developerDiagnostics && (this.counters.afterCommitStepErrors[name] += 1);
-            utils.infoWarn('ColdWorker', 'postcommit %s failed for %s: %s', name, characterId, error?.message || error);
+            if (FailureLog.refusal(error)) utils.infoWarn('ColdWorker', 'postcommit %s failed for %s: %s', name, characterId, error.message);
+            else FailureLog.note(`cold.postcommit.${name}`, error);
             return undefined;
         }
     }
@@ -1938,8 +1942,13 @@ class ColdSimulationCoordinator {
             const parsed = Protocol.commandIdentity(request);
             const identity = parsed && { characterId: parsed.characterId, commandId: parsed.commandId,
                 commandCheckpoint: parsed.checkpoint };
-            if (!identity || (request.kind !== 'lifecycle' && request.kind !== 'review')
-                || request.kind === 'lifecycle' && !Protocol.sameCommandCheckpoint(identity.commandCheckpoint, request.state)) return [];
+            // A request the worker built wrong (a protocol bug) gets no ack: counted, the first logged.
+            const dropped = !identity ? 'identity' : request.kind !== 'lifecycle' && request.kind !== 'review' ? 'kind'
+                : request.kind === 'lifecycle' && !Protocol.sameCommandCheckpoint(identity.commandCheckpoint, request.state) ? 'checkpoint' : null;
+            if (dropped) {
+                FailureLog.note(`cold.request_dropped:${dropped}`, Error(`command request dropped (${dropped}): ${request?.kind} ${request?.characterId}`));
+                return [];
+            }
             return [{ request, identity }];
         });
         this.commandTail = this.commandTail.then(async () => {
