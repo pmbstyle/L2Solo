@@ -316,11 +316,11 @@ for (const [id, name] of [[339, 'Parry Stance'], [340, 'Riposte Stance']]) {
     ToggleSkills.handleRequest(session(toggleActor), toggleActor, stance);
 }
 
-const stunAttack = skill(100, 'Stun Attack', 15, { spell: true, distance: 40, buff: 9000 });
-const hammerCrush = skill(260, 'Hammer Crush', 37, { spell: true, distance: 40, buff: 9000 });
+const stunAttack = skill(100, 'Stun Attack', 15, { distance: 40, buff: 9000 });
+const hammerCrush = skill(260, 'Hammer Crush', 37, { distance: 40, buff: 9000 });
 for (const dwarfStun of [stunAttack, hammerCrush]) {
     const semantic = dwarfStun.fetchSemantic();
-    assert.strictEqual(dwarfStun.fetchSpell(), false, `${dwarfStun.fetchName()} should be physical despite stale active data`);
+    assert.strictEqual(dwarfStun.fetchSpell(), false, `${dwarfStun.fetchName()} should be physical (Lisvus isMagic false)`);
     assert.strictEqual(semantic.durationMs, 9000, `${dwarfStun.fetchName()} should preserve the sourced nine-second stun`);
     assert.strictEqual(semantic.reuseTime, 13000, `${dwarfStun.fetchName()} should preserve the sourced reuse`);
     assert.strictEqual(semantic.magicLevel, dwarfStun.fetchSelfId() === 100 ? 36 : 74, `${dwarfStun.fetchName()} should preserve its final sourced magic level`);
