@@ -1,3 +1,4 @@
+const FailureLog = require('../../../FailureLog');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const ClassPolicy = invoke('GameServer/Bot/AI/BotClassPolicy');
@@ -437,7 +438,7 @@ function partyAuraRecipients(members, provider, skill, planning = null) {
         try {
             const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
             PartyAwareness.partyActors(leaderSession).forEach(addActor);
-        } catch (_) {}
+        } catch (error) { FailureLog.note('ai.support_recipients', error); }
     }
 
     const recipients = [];
@@ -451,7 +452,7 @@ function partyAuraRecipients(members, provider, skill, planning = null) {
             if (summon && summon.state?.fetchDead?.() !== true && summon.isDead?.() !== true && partyAuraCanReach(provider, summon, skill)) {
                 recipients.push(summon);
             }
-        } catch (_) {}
+        } catch (error) { FailureLog.note('ai.support_recipients', error); }
     });
     providerCache?.set(skill, recipients);
     return recipients;

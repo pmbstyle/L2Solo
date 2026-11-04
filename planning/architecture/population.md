@@ -89,7 +89,8 @@ thread: our rule, so a far bot does not re-decide on every event ([bot-ai.md](bo
   PvP `PvpEncounterLifecycle`), each with its own fence, CAS, spawn, restore. Unification: a solo bot is a group of 1.
 - **POP-5 hot → cold row builder has three branches** in `writeColdRow`; the fallback writes
   `Database.updateCharacter*` directly, bypassing `upsertState`. `BotSupplyErrand` calls `markCold` outside `Cooldown`,
-  with no `acceptColdState` and `.catch(() => {})`.
+  with no `acceptColdState` (its failure is counted, `population.mark_cold`). Its return (`BotTownTravel.returnSupplyHot`)
+  writes the row hot before the AI runs and keeps the bot parked while that write fails.
 - **POP-6 cold rules also run on main.** `PopulationService.resolveColdState` / `resolveColdEntryBranch`: karma
   (`ColdKarmaPolicy` + `resolveSolo`) duplicates the worker's `planLifecycle` (and is hardly reached: `lifecycleKind`
   sends a karma bot to the resolver before any command); `precomputedResult || resolveSolo(...)` fallbacks (raid-supply

@@ -250,7 +250,7 @@ function audit(negotiation, outcome, reason, meta = {}) {
 
 function journal(negotiation, event, detail) {
     const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
-    Promise.resolve(BotEventJournal.record({
+    BotEventJournal.record({
         playerId: actorId(negotiation.playerSession),
         botId: actorId(negotiation.botSession),
         eventType: `negotiation_${event}`,
@@ -258,7 +258,7 @@ function journal(negotiation, event, detail) {
         weight: event === 'completed' ? 5 : 2,
         dedupeKey: `${negotiation.id}:${event}`,
         meta: { itemSelfId: negotiation.itemSelfId, quantity: negotiation.quantity, totalPrice: negotiation.agreedTotalPrice || negotiation.currentUnitPrice * negotiation.quantity }
-    })).catch(() => {});
+    });
 }
 
 function releaseReservation(negotiation) {

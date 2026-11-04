@@ -1,4 +1,5 @@
 const refreshPartyMemberships = require('../../World/PartyMembershipPublication');
+const FailureLog = require('../../../FailureLog');
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const ServerResponse = invoke('GameServer/Network/Response');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
@@ -12,6 +13,8 @@ const TradeMeetings = invoke('GameServer/AfkTrade/TradeMeetingService');
 const SOE_SKILL_ID = 2013;
 const SOE_CAST_MS = TripPayment.SCROLL_CAST_MS;
 const SOE_DISTANCE = 2500;
+// A supply errand's return whose hot write failed writes again after this (returnSupplyHot).
+const SUPPLY_RETURN_RETRY_MS = 5000;
 
 function distance2d(bot, target) {
     const dx = bot.fetchLocX() - target.x;
@@ -78,6 +81,23 @@ function revealInterruptedSupplyErrand(session, bot) {
     revealSupplyErrand(session, bot, { clearErrand: true });
 }
 
+// A supply errand's end: the parked bot's row turns hot before `resume` runs its AI again, so the
+// bot is never hot in memory while its row is cold (two owners). A failed write (LifeState.markHot
+// counts it) keeps the bot parked, its AI stopped, and writes again every SUPPLY_RETURN_RETRY_MS
+// while its session holds the same actor.
+function returnSupplyHot(session, reason, resume) {
+    const actor = session.actor;
+    const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
+    return Promise.resolve().then(() => PopulationService.markHot(session, reason))
+        .catch(error => FailureLog.note('population.mark_hot', error))
+        .then((saved) => {
+            if (saved) return resume();
+            if (!actor || session.actor !== actor) return null;
+            return new Promise(resolve => setTimeout(resolve, SUPPLY_RETURN_RETRY_MS).unref())
+                .then(() => (session.actor === actor ? returnSupplyHot(session, reason, resume) : null));
+        });
+}
+
 function restoreSupplyHot(session, bot, reason = 'supply_errand_interrupted') {
     if (session?.supplyErrandPhase !== 'cold') {
         revealInterruptedSupplyErrand(session, bot);
@@ -92,12 +112,11 @@ function restoreSupplyHot(session, bot, reason = 'supply_errand_interrupted') {
     }
     const BotAI = invoke('GameServer/Bot/BotAI');
     BotAI.stop?.(session);
-    const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
-    return Promise.resolve().then(() => PopulationService.markHot(session, reason)).catch(() => null).then(() => {
+    return returnSupplyHot(session, reason, () => {
         session.supplyErrandPhase = undefined;
         BotAI.init?.(session);
         return { ok: true, reason };
-    });
+    }).then(done => done || { ok: false, reason: 'session_gone' });
 }
 
 function interruptEscape(session, bot) {
@@ -153,7 +172,7 @@ function beginEscape(session, bot, town, options = {}) {
                 utils.infoWarn('BotTownTravel', 'arrival callback failed for %s: %s', bot.fetchName?.() || bot.fetchId?.(), error.message || error);
             });
         }
-        Promise.resolve(BotEventJournal.record({
+        BotEventJournal.record({
             botId: bot.fetchId(),
             eventType: 'travel_complete',
             summary: `${bot.fetchName?.() || 'Bot'} arrived in ${town.name}.`,
@@ -161,7 +180,7 @@ function beginEscape(session, bot, town, options = {}) {
             dedupeKey: `travel:${bot.fetchId()}:${town.name}`,
             coalesceWindowMs: 30000,
             meta: { town: town.name, mode: 'scroll_of_escape' }
-        })).catch(() => {});
+        });
     }, SOE_CAST_MS);
 }
 
@@ -335,5 +354,6 @@ module.exports = {
     request,
     requestMeeting,
     revealSupplyErrand,
-    restoreSupplyHot
+    restoreSupplyHot,
+    returnSupplyHot
 };

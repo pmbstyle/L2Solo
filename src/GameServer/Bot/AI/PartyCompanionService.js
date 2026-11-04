@@ -1,3 +1,4 @@
+const FailureLog = require('../../../FailureLog');
 const refreshPartyMemberships = require('../../World/PartyMembershipPublication');
 const ServerResponse = invoke('GameServer/Network/Response');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
@@ -117,7 +118,7 @@ function updateSettings(leaderSession, patch = {}) {
     membersForLeader(leaderSession).forEach((companionSession) => {
         companionSession.autoTaunt = next.pullMode !== 'off';
         if (next.lootPickupEnabled === false) cancelGroundPickup(companionSession);
-        Promise.resolve(BotEventJournal.record({
+        BotEventJournal.record({
             playerId: leaderSession?.actor?.fetchId?.(),
             botId: companionSession.actor?.fetchId?.(),
             eventType: 'policy_change',
@@ -126,7 +127,7 @@ function updateSettings(leaderSession, patch = {}) {
             dedupeKey: `policy:${leaderSession.actor?.fetchId?.()}:${JSON.stringify(patch)}`,
             coalesceWindowMs: 15000,
             meta: { patch, settings: next }
-        })).catch(() => {});
+        });
     });
     if (hasOwn(patch, 'lootPickupEnabled')) leaderSession.lastGroundLootScanAt = 0;
     return next;
@@ -144,7 +145,7 @@ function setDistribution(leaderSession, distribution) {
         // Turn order is meaningful only for the currently selected rule.
         settings.itemLastLootIndex = -1;
         membersForLeader(leaderSession).forEach((companionSession) => {
-            Promise.resolve(BotEventJournal.record({
+            BotEventJournal.record({
                 playerId: leaderSession?.actor?.fetchId?.(),
                 botId: companionSession.actor?.fetchId?.(),
                 eventType: 'policy_change',
@@ -153,7 +154,7 @@ function setDistribution(leaderSession, distribution) {
                 dedupeKey: `distribution:${leaderSession.actor?.fetchId?.()}:${next}`,
                 coalesceWindowMs: 15000,
                 meta: { distribution: next }
-            })).catch(() => {});
+            });
         });
     }
     return settings.distribution;
@@ -713,7 +714,7 @@ function beginRegroup(leaderSession, options = {}) {
         member.currentTargetId = undefined;
         member.lastFollowMoveTarget = null;
         member.actor?.unselect?.();
-        Promise.resolve(BotEventJournal.record({
+        BotEventJournal.record({
             playerId: leader.fetchId?.(),
             botId: member.actor?.fetchId?.(),
             eventType: 'party_regroup',
@@ -721,7 +722,7 @@ function beginRegroup(leaderSession, options = {}) {
             weight: 3,
             dedupeKey: `regroup:${leader.fetchId?.()}:${leaderSession.partyRegroupDirective.startedAt}`,
             meta: { radius, affected: members.length }
-        })).catch(() => {});
+        });
     });
     return {
         ok: true,
@@ -863,7 +864,7 @@ function cancelCompanionAction(companionSession) {
 }
 
 function detachState(companionSession, plan = 'hunting', preserveTakeover = false, preserveConstActivity = false) {
-    try { invoke('GameServer/Bot/BotTradeService').cleanup(companionSession, 'party_detach'); } catch (_) { /* optional hot trade modules */ }
+    try { invoke('GameServer/Bot/BotTradeService').cleanup(companionSession, 'party_detach'); } catch (error) { FailureLog.note('ai.cleanup.trade', error); }
     invoke('GameServer/Bot/AI/HotBotPolicyOverlay').clearForPartyDetach(companionSession);
     cancelCompanionAction(companionSession);
     companionSession.plan = plan;
@@ -1160,7 +1161,7 @@ const PartyCompanionService = {
 
         roster.forEach((companionSession) => {
             const bot = companionSession.actor;
-            Promise.resolve(BotEventJournal.record({
+            BotEventJournal.record({
                 playerId: leader.fetchId(),
                 botId: bot.fetchId(),
                 eventType: 'party_join',
@@ -1169,7 +1170,7 @@ const PartyCompanionService = {
                 dedupeKey: `party_takeover:${leader.fetchId()}:${bot.fetchId()}`,
                 coalesceWindowMs: 5000,
                 meta: { backgroundPartyId: options.expectedBackgroundPartyId || null }
-            })).catch(() => {});
+            });
         });
         return { ok: true, reason: 'party_taken_over', count: roster.length };
     },
@@ -1228,7 +1229,7 @@ const PartyCompanionService = {
         if (!arrivalPending) {
             invoke('GameServer/Bot/BotAI').wakeup(companionSession, { urgent: true });
         }
-        Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
+        invoke('GameServer/Bot/AI/BotEventJournal').record({
             playerId: leader.fetchId(),
             botId: bot.fetchId(),
             eventType: 'party_join',
@@ -1236,7 +1237,7 @@ const PartyCompanionService = {
             weight: 5,
             dedupeKey: `party_join:${leader.fetchId()}:${bot.fetchId()}`,
             coalesceWindowMs: 5000
-        })).catch(() => {});
+        });
         return true;
     },
 
@@ -1260,7 +1261,7 @@ const PartyCompanionService = {
         }
 
         refreshLeaderView(leaderSession, options);
-        Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
+        invoke('GameServer/Bot/AI/BotEventJournal').record({
             playerId: leaderSession.actor?.fetchId?.(),
             botId: companionSession.actor?.fetchId?.(),
             eventType: 'party_leave',
@@ -1269,7 +1270,7 @@ const PartyCompanionService = {
             dedupeKey: `party_leave:${leaderSession.actor?.fetchId?.()}:${companionSession.actor?.fetchId?.()}`,
             coalesceWindowMs: 5000,
             meta: { event: event || null, source }
-        })).catch(() => {});
+        });
         return true;
     },
 

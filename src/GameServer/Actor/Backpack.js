@@ -47,7 +47,7 @@ function recordEquipmentEvent(session, item, action) {
     if (Events.tracks(clanId, item?.fetchSelfId?.())) Events.changed(clanId, 'member_gear');
     if (!session?.accountId?.startsWith?.('bot_') || !item) return;
     invoke('GameServer/Bot/Population/BotLifeState').notifyNearFacts(session, 'equip'); // lazy: cycle BotLifeState loads Backpack at its top.
-    Promise.resolve(BotEventJournal.record({
+    BotEventJournal.record({
         botId: session.actor?.fetchId?.(),
         eventType: action === 'equip' ? 'equipment_change' : 'equipment_removed',
         summary: `${session.actor?.fetchName?.() || 'Bot'} ${action === 'equip' ? 'equipped' : 'unequipped'} ${item.fetchName?.() || 'an item'}.`,
@@ -55,7 +55,7 @@ function recordEquipmentEvent(session, item, action) {
         dedupeKey: `${action}:${session.actor?.fetchId?.()}:${item.fetchSelfId?.()}:${item.fetchSlot?.()}`,
         coalesceWindowMs: 15000,
         meta: { selfId: item.fetchSelfId?.(), slot: item.fetchSlot?.(), action }
-    })).catch(() => {});
+    });
 }
 
 const MANUFACTURE_STORE_TYPES = [5, 6];

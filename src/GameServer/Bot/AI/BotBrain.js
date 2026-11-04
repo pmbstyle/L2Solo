@@ -1,3 +1,4 @@
+const FailureLog = require('../../../FailureLog');
 const DiagnosticConfig = require('../Population/PopulationConfig');
 const SpotService    = invoke('GameServer/Bot/AI/SpotService');
 const SpotProfiles   = invoke('GameServer/Bot/Population/SpotProfiles');
@@ -125,10 +126,9 @@ function candidateSpots(status) {
     let indexed;
     try {
         indexed = SpotService.ensureIndexed();
-    } catch (_) {
-        // Lightweight chat fixtures and startup windows may not have the
-        // world spawn catalog loaded yet.  An empty candidate list is safer
-        // than making the whole dialogue turn fail.
+    } catch (error) {
+        // An empty candidate list is safer than making the whole dialogue turn fail.
+        FailureLog.note('ai.chat_spots', error);
         return [];
     }
 
@@ -859,7 +859,7 @@ function recordInferenceEvent(session, event, result, requestContext = null, ext
             },
             ...extra
         }
-    }).catch(() => {});
+    });
 }
 
 function fallbackReply(session, requestContext, outcome, persistMetadata = {}) {
@@ -1099,7 +1099,7 @@ const BotBrain = {
                 summary: `${bot.fetchName?.() || 'bot'} inference denied: ${admission.reason}`,
                 dedupeKey: `deny:${admission.reason}`,
                 meta: { reason: admission.reason, retryAfterMs: admission.retryAfterMs }
-            }).catch(() => {});
+            });
             debugSkip(session, cfg, admission.reason);
             fallbackReply(session, requestContext, admission.reason);
             return true;

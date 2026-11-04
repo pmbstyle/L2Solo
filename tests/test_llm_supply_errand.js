@@ -306,7 +306,7 @@ async function exhaustedSupplyRouteReturnsVisibly() {
         Recovery.refreshTarget = (target) => target;
         Approach.plan = () => null;
         Chatter.say = (_session, _ai, key) => { said.push(key); };
-        PopulationService.markHot = async (_session, reason) => { hot.push(reason); };
+        PopulationService.markHot = async (_session, reason) => { hot.push(reason); return { phase: 'hot' }; };
         HotBoard.naturalBreak = () => {};
         Response.charInfo = () => 'charInfo';
         Response.relationChanged = () => 'relationChanged';

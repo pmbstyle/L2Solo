@@ -1,3 +1,4 @@
+const FailureLog = require('../../../FailureLog');
 const ClanMembershipPolicy = require('../../Clan/ClanMembershipPolicy');
 const LifeStateCache = require('./LifeStateCache');
 const CharacterLocationRuntime = require('../../World/CharacterLocationRuntime');
@@ -2098,7 +2099,7 @@ const BotLifeState = {
             notifyNearFacts(session, 'activated');
             return snapshot;
         }).catch((err) => {
-            utils.infoWarn('BotLife', 'failed to mark %s hot: %s', row.characterName, err.message);
+            FailureLog.note('population.mark_hot', err);
             return null;
         });
 

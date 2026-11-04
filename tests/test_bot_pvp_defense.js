@@ -352,6 +352,30 @@ function skill(id, type, target, effect, power = 100) {
     lod.shouldRefreshStatus = refresh;
     BotAI.executePvPCombat = combat;
 }
+// A state that throws on every hot tick: the bot keeps ticking, the first failure is logged with
+// its stack, the rest only counted (status line swallowed=).
+{
+    const { own } = setup({}, 'resting');
+    const FailureLog = invoke('FailureLog');
+    const Resting = invoke('GameServer/Bot/AI/States/RestingState');
+    const lod = invoke('GameServer/Bot/AI/HotActorLodPolicy');
+    const Upgrade = invoke('GameServer/Bot/AI/BotEquipmentUpgrade');
+    const saved = { tick: Resting.tick, refresh: lod.shouldRefreshStatus, warn: utils.infoWarn, upgrade: Upgrade.applyBestUpgrades };
+    const logged = [];
+    try {
+        Upgrade.applyBestUpgrades = () => {};
+        Resting.tick = () => { throw new TypeError('resting state broken'); };
+        lod.shouldRefreshStatus = () => false;
+        utils.infoWarn = (prefix, ...line) => { if (prefix === 'Failure') logged.push(line.join(' ')); };
+        BotAI.tick(own); BotAI.tick(own); BotAI.tick(own);
+    } finally {
+        Resting.tick = saved.tick; lod.shouldRefreshStatus = saved.refresh; utils.infoWarn = saved.warn;
+        Upgrade.applyBestUpgrades = saved.upgrade;
+    }
+    assert.strictEqual(FailureLog.snapshot()['ai.state.resting'], 3, 'every failing tick is counted');
+    assert.strictEqual(logged.length, 1, 'only the first failing tick is logged');
+    assert.match(logged[0], /ai\.state\.resting[\s\S]*resting state broken/);
+}
 {
     const { own, bot, enemy } = setup();
     own.coldLifeState = { party: { partyId: 'background_test', leaderId: bot.id } };

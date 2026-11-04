@@ -1,3 +1,4 @@
+const FailureLog = require('../../../../FailureLog');
 const refreshPartyMemberships = require('../../../World/PartyMembershipPublication');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const World          = invoke('GameServer/World/World');
@@ -840,7 +841,7 @@ function deliverPurchasedResources(session, bot, playerSession) {
         return true;
     }
     let partyThreat = null;
-    try { partyThreat = PartyAwareness.findThreatTargetingPartyProjected(playerSession); } catch (_) { /* lightweight test/session */ }
+    try { partyThreat = PartyAwareness.findThreatTargetingPartyProjected(playerSession); } catch (error) { FailureLog.note('ai.follow_threat', error); }
     const leaderBusy = !!(
         playerSession.actor.state?.fetchHits?.() ||
         playerSession.actor.state?.fetchCasts?.() ||

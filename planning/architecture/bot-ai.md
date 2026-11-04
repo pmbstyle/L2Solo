@@ -76,9 +76,10 @@ deterministic brain; the LLM acts only on explicit player communication.
   dead/resting/following likely unreachable; `MerchantState` empty.
 - **AI-9 two ambient engines.** `BotAmbientDirector` (default, `ambientScenesEnabled`) and legacy `BotConversation` path;
   `checkAndStartConversation` asks `BotConversation.canStart` even when the director runs.
-- **AI-10 silent catches.** `BotAI.js` around modules that always exist; `FollowingState` test guard in production;
-  empty catches: BotBrain ~13, PartyCompanionService 7, ShoppingState 5; `HuntingState` uses a rejected
-  `World.fetchUser` as control flow; a throwing state is logged and repeats every tick.
+- **AI-13 `World.fetchUser` as control flow.** `HuntingState` (~1035) and `FollowingState` (~2018) ask
+  `fetchUser` first and read its rejection as "not a player", then `fetchNpc`: a session scan, an `Error` and two
+  promises per tick with an NPC target (perf, not a failure; the sync `World.registeredActorById` answers it).
+  `SpotService.ensureIndexed` returns `[]` without World definitions (a startup window), not counted.
 - **AI-11 ~12 copies of the FNV hash** beside `Bot/Fnv1a.js` (incl. `TendencyRoll`, `SpotService`, `LevelingRoutes`,
   `PartyHuntingTarget`, `ColdOccupationSources`). Matters if hot and cold rolls must agree.
 - **AI-12 two sell-trip checks in HuntingState** (leaf 'selling' and unconditional), each starts shopping.

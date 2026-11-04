@@ -544,7 +544,7 @@ class Attack {
         invoke('GameServer/Bot/AI/BotPartyChat').confirmSkillResult(session, actor, target, skill, outcome);
         invoke('GameServer/Bot/AI/BotActionFeedback').result(session, actor, target, skill, outcome);
         if (outcome?.applied && session?.accountId?.startsWith?.('bot_') && target?.session?.accountId && !target.session.accountId.startsWith('bot_')) {
-            Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
+            invoke('GameServer/Bot/AI/BotEventJournal').record({
                 playerId: target.session.actor?.fetchId?.(),
                 botId: actor.fetchId?.(),
                 eventType: 'support_result',
@@ -553,7 +553,7 @@ class Attack {
                 dedupeKey: `support:${actor.fetchId?.()}:${target.fetchId?.()}:${skill.fetchSelfId?.()}`,
                 coalesceWindowMs: 5000,
                 meta: { skillId: skill.fetchSelfId?.(), outcome: outcome.type || null }
-            })).catch(() => {});
+            });
         }
 
         if (outcome.damage > 0) {

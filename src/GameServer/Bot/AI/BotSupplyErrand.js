@@ -1,3 +1,4 @@
+const FailureLog = require('../../../FailureLog');
 const refreshPartyMemberships = require('../../World/PartyMembershipPublication');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
@@ -183,7 +184,7 @@ function request(session, playerSession, itemSelfId, requestedAmount) {
                 session.coldLifeState = state;
                 refreshPartyMemberships([session], invoke);
             }
-        }).catch(() => {});
+        }).catch(error => FailureLog.note('population.mark_cold', error));
     }
     if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) WorkflowTelemetry.recordSupply(session.companionShopping.workflowId, 'requested', {
         botId: bot.fetchId(),

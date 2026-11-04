@@ -683,7 +683,7 @@ module.exports = {
         }
         if (!session.shoppingDoneAnnounced) {
             session.shoppingDoneAnnounced = true;
-            Promise.resolve(BotEventJournal.record({
+            BotEventJournal.record({
                 botId: bot.fetchId(),
                 eventType: 'shopping_started',
                 summary: `${bot.fetchName?.() || 'Bot'} reached ${target.town || 'town'} to shop and restock.`,
@@ -691,7 +691,7 @@ module.exports = {
                 dedupeKey: `shopping:${bot.fetchId()}:${target.town || 'town'}`,
                 coalesceWindowMs: 30000,
                 meta: { town: target.town || null }
-            })).catch(() => {});
+            });
             this.sellAndRestock(session, bot, Generics, BotAI);
         }
     },
@@ -853,7 +853,7 @@ module.exports = {
                 deliveryReady = true;
                 session.lastTradeSummary = `bought ${purchased.delta}x ${companionErrand.itemName} for ${formatAdena(purchased.cost)}a to deliver to ${companionErrand.playerSession?.actor?.fetchName?.() || 'the leader'}`;
                 TownChatter.say(session, BotAI, 'supply-purchased', Speech.lines('town.supply-purchased', { count: purchased.delta, item: companionErrand.itemName }), { priority: 'coordination' });
-                Promise.resolve(BotEventJournal.record({
+                BotEventJournal.record({
                     playerId: companionErrand.playerId,
                     botId: bot.fetchId(),
                     eventType: 'resource_purchase',
@@ -866,7 +866,7 @@ module.exports = {
                         cost: purchased.cost,
                         requestedBy: companionErrand.playerId
                     }
-                })).catch(() => {});
+                });
             } catch (error) {
                 session.pendingResourceDelivery = undefined;
                 session.lastTradeSummary = `could not buy ${companionErrand.amount}x ${companionErrand.itemName}`;
@@ -1145,7 +1145,7 @@ module.exports = {
             // ARCH-NOTE: shopping may finish with a buff stop; that continuation
             // belongs to this town event and returning from the buff raises nothing.
             if (!returningToCompanion) raiseDecision(session, 'town');
-            Promise.resolve(BotEventJournal.record({
+            BotEventJournal.record({
                 botId: bot.fetchId(),
                 eventType: restockFailure ? 'shopping_deferred' : 'shopping_completed',
                 summary: restockFailure
@@ -1155,7 +1155,7 @@ module.exports = {
                 dedupeKey: `shopping_done:${bot.fetchId()}`,
                 coalesceWindowMs: 30000,
                 meta: { plan: session.plan, ...(restockFailure ? { reason: restockFailure } : {}) }
-            })).catch(() => {});
+            });
             session.shoppingDoneAnnounced = false;
             session.shoppingTarget = undefined;
             session.companionShopping = undefined;
@@ -1254,8 +1254,7 @@ module.exports = {
                 // is away. Reappear in a valid companion slot instead of
                 // making the player watch a long return route.
                 bot.setLocXYZ?.(destination);
-                const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
-                Promise.resolve().then(() => PopulationService.markHot(session, 'supply_errand_return')).catch(() => null).then(() => {
+                BotTownTravel.returnSupplyHot(session, 'supply_errand_return', () => {
                     restoreHot();
                     TownChatter.say(session, BotAI, 'supply-return', options.deliveryReady === true
             ? Speech.lines('town.supply-return.ready')
@@ -1271,8 +1270,7 @@ module.exports = {
                 // The leader may have disconnected during the errand. Reveal
                 // through the same packet path even when there is no return
                 // target; otherwise every nearby client keeps a ghost bot.
-                const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
-                Promise.resolve().then(() => PopulationService.markHot(session, 'supply_errand_leader_offline')).catch(() => null).then(() => {
+                BotTownTravel.returnSupplyHot(session, 'supply_errand_leader_offline', () => {
                     restoreHot();
                     if (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) WorkflowTelemetry.recordSupply(workflowId, 'return', {
                         botId: bot.fetchId(),

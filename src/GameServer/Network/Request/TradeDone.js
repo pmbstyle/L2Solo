@@ -149,7 +149,7 @@ async function tradeDone(session, buffer) {
             lootRequest ? 'gave_useful_loot' : 'trade_completed',
             detail
         );
-        Promise.resolve(invoke('GameServer/Bot/AI/BotEventJournal').record({
+        invoke('GameServer/Bot/AI/BotEventJournal').record({
             playerId: session.actor?.fetchId?.(),
             botId: result.partnerSession?.actor?.fetchId?.(),
             eventType: 'trade_completed',
@@ -158,7 +158,7 @@ async function tradeDone(session, buffer) {
             dedupeKey: `trade:${session.actor?.fetchId?.()}:${result.partnerSession?.actor?.fetchId?.()}:${detail}`,
             coalesceWindowMs: 30 * 1000,
             meta: { itemCount: result.moved?.length || 0 }
-        })).catch(() => {});
+        });
         BotManager.botTell(
             result.partnerSession,
             session,
