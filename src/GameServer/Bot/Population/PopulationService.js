@@ -356,10 +356,34 @@ async function marketTravelWithRefund(state, goal, timestamp = Date.now(), econo
     });
     const refunded = remote?.withdrawn ? remote.state || state : null;
     if (!refunded || refunded.phase !== 'cold' || joinedBackgroundParty(refunded)) return null;
-    return GoalExecutor.beginMarketTravel(refunded, goal, timestamp);
+    // The refund moves money only: the trip keeps the caller's retry stamp (a
+    // buyer's wake lifted it on the caller's state, not on the saved row).
+    return GoalExecutor.beginMarketTravel({ ...refunded,
+        stats: { ...refunded.stats, marketRetryAfter: state.stats?.marketRetryAfter ?? null } }, goal, timestamp);
 }
 
-function canResumeAffordableMarketPlan(state, timestamp = Date.now(), { marketWakeup = false } = {}) {
+// What the bot may pay for its market plan's target: the wallet with the
+// plan's own buy-order escrow, after the higher wishes (a weapon bridge: all).
+function marketPlanBudget(state, plan) {
+    const escrow = PurchaseFunding.tripEscrow(plan, BotAfkMarketService.buyOrderEscrow(state.characterId));
+    return plan.weaponBridge ? PurchaseFunding.budget(state, escrow)
+        : PurchaseFunding.spendable(state, escrow, { itemId: plan.target?.selfId });
+}
+
+// A buyer's wake (MarketBuyerWaiters → the lifecycle command's marketWakeup,
+// [{ itemId, price }]) lifts a failed visit's retry stamp only for a new offer
+// of the market plan's own target within the bot's budget: the event the stamp
+// waits for (ColdMarketService.retryAfterFailedPurchase). A wake for another
+// item it wants (shots, a recipe) leaves the stamp.
+function wakeLiftsMarketRetry(state, offers) {
+    const plan = state?.stats?.equipmentPlan;
+    const targetId = Number(plan?.target?.selfId || 0);
+    const offer = Array.isArray(offers) && targetId > 0 && plan?.strategy === 'market'
+        ? offers.find(row => Number(row?.itemId) === targetId) : null;
+    return !!offer && Number(offer.price) > 0 && marketPlanBudget(state, plan) >= Number(offer.price);
+}
+
+function canResumeAffordableMarketPlan(state, timestamp = Date.now()) {
     const plan = state?.stats?.equipmentPlan;
     const targetId = Number(plan?.target?.selfId || 0);
     const targetSlot = Number(plan?.target?.slot || 0);
@@ -369,13 +393,11 @@ function canResumeAffordableMarketPlan(state, timestamp = Date.now(), { marketWa
         || plan?.strategy !== 'market'
         || (![7, 14].includes(targetSlot) && !requiredClanPurchase)
         || targetId <= 0
-        || (!marketWakeup && Number(state.stats?.marketRetryAfter || 0) > timestamp)) return false;
+        || Number(state.stats?.marketRetryAfter || 0) > timestamp) return false;
 
     const price = Number(plan.market?.price || 0);
     const reserve = Math.max(0, Number(plan.market?.reserve || 0));
-    if (price <= 0 || (plan.weaponBridge ? PurchaseFunding.budget(state, PurchaseFunding.tripEscrow(plan, BotAfkMarketService.buyOrderEscrow(state.characterId)))
-            : PurchaseFunding.spendable(state, PurchaseFunding.tripEscrow(plan, BotAfkMarketService.buyOrderEscrow(state.characterId)),
-                { itemId: plan.target?.selfId })) < price) return false;
+    if (price <= 0 || marketPlanBudget(state, plan) < price) return false;
 
     const combinationRequirement = (plan.combine?.requirements || [])
         .find((entry) => Number(entry.selfId) === targetId);
@@ -3539,14 +3561,16 @@ const PopulationService = {
             // Worker-owned recovery finishes before the main economy command.
             // Reconsider a funded weapon purchase before applying another fight,
             // which could immediately put the buyer back into recovery again.
+            const buyer = state.stats?.marketRetryAfter && wakeLiftsMarketRetry(state, request.marketWakeup)
+                ? { ...state, stats: { ...state.stats, marketRetryAfter: null } } : state;
             if (!joinedBackgroundParty(state) && !state.stats?.pveEncounter && !state.stats?.pvpEncounter
-                && canResumeAffordableMarketPlan(state, Date.now(), { marketWakeup: request.marketWakeup === true })) {
+                && canResumeAffordableMarketPlan(buyer)) {
                 const goal = await GoalService.review(state);
                 const current = LifeState.cachedState(state.characterId) || state;
                 if (current !== state || joinedBackgroundParty(current) || current.phase !== 'cold') {
                     return { ok: false, reason: 'state_changed', state: current };
                 }
-                const travel = await marketTravelWithRefund(current, goal?.current, Date.now(), goal?.economy);
+                const travel = await marketTravelWithRefund(buyer, goal?.current, Date.now(), goal?.economy);
                 const latest = LifeState.cachedState(state.characterId) || current;
                 if (!travel && latest !== current) return { ok: false, reason: 'state_changed', state: latest };
                 if (travel) {

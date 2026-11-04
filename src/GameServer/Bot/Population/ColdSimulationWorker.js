@@ -181,7 +181,7 @@ const boardIndex = new BoardIndex({ groupOf: MarketCounters.counterOf });
 const buyerWaiters = new MarketBuyerWaiters({
     stateFor: id => kernel?.states.get(id)?.state,
     demandsFor: (state, timestamp) => invoke('GameServer/Bot/Economy/MarketDemandIndex').signalsOfState(state, timestamp),
-    wake: (id, timestamp) => kernel?.wakeBuyer(id, timestamp) === true
+    wake: (id, timestamp, offer) => kernel?.wakeBuyer(id, timestamp, offer) === true
 });
 const boardFollower = boardIndex.follower();
 // A whole 'board' or 'market' table is being replaced: set by its reset, cleared

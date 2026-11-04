@@ -57,7 +57,7 @@ const fields = ['activityStartedAt', 'nextResolveAt', 'lastResolvedAt', 'lastHot
 
         const kernel = new ColdSimulationKernel({ resolveSolo: async () => null, now: () => at + 100000 });
         kernel.upsert({ state: saved });
-        kernel.buyerWakeups.add(id);
+        kernel.wakeBuyer(id, at + 100000, { itemId: 1, price: 1 });
         kernel.dueCandidates();
         assert(kernel.commanding.has(id), 'a buyer wake on the repaired bot acquires a command instead of losing its schedule');
         await kernel.resolveChain;
@@ -67,7 +67,7 @@ const fields = ['activityStartedAt', 'nextResolveAt', 'lastResolvedAt', 'lastHot
         assert.equal(Protocol.commandCheckpoint(invalid), null, 'wire validation still rejects malformed checkpoints');
         const retry = new ColdSimulationKernel({ resolveSolo: async () => null, now: () => at + 100000 });
         retry.upsert({ state: invalid });
-        retry.buyerWakeups.add(id);
+        retry.wakeBuyer(id, at + 100000, { itemId: 1, price: 1 });
         retry.dueCandidates();
         assert.equal(retry.commanding.has(id), false, 'an invalid checkpoint never gains command authority');
         assert.equal(retry.scheduleTokens.get(id)?.dueAt, at + 101000,

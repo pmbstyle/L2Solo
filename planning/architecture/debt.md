@@ -106,7 +106,11 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    also held as `network.focus`, are read by slot in ~30 places (`focus?.[0]` in diagnostics and keys,
    `SpotEconomics.moneyShort`, `PartyIncomeComparison`, `ActorEconomyProjection`). They want one owner like
    `StatsPacket` (the money, kit and danger arrays).
-23. **A craft material party request is reviewed every 5 min.** `CraftMaterialParty.request` (`REVIEW_MS`, ~104,
+23. **A buyer's wallet growing past a listed offer has no event.** `MarketBuyerWaiters` wakes a buyer only when an
+   offer is listed or made cheaper (`recordChanged`); a bot whose budget grows past an offer it already saw waits
+   out the failed visit's retry stamp (limits.md "Buyer retry", 15 min). A budget event re-checking the owner's
+   heap nodes against the item's best offer would replace the window.
+24. **A craft material party request is reviewed every 5 min.** `CraftMaterialParty.request` (`REVIEW_MS`, ~104,
    ~113) keeps the request and its worker memo for 5 min of game time instead of keying them on what the review reads
    (the material's remaining amount, the camps' forecasts, the source route reader); a time window stands in for
    those events.

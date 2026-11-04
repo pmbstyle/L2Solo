@@ -114,6 +114,41 @@ const saved = {
             stats: { ...rich.stats, restUntil: Date.now() - 1 } });
         assert.deepStrictEqual(calls, ['travel:2000000']);
         assert.strictEqual(trip.state.activity, 'traveling');
+
+        // 3. A visit found no affordable weapon: the bot does not travel to buy
+        // it again for a while, unless a new offer of that weapon within its
+        // budget wakes it, and then it leaves at once. A new offer of another
+        // item it wants (shots) or a weapon offer above its budget keeps it
+        // hunting.
+        GoalExecutor.beginMarketTravel = saved.beginMarketTravel;
+        const shopping = { ...goal, plan: { ...goal.plan, economyActivity: 'shopping' } };
+        GoalService.review = () => Promise.resolve({ current: shopping, candidates: [] });
+        const failedVisit = { ...rich, stats: { ...rich.stats, marketRetryAfter: Date.now() + 10 * 60 * 1000 } };
+        assert.strictEqual(PopulationService.canResumeAffordableMarketPlan(rich), true, 'fixture: funded without the stamp');
+        LifeState.cachedState = () => failedVisit;
+        PopulationService.resolveColdState = () => Promise.resolve({ ok: true, reason: 'resolved' });
+        const visit = marketWakeup => PopulationService.executeWorkerLifecycleCommand(failedVisit, { ...(marketWakeup ? { marketWakeup } : {}),
+            precomputedResult: { patch: {}, events: [], materialize: { exp: 0, sp: 0, adena: 0, items: [] } } });
+        assert.strictEqual((await visit(null)).reason, 'resolved', 'no new offer: the bot goes on hunting');
+        assert.strictEqual((await visit([{ itemId: 1463, price: 20 }])).reason, 'resolved',
+            'a new shot offer does not lift the weapon\'s retry stamp');
+        assert.strictEqual((await visit([{ itemId: 127, price: 50_000_000 }])).reason, 'resolved',
+            'a new weapon offer above its budget does not either');
+        const weaponOffer = [{ itemId: 1463, price: 20 }, { itemId: 127, price: 900_000 }];
+        const woken = await visit(weaponOffer);
+        assert.strictEqual(woken.reason, 'goal_market_travel', 'a new affordable offer: the bot leaves for the market');
+        assert.strictEqual(woken.state.activity, 'traveling');
+        assert.strictEqual(woken.state.stats.marketRetryAfter, null, 'the wake lifts the failed visit\'s retry stamp');
+        // Part of its money in a buy order: the order is withdrawn and the
+        // trip leaves from the refunded row, the stamp still lifted.
+        AfkTrade.ownerRecords = () => [{ kind: 'buy_ad', storeType: AfkTrade.BUY, escrowAdena: 800_000, lines: [] }];
+        reconcileResult = () => Promise.resolve({ changed: true, withdrawn: true,
+            state: { ...failedVisit, adena: failedVisit.adena + 800_000 } });
+        const wokenWithOrder = await visit(weaponOffer);
+        assert.strictEqual(wokenWithOrder.reason, 'goal_market_travel');
+        assert(wokenWithOrder.state.adena > failedVisit.adena, 'it leaves with the refunded money (less its trip fee)');
+        assert.strictEqual(wokenWithOrder.state.stats.marketRetryAfter, null);
+        PopulationService.resolveColdState = fallback;
     } finally {
         Object.assign(AfkTrade, { ownerRecords: saved.ownerRecords });
         Object.assign(GoalService, { review: saved.review });
