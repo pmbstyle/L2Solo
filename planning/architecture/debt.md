@@ -65,6 +65,10 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
 14. **Arrow stock and companion unload (develop PR #207) checked where used.** The arrow cap is re-checked at ~11
    planner, buyer and writer sites; a companion unloads and sells arrows by its own path (ECO-15).
 
+15. **Picked-tests workflow mixes geodata states in a shard.** A shard that fetched raw geodata for one file runs the
+   others with it present, so `test_spawn_drop_height` (asserts the missing-geodata case) fails there while the full
+   PR run (raw geodata skipped) passes it. Run raw-geodata files in their own shard.
+
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets[6]`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so
 a rich bot there has a null activity (T178): a test expecting "one leaf" from such a scene breaks the same way. Known
