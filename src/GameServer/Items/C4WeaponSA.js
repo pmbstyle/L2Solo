@@ -99,7 +99,7 @@ function runProc(session, actor, target, descriptor, attack, rng) {
     actor.soulshotLoaded = actor.spiritshotLoaded = actor.blessedSpiritshotLoaded = false;
     try {
         const result = invoke('GameServer/Skills/C4SkillEffects').execute(session, actor, target, skill, { attack, rng, magicSkill: skill.fetchSpell() });
-        if (result.damage > 0) attack.hit(session, actor, target, result.damage, { skill });
+        if (result.damage > 0) attack.hit(session, actor, target, result.damage, { skill, npcAttacked: result.npcAttacked });
         return result;
     } finally {
         [actor.soulshotLoaded, actor.spiritshotLoaded, actor.blessedSpiritshotLoaded] = shots;
@@ -124,7 +124,7 @@ function onCast(session, actor, target, trigger, { weapon = equipped(actor), out
     if (Number(weapon.fetchSelfId()) === 5606 && offensive) {
         if (target?.fetchHp?.() <= 0 || target?.state?.fetchDead?.() || rng() >= 0.3) return null;
         const damage = Math.round(invoke('GameServer/Formulas').calcMagicDamage(actor.fetchCollectiveMAtk(), 8, target.fetchCollectiveMDef(), {}) * pvpMultiplier(actor, target, 'magic'));
-        attack.hit(session, actor, target, damage, { skill: trigger });
+        attack.hit(session, actor, target, damage, { skill: trigger, npcAttacked: outcome.npcAttacked });
         return { damage };
     }
     const descriptor = definition(weapon)?.oncast;

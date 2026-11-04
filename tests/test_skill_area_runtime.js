@@ -80,7 +80,8 @@ function npc(id, x, y, dead = false) {
             invoke('GameServer/Npc/Generics/BroadcastVitals')(this);
         },
         enterCombatState() {
-            this.enteredCombat += 1;
+            if (!this.state.fetchCombats()) this.enteredCombat += 1;
+            this.state.combats = true;
         },
         isDead: () => dead,
         automation: {
@@ -88,7 +89,7 @@ function npc(id, x, y, dead = false) {
         },
         state: {
             fetchDead: () => dead,
-            fetchCombats: () => false
+            fetchCombats() { return !!this.combats; }
         }
     };
 }
@@ -255,5 +256,41 @@ assert.strictEqual(resistedPlayer.fetchHp(), 1000, 'resisted NPC magic should no
 const resistedMessage = resistedPlayerSession.packets.find((packet) => packet?.[0] === 0x64 && packet.readInt32LE(1) === 159);
 assert(resistedMessage, 'a player should receive the C4 magic-resisted system message for an NPC spell');
 assert.strictEqual(resistedMessage.readInt32LE(9), 0, 'magic-resisted system message should carry the monster name as text');
+assert(!npcSession.packets.some(packet => packet?.[0] === 0x64 && [46, 158].includes(packet.readInt32LE(1))),
+    'an NPC proxy must not send the receiving player cast-use or caster-failure messages');
+
+const debuffCaster = actor();
+const debuffSession = session(debuffCaster);
+const hex = new SkillModel({ selfId: 122, name: 'Hex', level: 1, spell: true, distance: 600, hp: 0 });
+World.user = { sessions: [resistedPlayerSession] };
+Math.random = () => 0.99;
+try {
+    attack.remoteHit(debuffSession, resistedPlayer, hex);
+} finally {
+    World.user = originalWorldUser;
+    Math.random = originalRandom;
+    invoke('GameServer/Actor/CombatStance').clear(debuffCaster);
+}
+assert.deepStrictEqual(debuffSession.packets.filter(packet => packet?.[0] === 0x64).map(packet => packet.readInt32LE(1)),
+    [46, 158], 'a resisted player debuff reports its use and failure to its caster');
+assert.strictEqual(resistedPlayerSession.packets.filter(packet => packet?.[0] === 0x64 && packet.readInt32LE(1) === 159).length,
+    1, 'a resisted debuff must not reuse the target-side nuke-resistance message');
+
+const stunVictim = npc(1005010, 100, 0);
+const stun = new SkillModel({ selfId: 100, name: 'Stun Attack', level: 1, spell: false });
+debuffSession.packets.length = 0;
+World.user = { sessions: [debuffSession] };
+Math.random = () => 0.99;
+try {
+    attack.applyRemoteCastEffect(debuffSession, debuffCaster, stunVictim, stun, {
+        magicSkill: false, shotState: attack.captureShotState(debuffCaster)
+    });
+} finally {
+    World.user = originalWorldUser;
+    Math.random = originalRandom;
+}
+assert.strictEqual(stunVictim.fetchHp(), 967, 'a resisted secondary stun must preserve the landed skill damage');
+assert.deepStrictEqual(debuffSession.packets.filter(packet => packet?.[0] === 0x64).map(packet => packet.readInt32LE(1)),
+    [158, 35], 'caster failure and damage feedback must both arrive when only the secondary effect resisted');
 
 console.log('Skill area runtime checks passed');

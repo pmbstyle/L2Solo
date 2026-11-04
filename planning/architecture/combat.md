@@ -23,12 +23,24 @@ Scope: `Actor`, `Skills`, `Effects`, `Combat`, `Npc`, `RaidBoss`, `Pets`, `Formu
   (`Attack.tryBreakCast`, C4). Open tails: debt.md theme 9.
 - **Damage sinks:** player `Actor/Generics/ReceivedHit` (transfer pain, CP shield, HP, PvP/PK tally, karma) → `Die`
   (PK drop `PkDeathDrop`, death EXP `DeathExperience.applyDeathPenalty`); revive `Revive` / `RestartPoint` at
-  `Formulas.respawnHp` (70 %); NPC `Npc/Generics/ReceivedHit` (overhit, hate, minions, social aggro) → `Die` → `NpcDied`
+  `Formulas.respawnHp` (70 %); NPC `Npc/Generics/ReceivedHit` (overhit, HP, `Npc/Attacked` reaction) → `Die` → `NpcDied`
   (EXP/SP, quests, sweep); drops `World/Generics/NpcRewards`.
 - **Monster:** `Npc/Npc.js` hate (`NpcHate`, shared with cold), own `meleeHit`/`hit`, skill choice `NpcCombatChoice`
   (shared), aggro `NpcAggro` + `NpcAggroRange`, `SocialAggro`, `SpoilSweep`.
 - **Skills:** `C4SkillRules` (per-skill semantics, hot and cold), `C4SkillEffects.execute` (hot effects, one long
   `skillType` chain), `ChargeLifecycle`, `ToggleSkills`, `CubicControl`, `SkillReuse` (persistence only).
+- **NPC attack reaction:** hot `Npc/Attacked` owns hate and the leader/minion + clan assistance notification for
+  `ReceivedHit` and `C4SkillEffects`. A dying minion calls its leader before removal; a dying leader calls nobody.
+  `C4SkillRules.provokesNpc` owns cast engagement (hate removal/reduction and dagger blows excluded).
+  `C4SkillEffects.execute` calls the reaction before the success roll, including a resisted debuff. Its result's
+  `npcAttacked` flag crosses the native/proc/cubic HP-hit boundary so damage credits its hate without calling
+  assistance twice. `Attack.beginRemoteCast` sends the player's use message;
+  `C4SkillEffects.execute` sends failure to the caster for a resisted spell/effect, independently of HP damage.
+  Target-side magic resistance remains separate. `Response/ConsoleText` encodes a skill name as id + level.
+  Cost on main: one semantic predicate and one hate update per hostile cast/target, the existing group's minion
+  walk and one indexed clan-neighbour query (only with clan/help radius), one use packet per player cast and one
+  failure packet per resisted target. The subsequent HP hit only adds damage hate; no duplicate assistance walk,
+  global world scan, DB write, worker message, per-bot state or per-tick work is added.
 - **Effects:** `EffectStore` (authoritative), `EffectStats`, `EffectTicker`, `EffectRestrictions`; `BuffCatalog` legacy.
 - **Stats:** hot `CalculateStats`, cold `ColdCombatProfile.powerTerms/formulaPower` — both call `Formulas` but assemble
   separately.
@@ -66,6 +78,7 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
 | Who a mob attacks | `Npc/NpcHate` |
 | Aggro range | `Npc/NpcAggroRange` |
 | Skill semantics | `Skills/C4SkillRules` |
+| NPC attack reaction (hate + group/clan assistance) | hot `Npc/Attacked`, called by `ReceivedHit` and `C4SkillEffects` (`C4SkillRules.provokesNpc` for casts) |
 | Item-skill cast (timer, spend, landing) | `Backpack.castItemSkill` (bots' own SoE `BotTownTravel.beginEscape` is still a parallel path, debt.md theme 9) |
 | Cast break by damage | `Attack.tryBreakCast` (magic casts only) |
 | Effects store / stat sums | `EffectStore` + `EffectStats` |
@@ -116,7 +129,7 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
 - **CMB-27 `RaidCurse` scans the world per cast.** A non-offensive skill reads `raidBossesAttackedBy` for each target,
   a filter over every `World.npc.spawns`, and `combatLevel` of a summon scans every session (perf; their throws
   are counted, `raid.curse_lookup`). `World/RaidEntityIndex` already holds the bosses.
-- **CMB-15 local patches:** skill 84 in `finalizeSkillResult`, skills 109/121 in HEAL_PERCENT, weapon 5606 in
+- **CMB-15 local patches:** skills 109/121 in HEAL_PERCENT, weapon 5606 in
   `C4WeaponSA`, duck-type guard in `Npc.hit` for stale aggro entries (crashed the process).
 - **CMB-16 dead:** `Attack.physicalRaceModifier` test only (`test_melee_dd_class_skills`). (`Formulas.calcMagicSuccess`
   is live through `Formulas.calcSpoilSuccess`, hot `SpoilSweep` and cold `ColdKillRewards`; `HitRules` uses
@@ -139,6 +152,10 @@ Parity tests: `test_cold_combat_parity`, `test_combat_core`, `test_cold_hot_rule
 - **CMB-25 resurrection's EXP restore does not wash karma** (Lisvus `restoreExp` -> `addExp` does).
 - **CMB-20 hot-only rules with no cold counterpart** (may be intended): cast break, transfer pain, petrification,
   grade penalty, raid curse, position, C4 pets.
+- **CMB-28 cold skill engagement hate is missing.** `BackgroundResolver.addHate` credits damage only; a resisted
+  nuke gives no owner hate in a pet fight, while hot hostile casts add one before their success roll. Cold currently
+  resolves secondary debuffs only on damaging turns; standalone debuff effects are not resolved there. Route cold cast
+  engagement through `C4SkillRules.provokesNpc` when this cold fight rule is aligned (changes the measured fights).
 
 ## Open questions
 

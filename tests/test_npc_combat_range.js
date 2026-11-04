@@ -8,6 +8,7 @@ const SkillModel = invoke('GameServer/Model/Skill');
 const Formulas = invoke('GameServer/Formulas');
 const ConsoleText = invoke('GameServer/ConsoleText');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
+const SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
 const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
 const World = invoke('GameServer/World/World');
 
@@ -94,6 +95,83 @@ function actorAt(x, id = 2000001, cp = 0) {
             setCombats() {}
         }
     };
+}
+
+// Drive native casts to impact without waiting; NPC hate, stats and system
+// packets remain real so a silent or harmless debuff cannot pass this check.
+{
+    const savedRandom = Math.random;
+    try {
+        for (const [id, level, stat, multiplier] of [[122, 1, 'pDef', 0.77], [115, 1, 'pAtk', 0.8], [115, 2, 'pAtk', 0.8], [115, 3, 'pAtk', 0.77]]) {
+            for (const resisted of [false, true]) {
+                const caster = Object.assign(actorAt(0), {
+                    mp: 1000,
+                    fetchName: () => 'Debuff Caster',
+                    fetchMp() { return this.mp; },
+                    setMp(value) { this.mp = value; },
+                    fetchCollectiveMAtk: () => 100,
+                    fetchCollectiveCastSpd: () => 333,
+                    fetchCollectiveAtkSpd: () => 333,
+                    backpack: {}
+                });
+                const castSession = { actor: caster, packets: [],
+                    dataSendToMe(packet) { this.packets.push(packet); },
+                    dataSendToMeAndOthers(packet) { this.packets.push(packet); } };
+                const mob = npcWithRange(40);
+                mob.setLevel(40);
+                mob.model.hostile = false;
+                const skill = new SkillModel({ selfId: id, level, name: id === 122 ? 'Hex' : 'Power Break',
+                    spell: true, distance: 600, mp: 18, hp: 0, itemId: 0, itemCount: 0 });
+                const cast = new Attack();
+                caster.attack = cast;
+                const callbacks = [];
+                cast.queueTimer = callback => callbacks.push(callback);
+                const messages = () => castSession.packets.filter(packet => packet[0] === 0x64);
+                const before = stat === 'pDef' ? mob.fetchCollectivePDef() : mob.fetchCollectivePAtk();
+                Math.random = () => resisted ? 0.999999 : 0;
+                try {
+                    cast.remoteHit(castSession, mob, skill);
+                    const used = messages().filter(packet => packet.readInt32LE(1) === 46);
+                    assert.strictEqual(used.length, 1, 'accepted player cast must announce its use once');
+                    assert.strictEqual(used[0].readInt32LE(5), 1, 'use message has one skill-name parameter');
+                    assert.strictEqual(used[0].readInt32LE(9), 4, 'use message carries a client skill name');
+                    assert.strictEqual(used[0].readInt32LE(13), id);
+                    assert.strictEqual(used[0].readInt32LE(17), level, 'C4 skill-name parameters include the skill level');
+                    assert.strictEqual(mob.state.fetchCombats(), false, 'cast acceptance alone must not provoke the mob');
+                    while (callbacks.length) callbacks.shift()();
+                    const after = stat === 'pDef' ? mob.fetchCollectivePDef() : mob.fetchCollectivePAtk();
+                    assert.strictEqual(after, resisted ? before : Math.round(before * multiplier));
+                    const effect = EffectStore.list(mob).find(entry => entry.id === id);
+                    assert.strictEqual(!!effect, !resisted, 'only landed debuffs change the monster');
+                    if (effect) assert(effect.expiresAt - Date.now() > 14000 && effect.expiresAt - Date.now() <= 15000);
+                    assert.strictEqual(mob.fetchHp(), 100, 'debuff hate must not invent HP damage');
+                    assert.strictEqual(mob.state.fetchCombats(), true, 'landed and resisted debuffs provoke a passive mob');
+                    assert.strictEqual(mob.fetchCombatTarget(), caster);
+                    assert.strictEqual(mob.getHating(caster), 1, 'a non-damaging hostile cast adds one engagement point');
+                    assert.deepStrictEqual(messages().map(packet => packet.readInt32LE(1)), resisted ? [46, 158] : [46]);
+                } finally {
+                    mob.destructor(castSession);
+                    cast.destructor();
+                    invoke('GameServer/Actor/CombatStance').clear(caster);
+                }
+            }
+        }
+        for (const id of [11, 15, 106, 263]) {
+            const caster = actorAt(0);
+            const mob = npcWithRange(40);
+            const quietSession = { actor: caster, dataSendToMe() {}, dataSendToMeAndOthers() {} };
+            const quietSkill = new SkillModel({ selfId: id, level: 1, power: 1, spell: true });
+            try {
+                SkillEffects.execute(quietSession, caster, mob, quietSkill, { rng: () => 1 });
+                assert.strictEqual(mob.state.fetchCombats(), false, 'hate removal and missed dagger blows must not start a fight');
+                assert.strictEqual(mob.fetchMostHated(), null);
+            } finally {
+                mob.destructor(quietSession);
+            }
+        }
+    } finally {
+        Math.random = savedRandom;
+    }
 }
 
 const rangedNpc = npcWithRange(500);

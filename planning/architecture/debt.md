@@ -5,6 +5,10 @@ Checked at 199c3b19 (2026-11-04).
 Index across areas; details and evidence in each area file (ids: AI, POP, ECO, CMB, WOR, PER, TBL).
 Add a line when you find a tail you do not fix. Delete it when it is paid (the area file states the new rule).
 
+- Cold fights credit damage hate only, so a resisted offensive cast does not engage its caster as hot does (CMB-28).
+- Combat lint debt: skill 4080 is defined twice in `C4SkillRules`; `C4SkillEffects.applyBalanceLife` has an unused
+  `actor` argument. Check the duplicate skill against C4 before removing a definition.
+
 ## Themes
 
 1. **Failures that do not show.** The owner is `src/FailureLog.js` (a survived failure counts by site, the first

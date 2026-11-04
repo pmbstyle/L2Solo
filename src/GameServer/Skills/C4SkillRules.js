@@ -1339,6 +1339,21 @@ function hitsArea(semantic = {}) {
     return AREA_SOURCE_TARGETS.has(semantic.sourceTarget);
 }
 
+// Lisvus callSkill notifies the target before the success roll. Hate removal
+// must stay quiet, and a dagger blow provokes only through its landed damage.
+function provokesNpc(semantic) {
+    if (semantic.target !== 'enemy') return false;
+    switch (semantic.skillType) {
+        case AGGRO_REMOVE:
+        case AGGRO_REDUCE:
+        case AGGRO_REDUCE_CHAR:
+        case BLOW:
+            return false;
+        default:
+            return true;
+    }
+}
+
 function resolveCached(skill = {}) {
     const key = `${skill.selfId}|${skill.level}|${skill.name}|${skill.power}|${skill.buff}|${skill.spell === true}|${skill.distance}`;
     let semantic = resolved.get(key);
@@ -1597,6 +1612,7 @@ module.exports = {
     resolve,
     resolveCached,
     hitsArea,
+    provokesNpc,
     shotBoostsHeal,
     normalizeKey,
     sourcedMaxLevel,

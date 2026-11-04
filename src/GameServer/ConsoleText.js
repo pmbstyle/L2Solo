@@ -22,6 +22,7 @@ const ConsoleText = {
         inventoryFull     : 129,
         levelUp           :  96,
         incorrectDest     : 144,
+        attackFailed      : 158,
         magicResisted     : 159,
         waitForResponse   : 164,
         insufficientSp    : 278,

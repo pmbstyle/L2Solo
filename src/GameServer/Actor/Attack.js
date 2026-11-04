@@ -383,6 +383,11 @@ class Attack {
         if (skill.fetchTargetKind?.() === 'enemy') invoke('GameServer/Bot/AI/BotMobCompetition').record(actor, creature);
         session.dataSendToMeAndOthers(ServerResponse.skillStarted(actor, creature.fetchId(), skill), actor);
         session.dataSendToMe(ServerResponse.skillDurationBar(skill.fetchCalculatedHitTime()));
+        if (!actor.fetchKind) {
+            ConsoleText.transmit(session, ConsoleText.caption.used, [{
+                kind: ConsoleText.kind.skil, value: skill.fetchSelfId(), level: skill.fetchLevel()
+            }]);
+        }
         actor.state.setCasts(true);
         invoke('GameServer/Bot/AI/BotActionFeedback').record(session, actor, creature, skill, 'accepted', 'native_cast');
         // Tactical readers need the accepted cast, not skill availability:
@@ -557,7 +562,7 @@ class Attack {
         }
 
         if (outcome.damage > 0) {
-            this.hit(session, actor, target, outcome.damage, { skill });
+            this.hit(session, actor, target, outcome.damage, { skill, npcAttacked: outcome.npcAttacked });
             if (outcome.forceLethalVitals && target.fetchHp?.() > 0) {
                 target.setHp?.(1);
                 target.setCp?.(1);
