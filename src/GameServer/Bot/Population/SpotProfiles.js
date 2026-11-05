@@ -146,12 +146,24 @@ function spotHunters(spot, state = null) {
     return huntersOn(threadOccupancy(), spot?.id, state);
 }
 
+// A spot's crowd revision in this thread's occupancy
+// (SpotOccupancyIndex.spotVersion): a result held over the spot's hunters
+// (spotHunters, roomFor) stands while it reads the same.
+function spotVersion(spotId) {
+    return threadOccupancy()?.spotVersion(spotId) ?? 0;
+}
+
 // A spot has room for this bot in this thread's occupancy (roomFilterFor's
 // rule for one bot, with no set per search); its own spot always has.
 function roomFor(spot, state) {
-    if (String(spot.id) === String(state.spotId) || spotHunters(spot, state) <= LevelingRoutes.roomForSpot(spot)) return true;
+    if (roomAt(spot, state, spotHunters(spot, state))) return true;
     Diagnostics.count('spot_list', 'skip', 'full');
     return false;
+}
+// roomFor's rule at a count of hunters (spotHunters: the bot among them):
+// the earning spot's crowd key judges a held answer's spots by it.
+function roomAt(spot, state, hunters) {
+    return String(spot.id) === String(state.spotId) || hunters <= LevelingRoutes.roomForSpot(spot);
 }
 
 // How many bots a spot holds (LevelingRoutes.roomForSpot); a raid boss spot
@@ -276,10 +288,9 @@ const SpotProfiles = {
         // fallback; a refused candidate counts as absent. A bot's own spot is
         // never full to it; the room is checked again at arrival. The worker
         // passes its own index's filter (options.hasRoom); a search on main
-        // (market return, competition retreat, a command's trip, a party's
-        // formation) reads main's world index (ROUTE-ROOM-4). A party search
-        // counts the whole party (options.capacityStates), its own members
-        // excluded.
+        // (market return, a command's trip, a party's formation) reads main's
+        // world index (ROUTE-ROOM-4). A party search counts the whole party
+        // (options.capacityStates), its own members excluded.
         const hasRoom = options.hasRoom ?? defaultRoomFilter(state, profiles, options.capacityStates);
         const full = (spot) => {
             if (!hasRoom || (currentSpot && spot.id === currentSpot.id)
@@ -292,8 +303,8 @@ const SpotProfiles = {
                 spots: profiles, timestamp, mode, list,
                 required: invoke('GameServer/Bot/AI/PersonalGearProgression').assess(state).required });
             // The route reads its own risk marks, not the caller's exclusions
-            // (a market return's full saved spot, ROUTE-ROOM-4): an excluded
-            // pick counts as absent, as on the list walk.
+            // (options.excludedSpotIds): an excluded pick counts as absent, as
+            // on the list walk.
             if (incomeRoute && !excludedSpotIds.has(String(incomeRoute.spot.id)) && !full(incomeRoute.spot)) {
                 return incomeRoute.spot;
             }
@@ -446,7 +457,9 @@ const SpotProfiles = {
 };
 
 SpotProfiles.spotHunters = spotHunters;
+SpotProfiles.spotVersion = spotVersion;
 SpotProfiles.roomFor = roomFor;
+SpotProfiles.roomAt = roomAt;
 SpotProfiles.useOccupancy = useOccupancy;
 SpotProfiles.spotsNearLevel = spotsNearLevel;
 SpotProfiles.spotRoom = spotRoom;

@@ -1,6 +1,7 @@
 // Native providers/network with controlled gear/recipe facts and an actual board.
 // Source evidence is the same shared reader as production, no live DB.
 const fs = require('fs'), path = require('path'), assert = require('assert/strict');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 require('../src/Global');
 const { BoardIndex } = require('../src/GameServer/AfkTrade/BoardIndex');
 const root = path.resolve(__dirname, '../src/GameServer/Bot/Economy');
@@ -326,7 +327,7 @@ const nativeDeps = { board: new BoardIndex(), spots: [], npcOffersFor: () => [],
         object: { itemId: 101 }, paths: [{ kind: 'owned', price: 100, costHours: 1 }] }] };
 const richNative = NativeEconomy.forState(nativeState, nativeDeps);
 assert.equal(richNative.network.gap, null);
-assert.equal(richNative.statsPacket.money[3], 0);
+assert.equal(Packet.firstUnfundedPrice(richNative.statsPacket.money), 0);
 assert(richNative.gapHorizonHours > 0);
 const committedRich = { ...nativeState, stats: { ...nativeState.stats, ...richNative.statsPacket } };
 const richTransport = ColdDecision.compact(structuredClone(ColdDecision.capture(richNative, committedRich, nativeState)));

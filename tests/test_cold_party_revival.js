@@ -52,7 +52,7 @@ async function run() {
     const messages = [];
     const kernel = new ColdSimulationKernel({ now: () => at, resolveSolo: () => { throw Error('party must remain together'); }, resolveParty: input => Party.resolve(input),
         spotOf: () => ({ id: 'test' }), emit: (type, payload, msgId) => messages.push({ type, payload, msgId }) });
-    const roster = states(), expired = { ...party, stats: { ...party.stats, sessionExpiresAt: at - 1 } };
+    const roster = states(), expired = { ...party, stats: { ...party.stats, sessionReview: { at: at - 300000, nextAt: at - 1 } } }; // its review clock ran out
     roster.forEach(s => kernel.upsert({ state: s }));
     kernel.partyPut(expired.partyId, expired);
     kernel.tick();

@@ -2,6 +2,7 @@
 // Resolved at the first call (cycles); a require per call is a path lookup (L73).
 let SpotRewardExpectation = null;
 const Diagnostics = require('./EconomyDiagnostics');
+const Packet = require('./StatsPacket');
 const { occupiedSpotId } = require('../Population/SpotOccupancyIndex');
 const { powerWeight } = require('./EconomicValuation');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
@@ -13,7 +14,7 @@ const PER_KILL_FIELDS = ['kills', 'deaths', 'exp', 'sp', 'adena', 'dropLoot', 's
 function moneyShort(state) {
     const packet = state.stats?.money;
     if (Array.isArray(packet)) {
-        const gapPrice = Number(packet[3]);
+        const gapPrice = Number(Packet.firstUnfundedPrice(packet));
         return Number.isFinite(gapPrice) && gapPrice > 0 ? 1 : 0;
     }
     const focus = state.stats?.wishFocus;
@@ -27,10 +28,16 @@ function moneyShort(state) {
 // first build) against what an hour of its progress is (the level wish's).
 function moneyWeight(state, persona = BotPersona.of(state)) {
     const packet = state.stats?.money;
-    const money = Array.isArray(packet) ? Math.max(1, Number(packet[0]) * Number(packet[1]) || 0) : 1;
+    const money = Array.isArray(packet) ? Math.max(1, Number(Packet.hourAdena(packet)) * Number(Packet.moneyPrice(packet)) || 0) : 1;
     return money / (money + powerWeight(persona));
 }
 
+// The hours one death costs the bot in a reader's rows (riskHours' factor):
+// its hunt's (the build's, else its bare hunt at timestamp) death hours.
+function deathHoursOf(state, hunt, timestamp = Date.now()) {
+    return invoke('GameServer/Bot/Economy/EconomicValuation').deathHours(state,
+        hunt ?? invoke('GameServer/Bot/AI/BotHuntEfficiency').huntIncome(state, timestamp));
+}
 // hunt: the build's own hunt (EconomyContext), so one build reads one hour;
 // a caller outside a build leaves it out and gets the bot's bare hunt.
 // spotHunters(spot, state): the hunters on a spot with the bot among them,
@@ -54,15 +61,17 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
     const tableRole = Table.roleFor(state);
     hunt ??= Hunt.huntIncome(state, timestamp, mode);
     // The previous build's packet hour comes first, by design; the hunt only fills a missing packet.
-    const packetHour = Number(state.stats?.money?.[0]);
+    const packetHour = Number(Packet.hourAdena(state.stats?.money));
     const huntHour = Number(hunt.perHour);
     const bestIncome = packetHour > 0 && Number.isFinite(packetHour) || huntHour > 0 && Number.isFinite(huntHour)
         ? null : Table.best(tableRole, state.level, true, 'income');
     const hourAdena = Math.max(1, Number.isFinite(packetHour) && packetHour > 0 ? packetHour
         : Number.isFinite(huntHour) && huntHour > 0 ? huntHour : Number(bestIncome?.adena || 0) + Number(bestIncome?.loot || 0));
-    deathHours ??= Valuation.deathHours(state, hunt);
+    deathHours ??= deathHoursOf(state, hunt);
     const riskWeight = Valuation.riskWeight(state, persona);
     const costs = Hunt.consumablePrices(state, price);
+    // The hour incomeHours counts in (reader.moneyHour).
+    const moneyHour = hour?.adena > 0 ? hour.adena : hourAdena;
     const rewardOptions = { spoilSkillLevel: (SpotRewardExpectation ||= require('./SpotRewardExpectation')).spoilSkillLevel(state) };
     const own = Hunt.sampledRows(state, timestamp, mode);
     const calibrations = own.flatMap(row => {
@@ -85,10 +94,13 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
     // their own: the cap comes after them, so the crowd is cut once.
     // A crowd cut (crowdFactor < 1) is counted as spot_value:crowd:cut
     // (developer diagnostics).
-    const crowded = (spot, row) => {
+    const huntersOn = spot => {
         let hunters = spotHunters ? spotHunters(spot, state) : 1;
         for (const member of others) if (String(occupiedSpotId(member)) !== String(spot.id)) hunters += 1;
-        const factor = Table.huntShare(row.production, Math.max(1, hunters), row.kills);
+        return hunters;
+    };
+    const crowded = (spot, row) => {
+        const factor = Table.huntShare(row.production, Math.max(1, huntersOn(spot)), row.kills);
         if (factor >= 1) return row;
         if (Diagnostics.active()) Diagnostics.count('spot_value', 'crowd', 'cut');
         const out = { ...row, crowdFactor: factor };
@@ -98,7 +110,7 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
     // A table row as the bot's own samples scale it (calibration).
     const calibrated = row => row && (calibration === 1 ? row : { ...row, exp: row.exp * calibration,
         adena: row.adena * calibration, loot: row.loot * calibration, kills: row.kills * calibration });
-    return (spot, shots = hunt.useShots !== false) => {
+    const reader = (spot, shots = hunt.useShots !== false) => {
         // Charged observations cannot estimate a deliberately uncharged hunt.
         const observed = shots ? own.find(row => row.spotId === spot.id) : null;
         const rate = observed ? 3600000 / observed.cycleMs : 0;
@@ -118,15 +130,51 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
         // learned personal evaluation floor as income.
         const sample = state.stats?.spotRisk?.spotId === spot.id ? state.stats.spotRisk : null;
         if (sample?.windowFights > 0) row.deaths = row.kills * positive(sample.windowDeaths) / sample.windowFights;
+        // How the spot's hunters move this row (EquipmentIncomeRoute's crowd
+        // key): the share of the production, huntShare(production, hunters,
+        // kills), multiplies a table row's every hour field (value: true), an
+        // own observed row's deaths only (its kills are its own, risk alone);
+        // an observed row with its own death sample does not read the crowd.
+        const shares = table && table.production > 0 && table.kills > 0 && (!observed || !(sample?.windowFights > 0));
+        if (shares) row.crowd = { production: table.production, kills: table.kills, value: !observed };
         const riskBias = 1 + incomeError * (2 * Tendency.roll('spot-danger', state.characterId, spot.id) - 1);
         row.deaths *= riskBias;
         row.riskHours = row.deaths * deathHours * riskWeight;
+        // The units of shots and potions an hour its costs price (a table
+        // row's; an own observed row's costs are its samples', no price):
+        // the costs are a line in each price (EquipmentIncomeRoute.search
+        // reads them for the prices its answer stands over).
+        row.shotUnits = observed ? 0 : Number(base.shots || 0) * calibration;
+        row.potionUnits = observed ? 0 : Number(base.potions || 0) * calibration;
         row.costs = observed ? Number(observed.costs || 0) * rate
             : (Number(base.shots || 0) * costs.shots + Number(base.potions || 0) * costs.potions) * calibration;
         row.income = row.adena + row.loot - row.costs;
-        row.valueHours = row.exp / Math.max(1, hour?.exp || hunt.expPerHour) * (1 - weight)
-            + row.income / (hour?.adena > 0 ? hour.adena : hourAdena) * weight - row.riskHours;
+        // The value is linear in the money weight, its only use: expHours and
+        // incomeHours are the hour's exp and income in units of the hour
+        // (EquipmentIncomeRoute.search reads them for the weights its answer
+        // stands over).
+        row.expHours = row.exp / Math.max(1, hour?.exp || hunt.expPerHour);
+        row.incomeHours = row.income / moneyHour;
+        row.valueHours = row.expHours * (1 - weight) + row.incomeHours * weight - row.riskHours;
         return row;
     };
+    // What a row reads (SpotValueTable.value of the spot, role, level, shots
+    // and Spoil level from the table at its revision) and the crowd on its
+    // spot (reader.hunters): named, for a holder that keeps what it made of
+    // the rows (KeptSourceFacts). A row read with the default shots.
+    reader.inputs = () => [['table', Table.revision()], ['weight', weight], ['role', tableRole], ['tableLevel', Number(state.level)],
+        ['shots', hunt.useShots !== false], ['expHour', Math.max(1, hour?.exp || hunt.expPerHour)],
+        ['moneyHour', moneyHour], ['deathHours', deathHours], ['riskWeight', riskWeight],
+        ['prices', [costs.shots, costs.potions]], ['spoilSkill', rewardOptions.spoilSkillLevel],
+        ['samples', own.map(row => [row.spotId, row.exp, row.adena, row.loot, row.kills, row.costs, row.cycleMs])],
+        ['calibration', calibration], ['incomeError', incomeError], ['owner', state.characterId],
+        ['spotRisk', [state.stats?.spotRisk?.spotId, state.stats?.spotRisk?.windowFights, state.stats?.spotRisk?.windowDeaths]]];
+    // The hunters a row of this spot shares it with, the bot among them.
+    reader.hunters = huntersOn;
+    // The hours every row reads alike: incomeHours' unit and the death hours
+    // that scale every row's riskHours (EquipmentIncomeRoute's arrival).
+    reader.moneyHour = moneyHour;
+    reader.deathHours = deathHours;
+    return reader;
 }
-module.exports = { create, moneyWeight, moneyShort };
+module.exports = { create, moneyWeight, moneyShort, deathHoursOf };

@@ -62,18 +62,33 @@ try {
     const changed = { ...shopper, stats: { ...shopper.stats, equipmentPlan: {
         status: 'active', strategy: 'direct_drop', target: { selfId: 45, slot: 6 },
         next: { spotId: money.id, npcId: 1126, itemId: 45, amount: 1 } } } };
-    assert.equal(Executor.finishMarketVisit(changed, timestamp).stats.travel.spotId, money.id,
-        'a source changed during shopping takes precedence over the old safe origin');
+    // The spot the bot hunted before the trip comes before its plan's source
+    // (a recovery or a party-wait plan may name a source it does not hunt
+    // now); the worker's leaf moves it from there.
+    assert.equal(Executor.finishMarketVisit(changed, timestamp).stats.travel.spotId, source.id,
+        'an active plan elsewhere does not override the spot the bot hunted');
+    const away = { ...changed, stats: { ...changed.stats, capacityBackoffs: [{ spotId: source.id, untilStep: 12 }] } };
+    assert.equal(Executor.finishMarketVisit(away, timestamp).stats.travel.spotId, money.id,
+        'with that spot excluded, the viable plan source');
 
     const excluded = { ...shopper, stats: { ...shopper.stats,
         capacityBackoffs: [{ spotId: source.id, untilStep: 12 }] } };
     assert.equal(Executor.finishMarketVisit(excluded, timestamp).stats.travel.spotId, money.id,
-        'a marked source is still replanned');
+        'an excluded (marked full) source is not chosen: the search replans');
+    // A spot that filled during the visit, with no mark yet, is met by the
+    // worker (the room at arrival), one trip after the return.
     for (const characterId of [990503, 990504]) Life.acceptLifecycleRow({ characterId,
         characterName: 'SourceHunter', level: 24, phase: 'cold', activity: 'hunting', spotId: source.id,
         statsJson: '{}', inventorySummary: '{}' });
-    assert.equal(Executor.finishMarketVisit(shopper, timestamp).stats.travel.spotId, money.id,
-        'a source that filled during the visit is still replanned');
+    assert.equal(Executor.finishMarketVisit(shopper, timestamp).stats.travel.spotId, source.id,
+        'a source that filled during the visit: the return goes home, the room is read at arrival');
+    const decisions = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions;
+    const activity = decisions.activity;
+    try {
+        decisions.activity = () => ({ activity: 'hunting', spotId: money.id });
+        assert.equal(Executor.finishMarketVisit(shopper, timestamp).stats.travel.spotId, money.id,
+            'the worker\'s hunting leaf names the return spot');
+    } finally { decisions.activity = activity; }
 } finally {
     Spots.cache = saved.spots; Service.spots = saved.service;
     Income.select = saved.select; Errands.pending = saved.pending;

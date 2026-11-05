@@ -150,10 +150,27 @@ const builtProfiles = Matchup.coldProfiles;
 let builds = 0;
 Matchup.coldProfiles = (...args) => { builds++; return builtProfiles(...args); };
 try {
-    const round = Resolver.resolveSolo({ state: hunter(), spot: { ...gremlins(0), density: 9, npcEntries: [{ selfId: 1, count: 9 }] },
-        elapsedMs: 60000, rng: () => 0, timestamp: 1e12 });
+    const nine = { ...gremlins(0), density: 9, npcEntries: [{ selfId: 1, count: 9 }] };
+    const roundOf = state => Resolver.resolveSolo({ state, spot: nine, elapsedMs: 60000, rng: () => 0, timestamp: 1e12 });
+    // The bot's bag and saved fight kit, as every round after its first carries them.
+    const seed = { ...hunter(), characterId: 9070, inventory: {} };
+    const bot = { ...seed, stats: { coldCombat: Cold.seedSnapshot(seed, 1e12) } };
+    const round = roundOf(bot);
     assert(round.debug.wins > 1, `the round fights more than once (${round.debug.wins})`);
     assert.strictEqual(builds, 1, 'one profile build for the round');
+    // A hunt window's next round on the same bot judges by the same array and
+    // its verdicts: no build, the same round; a buff or a level is a new build.
+    assert.deepStrictEqual(roundOf({ ...bot }), round, 'the next round with the same inputs is the same round');
+    assert.strictEqual(builds, 1, 'the next round builds no profiles');
+    const might = { key: 'might', id: 1068, level: 1, type: 'buff', expiresAt: 2e12, stats: { pAtkMul: 1.5 } };
+    const withBuff = () => ({ ...bot, stats: { coldCombat: { ...bot.stats.coldCombat, effects: [{ ...might }] } } });
+    const buffed = roundOf(withBuff());
+    assert.strictEqual(builds, 2, 'a buff builds anew');
+    assert.deepStrictEqual(roundOf(withBuff()), buffed, 'the same buff again: the same round');
+    assert.strictEqual(builds, 2);
+    roundOf({ ...bot, level: 12 });
+    assert.strictEqual(builds, 3, 'a level builds anew');
+    assert.deepStrictEqual(roundOf({ ...bot }), round, 'back to the first inputs: the first round');
 } finally { Matchup.coldProfiles = builtProfiles; }
 // T106 (user 10-29): a species whose usual pull the hunter cannot survive is not hunted, as one mob it would be.
 const pack = hunt(3);

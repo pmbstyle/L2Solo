@@ -31,6 +31,7 @@ function actor() {
         fetchLocX: () => 0,
         fetchLocY: () => 0,
         fetchLocZ: () => 0,
+        fetchIsOnline: () => true,
         fetchHead: () => 0,
         fetchCollectiveMAtk: () => 100,
         fetchCollectivePAtk: () => 100,
@@ -74,6 +75,9 @@ function npc(id, x, y, dead = false) {
         fetchCollectivePDef: () => 100,
         fetchDex: () => 30,
         fetchHp() { return this.hp; },
+        fetchMaxHp: () => 1000,
+        fetchMp: () => 100,
+        fetchMaxMp: () => 100,
         setHp(value) { this.hp = value; },
         broadcastVitals() {
             this.vitalsBroadcasts += 1;
@@ -124,6 +128,8 @@ function player(id, x, y, level = 70) {
 
 function session(caster) {
     return {
+        accountId: `player_${caster.fetchId()}`,
+        fetchAccountId() { return this.accountId; },
         actor: caster,
         packets: [],
         dataSendToMe(packet) {
@@ -181,11 +187,14 @@ World.fetchNpcsInRadius = (x, y, radius) => {
 };
 Math.random = () => 0;
 caster.setDestId(primary.fetchId());
-World.user = { sessions: [testSession] };
+// The caster's client sees the NPCs it hit (vitals go to the real players registered near them).
+World.user = { sessions: [], revision: 0 };
+World.insertUser(testSession);
 
 try {
     attack.remoteHit(testSession, primary, flameStrike());
 } finally {
+    World.removeUser(testSession);
     World.fetchNpcsInRadius = originalFetchNpcsInRadius;
     World.user = originalWorldUser;
     Math.random = originalRandom;
@@ -203,9 +212,11 @@ assert(launched, 'magic area skill should broadcast MagicSkillLaunched');
 assert.strictEqual(launched.readInt32LE(13), 2, 'MagicSkillLaunched should include every affected target');
 assert.strictEqual(launched.readInt32LE(17), primary.fetchId(), 'MagicSkillLaunched should include primary target first');
 assert.strictEqual(launched.readInt32LE(21), nearby.fetchId(), 'MagicSkillLaunched should include secondary target');
+assert.deepStrictEqual(caster.statusUpdates.map((entry) => entry.id), [caster.fetchId()],
+    'the caster updates its own vitals after paying the cast');
 assert.deepStrictEqual(
-    caster.statusUpdates.map((entry) => entry.id),
-    [caster.fetchId(), primary.fetchId(), nearby.fetchId()],
+    testSession.packets.filter((packet) => packet?.[0] === 0x0e).map((packet) => packet.readInt32LE(1)),
+    [primary.fetchId(), nearby.fetchId()],
     'area damage should send vitals updates for every affected visible NPC, not only the selected primary target'
 );
 

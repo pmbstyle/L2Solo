@@ -76,6 +76,9 @@ const LINKS = Object.freeze({
     funding: link(['funding'], WORK | VISIT),
     occupation: link(['occupation'], 0),
     riskDeaths: link(['combat', 'occupation'], 0),
+    // The death recovery's level penalty moved (raised, or lifted by clean wins):
+    // the ground the bot may fight on moved, as a death moves it.
+    recovery: link(['combat', 'occupation'], 0),
     supply: link(['supply'], FIELD | VISIT),
     bag: link(STOCK, FIELD | VISIT),
     stores: link(STOCK, WORK | VISIT),
@@ -93,7 +96,9 @@ const LINKS = Object.freeze({
     // goal comes in reach; a rest is no review of the purse (user 11-02).
     money: link(['money'], FIELD | VISIT),
     goal: link(['money'], 0),
-    observation: link(OBSERVED, WORK | VISIT),
+    // Its own samples moved: also the observation bit, the earning spot search's
+    // event (DecisionSections SECTIONS); a gear-threat flip raises no such bit.
+    observation: link([...OBSERVED, 'observation'], WORK | VISIT),
     market: link(BOUGHT, 0),
     // The held plan's own proof (EconomyContext.heldBuildVerdict).
     crafter_mp: link(['sources'], FIELD | VISIT),

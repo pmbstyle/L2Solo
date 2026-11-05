@@ -2,10 +2,11 @@
 //  - context cache (layer B, LRU 64 per thread) and the kit profile store measured apart.
 // Run from the repo root: L2NODE_CONFIG_FILE=config/default.ini node --expose-gc <this> <world save database.sqlite> [bots=400]
 require('../src/Global');
+const SavedStats = require('../src/GameServer/Bot/SavedStats');
+const InventorySummary = require('../src/GameServer/Bot/Population/InventorySummary');
 const { DatabaseSync } = require('node:sqlite');
 const db = new DatabaseSync(process.argv[2], { readOnly: true });
 const N = Number(process.argv[3] || 400);
-const json = raw => { try { return JSON.parse(raw || '{}'); } catch { return {}; } };
 invoke('GameServer/DataCache').init();
 const Board = invoke('GameServer/AfkTrade/BoardIndex').BoardIndex; const board = new Board();
 const spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
@@ -16,7 +17,7 @@ const rows = db.prepare(`SELECT l.* FROM bot_life_state l ORDER BY l.characterId
 const states = rows.map(r => ({ characterId: r.characterId, name: r.characterName, level: r.level, exp: r.exp, sp: r.sp, adena: r.adena,
     phase: r.phase, activity: r.activity, currentRegion: r.currentRegion, spotId: r.spotId,
     loc: { locX: r.locX, locY: r.locY, locZ: r.locZ }, vitals: { hp: r.hp, maxHp: r.maxHp, mp: r.mp, maxMp: r.maxMp },
-    timing: {}, party: { partyId: r.partyId }, stats: json(r.statsJson), inventory: json(r.inventorySummary) }));
+    timing: {}, party: { partyId: r.partyId }, stats: SavedStats.merge(r.statsJson, r.mindJson), inventory: InventorySummary.read(r.inventorySummary) }));
 const heap = () => { gc(); gc(); const used = process.memoryUsage(); return used.heapUsed + used.arrayBuffers; };
 for (const s of states.slice(0, 20)) { try { Econ.forState(s, { timestamp: 1e12 }); } catch {} }   // warm JIT and static tables
 Econ.reset(); for (const s of states) Profile.forgetBuild(s.characterId);

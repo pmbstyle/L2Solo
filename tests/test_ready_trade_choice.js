@@ -1,5 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 require('../src/Global');
 const Data = invoke('GameServer/DataCache');
 Data.init();
@@ -122,22 +123,28 @@ try {
 console.log('PASS trade detour preserves and resumes the selected purchase');
 
 const Pricing = invoke('GameServer/Bot/Economy/MarketPricing');
-const stockState = { ...state, level: 30, activity: 'hunting', stats: {},
-    inventory: { 1463: { selfId: 1463, amount: 100, kind: 'Other.Shot' } } };
+// The personal shot target is the plan's published one (stats.stockTargets,
+// EconomyContext.keptTargets), the same the listing keeps.
+const stockBare = { ...state, level: 30, activity: 'hunting' };
+const shotId = invoke('GameServer/Inventory/ShotStock').planForState(stockBare).selfId;
+const stockState = { ...stockBare, inventory: { [shotId]: { selfId: shotId, amount: 100, kind: 'Other.Shot' } },
+    stats: { stockTargets: Packet.stockTargets({ potionId: invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(stockBare).selfId,
+        potionTarget: 0, shotId, shotTarget: 60, shotCurrentAtBuild: 100, potionSurvivalTarget: 0, gapHorizonHours: 0, shotsCanRestock: true,
+        shotSurvivalTarget: 0, scrollHours: 0 }) } };
+// A review's own stock reader (here a different target) does not decide it.
 const stockEconomy = { hourAdena: 1000, moneyPrice: .001, persona: { traits: {}, understanding: .3 },
-    network: {}, stock: kind => kind === 'shots' ? { itemId: 1463, target: 60 }
-        : { itemId: 1060, target: 0 } };
+    network: {}, stock: kind => kind === 'shots' ? { itemId: shotId, target: 0 } : { itemId: 1060, target: 0 } };
 const trip = () => 0; trip.details = () => ({ known: true, fees: 0, hours: 0 });
 const context = input => Pricing.traderContext(input, { economy: stockEconomy, board, tripCost: trip });
-const advertised = { storeType: 1, custodyPolicy: 1, selfId: 1463, count: 100, enchant: 0 };
+const advertised = { storeType: 1, custodyPolicy: 1, selfId: shotId, count: 100, enchant: 0 };
 assert.equal(context(stockState).saleCount(advertised), 40, 'the board offers only surplus over personal ammunition');
-assert.equal(context({ ...stockState, inventory: { 1463: { ...stockState.inventory[1463], amount: 20 } } })
+assert.equal(context({ ...stockState, inventory: { [shotId]: { ...stockState.inventory[shotId], amount: 20 } } })
     .saleCount(advertised), 0, 'consumed stock below the personal reserve has no saleable remainder');
 assert.equal(context({ ...stockState, stats: { tradeMeeting: [1, 1] } }).saleCount(advertised), 100,
     'accepted meeting custody keeps its quote until completion');
 // Backed quantities come from an actual owned record, separate from the bag.
 board.put({ id: 97, ownerId: stockState.characterId, kind: 'shop', custodyPolicy: 0,
-    storeType: 1, town: 'Dwarven Village', lines: [{ lineId: 98, selfId: 1463, count: 100, price: 10 }] });
+    storeType: 1, town: 'Dwarven Village', lines: [{ lineId: 98, selfId: shotId, count: 100, price: 10 }] });
 const backedStock = board.ownerLines(stockState.characterId).find(line => line.lineId === 98);
 assert.equal(context(stockState).saleCount(backedStock), 100,
     'backed shop stock is independent of ammunition still in the bag');

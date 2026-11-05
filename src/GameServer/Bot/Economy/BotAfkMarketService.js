@@ -1,5 +1,6 @@
 const ClassProgression = invoke('GameServer/ClassProgression');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
+const Packet = require('./StatsPacket');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
@@ -28,6 +29,8 @@ const ShotCraftPolicy = require('./ShotCraftPolicy');
 const ColdShotEconomyService = require('./ColdShotEconomyService');
 const TradeMeetingService = require('../../AfkTrade/TradeMeetingService');
 const BuyAdPolicy = require('./BuyAdPolicy');
+const ArrowStock = require('../../Inventory/ArrowStock');
+const BeginnerShots = require('../../Items/C4BeginnerShots');
 const MAX_LINES = BoardRules.BOT_SHOP_LINES;
 const reviewedInventory = new Map();
 const pending = new Map();
@@ -127,11 +130,30 @@ function standingBuyNeed(state, lines, candidates) {
         && items.has(Number(need.target?.itemId)));
 }
 
+// The bag a sell-shop review read (MarketListingPolicy.evaluate): every stack but
+// Adena, its amount, enchant and worn count. The shots a bot fires stay out while
+// they cannot move a listing: ItemDisposition.saleCandidates never lists the
+// personal shot or a beginner shot, whatever their amounts, which reach the other
+// stacks only through the kit the sale keeps (the published kit's targets and the
+// shot's own reserve, while that kit holds: the key carries it) and an archer's
+// arrow room (ArrowStock.keptAmounts: the weight of the rest), so not with arrows.
 function stockSignature(state) {
-    return Object.values(state?.inventory || {})
-        .filter((item) => Number(item.selfId) !== 57 && Number(item.amount || 0) > 0)
-        .map((item) => `${item.selfId}:${item.amount}:${item.enchant ?? ''}:${item.equippedCount || 0}`)
-        .sort().join('|');
+    const items = Object.values(state?.inventory || {})
+        .filter((item) => Number(item.selfId) !== 57 && Number(item.amount || 0) > 0);
+    const fired = firedShots(state, items);
+    const rows = items.filter((item) => !fired.has(Number(item.selfId)))
+        .map((item) => `${item.selfId}:${item.amount}:${item.enchant ?? ''}:${item.equippedCount || 0}`);
+    if (fired.size) rows.push('kit');
+    return rows.sort().join('|');
+}
+
+const NO_SHOTS = new Set();
+function firedShots(state, items) {
+    if (items.some(ArrowStock.isArrow)) return NO_SHOTS;
+    const ShotStock = invoke('GameServer/Inventory/ShotStock'), plan = ShotStock.planForState(state);
+    if (!ShotStock.isPersonalShot(state, plan.selfId)
+        || !invoke('GameServer/Bot/Economy/EconomyContext').saleKitPublished(state)) return NO_SHOTS;
+    return new Set([Number(plan.selfId), BeginnerShots.SOULSHOT, BeginnerShots.SPIRITSHOT]);
 }
 
 function rememberInventory(ownerId, state) {
@@ -371,7 +393,7 @@ async function withdrawSourceInvalidBuyAds(ownerId) {
 // first (the trip pays from the wallet); without a buy goal the ads stand
 // while the needs still ask for their items (standingBuyNeed), else go.
 async function reduceStandingBids(state, ads, { beforeWrite } = {}) {
-    const hour = Number(state.stats?.money?.[0]);
+    const hour = Number(Packet.hourAdena(state.stats?.money));
     if (state.phase !== 'cold' || !ads.length || !Number.isFinite(hour) || hour < 0
         || state.stats?.tradeMeeting) return false;
     // A preparation is still a quote, checked by record revision at native
@@ -866,8 +888,10 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
     if (plan.sell?.length) await run(async () => {
         // A line's pricing state (MarketPricing.lineState) reads the persona,
         // the board and the item beliefs, never the hunt/stock forecast: the
-        // card context serves it. Only an enchanted line's belief reads
-        // economy.price; that line takes the full context, built once.
+        // card context serves it. The worker's row carries its belief width
+        // (ColdEconomyPlan.sellSigma), so no belief is rebuilt here; a row
+        // without one reads it, and an enchanted line's belief reads
+        // economy.price: that line takes the full context, built once.
         const ctx = ListingPolicy.cardTraderContext(state);
         let full = null;
         const lineContext = enchant => {
@@ -879,7 +903,7 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         // Listings come from MarketListingPolicy.evaluate: sale candidates
         // and classify already admitted their sources.
         let ownSell = null; // read once: the map below writes nothing
-        const listings = plan.sell.slice(0, 8).map(([selfId, count, price, , plannedEnchant]) => {
+        const listings = plan.sell.slice(0, 8).map(([selfId, count, price, , plannedEnchant, plannedSigma]) => {
             const item = ItemTemplateIndex.find(DataCache.items, selfId);
             let enchant = plannedEnchant;
             if (enchant === undefined) {
@@ -894,10 +918,11 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
                 enchant = [...enchants][0];
             }
             if (!Number.isSafeInteger(enchant) || enchant < 0) throw Error('economy_plan_invalid_enchant');
+            const sigma = Number.isSafeInteger(plannedSigma) && plannedSigma > 0 ? plannedSigma / 1e4 : 0;
             return { selfId: Number(selfId), count: Number(count), price: Number(price), enchant,
                 name: item?.template?.name || `Item ${selfId}`, kind: item?.template?.kind || '',
-                pricing: MarketPricing.lineState(selfId, lineContext(enchant),
-                    { price: Number(price), storeType: AfkTrade.SELL, enchant, count: Number(count) }) };
+                pricing: MarketPricing.lineState(selfId, sigma > 0 ? ctx : lineContext(enchant),
+                    { price: Number(price), storeType: AfkTrade.SELL, enchant, count: Number(count), sigma }) };
         });
         const planTowns = new Map(listings.map((line, at) => [lineKey(line), plan.sell[at][3]]));
         // The worker marks promotion at a real visit (or a standing shop's
@@ -959,7 +984,7 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         // this does not choose a new price or rebuild the worker's wishes.
         const budgetState = { ...state, adena: PurchaseFunding.budget(state, escrow) };
         const owned = AfkTrade.boardIndex().ownerLines(ownerId);
-        wanted = BuyAdPolicy.keepRetainedBids(state, owned, wanted, Number(state.stats?.money?.[1]), escrow);
+        wanted = BuyAdPolicy.keepRetainedBids(state, owned, wanted, Number(Packet.moneyPrice(state.stats?.money)), escrow);
         let town = buyAdTown(state, ads, wanted);
         for (let pass = 0; pass <= MAX_LINES + BoardRules.BOT_RECORDS.buy_ad; pass++) {
             wanted = BuyAdPolicy.retainedLines(budgetState, wanted, owned, town);

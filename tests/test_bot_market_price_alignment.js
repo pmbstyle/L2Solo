@@ -1,4 +1,5 @@
 const assert = require('assert');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const { useRate } = require('./helpers/progressionRate');
 const fs = require('node:fs');
 require('./helpers/databaseIsolation');
@@ -181,7 +182,7 @@ function purchaseFor(buyer) {
         'a native shopping leaf comes from the funded queue');
     const reserve = kitReserve(buyer, economy);
     close(economy.survivalReserve, reserve, 'one-hour survival reserve');
-    assert.strictEqual(economy.statsPacket.money[2], Math.round(reserve), 'native saved reserve rounding');
+    assert.strictEqual(Packet.survivalReserve(economy.statsPacket.money), Math.round(reserve), 'native saved reserve rounding');
     const funded = { ...buyer, stats: { ...buyer.stats, ...economy.statsPacket } };
     const allowed = itemBudget(funded, id);
     assert.strictEqual(Funding.spendable(funded, 0, { itemId: id }), allowed);

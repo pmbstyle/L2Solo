@@ -64,6 +64,7 @@ async function run() {
 
         await Database.execute(["INSERT INTO accounts(username,password) VALUES('bot_pop_surplus','test')", []]);
         await Database.execute(["UPDATE characters SET username='bot_pop_surplus' WHERE id IN (?,?)", [id, mate]]);
+        await Database.execute(["INSERT INTO bot_life_state(characterId,accountName,level,statsJson) VALUES(?,'bot_pop_surplus',33,'{}')", [mate]]);
         const created = await Database.createAutonomousClan({ name: 'SurplusClan', leaderId: id, memberIds: [id, mate],
             founderQuorum: 2, maxBotClans: 40, maxBotMemberShare: 1, stateJson: { level: 2 } });
         assert.equal(created.ok, true, created.code);

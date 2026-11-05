@@ -135,6 +135,33 @@ async function main() {
             'formation keeps every chosen member; the spot room is not a formation gate');
         assert(Life.cachedState(limited[2].characterId).party?.partyId);
     } finally { Profiles.cache = savedCache; }
+    // A refused roster the assembly asks again on the same members is answered by
+    // its held refusal, with no second request; a member that changed is asked
+    // again. A cooling member wakes its group at its own end: it asks no retry.
+    {
+        let asks = 0;
+        Coordinator.requestPartyGoals = async (party, selected) => { asks++; return { ok: true,
+            sources: GoalCalculation.sources(selected), joint: GoalPolicy.formingVerdict(selected, party.stats.forming.requested) }; };
+        Income.compare = (_state, _peers, options) => ({ ...Income.evaluate({ solo: { income: 5000 }, party: { income: 10 }, cash: 5000 }),
+            at: options.prepared.timestamp, soloSource: null, partySource: null });
+        Config.partyMaxSize = 2;
+        const refused = { ...request, objectiveKey: 'event-fixture:refused', requestedAt: Date.now() };
+        const pair = [await seed({ partyRequest: refused }), await seed({ partyRequest: refused })];
+        assert.deepEqual(await Population.formBackgroundParties(pair), []);
+        assert.equal(asks, 1);
+        assert.deepEqual(await Population.formBackgroundParties(pair), []);
+        assert.equal(asks, 1, 'the held refusal answers the retry');
+        const leveled = await Life.upsertState({ ...pair[0], level: 11 }, 'refused_member_fixture');
+        assert.deepEqual(await Population.formBackgroundParties([leveled, pair[1]]), []);
+        assert.equal(asks, 2, 'a member that changed is asked again');
+        const cooling = await Life.upsertState({ ...pair[1], stats: { ...pair[1].stats, partyRequest: { ...refused,
+            deferReason: 'party_assembly_timeout', deferredUntil: Date.now() + 60000 } } }, 'cooling_member_fixture');
+        assert.equal((await Population.runPartyAssemblyEvent([cooling], Date.now())).deferred, false,
+            'a cooling member asks no retry: its own end wakes the group');
+        Income.compare = (_state, _peers, options) => ({ ...Income.evaluate({ solo: null, party: { income: 1000 }, cash: 5000 }),
+            at: options.prepared.timestamp, soloSource: null, partySource: null });
+    }
+    console.log('PASS a refused roster is asked once per member change; a cooling member asks no retry');
     Population.started = false; Population.playerActivityProfile = savedProfile;
     Coordinator.requestPartyGoals = originalPartyGoals;
     Income.compare = originalIncome;

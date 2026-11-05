@@ -60,12 +60,9 @@ function traderContext(state, deps = {}) {
             const board = deps.board || economy.board;
             const source = backed ? invoke('GameServer/Bot/Economy/MarketListingPolicy')
                 .ownSaleInputs(state, board?.ownerLines?.(Number(state.characterId)) || []).state : state;
-            const candidates = Disposition.saleCandidates(source, { unlimited: true,
-                keptAmounts: {
-                    ...invoke('GameServer/Inventory/ShotStock').keptAmounts(state, economy),
-                    ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: economy.stock('potions').target }),
-                    ...invoke('GameServer/Bot/Travel/ScrollStock').keptAmounts(state)
-                }, reserved: economy.craftReservations || Disposition.selectedCraftAmounts(state, economy.network) });
+            // The bot's own kept stock, as its listing keeps it (keptStock over the plan's published targets).
+            const candidates = Disposition.saleCandidates(source, { unlimited: true, keptAmounts: Disposition.keptStock(state),
+                reserved: economy.craftReservations || Disposition.selectedCraftAmounts(state, economy.network) });
             const amounts = new Map(candidates.map(item => [`${item.selfId}:${item.enchant || 0}`, item.count]));
             const lines = new Map();
             if (backed) {
@@ -98,7 +95,8 @@ function traderContext(state, deps = {}) {
         preparedWorth: deps.preparedWorth || (economy.network?.demands && economy.projection?.values
             ? id => economy.network.demands.has(`item:${id}`) || economy.projection.values.has(Number(id))
                 ? economy.worth(id) : NaN : typeof economy.worth === 'function' && !economy.price ? id => economy.worth(id) : null),
-        preparedBuffer: deps.preparedBuffer || null,
+        // The version of the card preparedWorth reads (ColdEconomyDecision.usefulnessVersion), main's card reader.
+        preparedVersion: deps.preparedVersion ?? null,
         preparedValue: economy.network?.demands && economy.projection?.values ? id => {
             const key = `item:${id}`;
             return economy.network.demands.has(key) ? economy.network.demands.get(key)

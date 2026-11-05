@@ -1,5 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const fs = require('node:fs');
 const filename = require.resolve('../src/GameServer/Bot/Economy/BuyAdPolicy');
 const loaded = { exports: {} }, priced = [];
@@ -121,7 +122,7 @@ try {
         const liveCase = { characterId: sample.id, adena: sample.wallet, stats: { money: sample.money } };
         const [prepared] = NativePolicy.linesFor(liveCase, null, {
             watchList: [{ itemId: 1458, amount: sample.count, key: 'power:76:7', recipeId: 0,
-                worth: sample.price, valueHours: 202, valueRate: sample.money[4] }],
+                worth: sample.price, valueHours: 202, valueRate: Packet.fundedRatio(sample.money, 0) }],
             board: { ownerLines: () => [{ kind: 'buy_ad', storeType: 3, town: 'Dion', selfId: 1458,
                 count: sample.oldCount, price: sample.oldPrice }] }, townFor: () => 'Dion'
         });

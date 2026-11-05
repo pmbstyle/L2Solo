@@ -3,6 +3,8 @@ const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 const C4GradePenalty = invoke('GameServer/Items/C4GradePenalty');
+const C4EquipmentItemSkills = invoke('GameServer/Items/C4EquipmentItemSkills');
+const LEGACY_BUFFS = ['might', 'shield', 'haste', 'windwalk'];
 
 function effectiveBaseStat(actor, stat, fallback) {
     const base = Number(fallback()) || 0;
@@ -162,9 +164,27 @@ function legacyBuffAdd(actor, typeOrKey, stat, fallback = 0) {
     return BuffCatalog.statAdd(actor, typeOrKey, stat, fallback);
 }
 
+// Everything a rebuild reads that can change on a live actor, as one string:
+// level, class, expertise, the legacy buff markers, the worn items (and
+// which of their skills' conditions hold), the effects, the passive skills
+// and their conditions (EffectStats.inputKey). Base stats and item templates
+// never change on a live actor; hennas are rebuilt by their only writer
+// (HennaService); the carried load is rewritten by refresh.
+function inputKey(actor) {
+    const items = actor.backpack?.fetchItems?.() || [];
+    let key = `${actor.fetchLevel?.()}:${actor.fetchClassId?.()}:${C4GradePenalty.expertiseIndex(actor)}:`;
+    for (const buff of LEGACY_BUFFS) key += BuffCatalog.isActive(actor, buff) ? '+' : '-';
+    key += '|';
+    for (const item of items) {
+        if (item?.fetchEquipped?.()) key += `${item.fetchId?.()}:${item.fetchSelfId?.()}:${item.fetchEnchantLevel?.()}:${item.fetchSlot?.()},`;
+    }
+    return `${key}|${C4EquipmentItemSkills.conditionKey(actor, items)}|${EffectStats.inputKey(actor)}`;
+}
+
 function calculateStats(session, actor) {
     C4GradePenalty.sync(actor);
     actor.backpack?.syncEquipmentItemSkills?.(actor);
+    const inputs = inputKey(actor);
     setCollectiveTotalHp      (actor);
     setCollectiveTotalMp      (actor);
     setCollectiveTotalCp      (actor);
@@ -180,7 +200,26 @@ function calculateStats(session, actor) {
     setCollectiveTotalCastSpd (actor);
     setCollectiveTotalWalkSpd (actor);
     setCollectiveTotalRunSpd  (actor);
+    // Kept only when no input moved while the stats were built (a new max HP
+    // can flip an HP condition): then a rebuild on this key gives these stats.
+    actor.statsInputKey = inputKey(actor) === inputs ? inputs : undefined;
 }
+
+// A vitals update (a regen tick, a received hit, a DoT tick) rebuilds the
+// stats only when an input changed since the last rebuild, an HP condition
+// crossing included. Otherwise it writes only what the rebuild would still
+// change: HP, MP and CP clamped to their maxima, and the carried load.
+calculateStats.refresh = (session, actor) => {
+    const inputs = actor.statsInputKey;
+    if (inputs === undefined || !(Number(actor.fetchMaxCp?.()) > 0) || inputKey(actor) !== inputs) {
+        calculateStats(session, actor);
+        return;
+    }
+    actor.setHp(Math.min(actor.fetchHp(), actor.fetchMaxHp()));
+    actor.setMp(Math.min(actor.fetchMp(), actor.fetchMaxMp()));
+    actor.setCp(Math.min(actor.fetchCp(), actor.fetchMaxCp()));
+    actor.setLoad(actor.backpack.fetchTotalLoad());
+};
 
 calculateStats.refreshConditionalCombatStats = (actor) => {
     setCollectiveTotalEvasion(actor);

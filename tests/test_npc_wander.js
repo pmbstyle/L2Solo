@@ -158,6 +158,14 @@ try {
         assert.equal(player.packets.length, 2, 'no periodic movement packet spam');
     });
 
+    check('a resting NPC entering view gets its NpcInfo alone and keeps no movement for it', () => {
+        const npc = npcAt(); const late = wireObserver();
+        worldFor([npc], [late]);
+        late.dataSendToMe(Response.npcInfo(npc));
+        assert.deepEqual(late.packets.map(p => p[0]), [0x16]);
+        assert.equal(npc.builtAutomation(), undefined, 'seeing a resting NPC builds none of its movement');
+    });
+
     check('late observer receives NpcInfo then the remaining route from its snapshot position', () => {
         const npc = npcAt(); const first = wireObserver(); const late = wireObserver();
         first.knownNpcIds.add(npc.fetchId());

@@ -80,19 +80,6 @@ function currentActorRecord(runtime, record) {
         && record.session.actor === record.actor && runtime.index.getSource(record.id, 'actor') === record;
 }
 
-function rawCoordinate(value) {
-    if (value !== null && !['number', 'string', 'boolean'].includes(typeof value)) return null;
-    const number = Number(value);
-    return Number.isFinite(number) ? number : null;
-}
-
-function rawActorLoc(actor) {
-    if (typeof actor.fetchLocX !== 'function' || typeof actor.fetchLocY !== 'function') return null;
-    const rawX = actor.fetchLocX(), rawY = actor.fetchLocY();
-    const locX = rawCoordinate(rawX), locY = rawCoordinate(rawY);
-    return locX !== null && locY !== null ? { locX, locY } : null;
-}
-
 function refreshActorPresence(runtime, record) {
     if (!currentActorRecord(runtime, record)) return false;
     const targetId = Number(record.actor.fetchDestId?.() || 0);
@@ -238,12 +225,14 @@ function isVisibleFrom(creature, candidate) {
         Number(candidate.actor.fetchLocX() ?? 0), Number(candidate.actor.fetchLocY() ?? 0));
 }
 
+// realOnly reads the index's real-player cells (online, finite XYZ, PlayerActivitySignal's
+// real session, kept by updateUserLocation): a bot packet no longer walks the hot bots around it.
 function visibleUserSessions(user, session, creature, realOnly) {
     const runtime = currentUserLocationIndex(user);
     if (!runtime) return [];
     const loc = { locX: Number(creature?.fetchLocX?.()), locY: Number(creature?.fetchLocY?.()), locZ: 0 };
     if (!Number.isFinite(loc.locX) || !Number.isFinite(loc.locY)) return [];
-    return runtime.index.nearSources(loc, CLIENT_VISIBILITY_RADIUS, { view: 'actor', kind: 'all',
+    return runtime.index.nearSources(loc, CLIENT_VISIBILITY_RADIUS, { view: 'actor', kind: realOnly ? 'player' : 'all',
         accept: (record) => !record.retired
             && record.session !== session && (!realOnly || !isBotSession(record.session))
             && record.actor.fetchIsOnline?.() === true })
@@ -348,7 +337,7 @@ const World = {
         };
         RaidEntityIndex.reset(this);
         this.npc.raidBossState = await RaidBossState.load();
-        this.items = { spawns   : [], nextId: 5000000 };
+        this.items = { spawns   : [], nextId: 5000000, byLeader: new Map() };
 
         World.spawnNpcs();
         RaidBossMinionManager.start(this);
@@ -503,28 +492,6 @@ const World = {
             }
         }
         return { record, session: record?.session ?? null, distance: Math.sqrt(distanceSquared), count: runtime.index.presenceSize() };
-    },
-
-    botRealPlayerIndex: true,
-
-    botVisibleRealPlayers(session, bot) {
-        if (!session || !bot) return [];
-        const point = rawActorLoc(bot);
-        if (!point) return [];
-        const runtime = currentUserLocationIndex(this.user);
-        if (!runtime) return [];
-        const records = runtime.index.nearSources({ ...point, locZ: 0 }, CLIENT_VISIBILITY_RADIUS, {
-            view: 'actor', kind: 'all',
-            accept: record => {
-                if (record.retired || record.session === session) return false;
-                const candidate = record.session, actor = record.actor;
-                return !!actor.fetchIsOnline?.() && !!candidate.accountId
-                    && !String(candidate.accountId).startsWith('bot_')
-                    && !!rawActorLoc(actor);
-            }
-        });
-        records.sort((left, right) => left.order - right.order);
-        return records.map(record => record.session);
     },
 
     pvpPartyMembershipKeys: PvpPartyMembershipKeys,

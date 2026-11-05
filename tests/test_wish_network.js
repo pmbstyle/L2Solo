@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const { WishNetwork, moneyQueue } = require('../src/GameServer/Bot/Economy/WishNetwork');
 
 const queue = moneyQueue([
@@ -208,7 +209,7 @@ console.log('PASS finite liquidation / partial gap / fees / unknown route / rece
 const { packetFor, PACKET_ROWS } = require('../src/GameServer/Bot/Economy/PurchaseFunding');
 const rowItems = result => {
     const packet = packetFor(result, result.hourAdena, 0), items = [];
-    for (let index = 4; index + 2 < packet.length; index += 3) if (packet[index + 2]) items.push(packet[index + 2]);
+    for (let row = 0; row < Packet.fundedRows(packet); row++) if (Packet.fundedItem(packet, row)) items.push(Packet.fundedItem(packet, row));
     return items;
 };
 const manyWishes = count => ({ wallet: 1e6, hourAdena: 1000, remembered: false,

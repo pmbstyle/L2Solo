@@ -113,7 +113,7 @@ class MarketBuyerWaiters {
                     const demand = this.demandsFor(state, timestamp).find(([id, signal]) => id === itemId
                         && signal.ready && Number(signal.budget) - reserve >= price);
                     if (!demand) continue;
-                    if (this.wake(node.ownerId, timestamp)) woken.push(node.ownerId);
+                    if (this.wake(node.ownerId, timestamp, { itemId, price })) woken.push(node.ownerId);
                 }
                 if (inspected === 5) break;
             }

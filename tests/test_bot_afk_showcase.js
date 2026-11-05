@@ -87,9 +87,23 @@ async function groupedReplacement() {
     assert.deepEqual(await bag(), fragments);
     await Database.execute(['DELETE FROM items WHERE characterId=?', [partsOwner]]);
 
+    // In its own town the shop keeps its record: the first line keeps its
+    // row and gives a unit back, the second takes two; totals as a reopen.
+    const sameTownUsed = await item(2);
+    shop = (await publish([line(await item(2), 2)])).shop;
+    shop = (await replace(shop, [line(sameTownUsed, 1), line(shop.lines[0].sourceObjectId, 2)])).shop;
+    assert.deepEqual(shop.lines.map(row => row.count), [1, 2]);
+    assert.equal(total(await bag()), 1, 'three of the four units are listed, one is in the bag');
+    await Database.closeAfkTradeShop(partsOwner);
+    assert.equal(total(await bag()), 4);
+    await Database.execute(['DELETE FROM items WHERE characterId=?', [partsOwner]]);
+
     const partiallyUsed = await item(2);
     shop = (await publish([line(await item(2), 2)])).shop;
-    shop = (await replace(shop, [line(partiallyUsed, 1), line(shop.lines[0].sourceObjectId, 2)])).shop;
+    // A shop moved to another town is closed and opened again (in its own
+    // town the first line would keep the old row): every line takes anew.
+    shop = (await publish([line(partiallyUsed, 1), line(shop.lines[0].sourceObjectId, 2)],
+        { replace: true, expectedRevision: shop.revision, town: 'Dion' })).shop;
     assert.deepEqual(shop.lines.map(row => row.count), [1, 2]);
     assert.deepEqual((await bag()).map(row => [row.id, row.amount]), [[partiallyUsed, 1]],
         'bounded selection skips a previously consumed ID with stock before taking both returned pieces');
@@ -246,10 +260,12 @@ async function groupedReplacement() {
         listings[0].enchant = 1;
         const enchanted = prepare();
         assert.equal(enchanted.shop, 'Giran', 'a different enchant requires replacement even at the same item, count and price');
-        assert.deepEqual(enchanted.sell, [[626, 1, 93905, 'Giran', 1]]);
+        assert.deepEqual(enchanted.sell.map(row => row.slice(0, 5)), [[626, 1, 93905, 'Giran', 1]]);
+        assert(enchanted.sell[0][5] > 0, 'the row carries the belief width read on the worker');
         await Market.executePlan(state, enchanted);
         const enchantedLine = Afk.findOwnerProjection(owner).shop.lines[0];
         assert.equal(enchantedLine.enchant, 1);
+        assert.equal(enchantedLine.pricing.sigma, enchanted.sell[0][5] / 1e4, 'main publishes the worker belief width');
         assert.equal(enchantedLine.sourceObjectId, shields.find(row => row.enchant === 1).id);
         const remaining = await Database.fetchItems(owner);
         assert.equal(remaining.filter(row => row.selfId === 626 && row.enchant === 0)

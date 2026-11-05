@@ -140,9 +140,10 @@ function restockPlan(value, options = {}) {
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const state = value?.backpack ? Economy.stateForActor(value) : value;
     // The budget needs the review; the same review gives the target. Main
-    // reads the basics (a near bot's decision is taken in the background).
+    // reads the plan's published kit (keptKit: a near bot's decision is taken in the background).
     const onMain = require('node:worker_threads').isMainThread;
-    const context = options.context || (onMain || options.targetAmount !== undefined ? Economy.basics(state) : Economy.forState(state));
+    const context = options.context || (onMain ? Economy.keptKit(state)
+        : options.targetAmount !== undefined ? Economy.basics(state) : Economy.forState(state));
     const targetAmount = Math.max(0, Number(options.targetAmount ?? context.stock('potions').target) || 0);
     // The purchased potion's own row (written by the purchase) and the whole stock (what is missing).
     const currentAmount = options.inventory

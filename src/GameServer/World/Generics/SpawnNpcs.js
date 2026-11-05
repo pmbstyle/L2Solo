@@ -29,8 +29,32 @@ function notifyNearby(world, npc, response = ServerResponse) {
     });
 }
 
+// An NPC's model inherits its template: the datapack row flattened by crushOb
+// (primitives only, so no inherited value can be edited in place), one per
+// deep-frozen row (DataCache.init), which never changes. Every write to the
+// model (setters, spoil, manor, drop and overhit state) defines a field of the
+// NPC's own: [[Set]] on an inherited writable property does not reach the
+// prototype. The template is therefore not frozen (a frozen prototype refuses
+// those writes, the override mistake) and never leaves this module. Any other
+// row (a quest NPC's edited clone, a test literal) gets a template of its own.
+const sharedTemplates = new WeakMap();
+
+function isDeepFrozen(value) {
+    if (value === null || typeof value !== 'object') return true;
+    return Object.isFrozen(value) && Object.keys(value).every((key) => isDeepFrozen(value[key]));
+}
+
+function npcModel(row, coords) {
+    let template = sharedTemplates.get(row);
+    if (!template) {
+        template = utils.crushOb(row);
+        if (row && isDeepFrozen(row)) sharedTemplates.set(row, template);
+    }
+    return Object.assign(Object.create(template), coords);
+}
+
 function createNpc(world, npc, coords, spawnDefinition = null) {
-    const instance = new Npc(world.npc.nextId++, { ...utils.crushOb(npc), ...coords });
+    const instance = new Npc(world.npc.nextId++, npcModel(npc, coords));
     instance.spawnDefinition = spawnDefinition;
     instance.spawnOrigin = { locX: coords.locX, locY: coords.locY, locZ: coords.locZ };
     if (npc.template?.raidBoss === true) instance.raidInstanceId = `${Date.now()}:${instance.fetchId()}`;
@@ -57,11 +81,11 @@ function catalogueSpawns(world) {
         const random = TendencyRoll.seeded(`spot-catalogue:${at}`);
         const coords = utils.size(definition.spawn.coords) > 0 ? { ...definition.spawn.coords[0] }
             : { ...territoryPoint(definition.bounds, random), head: 0 };
-        const leader = new Npc(-(spawns.length + 1), { ...utils.crushOb(definition.npc), ...coords });
+        const leader = new Npc(-(spawns.length + 1), npcModel(definition.npc, coords));
         leader.spawnDefinition = definition;
         spawns.push(leader);
         for (const minion of MinionManager.catalogueMinions(leader, random)) {
-            const instance = new Npc(-(spawns.length + 1), { ...utils.crushOb(minion.template), ...minion.coords });
+            const instance = new Npc(-(spawns.length + 1), npcModel(minion.template, minion.coords));
             Object.assign(instance, minion.link);
             spawns.push(instance);
         }
@@ -278,9 +302,9 @@ function spawnNpcs() {
     const exclusive = new Set(invoke('GameServer/Quest/QuestService').quests()
         .flatMap(quest => quest.exclusiveSpawns || []));
     // Datapack rows are frozen by DataCache.init and never written by an
-    // instance (createNpc flattens a fresh copy), so every definition borrows
-    // them. Only the wrapper is per instance: DayNightSpawnManager and
-    // RaidBossMinionManager key on its identity.
+    // instance (its model inherits one shared flattened copy, npcModel), so
+    // every definition borrows them. Only the wrapper is per instance:
+    // DayNightSpawnManager and RaidBossMinionManager key on its identity.
     const templates = new Set();
     let definitions = 0;
     DataCache.npcSpawns.forEach((item) => {

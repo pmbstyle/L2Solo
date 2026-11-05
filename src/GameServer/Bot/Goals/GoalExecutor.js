@@ -41,7 +41,8 @@ function beginMarketTravel(state, goal, timestamp = Date.now(), { economy = null
     if (!buyingGear && !buyingMaterial && !buyingErrand && !sellingInventory && !improving) return null;
     if (!improving && invoke('GameServer/Bot/Economy/BotAfkMarketService').canTradeRemotely(state, goal)) return null;
     if ((buyingGear || buyingMaterial) && Number(state.stats?.marketRetryAfter || 0) > timestamp) return null;
-    if (sellingInventory && !forcedInventoryCleanup && Number(state.stats?.marketSellRetryAfter || 0) > timestamp) return null;
+    if (sellingInventory && !forcedInventoryCleanup
+        && invoke('GameServer/Bot/Economy/ItemDisposition').saleRetryHolds(state)) return null;
 
     if (buyingGear || buyingMaterial || buyingErrand) {
         const selfId = Number(goal.target?.itemId);
@@ -144,28 +145,28 @@ function finishVisit(state, timestamp, options) {
     const spotBackoff = returnState && !clanReturn
         ? SpotRiskPolicy.backoffForStates([returnState], destination.spotId, timestamp)
         : null;
-    // returnState stands at the saved spot, so the search's room filter takes
-    // it for the bot's own spot and never refuses it: the saved spot's room
-    // is read here, on main's world index, and a full one is left out of the
-    // search, which then picks another spot (ROUTE-ROOM-4). With no other
-    // spot the bot still goes home; the room is read again at arrival.
-    const refused = !!savedSpot && !clanReturn
-        && !SpotProfiles.roomFilterFor(BotLifeState.occupancyIndex(), SpotProfiles.ensure(), [state])(savedSpot.id);
-    // Keep a valid hunting origin. Replacing it with a fresh income pick
-    // sends material hunters to an unrelated camp; the worker's hunting
-    // leaf then immediately orders another trip back to its own source.
-    const acquisition = state.stats?.equipmentPlan;
-    const changedSource = acquisition?.status === 'active' && acquisition.next?.spotId
-        && String(acquisition.next.spotId) !== String(savedSpot?.id);
-    const keepOrigin = returnState && !clanReturn && !refused && !changedSource
-        && (acquisition?.status !== 'active' || invoke('GameServer/Bot/AI/GearAcquisitionPlanner')
-            .isPlanSourceViableForState(returnState, acquisition, { spots: SpotProfiles.ensure(), timestamp }))
-        && invoke('GameServer/Bot/Population/BotRoute').leafFitReader(returnState,
-            { spots: SpotProfiles.ensure(), timestamp })(savedSpot.id) === 'fit';
-    const selectedSpot = clanReturn || keepOrigin ? savedSpot : returnState
-        ? SpotProfiles.findForState(returnState, { timestamp, excludedSpotIds: refused ? [savedSpot.id] : [] })
-            || (spotBackoff ? null : savedSpot)
-        : null;
+    // Where the bot hunts next is the worker's decision, read here: the card's
+    // hunting leaf, else the spot the bot hunted before the trip, else its
+    // gear plan's source while that stays viable; a spot the bot's marks
+    // exclude (died, was full, avoided) is neither. Only without one does main
+    // search. A full spot is met at arrival (ROUTE-ROOM-4) and a spot the bot
+    // may no longer hunt by the worker's next trip start: one trip there
+    // before the worker moves it.
+    let selectedSpot = clanReturn ? savedSpot : null;
+    if (returnState && !clanReturn) {
+        const excluded = SpotRiskPolicy.excludedSpotIdsForStates([returnState]);
+        const usable = spotId => spotId != null && !excluded.has(String(spotId));
+        // lazy: cycle the coordinator loads PopulationService, which loads this module.
+        const leaf = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions?.activity(state);
+        const plan = state.stats?.equipmentPlan;
+        selectedSpot = (leaf?.activity === 'hunting' && usable(leaf.spotId) ? SpotProfiles.findById(leaf.spotId) : null)
+            || (usable(savedSpot.id) ? savedSpot : null)
+            || (plan?.status === 'active' && usable(plan.next?.spotId) && invoke('GameServer/Bot/AI/GearAcquisitionPlanner')
+                .isPlanSourceViableForState(returnState, plan, { spots: SpotProfiles.ensure(), timestamp })
+                ? SpotProfiles.findById(plan.next.spotId) : null)
+            || SpotProfiles.findForState(returnState, { timestamp })
+            || (spotBackoff ? null : savedSpot);
+    }
     // Remaining in town is safer than silently returning to a spot that is
     // already over the death threshold. A later lifecycle pass can retry
     // once another suitable route becomes available.

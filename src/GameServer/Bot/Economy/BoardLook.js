@@ -149,7 +149,7 @@ function inputsFor(state, line, ctx, target, at, previousAt, preparedDirty) {
     // ARCH-NOTE: reuse reserved scalar slot for raw prepared usefulness;
     // no demand producer is added by this price-attention change.
     target[at + 35] = sourceValue;
-    const reusable = sameIdentity && !preparedDirty && (ctx.preparedBuffer
+    const reusable = sameIdentity && !preparedDirty && (ctx.preparedVersion !== null && ctx.preparedVersion !== undefined
         || ctx.preparedValue && Object.is(target[previousAt + 35], sourceValue));
     const raw = line.storeType === 3 ? reusable ? target[previousAt + 14] : scalarWorth(ctx, line.selfId) : null;
     const worth = raw === null || raw === undefined ? NaN : Number(raw);
@@ -174,7 +174,10 @@ function inputsFor(state, line, ctx, target, at, previousAt, preparedDirty) {
         | Number(!!stock.assignedClan) << 5 | Number(stock.available === false) << 6
         | Number(['active', 'component_ready', 'ready_to_craft'].includes(state.stats?.equipmentPlan?.status)
             && Number(state.stats.equipmentPlan.target?.selfId) === Number(line.selfId)) << 7;
-    target[at + 21] = Number(ctx.hour); target[at + 22] = Number(ctx.moneyPrice);
+    // Of the money price a line's answer reads the wait it costs (the
+    // trader's discount rate, PriceDecision.waitRate: 0 with no urgent want);
+    // a bid's worth (usefulness / money price) is slot 14.
+    target[at + 21] = Number(ctx.hour); target[at + 22] = Number(ctx.trader?.wait);
 }
 
 function attention(state, line, ctx, observed) {
@@ -203,10 +206,14 @@ function review(state, lines, ctx, lookSeen) {
     for (const id of [...cache.keys()]) if (!own.some(line => Number(line.lineId) === id)) cache.delete(id);
     const first = own.length > MAX_LINES ? cache.cursor % own.length : 0;
     cache.cursor = own.length ? (first + MAX_LINES) % own.length : 0;
-    if ((ctx.preparedBuffer || null) !== cache.preparedBuffer || ctx.moneyPrice !== cache.preparedMoney
+    // A bid's worth is read again (every line marked) when an input of the
+    // prepared worth moves: the card (by its version), the money price (a
+    // worth is usefulness over it), understanding, knowledge. An ask reads
+    // no worth: its marking costs nothing.
+    if ((ctx.preparedVersion ?? null) !== cache.preparedVersion || ctx.moneyPrice !== cache.preparedMoney
         || ctx.understanding !== cache.preparedUnderstanding || ctx.knowledgeEnabled !== cache.preparedKnowledge) {
         cache[3] = (1 << MAX_OWNED_LINES) - 1;
-        cache.preparedBuffer = ctx.preparedBuffer || null;
+        cache.preparedVersion = ctx.preparedVersion ?? null;
         cache.preparedMoney = ctx.moneyPrice; cache.preparedUnderstanding = ctx.understanding;
         cache.preparedKnowledge = ctx.knowledgeEnabled;
     }

@@ -123,3 +123,40 @@ const fight = Resolver.resolve({ party: { ...party, spotId: syntheticSpot.id }, 
 assert.strictEqual(fight.partyPatch.stats.assemblyWait, null);
 assert(fight.debug.wins > 0);
 console.log('Party assembly timeout, live-time accounting, release, cooldown and recovery checks passed');
+
+// A published clan wait steps again only when a writer changes its row: no
+// 30 s step while it waits, at once on the change, its wait lived, not hunted.
+(async () => {
+    const Life = invoke('GameServer/Bot/Population/BotLifeState');
+    const { ColdSimulationKernel, lifecycleKind } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
+    const { stepElapsedMs } = require('../src/GameServer/Bot/Population/ColdSoloWindow');
+    const clanObjective = { ...objective, clanGoalKey: 'clan-goal', clanId: 7 };
+    const solo = { ...members[0], characterId: 31, activity: 'hunting', party: { partyId: null },
+        timing: { lastResolvedAt: at - minute }, simulation: { revision: 1 },
+        stats: { ...members[0].stats, clanPartyObjective: clanObjective } };
+    assert.strictEqual(lifecycleKind(solo), 'resolver');
+    const hold = Duty.hold(solo, at);
+    const waiting = { ...await Life.prepareResolve(solo, hold, { timestamp: at, persist: false, projectClassProgression: true }),
+        simulation: { revision: 1 } };
+    assert.strictEqual(lifecycleKind(waiting), 'event_driven', 'the published wait waits for its party');
+    let now = at + 10 * minute;
+    const kernel = new ColdSimulationKernel({ now: () => now, resolveSolo: () => null });
+    kernel.upsert({ state: waiting });
+    kernel.dueCandidates(at + 10 * minute, 4);
+    assert(!kernel.busy(31), 'no step while the clan wait holds');
+    kernel.upsert({ state: { ...waiting, stats: { ...waiting.stats, lastReason: 'clan_review' }, simulation: { revision: 2 } } });
+    kernel.dueCandidates(at + 10 * minute, 4);
+    assert(!kernel.busy(31), 'a write that keeps the wait wakes nothing');
+    const clearedStats = { ...waiting.stats };
+    delete clearedStats.clanPartyObjective;
+    const cleared = { ...waiting, stats: clearedStats, simulation: { revision: 3 } };
+    assert(cleared.timing.nextResolveAt > at + 10000, 'the hold keeps a retry for a command that holds the bot first');
+    now = at + 10000;
+    kernel.upsert({ state: cleared });
+    kernel.dueCandidates(now, 4);
+    assert(kernel.busy(31), 'the objective\'s end wakes it at once (its command starts), not at the hold\'s retry');
+    assert.strictEqual(stepElapsedMs(cleared, at + 10 * minute), 1000, 'ten minutes waiting are not hunted');
+    const assigned = { ...waiting, party: { partyId: 'clan-party', leaderId: 32 }, simulation: { revision: 4 } };
+    assert.strictEqual(lifecycleKind(assigned), 'party_member', 'its party takes it over');
+    console.log('Clan party wait: event-driven hold, wake on the objective\'s end, lived wait checks passed');
+})().catch(error => { console.error(error); process.exitCode = 1; });

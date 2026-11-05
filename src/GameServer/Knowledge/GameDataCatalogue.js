@@ -7,7 +7,8 @@
 // total applies at EACH explicit coordinate, or to random placement in bounds.
 // Recipe relations use the declared source as first indexed (RecipeCatalog).
 // sourcesForItem requires kind 'drops'/'spoils' ('drop'/'spoil' aliases work).
-// It returns borrowed origin-specific source records, not a normalized schema.
+// It returns origin-specific source records, not a normalized schema (native: borrowed
+// reward rows; exported: `{ mobId }` per source, in catalogue order).
 // Importing this module/factory never loads native data or exported JSON.
 // Direct optional queries do not load missing datasets: null = unavailable,
 // [] = available but no matching rows. sourceIndexFor is the legacy planner

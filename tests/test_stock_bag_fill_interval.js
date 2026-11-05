@@ -71,7 +71,9 @@ try {
     assert.equal(target({ ...solo, stats: { ...solo.stats, generatedCold: true }, level: 9 }), target({ ...solo, level: 9 }),
         'a low-level generated bot forecasts the same executable sale');
     assert(target({ ...solo, level: 9 }) < 3, 'the level 9 bag sale still bounds the outing');
-    assert.equal(target({ ...solo, stats: { ...solo.stats, marketSellRetryAfter: Date.now() + 60000 } }), 6,
+    // The sale retry: the last visit tried these goods and nothing new came since.
+    const tried = { items: Object.keys(solo.inventory).map(Number), buyers: null };
+    assert.equal(target({ ...solo, stats: { ...solo.stats, marketSellSeen: tried } }), 6,
         'blocked sale does not claim an executable half-full return');
     const protectedLoot = { ...solo, inventory: { 1864: { selfId: 1864, amount: 1, stackable: true } },
         stats: { ...solo.stats, equipmentPlan: { status: 'active', strategy: 'craft', materials: [{ selfId: 1864, amount: 1 }] } } };

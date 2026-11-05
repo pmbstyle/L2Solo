@@ -64,15 +64,15 @@ async function run() {
     const requirements = [{ selfId: 1785, amount: 6, options: { towns: ['Dion'], r: 1, purpose: 'craft_input' } },
         { selfId: 3031, amount: 7, options: { towns: ['Dion'], r: 1, purpose: 'wealth_craft' } }];
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
-    const baseEconomics = Economy.basics;
+    const baseEconomics = Economy.keptKit;
     let preparations = 0;
     try {
-        Economy.basics = (...args) => { preparations++; return baseEconomics(...args); };
+        Economy.keptKit = (...args) => { preparations++; return baseEconomics(...args); };
         const raw = Npc.collect(state, { town: 'Dion', potions: false, scrolls: false, shots: false,
             extras: requirements.map(row => ({ selfId: row.selfId, amount: row.amount, funding: { r: 1 } })) });
         assert.equal(raw.length, 1); assert.equal(raw[0].lines.length, 2);
         assert.equal(preparations, 0, 'ordinary selected craft inputs do not rebuild survival economics');
-    } finally { Economy.basics = baseEconomics; }
+    } finally { Economy.keptKit = baseEconomics; }
     const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
     const prepareReservations = Disposition.reservedEquipmentAmounts;
     let reservations = 0, materials;

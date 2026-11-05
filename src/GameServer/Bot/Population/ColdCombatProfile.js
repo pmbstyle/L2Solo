@@ -218,16 +218,24 @@ function fightSources(profile, timestamp, held = null) {
     return { profile, effects: profile.effects, night, from: timestamp, until, sources: statSources(profile, timestamp) };
 }
 
-function statValues(profile, stat, timestamp, sources = statSources(profile, timestamp)) {
-    return sources.map((stats) => number(stats?.[stat], NaN)).filter(Number.isFinite);
+// The sum and the product of one stat's finite values over the sources, in
+// their order (a numbers pass reads ~35 stats; no array per stat).
+function add(profile, stat, timestamp, sources = statSources(profile, timestamp)) {
+    let sum = 0;
+    for (const stats of sources) {
+        const value = Number(stats?.[stat]);
+        if (Number.isFinite(value)) sum += value;
+    }
+    return sum;
 }
 
-function add(profile, stat, timestamp, sources) {
-    return statValues(profile, stat, timestamp, sources).reduce((sum, value) => sum + value, 0);
-}
-
-function multiplier(profile, stat, timestamp, sources) {
-    return statValues(profile, stat, timestamp, sources).reduce((total, value) => total * value, 1);
+function multiplier(profile, stat, timestamp, sources = statSources(profile, timestamp)) {
+    let total = 1;
+    for (const stats of sources) {
+        const value = Number(stats?.[stat]);
+        if (Number.isFinite(value)) total *= value;
+    }
+    return total;
 }
 
 function npcPassiveStatValues(actor, stat) {
@@ -1271,14 +1279,23 @@ function wornPart(inventory, known = {}) {
         const template = itemTemplate(item.selfId);
         if (template) known.worn = true;
         const amount = Math.max(0, number(item.amount, 1));
-        const explicit = Array.isArray(item.equippedSlots)
-            ? [...new Set(item.equippedSlots.map(Number).filter(slot => slot > 0))].slice(0, amount) : [];
-        const slot = number(item.slot, number(template?.etc?.slot));
-        const pair = [1, 2].includes(slot) ? [1, 2] : [4, 5].includes(slot) ? [4, 5] : [slot];
-        const slots = explicit.length ? explicit : pair.slice(0, Math.min(amount, pair.length));
+        // The distinct positive equipped slots, in order, at most amount.
+        let slots = [];
+        if (Array.isArray(item.equippedSlots)) {
+            for (const listed of item.equippedSlots) {
+                const slot = Number(listed);
+                if (slot > 0 && !slots.includes(slot)) slots.push(slot);
+            }
+            if (slots.length > amount) slots = slots.slice(0, amount);
+        }
+        if (!slots.length) {
+            const slot = number(item.slot, number(template?.etc?.slot));
+            const pair = slot === 1 || slot === 2 ? [1, 2] : slot === 4 || slot === 5 ? [4, 5] : [slot];
+            slots = pair.slice(0, Math.min(amount, pair.length));
+        }
         for (const wornSlot of slots) {
             const instance = item.instances?.find(row => row.equipped && number(row.slot) === wornSlot);
-            rows.push([Number(item.selfId), wornSlot, number(instance?.enchant, number(item.enchant))].join(':'));
+            rows.push(`${Number(item.selfId)}:${wornSlot}:${number(instance?.enchant, number(item.enchant))}`);
         }
     }
     return rows.sort().join(',');

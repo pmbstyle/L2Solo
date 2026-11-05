@@ -112,6 +112,15 @@ class SkillDtoInterner {
         }
     }
 
+    // A slot 0 (a row that fell back) is never held: a full pass may admit it now.
+    #holds(acquired, rows) {
+        if (acquired.length !== rows.length) return false;
+        for (let i = 0; i < rows.length; i++) {
+            if (!acquired[i] || this.#records[acquired[i]]?.dto !== rows[i]) return false;
+        }
+        return true;
+    }
+
     prepare(id, array) {
         let originals = null;
         if (Array.isArray(array) && !isProxy(array) && Object.getPrototypeOf(array) === Array.prototype) {
@@ -126,6 +135,17 @@ class SkillDtoInterner {
         if (!originals) {
             if (array !== null) this.fallback++;
             this.#stages.set(token, { id, array: null, originals: null, acquired: null });
+            return token;
+        }
+        // A state re-set with the rows this owner already holds (every commit
+        // ack and page re-publishes the same interned array): each row is the
+        // record dto of the owner's slot at its index, so a full pass would
+        // find exactly those records again. Take the same references without
+        // hashing; the commit then swaps the ledger for itself.
+        const held = this.#owners.get(id);
+        if (held && this.#holds(held, originals)) {
+            for (let i = 0; i < held.length; i++) this.#records[held[i]].references++;
+            this.#stages.set(token, { id, array, originals, acquired: held });
             return token;
         }
         const acquired = new Uint16Array(originals.length);

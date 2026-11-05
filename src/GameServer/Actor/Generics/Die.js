@@ -5,6 +5,7 @@ const calculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
 const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 const EconomyContext = invoke('GameServer/Bot/Economy/EconomyContext');
 const EconomicValuation = invoke('GameServer/Bot/Economy/EconomicValuation');
+const Packet = require('../../Bot/Economy/StatsPacket');
 
 function clearEffectsOnDeath(session, actor) {
     const silentMoving = Object.values(actor.effects || {}).find((effect) => effect?.stats?.silentMoving);
@@ -72,9 +73,12 @@ function die(session, actor, context = {}) {
         const prior = victimSession.coldLifeState || Life.cachedState(actor.fetchId());
         if (prior) {
             const timestamp = Number(context.timestamp || Date.now());
-            // The death price and persona come from the basics: no economy build on main.
-            const economy = EconomyContext.basics(prior, { timestamp });
-            // The basics price a table row's death; this live one also waits for its respawn.
+            // The death price its build published (stats.dangerPrice), the persona
+            // from the personal reads; the basics only for a bot with no packet.
+            const published = Packet.deathHours(prior.stats?.dangerPrice);
+            const economy = Number.isFinite(published) ? { deathHours: published,
+                persona: EconomyContext.personal(prior, { timestamp }).persona } : EconomyContext.basics(prior, { timestamp });
+            // The price is a table row's death; this live one also waits for its respawn.
             const progress = EconomicValuation.progressStats(prior, {
                 timestamp, losses: 1, lossHours: EconomicValuation.liveDeathHours(economy.deathHours), persona: economy.persona,
                 knowledgeEnabled: invoke('GameServer/Bot/AI/KnowledgeLearning').knowledgeEnabled(),

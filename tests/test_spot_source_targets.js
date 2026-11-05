@@ -101,7 +101,7 @@ try {
                 equipmentPlan: { ...plan, next: { ...plan.next, spotId: mixed.id } },
                 townVisit: { completed: true }, marketReturn: { spotId: mixed.id, loc: mixed.center, regionName: mixed.name } } };
         assert.equal(invoke('GameServer/Bot/Goals/GoalExecutor').finishMarketVisit(shopping, timestamp).stats.travel.spotId,
-            alternative.id, 'a safe origin with an unsafe planned target is replaced before returning from town');
+            mixed.id, 'the return goes to the plan\'s source; the worker\'s trip start retargets it (above)');
     } finally { Service.spots = savedService; Errands.pending = pending; }
 } finally { Spots.cache = original; }
 console.log('test_spot_source_targets: ok');

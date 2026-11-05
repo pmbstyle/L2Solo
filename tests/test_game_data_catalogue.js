@@ -115,17 +115,20 @@ try {
     growing.push(groups[0]);
     assert.notEqual(revisionOf(growing), beforeGrowth);
 
-    const drops = [{ id: 1 }], spoils = [], exportedSpawns = [{ id: 'E' }];
-    const data = { itemById: new Map([[1864, { sources: { drops, spoils } }]]),
-        mobById: new Map([[1, { spawnIds: ['E'] }]]), spawnById: new Map([['E', exportedSpawns[0]]]),
-        spawns: exportedSpawns, manifest: { generatedAt: 'fixture-export' } };
+    const exportedSpawns = [{ id: 'E' }];
+    const exportedSpawn = id => id === 'E' ? exportedSpawns[0] : null;
+    const data = { itemSources: { mobIds: (id, kind) => id === 1864 && kind === 'drops' ? [1] : [] },
+        records: { item: id => id === 1864 ? { id: 1864 } : null, npc: id => id === 1 ? { spawnIds: ['E'] } : null,
+            spawn: exportedSpawn, spawns: ids => (ids || []).map(exportedSpawn).filter(Boolean), allSpawns: () => exportedSpawns },
+        manifest: { generatedAt: 'fixture-export' } };
     const e = createExportedCatalogue(data, { nativeCatalogue: c });
     assert.equal(e.capabilities({ spots: A }).selectedSources, true);
     assert.equal(e.sourceIndexFor(A), plannerMap, 'injected export returns the existing native Map');
     const relation = e.relations('item', 1864, { spots: A });
     assert.equal(relation.sources.origin, 'exported');
     assert.equal(relation.sources.revision, 'fixture-export');
-    assert.equal(relation.sources.drops, drops);
+    assert.deepEqual(relation.sources.drops, [{ mobId: 1 }]);
+    assert.deepEqual(relation.sources.spoils, []);
     assert.equal(relation.recipes.origin, 'native');
     assert.equal(typeof relation.recipes.revision, 'number');
     assert.equal(relation.selectedSources.origin, 'native');
@@ -136,6 +139,24 @@ try {
     assert.equal(onlyExport.sourceIndexFor(A), null);
     assert.equal(onlyExport.selectedSourcesForItem(1864, A), null);
     assert.equal(onlyExport.relations('item', 1864).recipes.origin, null);
+
+    // Every clan worker plan message restores its spots into a new list: the
+    // same catalogue rows keep their index, and a clan's raid decoration only
+    // adds its boss rewards on top of the catalogue's (ClanSpotCatalog).
+    const camp = { id: 'camp', npcEntries: [{ selfId: raw[0].npcId, count: 2 }] };
+    const lair = { id: 'raid:10372', raidBoss: true, raidBossTemplateId: 10372, npcEntries: [{ selfId: 10372, count: 1 }] };
+    const campIndex = c.sourceIndexFor([camp]);
+    assert.equal(c.sourceIndexFor([camp]), campIndex, 'the same rows in a new list keep their index');
+    const decorated = { ...lair, raidRosterSize: 9, raidEstimate: { killMs: 1 } };
+    const withRaid = c.sourceIndexFor([camp, decorated]);
+    assert.deepEqual(withRaid.get(raidItem).filter(row => row.spot.raidBoss).map(row => row.spot), [decorated],
+        'a raid decoration is the source row of its boss rewards');
+    assert.deepEqual(withRaid.get(1864), campIndex.get(1864), 'the catalogue rows keep their sources under a raid overlay');
+    assert.equal(c.sourceIndexFor([camp, decorated]), withRaid, 'the same overlay in a new list keeps its index');
+    assert.equal(c.sourceIndexFor([camp]), campIndex, 'an overlay does not replace the catalogue index');
+    const redecorated = { ...lair, raidRosterSize: 9, raidEstimate: { killMs: 2 } };
+    assert.deepEqual(c.sourceIndexFor([camp, redecorated]).get(raidItem).filter(row => row.spot.raidBoss).map(row => row.spot),
+        [redecorated], 'a new decoration is a new source row');
 
     // Source labels and data readers must agree when a caller fills its array
     // in place. Check visible new sources/metadata, not just cache internals.

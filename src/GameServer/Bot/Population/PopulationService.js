@@ -356,10 +356,34 @@ async function marketTravelWithRefund(state, goal, timestamp = Date.now(), econo
     });
     const refunded = remote?.withdrawn ? remote.state || state : null;
     if (!refunded || refunded.phase !== 'cold' || joinedBackgroundParty(refunded)) return null;
-    return GoalExecutor.beginMarketTravel(refunded, goal, timestamp);
+    // The refund moves money only: the trip keeps the caller's retry stamp (a
+    // buyer's wake lifted it on the caller's state, not on the saved row).
+    return GoalExecutor.beginMarketTravel({ ...refunded,
+        stats: { ...refunded.stats, marketRetryAfter: state.stats?.marketRetryAfter ?? null } }, goal, timestamp);
 }
 
-function canResumeAffordableMarketPlan(state, timestamp = Date.now(), { marketWakeup = false } = {}) {
+// What the bot may pay for its market plan's target: the wallet with the
+// plan's own buy-order escrow, after the higher wishes (a weapon bridge: all).
+function marketPlanBudget(state, plan) {
+    const escrow = PurchaseFunding.tripEscrow(plan, BotAfkMarketService.buyOrderEscrow(state.characterId));
+    return plan.weaponBridge ? PurchaseFunding.budget(state, escrow)
+        : PurchaseFunding.spendable(state, escrow, { itemId: plan.target?.selfId });
+}
+
+// A buyer's wake (MarketBuyerWaiters → the lifecycle command's marketWakeup,
+// [{ itemId, price }]) lifts a failed visit's retry stamp only for a new offer
+// of the market plan's own target within the bot's budget: the event the stamp
+// waits for (ColdMarketService.retryAfterFailedPurchase). A wake for another
+// item it wants (shots, a recipe) leaves the stamp.
+function wakeLiftsMarketRetry(state, offers) {
+    const plan = state?.stats?.equipmentPlan;
+    const targetId = Number(plan?.target?.selfId || 0);
+    const offer = Array.isArray(offers) && targetId > 0 && plan?.strategy === 'market'
+        ? offers.find(row => Number(row?.itemId) === targetId) : null;
+    return !!offer && Number(offer.price) > 0 && marketPlanBudget(state, plan) >= Number(offer.price);
+}
+
+function canResumeAffordableMarketPlan(state, timestamp = Date.now()) {
     const plan = state?.stats?.equipmentPlan;
     const targetId = Number(plan?.target?.selfId || 0);
     const targetSlot = Number(plan?.target?.slot || 0);
@@ -369,13 +393,11 @@ function canResumeAffordableMarketPlan(state, timestamp = Date.now(), { marketWa
         || plan?.strategy !== 'market'
         || (![7, 14].includes(targetSlot) && !requiredClanPurchase)
         || targetId <= 0
-        || (!marketWakeup && Number(state.stats?.marketRetryAfter || 0) > timestamp)) return false;
+        || Number(state.stats?.marketRetryAfter || 0) > timestamp) return false;
 
     const price = Number(plan.market?.price || 0);
     const reserve = Math.max(0, Number(plan.market?.reserve || 0));
-    if (price <= 0 || (plan.weaponBridge ? PurchaseFunding.budget(state, PurchaseFunding.tripEscrow(plan, BotAfkMarketService.buyOrderEscrow(state.characterId)))
-            : PurchaseFunding.spendable(state, PurchaseFunding.tripEscrow(plan, BotAfkMarketService.buyOrderEscrow(state.characterId)),
-                { itemId: plan.target?.selfId })) < price) return false;
+    if (price <= 0 || marketPlanBudget(state, plan) < price) return false;
 
     const combinationRequirement = (plan.combine?.requirements || [])
         .find((entry) => Number(entry.selfId) === targetId);
@@ -910,12 +932,19 @@ async function createAndCommitBackgroundParty(members = [], objectiveOverride = 
 // asked like its goals (jointPartyGoals: main for an all-near roster, the worker otherwise). A busy
 // or failed worker defers the roster to the next assembly: no main thought and no build for a far
 // roster. The roster's id is its member set, so a refusal repeated per attempt logs once (logPartyFailure).
+// An answer is held while every member's source identity (PartyGoalCalculation.source: its
+// revision, update stamp, phase and party) and the requested objective stand: a refused roster
+// the assembly asks again (its retry) is not sent again until one of its members changes.
 async function formingVerdict(members, requested, options) {
     const memberIds = members.map(member => Number(member.characterId));
+    const asked = askedVerdicts.inputs(members, requested, { spots: SpotProfiles.ensure() });
+    const timestamp = Date.now(), held = askedVerdicts.read(asked, timestamp);
+    if (held) return held;
     const verdict = await jointPartyGoals({ partyId: `forming_${[...memberIds].sort((a, b) => a - b).join('_')}`,
-        leaderId: memberIds[0], memberIds, stats: { forming: { requested: requested || null } } }, members, Date.now(), options);
-    return Array.isArray(verdict?.formingAccepted) ? verdict : null;
+        leaderId: memberIds[0], memberIds, stats: { forming: { requested: requested || null } } }, members, timestamp, options);
+    return Array.isArray(verdict?.formingAccepted) ? askedVerdicts.write(asked, verdict) : null;
 }
+const askedVerdicts = PartyGoalPolicy.formingHold(member => JSON.stringify(PartyGoalCalculation.source(member)), 'ask');
 
 async function createBackgroundParty(members = [], objectiveOverride = null, options = {}) {
     const requested = objectiveOverride || members.map(partyObjectiveForState).find(objective => objective?.priority === 'required');
@@ -1722,17 +1751,26 @@ const PopulationService = {
             return { deferred: Help.hasPending(), retryAt: Help.nextDeadline() };
         }
         if (this.partyFormationRunning || this.resolving) return { deferred: true };
-        const eligible = candidates.filter(state => LifeState.cachedState(state.characterId) === state
-            && !invoke('GameServer/Bot/Population/PartyAssemblyRecovery').coolingDown(state, timestamp)
+        // A member cooling down or deferred wakes its group at its own end (the
+        // record's dueAt: partyAssemblyInput, refreshPartyAssemblyRequest), so it
+        // asks no retry; a state replaced since the page was read does.
+        const current = candidates.filter(state => LifeState.cachedState(state.characterId) === state);
+        const stale = current.length < candidates.length;
+        const eligible = current.filter(state => !invoke('GameServer/Bot/Population/PartyAssemblyRecovery').coolingDown(state, timestamp)
             && !(state.stats?.partyRequest?.status === 'deferred' && Number(state.stats.partyRequest.deferredUntil || 0) > timestamp));
-        if (!eligible.length) return { deferred: candidates.length > 0 };
+        if (!eligible.length) return { deferred: stale };
         const protectedActivity = this.playerActivityProfile(timestamp).protected;
         if (protectedActivity && timestamp < this.nextProtectedPartyFormationAt) return { deferred: true, retryAt: this.nextProtectedPartyFormationAt };
         if (protectedActivity && !eligible.some(state => RequiredPartyFormation.objectiveFor(state))) return {};
         const result = protectedActivity
             ? await this.formProtectedRequiredParty(timestamp, eligible)
             : await this.formBackgroundParties(eligible);
-        return { deferred: this.partyFormationPending || eligible.length < candidates.length
+        // Retried (PartyAssemblyEvents.retryMs): a busy formation, or a refused roster
+        // (partyFormationPending; the group index wakes on no member's level, kit or
+        // wallet, so the retry asks again and the held refusal answers while its
+        // members stand: formingVerdict), a replaced state, a material group that
+        // formed nothing (the next page offers other supports).
+        return { deferred: this.partyFormationPending || stale
                 || !result.length && eligible.some(state => CraftMaterialParty.isObjective(state.stats?.partyRequest)),
             continuation: result.length > 0,
             retryAt: protectedActivity ? this.nextProtectedPartyFormationAt : 0 };
@@ -3422,7 +3460,7 @@ const PopulationService = {
                 .then((saved) => saved || batchState);
         }
         const listingIntent = marketListingIntent(purchasedState, goal);
-        // A sale trip must reach the buyers and its 30-min retry, which only open does.
+        // A sale trip must reach the buyers and its sale retry, which only open does.
         const listingPromise = !marketLifecycle.closed && listingIntent.shouldOpen
             && (!workerPlan?.economyPlan || listingIntent.cleanup || listingIntent.saleVisit)
             ? openMarketListing(listingIntent, goal)
@@ -3487,7 +3525,11 @@ const PopulationService = {
         }).then(async (goalSnapshot) => {
             const remote = await BotAfkMarketService.reconcile(marketState, goalSnapshot?.current, goalSnapshot?.candidates);
             const current = remote.state || marketState;
-            const travelState = tripEdge || SurvivalFloor.forState(current)?.action === 'unload'
+            // forState unloads only where the bag alone does (the mana floor comes first), so
+            // the cheap bag floor answers the common no; one moment for both reads.
+            const now = Date.now();
+            const travelState = tripEdge || (SurvivalFloor.bagFor(current, now)?.action === 'unload'
+                && SurvivalFloor.forState(current, now)?.action === 'unload')
                 ? GoalExecutor.beginMarketTravel(current, goalSnapshot?.current, Date.now(),
                     { economy: current === marketState ? goalSnapshot?.economy : null }) : null;
             return travelState ? LifeState.upsertState(travelState, 'goal_market_travel') : current;
@@ -3535,14 +3577,16 @@ const PopulationService = {
             // Worker-owned recovery finishes before the main economy command.
             // Reconsider a funded weapon purchase before applying another fight,
             // which could immediately put the buyer back into recovery again.
+            const buyer = state.stats?.marketRetryAfter && wakeLiftsMarketRetry(state, request.marketWakeup)
+                ? { ...state, stats: { ...state.stats, marketRetryAfter: null } } : state;
             if (!joinedBackgroundParty(state) && !state.stats?.pveEncounter && !state.stats?.pvpEncounter
-                && canResumeAffordableMarketPlan(state, Date.now(), { marketWakeup: request.marketWakeup === true })) {
+                && canResumeAffordableMarketPlan(buyer)) {
                 const goal = await GoalService.review(state);
                 const current = LifeState.cachedState(state.characterId) || state;
                 if (current !== state || joinedBackgroundParty(current) || current.phase !== 'cold') {
                     return { ok: false, reason: 'state_changed', state: current };
                 }
-                const travel = await marketTravelWithRefund(current, goal?.current, Date.now(), goal?.economy);
+                const travel = await marketTravelWithRefund(buyer, goal?.current, Date.now(), goal?.economy);
                 const latest = LifeState.cachedState(state.characterId) || current;
                 if (!travel && latest !== current) return { ok: false, reason: 'state_changed', state: latest };
                 if (travel) {

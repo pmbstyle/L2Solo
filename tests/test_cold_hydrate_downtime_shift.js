@@ -122,8 +122,10 @@ async function run() {
     await boot();
     // The pause the boot applied: from the last write to the shift, so it holds
     // the boot time before the shift too (this process started before beforeBoot).
+    // The fractional row's updatedAt (lastWrite + 0.5) is the last write, whole up to 1 ms.
     const { downtimeMs: pause } = await Life.bootPause();
-    assert(pause >= beforeBoot - lastWrite, `the pause lasts until the shift (${pause} ms < ${beforeBoot - lastWrite} ms)`);
+    const lastWritten = Math.ceil(lastWrite + 0.5);
+    assert(pause >= beforeBoot - lastWritten, `the pause lasts until the shift (${pause} ms < ${beforeBoot - lastWritten} ms)`);
 
     const shifted = (value, moved) => moved ? value + pause : value;
     const expected = {

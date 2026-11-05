@@ -6,6 +6,8 @@ const calculateStats = invoke('GameServer/Actor/Generics/CalculateStats');
 const ReceivedHit = invoke('GameServer/Actor/Generics/ReceivedHit');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const Formulas = invoke('GameServer/Formulas');
+const Actor = invoke('GameServer/Actor/Actor');
+const Skill = invoke('GameServer/Model/Skill');
 
 function actor() {
     return {
@@ -150,5 +152,59 @@ for (const servitor of [{ fetchId: () => 1000001, fetchKind: () => 'Monster', fe
     assert.deepStrictEqual([summonHitVictim.fetchCp(), summonHitVictim.fetchHp()], [0, 90],
         'summon and pet damage consumes CP before HP');
 }
+
+// A vitals update (regen tick, received hit) leaves the stats a full rebuild
+// would give: after a plain HP change, a passive's HP threshold crossing, an
+// effect added or expired without its own refresh, a move, nightfall.
+const packets = [];
+const live = Object.assign(actor(), {
+    level: 40, moving: false, night: false,
+    session: { dataSendToMe: (packet) => packets.push(packet) },
+    fetchId: () => 2000003, fetchMaxLoad() { return this.maxLoad; },
+    state: { inMotion() { return live.moving; }, fetchWalkin: () => false, fetchSeated: () => false },
+    gameTime: { isNight: () => live.night },
+    skillset: { fetchSkills: () => [290, 225, 294].map((selfId) => new Skill({ selfId, level: 1, passive: true })) }
+});
+live.backpack.fetchItems = () => [];
+const statsOf = (a) => ['maxHp', 'maxMp', 'maxCp', 'hp', 'mp', 'cp', 'load', 'maxLoad', 'collectivePAtk',
+    'collectiveMAtk', 'collectivePDef', 'collectiveMDef', 'collectiveAccur', 'collectiveEvasion',
+    'collectiveCritical', 'collectiveAtkSpd', 'collectiveCastSpd', 'collectiveWalkSpd', 'collectiveRunSpd']
+    .map((key) => a[key]);
+function vitals(a) {
+    packets.length = 0;
+    Actor.prototype.statusUpdateVitals.call(a, a);
+    const stats = statsOf(a), packet = packets[0];
+    calculateStats({}, a);
+    packets.length = 0;
+    Actor.prototype.statusUpdateVitals.call(a, a);
+    assert.deepStrictEqual(statsOf(a), stats, 'a vitals update leaves the stats of a full rebuild');
+    assert.deepStrictEqual(packets[0], packet, 'and the same status packet');
+    return stats;
+}
+calculateStats({}, live);
+live.setHp(live.fetchMaxHp());
+calculateStats({}, live);
+const healthyPAtk = live.collectivePAtk, restingEvasion = live.collectiveEvasion, dayAccuracy = live.collectiveAccur;
+live.setHp(live.fetchMaxHp() * 0.5);
+vitals(live);
+assert.strictEqual(live.collectivePAtk, healthyPAtk, 'a hit above the threshold keeps the stats');
+live.setHp(live.fetchMaxHp() * 0.3);
+vitals(live);
+assert.strictEqual(live.collectivePAtk, healthyPAtk + 32.9, 'a hit to 30 % HP turns on the low-HP passive');
+live.setHp(live.fetchMaxHp() * 0.31);
+vitals(live);
+assert.strictEqual(live.collectivePAtk, healthyPAtk, 'regen above 30 % turns it off');
+EffectStore.apply(live, { id: 9002, key: 'quiet-might', stats: { pAtkMul: 2 } });
+vitals(live);
+assert.strictEqual(live.collectivePAtk, healthyPAtk * 2, 'an effect added without a refresh counts at the next update');
+live.effects['quiet-might'].expiresAt = Date.now() - 1;
+vitals(live);
+assert.strictEqual(live.collectivePAtk, healthyPAtk, 'an effect expired without a refresh stops counting');
+live.moving = true;
+vitals(live);
+assert.strictEqual(live.collectiveEvasion, restingEvasion + 4, 'running turns on the running passive');
+live.night = true;
+vitals(live);
+assert.strictEqual(live.collectiveAccur, dayAccuracy + 3, 'nightfall turns on the night passive');
 
 console.log('CP stat checks passed');

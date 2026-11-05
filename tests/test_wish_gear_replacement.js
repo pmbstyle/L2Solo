@@ -91,6 +91,32 @@ function verify() {
         assert.equal(basicsCalls, 1, 'one prepared member fallback per clan review');
         assert.equal(gainCalls, 1);
         assert(result.network.queue.some(row => row.object.itemId === 2503), 'clan retains the useful weapon replacement');
+        // A member with a decision and a published danger price: the clan
+        // reads its death hours from the packet, the same worth as the basics
+        // that carry those hours, and builds no basics.
+        const Decisions = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions;
+        const clanNumbers = Decisions.clanNumbers;
+        // Body armour (356): its defence gain is weighed by the death hours.
+        const worth = (state) => {
+            Clan.reset();
+            return Clan.forClan({ id: owner++, level: 3, leaderId: state.characterId, members: [state], state: {} },
+                { timestamp, proofOffer: null, halls: [],
+                    equipment: [{ memberId: state.characterId, plan: { target: { selfId: 356 }, market: { price: 1 } } }] })
+                .network.queue.find(row => row.object.itemId === 356)?.valueHours;
+        };
+        try {
+            Decisions.clanNumbers = () => ({ horizonHours: 40, huntPerHour: 1000, updatedAt: 1 });
+            const basicsWith = deathHours => () => ({ timestamp, persona: {}, hunt: { perHour: 1000, expPerHour: 1000 }, deathHours });
+            // A clan projection's member carries its persona (ClanGoalService).
+            const known = { ...member, persona: { traits: {} } };
+            Economy.basics = basicsWith(3);
+            const fromBasics = worth(known);
+            Economy.basics = basicsWith(30);
+            assert.notEqual(worth(known), fromBasics, 'fixture: the armour\'s worth reads the death hours');
+            Economy.basics = () => { throw Error('a member with a danger packet needs no basics'); };
+            const packed = { ...known, stats: { ...known.stats, dangerPrice: [3, 0.5] } };
+            assert.equal(worth(packed), fromBasics, 'the packet\'s death hours value the gear as the basics do');
+        } finally { Decisions.clanNumbers = clanNumbers; }
     } finally {
         Economy.basics = nativeBasics; Providers.gearGain = nativeGain;
         Clan.reset(); Profile.forgetBuild(member.characterId);

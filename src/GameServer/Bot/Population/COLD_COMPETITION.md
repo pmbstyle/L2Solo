@@ -138,16 +138,18 @@ deducts the idle interval once from subsequent farming time and clears the wait.
 Party selection excludes pending waits. CAS validation rejects duplicate delivery
 even after restart, and a stale participant aborts both writes.
 
-An avoid decision uses the ordinary suitable-spot selector and capacity check,
-excluding the current spot for ten steps of each holder (a member's far steps,
-the party's rounds). A successful action starts normal
-travel, with its existing arrival time and zero farming rewards during transit.
-All departing party members and the party's destination/schedule commit together;
-the other unit keeps hunting. A missing destination returns `no_retreat_route`,
-not a successful departure. The bounded `coldCompetition.avoid` entry survives
-restart and later encounters, expires without escalating PvE death backoff, and
-does not create resentment. `coldCompetitionActions.avoids` counts committed
-departures; recent results include the destination and affected members.
+An avoid decision excludes the current spot for ten steps of each holder (a
+member's far steps, the party's rounds), raises the occupation of the actor's
+unit and makes it due now; main searches no spot. The worker's next step (a
+solo member's trip start, the party's run) routes the unit off the excluded spot
+with the ordinary suitable-spot selector and capacity check, and starts normal
+travel with its arrival time and zero farming rewards during transit; with no
+other suitable spot the unit stays. All party members and the party's schedule
+commit together; the other unit keeps hunting. The bounded
+`coldCompetition.avoid` entry survives restart and later encounters, expires
+without escalating PvE death backoff, and does not create resentment.
+`coldCompetitionActions.avoids` counts committed avoids; recent results include
+the affected members.
 
 Party yields and all avoids validate the complete rosters (at most 18 hunters),
 physical presence, targets, memory versions and hot-handoff fences. The checks
@@ -232,9 +234,11 @@ include matchup, individual roles and affected member IDs. No PvP is executed.
 
 ## Party lifetime
 
-The legacy `sessionExpiresAt` is now the first review deadline, not a disband
-deadline. Further reviews run every five minutes and persist a bounded decision
-per member. Recent wins sustain a group; an urgent goal elsewhere, personal
+A party's first resolve records its review evidence (no review step). A review
+runs when its inputs move (roster and levels, objective, members' plan targets
+and clan objectives, relation revisions) or a clock runs out (a concern's grace,
+patience with no win, recent progress ending, a pause ending), never on a fixed
+cadence, and persists a bounded decision per member. Recent wins sustain a group; an urgent goal elsewhere, personal
 hostility or repeated unsuccessful attempts with no progress can cause departure.
 Commitment and friendship extend patience; committed friends can keep helping.
 Goal/conflict concerns must persist through a grace period. Recovery and travel

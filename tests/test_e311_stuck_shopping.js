@@ -36,11 +36,11 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 50));
         await Database.setItem(errandSellerId, { selfId: SKIN, amount: 20, slot: 0 });
         for (const [id, name, activity, stats] of [
             [buyerId, 'E311Buyer', 'hunting', { classId: 0, generatedCold: true, money: [100, 0, 1000, 0] }],
-            [sellerId, 'E311Seller', 'shopping', { classId: 0, generatedCold: true, marketSellRetryAfter: 1,
+            [sellerId, 'E311Seller', 'shopping', { classId: 0, generatedCold: true,
                 townVisit: { town: 'Giran', startedAt: Date.now() - 60000, reason: 'sell_inventory' },
                 marketReturn: { spotId: String(spot.id), regionName: spot.name, loc: spot.center } }],
             // A second seller whose town errands are not done on the refused pass.
-            [errandSellerId, 'E311ErrandSeller', 'shopping', { classId: 0, generatedCold: true, marketSellRetryAfter: 1,
+            [errandSellerId, 'E311ErrandSeller', 'shopping', { classId: 0, generatedCold: true,
                 townVisit: { town: 'Giran', startedAt: Date.now() - 60000, reason: 'sell_inventory' },
                 marketReturn: { spotId: String(spot.id), regionName: spot.name, loc: spot.center } }]
         ]) {
@@ -65,8 +65,9 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 50));
         // snapshot: it must not take the answer away (it turns off
         // ItemDisposition.soloSaleSlotLimit inside EconomyContext). Same economy
         // build and the same MarketListingPolicy.evaluate as the worker consent.
-        const consentAnswer = (state, retryAfter, now) => {
-            const probe = { ...state, stats: { ...state.stats, marketSellRetryAfter: retryAfter } };
+        const consentAnswer = (state, retry, now) => {
+            const probe = { ...state, stats: { ...state.stats,
+                marketSellSeen: retry ? invoke('GameServer/Bot/Economy/ItemDisposition').saleSeen(state) : null } };
             const trip = invoke('GameServer/Bot/Economy/EconomicTrip').prepare(probe);
             let step; do step = trip.next(); while (!step.done);
             const board = Afk.boardIndex();
@@ -90,7 +91,7 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 50));
             [...Array(14).keys()].map(index => ({ selfId: 1885 + index, amount: 2 }))) } };
         for (const [label, bag] of [['fixture bag', fixture], ['bag with loot and kit', kitBag], ['bag near the half-full limit', fullBag]]) {
             const now = Date.now();
-            const before = consentAnswer(bag, now - 1000, now), held = consentAnswer(bag, now + 30 * 60 * 1000, now);
+            const before = consentAnswer(bag, false, now), held = consentAnswer(bag, true, now);
             console.log(`E311 consent probe (${label}): answer without retry=${before}, with the saved retry=${held}`);
             assert.equal(held, before, `${label}: the saved sale retry changes the seller's own consent to the answer`);
         }
@@ -119,7 +120,7 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 50));
         assert.equal(meetings.size, 1, 'the first pass answered the buy ad through a trade meeting');
         assert.equal(Meetings.hasPreparation(sellerId), true, 'the deal is still being prepared');
         assert.equal(Life.cachedState(sellerId).activity, 'shopping', 'a deal in preparation keeps the visit');
-        const retryWhilePreparing = Number(Life.cachedState(sellerId).stats.marketSellRetryAfter);
+        const retryWhilePreparing = Life.cachedState(sellerId).stats.marketSellSeen;
         await Population.resolveColdState(Life.cachedState(sellerId));
         await settle();
         assert.equal(Life.cachedState(sellerId).activity, 'shopping', 'a pass during the preparation does not end the visit');
@@ -141,7 +142,7 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 50));
         const after = Life.cachedState(sellerId);
         assert.notEqual(after.activity, 'shopping', `E311: the visit never ends after a refused deal: ${JSON.stringify({
             meetings: meetings.size, activity: after.activity, townVisit: after.stats.townVisit,
-            marketSellRetryAfter: after.stats.marketSellRetryAfter, lastReason: after.stats.lastReason })}`);
+            marketSellSeen: after.stats.marketSellSeen, lastReason: after.stats.lastReason })}`);
         assert.equal(meetings.size, 1, 'no later pass answers the refused ad again');
 
         assert.equal(Afk.ownerRecords(buyerId).some(row => row.kind === 'buy_ad'), false,
@@ -173,9 +174,11 @@ const settle = () => new Promise(resolve => setTimeout(resolve, 50));
         assert.equal(errandAfter.activity, 'shopping', 'the errands keep this visit open');
         assert.equal(errandMeetings.size, 1, 'a visit held by its errands does not answer the refused ad again');
         // The mechanism last: the sale retry saved with the pending deal.
-        assert(retryWhilePreparing > Date.now(), 'the sale retry is saved with the pending deal');
-        assert(Number(after.stats.marketSellRetryAfter) > Date.now(), 'the ended visit keeps its sale retry');
-        assert(Number(errandAfter.stats.marketSellRetryAfter) > Date.now(), 'the errand seller keeps its sale retry');
+        assert(retryWhilePreparing?.items.includes(SKIN), 'the sale retry is saved with the pending deal');
+        // The ended visit's retry stands on what it could not place.
+        const leftKinds = state => invoke('GameServer/Bot/Economy/ItemDisposition').saleSeen(state)?.items || [];
+        assert.deepEqual(after.stats.marketSellSeen?.items || [], leftKinds(after), 'the ended visit keeps its sale retry');
+        assert.deepEqual(errandAfter.stats.marketSellSeen?.items || [], leftKinds(errandAfter), 'the errand seller keeps its sale retry');
         await Afk.replaceBotRecords(buyerId, 'buy_ad', [{ storeType: 3, town: 'Giran', title: 'Skins', ...place,
             lines: [{ selfId: SKIN, name: 'Animal Skin', count: 20, price: 5000, stackable: true,
                 intent: { itemId: SKIN, amount: 20, price: 5000, key: `resale:${SKIN}`, recipeId: 0, valueHours: 2, valueRate: 100 } }] }], { expected: {} });

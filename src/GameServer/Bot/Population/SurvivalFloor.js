@@ -60,14 +60,17 @@ function stateCastCosts(state, profile, timestamp) {
 }
 
 // Weight penalty 1 is only the C4 walking-speed step. During the sale retry
-// it waits like a half-full bag and the bot hunts on, spending its shots,
-// instead of flying back to a town that bought nothing. Unused arrows the NPC
+// (ItemDisposition.saleRetryHolds: nothing new since the last visit) it waits
+// like a half-full bag and the bot hunts on, spending its shots, instead of
+// flying back to a town that bought nothing. Unused arrows the NPC
 // sale takes (ItemDisposition.unusedArrowCandidates, the sale's own lines) do
 // not wait; heavier steps and full bags stay the floor. bag: the state or the
 // live actor; asState: that bag as a state for the sale, built only when arrows are held.
-function saleRetryWaits(floor, state, timestamp, bag = state, asState = () => bag) {
+// holds: whether the retry holds, asked only at penalty 1 with a retry saved.
+function saleRetryWaits(floor, state, timestamp, bag = state, asState = () => bag,
+    holds = () => invoke('GameServer/Bot/Economy/ItemDisposition').saleRetryHolds({ ...asState(), stats: state.stats })) {
     return floor?.reason === 'overweight' && floor.weightPenalty === 1
-        && Number(state?.stats?.marketSellRetryAfter || 0) > timestamp
+        && state?.stats?.marketSellSeen && typeof invoke === 'function' && holds()
         && !(ArrowStock.unused(bag).length > 0
             && invoke('GameServer/Bot/Economy/ItemDisposition').unusedArrowCandidates(asState()).length > 0) ? null : floor;
 }
@@ -82,8 +85,10 @@ function forState(state, timestamp = Date.now(), inputs = null) {
     const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
     const Roles = invoke('GameServer/Bot/AI/BotRoles');
     const profile = Profile.profileFor(state, timestamp);
+    // evaluate reads the cast costs only for a role that rests for mana.
+    const manaRequired = Roles.shouldRestForMana(state);
     return saleRetryWaits(evaluate({ hp: state.vitals?.hp, mp: state.vitals?.mp ?? profile.maxMp,
-        manaRequired: Roles.shouldRestForMana(state), castCosts: stateCastCosts(state, profile, timestamp),
+        manaRequired, castCosts: manaRequired ? stateCastCosts(state, profile, timestamp) : [],
         ...stateInventory(state, invoke('GameServer/DataCache').items),
         slotLimit: InventoryLimits.forState(state, profile), maxLoad: profile.maxLoad }), state, timestamp);
 }
@@ -120,6 +125,18 @@ function bagMarks(actor) {
         full: Number(bag.slots >= InventoryLimits.forActor(actor)) };
 }
 
+// A hot bag's sale retry, held while its bag and saved retry are the same
+// (a buyer of its goods is read again at the next bag change, as sellTripDue).
+const actorRetries = new WeakMap();
+function actorRetryHolds(actor, state) {
+    const bag = actorInventory(actor), seen = state?.stats?.marketSellSeen, held = actorRetries.get(actor.backpack);
+    if (held?.items === bag.items && held.count === bag.count && held.revision === bag.revision && held.seen === seen) return held.holds;
+    const holds = invoke('GameServer/Bot/Economy/ItemDisposition').saleRetryHolds({
+        ...invoke('GameServer/Bot/Economy/MarketListingPolicy').actorState({ actor, coldLifeState: state }), stats: state.stats });
+    actorRetries.set(actor.backpack, { items: bag.items, count: bag.count, revision: bag.revision, seen, holds });
+    return holds;
+}
+
 // A hot solo hunter carries its life state in the session (`coldLifeState`),
 // where the hot sale visit writes the same retry (HuntingState pauseSelling).
 function forActor(actor, state = null, timestamp = Date.now()) {
@@ -127,8 +144,10 @@ function forActor(actor, state = null, timestamp = Date.now()) {
     // lazy: worker the cold worker loads this file (BackgroundResolver); forActor is hot only.
     const Attack = invoke('GameServer/Actor/Attack');
     const Roles = invoke('GameServer/Bot/AI/BotRoles'); // lazy: worker as Attack above.
-    const mask = Attack.weaponMaskFor(actor);
-    const costs = (actor.skillset?.fetchSkills?.() || []).filter(skill => {
+    // evaluate reads the cast costs only for a role that rests for mana.
+    const manaRequired = Roles.shouldRestForMana(actor);
+    const mask = manaRequired ? Attack.weaponMaskFor(actor) : 0;
+    const costs = !manaRequired ? [] : (actor.skillset?.fetchSkills?.() || []).filter(skill => {
         const semantic = skill.fetchSemantic?.() || {};
         return !skill.fetchPassive?.() && semantic.target === 'enemy' && !semantic.notUsedInC4
             && (!semantic.requires?.weaponsAllowed || (Number(semantic.requires.weaponsAllowed) & mask) !== 0)
@@ -138,9 +157,10 @@ function forActor(actor, state = null, timestamp = Date.now()) {
     })
         .map(skill => Attack.prototype.skillMpCost(actor, skill));
     return saleRetryWaits(evaluate({ dead: actor.isDead?.() === true, hp: actor.fetchHp?.(), mp: actor.fetchMp?.(),
-        manaRequired: Roles.shouldRestForMana(actor), castCosts: costs,
+        manaRequired, castCosts: costs,
         ...actorInventory(actor), slotLimit: InventoryLimits.forActor(actor), maxLoad: actor.fetchMaxLoad?.() || 0 }),
-    state, timestamp, actor, () => invoke('GameServer/Bot/Economy/MarketListingPolicy').actorState({ actor, coldLifeState: state }));
+    state, timestamp, actor, () => invoke('GameServer/Bot/Economy/MarketListingPolicy').actorState({ actor, coldLifeState: state }),
+    () => actorRetryHolds(actor, state));
 }
 
 module.exports = { evaluate, forState, bagFor, forActor, bagMarks, stateInventory, inventoryLimit, weightPenalty };

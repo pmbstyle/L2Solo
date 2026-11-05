@@ -37,4 +37,52 @@ const [coldEdges, cold] = walk(EconomicTrip.details(probe, 'Giran')), [warmEdges
 assert.deepEqual(warm, cold);
 assert.equal(cold.known, true);
 assert.ok(warmEdges < coldEdges, `remembered regions skip the walk (${warmEdges} < ${coldEdges})`);
-console.log('Economic marginal trips: spent outbound, shared visit, extra detour, actual continuation, worker parity and unknown/karma routes passed');
+// The route table moves only with what its rows read: a rest, a hunt and a trip
+// to a spot, a scroll used while one is left, the field region, a trip's spot
+// keep one table; a bot's point moves it unless a return point stands for it.
+// Every table equals the rows read on the full state.
+const rowsOf = value => EconomicTrip.towns.map(town => {
+    const row = EconomicTrip.read(value, town);
+    return row.known ? [true, row.hours, row.fees] : [false, null, null];
+});
+const field = { characterId: 9303, phase: 'cold', activity: 'hunting', currentRegion: 'Field', loc: home, spotId: 7,
+    inventory: { 736: { selfId: 736, amount: 3 } }, stats: {} };
+const fieldRows = EconomicTrip.prepared(field);
+for (const [why, value] of [['a rest', { ...field, activity: 'resting' }],
+    ['a used scroll', { ...field, inventory: { 736: { selfId: 736, amount: 1 } } }],
+    ['the field region', { ...field, currentRegion: 'Dion' }],
+    ['a trip to a spot', { ...field, activity: 'traveling', stats: { travel: { spotId: 8, to: dion, arrivalActivity: 'hunting' } } }]]) {
+    assert.equal(EconomicTrip.key(value), EconomicTrip.key(field), `${why} keeps the route key`);
+    assert.strictEqual(EconomicTrip.prepared(value), fieldRows, `${why} keeps the route table`);
+}
+const returning = { ...field, stats: { marketReturn: { loc: home } } };
+assert.equal(EconomicTrip.key({ ...returning, loc: giran }), EconomicTrip.key(returning), 'a return point stands for the bot\'s point');
+for (const [why, value] of [['the last scroll used', { ...field, inventory: {} }], ['a move', { ...field, loc: giran }],
+    ['a town visit', state], ['an accepted trip', planned], ['karma', { ...field, stats: { karma: 700 } }]])
+    assert.notEqual(EconomicTrip.key(value), EconomicTrip.key(field), `${why} moves the route key`);
+for (const value of [field, { ...field, inventory: {} }, returning, { ...returning, loc: giran }, state, visiting, planned,
+    { ...planned, stats: { ...planned.stats, travel: { ...planned.stats.travel, to: null } } },
+    { ...field, activity: 'traveling', stats: { travel: { spotId: 8, to: dion, arrivalActivity: 'hunting' } } },
+    { ...field, stats: { karma: 700 } }])
+    assert.deepEqual(EconomicTrip.prepared(value), rowsOf(value), 'the route table on its key reads as the full state');
+// The route rows' declared inputs (DecisionSections LINK_INPUTS routeRows): each
+// one moved moves the key and is the input named; what keeps the key moves none.
+const Sections = require('../src/GameServer/Bot/Economy/DecisionSections');
+const firstMoved = (from, to) => Sections.movedInput('routeRows', Sections.routeVersions(from), Sections.routeVersions(to));
+const routeRows = [
+    ['route.activity', field, { ...field, activity: 'shopping' }],
+    ['route.region', state, { ...state, currentRegion: 'Giran' }],
+    ['route.loc', field, { ...field, loc: giran }],
+    ['route.scroll', field, { ...field, inventory: {} }],
+    ['route.karma', field, { ...field, stats: { karma: 700 } }],
+    ['route.return', returning, { ...field, stats: { marketReturn: { loc: giran } } }],
+    ['route.travel', planned, { ...planned, stats: { ...planned.stats, travel: { ...planned.stats.travel, townName: 'Giran' } } }]];
+assert.deepEqual(routeRows.map(row => row[0]), [...Sections.LINK_INPUTS.routeRows.discrete], 'a row per declared input');
+for (const [name, from, to] of routeRows) {
+    assert.notEqual(EconomicTrip.key(to), EconomicTrip.key(from), `a moved ${name} moves the route key`);
+    assert.equal(firstMoved(from, to), name, `and is the input that moved (${name})`);
+}
+for (const value of [{ ...field, activity: 'resting' }, { ...field, inventory: { 736: { selfId: 736, amount: 1 } } },
+    { ...field, currentRegion: 'Dion' }, { ...field, activity: 'traveling', stats: { travel: { spotId: 8, to: dion, arrivalActivity: 'hunting' } } }])
+    assert.equal(firstMoved(field, value), '', 'a rest, a hunt, a trip to a spot or a scroll used while one is left moves no input');
+console.log('Economic marginal trips: spent outbound, shared visit, extra detour, actual continuation, worker parity, unknown/karma routes and the route key passed');

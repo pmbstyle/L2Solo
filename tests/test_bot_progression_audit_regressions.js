@@ -2,6 +2,7 @@
 // environment, which the economy worker copies.
 process.env.BOT_STATIC_SHOTS_DISABLED = 'false';
 const assert = require('assert');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 require('./helpers/databaseIsolation');
 const isolated = require('./helpers/isolatedSocialDatabase')('progression-native-leaf');
 require('../src/Global');
@@ -150,7 +151,7 @@ async function checkWorkerSafety() {
         simulation: { revision: 3 },
         stats: { ...m.stats, clanPartyObjective: objective } }));
     const party = { partyId: 'unsafe', leaderId: 1, memberIds: [1, 2, 3], spotId: 'tower',
-        stats: { objective, sessionExpiresAt: at + 3600000 } };
+        stats: { objective } };
     const kernel = new ColdSimulationKernel({ now: () => at,
         resolveSolo: () => { throw new Error('party review must not run a solo fight'); },
         resolveParty: () => { throw new Error('an unsafe clan party must be released before combat'); },
@@ -209,8 +210,8 @@ async function checkMissingSpotRecovery() {
         // an unsupported wish before the root keeps its place without a row.
         const queuePosition = native.queue.filter(row => row.funded).findIndex(row => row.key === leaf.rootKey);
         assert(queuePosition >= 0 && queuePosition < 8, 'the selected root has an exact native funded money triplet');
-        const ratio = native.statsPacket.money[4 + queuePosition * 3];
-        assert(Number.isFinite(ratio) && ratio >= native.statsPacket.money[1]);
+        const ratio = Packet.fundedRatio(native.statsPacket.money, queuePosition);
+        assert(Number.isFinite(ratio) && ratio >= Packet.moneyPrice(native.statsPacket.money));
         assert(Funding.spendable(buyer, 0, { r: ratio }) >= selectedGoal.plan.estimatedCost,
             'the material quote fits its actual parent wish budget after reserve and higher-valued wishes');
         assert.deepStrictEqual(Needs.evaluate({ ...buyer, updatedAt: at + 1 }, { now: at, decisions }), [],

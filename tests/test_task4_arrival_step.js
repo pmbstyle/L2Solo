@@ -14,7 +14,7 @@ const dependencies = {
     'GameServer/Inventory/ShotStock': { SHOT_IDS: [1463] },
     'GameServer/Bot/Population/BotLifeState': {
         // The purchase gate keeps its war-ticket rule (the gear rules are out of this scene).
-        cachedState: () => current, hotRow: () => null,
+        cachedState: () => current, hotRow: () => null, planWants: () => false,
         marketPurchaseBlocker: (state, offer) => require(root + '/src/GameServer/Bot/Population/PartyMarketBreak')
             .warSupplyPurchaseBlocker(state, offer.selfId),
         subscribeChanges: () => () => {}, subscribeMarketReviewChanges: () => () => {},

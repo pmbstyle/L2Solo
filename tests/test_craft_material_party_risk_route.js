@@ -35,7 +35,7 @@ const needs = [1, 2].map(characterId => ({ characterId, itemId: characterId === 
     requiredTotal: 12, quota: 10, collected: characterId, helpDeal: { fee: 100, paid: 20 } }));
 let party = { partyId: 'material-risk', leaderId: 1, memberIds: [1, 2, 3], status: 'active', spotId: 'danger',
     nextResolveAt: at, stats: { objective, agreement: { mode: 'need', materialNeeds: needs, materialCursor: 7 },
-        sessionExpiresAt: at + 3600000, memberGoals: needs, fightsWon: 0 } };
+        memberGoals: needs, fightsWon: 0 } };
 const evidence = Risk.record(party, { debug: { fights: 3, wins: 0, spotId: 'danger' }, partyPatch: { stats: { deaths: 2 } } }, at);
 party = { ...party, stats: { ...party.stats, ...evidence.partyPatch.stats } };
 assert(Risk.excludedSpotIds(party, at).has('danger'), 'native risk evidence excludes the original camp');
@@ -128,7 +128,7 @@ async function main() {
         ?.materialEvacuation, 'a party already farming unrelated ground must also exit the stale operation');
     physicalSpotId = 'danger';
     const departed = await proposalsFor(party, members, evacuation, at);
-    departed.party.stats.sessionExpiresAt = at + 1;
+    departed.party.stats.sessionReview = { at, nextAt: at + 1 }; // its review clock runs out before the arrival
     const arrived = await proposalsFor(departed.party, departed.members, null, departed.party.stats.travel.arrivalAt);
     assert.equal(arrived.party.status, 'dissolved');
     arrived.members.forEach((state, i) => {

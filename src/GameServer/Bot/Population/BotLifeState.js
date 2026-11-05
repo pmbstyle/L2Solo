@@ -340,7 +340,30 @@ function equipmentTargetFulfilled(stats = {}, inventory = {}) {
         ));
 }
 
+// Whether the equipment plan, while it acts, wants an item: its target, its
+// next input or a material it still misses.
+function planWants(plan, itemId) {
+    const id = Number(itemId);
+    return id > 0 && ['active', 'component_ready', 'ready_to_craft'].includes(plan?.status) && (Number(plan.target?.selfId) === id || Number(plan.next?.itemId) === id
+        || (plan.materials || []).some(row => Number(row.selfId) === id && Number(row.missing || 0) > 0));
+}
+
+// A want's clear events (MarketDemandIndex: no clock): the item arrived in the
+// bag by any path (loot, trade, craft, a purchase elsewhere), or a want the
+// plan backed is one the plan no longer wants. A clan's want is the clan
+// signal's own (Database clan market demand).
+function settleMarketWanted(state) {
+    const wanted = state.stats?.marketWanted;
+    if (!wanted || wanted.clanId) return state;
+    const id = Number(wanted.itemId);
+    // held: what the bag holds once the failed purchase's units arrive (a want without it keeps to its plan).
+    const arrived = Number(wanted.held) > 0 && Number(state.inventory?.[id]?.amount || 0) >= Number(wanted.held);
+    if (!arrived && !(wanted.plan === true && !planWants(state.stats?.equipmentPlan, id))) return state;
+    return { ...state, stats: { ...state.stats, marketWanted: null } };
+}
+
 function reconcileFulfilledEquipmentPlan(state = {}) {
+    state = settleMarketWanted(state);
     const progress = invoke('GameServer/Bot/AI/EquipmentAcquisitionProgress');
     const plan = state.stats?.equipmentPlan;
     if (plan?.clanGoal?.goalKey && progress.componentAcquired(state, plan)) {
@@ -605,28 +628,34 @@ function targetCombatTelemetry(previous = {}, debug = {}, timestamp = now()) {
     };
 }
 
-function compactResolveDebug(debug = {}) {
-    if (Config.developerDiagnostics !== true) return null;
-    return {
-        route: debug.route || null,
-        partyId: debug.partyId || null,
-        targetNpcId: Number(debug.targetNpcId || 0) || null,
-        wins: Number(debug.wins || 0),
-        fights: Number(debug.fights || 0),
-        defeated: Array.isArray(debug.defeatedNpcIds) ? debug.defeatedNpcIds.slice(-8).map(Number) : [],
-        at: now()
-    };
-}
+// Parses main already holds of the texts a row carries, by the object they came with:
+// a row save() bound keeps save()'s stats parse ({ statsJson, stats }), taken once
+// (no two states share it); a state normalize() built keeps its mind parse and its
+// bag ({ mindJson, mind, inventorySummary, inventory }). normalize(row) takes a
+// parse while the row's text is the parsed text (parsing it again gives an equal
+// object): the RETURNING stats, and the mind and bag of the cached state the row
+// replaces (a review, a resolve that moved no item, a row read back unchanged),
+// which the new state then shares (a state is replaced, never edited). Costs the
+// two texts per cached state (~6 KB a bot in a 1731-bot world).
+const parsedColumns = new WeakMap();
 
 function normalize(row) {
-    const stats = SpotRiskPolicy.marksInSteps(SavedStats.merge(row.statsJson, row.mindJson), Date.now());
+    const parsed = parsedColumns.get(row);
+    if (parsed) parsedColumns.delete(row);
+    const prior = parsedColumns.get(cache.get(Number(row.characterId)));
+    const body = parsed && parsed.statsJson === row.statsJson ? parsed.stats : row.statsJson;
+    const mind = prior && prior.mindJson === row.mindJson ? prior.mind : SavedStats.parsedObject(row.mindJson);
+    const stats = SpotRiskPolicy.marksInSteps(SavedStats.merge(body, mind), Date.now());
     delete stats.marketTrades;
     delete stats.priceBeliefs;
-    // The retired combat profile hold record (no reader).
+    // The retired combat profile hold record and last round's debug copy (no reader).
     if (stats.coldCombat) delete stats.coldCombat.profileHold;
-    const inventory = normalizeInventoryStackability(parseJson(row.inventorySummary, {}));
+    delete stats.lastResolveDebug;
+    // The bag is a pure function of its text (item templates do not change at run time).
+    const inventory = prior && prior.inventorySummary === row.inventorySummary ? prior.inventory
+        : normalizeInventoryStackability(InventorySummary.read(row.inventorySummary));
 
-    return ClanMembershipPolicy.reconcileState({
+    const state = ClanMembershipPolicy.reconcileState({
         characterId: Number(row.characterId),
         accountName: row.accountName || '',
         name: row.characterName || '',
@@ -673,6 +702,8 @@ function normalize(row) {
         simulation: { revision: Math.max(0, Number(row.simulationRevision || 0)) },
         updatedAt: Number(row.updatedAt || 0)
     });
+    parsedColumns.set(state, { mindJson: row.mindJson, mind, inventorySummary: row.inventorySummary, inventory });
+    return state;
 }
 
 // A main write that moved a far row's revision hands back the written number
@@ -802,7 +833,7 @@ function recordFromSession(session, phase, reason = '') {
         targetLevelBand: levelBand(actor.fetchLevel()),
         deathCount: 0,
         partyId: null,
-        inventorySummary: safeJson(inventory),
+        inventorySummary: InventorySummary.saved(inventory),
         ...SavedStats.statsColumns(stats),
         updatedAt: timestamp
     };
@@ -845,7 +876,7 @@ function rowFromState(state) {
         targetLevelBand: persistedState.levelBand || levelBand(persistedState.level),
         deathCount: persistedState.stats?.deaths || 0,
         partyId: persistedState.party?.partyId || null,
-        inventorySummary: safeJson(persistedState.inventory || {}),
+        inventorySummary: InventorySummary.saved(persistedState.inventory || {}),
         ...SavedStats.statsColumns(persistedState.stats),
         // `save()` does not bind the revision: a far row's revision moves in
         // SQL and save() writes the moved number back here. Until then the row
@@ -872,13 +903,21 @@ function setSessionSnapshotsAuthority(session, saved) {
     RefreshPartyMemberships([session], invoke);
 }
 
+// The save's upsert text, built at the first save instead of a new ~5 KB
+// string per save (the statement cache keys on its text). Its inputs are
+// module constants fixed at load: TABLE, Database.HELD_ROW_SET,
+// Database.MOVE_FAR_REVISION and EconomyCommit.preserveLeafSql's output.
+let saveSql = null;
 function save(row, options = {}) {
     // ARCH-NOTE: strip retired counters even when an old caller supplies them on a new row.
     const proposedStats = parseJson(row.statsJson, {});
+    // Whether proposedStats is still the parse of the text bound below.
+    let boundParse = !!proposedStats && typeof proposedStats === 'object' && !Array.isArray(proposedStats);
     if (proposedStats.marketTrades || proposedStats.priceBeliefs) {
         delete proposedStats.marketTrades;
         delete proposedStats.priceBeliefs;
         row.statsJson = safeJson(proposedStats);
+        boundParse = false;
     }
     // A hot row belongs to the actor in the world; only markCold hands it back
     // to the cold population. A cold row proposed over it comes from a job that
@@ -894,6 +933,7 @@ function save(row, options = {}) {
     if (reconciled !== proposed) {
         row.activity = reconciled.activity;
         row.statsJson = safeJson(reconciled.stats);
+        boundParse = false;
     }
     // An async lifecycle step may still hold the inventory from before an
     // exchange. Reject it before its subsequent inventory sync restores gear.
@@ -922,7 +962,7 @@ function save(row, options = {}) {
     const beforeWrite = Object.getOwnPropertyDescriptor(options, 'beforeWrite');
     const databaseOptions = beforeWrite ? Object.defineProperty({}, 'beforeWrite', beforeWrite) : undefined;
     const statement = [
-        `INSERT INTO ${TABLE} (
+        saveSql ||= `INSERT INTO ${TABLE} (
             characterId, accountName, characterName, level, exp, sp, adena, homeRegion, currentRegion,
             spotId, activity, phase, activityStartedAt, nextResolveAt,
             lastResolvedAt, lastHotAt, locX, locY, locZ, hp, maxHp, mp, maxMp,
@@ -930,8 +970,8 @@ function save(row, options = {}) {
             nameGeneratorVersion, appearanceVersion, mindJson
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(characterId) DO UPDATE SET
-            accountName = excluded.accountName,
-            characterName = excluded.characterName,
+            -- The indexed columns the row does not already hold (Database.saveBotLifeState).
+            ${Database.HELD_ROW_SET}
             nameGeneratorVersion = excluded.nameGeneratorVersion,
             appearanceVersion = excluded.appearanceVersion,
             level = excluded.level,
@@ -942,9 +982,7 @@ function save(row, options = {}) {
             currentRegion = excluded.currentRegion,
             spotId = excluded.spotId,
             activity = excluded.activity,
-            phase = excluded.phase,
             activityStartedAt = excluded.activityStartedAt,
-            nextResolveAt = excluded.nextResolveAt,
             lastResolvedAt = excluded.lastResolvedAt,
             lastHotAt = excluded.lastHotAt,
             locX = excluded.locX,
@@ -956,18 +994,21 @@ function save(row, options = {}) {
             maxMp = excluded.maxMp,
             targetLevelBand = excluded.targetLevelBand,
             deathCount = excluded.deathCount,
-            partyId = excluded.partyId,
             inventorySummary = excluded.inventorySummary,
+            ${Database.bagRevisionSet('excluded.inventorySummary')},
             -- Native takeover/release/restore owns player membership. A late
-            -- actor snapshot cannot revive or remove that ownership marker.
-            statsJson = json_set(json_patch(json_remove(${EconomyCommit.preserveLeafSql(
-                "json_remove(excluded.statsJson, '$.marketTrades', '$.priceBeliefs')")}, '$.playerPartyTakeover', '$.constPartySession'),
-                json_object('playerPartyTakeover', json_extract(bot_life_state.statsJson, '$.playerPartyTakeover'),
-                    'constPartySession', json_extract(bot_life_state.statsJson, '$.constPartySession'))),
-                '$.hennas', json_array(
+            -- actor snapshot cannot revive or remove that ownership marker:
+            -- both are dropped from the proposal and patched back from the
+            -- row (a NULL member removes the key), with the hennas from
+            -- their rows, in one patch (one pass over the stats text).
+            statsJson = ${EconomyCommit.preserveLeafSql(
+                "json_remove(excluded.statsJson, '$.marketTrades', '$.priceBeliefs', '$.playerPartyTakeover', '$.constPartySession')",
+                `'playerPartyTakeover', json_extract(bot_life_state.statsJson, '$.playerPartyTakeover'),
+                'constPartySession', json_extract(bot_life_state.statsJson, '$.constPartySession'),
+                'hennas', json_array(
                     (SELECT symbolId FROM character_hennas WHERE characterId = excluded.characterId AND slot = 1),
                     (SELECT symbolId FROM character_hennas WHERE characterId = excluded.characterId AND slot = 2),
-                    (SELECT symbolId FROM character_hennas WHERE characterId = excluded.characterId AND slot = 3))),
+                    (SELECT symbolId FROM character_hennas WHERE characterId = excluded.characterId AND slot = 3))`)},
             -- The mind rides under the same guard as the body: a near bot's
             -- mind on main is the worker's copy, the next save carries the
             -- same copy, and a refused save is a stale actor snapshot, so a
@@ -1029,7 +1070,10 @@ function save(row, options = {}) {
         ]
     ];
     NativeWriteCheckpoint.bindRow(beforeWrite?.value, statement, row.characterId);
-    return Database.saveBotLifeState(statement, databaseOptions, row.characterId).then((result) => {
+    // The write reads the kit from the stats it binds, normalize(row) the stats
+    // it returns: both take this parse while their text is the one parsed.
+    const parsed = boundParse ? { statsJson: row.statsJson, stats: proposedStats } : null;
+    return Database.saveBotLifeState(statement, databaseOptions, row.characterId, parsed).then((result) => {
         if (result && typeof result.affectedRows === 'number' && result.affectedRows !== 1) {
             const error = new Error(`bot life state ownership conflict for ${row.characterId}`);
             error.code = 'BOT_LIFE_STATE_OWNERSHIP_CONFLICT';
@@ -1038,6 +1082,7 @@ function save(row, options = {}) {
         }
         Metrics.recordDbFlush();
         row.statsJson = result.statsJson;
+        if (parsed) parsedColumns.set(row, parsed);
         if (result.mindJson !== undefined) row.mindJson = result.mindJson;
         // The cache built from this row takes the row's revision (moved by
         // this write on a far row), not the older one the caller's state carried.
@@ -1376,7 +1421,7 @@ function recoverDissolvedPartyMembers() {
 function mergeSessionIntoLifeState(session, state, phase, reason = '', options = {}) {
     const observed = recordFromSession(session, phase, reason);
     const observedStats = SavedStats.merge(observed.statsJson, observed.mindJson);
-    const observedInventory = parseJson(observed.inventorySummary, {});
+    const observedInventory = InventorySummary.read(observed.inventorySummary);
     const timestamp = now();
     const physicalLoc = options.physicalLocation
         ? { locX: observed.locX, locY: observed.locY, locZ: observed.locZ } : null;
@@ -2033,7 +2078,7 @@ const BotLifeState = {
         const newerTiming = Number(current.simulation?.revision || 0) > Number(row.simulationRevision)
             || Number(current.updatedAt || 0) > Number(row.updatedAt);
         const snapshot = { ...current, simulation: movedSimulation(current, row),
-            stats: { ...current.stats, lastWarehouseWithdrawal: row.withdrawal, ...(row.market ? { marketSellRetryAfter: null } : {}) },
+            stats: { ...current.stats, lastWarehouseWithdrawal: row.withdrawal, ...(row.market ? { marketSellSeen: null } : {}) },
             timing: newerTiming ? current.timing : { ...current.timing, nextResolveAt: row.nextResolveAt ? Number(row.nextResolveAt) : null } };
         cache.set(snapshot.characterId, snapshot);
         notifyColdSnapshot(snapshot, 'cold_warehouse_withdrawal');
@@ -2155,7 +2200,7 @@ const BotLifeState = {
                     lastResolvedAt: now()
                 },
                 stats: { ...(craftState.stats || {}), ...membershipStats, pvpEnemies: BotEnemyMemory.snapshot(session), lastReason: reason },
-                inventory: parseJson(row.inventorySummary, {})
+                inventory: InventorySummary.read(row.inventorySummary)
             };
             // Built without mergeSessionIntoLifeState: the near raise joins here.
             DecisionEvents.applyPendingRaise(session, nextState.stats);
@@ -2695,6 +2740,10 @@ const BotLifeState = {
         // traveling is a leftover; the route (BotRoute) would skip the bot forever.
         if (patchedStats.travel && state.activity !== 'traveling'
             && (result.patch?.activity || state.activity) !== 'traveling') patchedStats.travel = null;
+        // A hold that waits for an event names it (result.eventWait); any other
+        // round ends the wait (ColdSoloWindow.livedClock reads it).
+        if (result.eventWait) patchedStats.eventWait = result.eventWait;
+        else delete patchedStats.eventWait;
         const stats = {
             ...patchedStats,
             // From the progressed state: a new death has already washed karma there.
@@ -2707,7 +2756,6 @@ const BotLifeState = {
             spEarned: Number(state.stats?.spEarned || 0) + Number(result.materialize?.sp || 0),
             adenaEarned: Number(state.stats?.adenaEarned || 0) + Number(result.materialize?.adena || 0) + materializedAdenaItems,
             route: result.debug?.route || state.stats?.route || null,
-            lastResolveDebug: compactResolveDebug(result.debug),
             ...(targetCombat ? { targetCombat } : {})
         };
         const inventory = { ...(state.inventory || {}) };
@@ -2860,7 +2908,6 @@ const BotLifeState = {
                 // that snapshot, which still contains the previous tick's data.
                 ...(targetCombat ? { targetCombat } : {}),
                 ...(nextActivity === 'dead' ? { partyRequest: null } : {}),
-                lastResolveDebug: compactResolveDebug(result.debug),
                 equipment: equipmentSummaryFromInventory(equippedInventory)
             },
             inventory: equippedInventory,
@@ -3026,7 +3073,7 @@ const BotLifeState = {
                         if (deathDrop?.inventory) {
                             // The published state carries the row the drop read back.
                             row.simulationRevision = deathDrop.revision;
-                            row.inventorySummary = safeJson(deathDrop.inventory);
+                            row.inventorySummary = InventorySummary.saved(deathDrop.inventory);
                             row.statsJson = safeJson({ ...parseJson(row.statsJson, {}), pkDropDeathSequence: deathDrop.deathSequence });
                             invoke('GameServer/Actor/Generics/PkDeathDrop').spawn(row.characterId, profiledState.loc, deathDrop.drops);
                         }
@@ -3677,7 +3724,7 @@ const BotLifeState = {
     // saved as the row's bag summary the way a full save writes it.
     writeHeldFields(read, { stats = {}, columns = {}, inventory = null }, reason) {
         return writeHeldOnRevision(read, { stats: { ...stats, lastReason: reason }, columns: inventory
-            ? { ...columns, inventorySummary: safeJson(InventorySummary.canonicalize(inventory)) }
+            ? { ...columns, inventorySummary: InventorySummary.saved(InventorySummary.canonicalize(inventory)) }
             : columns }, reason);
     },
 
@@ -3888,9 +3935,10 @@ const BotLifeState = {
                 || (state.activity === 'crafting' && state.stats?.craftShop)) {
                 return;
             }
-            // An arrived trader waits on the native meeting event; its old
-            // resolve deadline is not a task waiting in the worker's heap.
-            if (state.stats?.tradeMeeting
+            // An arrived trader waits on the native meeting event, a clan
+            // waiter on its party (ClanPartyDuty.held); their old resolve
+            // deadline is not a task waiting in the worker's heap.
+            if ((state.stats?.tradeMeeting || state.stats?.eventWait)
                 && require('./ColdSimulationKernel').lifecycleKind(state) === 'event_driven') return;
             const nextResolveAt = Number(state.timing?.nextResolveAt || 0);
             if (nextResolveAt > timestamp && !hasStaleRateModelPlan(state)) return;
@@ -4192,6 +4240,7 @@ BotLifeState.normalizeInventoryStackability = normalizeInventoryStackability;
 BotLifeState.preserveClanOwnedEquipmentState = preserveClanOwnedEquipmentState;
 BotLifeState.reconcileEquipmentInventory = reconcileEquipmentInventory;
 BotLifeState.reconcileFulfilledEquipmentPlan = reconcileFulfilledEquipmentPlan;
+BotLifeState.planWants = planWants;
 BotLifeState.reconcileIncompatibleShieldState = reconcileIncompatibleShieldState;
 
 BotLifeState.targetCombatTelemetry = targetCombatTelemetry;

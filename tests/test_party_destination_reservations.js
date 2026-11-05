@@ -34,7 +34,7 @@ const at = Date.now(), ids = [];
                 version: invoke('GameServer/Bot/Population/ColdCombatProfile').PROFILE_VERSION, skills: [] } })]]);
     }
     const prepared = Parties.prepareCommit({ partyId: 'old-assembly', status: 'active', leaderId: ids[0],
-        memberIds: ids, spotId: spot.id, startedAt: at, stats: { objective, sessionExpiresAt: at + 3600000 } });
+        memberIds: ids, spotId: spot.id, startedAt: at, stats: { objective } });
     await DB.saveBackgroundParty(prepared.row);
     await Life.init(); await Parties.init();
     const members = ids.map(id => Life.cachedState(id));

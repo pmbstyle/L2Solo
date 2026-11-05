@@ -1,7 +1,12 @@
 // One bounded cache per connection; statements never cross a close/reopen.
 // All callers bind their parameters anew and consume results synchronously.
+// One entry per SQL text, keyed by the text itself, with a slot for native
+// Number callers and one for readers that normalize BigInts: a prefixed key
+// would copy the whole text on every call (5 KB for the lifecycle save).
+// At most 256 statements per connection; the least recently used text goes
+// first, both its statements with it.
 const caches = new WeakMap();
-const MAX_ENTRIES = 256;
+const MAX_STATEMENTS = 256;
 const MAX_SQL_LENGTH = 16384;
 
 function create(connection, sql, readBigInts) {
@@ -16,19 +21,26 @@ function prepare(connection, sql, readBigInts = false) {
     // Every other PRAGMA/DDL retains the original invalidation below.
     if (sql === 'PRAGMA data_version') return create(connection, sql, readBigInts);
     let cache = caches.get(connection);
-    if (!cache) { cache = new Map(); caches.set(connection, cache); }
+    if (!cache) { cache = { texts: new Map(), statements: 0 }; caches.set(connection, cache); }
     if (sql.length > MAX_SQL_LENGTH || !/^\s*(SELECT|INSERT|UPDATE|DELETE|REPLACE|WITH|EXPLAIN)\b/i.test(sql)) {
-        cache.clear();
+        cache.texts.clear();
+        cache.statements = 0;
         return create(connection, sql, readBigInts);
     }
-    // Keep native Number callers separate from readers that normalize BigInts.
-    const key = readBigInts ? '\0' + sql : sql;
-    let statement = cache.get(key);
-    if (statement) cache.delete(key);
-    else statement = create(connection, sql, readBigInts);
-    cache.set(key, statement);
-    if (cache.size > MAX_ENTRIES) cache.delete(cache.keys().next().value);
-    return statement;
+    let entry = cache.texts.get(sql);
+    if (entry) cache.texts.delete(sql);
+    else entry = { numbers: null, bigints: null };
+    cache.texts.set(sql, entry);
+    const slot = readBigInts ? 'bigints' : 'numbers';
+    if (entry[slot]) return entry[slot];
+    entry[slot] = create(connection, sql, readBigInts);
+    cache.statements++;
+    while (cache.statements > MAX_STATEMENTS) {
+        const [oldest, evicted] = cache.texts.entries().next().value;
+        cache.texts.delete(oldest);
+        cache.statements -= (evicted.numbers ? 1 : 0) + (evicted.bigints ? 1 : 0);
+    }
+    return entry[slot];
 }
 
 module.exports = { prepare };

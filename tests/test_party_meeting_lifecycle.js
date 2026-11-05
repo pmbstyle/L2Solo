@@ -10,7 +10,7 @@ const leading = led => ({ leaderParty: () => led, partyMembers: () => [], buyOrd
     hallNeeded: () => false, playerWaiting: () => false });
 const at = Date.now();
 const party = { partyId: 'meeting-roster', leaderId: 1, memberIds: [1, 2], status: 'active',
-    spotId: 'old-spot', nextResolveAt: at, stats: { sessionExpiresAt: at - 1,
+    spotId: 'old-spot', nextResolveAt: at, stats: { sessionReview: { at: at - 300000, nextAt: at - 1 },
         travel: { reason: 'party_spot_replan', arrivalAt: at - 1, spotId: 'group-destination' } } };
 const to = { locX: 2000, locY: 0, locZ: 0 };
 const members = [1, 2].map(characterId => ({ characterId, phase: 'cold', name: `Member${characterId}`,

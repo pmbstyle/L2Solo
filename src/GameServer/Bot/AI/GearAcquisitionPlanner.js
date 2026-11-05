@@ -1,3 +1,4 @@
+const { isDeepStrictEqual } = require('node:util');
 const Sources = require('../../Items/ItemAcquisitionCatalog');
 const ClanCrafting = require('../../Clan/ClanCraftingPolicy');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
@@ -56,8 +57,11 @@ const RATE_MODEL_VERSION = 17;
 const RAID_MIN_ROSTER_LABOR = 7;
 const DIRECT_FAILURE_RESOLVE_LIMIT = 8;
 const DIRECT_DROP_EXHAUSTION_MULTIPLIER = 3;
-const DIRECT_ROUTE_COOLDOWN_MS = 60 * 60 * 1000;
 const PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT = 2;
+// A party route set aside waits on who could join it, which has no event (the
+// recruit pool, bots near the bot's level coming online): its entry also ends
+// after this window (limits.md "Party route set aside").
+const PARTY_ROUTE_RETRY_MS = 60 * 60 * 1000;
 const PAIRED_SLOTS = Object.freeze({ 1: 2, 2: 1, 4: 5, 5: 4 });
 const NPC_GEAR_MAX_RANK = 'd';
 
@@ -197,15 +201,20 @@ function itemScore(item, role, classId) {
     return Number(stats.pDef || 0) + Number(item.etc?.mp || 0);
 }
 
+// A failed route's wake: the inputs whose move makes it worth trying again
+// (level, the equipped weapon's grade, being in a party), kept on its
+// recovery entry; the entry stands while they hold, however long.
 function recoveryWake(state = {}) {
     const weapon = equippedInventoryItems(state.inventory).find(item => BotEquipmentCompatibility.isWeaponSlot(Number(item.etc?.slot)));
     return [Number(state.level || 1), weapon ? rankIndex(weapon.etc?.rank) : -1, state.party?.partyId ? 1 : 0];
 }
 
 function recoveryEntryLive(entry, state, timestamp, wake) {
+    // An entry saved before wakes were kept keeps its stored expiry.
     if (!Array.isArray(entry.wake)) return Number(entry.until || 0) > timestamp;
     const current = wake || recoveryWake(state);
-    return entry.wake.length === 3 && entry.wake.every((value, n) => Number(value) === current[n]);
+    return entry.wake.length === 3 && entry.wake.every((value, n) => Number(value) === current[n])
+        && (entry.until === undefined || Number(entry.until) > timestamp);
 }
 
 // One planner decision judges the same bot against every candidate source
@@ -485,9 +494,75 @@ function equipmentItemBetter(item, current, role, classId) {
             && Number(item.template?.price || 0) < Number(current.template?.price || 0);
 }
 
+// An entry equipping never touches: no paperdoll slot in its template or its
+// own record, worn in no slot, no per-copy instances (InventorySummary.
+// completeInstances skips a stackable one). It is never a candidate, never
+// a conflict and never worn, so its answer is its copy (passCopy).
+function passesThrough(value, item) {
+    return !(Number(item?.etc?.slot || 0) > 0) && !(Number(value?.slot || 0) > 0)
+        && !(Array.isArray(value?.equippedSlots) && value.equippedSlots.some(slot => Number(slot) > 0))
+        && (value?.stackable === true || !Array.isArray(value?.instances));
+}
+function passCopy(value) {
+    return { ...value, ...(Array.isArray(value?.equippedSlots) ? { equippedSlots: [...value.equippedSlots] } : {}) };
+}
+// A deep copy of plain data (an inventory entry: its slots, its instances).
+function plainCopy(value) {
+    if (value === null || typeof value !== 'object') return value;
+    if (Array.isArray(value)) return value.map(plainCopy);
+    const out = {};
+    for (const key of Object.keys(value)) out[key] = plainCopy(value[key]);
+    return out;
+}
+// The answers of the latest equips (equipInventoryUpgrades), newest last. One
+// reads, besides the catalogue: the role (roleFor), the class, the grade of
+// the level, whether the state's own bag wears a two-handed weapon (a
+// shield's suitability: read only for a shield user whose bag holds one) and the bag's
+// gear entries (in order, by value; the others pass through, passesThrough).
+// A cold hunt window equips the same gear each round, twice
+// (BotLifeState.prepareResolve). Kept by count, not by bot; a new catalogue
+// (DataCache.items or newbieItems replaced or grown) drops them all.
+const EQUIP_ANSWERS = 16;
+let equipAnswers = { items: null, length: 0, newbie: null, rows: [] };
 function equipInventoryUpgrades(state = {}, inventory = {}) {
     const role = roleFor(state);
     const classId = classIdFor(state);
+    const entries = Object.entries(inventory || {});
+    const gear = [];
+    let shield = false;
+    for (const [key, value] of entries) {
+        const item = ItemTemplateIndex.find(DataCache.items, value?.selfId);
+        if (passesThrough(value, item)) continue;
+        // A gear entry under another key than its id: equip writes its id's key.
+        if (key !== String(value?.selfId)) return equipUpgradesOf(state, inventory, role, classId);
+        if (Number(item?.etc?.slot) === 8) shield = true;
+        gear.push([key, value]);
+    }
+    const grade = gradeForLevel(state.level);
+    const twoHanded = shield && BotEquipmentCompatibility.usesShield(role, classId) ? hasEquippedTwoHandedWeapon(state) : null;
+    if (equipAnswers.items !== DataCache.items || equipAnswers.length !== DataCache.items?.length
+        || equipAnswers.newbie !== DataCache.newbieItems) {
+        equipAnswers = { items: DataCache.items, length: DataCache.items?.length, newbie: DataCache.newbieItems, rows: [] };
+    }
+    const rows = equipAnswers.rows;
+    let row = null;
+    for (let at = rows.length - 1; at >= 0 && !row; at--) {
+        const held = rows[at];
+        if (held.role === role && held.classId === classId && held.grade === grade && held.twoHanded === twoHanded
+            && held.gear.length === gear.length
+            && held.gear.every(([key, value], index) => key === gear[index][0] && isDeepStrictEqual(value, gear[index][1]))) row = held;
+    }
+    if (Diagnostics.active()) Diagnostics.count('equip_upgrades', 'answers', row ? 'hit' : 'built');
+    if (row) {
+        return Object.fromEntries(entries.map(([key, value]) => [key, row.out.has(key) ? plainCopy(row.out.get(key)) : passCopy(value)]));
+    }
+    const next = equipUpgradesOf(state, inventory, role, classId);
+    rows.push({ role, classId, grade, twoHanded, gear: gear.map(([key, value]) => [key, plainCopy(value)]),
+        out: new Map(gear.map(([key]) => [key, plainCopy(next[key])])) });
+    if (rows.length > EQUIP_ANSWERS) rows.shift();
+    return next;
+}
+function equipUpgradesOf(state, inventory, role, classId) {
     const candidates = Object.values(inventory || {}).flatMap((entry) => {
         if (Number(entry?.amount || 0) < 1) return [];
         const item = ItemTemplateIndex.find(DataCache.items, entry.selfId);
@@ -551,10 +626,7 @@ function equipInventoryUpgrades(state = {}, inventory = {}) {
         for (const slot of ArmorPolicy.ARMOR_SLOTS) best.delete(String(slot));
         for (const item of chosen) best.set(String(item.etc.slot),availableArmor.find(candidate => candidate.item === item));
     }
-    const next = Object.fromEntries(Object.entries(inventory || {}).map(([key, value]) => [key, {
-        ...value,
-        ...(Array.isArray(value?.equippedSlots) ? { equippedSlots: [...value.equippedSlots] } : {})
-    }]));
+    const next = Object.fromEntries(Object.entries(inventory || {}).map(([key, value]) => [key, passCopy(value)]));
     const setUnequipped = (owned) => {
         owned.equipped = false;
         owned.equippedCount = 0;
@@ -1392,10 +1464,10 @@ function abandonAcquisition(state, itemId, timestamp = Date.now(), reason = 'mar
     const wake = recoveryWake(state);
     const recoveryTargets = (plan.recoveryTargets || []).filter((entry) => (
         recoveryEntryLive(entry, state, timestamp, wake)
-            && (Array.isArray(entry.wake) || Number(entry.targetId) !== Number(plan.target.selfId))
+            && (entry.reason === 'combat_unviable' || Number(entry.targetId) !== Number(plan.target.selfId))
     ));
     recoveryTargets.push({ targetId: Number(plan.target.selfId), itemId: Number(itemId),
-        reason, failedAt: timestamp, until: timestamp + acquisitionCooldown(state) });
+        reason, failedAt: timestamp, wake });
     return { ...state, stats: { ...state.stats, partyRequest: null, marketWanted: null,
         equipmentPlan: { status: 'abandoned', strategy: 'none', grade: gradeForLevel(state.level),
             reason, recoveryTargets, target: null, next: null, materials: [] } } };
@@ -1454,8 +1526,8 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
     const wake = recoveryWake(state);
     const recoveryTargets = (previousPlan?.recoveryTargets || [])
         .filter((entry) => recoveryEntryLive(entry, state, timestamp, wake) && Number(entry.targetId || 0) > 0);
-    // A retained route can fail on either side of a grade threshold. Keep
-    // its failure and cooldown until expiry, even after another level-up.
+    // A retained route can fail on either side of a grade threshold: its
+    // failure is judged even after another level-up.
     // ARCH-NOTE: the old active plan may survive a replan; replaying its
     // recorded failure immediately recreates dormancy on a wake event. Wait
     // for the new plan to stamp its baseline before judging that route again.
@@ -1473,14 +1545,14 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
             failedAt: timestamp,
             // ARCH-NOTE: dormantWishes does not exclude a gear target yet;
             // keep its numeric wake inputs in the planner's recovery list (max4).
-            ...(failure.reason === 'combat_unviable' ? { wake }
-                : { until: timestamp + (failure.itemId ? acquisitionCooldown(state) : DIRECT_ROUTE_COOLDOWN_MS) })
+            wake,
+            ...(failure.reason === 'party_route_unavailable' ? { until: timestamp + PARTY_ROUTE_RETRY_MS } : {})
         };
         const index = recoveryTargets.findIndex((entry) => Number(entry.targetId) === failure.targetId);
         if (index >= 0) recoveryTargets[index] = recovery;
         else recoveryTargets.push(recovery);
     }
-    const dormant = recoveryTargets.filter(entry => entry.reason === 'combat_unviable' && Array.isArray(entry.wake))
+    const dormant = recoveryTargets.filter(entry => Array.isArray(entry.wake))
         .sort((a, b) => Number(b.failedAt) - Number(a.failedAt));
     const dropped = new Set(dormant.slice(4));
     for (let n = recoveryTargets.length - 1; n >= 0; n--) if (dropped.has(recoveryTargets[n])) recoveryTargets.splice(n, 1);
@@ -1559,7 +1631,7 @@ function finalizePlan(state = {}, previousPlan = null, rawPlan = {}, context = {
             npcId: null,
             reason: 'market_alternative',
             failedAt: timestamp,
-            until: timestamp + DIRECT_ROUTE_COOLDOWN_MS
+            wake: recoveryWake(state)
         });
     }
     const amounts = rawPlan?.strategy === 'craft' ? craftProgress(state, rawPlan) : null;
@@ -1586,15 +1658,18 @@ function finalizePlan(state = {}, previousPlan = null, rawPlan = {}, context = {
     };
 }
 
-// The equipment plan's own leveling-recovery window (not a spot mark): one
-// hour, the value it shared with the former spot death mark.
-const LEVELING_RECOVERY_MS = 60 * 60 * 1000;
+// The equipment plan's leveling recovery: it stands until the bot regains the
+// level and EXP it lost (its events), and while its route's spot still holds
+// the bot off (the spot's backoff, counted in the bot's own steps) or still
+// presses with deaths; then the plan is judged afresh.
 function levelingRecoveryFor(state = {}, plan = state.stats?.equipmentPlan, timestamp = Date.now()) {
     const stored = plan?.levelingRecovery;
     if (stored) {
-        return timestamp < Number(stored.until || 0)
-            || Number(state.exp || 0) < Number(stored.resumeExp || 0)
-            || Number(state.level || 1) < Number(stored.resumeLevel || 1) ? stored : null;
+        const spotId = stored.spotId ? String(stored.spotId) : null;
+        return Number(state.exp || 0) < Number(stored.resumeExp || 0)
+            || Number(state.level || 1) < Number(stored.resumeLevel || 1)
+            || spotId && (SpotRiskPolicy.activeBackoffs(state).some(entry => entry.spotId === spotId)
+                || !!SpotRiskPolicy.deathPressure(state, spotId)) ? stored : null;
     }
     if (plan?.status !== 'active' || !['direct_drop', 'craft'].includes(plan.strategy)) return null;
     const level = Number(state.level || 1);
@@ -1613,7 +1688,6 @@ function levelingRecoveryFor(state = {}, plan = state.stats?.equipmentPlan, time
     return {
         reason: deleveled ? 'level_regression' : pressure.reason || 'death_pressure',
         startedAt: timestamp,
-        until: timestamp + LEVELING_RECOVERY_MS,
         resumeLevel: deleveled ? Math.max(level, baselineLevel) : level,
         resumeExp: Math.max(Number(state.exp || 0), Number(plan.progressionBaseline?.exp || 0),
             Number(death?.expBeforeDeath || 0)),
@@ -2220,7 +2294,7 @@ function sourceRouteReader(state, options = {}) {
         if (!LevelingRoutes.isSpotAllowedForState(spot, state, { ...soloOptions, matchupProfiles: profiles })) return 'matchup';
         return null;
     };
-    return (spot, npcId = 0) => {
+    const reader = (spot, npcId = 0) => {
         const at = SpotIndex.ordinalFor(spots, spot), shift = (at & 3) << 1;
         let cell = at < 0 ? 0 : cells[at >> 2] >> shift & 3;
         if (shadow && cell && !shadow.has(at)) {
@@ -2271,8 +2345,21 @@ function sourceRouteReader(state, options = {}) {
         if (pair !== undefined) ground.species[pair >> 2] |= (can ? GROUND_ALLOWED : GROUND_REFUSED) << ((pair & 3) << 1);
         return can;
     };
+    // What a verdict reads beside the ground's own cells (kept, or filled by
+    // this reader: their identity is the rest): named, for a holder of facts
+    // made with this reader (KeptSourceFacts).
+    reader.inputs = () => [['economicHunt', economicHunt], ['excluded', [...excluded].map(String).sort().join(',')]];
+    return reader;
 }
 
+// What a wish's sourceFacts walk reads of the bot and the world beside its
+// options (the spot values, the route reader, trips, the spoiler and the band
+// it is given): named, for a holder of its facts (KeptSourceFacts).
+function sourceFactInputs(state = {}) {
+    return [['rates', sourceYieldRatesKey()], ['level', Number(state.level || 0)],
+        ['readiness', JSON.stringify(combatReadiness(state))],
+        ['current', String(state.stats?.travel?.spotId || state.spotId || null)]];
+}
 function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
     const ratesKey = sourceYieldRatesKey(), killerLevel = Number(state.level || 0);
     const entries = sourceIndexFor(options.spots || []).get(Number(itemId)) || [];
@@ -3168,6 +3255,7 @@ module.exports.acquisitionTargetAllowed = acquisitionTargetAllowed;
 module.exports.sourceCacheSize = sourceCacheSize;
 module.exports.sourceYieldReaderFor = sourceYieldReaderFor;
 module.exports.sourceFacts = sourceFacts;
+module.exports.sourceFactInputs = sourceFactInputs;
 module.exports.sourceRouteReader = sourceRouteReader;
 module.exports.sourceGround = sourceGround;
 module.exports.sourceShotFlipCount = () => sourceShotFlips;

@@ -7,6 +7,7 @@ const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const World = invoke('GameServer/World/World');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
 const Solo = invoke('GameServer/Bot/Population/BackgroundResolver');
 const Party = invoke('GameServer/Bot/Population/BackgroundPartyResolver');
 const ColdCombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
@@ -68,7 +69,7 @@ const spot = { id: 'potion_field', name: 'Potion field', avgLevel: 14, density: 
 
 // A solo round that drinks: the bot comes back below its rest line to a mob it
 // hunts at full health (Walking Fungus, level 8), and its hour is worth a
-// bottle a second (money[0]), so it drinks to save the rest instead of sitting
+// bottle a second (its money packet's hour), so it drinks to save the rest instead of sitting
 // through it (RestPotion, T141). A fight that would end below the potion line
 // is no longer taken (BotEncounterReadiness), so no admitted fight is relied
 // on to go wrong; the seed sweep is deterministic.
@@ -125,6 +126,11 @@ async function physicalAmount(characterId, selfId) {
     assert.strictEqual(committed.inventory[POTION].amount, 5 - drunk, 'the commit debits the drunk potions');
     const [life] = await Database.execute(['SELECT inventorySummary FROM bot_life_state WHERE characterId = ?', [id]]);
     assert.strictEqual(JSON.parse(life.inventorySummary)[POTION].amount, 5 - drunk, 'the stored summary keeps the lower count');
+    // The stored items leave out what their template says (name, kind, rank);
+    // read back, the bag is the committed one.
+    assert.strictEqual(JSON.parse(life.inventorySummary)[POTION].name, undefined, 'the stored potion leaves its template name out');
+    assert.deepStrictEqual(InventorySummary.read(life.inventorySummary)[POTION], committed.inventory[POTION], 'the stored potions read back as committed');
+    assert.strictEqual(JSON.parse(life.inventorySummary)[57].name, 'Adena', 'an item that is not exactly its template stays whole');
     assert.strictEqual(await physicalAmount(id, POTION), 5 - drunk, 'the items table keeps the lower count');
 
     // A party member's bottles are its own too (T141): each member result

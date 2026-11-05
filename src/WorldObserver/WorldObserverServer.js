@@ -1,6 +1,7 @@
 const ClassProgression = invoke('GameServer/ClassProgression');
 const GearSkillHints = invoke('GameServer/Bot/AI/GearSkillHints');
 const ItemTemplateIndex = require('../GameServer/Item/ItemTemplateIndex');
+const InventorySummary = require('../GameServer/Bot/Population/InventorySummary');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -569,7 +570,7 @@ function compactClanCraftPlan(goal, members, warehouse, knowledge = []) {
     if (!recipe) return { reasonCode: 'clan_craft_recipe_unavailable', craft: null };
     const providers = Object.fromEntries(Object.entries(plan.craftProviders || {}).map(([id, provider]) => [id,
         { ...provider, known: knowledge.some(row => Number(row.characterId) === Number(provider.characterId) && Number(row.recipeId) === Number(id)) }]));
-    const inventory = { ...observerJson(carrier.inventorySummary) };
+    const inventory = InventorySummary.read(carrier.inventorySummary);
     for (const row of warehouse) {
         const id = Number(row.selfId);
         inventory[id] = { selfId: id, amount: Number(inventory[id]?.amount || 0)
@@ -890,7 +891,7 @@ function compactClanMember(row, hotEntry = null, leaderId = 0) {
         locZ: clanNumber(row.lifeLocZ || row.locZ)
     };
     const area = hot?.area || WorldAreaCatalog.publicArea(WorldAreaCatalog.resolve(loc));
-    const inventory = observerJson(row.inventorySummary);
+    const inventory = InventorySummary.read(row.inventorySummary);
     const equipment = coldEquipmentValue({ inventory, stats });
     const online = !!hot || Number(row.isOnline) === 1 || String(row.phase || '') === 'hot';
     return {
@@ -1917,7 +1918,6 @@ async function persistedPlayerDetail(characterId) {
 function compactColdDetail(state, leaderState = null) {
     const stats = state.stats || {};
     const classId = normalizedClassId(stats.classId ?? stats.classProgressionClassId);
-    const lastResolve = stats.lastResolveDebug || null;
     const compact = compactStateBot(state, new Set(), leaderState);
     return {
         ...compact,
@@ -1959,13 +1959,6 @@ function compactColdDetail(state, leaderState = null) {
             adenaEarned: Number(stats.adenaEarned || 0),
             partyGearReceived: Number(stats.partyGearReceived || 0)
         },
-        lastResolve: (invoke('GameServer/Bot/Population/PopulationConfig').developerDiagnostics === true) && lastResolve ? {
-            route: lastResolve.route || null,
-            targetNpcId: Number(lastResolve.targetNpcId || 0) || null,
-            fights: Number(lastResolve.fights || 0),
-            wins: Number(lastResolve.wins || 0),
-            at: lastResolve.at || null
-        } : null,
         plan: compactColdPlan(state),
         travel: stats.travel || null,
         goal: stats.acquisitionGoal || stats.goal || null,

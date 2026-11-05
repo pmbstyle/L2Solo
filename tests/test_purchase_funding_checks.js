@@ -77,6 +77,31 @@ const protectedPacket = [1000, .001, 10, 77, .2, 80, 999, .1, 180, 2509, .05, 28
 const protectedPaid = Funding.packetAfterPurchase(protectedPacket, 100, { r: .1 });
 assert.deepEqual(protectedPaid, [1000, .001, 10, 77, .2, 80, 999, .1, 80, 2509, .05, 180, 1060]);
 
+// The saved and messaged stats packet arrays keep their slots (StatsPacket owns them).
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
+const written = Packet.money({ hourAdena: 1000, moneyPrice: .001, survivalReserve: 10, firstUnfundedPrice: 77 });
+Packet.addFunded(written, .2, 80, 999, 2); Packet.addFunded(written, .1, 180, 2509, 2); Packet.addFunded(written, .05, 280, 0, 2);
+assert.deepEqual(written, [1000, .001, 10, 77, .2, 80, 999, .05, 280, 0], 'a full packet merges the tail into its last row');
+assert.deepEqual([Packet.hourAdena(protectedPacket), Packet.moneyPrice(protectedPacket), Packet.survivalReserve(protectedPacket),
+    Packet.firstUnfundedPrice(protectedPacket), Packet.fundedRows(protectedPacket)], [1000, .001, 10, 77, 3]);
+assert.deepEqual([Packet.fundedRatio(protectedPacket, 1), Packet.fundedCumulative(protectedPacket, 1), Packet.fundedItem(protectedPacket, 1)], [.1, 180, 2509]);
+assert.equal(Packet.hasMoney([77000, 1e-5, 1000]), false);
+assert.equal(Packet.hourAdena(undefined), undefined);
+const kit = { potionId: 1061, potionTarget: 40, shotId: 1835, shotTarget: 3000, shotCurrentAtBuild: 500, potionSurvivalTarget: 10,
+    gapHorizonHours: 2.5, shotsCanRestock: true, shotSurvivalTarget: 600, scrollHours: null };
+assert.deepEqual(Packet.stockTargets(kit), [1061, 40, 1835, 3000, 500, 10, 2.5, 1, 600, -1]);
+assert.deepEqual(Packet.stockTargets({ ...kit, shotsCanRestock: false, scrollHours: 0.25 }).slice(7), [0, 600, 0.25]);
+assert.deepEqual(Packet.kitRow(Packet.stockTargets(kit)), { ...kit, complete: true });
+assert.deepEqual(Packet.kitRow([1061, 40, 1835, 3000, 500, 10, 2.5]), { potionId: 1061, potionTarget: 40, shotId: 1835, shotTarget: 3000,
+    shotCurrentAtBuild: 500, potionSurvivalTarget: 10, gapHorizonHours: 2.5, shotsCanRestock: false, shotSurvivalTarget: undefined,
+    scrollHours: null, complete: false }, 'a row from before the restock slots reads its targets only');
+assert.equal(Packet.kitRow([1061, 40, 1835, 3000, 500]).potionSurvivalTarget, undefined);
+assert.equal(Packet.kitRow([1061, 40, 1835, 3000]), null);
+assert.deepEqual([Packet.potionSurvivalTarget([1061, 40, 1835, 3000, 500, 10, 2.5]), Packet.gapHorizonHours([1061, 40, 1835, 3000, 500, 10, 2.5]),
+    Packet.potionSurvivalTarget(undefined)], [10, 2.5, undefined]);
+assert.deepEqual(Packet.dangerPrice({ deathHours: 0.4, riskWeight: 1.5 }), [0.4, 1.5]);
+assert.deepEqual([Packet.deathHours([0.4, 1.5]), Packet.riskWeight([0.4, 1.5]), Packet.deathHours(undefined)], [0.4, 1.5, undefined]);
+
 // ARCH-NOTE: the previous fixture pinned removed percentage reserves and a removed
 // priority ladder. The packet now proves planner/shop agreement on the real shared gate.
 const Population = invoke('GameServer/Bot/Population/PopulationService');

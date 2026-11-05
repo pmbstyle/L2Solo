@@ -6,60 +6,6 @@ const BotAI = invoke('GameServer/Bot/BotAI');
 const ReceivedHit = invoke('GameServer/Actor/Generics/ReceivedHit');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 
-function actor(online = true) {
-    return {
-        fetchIsOnline: () => online
-    };
-}
-
-const botSession = {
-    accountId: 'bot_test',
-    actor: actor(true)
-};
-const visiblePlayer = {
-    accountId: 'player_test',
-    actor: actor(true)
-};
-const visibleBot = {
-    accountId: 'bot_other',
-    actor: actor(true)
-};
-const offlinePlayer = {
-    accountId: 'player_offline',
-    actor: actor(false)
-};
-
-const World = {
-    fetchVisibleUsers() {
-        return [visiblePlayer, visibleBot, offlinePlayer];
-    }
-};
-
-assert.deepStrictEqual(BotAI.visibleRealPlayers(botSession, botSession.actor, World), [visiblePlayer]);
-assert.deepStrictEqual(BotAI.visibleRealPlayers(botSession, botSession.actor, { fetchVisibleUsers: () => [] }), []);
-
-const positionedBot = {
-    fetchLocX: () => 100,
-    fetchLocY: () => 100
-};
-const positionedPlayer = {
-    accountId: 'player_joined_after_cache',
-    actor: {
-        fetchIsOnline: () => true,
-        fetchLocX: () => 150,
-        fetchLocY: () => 100
-    }
-};
-const cachedWorld = { user: { revision: 0, sessions: [] } };
-assert.deepStrictEqual(BotAI.visibleRealPlayers(botSession, positionedBot, cachedWorld), []);
-cachedWorld.user.sessions.push(positionedPlayer);
-cachedWorld.user.revision += 1;
-assert.deepStrictEqual(
-    BotAI.visibleRealPlayers(botSession, positionedBot, cachedWorld),
-    [positionedPlayer],
-    'a player joining during the cache window must be visible without waiting for the TTL'
-);
-
 let wakeups = 0;
 let urgentWakeup = false;
 let invalidatedThreatSession = null;

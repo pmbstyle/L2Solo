@@ -38,13 +38,14 @@ const ids = [731501, 731502];
                     Afk.refreshRecord(result.shop); ads.push(result.shop.id);
                 }
             }
-            const now = Date.now(), retry = now + 1800000;
+            const now = Date.now(), inventory = Life.inventorySummaryFromItems(await Database.fetchItems(id));
+            // The sale retry: the last visit tried every kind in this bag, nothing new came since.
+            const retry = { items: Object.keys(inventory).map(Number).sort((a, b) => a - b), buyers: null };
             const state = await Life.upsertState({ characterId: id, name: `LoadedShaman${id}`, level: 15,
                 phase: 'cold', activity: 'shopping', currentRegion: 'Orc Village', adena: 361,
-                loc: { locX: -44600, locY: -112400, locZ: -240 },
-                inventory: Life.inventorySummaryFromItems(await Database.fetchItems(id)),
+                loc: { locX: -44600, locY: -112400, locZ: -240 }, inventory,
                 vitals: { hp: 400, maxHp: 400, mp: 200, maxMp: 200 },
-                stats: { classId: 49, generatedCold: true, marketSellRetryAfter: retry,
+                stats: { classId: 49, generatedCold: true, marketSellSeen: retry,
                     marketReturn: { loc: { locX: -29133, locY: -100191, locZ: -2728 }, regionName: 'Hunting ground' },
                     townVisit: { town: 'Orc Village', reason: 'sell_inventory', completed: true, startedAt: now - 25000 } }, timing: {} }, 'shaman_sale_fixture');
             if (id === ids[0]) {
@@ -77,7 +78,7 @@ const ids = [731501, 731502];
                 const value = selfId => Rules.npcBuyPrice(data.items.find(item => item.selfId === selfId).template.price);
                 assert.equal(await world.amount(id, 57), before + value(21) * 8 + value(28) * 7, 'the unload pays exact NPC buyback once');
                 assert.equal(Floor.bagFor(result.state, now), null, 'the bot can resume hunting after the visit');
-                assert.equal(result.state.stats.marketSellRetryAfter, retry, 'the ordinary market retry remains in force');
+                assert.deepEqual(result.state.stats.marketSellSeen, retry, 'the ordinary market retry remains in force');
                 assert.equal(result.state.activity, 'traveling', 'the whole visit resumes the original outing after unloading');
                 assert.equal(result.state.stats.travel.reason, 'return_after_market');
                 await Listing.open({ ...result.state, activity: 'shopping' }, { now: now + 1000 });

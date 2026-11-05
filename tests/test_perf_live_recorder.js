@@ -77,6 +77,11 @@ const BUSY = 'function stepBots() { let x = 0; const t = Date.now(); while (Date
         assert.ok(spikes.every(row => row.profile && fs.existsSync(path.join(boot, row.profile))), 'long chunks are kept');
         assert.ok(JSON.parse(fs.readFileSync(path.join(boot, spikes[0].profile), 'utf8')).samples.length > 0);
 
+        // Garbage enough for a scavenge on main; the GC observer reports after this task.
+        let garbage = null;
+        for (let i = 0; i < 200000; i++) garbage = { i, text: `garbage ${i}` };
+        assert.ok(garbage);
+        await new Promise(resolve => setTimeout(resolve, 20));
         await recorder.recordSummary('summary', { enabled: false, coldQueue: { overdue: 2 } }, () => ({ worker: { heapAfterGc: 1 } }));
         await recorder.writes;
         const summary = lines(path.join(boot, day)).find(line => line.type === 'summary');
@@ -86,6 +91,17 @@ const BUSY = 'function stepBots() { let x = 0; const t = Date.now(); while (Date
         assert.deepEqual(Object.keys(summary.heaps).sort(), ['main', 'perf-chunks', 'perf-test-busy', 'perf-test-leak', 'perf-test-quiet'],
             'heap of every thread, profiled or not');
         assert.ok(summary.main.memory.rss > 0);
+        assert.ok(summary.main.gc.minor.count > 0 && summary.main.gc.minor.ms >= 0 && summary.main.gc.minor.maxMs >= 0,
+            `main's scavenges: ${JSON.stringify(summary.main.gc)}`);
+        // The counts are cumulative: the next line carries this one's and the scavenges since (the report
+        // takes a window's pauses as the difference of two lines, so a lost line loses none).
+        for (let i = 0; i < 200000; i++) garbage = { i, text: `garbage ${i}` };
+        await new Promise(resolve => setTimeout(resolve, 20));
+        await recorder.recordSummary('summary', { enabled: false, coldQueue: { overdue: 2 } }, () => ({ worker: { heapAfterGc: 1 } }));
+        await recorder.writes;
+        const next = lines(path.join(boot, day)).filter(line => line.type === 'summary')[1];
+        assert.ok(next.main.gc.minor.count > summary.main.gc.minor.count && next.main.gc.minor.ms >= summary.main.gc.minor.ms
+            && next.main.gc.minor.maxMs >= summary.main.gc.minor.maxMs, `cumulative: ${JSON.stringify([summary.main.gc, next.main.gc])}`);
 
         // capture: the next tick saves every profiled thread's chunk, however short, and removes the request.
         fs.writeFileSync(path.join(dir, 'request.json'), JSON.stringify({ kind: 'cpu' }));

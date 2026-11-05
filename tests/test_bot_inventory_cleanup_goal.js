@@ -10,6 +10,8 @@ async function runInventoryCleanup() {
 
 const DataCache = invoke('GameServer/DataCache');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+// The sale retry (stats.marketSellSeen): the last visit tried every kind in this bag, nothing new came since.
+const triedAll = (inventory = {}) => ({ items: Object.keys(inventory).map(Number).sort((a, b) => a - b), buyers: null });
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const NeedsEvaluator = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
@@ -90,8 +92,9 @@ const capacityOnlyState = {
             }))
         }
     },
-    stats: { marketSellRetryAfter: now + 60 * 60 * 1000 }
+    stats: {}
 };
+capacityOnlyState.stats.marketSellSeen = triedAll(capacityOnlyState.inventory);
 assert.deepStrictEqual(ItemDisposition.inventoryCleanupNeed(capacityOnlyState, { now }), {
     reason: 'inventory_capacity',
     slots: 81,
@@ -123,7 +126,7 @@ assert.deepStrictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventor
     { reason: 'inventory_half_full', slots: 40, npcOnlySlots: 0, limit: ItemDisposition.INVENTORY_SLOT_LIMIT },
 'a half-full bag forms one market trip');
 assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: mixedBag(40),
-    stats: { marketSellRetryAfter: now + 60 * 60 * 1000 } }, { now }), null,
+    stats: { marketSellSeen: triedAll(mixedBag(40)) } }, { now }), null,
 'the half-full trip respects the market retry cooldown');
 assert.strictEqual(ItemDisposition.inventoryCleanupNeed({ ...state, inventory: mixedBag(40), party: { partyId: 5 } }, { now }), null,
 'a party member sells from the field: no half-full trip');
@@ -334,7 +337,7 @@ for (const consumable of [escapeScroll, resurrectionScroll]) {
 
 const cooldownCleanup = GoalExecutor.beginMarketTravel({
     ...state,
-    stats: { marketSellRetryAfter: now + 60 * 60 * 1000 }
+    stats: { marketSellSeen: triedAll(state.inventory) }
 }, {
     type: 'sell_inventory',
     target: { cleanupReason: 'inventory_capacity' },
@@ -343,7 +346,7 @@ const cooldownCleanup = GoalExecutor.beginMarketTravel({
 assert(cooldownCleanup, 'forced inventory cleanup must bypass a stale market retry cooldown');
 assert.strictEqual(GoalExecutor.beginMarketTravel({
     ...state,
-    stats: { marketSellRetryAfter: now + 60 * 60 * 1000 }
+    stats: { marketSellSeen: triedAll(state.inventory) }
 }, {
     type: 'sell_inventory',
     plan: { kind: 'market_sell', expectedBenefit: 'market_sale_inventory' }
@@ -357,16 +360,15 @@ const maxLoad = invoke('GameServer/Bot/Population/ColdCombatProfile').profileFor
 const heavyStack = DataCache.items.find((item) => item?.etc?.stackable === true
     && Number(item?.template?.mass) >= 10 && item?.template?.kind === 'Other.Material');
 assert(maxLoad > 0 && heavyStack, 'the datapack must contain a heavy stackable material');
-const loadedBag = (share, retryAfter, extra = {}) => ({
-    ...state,
-    inventory: { [heavyStack.selfId]: { selfId: heavyStack.selfId, name: heavyStack.template.name,
+const loadedBag = (share, retry, extra = {}) => {
+    const inventory = { [heavyStack.selfId]: { selfId: heavyStack.selfId, name: heavyStack.template.name,
         kind: heavyStack.template.kind, stackable: true,
-        amount: Math.ceil(share * maxLoad / Number(heavyStack.template.mass)) }, ...extra },
-    stats: { marketSellRetryAfter: retryAfter }
-});
-const retryUntil = now + 30 * 60 * 1000;
+        amount: Math.ceil(share * maxLoad / Number(heavyStack.template.mass)) }, ...extra };
+    return { ...state, inventory, stats: { marketSellSeen: retry ? triedAll(inventory) : null } };
+};
+const retryUntil = true; // the bag is behind the sale retry
 for (const [share, penalty] of [[0.55, 1], [0.7, 2]]) {
-    const floor = SurvivalFloor.forState(loadedBag(share, now - 1), now);
+    const floor = SurvivalFloor.forState(loadedBag(share, false), now);
     assert.strictEqual(floor?.reason, 'overweight');
     assert.strictEqual(floor.weightPenalty, penalty, `a ${share} load is weight penalty ${penalty}`);
 }
@@ -378,7 +380,7 @@ const weightTrip = (share, retryAfter, extra) => PopulationService.prepareInvent
 assert.strictEqual(weightTrip(0.55, retryUntil), null,
     'a weight penalty 1 cleanup must wait for the sale retry');
 assert(weightTrip(0.7, retryUntil), 'a weight penalty 2 cleanup must bypass the sale retry');
-assert(weightTrip(0.55, now - 1), 'a weight penalty 1 cleanup travels once the retry has passed');
+assert(weightTrip(0.55, false), 'a weight penalty 1 cleanup travels without a sale retry');
 assert(!NeedsEvaluator.evaluate(loadedBag(0.55, retryUntil), { now }).some((candidate) => candidate.type === 'sell_inventory'),
     'the planner adds no sale goal for a weight penalty 1 bag during the retry');
 const npcJunk = { [spellbook.selfId]: { selfId: spellbook.selfId, name: spellbook.template.name,
@@ -565,7 +567,7 @@ const protectedNpcState = {
 assert.strictEqual(ItemDisposition.npcLiquidationCandidates(protectedNpcState)[0].count, 1);
 assert(ItemDisposition.inventoryCleanupNeed({
     ...npcState,
-    stats: { marketSellRetryAfter: now + 60 * 60 * 1000 }
+    stats: { marketSellSeen: triedAll(npcState.inventory) }
 }, { now }), 'NPC-only cleanup must bypass market retry cooldown');
 
 const originalUpsertState = LifeState.upsertState;
@@ -593,7 +595,7 @@ const equippedBook = { selfId: 99, name: bookWeapon.template.name, kind: 'Weapon
     equipped: true, equippedCount: 1, equippedSlots: [7], slot: 7, stackable: false,
     instances: [{ id: 99, equipped: true, slot: 7 }] };
 const bookHunter = { ...state, inventory: { 99: equippedBook }, stats: {
-    ...state.stats, equipment: [{ ...equippedBook, rank: 'none' }], marketSellRetryAfter: now + 60000
+    ...state.stats, equipment: [{ ...equippedBook, rank: 'none' }], marketSellSeen: triedAll({ 99: equippedBook })
 } };
 assert.strictEqual(ItemDisposition.inventoryCleanupNeed(bookHunter, { now }), null);
 assert.deepStrictEqual(ItemDisposition.npcLiquidationCandidates(bookHunter), []);
@@ -606,6 +608,41 @@ assert.strictEqual(ItemDisposition.npcLiquidationCandidates(spareBook).find(item
     'a spare low-grade weapon remains ordinary sellable equipment');
 assert.strictEqual(ItemDisposition.isSkillBookItem({ selfId: 999999, name: 'Spellbook: Missing Kind' }), true);
 assert.strictEqual(ItemDisposition.isSkillBookItem({ selfId: 999999, name: 'Amulet: Missing Kind' }), true);
+
+// One bag's sale list serves its readers that ask with the same inputs (the
+// cleanup need, a listing, the board's sale count): the answer a fresh read
+// gives, each reader its own rows, and a fresh answer when the bag, a reserve
+// or a price moves on the same bag.
+{
+    const books = state.inventory[spellbook.selfId];
+    const seller = { ...state, characterId: 7010, stats: { shotCraft: { productId: 1463, unitPrice: 20 } }, inventory: {
+        1864: { selfId: 1864, name: 'Stem', amount: 30, stackable: true },
+        1463: { selfId: 1463, name: 'Soulshot: D-grade', amount: 900, stackable: true },
+        [spellbook.selfId]: { ...books, amount: 3, instances: books.instances.slice(0, 3) } } };
+    // The caller's kept stock (as the listing and the sale count pass it): no forecast read.
+    const all = (extra = {}) => ({ unlimited: true, now, keptAmounts: { 1463: 100 }, ...extra });
+    const fresh = (value, options) => ItemDisposition.saleCandidates(structuredClone(value), options);
+    const read = (value, options = all()) => ItemDisposition.saleCandidates(value, options);
+    const row = (rows, id) => rows.find(item => item.selfId === id);
+    const first = read(seller), second = read(seller);
+    assert(row(first, 1864) && row(first, 1463) && row(first, spellbook.selfId), 'fixture: three stacks to sell');
+    for (const rows of [first, second]) rows.forEach(item => { item.count = 0; });
+    assert.deepStrictEqual(read(seller), fresh(seller, all()), 'a later reader gets the fresh answer, not an earlier reader\'s rows');
+    assert.strictEqual(row(read({ ...seller, stats: { shotCraft: { productId: 1463, unitPrice: 35 } } }), 1463).price, 35,
+        'a moved price on the same bag is read');
+    assert.deepStrictEqual(ItemDisposition.inventoryCleanupNeed(seller, { now }),
+        ItemDisposition.inventoryCleanupNeed(structuredClone(seller), { now }), 'the cleanup need over the shared list is the fresh one');
+    assert.deepStrictEqual(read(seller, all({ reserved: { 1864: 10 } })), fresh(seller, all({ reserved: { 1864: 10 } })));
+    assert.strictEqual(row(read(seller, all({ reserved: { 1864: 10 } })), 1864).count, 20, 'a reserve on the same bag is read');
+    const moved = { ...seller, inventory: { ...seller.inventory, 1864: { ...seller.inventory[1864], amount: 31 } } };
+    assert.strictEqual(row(read(moved), 1864).count, 31, 'a moved bag is read');
+    assert.strictEqual(row(read(seller), 1463).count, 800, 'fixture: the kept shots stay');
+    assert.strictEqual(row(read(seller), 1864).count, 30, 'the first bag keeps its answer');
+    assert.strictEqual(ItemDisposition.saleCandidates(seller, { presenceOnly: true, keptAmounts: {} }), true);
+    assert.deepStrictEqual(read(seller, all({ unlimited: false, limit: 1 })), fresh(seller, all({ unlimited: false, limit: 1 })),
+        'a capped list is its own');
+    assert.strictEqual(read(seller, all({ unlimited: false, limit: 1 })).length, 1);
+}
 
 }
 runInventoryCleanup().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {

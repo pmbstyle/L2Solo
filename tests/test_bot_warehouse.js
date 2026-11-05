@@ -376,7 +376,7 @@ async function run() {
         loc: { locX: 83396, locY: 147904, locZ: -3400 },
         inventory: {},
         timing: {},
-        stats: { marketSellRetryAfter: Date.now() + 15 * 60 * 1000 }
+        stats: { marketSellSeen: { items: [1864], buyers: [[0, 0]] } }
     };
     const shopping = { ...seller, activity: 'shopping' };
     const pastLook = await BotWarehouse.releaseCold(shopping, { inTown: true, before: shopping });
@@ -385,7 +385,7 @@ async function run() {
     assert.deepStrictEqual(marketRelease.items.map((item) => [item.reason, item.amount]), [['market', 50]],
         'warehouse release must expose only the currently funded WTB quantity');
     assert.strictEqual(warehouseRows[0].amount, 50, 'unfunded warehouse surplus must remain stored');
-    assert.strictEqual(marketRelease.state.stats.marketSellRetryAfter, null,
+    assert.strictEqual(marketRelease.state.stats.marketSellSeen, null,
         'new funded WTB demand must clear a stale no-demand sale cooldown');
     const adena = liveItem(50, { selfId: 57, name: 'Adena', amount: 100, stackable: true });
     adena.setAmount = (amount) => { adena.amount = amount; };

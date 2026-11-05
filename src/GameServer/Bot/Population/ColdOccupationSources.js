@@ -5,6 +5,7 @@
 const Data = invoke('GameServer/DataCache');
 const ItemIndex = require('../../Item/ItemTemplateIndex');
 const StaticPricing = require('../Economy/StaticMerchantPricing');
+const Packet = require('../Economy/StatsPacket');
 const Routes = require('../Travel/TravelRoutes');
 const Towns = require('../../World/TownRespawn');
 const Production = require('../Economy/ProductionPolicy');
@@ -68,6 +69,28 @@ function* feasibility(state, { board, read = () => {} }, reserved = null) {
         at++; yield 'owned';
     }
     return [hash, blocked, lines.length];
+}
+
+// Whether a cold look may keep an own SELL line on sale: the mask's rule
+// (feasibility) on the state it looks at, its reservations read once at the
+// first line asked. A built mask describes its build's state and keys only the
+// lines, not the reservations and item flags its bits read, so a held build's
+// mask is no answer for a later state.
+function canSell(state, lines) {
+    const Look = invoke('GameServer/Bot/Economy/BoardLook');
+    let reserved;
+    return line => {
+        if (reserved === undefined) {
+            reserved = null;
+            if (lines.length <= Look.MAX_OWNED_LINES) {
+                const run = reservations(state);
+                let next;
+                do next = run.next(); while (!next.done);
+                reserved = next.value;
+            }
+        }
+        return Look.indexedFeasibility(state, line, reserved);
+    };
 }
 
 const EconomicTrip = require('../Economy/EconomicTrip');
@@ -138,9 +161,9 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
     routeRows = null, routeKey = null, targetRecipe = null } = {}) {
     const packet = state.stats?.money;
     if (!board) return noPlan('no_board', state);
-    if (!Array.isArray(packet) || packet.length < 4) return noPlan('no_money_packet', state);
-    if (!(packet[0] > 0)) return noPlan('no_hour_value', state);
-    if (!(packet[1] > 0)) return noPlan('no_money_price', state);
+    if (!Packet.hasMoney(packet)) return noPlan('no_money_packet', state);
+    if (!(Packet.hourAdena(packet) > 0)) return noPlan('no_hour_value', state);
+    if (!(Packet.moneyPrice(packet) > 0)) return noPlan('no_money_price', state);
     const admission = targetRecipe ? null : recipeIndex(board);
     const craftLevel = invoke('GameServer/Bot/Economy/CraftShopService').craftLevelFor(state);
     if (admission) readScope(admission.scopeFor(craftLevel));
@@ -155,9 +178,9 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
         ? routeRows : null;
     const readyRows = directRows || (economy?.routeKey === key ? economy.routeRows : null);
     const readyTrip = Array.isArray(readyRows) && readyRows.length === EconomicTrip.towns.length
-        ? EconomicTrip.preparedReader(readyRows, { hourAdena: Number(packet[0]) }) : null;
-    const context = { timestamp, state, insideContext: true, hourAdena: Number(packet[0]), moneyPrice: Number(packet[1]),
-        survivalReserve: Number(packet[2]), ...craftLabour(state, timestamp),
+        ? EconomicTrip.preparedReader(readyRows, { hourAdena: Number(Packet.hourAdena(packet)) }) : null;
+    const context = { timestamp, state, insideContext: true, hourAdena: Number(Packet.hourAdena(packet)), moneyPrice: Number(Packet.moneyPrice(packet)),
+        survivalReserve: Number(Packet.survivalReserve(packet)), ...craftLabour(state, timestamp),
         independentPrice: id => ownStock.get(Number(id))?.unitValue ?? NaN, worth: id => ownStock.get(Number(id))?.unitValue ?? NaN };
     const ensureTrip = function* (town) {
         const index = townOrdinal.get(town);
@@ -270,7 +293,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
         ownLines: board?.ownerLines(Number(state.characterId)) || [] } };
 }
 
-module.exports = { initialise, prepare, exitValue, craftLabour, reservations, feasibility, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
+module.exports = { initialise, prepare, exitValue, craftLabour, reservations, feasibility, canSell, tripDetails, regionalTown, QUOTE_DEPTH, recipeIndex,
     fixedBuyerOffersFor,
     hasNpcSellerInTown: town => { initialise(); return npcOfferView?.hasSellerInTown(town) || false; },
     npcOffersFor,

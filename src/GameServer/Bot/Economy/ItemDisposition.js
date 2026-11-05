@@ -11,6 +11,7 @@ const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const ClanSimulationConfig = invoke('GameServer/Clan/ClanSimulationConfig');
 const InventoryLimits = require('../../Inventory/InventoryLimits');
 const ArrowStock = require('../../Inventory/ArrowStock');
+const Diagnostics = require('./EconomyDiagnostics');
 
 const SELLABLE_KINDS = ['Weapon.', 'Armor.', 'Other.Material', 'Other.Shot'];
 const NPC_ONLY_KINDS = ['Other.Recipe', 'Other.Spellbook'];
@@ -227,8 +228,10 @@ function recipeDisposition(state, item, knownRecipeIds = []) {
     return { action: 'learn', reason: 'recipe_book', recipe: info.recipe };
 }
 
-function inventorySlotCount(state = {}) {
+// skip: item ids not counted (the goods the last sale visit could not place).
+function inventorySlotCount(state = {}, skip = null) {
     return Object.values(state.inventory || {}).reduce((total, item) => {
+        if (skip?.has(Number(item?.selfId))) return total;
         const amount = Math.max(0, Number(item?.amount || 0));
         if (amount <= 0) return total;
         if (Array.isArray(item?.instances)) return total + item.instances.length;
@@ -256,14 +259,63 @@ function skillBookSlotCount(state = {}, candidates) {
     return liquidationSlotCount(state, (item) => isSkillBookItem(item) && isNpcOnlyItem(item, undefined, state), candidates);
 }
 
-function soloSaleSlotLimit(state = {}, timestamp = Date.now()) {
-    return !(state.party?.partyId || state.partyId)
-        && !(Number(state.stats?.marketSellRetryAfter || 0) > timestamp)
-        ? HALF_FULL_CLEANUP_SLOTS : null;
+// The board the sale retry reads: main's own by default, the worker's mirror
+// once it passes it in (ColdSimulationWorker). The cold worker has no World.
+let boardSource = () => require('node:worker_threads').isMainThread
+    ? invoke('GameServer/AfkTrade/AfkTradeService').boardIndex() : null;
+function useBoard(source) { boardSource = source; }
+
+// The board's foreign buyers of these items, per item [best bid, units bid]
+// (both threads read the same lines): a new or better bid raises one, a filled
+// or withdrawn one only lowers it. A bid at or below the NPC buyback is no buyer.
+function buyersOf(board, ids, characterId) {
+    return ids.map(id => {
+        let best = 0, units = 0;
+        const buyback = NpcSellRules.npcBuyPrice(Number(templateFor(id)?.template?.price || 0));
+        for (const line of board.list(id, 3) || []) {
+            if (Number(line.ownerId) === Number(characterId) || !(Number(line.price) > buyback)) continue;
+            best = Math.max(best, Number(line.price) || 0); units += Number(line.count) || 0;
+        }
+        return [best, units];
+    });
 }
 
-function inventoryCleanupNeed(state = {}, options = {}) {
-    const timestamp = Number(options.now) || Date.now();
+// What a sale visit could not place (stats.marketSellSeen, written at its end
+// and at a hot sell trip's start): the kinds of sale candidates it left in the
+// bag (none, when it placed everything) and the board's buyers of them. The sale retry
+// holds while the bag offers no kind it did not try and no new or better buyer
+// of those came: a new fact, not a clock, sends the bot to sell again (maintainer,
+// 2026-11-05). Before the worker's board is ready only the kinds are compared.
+// The kinds are read with the whole kit kept (its potions, its Scroll of
+// Escape; shots are the bot's own), not the kit targets, which read this retry:
+// restocking the kit in town is no new goods to sell.
+function retryKinds(state) {
+    const keptAmounts = { ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: Infinity }),
+        736: Number(state.inventory?.[736]?.amount || 0) };
+    return [...new Set(saleCandidates(state, { unlimited: true, keptAmounts })
+        .map(item => Number(item.selfId)))].sort((a, b) => a - b);
+}
+function saleSeen(state) {
+    const items = retryKinds(state);
+    const board = boardSource();
+    return { items, buyers: board ? buyersOf(board, items, state.characterId) : null };
+}
+
+function saleRetryHolds(state) {
+    const seen = state?.stats?.marketSellSeen;
+    if (!Array.isArray(seen?.items)) return false;
+    const tried = new Set(seen.items);
+    if (retryKinds(state).some(id => !tried.has(id))) return false;
+    const board = Array.isArray(seen.buyers) ? boardSource() : null;
+    return !board || buyersOf(board, seen.items, state.characterId)
+        .every(([best, units], at) => best <= Number(seen.buyers[at]?.[0] || 0) && units <= Number(seen.buyers[at]?.[1] || 0));
+}
+
+function soloSaleSlotLimit(state = {}, retry) {
+    return !(state.party?.partyId || state.partyId) && !(retry ?? saleRetryHolds(state)) ? HALF_FULL_CLEANUP_SLOTS : null;
+}
+
+function inventoryCleanupNeed(state = {}) {
     const slots = inventorySlotCount(state);
     // One sale set serves every count below; it depends only on the state.
     const candidates = saleCandidates(state, { unlimited: true });
@@ -286,13 +338,19 @@ function inventoryCleanupNeed(state = {}, options = {}) {
     // Solo bots only: a party member sells from the field (AFK listing) and leaves its
     // party for the market only with a full bag (PartyMarketBreak); and only with
     // something to sell, else the trip would repeat every retry period.
-    const soloLimit = soloSaleSlotLimit(state, timestamp);
-    const halfFull = soloLimit !== null && slots >= soloLimit && candidates.length > 0;
-    // A normal market retry cooldown prevents pointless town loops. Residual
-    // NPC-only books/recipes become deterministic cleanup work once a
-    // character has enough to clean up. A genuinely full inventory remains
-    // actionable regardless of level.
-    if (Number(state.stats?.marketSellRetryAfter || 0) > timestamp
+    const solo = !(state.party?.partyId || state.partyId);
+    const retry = solo && saleRetryHolds(state);
+    const soloLimit = soloSaleSlotLimit(state, retry);
+    // Past a sale visit only the goods it did not try fill the half: the ones
+    // it could not place do not send the bot back with each new kind of loot.
+    const tried = Array.isArray(state.stats?.marketSellSeen?.items) ? new Set(state.stats.marketSellSeen.items) : null;
+    const halfFull = soloLimit !== null && candidates.length > 0
+        && (tried ? inventorySlotCount(state, tried) : slots) >= soloLimit;
+    // The sale retry (nothing new since the last visit) prevents pointless
+    // town loops. Residual NPC-only books/recipes become deterministic cleanup
+    // work once a character has enough to clean up. A genuinely full
+    // inventory remains actionable regardless of level.
+    if (retry
         && !overCapacity
         && !accumulatedNpcOnly) return null;
     if (!overCapacity && !accumulatedNpcOnly && !accumulatedSurplus && !halfFull) return null;
@@ -616,21 +674,50 @@ function protectedStarterLootAmount(item, kind) {
     return Math.max(0, Math.min(Number(item?.amount || 0), Number(item?.starterMobLootAmount || 0)));
 }
 
-function saleFreeAmount(state, item, reserved = {}) {
+// known: the item's template and NPC-only class, when the caller has read them.
+function saleFreeAmount(state, item, reserved = {}, known = null) {
     if (!item) return 0;
-    const template = templateFor(item.selfId), kind = kindFor(item, template);
-    const protectedAmount = isNpcOnlyItem(item, template, state) ? 0 : protectedStarterLootAmount(item, kind);
+    const template = known ? known.template : templateFor(item.selfId), kind = kindFor(item, template);
+    const npcOnly = known ? known.npcOnly : isNpcOnlyItem(item, template, state);
+    const protectedAmount = npcOnly ? 0 : protectedStarterLootAmount(item, kind);
     const rawEquippedCount = Number(item.equippedCount ?? (item.equipped ? 1 : 0));
     const equippedCount = Math.max(0, Number.isFinite(rawEquippedCount) ? rawEquippedCount : 0);
     // Sale-specific starter cleanup is preserved; customer, clan and explicit
     // physical reservations use the same stock guard as production.
     return Math.min(Math.max(0, Number(item.amount || 0) - equippedCount
         - Number(reserved[item.selfId] || 0) - protectedAmount),
-    invoke('GameServer/Bot/Economy/WealthCraftDecision').freeAmount(state, { ...item,
-        equippedCount, starterMobLootAmount: protectedAmount }, reserved));
+    invoke('GameServer/Bot/Economy/WealthCraftDecision').freeUnits(state, item, reserved, equippedCount, protectedAmount));
 }
 
 const { selectedCraftAmounts } = require('./CraftInputReservations');
+// The stock a sale keeps: potions, crafter ammunition and travel scrolls at
+// their restock targets, the held plan's published ones (EconomyContext.keptTargets,
+// L72), else the foundation. Ordinary bots retain their current ammunition
+// independently of forecasts. One reading for the listing (saleCandidates'
+// default) and the board's sale count (MarketPricing), main and worker.
+function keptStock(state, reserved) {
+    const targets = invoke('GameServer/Bot/Economy/EconomyContext').keptTargets(state, { saleReservations: reserved });
+    return {
+        ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: targets.potions }),
+        ...invoke('GameServer/Inventory/ShotStock').keptAmounts(state, null, targets.shots),
+        ...invoke('GameServer/Bot/Travel/ScrollStock').keptAmounts(state) };
+}
+// The walk over a bag's items (walkSale) is kept per inventory object and its
+// exact inputs, so the callers that ask of one bag with the same reserves share
+// one list: the board's sale count and the cleanup need on a step's round
+// state; the wish's liquidation and the bag forecast on the step's state,
+// asked by the card's check, the held build's verdict and the build. Inputs
+// (the key): the bag (an inventory object and its rows are replaced, never
+// edited), the merged reserves (equipment and production reserves,
+// clan, henna, the caller's reserved and kept stock), the arrows' sale amounts,
+// the personal shot, the state fields the walk reads (characterId, shotCraft
+// product and unit price, clanMarketDemand, clanMaterialDemand), the options it
+// reads (limit, onlyNpc, presenceOnly) and its tables (item templates, newbie
+// items, recipes, the acquisition catalogue's revision, NPC price rows, the
+// adena rate, the blood mark price). At most SALE_WALKS lists per bag, gone
+// with it; a reader gets its own copy of the rows.
+const SALE_WALKS = 4;
+const saleWalks = new WeakMap();
 function saleCandidates(state, options = {}) {
     const limit = options.unlimited
         ? Number.MAX_SAFE_INTEGER
@@ -642,36 +729,65 @@ function saleCandidates(state, options = {}) {
         reserved[id] = Math.max(Number(reserved[id] || 0), amount + Number(clan[id] || 0));
     for (const [id, amount] of Object.entries(options.reserved || {}))
         reserved[id] = Math.max(Number(reserved[id] || 0), Number(amount) + Number(clan[id] || 0));
-    // Potions, crafter ammunition and travel scrolls use restock reserves:
-    // the held plan's published targets (L72), else the foundation.
-    // Ordinary bots retain their current ammunition independently of forecasts.
-    const targets = options.keptAmounts ? null
-        : invoke('GameServer/Bot/Economy/EconomyContext').keptTargets(state, { saleReservations: reserved });
-    const kept = options.keptAmounts || {
-        ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: targets.potions }),
-        ...invoke('GameServer/Inventory/ShotStock').keptAmounts(state, null, targets.shots),
-        ...invoke('GameServer/Bot/Travel/ScrollStock').keptAmounts(state) };
+    const kept = options.keptAmounts || keptStock(state, reserved);
     for (const [selfId, amount] of Object.entries(kept)) {
         reserved[selfId] = Math.max(Number(reserved[selfId] || 0), amount + Number(clan[selfId] || 0));
     }
-    const arrowSales = ArrowStock.saleAmounts(state);
+    // Prepared reserves can describe only the bag while this projection
+    // also includes warehouse or escrow stock. Personal shots stay owned.
+    const Shots = invoke('GameServer/Inventory/ShotStock'), shot = Shots.planForState(state).selfId;
+    const walk = { reserved, arrowSales: ArrowStock.saleAmounts(state),
+        personalShot: Shots.isPersonalShot(state, shot) ? Number(shot) : 0,
+        limit, onlyNpc: options.onlyNpc === true, presenceOnly: !!options.presenceOnly };
+    const inventory = state?.inventory;
+    if (!inventory || typeof inventory !== 'object') return walkSale(state, walk);
+    const key = saleWalkKey(state, walk), tables = saleTables();
+    let walks = saleWalks.get(inventory);
+    const held = walks?.find(row => row.key === key && row.tables.every((table, at) => table === tables[at]));
+    if (held) {
+        if (Diagnostics.active()) Diagnostics.count('sale_walk', 'held', 'hit');
+        return saleCopy(held.result);
+    }
+    if (Diagnostics.active()) Diagnostics.count('sale_walk', 'held', 'built');
+    const result = walkSale(state, walk);
+    if (!walks) saleWalks.set(inventory, walks = []);
+    walks.push({ key, tables, result });
+    if (walks.length > SALE_WALKS) walks.shift();
+    return saleCopy(result);
+}
+const entriesKey = map => Object.keys(map || {}).sort().map(id => `${id}:${map[id]}`).join(',');
+function saleWalkKey(state, walk) {
+    const crafted = state.stats?.shotCraft, demand = state.stats?.clanMarketDemand;
+    return [state.characterId, crafted?.productId, crafted?.unitPrice, demand?.itemId, demand?.maxPrice,
+        entriesKey(state.stats?.clanMaterialDemand), walk.personalShot, walk.limit, walk.onlyNpc, walk.presenceOnly,
+        entriesKey(walk.reserved), [...walk.arrowSales].map(([id, count]) => `${id}:${count}`).join(','),
+        invoke('GameServer/Items/ItemAcquisitionCatalog').revision(),
+        invoke('GameServer/Bot/Economy/BotEconomyPricing').economyRate(), ClanSimulationConfig.bloodMarkMaxPrice].join('|');
+}
+// The walk's tables read by identity (the source reader too: a test replaces it).
+function saleTables() {
+    return [DataCache.items, DataCache.newbieItems, C4RecipeItems.loadRecipeItems(), BotMarketPricing.npcPriceRows(),
+        invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource];
+}
+function saleCopy(result) {
+    return Array.isArray(result) ? result.map(row => row.objectIds ? { ...row, objectIds: row.objectIds.slice() } : { ...row }) : result;
+}
+function walkSale(state, { reserved, arrowSales, personalShot, limit, onlyNpc, presenceOnly }) {
     const candidatesFor = (item) => {
         const selfId = Number(item?.selfId || 0);
-        // Prepared reserves can describe only the bag while this projection
-        // also includes warehouse or escrow stock. Personal shots stay owned.
-        if (invoke('GameServer/Inventory/ShotStock').isPersonalShot(state, selfId)) return [];
-        const sellableAmount = Math.min(saleFreeAmount(state, item, reserved),
+        if (personalShot !== 0 && selfId === personalShot) return [];
+        const template = templateFor(selfId);
+        const npcOnly = isNpcOnlyItem(item, template, state);
+        const sellableAmount = Math.min(saleFreeAmount(state, item, reserved, { template, npcOnly }),
             ArrowStock.isArrow(item) ? Number(arrowSales.get(selfId) || 0) : Infinity);
         if (!selfId || selfId === 57 || BeginnerShots.isRestricted(selfId) || sellableAmount <= 0) return [];
 
-        const template = templateFor(selfId);
         // Unsupported stock stays owned; neither a board sale nor NPC cleanup
         // may turn a service item's nominal price into bot income.
         if (isQuestItem(item, template)
             || !invoke('GameServer/Items/ItemAcquisitionCatalog').hasSource(selfId)) return [];
         const kind = kindFor(item, template);
-        const npcOnly = isNpcOnlyItem(item, template, state);
-        if (options.onlyNpc === true && !npcOnly) return [];
+        if (onlyNpc && !npcOnly) return [];
         const clanProgression = isClanProgressionItem(item);
         if (!npcOnly && !clanProgression && !isMarketRecipeItem(item)
             && !invoke('GameServer/Skills/SkillBookCatalog').isBook(selfId)
@@ -695,7 +811,7 @@ function saleCandidates(state, options = {}) {
             ? clanPrice
             : npcOnly ? Math.max(priceFor(state, item, template), NpcSellRules.npcBuyPrice(base)) : priceFor(state, item, template);
         if (price <= 0 || sellableCount <= 0) return [];
-        if (options.presenceOnly) return [true];
+        if (presenceOnly) return [true];
         const candidate = {
             selfId,
             name: item.name || template?.template?.name || `Item ${selfId}`,
@@ -722,7 +838,7 @@ function saleCandidates(state, options = {}) {
         if (left > 0) { const row = groups.get(0) || {...candidate,count:0};row.count += left;groups.set(0,row); }
         return [...groups.values()];
     };
-    if (options.presenceOnly) {
+    if (presenceOnly) {
         for (const item of Object.values(state?.inventory || {})) if (candidatesFor(item).length) return true;
         return false;
     }
@@ -869,6 +985,9 @@ module.exports = {
     inventoryCleanupNeed,
     inventorySlotCount,
     soloSaleSlotLimit,
+    saleSeen,
+    saleRetryHolds,
+    useBoard,
     npcOnlySlotCount,
     skillBookSlotCount,
     isWarehouseCandidate,
@@ -893,6 +1012,7 @@ module.exports = {
     storedEquipmentAmounts,
     reservationInputKey,
     saleCandidates,
+    keptStock,
     selectedCraftAmounts,
     saleFreeAmount,
     saleSummary,

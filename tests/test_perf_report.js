@@ -39,13 +39,20 @@ jsonl('timeline-20261103.jsonl', [
         longTurns: 2, profile: 'cpu/a.cpuprofile' },
     { type: 'cpu', t: iso(start + 61000), thread: 'main', instance: 0, ms: 60000, busyMs: 6000, gcMs: 0, longestMs: 120,
         longTurns: 4, profile: 'cpu/b.cpuprofile' },
+    // A chunk the profiler starved (CpuProfile): one 60 s "run" that says nothing of the thread.
+    { type: 'cpu', t: iso(start + 62000), thread: 'main', instance: 0, ms: 60000, busyMs: 60000, gcMs: 0, longestMs: 60000,
+        longTurns: 1, starved: true, samples: 110 },
     // The hot scenario's player: 20 probes, one waited 200 ms for the loop.
     { type: 'player', t: iso(start + 30000), scheduleMs: [...Array(19).fill(2), 200], handlerMs: Array(20).fill(1), errors: 0, hot: 30,
         players: 2, packets: 1200, bytes: 2 * 30 * 1024 * 10, seconds: 30, moves: 2 },
     { type: 'player', t: iso(end + 30000), scheduleMs: [999], handlerMs: [999], errors: 0, hot: 99 },
-    { type: 'summary', t: iso(start + 30000), main: { memory: { heapUsed: 100 * MB, rss: 300 * MB }, processCpuMs: { user: 9000, system: 1000 } },
+    // The last summary line before the window: the base of main's cumulative GC pauses.
+    { type: 'summary', t: iso(start - 30000), main: { gc: { minor: { count: 40, ms: 60, maxMs: 3 }, major: { count: 2, ms: 30, maxMs: 25 } } } },
+    { type: 'summary', t: iso(start + 30000), main: { memory: { heapUsed: 100 * MB, rss: 300 * MB }, processCpuMs: { user: 9000, system: 1000 },
+        gc: { minor: { count: 100, ms: 150, maxMs: 4 }, major: { count: 3, ms: 70, maxMs: 40 } } },
         vitals: { bots: { hot: 2, cold: 5 }, players: 1, lag: { sustainedMs: 10 }, database: { pending: 3, checkpoint: { last: { at: 1 } },
-            maintenance: { refusals: { 'wal_truncate:wal_below_threshold': 2 } } },
+            maintenance: { refusals: { 'wal_truncate:wal_below_threshold': 2 } },
+            overBudgetJobs: { 'bot-life:cold-owner-commit-release-batch': { count: 4, maxMs: 20, totalMs: 60 } } },
             mainHeap: { afterGc: 50 } },
         files: { walMb: 4, worldMb: 20 }, machine: { freeMemMb: 900, majorPageFaults: 2 },
         coordinator: { queue: { depth: 2, bytes: 2048, oldestMs: 100, paused: false, failures: { afterCommitErrors: 0 } },
@@ -54,11 +61,14 @@ jsonl('timeline-20261103.jsonl', [
             activationRefusalReasons: { no_safe_activation_placement: 2 }, transitions: { activation: { count: 3, avgMs: 100, p95Ms: 180, maxMs: 200 },
             cooldown: { count: 1, avgMs: 40, p95Ms: 40, maxMs: 40 } } } },
         coldQueue: { overdue: 1 }, heaps: { main: { usedMb: 100 } }, recorder: { costMs: 60, inspectorMs: 0 } },
-    { type: 'summary', t: iso(end), main: { memory: { heapUsed: 120 * MB, rss: 310 * MB }, processCpuMs: { user: 14000, system: 0 } },
+    { type: 'summary', t: iso(end), main: { memory: { heapUsed: 120 * MB, rss: 310 * MB }, processCpuMs: { user: 14000, system: 0 },
+        gc: { minor: { count: 200, ms: 300, maxMs: 6.5 }, major: { count: 3, ms: 70, maxMs: 40 }, incremental: { count: 10, ms: 5, maxMs: 1 } } },
         vitals: { bots: { hot: 4, cold: 3 }, players: 1, lag: { sustainedMs: 30 }, database: { pending: 7, checkpoint: { last: { at: 2 },
             lastResetAttempt: { mode: 'truncate', ok: false, error: 'disk I/O error', at: end - 1000, durationMs: 3.25 },
             lastReset: { mode: 'truncate', ok: true, busy: 0, at: end - 60000, durationMs: 7 } },
-            maintenance: { refusals: { 'wal_truncate:wal_below_threshold': 5, 'state_retention:governor_database_queue': 1 } } },
+            maintenance: { refusals: { 'wal_truncate:wal_below_threshold': 5, 'state_retention:governor_database_queue': 1 } },
+            overBudgetJobs: { 'bot-life:cold-owner-commit-release-batch': { count: 4, maxMs: 20, totalMs: 60 },
+                'clan-simulation:join': { count: 1, maxMs: 95, totalMs: 95 } } },
             mainHeap: { afterGc: 55 } },
         files: { walMb: 9, worldMb: 20 }, machine: { freeMemMb: 700, majorPageFaults: 5 },
         coordinator: { queue: { depth: 5, bytes: 4096, oldestMs: 900, paused: true, failures: { afterCommitErrors: 2 } },
@@ -88,6 +98,7 @@ try {
     assert.equal(main.gcPct, 0.5);
     assert.equal(main.longTurnsPerMin, 3);
     assert.equal(main.longestMs, 120);
+    assert.equal(main.starvedChunks, 1, 'a starved chunk is left out of busy, long turns and longest, and counted');
     assert.deepEqual(main.longTurnCode, [{ fn: 'heavy src/GameServer/World/World.js:10', ms: 120 }], 'spikes of the window only');
     assert.deepEqual(main.cpuSelf[0], { fn: 'heavy src/GameServer/World/World.js:10', ms: 60, pct: 100 },
         '40 + 30 busy samples less the 10 the second chunk shares with the first');
@@ -117,6 +128,8 @@ try {
     }, 'the WAL truncate\'s last try, failed ones included, and its last success');
     assert.deepEqual(c.database.maintenanceRefusals, { 'wal_truncate:wal_below_threshold': 3, 'state_retention:governor_database_queue': 1 },
         'maintenance refusals counted in the window, by job and reason');
+    assert.deepEqual(c.database.overBudgetJobs, [{ op: 'clan-simulation:join', count: 1, maxMs: 95 }],
+        'DB jobs past the drain slice in the window, by operation');
     assert.deepEqual(c.commitQueue, { depthMax: 5, bytesMaxKb: 4, oldestMaxMs: 900, pausedShare: 0.5 });
     assert.equal(c.failures.workerFaults, 3, 'faults in the window, not since boot');
     assert.equal(c.failures.afterCommitErrors, 2);
@@ -126,6 +139,11 @@ try {
     assert.equal(c.failures.swallowed, 4, 'failures the code survived, grown in the window');
     assert.deepEqual(c.failures.swallowedSites, { 'cold.after_commit': 3, 'route.search': 2 }, 'by site, as of the last line');
     assert.deepEqual(c.memory.mainHeapAfterGcMb, { start: 50, end: 55, max: 55 });
+    // Cumulative from the line before the window (start - 30 s) to its last (end): 2.5 minutes, so a
+    // line in between that is lost or late moves nothing; a kind new in the window counts from 0.
+    assert.deepEqual(c.memory.mainGc, { minor: { perMin: 64, msPerMin: 96, maxMsSinceStart: 6.5 },
+        major: { perMin: 0.4, msPerMin: 16, maxMsSinceStart: 40 }, incremental: { perMin: 4, msPerMin: 2, maxMsSinceStart: 1 } },
+        "main's GC pauses by kind over the window, per minute, with the longest since start");
     assert.equal(c.memory.freeMemMinMb, 700);
     assert.equal(c.memory.majorPageFaults, 3, 'totals since start: the last line in the window minus the first');
     assert.deepEqual(s.memory.mainHeapUsedMb, { start: 100, end: 120, max: 120 });

@@ -260,6 +260,129 @@ function state(characterId, revision, activity = 'hunting') {
     assert.deepStrictEqual(metadata(newerMetadataSave), ['MetadataNewest', 5, 4],
         'subsequent migrations must still advance and survive later saves');
 
+    // A save or a commit names an indexed column only when its value moves:
+    // SQLite rewrites the index entry of every column an UPDATE sets (a WAL
+    // page each). The row still reads back as the state that was saved.
+    const heldColumns = ['accountName', 'characterName', 'phase', 'partyId', 'nextResolveAt'];
+    await Database.execute(['CREATE TEMP TABLE held_column_writes (name TEXT)', []]);
+    for (const column of heldColumns) {
+        await Database.execute([`CREATE TEMP TRIGGER held_column_${column} AFTER UPDATE OF ${column} ON bot_life_state
+            BEGIN INSERT INTO held_column_writes VALUES ('${column}'); END`, []]);
+    }
+    const heldWrites = async () => {
+        const rows = await Database.execute(['SELECT name FROM held_column_writes ORDER BY name', []]);
+        await Database.execute(['DELETE FROM held_column_writes', []]);
+        return rows.map((row) => row.name);
+    };
+    const readRow = async () => (await Database.execute([`SELECT accountName, characterName, phase, partyId, nextResolveAt,
+        hp, statsJson FROM bot_life_state WHERE characterId = ?`, [metadataId]]))[0];
+    const vitalsSave = await BotLifeState.upsertState({
+        ...newerMetadataSave, vitals: { ...newerMetadataSave.vitals, hp: 77 }, stats: { ...newerMetadataSave.stats, restUntil: 13000 }
+    }, 'held_columns_still');
+    assert.deepStrictEqual(await heldWrites(), [], 'a save that moves no indexed column sets none');
+    const stillRow = await readRow();
+    assert.deepStrictEqual([stillRow.accountName, stillRow.characterName, stillRow.phase, stillRow.partyId,
+        Number(stillRow.nextResolveAt), Number(stillRow.hp), JSON.parse(stillRow.statsJson).restUntil],
+    ['owner_probe', 'MetadataNewest', 'cold', null, Number(newerMetadataSave.timing.nextResolveAt), 77, 13000],
+    'the row reads back as the saved state');
+    const timingSave = await BotLifeState.upsertState({
+        ...vitalsSave, timing: { ...vitalsSave.timing, nextResolveAt: 14000 }
+    }, 'held_columns_due');
+    assert.deepStrictEqual(await heldWrites(), ['nextResolveAt'], 'a save sets the indexed column that moved');
+    assert.strictEqual(Number((await readRow()).nextResolveAt), 14000);
+    const heldCommit = await commitOn(timingSave.simulation.revision, {
+        ...timingSave, timing: { ...timingSave.timing, nextResolveAt: 15000, lastResolvedAt: 14000 }, updatedAt: 14000
+    }, 14000);
+    assert.strictEqual(heldCommit.ok, true, heldCommit.reason);
+    assert.deepStrictEqual(await heldWrites(), ['nextResolveAt'], 'a commit leaves the phase and party it does not move');
+    const committedHeld = await readRow();
+    assert.deepStrictEqual([committedHeld.phase, committedHeld.partyId, Number(committedHeld.nextResolveAt), Number(committedHeld.hp)],
+        ['cold', null, 15000, 77], 'the commit reads back as proposed');
+
+    // A step's bag reaches the items rows stack by stack: while no other
+    // writer touched the rows since the last commit wrote them, only the
+    // stacks the step moved are read and compared. A warehouse deposit or a
+    // raw SQL write between two commits makes the next one compare every stack.
+    const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
+    const counts = () => invoke('GameServer/Bot/Economy/EconomyDiagnostics').metrics().counts;
+    const counted = (key) => Number(counts()[`commit_inventory:${key}`] || 0);
+    const bagId = Number((await Database.createCharacter('owner_probe', {
+        name: 'BagProbe', race: 0, classId: 0, maxHp: 100, maxMp: 50,
+        sex: 0, face: 0, hair: 0, hairColor: 0, locX: 10, locY: 20, locZ: -30
+    })).insertId);
+    let bagState = await BotLifeState.upsertState({ ...state(bagId, 0), name: 'BagProbe' }, 'bag_probe');
+    const commitBag = async (inventory, base = bagState) => {
+        const before = { full: counted('full:unknown'), stacks: counted('stacks:unknown'),
+            synced: counted('stack:synced'), kept: counted('stack:kept') };
+        const nextState = { ...base, inventory, updatedAt: base.updatedAt + 1 };
+        const [result] = await Owner.commitBatch([{ revision: base.simulation.revision, nextState,
+            proposal: InventorySummary.bagChange(base.inventory, inventory) }], { timestamp: nextState.updatedAt });
+        assert.strictEqual(result.ok, true, result.reason);
+        bagState = BotLifeState.cachedState(bagId);
+        return { full: counted('full:unknown') - before.full, stacks: counted('stacks:unknown') - before.stacks,
+            synced: counted('stack:synced') - before.synced, kept: counted('stack:kept') - before.kept };
+    };
+    const bagRows = async () => (await Database.execute(['SELECT selfId, amount, equipped, slot FROM items WHERE characterId = ? ORDER BY selfId, id', [bagId]]))
+        .map((row) => [Number(row.selfId), Number(row.amount), Number(row.equipped), Number(row.slot)]);
+    const storedBag = async () => JSON.parse((await Database.execute(['SELECT inventorySummary FROM bot_life_state WHERE characterId = ?', [bagId]]))[0].inventorySummary);
+    const firstBag = {
+        10: { selfId: 10, name: 'Dagger', amount: 1, slot: 7, equipped: true, stackable: false },
+        57: { selfId: 57, name: 'Adena', amount: 1000 },
+        1060: { selfId: 1060, name: 'Lesser Healing Potion', amount: 20 },
+        1835: { selfId: 1835, name: 'Soulshot: No Grade', amount: 500 }
+    };
+    assert.deepStrictEqual(await commitBag(firstBag), { full: 1, stacks: 0, synced: 4, kept: 0 },
+        'the first commit of a bag compares every stack with its rows');
+    assert.deepStrictEqual(await bagRows(), [[10, 1, 1, 7], [57, 1000, 0, 0], [1060, 20, 0, 0], [1835, 500, 0, 0]]);
+    // The step spent shots, picked up adena and drank its last potion.
+    const { 1060: drunk, ...secondBag } = { ...firstBag, 57: { ...firstBag[57], amount: 1100 }, 1835: { ...firstBag[1835], amount: 480 } };
+    assert(drunk);
+    assert.deepStrictEqual(await commitBag(secondBag), { full: 0, stacks: 1, synced: 3, kept: 1 },
+        'with no other writer only the moved stacks are read: the dagger row is not');
+    assert.deepStrictEqual(await bagRows(), [[10, 1, 1, 7], [57, 1100, 0, 0], [1835, 480, 0, 0]],
+        'the rows hold the committed bag');
+    assert.deepStrictEqual(await storedBag(), secondBag, 'the stored summary is the committed bag');
+
+    // A warehouse deposit moves the rows (and the far row's revision): the
+    // next step runs on the row, and its commit compares every stack.
+    const shotRow = (await Database.execute(['SELECT id FROM items WHERE characterId = ? AND selfId = 1835', [bagId]]))[0];
+    await Database.transferInventoryToWarehouse(bagId, { id: Number(shotRow.id), selfId: 1835, name: 'Soulshot: No Grade', amount: 30, stackable: true },
+        { coldState: bagState });
+    const [depositRow] = await Database.execute(['SELECT simulationRevision, inventorySummary FROM bot_life_state WHERE characterId = ?', [bagId]]);
+    assert.strictEqual(JSON.parse(depositRow.inventorySummary)[1835].amount, 450);
+    // The step on the row's bag (this world has no item templates, so the
+    // row's summary reads every stack as gear; the step keeps the stacks).
+    const deposited = { ...bagState, inventory: { ...bagState.inventory, 1835: { ...bagState.inventory[1835], amount: 450 } },
+        simulation: { revision: Number(depositRow.simulationRevision) } };
+    const afterDeposit = { ...deposited.inventory, 57: { ...deposited.inventory[57], amount: 1150 } };
+    assert.deepStrictEqual(await commitBag(afterDeposit, deposited), { full: 1, stacks: 0, synced: 3, kept: 0 },
+        'a warehouse write between two commits makes the next one compare every stack');
+    assert.deepStrictEqual(await bagRows(), [[10, 1, 1, 7], [57, 1150, 0, 0], [1835, 450, 0, 0]]);
+    assert.deepStrictEqual((await commitBag({ ...afterDeposit, 57: { ...afterDeposit[57], amount: 1160 } })).stacks, 1,
+        'the commit after it reads only the moved stacks again');
+
+    // A raw SQL write to a row (an admin path) is seen as well: the commit
+    // compares every stack and the rows hold the committed bag again.
+    await Database.execute(['UPDATE items SET amount = 7 WHERE characterId = ? AND selfId = 1835', [bagId]]);
+    const adminBag = { ...bagState.inventory, 57: { ...bagState.inventory[57], amount: 1170 } };
+    assert.deepStrictEqual(await commitBag(adminBag), { full: 1, stacks: 0, synced: 3, kept: 0 });
+    assert.deepStrictEqual(await bagRows(), [[10, 1, 1, 7], [57, 1170, 0, 0], [1835, 450, 0, 0]]);
+
+    // A lifecycle save moves the bag revision once when it moves the bag (in
+    // its own write; the trigger adds nothing), keeps it when the bag stands,
+    // and the next commit compares every stack after a moved one.
+    const bagRevision = async () => Number((await Database.execute(['SELECT inventoryRevision FROM bot_life_state WHERE characterId = ?', [bagId]]))[0].inventoryRevision);
+    const beforeSave = await bagRevision();
+    await BotLifeState.upsertState({ ...bagState, updatedAt: bagState.updatedAt + 1 }, 'bag_probe_same');
+    assert.strictEqual(await bagRevision(), beforeSave, 'a save of the same bag keeps its revision');
+    const { 1835: sold, ...savedBag } = bagState.inventory;
+    assert(sold);
+    await BotLifeState.upsertState({ ...bagState, inventory: savedBag, updatedAt: bagState.updatedAt + 2 }, 'bag_probe_moved');
+    assert.strictEqual(await bagRevision(), beforeSave + 1, 'a save of a moved bag moves its revision once');
+    bagState = BotLifeState.cachedState(bagId);
+    assert.deepStrictEqual((await commitBag({ ...bagState.inventory, 57: { ...bagState.inventory[57], amount: 1180 } })).full, 1,
+        'a commit after another writer moved the summary compares every stack');
+
     // Developer diagnostics: an item read counts under its call-site tag.
     await Database.fetchItems(characterId, 'owner_probe');
     assert.strictEqual(invoke('GameServer/Bot/Economy/EconomyDiagnostics').metrics().counts['item_list:call:owner_probe'], 1);

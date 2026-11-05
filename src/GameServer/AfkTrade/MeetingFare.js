@@ -6,10 +6,11 @@
 // A seller with an accepted meeting rides its route for no fare; whether that
 // meeting is in this town is MeetingAnchor's rule, read before this one.
 const fares = new WeakMap();
+const Packet = require('../Bot/Economy/StatsPacket');
 function sellerCanReach(offer, seller) {
     const trade = [1, 3].includes(Number(offer?.storeType)) || ['afk_bot_store', 'afk_player_store'].includes(offer?.sourceType);
     if (!trade || seller?.phase !== 'cold' || !seller.loc || !offer.town || !Number.isFinite(Number(seller.adena))
-        || !Array.isArray(seller.stats?.money) || seller.stats.money.length < 4 || seller.stats.tradeMeeting) return true;
+        || !Packet.hasMoney(seller.stats?.money) || seller.stats.tradeMeeting) return true;
     const origin = seller.activity === 'traveling' && seller.stats.travel?.to || seller.loc;
     // Read per offer of a board scan: one row per seller state, its origin and wallet.
     const karma = seller.stats.karma || 0;

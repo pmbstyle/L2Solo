@@ -118,8 +118,9 @@ let coordinator = null;
         `INSERT INTO bot_background_parties (
             partyId, leaderId, memberIdsJson, spotId, startedAt, nextResolveAt,
             cohesion, risk, status, roleCoverageJson, statsJson, updatedAt
-        ) VALUES ('worker-party', ?, ?, ?, ?, ?, 0.65, 0.25, 'active', '{}', json_object('sessionExpiresAt', ?), ?)`,
-        [memberIds[0], JSON.stringify(memberIds), spot.id, dueAt - 120000, dueAt, dueAt - 1, dueAt]
+        ) VALUES ('worker-party', ?, ?, ?, ?, ?, 0.65, 0.25, 'active', '{}',
+            json_object('sessionReview', json_object('at', ?, 'nextAt', ?)), ?)`,
+        [memberIds[0], JSON.stringify(memberIds), spot.id, dueAt - 120000, dueAt, dueAt - 120000, dueAt - 1, dueAt]
     ]);
     assert.strictEqual(await PartyState.init(), true);
     assert.strictEqual(await LifeState.init(), true);

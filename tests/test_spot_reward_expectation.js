@@ -119,6 +119,12 @@ try {
     Rewards.value(alternate, 33, { spoilSkillLevel: 1 });
     assert.equal(calls, firstCalls, 'NPC penalty cells are shared across camps');
     Rates.rewardGroupRoll = original.roll;
+    // Past the cap the oldest rows leave and come back with the same numbers.
+    const held = Rewards.value(blue, 30, { spoilSkillLevel: 1, spoilerLevel: 25 }), plain = Rewards.value(blue, 30);
+    for (let i = 0; i <= Rewards.MAX_SPOT_VALUES; i++) Rewards.value(spot(`fill-${i}`, blue.npcEntries), 1 + i % 80);
+    assert.deepEqual(Rewards.value(blue, 30, { spoilSkillLevel: 1, spoilerLevel: 25 }), held, 'a dropped row comes back the same');
+    assert.deepEqual(Rewards.value(blue, 30), plain, 'and one without Spoil');
+    assert(held.spoil > 0 && plain.spoil === 0, 'the Spoil skill is its own row');
 
     // Compare forecasts to independent native reward rolls, including high-rate
     // category selection and spoil landing. No combat simulator enters planning.

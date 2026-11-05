@@ -8,16 +8,23 @@ const { fileURLToPath } = require('url');
 // get back to waiting for I/O, so on main it is a turn of the event loop that every player packet
 // waited for. Pure; shared by the live recorder and scripts/perf.js.
 
-const ROOT = path.resolve(__dirname, '..', '..');
 const IDLE = '(idle)', GC = '(garbage collector)', PROGRAM = '(program)', ROOT_NODE = '(root)';
+// A run recorded from another checkout (a worktree, also one inside this checkout) names its files
+// under that checkout's root: a node_modules folder, or else the last top-level code folder in the
+// path, marks where the repository's own path starts.
+const CHECKOUT_TAIL = /\/(?:src|scripts|tests)\/(?!.*\/(?:src|scripts|tests)\/)/;
 
 function sourceOf(url) {
     let file = String(url || '');
     if (file.startsWith('file://')) {
         try { file = fileURLToPath(file); } catch { /* keep the raw url */ }
     }
-    if (file.startsWith(ROOT + path.sep)) return path.relative(ROOT, file).split(path.sep).join('/');
-    return file;
+    if (!path.isAbsolute(file)) return file;
+    file = file.split(path.sep).join('/');
+    const modules = file.indexOf('/node_modules/');
+    if (modules >= 0) return file.slice(modules + 1);
+    const tail = CHECKOUT_TAIL.exec(file);
+    return tail ? file.slice(tail.index + 1) : file;
 }
 
 // Project code is what a fix can change: files of this repository outside node_modules.
@@ -87,6 +94,12 @@ function attribute(run, samples, ms, tree, count) {
     return { self: top(self, count), code: top(code, count) };
 }
 
+// A chunk whose profiler sampled less than once per STARVED_GAP_MS (a healthy one: every ~1.3 ms) is
+// starved: seen on the cold worker (2026-11-04, ~110 samples a minute from the run's third minute
+// on, main normal), each sample then weighs ~0.5 s and the whole chunk reads as one busy run. Its
+// numbers say nothing about the thread: the recorder and the report leave it out.
+const STARVED_GAP_MS = 20;
+
 // longTurnMs: a busy run at least this long is a long turn. top: rows per list. keep: long turns
 // listed with their time (the longest is also attributed). since: samples up to this time (profile
 // clock, us) are left out: the part an overlapping chunk shares with the one before it.
@@ -94,9 +107,10 @@ function analyze(profile, { longTurnMs = 50, top: count = 8, keep = 20, since = 
     const tree = index(profile), samples = profile.samples || [];
     const { at, ms } = timings(profile);
     const self = new Map(), files = new Map(), owners = new Map(), runs = [];
-    let busyMs = 0, idleMs = 0, gcMs = 0, programMs = 0, run = null;
+    let busyMs = 0, idleMs = 0, gcMs = 0, programMs = 0, run = null, counted = 0;
     for (let i = 0; i < samples.length; i++) {
         if (at[i] <= since) continue;
+        counted++;
         const node = tree.nodes.get(samples[i]) || { name: '?' };
         if (node.name === IDLE) {
             idleMs += ms[i];
@@ -120,8 +134,9 @@ function analyze(profile, { longTurnMs = 50, top: count = 8, keep = 20, since = 
     const long = runs.filter(r => r.ms >= longTurnMs);
     const longest = runs.reduce((best, r) => (!best || r.ms > best.ms ? r : best), null);
     const round = (value) => Math.round(value * 10) / 10;
+    const durationMs = round(Math.max(0, (profile.endTime || 0) - Math.max(profile.startTime || 0, since)) / 1000);
     return {
-        durationMs: round(Math.max(0, (profile.endTime || 0) - Math.max(profile.startTime || 0, since)) / 1000),
+        durationMs, samples: counted, starved: durationMs >= 1000 && counted * STARVED_GAP_MS < durationMs,
         busyMs: round(busyMs), idleMs: round(idleMs), gcMs: round(gcMs), programMs: round(programMs),
         runs: runs.length,
         longTurns: long.length,

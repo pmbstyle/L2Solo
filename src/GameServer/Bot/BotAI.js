@@ -4,7 +4,6 @@ const ClassProgression = invoke('GameServer/ClassProgression');
 const DiagnosticConfig = require('./Population/PopulationConfig');
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const { raiseDecision } = require('./AI/DecisionEvents');
-const { inClientView } = invoke('GameServer/World/WorldConstants');
 const BotStatus      = invoke('GameServer/Bot/AI/BotStatus');
 const BotRoles       = invoke('GameServer/Bot/AI/BotRoles');
 const BotCombatUtility = invoke('GameServer/Bot/AI/BotCombatUtility');
@@ -538,9 +537,7 @@ const BotAI = {
         if (!botDead && invoke('GameServer/Bot/Economy/BuffService').maybeAutoBuy(session, tickStartedAt)) return;
 
         const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
-        const visibleRealPlayers = this.visibleRealPlayers(session, bot, World);
-
-        if (!botDead && onlinePlayerCount > 0 && visibleRealPlayers.length === 0 && !isCompanion && !session.hotBackgroundPartyId && session.plan !== 'shopping' && session.plan !== 'pk_hunting') {
+        if (!botDead && onlinePlayerCount > 0 && !lodContext.playerVisible && !isCompanion && !session.hotBackgroundPartyId && session.plan !== 'shopping' && session.plan !== 'pk_hunting') {
             // Far-away bot: light background event processing, skip everything else
             if (Math.random() < 0.05) {
                 this.triggerFarAwayChatEvent(session, bot);
@@ -709,7 +706,7 @@ const BotAI = {
 
         // Reactions use the existing visible hot tick and never delay combat
         // or keep an actor seated just to finish a scripted exchange.
-        if (visibleRealPlayers.length) invoke('GameServer/Bot/AI/BotChatReactions').offerLocal(session, tickStartedAt);
+        if (lodContext.playerVisible) invoke('GameServer/Bot/AI/BotChatReactions').offerLocal(session, tickStartedAt);
 
         // 3. Dynamic State Machine Routing
         if (isCompanion) invoke('GameServer/Bot/AI/PlayerPartyRaidChatter').tick(session.followPlayerSession, tickStartedAt);
@@ -1009,28 +1006,6 @@ const BotAI = {
                 user.dataSendToMe(packet);
             }
         });
-    },
-
-    visibleRealPlayers(session, bot, World = invoke('GameServer/World/World')) {
-        if (!session || !bot || !World) return [];
-        if (World.botRealPlayerIndex === true && typeof bot.fetchLocX === 'function' && typeof bot.fetchLocY === 'function') {
-            if (typeof World.botVisibleRealPlayers !== 'function') throw new TypeError('invalid_bot_real_player_index');
-            return World.botVisibleRealPlayers(session, bot);
-        }
-        const players = realPlayerSessions(World);
-        if (players && typeof bot.fetchLocX === 'function' && typeof bot.fetchLocY === 'function') {
-            const x = bot.fetchLocX();
-            const y = bot.fetchLocY();
-            return players.filter((candidate) => {
-                if (candidate === session || !candidate.actor || typeof candidate.actor.fetchLocX !== 'function' || typeof candidate.actor.fetchLocY !== 'function') return false;
-                return inClientView(x, y, candidate.actor.fetchLocX(), candidate.actor.fetchLocY());
-            });
-        }
-        const fetchVisiblePlayers = typeof World.fetchVisibleRealPlayers === 'function'
-            ? World.fetchVisibleRealPlayers.bind(World)
-            : World.fetchVisibleUsers?.bind(World);
-        if (!fetchVisiblePlayers) return [];
-        return fetchVisiblePlayers(session, bot).filter(isRealPlayerSession);
     },
 
     getStatus(session) {

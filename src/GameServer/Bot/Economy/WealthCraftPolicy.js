@@ -223,10 +223,59 @@ function* searchQuantity({ state, recipe, planFor, exits = [], ownedFor = () => 
     }
     return best;
 }
+// A crafter's MP enters a craft decision only through thresholds: a recipe's
+// batches floor(mp / mpCost), at most MAX_BATCHES (searchQuantity, the wish's
+// producer capacity); a basket's mpCost x batches + its gear craft's MP <= mp
+// (evaluatePrepared: a shot's crystals from a scrap craft); a scrap recipe
+// only below the bot's MP (mp > its mpCost, ShotCraftPolicy). craftMpBand is
+// the band of MP values on which every such check answers as at mp, over
+// every recipe the bot could craft at its craft level (the catalogue's: a
+// recipe in the bag or on the board is a candidate too), every dwarven 100 %
+// one-product recipe taken as a scrap: [low, lowIncluded, high, highIncluded].
+const bandCosts = new Map();
+function costsAt(level) {
+    let costs = bandCosts.get(level);
+    if (costs) return costs;
+    const shots = new Set(require('./ShotCraftPolicy').SHOT_RECIPE_IDS); // lazy: ShotCraftPolicy reads this module at its load
+    const all = new Set(), shot = new Set(), scrap = new Set();
+    for (const recipe of require('../../Items/C4RecipeItems').nativeSource().rows) {
+        const mp = Math.max(1, Number(recipe.mpCost) || 0), required = Number(recipe.level);
+        if (!(required > 0) || required > level) continue;
+        all.add(mp);
+        if (shots.has(Number(recipe.recipeId))) shot.add(mp);
+        if (recipe.type === 'dwarven' && Number(recipe.successRate) === 100 && Number(recipe.productCount) === 1) scrap.add(mp);
+    }
+    bandCosts.set(level, costs = { all: [...all], shot: [...shot], scrap: [...scrap] });
+    return costs;
+}
+function craftMpBand(craftLevel, mp) {
+    mp = Number(mp) || 0;
+    const band = [-Infinity, false, Infinity, false];
+    const below = (value, included) => { if (value > band[0] || value === band[0] && !included) { band[0] = value; band[1] = included; } };
+    const above = (value, included) => { if (value < band[2] || value === band[2] && !included) { band[2] = value; band[3] = included; } };
+    // mp >= at for at = base + k x cost, k = 1..MAX_BATCHES.
+    const steps = (base, cost) => {
+        const k = Math.floor((mp - base) / cost);
+        if (k >= 1) below(base + Math.min(k, MAX_BATCHES) * cost, true);
+        if (k + 1 <= MAX_BATCHES) above(base + Math.max(1, k + 1) * cost, false);
+    };
+    const { all, shot, scrap } = costsAt(Number(craftLevel) || 0);
+    for (const cost of all) steps(0, cost);
+    for (const gear of scrap) {
+        if (mp > gear) below(gear, false); else above(gear, true);
+        for (const cost of shot) steps(gear, cost);
+    }
+    return band;
+}
+const inMpBand = (band, mp) => (mp > band[0] || band[1] && mp === band[0]) && (mp < band[2] || band[3] && mp === band[2]);
+// Whether every craft check answers the same at both MP values.
+function sameCraftMp(craftLevel, mp, other) {
+    return Number(mp) === Number(other) || inMpBand(craftMpBand(craftLevel, mp), Number(other) || 0);
+}
 function chooseQuantity(input) { return drain(searchQuantity(input)); }
 function opportunityFor(state, recipe, planFor, exits = [], ownedFor = () => null, context = {}) {
     if (recipe?.type !== 'dwarven') return null;
     return chooseQuantity({ state, recipe, planFor, exits, ownedFor, context });
 }
 module.exports = { MAX_BATCHES, basketFor, craftMargin, evaluateBasket, chooseQuantity,
-    opportunityFor, prepareBasket, evaluatePrepared, searchQuantity, drain };
+    opportunityFor, prepareBasket, evaluatePrepared, searchQuantity, drain, craftMpBand, sameCraftMp };

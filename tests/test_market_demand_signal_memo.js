@@ -31,9 +31,34 @@ const richer = { ...wanting, adena: 900 };
 assert.strictEqual(MarketDemandIndex.indexSignals([richer], now + 2000, scope).get(SHORT_GLOVES)[0].budget, 900,
     'a replaced state carries its new budget');
 
-// A timed want expires without any state update.
+// A want only the wish card backs has no drop event yet: it expires on time.
 assert.deepStrictEqual(signalsFor([wanting], now + ttl - 1, SHORT_GLOVES), [1]);
 assert.deepStrictEqual(signalsFor([wanting], now + ttl, SHORT_GLOVES), [], 'the want expires on time');
+
+// A want the plan backs, a shot stack and a shot recipe live until their clear
+// events, however long the bot waits for a seller.
+const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
+const planPiece = { characterId: 1, adena: 500, inventory: {}, stats: {
+    equipmentPlan: { status: 'active', strategy: 'market', target: { selfId: SHORT_GLOVES } },
+    marketWanted: { itemId: SHORT_GLOVES, lastMissingAt: now, held: 1, plan: true },
+    shotDemand: { itemId: 1463, amount: 500, maxSpend: 400, at: now },
+    shotRecipeDemand: { itemId: 1804, amount: 1, maxSpend: 1000, at: now } } };
+const lateSignals = MarketDemandIndex.indexSignals([planPiece], now + 6 * ttl, scope);
+assert.deepStrictEqual([SHORT_GLOVES, 1463, 1804].map(id => (lateSignals.get(id) || []).length), [1, 1, 1],
+    'three hours later the backed wants still stand');
+assert.strictEqual(LifeState.reconcileFulfilledEquipmentPlan(planPiece).stats.marketWanted, planPiece.stats.marketWanted,
+    'nothing new: the want stays');
+const elsewhere = { ...planPiece, inventory: { [SHORT_GLOVES]: { selfId: SHORT_GLOVES, amount: 1 } },
+    stats: { ...planPiece.stats, equipmentPlan: { ...planPiece.stats.equipmentPlan, target: { selfId: LEATHER_SHOES } } } };
+assert.strictEqual(LifeState.reconcileFulfilledEquipmentPlan(elsewhere).stats.marketWanted, null,
+    'the piece arriving by another path clears its want at the next write');
+const dropped = { ...planPiece, stats: { ...planPiece.stats, equipmentPlan: { status: 'active', strategy: 'market',
+    target: { selfId: LEATHER_SHOES } } } };
+assert.strictEqual(LifeState.reconcileFulfilledEquipmentPlan(dropped).stats.marketWanted, null,
+    'a plan that no longer wants the piece clears its want');
+assert.deepStrictEqual(LifeState.reconcileFulfilledEquipmentPlan({ ...dropped, stats: { ...dropped.stats,
+    marketWanted: { itemId: SHORT_GLOVES, lastMissingAt: now, clanId: 7 } } }).stats.marketWanted,
+{ itemId: SHORT_GLOVES, lastMissingAt: now, clanId: 7 }, 'a clan want is the clan signal\'s own');
 
 // Reading an earlier moment (offline tools, tests) is recomputed, not reused.
 assert.deepStrictEqual(signalsFor([wanting], now, SHORT_GLOVES), [1]);

@@ -1,5 +1,6 @@
 const Diagnostics = require('./EconomyDiagnostics');
 const CombinedErrands = require('../Population/CombinedErrandPolicy');
+const Packet = require('./StatsPacket');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
@@ -25,12 +26,16 @@ function purchaseObservation(state, selfId, requested, budget, phase, reason, ex
     if (!Diagnostics.enabled(state?.characterId)) return;
     Diagnostics.push({ owner: Number(state.characterId), phase, reason, item: Number(selfId), requested: Number(requested),
         wallet: Number(state.adena ?? state.inventory?.[57]?.amount), budget, available: budget,
-        reserve: Number(state.stats?.money?.[2]), owned: Number(state.inventory?.[selfId]?.amount || 0),
+        reserve: Number(Packet.survivalReserve(state.stats?.money)), owned: Number(state.inventory?.[selfId]?.amount || 0),
         decisionSeq: Number(state.stats?.decisionSeq), activityLeaf: Number(state.stats?.activityLeaf),
         revision: Number(state.simulation?.revision), wishKey: state.stats?.wishFocus?.[0], town: state.currentRegion,
         errandAt: Number(state.stats?.marketErrand?.at), ...extra });
 }
 
+// After a visit that found no affordable offer, the bot does not travel to buy
+// that item again for this long: a new affordable offer wakes it at once
+// (MarketBuyerWaiters, which lifts the stamp); its wallet growing past an
+// offer it saw has no event yet (limits.md "Buyer retry").
 const RETRY_DELAY_MS = 15 * 60 * 1000;
 // A bound on an errand the bot has not carried out (no route, a party that
 // keeps it): after it the job that sent it plans again.
@@ -62,7 +67,11 @@ function retryAfterFailedPurchase(state, goal, reason) {
                 ...(state.stats?.marketWanted || {}),
                 itemId: goal.target.itemId,
                 itemName: goal.target.itemName,
-                lastMissingAt: timestamp
+                lastMissingAt: timestamp,
+                // What the bag holds once the want is met: its arrival clears it (BotLifeState.settleMarketWanted).
+                held: Number(state.inventory?.[goal.target.itemId]?.amount || 0) + Math.max(1, Number(goal.target.amount) || 1),
+                // Backed by the equipment plan: it lives until the plan drops it (MarketDemandIndex).
+                plan: invoke('GameServer/Bot/Population/BotLifeState').planWants(state.stats?.equipmentPlan, goal.target.itemId)
             },
             marketLead: null
         }
@@ -276,7 +285,7 @@ function purchaseMoney(state, plan, spent = 0, price = plan.npcPrice) {
         // An old errand has no valuation. It may still restore its actual
         // missing survival kit, never the former general purchasing cap.
         if (plan.purpose === 'shots' || (terms.r === undefined && terms.valueHours === undefined)) {
-            const context = plan.economy?.kitCost ? plan.economy : invoke('GameServer/Bot/Economy/EconomyContext').basics(state);
+            const context = plan.economy?.kitCost ? plan.economy : invoke('GameServer/Bot/Economy/EconomyContext').keptKit(state);
             const survival = PurchaseFunding.stockTerms(null, plan.selfId, PurchaseFunding.survivalTranche(context, plan.selfId, Number(price) || null));
             options.survivalCost = survival.survivalCost;
             if (survival.survivalShare !== undefined) options.survivalShare = survival.survivalShare;
@@ -296,7 +305,7 @@ function purchaseTerms(state, plan, spent = 0) {
         clanPart: Math.min(PurchaseFunding.budget(state), Math.max(0, Number(plan.tag?.clanPart || 0) - spent)) };
     if (plan.purpose === 'shots' || (terms.r === undefined && terms.valueHours === undefined)) {
         const survival = PurchaseFunding.stockTerms(null, plan.selfId, PurchaseFunding.survivalTranche(
-            invoke('GameServer/Bot/Economy/EconomyContext').basics(state), plan.selfId, Number(plan.npcPrice) || null));
+            invoke('GameServer/Bot/Economy/EconomyContext').keptKit(state), plan.selfId, Number(plan.npcPrice) || null));
         terms.survivalCost = survival.survivalCost;
         if (survival.survivalShare !== undefined) terms.survivalShare = survival.survivalShare;
     }
@@ -341,7 +350,7 @@ function planPurchase(state, selfId, amount, options = {}) {
             && Number(line.count) >= 1 && Number(line.ownerId ?? line.sourceId) !== Number(state.characterId)
             && (!(npcPrice > 0) || Number(line.price) <= npcPrice));
         const price = Number(first?.price || npcPrice || 0);
-        fundingContext ||= options.economy?.kitCost ? options.economy : invoke('GameServer/Bot/Economy/EconomyContext').basics(state);
+        fundingContext ||= options.economy?.kitCost ? options.economy : invoke('GameServer/Bot/Economy/EconomyContext').keptKit(state);
         return purchaseMoney(state, { ...options, economy: fundingContext, selfId: Number(selfId), npcPrice: price });
     };
     let plan;
@@ -444,7 +453,8 @@ function canTravelForPurchase(state, request, options = {}) {
     if (options.economy && (economy.inputKey || economy.inputHash) && board?.itemRevision && !options.cost) {
         const rates = invoke('GameServer/ProgressionRates').profile();
         const token = JSON.stringify([request, Number(state.adena), state.stats?.money,
-            EconomicTrip.key(state), board.itemRevision(id), rates.multiplier, rates.adena,
+            // The whole route frame, not the route key: the funding reads the scroll count.
+            JSON.stringify(EconomicTrip.frame(state)), board.itemRevision(id), rates.multiplier, rates.adena,
             ProductionPolicy.shotsDisabled()]);
         if (token.length <= 2048) key = token;
         const previous = key && deniedTrips.get(economy.plan || economy);
@@ -534,10 +544,10 @@ async function buyHere(state, plan, options = {}) {
         let bought;
         if (realSeller && (options.goal || options.errand)) {
             const offer = realSeller;
-            const basics = invoke('GameServer/Bot/Economy/EconomyContext').basics(current);
             const baskets = NpcRestock.collect(current, { town: plan.town, seller: offer,
-                shots: !plan.raidPreparationId && basics.stock('shots').itemId !== Number(plan.selfId),
-                potions: !plan.raidPreparationId && basics.stock('potions').itemId !== Number(plan.selfId),
+                shots: !plan.raidPreparationId && ShotStock.planForState(current).selfId !== Number(plan.selfId),
+                potions: !plan.raidPreparationId
+                    && invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(current).selfId !== Number(plan.selfId),
                 scrolls: !plan.raidPreparationId && Number(plan.selfId) !== 736,
                 extras: [{ selfId: plan.selfId, amount: rest, offer, funding: purchaseTerms(current, plan, spent),
                     goal: options.goal, errand: options.errand, autoEquip: options.autoEquip === true }] });

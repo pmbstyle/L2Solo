@@ -4,6 +4,7 @@ const DataCache = invoke('GameServer/DataCache');
 const GatekeeperTeleports = invoke('GameServer/World/C4GatekeeperTeleports');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
+const NpcObjectIndex = require('../../World/NpcObjectIndex');
 
 const MAX_TOWN_DISTANCE = 7500;
 const EMPTY = Object.freeze([]);
@@ -27,6 +28,8 @@ let cachedSpawns = null;
 let cachedSpawnsLength = null;
 let cachedRows = EMPTY;
 let cachedByRoleTown = Object.freeze({});
+// The rows by role, built with cachedRows: inputs DataCache.npcSpawns (identity, length).
+let cachedByRole = Object.freeze({});
 
 function distance(first, second) {
     return Math.hypot(
@@ -53,6 +56,7 @@ function build() {
         cachedSpawnsLength = spawns?.length;
         cachedRows = EMPTY;
         cachedByRoleTown = Object.freeze({});
+        cachedByRole = Object.freeze({});
         return;
     }
     if (cachedSpawns === spawns && cachedSpawnsLength === spawns.length) return;
@@ -115,12 +119,14 @@ function build() {
     cachedRows = Object.freeze(rows);
     cachedByRoleTown = Object.freeze(Object.fromEntries(Object.entries(byRoleTown)
         .map(([role, byTown]) => [role, Object.freeze(byTown)])));
+    cachedByRole = Object.freeze(Object.fromEntries(Object.entries(cachedByRoleTown)
+        .map(([role, byTown]) => [role, Object.freeze(Object.values(byTown).flat())])));
 }
 
 function rows(role = null) {
     build();
     if (!role) return cachedRows;
-    return Object.freeze(Object.values(cachedByRoleTown[String(role)] || {}).flat());
+    return cachedByRole[String(role)] || EMPTY;
 }
 
 function rowsForTown(town, role) {
@@ -139,28 +145,21 @@ function candidates(role, town, options = {}) {
             || Number(left.npcSelfId) - Number(right.npcSelfId));
 }
 
-function pointOf(actor) {
-    return {
-        locX: Number(actor?.fetchLocX?.() ?? actor?.locX ?? 0),
-        locY: Number(actor?.fetchLocY?.() ?? actor?.locY ?? 0),
-        locZ: Number(actor?.fetchLocZ?.() ?? actor?.locZ ?? 0)
-    };
-}
-
+// The row's live NPC: the nearest of its template to the row's place, the
+// first spawned on a tie (NpcObjectIndex.nearestOfTemplate); options.worldSpawns
+// stands in for the world's spawn list.
 function targetFromRow(row, role, options = {}) {
     if (!row) return null;
-    let worldSpawns = options.worldSpawns;
-    if (!Array.isArray(worldSpawns)) {
+    let world = Array.isArray(options.worldSpawns) ? { npc: { spawns: options.worldSpawns } } : null;
+    if (!world) {
         try {
-            worldSpawns = invoke('GameServer/World/World').npc?.spawns || [];
+            world = invoke('GameServer/World/World');
         } catch (error) {
             FailureLog.note('town.spawns', error);
-            worldSpawns = [];
+            world = null;
         }
     }
-    const actor = worldSpawns
-        .filter((candidate) => Number(candidate.fetchSelfId?.() || 0) === Number(row.npcSelfId))
-        .sort((left, right) => distance(pointOf(left), row) - distance(pointOf(right), row))[0] || null;
+    const actor = NpcObjectIndex.nearestOfTemplate(world, row.npcSelfId, Number(row.locX || 0), Number(row.locY || 0));
     const actorHead = Number(actor?.fetchHead?.());
     return {
         actorId: Number(actor?.fetchId?.() || 0) || null,

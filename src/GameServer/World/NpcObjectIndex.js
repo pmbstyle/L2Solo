@@ -61,4 +61,36 @@ function nearTemplate(world, selfId, locX, locY, radius) {
     return null;
 }
 
-module.exports = { reset, add, remove, find, nearTemplate, isIndexed };
+// 2D distance of an NPC (or a plain { locX, locY } row) to a point.
+function planarDistance(npc, locX, locY) {
+    return Math.hypot((Number(npc?.fetchLocX?.() ?? npc?.locX ?? 0) || 0) - locX,
+        (Number(npc?.fetchLocY?.() ?? npc?.locY ?? 0) || 0) - locY);
+}
+
+// The NPC of a template nearest to a point, the first in World.npc.spawns
+// among equally near ones (a town service target, TownServiceCatalog). The
+// template's set holds the same NPCs as the spawn list but not its order (a
+// group leader joins the grid after its minions), so a tie at the nearest
+// distance is settled by the list; an unindexed world scans the list.
+function nearestOfTemplate(world, selfId, locX, locY) {
+    const id = Number(selfId), x = Number(locX) || 0, y = Number(locY) || 0;
+    const index = id ? indexes.get(world?.npc) : null;
+    if (index) {
+        let best = null, nearest = Infinity, tied = false;
+        for (const npc of index.byTemplate.get(id) || []) {
+            const distance = planarDistance(npc, x, y);
+            if (distance < nearest) { best = npc; nearest = distance; tied = false; }
+            else if (distance === nearest) tied = true;
+        }
+        if (!tied) return best;
+    }
+    let best = null, nearest = Infinity;
+    for (const npc of world?.npc?.spawns || []) {
+        if (Number(npc?.fetchSelfId?.() || 0) !== id) continue;
+        const distance = planarDistance(npc, x, y);
+        if (best === null || distance < nearest) { best = npc; nearest = distance; }
+    }
+    return best;
+}
+
+module.exports = { reset, add, remove, find, nearTemplate, nearestOfTemplate, isIndexed };
