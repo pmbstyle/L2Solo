@@ -10,8 +10,7 @@ const { pipeline } = require('stream/promises');
 const Threads = require('./Threads');
 const HeapProfile = require('./HeapProfile');
 
-// Live recorder for a server that runs for days ([Perf] live; usage in scripts/perf.js, the map in
-// planning/architecture/README.md, Measurement).
+// Live recorder for a server that runs for days ([Perf] live; usage in scripts/perf.js).
 // Without live it registers nothing and starts no timer. With it, per boot folder:
 // - timeline-<day>.jsonl: a "summary" line per population summary (logSummary, every 30 s) and a
 //   "cpu" line per profiled thread per chunk (busy and GC time, longest busy run, long turns); the
