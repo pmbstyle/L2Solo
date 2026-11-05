@@ -21,13 +21,13 @@ const agreement = Material.agreement(members, objective);
 const spot = { id: objective.spotId, avgLevel: 60, npcEntries: [{ selfId: source, count: 1 }] };
 const prepared = { spots: [spot], spot, timestamp: at, rows: new Map(members.map(member => [member.characterId,
     { income: 100000, kills: 100, source: 'table_party', travelHours: 0 }])) };
-const original = { search: Route.search, allowed: Routes.isSpotAllowedForState, share: Hunt.onSpotShare,
+const original = { search: Route.search, held: Route.heldRoute, allowed: Routes.isSpotAllowedForState, share: Hunt.onSpotShare,
     forState: Economy.forState, forGroup: Economy.forGroup, npc: Data.npcs, rewards: Data.npcRewards };
 let scans = 0, exact = 0;
 try {
-    // The solo side's own search: its route over every money weight.
-    Route.search = () => { scans++; return { route: { spot: { id: 'solo' }, row: { income: 1000000, kills: 100 }, earning: 1000000 },
-        weights: { low: 0, high: 1, hour: null } }; };
+    // The solo side: the member's held earning answer at the inputs now; no admission searches.
+    Route.search = () => { scans++; throw Error('a material admission searched the earning spot'); };
+    Route.heldRoute = () => ({ spot: { id: 'solo' }, row: { income: 1000000, kills: 100 }, earning: 1000000 });
     Routes.isSpotAllowedForState = () => { exact++; return false; };
     Hunt.onSpotShare = () => 1;
     Economy.forState = Economy.forGroup = () => { throw Error('material admission rebuilt wishes'); };
@@ -113,7 +113,7 @@ try {
     console.log(`MATERIAL_ADMISSION_WARM_P95_MS ${durations[950].toFixed(4)}`);
     console.log('PASS material admission: physical completion, real market alternative, conservative ownership, paid helper and no wish builds');
 } finally {
-    Route.search = original.search; Routes.isSpotAllowedForState = original.allowed; Hunt.onSpotShare = original.share;
+    Route.search = original.search; Route.heldRoute = original.held; Routes.isSpotAllowedForState = original.allowed; Hunt.onSpotShare = original.share;
     Economy.forState = original.forState; Economy.forGroup = original.forGroup;
     Data.npcs = original.npc; Data.npcRewards = original.rewards;
 }

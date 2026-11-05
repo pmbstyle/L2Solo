@@ -640,6 +640,8 @@ function refusal(state, accepted, deps = {}, options = {}) {
     // lazy: cycle EconomyContext constructs and validates these cards.
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     if (state.stats?.wishDirty) return 'wish_dirty';
+    // The earning spot is due: only a build searches it.
+    if (Economy.earningDue(state, deps)) return 'earning_spot';
     const echo = Sections.decisionRefusal(state, accepted.decisionSeq, accepted.activityLeaf, accepted.focus);
     if (echo) return echo;
     // A card without a leaf reuses only as a completed (null) activity its
@@ -657,12 +659,10 @@ function refusal(state, accepted, deps = {}, options = {}) {
         && !invoke('GameServer/Bot/Population/BackgroundResolver').travelRecord(state.stats.travel)) return 'travel_record'; // lazy: as canReuse before L114 (load order unchecked)
     // A goal change (main's goal revision moved since the build) is seen at
     // the next decision point. No revision on the card (restored after a
-    // restart) differs too: one rebuild. The held earning spot does not
-    // compare the revision, no input of its search (DecisionSections LINK_INPUTS incomeSearch).
+    // restart) differs too: one rebuild. The earning spot hears no goal (situations).
     if (Number.isFinite(deps.goalRevision) && deps.goalRevision !== accepted.goalRevision
         && Situations.hears('goal_moved', Situations.place(state))) return 'goal';
-    // A far bot's card lives on, so nothing else heals a lost held build: every
-    // read of the earning spot would search in full.
+    // A far bot's card lives on, so nothing else heals a lost held build.
     if (Situations.reactive(state) && !Economy.heldBuild(state, deps)) return 'no_held';
     // options.collect: a build of the same step on this state follows a
     // refusal; the verdict collects and hands itself to it (forState).
@@ -684,8 +684,7 @@ function canReuse(state, accepted, deps = {}, options = {}) {
 // The basics: a selling leaf's check in the card's verdict builds them on the
 // same state and deps right before (EconomyContext LEAF_CHECKS selling), with
 // nothing yielding or written between; that answer serves when it read the
-// held earning spot with no search (a search renews or moves the hold, after
-// which a second read keeps its answer but records no search) at the same time.
+// held earning spot (basics never search) at the same time.
 function refreshAdvisory(state, accepted, deps = {}, options = {}) {
     const checked = {};
     const refused = refusal(state, accepted, deps, { ...options, basics: checked });
@@ -704,8 +703,10 @@ function refreshAdvisory(state, accepted, deps = {}, options = {}) {
     economy.statsPacket = { wishFocus: state.stats.wishFocus, dormantWishes: state.stats.dormantWishes,
         decisionSeq: state.stats.decisionSeq, activityLeaf: state.stats.activityLeaf, money: state.stats.money,
         stockTargets: state.stats.stockTargets, dangerPrice: state.stats.dangerPrice, wishSections: accepted.baseline, wishDirty: 0,
-        // The card serves the build and its earning spot's held answer.
-        woken: Situations.decided(state.stats, ['earning_spot', 'build'], { caller: deps.caller || 'card', served: true }),
+        // The card serves the build (until it moves to situations, step 4). A served
+        // card never clears another decision's bit: the earning spot's is cleared
+        // only by its search (EconomyContext.earningDue refuses the card first).
+        woken: Situations.decided(state.stats, 'build', { caller: deps.caller || 'card', served: true }),
         wishAdvisory: accepted.saved || null };
     Object.assign(economy.network, { focus: state.stats.wishFocus, dormant: state.stats.dormantWishes,
         decisionSeq: state.stats.decisionSeq, activityLeaf: state.stats.activityLeaf });

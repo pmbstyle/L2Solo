@@ -71,10 +71,6 @@ const SITUATIONS = Object.freeze({
     relations: link(['relations'], WORK | VISIT),
     party_joined: link(['relations'], 0),
     party_left: link(['relations'], 0),
-    // A search found a better spot: the bot finishes where it stands, and a job that
-    // is no hunt (income_later) before it hears of it.
-    income_moved: link(['occupation'], WORK | VISIT),
-    income_later: link(['occupation'], GATED),
     // A spot too full to enter (the room at arrival), and what main refused at the
     // act or a body that failed its step five times: the plan cannot stand.
     spot_crowded: link(['occupation', 'sources'], 0),
@@ -119,9 +115,8 @@ const SITUATIONS = Object.freeze({
     // goal comes in reach; a rest is no review of the purse (user 11-02).
     money: link(['money'], FIELD | VISIT),
     goal: link(['money'], 0),
-    // Its own samples moved: also the observation bit, the earning spot search's
-    // event (DecisionSections SECTIONS); a gear-threat flip raises no such bit.
-    observation: link([...OBSERVED, 'observation'], WORK | VISIT),
+    // Its own samples moved (the build's sections; a gear-threat flip raises none).
+    observation: link(OBSERVED, WORK | VISIT),
     market: link(BOUGHT, 0),
     // The held plan's own proof (EconomyContext.heldBuildVerdict).
     crafter_mp: link(['sources'], FIELD | VISIT),
@@ -173,8 +168,6 @@ function answer(caller, state) {
     return !name || hears(name, place(state)) ? 'decide' : name;
 }
 const keeps = caller => rowOf(caller).keeps;
-// The link a better spot comes by: a hunter's own, or a job that is no hunt, which ends first.
-const incomeLink = leaf => !leaf || leaf.activity === 'hunting' ? 'income_moved' : 'income_later';
 // Why a review opened, in the reviewer's words: a goal that failed, or that main moved.
 function goalMoment(why) {
     if (/^(events:)?check:/.test(why)) return 'goal_failed';
@@ -218,8 +211,12 @@ const WAKES = Object.freeze(Object.fromEntries(Object.keys(SITUATIONS).map(name 
 // anywhere; a rest its stop; the town, a stall, a meeting, the arrival in town and
 // a body near a player elsewhere all of them.
 const planesAt = where => where === WORK || where === BODY ? 0 : where === REST ? STOP : STOP | TOWN;
+// A decision's held answer in the mind (situations.md §10): with none the decision
+// reads woken (no stored raise), until it decides and holds one.
+const HELD = Object.freeze({ earning_spot: 'earning' });
+const unheld = stats => Object.entries(HELD).reduce((bits, [decision, key]) => stats?.[key] === undefined ? bits | BITS[decision] : bits, 0);
 // A row saved before the store kept no bits: every decision reads woken, once.
-const wokenBits = stats => stats?.woken === undefined ? ALL : Number(stats.woken) || 0;
+const wokenBits = stats => (stats?.woken === undefined ? ALL : Number(stats.woken) || 0) | unheld(stats);
 // The build's sections of a situation (the temporary half of its row). lazy: the
 // section table is DecisionSections', which reads this catalogue at its top.
 const masks = new Map();
@@ -427,5 +424,5 @@ const sectionsOf = names => heard(names, OPEN);
 
 module.exports = { FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, agendaHears, readsFacts, hears, heard, woke, sections,
     DECISIONS, ALL, raise, delta, counted, stop, woken, anyWoken, decided, counts, COUNT_KEYS,
-    answer, keeps, incomeLink, goalMoment, quiet,
+    answer, keeps, goalMoment, quiet,
     placeName: where => NAMES.get(where), SITUATIONS, detect, factNames, sectionsOf };

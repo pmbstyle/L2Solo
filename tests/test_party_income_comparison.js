@@ -73,6 +73,8 @@ try {
     const selected = Route.select(state, { spots, timestamp: at, required: true });
     assert.equal(selected.spot.id, 'lower'); assert.equal(selected.row.useShots, false,
         'lower uncharged net income is compared before committing to the first charged route');
+    // The solo side reads the bot's held earning answer: what its own search found (the stats are shared with peer).
+    state.stats.earning = Route.answerOf(selected, at);
     const prepared = Income.prepare([state, peer], { spots, timestamp: at });
     const decision = Goals.decide(state, [peer], { prepared, roll: 0 });
     assert.equal(decision.accept, false, 'required request and maximum sociability cannot bypass the funding comparison');
@@ -139,7 +141,7 @@ try {
         durations.push(performance.now() - start);
     }
     durations.sort((a, b) => a - b);
-    assert(gates <= 202 * Income.MAX_SOLO_CHECKS + 1, 'exact safety calls remain bounded per admission');
+    assert.equal(gates, 1, 'an admission asks no safety gate: the solo side reads the held answer (the one is the fixture\'s search)');
     console.log(`PASS personal admission: no wish builds; warm p95=${durations[190].toFixed(3)}ms, max=${durations[199].toFixed(3)}ms`);
 
     // A forming verdict is judged once per inputs: the roster asked again on the

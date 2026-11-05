@@ -29,9 +29,10 @@ function compact(stats = {}) {
 // The mind: what the background thread decided for the bot (its stats packet
 // and published card). It is saved in its own column (bot_life_state.mindJson),
 // so a refused body write never takes the decision with it.
-// woken, waiting, situationSeq: the bot's woken decisions (Situations, their one owner).
+// woken, waiting, situationSeq: the bot's woken decisions (Situations, their one owner); earning: the earning
+// spot's held answer (EquipmentIncomeRoute.answerOf).
 const MIND_KEYS = Object.freeze(['decisionSeq', 'activityLeaf', 'wishFocus', 'wishSections', 'wishDirty',
-    'dormantWishes', 'money', 'stockTargets', 'dangerPrice', 'wishAdvisory', 'woken', 'waiting', 'situationSeq']);
+    'dormantWishes', 'money', 'stockTargets', 'dangerPrice', 'wishAdvisory', 'woken', 'waiting', 'situationSeq', 'earning']);
 
 // A whole stats object (or a stats patch) as its two saved halves.
 function split(stats = {}) {

@@ -285,7 +285,7 @@ const WORKSHOP_STATS = Object.freeze(['workshop', 'dwarvenCraftLevel', 'classId'
     'wishFocus', 'craftStationId', 'craftShop', 'clanId', 'travel', 'marketReturn', 'karma', 'clanMaterialDemand',
     'clanMarketDemand', 'marketErrand', 'marketErrands', 'marketSellSeen', 'wealthRefused', 'wealthCraft', 'shotCraft',
     'stockTargets', 'dangerPrice', 'tradeMeeting', 'townLook', 'hennas', 'generatedIndex', 'playerPartyTakeover',
-    'decisionSeq', 'activityLeaf', 'economyClock', 'playedHours', 'frustration', 'lifelongKills', 'exp']);
+    'decisionSeq', 'activityLeaf', 'economyClock', 'playedHours', 'frustration', 'lifelongKills', 'exp', 'earning']);
 const objectSerials = new WeakMap();
 let nextObjectSerial = 0;
 const serialOf = value => value && typeof value === 'object'
@@ -2280,7 +2280,6 @@ function startKernel(config = {}) {
             eventLoopLagMaxMs: lagMaxMs,
             ...(Config.developerDiagnostics ? { occupationPlanning: occupationPlanner.snapshot() } : {}),
             safety: safetyTotals(),
-            incomeHold: EconomyContext.incomeHoldStats(),
             competition: competitionCandidates?.snapshot() || null,
             ...(Config.developerDiagnostics ? {
             tables: tables.summary(),

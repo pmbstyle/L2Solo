@@ -23,11 +23,12 @@ try {
     Config.decisionTrace = true;
     const sent = [];
     DecisionTrace.connect(batch => { sent.push(...batch.records); });
-    const stats = { woken: 0 };
+    // A bot holding its earning answer (with none the decision reads woken).
+    const stats = { woken: 0, earning: { spotId: '9_24' } };
     Situations.raise(stats, 'level_up', null, Situations.place({ phase: 'cold', activity: 'hunting' }), 501);
     Situations.stop(stats, Situations.REST, 501);
     Situations.decided(stats, 'earning_spot', { caller: 'step', subject: 501, answer: '11_6', was: '9_24' });
-    Situations.decided({ woken: 0 }, 'earning_spot', { caller: 'party', subject: 502 });
+    Situations.decided({ woken: 0, earning: { spotId: '9_24' } }, 'earning_spot', { caller: 'party', subject: 502 });
     DecisionTrace.ack(1, sent.length);
     const rows = sent.map(row => JSON.parse(row));
     assert.deepEqual(rows.map(row => [row.bot, row.kind]), [[501, 'raise'], [501, 'stop'], [501, 'decided'], [502, 'decided']]);

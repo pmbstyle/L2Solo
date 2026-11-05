@@ -15,9 +15,9 @@
 // The window's rule, the one owner of "is a hunting round's end a decision
 // point" (design rules, Recompute: when, not what). It reads at each round what
 // a step would hear at work and the rounds raise no event for: the soft point's
-// goal and market watch. The money drift, the bot's own samples and a better
-// earning spot (income_moved) wait at work (Situations), as a step's would; the
-// build at the window's end reads them and checks the held earning spot. The
+// goal and market watch. The money drift and the bot's own samples wait at
+// work (Situations), as a step's would; the build at the window's end reads
+// them, and searches the earning spot only when one of its situations woke it. The
 // rounds run in one burst at the step, against the world as it stands then:
 // the kernel bounds how far ahead of the step's clock they run (its look-ahead,
 // WINDOW_LEAD_MS), so the window's end comes within it.

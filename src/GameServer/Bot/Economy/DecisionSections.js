@@ -62,10 +62,7 @@ function observationBaselineValid(baseline, rows) {
 }
 // The decision sections in the order of their wishDirty bit (1 << at): one
 // table for the raise (DecisionEvents) and the names its readers count.
-// observation: the bot's own hunt samples moved past its error (Situations'
-// observation link, beside its sections): an event bit read by the links that
-// read the sample values (the earning spot search), no piece of its own.
-const SECTIONS = Object.freeze(['build', 'combat', 'supply', 'benefits', 'sources', 'occupation', 'money', 'relations', 'observation']);
+const SECTIONS = Object.freeze(['build', 'combat', 'supply', 'benefits', 'sources', 'occupation', 'money', 'relations']);
 function sectionBit(name) {
     if (name === 'funding') name = 'money';
     const at = SECTIONS.indexOf(name);
@@ -81,14 +78,12 @@ function sectionMask(names) {
 // foundation: hunt income, risk, death and kit hours, stock targets, the
 // survival reserve (kit, profile, consumables, the observation). Of money it
 // reads the wallet only for the rest bottles' cap, read anew on a kept
-// foundation (EconomyContext.foundationFromPlan), and the money weight of its
-// income search, which the held earning spot follows itself (incomeMoved:
-// the weights its answer stands over).
+// foundation (EconomyContext.foundationFromPlan).
 // Of the relations fact it reads only the party role (its spot value table
 // and hunt income); relations is in its list for it, so a party join
 // rebuilds it (a deviation from the spec's four sections).
-// The earning spot search inside it decides on its own key (LINK_INPUTS
-// incomeSearch, EconomyContext.incomeMoved), not on these sections.
+// The earning spot search inside it runs only when its decision is woken
+// (EconomyContext.earningDue), not on these sections.
 // sources: the source walk (worn gear and level; party, clan, role;
 // exclusions, risk, hunt rows; the plan, persona, craft station, trades;
 // the hour adena and the money mark). weighing: focus, step and money queue.
@@ -99,10 +94,8 @@ function sectionMask(names) {
 const FOUNDATION = sectionMask(['build', 'combat', 'supply', 'occupation', 'relations']);
 const COMPUTED = Object.freeze({
     foundation: FOUNDATION,
-    // weighing: every piece (a refusal that names no section); the
-    // observation bit is an event, not a piece: the earning spot search hears
-    // what such a refusal moved through its own key.
-    weighing: sectionMask(SECTIONS.filter(name => name !== 'observation')),
+    // weighing: every piece (a refusal that names no section).
+    weighing: sectionMask(SECTIONS),
     route: sectionMask(['build', 'relations', 'occupation', 'sources']),
     // The source walk's per-spot ground verdict (GearAcquisitionPlanner.sourceGround):
     // level and kit matchup; its other reads are checked beside it.
@@ -112,8 +105,8 @@ const COMPUTED = Object.freeze({
     gearReview: sectionMask(['build', 'benefits', 'combat'])
 });
 // The decision links: the inputs
-// each link reads, by inputVersions name. The earning spot search and the
-// workshop decide on them (EconomyContext.incomeMoved, workshopKeyHolds); the
+// each link reads, by inputVersions name. The workshop decides on them
+// (EconomyContext.workshopKeyHolds); the
 // route rows are measured only (EconomyContext's link shadow, developerDiagnostics).
 // discrete: a version compared exactly; continuous: a value compared inside
 // the answer's own range, else beyond the bot's own error (movedInput);
@@ -122,34 +115,6 @@ const COMPUTED = Object.freeze({
 const linkOf = (discrete, continuous, events) => Object.freeze({ discrete: Object.freeze(discrete),
     continuous: Object.freeze(continuous), events: Object.freeze(events) });
 const LINK_INPUTS = Object.freeze({
-    // The earning spot search (EquipmentIncomeRoute.select, called by
-    // EconomyContext.incomeRouteFor and holdRead; its route feeds foundation).
-    incomeSearch: linkOf([
-        'kit.class', // select: SpotValueTable.roleFor (the table role) and Match.stateProfiles
-        'kit.level', // select: state.level (the band, minGap, spotList.ids, avgLevel - level), the matchup
-        'kit.worn', 'kit.hennas', 'kit.capture', // select: Match.stateProfiles -> soloSpotUpperBound, spotAllowedReaderFor
-        'kit.skills', // spotList: ColdKillRewards.spoilerFor(skillsFor), the spoil skill level; the matchup
-        'party', // select: the state.party.partyId gate
-        'mode', // select: the caller's mode gate (party, duo); maxChecks stays the caller's option
-        'adventurer', // select: PersonalGearProgression.adventurer gate
-        'economic', // select: economicHunt opens the search
-        'required', // select: required (GearProgression.assess in EconomyContext.incomeRouteFor)
-        'spot', // select: ids start with state.spotId; origin = its center, else state.loc (WalkBack.tripHours); the arrival at the answer's spot replays (EquipmentIncomeRoute.arrived)
-        'samples', // select: BotHuntEfficiency.sampledRows spot ids join the candidates; a new sampled spot moves every table row (calibration) and the hunt's death hours: a search
-        'exclusions', // select: SpotRiskPolicy.excludedSpotIdsForStates (its exclusionVersion, a mark's end read at each check)
-        'recovery', // select: spotAllowedReaderFor -> safetyOptions' maxTargetLevel (the death recovery's level penalty)
-        'bagShot', // spotList.ids: consumablePrices' shot (ShotStock.planForState); stateProfiles' loaded shot (shotInputs)
-        'spawns' // SpotValueTable rows (value, rankedSpotIds, best): the spot catalog period, rewards, rates (its revision)
-    ], [
-        'weight', // SpotEconomics.create: moneyWeight, inside the weights the answer stands over (search's weights)
-        'hour' // SpotEconomics.create: the packet's own hour where the band has no money hour (search's weights.hour)
-    ], [
-        // What the answer stands on beside these (EquipmentIncomeRoute.standsMoved, read where the hold is):
-        'observation', // SpotEconomics.create: the bot's own sample values (the observation bit, beyond its own error)
-        'prices', // spotList.ids and SpotEconomics: the shot and potion prices (the reader's), inside the hull of the ranges the crowd key replays over (search's stands.prices)
-        'frustration', // SpotEconomics riskWeight: inside the range of it the answer stands over (search's stands.risk)
-        'crowd' // SpotEconomics spotHunters, SpotProfiles.roomFor: the crowd key's replay over its candidates' hunters (the pick; its earner and numbers at the read: liveRoute)
-    ]),
     // The crafter's workshop: the occupation planner's answer
     // (ColdOccupationSources.prepare over the planner capture,
     // ColdSimulationWorker occupationPlanner.capture), kept by
@@ -167,7 +132,6 @@ const LINK_INPUTS = Object.freeze({
         'supply' // a shot crafter: the bag's shot and potion presence (its product's own stock)
     ], [], [
         'money', // the money bit: the wallet (the planner's funding), the packet's money price and survival reserve, the market watch
-        'observation', // the observation bit: the bot's own samples, which move its hour before the income answer does
         'bag', // prepare: every inventory row's free amount (WealthCraftDecision.freeAmount): heard in town (the money bit)
         'reservations' // prepare: reservations(state): no event (the next ask)
     ]),
@@ -183,8 +147,7 @@ const LINK_INPUTS = Object.freeze({
         'route.travel' // routeInputs: the accepted trip's town and end
     ], [], [])
 });
-// What the earning spot search reads of the bag (LINK_INPUTS incomeSearch
-// bagShot): the shot its consumable prices name
+// What a bot's fight reads of the bag (PartyGoalPolicy's forming key): the shot its consumable prices name
 // (BotHuntEfficiency.consumablePrices: a spiritshot class's blessed or plain
 // one by what it holds) and the kind of shot the fight loads
 // (BotTargetMatchup.shotKind of ColdCombatProfile.shotSupply: none once the
@@ -196,34 +159,14 @@ function shotInputs(state, timestamp) {
 // lazy: ShotCraftPolicy loads the craft decision, which reads this module's readers.
 let shotRecipes = null;
 const shotRecipe = id => (shotRecipes ||= new Set(invoke('GameServer/Bot/Economy/ShotCraftPolicy').SHOT_RECIPE_IDS)).has(Number(id));
-const pointOf = loc => loc ? [Number(loc.locX) || 0, Number(loc.locY) || 0, Number(loc.locZ) || 0] : null;
 // One reader per link input over one call's reads (r: the view, the state,
 // the options; what several inputs share is read once, r.once).
 const VERSIONS = Object.freeze({
-    'kit.class': r => hash([r.kits[0], r.kits[1]]), 'kit.level': r => r.kits[2], 'kit.worn': r => r.kits[3],
-    'kit.hennas': r => r.kits[4], 'kit.skills': r => r.kits[5], 'kit.capture': r => r.kits[6],
+    'kit.class': r => hash([r.kits[0], r.kits[1]]), 'kit.level': r => r.kits[2],
     craft: r => hash([r.view.craftLevel, r.view.craftStationId ?? null, r.view.workshop?.entries ?? null]),
     crafter: r => r.once('crafter', () => require('./CraftEligibility').isServiceCrafter(r.state)),
     recipes: r => r.view.recipes ? hash(r.view.recipes) : null,
-    party: r => hash([r.view.party?.partyId, r.view.party?.role]),
-    mode: r => ['party', 'duo'].includes(r.mode),
-    spot: r => {
-        const spot = r.spots ? invoke('GameServer/Bot/AI/SpotIndex').spotById(r.spots, r.state.spotId) : null;
-        return hash([r.state.spotId ?? null, spot?.center ? null : pointOf(r.state.loc)]);
-    },
-    samples: r => hash([...new Set(Hunt.sampledRows(r.state, r.timestamp).map(row => String(row.spotId)))].sort()),
-    exclusions: r => invoke('GameServer/Bot/Population/SpotRiskPolicy').exclusionVersion(r.state).revision,
-    // What the search's matchup reads of the recovery (its solo safety, as select asks it).
-    recovery: r => invoke('GameServer/Bot/AI/LevelingRoutes').safetyOptions(r.state, { mode: 'solo' }).maxTargetLevel ?? null,
-    bagShot: r => hash(shotInputs(r.state, r.timestamp)),
-    // The table's revision: a counter of this thread (a held answer never leaves it).
-    spawns: () => invoke('GameServer/Bot/AI/SpotValueTable').revision(),
-    economic: r => invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').economicHunt(r.state),
-    adventurer: r => invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(r.state),
-    // The caller's own assessment of this state when it holds one (one per read: incomeRouteFor), else assessed here.
-    required: r => !!(r.required ?? invoke('GameServer/Bot/AI/PersonalGearProgression').assess(r.state).required),
-    weight: r => invoke('GameServer/Bot/Economy/SpotEconomics').moneyWeight(r.state),
-    hour: r => Number(Packet.hourAdena(r.stats.money)) || 0, maxMp: r => Number(r.state.vitals?.maxMp) || 0,
+    maxMp: r => Number(r.state.vitals?.maxMp) || 0,
     income: r => r.income ? hash(r.income) : null,
     ownLines: r => {
         if (!r.board) return null;
@@ -239,29 +182,18 @@ const VERSIONS = Object.freeze({
 // Every link input's version on a state, by LINK_INPUTS name (link: only the
 // discrete and continuous ones of that link, or of each of a list): a digest
 // of the input's value (no counter, no state identity), continuous ones the
-// value itself. view: the state's stateView (the held verdict's reads) or
-// linkView (no supply); spots: the catalogue the search reads (a spot without
-// a center reads the bot's point); board: the board mirror (ownLines; null
-// without one); mode: the caller's; income: the earning spot answer the money
-// packet carries ([spot, earning], EconomyContext.incomeOutput); required:
-// PersonalGearProgression.assess(state).required when the caller holds it.
-function inputVersions(view, state, timestamp, { spots = null, board = null, mode = null, income = null, required = null, link = null } = {}) {
+// value itself. view: the state's stateView (the held verdict's reads);
+// board: the board mirror (ownLines; null without one); income: the earning
+// spot's held answer ([spot, earning], EconomyContext.earningInput).
+function inputVersions(view, state, timestamp, { board = null, income = null, link = null } = {}) {
     const memo = new Map();
-    const r = { view, state, timestamp, spots, board, mode, income, required, stats: state.stats || {}, kits: view.kitHashes || [],
+    const r = { view, state, timestamp, board, income, stats: state.stats || {}, kits: view.kitHashes || [],
         once: (name, read) => memo.has(name) ? memo.get(name) : memo.set(name, read()).get(name) };
     const names = !link ? Object.keys(VERSIONS) : [...new Set([link].flat().flatMap(name =>
         [...LINK_INPUTS[name].discrete, ...LINK_INPUTS[name].continuous]))];
     const out = {};
     for (const name of names) out[name] = VERSIONS[name](r);
     return out;
-}
-// The part of stateView the link inputs read, for a reader with no verdict
-// (EconomyContext.holdRead from the basics or the party comparison).
-function linkView(state, recipes = null) {
-    const view = kitView(state);
-    view.party = partyIdOf(state) ? state.party : null;
-    view.recipes = recipes;
-    return view;
 }
 // The route table's inputs (EconomicTrip.routeInputs): the whole key (route)
 // and one version per field (LINK_INPUTS routeRows).
@@ -686,5 +618,5 @@ function standsIn(state, leaf) {
 function kitMoved(before, after) {
     return (before?.stats?.wishSections?.build ?? null) !== (after?.stats?.wishSections?.build ?? null);
 }
-module.exports = { FIELD_ACTIVITIES, partyIdOf, moneyReached, goalReached, SECTIONS, COMPUTED, LINK_INPUTS, inputVersions, linkView, routeVersions, movedInput, shotInputs, stateView, sectionBit, sectionMask, sectionNames, kit, kitMoved, moneyChanged, moneyBound, observationChanged, incomeError,
+module.exports = { FIELD_ACTIVITIES, partyIdOf, moneyReached, goalReached, SECTIONS, COMPUTED, LINK_INPUTS, inputVersions, routeVersions, movedInput, shotInputs, stateView, sectionBit, sectionMask, sectionNames, kit, kitMoved, moneyChanged, moneyBound, observationChanged, incomeError,
     MARKET_WATCH, softEvents, marketCrossed, carrySectionBaseline, baselineIdentity, sample, sampleRows, packSample, observationBaselineValid, bounds, snapshot, semanticFacts, factsOf, relationTargetIds, NO_PARTY, potionSurvivalTarget, fundingMark, occupationPlanned, hash, isEmptyWishPlan, decisionRefusal };

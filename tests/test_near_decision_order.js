@@ -96,7 +96,7 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
         const seq = body.nearRaise.seq;
         Events.detectNear(body, { ...handed, level: 31 });
         assert.equal(body.nearRaise.seq, seq, 'the same level while it waits is no new raise');
-        const hunting = Situations.bodyPlace({ activity: 'hunting' }), mind = { woken: 0 };
+        const hunting = Situations.bodyPlace({ activity: 'hunting' }), mind = { woken: 0, earning: { spotId: 'held' } };
         Events.takePostedRaise(mind, body.nearRaise, 0, hunting);
         assert(Situations.woken(mind, 'build') && !Situations.woken(mind, 'earning_spot'), 'on the hunt the level waits for the stop');
         Events.takePostedRaise(mind, { ...body.nearRaise, seq: seq + 1, stop: true }, seq, hunting);
@@ -108,7 +108,7 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
         Events.detectNear(body, decided);
         assert.equal(body.nearRaise, null, 'a received decision advances the baseline');
         // New gear waits for the town; the body's arrival in town is its stop there.
-        const town = { woken: 0 };
+        const town = { woken: 0, earning: { spotId: 'held' } };
         Events.takePostedRaise(town, { seq: 1, names: [['gear_changed', null]] }, 0, hunting);
         assert(!Situations.woken(town, 'earning_spot'), 'new gear on the hunt waits');
         Events.takePostedRaise(town, { seq: 2, names: [['gear_changed', null]], stop: 'rest' }, 1, hunting);

@@ -11,12 +11,6 @@ const WalkBack = require('../Economy/WalkBack');
 const HOUR_MS = 3600000;
 // An active party's income review cadence (PartyGoalPolicy.joint).
 const REVIEW_MS = 5 * 60000;
-const MAX_SOLO_CHECKS = 12;
-// The solo side's own searches, by bot (soloChoice): at most SOLO_SEARCH_LIMIT,
-// the least recently read out; each its route as the hold keeps one
-// (EconomyContext.searchInputs) and its key.
-const SOLO_SEARCH_LIMIT = 2048;
-const soloChoices = new Map();
 const positive = value => Math.max(0, Number(value) || 0);
 const rosterKey = members => members.map(member => Number(member.characterId)).sort((a, b) => a - b).join(',');
 const adventurer = state => invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(state);
@@ -66,52 +60,13 @@ function evaluate({ solo, party, cash = null, spendable = 0, fee = 0, rewardFee 
         soloSpotId: solo?.spotId || null, soloBuffPrice: positive(solo?.buffPrice) };
 }
 
-// The solo side's earning route: { route, own }. The spot the bot's held
-// build earns at (decision 10-30), read each time (no search, and no memo of
-// it here); else a search of its own (own: its held record). Either takes its
-// numbers at the inputs now (EquipmentIncomeRoute.liveRoute). A held forming
-// verdict keys the route's answer, whichever search gave it
-// (PartyGoalPolicy.verdictInputs).
+// The solo side's earning route: { route, own }: the bot's held earning answer
+// (situations step 1, stats.earning) at the inputs now (EquipmentIncomeRoute.heldRoute,
+// one row evaluation, no search); none when it holds no answer or none with a spot.
+// own: no search of its own any more (null).
 function soloChoice(state, spots, timestamp) {
-    const Economy = invoke('GameServer/Bot/Economy/EconomyContext'); // lazy: EconomyContext reads this module
-    const standalone = soloState(state);
-    const options = { spots, timestamp, required: true, mode: 'solo', maxChecks: MAX_SOLO_CHECKS };
-    // The search key's versions on the solo copy, read once: the hold's read,
-    // the own answer's check and a new search's key all read this moment.
-    options.versions = Economy.incomeVersions(standalone, options, timestamp);
-    const route = Economy.heldIncomeRoute(standalone, { ...options, party: true });
-    if (route) return { route, own: null };
-    const id = Number(state.characterId) || 0;
-    let own = soloChoices.get(id), kept = null;
-    if (!own || own.spots !== spots || timestamp < own.at
-        || (kept = Economy.searchRead(own, standalone, timestamp, options)).why
-        || invoke('GameServer/Bot/Economy/DecisionSections').observationChanged(standalone, own.observed, timestamp)) {
-        const found = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').search(standalone, options);
-        own = { ...Economy.searchInputs(standalone, found, timestamp, options), observed: observed(standalone, timestamp),
-            spots, at: timestamp };
-    } else if (kept.route !== own.route) own = { ...own, route: kept.route };
-    // Least recently used: a read moves the bot to the newest end.
-    soloChoices.delete(id); soloChoices.set(id, own);
-    if (soloChoices.size > SOLO_SEARCH_LIMIT) {
-        soloChoices.delete(soloChoices.keys().next().value);
-        invoke('GameServer/Bot/Economy/EconomyDiagnostics').count('party_solo_search', 'evicted');
-    }
-    return { route: own.route, own };
-}
-
-// The solo side's own search (EquipmentIncomeRoute.search) is kept on what it
-// reads, by the held earning spot's own key (EconomyContext.searchInputs,
-// searchRead: DecisionSections.LINK_INPUTS incomeSearch on the solo copy,
-// soloState, the weights its answer stands over and what else it stands on:
-// its prices, frustration range and crowd key; a kept choice takes its
-// numbers at the inputs now, its earner the replay's); its own samples and time on
-// the spot by the observation event's rule
-// (DecisionSections.observationChanged), as the observation bit reaches the
-// hold.
-function observed(state, timestamp) {
-    return { sample: invoke('GameServer/Bot/Economy/DecisionSections').sample(state, timestamp),
-        share: invoke('GameServer/Bot/AI/BotHuntEfficiency').onSpotShare(state),
-        incomeError: Math.max(positive(state.stats?.wishSections?.incomeError), invoke('GameServer/Bot/AI/KnowledgeLearning').INCOME_ERROR_FLOOR) };
+    const route = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').heldRoute(soloState(state), { spots, timestamp });
+    return { route, own: null };
 }
 
 // side: the member's soloChoice when its caller already read it.
@@ -296,17 +251,27 @@ function goalOf(state, members, objective, agreement) {
 // The direct solo drop's hours for a goal of goalOf: a material need's own
 // quote; else, for the final gear, the goal's known camp (it may differ from
 // the best cash route's), checked there without searching the source atlas
-// (soloItemRouteHours); null otherwise. Kept on the solo side (side: its
-// soloChoice): its own search's record, on that search's inputs, or a held
-// side's read.
+// (soloItemRouteHours); null otherwise. Kept per bot with the earning spot's
+// held answer it was read beside (the answer's time, the goal, the catalogue):
+// taken again when the bot decided its earning spot again (a level up, new
+// gear, a death...) or its goal moved, not when only prices or samples moved
+// between those situations (they go stale until then, as the held answer's).
+// At most GOAL_HOURS_LIMIT bots (limits.md), the least recently read out.
+const GOAL_HOURS_LIMIT = 2048;
+const goalHours = new Map();
 function soloGoalHours(state, side, aim, spots, timestamp) {
-    const goal = aim.goal, kept = side.own || side;
-    const goalKey = aim.final ? `${goal.spotId}:${goal.npcId}:${goal.itemId}:${goal.strategy}:${goal.amount || 1}` : null;
-    if (kept.goalKey !== goalKey) {
-        kept.goalKey = goalKey;
-        kept.itemHours = aim.final ? soloItemRouteHours(state, spots, goal, timestamp) : null;
+    if (aim.materialGoal?.materialSoloHours != null) return aim.materialGoal.materialSoloHours;
+    if (!aim.final) return null;
+    const goal = aim.goal, id = Number(state.characterId) || 0;
+    const key = `${state.stats?.earning?.at ?? 'none'}:${goal.spotId}:${goal.npcId}:${goal.itemId}:${goal.strategy}:${goal.amount || 1}`;
+    let kept = goalHours.get(id);
+    if (kept?.key !== key || kept.spots !== spots) kept = { key, spots, hours: soloItemRouteHours(state, spots, goal, timestamp) };
+    goalHours.delete(id); goalHours.set(id, kept);
+    if (goalHours.size > GOAL_HOURS_LIMIT) {
+        goalHours.delete(goalHours.keys().next().value);
+        invoke('GameServer/Bot/Economy/EconomyDiagnostics').count('party_goal_hours', 'evicted');
     }
-    return aim.materialGoal?.materialSoloHours ?? (aim.final ? kept.itemHours ?? null : null);
+    return kept.hours ?? null;
 }
 
 function compare(state, peers, options = {}) {
@@ -354,4 +319,4 @@ function compare(state, peers, options = {}) {
     return { ...answer, at: prepared.timestamp, soloSource: solo?.source || null, partySource: party?.source || null };
 }
 
-module.exports = { compare, prepare, evaluate, soloChoice, soloRoute, itemHours, soloItemRouteHours, focusedItem, goalOf, soloGoalHours, rosterKey, REVIEW_MS, MAX_SOLO_CHECKS, SOLO_SEARCH_LIMIT, soloState };
+module.exports = { compare, prepare, evaluate, soloChoice, soloRoute, itemHours, soloItemRouteHours, focusedItem, goalOf, soloGoalHours, rosterKey, REVIEW_MS, soloState };

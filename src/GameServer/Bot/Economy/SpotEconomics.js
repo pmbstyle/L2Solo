@@ -175,6 +175,8 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
     // that scale every row's riskHours (EquipmentIncomeRoute's arrival).
     reader.moneyHour = moneyHour;
     reader.deathHours = deathHours;
+    // The bot's own error on a row's income (its knowledge stage): the held earning answer's error.
+    reader.incomeError = incomeError;
     return reader;
 }
 module.exports = { create, moneyWeight, moneyShort, deathHoursOf };

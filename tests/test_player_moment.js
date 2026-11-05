@@ -41,9 +41,8 @@ assert(waitsFor(cold('hunting'), 'funding', 'money', 'supply', 'bag', 'quantity'
 assert(waitsFor(cold('hunting'), 'level_up', 'gear_changed') && hearsAll(cold('resting'), 'level_up', 'gear_changed'), 'a new level waits for the rest');
 assert(hearsAll(cold('hunting'), 'died', 'spot_dangerous', 'recovered', 'moved_by_world', 'shots_out', 'stock_low:potions', 'stock_low', 'bag_full', 'goal', 'market'), 'its fight, its place and a condition do not');
 assert(waitsFor(cold('resting'), 'supply', 'bag', 'quantity') && hearsAll(cold('resting'), 'funding', 'relations', 'stores'), 'a rest reads the money, the people and the clan');
-assert(waitsFor(cold('shopping'), 'funding', 'money', 'supply', 'bag', 'quantity', 'stores', 'level_up', 'gear_changed', 'recipe_learned', 'relations', 'income_moved'), 'a visit works down its list');
+assert(waitsFor(cold('shopping'), 'funding', 'money', 'supply', 'bag', 'quantity', 'stores', 'level_up', 'gear_changed', 'recipe_learned', 'relations'), 'a visit works down its list');
 assert(hearsAll(cold('shopping'), 'filled', 'short', 'offer_gone'), 'its list\'s end does not wait');
-assert(hearsAll(cold('resting'), 'income_moved') && waitsFor(cold('resting'), 'income_later'), 'a better spot reaches a rest on a hunt, not one on another job');
 assert(waitsFor(cold('resting'), 'offer_gone') && waitsFor(cold('traveling'), 'offer_gone'), 'who sells what is read at the market');
 assert.equal(Situations.place({ ...cold('shopping') }, cold('traveling')), 0, 'arriving hears all that waited');
 assert(hearsAll(cold('crafting'), 'funding', 'money', 'supply', 'quantity'), 'a craft has no check for its end');
@@ -62,7 +61,6 @@ assert(hearsAll(cold('grouped', { partyId: 'p' }), 'party_joined', 'party_left',
 assert(hearsAll({ ...hunter, phase: 'hot' }, 'funding', 'quantity', 'own_move'), 'nor near a player');
 assert(hearsAll(cold('hunting'), 'threat', 'excluded', 'material_done', 'filled', 'sale', 'craft', 'target'), 'a failed check goes at once');
 assert(waitsFor(cold('hunting'), 'short', 'money') && waitsFor(cold('crafting'), 'short') && hearsAll(cold('shopping'), 'short'), 'short of a price it earns on: the shop reads its purse');
-assert(waitsFor(cold('hunting'), 'income_moved') && hearsAll(cold('resting'), 'income_moved'), 'a better spot waits for the rest');
 assert.equal(Situations.placeName(Situations.place(cold('traveling'))), 'work', 'a hunt or the road is work');
 // Own trips: the bot's way out and back is no event far from a player; the world's push is.
 const trip = (travel, extra = {}) => cold('traveling', { stats: { travel }, ...extra });

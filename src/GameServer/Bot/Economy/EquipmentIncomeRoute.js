@@ -174,7 +174,7 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
             if (asked(candidate.spot)) { pick.earning = candidate.row.income; earner = candidate; break; }
         }
     }
-    if (!ranged) return { route: pick, weights: null };
+    if (!ranged) return { route: pick, weights: null, error: evaluate.incomeError };
     // Without the band's money hour the values count income in the packet's
     // own hour (SpotEconomics.create): that hour is an input beside the weight.
     const ownHour = hour.adena > 0 ? null : Number(Packet.hourAdena(state.stats?.money));
@@ -195,7 +195,7 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
         open, unpooled, cuts, matters, hour: evaluate.moneyHour, costs: BotHuntEfficiency.consumablePrices(state, price), arrival });
     // The inputs the route's numbers (its row, its earning) were read at (liveRoute).
     if (pick && stands.crowd) pick.live = liveInputs(stands.crowd, state, stands.crowd.earner, stands.prices);
-    return { route: pick, weights, stands };
+    return { route: pick, weights, stands, error: evaluate.incomeError };
 }
 
 // The arrival (find): what moves when the bot stands on the pick, its own
@@ -823,6 +823,35 @@ const timed = entry => function (state, options) {
     }
 };
 
+// Whether the bot's hour is its earning spot's (EconomyContext's foundation prices its hunt there): its gear is
+// required, its focus is an economic hunt, or it spoils; else it levels (BotHuntEfficiency.huntIncome). The bot
+// holds its earning spot either way (the party comparison's solo side reads it); this only says how the build uses it.
+function earnsOnRoute(state, required = false) {
+    return !!required || economicHunt(state) || !!spotList(state).spoiler();
+}
+// The earning spot's held answer (situations.md §10, stats.earning in the mind; its one owner of the layout): what
+// a search chose, { spotId (null: none), shots (the charge policy of its row), income (the row's income an hour),
+// earning (the bot's hour: its best income among the spots it may hunt), error (its own error on a row's income,
+// SpotEconomics incomeError), at }. ~50 B. found: search's { route }; error: the search's evaluate.incomeError.
+function answerOf(route, at, error = 0) {
+    return route ? { spotId: String(route.spot.id), shots: route.row.useShots !== false, income: Number(route.row.income) || 0,
+        earning: Number(route.earning) || 0, error: Number(error) || 0, at } : { spotId: null, shots: true, income: 0, earning: 0, error: 0, at };
+}
+// The route of the held answer at the inputs now (no search): its spot's row evaluated once at the reader's prices
+// (SpotEconomics, as the search reads it), its hour as decided. null: no answer, none held (spotId null) or a spot
+// the catalogue lost.
+// A bot in a party has none here: its hunt is the party's (the party comparison reads its solo copy).
+function heldRoute(state, { spots = [], timestamp = Date.now(), price, mode = null } = {}) {
+    if (state.party?.partyId || state.partyId || ['party', 'duo'].includes(mode)) return null;
+    const held = state.stats?.earning;
+    if (!held?.spotId) return null;
+    const spot = invoke('GameServer/Bot/AI/SpotIndex').spotById(spots, held.spotId);
+    if (!spot) return null;
+    const row = valuesFor(state, timestamp, price).evaluate(spot, held.shots !== false);
+    return row ? { spot, row, earning: Number(held.earning) || 0 } : null;
+}
+
 // untimedSelect: the link shadow's verify search (EconomyContext), kept out of these counts.
 module.exports = { select: timed(select), search: timed(search), untimedSelect: select,
-    searchTotals: () => ({ ...searchCounts }), economicHunt, spotList, standsMoved, standsRead, liveRoute, arrived, heldPrices };
+    searchTotals: () => ({ ...searchCounts }), economicHunt, spotList, standsMoved, standsRead, liveRoute, arrived, heldPrices,
+    answerOf, heldRoute, earnsOnRoute };
