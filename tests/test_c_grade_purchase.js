@@ -58,6 +58,13 @@ async function run() {
         assert.deepEqual(require('../src/GameServer/World/Generics/NpcExchangeShopLists').fetchForNpc(7097)[3].required
             .map(row => row.selfId), [1459, 1458], 'player costs retain both crystal grades');
         const proposal = { kind: 'luxury_exchange', ...recipe };
+        const Decision = invoke('GameServer/Bot/Population/ColdEconomyDecision');
+        const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+        const exchangeCard = Decision.capture({ riskWeight: 1, network: { activity: {
+            kind: 'luxury_exchange', activity: 'improving', itemId: recipe.itemId, amount: recipe.amount,
+            improvement: proposal, town: 'Giran'
+        } } }, state);
+        assert.equal(Economy.leafCheck(state, exchangeCard.activity, {}, {}), '', 'the unpaid exchange remains actionable');
         assert(Luxury.eligible(state, recipe), JSON.stringify(invoke('GameServer/Bot/AI/PersonalGearProgression').assess(state),
             (key, value) => value instanceof Map ? [...value] : value));
         const [physicalCharacter] = await DB.execute(['SELECT level,classId,clanId,locX,locY,locZ FROM characters WHERE id=?', [state.characterId]]);
@@ -80,6 +87,8 @@ async function run() {
         assert.equal(fresh.inventory[162].equipped, false, 'exchanged C awaits expertise');
         assert.equal(fresh.adena, state.adena, 'exchange price is crystals, with travel paid separately');
         assert(!fresh.inventory[1459], 'no C crystal input or synthetic C crystal appears');
+        assert.equal(Economy.leafCheck(fresh, exchangeCard.activity, {}, {}).reason, 'check:filled',
+            'receiving future C gear ends the selected exchange during the same town visit');
         await assert.rejects(DB.applyBotImprovement(state.characterId, proposal, { coldState: state }), /economy_state_changed/);
         await assert.rejects(DB.applyBotImprovement(state.characterId, proposal, { coldState: fresh }), /already_owned/);
         assert.equal((await DB.fetchItems(state.characterId)).filter(row => row.selfId === 162).length, 1);
@@ -124,6 +133,10 @@ async function run() {
         assert(!Disposition.saleCandidates(state).some(row => spareIds.includes(row.selfId)), 'exchange inputs stay reserved');
         const batch = { kind: 'crystallize', npcId: Crystals.npcId,
             items: [{ selfId: spareIds[0], amount: 2 }, { selfId: spareIds[1], amount: 1 }] };
+        const crystalCard = Decision.capture({ riskWeight: 1, network: { activity: {
+            kind: 'crystallize', activity: 'improving', itemId: 1458, amount: 5375,
+            improvement: batch, town: 'Giran'
+        } } }, state);
         await DB.execute(['UPDATE characters SET locX=91058,locY=171959,locZ=-3760 WHERE id=?', [state.characterId]]);
         const bagBefore = await DB.fetchItems(state.characterId);
         const kitBefore = bagBefore.filter(row => row.equipped);
@@ -137,6 +150,9 @@ async function run() {
         const output = 2 * Crystals.reward(Data.items.find(row => row.selfId === spareIds[0])).net
             + Crystals.reward(Data.items.find(row => row.selfId === spareIds[1])).net;
         assert.equal(shards.inventory[1458].amount, output, 'fee rounds upward separately for each item');
+        assert(output < 5375, 'this command supplies only part of the final crystal need');
+        assert.equal(Economy.leafCheck(shards, crystalCard.activity, {}, {}).reason, 'check:filled',
+            'a partial crystal delivery ends its consumed batch before selecting the next one');
         assert(!spareIds.some(id => shards.inventory[id]));
         assert.deepEqual((await DB.fetchItems(state.characterId)).filter(row => row.equipped), kitBefore, 'the D kit survives the batch');
         assert.equal(shards.adena, state.adena);
@@ -168,7 +184,6 @@ async function run() {
             materials: [...silver.materials, { selfId: 90, amount: 2 }] } } }, 'town_chain_fixture');
         state = await Life.applyMarketPurchase(state, { selfId: 90, price: 100, sourceType: 'fixture' }, 2);
         const Population = invoke('GameServer/Bot/Population/PopulationService');
-        const Decision = invoke('GameServer/Bot/Population/ColdEconomyDecision');
         async function townStep(current, improvement) {
             return Population.resolveColdState(current, {
                 precomputedPlan: { previousPlan: current.stats.equipmentPlan, acquisitionPlan: current.stats.equipmentPlan,

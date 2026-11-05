@@ -125,7 +125,7 @@ function actionTypeFor(clan, goal) {
     // from a changed member/warehouse/offer, rather than a polling plan.
     if (goal.plan?.kind === 'alliance_trial' && number(clan.level) === 3
         && String(clan.state?.mode || '') === 'autonomous') return ACTION_TYPES.CONTRIBUTION;
-    if (goal.type === 'equipment') return ACTION_TYPES.PLAN;
+    if (goal.type === 'equipment' || goal.type === 'strategy') return ACTION_TYPES.PLAN;
     if (number(clan.level) <= 1) return ACTION_TYPES.CONTRIBUTION;
     switch (String(goal.plan?.kind || '')) {
         case 'warehouse': return ACTION_TYPES.WAREHOUSE;
@@ -251,8 +251,9 @@ function endLeaseWait(clanId) {
 // runs); otherwise a running one, with its lease end.
 async function openReviewActions(clanIds) {
     const types = [ACTION_TYPES.PLAN, ACTION_TYPES.SUPPLIES];
-    const rows = await Database.execute([`SELECT clanId, actionType, status, leaseUntil FROM clan_actions
-        WHERE clanId IN (${clanIds.map(() => '?').join(',')}) AND actionType IN (?, ?) AND status IN ('pending','running')`,
+    const rows = await Database.execute([`SELECT a.clanId, a.actionType, a.status, a.leaseUntil, a.availableAt, s.mode FROM clan_actions a
+        JOIN clan_simulation_clans s ON s.clanId = a.clanId
+        WHERE a.clanId IN (${clanIds.map(() => '?').join(',')}) AND a.actionType IN (?, ?) AND a.status IN ('pending','running')`,
     [...clanIds, ...types]], 'clan-review:active');
     const open = new Map();
     for (const row of rows) {
@@ -290,9 +291,13 @@ async function scheduleReviews() {
                             Diagnostics.count('clan_review', 'lease_wait', 'parked');
                         } else ReviewEvents.changed(event.clanId, 'pending_review');
                     }
-                    continue;
+                    // A pending review reads fresh inputs, but a delayed
+                    // strategy review must become ready on a real change.
+                    if (active.status === 'running' || actionType !== ACTION_TYPES.PLAN
+                        || active.mode !== 'autonomous' || number(active.availableAt) <= at) continue;
                 }
                 await Database.enqueueClanAction({ clanId: event.clanId, actionType, priority: actionType === ACTION_TYPES.PLAN ? 75 : 40,
+                    coalescePending: actionType === ACTION_TYPES.PLAN,
                     actionKey: `clan:${event.clanId}:event:${randomUUID()}:${actionType}`, payload: { reasons: event.causes } });
             }
         } catch (error) {
@@ -319,6 +324,18 @@ async function bootstrap() {
 }
 
 async function bootstrapOnce() {
+    let afterId = 0, coalesced = 0;
+    for (;;) {
+        const page = await Database.repairClanProgressionQueue({ afterId });
+        coalesced += page.cancelled;
+        if (!page.scanned) break;
+        afterId = page.afterId;
+        // The repair also runs with players online; never hold main's DB
+        // queue for the whole saved backlog (64 actions / 8 ms per transaction,
+        // yielding at the next action boundary).
+        await new Promise(resolve => setImmediate(resolve));
+    }
+    if (coalesced) utils.infoSuccess('ClanAction', 'coalesced %d obsolete progression actions', coalesced);
     const playerManaged = await Database.ensurePlayerManagedClans();
     const clans = await Database.fetchClansNeedingAction(Config.resolveBatchSize * 4);
     let created = 0;
@@ -327,6 +344,7 @@ async function bootstrapOnce() {
             clanId: clan.clanId,
             actionKey: `clan:${Number(clan.clanId)}:recovery:v${BOOTSTRAP_RECOVERY_VERSION}:${Number(clan.updatedAt) || 0}`,
             actionType: ACTION_TYPES.PLAN,
+            coalescePending: true,
             priority: 75,
             payload: { reason: 'runtime_bootstrap', clanId: Number(clan.clanId) }
         });
@@ -351,7 +369,7 @@ async function bootstrapOnce() {
     }
     DiagnosticConfig.developerDiagnostics && (metrics.bootstraps += 1);
     DiagnosticConfig.developerDiagnostics && (metrics.planned += created + titleCreated);
-    return { attempted: clans.length, created, playerManaged, titleAttempted, titleCreated };
+    return { attempted: clans.length, created, playerManaged, titleAttempted, titleCreated, coalesced };
 }
 
 async function scheduleTitleReview(clan) {
@@ -389,7 +407,8 @@ async function scheduleNext(clan, goal, parentAction, delayMs = 0) {
         clanId: clan.id,
         actionKey,
         actionType: type,
-        priority: type === ACTION_TYPES.PLAN ? 75 : 50,
+        coalescePending: true,
+        priority: [ACTION_TYPES.PLAN, ACTION_TYPES.CONTRIBUTION].includes(type) ? 75 : 50,
         availableAt: Date.now() + delay,
         payload: {
             parentActionId: Number(parentAction.id),
@@ -448,6 +467,7 @@ async function execute(action, options = {}) {
     });
     if (!clan) return { ok: false, code: 'target_not_autonomous' };
     const payload = actionPayload(action);
+    const reasons = new Set([payload.reason, ...(payload.reasons || [])]);
     const requestedDeadline = Number(options.deadlineAt);
     const leaseDeadline = Date.now() + Math.max(1, Config.actionLeaseMs - 1000);
     const deadlineAt = Number.isFinite(requestedDeadline)
@@ -463,9 +483,9 @@ async function execute(action, options = {}) {
                 // below level 3 the equipment goal is the production goal, so pick the
                 // next one now instead of at the next 15-min production review.
                 const productionRequest = clan.state?.recruitmentDemand || clan.state?.recruitmentScan;
-                if (number(clan.level) < 3 && (String(payload.reason || '') === 'equipment_goal_completed'
-                    || productionRequest?.ownerSection === 'productionGoal' && ((payload.reasons || []).includes('recruitment_input')
-                        || String(payload.reason || '') === 'runtime_bootstrap'))) {
+                if (number(clan.level) < 3 && (reasons.has('equipment_goal_completed')
+                    || productionRequest?.ownerSection === 'productionGoal' && (reasons.has('recruitment_input')
+                        || reasons.has('runtime_bootstrap')))) {
                     const main = await GoalService.resolveClan(clan, { actionId: Number(action.id), reviewCauses: payload.reasons || [] });
                     if (!main.ok || main.advanced?.ok) { result = main; break; }
                     const fresh = await loadClan(clan.id);
