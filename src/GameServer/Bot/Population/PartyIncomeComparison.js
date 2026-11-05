@@ -13,7 +13,8 @@ const HOUR_MS = 3600000;
 const REVIEW_MS = 5 * 60000;
 const MAX_SOLO_CHECKS = 12;
 // The solo side's own searches, by bot (soloChoice): at most SOLO_SEARCH_LIMIT,
-// the least recently read out.
+// the least recently read out; each its route as the hold keeps one
+// (EconomyContext.searchInputs) and its key.
 const SOLO_SEARCH_LIMIT = 2048;
 const soloChoices = new Map();
 const positive = value => Math.max(0, Number(value) || 0);
@@ -86,7 +87,7 @@ function soloChoice(state, spots, timestamp) {
         || invoke('GameServer/Bot/Economy/DecisionSections').observationChanged(standalone, own.observed, timestamp)) {
         const found = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').search(standalone, options);
         own = { ...Economy.searchInputs(standalone, found, timestamp, options), observed: observed(standalone, timestamp),
-            spots, at: timestamp, choice: found.route };
+            spots, at: timestamp };
     }
     // Least recently used: a read moves the bot to the newest end.
     soloChoices.delete(id); soloChoices.set(id, own);
@@ -94,7 +95,7 @@ function soloChoice(state, spots, timestamp) {
         soloChoices.delete(soloChoices.keys().next().value);
         invoke('GameServer/Bot/Economy/EconomyDiagnostics').count('party_solo_search', 'evicted');
     }
-    return { route: own.choice, own };
+    return { route: own.route, own };
 }
 
 // The solo side's own search (EquipmentIncomeRoute.search) is kept on what it

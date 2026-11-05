@@ -1022,10 +1022,15 @@ function incomeRouteFor(state, deps, timestamp, price, keep) {
     keep?.(record);
     return record;
 }
+// What a kept answer keeps of the route a search chose (decision 10-30): its
+// spot, income row and hour (null: the search found none), what every reader
+// of a held route reads (the build's foundation, the party comparison's solo
+// side: PartyIncomeComparison.soloRoute and the forming verdict's key); not the
+// search's matchup profiles (their verdict caches would live with whoever keeps
+// the answer) nor its ranking fields.
+const keptRoute = route => route ? { spot: route.spot, row: route.row, earning: route.earning } : null;
 // What a held build keeps of the search that chose its route (decision 10-30):
-// the route's spot, income row and hour (null: the search found none), not the
-// search's matchup profiles (their verdict caches would live with the plan);
-// when it ran and its key: the versions of the inputs it read
+// keptRoute; when it ran and its key: the versions of the inputs it read
 // (Sections.LINK_INPUTS incomeSearch, incomeVersions) and the money weights
 // its answer stands over (EquipmentIncomeRoute.search's weights: the spot
 // value's money weight, SpotEconomics.moneyWeight, is the packet's hour times
@@ -1038,9 +1043,7 @@ function incomeRouteFor(state, deps, timestamp, price, keep) {
 // search followed the weighing (the economic hunt's turn or the money
 // weight), not another input.
 function newHold(found, at, versions, why, afterGoal = false) {
-    const route = found.route;
-    return { at, route: route ? { spot: route.spot, row: route.row, earning: route.earning } : null,
-        versions, weights: found.weights, stands: found.stands ?? null, why, moved: null, afterGoal };
+    return { at, route: keptRoute(found.route), versions, weights: found.weights, stands: found.stands ?? null, why, moved: null, afterGoal };
 }
 // The earning spot search's input versions on a state (its key's discrete and
 // continuous inputs), on the part of stateView they read. required: the
@@ -1067,16 +1070,16 @@ function incomeMoved(answer, versions, mask = 0, live = null) {
         || (Number(mask) & OBSERVATION ? 'observation' : '')
         || (live ? IncomeRoute.standsMoved(answer.stands, live.state, versions.weight, live.price) : '');
 }
-// The key of an earning-spot search made outside the hold (the party
-// comparison's own solo search, PartyIncomeComparison.soloChoice): the same
-// inputs as the held spot's (incomeVersions on the searched state, options:
-// the search's spots, mode and price; options.versions: the caller's, read
-// once on this state and moment) and what its answer stands on. One
-// rule with the hold: searchMoved names the input that moved since ('' none);
-// the observation bit, which only a build hears, the caller reads by the
-// observation event's own rule.
+// An earning-spot search made outside the hold (the party comparison's own
+// solo search, PartyIncomeComparison.soloChoice) as the hold keeps one: its
+// route (keptRoute) and its key, the same inputs as the held spot's
+// (incomeVersions on the searched state, options: the search's spots, mode and
+// price; options.versions: the caller's, read once on this state and moment)
+// and what its answer stands on. One rule with the hold: searchMoved names the
+// input that moved since ('' none); the observation bit, which only a build
+// hears, the caller reads by the observation event's own rule.
 function searchInputs(state, found, at, options) {
-    return { versions: options.versions || incomeVersions(state, options, at), weights: found.weights, stands: found.stands ?? null };
+    return { route: keptRoute(found.route), versions: options.versions || incomeVersions(state, options, at), weights: found.weights, stands: found.stands ?? null };
 }
 function searchMoved(inputs, state, timestamp, options) {
     return incomeMoved(inputs, options.versions || incomeVersions(state, options, timestamp), 0, { state, price: options.price });

@@ -154,6 +154,15 @@ function verify() {
             assert.equal(again.result.spotId, 'poor', `a copy of the same bot reads the same answer at ${minute} game minutes`);
             assert.equal(again.searches, 0, 'with no second search');
         }
+        // What it keeps of the search answers the comparison as the search's whole route does.
+        const whole = { route: nativeSearch(Party.soloState(turned), { spots, timestamp: time(31), required: true, mode: 'solo',
+            maxChecks: Party.MAX_SOLO_CHECKS }).route, own: null };
+        assert.deepEqual(Party.soloRoute({ ...turned }, spots, time(300)), Party.soloRoute({ ...turned }, spots, time(300), [], whole));
+        const other = { ...fighter(990263, { complete: true }), spotId: 'poor' };
+        const prepared = Party.prepare([turned, other], { spots, timestamp: time(300) });
+        assert.deepEqual(Party.compare({ ...turned }, [other], { prepared }),
+            Party.compare({ ...turned }, [other], { prepared, solo: new Map([[Number(turned.characterId), whole]]) }),
+            'the kept solo search compares as the whole one');
         const leveled = count(() => Party.soloRoute({ ...turned, level: 11 }, spots, time(302)));
         assert.equal(leveled.searches, 1, 'a moved input searches again');
         assert.equal(Economy.heldSpotMoved(turned), false, 'its search does not move the hold');
