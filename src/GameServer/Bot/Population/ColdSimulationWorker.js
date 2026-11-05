@@ -119,7 +119,7 @@ const ClanMembershipPolicy = require('../../Clan/ClanMembershipPolicy');
 const { ColdOccupationPlanner } = require('./ColdOccupationPlanner');
 const OccupationSources = require('./ColdOccupationSources');
 const EconomicTrip = require('../Economy/EconomicTrip');
-const { fnv1a32 } = require('../Fnv1a');
+const { fnv1a32, textDigest } = require('../Fnv1a');
 const WealthCraftPolicy = require('../Economy/WealthCraftPolicy');
 const RequiredPartyFormation = require('./RequiredPartyFormation');
 const { ColdCompetitionMonitor } = require('./ColdCompetitionMonitor');
@@ -239,27 +239,36 @@ const WORK_STAGES = Object.freeze(['stock', 'recipe', 'ingredient', 'owned', 'qu
 // A workshop card's window: the demand forecasts' clock decay has no event
 // (debt.md 25); 30 game min (5 real min) is ~8% demand drift.
 const WORKSHOP_SERVE_MS = 30 * invoke('GameServer/World/GameTime').GAME_MINUTE_MS;
-// A planner job's inputs as one value (ColdOccupationPlanner inputKey), by mode:
+// A planner job's inputs (ColdOccupationPlanner): a short key of the inputs
+// beside the state (inputKey) and, compared only when that one matches, the
+// digest of the state values the mode reads (valueKey), one per state object.
 // - wish: the route table's inputs (EconomicTrip.key): the rows read nothing else.
-// - occupation (a crafter's workshop): the state's values without its commit
-//   stamps (updatedAt, simulation, timing: no planner rule reads them; the
-//   meeting's authority and diagnostics do), its HP and CP (no workshop rule
-//   reads them), its MP as the band its craft checks answer alike on
-//   (WealthCraftPolicy.craftMpBand) and its saved restart card
-//   (stats.wishAdvisory, read by the card's restore only); the recipe book and known shot recipes, the escrow,
-//   the route key (the rows), the warehouse and clan supply versions and
-//   whether the board and market copies are whole. Board and market rows are
-//   the job's read tokens (sourceChanged). Not in it: the clock its sale
-//   exits read through the demand forecasts (MarketTradeDemand: the trades of
-//   an item decay by an e-fold per uptime hour, with no event between two
-//   trades) and through a combat profile's effects when the state stores no
-//   max MP: a finished workshop serves for its own window
-//   (WORKSHOP_SERVE_MS, servesUntil; limits.md "Occupation planner").
-// - action, showcase, craft_market: the same with HP (and the exact MP of a bot
-//   that rests for mana: SurvivalFloor's cast costs), the step's stock target,
-//   the step's economy (the object the step built) and the step clock, which
-//   the plan reads directly (SurvivalFloor's cooldowns and sale retry, the
-//   errands' expiry, price beliefs): a finished one serves its step only.
+// - occupation (a crafter's workshop): beside the state, the recipe book and
+//   known shot recipes, the escrow, the route key (the rows), the warehouse
+//   and clan supply versions and whether the board and market copies are
+//   whole; of the state, its top-level fields but the commit stamps
+//   (updatedAt, simulation, timing: the meeting's authority and diagnostics
+//   read them), its max MP and its MP as the band its craft checks answer
+//   alike on (WealthCraftPolicy.craftMpBand; no workshop rule reads HP or CP),
+//   and the stats fields the workshop's modules read (WORKSHOP_STATS:
+//   ColdOccupationSources, WealthCraftDecision and the modules they require,
+//   traced over the perf save's crafters); the kit's class beside the stats'
+//   (InventoryLimits). A cold state with no stored max MP reads its combat
+//   profile (ColdOccupationSources.craftLabour): all of it but the stamps.
+//   Board and market rows are the job's read tokens (sourceChanged). Not in
+//   it: the clock its sale exits read through the demand forecasts
+//   (MarketTradeDemand: the trades of an item decay by an e-fold per uptime
+//   hour, with no event between two trades): a finished workshop serves for
+//   its own window (WORKSHOP_SERVE_MS, servesUntil; limits.md "Occupation planner").
+// - action, showcase, craft_market: beside the state, the same with the
+//   step's stock target, the step's economy (the object the step built) and
+//   the step clock, which the plan reads directly (SurvivalFloor's cooldowns
+//   and sale retry, the errands' expiry, price beliefs): a finished one serves
+//   its step only. Of the state, all of it but the stamps, with HP and the MP
+//   band (the exact MP of a bot that rests for mana: SurvivalFloor's cast
+//   costs): the plan reads its kit, bag, goals and combat state. Computed only
+//   for an ask on the step's own clock and economy (a second ask of the step,
+//   a job in flight across main's resend).
 // - near, refresh, meeting: the asked state object (they build the economy,
 //   which reads the bot's memory rows, crowd and goals beside the state: a new
 //   state object stands for their moves) and the inputs asked beside it: the
@@ -269,24 +278,34 @@ const WORKSHOP_SERVE_MS = 30 * invoke('GameServer/World/GameTime').GAME_MINUTE_M
 const CLOCK_MODES = new Set(['action', 'showcase', 'craft_market']);
 const IDENTITY_MODES = new Set(['near', 'refresh', 'meeting']);
 const STATE_STAMPS = Object.freeze({ updatedAt: undefined, simulation: undefined, timing: undefined });
+const WORKSHOP_STATS = Object.freeze(['workshop', 'dwarvenCraftLevel', 'classId', 'race', 'money', 'equipmentPlan',
+    'wishFocus', 'craftStationId', 'craftShop', 'clanId', 'travel', 'marketReturn', 'karma', 'clanMaterialDemand',
+    'clanMarketDemand', 'marketErrand', 'marketErrands', 'marketSellSeen', 'wealthRefused', 'wealthCraft', 'shotCraft',
+    'stockTargets', 'dangerPrice', 'tradeMeeting', 'townLook', 'hennas', 'generatedIndex', 'playerPartyTakeover',
+    'decisionSeq', 'activityLeaf', 'economyClock', 'playedHours', 'frustration', 'lifelongKills', 'exp']);
 const objectSerials = new WeakMap();
 let nextObjectSerial = 0;
 const serialOf = value => value && typeof value === 'object'
     ? objectSerials.get(value) ?? (objectSerials.set(value, ++nextObjectSerial), nextObjectSerial) : 0;
-// The state's text per variant (stateValues: [without HP, with HP]), built
-// once per state object: a state is replaced, not edited (the near publish's
-// mind merge drops its entry). Held as long as the state is (the record's
-// state of a bot holding a workshop card: one text, 6-24 KB).
-const stateTexts = new WeakMap();
-function stateText(state, withHp) {
-    let texts = stateTexts.get(state);
-    if (!texts) stateTexts.set(state, texts = [null, null]);
-    return texts[+withHp] ??= stateValues(state, withHp);
+// The digest of a state's values per variant ([workshop, plan]), built once
+// per state object: a state is replaced, not edited (the near publish's mind
+// merge drops its entry after the jobs asked on it keep theirs).
+const stateDigests = new WeakMap();
+function stateDigest(state, variant) {
+    let digests = stateDigests.get(state);
+    if (!digests) stateDigests.set(state, digests = [null, null]);
+    return digests[variant] ??= textDigest(variant ? planValues(state) : workshopValues(state));
 }
-function stateValues(state, withHp) {
-    const mp = withHp && invoke('GameServer/Bot/AI/BotRoles').shouldRestForMana(state) ? state.vitals?.mp
-        : WealthCraftPolicy.craftMpBand(CraftEligibility.craftLevelFor(state), state.vitals?.mp);
-    const vitals = state.vitals && { ...state.vitals, mp, ...(withHp ? {} : { hp: undefined, cp: undefined }) };
+const mpBand = state => WealthCraftPolicy.craftMpBand(CraftEligibility.craftLevelFor(state), state.vitals?.mp);
+function workshopValues(state) {
+    if (state.phase !== 'hot' && !(Number(state.vitals?.maxMp) > 0)) return JSON.stringify({ ...state, ...STATE_STAMPS });
+    const stats = state.stats || {};
+    return JSON.stringify([{ ...state, ...STATE_STAMPS, vitals: undefined, stats: undefined }, Number(state.vitals?.maxMp || 0),
+        mpBand(state), WORKSHOP_STATS.map(key => stats[key]), stats.coldCombat?.classId]);
+}
+function planValues(state) {
+    const mp = invoke('GameServer/Bot/AI/BotRoles').shouldRestForMana(state) ? state.vitals?.mp : mpBand(state);
+    const vitals = state.vitals && { ...state.vitals, mp };
     const stats = state.stats && state.stats.wishAdvisory !== undefined ? { ...state.stats, wishAdvisory: undefined } : state.stats;
     return JSON.stringify({ ...state, ...STATE_STAMPS, vitals, stats });
 }
@@ -295,10 +314,12 @@ function plannerInputKey(input) {
     if (mode === 'wish') return input.routeKey;
     const beside = `${input.assetsKey}|${Number(input.buyOrderEscrow || 0)}|${input.sourceReady ? 1 : 0}|${input.recipeBook ?? ''}|${input.knownShotRecipes ?? ''}`;
     if (IDENTITY_MODES.has(mode)) return `${serialOf(input.state)}|${beside}|${Number(input.pending || 0)}|${input.meeting?.token ?? ''}`;
-    const clock = CLOCK_MODES.has(mode);
-    const text = JSON.stringify([input.routeKey, beside, clock ? [Number(input.timestamp), serialOf(input.economy), input.stock ?? null] : null])
-        + stateText(input.state, clock);
-    return `${fnv1a32(text)}.${fnv1a32(text, 0x01000193)}.${text.length}`;
+    return textDigest(JSON.stringify([mode, input.routeKey, beside, CLOCK_MODES.has(mode)
+        ? [Number(input.timestamp), serialOf(input.economy), input.stock ?? null] : null]));
+}
+function plannerValueKey(input) {
+    const mode = input.mode || 'occupation';
+    return mode === 'wish' || IDENTITY_MODES.has(mode) ? '' : stateDigest(input.state, +CLOCK_MODES.has(mode));
 }
 const occupationPlanner = new ColdOccupationPlanner({
     onPublishError: (error, characterId, input) => send('fault', {
@@ -314,6 +335,7 @@ const occupationPlanner = new ColdOccupationPlanner({
     // same on (kernel.states.set rebases it).
     ownCurrent: (id, input) => !shuttingDown && kernel?.states.get(id)?.state === input.sourceState,
     inputKey: plannerInputKey,
+    valueKey: plannerValueKey,
     servesUntil: input => (input.mode || 'occupation') === 'occupation' ? Number(input.timestamp) + WORKSHOP_SERVE_MS : Infinity,
     capture: (id, input, read, readScope) => {
         const book = RecipeBookCodec.unpack(input.recipeBook);
@@ -698,9 +720,11 @@ const occupationPlanner = new ColdOccupationPlanner({
             // mind keys the body takes and the post and raise it answers.
             // The published packet moves the record's mind, as the far step's merge does,
             // so the next post's events compare against it and a raise is taken once.
-            // It edits the record's state in place: its kept key text goes (stateText).
+            // It edits the record's state in place: a job asked on it keeps the
+            // values it was asked on (valueKey), the state's digests go.
+            for (const held of occupationPlanner.entriesOf(id)) if (held.input.state === owner.state) occupationPlanner.valuesOf(held);
             Object.assign(owner.state.stats ||= {}, workshop.statsPacket);
-            stateTexts.delete(owner.state);
+            stateDigests.delete(owner.state);
             owner.nearRoute = { key: input.routeKey, rows: workshop.routeRows };
             send('ready', { phase: 'economy_decided', characterId: id, economyDecision: workshop.decision,
                 near: { statsPacket: workshop.statsPacket, shotRestock: workshop.shotRestock, personalCraft: workshop.personalCraft,
@@ -2115,7 +2139,8 @@ function startKernel(config = {}) {
                     ? { ...held.input, state: EconomicTrip.frame(entry.state), sourceState: entry.state, routeKey }
                     : { ...held.input, state: entry.state, sourceState: entry.state, routeKey,
                         routeRows: held.input.routeKey === routeKey ? held.input.routeRows : null };
-                if (incoming && (held.mode === 'wish' || plannerInputKey(incoming) === held.fingerprint)) {
+                if (incoming && (held.mode === 'wish' || plannerInputKey(incoming) === held.fingerprint
+                    && occupationPlanner.valuesOf(held) === plannerValueKey(incoming))) {
                     occupationPlanner.rebase(held, incoming);
                 } else if (held.mode === 'wish') cancelRoute(id);
                 else occupationPlanner.cancel(id, held.mode);

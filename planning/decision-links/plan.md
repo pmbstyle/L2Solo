@@ -119,7 +119,7 @@ Inputs marked (E) have an event today, (–) have none, (S) need a significance 
    event:<input>, `income_crowd:kept|searched`, `windowEnd` lead/market. Left: the other windows of the census
    below.
 4. Done (branch ivan/links-step4-planner): planner answers per mode on the values they read
-   (`ColdSimulationWorker.plannerInputKey`; finished cards outside the 64 working contexts; a state that reads the same
+   (`ColdSimulationWorker.plannerInputKey` and `plannerValueKey`: the workshop on its named reads; finished cards outside the 64 working contexts; a state that reads the same
    keeps the job, in flight too); a crafter's MP as the band of its craft checks (`WealthCraftPolicy.craftMpBand`:
    the card's craft refresh, the planner keys, `crafter_mp`); the after-round action on the facts of the last action
    ask (`ColdEconomyPlan.edgesSince`, the bot's baseline at the step's commit). Open: near, refresh and meeting stay on

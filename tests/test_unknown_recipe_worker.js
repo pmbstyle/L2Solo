@@ -43,9 +43,23 @@ const pages = rows => [{ tables: [{ name: 'board', from: null, to: 0, full: true
     const crafter = { ...state, vitals: { ...state.vitals, mp: baseMp } };
     const vitals = mp => ({ vitals: { ...crafter.vitals, mp } });
     const material = recipe.materials[0].selfId;
+    // The workshop reads these stats fields (ColdSimulationWorker WORKSHOP_STATS):
+    // each one moved builds it anew; the combat kit, the wish sections and the
+    // hunt records it does not read keep it (HP too: no workshop rule reads it).
+    const readStats = ['workshop', 'dwarvenCraftLevel', 'race', 'equipmentPlan', 'wishFocus', 'craftStationId', 'craftShop',
+        'clanId', 'travel', 'marketReturn', 'karma', 'clanMaterialDemand', 'clanMarketDemand', 'marketErrand', 'marketErrands',
+        'marketSellSeen', 'wealthRefused', 'wealthCraft', 'shotCraft', 'stockTargets', 'dangerPrice', 'tradeMeeting', 'townLook',
+        'hennas', 'generatedIndex', 'playerPartyTakeover', 'decisionSeq', 'activityLeaf', 'economyClock', 'playedHours',
+        'frustration', 'lifelongKills', 'exp', 'classId', 'money'];
+    const unread = { hp: { vitals: { ...crafter.vitals, mp: outsideMp, hp: 900 } },
+        combat: { stats: { coldCombat: { skills: [{ selfId: 1, level: 1 }], cooldowns: { 1: 1 }, effects: [] } } },
+        sections: { stats: { wishSections: { supply: 3 }, wishAdvisory: { focus: 'x' } } },
+        hunt: { stats: { huntEfficiency: { kills: 5 }, spotRisk: { a: 1 }, huntClock: { at: 1 }, lastReason: 'moved' } } };
+    const readMoves = Object.fromEntries(readStats.map(key => [`stats.${key}`, { stats: { [key]: [`moved:${key}`] } }]));
     const reuse = await probe(crafter, { recipes: { recipeBook: Codec.pack([recipe.recipeId]) }, tablePages: pages(withoutScroll),
         plannerReuse: { bag: { inventory: { [material]: { selfId: material, amount: 1, stackable: true } } },
-            wallet: { adena: state.adena - 1 }, mpInBand: vitals(insideMp), mpOutOfBand: vitals(outsideMp) } });
+            wallet: { adena: state.adena - 1 }, mpInBand: vitals(insideMp), mpOutOfBand: vitals(outsideMp), ...unread,
+            maxMp: { vitals: { ...crafter.vitals, mp: outsideMp, hp: 900, maxMp: 999 } }, level: { level: state.level + 1 }, ...readMoves } });
     assert.deepEqual(reuse.first, { occupation: 1, wish: 1, action: 1 }, 'one build per mode; the step\'s second action ask joins');
     assert.deepEqual(reuse.actionAgain, reuse.action);
     assert.deepEqual(reuse.kept, { occupation: 1, wish: 1, action: 2 },
@@ -53,7 +67,9 @@ const pages = rows => [{ tables: [{ name: 'board', from: null, to: 0, full: true
     assert.deepEqual(reuse.keptWorkshop, reuse.workshop, 'the kept workshop is the one asked before the action');
     assert.deepEqual(reuse.keptRows, reuse.rows);
     assert.deepEqual(reuse.freshWorkshop, reuse.keptWorkshop, 'a fresh build on the resent row gives the kept answer');
-    const built = { bag: 1, wallet: 1, mpInBand: 0, mpOutOfBand: 1 };
+    const built = { bag: 1, wallet: 1, mpInBand: 0, mpOutOfBand: 1, hp: 0, combat: 0, sections: 0, hunt: 0, maxMp: 1, level: 1,
+        ...Object.fromEntries(Object.keys(readMoves).map(name => [name, 1])) };
+    assert.deepEqual(Object.keys(reuse.moves), Object.keys(built));
     for (const [name, move] of Object.entries(reuse.moves)) {
         assert.equal(move.built, built[name], `a ${name} move ${built[name] ? 'builds the workshop anew' : 'keeps it'}`);
         assert.deepEqual(move.answer, move.fresh, `the ${name} move's answer is a fresh build's`);

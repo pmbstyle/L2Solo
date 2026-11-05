@@ -60,7 +60,8 @@ module.exports.nativeMeetingPreparation = async (id, timestamp, request) => {
 // The planner's answers per mode across main's resend of the same row, the
 // moves a test names (moves: { name: fields set on the state, in order }) and an ask of
 // another mode: builds counted by mode, answers as values, each kept or
-// rebuilt answer beside a fresh build on the same state.
+// rebuilt answer beside a fresh build on the same state. A move's stats are
+// merged into the state's (one field moves, the earlier moves stay).
 module.exports.nativePlannerReuse = async (id, timestamp, moves = {}) => {
     const builds = {}, create = occupationPlanner.create;
     occupationPlanner.create = captured => { builds[captured.mode] = (builds[captured.mode] || 0) + 1; return create(captured); };
@@ -85,7 +86,7 @@ module.exports.nativePlannerReuse = async (id, timestamp, moves = {}) => {
         out.moves = {};
         let at = timestamp + 2000, current = resent;
         for (const [name, patch] of Object.entries(moves)) {
-            current = set({ ...current, ...patch, updatedAt: at });
+            current = set({ ...current, ...patch, ...(patch.stats ? { stats: { ...current.stats, ...patch.stats } } : {}), updatedAt: at });
             const before = counted().occupation || 0;
             const answer = await ask(current, at);
             const built = (counted().occupation || 0) - before;

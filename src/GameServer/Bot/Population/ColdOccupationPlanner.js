@@ -17,17 +17,19 @@ const keyOf = (id, mode) => `${mode || 'occupation'}:${Number(id)}`;
 // key, a source move on what it read, or its release. Waiting owners carry
 // references to their existing native input, a 128 B numeric cursor and one
 // completion callback, no graph.
-// inputKey(input): the job's input as a value (compared with ===); a new ask
-// with the same key and no moved source gets the answer or joins the work.
+// inputKey(input): the job's inputs as a value (compared with ===);
+// valueKey(input): the values it reads of its state, compared only when the
+// inputKey matches (the worker digests a state once). A new ask with both the
+// same and no moved source gets the answer or joins the work.
 // servesUntil(input): the clock (input.timestamp) from which a finished
 // answer no longer serves an ask of the same key: a window for an input the
 // answer reads that has no event (the worker states which); none by default.
 class ColdOccupationPlanner {
-    constructor({ capture, create, step, result, ownCurrent = () => true, inputKey = input => input,
+    constructor({ capture, create, step, result, ownCurrent = () => true, inputKey = input => input, valueKey = () => '',
         servesUntil = () => Infinity, sourceToken, sourceScope = () => null, sourceScopeToken = () => 0,
         onSlots = () => {}, onWorking = () => {}, publish = () => {}, onPublishError = () => {}, now = () => performance.now(),
         schedule = callback => setImmediate(callback) } = {}) {
-        Object.assign(this, { capture, create, step, result, ownCurrent, inputKey, servesUntil, sourceToken, sourceScope, sourceScopeToken, onSlots, onWorking, publish, onPublishError, now, schedule });
+        Object.assign(this, { capture, create, step, result, ownCurrent, inputKey, valueKey, servesUntil, sourceToken, sourceScope, sourceScopeToken, onSlots, onWorking, publish, onPublishError, now, schedule });
         this.slots = new Map(); this.cards = new Map(); this.waiting = new Map(); this.ready = new Set(); this.dependencies = new Map();
         this.workingContexts = 0;
         this.errorsSeen = new Set();
@@ -62,7 +64,7 @@ class ColdOccupationPlanner {
         const existing = this.waiting.get(key) || this.slots.get(key) || this.cards.get(key);
         const fingerprint = this.inputKey(input);
         if (existing && existing.fingerprint === fingerprint && !existing.dirty
-            && !(existing.done && Number(input?.timestamp) >= existing.until)) {
+            && !(existing.done && Number(input?.timestamp) >= existing.until) && this.valuesOf(existing) === this.valueKey(input)) {
             if (existing.done) { existing.input = input; DiagnosticConfig.developerDiagnostics && (this.stats.unchanged++); return Promise.resolve(existing.value); }
             return awaitResult ? existing.promise : null;
         }
@@ -70,11 +72,15 @@ class ColdOccupationPlanner {
         let resolve;
         const promise = new Promise(done => { resolve = done; });
         const entry = { key, id, mode, input, fingerprint, until: this.servesUntil(input), resolve, promise,
-            cursor: new Float64Array(16), dirty: false, done: false };
+            cursor: new Float64Array(16), dirty: false, done: false, values: null };
         this.waiting.set(key, entry);
         this.kick();
         return awaitResult ? promise : null;
     }
+
+    // The values a job was asked on (valueKey), taken at its first comparison
+    // (or before its state is edited in place) and kept: a rebase keeps them.
+    valuesOf(entry) { return entry.values ??= this.valueKey(entry.input); }
 
     // A new state of the bot on which a job reads the same (its key holds):
     // the job is kept and follows the state: a finished one takes the new
