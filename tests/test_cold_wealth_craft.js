@@ -305,6 +305,14 @@ async function run() {
         Recipes.resolveByRecipeId = recipeId => recipeId === recipe.recipeId ? recipe : null;
     }
     const writesBefore = purchases.length;
+    // The row raise (BotLifeState.raiseOnRow, an SQL writer: this test has no
+    // database): the raised bits on the row main holds.
+    const nativeRaise = LifeState.raiseOnRow;
+    LifeState.raiseOnRow = async (id, names) => {
+        const row = LifeState.cachedState(id) || state, stats = { ...row.stats };
+        for (const [name, payload] of names) invoke('GameServer/Bot/Situations').raise(stats, name, payload);
+        return { ...row, stats };
+    };
     const blockedBuyer = await Service.execute(state, forbiddenExit);
     assert.strictEqual(blockedBuyer.reason, 'buyer_changed', 'even a remote personal buyer is rejected before acquiring craft inputs');
     assert.strictEqual(blockedBuyer.state.stats.wishDirty, Sections.sectionBit('sources'));
@@ -328,6 +336,7 @@ async function run() {
         assert.deepStrictEqual(refused.state.stats.wealthRefused.recipes, [recipe.recipeId], 'the refusal marks its recipe');
     }
     assert.strictEqual(purchases.length, writesBefore);
+    LifeState.raiseOnRow = nativeRaise;
     Admission.configureTradeAdmission(id => LifeState.cachedState(Number(id)),
         id => invoke('GameServer/World/World').registeredActorById(Number(id))?.session);
     console.log(JSON.stringify({ scope: 'declared unit clock plus genuine native unfunded execution',

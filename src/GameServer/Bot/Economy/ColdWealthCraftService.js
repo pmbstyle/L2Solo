@@ -117,17 +117,18 @@ function withOutcome(state, opportunity, outcome, extras = {}) {
 
 // Retire only the accepted work that actually failed. A purchase/learning
 // await may have published another native row; never save its older caller.
-function rejectedWork(current, accepted, why, recipeId) {
-    if (current.phase !== 'cold') return current;
-    const next = DecisionEvents.rejectedState(current, accepted, why);
-    if (next === current || !(recipeId > 0)) return next;
-    return { ...next, stats: { ...next.stats, wealthRefused: WealthDecision.refusedMark(next, recipeId) } };
+// The rejection is raised on the row (DecisionEvents.rejectOnRow); the raised
+// row returned carries the recipe's refusal mark for the caller's own write.
+async function rejectedWork(current, accepted, why, recipeId) {
+    const raised = current.phase === 'cold' ? await DecisionEvents.rejectOnRow(current, accepted, why) : null;
+    if (!raised) return current;
+    return recipeId > 0 ? { ...raised, stats: { ...raised.stats, wealthRefused: WealthDecision.refusedMark(raised, recipeId) } } : raised;
 }
 // refusal: { reason, recipeId, kind: the craft's name in the count, wealth by default }.
 async function rejectAccepted(state, accepted = state, refusal = null) {
     const current = LifeState.cachedState(state.characterId) || state;
     if (refusal?.reason === 'mp_changed') return current;
-    const next = rejectedWork(current, accepted, `${refusal?.kind || 'wealth'}:${refusal?.reason || 'source'}`, refusal?.recipeId);
+    const next = await rejectedWork(current, accepted, `${refusal?.kind || 'wealth'}:${refusal?.reason || 'source'}`, refusal?.recipeId);
     return next === current ? current : await LifeState.upsertState(next, 'wealth_craft_source_rejected') || current;
 }
 
@@ -183,7 +184,7 @@ async function execute(state, opportunity, options = {}) {
         if (!bought.ready) throw Object.assign(Error('purchase_unavailable'), { why: bought.reason || (bought.plan ? 'unbought' : unfilled || bought.short || 'no_source') });
     } catch (error) {
         const failed = withOutcome(error?.message === 'purchase_unavailable'
-            ? rejectedWork(LifeState.cachedState(current.characterId) || current, state, `wealth:purchase_failed/${error.why}`, recipe.recipeId) : current, opportunity, 'purchase_failed',
+            ? await rejectedWork(LifeState.cachedState(current.characterId) || current, state, `wealth:purchase_failed/${error.why}`, recipe.recipeId) : current, opportunity, 'purchase_failed',
             { spent, error: String(error?.message || error) });
         return { state: await LifeState.upsertState(failed, 'wealth_craft_purchase_failed') || failed,
             crafted: false, reason: 'purchase_failed' };
@@ -192,7 +193,7 @@ async function execute(state, opportunity, options = {}) {
     const items = await Database.fetchItems(current.characterId, 'wealth_craft_items');
     const materials = materialRows(items, recipe, batches);
     if (!materials) {
-        const failed = withOutcome(rejectedWork(LifeState.cachedState(current.characterId) || current, state, 'wealth:materials_changed', recipe.recipeId), opportunity, 'materials_changed', { spent });
+        const failed = withOutcome(await rejectedWork(LifeState.cachedState(current.characterId) || current, state, 'wealth:materials_changed', recipe.recipeId), opportunity, 'materials_changed', { spent });
         return { state: await LifeState.upsertState(failed, 'wealth_craft_materials_changed') || failed,
             crafted: false, reason: 'materials_changed' };
     }
@@ -206,7 +207,7 @@ async function execute(state, opportunity, options = {}) {
             && Number(offer.price) === Number(opportunity.exit.price)
             && Number(offer.count) > 0
     )))) {
-        const changed = withOutcome(rejectedWork(LifeState.cachedState(current.characterId) || current, state, 'wealth:buyer_changed', recipe.recipeId), opportunity, 'buyer_changed', { spent });
+        const changed = withOutcome(await rejectedWork(LifeState.cachedState(current.characterId) || current, state, 'wealth:buyer_changed', recipe.recipeId), opportunity, 'buyer_changed', { spent });
         return { state: await LifeState.upsertState(changed, 'wealth_craft_buyer_changed') || changed,
             crafted: false, reason: 'buyer_changed' };
     }
@@ -236,7 +237,7 @@ async function execute(state, opportunity, options = {}) {
         const semantic = ['craft_recipe_changed', 'craft_recipe_materials_changed', 'craft_product_changed',
             'craft_product_template_changed', 'craft_material_identity_changed', 'craft material changed',
             'economy_material_protected'].includes(error?.message);
-        const failed = withOutcome(semantic ? rejectedWork(LifeState.cachedState(current.characterId) || current, state, 'wealth:craft_failed', recipe.recipeId) : current, opportunity, 'craft_rejected',
+        const failed = withOutcome(semantic ? await rejectedWork(LifeState.cachedState(current.characterId) || current, state, 'wealth:craft_failed', recipe.recipeId) : current, opportunity, 'craft_rejected',
             { spent, error: String(error?.message || error) });
         return { state: await LifeState.upsertState(failed, 'wealth_craft_rejected') || failed,
             crafted: false, reason: 'craft_rejected' };

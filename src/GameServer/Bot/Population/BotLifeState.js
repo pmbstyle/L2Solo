@@ -1125,6 +1125,48 @@ function writeHeldOnRevision(member, { stats = {}, columns = {} }, reason) {
         });
 }
 
+// Main's raise on a far bot (Situations' one SQL writer of its bits): the
+// situations' bits, as Situations.raise computes them where main last saw the
+// bot, ORed into the row's mind with no read of the rest, and the revision moved,
+// so a worker step begun before it is refused stale_revision and rebases onto the
+// raised row; a whole-row save never carries a raise (its mind is fenced). names:
+// [[situation, payload|null], ...]. Resolves the accepted row's state (the cached
+// one, nothing written, when the bits add nothing), null when the row is not far
+// (the caller raises where the bot is now) or the write failed (counted). Cost:
+// one UPDATE per raise that adds a bit; main raises a few per far bot per hour.
+function raiseOnRow(characterId, names, reason = 'situation') {
+    const id = Number(characterId), where = Situations.place(cache.get(id) || { phase: 'cold' });
+    const bits = { woken: 0, waiting: 0, wishDirty: 0, leaf: false };
+    for (const [name, payload] of names) {
+        const one = Situations.delta(name, payload, where);
+        bits.woken |= one.woken; bits.waiting |= one.waiting; bits.wishDirty |= one.wishDirty; bits.leaf ||= one.leaf;
+    }
+    // Nothing to OR: no write, no revision move, no stale step for the worker.
+    if (!bits.woken && !bits.waiting && !bits.wishDirty && !bits.leaf) {
+        const cached = cache.get(id);
+        return Promise.resolve(cached?.phase === 'cold' ? cached : null);
+    }
+    const mind = "COALESCE(NULLIF(mindJson, ''), '{}')", at = path => `json_extract(${mind}, '$.${path}')`;
+    return module.exports.serializeClanLevelUp(id, () => Database.execute([`UPDATE ${TABLE} SET
+        mindJson = json_set(${mind},
+            '$.woken', COALESCE(${at('woken')}, ?) | ?, '$.waiting', COALESCE(${at('waiting')}, 0) | ?,
+            '$.wishDirty', COALESCE(${at('wishDirty')}, 0) | ?, '$.situationSeq', COALESCE(${at('situationSeq')}, 0) + 1
+            ${bits.leaf ? ", '$.activityLeaf', 0" : ''}),
+        simulationRevision = simulationRevision + 1, updatedAt = ?
+        WHERE characterId = ? AND phase = 'cold'
+        RETURNING *`, [Situations.ALL, bits.woken, bits.waiting, bits.wishDirty, now(), id], { read: true }]))
+        .then(([row] = []) => {
+            if (!row) return null;
+            for (const [name] of names) Situations.counted(name, where);
+            const snapshot = module.exports.acceptNewerLifecycleRow(row);
+            if (snapshot) notifyColdSnapshot(snapshot, reason, { critical: true });
+            return snapshot;
+        }).catch((error) => {
+            FailureLog.note('botlife.raise_on_row', error);
+            return null;
+        });
+}
+
 // The world was paused while the server was down (L136): every persisted due
 // time moves by the downtime, so a restart does not make all bots due at once,
 // and so does lastResolvedAt: the step's length is now - lastResolvedAt
@@ -1879,6 +1921,7 @@ function reconcilePersistedLoadouts() {
 
 const BotLifeState = {
     notifyNearFacts,
+    raiseOnRow,
 
     // Boot only: { startedAt, downtimeMs } of this restart, measured once (L136).
     bootPause() {

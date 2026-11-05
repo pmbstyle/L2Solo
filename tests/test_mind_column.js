@@ -134,6 +134,33 @@ async function bodyMoney(id) {
         const memberAfter = await row(member);
         assert.equal(JSON.parse(memberAfter.statsJson).goalRepairProbe, true, 'the goal write writes the body');
         assert.equal(memberAfter.mindJson, memberBefore.mindJson, 'the goal write leaves the mind');
+
+        // (5) Main's raise on a far row (BotLifeState.raiseOnRow) survives a worker
+        // commit in flight: the commit built before it is refused and the bits stay;
+        // main's whole-row save of an older copy keeps them too.
+        const raisedId = await create('cold', { money: OLD_MONEY, woken: 0, wishDirty: 0, activityLeaf: 5 });
+        const inFlight = Life.cachedState(raisedId), flightRevision = inFlight.simulation.revision;
+        const raised = await Life.raiseOnRow(raisedId, [['goal_failed', { impossible: true }]], 'mind_column_raise');
+        assert(raised && raised.simulation.revision > flightRevision, 'the raise moves the far revision');
+        const [late] = await Owner.commitBatch([{ revision: flightRevision, proposal: { revision: flightRevision },
+            nextState: { ...inFlight, stats: { ...inFlight.stats, money: NEW_MONEY, woken: 0, wishDirty: 0 } } }]);
+        assert.equal(late.reason, 'stale_revision', 'the worker commit begun before the raise is refused');
+        await Life.upsertState(fixtureState(raisedId, 'MindColumn5', 'cold', { money: OLD_MONEY, woken: 0, wishDirty: 0 }), 'mind_column_old_copy');
+        const raisedMind = JSON.parse((await row(raisedId)).mindJson);
+        assert(raisedMind.woken & 2 && raisedMind.wishDirty, 'the raised bits stay on the row');
+        assert.equal(raisedMind.activityLeaf, 0, 'and its impossible mark dropped the held step');
+        assert.equal(raisedMind.situationSeq, 1, 'one raise');
+        assert.equal(await Life.raiseOnRow(await create('hot'), [['goal_failed', null]]), null, 'a row that is not far takes no row raise');
+        // A raise that adds no bit writes nothing: the revision stays, no worker step is refused.
+        const quietRevision = (await row(raisedId)).simulationRevision;
+        assert(await Life.raiseOnRow(raisedId, [['goal_moved', null]]), 'a raise that adds nothing still lands');
+        assert.equal((await row(raisedId)).simulationRevision, quietRevision, 'and moves no revision');
+        // A rejection whose row is not far and whose body is not in the world is counted, not lost silently.
+        const Events = invoke('GameServer/Bot/AI/DecisionEvents'), FailureLog = require('../src/FailureLog');
+        const lostBefore = FailureLog.snapshot()?.['situations.raise_lost'] || 0;
+        const gone = Life.cachedState(await create('hot'));
+        await Events.rejectOnRow(gone, gone, 'mind_column');
+        assert.equal(FailureLog.snapshot()?.['situations.raise_lost'], lostBefore + 1, 'a raise that lands nowhere is counted');
         console.log('PASS the mind column: refused far commits write nothing, main saves write a far row\'s only on its revision');
     } finally {
         fs.rmSync(directory, { recursive: true, force: true });

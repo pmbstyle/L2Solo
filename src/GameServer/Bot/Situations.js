@@ -252,20 +252,30 @@ function countWoke(before, after, name) {
 // held step (stats.activityLeaf), the one fact a raise writes beside the bits.
 // stats: an object the caller owns (a copy it is building); written and returned.
 function raise(stats, name, payload = null, where = OPEN) {
+    const bits = delta(name, payload, where);
+    if (bits.leaf) stats.activityLeaf = 0;
+    const was = wokenBits(stats), waited = Number(stats.waiting) || 0, dirty = Number(stats.wishDirty) || 0;
+    const woken = was | bits.woken, waiting = waited | bits.waiting, wishDirty = dirty | bits.wishDirty;
+    if (woken === was && waiting === waited && wishDirty === dirty) return stats;
+    stats.woken = woken; stats.waiting = waiting; stats.wishDirty = wishDirty;
+    stats.situationSeq = (Number(stats.situationSeq) || 0) + 1;
+    counted(name, where, was, woken);
+    return stats;
+}
+// What a raise ORs into a bot's bits (raise; BotLifeState.raiseOnRow's SQL on a far
+// row): { woken, waiting, wishDirty, leaf (drop the held step) }.
+function delta(name, payload = null, where = OPEN) {
     const row = SITUATIONS[name];
     if (!row) throw new TypeError(`situation: unknown ${name}`);
-    if (payload?.impossible === true) stats.activityLeaf = 0;
-    const was = wokenBits(stats), waited = Number(stats.waiting) || 0, dirty = Number(stats.wishDirty) || 0;
     const sections = hears(name, where) ? maskOf(name) : 0;
     const now = !row.heard || !!(planesAt(where) & row.heard);
-    const woken = was | (now ? WAKES[name] : 0) | (sections ? BUILD : 0);
-    const waiting = now ? waited : waited | WAKES[name] << SHIFT[row.heard];
-    if (woken === was && waiting === waited && (dirty | sections) === dirty) return stats;
-    stats.woken = woken; stats.waiting = waiting; stats.wishDirty = dirty | sections;
-    stats.situationSeq = (Number(stats.situationSeq) || 0) + 1;
+    return { woken: (now ? WAKES[name] : 0) | (sections ? BUILD : 0), waiting: now ? 0 : WAKES[name] << SHIFT[row.heard],
+        wishDirty: sections, leaf: payload?.impossible === true };
+}
+// A raise counted on the health line: where, and the decisions it woke (before, after: the woken bits).
+function counted(name, where, before = 0, after = 0) {
     count(raisedCounts, `${name}@${NAMES.get(where)}`);
-    countWoke(was, woken, name);
-    return stats;
+    countWoke(before, after, name);
 }
 // A stop (a far step at a rest or in town, a hot body's rest end): what waited on
 // the planes this place hears wakes. Written and returned as raise.
@@ -386,6 +396,6 @@ function needsOpened(before, after, names, now) {
 const sectionsOf = names => heard(names, OPEN);
 
 module.exports = { FIELD_ACTIVITIES, place, gated, field, reactive, onVisit, agendaHears, readsFacts, hears, heard, woke, sections,
-    DECISIONS, raise, stop, woken, anyWoken, decided, counts, COUNT_KEYS,
+    DECISIONS, ALL, raise, delta, counted, stop, woken, anyWoken, decided, counts, COUNT_KEYS,
     answer, keeps, incomeLink, goalMoment, quiet,
     placeName: where => NAMES.get(where), SITUATIONS, detect, factNames, sectionsOf };

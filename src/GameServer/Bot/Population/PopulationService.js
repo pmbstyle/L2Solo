@@ -3244,7 +3244,7 @@ const PopulationService = {
     },
 
     resolveColdCraft(state, plannedState, startedAt) {
-        return ColdCraftingService.craft(plannedState).then((craft) => {
+        return ColdCraftingService.craft(plannedState).then(async (craft) => {
             const completed = craft.reason === 'crafted'
                 || craft.reason === 'component_crafted'
                 || craft.reason === 'dual_sword_combined';
@@ -3272,8 +3272,11 @@ const PopulationService = {
                     }
                 }
                 : craft.state || plannedState;
-            if (!completed && ['materials_changed', 'missing_product', 'missing_station', 'insufficient_adena'].includes(craft.reason))
-                recoveredState = DecisionEvents.rejectedState(recoveredState, plannedState, `craft:${craft.reason}`);
+            // A rejection raised on the row (its own writer): the saved state is
+            // built on the raised row's revision and carries its raised mind.
+            const raised = !completed && ['materials_changed', 'missing_product', 'missing_station', 'insufficient_adena'].includes(craft.reason)
+                ? await DecisionEvents.rejectOnRow(recoveredState, plannedState, `craft:${craft.reason}`) : null;
+            if (raised) recoveredState = DecisionEvents.withRaise(recoveredState, raised);
             return LifeState.upsertState(recoveredState, reason).then(async (saved) => {
                 if (saved && craft.reason === 'component_crafted' && saved.activity !== 'crafting'
                     && invoke('GameServer/Bot/Economy/BotImprovementService').inTown(saved)

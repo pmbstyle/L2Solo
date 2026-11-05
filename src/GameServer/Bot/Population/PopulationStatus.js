@@ -1,6 +1,7 @@
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
+const Situations = invoke('GameServer/Bot/Situations');
 // A count map as name:n, most first.
 const top = rows => Object.entries(rows || {}).sort((a, b) => b[1] - a[1]).map(([why, count]) => `${why}:${count}`).join(',');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
@@ -150,7 +151,7 @@ const PopulationStatus = {
             + ` geo=${mb(geodata.loadedBytes)}MB/${geodata.loadedRegions} geoViews=${mb(geodata.attachedBytes)}+${mb(worker.geodata?.attachedBytes)}MB`
             + ` geoRaw=${geodata.rawRegions || 0} geoIndexOnly=${geodata.indexOnlyRegions || 0}`
             + ` geoHeightReads=${geodata.heightFileReads || 0}+${worker.geodata?.heightFileReads || 0} ${this.npcHateText()}`
-            + this.incomeHoldText(worker.incomeHold) + this.linksText(worker.links) + (worker.proofOverflows === undefined ? '' : ` proofOver=${worker.proofOverflows} nodeCap=${worker.nodeCapBuilds} asksDeep=${worker.asksPastDepth} shotFlips=${worker.sourceShotFlips} quietGear=${worker.quietGearBuilds}`) + this.doorsText(worker.buildDoors) + this.situationsText(worker.situations) + this.soloWindowText(worker.soloWindow);
+            + this.incomeHoldText(worker.incomeHold) + this.linksText(worker.links) + (worker.proofOverflows === undefined ? '' : ` proofOver=${worker.proofOverflows} nodeCap=${worker.nodeCapBuilds} asksDeep=${worker.asksPastDepth} shotFlips=${worker.sourceShotFlips} quietGear=${worker.quietGearBuilds}`) + this.doorsText(worker.buildDoors) + this.situationsText(worker.situations, Situations.counts()) + this.soloWindowText(worker.soloWindow);
     },
 
     // swallowed=<failures>/<sites>: failures main and the cold worker survived since start (FailureLog:
@@ -195,9 +196,17 @@ const PopulationStatus = {
     // situations=raised:<name@place>:<n>,...;woke:<decision><name>:<n>,...;decided:<decision>:<taken>/<served>,
     // <decision>:unwoken:<caller>:<n>,...[;over:<n>]: the worker's situation counts since it started
     // (Situations.counts), diagnostics off too, most first. unwoken: a decision taken with no woken bit, by its
-    // caller (the build runs on its sections until situations step 4); over: keys past the maps' cap.
-    situationsText(c) {
-        if (!c) return '';
+    // caller (the build runs on its sections until situations step 4); over: keys past the maps' cap. main: main's
+    // own counts (its raises on far rows, BotLifeState.raiseOnRow), summed in.
+    situationsText(worker, main) {
+        if (!worker) return '';
+        const sum = (a = {}, b = {}) => {
+            const out = { ...a };
+            for (const [key, n] of Object.entries(b)) out[key] = Array.isArray(n) ? n.map((v, at) => v + (out[key]?.[at] || 0)) : n + (out[key] || 0);
+            return out;
+        };
+        const c = { raised: sum(worker.raised, main?.raised), woke: sum(worker.woke, main?.woke), decided: sum(worker.decided, main?.decided),
+            unwoken: sum(worker.unwoken, main?.unwoken), overflow: (worker.overflow || 0) + (main?.overflow || 0) };
         const decided = Object.entries(c.decided || {}).map(([name, row]) => `${name}:${row[0]}/${row[1]}`);
         const unwoken = Object.entries(c.unwoken || {}).sort((a, b) => b[1] - a[1])
             .map(([key, n]) => `${key.slice(0, key.indexOf(':'))}:unwoken:${key.slice(key.indexOf(':') + 1)}:${n}`);

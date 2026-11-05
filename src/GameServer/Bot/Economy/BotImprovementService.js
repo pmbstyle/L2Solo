@@ -68,9 +68,8 @@ async function reviewCold(state, options = {}) {
         if (!rejectedInput(error)) throw error;
         const current = Life.cachedState(state.characterId) || state;
         if (current.phase !== 'cold') return { state: current, changed: false };
-        const rejected = DecisionEvents.rejectedState(current, state, `improvement:${error.message}`);
-        const saved = rejected === current ? current : await Life.upsertState(rejected, 'improvement_source_rejected') || current;
-        return { state: saved, changed: false, reason: error.message };
+        const raised = await DecisionEvents.rejectOnRow(current, state, `improvement:${error.message}`);
+        return { state: raised || current, changed: false, reason: error.message };
     }).finally(() => pendingCold.delete(state.characterId));
     pendingCold.set(state.characterId,work); return work;
 }

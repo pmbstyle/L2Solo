@@ -1,5 +1,6 @@
 'use strict';
 const { isMainThread } = require('node:worker_threads');
+const FailureLog = require('../../../FailureLog');
 const Sections = require('../Economy/DecisionSections');
 const Situations = require('../Situations');
 const TownVisitInterval = require('../Economy/TownVisitInterval');
@@ -34,7 +35,9 @@ function applyOwnRaise(state) {
 // clears it (receive). The bag: { seq, names: [[situation, payload|null], ...],
 // impossible, impossibleSeq }; impossibleSeq is the raise that proved the held
 // step impossible: the worker drops the step only for that raise, never again
-// for a later raise of the same pending bag. Any other bot raises on its stats.
+// for a later raise of the same pending bag. A far bot's row takes it through
+// the one SQL writer of its bits (BotLifeState.raiseOnRow), never through a
+// whole-row save; a session with no row (a fixture, the worker) on its stats.
 function raiseDecision(session, reason, { impossible = false } = {}) {
     if (!reasons.has(reason)) throw new TypeError('unknown_decision_event');
     const stats = statsFor(session);
@@ -53,7 +56,12 @@ function raiseDecision(session, reason, { impossible = false } = {}) {
         Life.notifyNearFacts(session, reason);
         return;
     }
-    Situations.raise(stats, reason, impossible ? { impossible } : null);
+    const payload = impossible ? { impossible } : null;
+    if (Life?.cachedState(session.actor.fetchId?.())?.phase === 'cold') {
+        raiseFar(session.actor.fetchId(), [[reason, payload]], `situation_${reason}`);
+        return;
+    }
+    Situations.raise(stats, reason, payload);
 }
 // A posted bag's raises on the background thread's mind (stats), heard as a
 // body near a player hears (Situations OPEN); its impossible mark drops the held
@@ -64,24 +72,53 @@ function raiseBag(stats, raise, impossible) {
     if (impossible) Situations.raise(stats, raise.impossibleName || 'goal_failed', { impossible: true });
 }
 // A real command rejection belongs to the accepted decision that attempted
-// it. The caller persists this returned state through its existing writer;
-// late failures never invalidate a newer decision or raise an event twice.
+// it: late failures never invalidate a newer decision or raise an event twice.
 const rejections = {};
 // A refusal with no state to mark: read on the health line.
 const refused = why => { rejections[why] = (rejections[why] || 0) + 1; };
-function rejectedState(current, accepted = current, why = 'other') {
+// Does the rejection still belong to the decision current holds (no raise
+// waits, the same echo and baseline)? Counted by why when it does.
+function rejects(current, accepted = current, why = 'other') {
     const source = accepted?.stats;
     if (!current?.stats || !source || Number(current.characterId) !== Number(accepted.characterId) || current.stats.wishDirty
         || Sections.decisionRefusal(current, Number(source.decisionSeq || 0), Number(source.activityLeaf || 0),
-            source.wishFocus?.[0] ?? null)) return current;
+            source.wishFocus?.[0] ?? null)) return false;
     if (source.wishSections) {
         const baseline = Sections.baselineIdentity(source.wishSections);
-        if (!baseline || baseline !== Sections.baselineIdentity(current.stats.wishSections)) return current;
+        if (!baseline || baseline !== Sections.baselineIdentity(current.stats.wishSections)) return false;
     }
-    const next = { ...current, stats: { ...current.stats } };
-    Situations.raise(next.stats, 'goal_failed', { impossible: true });
     rejections[why] = (rejections[why] || 0) + 1;
-    return next;
+    return true;
+}
+// A raise on a far bot's row (BotLifeState.raiseOnRow). A row no longer far (its
+// body went hot meanwhile) takes it where the bot is now: its body's bag. One that
+// lands nowhere is counted (situations.raise_lost). Resolves the raised row's
+// state, null when it did not land on a far row. Main only.
+async function raiseFar(characterId, names, reason) {
+    // lazy: cycle BotLifeState requires this module at its top.
+    const Life = invoke('GameServer/Bot/Population/BotLifeState');
+    const raised = await Life.raiseOnRow(characterId, names, reason);
+    if (raised) return raised;
+    const session = Life.cachedState(characterId)?.phase === 'hot'
+        ? invoke('GameServer/World/World').registeredActorById?.(Number(characterId))?.session : null;
+    if (session?.actor) {
+        for (const [name, payload] of names) raiseDecision(session, name, { impossible: payload?.impossible === true });
+    } else FailureLog.note('situations.raise_lost', new Error(`${names.map(([name]) => name).join('+')} on ${characterId}: no far row, no body`));
+    return null;
+}
+// The mind keys a row raise writes (BotLifeState.raiseOnRow).
+const RAISED_KEYS = Object.freeze(['woken', 'waiting', 'wishDirty', 'situationSeq', 'activityLeaf']);
+// A state the caller writes after its raise landed (raised: the raised row's
+// state): built on the raised row's revision, carrying its raised mind.
+const withRaise = (state, raised) => ({ ...state, simulation: raised.simulation,
+    stats: { ...state.stats, ...Object.fromEntries(RAISED_KEYS.map(key => [key, raised.stats?.[key]])) } });
+// A far bot's rejection: goal_failed with its held step dropped, raised on its
+// row (raiseFar); the caller's own write carries only its own fields. null (at
+// once) when the rejection is not the held decision's, else a promise of the
+// raised row's state (null when it did not land on a far row).
+function rejectOnRow(current, accepted, why) {
+    if (!rejects(current, accepted, why)) return null;
+    return raiseFar(current.characterId, [['goal_failed', { impossible: true }]], 'situation_rejected');
 }
 // A near bot's posted raise bag on the background thread's mind (stats),
 // against the last raise it applied in this life (applied): taken once per
@@ -107,8 +144,7 @@ function applyPendingRaise(session, stats) {
 function rejectSession(session, accepted) {
     const characterId = Number(session?.actor?.fetchId?.());
     if (!Number.isSafeInteger(characterId) || characterId <= 0 || session.nearRaise?.impossible) return false;
-    const current = { characterId, stats: decisionStatsFor(session) };
-    if (rejectedState(current, accepted) === current) return false;
+    if (!rejects({ characterId, stats: decisionStatsFor(session) }, accepted)) return false;
     raiseDecision(session, 'goal_failed', { impossible: true });
     return true;
 }
@@ -173,5 +209,5 @@ function checkWallet(session, actor) {
     raiseDecision(session, 'money');
     return true;
 }
-module.exports = { rejections: () => rejections, refused, statsFor, decisionStatsFor, applyOwnRaise, raiseDecision, takePostedRaise, applyPendingRaise, nearFields, receive, held, checkWallet, rejectedState, rejectSession,
+module.exports = { rejections: () => rejections, refused, statsFor, decisionStatsFor, applyOwnRaise, raiseDecision, takePostedRaise, applyPendingRaise, nearFields, receive, held, checkWallet, rejects, rejectOnRow, withRaise, rejectSession,
     NEAR_NAMES, nearOverflow: () => nearOverflow };
