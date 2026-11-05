@@ -95,6 +95,9 @@ const SITUATIONS = Object.freeze({
     spot_dangerous: link(['combat', 'occupation'], 0),
     // The recovery's penalty lifted by clean wins.
     recovered: link(['combat', 'occupation'], 0, STOP),
+    // Its own income on its spot below what its held earning answer expects, beyond its error: weighed at a rest,
+    // once a stay (BotHuntEfficiency.disappoints). Wakes the earning spot only (no build section).
+    spot_disappoints: link([], 0, STOP),
     supply: link(['supply'], FIELD | VISIT),
     bag: link(STOCK, FIELD | VISIT),
     stores: link(STOCK, WORK | VISIT),
@@ -197,7 +200,7 @@ function woke(name, where) {
 // raise heard for its sections wakes it, so its bit stands with stats.wishDirty.
 // spot_crowded wakes the earning spot until the spot contest replaces it (step 2).
 const DECISIONS = Object.freeze({
-    earning_spot: Object.freeze(['level_up', 'gear_changed', 'died', 'recovered', 'spot_empty', 'spot_dangerous',
+    earning_spot: Object.freeze(['level_up', 'gear_changed', 'died', 'recovered', 'spot_disappoints', 'spot_empty', 'spot_dangerous',
         'moved_by_world', 'party_left', 'shots_out', 'stock_low:potions', 'spot_crowded']),
     build: Object.freeze([])
 });

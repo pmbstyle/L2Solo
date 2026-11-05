@@ -3017,6 +3017,14 @@ const BotLifeState = {
         // its projection (the worker's room at arrival). Then the step's stop: at a
         // rest or in town what waited for it wakes.
         const where = Situations.place(nextState, state);
+        // A solo far hunter's stay weighed at its rest, once (situations.md Q2): its own income below its held
+        // answer's expectation beyond its error. Cold only (a hot stint records no income: debt).
+        const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
+        if (where === Situations.REST && !(nextState.party?.partyId || nextState.partyId)
+            && Hunt.disappoints(nextState.stats.stay, nextState.stats.earning)) {
+            nextState.stats.stay = { ...nextState.stats.stay, judged: true };
+            hard.push('spot_disappoints');
+        }
         for (const name of [...hard, ...soft, ...options.checkSituations || []]) Situations.raise(nextState.stats, name, null, where, nextState.characterId);
         Situations.stop(nextState.stats, where, nextState.characterId);
         // The worker's post-round economy ask: only a step that took no

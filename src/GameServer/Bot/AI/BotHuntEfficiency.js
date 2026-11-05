@@ -153,14 +153,40 @@ function recordRound(state, result, { spotId, exp = 0, timestamp = Date.now(), s
     const cycleMs = Math.max(0, Number(result.nextResolveAt || 0) - timestamp);
     const huntClock = nextClock(state, timestamp, cycleMs, startedAt);
     const items = result.materialize?.items || [];
-    const huntEfficiency = record(state, {
-        spotId: spotId || debug.spotId, cycleMs, exp, timestamp,
+    const round = { spotId: spotId || debug.spotId, cycleMs, exp, timestamp,
         adena: Number(result.materialize?.adena || 0), loot: lootValue(items),
         costs: consumedCost(state, result.patch?.inventory) + buffPurchaseCost(state, timestamp),
         kills: Number(debug.wins || 0), partyRoster: debug.partyRoster || null,
-        share: onSpotShare({ stats: { huntClock } })
-    });
-    return { ...life, huntEfficiency, huntClock };
+        share: onSpotShare({ stats: { huntClock } }) };
+    const huntEfficiency = record(state, round);
+    return { ...life, huntEfficiency, huntClock, stay: stayOf(state, round) };
+}
+// The bot's solo stay on its spot (situations.md §10 spot_disappoints): its kills, its net income (adena and loot less
+// the round's costs) and its hunting time since it began, under one mark: the spot, the earning answer it hunts on
+// (its time), its level and its last town arrival (stats.visitEvery's hours). A new answer, a level up, a town trip or
+// another spot starts a new stay, judged anew; a party round ends it (null: party rounds count into no solo stay).
+// judged: weighed against the held answer (once a stay). ~80 B in the stats.
+function stayOf(state, round) {
+    if (state.party?.partyId || state.partyId) return null;
+    const mark = { spotId: round.spotId == null ? null : String(round.spotId), at: state.stats?.earning?.at ?? null,
+        level: Number(state.level) || 0, visit: Number(state.stats?.visitEvery?.[0]) || 0 };
+    const stay = state.stats?.stay;
+    const same = !!stay && stay.spotId === mark.spotId && stay.at === mark.at && stay.level === mark.level && stay.visit === mark.visit;
+    return { ...mark, kills: (same ? stay.kills : 0) + round.kills, net: (same ? stay.net : 0) + round.adena + round.loot - round.costs,
+        ms: (same ? stay.ms : 0) + round.cycleMs, judged: same && stay.judged === true };
+}
+// The kills a stay needs before its income is weighed, and the sampling margin (limits.md "Earning spot disappoints").
+const STAY_KILLS = 50, NOISE_Z = 2;
+// Does the stay disappoint its held earning answer (situations.md Q2, N2)? Once per stay, after STAY_KILLS kills on
+// the answer's own spot, its own net income an hour below the answer's unbiased expectation (answer.expected, not the
+// bot's belief) less the sampling noise of its kills: net/h < expected × (1 − NOISE_Z / √kills), taking a kill's
+// income as spread about its own mean (a coefficient of variation of 1: drops are lumpy), so two standard errors
+// of the mean: 0.717 of the expectation at 50 kills, 0.8 at 100, 0.9 at 400. A bot hunting at its spot's true rate
+// trips it about 2 % of the stays. earning: stats.earning (EquipmentIncomeRoute.answerOf). Pure.
+function disappoints(stay, earning) {
+    if (!stay || stay.judged || !(stay.kills >= STAY_KILLS) || !(stay.ms > 0)) return false;
+    if (!earning?.spotId || String(earning.spotId) !== stay.spotId || !(earning.expected > 0)) return false;
+    return stay.net / stay.ms * HOUR_MS < earning.expected * (1 - NOISE_Z / Math.sqrt(stay.kills));
 }
 function buffPurchaseCost(state, timestamp) {
     const purchase = state.stats?.lastBuffServicePurchase;
@@ -276,5 +302,5 @@ function hourValue(state, timestamp = Date.now(), mode) {
 // Kept as lifecycle adapters for callers which accepted earlier samples.
 function observe() {}
 function resetLevelBands() {}
-module.exports = { record, recordRound, scores, signature, situationOf, lootValue, hourValue, onSpotShare, observe,
+module.exports = { record, recordRound, disappoints, STAY_KILLS, scores, signature, situationOf, lootValue, hourValue, onSpotShare, observe,
     resetLevelBands, consumablePrices, netIncome, consumedCost, buffPurchaseCost, huntHour, huntIncome, estimate: huntIncome, sampledRows, bestIncome, MAX_SPOTS, MAX_AGE_MS, SERVER_STARTED_AT };

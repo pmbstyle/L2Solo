@@ -160,12 +160,14 @@ function earnsOnRoute(state, required = false) {
     return !!required || economicHunt(state) || !!spotList(state).spoiler();
 }
 // The earning spot's held answer (situations.md §10, stats.earning in the mind; its one owner of the layout): what
-// a search chose, { spotId (null: none), shots (the charge policy of its row), income (the row's income an hour),
-// earning (the bot's hour: its best income among the spots it may hunt), error (its own error on a row's income,
-// SpotEconomics incomeError), at }. ~50 B. found: search's { route }; error: the search's evaluate.incomeError.
+// a search chose, { spotId (null: none), shots (the charge policy of its row), income (the row's income an hour, as
+// the bot believes it), expected (the same without its belief bias: SpotEconomics expected), earning (the bot's hour:
+// its best income among the spots it may hunt), error (its own error on a row's income, SpotEconomics incomeError),
+// at }. ~60 B. found: search's { route }; error: the search's evaluate.incomeError.
 function answerOf(route, at, error = 0) {
     return route ? { spotId: String(route.spot.id), shots: route.row.useShots !== false, income: Number(route.row.income) || 0,
-        earning: Number(route.earning) || 0, error: Number(error) || 0, at } : { spotId: null, shots: true, income: 0, earning: 0, error: 0, at };
+        expected: Number(route.row.expected ?? route.row.income) || 0, earning: Number(route.earning) || 0, error: Number(error) || 0, at }
+        : { spotId: null, shots: true, income: 0, expected: 0, earning: 0, error: 0, at };
 }
 // The route of the held answer at the inputs now (no search): its spot's row evaluated once at the reader's prices
 // (SpotEconomics, as the search reads it), its hour as decided. null: no answer, none held (spotId null) or a spot

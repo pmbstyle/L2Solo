@@ -149,6 +149,8 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
         row.costs = observed ? Number(observed.costs || 0) * rate
             : (Number(base.shots || 0) * costs.shots + Number(base.potions || 0) * costs.potions) * calibration;
         row.income = row.adena + row.loot - row.costs;
+        // The same income without the bot's own belief bias (spot_disappoints weighs a stay against it).
+        row.expected = base.adena + base.loot - row.costs;
         // The value is linear in the money weight, its only use: expHours and
         // incomeHours are the hour's exp and income in units of the hour
         // (EquipmentIncomeRoute.search reads them for the weights its answer

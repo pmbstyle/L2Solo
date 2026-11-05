@@ -131,6 +131,36 @@ function onWorker() {
         assert.equal(read.searches, 1, `${name} wakes one search`);
         assert.equal(published(woken, read.result).stats.earning.spotId, 'poor', `${name}: the bot moves to the better spot`);
     }
+    // Its own stay disappoints its answer (situations.md Q2): weighed at a rest, once a stay, after enough kills.
+    {
+        // The bot believes the spot pays 1300 an hour (its persona's bias); unbiased it pays 1000.
+        const answer = { spotId: 'rich', income: 1300, expected: 1000, error: 0.2 };
+        const stay = (kills, net, judged = false, spotId = 'rich') => ({ spotId, kills, net, ms: 3600000, judged });
+        assert.equal(Hunt.disappoints(stay(Hunt.STAY_KILLS, 1000), answer), false, 'hunting at the spot\'s true rate never trips it');
+        assert.equal(Hunt.disappoints(stay(Hunt.STAY_KILLS, 750), answer), false, 'inside 50 kills\' sampling noise (0.717)');
+        assert.equal(Hunt.disappoints(stay(Hunt.STAY_KILLS, 600), answer), true, 'well below the expectation');
+        assert.equal(Hunt.disappoints(stay(400, 750), answer), true, 'more kills, a narrower margin (0.9)');
+        assert.equal(Hunt.disappoints(stay(Hunt.STAY_KILLS - 1, 0), answer), false, 'too few kills to tell');
+        assert.equal(Hunt.disappoints(stay(Hunt.STAY_KILLS, 0, true), answer), false, 'once a stay');
+        assert.equal(Hunt.disappoints(stay(Hunt.STAY_KILLS, 0, false, 'poor'), answer), false, 'only on the answer\'s spot');
+        // The stay restarts with a new answer, a level up, a town trip; a party round counts into none.
+        const round = { debug: { wins: 10, combatMs: 60000, fights: 10, spotId: 'rich' }, materialize: { adena: 100, items: [] },
+            nextResolveAt: started + 60000, patch: {} };
+        const on = (state) => Hunt.recordRound(state, round, { spotId: 'rich', timestamp: started }).stay;
+        const solo = { ...turned, stats: { ...turned.stats, earning: { ...answer, at: 1 }, visitEvery: [5, 2] } };
+        const first = on(solo), second = on({ ...solo, stats: { ...solo.stats, stay: { ...first, judged: true } } });
+        assert.equal(second.kills, 20, 'one stay counts its rounds');
+        assert.equal(second.judged, true, 'and stays judged');
+        for (const [what, moved] of [['a new answer', { ...solo.stats, earning: { ...answer, at: 2 } }],
+            ['a town trip', { ...solo.stats, visitEvery: [6, 2] }]]) {
+            const fresh = on({ ...solo, stats: { ...moved, stay: { ...second } } });
+            assert.equal(fresh.kills, 10, `${what} starts a new stay`); assert.equal(fresh.judged, false);
+        }
+        assert.equal(on({ ...solo, level: solo.level + 1, stats: { ...solo.stats, stay: second } }).kills, 10, 'a level up starts a new stay');
+        assert.equal(on({ ...solo, party: { partyId: 'p3' }, stats: { ...solo.stats, stay: second } }), null, 'a party round counts into no solo stay');
+        const heard = count(() => Economy.forState(raised(turned, 'spot_disappoints', { stop: Situations.REST }), deps(7)));
+        assert.equal(heard.searches, 1, 'a disappointing stay wakes one search at the rest');
+    }
     // A situation that does not wake it searches nothing.
     for (const name of ['recipe_learned', 'arrived_town', 'goal_failed']) {
         assert.equal(count(() => Economy.forState(raised(turned, name), deps(8))).searches, 0, `${name} does not wake the earning spot`);
