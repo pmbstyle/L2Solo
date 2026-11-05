@@ -31,11 +31,6 @@ function spotList(state, { price } = {}) {
         { spoilSkillLevel: spoilerOf()?.skillLevel || 0 }) };
 }
 
-// The earning spot search (the decision's, EconomyContext.incomeRouteFor while it is woken): { route (null: none),
-// error (the bot's own error on a row's income, SpotEconomics incomeError) }.
-function search(state, options) {
-    return find(state, options);
-}
 // The solo matchup the search reads.
 function matchupOptions(state, timestamp) {
     return { timestamp, mode: 'solo', matchupProfiles: invoke('GameServer/Bot/AI/BotTargetMatchup').stateProfiles(state, { timestamp }) };
@@ -50,6 +45,15 @@ function valuesFor(state, timestamp, price) {
     const weight = SpotEconomics.moneyWeight(state);
     return { hour, weight, evaluate: SpotEconomics.create(state, { timestamp, price, hour, moneyWeight: weight }) };
 }
+// The route of a spot a rule fixed (the karma wash, a protected starter's field): its row with shots, else
+// without, else none (no income expected there); the hour its row's income. null: no spot.
+function fixedRoute(spot, evaluate) {
+    if (!spot) return null;
+    const row = evaluate(spot, true) || evaluate(spot, false);
+    return { spot, row: row || { income: 0, expected: 0, kills: 0, exp: 0, useShots: true }, earning: Number(row?.income) || 0 };
+}
+// The earning spot search (the decision's, EconomyContext.incomeRouteFor while it is woken; search below):
+// { route (null: none), error (the bot's own error on a row's income, SpotEconomics incomeError) }.
 function find(state, { spots = [], timestamp = Date.now(), price, required = false, mode,
     maxChecks = 32, list = null } = {}) {
     const none = { route: null, error: 0 };
@@ -59,10 +63,8 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
     // mobs, on foot; woken again by karma_changed. A party member's wash is its karma step's (ColdKarmaPolicy.plan).
     const Karma = invoke('GameServer/Bot/Population/ColdKarmaPolicy');
     if (Karma.active(state)) {
-        const spot = Karma.washSpot(state, spots, timestamp), { evaluate } = valuesFor(state, timestamp, price);
-        const row = spot ? evaluate(spot, true) || evaluate(spot, false) : null;
-        return { route: spot ? { spot, row: row || { income: 0, expected: 0, kills: 0, exp: 0, useShots: true },
-            earning: Number(row?.income) || 0 } : null, error: evaluate.incomeError };
+        const { evaluate } = valuesFor(state, timestamp, price);
+        return { route: fixedRoute(Karma.washSpot(state, spots, timestamp), evaluate), error: evaluate.incomeError };
     }
     if (!invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(state)) return none;
     const minGap = -15;
@@ -93,6 +95,12 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
         spotFactors.set(spot, allowed ? undefined : null);
         return allowed;
     };
+    // lazy: cycle SpotProfiles' search reads this module's held answer.
+    const Spots = invoke('GameServer/Bot/Population/SpotProfiles');
+    // A fresh racial cohort stays on its level-one field until it advances (SpotProfiles.isProtectedStarterCohort):
+    // that field is its answer while it may hunt there.
+    const own = Spots.isProtectedStarterCohort(state) ? Index.spotById(spots, state.spotId) : null;
+    if (own && admitted(own)) return { route: fixedRoute(own, evaluate), error: evaluate.incomeError };
     // Every spot the bot may earn at with this charge policy, each with its
     // score; those earning nothing at the prices read stay out.
     const candidates = shots => {
@@ -124,7 +132,6 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
     const allowed = Routes.spotAllowedReaderFor(state, options);
     // A spot full of other bots is no pick (the search's room rule): the bot
     // takes its next best now, not a refused trip.
-    const Spots = invoke('GameServer/Bot/Population/SpotProfiles'); // lazy: cycle SpotProfiles' search calls this select
     const open = shortlist.filter(candidate => Spots.roomFor(candidate.spot, state) || !(candidate.closed = true));
     const checks = Math.max(1, maxChecks);
     // Each spot's verdict, asked once.
@@ -151,6 +158,7 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
 // The earning spot's searches and their time since the worker started (the status line's situations
 // search=, diagnostics off too): two clock reads per search, ~5 per bot-hour.
 const searchCounts = { count: 0, ms: 0 };
+// search: find, timed.
 const timed = entry => function (state, options) {
     const started = performance.now();
     try { return entry(state, options); } finally {
@@ -163,9 +171,8 @@ const timed = entry => function (state, options) {
 // Whether the bot's hour is its earning spot's (EconomyContext's foundation prices its hunt there): its gear is
 // required, its focus is an economic hunt, or it spoils; else it levels (BotHuntEfficiency.huntIncome). The bot
 // holds its earning spot either way (the party comparison's solo side reads it); this only says how the build uses it.
-// list: the caller's spotList of this state, when it has one.
-function earnsOnRoute(state, required = false, list = null) {
-    return !!required || economicHunt(state) || !!(list || spotList(state)).spoiler();
+function earnsOnRoute(state, required = false) {
+    return !!required || economicHunt(state) || !!spotList(state).spoiler();
 }
 // The earning spot's held answer (situations.md §10, stats.earning in the mind; its one owner of the layout): what
 // a search chose, { spotId (null: none), shots (the charge policy of its row), income (the row's income an hour, as
@@ -203,5 +210,5 @@ function heldRoute(state, { spots = [], timestamp = Date.now(), price, mode = nu
     return row ? { spot, row, earning: Number(held.earning) || 0 } : null;
 }
 
-module.exports = { search: timed(search), searchTotals: () => ({ ...searchCounts }), economicHunt, spotList,
+module.exports = { search: timed(find), searchTotals: () => ({ ...searchCounts }), economicHunt, spotList,
     answerOf, commanded, heldSpot, heldRoute, earnsOnRoute };

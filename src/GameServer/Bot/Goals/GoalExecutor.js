@@ -159,9 +159,10 @@ function finishVisit(state, timestamp, options) {
         ? SpotRiskPolicy.backoffForStates([returnState], destination.spotId, timestamp)
         : null;
     // Where the bot hunts next is the worker's decision, read here: the card's
-    // hunting leaf, else the spot the bot hunted before the trip, else its
-    // gear plan's source while that stays viable, else its held earning
-    // answer; a spot the bot's marks exclude (died, was full, avoided,
+    // hunting leaf, else its gear plan's source while that stays viable (the
+    // route's own rule, BotRoute), else its held earning answer (every solo
+    // bot's spot, situations.md B12), else only then the spot it hunted before
+    // the trip; a spot the bot's marks exclude (died, was full, avoided,
     // unreachable) is none of them. Main never searches. A full spot is met at
     // arrival (ROUTE-ROOM-4) and a spot the bot may no longer hunt by the
     // worker's next trip start: one trip there before the worker moves it.
@@ -173,11 +174,11 @@ function finishVisit(state, timestamp, options) {
         const leaf = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions?.activity(state);
         const plan = state.stats?.equipmentPlan;
         selectedSpot = (leaf?.activity === 'hunting' && usable(leaf.spotId) ? SpotProfiles.findById(leaf.spotId) : null)
-            || (usable(savedSpot.id) ? savedSpot : null)
             || (plan?.status === 'active' && usable(plan.next?.spotId) && invoke('GameServer/Bot/AI/GearAcquisitionPlanner')
                 .isPlanSourceViableForState(returnState, plan, { spots: SpotProfiles.ensure(), timestamp })
                 ? SpotProfiles.findById(plan.next.spotId) : null)
             || (usable(state.stats?.earning?.spotId) ? heldEarningSpot(state) : null)
+            || (usable(savedSpot.id) ? savedSpot : null)
             || (spotBackoff ? null : savedSpot);
     }
     // Remaining in town is safer than silently returning to a spot that is

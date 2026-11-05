@@ -88,6 +88,16 @@ function routeChecks() {
     GearPlanner.safeFallbackForPlan = () => ({ spotId: plannedFallback.id, npcId: 321 });
     assert.strictEqual(route(routeState(1, { equipmentPlan: partyPlan, partyRequest: requiredRequest })).spotId,
         plannedFallback.id, 'a required waiter routes to the safe fallback of its plan');
+    // End to end on the step's trip: a required-party waiter holding an earning answer elsewhere still walks
+    // to its safe fallback (the waiter's rule goes first, until the party aggregate, step 8).
+    const held = { spotId: levelSpot.id, shots: true, income: 1, expected: 1, earning: 1, error: 0, at: 1 };
+    // (Its plan deferred, so only the waiter's rule, not an active plan's source, keeps it off the answer.)
+    const waiter = routeState(19, { equipmentPlan: { ...partyPlan, status: 'deferred' },
+        partyRequest: { ...requiredRequest, status: 'deferred' }, earning: held, woken: 0 });
+    assert(require('../src/GameServer/Bot/Population/PartyWaitFallback').waiting(waiter, waiter.stats.equipmentPlan,
+        waiter.stats.partyRequest), 'fixture: it waits for a party');
+    assert.strictEqual(BotRoute.trip({}, waiter, null, { spots: profiles, currentSpot, timestamp: Date.now() })?.spotId,
+        plannedFallback.id, 'a required-party waiter walks to the safe fallback');
 
     // A deferred request with a party-only plan still waits.
     const deferred = { ...requiredRequest, status: 'deferred', deferredUntil: Date.now() + 60000 };

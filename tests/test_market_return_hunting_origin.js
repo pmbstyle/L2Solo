@@ -44,13 +44,14 @@ const shopper = { ...state, activity: 'shopping', currentRegion: 'Dwarven Villag
     loc: { locX: 115072, locY: -178176, locZ: -880 },
     stats: { ...state.stats, townVisit: { town: 'Dwarven Village', completed: true },
         marketReturn: { spotId: source.id, regionName: source.name, loc: source.center },
-        // Its held earning answer names a different camp (the worker decided it; main reads it, never searches).
-        earning: { spotId: money.id, shots: true, income: 1, expected: 1, earning: 1, error: 0, at: 1 } } };
+        // Its held earning answer is where it hunts (the worker decided it; main reads it, never searches).
+        earning: { spotId: source.id, shots: true, income: 1, expected: 1, earning: 1, error: 0, at: 1 } } };
+const holding = spot => ({ spotId: spot.id, shots: true, income: 1, expected: 1, earning: 1, error: 0, at: 2 });
 const saved = { spots: Spots.cache, service: Service.spots, pending: Errands.pending };
 try {
     Spots.cache = Service.spots = spots;
     Errands.pending = () => [];
-    assert.equal(Income.heldSpot(shopper, spots)?.id, money.id, 'fixture: the held earning answer is a different camp');
+    assert.equal(Income.heldSpot(shopper, spots)?.id, source.id, 'fixture: the held earning answer is its source');
     const returned = Executor.finishMarketVisit(shopper, timestamp);
     assert.equal(returned.stats.travel.spotId, source.id,
         'a shopping visit returns directly to the valid material source');
@@ -62,16 +63,19 @@ try {
     const changed = { ...shopper, stats: { ...shopper.stats, equipmentPlan: {
         status: 'active', strategy: 'direct_drop', target: { selfId: 45, slot: 6 },
         next: { spotId: money.id, npcId: 1126, itemId: 45, amount: 1 } } } };
-    // The spot the bot hunted before the trip comes before its plan's source
-    // (a recovery or a party-wait plan may name a source it does not hunt
-    // now); the worker's leaf moves it from there.
-    assert.equal(Executor.finishMarketVisit(changed, timestamp).stats.travel.spotId, source.id,
-        'an active plan elsewhere does not override the spot the bot hunted');
+    // A viable gear plan's source comes before the held answer, as on the route
+    // (BotRoute: an active plan's source is the search's own rule).
+    assert.equal(Executor.finishMarketVisit(changed, timestamp).stats.travel.spotId, money.id,
+        'an active plan\'s viable source is the return, as the route takes it');
+    // The held answer comes before the spot it hunted before the trip (B12).
+    const heldElsewhere = { ...shopper, stats: { ...shopper.stats, earning: holding(money) } };
+    assert.equal(Executor.finishMarketVisit(heldElsewhere, timestamp).stats.travel.spotId, money.id,
+        'the held earning answer goes first, the saved spot only without one');
     const away = { ...changed, stats: { ...changed.stats, capacityBackoffs: [{ spotId: source.id, untilStep: 12 }] } };
     assert.equal(Executor.finishMarketVisit(away, timestamp).stats.travel.spotId, money.id,
         'with that spot excluded, the viable plan source');
 
-    const excluded = { ...shopper, stats: { ...shopper.stats,
+    const excluded = { ...shopper, stats: { ...shopper.stats, earning: holding(money),
         capacityBackoffs: [{ spotId: source.id, untilStep: 12 }] } };
     assert.equal(Executor.finishMarketVisit(excluded, timestamp).stats.travel.spotId, money.id,
         'an excluded (marked full) source is not chosen: the held earning answer is');

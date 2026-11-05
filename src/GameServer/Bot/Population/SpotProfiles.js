@@ -298,15 +298,18 @@ const SpotProfiles = {
             Diagnostics.count('spot_list', 'skip', 'full');
             return true;
         };
-        // The earning spot's held answer (situations.md §10): read, never searched
-        // here (the decision searches only when woken, on the worker). Its spot
-        // leads while the bot's hour is earned on it (EquipmentIncomeRoute.earnsOnRoute);
-        // one the caller's exclusions or the room refuse counts as absent, as on the
-        // list walk.
-        if (!protectedStarterCohort && !collectingGear && EquipmentIncomeRoute.earnsOnRoute(state,
-            invoke('GameServer/Bot/AI/PersonalGearProgression').assess(state).required, list)) {
+        // The earning spot's held answer is every solo bot's hunting spot (situations.md
+        // §10, B12): read, never searched here (the decision searches only when woken,
+        // on the worker). While the bot holds an answer this is no second search: the
+        // answer's spot, else (it found none, or the caller's exclusions or the room
+        // refuse it) the bot stays where it may until a situation re-decides. Only a
+        // bot with no answer yet (its first decision pending) walks the list below. A
+        // gear plan's source and a protected starter's field keep their own rules.
+        if (soloSearch && !protectedStarterCohort && !collectingGear && state.stats?.earning !== undefined
+            && !state.party?.partyId && !state.partyId) {
             const held = EquipmentIncomeRoute.heldSpot(state, profiles, mode);
             if (held && !excludedSpotIds.has(String(held.id)) && !full(held)) return held;
+            return currentSpot && !mustRelocate ? LevelingRoutes.decorateSpot(currentSpot, currentMatch) : null;
         }
 
         if (keepCurrentSpot) {

@@ -1376,7 +1376,13 @@ function roomAtArrival(spotId, arriving, overflow = 0) {
 // The step's trip begins, or waits for the engaged fight (PveEncounter.holdsTrip):
 // the round then ends that fight with no new one, and the kept route waits on
 // the record for the next step.
+// A route that asks the decision again (BotRoute.trip: no spot it may take, none
+// under it) raises its situation on the step's state, which the step carries.
 function stepTrip(state, route, timestamp) {
+    if (route?.ask) {
+        state = { ...state, stats: Situations.raise({ ...state.stats }, route.ask, null, Situations.place(state), state.characterId) };
+        route = null;
+    }
     if (PveEncounter.holdsTrip(state, route, timestamp)) return { routedState: state, route: null, lastFight: true };
     return { routedState: beginHuntingTrip(state, route, timestamp) || state, route, lastFight: false };
 }

@@ -91,19 +91,17 @@ assert.equal(Spots.findForState(state, { ...options, hasRoom: () => true })?.id,
     assert.equal(Spots.findForState(planning(source.id), { ...options, hasRoom: () => false })?.id, source.id,
         'a planned source the bot stands on is taken even when it counts as full');
 
-    // The held earning answer leads while the bot earns its hour on it (no
-    // search here: the worker decides it); the naked fixture earns on none, so
-    // it is said to here.
-    const earns = IncomeRoute.earnsOnRoute;
-    try {
-        IncomeRoute.earnsOnRoute = () => true;
-        const holding = { ...state, stats: { ...state.stats, earning: { spotId: String(source.id), shots: true } } };
-        assert.equal(Spots.findForState(holding, options)?.id, source.id, 'the held earning answer\'s spot is the pick');
-        assert.equal(Spots.findForState(holding, { ...options, hasRoom: noRoomAt(source.id) })?.id, first.id,
-            'a full held spot is skipped: the first spot of the list');
-        assert.equal(Spots.findForState(holding, { ...options, excludedSpotIds: new Set([String(source.id)]) })?.id, first.id,
-            'an excluded held spot is skipped too');
-    } finally { IncomeRoute.earnsOnRoute = earns; }
+    // The held earning answer is every solo bot's spot (situations.md B12): read, no
+    // search here (the worker decides it). One the room or the bot's marks refuse
+    // is no cue for a second search: the bot stays where it may (here nowhere)
+    // until a situation re-decides; only a bot with no answer yet walks the list.
+    const holding = { ...state, stats: { ...state.stats, earning: { spotId: String(source.id), shots: true } } };
+    assert.equal(Spots.findForState(holding, options)?.id, source.id, 'the held earning answer\'s spot is the pick');
+    assert.equal(Spots.findForState(holding, { ...options, hasRoom: noRoomAt(source.id) }), null,
+        'a full held spot: no other spot searched');
+    assert.equal(Spots.findForState(holding, { ...options, excludedSpotIds: new Set([String(source.id)]) }), null,
+        'an excluded held spot: none either');
+    assert.equal(Spots.findForState(state, options)?.id, chosen.id, 'with no answer yet the list decides');
 }
 
 // ROUTE-ROOM-4: a market return (GoalExecutor.finishMarketVisit) to the spot

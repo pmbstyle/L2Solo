@@ -233,6 +233,46 @@ function onWorker() {
         const solo = Party.soloRoute(published(geared, decided.result), spots, time(12));
         assert.equal(solo?.spotId, 'rich', 'the solo side reads it');
         assert.equal(Party.evaluate({ solo, party: { income: solo.income * 0.9 } }).accept, false, 'a party paying less is refused');
+        // B12: the held answer is a leveling bot's hunting spot too. Its build names it (the hot body walks to the
+        // card's leaf) while its hour stays its own, and its cold route goes there, the same after a worker restart
+        // (the answer is in the mind; no route is kept on the record).
+        const answered = published(geared, decided.result);
+        const leveling = { ...answered, stats: { ...answered.stats, wishFocus: geared.stats.wishFocus } };
+        assert.equal(Route.earnsOnRoute(leveling, false), false, 'fixture: it levels');
+        const built = count(() => Economy.basics(leveling, deps(13)));
+        assert.equal(built.searches, 0, 'fixture: nothing woken');
+        assert.equal(built.result.hunt.spotId, 'rich', 'the build hunts the held spot');
+        assert.notEqual(built.result.hunt.source, 'route', 'with the leveling hour');
+        const BotRoute = invoke('GameServer/Bot/Population/BotRoute');
+        const routeOf = owner => BotRoute.trip(owner, leveling, null, { spots, timestamp: time(13) })?.spotId;
+        const Service = invoke('GameServer/Bot/AI/SpotService'), arrive = Service.arrivalPointForState;
+        Service.arrivalPointForState = (_state, spot) => ({ ...spot.center }); // no geodata in this worker
+        try {
+            const owner = {};
+            assert.equal(routeOf(owner), 'rich', 'the cold route goes to the held spot');
+            assert.equal(owner.route, undefined, 'and keeps no route of its own');
+            assert.equal(routeOf({}), 'rich', 'a restarted worker (a fresh record) routes it the same');
+            // Ground it may not hunt alone, held as its answer: the route evacuates it (the search's rule),
+            // and nothing is kept on the record.
+            const unsafe = { ...spots[0], id: 'unsafe', tags: ['party_required'], center: { locX: -78000, locY: 250000, locZ: 0 } };
+            const onUnsafe = { ...leveling, spotId: 'unsafe', loc: unsafe.center,
+                stats: { ...leveling.stats, earning: { ...leveling.stats.earning, spotId: 'unsafe' } } };
+            const evacuating = {};
+            BotRoute.soloGroundMissing(onUnsafe, [...spots, unsafe], { owner: evacuating, timestamp: time(13) });
+            const fled = BotRoute.trip(evacuating, onUnsafe, null, { spots: [...spots, unsafe], currentSpot: unsafe, timestamp: time(13) });
+            assert(fled?.spotId && fled.spotId !== 'unsafe', 'unsafe held ground: the route evacuates');
+            assert.equal(evacuating.route, undefined, 'no held route is kept on the record');
+            // A far bot in town whose answer names no spot asks the decision once per answer, then stays.
+            const stranded = { ...leveling, spotId: null, loc: { locX: 0, locY: 0, locZ: 0 },
+                stats: { ...leveling.stats, earning: { ...leveling.stats.earning, spotId: null, at: 7 } } };
+            const record = {}, tripOf = state => BotRoute.trip(record, state, null, { spots, currentSpot: null, timestamp: time(13) });
+            assert.equal(tripOf(stranded)?.ask, 'spot_empty', 'it asks once (the step raises spot_empty)');
+            assert.equal(tripOf(stranded), null, 'and waits for the answer');
+            const before = Situations.counts().raised['earning:no_spot'] || 0;
+            const still = { ...stranded, stats: { ...stranded.stats, earning: { ...stranded.stats.earning, at: 8 } } };
+            assert.equal(tripOf(still), null, 'an answer to its ask with none either: it stays');
+            assert.equal(Situations.counts().raised['earning:no_spot'], before + 1, 'counted');
+        } finally { Service.arrivalPointForState = arrive; }
     }
     // A party member hunts with its party: its foundation does not price the held solo spot.
     {

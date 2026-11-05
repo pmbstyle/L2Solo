@@ -1007,11 +1007,14 @@ function incomeRouteFor(state, deps, timestamp, price, keep) {
     // The decision asks for the bot's own spot whatever its focus (required: the search's gate open); a party
     // member's foundation hunts with its party (no route: Hunt.huntIncome in the party mode).
     const found = decide ? IncomeRoute.search(state, { ...deps, timestamp, required: true, price: read }) : null;
+    // The held answer is every solo bot's hunting spot (situations.md B12); earns: the bot's hour is earned on it,
+    // priced at the inputs now (heldRoute); else it levels there (its hour Hunt.huntIncome's: the foundation reads
+    // only the answer's spot and charge policy, no row evaluated).
     const earns = IncomeRoute.earnsOnRoute(state, required);
-    const route = !earns ? null : found ? found.route
-        : IncomeRoute.heldRoute(state, { spots: deps.spots, timestamp, price: read, mode: deps.mode });
+    const route = found ? found.route : earns
+        ? IncomeRoute.heldRoute(state, { spots: deps.spots, timestamp, price: read, mode: deps.mode }) : null;
     // searched: the route is this search's; earning: the answer it holds.
-    const record = { state, timestamp, spots: deps.spots, mode: deps.mode, maxChecks: deps.maxChecks, required, reads, route,
+    const record = { state, timestamp, spots: deps.spots, mode: deps.mode, maxChecks: deps.maxChecks, required, reads, route, earns,
         searched: !!found, earning: found ? IncomeRoute.answerOf(found.route, timestamp, found.error) : state.stats?.earning ?? null };
     keep?.(record);
     return record;
@@ -1060,13 +1063,20 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
     const tableRole = Table.roleFor(state);
     const income = incomeRouteFor(state, deps, timestamp, price, keepRoute), incomeRoute = income.route;
     let hunt;
-    if (incomeRoute) {
-        // select already passed this spot through the same ground and matchup reader.
+    if (incomeRoute && income.earns) {
+        // The search already passed this spot through the same ground and matchup reader.
         const row = incomeRoute.row;
         hunt = { perHour: incomeRoute.earning * Hunt.onSpotShare(state), perKill: row.kills > 0 ? row.income / row.kills : 0,
             expPerHour: row.exp * Hunt.onSpotShare(state), source: 'route', spotId: incomeRoute.spot.id,
             progressSpotId: incomeRoute.spot.id, useShots: row.useShots };
-    } else hunt = Hunt.huntIncome(state, timestamp, deps.mode, leafFit(state, deps, timestamp));
+    } else {
+        hunt = Hunt.huntIncome(state, timestamp, deps.mode, leafFit(state, deps, timestamp));
+        // A leveling bot hunts its held answer too (B12): its hour stays its own, the spot and charge policy the
+        // answer's (this build's search, else stats.earning).
+        const held = incomeRoute?.spot || IncomeRoute.heldSpot(state, deps.spots || [], deps.mode);
+        if (held) hunt = { ...hunt, spotId: held.id, progressSpotId: held.id,
+            useShots: incomeRoute ? incomeRoute.row.useShots !== false : state.stats?.earning?.shots !== false };
+    }
     const lostGearHours = hunt.perHour > 0 ? Valuation.pkDropValue(state, price) / hunt.perHour : 0;
     const bestSpotId = hunt.spotId || state.spotId;
     const walkBackHours = WalkBack.hours(bestSpotId, state, deps.spots || SpotService.spots);
