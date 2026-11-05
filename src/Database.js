@@ -177,6 +177,23 @@ const metrics = {
 // WAL truncate; PopulationService), `job:reason` -> count, governor refusals as `governor_<reason>`.
 // Counted with diagnostics off too: stats().maintenance. Bounded by DiagnosticMetricMap.
 const maintenanceRefusals = new DiagnosticMetricMap();
+// Jobs that ran past the drain slice on their own (a job is never split, so the
+// event loop waited for all of it): operation -> { count, maxMs, totalMs }.
+// Counted with diagnostics off too: stats().overBudgetJobs. Bounded by DiagnosticMetricMap.
+const overBudgetJobs = new DiagnosticMetricMap();
+
+function noteJobRun(operation, ranMs) {
+    if (ranMs <= DB_QUEUE_SLICE_MS) return;
+    const entry = overBudgetJobs.get(operation) || { count: 0, maxMs: 0, totalMs: 0 };
+    entry.count += 1;
+    entry.maxMs = Math.max(entry.maxMs, ranMs);
+    entry.totalMs += ranMs;
+    overBudgetJobs.set(operation, entry);
+}
+
+function overBudgetSnapshot() {
+    return Object.fromEntries(Array.from(overBudgetJobs.entries(), ([operation, entry]) => [operation, { ...entry }]));
+}
 
 function now() {
     return Date.now();
@@ -334,8 +351,8 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
             drainSliceStartedAt = now();
             setImmediate(endDrainSlice);
         }
-        const startedAt = timed ? now() : 0;
-        const wait = startedAt - queuedAt;
+        const startedAt = now();
+        const wait = timed ? startedAt - queuedAt : 0;
         EconomyJournal.begin(operation);
         const candidateCheckpoint = connection?.isTransaction ? ClanReviewInputs.candidateCheckpoint() : null;
         if (!connection?.isTransaction) ClanReviewInputs.beginCandidateCommit();
@@ -355,6 +372,7 @@ function enqueue(work, { operation = 'raw', read = false, onTiming = null } = {}
             throw error;
         } finally {
             metrics.pending -= 1;
+            noteJobRun(operation, now() - startedAt);
             // A committed job may have added history outbox rows (directly or
             // by a trigger); the history thread sleeps until told. Outside the
             // try: nothing here can turn a committed job into a discard.
@@ -7104,7 +7122,7 @@ const Database = {
     stats({ resetPeak = false } = {}) {
         // Depth and physical checkpoint outcomes are runtime control sources.
         if (!DiagnosticConfig.developerDiagnostics) return { path: databasePath || null, historyPath: historyPath || null,
-            pending: metrics.pending, queueYields: metrics.queueYields, diagnostics: { enabled: false },
+            pending: metrics.pending, queueYields: metrics.queueYields, overBudgetJobs: overBudgetSnapshot(), diagnostics: { enabled: false },
             checkpoint: CheckpointCoordinator.snapshot(), maintenance: maintenanceSnapshot(), history: History.stats() };
         metrics.snapshots += 1;
         const operations = Object.fromEntries(Array.from(metrics.byOperation?.entries() || []).map(([key, value]) => [key, { ...value }]));
@@ -7114,6 +7132,7 @@ const Database = {
             pending: metrics.pending,
             maxPending: metrics.maxPending,
             queueYields: metrics.queueYields,
+            overBudgetJobs: overBudgetSnapshot(),
             total: metrics.total,
             reads: metrics.reads,
             writes: metrics.writes,
