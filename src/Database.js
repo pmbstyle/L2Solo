@@ -3013,6 +3013,28 @@ function heldRowSetSql(sql, held = []) {
     return sql.replace(HELD_ROW_SET, HELD_ROW_COLUMNS.filter((column) => !held.includes(column))
         .map((column) => `${column} = excluded.${column},`).join(' '));
 }
+// A save's text with the held columns put back, and with its RETURNING list,
+// held per (held set, RETURNING list) for one base text: the BotLifeState
+// save's constant, so at most 2^5 held sets x 2 lists = 64 (limits.md
+// "Lifecycle save texts"). A different base text (only tests alternate one)
+// clears them and they are built again. Built per save they were ~15 KB of
+// new strings each.
+const SAVE_RETURNING_NATIVE = `${NativeWriteCheckpoint.columns.join(', ')}, statsJson, mindJson`;
+const SAVE_RETURNING_PLAIN = 'simulationRevision, statsJson, mindJson';
+let saveSqlBase = null;
+const saveSqlVariants = new Map();
+function heldRowSaveSql(sql, held, nativeProof) {
+    if (sql !== saveSqlBase) { saveSqlBase = sql; saveSqlVariants.clear(); }
+    let key = nativeProof ? 1 << HELD_ROW_COLUMNS.length : 0;
+    for (let index = 0; index < HELD_ROW_COLUMNS.length; index++) if (held.includes(HELD_ROW_COLUMNS[index])) key |= 1 << index;
+    let variant = saveSqlVariants.get(key);
+    if (!variant) {
+        const set = heldRowSetSql(sql, held);
+        variant = { set, returning: `${set} RETURNING ${nativeProof ? SAVE_RETURNING_NATIVE : SAVE_RETURNING_PLAIN}` };
+        saveSqlVariants.set(key, variant);
+    }
+    return variant;
+}
 
 // bot_life_state columns (migration 68): the stored bag summary, the learned
 // skills rows and the henna rows of the bot. Only the database moves them.
@@ -4905,10 +4927,6 @@ const Database = {
                 if (admission.nativeProof) NativeWriteCheckpoint.checkRow(admission.nativeProof, statement);
                 phase = 'write_admission';
                 checkCapturedWriteAdmission(admission, admission.nativeProof ? statement[1][0] : null);
-                // The upsert moves a far row's revision (MOVE_FAR_REVISION) and
-                // hands back the row's own, the number the caller's cache takes;
-                // the mind comes back too: over a far row it is the worker's.
-                const returning = admission.nativeProof ? `${NativeWriteCheckpoint.columns.join(', ')}, statsJson, mindJson` : 'simulationRevision, statsJson, mindJson';
                 let params = statement[1] || [];
                 if (characterId !== undefined) {
                     // BotLifeState.save supplies its native 32-column ROW and
@@ -4932,9 +4950,13 @@ const Database = {
                 // (HELD_ROW_COLUMNS); another caller's statement sets them all.
                 const held = characterId === undefined ? [] : heldRowColumnsUnsafe(characterId, Object.fromEntries(
                     Object.entries(SAVE_ROW_HELD_PARAMS).map(([column, index]) => [column, params[index]])));
-                statement = [heldRowSetSql(statement[0], held), ...statement.slice(1)];
+                // The upsert moves a far row's revision (MOVE_FAR_REVISION) and
+                // hands back the row's own, the number the caller's cache takes;
+                // the mind comes back too: over a far row it is the worker's.
+                const saveTexts = heldRowSaveSql(statement[0], held, !!admission.nativeProof);
+                statement = [saveTexts.set, ...statement.slice(1)];
                 phase = 'write';
-                const row = one(`${statement[0]} RETURNING ${returning}`, params);
+                const row = one(saveTexts.returning, params);
                 phase = 'advance';
                 if (row && admission.nativeProof) NativeWriteCheckpoint.advance(admission.nativeProof, row);
                 return { affectedRows: row ? 1 : 0, statsJson: row?.statsJson, mindJson: row?.mindJson, simulationRevision: row?.simulationRevision };

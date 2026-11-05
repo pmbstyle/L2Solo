@@ -243,3 +243,5 @@ Each area file ends with its open questions; none blocks the order above.
   it by sequence or by id (`Database` `economyTupleUnsafe`). A writer that put an older receipt back (one not naming
   X; `EconomyCommit.preserveLeafSql` keeps every whole-stats writer from it today) would let the intent win again and
   a retry of X run twice. Nothing checks this beyond that rule.
+- `DatabaseStatements.prepare` treats SQL over 16 KB like DDL: not cached and it also clears the connection's whole
+  statement cache, so every such call re-prepares all the hot statements after it; only the uncached part is meant.

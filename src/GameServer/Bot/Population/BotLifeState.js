@@ -903,6 +903,11 @@ function setSessionSnapshotsAuthority(session, saved) {
     RefreshPartyMemberships([session], invoke);
 }
 
+// The save's upsert text, built at the first save instead of a new ~5 KB
+// string per save (the statement cache keys on its text). Its inputs are
+// module constants fixed at load: TABLE, Database.HELD_ROW_SET,
+// Database.MOVE_FAR_REVISION and EconomyCommit.preserveLeafSql's output.
+let saveSql = null;
 function save(row, options = {}) {
     // ARCH-NOTE: strip retired counters even when an old caller supplies them on a new row.
     const proposedStats = parseJson(row.statsJson, {});
@@ -957,7 +962,7 @@ function save(row, options = {}) {
     const beforeWrite = Object.getOwnPropertyDescriptor(options, 'beforeWrite');
     const databaseOptions = beforeWrite ? Object.defineProperty({}, 'beforeWrite', beforeWrite) : undefined;
     const statement = [
-        `INSERT INTO ${TABLE} (
+        saveSql ||= `INSERT INTO ${TABLE} (
             characterId, accountName, characterName, level, exp, sp, adena, homeRegion, currentRegion,
             spotId, activity, phase, activityStartedAt, nextResolveAt,
             lastResolvedAt, lastHotAt, locX, locY, locZ, hp, maxHp, mp, maxMp,
