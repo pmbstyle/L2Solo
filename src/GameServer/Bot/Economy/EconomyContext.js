@@ -2087,12 +2087,13 @@ function kitRates(base, gapHorizonHours = 0) {
 // main-thread review read them: a worth of 0 (an item off the bot's wish
 // card) caps the spend at 0, only no worth falls back to the price.
 // Only the activities the main-thread review posted for; any other step
-// keeps the previous row as it is.
+// keeps the previous row as it is. Posted only below the shots' line (in the
+// field the line is the bot's only shot need) or in town (the outing's refill).
 const SHOT_DEMAND_ACTIVITIES = ['hunting', 'resting', 'shopping', 'grouped'];
 function shotDemand(economy, state, timestamp, previous = null) {
     if (!SHOT_DEMAND_ACTIVITIES.includes(state.activity)) return previous;
     const stock = economy.stock('shots');
-    if (!stock?.needed) return null;
+    if (!stock?.needed && state.activity !== 'shopping') return null;
     const missing = stock.survivalMissing + stock.missing;
     if (!missing) return null;
     const price = stock.unitPrice;

@@ -117,12 +117,13 @@ const SITUATIONS = Object.freeze({
     stores: link(STOCK, WORK | VISIT),
     // Its own warehouse: what it put in and took is its doing, heard as it arrives in town.
     warehouse: link(STOCK, GATED),
-    // A condition, not a change: a need that opened. The planned shot ran out; the
-    // survival potions ran out or fell under what the survival drink keeps; the
-    // trip's scroll ran out; the bag full or the load a level up.
+    // A condition, not a change: a need that opened. The shots a fight loads or the
+    // survival potions fell under their line (one hour of use, the kit rates'), the
+    // shots ran out (the supply fact's flips, factNames); the bag full or the load
+    // a level up. Sections until the build moves to situations (step 4).
     shots_out: link(['supply'], 0),
+    'stock_low:shots': link(['supply'], 0),
     'stock_low:potions': link(['supply'], 0),
-    stock_low: link(['supply'], 0),
     bag_full: link(STOCK, 0),
     // Its own doing is no event (own outputs are not inputs): its trips and where
     // they end, its craft preparation.
@@ -453,6 +454,18 @@ function factNames(previousFact, current, funding = false, planned = false) {
     if (recovery !== undefined && recovery !== current.recovery) add(current.recovery < recovery ? 'recovered' : 'spot_dangerous');
     // Physical exhaustion is never hidden by economic uncertainty.
     if (previousFact('supply') !== current.supply) add('supply');
+    // A kind that crossed below its line, or ran out, since the decision (its
+    // baseline's lines, under the rates it published; heard near and far alike: a
+    // hot body's post reads the same facts). It stands raised until a decision
+    // takes it and keeps the new lines.
+    const lines = previousFact('lines');
+    if (lines !== undefined && lines !== current.lines) {
+        const S = readers();
+        const below = kind => S.lineAt(lines, kind) < S.LINE_BELOW && S.lineAt(current.lines, kind) >= S.LINE_BELOW;
+        if (below('shots')) add('stock_low:shots');
+        if (S.lineAt(lines, 'shots') < S.LINE_OUT && S.lineAt(current.lines, 'shots') === S.LINE_OUT) add('shots_out');
+        if (below('potions')) add('stock_low:potions');
+    }
     if (previousFact('bag') !== current.bag) add('bag');
     if (previousFact('stores') !== current.stores) add('stores');
     if (previousFact('warehouse') !== current.warehouse) add('warehouse');
@@ -496,16 +509,9 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, fa
     return gated(place(after, before)) ? names.concat(needsOpened(before, after, names, view)) : names;
 }
 // A need that opened in this step, one raise: one that stays open raises nothing more.
-// now: the step's view of after (stateView), its supply ids read once.
+// now: the step's view of after (stateView). The supply lines are facts (factNames).
 function needsOpened(before, after, names, now) {
-    const count = (state, id) => Math.max(0, Number(state.inventory?.[id]?.amount) || 0);
-    const ranOut = id => count(before, id) > 0 && !count(after, id);
-    const [scrollId, shotId, potionId] = now.supply.map(row => row[0]);
-    const floor = readers().potionSurvivalTarget(after);
     const opened = [];
-    if (ranOut(shotId)) opened.push('shots_out');
-    if (ranOut(potionId) || count(before, potionId) >= floor && count(after, potionId) < floor) opened.push('stock_low:potions');
-    if (ranOut(scrollId)) opened.push('stock_low');
     if (names.includes('bag')) {
         const was = readers().stateView(before);
         if (now.bagFull > was.bagFull || now.weight > was.weight) opened.push('bag_full');

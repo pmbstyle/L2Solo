@@ -408,7 +408,7 @@ function snapshot(state, context, cashBounds, moneyError = -1, mode, money = nul
         ...(budgetTracked ? { budgetBounds: money.budgetBounds } : {}),
         ...(context.goalBudget > wallet ? { goalBudget: context.goalBudget } : {}),
         bagValue: positive(context.choiceBagValue),
-        ...(facts || semanticFacts(state)), threat: context.gearThreatMask,
+        ...(facts || semanticFacts(state)), ...supplyFacts(state, context.statsPacket.kitRates), threat: context.gearThreatMask,
         frustration: frustrationOf(state), ...(bond ? { bond } : {}),
         incomeError: incomeError(state, persona), sample: packSample(sample(state, context.timestamp, mode)),
         ...(share === 1 ? {} : { share }), ...(marketWatch?.length ? { marketWatch } : {}) };
@@ -486,18 +486,37 @@ function factsOf(view, memory = null) {
         party: hash([view.party?.partyId, view.party?.role]),
         occupation: hash([view.spotId, view.activity === 'resting' ? 'hunting' : view.activity]),
         dead: view.dead, riskDeaths: view.riskDeaths, recovery: view.recovery, karma: view.karma,
-        supply: hash(view.supply), stores: hash(view.stores), warehouse: view.warehouse,
+        supply: hash(view.supply), lines: linesOf(view.supply), stores: hash(view.stores), warehouse: view.warehouse,
         bag: hash([view.bagFull, view.weight]) };
 }
 // The party fact of a bot in none (factsOf).
 const NO_PARTY = hash([null, null]);
-// What the survival drink keeps of the planned potion (its line: one hour of survival drinks).
-const potionSurvivalTarget = state => Number(Packet.lineOf(state.stats?.kitRates, 'potions')) || 0;
-// The stock items whose presence is the supply fact: the trip's Scroll of
-// Escape (736), the planned shot, the planned healing potion.
-function stockIds(shotPlan, potion) {
-    return [736, shotPlan.selfId, potion.selfId];
+// The supply fact: per kind [kind, itemId, where the count stands against
+// its line] (LINE_ABOVE, LINE_BELOW: under one hour of use, LINE_OUT: none
+// left of a kind the bot uses), the line the kit rates' (StatsPacket.lineOf).
+// Shots count the paid shot and the beginner grant a fight loads first. The
+// Scroll of Escape has no line (situations.md B2). A bot no build rated has none.
+const LINE_ABOVE = 0, LINE_BELOW = 1, LINE_OUT = 2;
+function supplyOf(state) {
+    const rates = state.stats?.kitRates, plan = ShotStock.planForState(state);
+    const potionId = Number(HealingPotionStock.purchasePotionFor(state).selfId);
+    const row = (kind, itemId, count) => {
+        const line = Packet.lineOf(rates, kind);
+        return [kind, itemId, !(line > 0) ? LINE_ABOVE : count <= 0 ? LINE_OUT : count < line ? LINE_BELOW : LINE_ABOVE];
+    };
+    return [row('shots', Number(plan.selfId), positive(state.inventory?.[plan.selfId]?.amount) + ShotStock.beginnerAmount(state, plan)),
+        row('potions', potionId, positive(state.inventory?.[potionId]?.amount))];
 }
+// The supply facts against the kit rates a build publishes (snapshot): its
+// baseline reads its own lines, so publishing them raises nothing.
+function supplyFacts(state, kitRates) {
+    const supply = supplyOf(kitRates ? { ...state, stats: { ...state.stats, kitRates } } : state);
+    return { supply: hash(supply), lines: linesOf(supply) };
+}
+// The lines fact (factsOf): the shots' and the potions' place against their line, one number.
+const linesOf = supply => (supply?.[0]?.[2] || 0) * 3 + (supply?.[1]?.[2] || 0);
+// One kind's place in a lines fact (Situations.factNames).
+const lineAt = (lines, kind) => kind === 'shots' ? Math.floor(lines / 3) : lines % 3;
 // The far reader: the raw values of a saved state. recipes: the known recipe
 // ids the build reads (WishProviders.recipeIds), null when the caller holds
 // no recipe book. One bag scan gives the bag full and the load.
@@ -517,9 +536,7 @@ function stateView(state, recipes = null) {
     view.riskDeaths = positive(stats.spotRisk?.windowDeaths);
     view.recovery = positive(invoke('GameServer/Bot/Population/SpotRiskPolicy').recoveryFor(state)?.levelPenalty);
     view.karma = Number(Number(stats.karma) > 0);
-    const shots = ShotStock.planForState(state);
-    const potion = HealingPotionStock.purchasePotionFor(state);
-    view.supply = stockIds(shots, potion).map(id => [id, positive(state.inventory?.[id]?.amount) > 0]);
+    view.supply = supplyOf(state);
     view.stores = storesOf(state);
     view.warehouse = Warehouse.contentIdentity(state);
     // The bag full: its slot limit (the full-bag sale itself is SurvivalFloor's).
@@ -622,4 +639,4 @@ function kitMoved(before, after) {
     return (before?.stats?.wishSections?.build ?? null) !== (after?.stats?.wishSections?.build ?? null);
 }
 module.exports = { FIELD_ACTIVITIES, partyIdOf, moneyReached, goalReached, SECTIONS, COMPUTED, LINK_INPUTS, inputVersions, routeVersions, movedInput, shotInputs, stateView, sectionBit, sectionMask, sectionNames, kit, kitMoved, moneyChanged, moneyBound, observationChanged, incomeError,
-    MARKET_WATCH, softEvents, marketCrossed, carrySectionBaseline, baselineIdentity, sample, sampleRows, packSample, observationBaselineValid, bounds, snapshot, semanticFacts, factsOf, relationTargetIds, NO_PARTY, potionSurvivalTarget, fundingMark, occupationPlanned, hash, isEmptyWishPlan, decisionRefusal };
+    MARKET_WATCH, softEvents, marketCrossed, carrySectionBaseline, baselineIdentity, sample, sampleRows, packSample, observationBaselineValid, bounds, snapshot, semanticFacts, factsOf, relationTargetIds, NO_PARTY, LINE_BELOW, LINE_OUT, lineAt, supplyOf, linesOf, fundingMark, occupationPlanned, hash, isEmptyWishPlan, decisionRefusal };

@@ -390,7 +390,9 @@ async function run() {
         const sectionsRaised = (before, after, leaf) => Situations.heard(Situations.detect(before, after, { leaf }), Situations.place(after, before));
         const raisedBy = (before, after) => sectionsRaised(atBaseline(before), atBaseline(after), held.network.activity);
         assert(raisedBy(carrying(50), carrying(0)).includes('supply'), 'the last shot gone is a need');
-        assert.deepEqual([...raisedBy(carrying(0), carrying(0))], [], 'it raises once');
+        // Once a decision has read the empty stock (its baseline keeps the lines), it raises nothing more.
+        const read = state => ({ ...state, stats: { ...state.stats, wishSections: { ...state.stats.wishSections, ...Gate.semanticFacts(carrying(0)) } } });
+        assert.deepEqual([...sectionsRaised(read(carrying(0)), read(carrying(0)), held.network.activity)], [], 'it raises until a decision takes it');
         // Potions under what the survival drink keeps: a need far from a player.
         const potion = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(published).selfId;
         const drinks = amount => ({ ...published, stats: { ...published.stats, kitRates: Packet.kitRates({ shotId: 0, shotUse: 0, shotBenefit: 0,
@@ -1292,6 +1294,8 @@ async function run() {
             const session = Kept.session;
             if (!keep) Kept.session = () => null;
             const out = [];
+            // Each build's kit rates are the bot's, as a step publishes them.
+            let kitRates;
             try {
                 for (const [at, [name, change]] of [['first', {}], ...path].entries()) {
                     for (const id of [...gearBoard.records.keys()]) gearBoard.remove(id);
@@ -1300,13 +1304,14 @@ async function run() {
                     const state = { ...bot, adena: bot.adena + at * 1000 + (change.adena || 0), level: change.level || bot.level,
                         marketTrades: change.trades ? { [earringCounter]: change.trades } : undefined,
                         inventory: change.bag ? { ...bot.inventory, [change.bag]: { selfId: change.bag, amount: 1 } } : bot.inventory,
-                        stats: { ...bot.stats, wishDirty: at ? Sections.sectionBit('money') : 0 } };
+                        stats: { ...bot.stats, ...(kitRates ? { kitRates } : {}), wishDirty: at ? Sections.sectionBit('money') : 0 } };
                     const workshops = recipeId => change.workshop && recipeId === frameRecipe ? [{ characterId: 77, recipeId, price: 500,
                         townName: 'Giran', loc: { locX: 81000, locY: 148000, locZ: -3500 }, capacityBatches: 5 }] : [];
                     const ids = [];
                     weighed = 0;
                     const next = Economy.forState(state, { timestamp: T, spots, caller: 'step', fullReview: true, board: gearBoard, workshops,
                         knowledgeEnabled: true, ...(change.recipes ? { knownRecipes: change.recipes } : {}), onSourceRead: id => ids.push(id) });
+                    kitRates = next.statsPacket.kitRates;
                     out.push({ name, weighed, decision: JSON.stringify({ nodes: next.projection.nodes, roots: next.projection.roots,
                         admission: next.projection.admission, queue: next.network.queue.map(wish => [wish.key, wish.funded, wish.price, wish.valueHours]),
                         focus: next.network.focus, activity: next.network.activity, packet: next.statsPacket, watch: next.watchList,

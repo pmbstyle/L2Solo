@@ -39,7 +39,7 @@ const waitsFor = (state, ...links) => links.every(link => !Situations.hears(link
 const hearsAll = (state, ...links) => links.every(link => Situations.hears(link, Situations.place(state)));
 assert(waitsFor(cold('hunting'), 'funding', 'money', 'supply', 'bag', 'quantity', 'stores', 'relations', 'observation'), 'at work the links wait');
 assert(waitsFor(cold('hunting'), 'level_up', 'gear_changed') && hearsAll(cold('resting'), 'level_up', 'gear_changed'), 'a new level waits for the rest');
-assert(hearsAll(cold('hunting'), 'died', 'spot_dangerous', 'recovered', 'moved_by_world', 'shots_out', 'stock_low:potions', 'stock_low', 'bag_full', 'goal', 'market'), 'its fight, its place and a condition do not');
+assert(hearsAll(cold('hunting'), 'died', 'spot_dangerous', 'recovered', 'moved_by_world', 'shots_out', 'stock_low:shots', 'stock_low:potions', 'bag_full', 'goal', 'market'), 'its fight, its place and a condition do not');
 assert(waitsFor(cold('resting'), 'supply', 'bag', 'quantity') && hearsAll(cold('resting'), 'funding', 'relations', 'stores'), 'a rest reads the money, the people and the clan');
 assert(waitsFor(cold('shopping'), 'funding', 'money', 'supply', 'bag', 'quantity', 'stores', 'level_up', 'gear_changed', 'recipe_learned', 'relations'), 'a visit works down its list');
 assert(hearsAll(cold('shopping'), 'filled', 'short', 'offer_gone'), 'its list\'s end does not wait');

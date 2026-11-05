@@ -315,10 +315,11 @@ parentPort.on('message', message => {
         assert.deepEqual(step.laterEdges.map(bits => bits & 9), [0, 0, 8, 8, 0],
             'a rest asks nothing, its end with nothing moved since the last action ask asks nothing, the arrival in town asks, '
             + 'again after main dropped that step, and not after main committed it');
-        assert.equal(step.wishDirty, 0, 'on the hunt the round\'s supply event raises nothing');
+        // A looted Scroll of Escape is no supply event: the scroll has no line (situations.md B2).
+        assert.equal(step.wishDirty, 0, 'on the hunt the round\'s loot raises nothing');
         assert.equal(step.seq[1], step.seq[0], 'and the decision sequence stands');
         assert.equal(step.rest[0], 0, 'nor does the round that ends at the rest');
-        assert(step.town[0] !== 0, 'the arrival in town raises it');
+        assert.equal(step.town[0], 0, 'nor the arrival in town: no supply line moved');
         assert.equal(step.baseline[1], step.baseline[0], 'the projected state keeps the baseline of the step decision');
         assert.equal(step.card.updatedAt, step.card.projectedAt, 'main gets the step card stamped to the projected state');
         assert.deepEqual(step.card.echo, step.card.projectedEcho, 'main gets the step card with the projected decision echo');
