@@ -21,7 +21,7 @@ const NpcWander = invoke('GameServer/Npc/NpcWander');
 const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool');
 const AttackHelper   = new Attack();
 // Dropped chases, chase path requests that gave no usable way (noPath), and mobs
-// left out of combat still hating (sleep, stun, fake death).
+// left out of combat still hating (fake death).
 const hateStats = { outOfReach: 0, noPath: 0, idleWithHate: 0, attackTimeout: 0 };
 // A monster that neither attacked or cast nor was attacked for 2 minutes stops
 // hating its target; the next hated one gets a timeout of its own, and with none
@@ -361,10 +361,7 @@ class Npc extends NpcModel {
         this.state.setCombats(true);
         this.combatActiveAt = Date.now();
 
-        this.setStateRun(true);
-        this.setStateAttack(true);
-        session.dataSendToMeAndOthers(ServerResponse.walkAndRun(this.fetchId(), this.fetchStateRun()), this);
-        session.dataSendToMeAndOthers(ServerResponse.autoAttackStart(this.fetchId()), this);
+        this.startCombatActions(session);
 
         this.timer.combatStart = setTimeout(() => {
             this.timer.combatStart = undefined;
@@ -405,6 +402,20 @@ class Npc extends NpcModel {
             };
 
             this.timer.combat = setInterval(() => {
+                if (!this.fetchStateAttack() && !EffectRestrictions.canAttack(this)) {
+                    // Control is not a failed chase. A path interrupted before
+                    // it landed must get a fresh retry after control ends.
+                    if (pendingPath) {
+                        pathGeneration++;
+                        pendingPath = null;
+                    }
+                    pathFailureCount = 0;
+                    nextPathRetryAt = 0;
+                    activeMoveCoords = null;
+                    activePathWaypoints.length = 0;
+                    activePathTargetCoords = null;
+                    return;
+                }
                 const actor = this.fetchCombatTarget();
                 if (!actor) {
                     this.endFight(session);
@@ -833,6 +844,7 @@ class Npc extends NpcModel {
         if (!EffectRestrictions.canCast(this)) return;
         if (!this.canUseCombatSkillOn(actor, skill)) return;
         if (actor !== this && !this.hasCombatLineOfSight(actor)) return;
+        this.startCombatActions(session);
         this.combatActiveAt = Date.now();
         this.attack.remoteHit({
             actor: this,
@@ -848,6 +860,30 @@ class Npc extends NpcModel {
         NpcWander.leaveFight(this);
     }
 
+    startCombatActions(session) {
+        if (!this.state.fetchCombats() || this.fetchStateAttack()) return;
+        this.setStateRun(true);
+        this.setStateAttack(true);
+        session?.dataSendToMeAndOthers?.(ServerResponse.walkAndRun(this.fetchId(), this.fetchStateRun()), this);
+        session?.dataSendToMeAndOthers?.(ServerResponse.autoAttackStart(this.fetchId()), this);
+    }
+
+    // Hot NPC control and combat termination share cancellation of the current
+    // swing. Control leaves the target, hate and combat loop ready to resume.
+    interruptCombatActions(session) {
+        const timer = this.#timer;
+        if (timer) {
+            clearTimeout(timer.hit);
+            timer.hit = undefined;
+            clearTimeout(timer.hitEnd);
+            timer.hitEnd = undefined;
+        }
+        PathfindingWorkerPool.cancel(`npc:${this.fetchId()}`);
+        this.state.setHits(false);
+        this.setStateAttack(false);
+        session?.dataSendToMeAndOthers?.(ServerResponse.autoAttackStop(this.fetchId()), this);
+    }
+
     abortCombatState(session, { preserveAggro = false } = {}) {
         delete this.confusionTarget;
         const wasMoving = this.state.inMotion();
@@ -857,12 +893,8 @@ class Npc extends NpcModel {
             timer.combatStart = undefined;
             clearInterval(timer.combat);
             timer.combat = undefined;
-            clearTimeout(timer.hit);
-            timer.hit = undefined;
-            clearTimeout(timer.hitEnd);
-            timer.hitEnd = undefined;
         }
-        PathfindingWorkerPool.cancel(`npc:${this.fetchId()}`);
+        this.interruptCombatActions(session);
 
         const previousTargetId = Number(this.fetchDestId?.() || 0);
         this.clearDestId();
@@ -882,9 +914,7 @@ class Npc extends NpcModel {
         }
 
         this.setStateRun(false);
-        this.setStateAttack(false);
         session.dataSendToMeAndOthers(ServerResponse.walkAndRun(this.fetchId(), this.fetchStateRun()), this);
-        session.dataSendToMeAndOthers(ServerResponse.autoAttackStop(this.fetchId()), this);
     }
 
     meleeHit(session, src, dst) {
@@ -896,6 +926,7 @@ class Npc extends NpcModel {
             return;
         }
 
+        this.startCombatActions(session);
         this.combatActiveAt = Date.now();
         const rangedAttack = AttackRange.weaponKind(src) === 'Weapon.Bow';
         const attackSpeed = src.fetchCollectiveAtkSpd();

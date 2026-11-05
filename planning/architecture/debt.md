@@ -5,6 +5,14 @@ Checked at 39e43408 (2026-11-04).
 Index across areas; details and evidence in each area file (ids: AI, POP, ECO, CMB, WOR, PER, TBL).
 Add a line when you find a tail you do not fix. Delete it when it is paid (the area file states the new rule).
 
+- Cold fights credit damage hate only, so a resisted offensive cast does not engage its caster as hot does (CMB-28).
+- Requiem (1049) lacks its C4 undead-aura target shape and radius, so it still resolves as a single-target skill (CMB-29).
+- Several NPC poison chances still disagree with Mobius C4, and generated weapon-proc semantics override 1168's chance with 7 (CMB-30).
+- Fear expiry in `EffectTicker.scheduleExpiry` clears the runtime interval without `EffectRestrictions.stopFear`;
+  `isAfraid` and an in-flight `fearMoveTimer` can outlive the effect. Align expiry with the existing fear cleanup.
+- Combat lint debt: skill 4080 is defined twice in `C4SkillRules`; `C4SkillEffects.applyBalanceLife` has an unused
+  `actor` argument. Check the duplicate skill against C4 before removing a definition.
+
 ## Themes
 
 1. **Failures that do not show.** The owner is `src/FailureLog.js` (a survived failure counts by site, the first

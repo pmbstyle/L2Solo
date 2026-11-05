@@ -13,6 +13,10 @@ const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const RuntimeWorld = invoke('GameServer/World/World');
 const ActorGenerics = invoke(path.actor);
 const { SPOT_CELL_SIZE } = invoke('GameServer/World/WorldConstants');
+const SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
+const Skill = invoke('GameServer/Model/Skill');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
+const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 
 DataCache.init();
 
@@ -115,6 +119,23 @@ withRuntimeWorld(() => ReceivedHit(session, attacker, guards[0], 1));
 assert.strictEqual(leader.state.fetchCombats(), true, 'the leader answers a minion hit');
 assert.strictEqual(leader.fetchDestId(), attacker.fetchId());
 assert.strictEqual(guards[1].fetchDestId(), attacker.fetchId());
+
+for (const [id, resisted] of [[122, false], [115, true]]) {
+    leader.abortCombatState(session);
+    guards.forEach((guard) => guard.abortCombatState(session));
+    const skill = new Skill({ selfId: id, level: 1, spell: true });
+    try {
+        const result = withRuntimeWorld(() => SkillEffects.execute(session, attacker, guards[0], skill,
+            { rng: () => resisted ? 1 : 0, magicSkill: true }));
+        assert.strictEqual(result.effectResisted, resisted);
+        assert.strictEqual(leader.fetchCombatTarget(), attacker, 'a debuff on an ordinary minion engages its leader');
+        assert(guards.every((guard) => guard.state.fetchCombats() && guard.fetchCombatTarget() === attacker),
+            'ordinary groups assist on a landed or resisted debuff, just like raid groups');
+    } finally {
+        EffectTicker.clearAll(guards[0]);
+        EffectStore.remove(guards[0], skill.fetchSemantic().effect);
+    }
+}
 
 // Lisvus replaces raid minions only: a killed guard stays dead while its leader lives.
 const originalNpcDied = ActorGenerics.npcDied;

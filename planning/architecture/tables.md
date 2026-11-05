@@ -193,6 +193,7 @@ surface's `data/Bots/hunt/gear.json` is covered by the gear-ladder code instead.
 | Gear ladders: `GearAcquisitionPlanner.suitable`, `BotEquipmentCompatibility`, `ItemAcquisitionCatalog`, `NpcShopBuyLists`, `data/Recipes`, `data/Henna` | `hunt` (then `spot` for the kit surface) |
 | The generators: `scripts/generate-spot-table.js` and `scripts/hunt-tables/{common,HuntModel,static-tables}.js` (both); `scripts/hunt-tables/{build,rotation,corrections,ceilings}.js` (hunt; `verify.js` none) | the table they write |
 | Readers only: `SpotValueTable`, `SpotEconomics`, `SpotRewardExpectation`, `BotHuntEfficiency`, server rates | none |
+| Hot action interruption only: `EffectRestrictions.interruptOnApply`, `Npc.interruptCombatActions` and the live NPC combat loop (not called by the cold fight or table generators) | none; shared impairment, stat and effect rules still require the rebuild above |
 
 ## Assessment
 

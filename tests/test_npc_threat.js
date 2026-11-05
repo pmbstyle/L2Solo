@@ -1,4 +1,5 @@
-const assert = require('assert');
+const assert = require('node:assert/strict');
+const { mock } = require('node:test');
 
 require('../src/Global');
 
@@ -7,11 +8,17 @@ const Npc = invoke('GameServer/Npc/Npc');
 const SkillModel = invoke('GameServer/Model/Skill');
 const World = invoke('GameServer/World/World');
 const PathfindingWorkerPool = invoke('GameServer/Geodata/PathfindingWorkerPool');
+const EffectStore = invoke('GameServer/Effects/EffectStore');
+const EffectTicker = invoke('GameServer/Effects/EffectTicker');
+const EffectRestrictions = invoke('GameServer/Effects/EffectRestrictions');
+const Formulas = invoke('GameServer/Formulas');
 
 function actor(id) {
     return {
         fetchId: () => id,
         fetchLevel: () => 40,
+        fetchCollectivePDef: () => 100,
+        fetchDex: () => 30,
         fetchLocX: () => 20,
         fetchLocY: () => 0,
         fetchLocZ: () => 0,
@@ -111,7 +118,7 @@ const outcome = C4SkillEffects.execute(
 
 assert(outcome.aggroDamage > 0, 'Aggression should produce hate instead of HP damage');
 assert.strictEqual(npc.fetchDestId(), tank.fetchId(), 'Aggression should transfer the NPC target to the tank');
-assert.strictEqual(npc.getHating(tank), outcome.aggroDamage, 'Aggression hate should be stored on the tank entry');
+assert.strictEqual(npc.getHating(tank), outcome.aggroDamage + 1, 'Aggression must retain its engagement hate as well as skill hate');
 assert.strictEqual(npc.getHating(damageDealer), 500, 'Aggression should not erase existing damage hate');
 
 npc.abortCombatState(tankSession);
@@ -270,6 +277,117 @@ function verifyCombatRetarget() {
     }, { meleeHit: (_session, _attacker, target) => observedTargets.push(target) });
 }
 
+function verifyControlRecovery() {
+    const originals = {
+        hit: npc.hit, selectCombatSkill: npc.selectCombatSkill,
+        hasCombatLineOfSight: npc.hasCombatLineOfSight, hostile: npc.model.hostile,
+        scheduleAction: npc.automation.scheduleAction, calcHitChance: Formulas.calcHitChance
+    };
+    const hits = [];
+    const sleep = new SkillModel({ selfId: 1069, name: 'Sleep', level: 1, passive: false,
+        spell: true, distance: 600, mp: 0, power: 80, hitTime: 0, reuse: 0, buff: 30000 });
+    const castSleep = () => C4SkillEffects.execute(damageDealerSession, damageDealer, npc, sleep,
+        { magicSkill: true, rng: () => 0, attack: { clearLoadedShot() {} } }).effect;
+    const advance = (ms) => {
+        for (let remaining = ms; remaining > 0; remaining -= 100) mock.timers.tick(Math.min(remaining, 100));
+    };
+    const reset = () => {
+        EffectTicker.clearAll(npc);
+        for (const effect of EffectStore.list(npc)) EffectStore.remove(npc, effect.key);
+        npc.abortCombatState(damageDealerSession);
+        hits.length = 0;
+        damageDealerSession.packets.length = 0;
+        tankSession.packets.length = 0;
+    };
+    mock.timers.enable({ apis: ['Date', 'setTimeout', 'setInterval'], now: 1000000 });
+    try {
+        npc.model.hostile = false;
+        npc.hit = (_session, target) => hits.push(target);
+        npc.selectCombatSkill = () => null;
+        npc.hasCombatLineOfSight = () => true;
+        npc.automation.scheduleAction = (_session, _npc, _target, _range, callback) => callback();
+        Formulas.calcHitChance = () => true;
+        reset();
+
+        npc.addDamageHate(damageDealerSession, damageDealer, 500, 500);
+        npc.addDamageHate(tankSession, tank, 0, 200);
+        advance(1100); // Sleep interrupts a swing before its damage lands.
+        assert(damageDealerSession.packets.some(packet => packet[0] === 0x05),
+            'the monster must announce a swing before Sleep interrupts its damage');
+        const effect = castSleep();
+        assert(effect, 'native Sleep must land');
+        const duration = effect.expiresAt - Date.now();
+        assert.equal(duration, 30000, 'the regression must cover the full native Sleep duration');
+        const hate = npc.getHating(damageDealer);
+        advance(duration - 100);
+        assert.equal(hits.length, 0, 'Sleep must cancel the pending swing and prevent attacks throughout its duration');
+        assert.equal(npc.getHating(damageDealer), hate, 'Sleep must preserve the original attacker hate');
+        assert.equal(npc.getHating(tank), 200, 'Sleep must preserve other hate entries too');
+        advance(2500);
+        assert(!EffectStore.hasDebuff(npc, 'sleep'), 'Sleep must naturally expire');
+        assert(hits.length > 0 && hits.every(target => target === damageDealer),
+            'a passive monster must resume attacking the highest-hate actor without a new hit or auto-aggro');
+        assert.equal(npc.getHating(damageDealer), hate, 'waking must not reset or add hate');
+
+        reset();
+        npc.addDamageHate(damageDealerSession, damageDealer, 500, 500);
+        castSleep(); // Also cover control before the initial combat callback.
+        const stun = EffectStore.apply(npc, { key: 'stun', id: 100, type: 'debuff', durationMs: 32000 });
+        EffectTicker.scheduleExpiry(damageDealerSession, npc, stun);
+        EffectRestrictions.interruptOnApply(damageDealerSession, npc, stun);
+        npc.addDamageHate(tankSession, tank, 0, 1000);
+        advance(31000);
+        assert.equal(hits.length, 0, 'expired Sleep must not bypass a remaining Stun');
+        advance(3500);
+        assert(hits.length > 0 && hits.every(target => target === tank),
+            'after all controls expire the monster must select the current highest hate');
+
+        for (const key of ['sleep', 'stun', 'paralyze']) {
+            reset();
+            npc.addDamageHate(damageDealerSession, damageDealer, 500, 500);
+            const control = EffectStore.apply(npc, { key, id: 1069, type: 'debuff', durationMs: 30000 });
+            EffectTicker.scheduleExpiry(damageDealerSession, npc, control);
+            EffectRestrictions.interruptOnApply(damageDealerSession, npc, control);
+            advance(1500);
+            assert.equal(hits.length, 0, `${key} must block attacks`);
+            if (key === 'sleep') EffectRestrictions.wakeOnDamage(npc, damageDealerSession);
+            else EffectStore.remove(npc, key);
+            advance(2500);
+            assert(hits.length > 0, `removing ${key} early must resume combat without waiting for its old expiry`);
+            assert.equal(npc.getHating(damageDealer), 500, `removing ${key} must preserve hate`);
+        }
+
+        reset();
+        npc.addDamageHate(damageDealerSession, damageDealer, 500, 500);
+        castSleep();
+        npc.reduceAggro(damageDealerSession, null, 10000);
+        advance(33000);
+        assert.equal(hits.length, 0, 'a hate wipe during Sleep must prevent combat from resuming');
+        assert.equal(npc.fetchMostHated(), null, 'Sleep expiry must not restore wiped hate');
+
+        reset();
+        const disconnected = actor(2000150);
+        const disconnectedSession = session(disconnected);
+        npc.addDamageHate(disconnectedSession, disconnected, 500, 500);
+        castSleep();
+        disconnected.fetchIsOnline = () => false;
+        advance(33000);
+        assert(hits.length > 0 && hits.every(target => target === damageDealer),
+            'waking must discard a disconnected top-hate actor and attack the next valid target');
+        assert.equal(npc.getHating(disconnected), 0, 'a disconnected actor must leave the hate table');
+    }
+    finally {
+        reset();
+        npc.hit = originals.hit;
+        npc.selectCombatSkill = originals.selectCombatSkill;
+        npc.hasCombatLineOfSight = originals.hasCombatLineOfSight;
+        npc.model.hostile = originals.hostile;
+        npc.automation.scheduleAction = originals.scheduleAction;
+        Formulas.calcHitChance = originals.calcHitChance;
+        mock.timers.reset();
+    }
+}
+
 // A dropped chase forgets that actor (Lisvus forgets a hated actor that left its
 // known list, or one it could not hit): the mob turns to the next hated actor, or
 // leaves combat with no stale hate that would turn it away from its next attacker.
@@ -373,6 +491,7 @@ npc.addDamageHate(damageDealerSession, damageDealer, 300, 300);
 npc.addDamageHate(tankSession, tank, 300, 300);
 assert.strictEqual(npc.fetchMostHated(), damageDealer, 'a hate tie must keep the earliest entry');
 npc.abortCombatState(tankSession);
+verifyControlRecovery();
 verifyCombatRetarget()
     .then(verifyOutOfReachForget)
     .then(() => verifyNoPathForget())

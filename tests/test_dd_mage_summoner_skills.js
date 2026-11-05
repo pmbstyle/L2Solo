@@ -1,3 +1,5 @@
+'use strict';
+
 const assert = require('assert');
 
 require('../src/Global');
@@ -8,7 +10,6 @@ const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
 const DataCache = invoke('GameServer/DataCache');
 const EffectStats = invoke('GameServer/Effects/EffectStats');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
-const SkillExec = invoke('GameServer/Actor/Generics/SkillExec');
 const SkillRequest = invoke('GameServer/Actor/Generics/SkillRequest');
 const SkillModel = invoke('GameServer/Model/Skill');
 const skillTree = require('../data/Skills/Tree/tree.json');
@@ -232,7 +233,7 @@ const petActor = {
         abortAll() {},
         scheduleAction(_session, _actor, target, _distance, callback) { executedPetTarget = target; callback(); }
     },
-    attack: { remoteHit(_session, target) { executedPetTarget = target; } }
+    attack: Object.assign(new Attack(), { remoteHit(_session, target) { executedPetTarget = target; } })
 };
 const petSession = { actor: petActor, dataSendToMe() {}, dataSendToMeAndOthers() {} };
 const request = { selfId: 1127 };

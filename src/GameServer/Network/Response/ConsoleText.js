@@ -14,6 +14,8 @@ function consoleText(textId, params) {
         }
         else {
             packet.writeD(param.value);
+            // C4 skill-name parameters contain both id and level.
+            if (param.kind === 4) packet.writeD(param.level ?? 1);
         }
     });
 

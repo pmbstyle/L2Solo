@@ -139,7 +139,7 @@ try {
     attack.calculatedSkillHitTime = () => 20000;
     const spell = {
         fetchSpell: () => true, fetchTargetKind: () => 'enemy',
-        fetchSelfId: () => 1177, fetchReuseTime: () => 0,
+        fetchSelfId: () => 1177, fetchLevel: () => 1, fetchReuseTime: () => 0,
         setCalculatedHitTime(ms) { this.hitTime = ms; },
         fetchCalculatedHitTime() { return this.hitTime; }
     };

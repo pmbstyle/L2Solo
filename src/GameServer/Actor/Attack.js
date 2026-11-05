@@ -1,3 +1,5 @@
+'use strict';
+
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const ServerResponse = invoke('GameServer/Network/Response');
 const ConsoleText    = invoke('GameServer/ConsoleText');
@@ -309,15 +311,17 @@ class Attack {
         if (session?.pvpHandoffPending) return;
         const actor = session.actor;
         const raidParty = invoke('GameServer/Clan/ClanRaidRoster').offensiveParty(session);
-        const corpseTarget = ['corpse_mob', 'corpse_player', 'corpse_pet', 'corpse_ally']
-            .includes(skill.fetchTargetKind?.());
+        const targetKind = skill.fetchTargetKind?.();
+        const corpseTarget = ['corpse_mob', 'corpse_player', 'corpse_pet', 'corpse_ally'].includes(targetKind);
 
-        if (this.blockedPvpDefense(session, actor, creature, skill) || this.checkParticipants(actor, creature, { allowDeadTarget: corpseTarget })) {
+        if (this.blockedPvpDefense(session, actor, creature, skill)
+            || this.checkParticipants(actor, creature, { allowDeadTarget: corpseTarget })) {
             invoke('GameServer/Bot/AI/BotActionFeedback').record(session, actor, creature, skill, 'rejected', 'invalid_target');
             invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, creature, skill, 'invalid_target');
             invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, creature, skill);
             return;
         }
+        if (!this.validateSkillTarget(session, actor, creature, skill)) return;
 
         if (actor.canUseSkill?.(skill) === false) {
             invoke('GameServer/Bot/AI/BotActionFeedback').record(session, actor, creature, skill, 'rejected', 'reuse');
@@ -383,6 +387,11 @@ class Attack {
         if (skill.fetchTargetKind?.() === 'enemy') invoke('GameServer/Bot/AI/BotMobCompetition').record(actor, creature);
         session.dataSendToMeAndOthers(ServerResponse.skillStarted(actor, creature.fetchId(), skill), actor);
         session.dataSendToMe(ServerResponse.skillDurationBar(skill.fetchCalculatedHitTime()));
+        if (!actor.fetchKind) {
+            ConsoleText.transmit(session, ConsoleText.caption.used, [{
+                kind: ConsoleText.kind.skil, value: skill.fetchSelfId(), level: skill.fetchLevel()
+            }]);
+        }
         actor.state.setCasts(true);
         invoke('GameServer/Bot/AI/BotActionFeedback').record(session, actor, creature, skill, 'accepted', 'native_cast');
         // Tactical readers need the accepted cast, not skill availability:
@@ -557,7 +566,7 @@ class Attack {
         }
 
         if (outcome.damage > 0) {
-            this.hit(session, actor, target, outcome.damage, { skill });
+            this.hit(session, actor, target, outcome.damage, { skill, npcAttacked: outcome.npcAttacked });
             if (outcome.forceLethalVitals && target.fetchHp?.() > 0) {
                 target.setHp?.(1);
                 target.setCp?.(1);
@@ -833,9 +842,34 @@ class Attack {
         return this.isValidSkillTarget(target, skill, actor);
     }
 
+    // Lisvus rejects restricted single targets before approach and casting.
+    // Auras instead use the caster as centre and filter their affected targets.
+    validateSkillTarget(session, actor, target, skill) {
+        const semantic = skill.fetchSemantic?.();
+        const restricted = skill.fetchTargetKind?.() === 'corpse_player'
+            || (semantic?.undeadOnly && semantic.sourceTarget !== 'aura');
+        if (!restricted || this.isValidSkillTarget(target, skill, actor)) return true;
+        ConsoleText.transmit(session, ConsoleText.caption.incorrectTarget);
+        session.dataSendToMe(ServerResponse.actionFailed());
+        invoke('GameServer/Bot/AI/BotActionFeedback').record(session, actor, target, skill, 'rejected', 'invalid_target');
+        invoke('GameServer/Bot/AI/BotSupportPlanner').cancelPendingSupportCast(session, actor, target, skill, 'invalid_target');
+        invoke('GameServer/Bot/AI/BotPartyChat').cancelExpectedSkillResult(session, actor, target, skill);
+        return false;
+    }
+
     isValidSkillTarget(target, skill, actor = null) {
         if (!target) return false;
         const targetKind = skill.fetchTargetKind?.();
+
+        const semantic = skill.fetchSemantic?.();
+        if (semantic?.undeadOnly) {
+            if (target.fetchUndead?.() !== true) return false;
+            // TARGET_UNDEAD permits undead NPCs and summons. Auras also
+            // require the ordinary enemy eligibility checked below.
+            if (semantic.sourceTarget !== 'aura') {
+                return target.state?.fetchDead?.() !== true && target.isDead?.() !== true;
+            }
+        }
 
         if (targetKind === 'corpse_mob') {
             return target.fetchAttackable?.() === true && target.isDead?.() === true;
