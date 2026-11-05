@@ -6,12 +6,21 @@ Drafted 2026-11-04 from the cold-worker perf passes (diagnostic run `2db814359-c
 
 ## Principle
 
-A bot's decision is a chain of links. Each link is a pure function of named inputs. A link is recomputed when one of
-its inputs changes, and only then: an event raises the input, the link reads the input's version and rebuilds on read.
-No time windows (AGENTS.md). An input that moves continuously (crowd, a money weight) is significant when it moves far
-enough to change the link's answer: the money weight enters the income search linearly, so the search returns the
-weights its answer stands over (`EquipmentIncomeRoute.search`); where no such range is computable, a significance rule
-against the bot's own error (`incomeError`), the measure the observation event uses.
+A bot decides rarely and by situation, as a C4 player does (AGENTS.md, maintainer 2026-11-05). A bot's decision is a
+chain of links; each link is a pure function of named inputs. A decision link is taken again only at a waking
+situation (arrived at a spot or in town, level up, new gear, death, a crowded own spot, invited, a stock run low) and
+held until the next; its other inputs (prices, crowd at candidate spots, money, bag counts) are read when it decides
+and do not wake it. One situation mechanism serves every decision (maintainer): situations named and raised in one
+place by their owners, each decision declares its waking situations, holding and waking are shared (today's
+`DecisionSections` sections/events and `DecisionEvents.raiseDecision` are the base; the cadence pass picks the owner
+and folds the per-decision hold logic into it). No time windows. Pure-calculation links under a decision (prices, route rows, matchup, damage)
+are cached on their exact inputs.
+
+Correction 2026-11-05: steps 1-4 below were built on "a link is recomputed when any of its inputs changes"; that made
+every input (a price belief, a hunter count at any candidate spot) a trigger, and the held earning spot searched more
+often than with the 30-min window it replaced (heap/CPU release perf: worker 59 → 84 %). The exact intervals and replays added since
+(prices, crowd) remain correct but are the wrong lever: the next step is the decision-cadence pass (per decision, its
+waking situations vs today's trigger counts; planning/target-architecture/plan.md).
 
 ## Why (measured)
 

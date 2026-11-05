@@ -21,11 +21,19 @@ much as behaviour:
 - Prefer the cheaper of two correct rules; reuse a computed result instead of recomputing; no work on the main thread
   that the worker can do, and main never rebuilds a decision the worker published (it reads it); no per-tick scans
   over all bots.
-- A held or cached result names its inputs (a comment at the key) and its key is exactly those inputs: a key finer
-  than what the result reads throws work away (an object identity, `updatedAt`, a raw activity string, an exact MP
-  value), a coarser one serves a stale answer. It is recomputed when one of its inputs changes, by an event; a time
-  window is not a substitute. A window only for an input that has no event yet, with the reason and a limits.md row,
-  and the missing event as a debt line.
+- A bot decides the way a C4 player does: rarely and by situation. A decision (where to hunt, what to wish for or buy,
+  a workshop, a party, an action plan) is taken at the situations a player takes it at (arrived at a spot or in town,
+  level up, new gear, death, a crowded spot, invited, a stock run low) and held until the next one; between them the
+  bot carries out the plan. Its other inputs (prices, crowd at other spots, money, bag counts) are read when it
+  decides and do not wake it. One mechanism for every decision: situations are named and raised in one place by
+  their owners (combat, market, town, party), each decision only declares which situations wake it, and holding and
+  waking are done by that one mechanism; no decision keeps its own wake logic.
+- No time windows: a decision is not taken again because time passed. A window only for a situation that has no
+  event yet, with the reason and a limits.md row, and the missing event as a debt line.
+- A cached result of a pure calculation (damage, a price, a route, a table read) names its inputs (a comment at the
+  key) and its key is exactly those inputs: a key finer than what the result reads throws work away (an object
+  identity, `updatedAt`, a raw activity string, an exact MP value), a coarser one serves a stale answer. It is
+  recomputed when one of its inputs changes.
 - A change for speed that claims the same behaviour proves it: it lists the inputs it relies on and a test pins the
   same result, also after an input changes. Otherwise it says what goes stale and by how much.
 - Development is a balance between simulation, realism and performance. Say which one a choice trades.
