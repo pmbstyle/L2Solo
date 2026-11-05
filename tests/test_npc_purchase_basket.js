@@ -329,6 +329,28 @@ async function run() {
     await assert.rejects(Basket.purchase(state, { seller: armourSeller,
         lines: [{ selfId: 45, amount: 10001, unitPrice: 37560, autoEquip: false }] }), /invalid npc purchase/);
     assert.equal(await amount(9531, 57), 1000000000); assert.equal(await amount(9531, 45), 0);
+    // The wish's selected dual can differ from the native bridge project
+    // still retained in equipmentPlan. Its input order owns the quantity.
+    for (const [id, itemId, held, ordered] of [[9532, 126, 0, 2], [9533, 127, 1, 1]]) {
+        const quote = invoke('GameServer/Bot/Economy/MarketOpportunity').npcOffers(itemId, 'Giran')[0];
+        assert(quote, 'the real NPC sells the selected dual-sword input');
+        const swordSeller = Basket.sellerFor(itemId, 'Giran', quote.price);
+        state = await seed(id, 10000000, { classId: 2, equipmentPlan: {
+            strategy: 'market', status: 'active', target: { selfId: 123, slot: 7 },
+            combine: { requirements: [{ selfId: 123, amount: 2 }] }
+        } });
+        if (held) await DB.setItem(id, { selfId: itemId, name: Data.items.find(row => row.selfId === itemId).template.name,
+            amount: held, equipped: false, slot: 7 });
+        state = await Life.upsertState({ ...state, level: 40, currentRegion: 'Giran', loc: swordSeller,
+            inventory: Life.inventorySummaryFromItems(await DB.fetchItems(id)) }, 'dual_input_basket_fixture');
+        const bought = await Basket.purchase(state, { seller: swordSeller,
+            lines: [{ selfId: itemId, amount: ordered, unitPrice: quote.price, autoEquip: false }] });
+        assert(bought.ok);
+        assert.equal(await amount(id, itemId), 2, 'the ordered pair completes despite an unrelated bridge project');
+        assert.equal(await amount(id, 57), 10000000 - ordered * quote.price, 'only the missing blades are paid for');
+        await Basket.purchase(bought.state, { seller: swordSeller, lines: [], original: bought.economyCommand });
+        assert.equal(await amount(id, itemId), 2, 'receipt replay cannot duplicate the blades');
+    }
     console.log('Native NPC basket: actual seller, multi-item debit, partial progress, restart/replay, aggregate funding, rollback and hot delivery passed');
 }
 run().then(() => DB.close()).catch(async error => { console.error(error); process.exitCode = 1; await DB.close(); });

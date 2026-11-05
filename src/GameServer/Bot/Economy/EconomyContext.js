@@ -702,9 +702,14 @@ const LEAF_CHECKS = Object.freeze({
         && leaf.rootKey === `scores:${leaf.targetId}` ? '' : TARGET,
     helping: (state, leaf) => Number.isSafeInteger(leaf.targetId) && leaf.targetId > 0
         && leaf.rootKey === `care:${leaf.targetId}` ? '' : TARGET,
-    improving: (state, leaf) => {
+    improving: (state, leaf, deps, input) => {
         const improvement = leaf.improvement;
         if (!improvement || typeof improvement !== 'object' || Array.isArray(improvement)) return IMPROVEMENT;
+        // A conversion ends when its product arrives, even during a town
+        // visit that defers bag changes. A partial crystal batch also ends
+        // this command: its consumed inputs need a fresh selection.
+        if (ColdEconomyDecision.ownItem(leaf) !== null
+            && ColdEconomyDecision.progressSince(withHeldUnits(leaf, input.heldUnits), state) > 0) return FILLED;
         // An enchant or a special ability names its object: it is still in the
         // bag under its item at the enchant level the decision read. Other
         // objects in the bag are no input; an exchange or a crystallization

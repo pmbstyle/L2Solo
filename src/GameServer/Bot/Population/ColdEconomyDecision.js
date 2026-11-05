@@ -294,7 +294,7 @@ function materialHunt(leaf) {
     return leaf?.activity === 'hunting' && leaf.funding !== true
         && Number.isSafeInteger(leaf.itemId) && leaf.itemId > 0 && Number.isFinite(leaf.amount) && leaf.amount > 0;
 }
-// The item a leaf itself brings in (a purchase, a material hunt): its bag
+// The item a leaf itself brings in (a purchase, material hunt or conversion): its bag
 // and incoming count is the leaf's own progress, measured from the decision
 // (heldAtDecision on the card, heldUnits on the held build).
 // The count a step's progress is read against: the decision's, else this state's.
@@ -303,7 +303,9 @@ function heldAtDecisionOf(leaf, state) {
     return leaf?.heldAtDecision ?? (own === null ? undefined : heldFor(state, own));
 }
 function ownItem(leaf) {
-    return leaf?.activity === 'shopping' || materialHunt(leaf) ? leaf.itemId : null;
+    return leaf?.activity === 'shopping' || materialHunt(leaf)
+        || leaf?.activity === 'improving' && ['luxury_exchange', 'crystallize'].includes(leaf.improvement?.kind)
+            && Number.isSafeInteger(leaf.itemId) && leaf.itemId > 0 ? leaf.itemId : null;
 }
 
 // economy: the network built on `seen` (the state before the projection's
