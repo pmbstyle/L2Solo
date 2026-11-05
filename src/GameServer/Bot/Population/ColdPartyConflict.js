@@ -11,6 +11,7 @@ const partyIdOf = state => state?.party?.partyId || state?.partyId || null;
 
 const { reaction, select } = require('../../Social/ConflictParticipationPolicy');
 const RevengePolicy = require('../../Social/RevengePolicy');
+const { coldPair } = require('../../Social/PvpAggression');
 const ColdRevengeMonitor = require('./ColdRevengeMonitor');
 const ColdPvpResolver = require('./ColdPvpResolver');
 const RelationshipContext = require('../../Social/RelationshipContext');
@@ -53,9 +54,14 @@ async function apply({ event, life, owner, memory, parties, personaFor, particip
         if (!revenge || resume) return true;
         const [a, b] = sides.map(s => s.principal);
         const identity = s => ({ id: s.characterId, clanId: Number(s.stats?.clanId || 0), partyId: partyIdOf(s) });
-        const social = RevengePolicy.evaluate(memory.assess(identity(a), identity(b), {}, now()), personaFor(a));
+        const relation = memory.assess(identity(a), identity(b), {}, now());
+        const social = RevengePolicy.evaluate(relation, personaFor(a), coldPair(a, b, now(), relation.war?.mutual === true));
+        // Each member of the side that starts it reads the rule's own karma (a red member
+        // starts no revenge; a red target is free).
         return Number.isFinite(event.revengeRoll) && event.revengeRoll >= 0 && event.revengeRoll < social.chance
+            && social.reason !== 'clan_war'
             && states.every(s => ColdRevengeMonitor.available(s, now()))
+            && sides[0].members.every(s => ColdRevengeMonitor.mayStart(s, memory.clanWars))
             && ColdRevengeMonitor.nearby(a, b)
             && sides.every(side => side.members.every(s => nearby(s, side.principal)));
     };

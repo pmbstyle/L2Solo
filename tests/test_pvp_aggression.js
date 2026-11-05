@@ -21,6 +21,8 @@ const neutral = { ready: true, personal: null };
 const hostile = { ready: true, affiliation: 'stranger',
     personal: { hostility: 30, trust: -10, affinity: -10, fear: 0 } };
 const persona = { traits: { assertiveness: 0.6, caution: 0.5, empathy: 0.3, resilience: 0.5 } };
+// A red PK opponent costs no C4 standing (PvpAggression.karmaCost): the pre-karma balance.
+const RED = { targetKarma: 240 };
 const previous = Config.pvpAggression;
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-aggression-'));
 try {
@@ -37,7 +39,11 @@ try {
         assert.strictEqual(Number(run.stdout), expected, `INI value ${raw}`);
     }
     Config.pvpAggression = 0.5;
-    const base = Resource.escalationChance(persona, neutral);
+    const base = Resource.escalationChance(persona, neutral, RED);
+    assert(Resource.escalationChance(persona, neutral) < base, 'escalating against a white opponent weighs turning red');
+    assert.strictEqual(Resource.escalationChance(persona, neutral, { ownKarma: 240, targetKarma: 240 }), 0,
+        'a bot with karma escalates no dispute');
+    assert.strictEqual(Resource.escalationChance(persona, neutral, { war: true }), base, 'a mutual clan war costs no standing');
     const revenge = Revenge.evaluate(hostile, persona).chance;
     assert(Math.abs(base - 0.499) < 1e-12, 'midpoint preserves the pre-setting resource balance');
     assert(revenge > 0);
@@ -48,11 +54,11 @@ try {
     const expectedRevenge = [0, revenge / 2, revenge, (revenge + 1) / 2, 1];
     for (const [index, level] of [0, 0.25, 0.5, 0.75, 1].entries()) {
         Config.pvpAggression = level;
-        assert(Math.abs(Resource.escalationChance(persona, neutral) - expectedEscalation[index]) < 1e-12);
+        assert(Math.abs(Resource.escalationChance(persona, neutral, RED) - expectedEscalation[index]) < 1e-12);
         assert(Math.abs(Revenge.evaluate(hostile, persona).chance - expectedRevenge[index]) < 1e-12);
         assert.strictEqual(Revenge.evaluate({ ...hostile, affiliation: 'own' }, persona).chance, 0);
         assert.strictEqual(Resource.escalationChance(persona, { ready: false }), 0);
-        const input = { pressure: 3, actor: { level: 40, size: 3, partyId: 'a' },
+        const input = { pressure: 3, actor: { level: 40, size: 3, partyId: 'a', karma: 240 },
             peer: { level: 40, size: 3, partyId: 'b' }, actorPersona: persona, peerPersona: persona,
             towardPeer: neutral, towardActor: neutral };
         const roll = () => { const values = [0.99, 0, 0.3]; return () => values.shift(); };

@@ -1,5 +1,6 @@
 const Memory = invoke('GameServer/Social/InteractionMemoryRuntime');
 const Policy = require('../../Social/RevengePolicy');
+const { hotStanding } = require('../../Social/PvpAggression');
 const Threats = invoke('GameServer/Bot/AI/BotPvpThreats');
 const Risk = invoke('GameServer/Bot/AI/BotPvpRisk');
 const Arena = invoke('GameServer/World/ArenaCombatRules');
@@ -15,10 +16,18 @@ const NOTICE_RADIUS = Policy.NOTICE_RADIUS;
 function assessment(session, target, now) {
     const identity = actor => ({ id: Number(actor.fetchId()), clanId: Number(actor.fetchClanId?.() || 0),
         partyId: actor.session?.coldLifeState?.party?.partyId });
-    return Policy.evaluate(Memory.assess(identity(session.actor), identity(target), {}, now), Voice.profile(session));
+    const standing = hotStanding(target);
+    // A bot with karma starts no revenge outside a mutual clan war (the rule's own karma); a red target is free.
+    return Policy.evaluate(Memory.assess(identity(session.actor), identity(target), {}, now), Voice.profile(session),
+        { ownKarma: hotStanding(session.actor).karma, targetKarma: standing.karma, targetFlagged: standing.flagged,
+            war: invoke('GameServer/Clan/ClanWarRuntime').between(session.actor, target).mutual === true });
 }
+// A provocation or objective the bot still wants: revenge by its rule and roll; any
+// other by the rule's own karma (a bot with karma starts no fight outside a mutual war).
 function stillWanted(session, objective, now) {
-    return objective.reason !== 'revenge' || assessment(session, objective.target, now).chance > objective.revengeRoll;
+    if (objective.reason === 'revenge') return assessment(session, objective.target, now).chance > objective.revengeRoll;
+    return !Policy.startsNoFight({ ownKarma: hotStanding(session.actor).karma,
+        war: invoke('GameServer/Clan/ClanWarRuntime').between(session.actor, objective.target).mutual === true });
 }
 
 function eligible(session, target) {
@@ -111,11 +120,6 @@ function request(session, target, reason, lines, attack = true, now = Date.now()
 }
 
 function tryStart(session, now = Date.now(), rng = Math.random) {
-    // Clear karma through hunting before initiating another revenge fight.
-    if (session?.actor?.fetchKarma?.() > 0) {
-        delete session.pendingPvpProvocation;
-        return false;
-    }
     if (session?.pendingPvpProvocation) return flushPending(session, now);
     if (!String(session?.accountId || '').startsWith('bot_') || session.arenaEphemeral ||
         session.staticService || session.partyCompanion || session.pvpDefense || session.pvpRevenge || session.pvpAggressors?.size ||
@@ -132,7 +136,8 @@ function tryStart(session, now = Date.now(), rng = Math.random) {
         const target = invoke('GameServer/Bot/AI/BotPvpIndex').actor(enemyId);
         if (!eligible(session, target) || Threats.distance(session.actor, target) > NOTICE_RADIUS) continue;
         const social = assessment(session, target, now);
-        if (!(social.chance > 0)) continue;
+        // A war-only grievance is BotClanWar's fight, temporary until step 2 S4 (enemy_met).
+        if (!(social.chance > 0) || social.reason === 'clan_war') continue;
         const decision = Risk.defenseDecision(session, [target], { key: decisionKey(session, target, 'revenge', now) });
         if (decision.action !== 'fight') continue;
         session.nextRevengeAt = now + RETRY_MS;

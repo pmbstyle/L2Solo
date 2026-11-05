@@ -1,4 +1,5 @@
 // A 0..1 aggression scale, not combat permission. The midpoint preserves balance.
+const PvpRules = require('../PvpRules');
 function normalize(value) {
     if (value === undefined || value === null || String(value).trim() === '') return 0.5;
     const number = Number(value);
@@ -28,4 +29,32 @@ function retreatHp(threshold, aggression) {
     return Math.max(0.1, Math.min(0.6, threshold * retreatMultiplier(aggression)));
 }
 
-module.exports = { normalize, scaleChance, retreatMultiplier, retreatChance, retreatHp };
+// What an attack costs a bot in C4 standing (PvpRules, both threads): attacking a
+// character without karma flags the attacker, killing a white unflagged one makes it
+// red (karma); a PK and an enemy of a mutual clan war are free. The share of an
+// attack's chance the bot gives up for it, by its caution (weights ours, not C4).
+// standing: { ownKarma, targetKarma, targetFlagged, war } (missing: a white unflagged
+// target, no war). A bot with karma gives up every attack it would start outside a war:
+// it washes its karma first (C9's karma wash; ours).
+function karmaCost(persona, { ownKarma = 0, targetKarma = 0, targetFlagged = false, war = false } = {}) {
+    if (war) return 0;
+    if (Number(ownKarma) > 0) return 1;
+    const caution = Math.max(0, Math.min(1, Number(persona?.traits?.caution ?? 0.5) || 0));
+    if (PvpRules.killOutcome({ killerKarma: ownKarma, victimKarma: targetKarma, victimFlagged: !!targetFlagged }) === 'pk') {
+        return 0.2 + caution * 0.4;
+    }
+    return PvpRules.flagsAttacker(targetKarma) ? caution * 0.1 : 0;
+}
+// A side's standing as karmaCost reads it: a cold row (its karma, its cold PvP flag at
+// `at`), a hot actor (its karma and flag now).
+const coldStanding = (state, at) => ({ karma: Number(state?.stats?.karma) || 0,
+    flagged: Number(state?.stats?.coldPvp?.flagUntil || 0) > at });
+const hotStanding = actor => ({ karma: Number(actor?.fetchKarma?.()) || 0, flagged: Number(actor?.fetchPvpFlag?.()) > 0 });
+// The standing of cold row `a` attacking cold row `b` at `at` (karmaCost's argument);
+// war: their clans' mutual war (the pair's relation, InteractionMemory.assess).
+function coldPair(a, b, at, war = false) {
+    const target = coldStanding(b, at);
+    return { ownKarma: coldStanding(a, at).karma, targetKarma: target.karma, targetFlagged: target.flagged, war: war === true };
+}
+
+module.exports = { normalize, scaleChance, retreatMultiplier, retreatChance, retreatHp, karmaCost, coldStanding, hotStanding, coldPair };

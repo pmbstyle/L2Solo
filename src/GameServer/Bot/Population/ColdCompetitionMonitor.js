@@ -1,5 +1,6 @@
 const { decide } = require('./ColdCompetitionPolicy');
 const Visible = require('../../Social/VisibleStrength');
+const { coldStanding } = require('../../Social/PvpAggression');
 const BotErrands = require('./BotErrands');
 const PartyHuntingTarget = require('./PartyHuntingTarget');
 // A party competes as one unit only when no member is on one of these errands.
@@ -208,7 +209,8 @@ class ColdCompetitionMonitor {
             // participant written since this scan (ColdConflictDecision.refresh).
             const decisionRolls = Array.from({ length: 4 }, (_, i) => TendencyRoll.roll('competition_decision', key, i));
             let decisionIndex = 0;
-            const look = unit => ({ ...unit, own: this.ownSide(unit.members, timestamp), seen: Visible.stateSide(unit.members, timestamp) });
+            const look = unit => ({ ...unit, own: this.ownSide(unit.members, timestamp), seen: Visible.stateSide(unit.members, timestamp),
+                ...coldStanding(unit.state, timestamp) });
             const outcome = decide({ pressure: group.pressure, actor: look(actor), peer: look(peer), towardPeer: ab, towardActor: ba,
                 actorPersona: this.personaFor(actor.state), peerPersona: this.personaFor(peer.state), rng: () => decisionRolls[decisionIndex++], key,
                 actorKnowledge: this.knowledgeFor(actor.state, this.personaFor(actor.state), `${key}:0`),

@@ -35,6 +35,21 @@ assert.strictEqual(Policy.evaluate({ ...social, effective: { ...social.personal,
 assert(Policy.evaluate({ ...social, effective: { ...social.personal, fear: 30 } }, persona).chance < chance);
 assert(Policy.evaluate({ ...social, clanSocial: { selfDiscipline: { stage: 'probation' } } }, persona).chance < chance);
 assert(Policy.evaluate({ ...social, effective: { ...social.personal, hostility: 45, trust: -30 } }, persona).chance > chance);
+// C4 standing (PvpRules): a bot with karma washes it before any fight; a red PK is free to
+// hunt; a white target weighs being flagged and turning red, a flagged one only the flag.
+assert.deepStrictEqual(Policy.evaluate(social, persona, { ownKarma: 240 }), { chance: 0, reason: 'own_karma' },
+    'a red bot starts no revenge');
+const red = Policy.evaluate(social, persona, { targetKarma: 240 }).chance;
+const flagged = Policy.evaluate(social, persona, { targetFlagged: true }).chance;
+assert(red > flagged && flagged > chance, 'revenge on a red PK is free, on a flagged target cheaper than on a white one');
+assert.strictEqual(Policy.evaluate(social, persona, {}).chance, chance, 'no standing reads as a white unflagged target');
+// A mutual clan war is a grievance of its own; a stranger without one is none.
+const stranger = { ready: true, affiliation: 'stranger', personal: null };
+assert.strictEqual(Policy.evaluate(stranger, persona).chance, 0);
+const war = Policy.evaluate(stranger, persona, { war: true });
+assert(war.chance > 0 && war.reason === 'clan_war', 'a mutual clan war enemy is met as a grievance');
+assert(Policy.evaluate(stranger, persona, { war: true, ownKarma: 1 }).chance > 0,
+    'a mutual-war kill gives no karma (C4): a red bot still meets its war enemies');
 const worker = new Memory();
 worker.accept(JSON.parse(JSON.stringify(memory.snapshot(1))));
 assert.deepStrictEqual(Policy.evaluate(worker.assess({ id: 1 }, { id: 2 }, {}, at), persona), Policy.evaluate(social, persona));
@@ -62,6 +77,24 @@ const fresh = input => forced(new ColdRevengeMonitor(), input);
 assert.strictEqual(fresh(entries.map(e => ({ ...e, state: { ...e.state, party: { partyId: 'same' } } }))).length, 0);
 assert.strictEqual(fresh(entries.map(e => ({ ...e, state: { ...e.state, stats: { revengeUntil: at + 1 } } }))).length, 0);
 assert.strictEqual(fresh(entries.map(e => ({ ...e, state: { ...e.state, loc: { ...e.state.loc, locX: e.state.characterId * 2000 } } }))).length, 0);
+const withKarma = (id, karma) => entries.map(e => e.state.characterId === id ? { ...e, state: { ...e.state, stats: { karma } } } : e);
+assert.strictEqual(fresh(withKarma(1, 240)).length, 0, 'a cold bot with karma takes no revenge');
+assert.strictEqual(fresh(withKarma(2, 240)).length, 1, 'a cold bot takes revenge on a red PK');
+{
+    // Its clan at mutual war with its enemy's: the war is passed to the rule, so a red bot
+    // still takes its revenge (no karma at stake), with no karma cost.
+    const ClanWarView = require('../src/GameServer/Clan/ClanWarView');
+    memory.clanWars = new ClanWarView();
+    memory.clanWars.accept({ fromClanId: 10, toClanId: 20, revision: 1, active: 1 });
+    memory.clanWars.accept({ fromClanId: 20, toClanId: 10, revision: 2, active: 1 });
+    const clans = karma => entries.map(e => ({ ...e, state: { ...e.state, stats: { clanId: e.state.characterId === 1 ? 10 : 20,
+        ...(e.state.characterId === 1 ? { karma } : {}) } } }));
+    const atWar = fresh(clans(240));
+    assert.strictEqual(atWar.length, 1, 'a red bot at mutual war with its enemy\'s clan still takes revenge');
+    assert(atWar[0].chance > chance, 'with no karma cost: above the white target\'s chance');
+    delete memory.clanWars;
+    assert.strictEqual(fresh(clans(240)).length, 0, 'without the war it washes its karma first');
+}
 const bounded = new ColdRevengeMonitor();
 bounded.sample(Array.from({ length: 2000 }, (_, i) => ({ ...entries[0], state: { ...entries[0].state, characterId: i + 100 } })), memory, at, () => persona);
 assert.strictEqual(bounded.cursor, MAX_ACTORS, 'worker decision work has a fixed actor budget');
