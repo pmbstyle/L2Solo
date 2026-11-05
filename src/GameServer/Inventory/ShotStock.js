@@ -535,7 +535,9 @@ function restockPlan(value, options = {}) {
     // packet and targets are already in its state (its held decision), a far bot's in its row.
     const onMain = require('node:worker_threads').isMainThread;
     const context = options.context || (onMain ? Economy.keptKit(state) : Economy.forState(state));
-    const stock = context.stock('shots');
+    // kit: the visit's own amounts (NpcRestockPlan.collect at the local quote, a hot visit's held kit);
+    // the wish's rank at the bot's own estimate (EconomyContext.visitStock).
+    const { row: stock, estimate } = Economy.visitStock(context, options.kit, 'shots');
     const targetAmount = Math.max(0, Number(options.targetAmount ?? stock.target) || 0);
     const reserve = context.survivalReserve;
     const unitPrice = Number(options.unitPrice ?? invoke('GameServer/Bot/Economy/StaticMerchantPricing')
@@ -547,7 +549,7 @@ function restockPlan(value, options = {}) {
     // The wish's rank at the price each source asks (E187): the board lines
     // at the cheapest line's price, the NPC remainder at the NPC's.
     const allowanceAt = price => PurchaseFunding.stockAllowance(fundedState, wish, plan.selfId,
-        PurchaseFunding.survivalTranche(context, plan.selfId, price), PurchaseFunding.quoteScale(stock.unitPrice, price));
+        PurchaseFunding.survivalTranche(context, plan.selfId, price), PurchaseFunding.quoteScale(estimate, price));
     const allowance = allowanceAt(npcPrice);
     const maxPrice = npcPrice > 0 ? npcPrice - 1 : invoke('GameServer/Bot/Population/ColdEconomyDecision').economyFor(state).worth(plan.selfId);
     // The players' lines cheaper than the NPC, cheapest first, then the NPC:
@@ -624,7 +626,7 @@ async function purchaseActorRestock(actor, options = {}) {
     ] : [];
     const restock = restockPlan(actor, { plan, targetAmount: options.targetAmount,
         unitPrice: options.unitPrice ?? localQuote?.price, potionUnitPrice: options.potionUnitPrice,
-        offers });
+        offers, kit: options.kit });
     if (!restock.needed) return { ok: true, changed: false, plan, amount: restock.currentAmount, cost: 0 };
     if (restock.amount <= 0) {
         return { ok: false, reason: 'not_enough_adena', plan, adena: restock.adena,
@@ -707,7 +709,7 @@ function needsActorRestock(actor) {
 // Where a hot bot goes for its shots in `town`: the best seller there, a
 // city merchant's or a shop's stall, or an ad dealt with by record at its
 // place (D6). The purchase itself is the restock (purchaseActorRestock).
-function restockTarget(actor, town, excludedIds = []) {
+function restockTarget(actor, town, excludedIds = [], kit = undefined) {
     const excluded = new Set(excludedIds.map(Number));
     const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
     const offers = MarketOpportunity.hotOffers(planForActor(actor).selfId, { town, buyerCharacterId: actor.fetchId() });
@@ -717,7 +719,7 @@ function restockTarget(actor, town, excludedIds = []) {
         if (offer.sellerKind !== 'fixed' && !String(offer.sourceType).startsWith('afk_') && offer.store?.kind !== 'player') continue;
         if (offer.sellerKind === 'fixed' && !offer.session?.actor) continue;
         if (offer.store?.kind === 'player') {
-            fundedLive ||= new Set(restockPlan(actor, { offers }).shops.map(line => line.offer));
+            fundedLive ||= new Set(restockPlan(actor, { offers, kit }).shops.map(line => line.offer));
             if (!fundedLive.has(offer)) continue;
         }
         return MarketOpportunity.offerTarget(offer, town);
@@ -727,7 +729,7 @@ function restockTarget(actor, town, excludedIds = []) {
 
 // Ordinary shops keep their stock in the owner's bag. Walk to an affordable
 // seller before the restock; an actor in another part of town cannot pay it remotely.
-function liveRestockTarget(actor, town) {
+function liveRestockTarget(actor, town, kit = undefined) {
     if (!town) return null;
     // lazy: cycle MarketOpportunity reads ShotStock at load
     const Market = invoke('GameServer/Bot/Economy/MarketOpportunity');
@@ -737,7 +739,7 @@ function liveRestockTarget(actor, town) {
     if (!offers.some(offer => offer.store?.kind === 'player')) return null;
     // lazy: cycle NpcRestockPlan reads ShotStock at load
     const quote = invoke('GameServer/Bot/Economy/NpcRestockPlan').quoteFor(plan.selfId, town);
-    const restock = restockPlan(actor, { plan, offers, unitPrice: quote?.price });
+    const restock = restockPlan(actor, { plan, offers, unitPrice: quote?.price, kit });
     const line = restock.shops[0];
     return line?.offer.store?.kind === 'player' ? Market.offerTarget(line.offer, town) : null;
 }

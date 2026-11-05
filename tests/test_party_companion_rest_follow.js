@@ -139,8 +139,8 @@ function authoredKitInputs(actor, session) {
     // the NPC's list price (the bot's estimate where no NPC sells it).
     const listPrice = id => { const list = invoke('GameServer/Bot/Economy/StaticMerchantPricing').botNpcListPrice(id);
         return Number.isFinite(list) && list > 0 ? list : price(id); };
-    const survivalReserve = (escapeCost > 0 ? listPrice(736) * Math.max(0, 1 - escapeHeld) : 0)
-        + Math.max(0, Math.ceil(shotUse) - shotHeld) * listPrice(plan.selfId)
+    // No Scroll of Escape in it (situations.md B2).
+    const survivalReserve = Math.max(0, Math.ceil(shotUse) - shotHeld) * listPrice(plan.selfId)
         + Math.max(0, Math.ceil(potionUse) - potionHeld) * listPrice(potionId);
     const potionUnitPrice = invoke('GameServer/Bot/Economy/StaticMerchantPricing').cheapestPurchase(potionId);
     const potionReserve = Math.max(0, Math.ceil(potionUse) - potionHeld) * potionUnitPrice;

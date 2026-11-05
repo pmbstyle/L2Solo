@@ -2,59 +2,63 @@ const assert = require('assert');
 
 require('../src/Global');
 
-// A bot keeps a few Scrolls of Escape for its town trips (part of H13, step
-// 3.2): a town visit buys what is missing up to the target at the local NPC,
-// from the Adena above the consumables reserve, as the healing potion
-// restock does; the sale keeps the stock and sells a surplus (H12 narrowed).
+// A Scroll of Escape is no survival item (situations.md B2): a bot carries one
+// per outing when the walk it saves is worth more than the scroll at its hour,
+// bought at the local NPC from money its queue does not hold; a broke bot
+// walks. The sale keeps every scroll it holds.
 const DataCache = invoke('GameServer/DataCache');
 DataCache.init();
 const Database = invoke('Database');
 const ScrollStock = invoke('GameServer/Bot/Travel/ScrollStock');
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
-const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
+const Packet = invoke('GameServer/Bot/Economy/StatsPacket');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 
-const TARGET = ScrollStock.TARGET_AMOUNT;
-assert.strictEqual(TARGET, 10, 'the temporary carried target is ten scrolls');
 const price = ScrollStock.localNpcPrice('Dion');
 assert.ok(price > 0, 'the Dion grocer sells Scrolls of Escape');
 assert.ok(ScrollStock.localNpcPrice('Floran Village') > 0, 'so does Floran\'s');
 
-function cold(scrolls, adena = 100000) {
+// A cold bot in Dion whose build rated its kit: the scroll's saved hours, its hour.
+function cold(scrolls, { adena = 100000, scrollHours = .5, hour = 10000, karma = 0 } = {}) {
     return {
         characterId: 9500101, level: 30, adena, phase: 'cold', activity: 'shopping', currentRegion: 'Dion',
-        stats: { classId: 0, role: 'dps' },
+        stats: { classId: 0, role: 'dps', karma,
+            money: Packet.money({ hourAdena: hour, moneyPrice: 1 / hour, survivalReserve: 0, firstUnfundedPrice: 0 }),
+            kitRates: Packet.kitRates({ shotId: 0, shotUse: 0, shotBenefit: 0, shotsCanRestock: false, potionId: 0, potionUse: 0,
+                potionRestUse: 0, potionBenefit: 0, scrollHours, outingHours: 1, gapHorizonHours: 0 }) },
         inventory: { 57: { selfId: 57, name: 'Adena', amount: adena },
             ...(scrolls ? { 736: { selfId: 736, name: 'Scroll of Escape', amount: scrolls } } : {}) }
     };
 }
 
-assert.strictEqual(ScrollStock.restockPlan(cold(0), { unitPrice: price }).amount, TARGET, 'an empty stock buys the target');
-assert.strictEqual(ScrollStock.restockPlan(cold(1), { unitPrice: price }).amount, 9, 'only what is missing');
-assert.strictEqual(ScrollStock.restockPlan(cold(TARGET), { unitPrice: price }).needed, false, 'a full stock buys nothing');
-const reserve = HealingPotionStock.operationalReserve(cold(0, 7600));
-const poor = ScrollStock.restockPlan(cold(0, reserve + price), { unitPrice: price });
-assert.strictEqual(poor.amount, 1, 'the consumables reserve is kept: one scroll above it');
-// The reserve holds the escape scroll at its NPC list price: a wallet of the reserve alone
-// buys only that mandatory scroll (at the town's quote, when it holds that much), none of the
-// optional nine.
-assert.strictEqual(ScrollStock.restockPlan(cold(0, reserve), { unitPrice: price }).amount, reserve >= price ? 1 : 0,
-    'from the reserve only its own escape scroll is bought');
+assert(.5 * 10000 > price, 'fixture: half an hour at 10k Adena is worth more than a scroll');
+const bought = ScrollStock.restockPlan(cold(0), { unitPrice: price });
+assert.strictEqual(bought.amount, 1, 'one scroll for the outing');
+assert(bought.funding.side > 0, 'paid from money the queue does not hold, at the hours it saves');
+assert.strictEqual(ScrollStock.restockPlan(cold(1), { unitPrice: price }).needed, false, 'one held: none bought');
+assert.strictEqual(ScrollStock.restockPlan(cold(0, { scrollHours: .01, hour: 1000 }), { unitPrice: price }).needed, false,
+    'a walk worth less than the scroll: the bot walks');
+assert.strictEqual(ScrollStock.restockPlan(cold(0, { scrollHours: null }), { unitPrice: price }).needed, false,
+    'a build that did not price the walk buys none');
+assert.strictEqual(ScrollStock.restockPlan(cold(0, { karma: 100 }), { unitPrice: price }).needed, false,
+    'towns closed by karma: no scroll');
+const kit = Economy.keptKit(cold(0));
+assert.strictEqual(kit.kitCost(736), 0, 'the scroll is no part of the survival reserve');
+assert.strictEqual(kit.survivalReserve, 0);
 
 const patch = ScrollStock.coldPurchasePatch(cold(0), { unitPrice: price });
-assert.strictEqual(patch.inventory[736].amount, TARGET);
-assert.strictEqual(patch.adena, 100000 - TARGET * price);
-assert.strictEqual(patch.inventory[57].amount, 100000 - TARGET * price);
+assert.strictEqual(patch.inventory[736].amount, 1);
+assert.strictEqual(patch.adena, 100000 - price);
+assert.strictEqual(patch.inventory[57].amount, 100000 - price);
 assert.deepStrictEqual({ selfId: patch.purchase.selfId, amount: patch.purchase.amount, cost: patch.purchase.cost },
-    { selfId: 736, amount: TARGET, cost: TARGET * price });
-assert.strictEqual(ScrollStock.coldPurchasePatch(cold(TARGET), { unitPrice: price }), null);
+    { selfId: 736, amount: 1, cost: price });
+assert.strictEqual(ScrollStock.coldPurchasePatch(cold(1), { unitPrice: price }), null);
 
-// The sale keeps the stock and sells the surplus.
-assert.deepStrictEqual(ScrollStock.keptAmounts(cold(TARGET + 3)), { 736: TARGET });
+// The sale keeps every scroll: each saves a walk.
+assert.deepStrictEqual(ScrollStock.keptAmounts(cold(13)), { 736: 13 });
 const sold = (state) => new Map(MarketListingPolicy.evaluate(state, { unlimited: true, states: [] }).npc
     .map((entry) => [entry.selfId, entry.count])).get(736);
-assert.strictEqual(sold(cold(TARGET)), undefined, 'the stock is not NPC junk');
-assert.strictEqual(sold(cold(TARGET + 3)), 3, 'a surplus is sold');
+assert.strictEqual(sold(cold(13)), undefined, 'no scroll is NPC junk');
 
 // A hot bot buys into its backpack the same way.
 (async () => {
@@ -75,12 +79,12 @@ assert.strictEqual(sold(cold(TARGET + 3)), 3, 'a surplus is sold');
                 insertItem: (id, selfId, data) => rows.set(Number(selfId), { id, amount: data.amount })
             }
         };
-        const bought = await ScrollStock.purchaseActorRestock(actor, { unitPrice: price, context: Economy.basics(cold(0)) });
-        assert.strictEqual(bought.ok, true);
-        assert.strictEqual(rows.get(736).amount, TARGET, 'the hot bot holds the target');
-        assert.strictEqual(rows.get(57).amount, 100000 - TARGET * price, 'and paid the NPC price');
-        const again = await ScrollStock.purchaseActorRestock(actor, { unitPrice: price, context: Economy.basics(cold(0)) });
-        assert.strictEqual(again.changed, false, 'a full hot stock buys nothing');
+        const hot = await ScrollStock.purchaseActorRestock(actor, { unitPrice: price, context: Economy.keptKit(cold(0)) });
+        assert.strictEqual(hot.ok, true);
+        assert.strictEqual(rows.get(736).amount, 1, 'the hot bot holds its scroll');
+        assert.strictEqual(rows.get(57).amount, 100000 - price, 'and paid the NPC price');
+        const again = await ScrollStock.purchaseActorRestock(actor, { unitPrice: price, context: Economy.keptKit(cold(0)) });
+        assert.strictEqual(again.changed, false, 'a held scroll buys nothing');
     } finally {
         Database.updateItemAmount = realUpdate;
         Database.setItem = realSet;

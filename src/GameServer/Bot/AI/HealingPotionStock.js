@@ -144,7 +144,10 @@ function restockPlan(value, options = {}) {
     // the background), as the worker does for a target it is given.
     const onMain = require('node:worker_threads').isMainThread;
     const context = options.context || (onMain || options.targetAmount !== undefined ? Economy.keptKit(state) : Economy.forState(state));
-    const targetAmount = Math.max(0, Number(options.targetAmount ?? context.stock('potions').target) || 0);
+    // kit: the visit's own amounts (NpcRestockPlan.collect at the local quote, a hot visit's held kit);
+    // the wish's rank at the bot's own estimate (EconomyContext.visitStock).
+    const { row: stock, estimate } = Economy.visitStock(context, options.kit, 'potions');
+    const targetAmount = Math.max(0, Number(options.targetAmount ?? stock.target) || 0);
     // The purchased potion's own row (written by the purchase) and the whole stock (what is missing).
     const currentAmount = options.inventory
         ? amountInInventory(options.inventory, potion.selfId)
@@ -158,7 +161,7 @@ function restockPlan(value, options = {}) {
     const desired = Math.max(0, targetAmount - stockAmount);
     const wish = context.network?.queue?.find(row => Number(row.object?.itemId) === Number(potion.selfId));
     const fundedState = context.statsPacket ? { ...state, stats: { ...state.stats, money: context.statsPacket.money } } : state;
-    const allowance = PurchaseFunding.stockAllowance(fundedState, wish, potion.selfId, PurchaseFunding.survivalTranche(context, potion.selfId, unitPrice), PurchaseFunding.quoteScale(context.stock('potions').unitPrice, unitPrice));
+    const allowance = PurchaseFunding.stockAllowance(fundedState, wish, potion.selfId, PurchaseFunding.survivalTranche(context, potion.selfId, unitPrice), PurchaseFunding.quoteScale(estimate, unitPrice));
     const affordable = unitPrice > 0 ? Math.floor(allowance / unitPrice) : 0;
     const amount = Math.min(desired, affordable);
     return {

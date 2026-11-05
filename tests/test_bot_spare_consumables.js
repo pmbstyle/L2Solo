@@ -30,8 +30,8 @@ async function run() {
         currentRegion: 'Giran', loc: world.town(),
         stats: { classId: 0, role: 'dps' },
         inventory: Object.fromEntries([
-            // One Scroll of Escape above the carried target (ten since 71ff0f77) is surplus.
-            line(57, 1000), line(17, 500), line(736, invoke('GameServer/Bot/Travel/ScrollStock').TARGET_AMOUNT + 1), line(1661, 2), line(1831, 4),
+            // Scrolls of Escape: every one is kept (each saves a walk to town).
+            line(57, 1000), line(17, 500), line(736, 11), line(1661, 2), line(1831, 4),
             line(1060, 10), line(1061, 30), line(956, 1), line(1458, 40)
         ].map((entry) => [String(entry.selfId), entry]))
     };
@@ -127,7 +127,7 @@ async function run() {
     const npc = new Map(visit.npc
         .map((entry) => [entry.selfId, entry.count]));
     assert.deepStrictEqual([...npc.entries()].sort((a, b) => a[0] - b[0]),
-        [[17, 500], [736, 1], [1060, 10], [1061, 20], [1661, 2], [1831, 4]],
+        [[17, 500], [1060, 10], [1061, 20], [1661, 2], [1831, 4]],
         'the cold visit sells spare consumables to the NPC while retaining grade crystals for the market');
     assert(visit.listings.some(entry => entry.selfId === 1458 && entry.count === 40),
         'the unreserved crystal surplus earns a market quote without a current buyer');

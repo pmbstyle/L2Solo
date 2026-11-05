@@ -304,7 +304,7 @@ async function run() {
     assert.equal(scrollPlan(scrollRow(0)).funding.side, 0, 'no saved hours, no side money');
     assert.equal(scrollPlan(scrollRow(null)).funding.side, 0, 'a row without scroll hours saves none: no route is solved on main');
     assert.equal((await Restock.purchase(state, { town: 'Dion', shots: false, potions: false })).receipts.length, 1);
-    assert.equal(await amount(9543, 736), 10, 'a planned side purchase commits through the writer');
+    assert.equal(await amount(9543, 736), 1, 'a planned side purchase commits through the writer: one scroll for the outing');
     // A refusal the next pass cannot change ends the purchase, never the visit.
     const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
     state = await seed(9544, 1000000, { classId: 1, money: null, townVisit: { town: 'Dion', startedAt: Date.now() },

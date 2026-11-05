@@ -193,6 +193,8 @@ async function run() {
         [{ selfId: 1, name: 'Short Sword', amount: 1, equipped: true, slot: 7 }]);
     state = { ...state, level: 40, exp: Data.experience[39],
         stats: { ...state.stats, money: [1, 1, 3000000, 0] } };
+    // Main reads the kit rates the bot's build publishes (stats.kitRates).
+    state.stats.kitRates = Economy.kitRates(Economy.basics(state));
     const survival = Economy.basics(state).stock('shots');
     const survivalUnits = Math.ceil(survival.usePerHour);
     const shotQuote = Npc.quoteFor(survival.itemId, 'Dion');
@@ -323,6 +325,12 @@ async function run() {
     ShotStock.planForState = (shotState, shotOptions = {}) => realPlan(shotState, { blessed: false, ...shotOptions });
     ShotStock.usePolicy = (shotState, prepared = {}) => ({ ...realUse(shotState, prepared), usePerHour: 1000, paidUsePerHour: 1000, purchaseUsePerHour: 1000 });
     try {
+        // Its build's kit rates (stats.kitRates), read at the visit's first restock: a Scroll of Escape
+        // saving an hour's walk at its 100k Adena hour is worth carrying (B2).
+        const Packet = invoke('GameServer/Bot/Economy/StatsPacket');
+        const rates = Packet.ratesOf(Economy.kitRates(Economy.basics(state)));
+        session.coldLifeState = { ...state, stats: { ...state.stats, money: [100000, .00001, 0, 0],
+            kitRates: Packet.kitRates({ ...rates, scrollHours: 1 }) } };
         try {
             global.setTimeout = (callback, delay, ...args) => {
                 if (delay === 4000 || delay === 5000) { timeouts.push({ callback, delay }); return {}; }

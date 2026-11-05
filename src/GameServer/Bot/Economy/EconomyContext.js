@@ -943,7 +943,11 @@ function ratesNow(rates, state, bag, price) {
 // and the reserve is empty. Prices go through the caller's price reader, so
 // each read joins the review's inputs. scrollHours: the hours a Scroll of
 // Escape saves, read only when a scroll is priced (a build solves its route
-// lazily).
+// lazily). The scroll is no survival item (situations.md B2): one is carried
+// per outing when the walk it saves is worth more than it costs at the bot's
+// hour, none in towns karma closes; a broke bot walks. It is no part of the
+// reserve; a purchase pays it from money the queue does not hold (ScrollStock).
+// One per outing is our rule, not C4.
 // The survival kit is priced at the NPC's list price (StaticMerchantPricing.
 // botNpcListPrice, kept per item), not the bot's estimate: the reserve holds
 // that, and a restock's survival tranche spends that share (kitCost) at any
@@ -973,19 +977,18 @@ function kitReader(rates, bag, wallet, price, scrollHours = () => positive(rates
             benefitPerUnit: use + restUse > 0 ? positive(shots ? rates.shotBenefit : rates.potionBenefit) : 0 };
     };
     const kit = [base('shots'), base('potions')];
-    const escapeCost = held || bag.closed ? 0 : survivalPrice(736, price) * Math.max(0, 1 - bag.scrolls);
-    // The survival reserve: the escape scroll and the kit's missing survival units at their list price.
-    const reserve = escapeCost + kit.reduce((sum, row) => sum + row.survivalMissing * row.survivalPrice, 0);
+    // The survival reserve: the kit's missing survival units at their list price.
+    const reserve = kit.reduce((sum, row) => sum + row.survivalMissing * row.survivalPrice, 0);
     const hours = held ? 0 : positive(rates.outingHours);
     const stock = kind => {
         if (kind === 'scrolls') {
-            const current = bag.scrolls, survivalTarget = held ? current : 1,
-                target = held ? current : invoke('GameServer/Bot/Travel/ScrollStock').TARGET_AMOUNT;
-            const missing = Math.max(0, target - Math.max(current, survivalTarget));
+            const current = bag.scrolls, unitPrice = price(736);
+            const target = held ? current : bag.closed ? 0 : current >= 1 || scrollHours() * bag.hour > unitPrice ? 1 : 0;
+            const missing = Math.max(0, target - current);
             const benefitPerUnit = current < target ? scrollHours() : 0;
             return { itemId: 736, usePerHour: 0, current, hours: Infinity, targetHours: hours, target,
-                survivalTarget, survivalMissing: Math.max(0, survivalTarget - current), missing,
-                unitPrice: price(736), survivalPrice: survivalPrice(736, price), benefitPerUnit, benefitHours: missing * benefitPerUnit, needed: current < target };
+                survivalTarget: 0, survivalMissing: 0, missing, unitPrice, survivalPrice: survivalPrice(736, price),
+                benefitPerUnit, benefitHours: missing * benefitPerUnit, needed: false };
         }
         const row = kit[kind === 'shots' ? 0 : 1], { itemId, current, use, restUse, line } = row;
         // The rest bottles (RestPotion.stockUse) beside the survival use: an
@@ -1008,8 +1011,6 @@ function kitReader(rates, bag, wallet, price, scrollHours = () => positive(rates
     // the share beside the queue's money and never refuses the kit itself).
     const kitCost = (id, unitPrice = null) => {
         const quoted = Number.isFinite(unitPrice) && unitPrice > 0;
-        if (Number(id) === 736 && (held || bag.closed)) return 0;
-        if (Number(id) === 736) return quoted ? unitPrice * Math.max(0, 1 - bag.scrolls) : escapeCost;
         return kit.filter(row => row.itemId === Number(id)).reduce((sum, row) => sum
             + row.survivalMissing * (quoted ? unitPrice : row.survivalPrice), 0);
     };
@@ -2122,12 +2123,26 @@ function ratesOf(state, quiet) {
 // The kit a purchase reads (ShotStock, HealingPotionStock and ScrollStock
 // restocks, NpcRestockPlan, ColdMarketService funding, the card view):
 // stock, kitCost, survivalReserve and price, priced at the bot's prices.
-function keptKit(state = {}, deps = {}) {
+// options.quote(id): a town's own price (NpcRestockPlan.quoteFor), read before
+// the bot's: a visit's amounts are priced where it buys (its funding stays at
+// the bot's own estimate, E187: visitStock). options.rates: a build's own
+// rates (the worker's fresh build), read instead of the published row.
+function keptKit(state = {}, deps = {}, options = {}) {
     let read = null;
-    const price = id => (read ||= personal(state, deps).price)(id);
+    const own = id => (read ||= personal(state, deps).price)(id);
+    const quote = options.quote;
+    const price = !quote ? own : id => { const local = Number(quote(id)); return local > 0 ? local : own(id); };
     const bag = kitBag(state);
-    const { stock, kitCost, reserve } = kitReader(ratesNow(ratesOf(state), state, bag, price), bag, Funding.budget(state), price);
+    const rates = options.rates !== undefined ? options.rates : ratesOf(state);
+    const { stock, kitCost, reserve } = kitReader(ratesNow(rates, state, bag, price), bag, Funding.budget(state), price);
     return { stock, kitCost, survivalReserve: reserve, price };
+}
+// A restock's stock row of a kind: its amounts from the visit's kit (kit: at the
+// town's quotes; else the funding context's own) and the estimate its wish is
+// ranked at, always the funding context's (the bot's own price, E187).
+function visitStock(context, kit, kind) {
+    const own = context.stock(kind);
+    return { row: kit ? kit.stock(kind) : own, estimate: own.unitPrice };
 }
 // The sale's kept stock (ItemDisposition.saleCandidates): each kind's stock
 // row (itemId, target, beginnerCurrent), no price read. The wallet does not
@@ -2365,5 +2380,5 @@ function reset() {
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
 module.exports = { quietGearBuildCount: () => quietGearBuilds, buildDoors: () => ({ ...doors, ...Agenda.counts() }), countDoor,
-    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), earningDue, linkStats, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockReader, kitReader, kitBag, kitRates, keptKit, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
+    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), earningDue, linkStats, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockReader, kitReader, kitBag, kitRates, keptKit, visitStock, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
     craftIncome };

@@ -1324,7 +1324,9 @@ function buildProjection(state, ctx, deps) {
         quantityInputs?.stockPhysical(`stock:${kind}`, stock.itemId, heldStock);
         root({ key: `stock:${kind}`, need: 'power', object: { itemId: stock.itemId, amount, kind },
             // A scroll saves time, not a life: it never outranks the kit, the
-            // visit's restock brings it along (user 11-01, T177).
+            // visit's restock brings it along (user 11-01, T177). Temporary until
+            // step 3 C5: survival stock still outranks unfinished equipment (a
+            // stock root of tier 0 leaves the queue while gear is required).
             progressionPriority: progression.required && kind !== 'scrolls' && stock.survivalMissing > 0 ? 4 : 0,
             valueHours: amount * stock.benefitPerUnit * powerWeight, price: amount * stock.unitPrice,
             // The survival tranche is the kit's cost (kitCost), already held

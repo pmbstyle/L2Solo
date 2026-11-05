@@ -1049,7 +1049,8 @@ async function run() {
         // Main reads the rates this build publishes over the same bag.
         const rated = { ...base, stats: { ...base.stats, kitRates: context.statsPacket.kitRates } };
         assert.equal(Shot.keptAmounts(rated)[stock.itemId], stock.target);
-        assert(invoke('GameServer/Bot/Economy/PurchaseFunding').operatingReserve({ level: 78, adena: 1e9 }) > 0);
+        assert.equal(invoke('GameServer/Bot/Economy/PurchaseFunding').operatingReserve({ level: 78, adena: 1e9 }),
+            Economy.basics({ level: 78, adena: 1e9 }).survivalReserve, 'a bot without a packet reserves its kit, not a share of its wallet');
         const plan = Shot.restockPlan({ ...rated, adena: 1e8 }, { unitPrice: 10 });
         assert.equal(plan.targetAmount, stock.target);
         assert(plan.amount >= stock.survivalMissing && plan.amount <= stock.target, 'the floor permits survival and only worthwhile extra stock');

@@ -189,7 +189,7 @@ function alternateTownNpcErrand(session, bot, town) {
     if (selfId) {
         if (session.shoppingTarget?.actorId) failedSourceIds.add(Number(
             session.shoppingTarget.sourceId || session.shoppingTarget.actorId));
-        const target = ShotStock.restockTarget(bot, town.name, [...failedSourceIds]);
+        const target = ShotStock.restockTarget(bot, town.name, [...failedSourceIds], heldShoppingKit(session, town.name));
         return target ? { ...errand, failedSourceIds: [...failedSourceIds], target } : null;
     }
     const target = townMerchantTarget(town, bot, selfId, {
@@ -260,6 +260,30 @@ function clearShoppingServiceState(session) {
     session.shoppingLiveBuyerChecked = undefined;
     session.shoppingRestockRetryAt = undefined;
     session.shoppingRestockFailures = undefined;
+    session.shoppingKit = undefined;
+    session.shoppingSale = undefined;
+}
+
+// The visit's kit amounts, fixed at its first restock once its sale has
+// settled (shoppingSale): the build's kit rates over the bag and wallet then,
+// at that town's quotes (EconomyContext.keptKit), read by every restock of the
+// visit in that town. None without a town. Temporary until step 6 (the town
+// plan on the worker takes the kit reader).
+function shoppingKit(session, bot, town) {
+    if (!town) return undefined;
+    if (session.shoppingKit?.town !== town) {
+        const NpcRestock = invoke('GameServer/Bot/Economy/NpcRestockPlan');
+        session.shoppingKit = { town, kit: EconomyContext.keptKit(EconomyContext.stateForActor(bot, session), {},
+            { quote: id => NpcRestock.quoteFor(id, town)?.price }) };
+    }
+    return session.shoppingKit.kit;
+}
+// The visit's kit when it was fixed in this town, else none (a read never fixes it).
+const heldShoppingKit = (session, town) => session.shoppingKit?.town === town ? session.shoppingKit.kit : undefined;
+// The visit's NPC sale of its junk (SellJunk), kept so the restock fixes its kit after the sale's Adena arrived.
+function sellJunk(session) {
+    session.activeMultiSell = null;
+    session.shoppingSale = invoke(path.world + 'NpcBypasses/SellJunk')(session);
 }
 
 async function waitForShoppingMeeting(session, bot, pending, visit) {
@@ -758,7 +782,6 @@ module.exports = {
     },
 
     async sellAndRestock(session, bot, Generics, BotAI) {
-        const NpcTalkResponse = invoke(path.world + 'NpcTalkResponse');
         const companionErrand = session.companionShopping;
         const visit = { errand: companionErrand, target: session.shoppingTarget, shopTimer: session.shopTimer };
 
@@ -1027,11 +1050,11 @@ module.exports = {
         }
 
         if (!soldToBuyer) {
-            NpcTalkResponse(session, { link: 'sell-junk' });
+            sellJunk(session);
             session.lastTradeSummary = `used general sell-junk at ${session.shoppingTarget?.town || 'town'}`;
         } else {
             // Clear only the leftovers that neither a buyer nor the warehouse wanted.
-            NpcTalkResponse(session, { link: 'sell-junk' });
+            sellJunk(session);
         }
 
         this.scheduleRestock(session, bot, Generics, BotAI);
@@ -1042,7 +1065,8 @@ module.exports = {
         if (!session.shoppingLiveShotStopChecked) {
             session.shoppingLiveShotStopChecked = true;
             const town = TownTransitPolicy.townAt(bot);
-            const target = ShotStock.liveRestockTarget(bot, town);
+            // Before the sale settles: the visit's kit is not fixed yet.
+            const target = ShotStock.liveRestockTarget(bot, town, heldShoppingKit(session, town));
             if (target && (!session.shoppingTarget || Number(session.shoppingTarget.actorId) !== target.actorId)) {
                 session.companionShopping = { kind: 'restock_shots', target };
                 session.shoppingTarget = target;
@@ -1076,10 +1100,13 @@ module.exports = {
                 const potionPrice = HealingPotionStock.localNpcPrice(potionPlan, potionTown);
                 const NpcRestock = invoke('GameServer/Bot/Economy/NpcRestockPlan');
                 const shotQuote = NpcRestock.quoteFor(plan.selfId, potionTown);
+                await session.shoppingSale;
+                if (session.actor !== bot || session.plan !== 'shopping') return;
+                const kit = shoppingKit(session, bot, potionTown);
                 const board = await ShotStock.purchaseActorRestock(bot, { plan, town: potionTown || null,
-                    unitPrice: shotQuote?.price, potionUnitPrice: potionPrice || undefined, skipNpc: true });
+                    unitPrice: shotQuote?.price, potionUnitPrice: potionPrice || undefined, skipNpc: true, kit });
                 if (session.actor !== bot || !LifeState.hotRow(bot.fetchId())) return;
-                const basket = await NpcRestock.purchaseForActor(bot, { town: potionTown });
+                const basket = await NpcRestock.purchaseForActor(bot, { town: potionTown, kit });
                 if (session.actor !== bot || !LifeState.hotRow(bot.fetchId())) return;
                 const lines = basket.receipts.flatMap(row => row.lines || []);
                 const potion = lines.find(row => Number(row.selfId) === Number(potionPlan.selfId));
