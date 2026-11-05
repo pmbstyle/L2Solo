@@ -6,6 +6,7 @@ const { fnv1a32 } = require('../Fnv1a');
 const Diagnostics = require('./EconomyDiagnostics');
 const { packetRowWishes } = require('./PurchaseFunding');
 const Bytes = require('./CompactBytes');
+const Trace = require('../DecisionTrace');
 const NEEDS = Object.freeze(['power', 'status', 'care', 'scores']);
 const MAX_NODES = 40;
 const MAX_ROOTS = 12;
@@ -771,13 +772,13 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
             if (transformation && transformation !== chosen) best.intentionPath = planOf(transformation);
         }
         if (diagnostic) Diagnostics.count('network', 'path_evaluated', 'known_available', choices.length);
-        if (detail) for (const row of choices) { const choice = { ...row.path, ...row.facts }; Diagnostics.push({ ...trace,
+        if (detail) for (const row of choices) { const choice = { ...row.path, ...row.facts }; Trace.detail({ ...trace,
             phase: 'wish_alternative', reason: row === chosen ? 'selected_path' : 'evaluated_path',
             wishKey: key, source: choice.sourceType || choice.kind || choice.activity || 'requirement',
             town: choice.town, npcId: choice.npcId, item: choice.itemId,
             recipeId: choice.recipeId, quote: choice.price, tripHours: choice.tripHours,
             tripFees: choice.tripFees, requested: choice.amount }); }
-        if (detail && best?.kind === 'craft') for (const requirement of best.requirements) Diagnostics.push({ ...trace,
+        if (detail && best?.kind === 'craft') for (const requirement of best.requirements) Trace.detail({ ...trace,
             phase: 'craft_requirement', reason: 'selected_recipe_input', source: 'craft_input',
             wishKey: requirement.key, recipeId: best.recipeId, requested: requirement.amount,
             item: requirement.key.startsWith('item:') ? Number(requirement.key.slice(5)) : undefined });
@@ -946,7 +947,7 @@ class WishNetwork {
             return remember(this.cache, actorKey, cached).result;
         }
         const started = diagnostic ? performance.now() : 0;
-        const detail = diagnostic && Diagnostics.enabled(characterId);
+        const detail = diagnostic && Trace.detailed(characterId);
         const trace = detail ? { owner: Number(characterId), caller, trigger,
             inputHash: fnv1a32(inputKey), decisionSeq, activityLeaf } : null;
         if (diagnostic) Diagnostics.count('network', 'miss', !remembered ? 'uncached_actor' : !retain ? 'held_plan_only' : cached ? 'input_dependency_changed' : 'not_retained');
@@ -1054,7 +1055,7 @@ class WishNetwork {
         if (diagnostic) for (const wish of queue) {
             Diagnostics.count('network', 'wish_funding', fundingReason(wish));
         }
-        if (detail) for (const wish of queue) Diagnostics.push({ ...trace,
+        if (detail) for (const wish of queue) Trace.detail({ ...trace,
             phase: 'wish_funding', reason: fundingReason(wish),
             wishKey: wish.key, item: wish.object?.itemId, requested: wish.object?.amount,
             quote: wish.price, valueHours: wish.valueHours, moneyPrice,
@@ -1217,7 +1218,7 @@ class WishNetwork {
             Diagnostics.count('network', cached ? sameResult(cached.result, result) ? 'unchanged' : 'changed' : 'comparison_unavailable');
             Diagnostics.duration('network', performance.now() - started);
         }
-        if (detail) Diagnostics.push({ ...trace, decisionSeq: result.decisionSeq, activityLeaf: result.activityLeaf,
+        if (detail) Trace.detail({ ...trace, decisionSeq: result.decisionSeq, activityLeaf: result.activityLeaf,
             phase: 'wish_activity', reason: heldActivity ? 'held_activity' : activity ? 'selected_activity' : 'no_executable_activity',
             wishKey: activity?.rootKey, source: activity?.sourceType || activity?.kind || activity?.activity,
             item: activity?.itemId, planned: activity?.amount, quote: activity?.price,

@@ -7,6 +7,7 @@
 // The step's facts, the soft point, the held plan's verdict and the doors to a build
 // all ask it; none keeps a rule of its own. A new rule is a row here.
 
+const Trace = require('./DecisionTrace');
 const FIELD_ACTIVITIES = new Set(['hunting', 'resting', 'traveling']);
 
 // Places, as bits of a link's waits. OPEN hears everything: a body near a player, a
@@ -249,6 +250,11 @@ function counts() {
 function countWoke(before, after, name) {
     for (const decision in BITS) if (after & ~before & BITS[decision]) count(wokeCounts, `${decision}<${name}`);
 }
+// The decisions of a set of bits (the trace's woke/waits), comma-joined; the planes' bits read as one.
+function decisionNames(bits) {
+    const all = (bits | bits >> 8) & PLANE;
+    return Object.keys(BITS).filter(decision => all & BITS[decision]).join(',');
+}
 
 // The one writer of a bot's woken decisions (both threads): a situation raised at a
 // place. Its decisions heard here wake (woken), the rest wait on its plane (waiting);
@@ -258,7 +264,8 @@ function countWoke(before, after, name) {
 // step impossible: a failed goal, a town visit with nothing to do) also drops the
 // held step (stats.activityLeaf), the one fact a raise writes beside the bits.
 // stats: an object the caller owns (a copy it is building); written and returned.
-function raise(stats, name, payload = null, where = OPEN) {
+// subject: the bot's id, for the decision trace (Bot/DecisionTrace).
+function raise(stats, name, payload = null, where = OPEN, subject = 0) {
     const bits = delta(name, payload, where);
     if (bits.leaf) stats.activityLeaf = 0;
     const was = wokenBits(stats), waited = Number(stats.waiting) || 0, dirty = Number(stats.wishDirty) || 0;
@@ -266,7 +273,7 @@ function raise(stats, name, payload = null, where = OPEN) {
     if (woken === was && waiting === waited && wishDirty === dirty) return stats;
     stats.woken = woken; stats.waiting = waiting; stats.wishDirty = wishDirty;
     stats.situationSeq = (Number(stats.situationSeq) || 0) + 1;
-    counted(name, where, was, woken);
+    counted(name, where, was, woken, subject, waiting & ~waited, payload);
     return stats;
 }
 // What a raise ORs into a bot's bits (raise; BotLifeState.raiseOnRow's SQL on a far
@@ -279,14 +286,17 @@ function delta(name, payload = null, where = OPEN) {
     return { woken: (now ? WAKES[name] : 0) | (sections ? BUILD : 0), waiting: now ? 0 : WAKES[name] << SHIFT[row.heard],
         wishDirty: sections, leaf: payload?.impossible === true };
 }
-// A raise counted on the health line: where, and the decisions it woke (before, after: the woken bits).
-function counted(name, where, before = 0, after = 0) {
+// A raise counted on the health line: where, and the decisions it woke (before, after: the woken bits); and traced
+// (subject: the bot; waits: the bits it left waiting on a plane; payload: its impossible mark).
+function counted(name, where, before = 0, after = 0, subject = 0, waits = 0, payload = null) {
     count(raisedCounts, `${name}@${NAMES.get(where)}`);
     countWoke(before, after, name);
+    if (Trace.on()) Trace.record({ kind: 'raise', bot: subject, name, place: NAMES.get(where), woke: decisionNames(after & ~before),
+        waits: decisionNames(waits), ...(payload?.impossible === true ? { reason: 'impossible' } : {}) });
 }
 // A stop (a far step at a rest or in town, a hot body's rest end): what waited on
 // the planes this place hears wakes. Written and returned as raise.
-function stop(stats, where) {
+function stop(stats, where, subject = 0) {
     const planes = planesAt(where), waited = Number(stats.waiting) || 0;
     let release = 0, waiting = waited;
     if (planes & STOP) { release |= waited & PLANE; waiting &= ~PLANE; }
@@ -295,19 +305,27 @@ function stop(stats, where) {
     const was = wokenBits(stats);
     stats.woken = was | release; stats.waiting = waiting;
     countWoke(was, stats.woken, `stop@${NAMES.get(where)}`);
+    if (Trace.on()) Trace.record({ kind: 'stop', bot: subject, place: NAMES.get(where), woke: decisionNames(stats.woken & ~was) });
     return stats;
 }
 const woken = (stats, decision) => !!(wokenBits(stats) & BITS[decision]);
 const anyWoken = stats => wokenBits(stats) !== 0;
 // A decision taken (or its held answer served: served) clears its bit; a taken one
 // with no bit woken is counted by its caller (the decisions not yet on situations).
-// decisions: a name or a list. Returns the woken bits left (stats.woken).
-function decided(stats, decisions, { caller = 'other', served = false } = {}) {
+// decisions: a name or a list. Returns the woken bits left (stats.woken). A taken
+// one is traced (subject: the bot; answer, was: its answer and the one it replaces,
+// short text, or per decision { decision: [answer, was] }).
+function decided(stats, decisions, { caller = 'other', served = false, subject = 0, answer = null, was = null } = {}) {
     let bits = wokenBits(stats);
     for (const decision of [decisions].flat()) {
-        const bit = BITS[decision];
+        const bit = BITS[decision], unwoken = !served && !(bits & bit);
         count(decidedCounts, decision, served ? 1 : 0);
-        if (!served && !(bits & bit)) count(unwokenCounts, `${decision}:${caller}`);
+        if (unwoken) count(unwokenCounts, `${decision}:${caller}`);
+        if (!served && Trace.on()) {
+            const [now, before] = answer && typeof answer === 'object' ? answer[decision] || [] : [answer, was];
+            Trace.record({ kind: 'decided', bot: subject, decision, caller, how: unwoken ? 'unwoken' : 'taken',
+                ...(now == null ? {} : { answer: String(now) }), ...(before == null ? {} : { was: String(before) }) });
+        }
         bits &= ~bit;
     }
     return bits;

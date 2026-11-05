@@ -79,6 +79,7 @@ const network = load('WishNetwork.js', name => {
     // WishNetwork reads the thread kind (c3a6771d); this fixture is the main thread.
     if (name === 'node:worker_threads') return require('node:worker_threads');
     if (name === './EconomyDiagnostics') return { active: () => false };
+    if (name === '../DecisionTrace') return require('../src/GameServer/Bot/DecisionTrace');
     if (name === './PurchaseFunding') return require('../src/GameServer/Bot/Economy/PurchaseFunding');
     if (name === './WealthCraftPolicy') return require('../src/GameServer/Bot/Economy/WealthCraftPolicy');
     if (name === './CompactBytes') return require('../src/GameServer/Bot/Economy/CompactBytes');
@@ -116,6 +117,7 @@ const provider = load('WishProviders.js' , name => {
     if (name === './CraftProfitPolicy') return require('../src/GameServer/Bot/Economy/CraftProfitPolicy');
     if (name === './ShotTradeDemand') return require('../src/GameServer/Bot/Economy/ShotTradeDemand');
     if (name === './EconomyDiagnostics') return { active: () => false, laps: () => null };
+    if (name === '../DecisionTrace') return require('../src/GameServer/Bot/DecisionTrace');
     if (name === './EconomicValuation') return valuation;
     // Synthetic origins are admitted; the solver is the network under test.
     if (name.endsWith('ItemAcquisitionCatalog')) return { revision: () => 1, hasSource: () => true, hasNonRaidSource: () => true, allowsRecipe: recipe => !!recipe };

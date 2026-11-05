@@ -21,6 +21,7 @@ const Shots = require('../Economy/ShotCraftPolicy');
 const MarketPricing = require('../Economy/MarketPricing');
 const PriceBelief = require('../Economy/PriceBelief');
 const Craft = require('../Economy/WealthCraftPolicy');
+const Trace = require('../DecisionTrace');
 
 // Arrival and recovery are natural decision points; ordinary counts/XP/wallet
 // changes do not schedule main-thread economic work. options.buyOrderEscrow:
@@ -269,7 +270,7 @@ function* prepareNative(state, economy, options) {
     }
     fit(plan, showcaseRows);
     if (plan.d > 1 && Diagnostics.active()) Diagnostics.count('economy_plan', 'deferred', `bytes_${plan.d & ~1}`);
-    if (Diagnostics.active() && Diagnostics.enabled(state.characterId)) {
+    if (Trace.detailed(state.characterId)) {
         const trace = { owner: state.characterId, caller: options.caller || 'cold_plan',
             trigger: options.trigger || 'plan_request', phase: 'plan_compute',
             inputHash: economy.inputHash ?? fnv1a32(economy.inputKey || ''),
@@ -278,8 +279,8 @@ function* prepareNative(state, economy, options) {
             wishKey: goal?.plan?.wishKey,
             wallet: state.adena, escrow: options.buyOrderEscrow,
             budget: money, available: money, reserve: Packet.survivalReserve(state.stats?.money) };
-        Diagnostics.push({ ...trace, reason: plan.travel ? 'travel_planned' : 'plan_prepared', town: goal?.plan?.marketTown });
-        for (const row of plan.buyAds || []) Diagnostics.push({ ...trace, phase: 'buy_request', reason: 'bid_planned',
+        Trace.detail({ ...trace, reason: plan.travel ? 'travel_planned' : 'plan_prepared', town: goal?.plan?.marketTown });
+        for (const row of plan.buyAds || []) Trace.detail({ ...trace, phase: 'buy_request', reason: 'bid_planned',
             item: row[0], planned: row[1], unitPrice: row[2], source: 'board_bid' });
     }
     return plan;

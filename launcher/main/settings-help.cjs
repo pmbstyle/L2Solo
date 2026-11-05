@@ -102,8 +102,7 @@ const help = {
         activationFloorCacheLimit: 'Maximum number of cached floor-visibility results kept for activation checks.',
         developerDiagnostics: 'Developer-only master switch for optional counters, timing measurements, logs and diagnostic IPC. Other diagnostic switches require this to be enabled.',
         coldWorkerHeapSnapshot: 'Developer-only memory dump of the background worker near its heap limit, at most once per server boot. The dump can be large and pauses that worker while being written.',
-        economyDiagnostics: 'Developer-only bounded economy event journal. Requires developer diagnostics and adds history-writing work.',
-        economyDiagnosticsBotIds: 'Comma-separated character IDs to trace in the developer economy journal. Empty selects up to sixteen bots observed by the journal.',
+        decisionTrace: 'Developer-only decision trace: what every bot decided and why, written to logs/decision-trace.jsonl and kept 48 hours. Adds history-writing work.',
         devLogPlayerChat: 'Developer option for recording player chat in diagnostic logs. Keep privacy in mind when sharing those logs.',
     },
     ClanSimulation: {

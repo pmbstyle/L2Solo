@@ -53,6 +53,7 @@ const GearProgression = invoke('GameServer/Bot/AI/PersonalGearProgression');
 const RestPotion = invoke('GameServer/Bot/AI/RestPotion');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const TradeIntent = require('./TradeIntent');
+const Trace = require('../DecisionTrace');
 // The bound of an event proof's packed and wire forms.
 const PROOF_RAW_BYTES = 65536;
 // The cold worker holds one plan per bot (~1,700), apart from the planner's in-flight builds: a
@@ -1647,7 +1648,7 @@ function buildForState(state, deps) {
         if (diagnostic) {
             Diagnostics.count('context', 'hit', held.key === key ? 'same_inputs' : 'own_result');
             // The timeline sees the served request too (tools/timeline).
-            if (Diagnostics.enabled(state.characterId)) Diagnostics.push({ owner: state.characterId,
+            if (Trace.detailed(state.characterId)) Trace.detail({ owner: state.characterId,
                 caller: deps.caller || 'economy_context', trigger: deps.trigger || 'request', phase: 'wish_context',
                 reason: held.key === key ? 'hit_same_inputs' : 'hit_own_result', outcome: 'held',
                 revision: state.simulation?.revision, wallet: positive(state.adena) });
@@ -1911,7 +1912,9 @@ function buildForState(state, deps) {
         // The build takes its decision and, until the earning spot decides on its
         // own (situations step 1), the earning spot's held answer with it.
         dangerPrice: dangerPrice(base), wishDirty: 0,
-        woken: Situations.decided(state.stats, BUILT, { caller: deps.caller || 'economy_context' }) };
+        woken: Situations.decided(state.stats, BUILT, { caller: deps.caller || 'economy_context', subject: state.characterId,
+            answer: { earning_spot: [base.hunt?.spotId, held?.plan.hunt?.spotId],
+                build: [network.activity?.key || network.focus?.[0], held?.plan.network?.activity?.key || held?.plan.network?.focus?.[0]] } }) };
     let cumulative = base.survivalReserve;
     for (const wish of network.queue) {
         cumulative += cashCharge(wish);
@@ -1959,7 +1962,7 @@ function buildForState(state, deps) {
     }
     // The build's record carries its cause (tools/timeline): the miss reason,
     // the verdict's first refusal (gate), the mask and the time it took.
-    if (diagnostic && Diagnostics.enabled(state.characterId)) Diagnostics.push({ owner: state.characterId,
+    if (diagnostic && Trace.detailed(state.characterId)) Trace.detail({ owner: state.characterId,
         caller: deps.caller || 'economy_context', trigger: deps.trigger || diagnosticReason,
         phase: 'wish_context', reason: diagnosticReason, inputHash: fnv1a32(networkKey),
         durationMs: Math.round(elapsed * 100) / 100,

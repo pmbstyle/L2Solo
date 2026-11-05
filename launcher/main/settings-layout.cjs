@@ -3,7 +3,7 @@
 // Presentation only: the server still reads every INI key normally.
 const hiddenFields = {
     BotPopulation: new Set([
-        'enabled', 'developerDiagnostics', 'coldWorkerHeapSnapshot', 'economyDiagnostics', 'economyDiagnosticsBotIds',
+        'enabled', 'developerDiagnostics', 'coldWorkerHeapSnapshot', 'decisionTrace',
         'backgroundResolverEnabled', 'backgroundPartyEnabled', 'opportunisticRaidsEnabled', 'opportunisticRaidAliveFraction',
         'opportunisticRaidSearchIntervalMs', 'opportunisticRaidIntervalMs', 'opportunisticRaidMemberCooldownMs',
         'opportunisticRaidMaxParties', 'opportunisticRaidMaxFightSeconds', 'opportunisticRaidShotReserve', 'opportunisticRaidExpeditionMs',

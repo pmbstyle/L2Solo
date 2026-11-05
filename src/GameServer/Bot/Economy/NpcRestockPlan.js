@@ -7,6 +7,7 @@ const Economy = require('./EconomyContext');
 const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
 const Diagnostics = require('./EconomyDiagnostics');
 const ArrowStock = require('../../Inventory/ArrowStock');
+const Trace = require('../DecisionTrace');
 const LIMIT = 12;
 const sellerKey = seller => [seller.town, seller.sourceId, seller.locX, seller.locY, seller.locZ].join(':');
 function quoteFor(selfId, town, price = null, seller = null) {
@@ -23,7 +24,7 @@ function observePlan(state, current, selfId, amount, count, available, offer, at
     if (!Diagnostics.active()) return;
     const price = Number(offer.price);
     Diagnostics.count('npc_plan', count > 0 ? 'planned' : 'refused', reason);
-    if (Diagnostics.enabled(state.characterId)) Diagnostics.push({ owner: Number(state.characterId),
+    if (Trace.detailed(state.characterId)) Trace.detail({ owner: Number(state.characterId),
         phase: 'npc_plan', reason, caller: 'NpcRestockPlan', item: Number(selfId),
         requested: amount, planned: count, available, budget: available, wallet: Number(current.adena),
         unitPrice: price, npcId: Number(offer.sourceId), town: offer.town,

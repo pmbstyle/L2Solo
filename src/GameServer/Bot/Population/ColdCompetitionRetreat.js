@@ -39,7 +39,7 @@ async function apply({ event, life, owner, memory, parties, participantAllowed, 
     const avoidFor = counter => ({ spotId: event.spotId, untilStep: counter + AVOID_STEPS });
     // Pushed off its spot: moved by the world, heard at once.
     const actorMembers = sides[0].members.map(s => avoiding ? { ...s, stats: Situations.raise({ ...s.stats,
-        coldCompetition: { ...s.stats?.coldCompetition, avoid: avoidFor(Risk.stepCount(s)) } }, 'moved_by_world') } : s);
+        coldCompetition: { ...s.stats?.coldCompetition, avoid: avoidFor(Risk.stepCount(s)) } }, 'moved_by_world', null, Situations.OPEN, s.characterId) } : s);
     // The actor's unit steps now (the worker routes it); a yield waits.
     const actorDue = due => avoiding ? at : Math.max(at, Number(due || 0)) + waitMs;
     const preparedParties = sides.map((side, i) => {

@@ -19,12 +19,13 @@ const EconomicTrip = require('./EconomicTrip');
 const EconomicValuation = require('./EconomicValuation');
 const PriceDecision = require('./PriceDecision');
 const ProductionPolicy = require('./ProductionPolicy');
+const Trace = require('../DecisionTrace');
 
 function purchaseObservation(state, selfId, requested, budget, phase, reason, extra) {
     if (!Diagnostics.active()) return;
     Diagnostics.count('market', phase, reason);
-    if (!Diagnostics.enabled(state?.characterId)) return;
-    Diagnostics.push({ owner: Number(state.characterId), phase, reason, item: Number(selfId), requested: Number(requested),
+    if (!Trace.detailed(state?.characterId)) return;
+    Trace.detail({ owner: Number(state.characterId), phase, reason, item: Number(selfId), requested: Number(requested),
         wallet: Number(state.adena ?? state.inventory?.[57]?.amount), budget, available: budget,
         reserve: Number(Packet.survivalReserve(state.stats?.money)), owned: Number(state.inventory?.[selfId]?.amount || 0),
         decisionSeq: Number(state.stats?.decisionSeq), activityLeaf: Number(state.stats?.activityLeaf),
@@ -169,7 +170,7 @@ function buyOffer(state, offer, options = {}) {
             // Native commit includes the buyer's experience exactly once.
             const buyer = done.state || state;
             const units = Number(trade.amount ?? trade.units ?? 0), spent = Number(trade.totalPrice ?? trade.spent ?? 0);
-            if (Diagnostics.enabled(state.characterId)) Diagnostics.push(trade.replayed ? { owner: state.characterId,
+            if (Trace.detailed(state.characterId)) Trace.detail(trade.replayed ? { owner: state.characterId,
                 phase: 'purchase_receipt', reason: 'replayed', actual: 0, spent: 0, receiptUnits: units, receiptSpent: spent,
                 commandId: trade.economyCommand?.[0], sequence: trade.economyCommand?.[2],
                 nativeId: Number(trade.eventId ?? trade.nativeId) } : { owner: state.characterId,
@@ -400,7 +401,7 @@ function planPurchase(state, selfId, amount, options = {}) {
     if (options.purpose === 'raid_supply' && plan
         && (plan.units < amount || !Number.isFinite(plan.landed) || plan.landed > money)) plan = null;
     if (Diagnostics.active()) purchaseObservation(state, selfId, amount, money, 'purchase_plan', plan ? 'source_selected' : 'no_affordable_source',
-        Diagnostics.enabled(state.characterId) ? { planned: Number(plan?.units || 0), remaining: Math.max(0, amount - Number(plan?.units || 0)),
+        Trace.detailed(state.characterId) ? { planned: Number(plan?.units || 0), remaining: Math.max(0, amount - Number(plan?.units || 0)),
             cost: Number(plan?.cost), town: plan?.town, source: plan?.npc > 0 ? 'npc_and_board' : 'board', unitPrice: Number(plan?.npcPrice),
             caller: options.purpose || 'planPurchase' } : undefined);
     return plan ? { ...plan, selfId: Number(selfId), amount: Number(amount), money: plan.spendBudget ?? money, ...fundingTerms(options),
@@ -536,7 +537,7 @@ async function buyHere(state, plan, options = {}) {
     const rest = npcPrice > 0 ? Math.max(0, Math.min(plan.amount - units, Math.floor(money / npcPrice))) : 0;
     if (Diagnostics.active()) purchaseObservation(current, plan.selfId, plan.amount - units, money, 'npc_remainder',
         !npcPrice ? 'no_current_npc_quote' : rest < plan.amount - units ? 'funding_partial' : 'funded',
-        Diagnostics.enabled(current.characterId) ? { planned: rest, actual: units, unitPrice: npcPrice, source: 'npc', town: plan.town } : undefined);
+        Trace.detailed(current.characterId) ? { planned: rest, actual: units, unitPrice: npcPrice, source: 'npc', town: plan.town } : undefined);
     const realSeller = NpcRestock.quoteFor(plan.selfId, plan.town, npcPrice);
     if (options.deferRealNpc && realSeller) return result({ state: current, units, spent, hot: false,
         progressApplied: !!options.goal && units > 0, ...(priceRefused && rest > 0 ? { npcDeferred: true } : {}) });
@@ -576,7 +577,7 @@ async function buyHere(state, plan, options = {}) {
     if (Diagnostics.active()) purchaseObservation(state, plan.selfId, plan.amount, plan.money, 'purchase_result',
         units >= plan.amount ? 'filled' : npcPrice > 0 && money < (plan.amount - units) * npcPrice ? 'funding_partial'
             : Number(plan.units || 0) < plan.amount ? 'supply_partial' : 'source_changed_or_refused',
-        Diagnostics.enabled(state.characterId) ? { planned: Number(plan.units), actual: units, remaining: Math.max(0, plan.amount - units), spent, town: plan.town } : undefined);
+        Trace.detailed(state.characterId) ? { planned: Number(plan.units), actual: units, remaining: Math.max(0, plan.amount - units), spent, town: plan.town } : undefined);
     return result({ state: current, units, spent, hot: false, progressApplied: !!options.goal && units > 0 });
 
 }
@@ -674,7 +675,7 @@ async function acquire(state, selfId, amount, options = {}) {
     const local = visitTown ? planPurchase(state, selfId, amount, { ...options, towns: [visitTown] }) : null;
     const plan = local || planPurchase(state, selfId, amount, options);
     if (Diagnostics.active()) purchaseObservation(state, selfId, amount, options.money, 'acquire_request', plan ? 'planned' : 'no_source',
-        Diagnostics.enabled(state.characterId) ? { planned: Number(plan?.units || 0), caller: options.purpose || 'acquire', town: plan?.town } : undefined);
+        Trace.detailed(state.characterId) ? { planned: Number(plan?.units || 0), caller: options.purpose || 'acquire', town: plan?.town } : undefined);
     if (!plan) return { state, bought: false, units: 0, traveling: false, plan: null };
     if (!worthwhileTravel(state, plan, options)) return { state, bought: false, units: 0,
         traveling: false, plan, reason: 'purchase_trip_not_worthwhile' };
@@ -692,7 +693,7 @@ async function acquire(state, selfId, amount, options = {}) {
     if (travel && state.activity === 'shopping') travel.stats.marketReturn = state.stats?.marketReturn || travel.stats.marketReturn;
     const next = travel || withErrand;
     if (Diagnostics.active()) purchaseObservation(state, selfId, amount, options.money, 'market_travel', travel ? 'departed' : state.party?.partyId || state.partyId ? 'party_wait' : 'town_visit_wait',
-        Diagnostics.enabled(state.characterId) ? { errandAt: errand.at, town: errand.town, planned: Number(plan.units), caller: errand.purpose } : undefined);
+        Trace.detailed(state.characterId) ? { errandAt: errand.at, town: errand.town, planned: Number(plan.units), caller: errand.purpose } : undefined);
     // errandAt: this call left the errand (a clan credit travels with it).
     if (options.persist === false) return { state: next, bought: false, units: 0, traveling: !!travel, plan, errandAt: errand.at };
     const saved = await LifeState.upsertState(next, travel ? `market_errand_${errand.purpose}` : 'market_errand_kept');
@@ -812,7 +813,7 @@ async function buyErrand(state, options = {}) {
     if (bought.hot) return { state: bought.state, purchased: bought.units > 0, reason: 'bot_went_hot' };
     const rest = Math.max(0, amount - Number(bought.units || 0));
     if (Diagnostics.active()) purchaseObservation(state, errand.selfId, errand.amount, plan?.money, 'errand_result', rest === 0 ? 'filled' : !plan ? 'no_source' : 'partial',
-        Diagnostics.enabled(state.characterId) ? { errandAt: errand.at, actual: Number(bought.units || 0), remaining: rest, spent: Number(bought.spent), town: errand.town } : undefined);
+        Trace.detailed(state.characterId) ? { errandAt: errand.at, actual: Number(bought.units || 0), remaining: rest, spent: Number(bought.spent), town: errand.town } : undefined);
     const active = CombinedErrands.pending(bought.state).find(other => CombinedErrands.key(other) === CombinedErrands.key(errand));
     if (!active || Number(active.at) !== Number(errand.at) || Number(active.amount) !== Number(errand.amount)) {
         return { state: bought.state, purchased: bought.units > 0, units: bought.units, reason: 'errand_changed' };
@@ -865,7 +866,7 @@ const ColdMarketService = {
             return Promise.resolve({ state, purchased: false, reason: 'purchase_quantity_unknown' });
         }
         const acceptedGoal = GoalState.snapshot(state.characterId)?.current;
-        const diagnosticGoalRevision = Diagnostics.enabled(state.characterId) ? GoalState.snapshot(state.characterId)?.updatedAt : null;
+        const diagnosticGoalRevision = Trace.detailed(state.characterId) ? GoalState.snapshot(state.characterId)?.updatedAt : null;
         // The caller usually passes the accepted goal object itself: no copy to compare.
         if (acceptedGoal && acceptedGoal !== goal && JSON.stringify(acceptedGoal) !== JSON.stringify(goal)) {
             return Promise.resolve({ state, purchased: false, reason: 'stale_purchase_goal' });
@@ -932,7 +933,7 @@ const ColdMarketService = {
             const snapshot = GoalState.snapshot(state.characterId);
             return buyHere(state, plan, { goal: { expectedGoal: goal, updatedAt: snapshot?.updatedAt } }).then(async bought => {
                 const progress = bought.progressApplied || (bought.units > 0 ? await GoalState.applyPurchase(state.characterId, goal, bought.units) : null);
-                if (diagnosticGoalRevision !== null) Diagnostics.push({ owner: state.characterId,
+                if (diagnosticGoalRevision !== null) Trace.detail({ owner: state.characterId,
                     revision: Number(bought.state?.simulation?.revision), goalRevision: diagnosticGoalRevision,
                     trigger: 'purchase_goal', phase: 'purchase_commit', reason: bought.units >= Number(goal.target.amount) ? 'filled' : bought.units > 0 ? 'partial' : 'no_fill',
                     item: Number(goal.target.itemId), need: Number(goal.target.amount), actual: bought.units,
@@ -963,7 +964,7 @@ const ColdMarketService = {
                 return bought.blocked ? finishBlockedPurchase(state, goal, bought.reason) : retryAfterFailedPurchase(state, goal, bought.reason);
             }
             return (bought.progressApplied ? Promise.resolve() : GoalState.applyPurchase(state.characterId, goal, Number(bought.units || 0))).then(() => {
-                if (diagnosticGoalRevision !== null) Diagnostics.push({ owner: state.characterId,
+                if (diagnosticGoalRevision !== null) Trace.detail({ owner: state.characterId,
                     goalRevision: diagnosticGoalRevision, trigger: 'purchase_goal', phase: 'purchase_commit', reason: 'filled',
                     item: Number(goal.target.itemId), need: 1, actual: Number(bought.units || 0), remaining: 0,
                     spent: bought.spent, town: state.currentRegion, source: offer.sourceType,

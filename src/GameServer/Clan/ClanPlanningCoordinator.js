@@ -135,7 +135,10 @@ class ClanPlanningCoordinator {
             spotTable: SpotValueTable.sharedDescriptor() } });
         this.worker = worker;
         // Only a failed worker is replaced (shutdown closes for good).
-        if (this.epoch > 0) this.restarts++;
+        if (this.epoch > 0) {
+            this.restarts++;
+            invoke('GameServer/Bot/DecisionTrace').record({ kind: 'restart', worker: 'clan', reason: 'replaced' });
+        }
         const epoch = ++this.epoch;
         // A restarted worker has not reported yet (WorkerHeapTelemetry.heapRecord).
         delete this.stats.v8Heap;

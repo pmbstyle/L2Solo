@@ -87,6 +87,13 @@ function die(session, actor, context = {}) {
             victimSession.coldLifeState = { ...prior, stats: { ...prior.stats, ...progress } };
         }
         Life.notifyNearFacts(victimSession, 'death');
+        const Trace = invoke('GameServer/Bot/DecisionTrace');
+        if (Trace.on()) {
+            const killer = context.killer ?? context.source;
+            Trace.record({ kind: 'death', bot: actor.fetchId(), spot: String(prior?.spotId ?? ''), level: Number(actor.fetchLevel?.()) || undefined,
+                killer: !killer || killer === actor ? 'unknown' : killer.fetchKind ? `npc:${killer.fetchSelfId?.() ?? '?'}`
+                    : `char:${killer.fetchId?.()}` });
+        }
         invoke('GameServer/Bot/AI/BotEventJournal').record({
             botId: actor.fetchId(),
             eventType: 'death',

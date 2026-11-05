@@ -40,7 +40,8 @@ global.invoke = name => dependencies[name] || {};
 const Decision = { economyFor: () => { throw Error('arrival builds no economy view'); },
     remainingToOrder: require(root + '/src/GameServer/Bot/Population/ColdEconomyDecision').remainingToOrder };
 const sandbox = { module: { exports: {} }, invoke: global.invoke, utils: { infoWarn: () => {} }, Date, Promise, console,
-    require: name => name === './EconomyDiagnostics' ? { active: () => false, enabled: () => false }
+    require: name => name === './EconomyDiagnostics' ? { active: () => false }
+        : name === '../DecisionTrace' ? require(root + '/src/GameServer/Bot/DecisionTrace')
         : name === '../../Inventory/ArrowStock' ? require(root + '/src/GameServer/Inventory/ArrowStock')
         : name === '../Population/ColdEconomyDecision' ? Decision
         : name === '../Population/CombinedErrandPolicy' ? { pending: () => [], ERRAND_MS: 1 }

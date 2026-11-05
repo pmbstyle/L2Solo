@@ -1,4 +1,5 @@
 const Diagnostics = require('./EconomyDiagnostics');
+const Trace = require('../DecisionTrace');
 const CombinedErrands = require('../Population/CombinedErrandPolicy');
 const Packet = require('./StatsPacket');
 // One wallet rule for hot/cold purchases. Value rates are hours per adena;
@@ -104,7 +105,7 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
     const own = options.ownClanErrand || (options.free === true && options.clanPart !== undefined && options.itemId
         ? { selfId: options.itemId } : null);
     const wallet = Math.max(0, budget(state, escrow) - clanCredit(state, own)), packet = state.stats?.money;
-    const selected = Diagnostics.active() && Diagnostics.enabled(state.characterId);
+    const selected = Trace.detailed(state.characterId);
     // Native callers observe this same calculation; they never calculate a second wallet.
     const capture = Diagnostics.active() ? captureOutput || (selected ? {} : null) : null;
     let queueBudget = 0, reason = 'ratio_below_money_price';
@@ -149,7 +150,7 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
     const survivalShare = Math.min(survivalCost, nonnegative(options.survivalShare ?? options.survivalCost));
     const available = Math.min(wallet, Math.max(queueBudget + Math.min(wallet, survivalShare), survivalCost));
     if (Diagnostics.active()) Diagnostics.count('funding', available > 0 ? 'allowed' : 'refused', reason);
-    if (selected) Diagnostics.push({ owner: Number(state.characterId), phase: 'funding', caller: options.caller || 'spendable', reason,
+    if (selected) Trace.detail({ owner: Number(state.characterId), phase: 'funding', caller: options.caller || 'spendable', reason,
         item: Number(options.itemId), wallet: nonnegative(state.adena ?? state.inventory?.[57]?.amount),
         escrow: nonnegative(escrow), available, budget: available, reserve: Number(Packet.survivalReserve(packet)),
         priorityReserve: capture.priorityReserve, moneyPrice: Number(Packet.moneyPrice(packet)), valueHours: Number(options.valueHours),

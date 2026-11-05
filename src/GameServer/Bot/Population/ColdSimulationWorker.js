@@ -183,6 +183,7 @@ const tables = new TableMirror({ actorProjectorRole: workerProjectorRole });
 const economyDiagnostics = require('../Economy/EconomyDiagnostics');
 // The board's offers, built from the main thread's 'board' table as it changes.
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
+const Trace = require('../DecisionTrace');
 const boardIndex = new BoardIndex({ groupOf: MarketCounters.counterOf });
 const buyerWaiters = new MarketBuyerWaiters({
     stateFor: id => kernel?.states.get(id)?.state,
@@ -453,7 +454,7 @@ const occupationPlanner = new ColdOccupationPlanner({
                         && row.amount >= required.get(line.selfId)
                         && invoke('GameServer/Bot/Economy/TradeIntent').purchaseWorth(row, economy.network.moneyPrice) >= line.price)) {
                         economyDiagnostics.count('meeting', 'purchase_consent', 'selected_quote');
-                        if (economyDiagnostics.enabled(ownId)) economyDiagnostics.push({ owner: ownId,
+                        if (Trace.detailed(ownId)) Trace.detail({ owner: ownId,
                             trigger: request.token, phase: 'meeting_consent', reason: 'selected_quote',
                             wishKey: intent.key, item: line.selfId, requested: line.count, unitPrice: line.price,
                             quote: intents.find(row => row.itemId === line.selfId)?.worth || 0 });
@@ -649,7 +650,7 @@ const occupationPlanner = new ColdOccupationPlanner({
             ...prepared.options, now: input.timestamp, board: input.board, persona: BotPersona.of(input.state),
             tripCost: prepared.context.trip, preparedCraft: selected,
             npcOffersFor: OccupationSources.npcOffersFor, saleHold: saleHold(input.state.characterId),
-            ...(economyDiagnostics.enabled(input.state.characterId) ? { onTownDecision: decision => economyDiagnostics.push({
+            ...(Trace.detailed(input.state.characterId) ? { onTownDecision: decision => Trace.detail({
                 owner: input.state.characterId, revision: Number(input.state.simulation?.revision), trigger: 'economy_plan',
                 phase: 'town_choice', town: decision.town, reason: decision.reason, candidates: decision.candidates,
                 tripHours: decision.tripHours, tripFees: decision.tripFees
@@ -960,9 +961,9 @@ function nearEvents(id, previous, entry, applied) {
     // record's stand, so a late post cannot roll back a raise.
     for (const key of SavedStats.MIND_KEYS) stats[key] = previous.stats?.[key];
     // Main detected the body's own facts (A1) and named them in the bag.
-    entry.raiseSeq = DecisionEvents.takePostedRaise(stats, row.raise, applied, Situations.bodyPlace(row));
+    entry.raiseSeq = DecisionEvents.takePostedRaise(stats, row.raise, applied, Situations.bodyPlace(row), id);
     const where = Situations.place(row, previous);
-    for (const name of DecisionSections.softEvents(row, stats.wishSections, softInputFor(id, Date.now()))) Situations.raise(stats, name, null, where);
+    for (const name of DecisionSections.softEvents(row, stats.wishSections, softInputFor(id, Date.now()))) Situations.raise(stats, name, null, where, id);
 }
 // A bot's goal revision (GoalState.revision on main, 0 = no goal) from the
 // 'goals' table; undefined while the table loads (the decision skips the compare).
@@ -1455,7 +1456,7 @@ function partyArrival({ party, members, spotId, cause = null }) {
         members: members.map(member => {
             if (Number(member.characterId) !== leaderId) return member;
             const raised = { ...member, stats: { ...(member.stats || {}) } };
-            Situations.raise(raised.stats, 'spot_crowded', null, Situations.place(raised));
+            Situations.raise(raised.stats, 'spot_crowded', null, Situations.place(raised), raised.characterId);
             return raised;
         })
     };
@@ -1664,7 +1665,7 @@ function wakeLoopIfSooner() {
 function startKernel(config = {}) {
     if (kernel) return;
     Config.developerDiagnostics = config.developerDiagnostics === true;
-    Config.economyDiagnostics = Config.developerDiagnostics && config.economyDiagnostics === true;
+    Config.decisionTrace = config.decisionTrace === true;
     // Busy share and heap after GC are two of the goal's three numbers (read with diagnostics off): always on, one
     // major-GC observer and two clock reads per heartbeat.
     heapTelemetry = invoke('GameServer/Bot/Population/WorkerHeapTelemetry').observe();
@@ -1673,14 +1674,10 @@ function startKernel(config = {}) {
     // a native histogram on a LAG_RESOLUTION_MS timer.
     eventLoopDelay = monitorEventLoopDelay({ resolution: LAG_RESOLUTION_MS });
     eventLoopDelay.enable();
-    Config.economyDiagnosticsBotIds = Config.economyDiagnostics ? config.economyDiagnosticsBotIds || '' : '';
-    if (Config.economyDiagnostics) economyDiagnostics.connect(batch => {
+    // The decision trace's records go to main (ColdSimulationCoordinator), which owns the history writer.
+    Trace.connect(batch => {
         if (shuttingDown) return false;
-        const message = { type: 'economy_diagnostics', epoch, ...batch, dropped: economyDiagnostics.stats().dropped };
-        const wireBytes = Buffer.byteLength(JSON.stringify(message));
-        if (wireBytes > 16384) return false;
-        parentPort.postMessage(message);
-        return wireBytes;
+        parentPort.postMessage({ type: 'decision_trace', epoch, ...batch, dropped: Trace.stats().dropped });
     });
     // Use the main process's resolved setting, including programmatic overrides.
     Config.pvpAggression = invoke('GameServer/Social/PvpAggression').normalize(config.pvpAggression ?? Config.pvpAggression);
@@ -2456,7 +2453,7 @@ async function handle(message) {
         for (const entry of partyGoalPages.values()) { clearTimeout(entry.timer); partyGoalJobs--; }
         partyGoalPages.clear(); partyGoalSeen.clear();
         routeRequests.clear();
-        if (Config.economyDiagnostics) economyDiagnostics.stop();
+        Trace.stop();
         occupationPlanner.stop();
         competitionCandidates?.stop();
         stopTimers();
@@ -2472,13 +2469,8 @@ async function handle(message) {
 }
 
 parentPort.on('message', (message) => {
-    if (message?.type === 'economy_diagnostics_selection') {
-        if (Config.developerDiagnostics && Config.economyDiagnostics && message.epoch === epoch)
-            economyDiagnostics.useSelection(message.ownerIds);
-        return;
-    }
-    if (message?.type === 'economy_diagnostics_ack' && Config.economyDiagnostics && message.epoch === epoch) {
-        economyDiagnostics.ack(message.id, message.accepted); return;
+    if (message?.type === 'decision_trace_ack' && message.epoch === epoch) {
+        Trace.ack(message.id, message.accepted); return;
     }
     Promise.resolve(handle(message)).catch((error) => {
         send('fault', { reason: error?.message || 'worker_message_error', stack: error?.stack || null, msgId: message?.msgId || null });

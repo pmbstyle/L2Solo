@@ -2295,7 +2295,7 @@ function worldStatus() {
             developerDiagnostics: {
                 main: Diagnostics.metrics(),
                 worker: cold.worker?.developerDiagnostics || null,
-                transport: HistoryDatabase.stats().economyDiagnostics || { enabled: false },
+                transport: HistoryDatabase.stats().decisionTrace || { enabled: false },
                 observer: observerDiagnostics()
             },
             townNavigation: {

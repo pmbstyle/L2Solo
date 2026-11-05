@@ -95,6 +95,7 @@ const mocks = {
         restoreFromResurrection: () => ({ restored: 0, persistence: Promise.resolve() })
     },
     'GameServer/Bot/AI/BotEventJournal': { record: async () => {} },
+    'GameServer/Bot/DecisionTrace': { on: () => false, record() {} },
     'GameServer/Pets/PetTravel': { begin: () => [], finish() {} },
     'GameServer/Actor/Generics': { updatePosition(s, a, p) { a.x = p.locX; a.y = p.locY; a.z = p.locZ; } },
     'GameServer/Network/Response': {

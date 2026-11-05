@@ -11,7 +11,7 @@ const { Worker } = require('worker_threads');
 const { DatabaseSync } = require('node:sqlite');
 const Statements = require('./DatabaseStatements');
 const HistoryStore = require('./HistoryStore');
-const Diagnostics = require('./GameServer/Bot/Economy/EconomyDiagnostics');
+const Trace = require('./GameServer/Bot/DecisionTrace');
 const PopulationConfig = require('./GameServer/Bot/Population/PopulationConfig');
 let worldToken = '';
 
@@ -128,26 +128,24 @@ function spawn() {
     if (!config || stopping || worker) return;
     const instance = new Worker(path.join(__dirname, 'HistoryWorker.js'), {
         workerData: { worldPath: config.worldPath, historyPath: config.historyPath, transferMs: config.transferMs,
-            ...(config.diagnostics ? { developerDiagnostics: true, diagnostics: config.diagnostics } : {}) }
+            ...(PopulationConfig.developerDiagnostics ? { developerDiagnostics: true } : {}),
+            ...(config.trace ? { trace: config.trace } : {}) }
     });
     worker = instance;
     workerHeap = null;
     wakePending = false;
     writesSinceWake = 0;
-    if (config.diagnostics) Diagnostics.connect(batch => {
+    if (config.trace) Trace.connect(batch => {
         if (worker !== instance) return false;
-        const message = { type: 'economy_diagnostics', ...batch };
-        const wireBytes = Buffer.byteLength(JSON.stringify(message));
-        if (wireBytes > Diagnostics.LIMITS.batchBytes) return false;
-        instance.postMessage(message); return wireBytes;
+        instance.postMessage({ type: 'decision_trace', ...batch });
     });
     if (PopulationConfig.developerDiagnostics) counters.starts += 1;
     instance.on('message', (message = {}) => {
         if (instance !== worker) return;
         if (message.v8Heap && PopulationConfig.developerDiagnostics) workerHeap = message.v8Heap;
-        if (message.type === 'economy_diagnostics_ack') {
-            if (!config?.diagnostics || !PopulationConfig.developerDiagnostics) return;
-            Diagnostics.ack(message.id, message.written);
+        if (message.type === 'decision_trace_ack') {
+            if (!config?.trace) return;
+            Trace.ack(message.id, message.written);
             const report = message.writer;
             if (report?.enabled === true) writerTelemetry = { enabled: true, batches: Number(report.batches || 0), records: Number(report.records || 0),
                 dropped: Number(report.dropped || 0), bytes: Number(report.bytes || 0), writeMs: Number(report.writeMs || 0), rotations: Number(report.rotations || 0), fileBytes: Number(report.fileBytes || 0) };
@@ -172,10 +170,11 @@ function spawn() {
     const failed = (error) => {
         if (instance !== worker) return;
         worker = null;
-        if (config?.diagnostics) Diagnostics.disconnect();
+        if (config?.trace) Trace.disconnect();
         rejectPending(error);
         if (stopping || !config) return;
         if (PopulationConfig.developerDiagnostics) counters.restarts += 1;
+        Trace.record({ kind: 'restart', worker: 'history', reason: String(error.message).slice(0, 64) });
         utils.infoWarn('DB', 'history thread stopped (%s); restarting', error.message);
         restartTimer = setTimeout(() => {
             restartTimer = null;
@@ -193,8 +192,8 @@ function spawn() {
 function start({ worldPath, historyPath, onMoved, transferMs } = {}) {
     stopping = false;
     config = { worldPath, historyPath, onMoved, transferMs };
-    if (PopulationConfig.developerDiagnostics && PopulationConfig.economyDiagnostics) {
-        // No full config/path/account data in the developer header.
+    if (Trace.on()) {
+        // The trace file's header: no full config/path/account data.
         let build = 'unknown';
         try {
             let git = path.resolve(__dirname, '../.git');
@@ -204,7 +203,7 @@ function start({ worldPath, historyPath, onMoved, transferMs } = {}) {
                 ? path.resolve(git, fs.readFileSync(path.join(git, 'commondir'), 'utf8').trim()) : git;
             build = head.startsWith('ref: ') ? fs.readFileSync(path.join(common, head.slice(5)), 'utf8').trim() : head;
         } catch { /* An exported build need not have Git metadata. */ }
-        config.diagnostics = { build: /^[0-9a-f]{40}$/.test(build) ? build : 'unknown',
+        config.trace = { build: /^[0-9a-f]{40}$/.test(build) ? build : 'unknown',
             world: worldToken.slice(0, 96), run: require('node:crypto').randomUUID(),
             rate: String(process.env.L2NODE_PROGRESSION_RATE || 'config').slice(0, 16),
             config: { population: PopulationConfig.maxPlayingPopulation,
@@ -241,12 +240,12 @@ async function stop() {
     clearTimeout(restartTimer);
     restartTimer = null;
     stopping = true;
-    if (config.diagnostics) {
+    if (config.trace) {
         const deadline = Date.now() + 500;
-        while ((Diagnostics.stats().queued || Diagnostics.stats().inFlight) && Date.now() < deadline)
+        while ((Trace.stats().queued || Trace.stats().inFlight) && Date.now() < deadline)
             await new Promise(resolve => setTimeout(resolve, 10));
-        const left = Diagnostics.stats(); Diagnostics.stop();
-        if (left.queued || left.inFlight) utils.infoWarn('DB', 'economy diagnostics stop dropped %d pending records', left.queued + left.inFlight);
+        const left = Trace.stats(); Trace.stop();
+        if (left.queued || left.inFlight) utils.infoWarn('DB', 'decision trace stop dropped %d pending records', left.queued + left.inFlight);
     }
     let upTo = counters.upTo;
     if (worker) {
@@ -278,9 +277,10 @@ function one(sql, params = []) {
 }
 
 function stats() {
-    if (!PopulationConfig.developerDiagnostics) return { path: config?.historyPath || null, running: !!worker, upTo: counters.upTo, diagnostics: { enabled: false } };
+    const trace = Trace.on() ? { decisionTrace: { ...Trace.stats(), writer: writerTelemetry } } : {};
+    if (!PopulationConfig.developerDiagnostics) return { path: config?.historyPath || null, running: !!worker, upTo: counters.upTo, diagnostics: { enabled: false }, ...trace };
     return { path: config?.historyPath || null, running: !!worker, ...counters, v8Heap: workerHeap,
-        ...(PopulationConfig.developerDiagnostics && PopulationConfig.economyDiagnostics ? { economyDiagnostics: { ...Diagnostics.stats(), writer: writerTelemetry } } : {}) };
+        ...trace };
 }
 
 module.exports = { all, flush, one, prepare, start, stats, stop, wake };

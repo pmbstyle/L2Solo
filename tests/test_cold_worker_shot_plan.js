@@ -1,4 +1,4 @@
-process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture asserts the optional worker telemetry bridge.
+process.env.BOT_DEVELOPER_DIAGNOSTICS = 'true'; // This fixture asserts the worker's decision trace bridge.
 const assert = require('node:assert/strict');
 const { useRate, useGeneral } = require('./helpers/progressionRate');
 require('./helpers/databaseIsolation');
@@ -20,7 +20,7 @@ const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtoco
 const { npcPlanningCatalogRows } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
 const root = path.resolve(__dirname, '..');
 const Config = require('../src/GameServer/Bot/Population/PopulationConfig');
-Config.economyDiagnostics = true; Config.economyDiagnosticsBotIds = '710021';
+Config.decisionTrace = true;
 // Keep the original native fixture and assertions, with both literal UUID
 // database paths configured and asserted before the first connection.
 async function createWorld(characters) {
@@ -122,7 +122,7 @@ parentPort.on('message', message => {
         const diagnosticCoordinator = new ColdSimulationCoordinator(); diagnosticCoordinator.worker = worker; diagnosticCoordinator.workerEpoch = epoch;
         worker.on('message', message => {
             messages.push(message);
-            if (message.type === 'economy_diagnostics') diagnosticCoordinator.onMessage(message, worker, epoch);
+            if (message.type === 'decision_trace') diagnosticCoordinator.onMessage(message, worker, epoch);
         }); worker.on('error', error => { fault = error; });
         const wait = async predicate => { const deadline = Date.now() + 60000;
             while (!messages.some(predicate)) { if (fault) throw fault;
@@ -136,7 +136,7 @@ parentPort.on('message', message => {
             rows: catalog.slice(at, at + Protocol.MAX_BATCH), done: at + Protocol.MAX_BATCH >= catalog.length });
         const spots = invoke('GameServer/Bot/Population/SpotProfiles').ensure();
         for (let at = 0; at < spots.length; at += Protocol.MAX_BATCH) send('catalog_page', { catalog: 'spots', rows: spots.slice(at, at + Protocol.MAX_BATCH) });
-        send('init', { config: { loopIntervalMs: 1000, developerDiagnostics: true, economyDiagnostics: true, economyDiagnosticsBotIds: '710021' } }, 'init');
+        send('init', { config: { loopIntervalMs: 1000, developerDiagnostics: true, decisionTrace: true } }, 'init');
         await wait(message => message.type === 'ready' && message.payload.phase === 'running'); send('pause', {}, 'pause');
         // Finite funded demand and explicit finite inputs/scroll. E2 correctly
         // refuses to invent a missing recipe or ingredient source from a bid.
@@ -152,7 +152,7 @@ parentPort.on('message', message => {
         console.log(JSON.stringify({ edges: result.edges, shot: result.plan?.shot, huntHour: result.hour, forbiddenLoaded: result.forbiddenLoaded }));
         const selectedStep = Policy.unpackStep(result.plan?.shot);
         assert(result.edges & 1); assert(selectedStep?.recipeTarget > 0, 'native worker with no known recipe selects a profitable executable recipe');
-        assert(messages.some(message => message.type === 'economy_diagnostics'), 'worker emits sampled decision telemetry on the separate developer bridge');
+        assert(messages.some(message => message.type === 'decision_trace'), 'the worker sends its decision trace to main');
         assert.deepEqual(result.forbiddenLoaded, [], 'pure craft decision loads no World actor, Network or database implementation');
         assert.equal(result.indexHooks.overlay, result.indexHooks.before + 100, 'projected own stock has a transient overlay');
         assert.equal(result.indexHooks.held, undefined, 'foreign stock is never exposed by a global snapshot');
@@ -220,11 +220,11 @@ parentPort.on('message', message => {
         await invoke('HistoryDatabase').flush();
         // The history worker may still be appending a later bridged batch while
         // this reads: only newline-terminated (whole) rows are parsed.
-        const diagnostics = fs.readFileSync(path.join(fixture.directory, 'logs/economy-diagnostics.jsonl'), 'utf8').split('\n').slice(0, -1).map(JSON.parse);
-        // The bridge is bounded (64 records a second): whether the later town
-        // choice survives depends on the wall-clock second it lands in, so the
-        // check is that this bot's worker records reach the writer at all.
-        assert(diagnostics.some(row => row.owner === id && row.thread === 'worker'), 'sampled worker choices reach the existing history writer');
+        const trace = fs.readFileSync(path.join(fixture.directory, 'logs/decision-trace.jsonl'), 'utf8').split('\n').slice(0, -1).map(JSON.parse);
+        assert.equal(trace[0].type, 'decision_trace_header');
+        assert.match(trace[0].build, /^([0-9a-f]{40}|unknown)$/); assert(trace[0].run);
+        // The trace is rate-bounded: the check is that this bot's worker records reach the history writer at all.
+        assert(trace.some(row => row.bot === id && row.thread === 'worker'), 'the worker\'s decisions reach the history writer');
         console.log('Native worker executable recipe decision, physical purchase, own-stock privacy, held unsupported book, zero economy fences and margin rejection passed');
     } finally { await worker?.terminate(); await world.close(); }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

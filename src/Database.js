@@ -59,6 +59,7 @@ const ClanSocialPolicy = require('./GameServer/Clan/ClanSocialPolicy');
 const ClanRules = require('./GameServer/Clan/ClanRules');
 const ClanSocialEvidence = require('./GameServer/Clan/ClanSocialEvidence');
 const PkDropPolicy = require('./GameServer/PkDropPolicy');
+const Trace = require('./GameServer/Bot/DecisionTrace');
 let nativeDiagnosticFacts = null;
 let nativeDiagnosticCounts = null;
 let nativeDiagnosticOverflow = 0;
@@ -70,8 +71,8 @@ function stageNativeDiagnostic(characterId, step, phase, reason, fields) {
         if (previous) previous.count++;
         else if (nativeDiagnosticCounts.size < 64) nativeDiagnosticCounts.set(key, { phase, reason, count: 1 });
         else nativeDiagnosticOverflow++;
-        if (!Diagnostics.enabled(characterId)) return;
-        if ((nativeDiagnosticFacts?.length || 0) >= 64) { Diagnostics.noteDropped(1); return; }
+        if (!Trace.detailed(characterId)) return;
+        if ((nativeDiagnosticFacts?.length || 0) >= 64) { Trace.noteDropped(1); return; }
         nativeDiagnosticFacts ||= [];
         nativeDiagnosticFacts.push(Object.freeze({ ...fields, owner: Number(characterId), phase, reason, at: Date.now(),
             commandId: step?.command?.[0], commandKind: step?.command?.[1], sequence: step?.command?.[2],
@@ -97,7 +98,7 @@ function publishNativeDiagnostics(rolledBack = null) {
     if (!facts) return;
     for (const row of facts) {
         try {
-            Diagnostics.push(rolledBack ? { ...row, outcome: 'rolled_back',
+            Trace.detail(rolledBack ? { ...row, outcome: 'rolled_back',
                 reason: row.phase === 'native_refusal' ? row.reason : rolledBack,
                 planned: row.planned ?? row.actual, actual: 0, spent: 0,
                 ...(row.goalApplied === undefined ? {} : { goalApplied: 0 }) } : { ...row, outcome: 'committed' });
@@ -2746,7 +2747,7 @@ function checkEconomyFundingUnsafe(characterId, step, amount, funding = {}, wall
     if (!StatsPacket.hasMoney(packet)) throw Error('economy_funding_missing');
     const wallet = walletOverride === null ? Number(one('SELECT COALESCE(SUM(amount),0) amount FROM items WHERE characterId=? AND selfId=57', [characterId]).amount) : walletOverride;
     const { r, itemId, valueHours, side, survivalCost, survivalShare, clanPart, raidPreparationId } = funding;
-    const fundingCapture = Diagnostics.active() && Diagnostics.enabled(characterId) ? {} : null;
+    const fundingCapture = Trace.detailed(characterId) ? {} : null;
     const budget = PurchaseFunding.spendable({
         adena: wallet, stats: raidPreparationId ? { ...stats, money: packet } : { money: packet },
         ...(raidPreparationId ? { inventory: { [itemId]: { amount: Number(one(

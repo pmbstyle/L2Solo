@@ -5,8 +5,8 @@ const DEFAULTS = {
     // Mobius buylists: only the GM shop); crafters make them (T116).
     staticShotsDisabled: true,
     developerDiagnostics: false,
-    economyDiagnostics: false,
-    economyDiagnosticsBotIds: '',
+    // The decision trace (Bot/DecisionTrace): its own switch, not under developerDiagnostics.
+    decisionTrace: false,
     // Personal knowledge errors and learning by own actions share one switch.
     knowledgeErrorsEnabled: true,
     backgroundResolverEnabled: true,

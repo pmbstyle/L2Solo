@@ -47,6 +47,7 @@ const BotTargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
+const Trace = require('../DecisionTrace');
 
 const { equipmentSlotKey, equipmentReplacementConflict } = BotEquipmentCompatibility;
 const ARMOR_SLOTS = new Set([6, 9, 10, 11, 12, 15]);
@@ -2313,7 +2314,7 @@ function sourceRouteReader(state, options = {}) {
     if (diagnostic && options.ground) Diagnostics.count('source_route', 'ground', reused ? 'reuse' : 'build');
     if (diagnostic && options.ground && !reused) Diagnostics.count('source_route', 'ground_moved', moved);
     // A sampled reader notes the ordinals it checked or filled itself.
-    const shadow = diagnostic && reused && (Diagnostics.enabled(state.characterId) || (++groundShadows & 63) === 0)
+    const shadow = diagnostic && reused && (Trace.detailed(state.characterId) || (++groundShadows & 63) === 0)
         ? new Set() : null;
     // An excluded spot counts once per reader, as each refusal used to.
     const countedExcluded = diagnostic ? new Set() : null;

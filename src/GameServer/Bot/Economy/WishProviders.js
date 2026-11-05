@@ -14,6 +14,7 @@ const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
 const DataCache = invoke('GameServer/DataCache');
 const { GRADES: GEAR_RANKS } = invoke('GameServer/Bot/AI/GearGradeRule');
+const Trace = require('../DecisionTrace');
 // A module read inside a hot function: require() walks the module path on
 // every call, so each path is resolved once here. The relative require keeps
 // the module's dependency boundary (tests pass their own require).
@@ -1308,7 +1309,7 @@ function buildProjection(state, ctx, deps) {
         // floor is filled, optional stock cannot keep the kit on hold.
         const amount = Number(stock?.survivalMissing || 0)
             + (progression.required && kind !== 'shots' ? 0 : Number(stock?.missing || 0));
-        if (Diagnostics.active() && Diagnostics.enabled(state.characterId)) Diagnostics.push({ owner: state.characterId,
+        if (Trace.detailed(state.characterId)) Trace.detail({ owner: state.characterId,
             caller: deps.caller || 'wish_provider', trigger: 'projection_build',
             phase: 'wish_need', reason: !(amount > 0) ? 'target_satisfied' : !(stock.unitPrice > 0)
                 ? 'unknown_price' : !(stock.benefitPerUnit > 0) ? 'no_expected_benefit' : 'stock_shortfall',

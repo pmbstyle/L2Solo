@@ -2969,7 +2969,8 @@ const BackgroundResolver = {
                     type: 'death',
                     summary: `${state.name || 'Bot'} died near ${spot.name}`,
                     weight: 4,
-                    meta: { spotId: spot.id, fights: i + 1 }
+                    // killer: the mob's template id (the decision trace's death record).
+                    meta: { spotId: spot.id, fights: i + 1, killer: Number(result.debug?.mobSelfId) || 0 }
                 });
                 break;
             }

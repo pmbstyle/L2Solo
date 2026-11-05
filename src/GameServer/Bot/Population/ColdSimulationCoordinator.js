@@ -45,7 +45,7 @@ const ColdSafetyTransport = require('./ColdSafetyTransport');
 const ColdNpcPlanningCatalog = require('./ColdNpcPlanningCatalog');
 const TableChannel = require('./ColdTableChannel');
 const TownNpcCatalog = require('../Economy/TownNpcCatalog');
-const EconomyDiagnostics = require('../Economy/EconomyDiagnostics');
+const Trace = require('../DecisionTrace');
 const EconomyCommit = require('../Economy/EconomyCommit');
 const DecisionEvents = require('../AI/DecisionEvents');
 const RecomputeGeneration = require('./RecomputeGeneration');
@@ -717,16 +717,15 @@ class ColdSimulationCoordinator {
 
     async onMessage(message, worker = this.worker, epoch = this.workerEpoch) {
         if (this.worker !== worker || this.workerEpoch !== epoch) return;
-        if (message?.type === 'economy_diagnostics' && Config.developerDiagnostics && Config.economyDiagnostics && message.epoch === epoch) {
+        if (message?.type === 'decision_trace' && Trace.on() && message.epoch === epoch) {
             if (!Number.isSafeInteger(message.id) || message.id <= 0) return;
-            const diagnostics = invoke('GameServer/Bot/Economy/EconomyDiagnostics');
-            const accepted = diagnostics.accept(message.records);
-            if (this.diagnosticEpoch !== epoch) { this.diagnosticEpoch = epoch; this.diagnosticDropped = 0; }
+            const accepted = Trace.accept(message.records);
+            if (this.traceEpoch !== epoch) { this.traceEpoch = epoch; this.traceDropped = 0; }
             const dropped = Number(message.dropped);
-            if (Number.isSafeInteger(dropped) && dropped >= this.diagnosticDropped) {
-                diagnostics.noteDropped(dropped - this.diagnosticDropped); this.diagnosticDropped = dropped;
+            if (Number.isSafeInteger(dropped) && dropped >= this.traceDropped) {
+                Trace.noteDropped(dropped - this.traceDropped); this.traceDropped = dropped;
             }
-            worker.postMessage({ type: 'economy_diagnostics_ack', epoch, id: message.id,
+            worker.postMessage({ type: 'decision_trace_ack', epoch, id: message.id,
                 accepted: Number.isSafeInteger(accepted) ? accepted : 0 }); return;
         }
         const valid = Protocol.validateEnvelope(message, 'worker', { workerEpoch: this.workerEpoch, bytes: message?.bytes });
@@ -769,12 +768,6 @@ class ColdSimulationCoordinator {
                 this.sendPlanningCatalog();
                 this.post('init', { config: this.workerConfig(), catalogVersion: utils.buildNumber(),
                     recomputeGeneration: RecomputeGeneration.metadata() });
-                this.stopDiagnosticSelection?.();
-                this.stopDiagnosticSelection = Config.developerDiagnostics && Config.economyDiagnostics
-                    ? EconomyDiagnostics.followSelection(ownerIds => {
-                        if (!this.stopping && this.worker === worker && this.workerEpoch === epoch)
-                            worker.postMessage({ type: 'economy_diagnostics_selection', epoch, ownerIds });
-                    }) : null;
                 try {
                     this.attachTableChannel();
                 } catch (error) {
@@ -915,7 +908,7 @@ class ColdSimulationCoordinator {
     workerConfig() {
         return {
             developerDiagnostics: Config.developerDiagnostics === true,
-            ...(Config.developerDiagnostics && Config.economyDiagnostics ? { economyDiagnostics: true, economyDiagnosticsBotIds: EconomyDiagnostics.ownerIds() } : {}),
+            decisionTrace: Trace.on(),
             pvpAggression: Config.pvpAggression,
             maxBatch: Math.max(1, Math.min(64, Number(Config.coldWorkerBatchSize) || 64)),
             maxInFlight: this.desiredWorkerPressure().maxInFlight,
@@ -2310,8 +2303,6 @@ class ColdSimulationCoordinator {
             const preparation = held.meetingToken ? held : held.meetingPending;
             if (preparation) this.finishMeetingPreparation(id, preparation, null, Error('trade_meeting_worker_exited'));
         }
-        this.stopDiagnosticSelection?.();
-        this.stopDiagnosticSelection = null;
         this.cancelSafety();
         Metrics.clearColdSafetyEpoch(epoch);
         this.economyDecisions.clear();
@@ -2331,6 +2322,7 @@ class ColdSimulationCoordinator {
         const restartDelay = restart.delayMs;
         this.restartCount = restart.crashes;
         DiagnosticConfig.developerDiagnostics && (this.counters.workerRestarts += 1);
+        Trace.record({ kind: 'restart', worker: 'cold', reason: this.terminateCause || `exit_${Number(code || 0)}` });
         utils.infoWarn('ColdWorker', 'worker exited code=%d cause=%s last message %s; restarting in %dms',
             Number(code || 0), this.terminateCause || 'worker_own_exit', this.lastWorkerMessage || 'none', restartDelay);
         this.restartTimer = setTimeout(() => this.startWorker(), restartDelay);
@@ -2355,8 +2347,6 @@ class ColdSimulationCoordinator {
         // Fence posted continuations before cancellation, early returns or any
         // drain await. A stopped same-epoch recipient cannot be rearmed.
         this.tableChannel.stopActorRecipient?.(this, epoch);
-        this.stopDiagnosticSelection?.();
-        this.stopDiagnosticSelection = null;
         this.cancelSafety();
         for (const held of this.commitAcknowledgements.values()) held.resolve(false);
         this.commitAcknowledgements.clear();

@@ -13,6 +13,7 @@ const DataCache = invoke('GameServer/DataCache');
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Consumption = require('../Economy/ConsumptionDiagnostics');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
+const Trace = require('../DecisionTrace');
 const DecisionEvents = require('../AI/DecisionEvents');
 const DecisionSections = require('../Economy/DecisionSections');
 const Situations = require('../Situations');
@@ -1140,10 +1141,11 @@ function writeHeldOnRevision(member, { stats = {}, columns = {} }, reason) {
 // one UPDATE per raise that adds a bit; main raises a few per far bot per hour.
 function raiseOnRow(characterId, names, reason = 'situation') {
     const id = Number(characterId), where = Situations.place(cache.get(id) || { phase: 'cold' });
-    const bits = { woken: 0, waiting: 0, wishDirty: 0, leaf: false };
+    const bits = { woken: 0, waiting: 0, wishDirty: 0, leaf: false }, each = [];
     for (const [name, payload] of names) {
         const one = Situations.delta(name, payload, where);
         bits.woken |= one.woken; bits.waiting |= one.waiting; bits.wishDirty |= one.wishDirty; bits.leaf ||= one.leaf;
+        each.push([name, payload, one]);
     }
     // Nothing to OR: no write, no revision move, no stale step for the worker.
     if (!bits.woken && !bits.waiting && !bits.wishDirty && !bits.leaf) {
@@ -1161,7 +1163,7 @@ function raiseOnRow(characterId, names, reason = 'situation') {
         RETURNING *`, [Situations.ALL, bits.woken, bits.waiting, bits.wishDirty, now(), id], { read: true }]))
         .then(([row] = []) => {
             if (!row) return null;
-            for (const [name] of names) Situations.counted(name, where);
+            for (const [name, payload, one] of each) Situations.counted(name, where, 0, one.woken, id, one.waiting, payload);
             const snapshot = module.exports.acceptNewerLifecycleRow(row);
             if (snapshot) notifyColdSnapshot(snapshot, reason, { critical: true });
             return snapshot;
@@ -1511,7 +1513,7 @@ function mergeSessionIntoLifeState(session, state, phase, reason = '', options =
     // for the party and PvP cooldowns) takes the near raise still unanswered.
     // Its detect baseline ends with the body.
     if (phase === 'cold') {
-        DecisionEvents.applyPendingRaise(session, merged.stats, Situations.place(merged));
+        DecisionEvents.applyPendingRaise(session, merged.stats, Situations.place(merged), merged.characterId);
         session.nearFacts = null;
     }
     return merged;
@@ -2254,7 +2256,7 @@ const BotLifeState = {
                 inventory: InventorySummary.read(row.inventorySummary)
             };
             // Built without mergeSessionIntoLifeState: the near raise joins here.
-            DecisionEvents.applyPendingRaise(session, nextState.stats, Situations.place(nextState));
+            DecisionEvents.applyPendingRaise(session, nextState.stats, Situations.place(nextState), nextState.characterId);
             session.nearFacts = null;
             return this.upsertState(nextState, reason, { releaseHot: true });
         }
@@ -2728,6 +2730,11 @@ const BotLifeState = {
         const newDeath = (result.patch?.activity === 'dead' || result.debug?.died === true)
             && nextDeathsForPenalty > Number(state.stats?.deaths || 0);
         if (newDeath) {
+            if (Trace.on()) {
+                const death = result.events?.find(event => event?.type === 'death')?.meta;
+                Trace.record({ kind: 'death', bot: state.characterId, spot: String(death?.spotId ?? result.patch?.spotId ?? state.spotId ?? ''),
+                    killer: death?.killer > 0 ? `npc:${death.killer}` : death?.partyId ? 'party_fight' : 'unknown', level: Number(state.level) });
+            }
             progressionState = invoke('GameServer/Progression/DeathExperience').applyColdDeath(progressionState, {
                 timestamp,
                 cold: true
@@ -3010,8 +3017,8 @@ const BotLifeState = {
         // its projection (the worker's room at arrival). Then the step's stop: at a
         // rest or in town what waited for it wakes.
         const where = Situations.place(nextState, state);
-        for (const name of [...hard, ...soft, ...options.checkSituations || []]) Situations.raise(nextState.stats, name, null, where);
-        Situations.stop(nextState.stats, where);
+        for (const name of [...hard, ...soft, ...options.checkSituations || []]) Situations.raise(nextState.stats, name, null, where, nextState.characterId);
+        Situations.stop(nextState.stats, where, nextState.characterId);
         // The worker's post-round economy ask: only a step that took no
         // decision before its round (a party member).
         if (!isMainThread && !state.stats?.tradeMeeting && !beforeResolvePacket) {

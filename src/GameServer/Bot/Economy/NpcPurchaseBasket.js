@@ -4,14 +4,15 @@ const Commit = require('./EconomyCommit');
 const Diagnostics = require('./EconomyDiagnostics');
 const SavedStats = require('../SavedStats');
 const InventorySummary = require('../Population/InventorySummary');
+const Trace = require('../DecisionTrace');
 const MAX_LINES = 12;
 
 // No result history: bounded observations use the admission and returned receipt.
 function diagnostic(state, command, phase, reason, fields) {
     if (!Diagnostics.active()) return;
     Diagnostics.count('npc_basket', phase, reason);
-    if (!Diagnostics.enabled(state.characterId)) return;
-    Diagnostics.push({ ...fields, owner: Number(state.characterId), phase, reason, caller: 'NpcPurchaseBasket',
+    if (!Trace.detailed(state.characterId)) return;
+    Trace.detail({ ...fields, owner: Number(state.characterId), phase, reason, caller: 'NpcPurchaseBasket',
         commandId: command?.[0], sequence: command?.[2], revision: Number(state.simulation?.revision),
         decisionSeq: Number(state.stats?.decisionSeq), activityLeaf: Number(state.stats?.activityLeaf) });
 }

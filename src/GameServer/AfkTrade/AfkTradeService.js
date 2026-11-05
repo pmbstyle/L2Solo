@@ -27,8 +27,8 @@ const entriesById = new Map();
 const entriesByOwner = new Map();
 const MarketCounters = invoke('GameServer/Bot/Economy/MarketCounters');
 const ColdOccupationSources = require('../Bot/Population/ColdOccupationSources');
-const EconomyDiagnostics = require('../Bot/Economy/EconomyDiagnostics');
 const PartyAdmission = require('../Bot/Population/PartyAdmission');
+const Trace = require('../Bot/DecisionTrace');
 const board = new BoardIndex({ groupOf: MarketCounters.counterOf });
 MarketCounters.publish(TableChannel.shared);
 // The board goes to the planning workers as the 'board' table (ColdTableChannel):
@@ -712,14 +712,14 @@ function syncOwnerAfterMove(ownerId, result) {
 // follow its goal). `expected` maps the records it saw to their revisions.
 async function replaceBotRecords(ownerId, kind, configs, options = {}) {
     const characterId = Number(ownerId);
-    const observed = kind === 'buy_ad' && EconomyDiagnostics.enabled(characterId);
+    const observed = kind === 'buy_ad' && Trace.detailed(characterId);
     const reserve = observed ? () => board.ownerLines(characterId).filter(line => line.kind === 'buy_ad' && line.custodyPolicy !== 1)
         .reduce((sum, line) => sum + line.count * line.price, 0) : null;
     const oldReserve = observed ? reserve() : 0;
     let result;
     try { result = await Database.replaceBoardRecords(characterId, kind, configs, options); }
     catch (error) {
-        if (observed) EconomyDiagnostics.push({ owner: characterId, phase: 'buy_ad_reconcile', trigger: 'goal_review',
+        if (observed) Trace.detail({ owner: characterId, phase: 'buy_ad_reconcile', trigger: 'goal_review',
             reason: /^(economy_[a-z_]+|shop_changed|board_[a-z_]+|not_enough_adena)$/.test(error.message) ? error.message : 'native_refused',
             reserveDelta: 0 });
         throw error;
@@ -727,7 +727,7 @@ async function replaceBotRecords(ownerId, kind, configs, options = {}) {
     result.closed.forEach(refreshRecord);
     (result.changed || result.opened).forEach(refreshRecord);
     if (result.ownerInventory) syncOwnerAfterMove(characterId, result);
-    if (observed) EconomyDiagnostics.push({ owner: characterId, phase: 'buy_ad_reconcile', trigger: 'goal_review',
+    if (observed) Trace.detail({ owner: characterId, phase: 'buy_ad_reconcile', trigger: 'goal_review',
         reason: result.closed.length || result.opened.length || result.changed?.length ? 'changed' : 'unchanged',
         reserveDelta: reserve() - oldReserve, recordId: result.retained?.[0]?.id || result.opened?.[0]?.id,
         revision: result.retained?.[0]?.revision || result.opened?.[0]?.revision });

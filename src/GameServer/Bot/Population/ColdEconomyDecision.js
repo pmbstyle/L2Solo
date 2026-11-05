@@ -19,6 +19,7 @@ const Sections = require('../Economy/DecisionSections');
 const Situations = require('../Situations');
 const PurchaseFunding = require('../Economy/PurchaseFunding');
 const EconomicValuation = require('../Economy/EconomicValuation');
+const Trace = require('../DecisionTrace');
 const kinds = [undefined, 'improvement', 'book', 'resale', 'shots', 'potions'];
 function kindCode(kind) { const code = kinds.indexOf(kind); return code < 0 ? 255 : code; }
 function kindFor(code) { return kinds[code]; }
@@ -395,7 +396,7 @@ function capture(economy, state, seen = state) {
         feasibility: economy?.workshop?.feasibility || economy?.feasibility || null
     });
     if (Diagnostics.active()) Diagnostics.count('ready_card', 'build', 'decision_pack');
-    if (Diagnostics.active() && Diagnostics.enabled(state?.characterId)) Diagnostics.push({ owner: state.characterId,
+    if (Trace.detailed(state?.characterId)) Trace.detail({ owner: state.characterId,
         caller: 'cold_decision_capture', trigger: 'decision_pack', phase: 'decision_preparation',
         reason: 'prepared_card', inputHash: decision.inputHash, revision: state.simulation?.revision,
         decisionSeq: economy?.network?.decisionSeq, activityLeaf: economy?.network?.activityLeaf,
@@ -762,9 +763,9 @@ class ColdEconomyDecisions {
             const same = previous ? sameEconomicOutput(previous, incoming) : null;
             Diagnostics.count('ready_card', same === null ? 'comparison_unavailable' : same ? 'unchanged' : 'changed',
                 same === null ? previous ? 'wide_packet' : 'not_retained' : 'economic_output');
-            if (Diagnostics.enabled(id)) {
+            if (Trace.detailed(id)) {
                 const activity = incoming.activity;
-                Diagnostics.push({ owner: id, caller: 'cold_decision_accept', phase: 'decision_publication',
+                Trace.detail({ owner: id, caller: 'cold_decision_accept', phase: 'decision_publication',
                     trigger: bagChanged ? 'native_bag_changed' : 'state_publication',
                     reason: same === null ? 'comparison_unavailable' : same ? 'economic_output_unchanged' : 'economic_output_changed',
                     inputHash: incoming.inputHash, wishKey: activity?.rootKey, item: activity?.itemId,
