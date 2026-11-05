@@ -3,14 +3,13 @@ const InventorySummary = require('./InventorySummary');
 const Episode = require('./ColdCompetitionEpisode');
 const Risk = require('./SpotRiskPolicy');
 const PartyRisk = require('./PartySpotRiskPolicy');
-const Sections = require('../Economy/DecisionSections');
+const Situations = require('../Situations');
 // Voluntary decisions affect the actor's whole hunting unit, without blame.
 // The avoided spot stays excluded for ten of the holder's own steps.
 const AVOID_STEPS = 10;
-// An avoid raises the unit's occupation: the worker's next step (a member's,
-// the party's run) routes it off the excluded spot, as any trip (BotRoute);
-// main searches no spot.
-const OCCUPATION = Sections.sectionBit('occupation');
+// An avoid raises moved_by_world on the unit (its occupation section): the
+// worker's next step (a member's, the party's run) routes it off the excluded
+// spot, as any trip (BotRoute); main searches no spot.
 
 async function apply({ event, life, owner, memory, parties, participantAllowed, contestContextAllowed,
     onState, now, waitMs }) {
@@ -38,9 +37,9 @@ async function apply({ event, life, owner, memory, parties, participantAllowed, 
     // One avoid per holder, on its own counter: each member's far steps, the
     // party's rounds for the party copy.
     const avoidFor = counter => ({ spotId: event.spotId, untilStep: counter + AVOID_STEPS });
-    const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
-    const actorMembers = sides[0].members.map(s => avoiding ? { ...s, stats: DecisionEvents.applyRaise({ ...s.stats,
-        coldCompetition: { ...s.stats?.coldCompetition, avoid: avoidFor(Risk.stepCount(s)) } }, OCCUPATION) } : s);
+    // Pushed off its spot: moved by the world, heard at once.
+    const actorMembers = sides[0].members.map(s => avoiding ? { ...s, stats: Situations.raise({ ...s.stats,
+        coldCompetition: { ...s.stats?.coldCompetition, avoid: avoidFor(Risk.stepCount(s)) } }, 'moved_by_world') } : s);
     // The actor's unit steps now (the worker routes it); a yield waits.
     const actorDue = due => avoiding ? at : Math.max(at, Number(due || 0)) + waitMs;
     const preparedParties = sides.map((side, i) => {

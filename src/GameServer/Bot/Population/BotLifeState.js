@@ -136,7 +136,7 @@ function notifyNearFacts(session, reason) {
             // Not saved: the number of this post and the raise it carries.
             session.nearSeq = Number(session.nearSeq || 0) + 1;
             row.nearSeq = session.nearSeq;
-            if (session.nearRaise) row.raise = { ...session.nearRaise };
+            if (session.nearRaise) row.raise = { ...session.nearRaise, names: session.nearRaise.names.map(pair => [...pair]) };
             // lazy: cycle the coordinator requires this module at its top.
             invoke('GameServer/Bot/Population/ColdSimulationCoordinator').markDirty(row,
                 { reason, critical: isCriticalSnapshotReason(reason, row) || !!row.raise, near: true });
@@ -2942,8 +2942,8 @@ const BotLifeState = {
             // and arrival raise nothing; none (main, a step without a plan):
             // every move is an event.
             // The round found its spot empty of prey (BackgroundResolver, once a stay).
-            hard = Situations.raise(Situations.detect(state, nextState, { escrow, leaf: options.leaf ?? null,
-                unhuntable: result.debug?.unhuntable === true }), Situations.place(nextState, state));
+            hard = Situations.detect(state, nextState, { escrow, leaf: options.leaf ?? null,
+                unhuntable: result.debug?.unhuntable === true });
         }
         // The bot's step counter, the clock of its spot marks (SpotRiskPolicy):
         // +1 once per resolved step, whichever thread resolves it (hot actor
@@ -2951,12 +2951,15 @@ const BotLifeState = {
         nextState.stats.stepCount = SpotRiskPolicy.stepCount(state) + 1;
         // The soft point (background thread, every far step, whatever its
         // round): money, income and the watched market against the bot's own
-        // error; raised with the round's hard events in one bump.
+        // error; raised with the round's situations.
         const soft = !isMainThread && typeof options.softInputFor === 'function'
             ? DecisionSections.softEvents(nextState, nextState.stats.wishSections, options.softInputFor(nextState, timestamp), state) : [];
-        // checkSections: the sections a failed cheap check of this step raised
-        // before its projection (the worker's room at arrival), in the same bump.
-        DecisionEvents.raiseSections(state, nextState, hard, soft, options.checkSections || []);
+        // checkSituations: what a failed cheap check of this step raised before
+        // its projection (the worker's room at arrival). Then the step's stop: at a
+        // rest or in town what waited for it wakes.
+        const where = Situations.place(nextState, state);
+        for (const name of [...hard, ...soft, ...options.checkSituations || []]) Situations.raise(nextState.stats, name, null, where);
+        Situations.stop(nextState.stats, where);
         // The worker's post-round economy ask: only a step that took no
         // decision before its round (a party member).
         if (!isMainThread && !state.stats?.tradeMeeting && !beforeResolvePacket) {

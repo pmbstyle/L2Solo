@@ -88,6 +88,12 @@ async function bodyMoney(id) {
         await Life.upsertState(fixtureState(near, 'MindColumn2', 'hot', { money: NEW_MONEY }), 'mind_column_near');
         assert.deepEqual(JSON.parse((await row(near)).mindJson).money, NEW_MONEY, 'a hot save writes the new mind');
         assert.equal(await bodyMoney(near), null, 'the body still holds no money');
+        // The woken decisions (Situations' store) are the mind's too.
+        const STORE = { woken: 1, waiting: 256, situationSeq: 4 };
+        await Life.upsertState(fixtureState(near, 'MindColumn2', 'hot', { money: NEW_MONEY, ...STORE }), 'mind_column_store');
+        const stored = await row(near), storedMind = JSON.parse(stored.mindJson), storedBody = JSON.parse(stored.statsJson);
+        assert.deepEqual([storedMind.woken, storedMind.waiting, storedMind.situationSeq], [1, 256, 4], 'the store is saved in the mind');
+        assert.equal(['woken', 'waiting', 'situationSeq'].some(key => Object.hasOwn(storedBody, key)), false, 'not in the body');
         // The hot->cold hand-off carries main's mind into the far row.
         const HANDOFF_MONEY = [99000, 0, 17000, 0];
         await Life.upsertState(fixtureState(near, 'MindColumn2', 'cold', { money: HANDOFF_MONEY }), 'mind_column_handoff',

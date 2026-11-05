@@ -462,7 +462,7 @@ function verify() {
             [ear.selfId]: { ...ear, amount: 2, equippedCount: 2, equippedSlots: [1, 2] } } });
         const sampledThird = state => stat(state, { huntEfficiency: [0, 1, 2].reduce(rows => Hunt.record(stat(state, { huntEfficiency: rows }),
             { spotId: 'third', timestamp: started, cycleMs: 60000, adena: 500, costs: 100, loot: 0, exp: 50, kills: 10 }), state.stats.huntEfficiency) });
-        const raised = state => stat(state, { wishDirty: Sections.sectionMask(Sections.softEvents(state, state.stats.wishSections, { timestamp: time(1) })) });
+        const raised = state => stat(state, { wishDirty: Sections.sectionMask(Situations.sectionsOf(Sections.softEvents(state, state.stats.wishSections, { timestamp: time(1) }))) });
         const money = (state, hour, price) => { const packet = state.stats.money;
             return stat(state, { money: Packet.money({ hourAdena: Packet.hourAdena(packet) * hour, moneyPrice: Packet.moneyPrice(packet) * price,
                 survivalReserve: Packet.survivalReserve(packet), firstUnfundedPrice: Packet.firstUnfundedPrice(packet) }) }); };
@@ -806,10 +806,10 @@ function verify() {
         assert.equal(count(() => Economy.forState(state, on(1))).searches, 0, 'fixture: the hold stands');
         const lifted = recovering(state, Risk.recordRecovery(state, { wins: 12, exp: Number(state.exp) || 0 }));
         assert.equal(lifted.stats.huntingRecovery.levelPenalty, 0, 'fixture: twelve clean wins lift it');
-        const raised = Situations.raise(Situations.detect(state, lifted), Situations.place(lifted, state));
+        const raised = Situations.heard(Situations.detect(state, lifted), Situations.place(lifted, state));
         assert(raised.includes('occupation'), 'the step that lifts it raises the bot\'s ground');
         const far = state => ({ ...state, phase: 'cold' });
-        assert(Situations.raise(Situations.detect(far(state), far(lifted)), Situations.place(far(lifted), far(state))).includes('occupation'), 'also far at work');
+        assert(Situations.heard(Situations.detect(far(state), far(lifted)), Situations.place(far(lifted), far(state))).includes('occupation'), 'also far at work');
         const heard = { ...lifted, stats: { ...lifted.stats, wishDirty: Sections.sectionMask(raised) } };
         const read = count(() => Economy.forState(heard, on(2)));
         assert.equal(read.searches, 1, 'the lifted penalty searches once');

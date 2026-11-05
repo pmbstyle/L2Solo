@@ -1,6 +1,8 @@
 const Config = invoke('GameServer/Bot/Population/PopulationConfig');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
+// A count map as name:n, most first.
+const top = rows => Object.entries(rows || {}).sort((a, b) => b[1] - a[1]).map(([why, count]) => `${why}:${count}`).join(',');
 const MarketTelemetry = invoke('GameServer/Bot/Economy/MarketTelemetry');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const PartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
@@ -99,11 +101,14 @@ const PopulationStatus = {
     // raiseDecision: arrived_town, money, revived, goal_failed, ...); nearDecisions=
     // accepted/refused/dropped, the decisions their bodies took, refused as
     // older than the one held, or dropped as the bot cooled before they came.
+    // nearRaiseOver= (only when any): raises past a body's pending bag's cap
+    // (DecisionEvents.NEAR_NAMES), dropped.
     nearText(coordinator) {
         const nearFacts = coordinator?.snapshots?.nearFacts || {}, decisions = coordinator?.nearDecisions || {};
         const raises = Object.entries(nearFacts).reduce((sum, [reason, count]) => NEAR_FACTS.includes(reason) ? sum : sum + count, 0);
         return `nearFacts=${NEAR_FACTS.map(reason => nearFacts[reason] || 0).join('/')} nearRaises=${raises}`
-            + ` nearDecisions=${decisions.accepted || 0}/${decisions.refused || 0}/${decisions.dropped || 0}`;
+            + ` nearDecisions=${decisions.accepted || 0}/${decisions.refused || 0}/${decisions.dropped || 0}`
+            + (DecisionEvents.nearOverflow() ? ` nearRaiseOver=${DecisionEvents.nearOverflow()}` : '');
     },
 
     // The goal's numbers without diagnostics, in the full line's names: cold queue due now and the oldest wait,
@@ -145,7 +150,7 @@ const PopulationStatus = {
             + ` geo=${mb(geodata.loadedBytes)}MB/${geodata.loadedRegions} geoViews=${mb(geodata.attachedBytes)}+${mb(worker.geodata?.attachedBytes)}MB`
             + ` geoRaw=${geodata.rawRegions || 0} geoIndexOnly=${geodata.indexOnlyRegions || 0}`
             + ` geoHeightReads=${geodata.heightFileReads || 0}+${worker.geodata?.heightFileReads || 0} ${this.npcHateText()}`
-            + this.incomeHoldText(worker.incomeHold) + this.linksText(worker.links) + (worker.proofOverflows === undefined ? '' : ` proofOver=${worker.proofOverflows} nodeCap=${worker.nodeCapBuilds} asksDeep=${worker.asksPastDepth} shotFlips=${worker.sourceShotFlips} quietGear=${worker.quietGearBuilds}`) + this.doorsText(worker.buildDoors, worker.raisedLinks) + this.soloWindowText(worker.soloWindow);
+            + this.incomeHoldText(worker.incomeHold) + this.linksText(worker.links) + (worker.proofOverflows === undefined ? '' : ` proofOver=${worker.proofOverflows} nodeCap=${worker.nodeCapBuilds} asksDeep=${worker.asksPastDepth} shotFlips=${worker.sourceShotFlips} quietGear=${worker.quietGearBuilds}`) + this.doorsText(worker.buildDoors) + this.situationsText(worker.situations) + this.soloWindowText(worker.soloWindow);
     },
 
     // swallowed=<failures>/<sites>: failures main and the cold worker survived since start (FailureLog:
@@ -183,9 +188,21 @@ const PopulationStatus = {
 
     // doors=<caller>:<built>:<served>:<left to the step>:<read as held>:<moved down its agenda>: every door since the worker started.
     // raised=<link>@<place>:<n>: what woke a review (Reaction). rejected=<why>:<n>: what main refused at the act.
-    doorsText(doors, raised) {
-        const top = rows => Object.entries(rows || {}).sort((a, b) => b[1] - a[1]).map(([why, count]) => `${why}:${count}`).join(',');
-        return doors ? ` doors=${Object.entries(doors).map(([caller, row]) => `${caller}:${row.join(':')}`).join(',')} raised=${top(raised)} rejected=${top(DecisionEvents.rejections())}` : '';
+    doorsText(doors) {
+        return doors ? ` doors=${Object.entries(doors).map(([caller, row]) => `${caller}:${row.join(':')}`).join(',')} rejected=${top(DecisionEvents.rejections())}` : '';
+    },
+
+    // situations=raised:<name@place>:<n>,...;woke:<decision><name>:<n>,...;decided:<decision>:<taken>/<served>,
+    // <decision>:unwoken:<caller>:<n>,...[;over:<n>]: the worker's situation counts since it started
+    // (Situations.counts), diagnostics off too, most first. unwoken: a decision taken with no woken bit, by its
+    // caller (the build runs on its sections until situations step 4); over: keys past the maps' cap.
+    situationsText(c) {
+        if (!c) return '';
+        const decided = Object.entries(c.decided || {}).map(([name, row]) => `${name}:${row[0]}/${row[1]}`);
+        const unwoken = Object.entries(c.unwoken || {}).sort((a, b) => b[1] - a[1])
+            .map(([key, n]) => `${key.slice(0, key.indexOf(':'))}:unwoken:${key.slice(key.indexOf(':') + 1)}:${n}`);
+        return ` situations=raised:${top(c.raised)};woke:${top(c.woke)};decided:${[...decided, ...unwoken].join(',')}`
+            + (c.overflow ? `;over:${c.overflow}` : '');
     },
 
     // incomeHold=<kept>/<none>,<unrouted>,<renewed>,<moved>;event:<input>=<n>+...;party<kept>/<missed>: held

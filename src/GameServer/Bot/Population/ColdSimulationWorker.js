@@ -961,9 +961,9 @@ function nearEvents(id, previous, entry, applied) {
     // record's stand, so a late post cannot roll back a raise.
     for (const key of SavedStats.MIND_KEYS) stats[key] = previous.stats?.[key];
     entry.raiseSeq = DecisionEvents.takePostedRaise(stats, row.raise, applied);
-    const hard = Situations.raise(Situations.detect(previous, row, { escrow: escrowFor(id) }), Situations.place(row, previous));
-    const soft = DecisionSections.softEvents(row, stats.wishSections, softInputFor(id, Date.now()));
-    DecisionEvents.raiseSections(previous, row, hard, soft);
+    const where = Situations.place(row, previous);
+    for (const name of [...Situations.detect(previous, row, { escrow: escrowFor(id) }),
+        ...DecisionSections.softEvents(row, stats.wishSections, softInputFor(id, Date.now()))]) Situations.raise(stats, name, null, where);
 }
 // A bot's goal revision (GoalState.revision on main, 0 = no goal) from the
 // 'goals' table; undefined while the table loads (the decision skips the compare).
@@ -1366,7 +1366,6 @@ function pruneLookSeen(ownerId) {
 // there is indexed at its destination but does not stand there yet. Read once
 // when a trip ends; no place is held for a bot on its way. A raid boss spot or
 // a spot the catalog does not know has room.
-const ROOM_SECTIONS = Situations.sections('spot_crowded');
 function roomAtArrival(spotId, arriving, overflow = 0) {
     const room = SpotProfiles.spotRoom(planningSpots, spotId);
     if (room === Infinity) return true;
@@ -1406,7 +1405,7 @@ function dropRoute(characterId, why) {
 
 // A solo trip ends on a full spot: the bot stands there with a "was full"
 // mark (counted from this step's counter before its +1) and the step raises
-// occupation and sources with its other events, so the next step's decision
+// spot_crowded (occupation and sources) with its other events, so the next step's decision
 // point refuses the hunting leaf there and the spot search takes the next one.
 // A safety evacuation may exceed a full spot by one bot. A party trip is
 // checked once, at the party's arrival (partyArrival). Returns the marked
@@ -1431,8 +1430,8 @@ function soloArrival(state, result) {
 // A party trip ends (the kernel's party round, finishPartyRouteTravelState):
 // the spot's standing bots that are not of this party plus the whole party
 // against the capacity, no overflow. Full -> the party's "was full" mark
-// (PartySpotRiskPolicy, read by its next spot search) and occupation and
-// sources raised on the leader; the members arrive and stand. The party's own
+// (PartySpotRiskPolicy, read by its next spot search) and spot_crowded
+// raised on the leader; the members arrive and stand. The party's own
 // objective spot (a clan goal, a material party) admits it: a pass read from
 // the goal the party carries, not a place held for it, so a full roster does
 // not bounce between its objective and a fallback spot. cause: the trip's
@@ -1457,7 +1456,7 @@ function partyArrival({ party, members, spotId, cause = null }) {
         members: members.map(member => {
             if (Number(member.characterId) !== leaderId) return member;
             const raised = { ...member, stats: { ...(member.stats || {}) } };
-            DecisionEvents.raiseSections(member, raised, ROOM_SECTIONS);
+            Situations.raise(raised.stats, 'spot_crowded', null, Situations.place(raised));
             return raised;
         })
     };
@@ -1733,7 +1732,7 @@ function startKernel(config = {}) {
             let actionBaseline = lifecyclePlan?.actionBaseline || null;
             const base = {
                 ...roundProjection(state, timestamp, writtenAt, lifecyclePlan),
-                ...(crowded ? { checkSections: ROOM_SECTIONS } : {}),
+                ...(crowded ? { checkSituations: ['spot_crowded'] } : {}),
                 // The soft point's inputs (BotLifeState.prepareResolve, every
                 // step): the board mirror (null until ready), the escrow and
                 // the bot's memory rows, read only when its bond is compared.

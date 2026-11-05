@@ -13,6 +13,8 @@ const Valuation = require('./EconomicValuation');
 const Providers = require('./WishProviders');
 const Sections = require('./DecisionSections');
 const Situations = require('../Situations');
+// The decisions a build takes (Situations.decided).
+const BUILT = Object.freeze(['earning_spot', 'build']);
 const Funding = require('./PurchaseFunding');
 const Packet = require('./StatsPacket');
 const SpotRiskPolicy = require('../Population/SpotRiskPolicy');
@@ -124,7 +126,8 @@ function itemRows(items) {
 function routeState(state, session) {
     if (!session || typeof session !== 'object') return state;
     const frame = Trip.frame(state); frame.loc = null;
-    const event = JSON.stringify([state.spotId, state.stats?.decisionSeq, frame]);
+    // A decision (decisionSeq) or a raise (situationSeq) re-anchors it.
+    const event = JSON.stringify([state.spotId, state.stats?.decisionSeq, state.stats?.situationSeq, frame]);
     const held = routeAnchors.get(session);
     const anchor = held?.event === event ? held : { event, loc: state.loc };
     routeAnchors.set(session, anchor);
@@ -1905,7 +1908,10 @@ function buildForState(state, deps) {
     context.statsPacket = { wishFocus: network.focus, dormantWishes: network.dormant,
         decisionSeq: network.decisionSeq, activityLeaf: network.activityLeaf,
         money: Funding.packetFor(network, context.hourAdena, base.survivalReserve), stockTargets: stockTargets(base, context.gapHorizonHours),
-        dangerPrice: dangerPrice(base), wishDirty: 0 };
+        // The build takes its decision and, until the earning spot decides on its
+        // own (situations step 1), the earning spot's held answer with it.
+        dangerPrice: dangerPrice(base), wishDirty: 0,
+        woken: Situations.decided(state.stats, BUILT, { caller: deps.caller || 'economy_context' }) };
     let cumulative = base.survivalReserve;
     for (const wish of network.queue) {
         cumulative += cashCharge(wish);
@@ -2389,9 +2395,9 @@ function forGroup(group, members, deps = {}) {
     // own decision, so with the echo equal keys are equal member plans (perf
     // C1: a member's later view is a new object over the same plan). A party
     // keeps its group answer until a member's facts, decision sequence, leaf
-    // or focus move.
-    const key = [wallet, ...contexts.map(({ inputKey, statsPacket: packet }) =>
-        `${inputKey}:${packet?.decisionSeq}:${packet?.activityLeaf}:${packet?.wishFocus?.[0]}`)].join('|');
+    // or focus move, or a situation is raised on it (its situationSeq).
+    const key = [wallet, ...contexts.map(({ inputKey, statsPacket: packet }, i) =>
+        `${inputKey}:${packet?.decisionSeq}:${Number(selected[i]?.stats?.situationSeq) || 0}:${packet?.activityLeaf}:${packet?.wishFocus?.[0]}`)].join('|');
     const held = proposal ? null : groups.get(actorKey);
     if (held?.key === key) {
         if (diagnostic) Diagnostics.count('context_group', 'hit', 'same_members');

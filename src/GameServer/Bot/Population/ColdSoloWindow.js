@@ -22,6 +22,7 @@
 // the kernel bounds how far ahead of the step's clock they run (its look-ahead,
 // WINDOW_LEAD_MS), so the window's end comes within it.
 const ColdEconomyPlan = require('./ColdEconomyPlan');
+const Situations = require('../Situations');
 
 // The bot's own clock: what its hunt has been credited through.
 function ownClock(state) {
@@ -77,10 +78,9 @@ function endOf(before, after, result, readers) {
     if (!huntingRound(result)) return 'round';
     // The round's own end: a rest, a death, a flight.
     if (after.activity !== 'hunting') return after.activity === 'dead' ? 'death' : 'rest';
-    // Level is no fact of its own: the kit's section may not move with it.
-    if (Number(after.level) !== Number(before.level)) return 'level';
-    // The hard events of the round: supplies, the bag, the kit, the funding, a death mark.
-    if (Number(after.stats?.wishDirty) || 0) return 'event';
+    // A decision woken by the round (Situations: what is heard at work; a level up
+    // waits for the rest, situations.md Q7): its step decides. What waits does not end it.
+    if (Situations.anyWoken(after.stats)) return 'event';
     // New loot (bit 1) is no decision point: the commit's edges read it from the window's start.
     if (readers.edges(before, after) & ~1) return 'supplies';
     if (readers.moneyBound(after)) return 'money';

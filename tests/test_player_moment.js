@@ -29,7 +29,7 @@ const moneyBaseline = { wallet: 1000, moneyError: 100, cashBounds: [0, 5000], go
 const hunting = adena => ({ characterId: 7, phase: 'cold', activity: 'hunting', adena, stats: {} });
 const soft = state => Sections.softEvents(state, moneyBaseline, { buyOrderEscrow: 0, timestamp: 1 });
 assert(!soft(hunting(1500)).includes('money'), 'a drift away on the hunt is no event');
-assert(soft(hunting(6000)).includes('money'), 'its goal in reach is');
+assert(soft(hunting(6000)).includes('goal'), 'its goal in reach is');
 assert(!soft({ ...hunting(1500), partyId: 'bgp_1' }).includes('money'), 'a party member holds its plan too');
 assert.deepEqual(Sections.softEvents(hunting(1000), { ...moneyBaseline, share: 0.5, incomeError: 0 }, { buyOrderEscrow: 0, timestamp: 1 }), [],
     'nor does the income reach it on the hunt');
@@ -82,9 +82,9 @@ const purse = adena => cold('hunting', { adena, stats: {} });
 const wallet = { wallet: 50, moneyError: -1, cashBounds: [0, 100], budgetBounds: [0, 100], goalBudget: 500 };
 const moneyHeard = state => Sections.softEvents(state, wallet, { board: null });
 assert.deepEqual([...moneyHeard(purse(150))], [], 'a next price is no event at work');
-assert.deepEqual([...moneyHeard(purse(500))], ['money'], 'the goal within reach is');
+assert.deepEqual([...moneyHeard(purse(500))], ['goal'], 'the goal within reach is');
 assert.deepEqual([...moneyHeard({ ...purse(150), activity: 'resting' })], [], 'nor at a rest');
-assert.deepEqual([...moneyHeard({ ...purse(500), activity: 'resting' })], ['money'], 'there the goal speaks too');
+assert.deepEqual([...moneyHeard({ ...purse(500), activity: 'resting' })], ['goal'], 'there the goal speaks too');
 // The bot's own craft preparation asks no review far from a player; it stands in its state.
 const Events = invoke('GameServer/Bot/AI/DecisionEvents');
 const preparing = cold('crafting', { stats: { decisionSeq: 3 } }), bits = Sections.sectionMask(['sources', 'benefits', 'money']);

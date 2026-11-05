@@ -703,6 +703,8 @@ function refreshAdvisory(state, accepted, deps = {}, options = {}) {
     economy.statsPacket = { wishFocus: state.stats.wishFocus, dormantWishes: state.stats.dormantWishes,
         decisionSeq: state.stats.decisionSeq, activityLeaf: state.stats.activityLeaf, money: state.stats.money,
         stockTargets: state.stats.stockTargets, dangerPrice: state.stats.dangerPrice, wishSections: accepted.baseline, wishDirty: 0,
+        // The card serves the build and its earning spot's held answer.
+        woken: Situations.decided(state.stats, ['earning_spot', 'build'], { caller: deps.caller || 'card', served: true }),
         wishAdvisory: accepted.saved || null };
     Object.assign(economy.network, { focus: state.stats.wishFocus, dormant: state.stats.dormantWishes,
         decisionSeq: state.stats.decisionSeq, activityLeaf: state.stats.activityLeaf });

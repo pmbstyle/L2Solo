@@ -481,8 +481,9 @@ function snapshot(state, context, cashBounds, moneyError = -1, mode, money = nul
         incomeError: incomeError(state, persona), sample: packSample(sample(state, context.timestamp, mode)),
         ...(share === 1 ? {} : { share }), ...(marketWatch?.length ? { marketWatch } : {}) };
 }
-// The soft point (far bots, the end of every step): the sections whose soft
-// inputs crossed the bot's own error since its decision, empty when quiet;
+// The soft point (far bots, the end of every step): the situations (money,
+// goal, observation, market) whose soft inputs crossed the bot's own error since
+// its decision, heard where it stands, empty when quiet;
 // no clock: a drift inside the error is never an event, however long.
 // baseline: the decision's (stats.wishSections). input: { board (the board
 // mirror, null: not ready, the market part waits), buyOrderEscrow, memory (a
@@ -490,15 +491,14 @@ function snapshot(state, context, cashBounds, moneyError = -1, mode, money = nul
 // timestamp (the step's) }. before: the state the step left (arriving in town).
 function softEvents(state, baseline, input, before = null) {
     if (!baseline) return NONE;
-    let sections = NONE;
+    const names = [];
     // Diagnostics only: soft:step:far counts the soft points, soft:raise:<source>
     // the raises by source (the observation share per far step is read live).
     const diagnostic = Diagnostics.active();
     if (diagnostic) Diagnostics.count('soft', 'step', 'far');
     const where = Situations.place(state, before);
     const add = source => {
-        const names = Situations.raise([source], where);
-        sections = sections === NONE ? [...names] : [...new Set([...sections, ...names])];
+        names.push(source);
         if (diagnostic) Diagnostics.count('soft', 'raise', source);
     };
     if (Situations.hears('money', where) && meaningfulMoney(state, baseline, input.buyOrderEscrow)) add('money');
@@ -506,7 +506,7 @@ function softEvents(state, baseline, input, before = null) {
     const bondNow = () => Providers.relationBond(state, { memory: input.memory?.() ?? null });
     if (Situations.hears('observation', where) && observationChanged(state, baseline, input.timestamp, undefined, bondNow)) add('observation');
     if (input.board && marketCrossed(input.board, baseline.marketWatch, Number(state.characterId))) add('market');
-    return sections;
+    return names.length ? names : NONE;
 }
 const NONE = Object.freeze([]);
 // The watch rows against the board mirror, one head read per row: a sell line

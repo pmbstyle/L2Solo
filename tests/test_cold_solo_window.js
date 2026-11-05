@@ -37,7 +37,7 @@ async function hunter(overrides = {}) {
         stats: { ...state.stats, classProgressionClassId: state.stats.classId, classProgressionLevel: 18, deaths: 0 },
         simulation: { revision: 1 }, updatedAt: T - 60000 }, quiet, { timestamp: T - 60000, persist: false, projectClassProgression: true });
     return { ...worn, timing: { lastResolvedAt: T - 60000, nextResolveAt: T },
-        stats: { ...worn.stats, stepCount: 0, wishDirty: 0, wishSections: { ...Sections.semanticFacts(worn), funding: 0 } }, ...overrides };
+        stats: { ...worn.stats, stepCount: 0, wishDirty: 0, woken: 0, wishSections: { ...Sections.semanticFacts(worn), funding: 0 } }, ...overrides };
 }
 
 // The step's decision: hold the hunt, as a held card does. `plan` overrides it.
@@ -214,7 +214,7 @@ const roundsOf = state => state.stats.stepCount;
         assert.equal(Number(state.stats.wishDirty) & (occupation | sources), occupation | sources, 'the empty spot raises its ground');
         assert.equal(roundsOf(state), 1, 'the window ends at the first empty round');
         // The decision answered and kept it on the spot: the stay raises nothing more.
-        kernel.upsert({ state: { ...state, stats: { ...state.stats, wishDirty: 0 }, simulation: { revision: 50 } } });
+        kernel.upsert({ state: { ...state, stats: { ...state.stats, wishDirty: 0, woken: 0 }, simulation: { revision: 50 } } });
         const { state: stays } = await step();
         assert.equal(Number(stays.stats.wishDirty) || 0, 0, 'a later empty round of the stay raises nothing');
         assert.equal(stays.stats.decisionSeq, state.stats.decisionSeq);

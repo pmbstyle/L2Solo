@@ -27,13 +27,13 @@ const Risk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const PartyRisk = require('./PartySpotRiskPolicy');
 const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
 const bits = () => ({ occupation: Sections.sectionBit('occupation'), sources: Sections.sectionBit('sources') });
-// The step's one raise (BotLifeState.prepareResolve): the sections its cheap
-// check named, in the bump the step's own decision point then reads.
-const Events = require('../AI/DecisionEvents'), raise = Events.raiseSections;
+// The step's raises (BotLifeState.prepareResolve): what its cheap check named,
+// read by the step's own decision point.
+const Catalogue = invoke('GameServer/Bot/Situations'), raise = Catalogue.raise;
 let raised = null;
-Events.raiseSections = (before, after, ...lists) => {
-    if (lists.length === 3) raised = [...lists[2]];
-    return raise(before, after, ...lists);
+Catalogue.raise = (stats, name, ...rest) => {
+    if (name === 'spot_crowded') (raised ||= []).push(name);
+    return raise(stats, name, ...rest);
 };
 module.exports.probe = async ({ kind, id, spotId, reason, remove, party }) => {
     for (const gone of remove || []) kernel.remove(gone);
@@ -87,7 +87,7 @@ module.exports.probe = async ({ kind, id, spotId, reason, remove, party }) => {
     const traveling = beginHuntingTrip(entry.state, { needed: true, mode: 'solo', spotId, regionName: 'Room',
         to, destinations: { [id]: to }, travelMs: 1000, reason }, now - 5000 - tripMs);
     const result = BackgroundResolver.resolveSolo({ state: traveling, timestamp: now });
-    raised = null;
+    raised = [];
     const projected = (await kernel.projectResolve(traveling, result, now)).state;
     const next = { ...projected, stats: { ...projected.stats, stepCount: Risk.stepCount(projected) + 1 } };
     return { activity: projected.activity, spotId: projected.spotId, before: Risk.stepCount(traveling),
@@ -172,8 +172,7 @@ function bot(characterId, extra = {}) {
         assert.equal(full.spotId, room.id);
         assert.deepEqual(full.marks.map(mark => mark.spotId), [room.id], 'the full spot gets the "was full" mark');
         assert.equal(full.marks[0].untilStep, full.before + 1 + 1, 'the mark is counted from the step before its +1');
-        assert.deepEqual(full.raised, ['occupation', 'sources'],
-            'the full spot raises occupation and sources in the step\'s one bump');
+        assert.deepEqual(full.raised, ['spot_crowded'], 'the full spot raises spot_crowded in its step');
         assert(full.excludedNow.includes(room.id), 'the next step\'s spot search skips the full spot');
         assert(!full.excludedAfter.includes(room.id), 'the mark lapses after that step');
 

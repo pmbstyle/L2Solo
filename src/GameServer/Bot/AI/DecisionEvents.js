@@ -12,54 +12,56 @@ const WishProviders = invoke('GameServer/Bot/Economy/WishProviders');
 // wallet. A near bot's moved fact raises on the background thread, which compares
 // its posted row with the one before (ColdSimulationWorker's state writer).
 const reasons = new Set(['arrived_town', 'revived', 'goal_failed', 'party_left', 'spot_empty', 'money']);
-// Every situation marks the sections of its row in the one table (Situations.SITUATIONS).
-const factBits = fact => Sections.sectionMask(Situations.sections(fact));
+// A near bot's pending raises (session.nearRaise.names): at most NEAR_NAMES
+// distinct situations wait for the worker's answer (limits.md); one past them is
+// counted (nearOverflow) and dropped.
+const NEAR_NAMES = 16;
+let nearOverflow = 0;
 function statsFor(session) {
     return session.coldLifeState ? (session.coldLifeState.stats ||= {}) : (session.decisionStats ||= {});
 }
 function decisionStatsFor(session) {
     return { ...session?.heldEconomy?.statsPacket, ...session?.decisionStats, ...session?.coldLifeState?.stats };
 }
-// One event on a bot's stats: the bits name the sections it touched and
-// invalidate the held decision; decisionSeq is the decision's own (its build
-// moves it), so a raise rolls no tendency again. The held activity stays and
-// WishNetwork rerolls it only when gone, outscored or off a moved focus. An
-// execution that proved the held step impossible drops it: the economy inputs
-// do not record that failure, so the step would be chosen again.
-function applyRaise(stats, bits, impossible = false) {
-    stats.wishDirty = (Number(stats.wishDirty) || 0) | bits;
-    if (impossible) stats.activityLeaf = 0;
-    return stats;
-}
-// A far bot's own preparation stands in its state for its next review.
+// A far bot's own preparation stands in its state for its next review (its own
+// output: heard only where its row says).
 function applyOwnRaise(state) {
-    const stats = { ...(state.stats || {}) };
-    return Situations.hears('own_preparation', Situations.place(state)) ? applyRaise(stats, factBits('own_preparation')) : stats;
+    return Situations.raise({ ...(state.stats || {}) }, 'own_preparation', null, Situations.place(state));
 }
 // A near bot (a body on main) takes its decisions on the background thread:
 // the raise waits on the session (nearRaise, ORed while pending) and rides its
 // next post (BotLifeState.notifyNearFacts); the decision that consumed it
-// clears it (receive). impossibleSeq is the raise that proved the held step
-// impossible: the worker drops the step only for that raise, never again for
-// a later raise of the same pending bag. Any other bot raises on its stats.
+// clears it (receive). The bag: { seq, names: [[situation, payload|null], ...],
+// impossible, impossibleSeq }; impossibleSeq is the raise that proved the held
+// step impossible: the worker drops the step only for that raise, never again
+// for a later raise of the same pending bag. Any other bot raises on its stats.
 function raiseDecision(session, reason, { impossible = false } = {}) {
     if (!reasons.has(reason)) throw new TypeError('unknown_decision_event');
     const stats = statsFor(session);
     // Visit ends share the arrival clock until a single native arrival event
     // exists. A fact of the body, kept on its stats: never part of a raise.
     if (reason === 'arrived_town') stats.visitEvery = TownVisitInterval.arrived(stats);
-    const bits = factBits(reason);
     // lazy: cycle BotLifeState requires this module at its top.
     const Life = isMainThread && session.actor ? invoke('GameServer/Bot/Population/BotLifeState') : null;
     if (Life?.cachedState(session.actor.fetchId?.())?.phase === 'hot') {
-        const raise = session.nearRaise ||= { seq: 0, bits: 0, impossible: false };
+        const raise = session.nearRaise ||= { seq: 0, names: [], impossible: false };
         raise.seq = session.raiseSeq = Number(session.raiseSeq || 0) + 1;
-        raise.bits |= bits;
-        if (impossible) { raise.impossible = true; raise.impossibleSeq = raise.seq; }
+        const waits = raise.names.some(([name]) => name === reason);
+        if (!waits && raise.names.length < NEAR_NAMES) raise.names.push([reason, null]);
+        else if (!waits) nearOverflow++;
+        if (impossible) { raise.impossible = true; raise.impossibleSeq = raise.seq; raise.impossibleName = reason; }
         Life.notifyNearFacts(session, reason);
         return;
     }
-    applyRaise(stats, bits, impossible);
+    Situations.raise(stats, reason, impossible ? { impossible } : null);
+}
+// A posted bag's raises on the background thread's mind (stats), heard as a
+// body near a player hears (Situations OPEN); its impossible mark drops the held
+// step (with the situation that set it, impossibleName) only while the raise that
+// set it is unanswered.
+function raiseBag(stats, raise, impossible) {
+    for (const [name, payload] of Array.isArray(raise?.names) ? raise.names : []) Situations.raise(stats, name, payload);
+    if (impossible) Situations.raise(stats, raise.impossibleName || 'goal_failed', { impossible: true });
 }
 // A real command rejection belongs to the accepted decision that attempted
 // it. The caller persists this returned state through its existing writer;
@@ -77,7 +79,7 @@ function rejectedState(current, accepted = current, why = 'other') {
         if (!baseline || baseline !== Sections.baselineIdentity(current.stats.wishSections)) return current;
     }
     const next = { ...current, stats: { ...current.stats } };
-    applyRaise(next.stats, factBits('goal_failed'), true);
+    Situations.raise(next.stats, 'goal_failed', { impossible: true });
     rejections[why] = (rejections[why] || 0) + 1;
     return next;
 }
@@ -87,7 +89,7 @@ function rejectedState(current, accepted = current, why = 'other') {
 // step only while the raise that set it (impossibleSeq) is not yet applied.
 // Returns the raise seq now applied.
 function takePostedRaise(stats, raise, applied) {
-    if (raise && Number(raise.seq) > applied) applyRaise(stats, Number(raise.bits) || 0,
+    if (raise && Number(raise.seq) > applied) raiseBag(stats, raise,
         raise.impossible === true && Number(raise.impossibleSeq || 0) > applied);
     return Math.max(applied, Number(raise?.seq || 0));
 }
@@ -98,7 +100,7 @@ function takePostedRaise(stats, raise, applied) {
 // cooling that rolls back leaves the raise waiting for its decision.
 function applyPendingRaise(session, stats) {
     const raise = session?.nearRaise;
-    if (raise) applyRaise(stats, Number(raise.bits) || 0, raise.impossible === true);
+    if (raise) raiseBag(stats, raise, raise.impossible === true);
 }
 // A hot body's rejection: one impossible raise while it waits for its
 // decision, a second rejection in that window adds nothing.
@@ -161,7 +163,7 @@ function held(session) {
 // point's money reading, DecisionSections.moneyChanged): a crossing raises
 // money once; nothing while that raise waits or before a baseline exists.
 function checkWallet(session, actor) {
-    if (Number(session.nearRaise?.bits) & factBits('money')) return false;
+    if (session.nearRaise?.names?.some(([name]) => name === 'money')) return false;
     const stats = statsFor(session);
     if (!stats.wishSections) return false;
     const wallet = actor.backpack?.fetchTotalAdena?.() ?? actor.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() ?? 0;
@@ -171,15 +173,5 @@ function checkWallet(session, actor) {
     raiseDecision(session, 'money');
     return true;
 }
-// One raise per step: the sections a step's checks raised (the round's hard
-// events, Situations.detect, and on the background thread the soft
-// point, softEvents), their bits ORed into the bits already raised.
-function raiseSections(before, after, ...lists) {
-    let bits = 0;
-    for (const list of lists) for (const section of list) bits |= Sections.sectionBit(section);
-    if (!bits) return 0;
-    const stats = after.stats ||= {};
-    stats.wishDirty = (Number(stats.wishDirty) || 0) | bits;
-    return bits;
-}
-module.exports = { rejections: () => rejections, refused, statsFor, decisionStatsFor, applyRaise, applyOwnRaise, raiseDecision, takePostedRaise, applyPendingRaise, nearFields, receive, held, checkWallet, rejectedState, rejectSession, raiseSections };
+module.exports = { rejections: () => rejections, refused, statsFor, decisionStatsFor, applyOwnRaise, raiseDecision, takePostedRaise, applyPendingRaise, nearFields, receive, held, checkWallet, rejectedState, rejectSession,
+    NEAR_NAMES, nearOverflow: () => nearOverflow };

@@ -42,7 +42,10 @@ function readsFacts(before, after) {
         || gated(place(before)) && (before.activity === 'grouped' || !place(after, before));
 }
 
-const link = (sections, waits) => Object.freeze({ sections: Object.freeze(sections), waits });
+// The planes a far bot hears a situation on (a row's heard): NOW anywhere, STOP at
+// its next stop (a rest or the town), TOWN in town only (situations.md §10).
+const NOW = 0, STOP = 1, TOWN = 2;
+const link = (sections, waits, heard = NOW) => Object.freeze({ sections: Object.freeze(sections), waits, heard });
 const KIT = ['build', 'benefits', 'sources'], STOCK = ['supply', 'sources'];
 const BOUGHT = ['sources', 'money'], OBSERVED = ['occupation', 'benefits', 'sources'];
 
@@ -52,9 +55,9 @@ const BOUGHT = ['sources', 'money'], OBSERVED = ['occupation', 'benefits', 'sour
 const SITUATIONS = Object.freeze({
     // Its own state (detect). A level moved, or the rest of the kit (worn gear,
     // hennas, skills, class, the craft): read apart, a level up wins a step that moved both.
-    level_up: link(KIT, WORK | VISIT),
-    gear_changed: link(KIT, WORK | VISIT),
-    recipe_learned: link(KIT, WORK | VISIT),
+    level_up: link(KIT, WORK | VISIT, STOP),
+    gear_changed: link(KIT, WORK | VISIT, TOWN),
+    recipe_learned: link(KIT, WORK | VISIT, STOP),
     died: link(['combat'], 0),
     // A hot body's respawn in town (BotAI): its town arrival follows as its own.
     revived: link(['combat'], 0),
@@ -88,7 +91,7 @@ const SITUATIONS = Object.freeze({
     // spot's pressure): the ground the bot may fight on moved.
     spot_dangerous: link(['combat', 'occupation'], 0),
     // The recovery's penalty lifted by clean wins.
-    recovered: link(['combat', 'occupation'], 0),
+    recovered: link(['combat', 'occupation'], 0, STOP),
     supply: link(['supply'], FIELD | VISIT),
     bag: link(STOCK, FIELD | VISIT),
     stores: link(STOCK, WORK | VISIT),
@@ -180,19 +183,117 @@ function heard(names, where) {
     for (const name of names) if (hears(name, where)) for (const section of SITUATIONS[name].sections) out.add(section);
     return [...out];
 }
-// The same for a real raise: what each link woke and where, for the health line.
-const raisedCounts = {};
-function raise(names, where) {
-    for (const name of names) if (hears(name, where)) {
-        const key = `${name}@${NAMES.get(where)}`;
-        raisedCounts[key] = (raisedCounts[key] || 0) + 1;
-    }
-    return heard(names, where);
-}
-// One reason with no sections of its own: is it heard here, counted as a raise.
+// One reason with no decision of its own (a door's review): is it heard here, counted as a raise.
 function woke(name, where) {
-    raise([name], where);
-    return hears(name, where);
+    const now = hears(name, where);
+    if (now) count(raisedCounts, `${name}@${NAMES.get(where)}`);
+    return now;
+}
+
+// The decisions a bot holds: one bit each in stats.woken, the same bits per plane
+// in stats.waiting (STOP plane the low byte, TOWN the next). Each declares here, once,
+// the situations that wake it; a decision joins as the step that moves it does
+// (situations.md §10). The build runs on its sections until it moves (step 4): a
+// raise heard for its sections wakes it, so its bit stands with stats.wishDirty.
+// spot_crowded wakes the earning spot until the spot contest replaces it (step 2).
+const DECISIONS = Object.freeze({
+    earning_spot: Object.freeze(['level_up', 'gear_changed', 'died', 'recovered', 'spot_empty', 'spot_dangerous',
+        'moved_by_world', 'party_left', 'shots_out', 'stock_low:potions', 'spot_crowded']),
+    build: Object.freeze([])
+});
+const BITS = Object.freeze(Object.fromEntries(Object.keys(DECISIONS).map((name, at) => [name, 1 << at])));
+const ALL = Object.values(BITS).reduce((all, bit) => all | bit, 0), PLANE = 0xff;
+const BUILD = BITS.build, SHIFT = { [STOP]: 0, [TOWN]: 8 };
+// The decisions each situation wakes.
+const WAKES = Object.freeze(Object.fromEntries(Object.keys(SITUATIONS).map(name => [name,
+    Object.entries(DECISIONS).reduce((bits, [decision, names]) => names.includes(name) ? bits | BITS[decision] : bits, 0)])));
+// The planes a place hears: work only what is heard anywhere; a rest its stop; the
+// town, a stall, a meeting, the arrival in town and a body near a player all of them.
+const planesAt = where => where === WORK ? 0 : where === REST ? STOP : STOP | TOWN;
+// A row saved before the store kept no bits: every decision reads woken, once.
+const wokenBits = stats => stats?.woken === undefined ? ALL : Number(stats.woken) || 0;
+// The build's sections of a situation (the temporary half of its row). lazy: the
+// section table is DecisionSections', which reads this catalogue at its top.
+const masks = new Map();
+const maskOf = name => masks.get(name) ?? masks.set(name, readers().sectionMask(SITUATIONS[name].sections)).get(name);
+
+// The health line's counts (counts()), always on: what was raised where, which
+// situation woke which decision, the decisions taken or served, and those taken with
+// no bit woken by their caller. Each map holds at most COUNT_KEYS keys (limits.md);
+// a key past them is counted in overflow.
+const COUNT_KEYS = 256;
+const raisedCounts = new Map(), wokeCounts = new Map(), decidedCounts = new Map(), unwokenCounts = new Map();
+const overflow = new Map();
+function count(map, key, at = 0) {
+    let row = map.get(key);
+    if (!row) {
+        if (map.size >= COUNT_KEYS) { overflow.set(map, (overflow.get(map) || 0) + 1); return; }
+        map.set(key, row = map === decidedCounts ? [0, 0] : [0]);
+    }
+    row[at]++;
+}
+// A plain copy of the counts: { raised: { name@place: n }, woke: { decision<name: n },
+// decided: { decision: [taken, served] }, unwoken: { decision:caller: n }, overflow: n }.
+function counts() {
+    const plain = map => Object.fromEntries([...map].map(([key, row]) => [key, row.length === 1 ? row[0] : [...row]]));
+    return { raised: plain(raisedCounts), woke: plain(wokeCounts), decided: plain(decidedCounts),
+        unwoken: plain(unwokenCounts), overflow: [...overflow.values()].reduce((sum, n) => sum + n, 0) };
+}
+function countWoke(before, after, name) {
+    for (const decision in BITS) if (after & ~before & BITS[decision]) count(wokeCounts, `${decision}<${name}`);
+}
+
+// The one writer of a bot's woken decisions (both threads): a situation raised at a
+// place. Its decisions heard here wake (woken), the rest wait on its plane (waiting);
+// its build sections heard here are raised (stats.wishDirty) and wake the build. A
+// raise that adds no bit is no news: not counted, situationSeq stays. payload
+// (diagnostics; plain data): { impossible: true } (an execution that proved the held
+// step impossible: a failed goal, a town visit with nothing to do) also drops the
+// held step (stats.activityLeaf), the one fact a raise writes beside the bits.
+// stats: an object the caller owns (a copy it is building); written and returned.
+function raise(stats, name, payload = null, where = OPEN) {
+    const row = SITUATIONS[name];
+    if (!row) throw new TypeError(`situation: unknown ${name}`);
+    if (payload?.impossible === true) stats.activityLeaf = 0;
+    const was = wokenBits(stats), waited = Number(stats.waiting) || 0, dirty = Number(stats.wishDirty) || 0;
+    const sections = hears(name, where) ? maskOf(name) : 0;
+    const now = !row.heard || !!(planesAt(where) & row.heard);
+    const woken = was | (now ? WAKES[name] : 0) | (sections ? BUILD : 0);
+    const waiting = now ? waited : waited | WAKES[name] << SHIFT[row.heard];
+    if (woken === was && waiting === waited && (dirty | sections) === dirty) return stats;
+    stats.woken = woken; stats.waiting = waiting; stats.wishDirty = dirty | sections;
+    stats.situationSeq = (Number(stats.situationSeq) || 0) + 1;
+    count(raisedCounts, `${name}@${NAMES.get(where)}`);
+    countWoke(was, woken, name);
+    return stats;
+}
+// A stop (a far step at a rest or in town, a hot body's rest end): what waited on
+// the planes this place hears wakes. Written and returned as raise.
+function stop(stats, where) {
+    const planes = planesAt(where), waited = Number(stats.waiting) || 0;
+    let release = 0, waiting = waited;
+    if (planes & STOP) { release |= waited & PLANE; waiting &= ~PLANE; }
+    if (planes & TOWN) { release |= waited >> 8 & PLANE; waiting &= ~(PLANE << 8); }
+    if (!release) return stats;
+    const was = wokenBits(stats);
+    stats.woken = was | release; stats.waiting = waiting;
+    countWoke(was, stats.woken, `stop@${NAMES.get(where)}`);
+    return stats;
+}
+const woken = (stats, decision) => !!(wokenBits(stats) & BITS[decision]);
+const anyWoken = stats => wokenBits(stats) !== 0;
+// A decision taken (or its held answer served: served) clears its bit; a taken one
+// with no bit woken is counted by its caller (the decisions not yet on situations).
+// decisions: a name or a list. Returns the woken bits left (stats.woken).
+function decided(stats, decisions, { caller = 'other', served = false } = {}) {
+    let bits = wokenBits(stats);
+    for (const decision of [decisions].flat()) {
+        const bit = BITS[decision];
+        count(decidedCounts, decision, served ? 1 : 0);
+        if (!served && !(bits & bit)) count(unwokenCounts, `${decision}:${caller}`);
+        bits &= ~bit;
+    }
+    return bits;
 }
 
 // The fact readers (DecisionSections: the views and facts its builds keep as their
@@ -284,6 +385,7 @@ function needsOpened(before, after, names, now) {
 // The sections a list of situations touches wherever the bot stands.
 const sectionsOf = names => heard(names, OPEN);
 
-module.exports = { FIELD_ACTIVITIES, place, gated, field, reactive, onVisit, agendaHears, readsFacts, hears, heard, raise, woke, raisedCounts: () => raisedCounts, sections,
+module.exports = { FIELD_ACTIVITIES, place, gated, field, reactive, onVisit, agendaHears, readsFacts, hears, heard, woke, sections,
+    DECISIONS, raise, stop, woken, anyWoken, decided, counts, COUNT_KEYS,
     answer, keeps, incomeLink, goalMoment, quiet,
     placeName: where => NAMES.get(where), SITUATIONS, detect, factNames, sectionsOf };

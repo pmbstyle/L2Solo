@@ -387,7 +387,7 @@ async function run() {
         const carrying = amount => ({ ...published, inventory: { ...published.inventory, [shot]: { selfId: shot, amount } } });
         const atBaseline = state => ({ ...state, stats: { ...state.stats, wishSections: { ...state.stats.wishSections, ...Gate.semanticFacts(carrying(50)) } } });
         // The sections a far step raises: the situations its diff names, heard where it stands.
-        const sectionsRaised = (before, after, leaf) => Situations.raise(Situations.detect(before, after, { leaf }), Situations.place(after, before));
+        const sectionsRaised = (before, after, leaf) => Situations.heard(Situations.detect(before, after, { leaf }), Situations.place(after, before));
         const raisedBy = (before, after) => sectionsRaised(atBaseline(before), atBaseline(after), held.network.activity);
         assert(raisedBy(carrying(50), carrying(0)).includes('supply'), 'the last shot gone is a need');
         assert.deepEqual([...raisedBy(carrying(0), carrying(0))], [], 'it raises once');
@@ -957,7 +957,7 @@ async function run() {
         assert.deepEqual(soft(richer(5), wallet), [], 'a wallet drift inside the error is no event');
         assert.deepEqual(soft(richer(50), wallet), ['money'], 'a wallet drift beyond the error is an event a second later');
         assert.deepEqual(soft({ ...published, stats: { ...published.stats, frustration: 1 } }, { frustration: 0, incomeError: 0.1 }),
-            ['occupation', 'benefits', 'sources', 'observation'], 'a frustration beyond the error is an observation event');
+            ['observation'], 'a frustration beyond the error is an observation event');
         const [item, , reference, error] = watched, below = Math.floor(reference * (1 - error)) - 1;
         assert(below > 0, 'fixture: a price below the watched reference');
         let record = 1;
@@ -970,18 +970,18 @@ async function run() {
         offer(item, Math.ceil(reference * (1 - error)));
         assert.deepEqual(soft(published), [], 'a line inside the error is no event');
         offer(item, below);
-        assert.deepEqual(soft(published), ['sources', 'money'], 'a watched item\'s clearly cheaper line is an event');
+        assert.deepEqual(soft(published), ['market'], 'a watched item\'s clearly cheaper line is an event');
         assert.deepEqual(soft(published, {}, null), [], 'without the board mirror the market waits');
         const buyWatch = { marketWatch: [[990005, 3, 100, 0.1]] };
         offer(990005, 105, 3);
         assert.deepEqual(soft(published, buyWatch), [], 'a buy line inside the error is no event');
         offer(990005, 120, 3);
-        assert.deepEqual(soft(published, buyWatch), ['sources', 'money'], 'a watched sale\'s clearly higher bid is an event');
+        assert.deepEqual(soft(published, buyWatch), ['market'], 'a watched sale\'s clearly higher bid is an event');
         // The rebuild weighed the line it saw: the same board is no new event.
         Economy.forget(native.characterId);
         const rebuilt = Economy.forState(native, { board: softBoard, timestamp: T + 2000 }).statsPacket.wishSections;
         assert.deepEqual(Sections.softEvents(published, rebuilt, { board: softBoard, buyOrderEscrow: 0, timestamp: T + 3000,
-            memory: () => null }).filter(name => name === 'sources'), [], 'a decision that saw the cheap line does not cross on it again');
+            memory: () => null }).filter(name => name === 'market'), [], 'a decision that saw the cheap line does not cross on it again');
         // A sale of an item the bot has no use for (worth 0) is watched at its price.
         const junk = Economy.forState({ ...native, characterId: 990026, inventory: { ...native.inventory,
             1872: { selfId: 1872, amount: 200 } } }, { board: softBoard, timestamp: T + 4000 });
@@ -990,12 +990,12 @@ async function run() {
             `a liquidation of a zero-usefulness item is watched on the buy side: ${JSON.stringify(junk.statsPacket.wishSections.marketWatch)}`);
         Economy.forget(990026);
         Economy.forget(native.characterId);
-        // One raise per step: the round's and the soft point's sections ORed
-        // into the bits raised before; a raise is no decision, its sequence stays.
-        const before = { stats: { decisionSeq: 3 } }, after = { stats: { decisionSeq: 3, wishDirty: Sections.sectionBit('supply') } };
-        Events.raiseSections(before, after, ['money'], ['money', 'sources']);
-        assert.equal(after.stats.decisionSeq, 3, 'no bump');
-        assert.equal(after.stats.wishDirty, Sections.sectionMask(['supply', 'money', 'sources']), 'the raised bits join the earlier ones');
+        // A step's raises: their sections ORed into the bits raised before; a
+        // raise is no decision, its sequence stays.
+        const after = { decisionSeq: 3, wishDirty: Sections.sectionBit('supply') };
+        for (const name of ['money', 'market']) invoke('GameServer/Bot/Situations').raise(after, name);
+        assert.equal(after.decisionSeq, 3, 'no bump');
+        assert.equal(after.wishDirty, Sections.sectionMask(['supply', 'money', 'sources']), 'the raised bits join the earlier ones');
     }
     console.log('PASS soft point: money / observation / watched market / one raise');
     const Workshop = invoke('GameServer/Bot/Economy/CraftWorkshopService');
@@ -1121,6 +1121,10 @@ async function run() {
     const group = Economy.forGroup({ id: 44, wallet: 100, playedHours: 4 }, [base, sampled]);
     assert(group.network.queue.length > 0 && group.actorKey === 'group:44');
     assert.equal(Economy.forGroup({ id: 44, wallet: 100, playedHours: 4 }, [base, sampled]), group);
+    // A situation raised on a member (its situationSeq) solves the group answer again.
+    const raisedMember = { ...sampled, stats: { ...sampled.stats, situationSeq: (Number(sampled.stats?.situationSeq) || 0) + 1 } };
+    assert.notEqual(Economy.forGroup({ id: 44, wallet: 100, playedHours: 4 }, [base, raisedMember]), group,
+        'a member\'s raise solves the group answer again');
     assert(group.network.queue.every(wish => /^\d+:/.test(wish.key)), 'actual member graphs share one group queue');
     // perf C1: members that hit give the group the same graph as fresh builds.
     const groupDigest = g => JSON.stringify([g.inputKey, g.network.focus, g.network.activity?.key,
