@@ -7950,9 +7950,12 @@ const Database = {
                 if ((step || seller) && (!template || stackable !== !!template.etc?.stackable
                     || slot !== Number(template.etc?.slot || 0))) throw Error('npc_item_template_changed');
                 if (seller && step && slot > 0) {
+                    // The admitted order owns its input quantity, as in
+                    // ColdMarketService. A retained bridge project may name
+                    // different swords; war and arrow stock gates still hold.
                     const blocker = invoke('GameServer/Bot/Population/BotLifeState').marketPurchaseBlocker({
                         level: Number(step.row.level), stats: SavedStats.merge(step.row.statsJson, step.row.mindJson), inventory: jsonObject(step.row.inventorySummary)
-                    }, { selfId: itemId }, count);
+                    }, { selfId: itemId }, count, { commanded: true });
                     if (blocker) throw Error(blocker);
                 }
                 let attributed = 0, attributedCost = 0;
