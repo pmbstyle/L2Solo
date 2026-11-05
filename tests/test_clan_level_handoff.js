@@ -252,6 +252,75 @@ async function main() {
                 { item: { id: -1, selfId: 1864 }, amount: 1, resolveKey: 'handoff:batch:missing' }] }));
         assert.equal(Events.pending(), 0, 'failed mixed batch emits no cash event');
         assert.equal((await one('SELECT amount FROM clan_warehouse_items WHERE clanId=? AND selfId=57', [reserved.clanId])).amount, beforeRollback.amount);
+
+        // Frequent world events must not multiply either the strategic review
+        // or the native payer, and ready payment must not wait behind reviews.
+        const strategic = await fixture(720006, 1, 150010);
+        const Strategy = require('../src/GameServer/Clan/ClanStrategyService');
+        const Policy = require('../src/GameServer/Clan/ClanStrategyPolicy');
+        const projected = await Goals.clanProjectionById(strategic.clanId);
+        const leaderKey = Policy.snapshot(projected, await Strategy.inputsFor(projected)).leaderKey;
+        const at = Date.now();
+        await sql(`UPDATE clan_simulation_clans SET stateJson=json_set(stateJson,'$.strategy',json(?)) WHERE clanId=?`,
+            [JSON.stringify({ version: 1, objective: 'advance_clan', status: 'active', target: { level: 2 },
+                leaderKey, selectedAt: at, progressAt: at, lastDecisionAt: at }), strategic.clanId]);
+        for (let i = 0; i < 8; i++) await plan(strategic.clanId);
+        const queued = () => sql("SELECT * FROM clan_actions WHERE clanId=? AND status='pending' ORDER BY id", [strategic.clanId]);
+        let pending = await queued();
+        assert.equal(pending.filter(row => row.actionType === 'contribution').length, 1, 'one native payment after repeated strategic reviews');
+        assert.equal(pending.filter(row => row.actionType === 'goal_plan').length, 1, 'one delayed strategy review');
+        assert(pending.find(row => row.actionType === 'goal_plan').availableAt > Date.now());
+        Events.changed(strategic.clanId, 'warehouse');
+        await Actions.scheduleReviews();
+        pending = await queued();
+        assert.equal(pending.filter(row => row.actionType === 'goal_plan').length, 1);
+        assert(pending.find(row => row.actionType === 'goal_plan').availableAt <= Date.now(), 'a real change wakes the delayed review');
+        const command = { clanId: strategic.clanId, actionType: 'goal_plan', actionKey: 'durable:equipment-completed',
+            payload: { reason: 'equipment_goal_completed' } };
+        const signalled = await Database.enqueueClanAction(command);
+        assert(signalled.created, 'a one-shot completion command retains its own durable key');
+        await Database.resolveClanAction({ actionId: signalled.actionId });
+        const repeated = await Database.enqueueClanAction(command);
+        assert(repeated.idempotent, 'a completion signal cannot be replayed after settlement');
+        assert.equal(repeated.actionId, signalled.actionId);
+
+        // Restore an old save's duplicate backlog through the same bounded
+        // repair used at startup, preserving leased work and cancellation history.
+        for (let i = 0; i < 150; i++) {
+            await sql(`INSERT INTO clan_actions(clanId,actionKey,actionType,priority,status,availableAt,payloadJson,createdAt,updatedAt)
+                VALUES(?,?,'contribution',50,'pending',?,?,?,?)`, [strategic.clanId, `legacy:${i}`, at,
+                JSON.stringify({ goalType: i % 2 ? 'strategy' : 'level' }), at, at]);
+        }
+        const leased = await Database.enqueueClanAction({ clanId: strategic.clanId, actionKey: 'leased:progression',
+            actionType: 'supplies', availableAt: at });
+        await sql("UPDATE clan_actions SET actionType='contribution',status='running',leaseUntil=? WHERE id=?", [at + 600000, leased.actionId]);
+        await sql("UPDATE clan_simulation_clans SET mode='player_managed' WHERE clanId=?", [first.clanId]);
+        for (let i = 0; i < 2; i++) await sql(`INSERT INTO clan_actions(clanId,actionKey,actionType,status,availableAt,createdAt,updatedAt)
+            VALUES(?,?,'goal_plan','pending',?,?,?)`, [first.clanId, `player-order:${i}`, at, at, at]);
+        let afterId = 0, cancelled = 0;
+        for (;;) {
+            const page = await Database.repairClanProgressionQueue({ afterId });
+            assert(page.scanned <= 64);
+            cancelled += page.cancelled;
+            if (!page.scanned) break;
+            afterId = page.afterId;
+        }
+        assert.equal(cancelled, 150);
+        pending = await queued();
+        assert.equal(pending.filter(row => row.actionType === 'contribution').length, 1);
+        assert.equal(pending.filter(row => row.actionType === 'goal_plan').length, 1);
+        assert.equal((await one('SELECT status FROM clan_actions WHERE id=?', [leased.actionId])).status, 'running');
+        assert.equal((await one("SELECT COUNT(*) n FROM clan_actions WHERE clanId=? AND actionKey LIKE 'player-order:%'", [first.clanId])).n, 2,
+            'repair does not merge player orders');
+        const cancelledActions = await Database.fetchClanActions({ clanId: strategic.clanId, status: 'cancelled', limit: 200 });
+        assert.equal(cancelledActions.length, 150, 'removed duplicates remain in durable history');
+        assert(cancelledActions.some(row => row.reasonCode === 'clan_strategy_review_replaced'));
+        assert(cancelledActions.some(row => row.reasonCode === 'clan_action_coalesced'));
+        assert.equal((await Database.repairClanProgressionQueue()).cancelled, 0, 'queue repair is repeatable');
+        await Actions.resolveBatch({ limit: 2, budgetMs: 5000 });
+        assert.equal((await snapshot(strategic.clanId)).level, 2, 'funded clan advances before the next wave of reviews');
+        assert.equal((await one('SELECT sp FROM characters WHERE id=?', [strategic.leaderId])).sp, 10);
+        assert.equal((await one("SELECT COUNT(*) n FROM clan_warehouse_ledger WHERE clanId=? AND operation='level_up_consume'", [strategic.clanId])).n, 1);
         console.log('Clan cash handoff: startup, 0→1, 1→2, cold/hot SP, duplicate payment, reserved cash and committed warehouse inputs passed');
     } finally {
         Events.stop();

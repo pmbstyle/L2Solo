@@ -41,6 +41,14 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
   runs load a save into their own folder (`scripts/perf/window.js`), the save is never touched.
 - **Workers:** none write the world DB. Cold bot worker sends proposals → `commitAndReleaseColdSimulationLeases`,
   `handoffColdSimulationToMain`. Clan planning worker gets snapshots.
+- **Clan progression queue:** `ClanActionService` sends strategy reviews to `goal_plan` and native level payments to
+  `contribution`. Disposable wake-ups opt into `Database.enqueueClanAction` coalescing: reuse a pending action of the
+  same type for that autonomous clan, merging causes, the highest priority and the earliest due time. Running work is
+  retained; completion commands keep their durable keys. `repairClanProgressionQueue` uses the same admission and
+  settlement to recover saved duplicates at bootstrap, preserving player orders, leases and cancellation history.
+  Main processes at most 64 actions per transaction with an 8 ms budget checked between actions, then yields
+  through `setImmediate` and resumes from the returned cursor (limits.md). Admission adds DB lookups per queued
+  wake-up; repair runs on main at bootstrap, with no new per-bot step work or worker messages.
 - **Systems:** quests `Quest/QuestService` + 133 scripts → `QuestStep` → `applyQuestStep`; class change
   `ClassTransfer`, `SecondProfession` → `completeSecondProfession`, trees `ClassProgression`; warehouses
   `Warehouse/*`; clans `Clan/*` (69 files); `ClanHall/*`; `Social/*`; `Progression/*`; `Knowledge/*` (runtime);

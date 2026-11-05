@@ -2327,15 +2327,71 @@ function archiveFinishedClanActionsUnsafe(clanId) {
     return rows;
 }
 
+function resolveClanActionUnsafe(action, status, result, reasonCode) {
+    const timestamp = now();
+    const safeResult = compactClanActionResult(result);
+    const updated = write(`UPDATE clan_actions
+        SET status = ?, leaseUntil = NULL, resultJson = ?, reasonCode = ?, updatedAt = ?, resolvedAt = ?
+        WHERE id = ? AND status IN ('pending', 'running')`, [
+        status,
+        JSON.stringify(safeResult),
+        String(reasonCode || ''),
+        timestamp,
+        timestamp,
+        action.id
+    ]);
+    if (Number(updated.affectedRows || 0) !== 1) return { ok: false, code: 'ownership_conflict' };
+    recordClanGoalEventUnsafe({
+        clanId: Number(action.clanId),
+        eventType: `action_${status}`,
+        plan: String(action.actionType || ''),
+        reasonCode: String(reasonCode || ''),
+        payloadJson: JSON.stringify({ actionId: Number(action.id), actionKey: action.actionKey, result: safeResult }),
+        occurredAt: timestamp
+    });
+    const resolved = one('SELECT * FROM clan_actions WHERE id = ?', [action.id]);
+    archiveFinishedClanActionsUnsafe(action.clanId);
+    return {
+        ok: true,
+        actionId: Number(action.id),
+        status,
+        action: resolved
+    };
+}
+
 // A new pending clan action. Its actionKey stays unique across live and
 // finished actions, as when both were one table: a key taken by a finished
 // action fails (or is ignored) like the UNIQUE constraint did.
 function insertClanActionUnsafe({ clanId, actionKey, actionType, priority = 100, availableAt, payload = {},
-    reasonCode = '', createdAt }, { ignoreDuplicate = false } = {}) {
+    reasonCode = '', createdAt }, { ignoreDuplicate = false, coalescePending = false } = {}) {
     if (finishedClanActionUnsafe('actionKey', actionKey)) {
         if (ignoreDuplicate) return { affectedRows: 0, insertId: 0 };
         throw Object.assign(new Error('UNIQUE constraint failed: clan_actions.actionKey'),
             { code: 'ERR_SQLITE_ERROR', errcode: 2067, errstr: 'constraint failed' });
+    }
+    // These actions read the clan's current state when claimed. New inputs
+    // advance one pending action, never another execution chain. A running
+    // action retains its captured inputs and may have one pending successor.
+    // Only disposable wake-ups opt in. Commands such as equipment completion
+    // retain their own durable key even when another review is already queued.
+    if (coalescePending && ['goal_plan', 'contribution'].includes(actionType)
+        && one("SELECT 1 FROM clan_simulation_clans WHERE clanId = ? AND mode = 'autonomous'", [clanId])) {
+        const pending = one(`SELECT * FROM clan_actions
+            WHERE clanId = ? AND status = 'pending' AND actionType = ? ORDER BY id LIMIT 1`, [clanId, actionType]);
+        if (pending) {
+            const previous = jsonObject(pending.payloadJson);
+            const merged = { ...previous, ...payload };
+            merged.reasons = [...new Set([...(previous.reasons || []), ...(payload.reasons || []),
+                previous.reason, payload.reason].filter(Boolean))];
+            const nextPriority = Math.max(Number(pending.priority), priority);
+            const nextAt = Math.min(Number(pending.availableAt), availableAt);
+            const payloadJson = JSON.stringify(merged);
+            if (nextPriority !== Number(pending.priority) || nextAt !== Number(pending.availableAt) || payloadJson !== pending.payloadJson) {
+                write('UPDATE clan_actions SET priority = ?, availableAt = ?, payloadJson = ?, updatedAt = ? WHERE id = ?',
+                    [nextPriority, nextAt, payloadJson, createdAt, pending.id]);
+            }
+            return { affectedRows: 0, insertId: pending.id, coalesced: true };
+        }
     }
     return write(`INSERT ${ignoreDuplicate ? 'OR IGNORE ' : ''}INTO clan_actions
         (clanId, actionKey, actionType, priority, status, attempt, availableAt,
@@ -9336,7 +9392,8 @@ const Database = {
         actionType,
         priority = 0,
         availableAt = null,
-        payload = {}
+        payload = {},
+        coalescePending = false
     } = {}) {
         const clan = Number(clanId);
         const key = String(actionKey || '').trim();
@@ -9368,10 +9425,43 @@ const Database = {
                 availableAt: dueAt,
                 payload: payload && typeof payload === 'object' ? payload : {},
                 createdAt: timestamp
-            });
+            }, { coalescePending });
             const action = one('SELECT * FROM clan_actions WHERE id = ?', [Number(inserted.insertId)]);
-            return { ok: true, created: true, actionId: Number(inserted.insertId), action };
+            return { ok: true, created: !inserted.coalesced, coalesced: !!inserted.coalesced, actionId: Number(inserted.insertId), action };
         }, 'clan-action:enqueue');
+    },
+    // A paged upgrade of saved queues, using the same admission and settlement
+    // as live actions. Leased work and player orders are never rewritten.
+    repairClanProgressionQueue({ afterId = 0 } = {}) {
+        return inTransaction(() => {
+            const deadlineAt = performance.now() + 8;
+            const rows = all(`SELECT a.* FROM clan_actions a
+                JOIN clan_simulation_clans s ON s.clanId = a.clanId AND s.mode = 'autonomous'
+                WHERE a.id > ? AND a.status = 'pending' AND a.actionType IN ('goal_plan', 'contribution')
+                ORDER BY a.id LIMIT 64`, [Number(afterId)]);
+            let cancelled = 0, scanned = 0, cursor = Number(afterId);
+            for (const action of rows) {
+                if (scanned && performance.now() >= deadlineAt) break;
+                scanned++;
+                cursor = Number(action.id);
+                const payload = jsonObject(action.payloadJson);
+                const strategyReview = action.actionType === 'contribution' && payload.goalType === 'strategy';
+                const kept = insertClanActionUnsafe({
+                    clanId: action.clanId,
+                    actionKey: strategyReview ? `clan:${action.clanId}:queue-repair:${action.id}` : action.actionKey,
+                    actionType: strategyReview ? 'goal_plan' : action.actionType,
+                    priority: Math.max(75, Number(action.priority)),
+                    availableAt: action.availableAt,
+                    payload: strategyReview ? { reason: 'strategy_review_recovered' } : payload,
+                    createdAt: now()
+                }, { coalescePending: true });
+                if (Number(kept.insertId) === Number(action.id)) continue;
+                resolveClanActionUnsafe(action, 'cancelled', { successorActionId: Number(kept.insertId) },
+                    strategyReview ? 'clan_strategy_review_replaced' : 'clan_action_coalesced');
+                cancelled++;
+            }
+            return { scanned, cancelled, afterId: cursor };
+        }, 'clan-action:repair-progression');
     },
     claimClanActions({ limit = 8, at = null, leaseMs = 120000 } = {}) {
         // Compatibility wrapper intentionally admits a single action. Claiming a
@@ -9465,35 +9555,7 @@ const Database = {
                     action
                 };
             }
-            const timestamp = now();
-            const safeResult = compactClanActionResult(result);
-            const updated = write(`UPDATE clan_actions
-                SET status = ?, leaseUntil = NULL, resultJson = ?, reasonCode = ?, updatedAt = ?, resolvedAt = ?
-                WHERE id = ? AND status IN ('pending', 'running')`, [
-                nextStatus,
-                JSON.stringify(safeResult),
-                String(reasonCode || ''),
-                timestamp,
-                timestamp,
-                id
-            ]);
-            if (Number(updated.affectedRows || 0) !== 1) return { ok: false, code: 'ownership_conflict' };
-            recordClanGoalEventUnsafe({
-                clanId: Number(action.clanId),
-                eventType: `action_${nextStatus}`,
-                plan: String(action.actionType || ''),
-                reasonCode: String(reasonCode || ''),
-                payloadJson: JSON.stringify({ actionId: id, actionKey: action.actionKey, result: safeResult }),
-                occurredAt: timestamp
-            });
-            const resolved = one('SELECT * FROM clan_actions WHERE id = ?', [id]);
-            archiveFinishedClanActionsUnsafe(action.clanId);
-            return {
-                ok: true,
-                actionId: id,
-                status: nextStatus,
-                action: resolved
-            };
+            return resolveClanActionUnsafe(action, nextStatus, result, reasonCode);
         }, 'clan-action:resolve');
     },
     fetchClanActions({ clanId = null, status = null, limit = 50 } = {}) {
