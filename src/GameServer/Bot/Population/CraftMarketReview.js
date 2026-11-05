@@ -1,5 +1,6 @@
 'use strict';
 const Network = invoke('GameServer/Bot/Economy/WishNetwork');
+const Packet = require('../Economy/StatsPacket');
 
 // These reviews run only on the bot's ordinary lifecycle, never from a timer
 // or population scan. The record is worker-local and survives state updates.
@@ -16,7 +17,7 @@ function personalBidDue(state, record, timestamp, board) {
     }
     if (record.craftBidReviewAt > timestamp) return false;
     record.craftBidReviewAt = timestamp + 900000;
-    const moneyPrice = Number(state.stats?.money?.[1]);
+    const moneyPrice = Number(Packet.moneyPrice(state.stats?.money));
     if (!board || !(moneyPrice > 0)) return false;
     const needs = invoke('GameServer/Bot/Economy/TradeIntent').retainedProjectIntents(state, { moneyPrice }, () => 1);
     const owned = board.ownerLines(Number(state.characterId));
@@ -45,7 +46,7 @@ function clanInputDue(state, record, timestamp, board) {
     const candidates = [Number(part?.selfId), Number(recipe?.recipeItemId)]
         .filter(id => id > 0 && board.list(id, 1)?.length);
     if (!candidates.length) return false;
-    const moneyPrice = Number(state.stats?.money?.[1]);
+    const moneyPrice = Number(Packet.moneyPrice(state.stats?.money));
     if (!(moneyPrice > 0)) return false;
     const key = `power:${Number(plan.target?.selfId)}:${Number(plan.target?.slot)}`;
     return invoke('GameServer/Bot/Economy/TradeIntent').retainedProjectIntents(state, { moneyPrice }, () => 1)

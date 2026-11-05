@@ -1,5 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const fs = require('node:fs');
 require('./helpers/databaseIsolation');
 const fixture = require('./helpers/isolatedSocialDatabase')('crystal-fallback');
@@ -184,7 +185,7 @@ async function run() {
         const sources = invoke('GameServer/Bot/Population/ColdOccupationSources'); sources.initialise();
         const nativeReview = state => Economy.forState(state, { board: scarce, spots: [], caller: 'meeting_prepare',
             npcOffersFor: sources.npcOffersFor, tripCost: invoke('GameServer/Bot/Economy/EconomicTrip').reader(state,
-                { hourAdena: Number(state.stats.money?.[0]) || 0 }), workshop: null, knownRecipes: [], workshops: () => [] });
+                { hourAdena: Number(Packet.hourAdena(state.stats.money)) || 0 }), workshop: null, knownRecipes: [], workshops: () => [] });
         const order = nativeReview(nativeBuyer), input = order.network.activity;
         assert.equal(input.sourceType, 'npc');
         assert.equal(template(input.itemId).etc.rank, 'd');

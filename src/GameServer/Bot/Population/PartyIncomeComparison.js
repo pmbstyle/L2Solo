@@ -3,14 +3,19 @@
 const BuffPolicy = invoke('GameServer/Bot/Economy/BuffServicePolicy');
 const Network = invoke('GameServer/Bot/Economy/WishNetwork');
 const Rewards = require('../Economy/SpotRewardExpectation');
+const Packet = require('../Economy/StatsPacket');
 const GameDataCatalogue = require('../../Knowledge/GameDataCatalogue');
 const Material = require('./CraftMaterialParty');
 const SpotEconomics = require('../Economy/SpotEconomics');
 const WalkBack = require('../Economy/WalkBack');
 const HOUR_MS = 3600000;
+// An active party's income review cadence (PartyGoalPolicy.joint).
 const REVIEW_MS = 5 * 60000;
 const MAX_SOLO_CHECKS = 12;
-const soloChoices = new WeakMap();
+// The solo side's own searches, by bot (soloChoice): at most SOLO_SEARCH_LIMIT,
+// the least recently read out.
+const SOLO_SEARCH_LIMIT = 2048;
+const soloChoices = new Map();
 const positive = value => Math.max(0, Number(value) || 0);
 const rosterKey = members => members.map(member => Number(member.characterId)).sort((a, b) => a - b).join(',');
 const adventurer = state => invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(state);
@@ -60,22 +65,55 @@ function evaluate({ solo, party, cash = null, spendable = 0, fee = 0, rewardFee 
         soloSpotId: solo?.spotId || null, soloBuffPrice: positive(solo?.buffPrice) };
 }
 
-function soloRoute(state, spots, timestamp, peers = []) {
-    const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
-    const Route = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
+// The solo side's earning route: { route, version, own }. The spot the bot's
+// held build earns at (decision 10-30), read each time (no search, and no memo
+// may outlive its window); else a search of its own (own: its held record).
+// version names the search the route came from (the hold's answer's, or the
+// own search's time): a held forming verdict lives no longer than it
+// (PartyGoalPolicy.verdictInputs).
+function soloChoice(state, spots, timestamp) {
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext'); // lazy: EconomyContext reads this module
     const standalone = soloState(state);
     const options = { spots, timestamp, required: true, mode: 'solo', maxChecks: MAX_SOLO_CHECKS };
-    // The spot the bot's held build earns at (decision 10-30), read each time
-    // (no search, and no memo may outlive its window); else a search of its own.
-    let choice = invoke('GameServer/Bot/Economy/EconomyContext').heldIncomeRoute(standalone, { ...options, party: true }); // lazy: EconomyContext reads this module
-    if (!choice) {
-        let held = soloChoices.get(state);
-        if (!held || held.spots !== spots || timestamp < held.at || timestamp - held.at >= REVIEW_MS) {
-            held = { spots, at: timestamp, choice: Route.select(standalone, options) };
-            soloChoices.set(state, held);
-        }
-        choice = held.choice;
+    const route = Economy.heldIncomeRoute(standalone, { ...options, party: true });
+    if (route) return { route, version: `held:${Economy.holdAnswerAt(standalone)}`, own: null };
+    const id = Number(state.characterId) || 0;
+    let own = soloChoices.get(id);
+    if (!own || own.spots !== spots || timestamp < own.at || timestamp >= own.at + Economy.HOLD_MS
+        || Economy.searchMoved(own, standalone, timestamp, options)
+        || invoke('GameServer/Bot/Economy/DecisionSections').observationChanged(standalone, own.observed, timestamp)) {
+        const found = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').search(standalone, options);
+        own = { ...Economy.searchInputs(standalone, found, timestamp, options), observed: observed(standalone, timestamp),
+            spots, at: timestamp, choice: found.route };
     }
+    // Least recently used: a read moves the bot to the newest end.
+    soloChoices.delete(id); soloChoices.set(id, own);
+    if (soloChoices.size > SOLO_SEARCH_LIMIT) {
+        soloChoices.delete(soloChoices.keys().next().value);
+        invoke('GameServer/Bot/Economy/EconomyDiagnostics').count('party_solo_search', 'evicted');
+    }
+    return { route: own.choice, version: `own:${own.at}`, own };
+}
+
+// The solo side's own search (EquipmentIncomeRoute.search) is kept on what it
+// reads, by the held earning spot's own key (EconomyContext.searchInputs,
+// searchMoved: DecisionSections.LINK_INPUTS incomeSearch on the solo copy,
+// soloState, and the weights its answer stands over); its own samples and
+// time on the spot by the observation event's rule
+// (DecisionSections.observationChanged), as the observation bit reaches the
+// hold. Inputs with no event (crowd, prices, the spawn period): the hold's
+// window (HOLD_MS) stands in for them here too.
+function observed(state, timestamp) {
+    return { sample: invoke('GameServer/Bot/Economy/DecisionSections').sample(state, timestamp),
+        share: invoke('GameServer/Bot/AI/BotHuntEfficiency').onSpotShare(state),
+        incomeError: Math.max(positive(state.stats?.wishSections?.incomeError), invoke('GameServer/Bot/AI/KnowledgeLearning').INCOME_ERROR_FLOOR) };
+}
+
+// side: the member's soloChoice when its caller already read it.
+function soloRoute(state, spots, timestamp, peers = [], side = soloChoice(state, spots, timestamp)) {
+    const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
+    const standalone = soloState(state);
+    const choice = side.route;
     if (!choice) return null;
     const row = choice.row;
     let best = { ...row, income: choice.earning * Hunt.onSpotShare(state), spotId: choice.spot.id,
@@ -234,7 +272,8 @@ function compare(state, peers, options = {}) {
     if (!state.spotId || !Number.isFinite(Number(state.stats?.classId ?? state.classId))) return null;
     const members = [state, ...peers];
     const prepared = options.prepared || prepare(members, options);
-    let solo = soloRoute(state, prepared.spots, prepared.timestamp, peers);
+    const side = options.solo?.get(Number(state.characterId)) || soloChoice(state, prepared.spots, prepared.timestamp);
+    let solo = soloRoute(state, prepared.spots, prepared.timestamp, peers, side);
     // A guarded existing production quote can beat hunting. This is a read
     // of an already prepared native result, never a market/recipe scan here.
     const workshop = prepared.workshops?.get(state.characterId)
@@ -252,7 +291,7 @@ function compare(state, peers, options = {}) {
         .find(row => row.characterId === Number(state.characterId)) : null;
     const goal = materialGoal || state.stats?.partyRequest || state.stats?.equipmentPlan?.next || options.objective;
     const cash = materialParty ? materialGoal?.materialCash ?? null : positive(focus?.[2]) || null;
-    const spendable = Math.max(0, positive(state.adena) - positive(state.stats?.money?.[2]));
+    const spendable = Math.max(0, positive(state.adena) - positive(Packet.survivalReserve(state.stats?.money)));
     const help = options.party?.stats?.agreement?.help || options.objective?.helpDeal;
     const payer = Number(help?.payerId) === Number(state.characterId);
     const fee = help?.status === 'funded' ? 0 : payer ? positive(help?.fee) : 0;
@@ -265,7 +304,8 @@ function compare(state, peers, options = {}) {
         ? itemHours(state, prepared.spot, party?.kills, goal, members, agreement) : null;
     // The direct solo drop may be at a different camp from the best cash
     // route. Check just that known camp, without searching the source atlas.
-    const held = soloChoices.get(state);
+    // Kept with the own search, on the same inputs.
+    const held = side.own;
     const goalKey = finalItem ? `${goal.spotId}:${goal.npcId}:${goal.itemId}:${goal.strategy}:${goal.amount || 1}` : null;
     if (held && held.goalKey !== goalKey) {
         held.goalKey = goalKey;
@@ -289,4 +329,4 @@ function compare(state, peers, options = {}) {
     return { ...answer, at: prepared.timestamp, soloSource: solo?.source || null, partySource: party?.source || null };
 }
 
-module.exports = { compare, prepare, evaluate, soloRoute, itemHours, soloItemRouteHours, rosterKey, REVIEW_MS, MAX_SOLO_CHECKS };
+module.exports = { compare, prepare, evaluate, soloChoice, soloRoute, itemHours, soloItemRouteHours, rosterKey, REVIEW_MS, MAX_SOLO_CHECKS, SOLO_SEARCH_LIMIT, soloState };

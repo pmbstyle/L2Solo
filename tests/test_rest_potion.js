@@ -4,6 +4,7 @@
 // worth more than the bottle's NPC price; one rule hot and cold; its potion
 // stock buys what the rule drinks.
 const assert = require('node:assert/strict');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const { useRate } = require('./helpers/progressionRate');
 require('./helpers/databaseIsolation');
 require('../src/Global');
@@ -33,7 +34,7 @@ function bot(classId, { hp = 1, mp = 1, bottles = 10, hour = 600000, keep = 0 } 
     state.characterId = 7000 + classId;
     state.vitals = { hp: profile.maxHp * hp, maxHp: profile.maxHp, mp: profile.maxMp * mp, maxMp: profile.maxMp };
     state.inventory[POTION] = { selfId: POTION, amount: bottles };
-    state.stats = { ...state.stats, ...(hour > 0 ? { money: [hour, 1 / hour, 0, 0], stockTargets: [POTION, 0, 0, 0, 0, keep] } : {}) };
+    state.stats = { ...state.stats, ...(hour > 0 ? { money: [hour, 1 / hour, 0, 0], stockTargets: Packet.stockTargets({ potionId: POTION, potionTarget: 0, shotId: 0, shotTarget: 0, shotCurrentAtBuild: 0, potionSurvivalTarget: keep }) } : {}) };
     return { state, profile };
 }
 
@@ -157,6 +158,25 @@ try {
     assert(poor.target <= stock.survivalTarget + 3, `the wallet bounds the stock (${poor.target})`);
     const walletless = Economy.basics(hunter(0), { timestamp: T }).stock('potions');
     assert.equal(walletless.target, Math.ceil(walletless.usePerHour * walletless.targetHours), 'no money, only the survival drink\'s stock');
+    // A build that keeps its foundation (a money build: the wallet is no
+    // foundation section) bounds the stock by the wallet it has now.
+    {
+        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+        // A held build proves itself only under a published code identity.
+        const Generation = require('../src/GameServer/Bot/Population/RecomputeGeneration'), generation = Generation.metadata();
+        Generation.configure({ code: '1'.repeat(40), config: '2'.repeat(64) });
+        invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').useRowSource(() => null, () => true);
+        const native = hunter(1e7);
+        Economy.forget(native.characterId);
+        const built = Economy.forState(native, { timestamp: T });
+        const poorer = hunter(price * 3);
+        const dirty = { ...poorer, stats: { ...poorer.stats, ...built.statsPacket, wishDirty: Sections.sectionBit('money') } };
+        const kept = Economy.forState(dirty, { timestamp: T, caller: 'step' }).stock('potions');
+        const fresh = Economy.basics(dirty, { timestamp: T }).stock('potions');
+        assert.equal(kept.target, fresh.target, `a money build reads the wallet it has (${kept.target}, ${fresh.target} fresh)`);
+        Economy.forget(native.characterId);
+        Generation.configure(generation);
+    }
     // The same rule: a bottle that does not pay adds nothing to the stock.
     const potion = { heal: 336, price };
     const paying = RestPotion.stockUse(hunter(0), { row: cycle, potion, hour: breakEven * 1.1, timestamp: T });

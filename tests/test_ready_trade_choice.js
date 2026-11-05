@@ -1,5 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 require('../src/Global');
 const Data = invoke('GameServer/DataCache');
 Data.init();
@@ -127,8 +128,9 @@ const Pricing = invoke('GameServer/Bot/Economy/MarketPricing');
 const stockBare = { ...state, level: 30, activity: 'hunting' };
 const shotId = invoke('GameServer/Inventory/ShotStock').planForState(stockBare).selfId;
 const stockState = { ...stockBare, inventory: { [shotId]: { selfId: shotId, amount: 100, kind: 'Other.Shot' } },
-    stats: { stockTargets: [invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(stockBare).selfId, 0,
-        shotId, 60, 100, 0, 0, 1, 0, 0] } };
+    stats: { stockTargets: Packet.stockTargets({ potionId: invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(stockBare).selfId,
+        potionTarget: 0, shotId, shotTarget: 60, shotCurrentAtBuild: 100, potionSurvivalTarget: 0, gapHorizonHours: 0, shotsCanRestock: true,
+        shotSurvivalTarget: 0, scrollHours: 0 }) } };
 // A review's own stock reader (here a different target) does not decide it.
 const stockEconomy = { hourAdena: 1000, moneyPrice: .001, persona: { traits: {}, understanding: .3 },
     network: {}, stock: kind => kind === 'shots' ? { itemId: shotId, target: 0 } : { itemId: 1060, target: 0 } };

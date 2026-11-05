@@ -1,4 +1,5 @@
 const assert = require('assert');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const fs = require('node:fs');
 require('./helpers/databaseIsolation');
 const isolated = require('./helpers/isolatedSocialDatabase')('wealth-craft-policy');
@@ -117,7 +118,7 @@ const clockState = { characterId: 9105, name: 'NativeCraftFunding', accountName:
 const mpPerHour = Number(Background.coldRestRegenPerTick(clockState).mp) * 1200;
 assert(mpPerHour > 0 && Number.isFinite(mpPerHour), 'authored class and regeneration give a positive MP production clock');
 const native = await captureAndRead(clockState, { timestamp: NOW });
-const nativeClock = { hourAdena: native.state.stats.money[0], mpPerHour };
+const nativeClock = { hourAdena: Packet.hourAdena(native.state.stats.money), mpPerHour };
 const nativeMargin = netProfit(recipe, exit.price, 27000, 0, nativeClock);
 const nativeOpportunity = Policy.opportunityFor(native.state, recipe, planFor, [exit], undefined, nativeClock);
 if (nativeMargin > 0) {
@@ -128,7 +129,7 @@ if (nativeMargin > 0) {
     const r = nativeMargin / nativeClock.hourAdena / 27000;
     assert.strictEqual(Funding.spendable(native.state, 0, { r }), expectedSpendable(native.state, { r }),
         'the exact gain/cash ratio uses the same genuine native packet');
-    if (r < native.state.stats.money[1]) assert.strictEqual(Funding.spendable(native.state, 0, { r }), 0,
+    if (r < Packet.moneyPrice(native.state.stats.money)) assert.strictEqual(Funding.spendable(native.state, 0, { r }), 0,
         'a gain below the real money floor cannot fund this basket');
     console.log(JSON.stringify({ nativeClock, unitRecipeId: recipe.recipeId, nativeMargin, r,
         allowance: Funding.spendable(native.state, 0, { r }), cash: 27000,
@@ -136,7 +137,7 @@ if (nativeMargin > 0) {
 } else assert.strictEqual(nativeOpportunity, null, 'a nonpositive native-clock margin is rejected before funding');
 // An explicit lower-value gain control uses the real packet floor. It does
 // not claim an observed craft/offer and never creates a percentage wallet cap.
-const lowGainRatio = native.state.stats.money[1] / 2;
+const lowGainRatio = Packet.moneyPrice(native.state.stats.money) / 2;
 assert.strictEqual(Funding.spendable(native.state, 0, { r: lowGainRatio }), 0,
     'actual E3 refuses a low-value gain even though the original 100000 wallet pays 27000 physically');
 console.log('Wealth craft policy checks passed');

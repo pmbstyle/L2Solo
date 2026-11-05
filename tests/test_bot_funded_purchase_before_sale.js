@@ -1,4 +1,5 @@
 const assert = require('assert');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 require('./helpers/databaseIsolation');
 const fixture = require('./helpers/isolatedSocialDatabase')('fx-market-case');
 const fs = require('node:fs');
@@ -76,7 +77,7 @@ const poorChoice = await choice(bot(wealth, npcJewellery, 50000), 'poor_original
 // Selling the loot is finite funding too (f75b6525): the poor wallet earns its
 // missing purchase value by hunting or by selling, never by buying.
 assert(['hunting', 'selling'].includes(poorChoice.read.activity.activity), 'the original poor wallet must earn its missing purchase value');
-assert(poorChoice.state.stats.money[3] > 0, 'a real unfunded gap remains');
+assert(Packet.firstUnfundedPrice(poorChoice.state.stats.money) > 0, 'a real unfunded gap remains');
 assert.strictEqual(Funding.spendable(poorChoice.state, 0, { itemId: NECKLACE }), 0,
     'the old jewellery plan alone cannot authorize its debit');
 

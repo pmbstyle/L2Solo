@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 delete process.env.L2NODE_SHARED_CONFIG_FILE;
 process.env.L2NODE_CONFIG_FILE = 'config/default.ini';
 require('../src/Global');
@@ -105,7 +106,7 @@ async function run() {
     assert.deepEqual(hotPlan, coldPlan);
     const potions = Potions.restockPlan(cold, { unitPrice: 200 });
     assert(potions.amount > 0); assert.equal(coldPlan.potionCost, coldPlan.needed ? potions.cost : 0);
-    assert(coldPlan.cost + coldPlan.potionCost <= cold.adena - packet.money[2]);
+    assert(coldPlan.cost + coldPlan.potionCost <= cold.adena - Packet.survivalReserve(packet.money));
     assert.equal(coldPlan.needed, false, 'an unequipped native bot has no funded D-shot wish');
     assert.equal(coldPlan.amount, 0); assert.deepEqual(coldPlan.shops, []);
 

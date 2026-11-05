@@ -1,5 +1,6 @@
 const Diagnostics = require('./EconomyDiagnostics');
 const CombinedErrands = require('../Population/CombinedErrandPolicy');
+const Packet = require('./StatsPacket');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
@@ -25,7 +26,7 @@ function purchaseObservation(state, selfId, requested, budget, phase, reason, ex
     if (!Diagnostics.enabled(state?.characterId)) return;
     Diagnostics.push({ owner: Number(state.characterId), phase, reason, item: Number(selfId), requested: Number(requested),
         wallet: Number(state.adena ?? state.inventory?.[57]?.amount), budget, available: budget,
-        reserve: Number(state.stats?.money?.[2]), owned: Number(state.inventory?.[selfId]?.amount || 0),
+        reserve: Number(Packet.survivalReserve(state.stats?.money)), owned: Number(state.inventory?.[selfId]?.amount || 0),
         decisionSeq: Number(state.stats?.decisionSeq), activityLeaf: Number(state.stats?.activityLeaf),
         revision: Number(state.simulation?.revision), wishKey: state.stats?.wishFocus?.[0], town: state.currentRegion,
         errandAt: Number(state.stats?.marketErrand?.at), ...extra });

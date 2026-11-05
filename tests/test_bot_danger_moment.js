@@ -81,7 +81,7 @@ assert.strictEqual(HealingPotionStock.tryUseInCombat(session, actor, mob), null,
 assert.strictEqual(DangerMoment.forActor({}, actor, mob, { attackers: [mob] }), null,
     'no held economy: the author rule decides');
 
-// The price of money unknown (no moneyPrice, no money[1] in the stats packet):
+// The price of money unknown (no moneyPrice, none in the stats packet):
 // a potion priced at zero would be drunk whenever the last one wears off, so
 // the author's 0.35 rule decides.
 assert.strictEqual(DangerRule.decide({ ...base, moneyPrice: null }), null);
@@ -92,7 +92,7 @@ assert.strictEqual(DangerMoment.forActor(noPrice, actor, mob, { attackers: [mob]
     'an unknown price of money leaves the author rule');
 noPrice.heldEconomy.statsPacket.money = [12000, 1 / 10000];
 assert.strictEqual(DangerMoment.forActor(noPrice, actor, mob, { attackers: [mob] }).action, 'drink',
-    'the price of money read from the stats packet (money[1]) as EconomyContext holds it');
+    'the price of money read from the stats packet as EconomyContext holds it');
 
 // Top0r: effective speed 124 against mobs running at 176/191. A slower
 // primary target must not hide the faster add; buffs/slows change the race.

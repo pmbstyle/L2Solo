@@ -1,4 +1,5 @@
 const assert = require('assert');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const { useRate } = require('./helpers/progressionRate');
 
 require('./helpers/databaseIsolation');
@@ -1314,7 +1315,7 @@ async function verifyWorkerSelectedGoals() {
             assert(native.queue.some(row => row.key === leaf.rootKey)
                 || leaf.activity === 'hunting' && !leaf.funding && leaf.rootKey === `level:${state.level + 1}`,
                 'paid roots belong to the native queue; free level progress is an explicit network root');
-            assert(Number.isFinite(state.stats.money[0]) && state.stats.money[0] > 0,
+            assert(Number.isFinite(Packet.hourAdena(state.stats.money)) && Packet.hourAdena(state.stats.money) > 0,
                 'native planning supplies a positive hour value, without a synthetic money packet');
             Economy.forState = () => { throw Error('cold goal reader rebuilt the wish network'); };
             const goals = NeedsEvaluator.evaluate(state, { now: 1000, decisions });

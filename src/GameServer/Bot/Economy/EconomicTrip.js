@@ -240,4 +240,4 @@ function reader(state, { hourAdena, origin = null } = {}) {
     if (state && typeof state === 'object') readers.set(state, { key, cost });
     return cost;
 }
-module.exports = { details, read, reader, regionalTown, towns, frame, key, prepare, prepared, preparedReader };
+module.exports = { details, read, reader, regionalTown, towns, frame, routeInputs, key, prepare, prepared, preparedReader };

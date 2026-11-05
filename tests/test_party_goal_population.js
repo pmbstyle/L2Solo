@@ -162,7 +162,12 @@ const spot = { id: 'goal-spot', name: 'Goal spot', center: { locX: 1, locY: 1, l
     const writesBeforeBusy = writes;
     Coordinator.requestPartyGoals = async () => ({ ok: false, reason: 'party_goal_busy' });
     Population.nextProtectedPartyFormationAt = 0;
-    assert.deepEqual(await Population.formProtectedRequiredParty(Date.now(), materialMembers), []);
+    // Moved members: the verdict on the formed ones is held, a new one is asked.
+    const movedMembers = materialMembers.map(member => ({ ...member, updatedAt: Number(member.updatedAt || 0) + 1 }));
+    Life.cachedState = id => movedMembers.find(member => member.characterId === Number(id));
+    Formation.proposalFromStates = () => ({ candidates: movedMembers,
+        spotId: spot.id, minSize: 2, maxSize: 5, levelRange: 4, materialParty: true });
+    assert.deepEqual(await Population.formProtectedRequiredParty(Date.now(), movedMembers), []);
     assert.equal(writes, writesBeforeBusy, 'a busy worker defers the forming verdict: no main admission');
     console.log('PASS all three cold group readers: no main network, delayed formation, budget, lifecycle CAS, stale rejection');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {

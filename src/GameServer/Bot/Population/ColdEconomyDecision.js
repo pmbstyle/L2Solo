@@ -12,6 +12,7 @@ const FailureLog = require('../../../FailureLog');
 const { isMainThread } = require('node:worker_threads');
 const { fnv1a32 } = require('../Fnv1a');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
+const Packet = require('../Economy/StatsPacket');
 const RestartDecision = require('./EconomyRestartDecision');
 const CraftInputReservations = require('../Economy/CraftInputReservations');
 const Sections = require('../Economy/DecisionSections');
@@ -79,6 +80,18 @@ function workshopValues(value) {
         && Number.isFinite(income) && Number.isFinite(cycle) ? [recipeId, productId, income, cycle] : [0, 0, NaN, NaN];
 }
 function unknownWorkshop() { return { known: false, recipeId: 0, productId: 0, incomePerHour: NaN, cycleHours: NaN }; }
+// A known workshop with nothing to craft (the planner's answer to a bot it has no recipe search for).
+function noWorkshop() { return { known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0 }; }
+// The occupation planner's answer to a bot that is no service crafter and has
+// no own board line, known without the planner (no recipe search, no sale
+// feasibility to read): its occupation branch (ColdSimulationWorker) and the
+// step's shortcut before an ask (member, lifecycle) both return it. Else null:
+// the planner answers. board: the board mirror (ownerLines).
+function noCrafterWorkshop(state, board) {
+    if (require('../Economy/CraftEligibility').isServiceCrafter(state)
+        || board?.ownerLines(Number(state.characterId))?.length) return null;
+    return { ...noWorkshop(), feasibility: null };
+}
 class CompactDecision {
     constructor(updatedAt, echo, riskWeight, activity, data, flags) {
         this.echo = echo; this.data = data;
@@ -408,6 +421,18 @@ function preparedCardWorth(decision, id, state, moneyPrice, understanding, enabl
     return NaN;
 }
 
+// What preparedCardWorth reads of a card (the stale flag, its usefulness
+// pairs) as one version: worths read from one card stand for the next card
+// that reads the same (a flag write copies the buffer, a new decision brings a
+// new one). null: no card.
+function usefulnessVersion(decision) {
+    if (!decision) return null;
+    const data = decision.data;
+    if (decision.stale || !data || data.byteLength > MAX_BYTES) return 'none';
+    const text = new Float32Array(data, 28, (decision.counts & 63) * 2).join(',');
+    return fnv1a32(text) * 2 ** 21 + (fnv1a32(text, 0x9e3779b9) & 0x1fffff);
+}
+
 // The basics' enumerable keys, learned from the first build: basics() always
 // returns the same shape, so a later view defines them without a build.
 let basicsKeys = null;
@@ -435,10 +460,10 @@ function view(state, decision, deps = {}, preparedBase = null) {
         return base;
     };
     const packet = state.stats?.money;
-    const valid = Array.isArray(packet) && packet.length >= 4;
+    const valid = Packet.hasMoney(packet);
     if (!valid || !basicsKeys) basics();
-    const hourAdena = valid ? Number(packet[0]) : base.hourAdena;
-    const moneyPrice = valid ? Number(packet[1]) : hourAdena > 0 ? 1 / hourAdena : 0;
+    const hourAdena = valid ? Number(Packet.hourAdena(packet)) : base.hourAdena;
+    const moneyPrice = valid ? Number(Packet.moneyPrice(packet)) : hourAdena > 0 ? 1 / hourAdena : 0;
     const known = id => {
         const pairs = decision?.usefulness || [];
         for (let i = 0; i < pairs.length; i += 2) if (pairs[i] === Number(id)) return pairs[i + 1];
@@ -449,12 +474,13 @@ function view(state, decision, deps = {}, preparedBase = null) {
     const activity = decision?.activity || null;
     const wish = decision?.wish ? { object: { kind: kindFor(decision.wish[0]), amount: decision.wish[1] }, price: decision.wish[2] } : null;
     // The hours an urgent want may wait for a better price (PriceDecision.waitRate).
-    const gapHorizonHours = () => !decision?.urgency ? 0 : Number.isFinite(state.stats?.stockTargets?.[6]) ? state.stats.stockTargets[6]
+    const publishedHorizon = () => Packet.gapHorizonHours(state.stats?.stockTargets);
+    const gapHorizonHours = () => !decision?.urgency ? 0 : Number.isFinite(publishedHorizon()) ? publishedHorizon()
         : decision.urgency === URGENCY_SHOTS
         ? basics().stock('shots').targetHours : decision.urgency === URGENCY_POTIONS
             ? basics().stock('potions').targetHours
             : EconomicValuation.stageHours(state, basics().hunt.expPerHour, basics().persona);
-    const own = { state, hourAdena, moneyPrice, survivalReserve: valid ? Number(packet[2]) : base.survivalReserve,
+    const own = { state, hourAdena, moneyPrice, survivalReserve: valid ? Number(Packet.survivalReserve(packet)) : base.survivalReserve,
         board, network: { activity }, activity, wish,
         craftReservations: Object.fromEntries(activity?.craftReservations || []),
         watchList: (decision?.watch || []).map(row => ({ itemId: row[0], amount: row[1], worth: row[2], kind: kindFor(row[3]) })),
@@ -628,8 +654,8 @@ function refusal(state, accepted, deps = {}, options = {}) {
         && !invoke('GameServer/Bot/Population/BackgroundResolver').travelRecord(state.stats.travel)) return 'travel_record'; // lazy: as canReuse before L114 (load order unchecked)
     // A goal change (main's goal revision moved since the build) is seen at
     // the next decision point. No revision on the card (restored after a
-    // restart) differs too: one rebuild. The build reads the same revision for
-    // the held earning spot (EconomyContext.holdRead: a goal change searches).
+    // restart) differs too: one rebuild. The held earning spot does not
+    // compare the revision, no input of its search (DecisionSections LINK_INPUTS incomeSearch).
     if (Number.isFinite(deps.goalRevision) && deps.goalRevision !== accepted.goalRevision
         && Reaction.hears('goal_moved', Reaction.place(state))) return 'goal';
     // A far bot's card lives on, so nothing else heals a lost held build: every
@@ -817,5 +843,5 @@ class ColdEconomyDecisions {
     }
 }
 
-module.exports = { personalUsefulness, preparedCardWorth, capture, heldFor, heldAtDecisionOf, progressSince, remainingToOrder, materialHunt, ownItem, stateEcho, echoHolds, CompactActivity, ColdEconomyDecisions, economyFor, view, nearView, advisory, restoreAdvisory, advisoryPublicationHolds, sameEconomicOutput, current, canReuse, refusal, refreshAdvisory, refreshPreparedCraft, cardWithShot, kindCode, kindFor, compact, workshopValues,
-    unknownWorkshop, MAX_BYTES, MAX_SHOT_BYTES, COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES };
+module.exports = { personalUsefulness, preparedCardWorth, usefulnessVersion, capture, heldFor, heldAtDecisionOf, progressSince, remainingToOrder, materialHunt, ownItem, stateEcho, echoHolds, CompactActivity, ColdEconomyDecisions, economyFor, view, nearView, advisory, restoreAdvisory, advisoryPublicationHolds, sameEconomicOutput, current, canReuse, refusal, refreshAdvisory, refreshPreparedCraft, cardWithShot, kindCode, kindFor, compact, workshopValues,
+    unknownWorkshop, noWorkshop, noCrafterWorkshop, MAX_BYTES, MAX_SHOT_BYTES, COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES };

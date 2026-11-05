@@ -182,6 +182,71 @@ async function run() {
         assert.equal(verdict(arrived), true, 'a far flight\'s arrival is its own ground: the decision stands');
     }
     console.log('PASS a death-pressure flight is an event');
+
+    {
+        // A trip start keeps its spot verdicts on the bot's kernel record
+        // (BotRoute heldVerdict) while what they read stands: the spot, the
+        // bot's side (kit and level, shot kind, servitor), the recovery's
+        // target level. Exclusion marks are read at every ask; the crowd is no
+        // input. A kept verdict answers as a fresh one, also after each input
+        // changes; `judged`: did the ask judge the ground and matchup again.
+        const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
+        const SpotService = invoke('GameServer/Bot/AI/SpotService');
+        const ShotStock = invoke('GameServer/Inventory/ShotStock');
+        const stubbed = { ready: LevelingRoutes.readySpotReaderFor, allowed: LevelingRoutes.isSpotAllowedForState };
+        let judged = 0;
+        LevelingRoutes.readySpotReaderFor = (...args) => { judged++; return stubbed.ready(...args); };
+        LevelingRoutes.isSpotAllowedForState = (...args) => { judged++; return stubbed.allowed(...args); };
+        try {
+            const owner = {};
+            const leafAt = (state, id, at, record) => BotRoute.leafChoice(state, { activity: 'hunting', spotId: id },
+                { spots, timestamp: at, owner: record });
+            const ask = (state, id, at = T) => {
+                const before = judged;
+                const held = leafAt(state, id, at, owner), fresh = (judged - before) > 0;
+                assert.deepEqual(held, leafAt(state, id, at, null), `the kept verdict at ${id} answers as a fresh one`);
+                return { spotId: held?.spotId ?? null, judged: fresh };
+            };
+            const bot = { ...spotAt(base, '-5_16'), characterId: 990105, stats: { ...base.stats, stepCount: 1 } };
+            const with_ = stats => ({ ...bot, stats: { ...bot.stats, ...stats } });
+            assert.deepEqual(ask(bot, '-5_16'), { spotId: '-5_16', judged: true }, 'fixture: the leaf\'s own spot fits');
+            assert.deepEqual(ask({ ...bot }, '-5_16', T + 60000), { spotId: '-5_16', judged: false },
+                'a later step with the same inputs keeps the verdict');
+            assert.deepEqual(ask({ ...bot, level: 36 }, '-5_16'), { spotId: '-5_16', judged: true }, 'a level up judges again');
+            ask(bot, '-5_16');
+            const marked = with_({ capacityBackoffs: [{ spotId: '-5_16', untilStep: 3 }] });
+            assert.deepEqual(ask(marked, '-5_16'), { spotId: null, judged: false }, 'a mark on the spot refuses it at once');
+            assert.deepEqual(ask({ ...marked, stats: { ...marked.stats, stepCount: 3 } }, '-5_16'), { spotId: '-5_16', judged: false },
+                'its expiry admits it again on the kept verdict');
+            assert.deepEqual(ask(with_({ huntingRecovery: { levelPenalty: 4, cleanWins: 0, resumeExp: 0 } }), '-5_16').judged, true,
+                'a recovery penalty (the matchup\'s target level) judges again');
+            const plan = ShotStock.combatPlanForState(bot);
+            const shots = { ...bot, inventory: { ...bot.inventory, [plan.selfId]: { selfId: plan.selfId, amount: 5000 } } };
+            ask(bot, '-5_16');
+            assert.equal(ask(shots, '-5_16').judged, true, 'a loaded shot judges again');
+            const naked = { ...bot, inventory: {} };
+            assert.deepEqual(ask(naked, '-5_16'), { spotId: null, judged: true }, 'without its gear the matchup refuses the spot');
+            assert.deepEqual(ask({ ...naked }, '-5_16', T + 60000), { spotId: null, judged: false }, 'the refusal is kept too');
+            assert.deepEqual(ask(bot, '-5_16'), { spotId: '-5_16', judged: true }, 'gear worn again judges it again');
+            // The ground the bot stands on (a trip under a leaf that is no hunt):
+            // kept the same way.
+            const standing = state => SpotService.standingSpot(state, spots);
+            const shop = { activity: 'shopping' };
+            const groundAt = (state, at = T) => {
+                const before = judged;
+                assert.equal(BotRoute.trip(owner, state, shop, { spots, currentSpot: standing(state), timestamp: at }), null,
+                    'fixture: safe ground, the occupation owns the step');
+                return judged - before > 0;
+            };
+            assert.equal(groundAt(bot), true, 'the first trip start judges the ground');
+            assert.equal(groundAt({ ...bot }, T + 60000), false, 'the next one keeps it');
+            assert.equal(groundAt({ ...bot, level: 36 }), true, 'a level up judges it again');
+        } finally {
+            LevelingRoutes.readySpotReaderFor = stubbed.ready;
+            LevelingRoutes.isSpotAllowedForState = stubbed.allowed;
+        }
+    }
+    console.log('PASS a trip start keeps its spot verdicts while their inputs stand');
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => {
     Economy?.reset();

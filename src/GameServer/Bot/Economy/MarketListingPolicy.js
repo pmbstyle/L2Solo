@@ -1,5 +1,6 @@
 const BeginnerShots = require('../../Items/C4BeginnerShots');
 const LotPolicy = require('./MarketLotPolicy');
+const Packet = require('./StatsPacket');
 const BoardRules = require('../../AfkTrade/BoardRules');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
@@ -96,13 +97,13 @@ function cardTraderContext(state, options = {}) {
     // lazy: worker the coordinator's accepted decisions live on main only
     const prepared = invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions.decided?.(state);
     const worth = id => ColdEconomyDecision.preparedCardWorth(prepared,
-        id, state, Number(packet?.[1]), persona?.understanding, KnowledgeLearning.knowledgeEnabled());
+        id, state, Number(Packet.moneyPrice(packet)), persona?.understanding, KnowledgeLearning.knowledgeEnabled());
     return MarketPricing.traderContext(state, {
         npcOffersFor: selfId => invoke('GameServer/Bot/Economy/MarketOpportunity').npcOffersAll(selfId), // lazy: worker main-only NPC shops
         ...options,
         board: Object.hasOwn(options, 'board') ? options.board : invoke('GameServer/AfkTrade/AfkTradeService').boardIndex(), // lazy: worker main-only board
-        persona, preparedWorth: worth, preparedBuffer: prepared?.data,
-        economy: { persona, hourAdena: Number(packet?.[0]), moneyPrice: Number(packet?.[1]), gapHorizonHours: NaN, worth } });
+        persona, preparedWorth: worth, preparedVersion: ColdEconomyDecision.usefulnessVersion(prepared),
+        economy: { persona, hourAdena: Number(Packet.hourAdena(packet)), moneyPrice: Number(Packet.moneyPrice(packet)), gapHorizonHours: NaN, worth } });
 }
 
 // Board slots of a bot (user, 2026-10-05): 3 shop lines + 5 sell ads.

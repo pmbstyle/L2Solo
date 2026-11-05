@@ -1,6 +1,7 @@
 const { coldRestRegenPerTick, restRegenPerTick, requiresManaRecovery, estimateRestMs } = require('./ColdRest');
 const PveEncounter = require('./ColdPveEncounter');
 const ColdSoulCrystal = require('./ColdSoulCrystal');
+const Packet = require('../Economy/StatsPacket');
 const ProgressionRates = invoke('GameServer/ProgressionRates');
 const DataCache = invoke('GameServer/DataCache');
 const Formulas = invoke('GameServer/Formulas');
@@ -42,6 +43,7 @@ const SurvivalFloor = require('./SurvivalFloor');
 const { SPOT_CELL_SIZE } = invoke('GameServer/World/WorldConstants');
 const { RUN_SPEED } = require('./ColdTrip');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
+const GameTime = invoke('GameServer/World/GameTime');
 
 function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -1594,8 +1596,8 @@ const PET_LEFT_ACTIONS = 400;
 // What a fight's danger moment weighs, from the bot's packet (DangerRule); null
 // before its first decision, as a hot body's first ticks (the retreat rule then).
 function coldDangerPrice(stats) {
-    const [deathHours, riskWeight] = stats?.dangerPrice || [];
-    const moneyPrice = Number(stats?.money?.[1]);
+    const deathHours = Packet.deathHours(stats?.dangerPrice), riskWeight = Packet.riskWeight(stats?.dangerPrice);
+    const moneyPrice = Number(Packet.moneyPrice(stats?.money));
     return deathHours >= 0 && moneyPrice > 0 ? { deathHours, riskWeight, moneyPrice } : null;
 }
 
@@ -2427,8 +2429,54 @@ function routeRefuses(state, spot, timestamp, profiles) {
 // The matchup profiles of a solo round, at the round's start: its fights and
 // its admitted spawns judge by them (a summon raised mid-round counts from
 // the next round; each fight's readiness still reads the HP and MP left).
+// An array, with the species verdicts kept on it (BotTargetMatchup), serves
+// the next rounds (a hunt window's) while what coldProfiles reads is the
+// same: the fight profile by value (its kit parts are the stored kit's own
+// objects: by identity), whether the state has a bag, the kind of shot (a
+// matchup profile's shot is read for its kind alone: channels, profileKey,
+// readyProfiles) and the servitor beside it by value (sameData, as heldSolo).
+// The readers' caches on it (verdicts, ColdCombatProfile's views) read the
+// clock's active effects and night, so it serves only from its build to the
+// first of its effects' expiry or the day's turn after. At most
+// ROUND_PROFILES, newest last.
+const ROUND_PROFILES = 8;
+const heldRounds = [];
 function roundProfiles(state, timestamp, profile = botCombatStats(state, timestamp)) {
-    return TargetMatchup.coldProfiles(profile, state, timestamp);
+    const bag = !!state.inventory;
+    const shot = bag ? coldShotSupply(state, timestamp) : undefined;
+    const now = Date.now(), kind = TargetMatchup.shotKind(shot);
+    for (let at = heldRounds.length - 1; at >= 0; at--) {
+        const held = heldRounds[at];
+        if (now < held.from || now >= held.until || held.bag !== bag || held.kind !== kind || !sameFightProfile(held.profile, profile)
+            || !TargetMatchup.sameData(held.servitor, TargetMatchup.servitorProfile(held.profile, state, timestamp))) continue;
+        if (Diagnostics.active()) Diagnostics.count('round_profiles', 'held', 'hit');
+        return held.profiles;
+    }
+    const servitor = TargetMatchup.servitorProfile(profile, state, timestamp);
+    const profiles = TargetMatchup.coldProfiles(profile, state, timestamp, { shot, servitor });
+    let until = now + GameTime.msUntilTransition(now);
+    for (const each of profiles) {
+        for (const effect of each.effects || []) {
+            const end = Number(effect?.expiresAt);
+            if (end > now && end < until) until = end;
+        }
+    }
+    heldRounds.push({ profile: { ...profile }, bag, kind, servitor, profiles, from: now, until });
+    if (heldRounds.length > ROUND_PROFILES) heldRounds.shift();
+    if (Diagnostics.active()) Diagnostics.count('round_profiles', 'held', 'built');
+    return profiles;
+}
+// Two fight profiles (ColdCombatProfile.fightProfile) equal: the same fields,
+// each the same value, the kit's shared objects the same ones, effects by value.
+function sameFightProfile(held, profile) {
+    const keys = Object.keys(profile);
+    if (keys.length !== Object.keys(held).length) return false;
+    for (const key of keys) {
+        if (!Object.hasOwn(held, key)) return false;
+        if (Object.is(held[key], profile[key])) continue;
+        if (key !== 'effects' || !TargetMatchup.sameData(held[key], profile[key])) return false;
+    }
+    return true;
 }
 
 // The spot's monsters a solo bot may fight: its density times the admitted

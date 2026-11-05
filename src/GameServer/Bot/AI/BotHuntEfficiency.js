@@ -1,6 +1,7 @@
 const Roles = invoke('GameServer/Bot/AI/BotRoles');
 const Rates = invoke('GameServer/ProgressionRates');
 const DataCache = invoke('GameServer/DataCache');
+const Packet = require('../Economy/StatsPacket');
 const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
@@ -268,7 +269,7 @@ function huntHour(hunt, state = {}) {
 }
 function hourValue(state, timestamp = Date.now(), mode) {
     const hunt = huntIncome(state, timestamp, mode);
-    const packetHour = !mode && Number(state.stats?.money?.[0]);
+    const packetHour = !mode && Number(Packet.hourAdena(state.stats?.money));
     return { perHour: packetHour > 0 ? packetHour : huntHour(hunt, state), perKill: hunt.perKill,
         expPerHour: hunt.expPerHour, source: hunt.source };
 }

@@ -1,5 +1,6 @@
 'use strict';
 const assert = require('node:assert/strict');
+const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 require('../src/Global');
 const Data = invoke('GameServer/DataCache'); Data.init();
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
@@ -69,7 +70,7 @@ assert.equal(Scrolls.restockPlan(rich.state, { unitPrice: price, context: remote
 const one = published(state(1));
 assert.equal(units(one.state), 9, 'one scroll held: the side purchase still tops it up');
 const withPacket = ({ state: input }, money) => ({ ...input, stats: { ...input.stats, money } });
-const priced = published(state(1, 300000)).state.stats.money[1];
+const priced = Packet.moneyPrice(published(state(1, 300000)).state.stats.money);
 assert.equal(units(withPacket(published(state(1, 300000)), [50000, priced, 0, 0, priced, 300000, 999])), 0,
     'a funded kit row at the money price is held from spare scrolls');
 assert.equal(units(withPacket(published(state(0, 300000)), [50000, priced, 0, 0, priced, 300000, 999])), 1,

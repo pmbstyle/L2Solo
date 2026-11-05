@@ -2,6 +2,7 @@
 // Resolved at the first call (cycles); a require per call is a path lookup (L73).
 let SpotRewardExpectation = null;
 const Diagnostics = require('./EconomyDiagnostics');
+const Packet = require('./StatsPacket');
 const { occupiedSpotId } = require('../Population/SpotOccupancyIndex');
 const { powerWeight } = require('./EconomicValuation');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
@@ -13,7 +14,7 @@ const PER_KILL_FIELDS = ['kills', 'deaths', 'exp', 'sp', 'adena', 'dropLoot', 's
 function moneyShort(state) {
     const packet = state.stats?.money;
     if (Array.isArray(packet)) {
-        const gapPrice = Number(packet[3]);
+        const gapPrice = Number(Packet.firstUnfundedPrice(packet));
         return Number.isFinite(gapPrice) && gapPrice > 0 ? 1 : 0;
     }
     const focus = state.stats?.wishFocus;
@@ -27,7 +28,7 @@ function moneyShort(state) {
 // first build) against what an hour of its progress is (the level wish's).
 function moneyWeight(state, persona = BotPersona.of(state)) {
     const packet = state.stats?.money;
-    const money = Array.isArray(packet) ? Math.max(1, Number(packet[0]) * Number(packet[1]) || 0) : 1;
+    const money = Array.isArray(packet) ? Math.max(1, Number(Packet.hourAdena(packet)) * Number(Packet.moneyPrice(packet)) || 0) : 1;
     return money / (money + powerWeight(persona));
 }
 
@@ -54,7 +55,7 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
     const tableRole = Table.roleFor(state);
     hunt ??= Hunt.huntIncome(state, timestamp, mode);
     // The previous build's packet hour comes first, by design; the hunt only fills a missing packet.
-    const packetHour = Number(state.stats?.money?.[0]);
+    const packetHour = Number(Packet.hourAdena(state.stats?.money));
     const huntHour = Number(hunt.perHour);
     const bestIncome = packetHour > 0 && Number.isFinite(packetHour) || huntHour > 0 && Number.isFinite(huntHour)
         ? null : Table.best(tableRole, state.level, true, 'income');
@@ -124,8 +125,13 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
         row.costs = observed ? Number(observed.costs || 0) * rate
             : (Number(base.shots || 0) * costs.shots + Number(base.potions || 0) * costs.potions) * calibration;
         row.income = row.adena + row.loot - row.costs;
-        row.valueHours = row.exp / Math.max(1, hour?.exp || hunt.expPerHour) * (1 - weight)
-            + row.income / (hour?.adena > 0 ? hour.adena : hourAdena) * weight - row.riskHours;
+        // The value is linear in the money weight, its only use: expHours and
+        // incomeHours are the hour's exp and income in units of the hour
+        // (EquipmentIncomeRoute.search reads them for the weights its answer
+        // stands over).
+        row.expHours = row.exp / Math.max(1, hour?.exp || hunt.expPerHour);
+        row.incomeHours = row.income / (hour?.adena > 0 ? hour.adena : hourAdena);
+        row.valueHours = row.expHours * (1 - weight) + row.incomeHours * weight - row.riskHours;
         return row;
     };
 }

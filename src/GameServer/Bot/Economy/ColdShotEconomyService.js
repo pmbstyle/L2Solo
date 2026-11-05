@@ -1,4 +1,5 @@
 const FailureLog = require('../../../FailureLog');
+const Packet = require('./StatsPacket');
 const Database = invoke('Database');
 const DataCache = invoke('GameServer/DataCache');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -39,12 +40,12 @@ function recheck(state, selected) {
     const packet = state.stats?.money;
     if (!recipe || !SHOT_RECIPE_IDS.includes(Number(recipe.recipeId)) || !CraftShopService.canCraft(state, recipe)
         || !Number.isSafeInteger(batches) || batches < 1 || batches > 64
-        || !Array.isArray(packet) || !(packet[0] > 0) || !(packet[1] > 0)) return null;
+        || !Array.isArray(packet) || !(Packet.hourAdena(packet) > 0) || !(Packet.moneyPrice(packet) > 0)) return null;
     const Source = require('../Population/ColdOccupationSources'); Source.initialise();
     const board = AfkTrade.boardIndex(), Fields = require('../../AfkTrade/BoardIndex');
     const ownLines = board.ownerLines(Number(state.characterId));
     const ItemIndex = require('../../Item/ItemTemplateIndex');
-    const context = { hourAdena: Number(packet[0]), moneyPrice: Number(packet[1]), fixedBatches: batches,
+    const context = { hourAdena: Number(Packet.hourAdena(packet)), moneyPrice: Number(Packet.moneyPrice(packet)), fixedBatches: batches,
         ...Source.craftLabour(state) };
     const trip = Profit.tripFor(state, context); context.trip = trip;
     const ownStock = new Map(), neededIds = new Set([Number(recipe.productId), Number(recipe.recipeItemId)]);
