@@ -6,7 +6,7 @@ Drafted 2026-11-04 from the cold-worker perf passes (diagnostic run `2db814359-c
 
 ## Principle
 
-A bot decides rarely and by situation, as a C4 player does (AGENTS.md, maintainer 2026-11-05). A bot's decision is a
+A bot decides rarely and by situation, as a C4 player does (coding rules, maintainer 2026-11-05). A bot's decision is a
 chain of links; each link is a pure function of named inputs. A decision link is taken again only at a waking
 situation (arrived at a spot or in town, level up, new gear, death, a crowded own spot, invited, a stock run low) and
 held until the next; its other inputs (prices, crowd at candidate spots, money, bag counts) are read when it decides
@@ -59,7 +59,7 @@ Inputs marked (E) have an event today, (–) have none, (S) need a significance 
 
 ## Cross-cutting fixes the links need
 
-1. Packet layouts with one owner (`StatsPacket`: money, stockTargets, dangerPrice), named readers (AGENTS.md).
+1. Packet layouts with one owner (`StatsPacket`: money, stockTargets, dangerPrice), named readers (coding rules).
 2. State replaced, not edited in place (NpcRestockPlan's clone, cached-state repairs), so a link may key on identity.
 3. Per-spot versions: a crowd/room revision in `SpotOccupancyIndex` and a risk-exclusion revision in `SpotRiskPolicy`,
    read by the links that read those spots (no dispatch to bots needed: the reader compares versions). Done

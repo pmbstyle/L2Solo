@@ -91,7 +91,7 @@ thread: our rule, so a far bot does not re-decide on every event ([bot-ai.md](bo
 | Transition cost (cold ↔ hot time per bot) | `PopulationMetrics.recordActivation`/`recordCooldown` (`transitions` in the summary) |
 
 The rows above that wake a held decision on its inputs (the action-plan ask's fact edges, the party stay review's
-`inputKey`) describe today's code under the rule AGENTS.md replaced on 2026-11-05: a decision wakes only at its
+`inputKey`) describe today's code under the rule replaced on 2026-11-05: a decision wakes only at its
 situations, through one mechanism. The decision cadence pass moves them onto it
 ([../target-architecture/plan.md](../target-architecture/plan.md) §4.2, `situations.md`); the planner answer's keys
 stay as the cache of a pure calculation.

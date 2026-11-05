@@ -708,7 +708,7 @@ function keptStock(state, reserved) {
 // state; the wish's liquidation and the bag forecast on the step's state,
 // asked by the card's check, the held build's verdict and the build. Inputs
 // (the key): the bag (an inventory object and its rows are replaced, never
-// edited: AGENTS.md), the merged reserves (equipment and production reserves,
+// edited), the merged reserves (equipment and production reserves,
 // clan, henna, the caller's reserved and kept stock), the arrows' sale amounts,
 // the personal shot, the state fields the walk reads (characterId, shotCraft
 // product and unit price, clanMarketDemand, clanMaterialDemand), the options it

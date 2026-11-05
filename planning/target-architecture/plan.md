@@ -7,7 +7,7 @@ corrected by this one).
 
 ## 1. Principles
 
-1. **A bot decides the way a C4 player does: rarely and by situation** (AGENTS.md). A decision (where to hunt, what to
+1. **A bot decides the way a C4 player does: rarely and by situation** (coding rules). A decision (where to hunt, what to
    wish for or buy, a workshop, a party, an action plan) is taken at a situation a player takes it at (arrived at a
    spot or in town, level up, new gear, death, a crowded own spot, invited, a stock below its line) and held until the
    next one; between them the bot carries out the plan. Prices, crowd at other spots, money and bag counts are read
@@ -26,7 +26,7 @@ corrected by this one).
    regen, effects). Decisions are not systems: they run on situations above the components, never a per-tick scan of
    all bots. The hot path (NodeL2 classes, packets, tens of bots) stays as it is.
 5. **Pure calculations cached on exact inputs** (damage, prices, routes, table reads, matchup): the key is exactly
-   what the result reads (AGENTS.md).
+   what the result reads (coding rules).
 6. **Scale out, not only cheaper.** One worker cannot carry 5k bots; data by id makes sharding bots over several
    workers possible.
 

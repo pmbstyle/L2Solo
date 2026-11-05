@@ -130,7 +130,7 @@ merchant bots), warehouse, buyer again, NPC sell-junk. Shots/potions/scrolls thr
 | Whether a held economy build may be served (its event proof) | `EconomyContext.heldBuildVerdict` over the proof's code/config/rates identity, `RecomputeGeneration.current`: a detached checkout's commit or a launcher install's the install marker .l2solo/installation.json `sourceCommit`; a branch tree gets a process-local identity (held builds hold in the process). A proof saved for a restart only under a published identity (`restorable`); the identity is the claimed commit plus config and rates, not a content hash: a hand-edited install or a dirty detached tree keeps the release sha (startup logs the source: `Recompute :: code identity`). A throw in a proof or advisory codec costs a full rebuild and counts as `economy.codec:<which>` (a negative or non-finite quantity included: its producer is wrong); a saved advisory that inflates past its cap is refused uncounted, like the other shape checks |
 
 The rows above that hold a decision on its inputs (the owner's own look, the workshop, the held earning spot, the sale
-disposition hold, `CraftMarketReview`) describe today's code under the rule AGENTS.md replaced on 2026-11-05: a decision
+disposition hold, `CraftMarketReview`) describe today's code under the rule replaced on 2026-11-05: a decision
 (where to hunt, a workshop, the town plan) wakes only at a player's situations, and prices, crowd at other spots and
 money are read when it decides. The decision cadence pass moves each onto the one situation mechanism and deletes its
 own wake logic ([../target-architecture/plan.md](../target-architecture/plan.md) §4.2, `situations.md` §4.3); the

@@ -111,7 +111,7 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
 
 23. **The forming verdict wakes on a member's wallet and time on the spot.** `PartyGoalPolicy.verdictInputs`
    re-judges a roster when a member's adena or `onSpotShare` moves beyond its `incomeError` (at least 3 %). Under the
-   situation rule (AGENTS.md) both are read when the verdict is taken and wake nothing: a roster is judged again at a
+   situation rule both are read when the verdict is taken and wake nothing: a roster is judged again at a
    member's level up, gear change, death or leaving, or a moved objective (target-architecture/situations.md "Party
    forming"); the drift goes with the cadence pass. The paid-buff solo alternative
    (`PartyIncomeComparison.soloRoute`) reads the buyer's and the seller's hour at the wall clock
@@ -248,7 +248,7 @@ Each area file ends with its open questions; none blocks the order above.
   (`db_maintenance`) as state retention is.
 - Gear planner recovery entries wake on level, weapon grade and party (`GearAcquisitionPlanner.recoveryWake`); a new
   board offer for a set-aside target or material (`market_alternative`, `craft_stalled`) is read at the next of them
-  (prices wake no decision, AGENTS.md). `abandonAcquisition` has no game caller (tests only). A party route set aside
+  (prices wake no decision). `abandonAcquisition` has no game caller (tests only). A party route set aside
   (`party_route_unavailable`) has no event for a recruit pool that could now form it: a 1 h window stands in
   (`PARTY_ROUTE_RETRY_MS`).
 - A completed economy intent keeps its `bot_economy_intents` row (`[S,0,X]`); the stats receipt `[S+1,1,X]` supersedes
