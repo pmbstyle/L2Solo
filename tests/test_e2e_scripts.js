@@ -41,7 +41,7 @@ for (const { file, script } of scripts) {
     assert.ok(place === null || ['locX', 'locY', 'locZ'].every(key => Number.isFinite(Number(place[key]))),
         `${file}: place() is null or a location (${JSON.stringify(place)})`);
 
-    // The code it plays: planning/architecture/e2e.md maps a changed path to the scripts to run.
+    // The code it plays: a changed path maps to the scripts to run.
     assert.ok(Array.isArray(script.areas) && script.areas.length > 0, `${file}: areas lists the src paths it plays`);
     for (const area of script.areas) {
         assert.ok(typeof area === 'string' && !path.isAbsolute(area) && !area.includes('..'), `${file}: area "${area}" is a path under src/`);

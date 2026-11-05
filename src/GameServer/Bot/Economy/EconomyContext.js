@@ -1513,7 +1513,7 @@ function advanced(held, verdict, state, deps) {
 // A step by what it does and where, for the health line's repick row: a build after a
 // dropped step that takes it again names two answers to one question that disagree.
 const stepPlace = leaf => `${leaf.activity}|${leaf.kind}|${leaf.itemId}|${leaf.town}`;
-// The decision links' counts (planning/decision-links/plan.md steps 1-2),
+// The decision links' counts,
 // developerDiagnostics only; no decision reads them. Per bot, on its held
 // entry (held.links, carried to the entry that replaces it, gone with the
 // entry: evicted, forgotten or reset): what each link's answer was built on.

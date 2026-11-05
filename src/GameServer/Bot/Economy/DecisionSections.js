@@ -111,7 +111,7 @@ const COMPUTED = Object.freeze({
     // bot's kit, what gear gives it, a death (Reaction.quiet).
     gearReview: sectionMask(['build', 'benefits', 'combat'])
 });
-// The decision links (planning/decision-links/plan.md, steps 1-2): the inputs
+// The decision links: the inputs
 // each link reads, by inputVersions name. The earning spot search and the
 // workshop decide on them (EconomyContext.incomeMoved, workshopKeyHolds); the
 // route rows are measured only (EconomyContext's link shadow, developerDiagnostics).

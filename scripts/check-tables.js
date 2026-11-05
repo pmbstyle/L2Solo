@@ -55,8 +55,8 @@ function checkTables(root = TableFingerprint.ROOT, strict = true) {
         if (group.state === 'stale') {
             (strict ? errors : warnings).push(`Stale bot table${group.tables.length > 1 ? 's' : ''} ${tables} (built at ${group.revision}): `
                 + `${group.changed.length} input file${group.changed.length > 1 ? 's' : ''} changed since: `
-                + `${TableFingerprint.list(group.changed)}. Rebuild on the fork: tables/${group.kind}/$sha `
-                + '(planning/architecture/tables.md "Rebuild"), or `all` when both families are stale.');
+                + `${TableFingerprint.list(group.changed)}. Rebuild on the fork: tables/${group.kind}/$sha`
+                + ', or `all` when both families are stale.');
         } else if (group.state === 'unknown') {
             warnings.push(`Bot table${group.tables.length > 1 ? 's' : ''} ${tables} (built at ${group.revision}): `
                 + `${group.kind ? 'no fingerprint (an older build)' : 'no known generator in the header'}, `

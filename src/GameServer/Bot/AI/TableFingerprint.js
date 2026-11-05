@@ -1,8 +1,7 @@
 'use strict';
 
 // The files each precomputed bot table is simulated by, and their fingerprint:
-// the concrete list of planning/architecture/tables.md "When to rebuild" (a
-// change in one of these files makes the table stale). Read by the generators
+// a change in one of these files makes the table stale. Read by the generators
 // (scripts/generate-spot-table.js writes the spot table's header.fingerprint,
 // scripts/hunt-tables/common.js each hunt table's), by scripts/check-tables.js
 // (`npm run check` fails on a stale committed table) and by SpotValueTable

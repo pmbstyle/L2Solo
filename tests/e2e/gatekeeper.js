@@ -11,7 +11,7 @@ const GLUDIO = { locX: -12736, locY: 122816, locZ: -3112 };
 module.exports = {
     name: 'gatekeeper',
     players: 1,
-    // The code this scenario plays (planning/architecture/e2e.md): a change there runs it.
+    // The code this scenario plays: a change there runs it.
     areas: ['GameServer/Network/Request/MoveToLocation.js', 'GameServer/Network/Request/Action.js',
         'GameServer/Actor/Generics/Select.js', 'GameServer/World/Generics/NpcTalk.js',
         'GameServer/World/Generics/NpcTalkResponse.js', 'GameServer/World/Generics/NpcBypasses/GatekeeperTeleport.js',
