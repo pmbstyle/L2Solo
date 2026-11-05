@@ -255,6 +255,9 @@ function counts() {
     return { raised: plain(raisedCounts), woke: plain(wokeCounts), decided: plain(decidedCounts),
         unwoken: plain(unwokenCounts), overflow: [...overflow.values()].reduce((sum, n) => sum + n, 0) };
 }
+// A named count on the health line's raised map with no situation of its own (the
+// spot aggregate's arrivals and contests, SpotContest; a mark dropped).
+const note = key => count(raisedCounts, key);
 function countWoke(before, after, name) {
     for (const decision in BITS) if (after & ~before & BITS[decision]) count(wokeCounts, `${decision}<${name}`);
 }
@@ -459,8 +462,11 @@ function factNames(previousFact, current, funding = false, planned = false) {
 // prey, BackgroundResolver, once a stay: a fact of the round, not of the states).
 // facts, funding: a body's previous post kept as its facts and its funding mark
 // (DecisionEvents.detectNear) in place of the state before; out: receives this
-// post's { facts, funding } for the next.
-function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, facts = null, funding: fundingBefore, out = null } = {}) {
+// post's { facts, funding } for the next. body: the post of a body near a player,
+// whose moves are its own (main executes its held decisions): a spot it reaches or
+// leaves is an arrival for the spot aggregate (the background thread's hot arrival
+// hook, the near_spot / near_left posts), not moved_by_world.
+function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, facts = null, funding: fundingBefore, out = null, body = false } = {}) {
     const Sections = readers();
     // Main may replay a validated worker packet that already describes this
     // same round: a newer build's baseline (its own time) is the one compared;
@@ -480,7 +486,7 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, fa
     const funding = Sections.moneyChanged(after, represented || before.stats?.wishSections, escrow, false)
         || !previous.funding && (fundingBefore ?? Sections.fundingMark(before)) !== fundingAfter;
     if (out) { out.facts = current; out.funding = fundingAfter; }
-    const names = factNames(previousFact, current, funding, Sections.occupationPlanned(after, leaf));
+    const names = factNames(previousFact, current, funding, body || Sections.occupationPlanned(after, leaf));
     if (unhuntable) names.push('spot_empty');
     return gated(place(after, before)) ? names.concat(needsOpened(before, after, names, view)) : names;
 }
@@ -505,6 +511,6 @@ function needsOpened(before, after, names, now) {
 const sectionsOf = names => heard(names, OPEN);
 
 module.exports = { FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, agendaHears, readsFacts, hears, heard, woke, sections,
-    DECISIONS, ALL, raise, delta, planes, took, applyFacts, spotAsk, counted, stop, woken, anyWoken, decided, counts, COUNT_KEYS,
+    DECISIONS, ALL, raise, delta, planes, took, applyFacts, spotAsk, counted, note, stop, woken, anyWoken, decided, counts, COUNT_KEYS,
     answer, keeps, goalMoment, quiet,
     placeName: where => NAMES.get(where), SITUATIONS, detect, factNames, sectionsOf };

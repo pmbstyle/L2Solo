@@ -652,7 +652,7 @@ const BotAI = {
                     spawnTarget = this.beginPartyTownRecovery(session, bot);
                 } else if (bot.fetchKarma() > 0) {
                     session.plan = session.pkProfile ? 'pk_hunting' : 'hunting';
-                    session.currentSpot = null;
+                    invoke('GameServer/Bot/AI/SpotService').leaveSpot(session);
                     session.noTargetTicks = 0;
                     spawnTarget = this.getDeathRespawnTarget(session, bot);
                 } else if (session.plan === 'merchant' || (bot.fetchPrivateStore && bot.fetchPrivateStore())) {
@@ -666,7 +666,7 @@ const BotAI = {
                 } else {
                     session.plan = 'hunting'; // Reset plan
                     // A hot party member keeps the spot it hunts on: the party tick brings it back from town.
-                    if (!session.hotBackgroundPartyId) session.currentSpot = null;
+                    if (!session.hotBackgroundPartyId) invoke('GameServer/Bot/AI/SpotService').leaveSpot(session);
                     session.noTargetTicks = 0;
                     spawnTarget = recoveryHall?.spawn || this.getDeathRespawnTarget(session, bot, false);
                 }

@@ -23,8 +23,23 @@ const FACTS = new Set(['spot_unreachable', 'spot_dangerous', 'player_command']);
 // counted (nearOverflow) and dropped.
 const NEAR_NAMES = 16;
 let nearOverflow = 0;
+// A body's stats (its row's, else its own decision stats): read here, written only
+// through replaceStats, never in place (the session's row object may be the one the
+// state cache holds).
+const NO_STATS = Object.freeze({});
 function statsFor(session) {
-    return session.coldLifeState ? (session.coldLifeState.stats ||= {}) : (session.decisionStats ||= {});
+    return session.coldLifeState ? session.coldLifeState.stats || NO_STATS : session.decisionStats || NO_STATS;
+}
+// The one writer of a body's stats: a new stats object on a new row object.
+function replaceStats(session, stats) {
+    if (session.coldLifeState) session.coldLifeState = { ...session.coldLifeState, stats };
+    else session.decisionStats = stats;
+    return stats;
+}
+// The facts a body's raise carries (Situations.applyFacts) on its copy of the stats.
+function withFacts(session, name, payload) {
+    const stats = { ...statsFor(session) };
+    if (Situations.applyFacts(stats, name, payload)) replaceStats(session, stats);
 }
 function decisionStatsFor(session) {
     return { ...session?.heldEconomy?.statsPacket, ...session?.decisionStats, ...session?.coldLifeState?.stats };
@@ -50,10 +65,9 @@ function applyOwnRaise(state) {
 // { spotId, reason }, player_command's { spotId, at }).
 function raiseDecision(session, reason, { impossible = false, payload: fact = null } = {}) {
     if (!reasons.has(reason)) throw new TypeError('unknown_decision_event');
-    const stats = statsFor(session);
     // Visit ends share the arrival clock until a single native arrival event
     // exists. A fact of the body, kept on its stats: never part of a raise.
-    if (reason === 'arrived_town') stats.visitEvery = TownVisitInterval.arrived(stats);
+    if (reason === 'arrived_town') replaceStats(session, { ...statsFor(session), visitEvery: TownVisitInterval.arrived(statsFor(session)) });
     // lazy: cycle BotLifeState requires this module at its top.
     const Life = isMainThread && session.actor ? invoke('GameServer/Bot/Population/BotLifeState') : null;
     if (Life?.cachedState(session.actor.fetchId?.())?.phase === 'hot') {
@@ -74,17 +88,15 @@ function raiseDecision(session, reason, { impossible = false, payload: fact = nu
         raiseFar(session.actor.fetchId(), [{ name: reason, payload }], `situation_${reason}`);
         return;
     }
-    Situations.raise(stats, reason, payload, Situations.OPEN, session.actor?.fetchId?.());
+    replaceStats(session, Situations.raise({ ...statsFor(session) }, reason, payload, Situations.OPEN, session.actor?.fetchId?.()));
 }
 // A body's pending bag with these situations joined: a new raise (a new seq)
 // when one joins it, or always (force: a named raise or a stop, whose post is
 // flushed at once: named). One that waits already adds nothing, but a fact's
 // (FACTS) moves to the end with its payload, so the background thread writes it
 // after what came before, as the body did (its own copy: Situations.applyFacts);
-// past NEAR_NAMES it is counted and dropped. movedTo: the spot the post that
-// detected a move stands on: the move to a waiting command's spot is the command's
-// own and raises nothing (own outputs are not inputs); any other move does.
-function nearBag(session, names, force = false, movedTo = null) {
+// past NEAR_NAMES it is counted and dropped.
+function nearBag(session, names, force = false) {
     const raise = session.nearRaise ||= { seq: 0, names: [], impossible: false };
     let joined = force, command = false;
     const added = [];
@@ -93,12 +105,11 @@ function nearBag(session, names, force = false, movedTo = null) {
         const at = raise.names.findIndex(([held, carried]) => held === name && (!fact || name === 'player_command'
             || String(carried?.spotId) === key));
         if (at >= 0 && !fact) continue;
-        if (name === 'moved_by_world' && movedTo != null && commandSpot(raise) === String(movedTo)) continue;
         if (at >= 0) raise.names.splice(at, 1);
         else if (raise.names.length >= NEAR_NAMES) { nearOverflow++; continue; }
         const entry = [name, payload ?? null];
         raise.names.push(entry); added.push(entry);
-        Situations.applyFacts(statsFor(session), name, payload ?? null);
+        withFacts(session, name, payload ?? null);
         joined = true;
         command ||= name === 'player_command';
     }
@@ -121,9 +132,9 @@ const postedBag = session => ({ ...session.nearRaise, names: session.nearRaise.n
 // dropped as the body cools. The worker hears them with the bag.
 function detectNear(session, row, escrow = 0) {
     const previous = session.nearFacts, next = {};
-    const names = Situations.detect(previous ? {} : row, row, { escrow, facts: previous?.facts, funding: previous?.funding, out: next });
+    const names = Situations.detect(previous ? {} : row, row, { escrow, facts: previous?.facts, funding: previous?.funding, out: next, body: true });
     session.nearFacts = next;
-    if (names.length) nearBag(session, names.map(name => [name, null]), false, row.spotId ?? null);
+    if (names.length) nearBag(session, names.map(name => [name, null]));
 }
 // A body's rest ends (RestingState): its stop, carried by its bag to the worker,
 // where what waited for a stop wakes (Situations.stop); a far bot's is its step's.
@@ -252,7 +263,7 @@ function nearFields(economy, state) {
 // build's shot stock (near.shots).
 function receive(session, card, near) {
     const actor = session.actor;
-    const stats = Object.assign(statsFor(session), near.statsPacket);
+    replaceStats(session, { ...statsFor(session), ...near.statsPacket });
     session.heldEconomy = Object.assign(Decisions.nearView(Economy.stateForActor(actor, session), card), near);
     session.heldNearSeq = Number(near.nearSeq || 0);
     session.activationEconomyDecision = null;
@@ -262,7 +273,7 @@ function receive(session, card, near) {
     // Only the entries this answer did not apply (raised after its seq).
     const answered = Number(near.raiseSeq || 0);
     for (const [name, payload, seq] of session.nearRaise?.names || []) {
-        if (FACTS.has(name) && Number(seq || 0) > answered) Situations.applyFacts(stats, name, payload);
+        if (FACTS.has(name) && Number(seq || 0) > answered) withFacts(session, name, payload);
     }
     if (near.shots) ShotStock.enableAutoShot(actor, { stock: near.shots });
     return session.heldEconomy;
@@ -318,11 +329,6 @@ function needSpot(session) {
     return verdict;
 }
 const spotHeld = session => { if (session?.spotAsk) session.spotAsk = null; };
-// The spot of the command waiting in a bag, as text (null: none).
-function commandSpot(raise) {
-    const entry = raise?.commandSeq ? raise.names.find(([name]) => name === 'player_command') : null;
-    return entry?.[1]?.spotId == null ? null : String(entry[1].spotId);
-}
 // A player's command the background thread has not answered yet: the card the body
 // holds still names the spot the command replaced (BotDecisionService waits for it).
 // The answer for its seq settles it (settle; a lost one drops it, counted); a body no
@@ -352,5 +358,5 @@ function checkWallet(session, actor) {
     raiseDecision(session, 'money');
     return true;
 }
-module.exports = { rejections: () => rejections, refused, statsFor, decisionStatsFor, applyOwnRaise, raiseDecision, detectNear, stop, takePostedRaise, applyPendingRaise, postedBag, nearFields, receive, settle, held, heldSpotId, heldSpotOf, needSpot, spotHeld, commandPending, checkWallet, rejects, rejectOnRow, withRaise, rejectSession,
+module.exports = { rejections: () => rejections, refused, statsFor, replaceStats, decisionStatsFor, applyOwnRaise, raiseDecision, detectNear, stop, takePostedRaise, applyPendingRaise, postedBag, nearFields, receive, settle, held, heldSpotId, heldSpotOf, needSpot, spotHeld, commandPending, checkWallet, rejects, rejectOnRow, withRaise, rejectSession,
     NEAR_NAMES, nearOverflow: () => nearOverflow };

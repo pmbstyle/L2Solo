@@ -268,15 +268,16 @@ test('a held answer with no spot asks once more, then rests in town: never a loo
     const empty = at => ({ woken: 0, earning: { spotId: null, shots: true, income: 0, expected: 0, earning: 0, error: 0, at } });
     const f = fixture(town, null, empty(1));
     f.session.currentSpot = null;
-    const stats = f.session.coldLifeState.stats, raised = () => Number(stats.situationSeq || 0);
+    // The body's stats are replaced at each write (DecisionEvents.replaceStats): read them fresh.
+    const stats = () => f.session.coldLifeState.stats, raised = () => Number(stats().situationSeq || 0);
     const noSpot = () => Situations.counts().raised['earning:no_spot'] || 0;
     assert.equal(Decision.suggest(f.session.botStatus, f.session).reason, 'no_hunting_route');
-    assert(Situations.woken(stats, 'earning_spot'), 'it asks the decision again (spot_empty)');
+    assert(Situations.woken(stats(), 'earning_spot'), 'it asks the decision again (spot_empty)');
     assert.equal(raised(), 1);
     Decision.suggest(f.session.botStatus, f.session);
     assert.equal(raised(), 1, 'once per answer');
     const before = noSpot();
-    Object.assign(stats, empty(2)); // the answer to its ask: still none
+    f.session.coldLifeState = { ...f.session.coldLifeState, stats: { ...stats(), ...empty(2) } }; // the answer to its ask: still none
     assert.equal(Decision.suggest(f.session.botStatus, f.session).reason, 'no_hunting_spot', 'it rests in town');
     Decision.suggest(f.session.botStatus, f.session);
     assert.equal(noSpot(), before + 1, 'counted once');

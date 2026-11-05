@@ -41,7 +41,7 @@ const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
 let lastMoneyPacketMissing = 0;
 // The body's fact posts (BotLifeState.notifyNearFacts reasons); any other
 // near post reason is a named raise.
-const NEAR_FACTS = Object.freeze(['bag', 'equip', 'level', 'death', 'revive', 'near_spot', 'activated']);
+const NEAR_FACTS = Object.freeze(['bag', 'equip', 'level', 'death', 'revive', 'near_spot', 'near_left', 'activated']);
 
 function isBotSession(session) {
     return session && session.accountId && String(session.accountId).startsWith('bot_');
@@ -97,7 +97,7 @@ const PopulationStatus = {
 
     // The near bots' line, always on (logSummary prints it without
     // diagnostics), from the coordinator's snapshot: nearFacts=bag/equip/
-    // level/death/revive/near_spot/activated, their fact posts queued since
+    // level/death/revive/near_spot/near_left/activated, their fact posts queued since
     // start; nearRaises=, the posts a named raise made (DecisionEvents
     // raiseDecision: arrived_town, money, revived, goal_failed, ...); nearDecisions=
     // accepted/refused/dropped, the decisions their bodies took, refused as

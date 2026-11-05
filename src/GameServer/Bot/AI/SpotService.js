@@ -545,10 +545,20 @@ const SpotService = {
             joins: spot.joins || null,
             route: spot.route || null
         };
-        // The arrival after the choice is the same spot: no second post.
+        // The arrival after the choice is the same spot: no second post. The post is the
+        // spot aggregate's arrival on the background thread (its hot arrival hook).
         // lazy: cycle BotLifeState invokes SpotService at its top.
         if (moved) invoke('GameServer/Bot/Population/BotLifeState').notifyNearFacts(session, 'near_spot');
         return session.currentSpot;
+    },
+
+    // The body leaves its spot (a respawn in town, a karma reset, a clan hall
+    // departure): its post tells the background thread's spot aggregate it left
+    // (near_left, spotId null). One with no spot posts nothing.
+    leaveSpot(session) {
+        const had = session.currentSpot != null;
+        session.currentSpot = null;
+        if (had) invoke('GameServer/Bot/Population/BotLifeState').notifyNearFacts(session, 'near_left');
     },
 
     randomPointNear(spot, radius = 900) {

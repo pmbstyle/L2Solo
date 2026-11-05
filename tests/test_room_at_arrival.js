@@ -250,10 +250,13 @@ function bot(characterId, extra = {}) {
         const nearBots = [near(120, away), near(121, away)];
         await new Promise(resolve => setImmediate(resolve));
         await coordinator.sendSnapshots();
-        nearBots.forEach(session => moveTo(session, room));
-        await new Promise(resolve => setImmediate(resolve));
+        await coordinator.criticalSnapshotInFlight;
         pages.length = 0;
         coordinator.snapshotBootstrapPending = false;
+        // A spot move is posted at once (near_spot, critical), in a page of its own.
+        nearBots.forEach(session => moveTo(session, room));
+        await new Promise(resolve => setImmediate(resolve));
+        await coordinator.criticalSnapshotInFlight;
         await coordinator.sendSnapshots();
         assert(pages.length && pages.every(page => page.initial !== true), 'the move goes in a dirty page, not a full snapshot');
         let standingNear = 0;

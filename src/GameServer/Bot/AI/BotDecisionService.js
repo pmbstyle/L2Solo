@@ -32,7 +32,7 @@ function groundLook(session, spot) {
     const stats = DecisionEvents.statsFor(session);
     if (Number(session.noTargetTicks || 0) < EMPTY_HUNT_SCANS) {
         session.groundLookedAt = null;
-        if (stats.emptyGround != null) stats.emptyGround = null;
+        if (stats.emptyGround != null) DecisionEvents.replaceStats(session, { ...stats, emptyGround: null });
         return '';
     }
     if (!spot?.id || !session.actor || session.hotBackgroundPartyId || session.followPlayerSession
@@ -58,7 +58,7 @@ function groundLook(session, spot) {
         }
     }
     session.groundReadying = null;
-    stats.emptyGround = String(spot.id);
+    DecisionEvents.replaceStats(session, { ...stats, emptyGround: String(spot.id) });
     DecisionEvents.raiseDecision(session, 'spot_empty');
     return 'raised';
 }
@@ -166,7 +166,9 @@ const BotDecisionService = {
                     const look = groundLook(session, ground);
                     if (look === 'rest') return { action: 'rest', reason: 'ground_needs_rest' };
                     if (look === 'summon') return { action: 'summon', reason: 'ground_needs_pet' };
-                    const heldId = ground && String(stats.emptyGround ?? '') === String(ground.id) ? DecisionEvents.heldSpotId(session) : null;
+                    // groundLook replaces the stats it writes: read them after it.
+                    const heldId = ground && String(DecisionEvents.statsFor(session).emptyGround ?? '') === String(ground.id)
+                        ? DecisionEvents.heldSpotId(session) : null;
                     const spot = heldId && heldId !== String(ground.id) ? SpotService.findById(heldId) : null;
                     if (spot) return { action: 'move_to_spot', reason: 'deferred_occupation_hunt',
                         spot, deferredOccupation: session.deferredOccupation };

@@ -67,6 +67,30 @@ async function run() {
     assert.strictEqual(Number(row.simulation?.revision || 0), Number(Life.cachedState(id).simulation?.revision || 0),
         'the row carries the cached row\'s revision');
 
+    // The body's spot moves are the spot aggregate's arrivals and leaves on the worker
+    // (near_spot / near_left posts), not moved_by_world: they wake no decision on main.
+    const SpotService = invoke('GameServer/Bot/AI/SpotService');
+    // A spot post is sent at once (critical); what reached the worker since the move.
+    const posted = async move => {
+        sent.length = 0;
+        move();
+        await new Promise(resolve => setImmediate(resolve));
+        await Coordinator.criticalSnapshotInFlight;
+        await Coordinator.sendSnapshots(false);
+        return sent.filter(message => message.type === 'snapshot_page')
+            .flatMap(message => message.payload.rows.map(entry => entry.state || entry))
+            .filter(candidate => Number(candidate.characterId) === id).at(-1);
+    };
+    const left = await posted(() => SpotService.leaveSpot(session));
+    assert.strictEqual(session.currentSpot, null);
+    assert(left, 'the leave reaches the worker');
+    assert.strictEqual(left.spotId, null, 'a body that leaves its spot posts that it stands on none');
+    const arrived = await posted(() => SpotService.assignSpot(session, { id: 'near-fact-other', name: 'Other spot',
+        center: { locX: -71000, locY: 258000, locZ: -3104 }, npcNames: [] }));
+    assert.strictEqual(arrived?.spotId, 'near-fact-other', 'its arrival on another spot posts the new spot');
+    assert(!(session.nearRaise?.names || []).some(([name]) => name === 'moved_by_world'),
+        'a body\'s own spot change raises no moved_by_world');
+
     // A player's bag change sends nothing.
     sent.length = 0;
     session.accountId = 'player_near_1';
