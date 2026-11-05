@@ -2,9 +2,9 @@ const DiagnosticConfig = require('./PopulationConfig');
 const Episode = require('./ColdCompetitionEpisode');
 const RelationshipContext = require('../../Social/RelationshipContext');
 const InventorySummary = require('./InventorySummary');
-const TTL_MS = 10000;
+// A forecast's freshness and a yield's pause: the spot contest's (SpotContest).
+const { EVENT_TTL_MS: TTL_MS, WAIT_MS } = require('./SpotContest');
 const COOLDOWN_MS = 2 * 60000;
-const WAIT_MS = 15000;
 const CONFLICT_COOLDOWN_MS = 10 * 60000;
 // Losing a mob is a provocation, but should not exhaust the budget of a real fight.
 const DISPUTE_COOLDOWN_MS = 3 * 60000;

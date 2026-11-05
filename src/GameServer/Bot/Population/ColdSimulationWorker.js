@@ -122,6 +122,12 @@ const EconomicTrip = require('../Economy/EconomicTrip');
 const { fnv1a32, textDigest } = require('../Fnv1a');
 const WealthCraftPolicy = require('../Economy/WealthCraftPolicy');
 const RequiredPartyFormation = require('./RequiredPartyFormation');
+const SpotContest = require('./SpotContest');
+const PartyHuntingTarget = require('./PartyHuntingTarget');
+const ColdCompetitionEpisode = require('./ColdCompetitionEpisode');
+const ColdCompetitionRetreat = require('./ColdCompetitionRetreat');
+const EquipmentIncomeRoute = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
+const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const { ColdCompetitionMonitor } = require('./ColdCompetitionMonitor');
 const ColdCompetitionCandidates = require('./ColdCompetitionCandidates');
 const { ColdSimulationKernel, lifecycleKind } = require('./ColdSimulationKernel');
@@ -970,11 +976,26 @@ function nearEvents(id, previous, entry, applied) {
 // (row.nearSpot { seq, spotId }, BotLifeState.notifyNearFacts), never by comparing the
 // rows' spotId (a later post falls back to the physical spot): an arrival at its spot, or
 // a leave, for the spot aggregate. Its own hook, apart from nearEvents (whose soft part
-// goes in step 4). previous: the record's row before; row: the post.
+// goes in step 4). previous: the record's row before; row: the post, its mind the
+// worker's (nearEvents). A solo body's arrival meets the
+// spot's standing units (SpotContest; its step: the post's number): a lost contest
+// raises contest_lost with its mark in the near mind, which the near decision answers;
+// any other outcome is the body's own tactics near the player (no hot contest command,
+// HotResourceCompetition): counted. A body in a party arrives with its party's tactics
+// (temporary until the party aggregate, step 8): counted.
 function nearArrival(id, previous, row) {
     const post = row.nearSpot;
     if (!post || Number(post.seq) === Number(previous?.nearSpot?.seq)) return;
-    Situations.note(post.spotId == null ? 'spot:left@hot' : 'spot:arrival@hot');
+    const to = post.spotId ?? null;
+    if (to == null) { Situations.note('spot:left@hot'); return; }
+    Situations.note('spot:arrival@hot');
+    if (row.party?.partyId || row.partyId) { Situations.note('spot:contest:hot_party'); return; }
+    const verdict = arrivalContest({ spotId: to, members: [row], principal: row, step: Number(row.nearSeq) || 0,
+        at: Number(row.updatedAt) || Date.now() });
+    if (!verdict || verdict.action === 'coexist') return;
+    if (verdict.action === 'avoid') {
+        Situations.raise(row.stats ||= {}, 'contest_lost', { spotId: String(to), reason: 'contest_lost' }, Situations.bodyPlace(row), id);
+    } else Situations.note('spot:contest:hot_skipped');
 }
 // A bot's goal revision (GoalState.revision on main, 0 = no goal) from the
 // 'goals' table; undefined while the table loads (the decision skips the compare).
@@ -1371,19 +1392,6 @@ function pruneLookSeen(ownerId) {
     if (!seen.size) kernel.lookSeen.delete(Number(ownerId));
 }
 
-// The cheap check `room` at arrival: the bots that stand on the spot in the
-// one "who stands here" index (kernel.occupancy), other than the arriving
-// ones, plus the arriving ones, against the spot's capacity. A bot traveling
-// there is indexed at its destination but does not stand there yet. Read once
-// when a trip ends; no place is held for a bot on its way. A raid boss spot or
-// a spot the catalog does not know has room.
-function roomAtArrival(spotId, arriving, overflow = 0) {
-    const room = SpotProfiles.spotRoom(planningSpots, spotId);
-    if (room === Infinity) return true;
-    const standing = kernel.occupancy.physicalCount(spotId, { excludeKeys: arriving, standingOnly: true });
-    return standing + arriving.size <= room + overflow;
-}
-
 // The step's trip begins, or waits for the engaged fight (PveEncounter.holdsTrip):
 // the round then ends that fight with no new one, and the kept route waits on
 // the record for the next step.
@@ -1420,63 +1428,170 @@ function dropRoute(characterId, why) {
     BotRoute.drop(kernel.states.get(Number(characterId)), why);
 }
 
-// A solo trip ends on a full spot: the bot stands there with a "was full"
-// mark (counted from this step's counter before its +1) and the step raises
-// spot_crowded (occupation and sources) with its other events, so the next step's decision
-// point refuses the hunting leaf there and the spot search takes the next one.
-// A safety evacuation may exceed a full spot by one bot. A party trip is
-// checked once, at the party's arrival (partyArrival). Returns the marked
-// result, or null when the step is no such arrival or the spot has room.
-function soloArrival(state, result) {
+// The spot aggregate at an arrival (SpotContest): the units standing on the spot in
+// the one "who stands here" index (kernel.occupancy), the arriving ones left out, as
+// SpotContest reads them, grouped by hunting unit (a party, read through its row and
+// its leader; a solo bot), each with its target species (PartyHuntingTarget). A bot
+// traveling there is indexed at its destination but does not stand there yet; a far
+// bot in a competition wait or dead stands aside (a near post carries no vitals).
+// untargeted: the standing hunters with no target. A raid boss spot (no room limit)
+// holds no contest: null.
+const unitKeyOf = state => state.party?.partyId || state.partyId || `solo:${state.characterId}`;
+function standingUnits(spot, arriving) {
+    if (SpotProfiles.spotRoom(planningSpots, spot.id) === Infinity) return null;
+    const units = new Map();
+    let untargeted = 0;
+    for (const [key, state] of kernel.occupancy.members(spot.id, 'physical')) {
+        if (arriving.has(key) || state?.activity === 'traveling' || state?.phase !== 'hot' && !(state?.vitals?.hp > 0)
+            || state.stats?.coldCompetition?.wait || !['hunting', 'grouped', 'resting'].includes(state.activity)) continue;
+        const unitKey = unitKeyOf(state);
+        let unit = units.get(unitKey);
+        if (!unit) {
+            const party = unitKey.startsWith('solo:') ? null : kernel.partyOf(state.characterId);
+            const leader = party ? kernel.states.get(Number(party.leaderId))?.state || state : state;
+            const npcId = PartyHuntingTarget.competitionNpcId(party, leader, spot, id => kernel.states.get(Number(id))?.state);
+            units.set(unitKey, unit = { key: unitKey, id: Number(leader.characterId), name: leader.name, partyId: party?.partyId || null,
+                partyRevision: party?.revision, size: party?.memberIds?.length || 1, level: 0, hunters: 0, members: [], state: leader,
+                npcId, hot: false });
+        }
+        unit.hunters++; unit.members.push(state); unit.level += Number(state.level || 1);
+        unit.hot ||= state.phase === 'hot';
+        if (!unit.npcId) untargeted++;
+    }
+    for (const unit of units.values()) unit.level /= unit.members.length;
+    return { units: [...units.values()].filter(unit => unit.npcId), untargeted };
+}
+// One arrival's contest (SpotContest.contest) for an arriving unit: members (the
+// arriving states), principal (its leader or the solo bot), party (its row, or null),
+// step (the principal's own counter: the roll's key), at (the step's time), evacuating
+// (a safety evacuation off unsafe ground: it holds its new ground, never avoids). null: no
+// contest (a spot with no limit, no target there).
+function arrivalContest({ spotId, members, principal, party = null, step, at, evacuating = false }) {
+    const spot = SpotIndex.spotById(planningSpots, spotId);
+    if (!spot) return null;
+    const standing = standingUnits(spot, new Set(members.map(stateKey)));
+    if (!standing) return null;
+    const npcId = PartyHuntingTarget.competitionNpcId(party, principal, spot, id => members.find(s => Number(s.characterId) === Number(id))
+        || kernel.states.get(Number(id))?.state);
+    if (!npcId) return null;
+    const arriving = { key: party?.partyId || `solo:${principal.characterId}`, id: Number(principal.characterId), name: principal.name,
+        partyId: party?.partyId || null, partyRevision: party?.revision, size: members.length, hunters: members.length, members,
+        state: principal, level: members.reduce((sum, s) => sum + Number(s.level || 1), 0) / members.length, npcId,
+        holds: !party && EquipmentIncomeRoute.isCommanded(principal.stats?.earning) ? 'commanded' : evacuating ? 'evacuation' : null };
+    const verdict = SpotContest.contest({ spot, npcId, arriving, standing: standing.units, untargeted: standing.untargeted, at, step,
+        memory: kernel.interactionMemory, personaFor: state => BotPersona.of(state), ownSide: ColdPvpResolver.ownSide,
+        capacityForSpot: LevelingRoutes.capacityForSpot });
+    // The pairs this arrival decided hold the scan's pair cooldown (the key it reads):
+    // one decision per meeting. Temporary until step 2 S5 deletes the scan.
+    competition?.holdPairs(arriving.key, verdict.met, at);
+    return verdict;
+}
+// An arriving unit's outcomes that touch a standing unit (offer_party, contest, a
+// PvP intent): held until main acknowledges the arriving step's commit (its proposal,
+// proposalId), then sent in the competition frame (ColdCompetitionCandidates.queueEvent),
+// whose actions fence both sides on their revisions (ColdCompetitionActions). One per
+// arriving principal. Only that step's accepted commit sends it, with the committed
+// revisions (the bot's, its party row's: table changes reach the worker before the
+// ack); any other ack, a refused one, the bot leaving the far simulation, the worker's
+// stop or an age past the event's freshness from the arrival (SpotContest.EVENT_TTL_MS)
+// drops it, counted (spot:contest:stale / unsent), never re-fenced.
+const contestOutbox = new Map();
+function dropContest(id, why) {
+    if (contestOutbox.delete(Number(id))) Situations.note(`spot:contest:${why}`);
+}
+function contestAcked(results, now = Date.now()) {
+    for (const result of results || []) {
+        const id = Number(result?.characterId), entry = contestOutbox.get(id);
+        if (!entry) continue;
+        contestOutbox.delete(id);
+        const committed = result.ok ? kernel.states.get(id)?.state : null;
+        if (!result.ok) { Situations.note('spot:contest:unsent'); continue; }
+        if (result.proposalId !== entry.proposalId || committed?.phase !== 'cold' || now - entry.event.at > SpotContest.EVENT_TTL_MS) {
+            Situations.note('spot:contest:stale'); continue;
+        }
+        if (!competitionCandidates) { Situations.note('spot:contest:unsent'); continue; }
+        const party = entry.event.actor.partyId ? kernel.partyOf(id) : null;
+        competitionCandidates.queueEvent({ ...entry.event, actor: { ...entry.event.actor,
+            revision: Number(committed.simulation?.revision || 0), memoryRevision: kernel.interactionMemory.revision(id),
+            ...(party && String(party.partyId) === String(entry.event.actor.partyId) ? { partyRevision: party.revision } : {}) } });
+        wakeLoopIfSooner();
+    }
+}
+// The outbox's own end: entries past the freshness from their arrival (a step whose
+// ack never came) go, counted. Each heartbeat.
+function sweepContestOutbox(now = Date.now()) {
+    for (const [id, entry] of contestOutbox) if (now - entry.event.at > SpotContest.EVENT_TTL_MS) dropContest(id, 'stale');
+}
+// The arriving unit's own outcome on its states (its step's patch): avoid raises
+// contest_lost with the spot as its mark (it wakes the earning spot at once); yield
+// waits (ColdCompetitionWait, the resolver deducts the wait from its hunt); coexist
+// changes nothing; one touching a standing unit goes to the outbox, keyed by the arriving
+// step's proposal (proposalId). stats: a copy the caller owns, written and returned.
+function contestOutcome(verdict, stats, principal, at, proposalId = null) {
+    if (!verdict || verdict.action === 'coexist') return stats;
+    if (verdict.action === 'avoid') {
+        return Situations.raise(stats, 'contest_lost', { spotId: verdict.event.spotId, reason: 'contest_lost' }, Situations.OPEN, principal.characterId);
+    }
+    if (verdict.action === 'yield') {
+        stats.coldCompetition = ColdCompetitionEpisode.begin(stats.coldCompetition, { outcome: 'yield', key: verdict.event.key, at,
+            action: 'yield', peerId: verdict.peer.id, wait: { start: at, until: at + SpotContest.WAIT_MS } });
+        return stats;
+    }
+    if (proposalId) contestOutbox.set(Number(principal.characterId), { event: verdict.event, proposalId });
+    else Situations.note('spot:contest:unsent');
+    return stats;
+}
+
+// A solo trip ends on its spot: the arrival's contest, its outcome in the step's
+// patch (the arrival patch carries the whole stats copy, resolveTravel). A party trip
+// is checked once, at the party's arrival (partyArrival). Returns the patched result,
+// or null when the step is no such arrival or nothing changes.
+function soloArrival(state, result, timestamp) {
     const travel = state?.activity === 'traveling' ? state.stats?.travel : null;
     if (!travel?.spotId || travel.reason === 'party_spot_replan' || result?.patch?.activity !== 'hunting'
         || String(result.patch.spotId) !== String(travel.spotId)) return null;
-    const room = roomAtArrival(travel.spotId, new Set([stateKey(state)]),
-        travel.reason === 'unsafe_ground_evacuation' ? 1 : 0);
-    economyDiagnostics.count('roomAtArrival', 'solo', 'checked');
-    if (room) return null;
-    economyDiagnostics.count('roomAtArrival', 'solo', 'full');
-    // Which trips still end on a full spot: the read names their reasons.
-    economyDiagnostics.count('roomAtArrival', 'full', travel.reason || 'none');
-    // The arrival patch carries the whole stats copy (resolveTravel); the mark
-    // reads the same counter and marks from the state the step started on.
-    const { capacityBackoffs, lastReason } = SpotRiskPolicy.withCapacityBackoff(state, travel.spotId).stats;
-    return { ...result, patch: { ...result.patch, stats: { ...result.patch.stats, capacityBackoffs, lastReason } } };
-}
-
-// A party trip ends (the kernel's party round, finishPartyRouteTravelState):
-// the spot's standing bots that are not of this party plus the whole party
-// against the capacity, no overflow. Full -> the party's "was full" mark
-// (PartySpotRiskPolicy, read by its next spot search) and spot_crowded
-// raised on the leader; the members arrive and stand. The party's own
-// objective spot (a clan goal, a material party) admits it: a pass read from
-// the goal the party carries, not a place held for it, so a full roster does
-// not bounce between its objective and a fallback spot. cause: the trip's
-// (party.stats.travel.cause): position_mismatch or death_pressure (the run's
-// search); none: 'route', the
-// run's search that picked a new spot.
-function partyArrival({ party, members, spotId, cause = null }) {
-    const arriving = new Set((party?.memberIds || []).map(String));
-    if (!spotId || !arriving.size) return null;
-    if (String(spotId) === String(party.stats?.objective?.spotId ?? '')) {
-        economyDiagnostics.count('roomAtArrival', 'party', 'pass');
+    const arrived = { ...state, ...result.patch, stats: { ...state.stats, ...result.patch.stats } };
+    const verdict = arrivalContest({ spotId: travel.spotId, members: [arrived], principal: arrived,
+        step: SpotRiskPolicy.stepCount(state), at: timestamp, evacuating: travel.reason === 'unsafe_ground_evacuation' });
+    if (!verdict || verdict.action === 'coexist') return null;
+    if (verdict.action !== 'avoid' && verdict.action !== 'yield') {
+        contestOutcome(verdict, null, arrived, timestamp, kernel.proposalIdOf(state.characterId));
         return null;
     }
-    const room = roomAtArrival(spotId, arriving);
-    economyDiagnostics.count('roomAtArrival', 'party', 'checked');
-    if (room) return null;
-    economyDiagnostics.count('roomAtArrival', 'party', 'full');
-    economyDiagnostics.count('roomAtArrival', 'party_full', cause || 'route');
+    const stats = contestOutcome(verdict, { ...result.patch.stats }, arrived, timestamp);
+    return { ...result, patch: { ...result.patch, stats } };
+}
+
+// A party trip ends (the kernel's party round, finishPartyRouteTravelState): the
+// party arrives as one unit, its contest decided through its leader (temporary until
+// the party aggregate, step 8). The party's own objective spot (a clan goal, a
+// material party) admits it: no contest, so a full roster does not bounce between its
+// objective and a fallback spot. avoid: the party's competition avoid of the spot
+// (ColdCompetitionRetreat.partyAvoid, read by its next spot search) and contest_lost on
+// the leader; yield: the party waits; one touching a standing unit: the outbox, keyed
+// on the leader. Returns { party, members } changed, or null.
+function partyArrival({ party, members, spotId, timestamp = Date.now(), proposalId = null }) {
+    if (!spotId || !(party?.memberIds || []).length || !members.length) return null;
+    if (String(spotId) === String(party.stats?.objective?.spotId ?? '')) {
+        Situations.note('spot:arrival:objective');
+        return null;
+    }
     const leaderId = Number(party.leaderId || 0);
-    return {
-        party: PartySpotRiskPolicy.withCapacityBackoff(party, spotId),
-        members: members.map(member => {
-            if (Number(member.characterId) !== leaderId) return member;
-            const raised = { ...member, stats: { ...(member.stats || {}) } };
-            Situations.raise(raised.stats, 'spot_crowded', null, Situations.place(raised), raised.characterId);
-            return raised;
-        })
-    };
+    const leader = members.find(member => Number(member.characterId) === leaderId);
+    if (!leader) return null;
+    const verdict = arrivalContest({ spotId, members, principal: leader, party, step: PartySpotRiskPolicy.rounds(party), at: timestamp });
+    if (!verdict || verdict.action === 'coexist') return null;
+    if (verdict.action === 'avoid') {
+        return { party: ColdCompetitionRetreat.partyAvoid(party, spotId, verdict.event, timestamp),
+            members: members.map(member => Number(member.characterId) !== leaderId ? member
+                : { ...member, stats: contestOutcome(verdict, { ...(member.stats || {}) }, member, timestamp) }) };
+    }
+    if (verdict.action === 'yield') {
+        const stats = contestOutcome(verdict, { ...(party.stats || {}) }, leader, timestamp);
+        return { party: { ...party, stats }, members };
+    }
+    contestOutcome(verdict, null, leader, timestamp, proposalId);
+    return null;
 }
 
 // payloadBytes: the payload's JSON size when the caller already counted it
@@ -1730,11 +1845,11 @@ function startKernel(config = {}) {
         // windowStart: the state a hunt window (ColdSoloWindow) started on: `state` is its last round's.
         projectResolve: async (state, result, timestamp, lifecyclePlan = null, writtenAt = timestamp, windowStart = state) => {
             const owner = kernel.states.get(Number(state.characterId));
-            // Room at arrival, before the projection: a full spot's mark rides
-            // the patch, its sections join the step's one raise.
+            // The spot contest at arrival, before the projection: the arriving
+            // bot's outcome rides the patch (SpotContest; contest_lost raised there).
             const raidPreparing = require('./RaidSupplyPolicy').held(state, timestamp);
-            const crowded = !raidPreparing && soloArrival(state, result);
-            if (crowded) result = crowded;
+            const contested = !raidPreparing && soloArrival(state, result, timestamp);
+            if (contested) result = contested;
             // The step's one decision, taken before the round (planLifecycle):
             // the round's consequences run on it, no second ask. A step
             // without one (a party member, karma) asks after
@@ -1745,7 +1860,6 @@ function startKernel(config = {}) {
             let actionBaseline = lifecyclePlan?.actionBaseline || null;
             const base = {
                 ...roundProjection(state, timestamp, writtenAt, lifecyclePlan),
-                ...(crowded ? { checkSituations: ['spot_crowded'] } : {}),
                 // The soft point's inputs (BotLifeState.prepareResolve, every
                 // step): the board mirror (null until ready), the escrow and
                 // the bot's memory rows, read only when its bond is compared.
@@ -2135,6 +2249,8 @@ function startKernel(config = {}) {
         const previousEntry = kernel.states.get(Number(id)), previous = previousEntry?.state;
         // A new life starts from no record (activations fence the bot first),
         // so the raises applied are this life's.
+        // A bot that leaves the far simulation sends no arrival outcome after it.
+        if (entry.state.phase !== 'cold') dropContest(id, 'stale');
         if (previous && previous !== entry.state && entry.state.phase === 'hot') {
             nearEvents(id, previous, entry, Number(previousEntry.raiseSeq || 0));
             nearArrival(id, previous, entry.state);
@@ -2175,11 +2291,12 @@ function startKernel(config = {}) {
         }
         return result;
     };
-    kernel.states.delete = id => { occupationPlanner.cancel(id); cancelRoute(id); return nativeDelete(id); };
+    kernel.states.delete = id => { occupationPlanner.cancel(id); cancelRoute(id); dropContest(id, 'stale'); return nativeDelete(id); };
     kernel.states.clear = () => {
         for (const entry of [...occupationPlanner.slots.values(), ...occupationPlanner.cards.values(), ...occupationPlanner.waiting.values()])
             occupationPlanner.cancel(entry.id, entry.mode);
         routeRequests.clear();
+        for (const id of [...contestOutbox.keys()]) dropContest(id, 'stale');
         return nativeClear();
     };
     invoke('GameServer/Bot/Population/PartyAdmission').configureTradeAdmission(id => kernel.states.get(Number(id))?.state || kernel.states.get(-Number(id))?.state,
@@ -2292,6 +2409,7 @@ function startKernel(config = {}) {
         }
         const elu = performance.eventLoopUtilization(previousElu);
         previousElu = performance.eventLoopUtilization();
+        sweepContestOutbox();
         const heartbeat = {
             ...kernel.heartbeatSnapshot(),
             ...heapTelemetry.snapshot(),
@@ -2420,7 +2538,7 @@ async function handle(message) {
         send('worker_repair_ack', { results: payload.rows.map(safetyRepair), safety: safetyTotals() }, message.msgId);
         break;
     case 'commit_ack':
-        kernel?.onCommitAck(payload);
+        contestAcked(kernel?.onCommitAck(payload));
         break;
     case 'command_request':
         for (const request of payload.requests || []) if (!kernel?.receiveMeetingPage(request))
@@ -2477,6 +2595,7 @@ async function handle(message) {
         Trace.stop();
         occupationPlanner.stop();
         competitionCandidates?.stop();
+        for (const id of [...contestOutbox.keys()]) dropContest(id, 'stale');
         stopTimers();
         eventLoopDelay?.disable();
         heapTelemetry?.close();

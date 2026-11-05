@@ -659,8 +659,8 @@ class ColdSimulationKernel {
         // hunting steps, their rounds and hunt time (steps per hunting
         // bot-hour = 3.6e6 * steps / huntMs); what ended each window.
         this.soloWindowStats = { steps: 0, rounds: 0, huntMs: 0, ended: {} };
-        // The room check at a party's arrival (the worker's partyArrival):
-        // { party, members } with the "was full" mark, or null.
+        // The spot contest at a party's arrival (the worker's partyArrival):
+        // { party, members } with its outcome, or null.
         this.partyArrival = typeof options.partyArrival === 'function' ? options.partyArrival : null;
         // The party's route (the worker's BotRoute.route on the leader's state):
         // { leader, party, members, spot, timestamp } -> trip record or null.
@@ -889,6 +889,13 @@ class ColdSimulationKernel {
     }
 
     // The party row this bot is a member of, or null.
+    // The proposal id of the step a bot has in flight (its commit ack names it), null
+    // with none: the spot contest keys an arrival's outcome on it (the worker's outbox).
+    proposalIdOf(characterId) {
+        const active = this.inFlight.get(Number(characterId));
+        return active ? stepProposalId(characterId, active.startedAt) : null;
+    }
+
     partyOf(characterId) {
         const partyId = this.partyByMember.get(Number(characterId));
         return partyId === undefined ? null : this.parties.get(partyId) || null;
@@ -1966,14 +1973,14 @@ class ColdSimulationKernel {
                     arrivedMembers.splice(0, arrivedMembers.length, ...materialArrival.members);
                     arrivedParty = materialArrival.party;
                 }
-                // The party is checked once, as a whole, here; its members'
-                // own arrivals are not. cause: why the trip started (the
-                // full arrival's counter reads it).
-                const crowded = this.partyArrival?.({ party: arrivedParty, members: arrivedMembers,
-                    spotId: partyTravel.spotId, cause: partyTravel.cause });
-                if (crowded) {
-                    arrivedMembers.splice(0, arrivedMembers.length, ...crowded.members);
-                    arrivedParty = crowded.party;
+                // The party meets the spot once, as a whole, here; its members'
+                // own arrivals do not.
+                const contested = this.partyArrival?.({ party: arrivedParty, members: arrivedMembers,
+                    spotId: partyTravel.spotId, timestamp: startedAt,
+                    proposalId: stepProposalId(Number(run.party.leaderId), run.startedAt) });
+                if (contested) {
+                    arrivedMembers.splice(0, arrivedMembers.length, ...contested.members);
+                    arrivedParty = contested.party;
                 }
                 const proposals = partyTransitionProposals(
                     run,

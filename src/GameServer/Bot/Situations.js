@@ -71,9 +71,15 @@ const SITUATIONS = Object.freeze({
     relations: link(['relations'], WORK | VISIT),
     party_joined: link(['relations'], 0),
     party_left: link(['relations'], 0),
-    // A spot too full to enter (the room at arrival), and what main refused at the
-    // act or a body that failed its step five times: the plan cannot stand.
-    spot_crowded: link(['occupation', 'sources'], 0),
+    // A contest lost at its arrival on a spot (SpotContest: it avoids the units standing
+    // there; payload { spotId, reason: 'contest_lost' }: its spot mark, raisedFacts).
+    contest_lost: link(['occupation', 'sources'], 0),
+    // The spot's own (subject: the spot, traced, raised on no bot): a contest at an
+    // arrival (SpotContest), a grievance pair met there (step 2 S4).
+    spot_contested: link([], 0),
+    enemy_met: link([], 0),
+    // What main refused at the act or a body that failed its step five times: the plan
+    // cannot stand.
     goal_failed: link(['sources'], 0),
     // A spot whose spawns admit none of the bot's fights alone (a kit or level it
     // lost, a stand-in ground): the bot stands with nothing to hunt, its plan cannot
@@ -206,10 +212,9 @@ function woke(name, where) {
 // the situations that wake it; a decision joins as the step that moves it does
 // (situations.md §10). The build runs on its sections until it moves (step 4): a
 // raise heard for its sections wakes it, so its bit stands with stats.wishDirty.
-// spot_crowded wakes the earning spot until the spot contest replaces it (step 2).
 const DECISIONS = Object.freeze({
-    earning_spot: Object.freeze(['level_up', 'gear_changed', 'died', 'recovered', 'spot_disappoints', 'spot_empty', 'spot_dangerous',
-        'spot_unreachable', 'moved_by_world', 'party_left', 'shots_out', 'stock_low:potions', 'karma_changed', 'spot_crowded']),
+    earning_spot: Object.freeze(['level_up', 'gear_changed', 'died', 'recovered', 'spot_disappoints', 'contest_lost', 'spot_empty',
+        'spot_dangerous', 'spot_unreachable', 'moved_by_world', 'party_left', 'shots_out', 'stock_low:potions', 'karma_changed']),
     build: Object.freeze([])
 });
 const BITS = Object.freeze(Object.fromEntries(Object.keys(DECISIONS).map((name, at) => [name, 1 << at])));
@@ -318,13 +323,13 @@ function delta(name, payload = null, where = OPEN, stats = null) {
 // The facts a raise writes beside its bits (situations.md B6), each owned by its
 // reader: player_command's spot becomes the held earning answer (the player decided:
 // EquipmentIncomeRoute.commanded, no search; the earning spot's bit taken); the spot
-// of a spot_unreachable or a spot_dangerous that names one a spot mark
+// of a spot_unreachable, a contest_lost or a spot_dangerous that names one a spot mark
 // (SpotRiskPolicy.withSpotMark), which the next held answer retires.
 // { earning, spotMarks }, undefined: unchanged. stats: the facts before the raise
 // (null: none known). dropped: told a mark past the cap.
 // lazy: cycles both owners load spot modules that read this catalogue.
 let IncomeRoute = null, Risk = null;
-const MARKS = new Set(['spot_unreachable', 'spot_dangerous']);
+const MARKS = new Set(['spot_unreachable', 'spot_dangerous', 'contest_lost']);
 function raisedFacts(stats, name, payload, dropped = null) {
     if (payload?.spotId == null) return {};
     if (name === 'player_command') return { earning: (IncomeRoute ||=

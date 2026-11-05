@@ -12,14 +12,12 @@ function state(party) {
     const same = memory?.partyId === party?.partyId;
     const current = same && memory?.rosterKey === rosterKey(party) ? memory : {};
     return { spotId: party?.spotId, stats: { spotRisk: current.spotRisk, spotBackoffs: current.spotBackoffs,
-        capacityBackoffs: current.capacityBackoffs,
         stepCount: same ? Math.max(0, Number(memory.rounds) || 0) : 0,
         coldCompetition: party?.stats?.coldCompetition } };
 }
 function memory(party, stats) {
     return { partyId: party.partyId, rosterKey: rosterKey(party),
         spotRisk: stats.spotRisk || null, spotBackoffs: stats.spotBackoffs || [],
-        ...(stats.capacityBackoffs?.length ? { capacityBackoffs: stats.capacityBackoffs } : {}),
         rounds: stats.stepCount || 0 };
 }
 function rounds(party) {
@@ -47,15 +45,6 @@ function withBackoff(party, value, timestamp) {
     const next = Risk.withBackoff(state(party), value, timestamp);
     return { ...party, stats: { ...party.stats, partySpotRisk: memory(party, next.stats) } };
 }
-// The party found its spot full at arrival: the same "was full" mark as a
-// solo bot's, in the party's memory. The arrival counts as the party's step
-// (its rounds +1), as a solo bot's arrival step does, so the mark holds at the
-// party's next round and lapses after it.
-function withCapacityBackoff(party, spotId) {
-    const next = Risk.withCapacityBackoff(state(party), spotId);
-    return { ...party, stats: { ...party.stats,
-        partySpotRisk: memory(party, { ...next.stats, stepCount: next.stats.stepCount + 1 }) } };
-}
 function record(party, result, timestamp) {
     if (result?.memberResults) result = { ...result, memberResults: result.memberResults.map(entry => ({
         ...entry, result: require('./ClanEquipmentPartyPolicy').recordOutcome(entry.state, entry.result, party?.stats?.objective, timestamp)
@@ -73,4 +62,4 @@ function record(party, result, timestamp) {
     return { ...result, partyPatch: { ...result.partyPatch, stats: { ...result.partyPatch?.stats,
         partySpotRisk: memory(party, { ...previous, spotRisk, stepCount }) } } };
 }
-module.exports = { rosterKey, rounds, marksInSteps, excludedSpotIds, backoff, withBackoff, withCapacityBackoff, record };
+module.exports = { rosterKey, rounds, marksInSteps, excludedSpotIds, backoff, withBackoff, record };

@@ -297,30 +297,23 @@ try {
     assert.strictEqual(batchRouteFor(22)?.spotId, targetSpot.id,
         'a third decision is not refused at planning: the room is checked at arrival');
 
-    // "Was full" marks (the arrival check itself: test_room_at_arrival.js):
-    // a chain of them, and the searches they clear.
+    // A contest lost at the arrival (SpotContest; the contest itself: test_room_at_arrival.js):
+    // the spot is marked until the next earning answer, and the next search takes another.
     const Risk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
-    const atStep = (value, stepCount) => ({ ...value, stats: { ...value.stats, stepCount } });
-    const markedState = Risk.withCapacityBackoff({
+    const Situations = invoke('GameServer/Bot/Situations');
+    const markedState = {
         characterId: 23,
         phase: 'cold',
         activity: 'hunting',
         spotId: targetSpot.id,
         loc: { locX: 1, locY: 2, locZ: 3 },
-        stats: { equipmentPlan: { status: 'active', strategy: 'direct_drop' } }
-    }, targetSpot.id);
-    const refusedAt = Risk.stepCount(markedState);
-    let chained = markedState;
-    for (let index = 1; index < Risk.MAX_BACKOFFS; index += 1) {
-        chained = Risk.withCapacityBackoff(atStep(chained, refusedAt + index), `chain_${index}`);
-    }
-    const chainEnd = refusedAt + Risk.MAX_BACKOFFS - 1;
-    assert.strictEqual(Risk.excludedSpotIdsForStates([atStep(chained, chainEnd + 1)]).size, Risk.MAX_BACKOFFS,
-        'every spot found full along a chain stays excluded, so the bot can reach a free spot');
-    assert.strictEqual(Risk.excludedSpotIdsForStates([atStep(chained, chainEnd + 1 + Risk.CAPACITY_BACKOFF_STEPS)]).size, 0,
-        'the whole chain expires one backoff after the last full spot');
-    assert.strictEqual(markedState.stats.lastReason, 'route_capacity_full');
-    assert.strictEqual(markedState.stats.spotBackoffs, undefined);
+        stats: Situations.raise({ equipmentPlan: { status: 'active', strategy: 'direct_drop' } }, 'contest_lost',
+            { spotId: targetSpot.id, reason: 'contest_lost' }, Situations.OPEN, 23)
+    };
+    assert(Risk.excludedSpotIdsForStates([markedState]).has(String(targetSpot.id)), 'the spot of a lost contest is excluded');
+    assert(Situations.woken(markedState.stats, 'earning_spot'), 'a lost contest wakes the earning spot');
+    assert.strictEqual(Risk.excludedSpotIdsForStates([{ ...markedState, stats: { ...markedState.stats,
+        earning: { spotId: 'free-destination', at: 5 } } }]).size, 0, 'the next held answer retires the mark');
     const originalCache = SpotProfiles.cache;
     const savedFind = SpotProfiles.findForState;
     const savedPhysical = SpotService.findCurrentSpot;

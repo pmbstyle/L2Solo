@@ -1,15 +1,25 @@
 const Validation = require('./ColdCompetitionValidation');
 const InventorySummary = require('./InventorySummary');
 const Episode = require('./ColdCompetitionEpisode');
-const Risk = require('./SpotRiskPolicy');
 const PartyRisk = require('./PartySpotRiskPolicy');
 const Situations = require('../Situations');
 // Voluntary decisions affect the actor's whole hunting unit, without blame.
-// The avoided spot stays excluded for ten of the holder's own steps.
-const AVOID_STEPS = 10;
-// An avoid raises moved_by_world on the unit (its occupation section): the
-// worker's next step (a member's, the party's run) routes it off the excluded
-// spot, as any trip (BotRoute); main searches no spot.
+// An avoid is a contest lost: each member raises contest_lost with the spot as its
+// mark (it wakes the earning spot at once; the mark holds until that decision is
+// taken, SpotRiskPolicy.spotMarks): the worker's next step routes it off the spot,
+// as any trip (BotRoute); main searches no spot. A party's avoid is the party's own
+// competition avoid for PARTY_AVOID_ROUNDS of its rounds (temporary until the party
+// aggregate, step 8: a party holds no earning answer its marks could hang on).
+const PARTY_AVOID_ROUNDS = 10;
+const lost = (state, spotId) => Situations.raise({ ...state.stats }, 'contest_lost', { spotId, reason: 'contest_lost' },
+    Situations.OPEN, state.characterId);
+// A party row whose next spot search excludes spotId (its rounds' counter); event: the
+// contest's (its key and peer).
+function partyAvoid(party, spotId, event, at) {
+    return { ...party, stats: { ...party.stats, coldCompetition: Episode.begin(party.stats?.coldCompetition, {
+        outcome: 'avoid', key: event.key, at, action: 'avoid', peerId: event.peer?.id,
+        avoid: { spotId: String(spotId), untilStep: PartyRisk.rounds(party) + PARTY_AVOID_ROUNDS } }) } };
+}
 
 async function apply({ event, life, owner, memory, parties, participantAllowed, contestContextAllowed,
     onState, now, waitMs }) {
@@ -34,22 +44,18 @@ async function apply({ event, life, owner, memory, parties, participantAllowed, 
     const states = sides.flatMap(s => s.members);
     if (states.length > 18 || new Set(states.map(s => s.characterId)).size !== states.length) return { ok: false, reason: 'overlapping_sides' };
     const avoiding = event.action === 'avoid';
-    // One avoid per holder, on its own counter: each member's far steps, the
-    // party's rounds for the party copy.
-    const avoidFor = counter => ({ spotId: event.spotId, untilStep: counter + AVOID_STEPS });
-    // Pushed off its spot: moved by the world, heard at once.
-    const actorMembers = sides[0].members.map(s => avoiding ? { ...s, stats: Situations.raise({ ...s.stats,
-        coldCompetition: { ...s.stats?.coldCompetition, avoid: avoidFor(Risk.stepCount(s)) } }, 'moved_by_world', null, Situations.OPEN, s.characterId) } : s);
+    const actorMembers = sides[0].members.map(s => avoiding ? { ...s, stats: lost(s, event.spotId) } : s);
     // The actor's unit steps now (the worker routes it); a yield waits.
     const actorDue = due => avoiding ? at : Math.max(at, Number(due || 0)) + waitMs;
     const preparedParties = sides.map((side, i) => {
         if (!side.party) return null;
-        const prepared = parties.prepareCommit({ ...side.party,
-            nextResolveAt: i === 0 ? actorDue(side.party.nextResolveAt) : side.party.nextResolveAt,
-            stats: { ...side.party.stats, coldCompetition: Episode.begin(side.party.stats?.coldCompetition, {
+        const row = i === 0 && avoiding ? partyAvoid(side.party, event.spotId, { key: event.key, peer: { id: sides[1].principal.characterId } }, at)
+            : { ...side.party, stats: { ...side.party.stats, coldCompetition: Episode.begin(side.party.stats?.coldCompetition, {
                 outcome: event.action, key: event.key, at, action: event.action, peerId: sides[1 - i].principal.characterId,
-                ...(i === 0 ? avoiding ? { avoid: avoidFor(PartyRisk.rounds(side.party)) } : { wait: { start: at, until: at + waitMs } } : {})
-            }) } });
+                ...(i === 0 ? { wait: { start: at, until: at + waitMs } } : {})
+            }) } };
+        const prepared = parties.prepareCommit({ ...row,
+            nextResolveAt: i === 0 ? actorDue(side.party.nextResolveAt) : side.party.nextResolveAt });
         prepared.row.updatedAt = Math.max(prepared.row.updatedAt, side.party.updatedAt + 1);
         return prepared;
     });
@@ -77,6 +83,6 @@ async function apply({ event, life, owner, memory, parties, participantAllowed, 
     states.forEach(s => onState(s.characterId));
     return { ok: true, affectedIds: sides[0].members.map(s => s.characterId), memoryEvents: 0,
         matchup: sides.map(s => s.party ? 'party' : 'solo').join('_vs_'),
-        ...(avoiding ? { avoidSteps: AVOID_STEPS } : { waitUntil: at + waitMs }) };
+        ...(avoiding ? { contestLost: event.spotId } : { waitUntil: at + waitMs }) };
 }
-module.exports = { apply, AVOID_STEPS };
+module.exports = { apply, partyAvoid, PARTY_AVOID_ROUNDS };

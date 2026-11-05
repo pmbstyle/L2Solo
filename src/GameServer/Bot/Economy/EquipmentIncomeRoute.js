@@ -187,11 +187,13 @@ function answerOf(route, at, error = 0) {
 // A player's command naming a spot (Situations' player_command, B6) as the held answer: that spot, with the
 // bot's hour, charge policy and error kept from the answer it replaces (held: null for none); no income expected
 // there (a stay never disappoints a command: BotHuntEfficiency.disappoints). Held until the bot's next own
-// situation re-decides the spot.
+// situation re-decides the spot. command: the player decided it (isCommanded: a spot contest never makes it
+// avoid, B14).
 function commanded(held, spotId, at = 0) {
     return { spotId: String(spotId), shots: held?.shots !== false, income: 0, expected: 0, earning: Number(held?.earning) || 0,
-        error: Number(held?.error) || 0, at: Number(at) || 0 };
+        error: Number(held?.error) || 0, at: Number(at) || 0, command: true };
 }
+const isCommanded = held => held?.command === true;
 // The held answer's spot in a catalogue (no search; spots: the catalogue's profiles). null: no answer, none held
 // (spotId null), a spot the catalogue lost, or a bot in a party: its hunt is the party's (the party comparison
 // reads its solo copy).
@@ -211,4 +213,4 @@ function heldRoute(state, { spots = [], timestamp = Date.now(), price, mode = nu
 }
 
 module.exports = { search: timed(find), searchTotals: () => ({ ...searchCounts }), economicHunt, spotList,
-    answerOf, commanded, heldSpot, heldRoute, earnsOnRoute };
+    answerOf, commanded, isCommanded, heldSpot, heldRoute, earnsOnRoute };

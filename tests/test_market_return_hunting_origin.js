@@ -71,12 +71,12 @@ try {
     const heldElsewhere = { ...shopper, stats: { ...shopper.stats, earning: holding(money) } };
     assert.equal(Executor.finishMarketVisit(heldElsewhere, timestamp).stats.travel.spotId, money.id,
         'the held earning answer goes first, the saved spot only without one');
-    const away = { ...changed, stats: { ...changed.stats, capacityBackoffs: [{ spotId: source.id, untilStep: 12 }] } };
+    const away = { ...changed, stats: { ...changed.stats, spotBackoffs: [{ spotId: source.id, untilStep: 12 }] } };
     assert.equal(Executor.finishMarketVisit(away, timestamp).stats.travel.spotId, money.id,
         'with that spot excluded, the viable plan source');
 
     const excluded = { ...shopper, stats: { ...shopper.stats, earning: holding(money),
-        capacityBackoffs: [{ spotId: source.id, untilStep: 12 }] } };
+        spotBackoffs: [{ spotId: source.id, untilStep: 12 }] } };
     assert.equal(Executor.finishMarketVisit(excluded, timestamp).stats.travel.spotId, money.id,
         'an excluded (marked full) source is not chosen: the held earning answer is');
     // A spot that filled during the visit, with no mark yet, is met by the

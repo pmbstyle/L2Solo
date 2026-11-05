@@ -216,7 +216,7 @@ async function run() {
                 'a later step with the same inputs keeps the verdict');
             assert.deepEqual(ask({ ...bot, level: 36 }, '-5_16'), { spotId: '-5_16', judged: true }, 'a level up judges again');
             ask(bot, '-5_16');
-            const marked = with_({ capacityBackoffs: [{ spotId: '-5_16', untilStep: 3 }] });
+            const marked = with_({ spotBackoffs: [{ spotId: '-5_16', untilStep: 3 }] });
             assert.deepEqual(ask(marked, '-5_16'), { spotId: null, judged: false }, 'a mark on the spot refuses it at once');
             assert.deepEqual(ask({ ...marked, stats: { ...marked.stats, stepCount: 3 } }, '-5_16'), { spotId: '-5_16', judged: false },
                 'its expiry admits it again on the kept verdict');

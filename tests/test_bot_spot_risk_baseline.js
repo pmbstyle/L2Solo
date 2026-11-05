@@ -177,13 +177,12 @@ async function run() {
     const loaded = SpotRiskPolicy.marksInSteps({ stepCount: 3,
         spotBackoffs: [{ spotId: 'clock_spot', startedAt: 1, until: loadedAt + 5 * 60000 },
             { spotId: 'old_clock_spot', startedAt: 1, until: loadedAt - 1 }],
-        capacityBackoffs: [{ spotId: 'full_spot', until: loadedAt + 1 }],
         coldCompetition: { avoid: { spotId: 'avoided_spot', until: loadedAt + 10 * 60000 } } }, loadedAt);
     assert.deepStrictEqual([...SpotRiskPolicy.excludedSpotIdsForStates([{ stats: loaded }])].sort(),
-        ['avoided_spot', 'clock_spot', 'full_spot'], 'a loaded clock mark with time left still excludes its spot');
+        ['avoided_spot', 'clock_spot'], 'a loaded clock mark with time left still excludes its spot');
     assert.deepStrictEqual(loaded.spotBackoffs.map(entry => entry.spotId), ['clock_spot'], 'an expired clock mark is dropped');
     assert.deepStrictEqual([...SpotRiskPolicy.excludedSpotIdsForStates([{ stats: { ...loaded, stepCount: 3 + 5 } }])].sort(),
-        ['avoided_spot'], 'five minutes left last five steps, one second one step');
+        ['avoided_spot'], 'five minutes left last five steps');
     assert.deepStrictEqual([...SpotRiskPolicy.excludedSpotIdsForStates([{ stats: { ...loaded, stepCount: 3 + 10 } }])], [],
         'ten minutes of avoid last ten steps');
     // The exclusion version: the excluded set names it, and the first mark's
@@ -191,14 +190,14 @@ async function run() {
     // set re-reads on a mark added, removed or expired, and only then.
     const version = stats => SpotRiskPolicy.exclusionVersion({ stats });
     const held = version(loaded);
-    assert.deepStrictEqual(held, { revision: 'avoided_spot,clock_spot,full_spot', untilStep: 4 },
+    assert.deepStrictEqual(held, { revision: 'avoided_spot,clock_spot', untilStep: 8 },
         'the set and the step its first mark ends');
     assert.deepStrictEqual(version({ ...loaded }), held, 'unchanged marks: the same version');
-    assert.deepStrictEqual(version({ ...loaded, stepCount: 4 }), { revision: 'avoided_spot,clock_spot', untilStep: 8 },
+    assert.deepStrictEqual(version({ ...loaded, stepCount: 8 }), { revision: 'avoided_spot', untilStep: 13 },
         'at untilStep the mark ends and the revision moves');
-    const added = SpotRiskPolicy.withCapacityBackoff({ stats: loaded }, 'other_full_spot').stats;
+    const added = SpotRiskPolicy.withBackoff({ stats: loaded }, { spotId: 'other_spot', startedAt: 1 }).stats;
     assert.notEqual(version(added).revision, held.revision, 'a mark added moves it');
-    assert.equal(version({ ...loaded, capacityBackoffs: [] }).revision, 'avoided_spot,clock_spot', 'a mark removed moves it');
+    assert.equal(version({ ...loaded, spotBackoffs: [] }).revision, 'avoided_spot', 'a mark removed moves it');
     assert.deepStrictEqual(SpotRiskPolicy.exclusionVersion({}), { revision: '', untilStep: Infinity }, 'no marks: none ends');
     const reloaded = LifeState.acceptLifecycleRow({ characterId: 993, name: 'ClockMarkProbe', phase: 'cold',
         activity: 'hunting', spotId: 'other_spot', simulationRevision: 1, updatedAt: 1,

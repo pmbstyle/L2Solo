@@ -123,7 +123,7 @@ if (isMainThread) {
     assert.notEqual(progressOnly.leveling.spotId, progressOnly.earning.spotId, 'not the first by income');
 
     // Excluded: the bot's own risk exclusions (spots it was turned away from as full).
-    const turnedAway = { ...state, stats: { ...state.stats, capacityBackoffs: [...unfit].map(spotId => ({ spotId, untilStep: 50 })) } };
+    const turnedAway = { ...state, stats: { ...state.stats, spotBackoffs: [...unfit].map(spotId => ({ spotId, untilStep: 50 })) } };
     const plain = listed.map(id => spot(id));
     const excluded = build(turnedAway, plain);
     assert.equal(excluded.bestSpotId, fitting.earning.spotId, 'an excluded spot is no income pick');

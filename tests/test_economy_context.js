@@ -247,7 +247,7 @@ async function run() {
         const spotId = held.network.activity?.spotId, published = { ...native, stats: { ...native.stats, ...held.statsPacket } };
         assert(held.network.activity?.activity === 'hunting' && spotId, 'fixture: a hunting decision at a spot');
         assert.equal(Economy.forState(published, { timestamp: T }).plan, held.plan, 'fixture: the published decision holds');
-        const excluded = { ...published, stats: { ...published.stats, capacityBackoffs: [{ spotId, untilStep: 1 }] } };
+        const excluded = { ...published, stats: { ...published.stats, spotBackoffs: [{ spotId, untilStep: 1 }] } };
         assert.notEqual(Economy.forState(excluded, { timestamp: T }).plan, held.plan, 'a new exclusion refuses a same-key hunting decision');
     }
     // The held decision is refused by its facts, not by the bot's own past
@@ -822,7 +822,7 @@ async function run() {
         // the mark lives the bot's own steps, then holds again.
         const hunt = { activity: 'hunting', spotId: 'crowded' };
         const marked = stepCount => ({ ...base, stats: { ...base.stats, stepCount,
-            capacityBackoffs: [{ spotId: 'crowded', untilStep: 12 }] } });
+            spotBackoffs: [{ spotId: 'crowded', untilStep: 12 }] } });
         const excluded = check(marked(11), hunt);
         assert.equal(excluded.reason, 'check:excluded', 'a marked spot refuses its hunt');
         assert.deepEqual([...excluded.sections].sort(), ['occupation', 'sources'], 'an excluded spot re-weighs occupation and sources');
@@ -1186,7 +1186,7 @@ async function run() {
                 spoiler: [{ ...bot, stats: { ...bot.stats, coldCombat: { ...bot.stats.coldCombat, skills: [...bot.stats.coldCombat.skills, { selfId: 254, level: 1 }] } } }],
                 current: [{ ...bot, spotId: far.id }],
                 economic_hunt: [{ ...bot, stats: { ...bot.stats, wishFocus: ['resale:1864', 1, 1] } }],
-                excluded: [{ ...bot, stats: { ...bot.stats, capacityBackoffs: [{ spotId: near.id, untilStep: 1e9 }] } }],
+                excluded: [{ ...bot, stats: { ...bot.stats, spotBackoffs: [{ spotId: near.id, untilStep: 1e9 }] } }],
                 hour: [bot, { hourAdena: built.hourAdena + 1 }],
                 trip_rows: [bot, { trip: Trip.preparedReader(Trip.towns.map(() => [true, 0.5, 100]), { hourAdena: 100 }) }],
                 death_hours: [bot, {}, { deathHours: built.deathHours * 2 + 1 }],

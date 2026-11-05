@@ -2063,6 +2063,16 @@ function applySchemaMigrations() {
                 characterId INTEGER PRIMARY KEY REFERENCES bot_life_state(characterId) ON DELETE CASCADE,
                 tuple TEXT NOT NULL
             );
+        `)],
+        // The spot contest at arrival (SpotContest) replaced the "was full" marks
+        // (capacityBackoffs, a bot's and a party's) and a solo bot's competition
+        // avoid (its contest_lost spot mark now): no reader is left for either.
+        ['drop-capacity-backoffs-and-solo-avoid', () => connection.exec(`
+            UPDATE bot_life_state SET statsJson = json_remove(statsJson, '$.capacityBackoffs', '$.coldCompetition.avoid')
+            WHERE json_valid(statsJson) AND (json_type(statsJson, '$.capacityBackoffs') IS NOT NULL
+                OR json_type(statsJson, '$.coldCompetition.avoid') IS NOT NULL);
+            UPDATE bot_background_parties SET statsJson = json_remove(statsJson, '$.partySpotRisk.capacityBackoffs')
+            WHERE json_valid(statsJson) AND json_type(statsJson, '$.partySpotRisk.capacityBackoffs') IS NOT NULL;
         `)]
     ];
     const migrate = (apply, record) => {
