@@ -17,7 +17,7 @@ Scope: `Bot/Population`, `Bot/Travel`, `BotManager`, `BotSession`, worker protoc
 | `ColdSimulationWorker` | Worker entry; replaces `invoke` with a forbidden-module guard + stubs; holds `planLifecycle` and `projectResolve` inline | `handle` |
 | `ColdSimulationKernel` | Worker scheduler: due heap, `lifecycleKind` (module function), `resolveStep` (+ solo hunt window `huntWindow` / `ColdSoloWindow`), `resolvePartyStep`, `proposal_batch`, stall recovery `recoverStalled`, per-bot fault backoff/quarantine `fault` | `tick` |
 | `BackgroundResolver` / `BackgroundPartyResolver` | Pure cold fight/rest/travel round, solo / party; the spot table measures `resolveSolo` offline ([tables.md](tables.md): a change here needs a rebuild) | `resolveSolo`, `resolve` |
-| `ColdSimulationProtocol` | Message whitelists, envelope validation | `validateEnvelope` |
+| `ColdSimulationProtocol` | Message whitelists, envelope validation; the one JSON byte count every page and message limit reads (`byteLength`: exact UTF-8 size of the JSON, counted without building it) | `validateEnvelope`, `byteLength` |
 | `ColdTableChannel` / `TableMirror` | Versioned main → worker table replication (13 tables) | `TableChannel.register` |
 | `ColdSimulationOwner` + `ColdCommitQueue` | Commit of worker proposals: CAS on `simulation.revision`; `handoffToMain` for activation | `flushBatch` |
 | `HotActivation` / `Cooldown` | Solo cold → hot / hot → cold (both hand a party or PvP bot to the group lifecycles) | `activate`, `cooldown` |
