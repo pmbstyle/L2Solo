@@ -32,6 +32,9 @@ function seedDatabase() {
     ) VALUES (?, ?, ?, 20, 'hunting', 'cold', '{}', ?, ?)`);
     const insertPersona = seed.prepare(`INSERT INTO bot_personas(characterId, version, seed, primaryDrive, archetype, traitsJson,
         textCard, createdAt, updatedAt) VALUES (?, 2, 1, 'progression', 'steady_achiever', ?, '', 0, 0)`);
+    // A generated craft shop: a static service, outside the clan share cap's population.
+    insertCharacter.run(4100099, 'SliceOneShop', 1);
+    insertState.run(4100099, 'bot_pop_slice1', 'SliceOneShop', JSON.stringify({ generatedCold: true, craftShop: { id: 1 } }), 99);
     for (let index = 1; index <= 10; index += 1) {
         const id = 4100000 + index;
         const classId = index === 1 ? 4 : index === 2 ? 15 : index === 3 ? 21 : index === 4 ? 11 : index === 5 ? 54 : 1;
@@ -186,11 +189,38 @@ async function main() {
         });
         assert.strictEqual(blockedJoin.ok, false);
         assert.strictEqual(blockedJoin.code, 'join_population_limit');
+        assert.deepStrictEqual([blockedJoin.population, blockedJoin.maxBotMembers], [10, 7], 'the craft shop is not counted');
+
+        // Two more generated bots, first under a player party takeover: they
+        // count toward the population only once the takeover ends.
+        for (const id of [4100011, 4100012]) {
+            await Database.execute([`INSERT INTO characters(id, username, name, classId, race, level, maxHp, maxMp,
+                sex, face, hair, hairColor, locX, locY, locZ) VALUES (?, 'bot_pop_slice1', ?, 1, 0, 20, 500, 250, 0, 0, 0, 0, 83400, 148600, -3400)`,
+            [id, `SliceOne${id - 4100000}`]]);
+            await Database.execute([`INSERT INTO bot_life_state(characterId, accountName, characterName, level, activity, phase,
+                inventorySummary, statsJson, updatedAt) VALUES (?, 'bot_pop_slice1', ?, 20, 'hunting', 'cold', '{}', ?, 1)`,
+            [id, `SliceOne${id - 4100000}`, JSON.stringify({ generatedCold: true, playerPartyTakeover: { playerId: 1, partyId: 'p1' } })]]);
+        }
+        const join = (characterId) => Database.joinAutonomousClan({
+            clanId: created.clanId,
+            characterId,
+            memberLimit: ClanRules.memberLimit(0),
+            maxBotMemberShare: 0.70
+        });
+        const takenOver = await join(freeIds[2]);
+        assert.deepStrictEqual([takenOver.code, takenOver.population], ['join_population_limit', 10],
+            'bots under a player party takeover are outside the population');
+        await Database.execute(['UPDATE bot_life_state SET statsJson = ? WHERE characterId IN (4100011, 4100012)',
+            [JSON.stringify({ generatedCold: true })]]);
+        assert.strictEqual((await join(freeIds[2])).ok, true, 'the released bots raise the cap to 8 of 12');
+        const blockedAgain = await join(freeIds[3]);
+        assert.deepStrictEqual([blockedAgain.code, blockedAgain.population, blockedAgain.maxBotMembers],
+            ['join_population_limit', 12, 8]);
 
         const [updatedState] = await Database.execute(['SELECT stateJson FROM clan_simulation_clans WHERE clanId = ?', [created.clanId]]);
-        assert.deepStrictEqual(JSON.parse(updatedState.stateJson).memberIds, [...initialMemberIds, freeIds[0], freeIds[1]].sort((a, b) => a - b));
+        assert.deepStrictEqual(JSON.parse(updatedState.stateJson).memberIds, [...initialMemberIds, freeIds[0], freeIds[1], freeIds[2]].sort((a, b) => a - b));
         assert.strictEqual(await Database.isAutonomousBotMember(freeIds[0], created.clanId), true);
-        assert.strictEqual(await Database.isAutonomousBotMember(freeIds[2], created.clanId), false);
+        assert.strictEqual(await Database.isAutonomousBotMember(freeIds[3], created.clanId), false);
 
         await ClanService.reload();
         const actor = {

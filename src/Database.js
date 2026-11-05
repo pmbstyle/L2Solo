@@ -2277,13 +2277,12 @@ function generatedBotRow(row = {}) {
     return generated && !staticService;
 }
 
+// The clan share cap counts the generated bots, and those in a clan, from the
+// trigger-kept party candidate flag, not from every bot's stats. Our choice: a
+// bot under a player party takeover counts in neither number while it lasts.
 function botPopulationUnsafe() {
-    return one(`SELECT
-        COUNT(DISTINCT c.id) AS population,
-        COUNT(DISTINCT CASE WHEN c.clanId != 0 THEN c.id END) AS botMembers
-        FROM characters c
-        LEFT JOIN bot_life_state life ON life.characterId = c.id
-        WHERE ${GENERATED_BOT_FILTER}`);
+    return one(`SELECT COUNT(*) AS population, COUNT(*) FILTER (WHERE clanId != 0) AS botMembers
+        FROM bot_party_candidate_projection WHERE ordinaryEligible = 1`);
 }
 
 function executeReadAutonomousBotMember(characterId, clanId) {

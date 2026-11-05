@@ -19,6 +19,8 @@ async function character(id, username = 'bot_pop_names', clanId = 0) {
         (id, username, name, clanId, classId, race, level, maxHp, maxMp, sex, face, hair, hairColor, locX, locY, locZ)
         VALUES (?, ?, ?, ?, 4, 0, 40, 500, 250, 0, 0, 0, 0, 100, 100, 0)`,
     [id, username, `RenamedBot${id}`, clanId]);
+    if (username.startsWith('bot_')) await query(`INSERT INTO bot_life_state(characterId, accountName, characterName, level, statsJson)
+        VALUES (?, ?, ?, 40, '{}')`, [id, username, `RenamedBot${id}`]);
 }
 
 const goal = { type: 'equipment', target: { memberId: 1, itemId: 78 }, status: 'active' };

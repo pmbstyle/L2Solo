@@ -26,6 +26,11 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
   SQLITE_CONSTRAINT) drops that patch, any other fault puts it back for the next tick; each is counted (FailureLog).
 - **History DB:** second file `<world>.history.sqlite`; world transactions write `history_outbox`, `HistoryWorker`
   moves rows, main deletes them; retention in `HistoryStore`.
+- **Party candidate projection** `bot_party_candidate_projection` (`PartyCandidateProjection`): one row per life row,
+  kept by triggers on the life row (stats, account, level, phase, party, activity, spot) and the character (username,
+  class, clan); `ordinaryEligible` = a generated bot, not a static craft service, not under a player party takeover.
+  Read by party recruitment, the clan candidate trigger, clan recruitment rows, the clan raid roster, clan equipment
+  and the clan share cap (`botPopulationUnsafe`), instead of parsing every bot's stats.
 - **Journals:** `EconomyJournal` (TEMP triggers sum adena/item flow), `PvpJournal`; one outbox row per flush.
 - **WAL checkpoints:** `DatabaseCheckpointCoordinator` + worker (≥ 4 MB, every 5 s); the WAL truncate
   (`PopulationService.runAdaptiveWalReset`) is tried when a passive one finishes (`Database.onCheckpoint`, limits.md),
