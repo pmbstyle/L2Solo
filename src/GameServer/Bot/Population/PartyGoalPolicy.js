@@ -6,6 +6,7 @@ const CraftMaterialParty = require('./CraftMaterialParty');
 const ColdEconomyDecision = require('./ColdEconomyDecision');
 const Packet = require('../Economy/StatsPacket');
 const Rewards = require('../Economy/SpotRewardExpectation');
+const WalkBack = require('../Economy/WalkBack');
 const { fnv1a32 } = require('../Fnv1a');
 
 const positive = value => Math.max(0, Number(value) || 0);
@@ -184,11 +185,18 @@ function formingHold(inputsOf, site) {
 
 // What the forming comparison reads of one member (PartyIncomeComparison.compare
 // and prepare; participation when no comparison applies). Exact: level, class,
-// kit fact (gear, skills, craft, the karma flip), spot, the position its trips
-// run from (a cold member moves only on its trips), whether it can sell a buff,
-// its request and gear plan, the focus and its cash, survival reserve, workshop
-// quote, planned potion, its party samples at this spot (any sub-roster), the
-// solo side's search (its version: the earning hold's renewal or its own).
+// kit fact (gear, skills, craft, the karma flip), spot, whether it can sell a
+// buff, its gear plan's next step as a goal reads it (goalReads; also a payer's,
+// whose delivery another member times). A participant: its request's priority,
+// persona and roll seed. A comparison: its request as a goal (a material need
+// as its agreement holds it), the focused gear
+// and the cash, survival reserve, workshop quote, planned potion, its party
+// samples at the grounds (any sub-roster), the solo side's answer (its spot, the
+// earning and the row's income and kills soloRoute reads: the same whichever
+// search gave it, so a renewal of the owner's hold to the same answer keeps the
+// verdict), the solo drop's hours for its goal (soloGoalHours: they read its
+// own samples, prices and recovery), and its position as its trips read it: the
+// hours to the solo spot and to each ground (WalkBack.tripHours).
 // The fight's moment by what the matchups and buff offers read of it: the
 // shot its prices name and the kind it loads (DecisionSections.shotInputs; none
 // once the charges end), alive
@@ -199,8 +207,10 @@ function formingHold(inputsOf, site) {
 // heal sustain); the night is the roster's (formingVerdict). By the bot's income
 // error (drift; debt.md 23): the wallet and the time on the spot; a material
 // roster's wallets exactly, as its reviews carry the hours they give.
+const goalReads = row => JSON.stringify(row ? [row.spotId ?? null, row.npcId ?? null, row.itemId ?? null, row.strategy ?? null,
+    row.sourceKind ?? null, row.kind ?? null, row.amount ?? null] : null);
 function verdictInputs(member, context, drift) {
-    const stats = member.stats || {}, plan = stats.equipmentPlan, id = Number(member.characterId);
+    const stats = member.stats || {}, id = Number(member.characterId);
     const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
     const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
     const Offer = invoke('GameServer/Bot/Economy/ColdBuffOffer');
@@ -215,24 +225,31 @@ function verdictInputs(member, context, drift) {
             .map(skill => `${skill.fetchSelfId()}:${skill.fetchLevel()}`).join('+')).join('/');
     const summoner = invoke('GameServer/Bot/AI/BotRoles').isSummoner({ classId, characterId: id }) || !!stats.coldCombat?.summon;
     const summon = stats.coldCombat?.summon;
-    const parts = [id, member.level, classId, member.spotId, member.loc?.locX, member.loc?.locY, Sections.kit(member), economic,
+    const parts = [id, member.level, classId, member.spotId, Sections.kit(member), economic,
         Offer.available(member), Number(member.vitals?.hp === 0 || member.activity === 'dead'), running, sold,
         Sections.shotInputs(member, timestamp).join(':'),
         summoner ? [member.vitals?.mp, !!(summon?.active && Number(summon.hp ?? summon.maxHp) > 0 && summon.expiresAt > timestamp),
             Object.entries(stats.coldCombat?.cooldowns || {}).filter(([, until]) => Number(until) > timestamp).map(([skill]) => skill).sort().join('+')].join(':') : '',
-        JSON.stringify(stats.partyRequest ?? null), plan?.status, plan?.strategy, JSON.stringify(plan?.next ?? null)];
+        goalReads(stats.equipmentPlan?.next)];
     if (!economic) {
-        // participation: the persona and its roll's seed (decide).
-        parts.push(JSON.stringify(invoke('GameServer/Bot/AI/BotPersona').of(member)?.traits || {}),
+        // participation: the priority (formingMembers), the persona and its roll's seed (decide).
+        parts.push(stats.partyRequest?.priority, JSON.stringify(invoke('GameServer/Bot/AI/BotPersona').of(member)?.traits || {}),
             stats.partyRequest?.requestedAt || member.spotId || member.updatedAt);
         return parts.join(',');
     }
-    const side = PartyIncomeComparison.soloChoice(member, context.spots, timestamp);
+    const side = PartyIncomeComparison.soloChoice(member, context.spots, timestamp), route = side.route;
     context.solo.set(id, side);
+    const trip = spot => WalkBack.tripHours(member.loc, spot, member, context.spots);
+    // As compare times it: the member first (a material agreement holds the first members' needs).
+    const own = context.material ? [member, ...context.members.filter(peer => peer !== member)] : context.members;
+    const aim = PartyIncomeComparison.goalOf(member, own, context.requested,
+        context.material ? CraftMaterialParty.agreement(own, context.requested) : null);
     const workshop = invoke('GameServer/Bot/Economy/EconomyContext').craftIncome(member);
-    // Every roster's samples at the spot: the second pass prepares a sub-roster.
-    const samples = Hunt.sampledRows(member, timestamp, 'party').filter(row => String(row.spotId) === String(context.spotId));
-    parts.push(side.version, stats.wishFocus?.[0], stats.wishFocus?.[2],
+    // Every roster's samples at the grounds: the second pass prepares a sub-roster.
+    const samples = Hunt.sampledRows(member, timestamp, 'party').filter(row => context.grounds.ids.has(String(row.spotId)));
+    parts.push(route ? [route.spot.id, route.earning, route.row.income, route.row.kills, trip(route.spot)].join(':') : '',
+        context.grounds.spots.map(trip).join(':'), PartyIncomeComparison.soloGoalHours(member, side, aim, context.spots, timestamp),
+        goalReads(stats.partyRequest), JSON.stringify(aim.materialGoal ?? null), PartyIncomeComparison.focusedItem(member), stats.wishFocus?.[2],
         require('../Economy/StatsPacket').survivalReserve(stats.money),
         workshop?.known, workshop?.incomePerHour, workshop?.cycleHours,
         invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(member)?.selfId,
@@ -251,14 +268,19 @@ const verdicts = formingHold(verdictInputs, 'verdict');
 function formingVerdict(members, requested, { spots, timestamp = Date.now() } = {}) {
     if (verdictFree(requested)) return judgeForming(members, requested, { spots, timestamp });
     spots ||= invoke('GameServer/Bot/Population/SpotProfiles').ensure();
-    const material = CraftMaterialParty.isObjective(requested)
-        ? CraftMaterialParty.needs(members, requested, CraftMaterialParty.agreement(members, requested)) : null;
-    const context = { spots, timestamp, members, material: !!material, solo: new Map(),
-        roster: PartyIncomeComparison.rosterKey(members), spotId: requested?.spotId || members[0]?.spotId };
+    const agreement = CraftMaterialParty.isObjective(requested) ? CraftMaterialParty.agreement(members, requested) : null;
+    const material = agreement ? CraftMaterialParty.needs(members, requested, agreement) : null;
+    // The grounds a forecast reads (PartyIncomeComparison.prepare: the objective's
+    // spot, else the first member's of the roster or of a sub-roster).
+    const grounds = requested?.spotId ? [requested.spotId] : [...new Set(members.map(member => member.spotId).filter(Boolean))];
+    const context = { spots, timestamp, members, requested, material: !!material, solo: new Map(),
+        grounds: { ids: new Set(grounds.map(String)), spots: grounds.map(spotId => invoke('GameServer/Bot/AI/SpotIndex').spotById(spots, spotId)) } };
     // The roster's own inputs: the requested objective (a material one with its
-    // members' needs) and the night the fight profiles read.
+    // members' needs), the night the fight profiles read and the spot table's
+    // revision (the forecast's table rows and rewards).
     const read = verdicts.inputs(members, { requested, material,
-        night: invoke('GameServer/World/GameTime').isNight(timestamp) }, context);
+        night: invoke('GameServer/World/GameTime').isNight(timestamp),
+        table: invoke('GameServer/Bot/AI/SpotValueTable').revision() }, context);
     return verdicts.read(read, timestamp)
         || verdicts.write(read, judgeForming(members, requested, { spots, timestamp, solo: context.solo }));
 }

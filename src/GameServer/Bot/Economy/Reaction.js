@@ -76,6 +76,9 @@ const LINKS = Object.freeze({
     funding: link(['funding'], WORK | VISIT),
     occupation: link(['occupation'], 0),
     riskDeaths: link(['combat', 'occupation'], 0),
+    // The death recovery's level penalty moved (raised, or lifted by clean wins):
+    // the ground the bot may fight on moved, as a death moves it.
+    recovery: link(['combat', 'occupation'], 0),
     supply: link(['supply'], FIELD | VISIT),
     bag: link(STOCK, FIELD | VISIT),
     stores: link(STOCK, WORK | VISIT),

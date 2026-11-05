@@ -20,35 +20,96 @@ const TradeIntent = require('../Economy/TradeIntent');
 const Shots = require('../Economy/ShotCraftPolicy');
 const MarketPricing = require('../Economy/MarketPricing');
 const PriceBelief = require('../Economy/PriceBelief');
+const Craft = require('../Economy/WealthCraftPolicy');
 
 // Arrival and recovery are natural decision points; ordinary counts/XP/wallet
 // changes do not schedule main-thread economic work. options.buyOrderEscrow:
-// the adena the bot's buy orders hold (the worker's board sum).
+// the adena the bot's buy orders hold (the worker's board sum). edges reads
+// a round's two states (the hunt window's end); edgesSince reads the facts of
+// the bot's last action ask (actionBaseline) against the step's projection.
 function edges(before, after, options = {}) {
+    const oldBag = before?.inventory || {};
+    const bits = factEdges({ amount: id => Number(oldBag[id]?.amount || 0), money: Funding.moneyReached(before, options.buyOrderEscrow),
+        arrived: () => before?.activity === 'traveling', level: Number(before?.level), dead: before?.activity === 'dead' }, after, options);
+    // Rest blocks actions, so stock/loot changes may have passed without
+    // preparation. Reconsider them once the bot can act again. A goal change
+    // is the decision point's (ColdEconomyDecision.refusal 'goal').
+    return bits >= 0 && after.activity === 'hunting' && before?.activity === 'resting' ? bits | 8 : Math.max(0, bits);
+}
+// The edges both readers share; -1: none can fire (a rest, a trip, a party member).
+function factEdges(was, after, options) {
     if (!after || ['resting', 'traveling'].includes(after.activity)
-        || after.party?.partyId || after.partyId) return 0;
-    const oldBag = before?.inventory || {}, bag = after.inventory || {};
+        || after.party?.partyId || after.partyId) return -1;
+    const bag = after.inventory || {};
     let bits = 0;
     for (const [key, row] of Object.entries(bag)) {
         const id = Number(row.selfId || key);
-        if (id !== 57 && Number(row.amount) > 0 && !(Number(oldBag[id]?.amount) > 0)) { bits |= 1; break; }
+        if (id !== 57 && Number(row.amount) > 0 && !(was.amount(id) > 0)) { bits |= 1; break; }
     }
     const stockFor = options.stockFor || EconomyContext.stockFor;
     for (const kind of ['shots', 'potions']) {
         const stock = stockFor(after, kind);
         const id = Number(stock?.itemId), keep = Number(stock?.keep ?? stock?.target);
         if (!(id > 0) || !(keep > 0)) continue;
-        if ((Number(oldBag[id]?.amount || 0) >= keep) !== (Number(bag[id]?.amount || 0) >= keep)) bits |= 2;
+        if ((was.amount(id) >= keep) !== (Number(bag[id]?.amount || 0) >= keep)) bits |= 2;
     }
-    if (!Funding.moneyReached(before, options.buyOrderEscrow)
-        && Funding.moneyReached(after, options.buyOrderEscrow)) bits |= 4;
-    if (after.activity === 'shopping' && before?.activity === 'traveling') bits |= 8;
-    // Rest blocks actions, so stock/loot changes may have passed without
-    // preparation. Reconsider them once the bot can act again. A goal change
-    // is the decision point's (ColdEconomyDecision.refusal 'goal').
-    if (after.activity === 'hunting' && before?.activity === 'resting') bits |= 8;
-    if (Number(after.level) > Number(before?.level)) bits |= 16;
-    if (after.activity === 'dead' && before?.activity !== 'dead') bits |= 32;
+    if (!was.money && Funding.moneyReached(after, options.buyOrderEscrow)) bits |= 4;
+    if (after.activity === 'shopping' && was.arrived(after)) bits |= 8;
+    if (Number(after.level) > was.level) bits |= 16;
+    if (after.activity === 'dead' && !was.dead) bits |= 32;
+    return bits;
+}
+// The facts of the bot's action ask that its plan reads and that have an
+// event: each bag item's amount, whether the money reached the first unfunded
+// wish, the town it shops in, its level, a death, its MP (as the band its
+// craft checks answer alike on, WealthCraftPolicy.craftMpBand) and the trades
+// on its own board lines (each line's fills). Not in it: the clock (the plan
+// reads it directly: SurvivalFloor's cooldowns and sale retry, the errands'
+// expiry, price beliefs), the quotes of others on what it reads (their item
+// revisions move nearly every step), a mana bot's MP (SurvivalFloor's cast
+// costs follow the cooldowns) and an own line sold out (it leaves the board,
+// as one the plan withdrew): heard at the bot's next edge or decision.
+// Compact: sorted [id, amount] and [lineId, fills] pairs.
+function actionBaseline(state, { buyOrderEscrow = 0, ownLines = [] } = {}) {
+    const bag = [];
+    for (const [key, row] of Object.entries(state.inventory || {})) {
+        const id = Number(row.selfId || key), amount = Number(row.amount) || 0;
+        if (id !== 57 && amount > 0) bag.push([id, amount]);
+    }
+    return { bag: pairsOf(bag), money: Funding.moneyReached(state, buyOrderEscrow),
+        shop: state.activity === 'shopping' ? String(state.currentRegion) : null, level: Number(state.level),
+        dead: state.activity === 'dead', mp: Number(state.vitals?.mp) || 0,
+        fills: pairsOf(ownLines.map(line => [Number(line.lineId), Number(line.fills) || 0])) };
+}
+function pairsOf(rows) {
+    rows.sort((a, b) => a[0] - b[0]);
+    const out = new Float64Array(rows.length * 2);
+    rows.forEach(([id, value], at) => { out[2 * at] = id; out[2 * at + 1] = value; });
+    return out;
+}
+// The pair's value for id, undefined when it has none.
+function pairValue(pairs, id) {
+    let low = 0, high = pairs.length / 2 - 1;
+    while (low <= high) {
+        const mid = (low + high) >> 1, at = pairs[2 * mid];
+        if (at === id) return pairs[2 * mid + 1];
+        if (at < id) low = mid + 1; else high = mid - 1;
+    }
+    return undefined;
+}
+// The bits of the facts that moved since the baseline: 1 new loot, 2 a kit
+// stock threshold, 4 the money reached, 8 a shopping town reached, 16 a level,
+// 32 a death, 64 the craft MP band, 128 a trade on an own line.
+// options.ownLines: the bot's board lines now.
+function edgesSince(baseline, after, options = {}) {
+    let bits = factEdges({ amount: id => pairValue(baseline.bag, Number(id)) || 0, money: baseline.money,
+        arrived: now => baseline.shop !== String(now.currentRegion), level: baseline.level, dead: baseline.dead }, after, options);
+    if (bits < 0) return 0;
+    if (!Craft.sameCraftMp(invoke('GameServer/Bot/Economy/CraftEligibility').craftLevelFor(after), baseline.mp, after.vitals?.mp)) bits |= 64;
+    // A line posted since the ask counts its fills from none.
+    for (const line of options.ownLines || []) {
+        if ((Number(line.fills) || 0) > (pairValue(baseline.fills, Number(line.lineId)) ?? 0)) { bits |= 128; break; }
+    }
     return bits;
 }
 
@@ -299,4 +360,4 @@ function decideShot(state, economy, options = {}) {
     // a recipe/gear/quote scan by falling through this publication adapter.
     return { unknown: true };
 }
-module.exports = { edges, acts, decide, prepare, fit, buyBatch, decideShot, MAX_BYTES, MAX_SHOT_BYTES, MAX_PLAN_PAYLOAD_BYTES, MAX_SHOT_PAYLOAD_BYTES };
+module.exports = { edges, edgesSince, actionBaseline, acts, decide, prepare, fit, buyBatch, decideShot, MAX_BYTES, MAX_SHOT_BYTES, MAX_PLAN_PAYLOAD_BYTES, MAX_SHOT_PAYLOAD_BYTES };

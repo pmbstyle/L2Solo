@@ -578,7 +578,8 @@ async function run() {
     // A far bot's card with a selling leaf holds: its check reads the sale list
     // over the basics, and the card's view gets the same economy as basics
     // built anew on that state (one held-spot read for both); a moved bag gives
-    // the bag's answer; after the hold's window the check's search renews the
+    // the bag's answer; a later check with nothing moved searches nothing; an
+    // input that moved (the catalog period) makes the check's search renew the
     // hold and the view reads its answer as basics built after it do.
     {
         const Card = invoke('GameServer/Bot/Population/ColdEconomyDecision');
@@ -623,9 +624,14 @@ async function run() {
             assert.deepEqual(same.economy, same.fresh, 'the view\'s economy is the basics\' on that state');
             const moved = refresh({ ...published, inventory: { ...published.inventory, 1060: { selfId: 1060, amount: 7, stackable: true } } }, T);
             assert.deepEqual(moved.economy, moved.fresh, 'a moved bag gives the bag\'s answer');
-            const later = refresh(published, T + 31 * invoke('GameServer/World/GameTime').GAME_MINUTE_MS);
-            assert.equal(later.reads.renewed, 1, 'fixture: the window\'s end searches in the check');
-            assert.equal(later.reads.window, 1, 'fixture: by the window');
+            const minute = invoke('GameServer/World/GameTime').GAME_MINUTE_MS;
+            const quiet = refresh(published, T + 31 * minute);
+            assert.equal(reads(quiet.reads), 1, 'a later check with nothing moved reads the held spot');
+            assert.equal(Object.keys(quiet.reads).length, 1, 'with no search');
+            invoke('GameServer/Bot/AI/SpotValueTable').useFile();
+            const later = refresh(published, T + 32 * minute);
+            assert.equal(later.reads.renewed, 1, 'fixture: a turned catalog searches in the check');
+            assert.equal(later.reads['event:spawns'], 1, 'fixture: by its input');
             assert.equal(reads(later.reads), 1, 'the view reads the renewed hold anew');
             assert.deepEqual(later.economy, later.fresh, 'the view\'s economy is the renewed hold\'s');
         } finally {
@@ -1124,6 +1130,239 @@ async function run() {
     const fromBuilds = Economy.forGroup({ id: 'proposal:44', wallet: 100, playedHours: 4 }, [base, sampled]);
     assert.equal(groupDigest(fromHits), groupDigest(fromBuilds), 'a group of held member reviews equals one of fresh builds');
     console.log('PASS real member providers reuse one group engine / purse');
+
+    // A source fact kept with the held build (KeptSourceFacts) is served while
+    // every input it read is the same, and answers as its fresh walk: walked
+    // again on each input that moved, never on anything else.
+    {
+        const Providers = invoke('GameServer/Bot/Economy/WishProviders');
+        const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+        const SpotEconomics = invoke('GameServer/Bot/Economy/SpotEconomics');
+        const Trip = invoke('GameServer/Bot/Economy/EconomicTrip');
+        const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
+        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+        // Two fields of Excuro (level 41, drops Cokes), the bot on the near one.
+        const field = (id, center) => ({ id, avgLevel: 41, minLevel: 41, maxLevel: 41, levelCounts: { 41: 4 }, capacity: 9, density: 4,
+            center, npcEntries: [{ selfId: 214, count: 4 }], npcSelfIds: [214] });
+        const near = field('kept-near', { locX: 82000, locY: 148000, locZ: -3500 });
+        const far = field('kept-far', { locX: 17000, locY: 170000, locZ: -3500 });
+        const keptSpots = [...spots, near, far], cokes = 1879;
+        const walk = Planner.sourceFacts;
+        let walks = 0, walked = null;
+        Planner.sourceFacts = function (...args) { walks++; walked?.add(Number(args[1])); return walk.apply(this, args); };
+        try {
+            const T = Date.now();
+            let bot = { ...equippedFixture(990031, 2, 44, 20000), spotId: near.id, loc: near.center };
+            bot.stats = { ...bot.stats, coldCombat: Profile.legacySnapshot(bot, Profile.skillRecordsFromTree(2, 44), T) };
+            for (let n = 0; n < 3; n++) for (const spot of [near, far]) bot = { ...bot, stats: { ...bot.stats,
+                huntEfficiency: Hunt.record(bot, { spotId: spot.id, timestamp: T, cycleMs: 60000, adena: 900, costs: 50, exp: 300, kills: 10 }) } };
+            const built = Economy.forState(bot, { timestamp: T, spots: keptSpots });
+            // The build's spot value reader, made again from these options; `read`: the spots any fact read.
+            const valueOptions = { timestamp: T, persona: built.persona, price: built.price, deathHours: built.deathHours,
+                hunt: built.hunt?.source === 'route' ? undefined : built.hunt };
+            const read = new Set();
+            const spotValueOf = (state, options = {}) => {
+                const reader = SpotEconomics.create(state, { ...valueOptions, ...options });
+                return Object.assign(spot => { read.add(spot); return reader(spot); }, { inputs: reader.inputs, hunters: reader.hunters });
+            };
+            // A stock root of Cokes: its fact walks both fields.
+            const stock = kind => kind === 'shots' ? { ...built.stock('shots'), itemId: cokes, missing: 3, survivalMissing: 0,
+                unitPrice: 1000, benefitPerUnit: 1, target: 3, current: 0 } : built.stock(kind);
+            const contextOf = (state, extra = {}, options = {}) => ({ ...built, stock, spotValue: spotValueOf(state, options), ...extra });
+            // walks: the held build's items walked again (an item it did not ask has no fact to keep).
+            let asked = null;
+            const project = (state, ctx, kept = null, deps = {}) => {
+                walked = new Set();
+                const projection = Providers.build(state, ctx, { spots: keptSpots, sourceGround: kept?.sourceGround ?? null,
+                    keptFacts: kept?.keptFacts ?? null, ...deps });
+                const again = [...walked].filter(id => !asked || asked.has(id));
+                walked = null;
+                return { projection, walks: again.length, items: again };
+            };
+            const answer = ({ projection }) => JSON.stringify({ nodes: projection.nodes, roots: projection.roots, values: [...projection.values],
+                moneyPaths: projection.moneyPaths, horizon: projection.horizon, admission: projection.admission });
+            const first = project(bot, contextOf(bot));
+            assert(first.items.includes(cokes) && first.projection.keptFacts, 'fixture: the build walks the Cokes fact and keeps it');
+            assert(read.has(near) && read.has(far), 'fixture: the fact read both fields');
+            assert(first.projection.nodes.some(node => node.key === `item:${cokes}` && node.paths.some(path => path.kind === 'drop' && path.spotId === near.id)),
+                'fixture: Cokes drops on the near field');
+            asked = new Set(first.items);
+            // A held build of the bot as it was: its ground cells and its facts.
+            const held = () => project(bot, contextOf(bot)).projection;
+            // The same rebuild walking every fact, on the same ground history.
+            const walkedOn = (state, ctx, deps = {}) => project(state, ctx, { sourceGround: held().sourceGround }, deps);
+            const same = project(bot, contextOf(bot), held());
+            assert.equal(same.walks, 0, 'the same inputs walk no source fact');
+            assert.equal(answer(same), answer(walkedOn(bot, contextOf(bot))), 'kept facts answer as walked ones');
+            assert.equal(answer(same), answer(first), 'and as the build that kept them');
+            // Anything a fact does not read keeps it: the wallet, a field no fact read.
+            const unread = keptSpots.find(spot => !read.has(spot));
+            for (const [name, state, ctx] of [['wallet', { ...bot, adena: bot.adena + 1e6 }, contextOf(bot, { wallet: 1e6 })],
+                ['crowd elsewhere', bot, contextOf(bot, {}, { spotHunters: (spot, who) => SpotProfiles.spotHunters(spot, who) + (spot === unread ? 5 : 0) })]])
+                assert.equal(project(state, ctx, held()).walks, 0, `${name}: kept`);
+            // Every input a fact reads walks it again, to the walked answer.
+            const moved = {
+                level: [{ ...bot, level: bot.level + 1 }],
+                readiness: [{ ...bot, inventory: {} }],
+                spoiler: [{ ...bot, stats: { ...bot.stats, coldCombat: { ...bot.stats.coldCombat, skills: [...bot.stats.coldCombat.skills, { selfId: 254, level: 1 }] } } }],
+                current: [{ ...bot, spotId: far.id }],
+                economic_hunt: [{ ...bot, stats: { ...bot.stats, wishFocus: ['resale:1864', 1, 1] } }],
+                excluded: [{ ...bot, stats: { ...bot.stats, capacityBackoffs: [{ spotId: near.id, untilStep: 1e9 }] } }],
+                hour: [bot, { hourAdena: built.hourAdena + 1 }],
+                trip_rows: [bot, { trip: Trip.preparedReader(Trip.towns.map(() => [true, 0.5, 100]), { hourAdena: 100 }) }],
+                death_hours: [bot, {}, { deathHours: built.deathHours * 2 + 1 }],
+                consumable_price: [bot, {}, { price: id => 3 * built.price(id) + 1 }],
+                money_weight: [{ ...bot, stats: { ...bot.stats, money: Packet.money({ hourAdena: 5000, moneyPrice: 3, survivalReserve: 0, firstUnfundedPrice: 0 }) } }],
+                samples: [{ ...bot, stats: { ...bot.stats, huntEfficiency: Hunt.record(bot, { spotId: far.id, timestamp: T, cycleMs: 30000, adena: 900, costs: 50, exp: 300, kills: 10 }) } }],
+                risk: [{ ...bot, stats: { ...bot.stats, frustration: 1 } }],
+                spot_risk: [{ ...bot, stats: { ...bot.stats, spotRisk: { spotId: near.id, windowFights: 10, windowDeaths: 5 } } }],
+                crowd: [bot, {}, { spotHunters: (spot, who) => SpotProfiles.spotHunters(spot, who) + (spot === near ? 5 : 0) }]
+            };
+            for (const [name, [state, extra = {}, options = {}]] of Object.entries(moved)) {
+                const rebuilt = project(state, contextOf(state, extra, options), held());
+                assert(rebuilt.items.includes(cokes), `${name}: walked again`);
+                assert.equal(answer(rebuilt), answer(walkedOn(state, contextOf(state, extra, options))), `${name}: as walked`);
+            }
+            // Another spot value table (a new file or rates) walks it again.
+            {
+                const before = held();
+                invoke('GameServer/Bot/AI/SpotValueTable').useFile();
+                const rebuilt = project(bot, contextOf(bot), before);
+                assert(rebuilt.items.includes(cokes), 'table: walked again');
+                assert.equal(answer(rebuilt), answer(walkedOn(bot, contextOf(bot))), 'table: as walked');
+            }
+            assert(project(bot, contextOf(bot), { ...held(), sourceGround: null }).items.includes(cokes), 'new ground cells: walked again');
+            assert(project(bot, contextOf(bot), held(), { spots: [...keptSpots] }).items.includes(cokes), 'another spot list: walked again');
+            // The build as a whole: a rebuild on kept facts decides, reads and
+            // proves as the same rebuild walking them (a trip reader that names
+            // no rows keeps none, with the same answers).
+            const rebuild = (deps = {}) => {
+                Economy.forget(bot.characterId);
+                let state = bot;
+                for (let round = 0; round < 3; round++) {
+                    const ids = new Set(), before = walks;
+                    const next = Economy.forState(state, { timestamp: T, spots: keptSpots, caller: 'step', ...(round === 2 ? deps : {}),
+                        onSourceRead: id => ids.add(id) });
+                    if (round === 2) return { next, ids: [...ids].sort((a, b) => a - b), walks: walks - before };
+                    state = { ...state, adena: state.adena + 1000, stats: { ...state.stats, ...next.statsPacket, wishDirty: Sections.sectionBit('money') } };
+                }
+            };
+            const rows = Trip.preparedReader([], { hourAdena: 0 });
+            const kept = rebuild(), fresh = rebuild({ tripCost: Object.assign(town => rows(town), { details: rows.details }) });
+            assert(fresh.walks > kept.walks, 'fixture: the rebuild kept facts the other walked');
+            const decision = ({ next }) => JSON.stringify({ queue: next.network.queue.map(wish => [wish.key, wish.funded, wish.price, wish.valueHours]),
+                focus: next.network.focus, activity: next.network.activity, packet: next.statsPacket, watch: next.watchList,
+                proof: { ...next.eventProof(), quantities: [...next.eventProof().quantities] } });
+            assert(kept.next.eventProof(), 'fixture: the rebuild has its event proof');
+            assert.equal(decision(kept), decision(fresh), 'the same decision and event proof');
+            assert.deepEqual(kept.ids, fresh.ids, 'the same read items');
+        } finally { Planner.sourceFacts = walk; Economy.forget(990031); }
+        console.log('PASS kept source facts: same inputs served, each moved input walked, same decision and proof');
+    }
+
+    // The gear candidates a review weighed are kept with the held build
+    // (KeptGearCandidates) and served while everything they read is the same:
+    // weighed again on each input that moved, never on anything else, and the
+    // build decides, reads and proves as the same build with nothing kept.
+    {
+        const Kept = invoke('GameServer/Bot/Economy/KeptGearCandidates');
+        const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+        const Recipes = invoke('GameServer/Items/C4RecipeItems');
+        // Weighing asks of each candidate whether the bot may take it up at
+        // its acquisition rank: whether the list was weighed.
+        const considerable = Planner.considerable;
+        let weighed = 0;
+        Planner.considerable = function (...args) { if (args.length === 4) weighed++; return considerable.apply(this, args); };
+        // An artisan at 45 after its earring and ring (crafted from Silver Mold, Gemstone C, ...).
+        const crafter = equippedFixture(990041, 56, 45, 1000000), gearBoard = new BoardIndex();
+        const T = Date.now(), frameRecipe = Recipes.resolveVariantsByProductId(1892)[0].recipeId;
+        const earringCounter = invoke('GameServer/Bot/Economy/MarketCounters').counterOf(852);
+        // [name, change, whether the list is weighed again]
+        const steps = [
+            ['same', {}, false],
+            ['wallet', { adena: 1 }, false],
+            // Lines and the bag of items no candidate is.
+            ['material line', { line: [1886, 900] }, false],
+            // The bot's own line on a candidate moves its lines, not its price.
+            ['own line', { line: [852, 900], owner: crafter.characterId }, false],
+            ['own line back', {}, false],
+            ['material bag', { bag: 2131 }, false],
+            ['workshop', { workshop: true }, false],
+            ['recipes', { recipes: [frameRecipe] }, false],
+            // A candidate's price, and a wallet across a candidate's price.
+            ['gear price', { line: [852, 4000] }, true],
+            // The held plan's price of it stands (the kept foundation's prices).
+            ['gear price back', {}, false],
+            // Trades on a candidate's counter move its price (the bot's error), not its lines.
+            ['gear trades', { trades: 40 }, true],
+            ['gear trades back', {}, true],
+            ['poor', { adena: -998000 }, true],
+            ['poor back', {}, true],
+            ['level', { level: 46 }, true]
+        ];
+        // The bot through every step, each a build after a money event; keep
+        // false: the same steps with nothing kept.
+        const walk = (keep, bot = crafter, path = steps) => {
+            Economy.forget(bot.characterId);
+            const session = Kept.session;
+            if (!keep) Kept.session = () => null;
+            const out = [];
+            try {
+                for (const [at, [name, change]] of [['first', {}], ...path].entries()) {
+                    for (const id of [...gearBoard.records.keys()]) gearBoard.remove(id);
+                    if (change.line) gearBoard.put({ id: 9100, ownerId: change.owner || 77, storeType: 1, custodyPolicy: 1, revision: 1, town: 'Giran',
+                        lines: [{ lineId: 1, selfId: change.line[0], count: 3, price: change.line[1] }] });
+                    const state = { ...bot, adena: bot.adena + at * 1000 + (change.adena || 0), level: change.level || bot.level,
+                        marketTrades: change.trades ? { [earringCounter]: change.trades } : undefined,
+                        inventory: change.bag ? { ...bot.inventory, [change.bag]: { selfId: change.bag, amount: 1 } } : bot.inventory,
+                        stats: { ...bot.stats, wishDirty: at ? Sections.sectionBit('money') : 0 } };
+                    const workshops = recipeId => change.workshop && recipeId === frameRecipe ? [{ characterId: 77, recipeId, price: 500,
+                        townName: 'Giran', loc: { locX: 81000, locY: 148000, locZ: -3500 }, capacityBatches: 5 }] : [];
+                    const ids = [];
+                    weighed = 0;
+                    const next = Economy.forState(state, { timestamp: T, spots, caller: 'step', fullReview: true, board: gearBoard, workshops,
+                        knowledgeEnabled: true, ...(change.recipes ? { knownRecipes: change.recipes } : {}), onSourceRead: id => ids.push(id) });
+                    out.push({ name, weighed, decision: JSON.stringify({ nodes: next.projection.nodes, roots: next.projection.roots,
+                        admission: next.projection.admission, queue: next.network.queue.map(wish => [wish.key, wish.funded, wish.price, wish.valueHours]),
+                        focus: next.network.focus, activity: next.network.activity, packet: next.statsPacket, watch: next.watchList,
+                        proof: { ...next.eventProof(), quantities: [...next.eventProof().quantities] }, ids },
+                    (key, value) => typeof value === 'number' && !Number.isFinite(value) ? String(value) : value) });
+                }
+            } finally { Kept.session = session; Economy.forget(bot.characterId); }
+            return out;
+        };
+        const check = (bot, path) => {
+            const kept = walk(true, bot, path), fresh = walk(false, bot, path);
+            assert(fresh.every(step => step.weighed > 0), 'fixture: with nothing kept every build weighs its gear candidates');
+            for (const [at, [name, , again]] of path.entries())
+                assert.equal(kept[at + 1].weighed > 0, again, `${name}: gear candidates ${again ? 'weighed again' : 'kept'}`);
+            for (const [at, step] of kept.entries()) assert.equal(step.decision, fresh[at].decision, `${step.name}: the same decision, reads and event proof`);
+        };
+        try {
+            check(crafter, steps);
+            // A bot at 30 weighs its C pieces for the kit it prepares (level 40):
+            // its wallet keeps them, a C piece in its bag (worn in the
+            // preparation) weighs them again.
+            // Its D kit worn (paired jewellery on both sides), so no gap is required.
+            const preparing = { ...equippedFixture(990042, 1, 30, 300000), inventory: {} };
+            for (const entry of invoke('GameServer/Bot/AI/BotGear').planFor({ classId: 1, level: 20 }).items) {
+                const row = preparing.inventory[entry.selfId] ||= { selfId: Number(entry.selfId), amount: 0, equipped: true, equippedCount: 0,
+                    equippedSlots: [], slot: Number(entry.slot), enchant: 0 };
+                row.amount++; row.equippedCount++; row.equippedSlots.push(Number(entry.slot));
+            }
+            const Progression = invoke('GameServer/Bot/AI/PersonalGearProgression');
+            assert(Progression.preparation(preparing), 'fixture: the bot prepares its C kit');
+            const future = Progression.preparation(preparing);
+            const piece = [...ProvidersForKit.gearCandidates(future).values()].flat().find(item => item.etc?.rank === 'c'
+                && !preparing.inventory[item.selfId] && Progression.preparation({ ...preparing,
+                    inventory: { ...preparing.inventory, [item.selfId]: { selfId: Number(item.selfId), amount: 1 } } })?.inventory[item.selfId]?.equippedCount > 0);
+            assert(piece, 'fixture: a C piece the preparation would wear');
+            check(preparing, [['same', {}, false], ['wallet', { adena: 1 }, false], ['C piece in bag', { bag: Number(piece.selfId) }, true],
+                ['C piece back', {}, true]]);
+        } finally { Planner.considerable = considerable; }
+        console.log('PASS kept gear candidates: same inputs served, each moved input weighed again, same decision, reads and proof');
+    }
 
     const Catalog = invoke('GameServer/Skills/SkillBookCatalog');
     const Providers = invoke('GameServer/Bot/Economy/WishProviders');

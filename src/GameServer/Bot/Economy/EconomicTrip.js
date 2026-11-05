@@ -208,6 +208,8 @@ function preparedReader(rows, { hourAdena } = {}) {
             ? Math.round(value.hours * hourAdena) + value.fees : Infinity;
     };
     cost.details = row;
+    // Its one input: a holder of what was made of its rows compares them.
+    cost.rows = rows;
     return cost;
 }
 function reader(state, { hourAdena, origin = null } = {}) {

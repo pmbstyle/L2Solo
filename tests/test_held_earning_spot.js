@@ -1,10 +1,12 @@
 'use strict';
 // Decision 10-30: a bot keeps its earning spot. A held build with a valid event
-// proof: inside the window nothing searches, on any path; the window's end and
-// a goal change that can change the answer (the focus into or out of gear and
-// resale, the money weight past the range its answer stands over) ask one
-// search on any path, the same answer renews in place, a new one
-// rebuilds; a search that found nothing is kept like a route.
+// proof: while no input of the search moved nothing searches, on any path,
+// however long; an input that moved (a version, the observation bit, a goal
+// change that can change the answer: the focus into or out of gear and
+// resale, the money weight past the range its answer stands over; the crowd
+// past its key; the consumable prices past their ranges) asks one search on
+// any path, the same answer renews in place,
+// a new one rebuilds; a search that found nothing is kept like a route.
 const assert = require('node:assert/strict');
 const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
 const { Worker, isMainThread } = require('node:worker_threads');
@@ -27,6 +29,11 @@ const time = minutes => started + minutes * GameTime.GAME_MINUTE_MS;
 invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').useRowSource(() => null, () => true);
 const generation = Generation.metadata();
 Generation.configure({ code: '1'.repeat(40), config: '2'.repeat(64) });
+const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+// The spot catalog period turns: the table's revision (the search reads its rows).
+const catalogTurned = () => invoke('GameServer/Bot/AI/SpotValueTable').useSpots([]);
+// The observation link raised its bit (the bot's own samples moved beyond its error).
+const observing = state => ({ ...state, stats: { ...state.stats, wishDirty: Sections.sectionBit('observation') } });
 
 const spots = ['poor', 'rich'].map((id, at) => ({ id, avgLevel: 10, minLevel: 10, maxLevel: 10,
     density: 10, tagsAuthoritative: true, tags: ['starter'], npcEntries: [],
@@ -94,59 +101,122 @@ function verify() {
         return { built, state };
     };
 
-    // Inside the window nothing searches, on any path, also when another spot turned better.
+    // With no input moved nothing searches, on any path, however long, also
+    // when another spot turned better (samples moved inside the observation
+    // rule raise no bit).
     {
         const { built, state } = settled(990201);
         const turned = sampled(state, 'poor');
-        for (const minute of [1, 15, 29]) {
+        for (const minute of [1, 29, 31, 300]) {
             const read = count(() => Economy.forState(turned, deps(minute)));
-            assert.equal(read.result.plan, built.plan, 'a build inside the window serves the held build');
-            assert.equal(read.searches, 0, 'a build inside the window does not search');
+            assert.equal(read.result.plan, built.plan, `a build at ${minute} game minutes serves the held build`);
+            assert.equal(read.searches, 0, 'a build with nothing moved does not search');
             const stock = count(() => Economy.basics(turned, deps(minute)));
             assert.equal(stock.result.hunt.spotId, 'rich', 'the basics read the held spot');
-            assert.equal(stock.searches, 0, 'the basics inside the window do not search');
+            assert.equal(stock.searches, 0, 'the basics with nothing moved do not search');
             const party = count(() => Party.soloRoute({ ...turned }, spots, time(minute)));
             assert.equal(party.result.spotId, 'rich', 'the party read takes the held spot');
-            assert.equal(party.searches, 0, 'the party read inside the window does not search');
+            assert.equal(party.searches, 0, 'the party read with nothing moved does not search');
         }
     }
 
-    // An off-card bot past the window: forState alone, no basics.
+    // An off-card bot: forState alone, no basics. A turned catalog searches
+    // once: the same spot renews the hold in place. Turned samples are heard
+    // by the observation bit: the better spot rebuilds the build.
     {
         const { built, state } = settled(990202);
+        catalogTurned();
         const same = count(() => Economy.forState(state, deps(31)));
-        assert.equal(same.searches, 1, 'past the window a build searches once');
+        assert.equal(same.searches, 1, 'a turned catalog searches once');
         assert.equal(same.result.plan, built.plan, 'the same spot renews the hold in place, nothing is rebuilt');
-        assert.equal(count(() => Economy.forState(state, deps(32))).searches, 0, 'the renewed window holds');
+        assert.equal(count(() => Economy.forState(state, deps(32))).searches, 0, 'the renewed hold holds');
         const turned = sampled(state, 'poor');
-        assert.equal(count(() => Economy.forState(turned, deps(60))).searches, 0, 'until its own end');
-        const moved = count(() => Economy.forState(turned, deps(62)));
+        assert.equal(count(() => Economy.forState(turned, deps(300))).searches, 0, 'samples with no observation event keep it');
+        const moved = count(() => Economy.forState(observing(turned), deps(301)));
         assert.notEqual(moved.result.plan, built.plan, 'a better spot rebuilds the build');
         assert.equal(moved.searches, 1, 'on the search that moved the hold, not a second one');
         assert.equal(moved.result.hunt.spotId, 'poor', 'on the new spot');
         assert.equal(Economy.heldSpotMoved(turned), false, 'and the new build holds it');
     }
 
-    // The party read past the window searches for itself and leaves the hold to
-    // its owner. Its own search is kept on what it read (any copy of the bot),
-    // searched again when one of those inputs moves or past its own window.
+    // A party read whose hold an input moved searches for itself and leaves
+    // the hold to its owner. Its own search is kept on what it read (any copy
+    // of the bot, however long), searched again when one of those inputs moves.
     {
         const { state } = settled(990203);
         const turned = sampled(state, 'poor');
-        for (const minute of [31, 300]) {
-            const party = count(() => Party.soloRoute({ ...turned }, spots, time(minute)));
-            assert.equal(party.result.spotId, 'poor', `the party read at ${minute} game minutes is a fresh one`);
-            assert.equal(party.searches, 1, 'one search');
-            const again = count(() => Party.soloRoute({ ...turned }, spots, time(minute + 1)));
-            assert.equal(again.result.spotId, 'poor', 'a copy of the same bot reads the same answer');
+        catalogTurned();
+        const party = count(() => Party.soloRoute({ ...turned }, spots, time(31)));
+        assert.equal(party.result.spotId, 'poor', 'the party read of a moved input is a fresh one');
+        assert.equal(party.searches, 1, 'one search');
+        for (const minute of [32, 300]) {
+            const again = count(() => Party.soloRoute({ ...turned }, spots, time(minute)));
+            assert.equal(again.result.spotId, 'poor', `a copy of the same bot reads the same answer at ${minute} game minutes`);
             assert.equal(again.searches, 0, 'with no second search');
         }
+        // What it keeps of the search answers the comparison as the search's whole route does.
+        const whole = { route: nativeSearch(Party.soloState(turned), { spots, timestamp: time(31), required: true, mode: 'solo',
+            maxChecks: Party.MAX_SOLO_CHECKS }).route, own: null };
+        assert.deepEqual(Party.soloRoute({ ...turned }, spots, time(300)), Party.soloRoute({ ...turned }, spots, time(300), [], whole));
+        const other = { ...fighter(990263, { complete: true }), spotId: 'poor' };
+        const prepared = Party.prepare([turned, other], { spots, timestamp: time(300) });
+        assert.deepEqual(Party.compare({ ...turned }, [other], { prepared }),
+            Party.compare({ ...turned }, [other], { prepared, solo: new Map([[Number(turned.characterId), whole]]) }),
+            'the kept solo search compares as the whole one');
         const leveled = count(() => Party.soloRoute({ ...turned, level: 11 }, spots, time(302)));
         assert.equal(leveled.searches, 1, 'a moved input searches again');
         assert.equal(Economy.heldSpotMoved(turned), false, 'its search does not move the hold');
     }
 
-    // A goal change searches inside the window only when it opens or closes the
+    // A held forming verdict reads the solo side's answer, not the search that
+    // gave it: the owner's hold renewed to the same spot by an input the verdict
+    // does not read keeps it, judged once and the same as a fresh judgement;
+    // the hold moved to another spot judges it again.
+    {
+        const Goals = invoke('GameServer/Bot/Population/PartyGoalPolicy');
+        const { built, state: owner } = settled(990261);
+        // Both short of their focus' cash: the party's hour buys it sooner.
+        const state = { ...owner, adena: 0 };
+        const peer = { ...fighter(990262, { complete: true }), adena: 0, spotId: 'rich', loc: spots[1].center };
+        const requested = { spotId: 'rich' };
+        const nativePrepare = Party.prepare;
+        let judged = 0;
+        // A party forecast that beats the solo hour, so the verdict accepts.
+        Party.prepare = (members, options) => {
+            judged += 1;
+            const prepared = nativePrepare(members, options);
+            for (const member of members) prepared.rows.set(member.characterId,
+                { income: 1e9, kills: 100, spotId: 'rich', source: 'table_party', travelHours: 0 });
+            return prepared;
+        };
+        try {
+            const ask = (members, minute) => Goals.formingVerdict(members, requested, { spots, timestamp: time(minute) });
+            const fresh = (members, minute) => Goals.formingMembers(members, requested, { spots, timestamp: time(minute) })
+                .map(member => Number(member.characterId));
+            const first = ask([state, peer], 1);
+            assert.deepEqual(first.formingAccepted, [990261, 990262], 'fixture: the roster forms');
+            const once = judged;
+            // A capacity mark on the other spot: an input of the owner's search, not of the verdict.
+            const mark = bot => ({ ...bot, stats: { ...bot.stats, capacityBackoffs: [{ spotId: 'poor', untilStep: 5 }] } });
+            const marked = mark(state);
+            const renewed = count(() => Economy.forState(mark(owner), deps(2)));
+            assert.equal(renewed.searches, 1, 'fixture: the owner searches once');
+            assert.equal(renewed.result.plan, built.plan, 'fixture: the same spot renews the hold in place');
+            const held = ask([marked, peer], 3);
+            assert.equal(judged, once, 'the renewed hold keeps the verdict');
+            assert.deepEqual(held, first);
+            assert.deepEqual(held.formingAccepted, fresh([marked, peer], 3), 'the held verdict is a fresh judgement');
+            // Its own samples turned to the other spot (the mark off): the hold moves there.
+            const turned = sampled(state, 'poor');
+            assert.equal(Economy.forState(observing(sampled(owner, 'poor')), deps(4)).hunt.spotId, 'poor',
+                'fixture: the owner\'s hold moved');
+            const moved = ask([turned, peer], 5);
+            assert(judged > once, 'the solo side\'s new answer judges the verdict again');
+            assert.deepEqual(moved.formingAccepted, fresh([turned, peer], 5));
+        } finally { Party.prepare = nativePrepare; }
+    }
+
+    // A goal change searches only when it opens or closes the
     // search: the focus turned into or out of gear and resale (the economic
     // hunt). A focus moved on the same side, by the bot's own build or an outside
     // write, or main's goal revision keeps the held answer: the bot keeps its spot.
@@ -207,7 +277,7 @@ function verify() {
         const weighed = weight => ({ ...state, stats: { ...state.stats,
             money: [hour, weight * power / (1 - weight) / hour, ...state.stats.money.slice(2)] } });
         const held = count(() => Economy.basics(weighed(0.9), deps(31)));
-        assert.equal(held.searches, 1, 'fixture: the window\'s search');
+        assert.equal(held.searches, 1, 'fixture: the weight past its range searches');
         assert.equal(held.result.hunt.spotId, 'rich', 'fixture: a high money weight earns');
         const { low, high } = lastSearch.weights;
         assert(low > base && low < 0.9 && high === 1, 'fixture: the range ends where the spots cross');
@@ -234,7 +304,6 @@ function verify() {
     // that keeps it searches nothing, and one that changes the shot the fight
     // loads searches.
     {
-        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
         const Matchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
         const Shots = invoke('GameServer/Inventory/ShotStock');
         const { built, state } = settled(990270);
@@ -258,7 +327,7 @@ function verify() {
     // build's answer at that moment, not one to repeat.
     {
         const { state } = settled(990280);
-        const turned = sampled(state, 'poor'), step = deps(31), eventVerdict = {};
+        const turned = observing(sampled(state, 'poor')), step = deps(31), eventVerdict = {};
         assert.equal(count(() => Economy.heldWorkshop(turned, step, eventVerdict)).searches, 1, 'fixture: the step\'s look searches');
         assert.equal(Economy.heldSpotMoved(turned), true, 'fixture: and moves the hold');
         const built = count(() => Economy.forState(turned, { ...step, eventVerdict }));
@@ -273,7 +342,8 @@ function verify() {
         const accepted = Card.advisory(built, state, undefined, deps(0));
         assert.equal(Card.refusal(state, accepted, deps(1)), '', 'fixture: the card holds');
         const turned = sampled(state, 'poor');
-        assert.equal(Economy.basics(turned, deps(31)).hunt.spotId, 'poor', 'past the window a read finds the better spot');
+        catalogTurned();
+        assert.equal(Economy.basics(turned, deps(31)).hunt.spotId, 'poor', 'with an input moved a read finds the better spot');
         const later = count(() => Economy.basics(turned, deps(45)));
         assert.equal(later.result.hunt.spotId, 'poor', 'later reads keep the found spot');
         assert.equal(later.searches, 0, 'with no new search');
@@ -297,22 +367,24 @@ function verify() {
         assert.equal(rebuilt.hunt.spotId, 'poor', 'and moves to it');
         assert.equal(Economy.heldSpotMoved(turned), false);
     }
-    // A found spot that is not rebuilt ends like any hold: the window's next
-    // search may find the held spot again.
+    // A found spot that is not rebuilt ends like any hold: the next search may
+    // find the held spot again.
     {
         const { built, state } = settled(990208);
         const turned = sampled(state, 'poor');
+        catalogTurned();
         assert.equal(Economy.basics(turned, deps(31)).hunt.spotId, 'poor', 'moved');
+        catalogTurned();
         assert.equal(Economy.basics(state, deps(61)).hunt.spotId, 'rich', 'a second search finds the held spot');
         assert.equal(Economy.heldSpotMoved(state), false, 'and the hold stands again');
         assert.equal(Economy.forState(state, deps(62)).plan, built.plan, 'nothing was rebuilt');
     }
-    // A moved hold inside the found answer's window: a far hunter's builds read
-    // that answer, so a second build of the same moment searches nothing and
+    // A moved hold: a far hunter's builds read that answer, so a second build of the same moment searches nothing and
     // serves what the first one left.
     {
         const { state } = settled(990211);
         const turned = sampled(state, 'poor');
+        catalogTurned();
         assert.equal(Economy.basics(turned, deps(31)).hunt.spotId, 'poor', 'fixture: a read moved the hold');
         const hunting = { ...turned, phase: 'cold', activity: 'hunting' };
         const first = Economy.forState(hunting, deps(40));
@@ -321,8 +393,8 @@ function verify() {
         assert.equal(again.result.plan, first.plan, 'and serves the first one\'s build');
     }
 
-    // A search that found nothing is kept until the window ends, and past it
-    // a route found is a move. Raid camps are no earning ground.
+    // A search that found nothing is kept like a route, however long; the
+    // next search that finds a route is a move. Raid camps are no earning ground.
     {
         const raids = spots.map(spot => ({ ...spot, raidBoss: true }));
         const none = minute => ({ spots: raids, timestamp: time(minute) });
@@ -330,15 +402,17 @@ function verify() {
         const built = Economy.forState(native, none(0));
         const state = published(native, built);
         Economy.forState(state, none(0));
-        for (const minute of [1, 29]) {
+        for (const minute of [1, 29, 31, 300]) {
             assert.equal(count(() => Economy.basics(state, none(minute))).searches, 0, 'a held null is not searched per read');
             assert.equal(count(() => Economy.forState(state, none(minute))).searches, 0, 'nor by a build');
         }
-        assert.equal(count(() => Economy.basics(state, none(31))).searches, 1, 'its window ends with one search');
+        catalogTurned();
+        assert.equal(count(() => Economy.basics(state, none(301))).searches, 1, 'a turned catalog searches once');
         assert.equal(Economy.heldSpotMoved(state), false, 'no route again is no move');
-        assert.equal(count(() => Economy.forState(state, none(32))).searches, 0, 'a new window');
-        assert.equal(count(() => Party.soloRoute({ ...state }, raids, time(33))).searches, 1, 'a held null answers no solo question');
-        assert.equal(count(() => Economy.basics(state, deps(62))).searches, 1, 'the next search');
+        assert.equal(count(() => Economy.forState(state, none(302))).searches, 0, 'and holds it');
+        assert.equal(count(() => Party.soloRoute({ ...state }, raids, time(303))).searches, 1, 'a held null answers no solo question');
+        catalogTurned();
+        assert.equal(count(() => Economy.basics(state, deps(362))).searches, 1, 'the next search');
         assert.equal(Economy.heldSpotMoved(state), true, 'a route found moves the hold');
     }
 
@@ -377,7 +451,6 @@ function verify() {
     // weight the packet's hour and price; the karma flip the route key; a
     // crafter's own lines the lines it sells, a shot crafter's supply its bag).
     {
-        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
         const Shots = invoke('GameServer/Inventory/ShotStock');
         const stat = (state, more) => ({ ...state, stats: { ...state.stats, ...more } });
         const versions = (state, recipes = null, board = null, mode = null, income = null) => Sections.inputVersions(Sections.stateView(state, recipes),
@@ -410,14 +483,25 @@ function verify() {
             ['spot', state => ({ ...state, spotId: 'nowhere' }), ['spot']],
             ['samples', state => raised(sampledThird(state)), ['samples']],
             ['exclusions', state => stat(state, { capacityBackoffs: [{ spotId: 'rich', untilStep: 5 }] }), ['exclusions']],
+            ['recovery', state => stat(state, { huntingRecovery: { levelPenalty: 2, cleanWins: 0, resumeExp: 0 } }), ['recovery']],
             ['bagShot', state => { const shot = Shots.combatPlanForState(state);
-                return { ...state, inventory: { ...state.inventory, [shot.selfId]: { selfId: shot.selfId, amount: 5000 } } }; }, ['bagShot']]
+                return { ...state, inventory: { ...state.inventory, [shot.selfId]: { selfId: shot.selfId, amount: 5000 } } }; }, ['bagShot']],
+            ['spawns', state => { catalogTurned(); return state; }, ['spawns']]
         ];
         assert.deepEqual(rows.map(row => row[0]).sort(), [...Sections.LINK_INPUTS.incomeSearch.discrete].sort(), 'a row per declared input');
         let id = 990300;
+        const GearProgression = invoke('GameServer/Bot/AI/PersonalGearProgression');
         for (const [name, move, , extra] of rows) {
-            const { state } = heldBot(++id);
-            assert.equal(count(() => Economy.forState(move(state), deps(1, extra))).searches, 1, `a moved ${name} searches the held spot once`);
+            const { state } = heldBot(++id), moved = move(state);
+            assert.equal(count(() => Economy.forState(moved, deps(1, extra))).searches, 1, `a moved ${name} searches the held spot once`);
+            assert.equal(lastSearch.options.required, GearProgression.assess(moved).required, `a moved ${name}: the search weighs the bot's gear gap now`);
+        }
+        // A read with no build (basics) hears a gear gap that opened, and its search weighs it.
+        {
+            const { state } = heldBot(++id), moved = worn(state);
+            assert.notEqual(GearProgression.assess(moved).required, GearProgression.assess(state).required, 'fixture: the gear gap moved');
+            assert.equal(count(() => Economy.basics(moved, deps(1))).searches, 1, 'a read searches the held spot once');
+            assert.equal(lastSearch.options.required, GearProgression.assess(moved).required, 'and weighs the gap now');
         }
         // inputVersions on a bot out of the economic hunt (a stock focus), so the adventurer moves no goal.
         const base = stat(heldBot(++id).state, { wishFocus: ['stock:1060', 1, 1000000] }), before = versions(base);
@@ -428,7 +512,9 @@ function verify() {
             ['hour', state => money(state, 2, 1), ['hour', 'weight']],
             ['maxMp', state => ({ ...state, vitals: { ...state.vitals, maxMp: 301 } }), ['maxMp']]
         ];
-        for (const [name, move, moved, extra] of [...rows.map(([name, move, moved, extra]) => [name, name === 'samples' ? sampledThird : move, moved, extra]), ...others])
+        // The catalog turns for every bot (its own check, last).
+        for (const [name, move, moved, extra] of [...rows.filter(row => row[0] !== 'spawns')
+            .map(([name, move, moved, extra]) => [name, name === 'samples' ? sampledThird : move, moved, extra]), ...others])
             assert.deepEqual(movedNames(before, versions(move(base), null, null, extra?.mode)), moved.sort(), `moving ${name} moves its version only`);
         assert.deepEqual(movedNames(before, versions(base, [1, 2])), ['recipes'], 'the recipe book moves its version only');
         const lines = rows => ({ ownerLines: () => rows });
@@ -453,6 +539,8 @@ function verify() {
             'every version is moved here (the route fields: test_economic_trip_marginal)');
         assert.equal(Sections.movedInput('incomeSearch', before, versions(money(base, 1.0001, 1)), 0.01), '', 'a weight drift inside the error keeps');
         assert.equal(Sections.movedInput('incomeSearch', before, versions(money(base, 4, 1)), 0.01), 'weight', 'one beyond it moves');
+        catalogTurned();
+        assert.deepEqual(movedNames(before, versions(base)), ['spawns'], 'a turned catalog moves its version only');
     }
     // What raises sections the search keys on no input of: the rebuild keeps
     // the held spot with no search (a clan change, a learned recipe, a friend
@@ -460,7 +548,6 @@ function verify() {
     // unhuntable on the same spot and kit), though another spot turned better.
     // The observation bit alone asks one search.
     {
-        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
         const Reaction = invoke('GameServer/Bot/Economy/Reaction');
         const stat = (state, more) => ({ ...state, stats: { ...state.stats, ...more } });
         const raised = (state, link) => stat(state, { wishDirty: Sections.sectionMask(Reaction.sections(link)) });
@@ -484,9 +571,261 @@ function verify() {
         assert.equal(observed.searches, 1, 'the observation bit searches once');
         assert.equal(observed.result.hunt.spotId, 'poor', 'on the new samples');
     }
-    // The link counts (developerDiagnostics): a read inside the window keeps,
-    // the window's search names it and is verified against the answer it
-    // replaces, a level up and a risk mark search by their input.
+    // The crowd (decision links step 3): the held answer stands on its
+    // candidates' hunters (the crowd key), with no window. The bot stands on
+    // 'poor' and holds 'rich', which holds nine bots: others joining it short
+    // of that, or crowding a spot the answer does not need, keep the hold with
+    // no search, on every path; the one that fills it searches once and the
+    // bot takes the other spot; one leaving opens it again: one search, back.
+    {
+        const { SpotOccupancyIndex } = invoke('GameServer/Bot/Population/SpotOccupancyIndex');
+        const Spots = invoke('GameServer/Bot/Population/SpotProfiles');
+        const index = new SpotOccupancyIndex();
+        let next = 991000;
+        const join = (n, spotId) => { for (let i = 0; i < n; i++) index.update({ characterId: next++, activity: 'hunting', spotId }); };
+        Spots.useOccupancy(() => index);
+        try {
+            const { built, state } = settled(990290);
+            join(8, 'rich'); join(5, 'poor');
+            for (const minute of [1, 300]) {
+                const read = count(() => Economy.forState(state, deps(minute)));
+                assert.equal(read.searches, 0, `a crowd inside its key does not search (${minute} game minutes)`);
+                assert.equal(read.result.plan, built.plan, 'and the held build stands');
+                const stock = count(() => Economy.basics(state, deps(minute)));
+                assert.equal(stock.searches, 0, 'the basics neither');
+                assert.equal(stock.result.hunt.spotId, 'rich', 'on the held spot');
+            }
+            join(1, 'rich');
+            const full = count(() => Economy.forState(state, deps(301)));
+            assert.equal(full.searches, 1, 'the bot that fills the held spot searches once');
+            assert.equal(full.result.hunt.spotId, 'poor', 'and the bot takes the other spot');
+            assert.equal(count(() => Economy.forState(state, deps(302))).searches, 0, 'once');
+            index.remove(String(next - 1));
+            const freed = count(() => Economy.forState(state, deps(303)));
+            assert.equal(freed.searches, 1, 'a place freed on the better spot searches once');
+            assert.equal(freed.result.hunt.spotId, 'rich', 'and the bot goes back');
+        } finally { Spots.useOccupancy(null); }
+    }
+    // The consumable prices (decision links step 3): a table spot's costs are
+    // its shots and potions at the bot's own price beliefs, a line in each
+    // price, so the held answer stands over the prices around the ones it read
+    // (the ranges of its stands) and a read replays it at the prices now. A
+    // deal of another item in the shot's or the potion's market counter moves
+    // every such belief a little: no search, on every path. A shot price past
+    // the range searches once: short of the crossing the same spot renews in
+    // place, past it the bot moves. Whatever the hold keeps, a fresh search at
+    // the prices of that read gives the same answer.
+    {
+        const Table = invoke('GameServer/Bot/AI/SpotValueTable');
+        const Counters = invoke('GameServer/Bot/Economy/MarketCounters');
+        const FirstPrice = invoke('GameServer/Bot/Economy/FirstPrice');
+        const Shots = invoke('GameServer/Inventory/ShotStock');
+        const Potions = invoke('GameServer/Bot/AI/HealingPotionStock');
+        const Economics = invoke('GameServer/Bot/Economy/SpotEconomics');
+        Counters.reset();
+        Table.useSpots([]);
+        const probe = fighter(990510);
+        const shotId = Shots.planForState(probe).selfId, potionId = Potions.purchasePotionFor(probe).selfId;
+        // Another item of each one's counter, with a first price (the counter's index reads it).
+        const kin = id => Data.items.map(item => item.selfId).find(other => other !== id && Counters.counterOf(other) === Counters.counterOf(id)
+            && FirstPrice.cachedFirstPrice(other, { timestamp: time(0) }) > 0);
+        const shotKin = kin(shotId), potionKin = kin(potionId);
+        assert(shotKin && potionKin, 'fixture: another item in the shot\'s and the potion\'s counter');
+        const firstOf = id => FirstPrice.cachedFirstPrice(id, { timestamp: time(0) });
+        // A first deal at its first price opens each counter's index at zero: the beliefs as before.
+        for (const id of [shotKin, potionKin]) Counters.deal(id, firstOf(id), 1, time(0));
+        // The band's best charged table spot, where the bot stands, and one its samples know.
+        const [tableId, otherId] = Route.spotList(probe).ids(true, 10, -15);
+        const ground = [tableId, otherId].map((id, at) => ({ id, avgLevel: 10, minLevel: 10, maxLevel: 10, density: 10,
+            tagsAuthoritative: true, tags: ['starter'], npcEntries: [], center: { locX: -80000 + at * 1000, locY: 250000, locZ: 0 } }));
+        let native = { ...fighter(990511), spotId: tableId, loc: ground[0].center };
+        const own = Economics.create(native, { timestamp: started })(ground[0], true);
+        assert(own?.shotUnits > 0, 'fixture: the table spot pays for its shots');
+        for (let n = 0; n < 3; n++) native = { ...native, stats: { ...native.stats, huntEfficiency: Hunt.record(native, { spotId: otherId,
+            timestamp: started, cycleMs: 3600000, exp: 0.2 * own.exp, adena: 0.2 * own.income, loot: 0, costs: 0, kills: 0.6 * own.kills }) } };
+        const on = minute => ({ spots: ground, timestamp: time(minute) });
+        const built = Economy.forState(native, on(0));
+        assert.equal(built.hunt.spotId, tableId, 'fixture: the bot earns at its table spot');
+        const state = published(native, built);
+        assert.equal(count(() => Economy.forState(state, on(1))).searches, 0, 'fixture: the hold stands');
+        const answerOf = route => route ? `${route.spot.id}|${route.row.useShots}` : null;
+        // A read of the hold: its answer and searches, the prices it read and a fresh search at them.
+        const read = (minute, path = 'basics') => {
+            const before = searches;
+            const result = path === 'basics' ? Economy.basics(state, on(minute)) : Economy.forState(state, on(minute));
+            const price = path === 'basics' ? result.price : Economy.basics(state, on(minute)).price;
+            const prices = [price(shotId), price(potionId)];
+            const fresh = nativeSelect(state, { spots: ground, timestamp: time(minute), required: true,
+                price: id => Number(id) === shotId ? prices[0] : Number(id) === potionId ? prices[1] : price(id) });
+            return { spotId: result.hunt.spotId, searches: searches - before, prices, fresh: answerOf(fresh), plan: result.plan,
+                perHour: result.hunt.perHour, freshPerHour: fresh ? fresh.earning * Hunt.onSpotShare(state) : null };
+        };
+        const held = read(2);
+        assert.equal(held.searches, 0, 'fixture: nothing moved');
+        assert.equal(held.fresh, `${tableId}|true`, 'fixture: a fresh search agrees');
+        // Deals of other items in both counters: each belief moves a little.
+        for (const [id, at] of [[shotKin, 3], [potionKin, 4]]) {
+            Counters.deal(id, 1.2 * firstOf(id), 1, time(at));
+            const quiet = read(at);
+            assert.notDeepEqual(quiet.prices, held.prices, `fixture: a deal in the ${id === shotKin ? 'shot' : 'potion'} counter moves the bot's beliefs`);
+            assert.equal(quiet.searches, 0, 'a deal of another item in the counter does not search');
+            assert.equal(quiet.spotId, tableId, 'and the bot keeps its spot');
+            assert.equal(quiet.fresh, `${tableId}|true`, 'as a fresh search at those prices does');
+            const build = read(at, 'build');
+            assert.equal(build.searches, 0, 'nor does a build');
+            assert.equal(build.plan, built.plan, 'which serves the held build');
+        }
+        // The shot's own deals move its belief further, cheap shots first, then
+        // dear ones: a read searches when the price leaves the range the hold
+        // stands on, once, and always agrees with a fresh search at its prices,
+        // a kept read on its earning too (its numbers at the prices now).
+        const walk = (factor, from, done) => {
+            for (let minute = from; minute < from + 40; minute++) {
+                Counters.deal(shotId, factor * firstOf(shotId), 1, time(minute));
+                const next = read(minute);
+                assert(next.searches <= 1, 'one search at most');
+                assert.equal(next.spotId, next.fresh?.split('|')[0], `the hold agrees with a fresh search at shot ${next.prices[0]}`);
+                assert.equal(next.perHour, next.freshPerHour, `and on its earning at shot ${next.prices[0]}`);
+                if (done(next)) return next;
+            }
+            return null;
+        };
+        let cheapSearches = 0;
+        assert.equal(walk(0.3, 10, next => { cheapSearches += next.searches; return false; }), null, 'cheap shots keep the table spot');
+        assert.equal(cheapSearches, 0, 'with no search: the moves stay inside the hull, the earner the replay finds');
+        assert.equal(Economy.heldSpotMoved(state), false, 'in place');
+        const moved = walk(4, 60, next => next.spotId !== tableId);
+        assert(moved, 'dear enough shots move the bot off its table spot');
+        assert.equal(moved.searches, 1, 'on one search');
+        assert.equal(moved.spotId, otherId, 'to the spot its samples know');
+        Counters.reset();
+    }
+    // The crowd and the bot's own arrival on table spots (decision links
+    // step 3): the key replays the pick at the counts now and finds there
+    // which spot sets its earning, so a crowd on a candidate other than the
+    // pick keeps the hold with no search, also one that closes the spot that
+    // set the earning; the bot's arrival at its held spot, its own output
+    // (only its walks move), replays from there with no search. Every kept
+    // read agrees with a fresh search at its inputs: the spot, its charge,
+    // the earning and the spot's row.
+    {
+        const { SpotOccupancyIndex } = invoke('GameServer/Bot/Population/SpotOccupancyIndex');
+        const Spots = invoke('GameServer/Bot/Population/SpotProfiles');
+        const Table = invoke('GameServer/Bot/AI/SpotValueTable');
+        const Economics = invoke('GameServer/Bot/Economy/SpotEconomics');
+        const Routes = invoke('GameServer/Bot/AI/LevelingRoutes');
+        const index = new SpotOccupancyIndex();
+        let next = 993000;
+        const join = (n, spotId) => { for (let i = 0; i < n; i++) index.update({ characterId: next++, activity: 'hunting', spotId }); };
+        Spots.useOccupancy(() => index);
+        try {
+            Table.useSpots([]);
+            const ids = Route.spotList(fighter(990530)).ids(true, 10, -15).slice(0, 4);
+            const ground = ids.map((id, at) => ({ id, avgLevel: 10, minLevel: 10, maxLevel: 10, density: 10, tagsAuthoritative: true,
+                tags: ['starter'], npcEntries: [], center: { locX: -80000 + at * 1500, locY: 250000, locZ: 0 } }));
+            const on = minute => ({ spots: ground, timestamp: time(minute) });
+            const agrees = (state, minute, what) => {
+                const read = count(() => Economy.basics(state, on(minute)));
+                const fresh = nativeSearch(state, { spots: ground, timestamp: time(minute), required: true, price: read.result.price }).route;
+                assert.equal(read.searches, 0, `${what}: no search`);
+                assert.equal(read.result.hunt.spotId, fresh.spot.id, `${what}: the fresh search's spot`);
+                assert.equal(read.result.hunt.useShots, fresh.row.useShots, `${what}: its charge`);
+                assert.equal(read.result.hunt.perHour, fresh.earning * Hunt.onSpotShare(state), `${what}: its earning`);
+                assert.equal(read.result.hunt.perKill, fresh.row.kills > 0 ? fresh.row.income / fresh.row.kills : 0, `${what}: its row`);
+                return read.result.hunt;
+            };
+            const holding = (characterId, at) => {
+                const native = { ...fighter(characterId), spotId: ids[at], loc: ground[at].center };
+                const state = published(native, Economy.forState(native, on(0)));
+                assert.equal(count(() => Economy.forState(state, on(1))).searches, 0, 'fixture: the hold stands');
+                return state;
+            };
+            // On its pick: the spot paying most besides it sets the earning.
+            let state = null, pick = null;
+            for (let at = 0; at < ids.length; at++) {
+                state = holding(990531 + at * 10, at);
+                pick = agrees(state, 2, 'fixture: the held read');
+                if (pick.spotId === state.spotId) break;
+            }
+            assert.equal(pick.spotId, state.spotId, 'fixture: the bot earns where it stands');
+            const rows = ground.flatMap(spot => [true, false].map(shots => ({ spot, row: Economics.create(state, { timestamp: time(2) })(spot, shots) })));
+            const richest = rows.filter(({ spot, row }) => spot.id !== pick.spotId && row?.income > 0).sort((a, b) => b.row.income - a.row.income)[0];
+            assert(richest?.row.income * Hunt.onSpotShare(state) === pick.perHour, 'fixture: another spot sets the earning');
+            const quiet = ids.find(id => id !== pick.spotId && id !== richest.spot.id);
+            join(1, quiet);
+            agrees(state, 3, 'one hunter on a candidate other than the pick');
+            join(Routes.roomForSpot(richest.spot), richest.spot.id);
+            const closed = agrees(state, 4, 'a crowd that closes the spot setting the earning');
+            assert(closed.perHour < pick.perHour, 'another spot sets it now');
+            assert.equal(Economy.heldSpotMoved(state), false, 'the hold stands in place');
+            // Off its pick: it arrives there.
+            let away = null, held = null;
+            for (let n = 0; n < ids.length; n++) {
+                away = holding(990632 + n * 10, n);
+                held = agrees(away, 2, 'fixture: the held read');
+                if (held.spotId !== away.spotId) break;
+            }
+            const at = ids.indexOf(held.spotId), from = ids.indexOf(away.spotId);
+            assert.notEqual(at, from, 'fixture: the bot earns at a spot it does not stand on');
+            const arrived = { ...away, spotId: ids[at], loc: ground[at].center };
+            assert.equal(agrees(arrived, 3, 'the bot\'s arrival at its held spot').spotId, held.spotId, 'it keeps the spot');
+            join(1, quiet === ids[at] ? ids[0] : quiet);
+            agrees(arrived, 4, 'a crowd after the arrival');
+            const elsewhere = ids.find((id, n) => n !== from && n !== at);
+            const moved = count(() => Economy.basics({ ...away, spotId: elsewhere, loc: ground[ids.indexOf(elsewhere)].center }, on(5)));
+            assert.equal(moved.searches, 1, 'a move to another spot searches');
+        } finally { Spots.useOccupancy(null); Table.useSpots([]); }
+    }
+    // The death recovery's level penalty caps the spawns the search's matchup
+    // admits (LevelingRoutes.safetyOptions' maxTargetLevel): held below the
+    // better spot's level-10 spawns, the bot earns at the other one. Its clean
+    // wins lift the penalty (SpotRiskPolicy.recordRecovery): the step raises it
+    // (also far at work), the next build searches once and takes the better
+    // spot; the party comparison's own solo search hears it the same way.
+    {
+        const Data = invoke('GameServer/DataCache');
+        const Risk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
+        const Targets = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
+        const recovering = (state, recovery) => ({ ...state, stats: { ...state.stats, huntingRecovery: recovery } });
+        const penalized = state => recovering(state, { levelPenalty: 2, cleanWins: 0, resumeExp: 0 });
+        const on = minute => ({ spots: guarded, timestamp: time(minute) });
+        // A level-10 spawn the bot hunts alone: the better spot is its only ground.
+        let guarded = null;
+        for (const npc of Data.npcs) {
+            if (Number(npc.template?.level) !== 10 || npc.template?.kind !== 'Monster' || !Targets.canHunt(npc)) continue;
+            const ground = [spots[0], { ...spots[1], npcSelfIds: [npc.selfId], npcEntries: [{ selfId: npc.selfId, count: 10 }] }];
+            const probe = sampled(fighter(990420), 'rich');
+            if (nativeSelect(probe, { spots: ground, timestamp: time(0) })?.spot.id === 'rich'
+                && nativeSelect(penalized(probe), { spots: ground, timestamp: time(0) })?.spot.id === 'poor') { guarded = ground; break; }
+        }
+        assert(guarded, 'fixture: a level-10 spawn the penalty refuses and the bot otherwise hunts');
+        const native = penalized(sampled(fighter(990421), 'rich'));
+        const built = Economy.forState(native, on(0));
+        assert.equal(built.hunt.spotId, 'poor', 'fixture: under the penalty the bot earns at the other spot');
+        const state = published(native, built);
+        assert.equal(count(() => Economy.forState(state, on(1))).searches, 0, 'fixture: the hold stands');
+        const lifted = recovering(state, Risk.recordRecovery(state, { wins: 12, exp: Number(state.exp) || 0 }));
+        assert.equal(lifted.stats.huntingRecovery.levelPenalty, 0, 'fixture: twelve clean wins lift it');
+        const raised = Sections.events(state, lifted);
+        assert(raised.includes('occupation'), 'the step that lifts it raises the bot\'s ground');
+        const far = state => ({ ...state, phase: 'cold' });
+        assert(Sections.events(far(state), far(lifted)).includes('occupation'), 'also far at work');
+        const heard = { ...lifted, stats: { ...lifted.stats, wishDirty: Sections.sectionMask(raised) } };
+        const read = count(() => Economy.forState(heard, on(2)));
+        assert.equal(read.searches, 1, 'the lifted penalty searches once');
+        assert.equal(read.result.hunt.spotId, 'rich', 'and the bot takes the better spot');
+        // The party comparison's own solo search (no held build for it).
+        const solo = penalized(sampled(fighter(990422), 'rich'));
+        const first = count(() => Party.soloRoute({ ...solo }, guarded, time(3)));
+        assert.equal(first.result.spotId, 'poor', 'fixture: the solo side under the penalty');
+        assert.equal(count(() => Party.soloRoute({ ...solo }, guarded, time(4))).searches, 0, 'fixture: kept');
+        const again = count(() => Party.soloRoute(recovering(solo, { levelPenalty: 0, cleanWins: 0, resumeExp: 0 }), guarded, time(5)));
+        assert.equal(again.searches, 1, 'the lifted penalty searches the solo side again');
+        assert.equal(again.result.spotId, 'rich', 'on the better spot');
+    }
+    // The link counts (developerDiagnostics): a read with nothing moved keeps,
+    // however late; a turned catalog, a level up and a risk mark search by
+    // their input.
     {
         const Config = invoke('GameServer/Bot/Population/PopulationConfig');
         const counts = () => invoke('GameServer/Bot/Economy/EconomyDiagnostics').metrics().counts || {};
@@ -496,10 +835,11 @@ function verify() {
             const before = counts(), delta = key => (counts()[key] || 0) - (before[key] || 0);
             const { state } = heldBot(990330);
             Economy.forState(state, deps(1));
-            assert.equal(delta('link:incomeSearch:kept:quiet'), 1, 'a read inside the window keeps');
-            Economy.forState(state, deps(31));
-            assert.equal(delta('link:incomeSearch:rebuilt:window'), 1, 'the window searches');
-            assert.equal(delta('link:incomeSearch:verify:same'), 1, 'and finds the held spot');
+            Economy.forState(state, deps(300));
+            assert.equal(delta('link:incomeSearch:kept:quiet'), 2, 'a read with nothing moved keeps');
+            catalogTurned();
+            Economy.forState(state, deps(301));
+            assert.equal(delta('link:incomeSearch:rebuilt:spawns'), 1, 'a turned catalog searches by its input');
             const levelled = { ...state, level: 11 }, rebuilt = Economy.forState(levelled, deps(32));
             assert.equal(delta('link:incomeSearch:rebuilt:kit.level'), 1, 'a level up searches by its input');
             const marked = { ...published(levelled, rebuilt), stats: { ...published(levelled, rebuilt).stats,
@@ -519,7 +859,7 @@ function verify() {
         assert.equal(Economy.captureEventProof(state, deps(0), { plan }), null, 'a bot near a player does not');
     }
     Economy.reset();
-    console.log(`PASS held earning spot: window on every path, goal change, moved hold, held null ${isMainThread ? 'main' : 'worker'}`);
+    console.log(`PASS held earning spot: no time window, inputs on every path, goal change, crowd, recovery, moved hold, held null ${isMainThread ? 'main' : 'worker'}`);
 }
 try { verify(); } finally { Route.select = nativeSelect; Route.search = nativeSearch; Generation.configure(generation); }
 if (isMainThread) {

@@ -188,14 +188,14 @@ const PopulationStatus = {
         return doors ? ` doors=${Object.entries(doors).map(([caller, row]) => `${caller}:${row.join(':')}`).join(',')} raised=${top(raised)} rejected=${top(DecisionEvents.rejections())}` : '';
     },
 
-    // incomeHold=<kept>/<none>,<unrouted>,<renewed>,<moved>,<window>;event:<input>=<n>+...;party<kept>/<missed>: held
+    // incomeHold=<kept>/<none>,<unrouted>,<renewed>,<moved>;event:<input>=<n>+...;party<kept>/<missed>: held
     // earning spot reads and searches since the worker started (EconomyContext holdStats, decision 10-30), diagnostics
-    // off too: window the searches the 30-min window asked, event the searches each input of the search's key asked
-    // (a build's own and a read's; observation: the bot's own samples), most first.
+    // off too: event the searches each input of the search's key asked (a build's own and a read's; observation: the
+    // bot's own samples; prices, frustration, crowd: what its answer stands on), most first.
     incomeHoldText(h) {
         if (!h) return '';
         const events = Object.entries(h.event || {}).sort((a, b) => b[1] - a[1]).map(([input, n]) => `${input}=${n}`).join('+');
-        return ` incomeHold=${h.kept || 0}/${h.none || 0},${h.unrouted || 0},${h.renewed || 0},${h.moved || 0},${h.window || 0}`
+        return ` incomeHold=${h.kept || 0}/${h.none || 0},${h.unrouted || 0},${h.renewed || 0},${h.moved || 0}`
             + `;event:${events || 0};party${h.partyKept || 0}/${h.partyMissed || 0}`;
     },
 

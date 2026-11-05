@@ -134,18 +134,21 @@ const LINK_INPUTS = Object.freeze({
         'adventurer', // select: PersonalGearProgression.adventurer gate
         'economic', // select: economicHunt opens the search
         'required', // select: required (GearProgression.assess in EconomyContext.incomeRouteFor)
-        'spot', // select: ids start with state.spotId; origin = its center, else state.loc (WalkBack.tripHours)
-        'samples', // select: BotHuntEfficiency.sampledRows spot ids join the candidates
-        'exclusions', // select: SpotRiskPolicy.excludedSpotIdsForStates
-        'bagShot' // spotList.ids: consumablePrices' shot (ShotStock.planForState); stateProfiles' loaded shot (shotInputs)
+        'spot', // select: ids start with state.spotId; origin = its center, else state.loc (WalkBack.tripHours); the arrival at the answer's spot replays (EquipmentIncomeRoute.arrived)
+        'samples', // select: BotHuntEfficiency.sampledRows spot ids join the candidates; a new sampled spot moves every table row (calibration) and the hunt's death hours: a search
+        'exclusions', // select: SpotRiskPolicy.excludedSpotIdsForStates (its exclusionVersion, a mark's end read at each check)
+        'recovery', // select: spotAllowedReaderFor -> safetyOptions' maxTargetLevel (the death recovery's level penalty)
+        'bagShot', // spotList.ids: consumablePrices' shot (ShotStock.planForState); stateProfiles' loaded shot (shotInputs)
+        'spawns' // SpotValueTable rows (value, rankedSpotIds, best): the spot catalog period, rewards, rates (its revision)
     ], [
         'weight', // SpotEconomics.create: moneyWeight, inside the weights the answer stands over (search's weights)
         'hour' // SpotEconomics.create: the packet's own hour where the band has no money hour (search's weights.hour)
     ], [
-        'observation', // SpotEconomics.create: the bot's own sample values (the observation bit)
-        'prices', // spotList.ids and SpotEconomics: consumable and loot prices: no event (the window)
-        'crowd', // SpotEconomics spotHunters, SpotProfiles.roomFor: no event (the window)
-        'spawns' // SpotValueTable rows and the spawn catalog period: no event (the window)
+        // What the answer stands on beside these (EquipmentIncomeRoute.standsMoved, read where the hold is):
+        'observation', // SpotEconomics.create: the bot's own sample values (the observation bit, beyond its own error)
+        'prices', // spotList.ids and SpotEconomics: the shot and potion prices (the reader's), inside the hull of the ranges the crowd key replays over (search's stands.prices)
+        'frustration', // SpotEconomics riskWeight: inside the range of it the answer stands over (search's stands.risk)
+        'crowd' // SpotEconomics spotHunters, SpotProfiles.roomFor: the crowd key's replay over its candidates' hunters (the pick; its earner and numbers at the read: liveRoute)
     ]),
     // The crafter's workshop: the occupation planner's answer
     // (ColdOccupationSources.prepare over the planner capture,
@@ -209,11 +212,16 @@ const VERSIONS = Object.freeze({
         return hash([r.state.spotId ?? null, spot?.center ? null : pointOf(r.state.loc)]);
     },
     samples: r => hash([...new Set(Hunt.sampledRows(r.state, r.timestamp).map(row => String(row.spotId)))].sort()),
-    exclusions: r => hash([...invoke('GameServer/Bot/Population/SpotRiskPolicy').excludedSpotIdsForStates([r.state])].map(String).sort()),
+    exclusions: r => invoke('GameServer/Bot/Population/SpotRiskPolicy').exclusionVersion(r.state).revision,
+    // What the search's matchup reads of the recovery (its solo safety, as select asks it).
+    recovery: r => invoke('GameServer/Bot/AI/LevelingRoutes').safetyOptions(r.state, { mode: 'solo' }).maxTargetLevel ?? null,
     bagShot: r => hash(shotInputs(r.state, r.timestamp)),
+    // The table's revision: a counter of this thread (a held answer never leaves it).
+    spawns: () => invoke('GameServer/Bot/AI/SpotValueTable').revision(),
     economic: r => invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').economicHunt(r.state),
     adventurer: r => invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(r.state),
-    required: r => !!invoke('GameServer/Bot/AI/PersonalGearProgression').assess(r.state).required,
+    // The caller's own assessment of this state when it holds one (one per read: incomeRouteFor), else assessed here.
+    required: r => !!(r.required ?? invoke('GameServer/Bot/AI/PersonalGearProgression').assess(r.state).required),
     weight: r => invoke('GameServer/Bot/Economy/SpotEconomics').moneyWeight(r.state),
     hour: r => Number(Packet.hourAdena(r.stats.money)) || 0, maxMp: r => Number(r.state.vitals?.maxMp) || 0,
     income: r => r.income ? hash(r.income) : null,
@@ -235,10 +243,11 @@ const VERSIONS = Object.freeze({
 // linkView (no supply); spots: the catalogue the search reads (a spot without
 // a center reads the bot's point); board: the board mirror (ownLines; null
 // without one); mode: the caller's; income: the earning spot answer the money
-// packet carries ([spot, earning], EconomyContext.incomeOutput).
-function inputVersions(view, state, timestamp, { spots = null, board = null, mode = null, income = null, link = null } = {}) {
+// packet carries ([spot, earning], EconomyContext.incomeOutput); required:
+// PersonalGearProgression.assess(state).required when the caller holds it.
+function inputVersions(view, state, timestamp, { spots = null, board = null, mode = null, income = null, required = null, link = null } = {}) {
     const memo = new Map();
-    const r = { view, state, timestamp, spots, board, mode, income, stats: state.stats || {}, kits: view.kitHashes || [],
+    const r = { view, state, timestamp, spots, board, mode, income, required, stats: state.stats || {}, kits: view.kitHashes || [],
         once: (name, read) => memo.has(name) ? memo.get(name) : memo.set(name, read()).get(name) };
     const names = !link ? Object.keys(VERSIONS) : [...new Set([link].flat().flatMap(name =>
         [...LINK_INPUTS[name].discrete, ...LINK_INPUTS[name].continuous]))];
@@ -534,7 +543,8 @@ function relationTargetIds(state, memory = null) {
 // role are the fact, its leaderId is not), clanId,
 // relationTargets ([friend, enemy] ids; null: read here from memory), activity,
 // spotId, stats.travel (occupationPlanned's shape) and stats.relations (the
-// fallback rows without memory), dead, riskDeaths, supply ([id, present] per
+// fallback rows without memory), dead, riskDeaths, recovery (the death
+// recovery's level penalty, SpotRiskPolicy.recoveryFor), supply ([id, present] per
 // stock item), stores (four identities), bagFull, weight (level 0-4).
 // memory: the bot's interaction memory rows, null when the caller read none.
 function factsOf(view, memory = null) {
@@ -542,7 +552,7 @@ function factsOf(view, memory = null) {
         relations: hash([view.clanId, ...(view.relationTargets || relationTargetIds(view, memory))]),
         party: hash([view.party?.partyId, view.party?.role]),
         occupation: hash([view.spotId, view.activity === 'resting' ? 'hunting' : view.activity]),
-        dead: view.dead, riskDeaths: view.riskDeaths, supply: hash(view.supply), stores: hash(view.stores), warehouse: view.warehouse,
+        dead: view.dead, riskDeaths: view.riskDeaths, recovery: view.recovery, supply: hash(view.supply), stores: hash(view.stores), warehouse: view.warehouse,
         bag: hash([view.bagFull, view.weight]) };
 }
 // The stock items whose presence is the supply fact: the trip's Scroll of
@@ -567,6 +577,7 @@ function stateView(state, recipes = null) {
     view.stats = { travel: stats.travel, relations: stats.relations };
     view.dead = Number(state.activity === 'dead' || Number(state.vitals?.hp) <= 0);
     view.riskDeaths = positive(stats.spotRisk?.windowDeaths);
+    view.recovery = positive(invoke('GameServer/Bot/Population/SpotRiskPolicy').recoveryFor(state)?.levelPenalty);
     const shots = ShotStock.planForState(state);
     const potion = HealingPotionStock.purchasePotionFor(state);
     view.supply = stockIds(shots, potion).map(id => [id, positive(state.inventory?.[id]?.amount) > 0]);
@@ -722,6 +733,11 @@ function factEvents(previousFact, current, funding = false, facts = null, planne
     // none, a rest at another spot is an occupation event.
     if (!planned && previousFact('occupation') !== current.occupation) raise('occupation');
     if (current.riskDeaths > previousFact('riskDeaths')) raise('riskDeaths');
+    // The recovery's level penalty, up (a death, the spot's pressure) or down
+    // (its clean wins, SpotRiskPolicy.recordRecovery). A baseline kept before
+    // the fact was recorded has none to compare.
+    const recovery = previousFact('recovery');
+    if (recovery !== undefined && recovery !== current.recovery) raise('recovery');
     // Physical exhaustion is never hidden by economic uncertainty.
     if (previousFact('supply') !== current.supply) raise('supply');
     if (previousFact('bag') !== current.bag) raise('bag');

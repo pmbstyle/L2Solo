@@ -164,6 +164,9 @@ try {
                 'a wallet move inside the bot\'s income error is no change');
             assert.deepEqual(ask([{ ...rich, vitals: { ...rich.vitals, hp: 60, mp: 40 } }, other], at + 60000), first,
                 'HP and MP that change no matchup and no buff sale are no change');
+            assert.deepEqual(ask([{ ...rich, stats: { ...rich.stats, partyRequest: { ...requested, requestedAt: at, attempts: 2 },
+                equipmentPlan: { status: 'active', strategy: 'buy' } } }, other], at + 60000), first,
+                'request and plan fields no comparison reads are no change');
             assert.equal(judged, once, 'the same members are not judged again');
             for (const moved of [{ ...rich, level: 21 }, { ...rich, spotId: 'lower' }, { ...rich, adena: 200000 },
                 { ...rich, loc: { locX: 5000, locY: 0 } }, { ...rich, vitals: { ...rich.vitals, hp: 0 } },

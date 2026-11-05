@@ -21,8 +21,16 @@ const STEP_STALL_MS = 30000;
 // stack, entering quarantine once; repeats are only counted (status `botFaults`).
 // Distinct messages logged per failing bot; others are only counted.
 const FAULT_LOGGED_MESSAGES = 4;
-// A solo hunt window's most rounds (typically 3-10 inside its ~300 s hold).
+// A solo hunt window's most rounds: it ends at its round's events
+// (ColdSoloWindow.endOf) or its look-ahead, rarely here.
 const MAX_WINDOW_ROUNDS = 32;
+// How far past the step's clock a window's rounds run. They run in one burst
+// at the step and read the world as it stands then (crowds, prices, the
+// board), and a hot session, party or command that interrupts the window
+// lives that time again (huntedThrough). Future world state is no input an
+// event could carry: this is the simulation's look-ahead, not a window for a
+// missing event.
+const WINDOW_LEAD_MS = 300000;
 // Ready resolver promises chained back to back ran a tick's whole batch as one task (T41 profile
 // 10-26: up to 1.3 s with no turn; the heartbeat, the flush and main's acks waited behind it). Each
 // queued step and command starts on its own turn: same work, no long task.
@@ -462,10 +470,11 @@ function meetingTravelTransition(state, kind = null, facts = NO_FACTS) {
 // the worker (it carries functions and is never posted).
 // economy and route are worker-local (the request carries the route's spot).
 function postedPlan(plan) {
-    if (!plan?.economy && !plan?.route) return plan;
+    if (!plan?.economy && !plan?.route && !plan?.actionBaseline) return plan;
     const posted = { ...plan };
     delete posted.economy;
     delete posted.route;
+    delete posted.actionBaseline;
     return posted;
 }
 
@@ -643,7 +652,7 @@ class ColdSimulationKernel {
         this.projectResolve = typeof options.projectResolve === 'function' ? options.projectResolve : null;
         // A hunting solo step's window (T120, ColdSoloWindow), the worker's:
         // { projectRound(state, result, timestamp, plan, writtenAt),
-        // deadline(state, timestamp), readers(plan) }. A kernel built without
+        // readers(plan) }. A kernel built without
         // them (a test of another rule) has no window: a step is its one round.
         this.soloWindow = options.soloWindow || null;
         // Read by the health line (PopulationStatus.soloWindowText): solo
@@ -1023,12 +1032,14 @@ class ColdSimulationKernel {
         const version = Number(this.versions.get(characterId) || 0) + 1;
         this.versions.set(characterId, version);
         // The bot's one record: { state, version, route, spotFit, materialMemo,
-        // economyPending, economyPlanHash, wishAdvisory, raiseSeq, nearRoute }.
+        // economyPending, economyPlanHash, wishAdvisory, raiseSeq, nearRoute,
+        // actionBaseline }.
         // Every field but the state and version is this thread's own and
         // survives a new state: the kept route (BotRoute.trip) until its
         // step's drops, the trip's kept spot verdicts (BotRoute heldVerdict,
         // each keyed on what it reads), the material memo (partyRequestForPlan), the economy
-        // plan sent and its hash, the card it holds and, for a near bot, the
+        // plan sent and its hash, the card it holds, the facts of its last
+        // committed action ask (onCommitAck) and, for a near bot, the
         // last raise applied and the route rows of its last decision
         // (ColdSimulationWorker nearEvents, publish).
         // A held event wait (lifecycleKind 'event_driven', stats.eventWait) ends
@@ -1657,6 +1668,8 @@ class ColdSimulationKernel {
             if (!this.currentCommand(id, attempt)) return;
             DiagnosticConfig.developerDiagnostics && (this.stats.resolved += 1);
             attempt.sent = true;
+            // The facts of the plan's action ask: the bot's baseline once main ran the command.
+            attempt.actionBaseline = lifecyclePlan?.actionBaseline || null;
             const sent = this.emit('command_request', {
                 requests: [{
                     characterId: id,
@@ -2340,6 +2353,9 @@ class ColdSimulationKernel {
                 options: { allowLifecycle: true, allowParty: !!active.state.stats?.tradeMeeting }
             };
             handled = true;
+            // Worker-local, never posted: the facts of the step's last action
+            // ask, the bot's baseline once main commits the step (onCommitAck).
+            active.actionBaseline = projection?.actionBaseline || null;
             this.dirty.set(Number(characterId), proposal);
             DiagnosticConfig.developerDiagnostics && (this.stats.resolved += 1);
             if (priority !== 'P2' || this.dirty.size >= this.maxBatch) {
@@ -2369,8 +2385,8 @@ class ColdSimulationKernel {
     // its timestamp, ended, and the window's sums (the bag's loot for the
     // priority, the events and debug main reads); null when the step went stale.
     async huntWindow(source, first, plan, roundOptions, writtenAt) {
-        const { projectRound, deadline } = this.soloWindow;
-        const until = deadline(first.state, first.timestamp), readers = this.windowReaders(plan);
+        const { projectRound } = this.soloWindow;
+        const readers = this.windowReaders(plan);
         const events = [], soulCrystals = [], items = [];
         let round = first, rounds = 1, debug = {};
         const add = result => {
@@ -2383,10 +2399,13 @@ class ColdSimulationKernel {
         for (;;) {
             const after = await projectRound(round.state, round.result, round.timestamp, plan, writtenAt);
             if (!this.resolverSourceCurrent(source)) return null;
-            // Two guards bound the loop whatever endOf decides: a round cap and a
-            // round that does not move the clock (limits.md; counted in windowEnd).
-            const ended = ColdSoloWindow.endOf(round.state, after, round.result, until, readers)
+            // Three guards bound the loop whatever endOf decides: a round cap, the
+            // look-ahead (the next round due past the step's clock + WINDOW_LEAD_MS:
+            // huntedThrough stays inside it) and a round that does not move the
+            // clock (limits.md; counted in windowEnd).
+            const ended = ColdSoloWindow.endOf(round.state, after, round.result, readers)
                 || (rounds >= MAX_WINDOW_ROUNDS ? 'round_cap' : '')
+                || (Math.ceil(Number(after.timing?.nextResolveAt)) >= first.timestamp + WINDOW_LEAD_MS ? 'lead' : '')
                 || (Math.ceil(Number(after.timing?.nextResolveAt)) > round.timestamp ? '' : 'stalled');
             if (ended) {
                 // huntedThrough (ColdSoloWindow): the last round's start, the end of the credited hunt.
@@ -2601,6 +2620,10 @@ class ColdSimulationKernel {
             // cache is the proposal's state with them.
             const committed = result.ok ? result.state || Protocol.committedState(active.proposed, result) : null;
             if (committed) {
+                // The committed step's action ask is the bot's last (ColdEconomyPlan.edgesSince);
+                // a step that ends otherwise leaves the baseline before it.
+                const record = this.states.get(id);
+                if (record && active.actionBaseline) record.actionBaseline = active.actionBaseline;
                 // Without result.state main changed nothing: the held state is
                 // the step's own output, not news for its economy (ownOutput).
                 this.upsert({ state: committed, ownOutput: result.state ? null : 'commit' });
@@ -2704,6 +2727,8 @@ class ColdSimulationKernel {
         // A command that threw on main (payload.fault, its stack) is held off as
         // a throw here is (fault); before the upsert, so its schedule keeps the hold.
         if (payload.ok) this.clearFault(id);
+        // A lifecycle command main ran: its plan's action ask is the bot's last.
+        if (payload.ok && attempt.actionBaseline) current.actionBaseline = attempt.actionBaseline;
         const retryAt = payload.fault && payload.ok === false
             ? this.fault(id, { message: payload.reason, stack: payload.fault.stack }, 'main_command')
             : this.now() + Math.max(1000, Number(payload.retryAfterMs) || 5000);

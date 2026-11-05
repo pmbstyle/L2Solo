@@ -156,9 +156,14 @@ function spotVersion(spotId) {
 // A spot has room for this bot in this thread's occupancy (roomFilterFor's
 // rule for one bot, with no set per search); its own spot always has.
 function roomFor(spot, state) {
-    if (String(spot.id) === String(state.spotId) || spotHunters(spot, state) <= LevelingRoutes.roomForSpot(spot)) return true;
+    if (roomAt(spot, state, spotHunters(spot, state))) return true;
     Diagnostics.count('spot_list', 'skip', 'full');
     return false;
+}
+// roomFor's rule at a count of hunters (spotHunters: the bot among them):
+// the earning spot's crowd key judges a held answer's spots by it.
+function roomAt(spot, state, hunters) {
+    return String(spot.id) === String(state.spotId) || hunters <= LevelingRoutes.roomForSpot(spot);
 }
 
 // How many bots a spot holds (LevelingRoutes.roomForSpot); a raid boss spot
@@ -454,6 +459,7 @@ const SpotProfiles = {
 SpotProfiles.spotHunters = spotHunters;
 SpotProfiles.spotVersion = spotVersion;
 SpotProfiles.roomFor = roomFor;
+SpotProfiles.roomAt = roomAt;
 SpotProfiles.useOccupancy = useOccupancy;
 SpotProfiles.spotsNearLevel = spotsNearLevel;
 SpotProfiles.spotRoom = spotRoom;

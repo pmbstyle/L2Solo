@@ -2294,7 +2294,7 @@ function sourceRouteReader(state, options = {}) {
         if (!LevelingRoutes.isSpotAllowedForState(spot, state, { ...soloOptions, matchupProfiles: profiles })) return 'matchup';
         return null;
     };
-    return (spot, npcId = 0) => {
+    const reader = (spot, npcId = 0) => {
         const at = SpotIndex.ordinalFor(spots, spot), shift = (at & 3) << 1;
         let cell = at < 0 ? 0 : cells[at >> 2] >> shift & 3;
         if (shadow && cell && !shadow.has(at)) {
@@ -2345,8 +2345,21 @@ function sourceRouteReader(state, options = {}) {
         if (pair !== undefined) ground.species[pair >> 2] |= (can ? GROUND_ALLOWED : GROUND_REFUSED) << ((pair & 3) << 1);
         return can;
     };
+    // What a verdict reads beside the ground's own cells (kept, or filled by
+    // this reader: their identity is the rest): named, for a holder of facts
+    // made with this reader (KeptSourceFacts).
+    reader.inputs = () => [['economicHunt', economicHunt], ['excluded', [...excluded].map(String).sort().join(',')]];
+    return reader;
 }
 
+// What a wish's sourceFacts walk reads of the bot and the world beside its
+// options (the spot values, the route reader, trips, the spoiler and the band
+// it is given): named, for a holder of its facts (KeptSourceFacts).
+function sourceFactInputs(state = {}) {
+    return [['rates', sourceYieldRatesKey()], ['level', Number(state.level || 0)],
+        ['readiness', JSON.stringify(combatReadiness(state))],
+        ['current', String(state.stats?.travel?.spotId || state.spotId || null)]];
+}
 function* sourceFacts(state = {}, itemId, units = 1, options = {}) {
     const ratesKey = sourceYieldRatesKey(), killerLevel = Number(state.level || 0);
     const entries = sourceIndexFor(options.spots || []).get(Number(itemId)) || [];
@@ -3242,6 +3255,7 @@ module.exports.acquisitionTargetAllowed = acquisitionTargetAllowed;
 module.exports.sourceCacheSize = sourceCacheSize;
 module.exports.sourceYieldReaderFor = sourceYieldReaderFor;
 module.exports.sourceFacts = sourceFacts;
+module.exports.sourceFactInputs = sourceFactInputs;
 module.exports.sourceRouteReader = sourceRouteReader;
 module.exports.sourceGround = sourceGround;
 module.exports.sourceShotFlipCount = () => sourceShotFlips;
