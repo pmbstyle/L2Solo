@@ -252,13 +252,21 @@ function combatReadiness(state = {}) {
 function computeCombatReadiness(state = {}) {
     const role = roleFor(state);
     const equipped = equippedInventoryItems(state.inventory);
-    const interimClassId = BotEquipmentCompatibility.interimClassIdFor(classIdFor(state));
-    const interimState = interimClassId
-        ? { ...state, party: null, stats: { ...(state.stats || {}), classId: interimClassId, role: undefined } }
-        : null;
-    const weapon = equipped.find((item) => BotEquipmentCompatibility.isWeaponSlot(Number(item.etc?.slot || 0))
-        && (suitable(item, state, role, item.etc?.rank)
-            || (interimState && suitable(item, interimState, roleFor(interimState), item.etc?.rank))));
+    const classId = classIdFor(state);
+    const interimClassId = BotEquipmentCompatibility.interimClassIdFor(classId);
+    // The bot as its interim profession, built on the first weapon its own
+    // role rejects that is an interim kind (isInterimWeaponKind).
+    let interim = null;
+    const weapon = equipped.find((item) => {
+        if (!BotEquipmentCompatibility.isWeaponSlot(Number(item.etc?.slot || 0))) return false;
+        if (suitable(item, state, role, item.etc?.rank)) return true;
+        if (!BotEquipmentCompatibility.isInterimWeaponKind(item.template?.kind || '', classId)) return false;
+        if (!interim) {
+            const interimState = { ...state, party: null, stats: { ...(state.stats || {}), classId: interimClassId, role: undefined } };
+            interim = { state: interimState, role: roleFor(interimState) };
+        }
+        return suitable(item, interim.state, interim.role, item.etc?.rank);
+    });
     const armor = equipped.filter((item) => ARMOR_SLOTS.has(Number(item.etc?.slot || 0))
         && suitable(item,state,role,item.etc?.rank));
     const weaponRank = rankIndex(weapon?.etc?.rank);
@@ -1089,7 +1097,7 @@ function staticNpcUpgradePlan(state = {}, options = {}) {
             // blades. It is this class's kit weapon under the same rule.
             const dual = dualSwordBridgePlan(state, options);
             if (!dual) continue;
-            if (dualSwordFunded(dual, state, options)) return dual;
+            if (weaponBridgeFunded(dual, state, options)) return dual;
             saving = saving || dual;
             continue;
         }
@@ -1180,7 +1188,7 @@ function npcWeaponBridgePlan(state = {}, options = {}) {
         // An interim weapon leaves an unfunded dual sword in the kit order
         // instead of a bridge that would hold back every other purchase.
         const dual = dualSwordBridgePlan(state, options);
-        return dual && (!armed || dualSwordFunded(dual, state, options)) ? dual : null;
+        return dual && (!armed || weaponBridgeFunded(dual, state, options)) ? dual : null;
     }
     if (armed || !GearLifecycle.isGearFocusActive(state)) return null;
     const slot = desiredNpcSlots(state).find((entry) => BotEquipmentCompatibility.isWeaponSlot(entry));
@@ -1200,9 +1208,13 @@ function npcWeaponBridgePlan(state = {}, options = {}) {
         weaponBridge: true, partyNeedReason: 'weapon_bridge' };
 }
 
-// Funded = the bot can pay for every blade the combination still needs.
-function dualSwordFunded(plan, state, options = {}) {
-    return Number(plan.bridgeCost || 0) <= npcPurchaseBudget(state, options).spendable;
+// Funded = the bot can pay now for what its weapon bridge still needs: every
+// blade of a dual-sword combination (a plan with `combine`: bridgeCost, above
+// the operating reserve, as dualSwordBridgePlan chose it), or the single NPC weapon (the whole wallet,
+// as npcWeaponBridgePlan chose it).
+function weaponBridgeFunded(plan, state, options = {}) {
+    if (plan.combine) return Number(plan.bridgeCost || 0) <= npcPurchaseBudget(state, options).spendable;
+    return Number(plan.market?.price || 0) <= npcPurchaseBudget(state, { ...options, weaponBridge: true }).spendable;
 }
 
 // Bridge choice over candidates sorted by cost: keep the bridge already
@@ -1216,9 +1228,8 @@ function chooseBridge(candidates, spendable, bridgeRank, keepId = 0) {
         || null;
 }
 
-function npcEquipmentBridgePlan(state = {}, options = {}) {
-    const weapon = npcWeaponBridgePlan(state, options);
-    if (weapon) return weapon;
+// Body armour of the wrong class: the kit's next NPC purchase when it is a body piece.
+function npcClassArmorBridgePlan(state = {}, options = {}) {
     const role = roleFor(state);
     const incompatibleBody = equippedInventoryItems(state.inventory).some(item => (
         [10, 11, 15].includes(Number(item.etc?.slot))
@@ -1230,15 +1241,37 @@ function npcEquipmentBridgePlan(state = {}, options = {}) {
         ? { ...plan, equipmentBridge: true, partyNeedReason: 'class_armor_bridge' } : null;
 }
 
+// The bridges in their order: a usable weapon before armour of the class.
+const NPC_BRIDGES = [npcWeaponBridgePlan, npcClassArmorBridgePlan];
+
+// The bridge the bot's gear plan follows, funded or saved for.
+function npcEquipmentBridgePlan(state = {}, options = {}) {
+    for (const bridge of NPC_BRIDGES) {
+        const plan = bridge(state, options);
+        if (plan) return plan;
+    }
+    return null;
+}
+
+// Funded = the bot can pay for the bridge now (weaponBridgeFunded for a
+// weapon; the armour from what it may spend on that item, escrow included).
+function bridgeFunded(plan, state, options = {}) {
+    return plan.weaponBridge ? weaponBridgeFunded(plan, state, options)
+        : Number(plan.market?.price) <= PurchaseFunding.spendable(state, options.buyOrderEscrow, { itemId: plan.target?.selfId });
+}
+
 // Why a party member leaves its party to fix its kit: it has no usable
-// weapon, or it wears body armour of the wrong class and can pay for the
-// NPC replacement now.
+// weapon, or it wears body armour of the wrong class, and it can pay for the
+// NPC replacement now. A C4 player without a proper weapon still parties and
+// earns his share there; leaving helps only when he can buy the weapon now.
+// An unfunded bridge stays the gear plan (saving for it), not a reason to
+// leave; the next bridge in order still is, when funded.
 function equipmentBridgeReason(state = {}, options = {}) {
-    const plan = npcEquipmentBridgePlan(state, options);
-    if (plan?.weaponBridge) return 'weapon_bridge';
-    return plan?.equipmentBridge
-        && Number(plan.market?.price) <= PurchaseFunding.spendable(state, options.buyOrderEscrow, { itemId: plan.target?.selfId })
-        ? 'class_armor_bridge' : null;
+    for (const bridge of NPC_BRIDGES) {
+        const plan = bridge(state, options);
+        if (plan && bridgeFunded(plan, state, options)) return plan.partyNeedReason;
+    }
+    return null;
 }
 
 function marketPlanForTarget(state = {}, targetId, options = {}) {

@@ -6,9 +6,18 @@ const CASTER_BUFFER_CLASSES = new Set([17, 49]);
 // Orc Shamans level through melee while retaining their support role. A
 // physical blunt preserves Stun Attack; one hand leaves room for a shield.
 // Warcryer and Overlord keep it: they fight in melee too
-// (BotRoles.usesCasterWeaponCombat; user 10-29, T106 audit).
+// (BotRoles.usesCasterWeaponCombat; user 10-29, T106 audit). That kit is our
+// choice; C4 lets any class hold any weapon, and Stun Attack and Hammer Crush
+// accept a two-handed blunt (weaponsAllowed Blunt|BigBlunt, C4SkillRules).
+// So the staff an Orc Mystic bought stays a weapon to fight with until the
+// kit replaces it (interimClassId), not an empty hand: judged unarmed, the
+// shaman left each party it formed for a weapon bridge (diagnostics run
+// 2026-11-05: 36 of 132 shamans). Only the mystic's blunts are kept
+// (interimWeaponKinds, any hand count): a sword or a rod does not stun.
 const ORC_SHAMAN_PROFILE = Object.freeze({
     weaponKinds: ['Weapon.Blunt'],
+    interimClassId: 49,
+    interimWeaponKinds: ['Weapon.Blunt'],
     armorStyle: 'heavy',
     twoHandedWeaponKinds: [],
     shield: true,
@@ -247,6 +256,18 @@ function interimClassIdFor(classId) {
     return Number(CLASS_PROFILES[baseClassId(classId)]?.interimClassId || 0);
 }
 
+// A weapon kind the class keeps from its interim profession (interimClassId)
+// until its own kit weapon: the interim profession's kinds, narrowed to the
+// profile's interimWeaponKinds when it lists them, never that profession's
+// retail starter weapon. Whether the item suits the interim profession
+// (hands, grade) is still its role's rule (GearAcquisitionPlanner suitable).
+function isInterimWeaponKind(kind, classId) {
+    const profile = CLASS_PROFILES[baseClassId(classId)];
+    const interimClassId = Number(profile?.interimClassId || 0);
+    if (!interimClassId || isStarterWeaponKind(kind, interimClassId)) return false;
+    return !profile.interimWeaponKinds || profile.interimWeaponKinds.includes(kind);
+}
+
 function preferredWeaponKindsFor(role, classId) {
     return profileFor(role, classId).preferredWeaponKinds;
 }
@@ -300,6 +321,7 @@ module.exports = {
     baseClassId,
     interimClassIdFor,
     isCasterRole,
+    isInterimWeaponKind,
     isStarterWeaponKind,
     preferredWeaponKindsFor,
     profileFor,
