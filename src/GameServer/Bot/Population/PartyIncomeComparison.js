@@ -68,7 +68,8 @@ function evaluate({ solo, party, cash = null, spendable = 0, fee = 0, rewardFee 
 
 // The solo side's earning route: { route, own }. The spot the bot's held
 // build earns at (decision 10-30), read each time (no search, and no memo of
-// it here); else a search of its own (own: its held record). A held forming
+// it here); else a search of its own (own: its held record). Either takes its
+// numbers at the inputs now (EquipmentIncomeRoute.liveRoute). A held forming
 // verdict keys the route's answer, whichever search gave it
 // (PartyGoalPolicy.verdictInputs).
 function soloChoice(state, spots, timestamp) {
@@ -81,14 +82,14 @@ function soloChoice(state, spots, timestamp) {
     const route = Economy.heldIncomeRoute(standalone, { ...options, party: true });
     if (route) return { route, own: null };
     const id = Number(state.characterId) || 0;
-    let own = soloChoices.get(id);
+    let own = soloChoices.get(id), kept = null;
     if (!own || own.spots !== spots || timestamp < own.at
-        || Economy.searchMoved(own, standalone, timestamp, options)
+        || (kept = Economy.searchRead(own, standalone, timestamp, options)).why
         || invoke('GameServer/Bot/Economy/DecisionSections').observationChanged(standalone, own.observed, timestamp)) {
         const found = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').search(standalone, options);
         own = { ...Economy.searchInputs(standalone, found, timestamp, options), observed: observed(standalone, timestamp),
             spots, at: timestamp };
-    }
+    } else if (kept.route !== own.route) own = { ...own, route: kept.route };
     // Least recently used: a read moves the bot to the newest end.
     soloChoices.delete(id); soloChoices.set(id, own);
     if (soloChoices.size > SOLO_SEARCH_LIMIT) {
@@ -100,9 +101,10 @@ function soloChoice(state, spots, timestamp) {
 
 // The solo side's own search (EquipmentIncomeRoute.search) is kept on what it
 // reads, by the held earning spot's own key (EconomyContext.searchInputs,
-// searchMoved: DecisionSections.LINK_INPUTS incomeSearch on the solo copy,
+// searchRead: DecisionSections.LINK_INPUTS incomeSearch on the solo copy,
 // soloState, the weights its answer stands over and what else it stands on:
-// its prices, frustration range and crowd key); its own samples and time on
+// its prices, frustration range and crowd key; a kept choice takes its
+// numbers at the inputs now, its earner the replay's); its own samples and time on
 // the spot by the observation event's rule
 // (DecisionSections.observationChanged), as the observation bit reaches the
 // hold.

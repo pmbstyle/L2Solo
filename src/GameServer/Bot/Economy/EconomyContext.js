@@ -1023,12 +1023,13 @@ function incomeRouteFor(state, deps, timestamp, price, keep) {
     return record;
 }
 // What a kept answer keeps of the route a search chose (decision 10-30): its
-// spot, income row and hour (null: the search found none), what every reader
+// spot, income row and hour (null: the search found none) and the inputs
+// those numbers read (live: EquipmentIncomeRoute.liveRoute), what every reader
 // of a held route reads (the build's foundation, the party comparison's solo
 // side: PartyIncomeComparison.soloRoute and the forming verdict's key); not the
 // search's matchup profiles (their verdict caches would live with whoever keeps
 // the answer) nor its ranking fields.
-const keptRoute = route => route ? { spot: route.spot, row: route.row, earning: route.earning } : null;
+const keptRoute = route => route ? { spot: route.spot, row: route.row, earning: route.earning, live: route.live ?? null } : null;
 // What a held build keeps of the search that chose its route (decision 10-30):
 // keptRoute; when it ran and its key: the versions of the inputs it read
 // (Sections.LINK_INPUTS incomeSearch, incomeVersions) and the money weights
@@ -1062,27 +1063,49 @@ const OBSERVATION = Sections.sectionBit('observation');
 // observation rule), else what the answer stands on (live: the state now and
 // the reader's price function, null for a reader with none;
 // EquipmentIncomeRoute.standsMoved: 'prices', 'frustration', 'crowd'), else
-// '': inside its key a search returns the same answer. The weight reads the
-// packet's hour, the last search's own earning (ECO-15): a move a search
-// makes is heard after the build that publishes it.
+// '': inside its key a search returns the same spot (its earning and numbers
+// at the inputs now: incomeRead). The weight reads the packet's hour, the
+// last search's own earning (ECO-15): a move a search makes is heard after
+// the build that publishes it. The bot's own arrival at the answer's spot
+// moves no input (the spot's version as searched): the stands replay the
+// answer from there (EquipmentIncomeRoute.arrived), or it searches.
 function incomeMoved(answer, versions, mask = 0, live = null) {
-    return Sections.movedInput('incomeSearch', answer.versions, versions, 0, weightBounds(answer))
-        || (Number(mask) & OBSERVATION ? 'observation' : '')
-        || (live ? IncomeRoute.standsMoved(answer.stands, live.state, versions.weight, live.price) : '');
+    return incomeRead(answer, versions, mask, live).why;
+}
+// incomeMoved with what the stands' replay read (read: standsRead's, null
+// where a version or bit moved or there is no live reader). live: { state,
+// price, timestamp }.
+function incomeRead(answer, versions, mask = 0, live = null) {
+    const now = live && IncomeRoute.arrived(answer.stands, live.state) ? { ...versions, spot: answer.versions.spot } : versions;
+    const why = Sections.movedInput('incomeSearch', answer.versions, now, 0, weightBounds(answer))
+        || (Number(mask) & OBSERVATION ? 'observation' : '');
+    if (why || !live) return { why, read: null };
+    const read = IncomeRoute.standsRead(answer.stands, live.state, versions.weight, live.price, live.timestamp);
+    return { why: read.moved, read };
+}
+// The answer's route at a read that keeps it (read: incomeRead's): its
+// numbers at the inputs now (EquipmentIncomeRoute.liveRoute: the earner the
+// crowd key's replay finds, the hunters and prices), as a fresh search there
+// gives them.
+function liveRouteOf(answer, state, read, live) {
+    return read ? IncomeRoute.liveRoute(answer.route, answer.stands, state, read, live) : answer.route;
 }
 // An earning-spot search made outside the hold (the party comparison's own
 // solo search, PartyIncomeComparison.soloChoice) as the hold keeps one: its
 // route (keptRoute) and its key, the same inputs as the held spot's
 // (incomeVersions on the searched state, options: the search's spots, mode and
 // price; options.versions: the caller's, read once on this state and moment)
-// and what its answer stands on. One rule with the hold: searchMoved names the
-// input that moved since ('' none); the observation bit, which only a build
-// hears, the caller reads by the observation event's own rule.
+// and what its answer stands on. One rule with the hold: searchRead names the
+// input that moved since ('' none) and, where none did, the route with its
+// numbers at the inputs now (liveRouteOf); the observation bit, which only a
+// build hears, the caller reads by the observation event's own rule.
 function searchInputs(state, found, at, options) {
     return { route: keptRoute(found.route), versions: options.versions || incomeVersions(state, options, at), weights: found.weights, stands: found.stands ?? null };
 }
-function searchMoved(inputs, state, timestamp, options) {
-    return incomeMoved(inputs, options.versions || incomeVersions(state, options, timestamp), 0, { state, price: options.price });
+function searchRead(inputs, state, timestamp, options) {
+    const live = { state, price: options.price, timestamp };
+    const { why, read } = incomeRead(inputs, options.versions || incomeVersions(state, options, timestamp), 0, live);
+    return { why, route: why ? null : liveRouteOf(inputs, state, read, live) };
 }
 // A search of this moment read every event: the bits ask none of it again.
 const eventsFor = (answer, mask, timestamp) => answer.at === timestamp ? 0 : mask;
@@ -1106,9 +1129,11 @@ function holdDueWhy(answer, versions, mask, timestamp, live) {
 // The one hold (decision 10-30): the answer of the search the bot's held build
 // made (a route or none), kept as found: no search and no matchup per read
 // (10-31: re-judging the held spot per read cost more than the ranking it
-// saved). A build that rebuilds its foundation searches when an input of the
+// saved); a kept read takes its numbers at the inputs now (liveRouteOf: the
+// crowd key's replay, the pick's and the earner's rows where they moved). A
+// build that rebuilds its foundation searches when an input of the
 // key moved (deps.searchIncome); any other read whose key moved
-// (holdDueWhy: options.versions, read here when not given; options.mask: the
+// (incomeRead: options.versions, read here when not given; options.mask: the
 // build's sections, the observation bit among them; options.price, the
 // prices it stands on; the crowd key; on every path: basics here, a build
 // through holdCheck) asks one full search with no rebuild: the same answer
@@ -1127,9 +1152,15 @@ function holdRead(state, options) {
     const timestamp = Number(options.timestamp) || Date.now();
     const answer = hold.moved || hold;
     const versions = options.versions || incomeVersions(state, options, timestamp);
-    // The party read has no prices of its own: the hold's owner hears them.
-    const why = holdDueWhy(answer, versions, options.mask, timestamp, { state, price: party ? null : options.price });
-    if (!why) return heldAnswer(hold, party);
+    // The party read has no prices of its own: the ones the owner's reads last took (heldPrices).
+    const live = { state, price: party ? IncomeRoute.heldPrices(answer.route, answer.stands, state) : options.price, timestamp };
+    const { why, read } = incomeRead(answer, versions, eventsFor(answer, options.mask, timestamp), live);
+    if (!why) {
+        // A kept read takes the route at the inputs now; the owner's read keeps it (the party's prices are the owner's).
+        const route = liveRouteOf(answer, state, read, live);
+        if (!party && route !== answer.route) answer.route = route;
+        return heldAnswer(hold, party, route);
+    }
     if (party) { holdStats.partyMissed += 1; return null; }
     countHoldEvent(why);
     const found = IncomeRoute.search(state, options);
@@ -1143,12 +1174,13 @@ function holdRead(state, options) {
     holdStats.moved += 1;
     return { route: found.route, searched: true, hold: next };
 }
-// A read of the hold's answer under its key: no search.
-function heldAnswer(hold, party) {
+// A read of the hold's answer under its key: no search. route: the answer's
+// at the read's inputs (holdRead), else as held.
+function heldAnswer(hold, party, route = (hold.moved || hold).route) {
     const answer = hold.moved || hold;
-    if (party && !answer.route) { holdStats.partyMissed += 1; return null; }
-    holdStats[party ? 'partyKept' : hold.moved ? 'moved' : answer.route ? 'kept' : 'unrouted'] += 1;
-    return { route: answer.route, searched: !!hold.moved, hold: answer };
+    if (party && !route) { holdStats.partyMissed += 1; return null; }
+    holdStats[party ? 'partyKept' : hold.moved ? 'moved' : route ? 'kept' : 'unrouted'] += 1;
+    return { route, searched: !!hold.moved, hold: answer };
 }
 // A build's read of the hold (heldVerdictFor): holdRead reached only through
 // basics would leave every bot off the card path (and a build that serves the
@@ -1175,7 +1207,7 @@ function holdCheck(state, deps, held, verdict, judged, versions) {
     // stands, after the versions and bits) or a search runs.
     let priced = null;
     const price = id => (priced ||= pricing(state, personaOf(state, deps), deps.board, timestamp, deps).price)(id);
-    const why = holdDueWhy(hold.moved || hold, versions, mask, timestamp, { state, price });
+    const why = holdDueWhy(hold.moved || hold, versions, mask, timestamp, { state, price, timestamp });
     if (!why) {
         if (!hold.moved || cache.get(`character:${Number(state.characterId) || 0}`)?.plan?.hold !== hold) return false;
         heldAnswer(hold, deps.party === true);
@@ -1495,12 +1527,14 @@ const stepPlace = leaf => `${leaf.activity}|${leaf.kind}|${leaf.itemId}|${leaf.t
 // the key on its fields would keep; rebuilt:key-only:<input> the reverse, once
 // per held answer; first: nothing to compare (its key is its inputs:
 // test_economic_trip_marginal reads the table on the full state).
-// verify:<same|row|mismatch> (incomeSearch): the held answer against a fresh
-// one (row: the same spot, another income): a fresh select on 1 in 16
+// verify:<same|row|mismatch> (incomeSearch): the held answer, its numbers as
+// a read takes them (liveRoute), against a fresh one (row: the same spot,
+// another income): a fresh select on 1 in 16
 // kept:quiet reads (untimed: not in link:income:search and the links line's
 // search count; its own time is link:income:verify, its number the verify
-// counts; the spot list, value and matchup counters inside select still count
-// it): a mismatch is an input the key misses.
+// counts; the spot list, value, matchup and the stands' replay counters,
+// income_crowd and income_live, still count it): a mismatch is an input the
+// key misses.
 const linkTotals = {};
 let linkVerifyTick = 0;
 // The links still decided by masks: their rows split what the key would decide.
@@ -1551,11 +1585,14 @@ function incomeShadow(state, deps, seen, hold, timestamp, board) {
         linkCount('incomeSearch', 'kept:quiet');
         if (++linkVerifyTick % 16) return;
         const started = performance.now();
+        const price = pricing(state, personaOf(state, deps), board, timestamp, deps).price;
         const fresh = IncomeRoute.untimedSelect(state, { spots: deps.spots, mode: deps.mode, maxChecks: deps.maxChecks, timestamp,
-            required: GearProgression.assess(state).required,
-            price: pricing(state, personaOf(state, deps), board, timestamp, deps).price });
+            required: GearProgression.assess(state).required, price });
+        // The held answer as a read takes it: its numbers at the inputs now (liveRoute).
+        const live = { state, price, timestamp }, { why, read } = incomeRead(answer, incomeVersions(state, deps, timestamp), 0, live);
+        const route = why ? answer.route : liveRouteOf(answer, state, read, live);
         Diagnostics.duration('link:income:verify', performance.now() - started);
-        linkCount('incomeSearch', `verify:${sameAnswer(spot, income, spotOf(fresh), fresh?.row?.income ?? null)}`);
+        linkCount('incomeSearch', `verify:${sameAnswer(spot, route?.row?.income ?? null, spotOf(fresh), fresh?.row?.income ?? null)}`);
         return;
     }
     seen.incomeSearch = { at: answer.at, spot, income };
@@ -1723,7 +1760,7 @@ function buildForState(state, deps) {
     // income_moved refusal's section, not a second search.
     const heldSpot = held?.plan.hold?.moved || held?.plan.hold;
     const searchIncome = heldSpot && !keptBase
-        ? incomeMoved(heldSpot, reads.versions, eventsFor(heldSpot, mask, timestamp), { state, price }) : '';
+        ? incomeMoved(heldSpot, reads.versions, eventsFor(heldSpot, mask, timestamp), { state, price, timestamp }) : '';
     const base = keptBase ? foundationFromPlan(state, keptBase, deps, price)
         : foundation(state, { ...deps, searchIncome, incomeVersions: reads.versions },
             persona, timestamp, price, record => { incomeRecord = record; });
@@ -2537,5 +2574,5 @@ function reset() {
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
 module.exports = { quietGearBuildCount: () => quietGearBuilds, buildDoors: () => ({ ...doors, ...Agenda.counts() }), countDoor,
-    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), incomeHoldStats, linkStats, heldIncomeRoute, heldSpotMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockFor, stockReader, keptKit, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider, incomeVersions, searchInputs, searchMoved,
+    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), incomeHoldStats, linkStats, heldIncomeRoute, heldSpotMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockFor, stockReader, keptKit, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider, incomeVersions, searchInputs, searchRead,
     craftIncome };

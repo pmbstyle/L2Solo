@@ -134,8 +134,8 @@ const LINK_INPUTS = Object.freeze({
         'adventurer', // select: PersonalGearProgression.adventurer gate
         'economic', // select: economicHunt opens the search
         'required', // select: required (GearProgression.assess in EconomyContext.incomeRouteFor)
-        'spot', // select: ids start with state.spotId; origin = its center, else state.loc (WalkBack.tripHours)
-        'samples', // select: BotHuntEfficiency.sampledRows spot ids join the candidates
+        'spot', // select: ids start with state.spotId; origin = its center, else state.loc (WalkBack.tripHours); the arrival at the answer's spot replays (EquipmentIncomeRoute.arrived)
+        'samples', // select: BotHuntEfficiency.sampledRows spot ids join the candidates; a new sampled spot moves every table row (calibration) and the hunt's death hours: a search
         'exclusions', // select: SpotRiskPolicy.excludedSpotIdsForStates (its exclusionVersion, a mark's end read at each check)
         'recovery', // select: spotAllowedReaderFor -> safetyOptions' maxTargetLevel (the death recovery's level penalty)
         'bagShot', // spotList.ids: consumablePrices' shot (ShotStock.planForState); stateProfiles' loaded shot (shotInputs)
@@ -148,7 +148,7 @@ const LINK_INPUTS = Object.freeze({
         'observation', // SpotEconomics.create: the bot's own sample values (the observation bit, beyond its own error)
         'prices', // spotList.ids and SpotEconomics: the shot and potion prices (the reader's), inside the hull of the ranges the crowd key replays over (search's stands.prices)
         'frustration', // SpotEconomics riskWeight: inside the range of it the answer stands over (search's stands.risk)
-        'crowd' // SpotEconomics spotHunters, SpotProfiles.roomFor: the crowd key's replay over its candidates' hunters
+        'crowd' // SpotEconomics spotHunters, SpotProfiles.roomFor: the crowd key's replay over its candidates' hunters (the pick; its earner and numbers at the read: liveRoute)
     ]),
     // The crafter's workshop: the occupation planner's answer
     // (ColdOccupationSources.prepare over the planner capture,

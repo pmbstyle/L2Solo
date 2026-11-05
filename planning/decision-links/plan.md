@@ -84,7 +84,7 @@ Inputs marked (E) have an event today, (–) have none, (S) need a significance 
    key would decide against the mask (`link:<link>:<rebuilt|kept>:<input|mask-only|key-only:input>`, `verify:*`,
    `link:income:search`, the worker's `links=` line). Key-only by reading (no event today): a risk mark on a spot that
    is not the held leaf's, and a mark's expiry (exclusions); the held leaf's own arrival moves the search's origin
-   (spot, own output: decide); the workshop's packet hour/price are the previous build's (one build behind) and its
+   (spot, own output: decided in step 3, the arrival at the held spot replays); the workshop's packet hour/price are the previous build's (one build behind) and its
    wallet, maxMp and own board lines carry no fact; beginner shots running out (bagShot).
    Stage B done: the earning spot search decides on its key (`EconomyContext.incomeMoved`: the incomeSearch
    versions, `mode` the party/duo gate, the weight interval, the new `observation` section bit raised by the
@@ -110,14 +110,18 @@ Inputs marked (E) have an event today, (–) have none, (S) need a significance 
    answer anywhere in the box (weight range × frustration range × the prices' hull × any crowd, the pick's own
    hunters up to the count where it loses), with the score of each as a function of its hunters (huntShare scales a
    table row, an observed row's deaths) and the prices, replayed at each check against the counts and prices now
-   (`crowdStands`). The catalog period is the
+   (`crowdStands`): the key's answer is the pick; who sets its earning is found at the read (an earner change was
+   ~half the crowd searches, each renewing the same spot), and a kept read takes the route's numbers at the inputs
+   now (`liveRoute`). The held leaf's own arrival at the held spot (own output: the walks and the death hours
+   move, the latter one factor on every row's risk as frustration's) replays from there (`arrived`); a new sampled spot searches (calibration and death hours move every row). The catalog period is the
    spot table's revision. Samples stay on the observation rule (not linear: rates, calibration inside the crowd cut,
    deathHours over the hunt's exp). The death recovery's target level cap is a version (`recovery`) and a fact
    raised both ways. The solo hunt window lost the hold's deadline: its bound is the kernel's own look-ahead
    (`WINDOW_LEAD_MS` 300 s: the burst reads the world as it stands at the step), and each round reads the market
    watch (the money drift, the samples and income_moved wait at work, Reaction). Counted: `incomeHold`
-   event:<input>, `income_crowd:kept|searched`, `windowEnd` lead/market. Left: the other windows of the census
-   below.
+   event:<input>, `income_crowd:kept|searched|arrival`, `income_live:refreshed`, `income_prices:point`, `windowEnd` lead/market. Left: the
+   prices' hull is the diamond of the two ranges (a price walk past it, inside the comparisons' own region, searches
+   and renews: the exactness harness's price trials); the other windows of the census below.
 4. Done (branch ivan/links-step4-planner): planner answers per mode on the values they read
    (`ColdSimulationWorker.plannerInputKey` and `plannerValueKey`: the workshop on its named reads; finished cards outside the 64 working contexts; a state that reads the same
    keeps the job, in flight too); a crafter's MP as the band of its craft checks (`WealthCraftPolicy.craftMpBand`:

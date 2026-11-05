@@ -105,11 +105,12 @@ try {
     // step 3). The bot stands on the band's best table spot, whose spawns its
     // hunters share; its next best it knows by its own samples. Bots joining
     // its spot one by one: the key keeps the answer exactly while a fresh
-    // search still gives it (the spot, its charge, who sets its earning), and
-    // asks a search ('crowd') at the first count where it does not: the bot is
-    // crowded off to the other spot. The prices inside the ranges its answer
-    // stands on keep it, as a fresh search does; its frustration inside its
-    // range keeps.
+    // search still gives it (the spot and its charge; who sets its earning
+    // and the numbers a kept read takes at the counts now, liveRoute, as the
+    // fresh search's), and asks a search ('crowd') at the first count where it
+    // does not: the bot is crowded off to the other spot. The prices inside
+    // the ranges its answer stands on keep it, as a fresh search does; its
+    // frustration inside its range keeps.
     {
         const Route = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
         const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
@@ -130,7 +131,11 @@ try {
         for (let n = 0; n < 3; n++) bot = { ...bot, stats: { ...bot.stats, huntEfficiency: Hunt.record(bot, { spotId: other, timestamp: now,
             cycleMs: 3600000, exp: 0.6 * own.exp, adena: 0.6 * own.income, loot: 0, costs: 0, kills: 0.6 * own.kills }) } };
         const options = { spots: catalog, timestamp: now, required: true };
-        const answerOf = route => route ? `${route.spot.id}|${route.row.useShots}|${route.earning === route.row.income ? 'own' : 'other'}` : null;
+        const answerOf = route => route ? `${route.spot.id}|${route.row.useShots}` : null;
+        const numbersOf = route => route ? `${answerOf(route)}|${route.row.income}|${route.row.exp}|${route.row.kills}|${route.earning}` : null;
+        // A kept read's route: the held one at the counts and prices now.
+        const liveOf = (bot, price) => Route.liveRoute(found.route, found.stands, bot, Route.standsRead(found.stands, bot, weight, price, now),
+            { timestamp: now, price });
         const weight = Economics.moneyWeight(bot);
         let found = Route.search(bot, options), answer = answerOf(found.route);
         assert.equal(found.route?.spot.id, held, 'fixture: alone the bot keeps its spot');
@@ -138,9 +143,12 @@ try {
         let next = 992000, kept = 0, crowdedOff = 0;
         for (let n = 1; n <= 200 && !crowdedOff; n++) {
             crowd.update({ characterId: next++, activity: 'hunting', spotId: held });
-            const fresh = Route.search(bot, options), moved = Route.standsMoved(found.stands, bot, weight, undefined);
+            const fresh = Route.search(bot, options), moved = Route.standsMoved(found.stands, bot, weight, undefined, now);
             assert.equal(moved === '', answerOf(fresh.route) === answer, `the key and a fresh search agree with ${n} others on the spot`);
-            if (moved === '') { kept++; continue; }
+            if (moved === '') {
+                assert.equal(numbersOf(liveOf(bot, undefined)), numbersOf(fresh.route), `a kept read's numbers are the fresh search's with ${n} others`);
+                kept++; continue;
+            }
             assert.equal(moved, 'crowd', 'by its input');
             found = fresh; answer = answerOf(fresh.route);
             if (fresh.route?.spot.id === other) crowdedOff = n;
@@ -159,12 +167,13 @@ try {
         let pricedKept = 0, back = 0;
         for (const shots of [0, 0.3, 0.6, 0.9, 0.99, 1.01, 1.1, 1.5, 2, 10].map(f => f * costs.shots)) {
             for (const potions of [0, 0.5, 1, 2].map(f => f * costs.potions)) {
-                const price = priced(shots, potions), moved = Route.standsMoved(found.stands, bot, weight, price);
-                const fresh = answerOf(Route.search(bot, { ...options, price }).route);
+                const price = priced(shots, potions), moved = Route.standsMoved(found.stands, bot, weight, price, now);
+                const freshRoute = Route.search(bot, { ...options, price }).route, fresh = answerOf(freshRoute);
                 if (fresh?.startsWith(`${held}|`)) back++;
                 if (moved === '') {
                     pricedKept++;
                     assert.equal(fresh, answer, `kept at shot ${shots} and potion ${potions}: a fresh search agrees`);
+                    assert.equal(numbersOf(liveOf(bot, price)), numbersOf(freshRoute), 'on the numbers too');
                 } else assert.equal(moved, 'prices', 'by its input');
             }
         }

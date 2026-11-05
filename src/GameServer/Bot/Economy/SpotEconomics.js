@@ -32,6 +32,12 @@ function moneyWeight(state, persona = BotPersona.of(state)) {
     return money / (money + powerWeight(persona));
 }
 
+// The hours one death costs the bot in a reader's rows (riskHours' factor):
+// its hunt's (the build's, else its bare hunt at timestamp) death hours.
+function deathHoursOf(state, hunt, timestamp = Date.now()) {
+    return invoke('GameServer/Bot/Economy/EconomicValuation').deathHours(state,
+        hunt ?? invoke('GameServer/Bot/AI/BotHuntEfficiency').huntIncome(state, timestamp));
+}
 // hunt: the build's own hunt (EconomyContext), so one build reads one hour;
 // a caller outside a build leaves it out and gets the bot's bare hunt.
 // spotHunters(spot, state): the hunters on a spot with the bot among them,
@@ -61,7 +67,7 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
         ? null : Table.best(tableRole, state.level, true, 'income');
     const hourAdena = Math.max(1, Number.isFinite(packetHour) && packetHour > 0 ? packetHour
         : Number.isFinite(huntHour) && huntHour > 0 ? huntHour : Number(bestIncome?.adena || 0) + Number(bestIncome?.loot || 0));
-    deathHours ??= Valuation.deathHours(state, hunt);
+    deathHours ??= deathHoursOf(state, hunt);
     const riskWeight = Valuation.riskWeight(state, persona);
     const costs = Hunt.consumablePrices(state, price);
     // The hour incomeHours counts in (reader.moneyHour).
@@ -165,7 +171,10 @@ function create(state, { timestamp = Date.now(), mode, persona, deathHours, mone
         ['spotRisk', [state.stats?.spotRisk?.spotId, state.stats?.spotRisk?.windowFights, state.stats?.spotRisk?.windowDeaths]]];
     // The hunters a row of this spot shares it with, the bot among them.
     reader.hunters = huntersOn;
+    // The hours every row reads alike: incomeHours' unit and the death hours
+    // that scale every row's riskHours (EquipmentIncomeRoute's arrival).
     reader.moneyHour = moneyHour;
+    reader.deathHours = deathHours;
     return reader;
 }
-module.exports = { create, moneyWeight, moneyShort };
+module.exports = { create, moneyWeight, moneyShort, deathHoursOf };

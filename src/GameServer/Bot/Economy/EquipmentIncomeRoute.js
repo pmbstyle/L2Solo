@@ -47,6 +47,21 @@ function select(state, options) {
 }
 // Every weight: an answer that does not read it.
 const ALL_WEIGHTS = Object.freeze({ low: 0, high: 1, hour: null });
+// The solo matchup the search reads (find; the crowd key's replay asks a
+// spot's verdict through the same reader, Routes.spotAllowedReaderFor).
+function matchupOptions(state, timestamp) {
+    return { timestamp, mode: 'solo', matchupProfiles: invoke('GameServer/Bot/AI/BotTargetMatchup').stateProfiles(state, { timestamp }) };
+}
+// The search's spot values (find, liveRoute): SpotEconomics' reader in the
+// role's best hour of the band, not the bot's own: an hour read at the spot
+// it stands on makes two spots each look better from the other (own outputs
+// are not inputs); at the bot's money weight.
+function valuesFor(state, timestamp, price) {
+    const role = SpotValueTable.roleFor(state), bestIncome = SpotValueTable.best(role, state.level, true, 'income');
+    const hour = { adena: (bestIncome?.adena || 0) + (bestIncome?.loot || 0), exp: SpotValueTable.best(role, state.level, true, 'exp')?.exp };
+    const weight = SpotEconomics.moneyWeight(state);
+    return { hour, weight, evaluate: SpotEconomics.create(state, { timestamp, price, hour, moneyWeight: weight }) };
+}
 function find(state, { spots = [], timestamp = Date.now(), price, required = false, mode,
     maxChecks = 32, list = null } = {}, ranged) {
     const unweighed = { route: null, weights: ALL_WEIGHTS };
@@ -60,18 +75,16 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
     const Match = invoke('GameServer/Bot/AI/BotTargetMatchup');
     const Index = invoke('GameServer/Bot/AI/SpotIndex');
     const Risk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
-    // Values in the role's best hour of the band, not the bot's own: an hour
-    // read at the spot it stands on makes two spots each look better from the
-    // other (own outputs are not inputs).
-    const role = SpotValueTable.roleFor(state), bestIncome = SpotValueTable.best(role, state.level, true, 'income');
-    const hour = { adena: (bestIncome?.adena || 0) + (bestIncome?.loot || 0), exp: SpotValueTable.best(role, state.level, true, 'exp')?.exp };
-    const weight = SpotEconomics.moneyWeight(state);
-    const evaluate = SpotEconomics.create(state, { timestamp, price, hour, moneyWeight: weight });
+    const { hour, weight, evaluate } = valuesFor(state, timestamp, price);
     const excluded = Risk.excludedSpotIdsForStates([state], timestamp);
-    const options = { timestamp, mode: 'solo', matchupProfiles: Match.stateProfiles(state, { timestamp }) };
+    const options = matchupOptions(state, timestamp);
     const survives = Match.soloSpotUpperBound(options.matchupProfiles);
     const origin = Index.spotById(spots, state.spotId)?.center || state.loc;
-    const ids = new Set([state.spotId, ...BotHuntEfficiency.sampledRows(state, timestamp).map(row => row.spotId)]);
+    const sampled = BotHuntEfficiency.sampledRows(state, timestamp).map(row => row.spotId);
+    const ids = new Set([state.spotId, ...sampled]);
+    // The band's spots (arrival: the bot's own spot stays a candidate after it
+    // leaves only if the band or its samples name it).
+    const listed = ranged ? new Set(sampled.map(String)) : null;
     // Search-local: null rejects a spot; undefined awaits its first walk factor.
     const spotFactors = new Map();
     // A spot the bot may earn at, whatever the prices.
@@ -94,12 +107,12 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
     // asking more (a spot the search never asked: what its catalog entry
     // tells, the rest counted as admitted).
     const always = new Set(ids), counted = new Map();
+    const admittedKnown = spot => !spot ? false : spotFactors.has(spot) ? spotFactors.get(spot) !== null
+        : !spot.raidBoss && Number(spot.avgLevel || spot.minLevel || 1) - state.level >= minGap && !excluded.has(String(spot.id));
     const matters = id => {
         let known = counted.get(id);
         if (known !== undefined) return known;
-        const spot = always.has(id) ? null : Index.spotById(spots, id);
-        known = !spot ? false : spotFactors.has(spot) ? spotFactors.get(spot) !== null
-            : !spot.raidBoss && Number(spot.avgLevel || spot.minLevel || 1) - state.level >= minGap && !excluded.has(String(spot.id));
+        known = admittedKnown(always.has(id) ? null : Index.spotById(spots, id));
         counted.set(id, known);
         return known;
     };
@@ -107,7 +120,7 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
     // score, positive or not (lineRange and the crowd key read those below zero too).
     const candidates = shots => {
         // costs are the bot's own price beliefs: the id view, not the shared shortlist rows.
-        for (const spotId of list.ids(shots, state.level, minGap, cuts)) ids.add(spotId);
+        for (const spotId of list.ids(shots, state.level, minGap, cuts)) { ids.add(spotId); listed?.add(String(spotId)); }
         return [...ids].map(id => Index.spotById(spots, id)).filter(admitted)
             .map(spot => {
                 const row = evaluate(spot, shots);
@@ -166,8 +179,36 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
     // own hour (SpotEconomics.create): that hour is an input beside the weight.
     const ownHour = hour.adena > 0 ? null : Number(Packet.hourAdena(state.stats?.money));
     const weights = { ...lineRange(weight, 0, 1, pool, open, pick, checks, weightLine), hour: ownHour };
-    return { route: pick, weights, stands: standsOf(state, { pool, shortlist, pick, earner, checks, verdicts, weight, weights,
-        open, unpooled, cuts, matters, hour: evaluate.moneyHour, costs: BotHuntEfficiency.consumablePrices(state, price) }) };
+    // The bot's arrival at the pick, its own output, moves only the origin of
+    // every walk (to the pick's center, its own walk 1) and which spot is its
+    // own (the room's exception; the spot it left stays a candidate only if
+    // listed): the crowd key replays the answer from there too (crowdKey).
+    const here = String(state.spotId);
+    const arrival = pick && pick.spot.center && String(pick.spot.id) !== here
+        ? arrivalAt(state, pick, timestamp, hour, evaluate, {
+            walkOf: spot => 1 + WalkBack.tripHours(pick.spot.center, spot, state, spots) / 0.5,
+            away: state.spotId != null && !listed.has(here) ? here : null,
+            // From the pick the spot it left is a candidate only through the band's cut (unless sampled): its place there counts.
+            matters: id => String(id) === here && !sampled.some(spotId => String(spotId) === here)
+                ? admittedKnown(Index.spotById(spots, id)) : matters(id) }) : null;
+    const stands = standsOf(state, { pool, shortlist, pick, earner, checks, verdicts, weight, weights,
+        open, unpooled, cuts, matters, hour: evaluate.moneyHour, costs: BotHuntEfficiency.consumablePrices(state, price), arrival });
+    // The inputs the route's numbers (its row, its earning) were read at (liveRoute).
+    if (pick && stands.crowd) pick.live = liveInputs(stands.crowd, state, stands.crowd.earner, stands.prices);
+    return { route: pick, weights, stands };
+}
+
+// The arrival (find): what moves when the bot stands on the pick, its own
+// output. Beside the walks and its own spot, the death hours: the bot's hunt
+// and its walk back read the spot it stands on (SpotEconomics.deathHoursOf,
+// one factor on every row's riskHours, as frustration's k: the replay reads
+// k times their ratio). Without the band's hours the rows' own hour reads the
+// hunt too: the arrival searches. Cost: one hunt and death hours at the pick.
+function arrivalAt(state, pick, timestamp, hour, evaluate, arrival) {
+    if (!(hour.adena > 0 && hour.exp > 0)) return null;
+    const there = SpotEconomics.deathHoursOf({ ...state, spotId: pick.spot.id }, undefined, timestamp);
+    const death = evaluate.deathHours > 0 ? there / evaluate.deathHours : there === 0 ? 1 : NaN;
+    return Number.isFinite(death) ? { ...arrival, death } : null;
 }
 
 // The money weights [low, high] around the search's own weight w0 over which
@@ -278,33 +319,52 @@ function lineRange(x0, lo, hi, pool, open, pick, checks, lineOf) {
 // - risk: the range of k (riskLine) it answers the same over (base: the
 //   frustration at the search).
 // - crowd: the crowd key (crowdKey), replayed at the crowd and prices now.
-function standsOf(state, { pool, shortlist, pick, earner, checks, verdicts, weight, weights, open, unpooled, cuts, matters, hour, costs }) {
+function standsOf(state, { pool, shortlist, pick, earner, checks, verdicts, weight, weights, open, unpooled, cuts, matters, hour, costs, arrival }) {
     const base = Math.max(0, Number(state.stats?.frustration) || 0);
-    const risk = { base, ...lineRange(1, 1 / (1 + base), Infinity, pool, open, pick, checks, riskLine(weight)) };
-    const prices = priceStands({ pool, open, pick, checks, weight, unpooled, cuts, matters, hour, costs });
+    // k from no frustration up (from the pick: times its death hours' ratio, crowdKey's arrival).
+    const risk = { base, ...lineRange(1, Math.min(1, arrival?.death ?? 1) / (1 + base), Infinity, pool, open, pick, checks, riskLine(weight)) };
+    const prices = priceStands({ pool, open, pick, checks, weight, unpooled, cuts, matters, hour, costs, arrival });
     return { prices, risk,
-        crowd: crowdKey(state, { pool, shortlist, pick, earner, checks, verdicts, weight, weights, risk, prices, hour }) };
+        crowd: crowdKey(state, { pool, shortlist, pick, earner, checks, verdicts, weight, weights, risk, prices, hour, arrival }) };
 }
 // The input of the answer's stands that moved since its search: 'prices'
 // outside their ranges (a reader with no prices of its own, price null,
 // leaves them to the hold's owner), 'frustration' outside its range, else
 // what the crowd key's replay at the crowd and prices now finds moved
-// (crowdStands: 'crowd' or 'prices'); '' when it stands. weight: the money
-// weight now (inside the answer's weights: the caller checked them).
-function standsMoved(stands, state, weight, price) {
-    if (!stands) return '';
-    let move = null;
+// (crowdStands: 'crowd' or 'prices'); '' when the pick stands (its earner
+// and numbers: liveRoute). weight: the money weight now (inside the answer's
+// weights: the caller checked them).
+function standsMoved(stands, state, weight, price, timestamp = Date.now()) {
+    return standsRead(stands, state, weight, price, timestamp).moved;
+}
+// standsMoved's read with what it found: { moved, earner (the key's model
+// that sets the earning now, -1: the pick's own), costs (the prices it
+// read: as read where the reader has none) }. timestamp: the read's (a
+// matchup verdict the replay asks).
+function standsRead(stands, state, weight, price, timestamp = Date.now()) {
+    if (!stands) return { moved: '', earner: -1, costs: null };
+    // From the pick: its own price ranges and the death hours there (crowdKey's arrival).
+    const there = arrived(stands, state), ranges = there ? stands.prices.arrival : stands.prices;
+    let move = null, costs = stands.prices;
     if (price !== null) {
-        const costs = BotHuntEfficiency.consumablePrices(state, price);
+        costs = BotHuntEfficiency.consumablePrices(state, price);
         const shots = costs.shots - stands.prices.shots, potions = costs.potions - stands.prices.potions;
         if (shots || potions) {
-            if (!pricesInside(stands.prices, shots, potions)) return 'prices';
+            if (!pricesInside(ranges, shots, potions)) return { moved: 'prices', earner: -1, costs };
             move = { shots, potions };
         }
     }
-    const k = riskFactor(state, stands.risk.base);
-    if (!(k >= stands.risk.low && k <= stands.risk.high)) return 'frustration';
-    return crowdStands(stands.crowd, state, weight, k, move);
+    const k = riskFactor(state, stands.risk.base) * (there ? stands.crowd.death : 1);
+    if (!(k >= stands.risk.low && k <= stands.risk.high)) return { moved: 'frustration', earner: -1, costs };
+    const replayed = crowdStands(stands.crowd, state, weight, k, move, timestamp, there);
+    return { moved: replayed.moved, earner: replayed.earner, costs };
+}
+// The bot stands where the crowd key replays its answer from the pick's own
+// spot (its arrival: crowdKey), not where it searched: its spot moved only
+// by its own arrival (EconomyContext.incomeMoved keeps the spot's version).
+function arrived(stands, state) {
+    const key = stands?.crowd;
+    return !!key?.arrival && !!stands.prices.arrival && String(state.spotId) === key.arrival && key.arrival !== key.origin;
 }
 
 // The consumable prices. A table row's costs are its shots and potions an
@@ -331,7 +391,7 @@ function standsMoved(stands, state, weight, price) {
 // every candidate that could change the answer anywhere in it. A read
 // outside the hull searches. Cost per search: two line ranges over the pool,
 // the cuts' (O(n) each, n: the band's spots) and the key's corners.
-function priceStands({ pool, open, pick, checks, weight, unpooled, cuts, matters, hour, costs }) {
+function priceStands({ pool, open, pick, checks, weight, unpooled, cuts, matters, hour, costs, arrival = null }) {
     const ranges = {};
     for (const [name, units] of [['shots', row => row.shotUnits], ['potions', row => row.potionUnits]]) {
         const x0 = costs[name];
@@ -346,11 +406,24 @@ function priceStands({ pool, open, pick, checks, weight, unpooled, cuts, matters
         ranges[name] = [Math.min(low, x0), Math.max(high, x0)];
     }
     // The cuts inside these ranges (the walk of their envelopes stops at the
-    // ends), ranked at the same prices (spotList's, the same price reader).
-    if (cuts.some(cut => cut.costs.shots !== costs.shots || cut.costs.potions !== costs.potions)) {
-        ranges.shots = [costs.shots, costs.shots]; ranges.potions = [costs.potions, costs.potions];
-    } else SpotValueTable.cutStands(cuts, matters, ranges);
-    return { shots: costs.shots, potions: costs.potions, shotsRange: ranges.shots, potionsRange: ranges.potions };
+    // ends), ranked at the same prices (spotList's, the same price reader: a
+    // memoized reader answers both reads alike; a caller's list read at other
+    // prices leaves only the prices read).
+    const ranked = !cuts.some(cut => cut.costs.shots !== costs.shots || cut.costs.potions !== costs.potions);
+    if (!ranked) { ranges.shots = [costs.shots, costs.shots]; ranges.potions = [costs.potions, costs.potions]; }
+    else SpotValueTable.cutStands(cuts, matters, ranges);
+    // Diagnostics: a price whose range is the price read alone (any move of it searches), by what closed it.
+    if (Diagnostics.active()) for (const name of ['shots', 'potions']) {
+        if (ranges[name][0] === ranges[name][1]) Diagnostics.count('income_prices', 'point', ranked ? name : 'cut_prices');
+    }
+    // From the pick (arrival): inside these, the cut also keeps the place of the spot the bot left.
+    let from = null;
+    if (arrival && ranked) {
+        from = { shots: [...ranges.shots], potions: [...ranges.potions] };
+        SpotValueTable.cutStands(cuts, arrival.matters, from);
+    }
+    return { shots: costs.shots, potions: costs.potions, shotsRange: ranges.shots, potionsRange: ranges.potions,
+        arrival: from && { shots: costs.shots, potions: costs.potions, shotsRange: from.shots, potionsRange: from.potions } };
 }
 // A candidate's score as a line in one price (units: its row's units of it).
 const priceLine = (units, weight, hour, x0) => candidate => {
@@ -380,22 +453,32 @@ function pricesInside(prices, shots, potions) {
 // hour and walk, both under σ. The key keeps every candidate that could
 // change the answer anywhere in the box of the weight range × the risk range
 // × the prices' hull × any crowd, the pick's own hunters at most `most` (the
-// count past which, all else as searched, the answer moves): those ranked
+// count past which, all else as searched, the pick moves): those ranked
 // above the pick, those whose score could pass the pick's somewhere in the
-// box, those that could pay more than the pick and its earner somewhere (the
-// earning: judge holds the earner), and with no pick every one that could
-// score above zero. Each is multilinear in
+// box, those that could pay more than the pick somewhere (any of them may
+// set the earning: the replay finds the one that does now, judge), and with
+// no pick every one that could score above zero. Each is multilinear in
 // the weight, ρ and either price, so its extremes lie at the box's corners
 // (the hull's four ends, a price each). Outside the box the weight,
 // frustration or prices moved (searched by their ranges) or the pick's crowd
 // passed `most`. A read replays the answer's comparisons over them at the
 // counts and prices it reads (crowdStands). Comparisons inside a few roundings
 // of their terms stand only while nothing moved.
+// The bot's arrival at the pick (its own output) moves the walks (each
+// candidate's from the pick's center: walkAt, the pick's 1), which spot is
+// its own (the spot it left, `away` where only being its own made it a
+// candidate) and the death hours (key.death: their ratio, read with k;
+// arrivalAt). The key replays from there too (key.arrival: the pick's id)
+// where every candidate it dropped stays dropped: a score s = v / walk moves
+// to v / walkAt and the pick's to s·walk, so one that could not pass the pick
+// anywhere in the box still cannot where walk ≤ the pick's walk × walkAt (a
+// spot whose way from the pick shrank more than the pick's own: next to it,
+// where the bot came by town); else the arrival searches.
 const MOVED = 0, STANDS = 1, UNSURE = 2;
 function modelOf(candidate, at, state, verdicts, Spots) {
     const row = candidate.row, share = row.crowd || null, hunters = Spots.spotHunters(candidate.spot, state);
-    const model = { spot: candidate.spot, at, own: String(candidate.spot.id) === String(state.spotId),
-        exp: row.expHours, income: row.incomeHours, risk: row.riskHours, walk: candidate.walkFactor, gain: row.income,
+    const model = { spot: candidate.spot, shots: row.useShots, at, own: String(candidate.spot.id) === String(state.spotId),
+        exp: row.expHours, income: row.incomeHours, risk: row.riskHours, walk: candidate.walkFactor, walkAt: 0, away: false, gain: row.income,
         shotUnits: row.shotUnits, potionUnits: row.potionUnits, costs: row.costs,
         share, hunters, phi0: share ? SpotValueTable.huntShare(share.production, Math.max(1, hunters), share.kills) : 1,
         verdict: verdicts.get(candidate.spot) };
@@ -411,8 +494,8 @@ const shareAt = (model, hunters) => model.share
 // ({ shots, potions }, null: as read) and the money hour of its scores; a
 // moved price's margins count the row's costs at it (a fresh search rounds
 // its income from them). pool: whether it earns above zero (the search's
-// pool; as read: it does).
-function valueOf(model, weight, k, rho, open, move = null, hour = 1) {
+// pool; as read: it does). walk: its walk from where the bot stands.
+function valueOf(model, weight, k, rho, open, move = null, hour = 1, walk = model.walk) {
     const sigma = model.share?.value ? rho : 1, tau = model.share ? rho : 1;
     const spend = move ? model.shotUnits * move.shots + model.potionUnits * move.potions : 0;
     const costs = move ? Math.abs(model.costs) + Math.abs(spend) : 0;
@@ -420,15 +503,29 @@ function valueOf(model, weight, k, rho, open, move = null, hour = 1) {
     const lift = model.exp * (1 - weight) + income * weight, cost = model.risk * k;
     const gain = sigma * (move ? model.gain - spend : model.gain);
     const tolGain = 16 * Number.EPSILON * (Math.abs(gain) + sigma * costs);
-    return { model, open, moved: !!move, s: (sigma * lift - tau * cost) / model.walk, gain,
-        tol: 16 * Number.EPSILON * (Math.abs(model.exp) + Math.abs(income) + costs / hour + Math.abs(cost)) * Math.max(1, sigma, tau) / model.walk,
+    return { model, open, moved: !!move, s: (sigma * lift - tau * cost) / walk, gain,
+        tol: 16 * Number.EPSILON * (Math.abs(model.exp) + Math.abs(income) + costs / hour + Math.abs(cost)) * Math.max(1, sigma, tau) / walk,
         tolGain, pool: move ? (gain > tolGain ? 1 : gain < -tolGain ? -1 : 0) : 1 };
 }
-// The answer the search reads from these values: STANDS (the same pick and
-// earning spot), MOVED, or UNSURE (a comparison inside its margin). values:
-// valueOf per candidate; pick, earner: theirs (null: none).
-function judge(values, pick, earner, checks) {
+// The answer the search reads from these values: { verdict, earner }, the
+// verdict STANDS (the same pick), MOVED, or UNSURE (a comparison inside its
+// margin, or a matchup verdict the search never asked where it decides);
+// earner: where the pick stands, the value that sets its earning (its index,
+// -1: none, the pick's own). values: valueOf per candidate (open false: no
+// candidate now); pick: its value (null: none); ask(spot): the matchup's
+// verdict on a spot the search never asked, where it decides (null: unsure
+// there; asked at the read, for this judgement only: a read's moment is not
+// the key's); earning: false judges the pick alone.
+function judge(values, pick, checks, ask = null, earning = true) {
     let unsure = false;
+    const asked = new Map();
+    // The verdict known so far (undefined: never asked), and asked where it decides.
+    const known = x => x.model.verdict !== undefined ? x.model.verdict : asked.get(x);
+    const verdictOf = x => {
+        if (known(x) === undefined && ask) asked.set(x, !!ask(x.model.spot));
+        return known(x);
+    };
+    const out = verdict => ({ verdict, earner: -1 });
     const sign = (d, t) => d > t ? 1 : d < -t ? -1 : 0;
     // On the shortlist: a score above zero, in the pool.
     const positive = v => Math.min(sign(v.s, v.tol), v.pool);
@@ -455,39 +552,52 @@ function judge(values, pick, earner, checks) {
         for (const x of values) {
             if (x.model.verdict === false || !x.open || positive(x) === -1) continue;
             const reached = within(x, before);
-            if (reached === 1 && positive(x) === 1) return MOVED;
+            if (reached === 1 && positive(x) === 1) return out(MOVED);
             if (reached !== -1) unsure = true;
         }
-        return unsure ? UNSURE : STANDS;
+        return out(unsure ? UNSURE : STANDS);
     }
-    if (!pick.open || note(positive(pick)) === -1) return MOVED;
+    if (!pick.open || note(positive(pick)) === -1) return out(MOVED);
     // No candidate the matchup may allow comes before the pick, and the pick
     // stays within the first `checks`.
     for (const x of values) {
         if (x === pick || x.model.verdict === false || !x.open || positive(x) === -1) continue;
         const b = before(x, pick);
-        if (b === 1 && positive(x) === 1) return MOVED;
-        if (b !== -1) unsure = true;
-    }
-    if (note(within(pick, before)) === -1) return MOVED;
-    // The earning: the first allowed of the first `checks` by income paying more
-    // than the pick (earner), every one before it refused; none: no allowed one pays more.
-    if (earner) {
-        if (!earner.open || note(positive(earner)) === -1 || note(richer(earner, pick)) === -1) return MOVED;
-        if (note(within(earner, richer)) === -1) return MOVED;
-    }
-    for (const x of values) {
-        if (x === pick || x === earner || x.model.verdict === false || !x.open || positive(x) === -1) continue;
-        const b = richer(x, earner || pick);
-        if (b === -1) continue;
-        const reached = within(x, richer);
-        if (reached === -1) continue;
-        if (b === 1 && positive(x) === 1 && reached === 1) return MOVED;
+        if (b === -1 || verdictOf(x) === false) continue;
+        if (b === 1 && positive(x) === 1) return out(MOVED);
         unsure = true;
     }
-    return unsure ? UNSURE : STANDS;
+    if (note(within(pick, before)) === -1) return out(MOVED);
+    if (unsure) return out(UNSURE);
+    if (!earning) return out(STANDS);
+    // The earning: the first allowed of the first `checks` by income (the
+    // open spots above zero) paying more than the pick; none: the pick's own.
+    // The first one paying more that the matchup does not refuse, sharply
+    // ahead of every other one it does not refuse, within the first `checks`.
+    let earner;
+    do {
+        earner = null;
+        for (const x of values) {
+            if (x === pick || !x.open || known(x) === false) continue;
+            const p = positive(x);
+            if (p === -1) continue;
+            const b = richer(x, pick);
+            if (b === -1) continue;
+            if (b === 0 || p === 0) return out(UNSURE);
+            if (!earner || x.gain > earner.gain) earner = x;
+        }
+    } while (earner && verdictOf(earner) === false);
+    if (!earner) return { verdict: STANDS, earner: -1 };
+    if (known(earner) !== true) return out(UNSURE);
+    for (const y of values) {
+        if (y === earner || y === pick || !y.open || known(y) === false || positive(y) === -1) continue;
+        if (richer(y, pick) !== -1 && richer(earner, y) !== 1) return out(UNSURE);
+    }
+    const reached = within(earner, richer);
+    if (reached === 0) return out(UNSURE);
+    return { verdict: STANDS, earner: reached === 1 ? values.indexOf(earner) : -1 };
 }
-function crowdKey(state, { pool, shortlist, pick, earner, checks, verdicts, weight, weights, risk, prices, hour }) {
+function crowdKey(state, { pool, shortlist, pick, earner, checks, verdicts, weight, weights, risk, prices, hour, arrival }) {
     const Spots = invoke('GameServer/Bot/Population/SpotProfiles'); // lazy: cycle, as select's
     const byCandidate = new Map();
     for (let at = 0; at < pool.length; at++) {
@@ -500,11 +610,11 @@ function crowdKey(state, { pool, shortlist, pick, earner, checks, verdicts, weig
     const pickModel = pick ? byCandidate.get(pick) : null, earnerModel = earner ? byCandidate.get(earner) : null;
     // Unreachable: a pick scores above zero, so its row is finite.
     if (pick && !pickModel) return null;
-    // The pick's own hunters past which, all else as searched, the answer
+    // The pick's own hunters past which, all else as searched, the pick
     // moves: its room (another spot's), else, where its value follows its
-    // share, where its score or income falls below what it must stay above
-    // (the answer moves at most once as the count grows: found by halving, up
-    // to 64 more on its own spot, none past that).
+    // share, where its score falls below what it must stay above (the pick
+    // moves at most once as the count grows: found by halving, up to 64 more
+    // on its own spot, none past that).
     let most = Infinity;
     if (pickModel) {
         const room = invoke('GameServer/Bot/AI/LevelingRoutes').roomForSpot(pickModel.spot);
@@ -513,11 +623,10 @@ function crowdKey(state, { pool, shortlist, pick, earner, checks, verdicts, weig
         if (!pickModel.share?.value) most = last;
         else {
             const at = models.indexOf(pickModel), pickValue = values[at];
-            const earnerValue = earnerModel ? values[models.indexOf(earnerModel)] : null;
             const cap = pickModel.own ? pickModel.hunters + 64 : last;
             const stands = h => {
                 values[at] = valueOf(pickModel, weight, 1, shareAt(pickModel, h), Spots.roomAt(pickModel.spot, state, h));
-                return judge(values, values[at], earnerValue, checks) === STANDS;
+                return judge(values, values[at], checks, null, false).verdict === STANDS;
             };
             let lo = pickModel.hunters, hi = cap;
             while (lo < hi) {
@@ -573,7 +682,7 @@ function crowdKey(state, { pool, shortlist, pick, earner, checks, verdicts, weig
         }
         return top;
     };
-    // The most a model can pay above another (the pick, its earner) in the box.
+    // The most a model can pay above the pick in the box.
     const richer = (model, other) => {
         let top = -Infinity;
         for (const rx of rhos(model)) for (const ro of rhos(other)) {
@@ -586,45 +695,113 @@ function crowdKey(state, { pool, shortlist, pick, earner, checks, verdicts, weig
     const margin = model => 1e-9 * (scale(model) + (pickModel ? scale(pickModel) : 0));
     const above = new Set(pick ? shortlist.slice(0, shortlist.indexOf(pick)) : []);
     const leastGain = pickModel ? sigma(pickModel, rhos(pickModel)[0]) * pickModel.gain : 0;
+    // Dropped: a model that never scores above zero in the box (none that
+    // could, else), or one that can neither pass the pick nor pay more than it.
+    const never = model => best(model) <= -margin(model);
     const kept = models.filter(model => {
         if (model === pickModel || model === earnerModel) return true;
-        if (best(model) <= -margin(model)) return false;
+        if (never(model)) return false;
         if (!pickModel) return true;
-        // The earning reads only the candidates paying more than the pick and its earner (judge: the same earner).
-        return above.has(pool[model.at]) || passes(model) > -margin(model)
-            || richer(model, pickModel) >= -1e-9 * leastGain && (!earnerModel || richer(model, earnerModel) >= -1e-9 * leastGain);
+        return above.has(pool[model.at]) || passes(model) > -margin(model) || richer(model, pickModel) >= -1e-9 * leastGain;
     });
-    return { models: kept, pick: kept.indexOf(pickModel), earner: kept.indexOf(earnerModel), checks, most, weight, hour };
+    let from = null;
+    if (pickModel && arrival) {
+        const keeps = new Set(kept);
+        let holds = true;
+        for (const model of models) {
+            model.walkAt = arrival.walkOf(model.spot);
+            model.away = String(model.spot.id) === arrival.away;
+            if (!keeps.has(model) && !never(model) && !(model.walk <= pickModel.walk * model.walkAt)) holds = false;
+        }
+        if (holds) from = String(pickModel.spot.id);
+        if (Diagnostics.active()) Diagnostics.count('income_crowd', 'arrival', holds ? 'replayed' : 'searches');
+    }
+    return { models: kept, pick: kept.indexOf(pickModel), earner: kept.indexOf(earnerModel), checks, most, weight, hour,
+        origin: String(state.spotId), arrival: from, death: from ? arrival.death : 1 };
 }
-// The crowd key's replay at a read: '' while the answer stands at the counts
-// of its candidates' hunters and the prices now (weight, k: the weight and
-// risk factor now, each inside its range, move: the prices' move inside their
-// hull, null: as read; the caller checked them), else the input that moved
-// ('prices' when only they did, else 'crowd'). The counts are compared first:
-// with none moved, the prices as read and the weight or the risk factor as
-// searched, the other one inside its range is the search's own answer (each
-// range holds the rest as searched), and nothing is replayed. Else every
+// The crowd key's replay at a read: { moved, earner }, moved '' while the
+// pick stands at the counts of its candidates' hunters and the prices now
+// (weight, k: the weight and risk factor now, each inside its range, move:
+// the prices' move inside their hull, null: as read; the caller checked
+// them), else the input that moved ('prices' when only they did, else
+// 'crowd'); earner: the key's model that sets its earning now (-1: none). The
+// counts are compared first: with none moved, the prices as read, the bot on
+// the spot it searched from and the weight or the risk factor as searched,
+// the other one inside its range is the search's own answer (each range
+// holds the rest as searched), and nothing is replayed. Else every
 // comparison is replayed at once (the weight, frustration and price ranges
 // are each taken with the others as searched, so two moved need the replay
-// too). Cost per read: n count reads (n: the key's models), no allocation; a
-// replay adds n values and judge's O(n·(1 + r)) comparisons (r: the
-// candidates richer than the pick's earning that the search never asked,
-// usually none).
-function crowdStands(key, state, weight, k, move = null) {
-    if (!key) return move ? 'prices' : '';
+// too); from the pick's own spot (arrived: its walks, the spot it left no
+// candidate where it was only as its own). Cost per read: n count reads (n:
+// the key's models), no allocation; a replay adds n values and judge's
+// O(n·(1 + r)) comparisons (r: the candidates paying more than the pick).
+function crowdStands(key, state, weight, k, move = null, timestamp = Date.now(), there = false) {
+    if (!key) return { moved: move ? 'prices' : '', earner: -1 };
     const Spots = invoke('GameServer/Bot/Population/SpotProfiles');
     const models = key.models;
     let crowded = false;
     for (let at = 0; at < models.length && !crowded; at++) crowded = Spots.spotHunters(models[at].spot, state) !== models[at].hunters;
-    if (!crowded && !move && (weight === key.weight || k === 1)) return '';
+    if (!crowded && !move && !there && (weight === key.weight || k === 1)) return { moved: '', earner: key.earner };
     const moved = crowded || !move ? 'crowd' : 'prices';
-    if (key.pick >= 0 && Spots.spotHunters(models[key.pick].spot, state) > key.most) return countCrowd(crowded, false) ? '' : moved;
+    if (key.pick >= 0 && Spots.spotHunters(models[key.pick].spot, state) > key.most) {
+        countCrowd(crowded, false);
+        return { moved, earner: -1 };
+    }
     const values = models.map(model => {
         const hunters = Spots.spotHunters(model.spot, state);
-        return valueOf(model, weight, k, shareAt(model, hunters), Spots.roomAt(model.spot, state, hunters), move, key.hour);
+        return valueOf(model, weight, k, shareAt(model, hunters), !(there && model.away) && Spots.roomAt(model.spot, state, hunters),
+            move, key.hour, there ? model.walkAt : model.walk);
     });
-    const verdict = judge(values, key.pick >= 0 ? values[key.pick] : null, key.earner >= 0 ? values[key.earner] : null, key.checks);
-    return countCrowd(crowded, verdict === STANDS) ? '' : moved;
+    let allowed = null;
+    const ask = spot => (allowed ||= invoke('GameServer/Bot/AI/LevelingRoutes').spotAllowedReaderFor(state, matchupOptions(state, timestamp)))(spot);
+    const { verdict, earner } = judge(values, key.pick >= 0 ? values[key.pick] : null, key.checks, ask);
+    return countCrowd(crowded, verdict === STANDS) ? { moved: '', earner } : { moved, earner: -1 };
+}
+// The inputs a route's numbers (its row and earning: liveRoute) read that the
+// crowd key replays: the pick's crowd share (huntShare at the hunters on it,
+// what its row reads of them; 1: a row that does not), the key's model that
+// sets its earning (-1: none) and its share, the shot and potion prices.
+function liveInputs(key, state, earner, costs) {
+    const Spots = invoke('GameServer/Bot/Population/SpotProfiles');
+    const share = model => model?.share ? SpotValueTable.huntShare(model.share.production,
+        Math.max(1, Spots.spotHunters(model.spot, state)), model.share.kills) : 1;
+    return { share: share(key.models[key.pick]), earner, earnerShare: share(key.models[earner]), shots: costs.shots, potions: costs.potions };
+}
+// A held route's numbers at the inputs a read finds (read: standsRead's, the
+// pick standing), as a fresh search there gives them, bit for bit: its row
+// and its earning, at the hunters on its spot and on the spot the replay
+// finds setting the earning now, and the prices (a reader with none of its
+// own, price null: as the search read them). The route itself while they
+// read the same; else a new one, its spot's and the earner's rows read
+// through the search's own reader (valuesFor: one SpotEconomics reader, two
+// rows). The rest of a row (its value hours at the weight and frustration
+// now) and the inputs no key reads (the bot's own sample values and income
+// error inside its error: the observation rule) stay as searched.
+function liveRoute(route, stands, state, read, { timestamp = Date.now(), price } = {}) {
+    const key = stands?.crowd;
+    if (!route || !key || key.pick < 0 || read.moved) return route;
+    const live = liveInputs(key, state, read.earner, read.costs), was = route.live;
+    if (was && sameLive(was, live)) return route;
+    // Diagnostics: a kept read that read the route's rows anew, by whether the spot setting its earning moved.
+    if (Diagnostics.active()) Diagnostics.count('income_live', 'refreshed', was && was.earner !== live.earner ? 'earner' : 'inputs');
+    const { evaluate } = valuesFor(state, timestamp, price === null ? pricesAsRead(state, stands.prices) : price);
+    const row = evaluate(route.spot, route.row.useShots), by = key.models[read.earner];
+    const earning = by ? evaluate(by.spot, by.shots)?.income : row?.income;
+    return row && Number.isFinite(earning) ? { spot: route.spot, row, earning, live } : route;
+}
+// A reader with no prices of its own (the party's read of the hold): the
+// prices the held route's numbers last read (its owner's), else the search's.
+function heldPrices(route, stands, state) {
+    return stands?.prices ? pricesAsRead(state, route?.live ?? stands.prices) : null;
+}
+const sameLive = (a, b) => a.share === b.share && a.earner === b.earner && a.earnerShare === b.earnerShare
+    && a.shots === b.shots && a.potions === b.potions;
+// A price reader with the given shot and potion prices (a search's, a held
+// route's: a reader with none of its own, liveRoute and the party's read).
+function pricesAsRead(state, prices) {
+    const shot = Number(invoke('GameServer/Inventory/ShotStock').planForState(state).selfId);
+    const potion = Number(invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state).selfId);
+    return id => Number(id) === shot ? prices.shots : Number(id) === potion ? prices.potions : 0;
 }
 // Diagnostics: a read where its candidates' crowd moved, kept or searched (income_crowd).
 function countCrowd(crowded, stands) {
@@ -648,4 +825,4 @@ const timed = entry => function (state, options) {
 
 // untimedSelect: the link shadow's verify search (EconomyContext), kept out of these counts.
 module.exports = { select: timed(select), search: timed(search), untimedSelect: select,
-    searchTotals: () => ({ ...searchCounts }), economicHunt, spotList, standsMoved };
+    searchTotals: () => ({ ...searchCounts }), economicHunt, spotList, standsMoved, standsRead, liveRoute, arrived, heldPrices };

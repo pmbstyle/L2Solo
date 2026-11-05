@@ -657,7 +657,8 @@ function verify() {
             const prices = [price(shotId), price(potionId)];
             const fresh = nativeSelect(state, { spots: ground, timestamp: time(minute), required: true,
                 price: id => Number(id) === shotId ? prices[0] : Number(id) === potionId ? prices[1] : price(id) });
-            return { spotId: result.hunt.spotId, searches: searches - before, prices, fresh: answerOf(fresh), plan: result.plan };
+            return { spotId: result.hunt.spotId, searches: searches - before, prices, fresh: answerOf(fresh), plan: result.plan,
+                perHour: result.hunt.perHour, freshPerHour: fresh ? fresh.earning * Hunt.onSpotShare(state) : null };
         };
         const held = read(2);
         assert.equal(held.searches, 0, 'fixture: nothing moved');
@@ -676,26 +677,104 @@ function verify() {
         }
         // The shot's own deals move its belief further, cheap shots first, then
         // dear ones: a read searches when the price leaves the range the hold
-        // stands on, once, and always agrees with a fresh search at its prices.
+        // stands on, once, and always agrees with a fresh search at its prices,
+        // a kept read on its earning too (its numbers at the prices now).
         const walk = (factor, from, done) => {
             for (let minute = from; minute < from + 40; minute++) {
                 Counters.deal(shotId, factor * firstOf(shotId), 1, time(minute));
                 const next = read(minute);
                 assert(next.searches <= 1, 'one search at most');
                 assert.equal(next.spotId, next.fresh?.split('|')[0], `the hold agrees with a fresh search at shot ${next.prices[0]}`);
+                assert.equal(next.perHour, next.freshPerHour, `and on its earning at shot ${next.prices[0]}`);
                 if (done(next)) return next;
             }
             return null;
         };
-        const renewed = walk(0.3, 10, next => next.searches > 0);
-        assert(renewed, 'cheap enough shots leave the range');
-        assert.equal(renewed.spotId, tableId, 'short of a crossing the search renews the same spot');
+        let cheapSearches = 0;
+        assert.equal(walk(0.3, 10, next => { cheapSearches += next.searches; return false; }), null, 'cheap shots keep the table spot');
+        assert.equal(cheapSearches, 0, 'with no search: the moves stay inside the hull, the earner the replay finds');
         assert.equal(Economy.heldSpotMoved(state), false, 'in place');
         const moved = walk(4, 60, next => next.spotId !== tableId);
         assert(moved, 'dear enough shots move the bot off its table spot');
         assert.equal(moved.searches, 1, 'on one search');
         assert.equal(moved.spotId, otherId, 'to the spot its samples know');
         Counters.reset();
+    }
+    // The crowd and the bot's own arrival on table spots (decision links
+    // step 3): the key replays the pick at the counts now and finds there
+    // which spot sets its earning, so a crowd on a candidate other than the
+    // pick keeps the hold with no search, also one that closes the spot that
+    // set the earning; the bot's arrival at its held spot, its own output
+    // (only its walks move), replays from there with no search. Every kept
+    // read agrees with a fresh search at its inputs: the spot, its charge,
+    // the earning and the spot's row.
+    {
+        const { SpotOccupancyIndex } = invoke('GameServer/Bot/Population/SpotOccupancyIndex');
+        const Spots = invoke('GameServer/Bot/Population/SpotProfiles');
+        const Table = invoke('GameServer/Bot/AI/SpotValueTable');
+        const Economics = invoke('GameServer/Bot/Economy/SpotEconomics');
+        const Routes = invoke('GameServer/Bot/AI/LevelingRoutes');
+        const index = new SpotOccupancyIndex();
+        let next = 993000;
+        const join = (n, spotId) => { for (let i = 0; i < n; i++) index.update({ characterId: next++, activity: 'hunting', spotId }); };
+        Spots.useOccupancy(() => index);
+        try {
+            Table.useSpots([]);
+            const ids = Route.spotList(fighter(990530)).ids(true, 10, -15).slice(0, 4);
+            const ground = ids.map((id, at) => ({ id, avgLevel: 10, minLevel: 10, maxLevel: 10, density: 10, tagsAuthoritative: true,
+                tags: ['starter'], npcEntries: [], center: { locX: -80000 + at * 1500, locY: 250000, locZ: 0 } }));
+            const on = minute => ({ spots: ground, timestamp: time(minute) });
+            const agrees = (state, minute, what) => {
+                const read = count(() => Economy.basics(state, on(minute)));
+                const fresh = nativeSearch(state, { spots: ground, timestamp: time(minute), required: true, price: read.result.price }).route;
+                assert.equal(read.searches, 0, `${what}: no search`);
+                assert.equal(read.result.hunt.spotId, fresh.spot.id, `${what}: the fresh search's spot`);
+                assert.equal(read.result.hunt.useShots, fresh.row.useShots, `${what}: its charge`);
+                assert.equal(read.result.hunt.perHour, fresh.earning * Hunt.onSpotShare(state), `${what}: its earning`);
+                assert.equal(read.result.hunt.perKill, fresh.row.kills > 0 ? fresh.row.income / fresh.row.kills : 0, `${what}: its row`);
+                return read.result.hunt;
+            };
+            const holding = (characterId, at) => {
+                const native = { ...fighter(characterId), spotId: ids[at], loc: ground[at].center };
+                const state = published(native, Economy.forState(native, on(0)));
+                assert.equal(count(() => Economy.forState(state, on(1))).searches, 0, 'fixture: the hold stands');
+                return state;
+            };
+            // On its pick: the spot paying most besides it sets the earning.
+            let state = null, pick = null;
+            for (let at = 0; at < ids.length; at++) {
+                state = holding(990531 + at * 10, at);
+                pick = agrees(state, 2, 'fixture: the held read');
+                if (pick.spotId === state.spotId) break;
+            }
+            assert.equal(pick.spotId, state.spotId, 'fixture: the bot earns where it stands');
+            const rows = ground.flatMap(spot => [true, false].map(shots => ({ spot, row: Economics.create(state, { timestamp: time(2) })(spot, shots) })));
+            const richest = rows.filter(({ spot, row }) => spot.id !== pick.spotId && row?.income > 0).sort((a, b) => b.row.income - a.row.income)[0];
+            assert(richest?.row.income * Hunt.onSpotShare(state) === pick.perHour, 'fixture: another spot sets the earning');
+            const quiet = ids.find(id => id !== pick.spotId && id !== richest.spot.id);
+            join(1, quiet);
+            agrees(state, 3, 'one hunter on a candidate other than the pick');
+            join(Routes.roomForSpot(richest.spot), richest.spot.id);
+            const closed = agrees(state, 4, 'a crowd that closes the spot setting the earning');
+            assert(closed.perHour < pick.perHour, 'another spot sets it now');
+            assert.equal(Economy.heldSpotMoved(state), false, 'the hold stands in place');
+            // Off its pick: it arrives there.
+            let away = null, held = null;
+            for (let n = 0; n < ids.length; n++) {
+                away = holding(990632 + n * 10, n);
+                held = agrees(away, 2, 'fixture: the held read');
+                if (held.spotId !== away.spotId) break;
+            }
+            const at = ids.indexOf(held.spotId), from = ids.indexOf(away.spotId);
+            assert.notEqual(at, from, 'fixture: the bot earns at a spot it does not stand on');
+            const arrived = { ...away, spotId: ids[at], loc: ground[at].center };
+            assert.equal(agrees(arrived, 3, 'the bot\'s arrival at its held spot').spotId, held.spotId, 'it keeps the spot');
+            join(1, quiet === ids[at] ? ids[0] : quiet);
+            agrees(arrived, 4, 'a crowd after the arrival');
+            const elsewhere = ids.find((id, n) => n !== from && n !== at);
+            const moved = count(() => Economy.basics({ ...away, spotId: elsewhere, loc: ground[ids.indexOf(elsewhere)].center }, on(5)));
+            assert.equal(moved.searches, 1, 'a move to another spot searches');
+        } finally { Spots.useOccupancy(null); Table.useSpots([]); }
     }
     // The death recovery's level penalty caps the spawns the search's matchup
     // admits (LevelingRoutes.safetyOptions' maxTargetLevel): held below the
