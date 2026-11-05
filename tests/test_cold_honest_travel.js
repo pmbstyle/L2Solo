@@ -80,7 +80,8 @@ assert.strictEqual(other.stats.travel.arrivalAt, trip.stats.travel.arrivalAt, 'n
 const red = ColdTrip.toSpot(bot({ stats: { karma: 100 } }), spotTravel(NEAR_DRAGON_VALLEY), T);
 assert.strictEqual(red.stats.travel.method, 'walk');
 assert.strictEqual(red.stats.travel.arrivalAt - T, ColdTrip.runMs(DION_FIELD, NEAR_DRAGON_VALLEY));
-const washing = ColdKarmaPolicy.plan(bot({ stats: { karma: 100 } }), [{
+// The walk to the held earning answer (the wash's spot, decided when woken).
+const washing = ColdKarmaPolicy.plan(bot({ stats: { karma: 100, woken: 0, earning: { spotId: 'wash' } } }), [{
     id: 'wash', name: 'Wash', minLevel: 35, maxLevel: 45, center: { locX: 40000, locY: 140000, locZ: -3000 },
     npcEntries: [{ selfId: 20001, level: 38 }]
 }], T);

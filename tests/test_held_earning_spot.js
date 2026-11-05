@@ -161,6 +161,60 @@ function onWorker() {
         const heard = count(() => Economy.forState(raised(turned, 'spot_disappoints', { stop: Situations.REST }), deps(7)));
         assert.equal(heard.searches, 1, 'a disappointing stay wakes one search at the rest');
     }
+    // The body's inputs (situations.md B6, §14). A spot it could not reach, or ground it may not hunt alone, is
+    // marked: the search passes it by; a situation raised after it before the search keeps it; the earning
+    // decision taken clears it (no clock, never a wake).
+    const raisedWith = (state, name, payload) => ({ ...state,
+        stats: Situations.raise({ ...state.stats }, name, payload, Situations.place(state), state.characterId) });
+    {
+        const Risk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
+        const failed = raised(raisedWith(turned, 'spot_unreachable', { spotId: 'poor', reason: 'walk_timeout' }), 'died');
+        assert(Risk.isMarked(failed.stats, 'poor'), 'a wake raised after the mark keeps it');
+        const read = count(() => Economy.forState(failed, deps(15)));
+        assert.equal(read.searches, 1, 'spot_unreachable wakes one search');
+        assert.equal(read.result.statsPacket.earning.spotId, 'rich', 'which passes the unreachable spot by');
+        const after = published(failed, read.result);
+        assert.equal(Risk.isMarked(after.stats, 'poor'), false, 'the decision taken clears the mark');
+        assert.equal(Economy.forState(raised(after, 'died'), deps(16)).statsPacket.earning.spotId, 'poor',
+            'and the next decision may choose the spot again');
+        const unsafe = raisedWith(turned, 'spot_dangerous', { spotId: 'poor', reason: 'party_required_hunting_ground' });
+        assert.equal(Economy.forState(unsafe, deps(16)).statsPacket.earning.spotId, 'rich', 'unsafe ground is passed by too');
+    }
+    // A player's command naming a spot is the held answer itself (no search), and takes the bit its move woke.
+    {
+        const waiting = raised(raised(held, 'moved_by_world'), 'level_up', { at: Situations.place(held) });
+        const commanded = raisedWith(waiting, 'player_command', { spotId: 'poor', at: time(17) });
+        assert.equal(commanded.stats.earning.spotId, 'poor', 'the command is the held answer');
+        assert.equal(commanded.stats.earning.earning, held.stats.earning.earning, 'with the bot\'s hour kept');
+        assert.equal(Situations.woken(commanded.stats, 'earning_spot'), false, 'it took the decision');
+        assert.equal(Number(commanded.stats.waiting) & 0x101, 0, 'a level up waiting for the stop does not wake it again');
+        const read = count(() => Economy.forState(commanded, deps(17)));
+        assert.equal(read.searches, 0, 'a command searches nothing');
+        assert.equal(read.result.hunt.spotId, 'poor', 'the bot hunts the commanded spot');
+    }
+    // Karma: appearing or clearing is the decision's situation, and while it lasts the decision takes the
+    // karma wash's choice (its own spot, near and eligible) instead of the best earning.
+    {
+        const red = { ...held, stats: { ...held.stats, karma: 50 } };
+        assert(Situations.detect(held, red).includes('karma_changed'), 'karma that appears is a situation');
+        const woken = raised(red, 'karma_changed');
+        // The fixture's spots lie in Gludin's peace zone, where no karma washes.
+        const peace = utils.isInPeaceZone;
+        utils.isInPeaceZone = () => false;
+        let read, crafter;
+        try {
+            read = count(() => Economy.forState(woken, deps(18)));
+            // A crafter at its station with karma washes it too (no adventurer gate before the wash).
+            crafter = Route.search({ ...woken, stats: { ...woken.stats, craftStationId: 7 } },
+                { spots, timestamp: time(18), required: true }).route;
+        } finally { utils.isInPeaceZone = peace; }
+        assert.equal(crafter?.spot.id, 'poor', 'a crafter with karma gets the wash\'s spot');
+        assert.equal(read.searches, 1, 'karma_changed wakes one search');
+        assert.equal(read.result.statsPacket.earning.spotId, 'poor', 'which takes the wash\'s spot');
+        const washing = published(woken, read.result);
+        assert(Situations.detect(washing, { ...washing, stats: { ...washing.stats, karma: 0 } }).includes('karma_changed'),
+            'and karma that clears');
+    }
     // A situation that does not wake it searches nothing.
     for (const name of ['recipe_learned', 'arrived_town', 'goal_failed']) {
         assert.equal(count(() => Economy.forState(raised(turned, name), deps(8))).searches, 0, `${name} does not wake the earning spot`);
@@ -209,7 +263,8 @@ function onWorker() {
     assert.deepEqual(unwoken(), [], 'the earning spot is never decided unwoken');
     Economy.reset();
     console.log('PASS earning spot on its situations (worker): held across prices, weight, samples and catalogue; '
-        + 'level at the rest, gear in town, death, empty, dangerous, potions, party left; party member keeps; none held');
+        + 'level at the rest, gear in town, death, empty, dangerous, potions, party left; unreachable marks, a command, karma; '
+        + 'party member keeps; none held');
 }
 
 function onMain() {

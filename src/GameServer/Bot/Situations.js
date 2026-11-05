@@ -95,6 +95,14 @@ const SITUATIONS = Object.freeze({
     spot_dangerous: link(['combat', 'occupation'], 0),
     // The recovery's penalty lifted by clean wins.
     recovered: link(['combat', 'occupation'], 0, STOP),
+    // The earning spot's own inputs (situations.md B6): karma that appeared or cleared
+    // (detect; the decision takes the karma wash's choice while it lasts), a spot the
+    // body's relocation could not reach (payload { spotId, reason }: its spot mark)
+    // and a player's command naming a spot (payload { spotId, at }: the held answer
+    // itself, no search). raisedFacts writes what they carry (spot_dangerous's too).
+    karma_changed: link(['occupation'], 0),
+    spot_unreachable: link(['occupation'], 0),
+    player_command: link(['occupation'], 0),
     // Its own income on its spot below what its held earning answer expects, beyond its error: weighed at a rest,
     // once a stay (BotHuntEfficiency.disappoints). Wakes the earning spot only (no build section).
     spot_disappoints: link([], 0, STOP),
@@ -201,7 +209,7 @@ function woke(name, where) {
 // spot_crowded wakes the earning spot until the spot contest replaces it (step 2).
 const DECISIONS = Object.freeze({
     earning_spot: Object.freeze(['level_up', 'gear_changed', 'died', 'recovered', 'spot_disappoints', 'spot_empty', 'spot_dangerous',
-        'moved_by_world', 'party_left', 'shots_out', 'stock_low:potions', 'spot_crowded']),
+        'spot_unreachable', 'moved_by_world', 'party_left', 'shots_out', 'stock_low:potions', 'karma_changed', 'spot_crowded']),
     build: Object.freeze([])
 });
 const BITS = Object.freeze(Object.fromEntries(Object.keys(DECISIONS).map((name, at) => [name, 1 << at])));
@@ -259,33 +267,100 @@ function decisionNames(bits) {
 // The one writer of a bot's woken decisions (both threads): a situation raised at a
 // place. Its decisions heard here wake (woken), the rest wait on its plane (waiting);
 // its build sections heard here are raised (stats.wishDirty) and wake the build. A
-// raise that adds no bit is no news: not counted, situationSeq stays. payload
-// (diagnostics; plain data): { impossible: true } (an execution that proved the held
+// raise that adds no bit and writes no fact is no news: not counted, situationSeq
+// stays. payload (plain data): { impossible: true } (an execution that proved the held
 // step impossible: a failed goal, a town visit with nothing to do) also drops the
-// held step (stats.activityLeaf), the one fact a raise writes beside the bits.
+// held step (stats.activityLeaf); the facts its payload carries (raisedFacts) are
+// written beside the bits; else diagnostics.
 // stats: an object the caller owns (a copy it is building); written and returned.
 // subject: the bot's id, for the decision trace (Bot/DecisionTrace).
 function raise(stats, name, payload = null, where = OPEN, subject = 0) {
-    const bits = delta(name, payload, where);
+    const bits = delta(name, payload, where, stats);
     if (bits.leaf) stats.activityLeaf = 0;
     const was = wokenBits(stats), waited = Number(stats.waiting) || 0, dirty = Number(stats.wishDirty) || 0;
+    const before = stats.earning?.spotId ?? null, wrote = writeFacts(stats, bits.facts);
     const woken = was | bits.woken, waiting = waited | bits.waiting, wishDirty = dirty | bits.wishDirty;
-    if (woken === was && waiting === waited && wishDirty === dirty) return stats;
+    if (!wrote && woken === was && waiting === waited && wishDirty === dirty) return stats;
     stats.woken = woken; stats.waiting = waiting; stats.wishDirty = wishDirty;
     stats.situationSeq = (Number(stats.situationSeq) || 0) + 1;
     counted(name, where, was, woken, subject, waiting & ~waited, payload);
+    if (bits.taken) took(stats, bits, name, subject, before);
     return stats;
 }
+// The decisions a raise's facts took (player_command: the player decided the earning
+// spot): decided as that caller (counted, traced; one taken while it slept counts as
+// unwoken under that caller), their bits cleared woken and waiting on every plane.
+// Written on stats; returns the woken bits left. Also for a far row's raise
+// (BotLifeState.raiseOnRow), over its bits.
+function took(stats, bits, caller, subject = 0, was = null) {
+    stats.woken = decided(stats, Object.keys(BITS).filter(decision => bits.taken & BITS[decision]),
+        { caller, subject, answer: bits.facts?.earning?.spotId ?? null, was });
+    stats.waiting = (Number(stats.waiting) || 0) & ~planes(bits.taken);
+    return stats.woken;
+}
 // What a raise ORs into a bot's bits (raise; BotLifeState.raiseOnRow's SQL on a far
-// row): { woken, waiting, wishDirty, leaf (drop the held step) }.
-function delta(name, payload = null, where = OPEN) {
+// row): { woken, waiting, wishDirty, leaf (drop the held step), taken (the decisions
+// its facts took: their bits cleared, woken and waiting on every plane: planes()),
+// facts (raisedFacts over stats: the facts as they stand before it) }.
+function delta(name, payload = null, where = OPEN, stats = null) {
     const row = SITUATIONS[name];
     if (!row) throw new TypeError(`situation: unknown ${name}`);
     const sections = hears(name, where) ? maskOf(name) : 0;
     const now = !row.heard || !!(planesAt(where) & row.heard);
+    // A mark past SpotRiskPolicy.MAX_SPOT_MARKS drops the oldest: counted (limits.md).
+    const facts = raisedFacts(stats, name, payload, () => count(raisedCounts, 'spot_mark:dropped'));
     return { woken: (now ? WAKES[name] : 0) | (sections ? BUILD : 0), waiting: now ? 0 : WAKES[name] << SHIFT[row.heard],
-        wishDirty: sections, leaf: payload?.impossible === true };
+        wishDirty: sections, leaf: payload?.impossible === true, taken: facts.earning ? BITS.earning_spot : 0, facts };
 }
+// The facts a raise writes beside its bits (situations.md B6), each owned by its
+// reader: player_command's spot becomes the held earning answer (the player decided:
+// EquipmentIncomeRoute.commanded, no search; the earning spot's bit taken); the spot
+// of a spot_unreachable or a spot_dangerous that names one a spot mark
+// (SpotRiskPolicy.withSpotMark), which the next held answer retires.
+// { earning, spotMarks }, undefined: unchanged. stats: the facts before the raise
+// (null: none known). dropped: told a mark past the cap.
+// lazy: cycles both owners load spot modules that read this catalogue.
+let IncomeRoute = null, Risk = null;
+const MARKS = new Set(['spot_unreachable', 'spot_dangerous']);
+function raisedFacts(stats, name, payload, dropped = null) {
+    if (payload?.spotId == null) return {};
+    if (name === 'player_command') return { earning: (IncomeRoute ||=
+        invoke('GameServer/Bot/Economy/EquipmentIncomeRoute')).commanded(stats?.earning, payload.spotId, payload.at) };
+    if (!MARKS.has(name)) return {};
+    Risk ||= invoke('GameServer/Bot/Population/SpotRiskPolicy');
+    return { spotMarks: Risk.withSpotMark(stats, payload.spotId, payload.reason || name, dropped) };
+}
+// A decision's bits on both waiting planes (STOP the low byte, TOWN the next).
+const planes = bits => bits | bits << 8;
+// raisedFacts' facts on stats (written in place, as raise's bits). Did it write any?
+function writeFacts(stats, facts) {
+    if (facts.earning) stats.earning = facts.earning;
+    if (facts.spotMarks) stats.spotMarks = facts.spotMarks;
+    return !!facts.earning || !!facts.spotMarks;
+}
+// A unit (a body, a far bot's kernel record: memory) that needs a spot while its held
+// earning answer names none it may take (none found, marked, full): an existing answer
+// reads as not woken, so it asks the decision again, once per answer (memory.spotAsk:
+// the answer's time it asked against): 'ask', the caller raises spot_empty. Until the
+// next answer: 'wait'. An answer after its ask that still names none is counted
+// (earning:no_spot) and traced once: 'none', the caller does its defined fallback until
+// a situation brings a spot. No answer at all: 'wait' (it reads woken already). A unit
+// that holds a spot again forgets its ask (memory.spotAsk = null).
+function spotAsk(memory, earning, subject = 0) {
+    if (!earning) return 'wait';
+    const at = Number(earning.at) || 0, ask = memory.spotAsk;
+    if (!ask) { memory.spotAsk = { at, none: false }; return 'ask'; }
+    if (ask.at === at) return 'wait';
+    if (!ask.none) {
+        ask.none = true;
+        count(raisedCounts, 'earning:no_spot');
+        if (Trace.on()) Trace.record({ kind: 'note', bot: subject, name: 'earning:no_spot' });
+    }
+    return 'none';
+}
+// A body's own copy of the facts its raises write (DecisionEvents: main reads them
+// while its raise waits for the background thread, which writes the same in its raise).
+const applyFacts = (stats, name, payload = null) => writeFacts(stats, raisedFacts(stats, name, payload));
 // A raise counted on the health line: where, and the decisions it woke (before, after: the woken bits); and traced
 // (subject: the bot; waits: the bits it left waiting on a plane; payload: its impossible mark).
 function counted(name, where, before = 0, after = 0, subject = 0, waits = 0, payload = null) {
@@ -359,6 +434,10 @@ function factNames(previousFact, current, funding = false, planned = false) {
     // none, a rest at another spot is an occupation event.
     if (!planned && previousFact('occupation') !== current.occupation) add('moved_by_world');
     if (current.riskDeaths > previousFact('riskDeaths')) add('spot_dangerous');
+    // Karma that appeared or cleared (the karma wash, B6). A baseline kept before the
+    // fact was recorded has none to compare.
+    const karma = previousFact('karma');
+    if (karma !== undefined && karma !== current.karma) add('karma_changed');
     // The recovery's level penalty, up (a death, the spot's pressure) or down
     // (its clean wins, SpotRiskPolicy.recordRecovery). A baseline kept before
     // the fact was recorded has none to compare.
@@ -426,6 +505,6 @@ function needsOpened(before, after, names, now) {
 const sectionsOf = names => heard(names, OPEN);
 
 module.exports = { FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, agendaHears, readsFacts, hears, heard, woke, sections,
-    DECISIONS, ALL, raise, delta, counted, stop, woken, anyWoken, decided, counts, COUNT_KEYS,
+    DECISIONS, ALL, raise, delta, planes, took, applyFacts, spotAsk, counted, stop, woken, anyWoken, decided, counts, COUNT_KEYS,
     answer, keeps, goalMoment, quiet,
     placeName: where => NAMES.get(where), SITUATIONS, detect, factNames, sectionsOf };

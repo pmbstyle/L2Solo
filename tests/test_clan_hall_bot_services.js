@@ -20,7 +20,7 @@ const Departure = require('../src/GameServer/ClanHall/Departure');
 const VisitPolicy = require('../src/GameServer/ClanHall/VisitPolicy');
 const VisitNeed = require('../src/GameServer/ClanHall/VisitNeed');
 const TableChannel = require('../src/GameServer/Bot/Population/ColdTableChannel').shared;
-const originalBestSpot = Spots.findBestSpot;
+const originalFindById = Spots.findById;
 const originalArrival = Spots.arrivalPointForState;
 const originalInvoke = global.invoke;
 const { lifecycleKind, ColdSimulationKernel } = invoke('GameServer/Bot/Population/ColdSimulationKernel');
@@ -64,6 +64,8 @@ Navigation.move = () => {
     return { status: 'moving' };
 };
 Runtime.applyRows([hallRow]);
+// The held earning answer the hall's departure reads (main never chooses a spot): the field it hunts.
+const heldReturn = { spotId: 'hall-return-test', shots: true, income: 1000, expected: 1000, earning: 1000, error: 0, at };
 function stateFor(id, classId = 88) {
     return {
         characterId: id,
@@ -86,7 +88,8 @@ function stateFor(id, classId = 88) {
             classId,
             classProgressionLevel: 60,
             classProgressionClassId: classId,
-            coldCombat: { effects: [], skills: [], skillSource: 'hot' }
+            coldCombat: { effects: [], skills: [], skillSource: 'hot' },
+            earning: heldReturn
         },
         simulation: { revision: 0 }
     };
@@ -168,6 +171,7 @@ async function main() {
         const session = {
             actor: physical,
             plan: 'hunting',
+            decisionStats: { earning: heldReturn },
             dataSendToMe() {},
             dataSendToOthers() {},
             dataSendToMeAndOthers(packet, caster) { broadcasts.push({ packet, caster }); }
@@ -313,14 +317,13 @@ async function main() {
         assert(requests?.[0].precomputedResult, 'worker requests a main-thread service operation');
         const returnSpot = { id: 'hall-return-test', name: 'Hunting field',
             center: { locX: 10000, locY: 15000, locZ: -3000 }, npcNames: [] };
-        let selection;
-        Spots.findBestSpot = (status, options) => { selection = { status, options }; return { spot: returnSpot }; };
+        Spots.findById = id => id === returnSpot.id ? returnSpot : originalFindById.call(Spots, id);
         Spots.arrivalPointForState = () => ({ ...returnSpot.center });
-        const safeDeparture = Departure.plan({ ...state, stats: { ...state.stats,
-            spotBackoffs: [{ spotId: 'dangerous', untilStep: 60 }] } }, Runtime.owned(1), at);
-        assert(safeDeparture);
-        assert.equal(selection.options.spotRetryAfter.dangerous, Infinity, 'do not return to a dangerous spot');
-        assert.equal(selection.options.mode, 'solo');
+        assert.equal(Departure.plan(state, Runtime.owned(1), at)?.spot.id, returnSpot.id, 'the hall sends the bot to its held spot');
+        assert.equal(Departure.plan({ ...state, stats: { ...state.stats,
+            spotBackoffs: [{ spotId: returnSpot.id, untilStep: 60 }] } }, Runtime.owned(1), at), null, 'never to one it died at');
+        assert.equal(Departure.plan({ ...state, stats: { ...state.stats, earning: undefined } }, Runtime.owned(1), at), null,
+            'with no held answer no teleport: main never chooses a spot');
         // Karma closes the hall's teleport: any karma above 0 blocks it; none,
         // zero or negative karma does not.
         for (const [karma, blocked] of [[undefined, false], [null, false], [0, false], [-5, false], ['0', false], [NaN, false], [1, true], ['7', true], [45, true]]) {
@@ -531,7 +534,7 @@ async function main() {
     } finally {
         actors.forEach((a) => Ticker.clearAll(a));
         global.invoke = originalInvoke;
-        Spots.findBestSpot = originalBestSpot;
+        Spots.findById = originalFindById;
         Spots.arrivalPointForState = originalArrival;
         World.npc = originalNpc;
         Approach.hasLineOfSight = originalLos;

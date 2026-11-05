@@ -476,7 +476,8 @@ function relationTargetIds(state, memory = null) {
 // relationTargets ([friend, enemy] ids; null: read here from memory), activity,
 // spotId, stats.travel (occupationPlanned's shape) and stats.relations (the
 // fallback rows without memory), dead, riskDeaths, recovery (the death
-// recovery's level penalty, SpotRiskPolicy.recoveryFor), supply ([id, present] per
+// recovery's level penalty, SpotRiskPolicy.recoveryFor), karma (1 while it has any:
+// the karma wash, ColdKarmaPolicy.active), supply ([id, present] per
 // stock item), stores (four identities), bagFull, weight (level 0-4).
 // memory: the bot's interaction memory rows, null when the caller read none.
 function factsOf(view, memory = null) {
@@ -484,7 +485,8 @@ function factsOf(view, memory = null) {
         relations: hash([view.clanId, ...(view.relationTargets || relationTargetIds(view, memory))]),
         party: hash([view.party?.partyId, view.party?.role]),
         occupation: hash([view.spotId, view.activity === 'resting' ? 'hunting' : view.activity]),
-        dead: view.dead, riskDeaths: view.riskDeaths, recovery: view.recovery, supply: hash(view.supply), stores: hash(view.stores), warehouse: view.warehouse,
+        dead: view.dead, riskDeaths: view.riskDeaths, recovery: view.recovery, karma: view.karma,
+        supply: hash(view.supply), stores: hash(view.stores), warehouse: view.warehouse,
         bag: hash([view.bagFull, view.weight]) };
 }
 // The party fact of a bot in none (factsOf).
@@ -514,6 +516,7 @@ function stateView(state, recipes = null) {
     view.dead = Number(state.activity === 'dead' || Number(state.vitals?.hp) <= 0);
     view.riskDeaths = positive(stats.spotRisk?.windowDeaths);
     view.recovery = positive(invoke('GameServer/Bot/Population/SpotRiskPolicy').recoveryFor(state)?.levelPenalty);
+    view.karma = Number(Number(stats.karma) > 0);
     const shots = ShotStock.planForState(state);
     const potion = HealingPotionStock.purchasePotionFor(state);
     view.supply = stockIds(shots, potion).map(id => [id, positive(state.inventory?.[id]?.amount) > 0]);

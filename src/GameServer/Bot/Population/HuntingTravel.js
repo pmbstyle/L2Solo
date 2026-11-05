@@ -15,8 +15,7 @@ function routeDestination(state = {}, route = {}) {
     return route?.destinations?.[String(state.characterId)] || route?.to || null;
 }
 
-// Starts one bot's trip along a route: the bot's own (BotRoute), or one
-// main builds from a spot (PopulationService.beginHuntingTravel). A party
+// Starts one bot's trip along a route: the bot's own (BotRoute). A party
 // trip arrives `grouped` and leaves the party's backoff out of the member's
 // own record; a solo trip records its backoff on the bot.
 function beginHuntingTrip(state = {}, route = null, timestamp = Date.now()) {

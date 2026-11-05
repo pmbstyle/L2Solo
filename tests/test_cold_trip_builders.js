@@ -177,7 +177,7 @@ async function cases() {
         stats: { ...mammonTrip.stats, travel: null } }, T)));
 
     // The hunting route (solo: its own time; party: the route's shared time)
-    // and the karma washing walk.
+    // and the karma washing walk (to its held earning answer: the wash's spot).
     const { beginHuntingTrip } = require('../src/GameServer/Bot/Population/HuntingTravel');
     const route = { needed: true, mode: 'solo', spotId: SPOT.id, regionName: SPOT.name, travelMs: 25000, to: { ...SPOT.center } };
     out.hunting_solo = digest(beginHuntingTrip(hunter(), route, T));
@@ -186,7 +186,7 @@ async function cases() {
     // the real arrival builder still chooses the offset and route.
     out.karma_washing = withStubs([
         [invoke('GameServer/Geodata/GeodataEngine'), 'getHeight', () => -2544]
-    ], () => digest(invoke('GameServer/Bot/Population/ColdKarmaPolicy').plan(hunter({ stats: { classId: 2, karma: 100 } }), [{
+    ], () => digest(invoke('GameServer/Bot/Population/ColdKarmaPolicy').plan(hunter({ stats: { classId: 2, karma: 100, woken: 0, earning: { spotId: 'wash' } } }), [{
         id: 'wash', name: 'Wash', minLevel: 35, maxLevel: 45, center: { locX: 40000, locY: 140000, locZ: -3000 },
         npcEntries: [{ selfId: 20001, level: 38 }]
     }], T).plannedState));

@@ -1641,8 +1641,10 @@ function buildForState(state, deps) {
         money: Funding.packetFor(network, context.hourAdena, base.survivalReserve), stockTargets: stockTargets(base, context.gapHorizonHours),
         dangerPrice: dangerPrice(base), wishDirty: 0 };
     // The decisions this build took (only this build's result carries them, never a plan served later): the build,
-    // and the earning spot when it searched (its held answer published).
-    const decided = { ...(earningDecided ? { earning: base.earning } : {}),
+    // and the earning spot when it searched (its held answer published, the spot marks it read cleared: they hold
+    // only until the earning decision is taken, SpotRiskPolicy.spotMarks; a mark raised meanwhile is a body's
+    // pending raise, applied again over this answer: DecisionEvents.receive, the worker's next bag).
+    const decided = { ...(earningDecided ? { earning: base.earning, spotMarks: null } : {}),
         woken: Situations.decided(state.stats, earningDecided ? ['earning_spot', 'build'] : 'build', { caller: deps.caller || 'economy_context',
             subject: state.characterId, answer: !Trace.on() ? null : { earning_spot: [base.earning?.spotId ?? 'none', state.stats?.earning?.spotId ?? 'none'],
                 build: [network.activity?.key || network.focus?.[0], held?.plan.network?.activity?.key || held?.plan.network?.focus?.[0]] } }) };
@@ -2044,7 +2046,7 @@ function shotDemand(economy, state, timestamp, previous = null) {
 // it buys (our model choice, not C4): the worker's published targets
 // (stats.stockTargets) over the live bag, so a town errand's restock and the
 // sale list read the plan the worker decided under spot occupancy instead of
-// a second earning-spot search per read (IncomeRoute.select in the basics).
+// a second earning-spot read per read (IncomeRoute.heldRoute in the basics).
 // The basics answer instead when the row is missing or names another potion or
 // shot (level, weapon: no published target yet), and when shots that cannot
 // restock rose above the stock owned at the build (their target was capped by

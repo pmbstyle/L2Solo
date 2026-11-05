@@ -3,6 +3,9 @@ const DEFAULT_MIN_HUNT_LEVEL_GAP = -7;
 const DEFAULT_MAX_HUNT_LEVEL_GAP = 3;
 // The farthest hunting spot a hot bot reaches on foot; beyond it, SoE or a gatekeeper.
 const MAX_WALK_SPOT_DISTANCE = 12000;
+// A walk to a spot ends this close to its point (HuntingState's relocation), and a
+// body this close to a spot's center, or on its ground, has arrived there (arrivedAt).
+const SPOT_ARRIVAL_RADIUS = 1000;
 // The fewest spawns of a bot's band a spot is suitable with (isSuitable). A
 // cell piece with fewer spawns is an edge fragment (T123): it joins the
 // field of its species in a neighbour cell.
@@ -10,13 +13,11 @@ const MIN_ELIGIBLE_DENSITY = 3;
 // Spot ids: the cell `x_y`, `:area` inside a partitioned dungeon, `:f<n>` for
 // a floor of a cell split by height (T123).
 const GRID_SPOT_ID = /^(-?\d+)_(-?\d+)(?::.+)?$/;
-const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const WorldAreaCatalog = invoke('GameServer/World/WorldAreaCatalog');
 const BotRaidSafety = invoke('GameServer/Bot/AI/BotRaidSafety');
 const BotHuntingTargetPolicy = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
 const BotPullEstimate = invoke('GameServer/Bot/AI/BotPullEstimate');
-const BotTargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const GameTime = invoke('GameServer/World/GameTime');
 
 const anonymousStateIds = new WeakMap();
@@ -379,6 +380,7 @@ function isSuitable(spot, targetLevel, options = {}) {
 
 const SpotService = {
     MAX_WALK_SPOT_DISTANCE,
+    SPOT_ARRIVAL_RADIUS,
     respawnsPerHour,
     spots: null,
 
@@ -499,6 +501,16 @@ const SpotService = {
         return this.findCurrentSpot(state?.loc, spots) || declared;
     },
 
+    // Has a body at loc arrived at spot: on its ground (floor-aware, containsLocation)
+    // or within the arrival radius of its center? The one arrival rule of a walk's end
+    // and of "on the planned spot" (BotDecisionService), never an exact cell match.
+    // A profile with no ground of its own (not a grid spot or a raid's) is the radius alone.
+    arrivedAt(spot, loc) {
+        if (!spot?.center) return false;
+        const ground = spot.raidBoss === true || GRID_SPOT_ID.test(String(spot.id || ''));
+        return (ground && this.containsLocation(spot, loc)) || distance2d(spot.center, loc) <= SPOT_ARRIVAL_RADIUS;
+    },
+
     containsLocation(spot, loc) {
         if (!loc || !['locX', 'locY', 'locZ'].every(key => Number.isFinite(Number(loc[key])))) return false;
         if (spot?.raidBoss === true) {
@@ -511,93 +523,6 @@ const SpotService = {
         // A copy without its pieces (a session's spot) reads the catalogue's.
         const own = spot.floor || spot.joins ? spot : SpotIndex.spotById(this.spots, spot.id) || spot;
         return SpotIndex.covers(own, cellAt(loc).key, Number(loc.locZ));
-    },
-
-    findBestSpot(status, options = {}) {
-        const loc = status.loc;
-        const targetLevel = options.level || status.level || 1;
-        // The coarse spot filter must include the same lower-level mobs as
-        // isSuitable. A symmetric +/-3 search hid safe camps in the -7 band.
-        const band = options.levelRange === undefined ? huntBand(targetLevel, options)
-            : { min: targetLevel - options.levelRange, max: targetLevel + options.levelRange };
-        const currentSpotId = status.spot?.id;
-        const minDistance = options.minDistance || 1200;
-        const maxDistance = options.maxDistance || (options.walkOnly === true ? MAX_WALK_SPOT_DISTANCE : 90000);
-        const routeState = {
-            characterId: status.characterId,
-            name: status.name,
-            level: targetLevel,
-            stats: {
-                ...(status.stats || {}),
-                role: status.role ?? status.stats?.role,
-                classId: status.classId ?? status.stats?.classId,
-                starterRegion: status.starterRegion || status.stats?.starterRegion
-            }
-        };
-        const routeOptions = {
-            ...options,
-            mode: options.mode || 'solo',
-            role: options.role || status.role,
-            equipment: options.equipment
-        };
-        // The stand-in state carries the bot's id without its bag: a what-if
-        // for the kit profile store.
-        routeOptions.matchupProfiles = BotTargetMatchup.stateProfiles(routeState, { ...routeOptions, store: false });
-
-        const candidates = this.ensureIndexed()
-            .filter((spot) => !(Number(options.spotRetryAfter?.[spot.id]) > Date.now()))
-            .filter((spot) => spot.density >= (options.minDensity || 4))
-            .filter((spot) => spot.minLevel <= band.max && spot.maxLevel >= band.min)
-            .filter((spot) => isSuitable(spot, targetLevel, options))
-            .filter((spot) => LevelingRoutes.isSpotAllowedForState(spot, routeState, routeOptions))
-            .filter((spot) => {
-                const dist = distance2d(loc, spot.center);
-                return dist >= minDistance && dist <= maxDistance;
-            })
-            .map((spot) => {
-                const fit = levelFit(spot, targetLevel, options);
-                const levelGap = fit.averageGap;
-                const dist = distance2d(loc, spot.center);
-                const sameSpotPenalty = currentSpotId && currentSpotId === spot.id ? 100 : 0;
-                const peacePenalty = utils.isInPeaceZone(spot.center.locX, spot.center.locY) ? 40 : 0;
-
-                return {
-                    spot,
-                    score: (fit.eligibleDensity * 5) + (fit.eligibleRatio * 30)
-                        - (levelGap * 18)
-                        - (fit.dangerousLevelSpan * 3)
-                        - (dist / 2500)
-                        - sameSpotPenalty
-                        - peacePenalty,
-                    distance: dist,
-                    levelGap,
-                    eligibleDensity: fit.eligibleDensity,
-                    eligibleRatio: fit.eligibleRatio
-                };
-            })
-            .map((candidate) => {
-                const routeMatch = LevelingRoutes.scoreSpot(candidate.spot, routeState, routeOptions);
-                const decoratedSpot = LevelingRoutes.decorateSpot(candidate.spot, routeMatch);
-                return {
-                    ...candidate,
-                    spot: decoratedSpot,
-                    score: candidate.score + routeMatch.routeScore + routeMatch.variation
-                        - routeMatch.localityPenalty - routeMatch.targetMatchup.penalty,
-                    route: decoratedSpot.route || null,
-                    routeScore: routeMatch.routeScore,
-                    localityPenalty: routeMatch.localityPenalty,
-                    huntingGroundPenalty: routeMatch.huntingGroundPenalty,
-                    variation: routeMatch.variation
-                };
-            })
-            .sort((a, b) => b.score - a.score);
-
-        if (!candidates.length && options.allowEasierSpots && options.levelRange === undefined
-            && band.min > Math.max(1, targetLevel - 15)) {
-            return this.findBestSpot(status, { ...options, allowEasierSpots: false, minLevelGap: -15,
-                matchupProfiles: routeOptions.matchupProfiles });
-        }
-        return candidates[0] || null;
     },
 
     assignSpot(session, spot) {

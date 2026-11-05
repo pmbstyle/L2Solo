@@ -47,7 +47,7 @@ function deathHoursOf(state, hunt, timestamp = Date.now()) {
 // capacityStates, the room filter's members, SpotProfiles.roomFilterFor),
 // the bot among them; each takes its own share. hour: { adena, exp }, the hour
 // valueHours counts in when the caller compares spots whatever the bot stands
-// on (EquipmentIncomeRoute.select); by default the bot's own.
+// on (EquipmentIncomeRoute.search); by default the bot's own.
 function create(state, { timestamp = Date.now(), mode, persona, deathHours, moneyWeight: weight, price, hunt, hour = null,
     spotHunters = invoke('GameServer/Bot/Population/SpotProfiles').spotHunters, members = null } = {}) { // lazy: cycle SpotProfiles' route search builds this reader
     const Table = invoke('GameServer/Bot/AI/SpotValueTable');

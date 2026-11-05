@@ -193,31 +193,26 @@ async function commandChecks() {
     };
     const worked = { needed: false, spotId: currentSpot.id };
 
-    // A waiter with a worker fight is relabelled to the plan's safe fallback.
+    // The waiter's safe fallback is the worker's rule (BotRoute.choose →
+    // PartyWaitFallback.spotFor); main applies the worker's route and relabels
+    // nothing (situations.md §8).
+    const { spotFor } = require('../src/GameServer/Bot/Population/PartyWaitFallback');
+    const fallbackOf = (state, plan) => spotFor(state, plan, profiles, { timestamp: Date.now() })?.spot?.id;
     GearPlanner.safeFallbackForPlan = () => ({ spotId: plannedFallback.id, npcId: 321 });
-    let result = await command(routeState(11, {}), partyPlan, worked);
-    assert.strictEqual(result.ok, true);
-    assert.strictEqual(applied.length, 1, 'the worker fight is applied');
-    assert.strictEqual(applied[0].spotId, plannedFallback.id, 'a commanded waiter is placed on its safe fallback');
-    assert.strictEqual(applied[0].activity, 'hunting');
-
+    assert.strictEqual(fallbackOf(routeState(11, {}), partyPlan), plannedFallback.id, 'a waiter\'s spot is its safe fallback');
     // The planned fallback is unsafe: the plan-free level search decides.
     GearPlanner.safeFallbackForPlan = () => ({ spotId: unsafeFallback.id, npcId: 321 });
-    result = await command(routeState(12, {}), partyPlan, worked);
-    assert.strictEqual(applied[0].spotId, genericFallback.id, 'an unsafe planned fallback gives way to the level search');
-
-    // A clan hunt asks for a party even with a solo-safe plan: the command waits.
+    assert.strictEqual(fallbackOf(routeState(12, {}), partyPlan), genericFallback.id, 'an unsafe planned fallback gives way to the level search');
     GearPlanner.safeFallbackForPlan = () => ({ spotId: plannedFallback.id, npcId: 321 });
-    result = await command(routeState(13, { clanPartyObjective: clanObjective }), soloPlan, worked);
-    assert.strictEqual(applied[0].spotId, plannedFallback.id, 'a clan-hunt request makes a solo-safe planner wait');
+    // A clan hunt asks for a party even with a solo-safe plan: it waits on its fallback too.
+    assert.strictEqual(fallbackOf(routeState(13, { clanPartyObjective: clanObjective }), soloPlan), plannedFallback.id,
+        'a clan-hunt request makes a solo-safe planner wait');
+    let result = await command(routeState(11, {}), partyPlan, worked);
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(applied[0].spotId, currentSpot.id, 'a waiter\'s command hunts the worker\'s route, relabelled by none');
 
-    // A resting waiter finishes its rest first (step 1.3 D3).
-    result = await command(routeState(14, {}, { activity: 'resting' }), partyPlan, worked);
-    assert.strictEqual(applied[0].spotId, plannedFallback.id);
-    assert.strictEqual(applied[0].activity, 'resting', 'D3: a found fallback does not skip the rest');
-
-    // Not a waiter: main takes the spot the worker fought on and keeps the
-    // worker fight; it runs no spot search of its own (step 1.3 U3).
+    // Main takes the spot the worker fought on and keeps the worker fight; it
+    // runs no spot search of its own (step 1.3 U3).
     SpotProfiles.findForState = () => assert.fail('a command runs no second spot search');
     result = await command(routeState(15, {}), soloPlan, worked);
     assert.strictEqual(result.ok, true);

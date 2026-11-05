@@ -114,8 +114,11 @@ function notifyColdSnapshot(state, reason = 'state_changed', options = {}) {
 // the cache nor the database is written. The row is built on the next turn, so
 // it reads the body after the change; several changes in one turn stay one
 // queue entry per bot. The far poster's gate above stays for far bots.
+// Does this body post its facts at all (a bot's own body, not an arena copy)? An
+// activating one posts once activated.
+const nearPosts = session => !!session?.accountId?.startsWith?.('bot_') && session.arenaEphemeral !== true;
 function notifyNearFacts(session, reason) {
-    if (!session?.accountId?.startsWith?.('bot_') || session.arenaEphemeral === true) return;
+    if (!nearPosts(session)) return;
     // Ownership is persisted before enterWorld finishes. That provisional
     // body must not look like a changed kit to the occupation planner.
     if (session.populationActivating === true) return;
@@ -140,7 +143,7 @@ function notifyNearFacts(session, reason) {
             row.nearSeq = session.nearSeq;
             // lazy: worker the native market owner is main-thread only.
             DecisionEvents.detectNear(session, row, invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(row.characterId));
-            if (session.nearRaise) row.raise = { ...session.nearRaise, names: session.nearRaise.names.map(pair => [...pair]) };
+            if (session.nearRaise) row.raise = DecisionEvents.postedBag(session);
             // lazy: cycle the coordinator requires this module at its top.
             invoke('GameServer/Bot/Population/ColdSimulationCoordinator').markDirty(row,
                 { reason, critical: isCriticalSnapshotReason(reason, row) || row.raise?.named === true, near: true });
@@ -1139,31 +1142,55 @@ function writeHeldOnRevision(member, { stats = {}, columns = {} }, reason) {
 // one, nothing written, when the bits add nothing), null when the row is not far
 // (the caller raises where the bot is now) or the write failed (counted). Cost:
 // one UPDATE per raise that adds a bit; main raises a few per far bot per hour.
-function raiseOnRow(characterId, names, reason = 'situation') {
-    const id = Number(characterId), where = Situations.place(cache.get(id) || { phase: 'cold' });
-    const bits = { woken: 0, waiting: 0, wishDirty: 0, leaf: false }, each = [];
-    for (const [name, payload] of names) {
-        const one = Situations.delta(name, payload, where);
-        bits.woken |= one.woken; bits.waiting |= one.waiting; bits.wishDirty |= one.wishDirty; bits.leaf ||= one.leaf;
-        each.push([name, payload, one]);
+// The facts a raise carries (Situations.raisedFacts: a command's held answer, the
+// spot marks) are written whole, worked out over the cached row's: a worker
+// commit between that read and this write that moved them is overwritten (rare: a
+// body's raises ride its bag while it is hot; these land here only on its edge).
+// raises: [{ name, payload }] (DecisionEvents.raiseFar's). A decision a fact took
+// (player_command) is decided as its caller once the row raise landed (Situations.took).
+function raiseOnRow(characterId, raises, reason = 'situation') {
+    const id = Number(characterId), cached = cache.get(id), where = Situations.place(cached || { phase: 'cold' });
+    const bits = { woken: 0, waiting: 0, wishDirty: 0, leaf: false, cleared: 0, waitCleared: 0 }, each = [];
+    const facts = { earning: cached?.stats?.earning, spotMarks: cached?.stats?.spotMarks }, written = {};
+    // The woken bits as each raise meets them (the cached row's, then this batch's), for the decisions taken.
+    let seen = Number(cached?.stats?.woken ?? Situations.ALL);
+    for (const { name, payload = null } of raises) {
+        const one = Situations.delta(name, payload, where, facts);
+        const before = facts.earning?.spotId ?? null;
+        seen |= one.woken;
+        // In order: a decision a fact took clears what came before it (woken and on
+        // both waiting planes), a later raise wakes it again.
+        const taken = Situations.planes(one.taken);
+        bits.woken = (bits.woken | one.woken) & ~one.taken; bits.cleared = (bits.cleared | one.taken) & ~one.woken;
+        bits.waiting = (bits.waiting | one.waiting) & ~taken; bits.waitCleared = (bits.waitCleared | taken) & ~one.waiting;
+        bits.wishDirty |= one.wishDirty; bits.leaf ||= one.leaf;
+        for (const key of ['earning', 'spotMarks']) {
+            if (one.facts[key] !== undefined) facts[key] = written[key] = one.facts[key];
+        }
+        each.push({ name, payload, one, seen, before });
+        if (one.taken) seen &= ~one.taken;
     }
+    const factKeys = Object.keys(written);
     // Nothing to OR: no write, no revision move, no stale step for the worker.
-    if (!bits.woken && !bits.waiting && !bits.wishDirty && !bits.leaf) {
-        const cached = cache.get(id);
+    if (!bits.woken && !bits.cleared && !bits.waiting && !bits.waitCleared && !bits.wishDirty && !bits.leaf && !factKeys.length) {
         return Promise.resolve(cached?.phase === 'cold' ? cached : null);
     }
     const mind = "COALESCE(NULLIF(mindJson, ''), '{}')", at = path => `json_extract(${mind}, '$.${path}')`;
     return module.exports.serializeClanLevelUp(id, () => Database.execute([`UPDATE ${TABLE} SET
         mindJson = json_set(${mind},
-            '$.woken', COALESCE(${at('woken')}, ?) | ?, '$.waiting', COALESCE(${at('waiting')}, 0) | ?,
+            '$.woken', (COALESCE(${at('woken')}, ?) & ~?) | ?, '$.waiting', (COALESCE(${at('waiting')}, 0) & ~?) | ?,
             '$.wishDirty', COALESCE(${at('wishDirty')}, 0) | ?, '$.situationSeq', COALESCE(${at('situationSeq')}, 0) + 1
-            ${bits.leaf ? ", '$.activityLeaf', 0" : ''}),
+            ${bits.leaf ? ", '$.activityLeaf', 0" : ''}${factKeys.map(key => `, '$.${key}', json(?)`).join('')}),
         simulationRevision = simulationRevision + 1, updatedAt = ?
         WHERE characterId = ? AND phase = 'cold'
-        RETURNING *`, [Situations.ALL, bits.woken, bits.waiting, bits.wishDirty, now(), id], { read: true }]))
+        RETURNING *`, [Situations.ALL, bits.cleared, bits.woken, bits.waitCleared, bits.waiting, bits.wishDirty,
+        ...factKeys.map(key => JSON.stringify(written[key])), now(), id], { read: true }]))
         .then(([row] = []) => {
             if (!row) return null;
-            for (const [name, payload, one] of each) Situations.counted(name, where, 0, one.woken, id, one.waiting, payload);
+            for (const { name, payload, one, seen: bitsThen, before } of each) {
+                Situations.counted(name, where, 0, one.woken, id, one.waiting, payload);
+                if (one.taken) Situations.took({ woken: bitsThen }, one, name, id, before);
+            }
             const snapshot = module.exports.acceptNewerLifecycleRow(row);
             if (snapshot) notifyColdSnapshot(snapshot, reason, { critical: true });
             return snapshot;
@@ -1932,6 +1959,7 @@ function reconcilePersistedLoadouts() {
 const BotLifeState = {
     notifyNearFacts,
     raiseOnRow,
+    nearPosts,
 
     // Boot only: { startedAt, downtimeMs } of this restart, measured once (L136).
     bootPause() {

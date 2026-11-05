@@ -22,7 +22,6 @@ const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
 const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const RestPotion = invoke('GameServer/Bot/AI/RestPotion');
-const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
 const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
@@ -2742,8 +2741,8 @@ const BackgroundResolver = {
                 name: state.currentRegion || null,
                 area: state.area || state.stats?.area || null
             };
-        const currentHuntingGround = BotHuntingGroundPolicy.evaluate(currentGround, state);
-        const destinationHuntingGround = BotHuntingGroundPolicy.evaluate(spot, state);
+        const currentHuntingGround = LevelingRoutes.groundVerdict(currentGround, state);
+        const destinationHuntingGround = LevelingRoutes.groundVerdict(spot, state);
         const huntingGround = !currentHuntingGround.allowed
             ? currentHuntingGround
             : destinationHuntingGround;

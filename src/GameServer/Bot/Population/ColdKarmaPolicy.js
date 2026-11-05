@@ -4,6 +4,7 @@ const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const ColdTrip = require('./ColdTrip');
+const Situations = require('../Situations');
 
 // Karma washing: a bot with any karma hunts it off. The same value as
 // Karma.closesTowns, asked for planning rather than for town access.
@@ -21,21 +22,31 @@ function targetForSpot(state, spot) {
         .sort((a, b) => Number(a.level) - Number(b.level) || Number(a.selfId) - Number(b.selfId))[0]?.selfId || 0);
 }
 
-function plan(state, spots, timestamp = Date.now()) {
-    if (!active(state)) return null;
+// The washing state: the death backoff of its own spot recorded, its errands
+// dropped (a bot with karma only washes it). Its exclusions read from it.
+function washingState(state, timestamp) {
     const backoff = SpotRiskPolicy.backoffForStates([state], state.spotId, timestamp);
     const routedState = backoff && !SpotRiskPolicy.activeBackoffs(state, timestamp)
         .some(entry => entry.spotId === state.spotId)
         ? SpotRiskPolicy.withBackoff(state, backoff, timestamp) : state;
-    const clean = { ...routedState, stats: { ...(routedState.stats || {}), equipmentPlan: null,
+    return { ...routedState, stats: { ...(routedState.stats || {}), equipmentPlan: null,
         partyRequest: null, marketReturn: null, craftReturn: null, craftStationId: null,
         warehouseWorkflow: null, warehouseErrand: null, supplyErrand: null } };
-    const travel = clean.stats.travel;
+}
+// Its own spot while it stands near it (the index's row for its id).
+function nearOwn(state, spot) {
+    return !!spot && Math.hypot(Number(spot.center?.locX) - Number(state.loc?.locX),
+        Number(spot.center?.locY) - Number(state.loc?.locY)) < 4500;
+}
+
+// The karma wash's spot: the earning spot decision's answer while the bot has
+// karma (situations.md B6: EquipmentIncomeRoute's search takes it, woken by
+// karma_changed and the earning spot's other situations), never asked per step.
+// Its own spot while near and eligible, else the best eligible field: mobs up to
+// eight levels below it, out of a peace zone, not a raid, not excluded.
+function washSpot(state, spots, timestamp = Date.now()) {
+    const clean = washingState(state, timestamp);
     const excludedSpotIds = SpotRiskPolicy.excludedSpotIdsForStates([clean], timestamp);
-    if (state.activity === 'traveling' && travel?.reason === 'karma_washing'
-        && !excludedSpotIds.has(travel.spotId)) {
-        return { targetNpcId: 0, plannedState: clean, spot: SpotIndex.spotById(spots, travel.spotId) };
-    }
     // The level window is a cheap comparison; the solo matchup behind
     // isSpotAllowedForState is not, so it only judges spots inside the window,
     // with the bot's combat profiles built once, by the first spot judged.
@@ -52,15 +63,35 @@ function plan(state, spots, timestamp = Date.now()) {
             && !excludedSpotIds.has(spot.id) && !utils.isInPeaceZone(point.locX, point.locY)
             && allowed(spot);
     };
-    // The bot's own spot first (the index's row for its id): only a bot that
-    // left it judges every spot for the best one.
+    // Only a bot that left its own spot judges every spot for the best one.
     const own = SpotIndex.spotById(spots, state.spotId);
-    const current = own && Math.hypot(Number(own.center?.locX) - Number(state.loc?.locX),
-        Number(own.center?.locY) - Number(state.loc?.locY)) < 4500 && eligible(own) ? own : null;
-    const spot = current || LevelingRoutes.bestSpot(spots.filter(eligible), clean)?.spot || null;
+    return (nearOwn(state, own) && eligible(own) ? own : null)
+        || LevelingRoutes.bestSpot(spots.filter(eligible), clean)?.spot || null;
+}
+
+// A karma step (the worker's planLifecycle, main's cold entry): it executes the
+// held answer (stats.earning), no search here. While the earning spot is woken
+// (karma just appeared, or another situation) the bot rests until the answer
+// comes; with none, or one its marks exclude, it rests too. A party member
+// decides no earning spot (EconomyContext.earningDue): its step takes the wash's
+// choice itself, as before situations step 1 (temporary until the party
+// aggregate, step 8; debt.md).
+function plan(state, spots, timestamp = Date.now()) {
+    if (!active(state)) return null;
+    const clean = washingState(state, timestamp);
+    const travel = clean.stats.travel;
+    const excludedSpotIds = SpotRiskPolicy.excludedSpotIdsForStates([clean], timestamp);
+    if (state.activity === 'traveling' && travel?.reason === 'karma_washing'
+        && !excludedSpotIds.has(travel.spotId)) {
+        return { targetNpcId: 0, plannedState: clean, spot: SpotIndex.spotById(spots, travel.spotId) };
+    }
+    const member = !!(state.party?.partyId || state.partyId);
+    const held = member ? washSpot(state, spots, timestamp) : Situations.woken(state.stats, 'earning_spot') ? null
+        : SpotIndex.spotById(spots, state.stats?.earning?.spotId);
+    const spot = held && !excludedSpotIds.has(String(held.id)) ? held : null;
     clean.stats.travel = null;
     if (state.activity === 'dead') return { targetNpcId: 0, plannedState: clean, spot };
-    if (current && !utils.isInPeaceZone(state.loc?.locX, state.loc?.locY)) {
+    if (nearOwn(state, spot) && String(spot.id) === String(state.spotId) && !utils.isInPeaceZone(state.loc?.locX, state.loc?.locY)) {
         return { targetNpcId: targetForSpot(state, spot), plannedState: { ...clean, spotId: spot.id,
             activity: state.activity === 'resting' ? 'resting' : 'hunting' }, spot };
     }
@@ -77,4 +108,4 @@ function plan(state, spots, timestamp = Date.now()) {
     }, timestamp) };
 }
 
-module.exports = { active, plan, targetForSpot };
+module.exports = { active, washSpot, plan, targetForSpot };

@@ -13,7 +13,6 @@ const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
-const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const BackgroundPartyState = invoke('GameServer/Bot/Population/BackgroundPartyState');
 const HotActivation = invoke('GameServer/Bot/Population/HotActivation');
@@ -34,7 +33,6 @@ const GearAcquisitionPlanner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner'
 const GearPlanSelection = invoke('GameServer/Bot/AI/GearPlanSelection');
 const DecisionEvents = require('../AI/DecisionEvents');
 const DecisionSections = require('../Economy/DecisionSections');
-const PartyWaitFallback = invoke('GameServer/Bot/Population/PartyWaitFallback');
 const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const ColdWealthCraftService = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
 const ColdShotEconomyService = invoke('GameServer/Bot/Economy/ColdShotEconomyService');
@@ -81,7 +79,6 @@ const ClanMarketService = invoke('GameServer/Clan/ClanMarketService');
 
 const { partyObjectiveForState } = PartyRequestPlanner;
 
-const { beginHuntingTrip } = require('./HuntingTravel');
 const SurvivalFloor = require('./SurvivalFloor');
 const CombinedErrands = require('./CombinedErrandPolicy');
 const TradeMeetingService = invoke('GameServer/AfkTrade/TradeMeetingService');
@@ -109,13 +106,6 @@ function logPartyFailure(partyId, step, result, timestamp = Date.now()) {
         step, partyId, reason, detail ? ` detail=${detail}` : '');
 }
 
-function hasFiniteCoordinate(value) {
-    return value !== null
-        && value !== undefined
-        && String(value).trim() !== ''
-        && Number.isFinite(Number(value));
-}
-
 // A walker a player at `playerLoc` comes near (ColdTrip) shows itself at an
 // endpoint of its run, never on the straight line between them (a walker on its
 // road is open work): at the spot edge it runs to when that is within the
@@ -135,30 +125,6 @@ function walkerAppearance(state, playerLoc) {
     const shown = { ...state, ...arrival.patch };
     if (inReach(shown.loc)) return shown;
     return inReach(run.from) ? { ...shown, loc: { ...run.from } } : false;
-}
-
-// Main's trip to a spot it chose itself: the trip a coordinator route to the
-// same spot starts (beginHuntingTrip). A regroup is a party trip.
-function beginHuntingTravel(state, spot, timestamp = Date.now(), options = {}) {
-    if (!state || !spot || state.activity === 'traveling') return null;
-    const from = state.loc || {};
-    if (!hasFiniteCoordinate(from.locX) || !hasFiniteCoordinate(from.locY)) return null;
-    const physical = SpotService.findCurrentSpot(from);
-    const currentId = physical?.id || options.currentSpotId || state.spotId || null;
-    if (currentId === spot.id && !options.regroup) return null;
-    const destination = options.destination || SpotService.arrivalPointForState(state, spot);
-    if (!destination) return null;
-    const spotBackoff = options.spotBackoff
-        || (!options.regroup && SpotRiskPolicy.backoffForStates([state], currentId, timestamp));
-    return beginHuntingTrip(state, {
-        needed: true,
-        mode: options.regroup ? 'party' : 'solo',
-        spotId: spot.id,
-        regionName: spot.name,
-        ...(options.travelMs ? { travelMs: options.travelMs } : {}),
-        to: destination,
-        ...(spotBackoff ? { spotBackoff, cause: 'death_pressure', reason: 'death_pressure_replan' } : {})
-    }, timestamp);
 }
 
 // The spot of a commanded bot, from its request's route: the trip the
@@ -3050,22 +3016,9 @@ const PopulationService = {
             planEvents.push(acquisitionFallbackEvent(state, previousPlan, replanContext.failure, acquisitionPlan));
         }
         if (plannedState.activity === 'crafting') return this.resolveColdCraft(state, plannedState, startedAt);
-        // A deferred request still owns the safe fallback route until the
-        // planner either reopens it or replaces the unavailable target. Do
-        // not let the cooldown hand control back to SpotProfiles while the
-        // persisted gear plan still points at an unsafe source.
-        const partyRouteWaiting = PartyWaitFallback.waiting(state, acquisitionPlan, partyRequest);
-        const excludedSpotIds = SpotRiskPolicy.excludedSpotIdsForStates([plannedState], startedAt);
-        const partyFallback = partyRouteWaiting && !passiveActivity
-            ? PartyWaitFallback.spotFor(state, acquisitionPlan, SpotProfiles.ensure(), { excludedSpotIds, timestamp: startedAt })
-            : null;
-        const fallbackSpot = partyFallback?.spot || null;
-        // A waiter that is resting finishes its rest first.
-        const routedState = fallbackSpot
-            ? { ...plannedState, activity: plannedState.activity === 'resting' ? 'resting' : 'hunting',
-                spotId: fallbackSpot.id }
-            : plannedState;
-        const currentSpotId = plannedState.spotId || null;
+        // The spot is the worker's route (BotRoute.choose: a party waiter's safe
+        // fallback too, PartyWaitFallback): main chooses none (situations.md §8).
+        const routedState = plannedState;
         const travellingState = ColdCraftingService.beginTravel(routedState) || routedState;
         const travel = travellingState.stats?.travel;
         const travelEvents = travellingState !== plannedState && travel?.stationId
@@ -3077,21 +3030,11 @@ const PopulationService = {
         if (travellingState !== routedState) {
             return this.resolveColdCraftTravel(state, travellingState, travel, planEvents, travelEvents, startedAt);
         }
-        const selectedSpot = passiveActivity
-            ? null
-            : fallbackSpot || (precomputedResult
-                ? commandSpot(workerRequest?.route)
-                : SpotProfiles.findForState(travellingState, {
-                    excludedSpotIds,
-                    timestamp: startedAt
-                }));
-        // A worker result is a fight at the worker's spot; applied over a trip
-        // it would restore `hunting` there and strand stats.travel. The worker
-        // is routed by its own plan (BotRoute) from the state this command writes.
-        const huntingTravelState = selectedSpot && !passiveActivity && !precomputedResult
-            ? beginHuntingTravel(travellingState, selectedSpot, startedAt, { currentSpotId })
-            : null;
-        const effectiveState = huntingTravelState || travellingState;
+        // A worker result is a fight at the worker's spot (its command's route);
+        // this command never starts a trip of its own: the worker is routed by its
+        // own plan (BotRoute) from the state this command writes.
+        const selectedSpot = passiveActivity ? null : commandSpot(workerRequest?.route);
+        const effectiveState = travellingState;
         const spot = effectiveState.activity === 'traveling' ? null : selectedSpot;
         if (!spot && !passiveActivity && effectiveState.activity !== 'traveling') {
             return this.resolveColdMissingSpot(state, plannedState, startedAt);
@@ -3101,9 +3044,7 @@ const PopulationService = {
             state: effectiveState,
             spot,
             spotHunters: SpotProfiles.spotHunters(spot),
-            targetNpcId: partyRouteWaiting
-                ? Number(partyFallback?.npcId || 0)
-                : directDropTargetNpcId(acquisitionPlan),
+            targetNpcId: directDropTargetNpcId(acquisitionPlan),
             elapsedMs
         });
 

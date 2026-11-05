@@ -9,7 +9,7 @@ const StaticMerchantPricing = invoke('GameServer/Bot/Economy/StaticMerchantPrici
 const MAX_SPOTS = 8;
 const MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
-// The ranked rows a fit walk reads, as EquipmentIncomeRoute.select's maxChecks.
+// The ranked rows a fit walk reads, as EquipmentIncomeRoute.search's maxChecks.
 const FIT_CHECKS = 32;
 // The bot hunts in a party or alone: the author keeps the two apart.
 function situationOf(state, mode) {

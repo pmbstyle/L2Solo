@@ -43,14 +43,14 @@ const leaf = { activity: 'hunting', spotId: source.id, npcId: 1133, itemId: 167,
 const shopper = { ...state, activity: 'shopping', currentRegion: 'Dwarven Village',
     loc: { locX: 115072, locY: -178176, locZ: -880 },
     stats: { ...state.stats, townVisit: { town: 'Dwarven Village', completed: true },
-        marketReturn: { spotId: source.id, regionName: source.name, loc: source.center } } };
-const saved = { spots: Spots.cache, service: Service.spots, select: Income.select, pending: Errands.pending };
+        marketReturn: { spotId: source.id, regionName: source.name, loc: source.center },
+        // Its held earning answer names a different camp (the worker decided it; main reads it, never searches).
+        earning: { spotId: money.id, shots: true, income: 1, expected: 1, earning: 1, error: 0, at: 1 } } };
+const saved = { spots: Spots.cache, service: Service.spots, pending: Errands.pending };
 try {
     Spots.cache = Service.spots = spots;
     Errands.pending = () => [];
-    Income.select = () => ({ spot: money });
-    assert.equal(Spots.findForState(state, { profiles: spots, timestamp })?.id, money.id,
-        'fixture: a fresh earning search would choose a different camp');
+    assert.equal(Income.heldSpot(shopper, spots)?.id, money.id, 'fixture: the held earning answer is a different camp');
     const returned = Executor.finishMarketVisit(shopper, timestamp);
     assert.equal(returned.stats.travel.spotId, source.id,
         'a shopping visit returns directly to the valid material source');
@@ -74,7 +74,7 @@ try {
     const excluded = { ...shopper, stats: { ...shopper.stats,
         capacityBackoffs: [{ spotId: source.id, untilStep: 12 }] } };
     assert.equal(Executor.finishMarketVisit(excluded, timestamp).stats.travel.spotId, money.id,
-        'an excluded (marked full) source is not chosen: the search replans');
+        'an excluded (marked full) source is not chosen: the held earning answer is');
     // A spot that filled during the visit, with no mark yet, is met by the
     // worker (the room at arrival), one trip after the return.
     for (const characterId of [990503, 990504]) Life.acceptLifecycleRow({ characterId,
@@ -91,6 +91,6 @@ try {
     } finally { decisions.activity = activity; }
 } finally {
     Spots.cache = saved.spots; Service.spots = saved.service;
-    Income.select = saved.select; Errands.pending = saved.pending;
+    Errands.pending = saved.pending;
 }
 console.log('test_market_return_hunting_origin: ok');

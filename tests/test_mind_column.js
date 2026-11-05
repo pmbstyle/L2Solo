@@ -140,7 +140,7 @@ async function bodyMoney(id) {
         // main's whole-row save of an older copy keeps them too.
         const raisedId = await create('cold', { money: OLD_MONEY, woken: 0, wishDirty: 0, activityLeaf: 5 });
         const inFlight = Life.cachedState(raisedId), flightRevision = inFlight.simulation.revision;
-        const raised = await Life.raiseOnRow(raisedId, [['goal_failed', { impossible: true }]], 'mind_column_raise');
+        const raised = await Life.raiseOnRow(raisedId, [{ name: 'goal_failed', payload: { impossible: true } }], 'mind_column_raise');
         assert(raised && raised.simulation.revision > flightRevision, 'the raise moves the far revision');
         const [late] = await Owner.commitBatch([{ revision: flightRevision, proposal: { revision: flightRevision },
             nextState: { ...inFlight, stats: { ...inFlight.stats, money: NEW_MONEY, woken: 0, wishDirty: 0 } } }]);
@@ -150,11 +150,28 @@ async function bodyMoney(id) {
         assert(raisedMind.woken & 2 && raisedMind.wishDirty, 'the raised bits stay on the row');
         assert.equal(raisedMind.activityLeaf, 0, 'and its impossible mark dropped the held step');
         assert.equal(raisedMind.situationSeq, 1, 'one raise');
-        assert.equal(await Life.raiseOnRow(await create('hot'), [['goal_failed', null]]), null, 'a row that is not far takes no row raise');
+        assert.equal(await Life.raiseOnRow(await create('hot'), [{ name: 'goal_failed' }]), null, 'a row that is not far takes no row raise');
         // A raise that adds no bit writes nothing: the revision stays, no worker step is refused.
         const quietRevision = (await row(raisedId)).simulationRevision;
-        assert(await Life.raiseOnRow(raisedId, [['goal_moved', null]]), 'a raise that adds nothing still lands');
+        assert(await Life.raiseOnRow(raisedId, [{ name: 'goal_moved' }]), 'a raise that adds nothing still lands');
         assert.equal((await row(raisedId)).simulationRevision, quietRevision, 'and moves no revision');
+        // The facts a raise carries land in the mind with its bits (situations.md B6): a spot the body could not
+        // reach is marked, and a player's command is the held earning answer, decided as its caller: the bit its
+        // move woke and one waiting for a stop both cleared.
+        await Life.raiseOnRow(raisedId, [{ name: 'spot_unreachable', payload: { spotId: 'far', reason: 'walk_timeout' } }]);
+        let factMind = JSON.parse((await row(raisedId)).mindJson);
+        assert.deepEqual(factMind.spotMarks.map(mark => [mark.spotId, mark.reason]), [['far', 'walk_timeout']],
+            'the unreachable spot is marked on the row');
+        assert(factMind.woken & 1, 'and it woke the earning spot');
+        const Situations = invoke('GameServer/Bot/Situations');
+        const takenBefore = Situations.counts().decided.earning_spot?.[0] || 0;
+        await Life.raiseOnRow(raisedId, [{ name: 'level_up' }, { name: 'moved_by_world' },
+            { name: 'player_command', payload: { spotId: 'near', at: 5 } }]);
+        factMind = JSON.parse((await row(raisedId)).mindJson);
+        assert.equal(factMind.earning.spotId, 'near', 'a command is the held answer');
+        assert.equal(factMind.woken & 1, 0, 'and it took the earning spot\'s bit');
+        assert.equal(factMind.waiting & (1 | 1 << 8), 0, 'on every waiting plane too');
+        assert.equal(Situations.counts().decided.earning_spot[0], takenBefore + 1, 'counted as a decision taken');
         // A rejection whose row is not far and whose body is not in the world is counted, not lost silently.
         const Events = invoke('GameServer/Bot/AI/DecisionEvents'), FailureLog = require('../src/FailureLog');
         const lostBefore = FailureLog.snapshot()?.['situations.raise_lost'] || 0;

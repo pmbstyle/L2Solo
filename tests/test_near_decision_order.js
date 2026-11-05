@@ -92,7 +92,7 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
         Events.detectNear(body, handed);
         assert.equal(body.nearRaise, null, 'the handed row raises nothing');
         Events.detectNear(body, { ...handed, level: 31 });
-        assert.deepEqual(body.nearRaise.names, [['level_up', null]], 'a new level joins the bag');
+        assert.deepEqual(body.nearRaise.names.map(([name, payload]) => [name, payload]), [['level_up', null]], 'a new level joins the bag');
         const seq = body.nearRaise.seq;
         Events.detectNear(body, { ...handed, level: 31 });
         assert.equal(body.nearRaise.seq, seq, 'the same level while it waits is no new raise');

@@ -2,9 +2,7 @@ const assert = require('assert');
 
 require('../src/Global');
 
-// A hunting trip starts from the bot's route (BotRoute, beginHuntingTrip)
-// or from a spot main chose itself (PopulationService). For the same bot and
-// destination both must write the same trip.
+// A hunting trip starts from the bot's route (BotRoute, beginHuntingTrip) only.
 
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
@@ -16,7 +14,6 @@ const MarketService = invoke('GameServer/Bot/Economy/ColdMarketService');
 const GoalService = invoke('GameServer/Bot/Goals/GoalService');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const GlobalChat = invoke('GameServer/Bot/Population/BotGlobalChat');
-const PopulationService = invoke('GameServer/Bot/Population/PopulationService');
 const Kernel = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 const { beginHuntingTrip } = require('../src/GameServer/Bot/Population/HuntingTravel');
 
@@ -64,58 +61,24 @@ function soloRoute(plan, backoff = null) {
     };
 }
 
-// Main starts its own trip when it resolves a bot without a worker result.
-async function mainTrip(state) {
-    const applied = [];
-    LifeState.applyResolve = (value, result) => {
-        applied.push(value);
-        return Promise.resolve({ ...value, ...result.patch });
-    };
-    const result = await PopulationService.resolveColdState(state);
-    assert.strictEqual(result.ok, true);
-    assert.strictEqual(applied[0].activity, 'traveling', 'fixture: main starts a trip');
-    return applied[0];
-}
-
-async function soloChecks() {
-    SpotProfiles.ensure = () => [oldSpot, newSpot];
-    SpotProfiles.findForState = () => newSpot;
-    SpotService.findCurrentSpot = (loc) => (loc?.locX === oldSpot.center.locX ? oldSpot : null);
-    SpotService.arrivalPointForState = (state, spot) => ({ ...spot.center });
-    GearPlanner.planFor = () => ({ status: 'complete', strategy: 'none', grade: 'none' });
-    LifeState.cachedState = () => null;
-    LifeState.upsertState = (value) => Promise.resolve(value);
-    ListingService.reconcileInventory = (value) => Promise.resolve({ state: value, closed: false });
-    ListingService.resolve = (lifecycle) => Promise.resolve({ state: lifecycle?.state || lifecycle, closed: false });
-    MarketService.tryPurchase = (value) => Promise.resolve({ state: value, purchased: false });
-    GoalService.current = () => Promise.resolve(null);
-    GoalService.review = () => Promise.resolve(null);
-    LifeEvents.recordMany = () => Promise.resolve(null);
-    GlobalChat.maybeAnnounce = () => null;
-
+// Only the bot's route starts a hunting trip (BotRoute, beginHuntingTrip): main
+// starts none of its own (situations.md §8, its cold command hunts the worker's route).
+function soloChecks() {
+    const at = 1800000000000;
     const plain = hunter(8101);
-    const fromMain = await mainTrip(plain);
-    const at = fromMain.stats.travel.startedAt;
-    const fromKernel = beginHuntingTrip({ ...plain,
-        stats: { ...plain.stats, equipmentPlan: fromMain.stats.equipmentPlan } }, soloRoute(fromMain.stats.equipmentPlan), at);
-    assert.deepStrictEqual(fromMain.stats.travel, fromKernel.stats.travel, 'solo trips: one trip record');
-    assert.deepStrictEqual(fromMain.timing, fromKernel.timing, 'solo trips: one arrival time');
-    assert.strictEqual(fromMain.stats.pveEncounter, null);
-    assert.strictEqual(fromKernel.stats.pveEncounter, null);
+    const trip = beginHuntingTrip(plain, soloRoute(null), at);
+    assert.strictEqual(trip.activity, 'traveling');
+    assert.strictEqual(trip.stats.travel.spotId, newSpot.id);
+    assert.strictEqual(trip.stats.pveEncounter, null);
 
-    // Deaths at the current spot: both record the retreat and its backoff.
+    // Deaths at the current spot: the trip records the retreat and its backoff.
     const pressured = hunter(8102, { deaths: 2, fightsResolved: 5,
         spotRisk: { spotId: oldSpot.id, deathsAtEntry: 0, fightsAtEntry: 0 } });
-    const pressuredMain = await mainTrip(pressured);
-    const pressuredAt = pressuredMain.stats.travel.startedAt;
-    const backoff = SpotRiskPolicy.backoffForStates([pressured], oldSpot.id, pressuredAt);
+    const backoff = SpotRiskPolicy.backoffForStates([pressured], oldSpot.id, at);
     assert(backoff, 'fixture: the bot is under death pressure');
-    const pressuredKernel = beginHuntingTrip({ ...pressured,
-        stats: { ...pressured.stats, equipmentPlan: pressuredMain.stats.equipmentPlan } }, soloRoute(pressuredMain.stats.equipmentPlan, backoff), pressuredAt);
-    assert.deepStrictEqual(pressuredMain.stats.travel, pressuredKernel.stats.travel, 'death-pressure trips: one record');
-    assert.strictEqual(pressuredMain.stats.travel.cause, 'death_pressure');
-    assert.deepStrictEqual(pressuredMain.stats.spotBackoffs, pressuredKernel.stats.spotBackoffs,
-        'death-pressure trips: one backoff');
+    const retreat = beginHuntingTrip(pressured, soloRoute(null, backoff), at);
+    assert.strictEqual(retreat.stats.travel.cause, 'death_pressure');
+    assert(retreat.stats.spotBackoffs.some(entry => entry.spotId === oldSpot.id), 'the retreat records its backoff');
 }
 
 function partyChecks() {
@@ -151,7 +114,7 @@ function arrivalChecks() {
 }
 
 async function run() {
-    await soloChecks();
+    soloChecks();
     partyChecks();
     arrivalChecks();
     console.log('Hunting trip checks passed');

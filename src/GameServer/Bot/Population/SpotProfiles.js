@@ -298,16 +298,15 @@ const SpotProfiles = {
             Diagnostics.count('spot_list', 'skip', 'full');
             return true;
         };
-        if (!protectedStarterCohort && !collectingGear) {
-            const incomeRoute = EquipmentIncomeRoute.select(state, {
-                spots: profiles, timestamp, mode, list,
-                required: invoke('GameServer/Bot/AI/PersonalGearProgression').assess(state).required });
-            // The route reads its own risk marks, not the caller's exclusions
-            // (options.excludedSpotIds): an excluded pick counts as absent, as
-            // on the list walk.
-            if (incomeRoute && !excludedSpotIds.has(String(incomeRoute.spot.id)) && !full(incomeRoute.spot)) {
-                return incomeRoute.spot;
-            }
+        // The earning spot's held answer (situations.md §10): read, never searched
+        // here (the decision searches only when woken, on the worker). Its spot
+        // leads while the bot's hour is earned on it (EquipmentIncomeRoute.earnsOnRoute);
+        // one the caller's exclusions or the room refuse counts as absent, as on the
+        // list walk.
+        if (!protectedStarterCohort && !collectingGear && EquipmentIncomeRoute.earnsOnRoute(state,
+            invoke('GameServer/Bot/AI/PersonalGearProgression').assess(state).required, list)) {
+            const held = EquipmentIncomeRoute.heldSpot(state, profiles, mode);
+            if (held && !excludedSpotIds.has(String(held.id)) && !full(held)) return held;
         }
 
         if (keepCurrentSpot) {

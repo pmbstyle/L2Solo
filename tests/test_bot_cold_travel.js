@@ -124,7 +124,7 @@ assert.strictEqual(returned.events[0].type, 'returned_to_spot');
 
 const originalFindById = SpotService.findById;
 const originalArrivalPointForState = SpotService.arrivalPointForState;
-const originalFindForState = SpotProfiles.findForState;
+const originalEnsure = SpotProfiles.ensure;
 const legacyMineSpot = {
     id: '29_-30',
     name: 'Mithril Mines',
@@ -137,7 +137,9 @@ const availableSpot = {
 };
 try {
     SpotService.findById = (id) => id === legacyMineSpot.id ? legacyMineSpot : null;
-    SpotProfiles.findForState = () => availableSpot;
+    // The held earning answer (the worker's decision; main reads it, never searches).
+    SpotProfiles.ensure = () => [legacyMineSpot, availableSpot];
+    const holding = { spotId: availableSpot.id, shots: true, income: 1, expected: 1, earning: 1, error: 0, at: 1 };
     SpotService.arrivalPointForState = (bot, spot) => ({
         locX: spot.center.locX + 137,
         locY: spot.center.locY - 91,
@@ -172,6 +174,7 @@ try {
             ...shoppingState.stats,
             deaths: 3,
             fightsResolved: 8,
+            earning: holding,
             spotRisk: { spotId: legacyMineSpot.id, deathsAtEntry: 1, fightsAtEntry: 0 },
             marketReturn: {
                 spotId: legacyMineSpot.id,
@@ -185,7 +188,7 @@ try {
     assert.strictEqual(deathRerouted.stats.spotBackoffs[0].spotId, legacyMineSpot.id,
         'a market return must persist the death cooldown before resetting the spot baseline');
 
-    SpotProfiles.findForState = () => null;
+    assert.strictEqual(deathRerouted.stats.travel.spotId, availableSpot.id, 'the held earning answer replaces the risky spot');
     assert.strictEqual(GoalExecutor.finishMarketVisit({
         ...shoppingState,
         spotId: legacyMineSpot.id,
@@ -200,11 +203,11 @@ try {
                 loc: { ...legacyMineSpot.center }
             }
         }
-    }, 1000), null, 'a bot must wait in town when no safe replacement spot is available');
+    }, 1000), null, 'a bot must wait in town when no safe replacement spot is held');
 } finally {
     SpotService.findById = originalFindById;
     SpotService.arrivalPointForState = originalArrivalPointForState;
-    SpotProfiles.findForState = originalFindForState;
+    SpotProfiles.ensure = originalEnsure;
 }
 
 const boundaryArrival = SpotService.arrivalPointForState({ characterId: 2 }, {

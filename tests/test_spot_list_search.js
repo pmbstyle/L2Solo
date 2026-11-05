@@ -91,25 +91,28 @@ assert.equal(Spots.findForState(state, { ...options, hasRoom: () => true })?.id,
     assert.equal(Spots.findForState(planning(source.id), { ...options, hasRoom: () => false })?.id, source.id,
         'a planned source the bot stands on is taken even when it counts as full');
 
-    // The income route's own pick needs a kit that survives its spots; the
-    // naked fixture survives none, so its answer is given here.
-    const select = IncomeRoute.select;
+    // The held earning answer leads while the bot earns its hour on it (no
+    // search here: the worker decides it); the naked fixture earns on none, so
+    // it is said to here.
+    const earns = IncomeRoute.earnsOnRoute;
     try {
-        IncomeRoute.select = () => ({ spot: source });
-        assert.equal(Spots.findForState(state, options)?.id, source.id, 'fixture: the income route\'s spot is the pick');
-        assert.equal(Spots.findForState(state, { ...options, hasRoom: noRoomAt(source.id) })?.id, first.id,
-            'a full income route spot is skipped: the first spot of the list');
-    } finally { IncomeRoute.select = select; }
+        IncomeRoute.earnsOnRoute = () => true;
+        const holding = { ...state, stats: { ...state.stats, earning: { spotId: String(source.id), shots: true } } };
+        assert.equal(Spots.findForState(holding, options)?.id, source.id, 'the held earning answer\'s spot is the pick');
+        assert.equal(Spots.findForState(holding, { ...options, hasRoom: noRoomAt(source.id) })?.id, first.id,
+            'a full held spot is skipped: the first spot of the list');
+        assert.equal(Spots.findForState(holding, { ...options, excludedSpotIds: new Set([String(source.id)]) })?.id, first.id,
+            'an excluded held spot is skipped too');
+    } finally { IncomeRoute.earnsOnRoute = earns; }
 }
 
 // ROUTE-ROOM-4: a market return (GoalExecutor.finishMarketVisit) to the spot
 // the bot left goes home, full or not: main searches no spot, the room is
 // read at arrival by the worker, which then re-routes the bot.
 {
-    const savedCatalogue = SpotService.spots, select = IncomeRoute.select;
+    const savedCatalogue = SpotService.spots;
     SpotService.spots = profiles;
-    // No income route: the return is the list search's, not an income pick that leads elsewhere.
-    IncomeRoute.select = () => null;
+    // No held earning answer: the return is the list search's, not an income pick that leads elsewhere.
     try {
         // No class in the stats: no matchup profile refuses a spot, so the
         // search has other spots to offer (the naked mage survives none).
@@ -144,7 +147,7 @@ assert.equal(Spots.findForState(state, { ...options, hasRoom: () => true })?.id,
         const alone = GoalExecutor.finishMarketVisit(forgetful, at);
         assert.equal(alone?.stats.travel.spotId, homeSpot.id, 'the bot goes home');
         assert.equal(alone.stats.travel.regionName, homeSpot.name, 'the saved spot itself is the destination');
-    } finally { SpotService.spots = savedCatalogue; IncomeRoute.select = select; }
+    } finally { SpotService.spots = savedCatalogue; }
 }
 
 Spots.cache = originalCache;

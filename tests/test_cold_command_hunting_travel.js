@@ -168,12 +168,8 @@ async function run() {
     MarketService.finishTownErrands = originalFinishTownErrands;
     ListingService.resolve = value => Promise.resolve({ state: value, closed: false });
 
-    // Without a worker result main still starts and resolves the trip itself.
-    applied.length = 0;
-    const unworked = await PopulationService.resolveColdState(hunter(7402));
-    assert.strictEqual(unworked.ok, true);
-    assert.strictEqual(applied[0].activity, 'traveling');
-    assert.strictEqual(applied[0].stats.travel.spotId, newSpot.id);
+    // Main starts no trip of its own (situations.md §8): every lifecycle command carries the worker's route
+    // (executeWorkerLifecycleCommand refuses one without a worker result).
 
     // Bots already stranded: the next resolve drops the leftover trip; a trip
     // in progress or started by the resolve is kept.

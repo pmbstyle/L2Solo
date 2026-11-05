@@ -1,5 +1,5 @@
 'use strict';
-// A solo bot's spot choice (EquipmentIncomeRoute.select, T156): it weighs what
+// A solo bot's spot choice (EquipmentIncomeRoute.search, T156): it weighs what
 // a spot gives in exp and in money by its own money price, in an hour that does
 // not depend on the spot it stands on, keeps its best income as its hour, prices
 // a far spot by the trip it makes (not a run across the world), and takes its
@@ -42,7 +42,7 @@ function hunter(characterId, spots, samples, money) {
     }
     return state;
 }
-const search = (state, spots) => Route.select(state, { spots, timestamp: started, required: true });
+const search = (state, spots) => Route.search(state, { spots, timestamp: started, required: true }).route;
 const chosen = (state, spots) => search(state, spots)?.spot.id;
 
 // The same two spots, a spot rich in exp and one rich in money: a bot at the
@@ -71,15 +71,14 @@ const chosen = (state, spots) => search(state, spots)?.spot.id;
 }
 
 // A far spot a gatekeeper reaches is priced by that trip, not by a run across
-// the world: it beats a poorer spot next door. On foot it would not.
+// the world: it beats a poorer spot next door. (A bot with karma, which walks,
+// takes the karma wash's spot instead: test_held_earning_spot.)
 {
     // Near Dion, 90000 from Gludin; a Gludin neighbour pays 3/4 of it.
     const spots = [at('home', -80000), at('next', -79000), at('far', 15664, 142979)];
     const samples = [['home', 0.5, 0.15], ['next', 0.75, 0.225], ['far', 1, 0.3]];
     const state = hunter(990303, spots, samples, [36000, 1 / 36000, 0, 0]);
     assert.equal(chosen(state, spots), 'far', 'the trip by gatekeeper is short');
-    const onFoot = { ...state, stats: { ...state.stats, karma: 100 } };
-    assert.equal(chosen(onFoot, spots), 'next', 'a bot with karma walks there');
 }
 
 // The best spot is full of other bots: the next best, and no refused trip.

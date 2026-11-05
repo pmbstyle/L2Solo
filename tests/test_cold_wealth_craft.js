@@ -308,9 +308,9 @@ async function run() {
     // The row raise (BotLifeState.raiseOnRow, an SQL writer: this test has no
     // database): the raised bits on the row main holds.
     const nativeRaise = LifeState.raiseOnRow;
-    LifeState.raiseOnRow = async (id, names) => {
+    LifeState.raiseOnRow = async (id, raises) => {
         const row = LifeState.cachedState(id) || state, stats = { ...row.stats };
-        for (const [name, payload] of names) invoke('GameServer/Bot/Situations').raise(stats, name, payload);
+        for (const { name, payload } of raises) invoke('GameServer/Bot/Situations').raise(stats, name, payload);
         return { ...row, stats };
     };
     const blockedBuyer = await Service.execute(state, forbiddenExit);

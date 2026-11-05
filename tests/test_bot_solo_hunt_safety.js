@@ -117,7 +117,7 @@ try {
                 cycleMs: 60000, adena: spot === unsafe ? 100000 : 1000, costs: 100,
                 loot: 0, exp: 100, kills: 1 });
         }
-        assert.equal(Route.select(hunter, { spots: Spots.cache, timestamp: at, required: true })?.spot.id,
+        assert.equal(Route.search(hunter, { spots: Spots.cache, timestamp: at, required: true }).route?.spot.id,
             safe.id, 'the earning selector rejects higher income on mobs the equipped bot cannot survive');
         assert.equal(Spots.findForState(hunter, { timestamp: at, occupancy: {} })?.id, safe.id,
             'an active unsafe gear source cannot override ordinary hunt safety for a clan member or a solo bot');

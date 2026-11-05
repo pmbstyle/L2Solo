@@ -159,14 +159,14 @@ function verify() {
         huntEfficiency: Hunt.record(earning, { spotId: spot.id, timestamp, cycleMs: 60000,
             adena: spot.id === 'poor' ? 1000 : 800, costs: spot.id === 'poor' ? 900 : 100,
             loot: 0, exp: 100, kills: 10 }) } };
-    assert.equal(Route.select(earning, { spots, timestamp, required: true }).spot.id, 'rich',
+    assert.equal(Route.search(earning, { spots, timestamp, required: true }).route.spot.id, 'rich',
         'a suitable current spot does not pin the bot when another has better net profit');
     // The held earning spot on its situations: test_held_earning_spot.
     let weak = { ...earning, level: 25, stats: { ...earning.stats, huntEfficiency: [] } };
     for (let at = 0; at < 3; at++) weak = { ...weak, stats: { ...weak.stats,
         huntEfficiency: Hunt.record(weak, { spotId: 'rich', timestamp, cycleMs: 60000,
             adena: 800, costs: 100, loot: 0, exp: 10, kills: 10 }) } };
-    assert.equal(Route.select(weak, { spots, timestamp, required: true }).spot.id, 'rich',
+    assert.equal(Route.search(weak, { spots, timestamp, required: true }).route.spot.id, 'rich',
         'a kit goal can use easier safe ground when the normal earning band has no profitable spot');
     for (const clanLevel of [0, 1, 5]) for (const grade of ['none', 'd', 'c', 'b', 'a', 's']) {
         const member = { ...weak, clanId: clanLevel ? 1 : 0, clanLevel,
@@ -174,25 +174,27 @@ function verify() {
                 equipmentPlan: { status: 'active', grade, strategy: 'market' } } };
         assert.equal(Route.economicHunt(member), true,
             `ordinary earning band is independent of clan level ${clanLevel} and target grade ${grade}`);
-        assert.equal(Route.select(member, { spots, timestamp, required: true })?.spot.id, 'rich',
+        assert.equal(Route.search(member, { spots, timestamp, required: true }).route?.spot.id, 'rich',
             `clan level ${clanLevel} and target grade ${grade} preserve the better net-income camp`);
         const tooLow = spots.map(spot => ({ ...spot, minLevel: 9, maxLevel: 9, avgLevel: 9 }));
-        assert.equal(Route.select(member, { spots: tooLow, timestamp, required: true }), null,
+        assert.equal(Route.search(member, { spots: tooLow, timestamp, required: true }).route, null,
             'economic hunts still reject a camp more than fifteen levels below the character');
     }
     for (const service of [{ stats: { ...weak.stats, craftStationId: 1 } },
         { activity: 'crafting', stats: { ...weak.stats, craftShop: {}, generatedIndex: 10000 } }]) {
         const stationary = { ...weak, ...service };
-        assert.equal(Route.select(stationary, { spots, timestamp, required: true }), null,
+        assert.equal(Route.search(stationary, { spots, timestamp, required: true }).route, null,
             'stationary services do not enter ordinary farming');
     }
-    const clanFunding = { ...earning, clanId: 1, clanLevel: 1,
-        stats: { ...earning.stats, clanId: 1, wishFocus: ['power:200:14', 1, 1000000],
-            equipmentPlan: { status: 'active', strategy: 'luxury_exchange',
-                clanGoal: { clanId: 1, goalKey: 'member-equipment' } } } };
+    const clanStats = { ...earning.stats, clanId: 1, wishFocus: ['power:200:14', 1, 1000000],
+        equipmentPlan: { status: 'active', strategy: 'luxury_exchange',
+            clanGoal: { clanId: 1, goalKey: 'member-equipment' } } };
+    const clanFunding = { ...earning, clanId: 1, clanLevel: 1, stats: clanStats };
+    // The route reads the held earning answer (the worker's decision), never a search of its own.
+    clanStats.earning = Route.answerOf(Route.search(clanFunding, { spots, timestamp, required: true }).route, timestamp);
     assert.equal(invoke('GameServer/Bot/Population/SpotProfiles').findForState(clanFunding,
         { profiles: spots, occupancy: {}, timestamp })?.id, 'rich',
-        'a clan-owned purchase plan without a hunting assignment still uses the best ordinary earning route');
+        'a clan-owned purchase plan without a hunting assignment still uses its held earning answer');
 
     const item = { key: 'item:1', price: 1000, paths: [
         { kind: 'drop', activity: 'hunting', spotId: 'rare', costHours: 0, readyHours: 10 },

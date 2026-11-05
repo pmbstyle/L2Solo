@@ -102,6 +102,9 @@ function finishMarketVisit(state, timestamp = Date.now(), options = {}) {
         townLook: { at: timestamp, n: Number(state.stats?.townLook?.n || 0) + 1 } } };
 }
 
+// The held earning answer's spot (situations.md §10; the worker decides it).
+const heldEarningSpot = state => invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').heldSpot(state, SpotProfiles.ensure());
+
 function finishVisit(state, timestamp, options) {
     if (!state || !['shopping', 'merchant'].includes(state.activity)) return null;
     if (!state.stats?.partyMarketReturn?.warOperationId && (CombinedErrands.pending(state, timestamp, state.currentRegion).length
@@ -115,9 +118,19 @@ function finishVisit(state, timestamp, options) {
         if (leader?.loc) destination = { loc: leader.loc, spotId: returningParty.spotId, regionName: leader.currentRegion };
     }
     if (!destination?.loc && options.recoverMissingReturn) {
-        const fallback = SpotProfiles.findForState({
-            ...state, activity: 'hunting'
-        }, { timestamp });
+        // No saved return: the spot its held decisions name (main never chooses
+        // one), when its marks allow it. A party member's is its party's
+        // (temporary until the party aggregate, situations step 8: the party's
+        // objective spot, else the spot it hunts), a solo bot's its card's hunting
+        // leaf, else its held earning answer. With none it rests in town: its
+        // earning spot reads woken while it holds no answer (Situations.woken), so
+        // its next step decides it and the worker routes it (BotRoute).
+        const party = state.party?.partyId ? invoke('GameServer/Bot/Population/BackgroundPartyState').find(state.party.partyId) : null;
+        const heldId = state.party?.partyId ? party?.stats?.objective?.spotId ?? party?.spotId ?? null
+            // lazy: cycle the coordinator loads PopulationService, which loads this module.
+            : DecisionEvents.heldSpotOf(state.stats, invoke('GameServer/Bot/Population/ColdSimulationCoordinator').economyDecisions?.activity(state));
+        const fallback = heldId != null && !SpotRiskPolicy.excludedSpotIdsForStates([state]).has(String(heldId))
+            ? SpotProfiles.findById(heldId) : null;
         const loc = fallback && SpotService.arrivalPointForState(state, fallback);
         if (loc) {
             destination = { loc, spotId: fallback.id, regionName: fallback.name };
@@ -147,11 +160,11 @@ function finishVisit(state, timestamp, options) {
         : null;
     // Where the bot hunts next is the worker's decision, read here: the card's
     // hunting leaf, else the spot the bot hunted before the trip, else its
-    // gear plan's source while that stays viable; a spot the bot's marks
-    // exclude (died, was full, avoided) is neither. Only without one does main
-    // search. A full spot is met at arrival (ROUTE-ROOM-4) and a spot the bot
-    // may no longer hunt by the worker's next trip start: one trip there
-    // before the worker moves it.
+    // gear plan's source while that stays viable, else its held earning
+    // answer; a spot the bot's marks exclude (died, was full, avoided,
+    // unreachable) is none of them. Main never searches. A full spot is met at
+    // arrival (ROUTE-ROOM-4) and a spot the bot may no longer hunt by the
+    // worker's next trip start: one trip there before the worker moves it.
     let selectedSpot = clanReturn ? savedSpot : null;
     if (returnState && !clanReturn) {
         const excluded = SpotRiskPolicy.excludedSpotIdsForStates([returnState]);
@@ -164,7 +177,7 @@ function finishVisit(state, timestamp, options) {
             || (plan?.status === 'active' && usable(plan.next?.spotId) && invoke('GameServer/Bot/AI/GearAcquisitionPlanner')
                 .isPlanSourceViableForState(returnState, plan, { spots: SpotProfiles.ensure(), timestamp })
                 ? SpotProfiles.findById(plan.next.spotId) : null)
-            || SpotProfiles.findForState(returnState, { timestamp })
+            || (usable(state.stats?.earning?.spotId) ? heldEarningSpot(state) : null)
             || (spotBackoff ? null : savedSpot);
     }
     // Remaining in town is safer than silently returning to a spot that is

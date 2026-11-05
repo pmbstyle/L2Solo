@@ -70,7 +70,7 @@ try {
     Routes.isSpotAllowedForState = () => { gates++; return true; };
     Routes.spotAllowedReaderFor = () => () => { gates++; return true; };
     Economy.forState = Economy.forGroup = () => { builds++; throw Error('admission built a wish network'); };
-    const selected = Route.select(state, { spots, timestamp: at, required: true });
+    const selected = Route.search(state, { spots, timestamp: at, required: true }).route;
     assert.equal(selected.spot.id, 'lower'); assert.equal(selected.row.useShots, false,
         'lower uncharged net income is compared before committing to the first charged route');
     // The solo side reads the bot's held earning answer: what its own search found (the stats are shared with peer).

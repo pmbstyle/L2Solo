@@ -13,6 +13,13 @@ const MAX_BACKOFFS = 8;
 const CAPACITY_BACKOFF_STEPS = 1;
 const MAX_FAILED_HUNTS = 3;
 const FAILED_HUNT_RECOVERY_WINS = 3;
+// Spots a body's situation ruled out (situations.md B6: spot_unreachable, a walk or
+// gatekeeper relocation that failed; spot_dangerous on ground it may not hunt alone):
+// stats.spotMarks [{ spotId, reason, answer }], the latest MAX_SPOT_MARKS kept
+// (limits.md). answer: the held earning answer's time when it was raised (null: none);
+// a mark holds against the search that answer's successor comes from, and lapses when
+// a new answer is held: the bot's next own situation that re-decides the spot. No clock.
+const MAX_SPOT_MARKS = 8;
 
 function normalizedSpotId(value) {
     const spotId = String(value || '').trim();
@@ -216,9 +223,10 @@ function backoffForStates(states = [], spotId, timestamp = Date.now()) {
 }
 
 // The spots one holder's marks exclude, added to `excluded`: its active
-// death and "was full" marks, its competition avoid and its death pressure.
-// Returns the holder's step at which the first of those marks ends (Infinity:
-// none ends by itself; death pressure ends only by a resolve).
+// death and "was full" marks, its competition avoid, its death pressure and its
+// situations' spot marks (spotMarks). Returns the holder's step at which the first
+// of those marks ends (Infinity: none ends by itself; death pressure ends only by
+// a resolve, a spot mark only by a new earning answer).
 function addExclusions(state, excluded) {
     let untilStep = Infinity;
     const mark = (spotId, entry) => { excluded.add(spotId); untilStep = Math.min(untilStep, Number(entry.untilStep)); };
@@ -229,8 +237,28 @@ function addExclusions(state, excluded) {
     if (normalizedSpotId(avoid?.spotId) && markActive(avoid, state)) mark(normalizedSpotId(avoid.spotId), avoid);
     const pressure = deathPressure(state);
     if (pressure) excluded.add(pressure.spotId);
+    for (const entry of spotMarks(state.stats)) excluded.add(entry.spotId);
     return untilStep;
 }
+
+// The held answer a mark is tied to: its time (EquipmentIncomeRoute.answerOf's at), null for none.
+const answerKey = stats => stats?.earning ? Number(stats.earning.at) || 0 : null;
+// The spot marks of a stats object that hold (written only through Situations' raise).
+function spotMarks(stats) {
+    if (!Array.isArray(stats?.spotMarks) || !stats.spotMarks.length) return [];
+    const answer = answerKey(stats);
+    return stats.spotMarks.filter(entry => normalizedSpotId(entry?.spotId) && (entry.answer ?? null) === answer);
+}
+// The marks with one more (the ones that hold): the spot's earlier mark replaced, the oldest past MAX_SPOT_MARKS
+// dropped (dropped: told the count, limits.md).
+function withSpotMark(stats, spotId, reason = 'excluded', dropped = null) {
+    const id = normalizedSpotId(spotId);
+    const kept = spotMarks(stats).filter(entry => String(entry.spotId) !== id);
+    if (!id) return kept;
+    if (kept.length >= MAX_SPOT_MARKS) dropped?.();
+    return [...kept, { spotId: id, reason: String(reason || 'excluded'), answer: answerKey(stats) }].slice(-MAX_SPOT_MARKS);
+}
+const isMarked = (stats, spotId) => spotMarks(stats).some(entry => String(entry.spotId) === String(spotId));
 
 // Callers still pass a time as the second argument; marks no longer read it.
 function excludedSpotIdsForStates(states = []) {
@@ -320,6 +348,10 @@ module.exports = {
     BACKOFF_STEPS,
     MAX_BACKOFF_STEPS,
     MAX_BACKOFFS,
+    MAX_SPOT_MARKS,
+    spotMarks,
+    withSpotMark,
+    isMarked,
     marksInSteps,
     CAPACITY_BACKOFF_STEPS,
     MAX_FAILED_HUNTS,

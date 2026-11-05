@@ -12,6 +12,7 @@ invoke('GameServer/Bot/AI/DecisionEvents').held = session => session.heldEconomy
 const Hunting = invoke('GameServer/Bot/AI/States/HuntingState');
 const Spots = invoke('GameServer/Bot/AI/SpotService');
 const Decision = invoke('GameServer/Bot/AI/BotDecisionService');
+const Situations = invoke('GameServer/Bot/Situations');
 const World = invoke('GameServer/World/World');
 const destination = { locX: 183244, locY: 51238, locZ: -5122 };
 const start = { locX: 177223, locY: 46613, locZ: -4104 };
@@ -69,21 +70,23 @@ try {
     assert.strictEqual(failed.bot.moves, 1);
     assert.strictEqual(failed.session.townRoutePlan, null);
     assert.strictEqual(failed.session.lastSpotRelocation.method, 'walk_route_unavailable');
-    assert(failed.session.spotRetryAfter[spot.id] > Date.now());
+    // The walk that could not reach its spot is the earning spot's situation (situations.md B6): its mark keeps
+    // the body off that spot, whatever time passes, until the bot's next own situation re-decides it.
+    const failedStats = failed.session.decisionStats;
+    assert.deepStrictEqual(failedStats.spotMarks, [{ spotId: spot.id, reason: 'walk_route_unavailable', answer: null }]);
+    assert(Situations.woken(failedStats, 'earning_spot'), 'spot_unreachable wakes the earning spot');
     assert(scans > 0, 'local target search must resume in the same tick after a failed retry');
-    assert.strictEqual(Decision.suggest(failed.session.botStatus, failed.session).action, 'search_locally');
-
-    // Exercise real destination selection, including expiry and per-bot isolation.
     const status = failed.session.botStatus;
-    assert.strictEqual(Spots.findBestSpot(status).spot.id, spot.id);
-    assert.strictEqual(Spots.findBestSpot(status, { spotRetryAfter: failed.session.spotRetryAfter }), null);
-    failed.session.lastSpotMoveAt = Date.now() - 16000;
-    assert.strictEqual(Decision.suggest(status, failed.session).action, 'search_locally', 'search exhaustion must respect failed spot cooldown');
+    assert.strictEqual(Decision.suggest(status, failed.session).reason, 'planned_route_unavailable');
     status.nearby.attackableNpcs = 0;
     status.nearby.eligibleAttackableNpcs = 0;
-    assert.strictEqual(Decision.suggest(status, failed.session).action, 'search_locally', 'empty surroundings must respect failed spot cooldown');
-    failed.session.spotRetryAfter[spot.id] = Date.now() - 1;
-    assert.strictEqual(Decision.suggest(status, failed.session).spot.id, spot.id, 'destination becomes eligible after cooldown');
+    assert.strictEqual(Decision.suggest(status, failed.session).action, 'search_locally', 'empty surroundings keep the mark');
+    Situations.raise(failedStats, 'level_up', null, Situations.OPEN);
+    assert.strictEqual(Decision.suggest(status, failed.session).action, 'search_locally', 'a wake does not drop the mark');
+    // The earning decision taken (its answer received) clears it.
+    failedStats.earning = { spotId: spot.id, shots: true, income: 1, expected: 1, earning: 1, error: 0, at: 5 };
+    failedStats.spotMarks = null;
+    assert.strictEqual(Decision.suggest(status, failed.session).spot.id, spot.id, 'and the held spot is walked to again');
 
     const initial = fixture();
     initial.session.spotRelocation = undefined;
@@ -104,7 +107,7 @@ try {
     const usable = fixture(true);
     tick(usable);
     assert(usable.session.spotRelocation, 'valid route retains travel ownership');
-    assert.strictEqual(usable.session.spotRetryAfter, undefined);
+    assert.strictEqual(usable.session.decisionStats?.spotMarks, undefined);
 
     for (const wrongDestination of [false, true]) {
         const stale = fixture(true);
@@ -119,16 +122,14 @@ try {
     expired.session.spotRelocation.startedAt = Date.now() - 121000;
     tick(expired);
     assert.strictEqual(expired.session.spotRelocation, undefined);
-    assert(expired.session.spotRetryAfter[spot.id] > Date.now(), 'timeout must not immediately select the same destination');
+    assert(!(expired.session.decisionStats?.spotMarks || []).some(mark => mark.reason === 'walk_timeout'),
+        'a timeout (fights on the way) marks nothing: an execution retry, bounded by the relocation timeout');
 
-    // A hot bot with karma never uses SoE or a gatekeeper: it looks for a
-    // spot within walking range and walks there.
+    // A hot bot with karma never uses SoE or a gatekeeper: it walks to its chosen spot.
     const farSpot = { ...spot, id: '31_8', name: 'Far field',
         center: { locX: start.locX + 30000, locY: start.locY, locZ: start.locZ } };
     Spots.ensureIndexed = () => [farSpot];
     const redStatus = { ...fixture().session.botStatus, nearby: { attackableNpcs: 0, eligibleAttackableNpcs: 0 } };
-    assert.strictEqual(Spots.findBestSpot(redStatus).spot.id, farSpot.id, 'a far spot is in range for SoE');
-    assert.strictEqual(Spots.findBestSpot(redStatus, { walkOnly: true }), null, 'walking range ends at 12000');
     const white = fixture(true);
     const red = fixture(true);
     red.bot.fetchKarma = () => 500;

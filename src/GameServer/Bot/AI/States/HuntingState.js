@@ -38,7 +38,7 @@ const TownPathfinder = invoke('GameServer/Bot/AI/TownPathfinder');
 const CompanionNavigationRecovery = invoke('GameServer/Bot/AI/CompanionNavigationRecovery');
 const HotTownRebuff = invoke('GameServer/Bot/AI/HotTownRebuff');
 const TownChatter = invoke('GameServer/Bot/AI/TownChatter');
-const BotHuntingGroundPolicy = invoke('GameServer/Bot/AI/BotHuntingGroundPolicy');
+const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const HuntingVisibility = invoke('GameServer/Bot/AI/BotHuntingVisibility');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const SurvivalFloor = invoke('GameServer/Bot/Population/SurvivalFloor');
@@ -53,9 +53,8 @@ const TARGET_RETRY_COOLDOWN_MS = 15000;
 const TARGET_PROGRESS_DISTANCE = 40;
 const { EMERGENCY_RETREAT_DISTANCE } = invoke('GameServer/Bot/AI/DangerRule');
 const MAX_WALK_SPOT_DISTANCE = SpotService.MAX_WALK_SPOT_DISTANCE;
-const SPOT_ARRIVAL_RADIUS = 1000;
+const SPOT_ARRIVAL_RADIUS = SpotService.SPOT_ARRIVAL_RADIUS;
 const MAX_SPOT_RELOCATION_MS = 120000;
-const FAILED_SPOT_RETRY_MS = 60000;
 const FULL_TARGET_CANDIDATE_LIMIT = 96;
 const VISIBLE_TARGET_CANDIDATE_LIMIT = 32;
 const LOCAL_TARGET_SEARCH_RADIUS = 2500;
@@ -507,13 +506,15 @@ function expireSpotRelocation(session, bot, relocation) {
     };
 }
 
+// A walk that ended without reaching its spot. Only a confirmed path failure (no
+// route there) is the earning spot's situation (situations.md B6): its mark keeps the
+// body (BotDecisionService) and the search off that spot until the decision is
+// taken. A timeout (fights on the way) is an execution retry: no mark, no search,
+// the next walk bounded by the same relocation timeout.
 function failWalkRelocation(session, bot, relocation, reason) {
     expireSpotRelocation(session, bot, relocation);
-    const now = Date.now();
-    session.spotRetryAfter = Object.fromEntries(Object.entries(session.spotRetryAfter || {})
-        .filter(([, retryAt]) => retryAt > now));
-    session.spotRetryAfter[relocation.spotId] = now + FAILED_SPOT_RETRY_MS;
-    session.lastSpotMoveAt = now;
+    if (reason === 'route_unavailable') DecisionEvents.raiseDecision(session, 'spot_unreachable',
+        { payload: { spotId: String(relocation.spotId), reason: `walk_${reason}` } });
     session.noTargetTicks = 0;
     session.lastSpotRelocation.method = `walk_${reason}`;
     session.lastDecision = { action: 'search_locally', reason, spotId: relocation.spotId };
@@ -579,7 +580,6 @@ function beginSpotRelocation(session, bot, spot, BotAI, deferredOccupation = nul
     session.currentTargetId = undefined;
     bot.unselect?.();
     session.noTargetTicks = 0;
-    session.lastSpotMoveAt = Date.now();
 
     const finishedTownErrands = session.pendingFarmDepartureAnnouncement === true;
     delete session.pendingFarmDepartureAnnouncement;
@@ -893,7 +893,7 @@ module.exports = {
             const currentGround = currentHuntingGround(session, bot);
             const matchupProfiles = TargetMatchup.actorProfiles([bot]);
             const groundSafety = currentGround
-                ? BotHuntingGroundPolicy.evaluate(currentGround, { level: bot.fetchLevel() }, {
+                ? LevelingRoutes.groundVerdict(currentGround, { level: bot.fetchLevel() }, {
                     mode: 'solo',
                     matchupProfiles,
                     equipment: equippedItems(bot)
@@ -950,7 +950,7 @@ module.exports = {
                 return;
             }
             const ground = currentHuntingGround(session, bot);
-            const allowed = !ground || BotHuntingGroundPolicy.evaluate(ground, { level: bot.fetchLevel() }, {
+            const allowed = !ground || LevelingRoutes.groundVerdict(ground, { level: bot.fetchLevel() }, {
                 mode: 'solo', equipment: equippedItems(bot)
             }).allowed;
             if (allowed && isSoloHunter(session) &&
@@ -987,7 +987,7 @@ module.exports = {
             const ground = currentHuntingGround(session, bot);
             if (leaf?.activity && leaf.activity !== 'hunting' && !session.currentTargetId
                 && !BotTownTravel.inCombat(session, bot)
-                && (!ground || BotHuntingGroundPolicy.evaluate(ground, { level: bot.fetchLevel() }, {
+                && (!ground || LevelingRoutes.groundVerdict(ground, { level: bot.fetchLevel() }, {
                     mode: 'solo', equipment: equippedItems(bot)
                 }).allowed)) {
                 session.deferredOccupation = DecisionService.occupationKey(leaf);
@@ -1012,32 +1012,42 @@ module.exports = {
         if (isSoloHunter(session)) {
             const currentGround = currentHuntingGround(session, bot);
             const groundSafety = currentGround
-                ? BotHuntingGroundPolicy.evaluate(currentGround, { level: bot.fetchLevel() }, {
+                ? LevelingRoutes.groundVerdict(currentGround, { level: bot.fetchLevel() }, {
                     mode: 'solo',
                     equipment: equippedItems(bot)
                 })
                 : { allowed: true };
             if (!groundSafety.allowed) {
                 if (session.currentTargetId) clearTarget(session, bot, session.currentTargetId);
-                const status = session.botStatus || BotAI.getStatus(session);
-                const destination = SpotService.findBestSpot(status, {
-                    spotRetryAfter: session.spotRetryAfter,
-                    walkOnly: Karma.closesTowns(bot.fetchKarma?.()),
-                    minDistance: 1,
-                    mode: 'solo',
-                    allowEasierSpots: true,
-                    matchupProfiles: TargetMatchup.actorProfiles([bot]),
-                    equipment: equippedItems(bot)
-                });
+                // Ground it may not hunt alone: the earning spot's situation, raised once
+                // a ground with the ground as its spot mark (the search passes it by
+                // until the next answer; main never chooses a spot). It walks to the
+                // spot its held decisions name when that is other ground it may hunt,
+                // else stands off until the answer comes.
+                if (String(session.dangerousGround) !== String(currentGround.id)) {
+                    session.dangerousGround = currentGround.id;
+                    DecisionEvents.raiseDecision(session, 'spot_dangerous',
+                        { payload: { spotId: String(currentGround.id), reason: groundSafety.reason } });
+                }
+                const heldId = DecisionEvents.heldSpotId(session, DecisionEvents.held(session)?.network.activity);
+                const held = heldId && heldId !== String(currentGround.id) ? SpotService.findById(heldId) : null;
+                const destination = held && LevelingRoutes.groundVerdict(held, { level: bot.fetchLevel() },
+                    { mode: 'solo', equipment: equippedItems(bot) }).allowed ? held : null;
+                // With none it asks once more; if that answer names none either it leaves
+                // for town (no spot to hunt is no reason to stay on ground it may not hunt).
+                const none = !destination && DecisionEvents.needSpot(session) === 'none';
+                if (destination) DecisionEvents.spotHeld(session);
                 session.lastDecision = {
-                    action: destination?.spot ? 'move_to_spot' : 'avoid_hunting_ground',
+                    action: destination ? 'move_to_spot' : none ? 'leave_for_town' : 'avoid_hunting_ground',
                     reason: groundSafety.reason,
-                    spotId: destination?.spot?.id || currentGround.id,
-                    spotName: destination?.spot?.name || currentGround.name
+                    spotId: destination?.id || currentGround.id,
+                    spotName: destination?.name || currentGround.name
                 };
-                if (destination?.spot) beginSpotRelocation(session, bot, destination.spot, BotAI);
+                if (destination) beginSpotRelocation(session, bot, destination, BotAI);
+                else if (none) BotTownTravel.request(session, bot, BotAI, 'no_hunting_spot', { announce: false });
                 return;
             }
+            if (session.dangerousGround != null) session.dangerousGround = null;
         }
 
         if (invoke('GameServer/Bot/AI/PendingSweep').tick(session, bot, Generics, BotAI)) return;
@@ -1062,7 +1072,7 @@ module.exports = {
             // Its ground admits it once its pet is up or whole (BotDecisionService): it
             // raises the pet out of the fight, or sits for the MP or the pet's HP.
             if (decision.action === 'summon' && SummonerTactics.raisePet(session, bot, Generics)) return;
-            if (decision.action === 'rest' && decision.reason === 'ground_needs_rest') {
+            if (decision.action === 'rest' && (decision.reason === 'ground_needs_rest' || decision.reason === 'no_hunting_spot')) {
                 beginVoluntaryRecovery(session, bot, BotAI);
                 return;
             }

@@ -32,12 +32,9 @@ function spotList(state, { price } = {}) {
 }
 
 // The earning spot search (the decision's, EconomyContext.incomeRouteFor while it is woken): { route (null: none),
-// error (the bot's own error on a row's income, SpotEconomics incomeError) }. select: the route alone.
+// error (the bot's own error on a row's income, SpotEconomics incomeError) }.
 function search(state, options) {
     return find(state, options);
-}
-function select(state, options) {
-    return find(state, options).route;
 }
 // The solo matchup the search reads.
 function matchupOptions(state, timestamp) {
@@ -56,8 +53,18 @@ function valuesFor(state, timestamp, price) {
 function find(state, { spots = [], timestamp = Date.now(), price, required = false, mode,
     maxChecks = 32, list = null } = {}) {
     const none = { route: null, error: 0 };
-    if (!spots.length || state.party?.partyId || ['party', 'duo'].includes(mode)
-        || !invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(state)) return none;
+    if (!spots.length || state.party?.partyId || state.partyId || ['party', 'duo'].includes(mode)) return none;
+    // While the bot has karma the decision takes the karma wash's choice (situations.md B6, ColdKarmaPolicy's
+    // rule), whatever else it is (a crafter at its station too: karma closes its town): weaker experience-bearing
+    // mobs, on foot; woken again by karma_changed. A party member's wash is its karma step's (ColdKarmaPolicy.plan).
+    const Karma = invoke('GameServer/Bot/Population/ColdKarmaPolicy');
+    if (Karma.active(state)) {
+        const spot = Karma.washSpot(state, spots, timestamp), { evaluate } = valuesFor(state, timestamp, price);
+        const row = spot ? evaluate(spot, true) || evaluate(spot, false) : null;
+        return { route: spot ? { spot, row: row || { income: 0, expected: 0, kills: 0, exp: 0, useShots: true },
+            earning: Number(row?.income) || 0 } : null, error: evaluate.incomeError };
+    }
+    if (!invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(state)) return none;
     const minGap = -15;
     list ||= spotList(state, { price });
     const spoiler = list.spoiler();
@@ -156,8 +163,9 @@ const timed = entry => function (state, options) {
 // Whether the bot's hour is its earning spot's (EconomyContext's foundation prices its hunt there): its gear is
 // required, its focus is an economic hunt, or it spoils; else it levels (BotHuntEfficiency.huntIncome). The bot
 // holds its earning spot either way (the party comparison's solo side reads it); this only says how the build uses it.
-function earnsOnRoute(state, required = false) {
-    return !!required || economicHunt(state) || !!spotList(state).spoiler();
+// list: the caller's spotList of this state, when it has one.
+function earnsOnRoute(state, required = false, list = null) {
+    return !!required || economicHunt(state) || !!(list || spotList(state)).spoiler();
 }
 // The earning spot's held answer (situations.md §10, stats.earning in the mind; its one owner of the layout): what
 // a search chose, { spotId (null: none), shots (the charge policy of its row), income (the row's income an hour, as
@@ -169,19 +177,31 @@ function answerOf(route, at, error = 0) {
         expected: Number(route.row.expected ?? route.row.income) || 0, earning: Number(route.earning) || 0, error: Number(error) || 0, at }
         : { spotId: null, shots: true, income: 0, expected: 0, earning: 0, error: 0, at };
 }
-// The route of the held answer at the inputs now (no search): its spot's row evaluated once at the reader's prices
-// (SpotEconomics, as the search reads it), its hour as decided. null: no answer, none held (spotId null) or a spot
-// the catalogue lost.
-// A bot in a party has none here: its hunt is the party's (the party comparison reads its solo copy).
-function heldRoute(state, { spots = [], timestamp = Date.now(), price, mode = null } = {}) {
+// A player's command naming a spot (Situations' player_command, B6) as the held answer: that spot, with the
+// bot's hour, charge policy and error kept from the answer it replaces (held: null for none); no income expected
+// there (a stay never disappoints a command: BotHuntEfficiency.disappoints). Held until the bot's next own
+// situation re-decides the spot.
+function commanded(held, spotId, at = 0) {
+    return { spotId: String(spotId), shots: held?.shots !== false, income: 0, expected: 0, earning: Number(held?.earning) || 0,
+        error: Number(held?.error) || 0, at: Number(at) || 0 };
+}
+// The held answer's spot in a catalogue (no search; spots: the catalogue's profiles). null: no answer, none held
+// (spotId null), a spot the catalogue lost, or a bot in a party: its hunt is the party's (the party comparison
+// reads its solo copy).
+function heldSpot(state, spots = [], mode = null) {
     if (state.party?.partyId || state.partyId || ['party', 'duo'].includes(mode)) return null;
     const held = state.stats?.earning;
-    if (!held?.spotId) return null;
-    const spot = invoke('GameServer/Bot/AI/SpotIndex').spotById(spots, held.spotId);
+    return held?.spotId ? invoke('GameServer/Bot/AI/SpotIndex').spotById(spots, held.spotId) || null : null;
+}
+// The route of the held answer at the inputs now (no search): its spot's row evaluated once at the reader's prices
+// (SpotEconomics, as the search reads it), its hour as decided. null: no held spot (heldSpot) or no row there.
+function heldRoute(state, { spots = [], timestamp = Date.now(), price, mode = null } = {}) {
+    const spot = heldSpot(state, spots, mode);
     if (!spot) return null;
+    const held = state.stats.earning;
     const row = valuesFor(state, timestamp, price).evaluate(spot, held.shots !== false);
     return row ? { spot, row, earning: Number(held.earning) || 0 } : null;
 }
 
-module.exports = { select, search: timed(search), searchTotals: () => ({ ...searchCounts }), economicHunt, spotList,
-    answerOf, heldRoute, earnsOnRoute };
+module.exports = { search: timed(search), searchTotals: () => ({ ...searchCounts }), economicHunt, spotList,
+    answerOf, commanded, heldSpot, heldRoute, earnsOnRoute };

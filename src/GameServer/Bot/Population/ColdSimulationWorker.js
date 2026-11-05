@@ -1875,8 +1875,10 @@ function startKernel(config = {}) {
             if (state.stats?.tradeMeeting) return null;
             // The bot's record as the kernel handed the step over (its card).
             const record = kernel.states.get(Number(state.characterId));
+            // A karma step executes the held earning answer (the wash's spot, decided
+            // when woken: no search here). It carries no stats packet: it keeps the
+            // previous shot demand, and its decision point is the ask after its round.
             const karmaPlan = invoke('GameServer/Bot/Population/ColdKarmaPolicy').plan(state, planningSpots, timestamp);
-            // A karma step carries no stats packet: it keeps the previous shot demand.
             if (karmaPlan) return karmaPlan;
             const originalPlan = state.stats?.equipmentPlan || null;
             const previousPlan = GearPlanSelection.uniqueCraftProjects(originalPlan);
