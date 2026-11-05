@@ -28,7 +28,9 @@ async function seed(stats = {}) {
     return Life.upsertState({ characterId: id, name: `Assembly${sequence}`, accountName: username,
         phase: 'cold', activity: 'party_wait', level: 10, spotId: 'event-fixture',
         loc: { locX: 0, locY: 0, locZ: 0 }, inventory: {}, adena: 0,
-        vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }, timing: {}, stats: { classId: 0, ...stats } }, 'assembly_fixture');
+        vitals: { hp: 100, maxHp: 100, mp: 100, maxMp: 100 }, timing: {},
+        // Each bot holds its earning answer (forming skips a candidate with none).
+        stats: { classId: 0, earning: { spotId: 'event-fixture', shots: true, income: 0, earning: 0, error: 0, at: 0 }, ...stats } }, 'assembly_fixture');
 }
 function registry(clock) {
     const result = Jobs.create({ now: () => clock.now, setInterval: () => ({ unref() {} }), clearInterval() {},

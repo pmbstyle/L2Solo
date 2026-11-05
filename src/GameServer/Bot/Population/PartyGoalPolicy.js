@@ -125,8 +125,16 @@ function formingMembers(members, requested, options = {}) {
     const filter = roster => {
         const prepared = PartyIncomeComparison.prepare(roster, { objective: requested, ...options });
         return roster.filter(member => {
-            if (!invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(member)
-                && member.stats?.partyRequest?.priority === 'required') return true;
+            const adventurer = invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(member);
+            if (!adventurer && member.stats?.partyRequest?.priority === 'required') return true;
+            // A candidate with no held earning answer has no solo side to compare: it skips this round (its earning
+            // spot is woken and decides at its next step; situations.md §8): party_solo:none (developerDiagnostics).
+            // (Only where the comparison runs: an adventurer with a spot and a class, PartyIncomeComparison.compare.)
+            if (adventurer && member.spotId && Number.isFinite(Number(member.stats?.classId ?? member.classId))
+                && member.stats?.earning === undefined) {
+                invoke('GameServer/Bot/Economy/EconomyDiagnostics').count('party_solo', 'none');
+                return false;
+            }
             const decision = decide(member, roster.filter(peer => peer !== member), { prepared, objective: requested, solo: options.solo });
             options.onReview?.(member, decision);
             return decision.accept;
@@ -191,11 +199,10 @@ function formingHold(inputsOf, site) {
 // persona and roll seed. A comparison: its request as a goal (a material need
 // as its agreement holds it), the focused gear
 // and the cash, survival reserve, workshop quote, planned potion, its party
-// samples at the grounds (any sub-roster), the solo side's answer (its spot, the
-// earning and the row's income and kills soloRoute reads: the same whichever
-// search gave it, so a renewal of the owner's hold to the same answer keeps the
-// verdict), the solo drop's hours for its goal (soloGoalHours: they read its
-// own samples, prices and recovery), and its position as its trips read it: the
+// samples at the grounds (any sub-roster), the solo side's held earning answer
+// (its spot and the decision's time: a new answer judges again, prices and the
+// crowd read anew by soloRoute wake nothing), the solo drop's hours for its goal
+// (soloGoalHours), and its position as its trips read it: the
 // hours to the solo spot and to each ground (WalkBack.tripHours).
 // The fight's moment by what the matchups and buff offers read of it: the
 // shot its prices name and the kind it loads (DecisionSections.shotInputs; none
@@ -237,8 +244,8 @@ function verdictInputs(member, context, drift) {
             stats.partyRequest?.requestedAt || member.spotId || member.updatedAt);
         return parts.join(',');
     }
-    const side = PartyIncomeComparison.soloChoice(member, context.spots, timestamp), route = side.route;
-    context.solo.set(id, side);
+    const route = PartyIncomeComparison.heldSoloRoute(member, context.spots, timestamp);
+    context.solo.set(id, route);
     const trip = spot => WalkBack.tripHours(member.loc, spot, member, context.spots);
     // As compare times it: the member first (a material agreement holds the first members' needs).
     const own = context.material ? [member, ...context.members.filter(peer => peer !== member)] : context.members;
@@ -247,8 +254,9 @@ function verdictInputs(member, context, drift) {
     const workshop = invoke('GameServer/Bot/Economy/EconomyContext').craftIncome(member);
     // Every roster's samples at the grounds: the second pass prepares a sub-roster.
     const samples = Hunt.sampledRows(member, timestamp, 'party').filter(row => context.grounds.ids.has(String(row.spotId)));
-    parts.push(route ? [route.spot.id, route.earning, route.row.income, route.row.kills, trip(route.spot)].join(':') : '',
-        context.grounds.spots.map(trip).join(':'), PartyIncomeComparison.soloGoalHours(member, side, aim, context.spots, timestamp),
+    // No held answer (skipped this round) and an answer with no spot are two inputs: the answer's arrival judges again.
+    parts.push(route ? [route.spot.id, stats.earning.at, trip(route.spot)].join(':') : stats.earning ? `none:${stats.earning.at}` : 'unheld',
+        context.grounds.spots.map(trip).join(':'), PartyIncomeComparison.soloGoalHours(member, aim, context.spots, timestamp),
         goalReads(stats.partyRequest), JSON.stringify(aim.materialGoal ?? null), PartyIncomeComparison.focusedItem(member), stats.wishFocus?.[2],
         require('../Economy/StatsPacket').survivalReserve(stats.money),
         workshop?.known, workshop?.incomePerHour, workshop?.cycleHours,

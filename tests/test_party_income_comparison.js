@@ -91,7 +91,7 @@ try {
             'ordinary clan-member parties must also beat the safe solo earning route');
         assert.equal(Income.compare(member, [memberPeer], { prepared, objective: { clanGoalKey: 'clan-kit' } }), null);
         assert.deepEqual(Goals.formingMembers([member, memberPeer], { clanGoalKey: 'clan-kit' }), [member, memberPeer]);
-        const review = Goals.joint({ startedAt: at - Income.REVIEW_MS, spotId: 'peer', stats: {} },
+        const review = Goals.joint({ startedAt: at - 5 * 60000, spotId: 'peer', stats: {} },
             [member, memberPeer], { timestamp: at, spots });
         assert.equal(review.incomeReviews?.length, 2,
             'ordinary party income review also runs for members of a clan with a warehouse');
@@ -142,6 +142,29 @@ try {
     }
     durations.sort((a, b) => a - b);
     assert.equal(gates, 1, 'an admission asks no safety gate: the solo side reads the held answer (the one is the fixture\'s search)');
+    // A candidate holding no earning answer has no solo side: forming skips it this round (its spot decides first).
+    const unanswered = { ...peer, characterId: 990133, stats: { ...peer.stats } };
+    delete unanswered.stats.earning;
+    assert(invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(unanswered), 'fixture: an economic candidate');
+    const judged = [];
+    Goals.formingMembers([state, unanswered], { spotId: 'peer' }, { onReview: member => judged.push(member.characterId) });
+    assert.deepEqual(judged, [state.characterId], 'a candidate with no held earning answer skips the round, unjudged');
+    // Its answer's arrival (even one with no spot) is an input of the held verdict: the roster is judged again.
+    {
+        const nativePrepare = Income.prepare;
+        let judgements = 0;
+        Income.prepare = (...args) => { judgements++; return nativePrepare(...args); };
+        try {
+            const ask = members => Goals.formingVerdict(members, { spotId: 'peer' }, { spots, timestamp: at });
+            ask([state, unanswered]);
+            const once = judgements;
+            ask([state, unanswered]);
+            assert.equal(judgements, once, 'fixture: the same roster is held');
+            const answered = { ...unanswered, stats: { ...unanswered.stats, earning: { spotId: null, shots: true, income: 0, earning: 0, error: 0, at } } };
+            ask([state, answered]);
+            assert(judgements > once, 'the candidate\'s new answer judges the roster again');
+        } finally { Income.prepare = nativePrepare; }
+    }
     console.log(`PASS personal admission: no wish builds; warm p95=${durations[190].toFixed(3)}ms, max=${durations[199].toFixed(3)}ms`);
 
     // A forming verdict is judged once per inputs: the roster asked again on the

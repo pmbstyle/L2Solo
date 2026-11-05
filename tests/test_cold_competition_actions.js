@@ -32,9 +32,11 @@ async function run() {
         await Database.execute([`INSERT INTO characters(id,username,name,classId,race,maxHp,maxMp,sex,face,hair,hairColor,locX,locY,locZ)
             VALUES (?,?,?,0,0,100,100,0,0,0,0,0,0,0)`, [id, `bot_actions_${id}`, `Action${id}`]]);
         await Database.execute([`INSERT INTO bot_life_state(characterId,accountName,characterName,phase,activity,spotId,hp,maxHp,mp,maxMp,level,
-            nextResolveAt,lastResolvedAt,updatedAt,statsJson) VALUES (?,?,?,'cold','hunting','test',100,100,100,100,20,?,?,?,?)`,
+            nextResolveAt,lastResolvedAt,updatedAt,statsJson,mindJson) VALUES (?,?,?,'cold','hunting','test',100,100,100,100,20,?,?,?,?,?)`,
         [id, `bot_actions_${id}`, `Action${id}`, now + 60000, now - 30000, now, JSON.stringify([1, 2, 3, 4, 11, 12, 13, 14].includes(id)
-            ? { ...stats, coldCompetition: { ...oldEpisode, conflictUntil: id >= 13 ? now - 1 : oldEpisode.conflictUntil } } : stats)]]);
+            ? { ...stats, coldCompetition: { ...oldEpisode, conflictUntil: id >= 13 ? now - 1 : oldEpisode.conflictUntil } } : stats),
+        // Each bot holds its earning answer (forming skips a candidate with none).
+        JSON.stringify({ earning: { spotId: 'test', shots: true, income: 0, earning: 0, error: 0, at: now } })]]);
     }
     await Life.init();
     const memory = new Memory();

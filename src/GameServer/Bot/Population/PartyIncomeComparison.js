@@ -9,8 +9,6 @@ const Material = require('./CraftMaterialParty');
 const SpotEconomics = require('../Economy/SpotEconomics');
 const WalkBack = require('../Economy/WalkBack');
 const HOUR_MS = 3600000;
-// An active party's income review cadence (PartyGoalPolicy.joint).
-const REVIEW_MS = 5 * 60000;
 const positive = value => Math.max(0, Number(value) || 0);
 const rosterKey = members => members.map(member => Number(member.characterId)).sort((a, b) => a - b).join(',');
 const adventurer = state => invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(state);
@@ -60,20 +58,18 @@ function evaluate({ solo, party, cash = null, spendable = 0, fee = 0, rewardFee 
         soloSpotId: solo?.spotId || null, soloBuffPrice: positive(solo?.buffPrice) };
 }
 
-// The solo side's earning route: { route, own }: the bot's held earning answer
-// (situations step 1, stats.earning) at the inputs now (EquipmentIncomeRoute.heldRoute,
-// one row evaluation, no search); none when it holds no answer or none with a spot.
-// own: no search of its own any more (null).
-function soloChoice(state, spots, timestamp) {
-    const route = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').heldRoute(soloState(state), { spots, timestamp });
-    return { route, own: null };
+// The solo side's earning route: the bot's held earning answer (situations step 1,
+// stats.earning) at the inputs now (EquipmentIncomeRoute.heldRoute: one row
+// evaluation, no search); null when it holds no answer (forming skips it,
+// PartyGoalPolicy.formingMembers) or none with a spot.
+function heldSoloRoute(state, spots, timestamp) {
+    return invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').heldRoute(soloState(state), { spots, timestamp });
 }
 
-// side: the member's soloChoice when its caller already read it.
-function soloRoute(state, spots, timestamp, peers = [], side = soloChoice(state, spots, timestamp)) {
+// choice: the member's held solo route when its caller already read it.
+function soloRoute(state, spots, timestamp, peers = [], choice = heldSoloRoute(state, spots, timestamp)) {
     const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
     const standalone = soloState(state);
-    const choice = side.route;
     if (!choice) return null;
     const row = choice.row;
     let best = { ...row, income: choice.earning * Hunt.onSpotShare(state), spotId: choice.spot.id,
@@ -259,7 +255,7 @@ function goalOf(state, members, objective, agreement) {
 // At most GOAL_HOURS_LIMIT bots (limits.md), the least recently read out.
 const GOAL_HOURS_LIMIT = 2048;
 const goalHours = new Map();
-function soloGoalHours(state, side, aim, spots, timestamp) {
+function soloGoalHours(state, aim, spots, timestamp) {
     if (aim.materialGoal?.materialSoloHours != null) return aim.materialGoal.materialSoloHours;
     if (!aim.final) return null;
     const goal = aim.goal, id = Number(state.characterId) || 0;
@@ -279,8 +275,9 @@ function compare(state, peers, options = {}) {
     if (!state.spotId || !Number.isFinite(Number(state.stats?.classId ?? state.classId))) return null;
     const members = [state, ...peers];
     const prepared = options.prepared || prepare(members, options);
-    const side = options.solo?.get(Number(state.characterId)) || soloChoice(state, prepared.spots, prepared.timestamp);
-    let solo = soloRoute(state, prepared.spots, prepared.timestamp, peers, side);
+    const id = Number(state.characterId);
+    const held = options.solo?.has(id) ? options.solo.get(id) : heldSoloRoute(state, prepared.spots, prepared.timestamp);
+    let solo = soloRoute(state, prepared.spots, prepared.timestamp, peers, held);
     // A guarded existing production quote can beat hunting. This is a read
     // of an already prepared native result, never a market/recipe scan here.
     const workshop = prepared.workshops?.get(state.characterId)
@@ -302,7 +299,7 @@ function compare(state, peers, options = {}) {
     const fee = help?.status === 'funded' ? 0 : payer ? positive(help?.fee) : 0;
     const partyItemHours = aim.final
         ? itemHours(state, prepared.spot, party?.kills, goal, members, agreement) : null;
-    const soloItemHours = soloGoalHours(state, side, aim, prepared.spots, prepared.timestamp);
+    const soloItemHours = soloGoalHours(state, aim, prepared.spots, prepared.timestamp);
     const payerState = members.find(member => Number(member.characterId) === Number(help?.payerId));
     const deliveryGoal = materialParty ? Material.needs(members, options.objective, agreement)
         .find(row => row.characterId === Number(help?.payerId)) : options.objective;
@@ -319,4 +316,4 @@ function compare(state, peers, options = {}) {
     return { ...answer, at: prepared.timestamp, soloSource: solo?.source || null, partySource: party?.source || null };
 }
 
-module.exports = { compare, prepare, evaluate, soloChoice, soloRoute, itemHours, soloItemRouteHours, focusedItem, goalOf, soloGoalHours, rosterKey, REVIEW_MS, soloState };
+module.exports = { compare, prepare, evaluate, heldSoloRoute, soloRoute, itemHours, soloItemRouteHours, focusedItem, goalOf, soloGoalHours, rosterKey, soloState };
