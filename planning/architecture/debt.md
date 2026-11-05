@@ -1,6 +1,6 @@
 # Architecture debt
 
-Checked at 39e43408 (2026-11-04).
+Checked at d379becbd (2026-11-05).
 
 Index across areas; details and evidence in each area file (ids: AI, POP, ECO, CMB, WOR, PER, TBL).
 Add a line when you find a tail you do not fix. Delete it when it is paid (the area file states the new rule).
@@ -10,8 +10,7 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
 - Several NPC poison chances still disagree with Mobius C4, and generated weapon-proc semantics override 1168's chance with 7 (CMB-30).
 - Fear expiry in `EffectTicker.scheduleExpiry` clears the runtime interval without `EffectRestrictions.stopFear`;
   `isAfraid` and an in-flight `fearMoveTimer` can outlive the effect. Align expiry with the existing fear cleanup.
-- Combat lint debt: skill 4080 is defined twice in `C4SkillRules`; `C4SkillEffects.applyBalanceLife` has an unused
-  `actor` argument. Check the duplicate skill against C4 before removing a definition.
+- Combat lint debt: `C4SkillEffects.applyBalanceLife` has an unused `actor` argument.
 
 ## Themes
 
@@ -97,56 +96,60 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    the card view's `stock()` (`ColdEconomyDecision.view` ~464) gives `worthwhileTravel` its `benefitPerUnit`. Both
    need the stock's benefit, which `stockTargets` does not carry; publishing it (or the use rate) would move them to
    `keptKit`.
-21. **A hot look reads a built sale-feasibility mask.** `HotBoardReviewService` passes the card's `feasibility`
-   (`ColdOccupationSources.feasibility`, built on the build's state) to `BoardLook.feasibilityPredicate`, which keys it
-   on the owner's lines only, not the reservations and item flags its bits read; a reservation made or ended since
-   the build answers with the old bit until the next near decision. The cold look answers on its own state
-   (`ColdOccupationSources.canSell`); on main the mask stands in for reading the reservations on every look.
-
 21. **The supply fact misses the beginner shots.** `DecisionSections.stockIds` (~387) names the paid shot
    (`ShotStock.planForState`), while a fight loads the beginner grant first (`ShotStock.combatPlanForState`): the
-   grant running out turns the shot a fight loads (`ColdCombatProfile.shotSupply`, the matchup's shot kind) with no
-   supply event, so a kept foundation hears it only at its next rebuild. The held earning spot's key reads the kind
-   (`bagShot`) at every build, the source ground compares it itself (`sourceRouteReader`).
+   grant running out turns the shot a fight loads (`ColdCombatProfile.shotSupply`, the matchup's shot kind) and raises
+   no situation, so a kept foundation hears it only at its next rebuild. The held earning spot's key reads the kind
+   (`bagShot`) at every build, the source ground compares it itself (`sourceRouteReader`). The missing situation is
+   `stock_low` for the shot a fight loads (target-architecture/situations.md).
 
 22. **The wish focus and dormant rows have no layout owner.** `stats.wishFocus` (`[key, sinceHours, price]`) and
    `stats.dormantWishes` rows (`[key, reason, 0, price, playedHours, loyalty]`), written by `WishNetwork` (~1038) and
    also held as `network.focus`, are read by slot in ~30 places (`focus?.[0]` in diagnostics and keys,
    `SpotEconomics.moneyShort`, `PartyIncomeComparison`, `ActorEconomyProjection`). They want one owner like
    `StatsPacket` (the money, kit and danger arrays).
-23. **A buyer's wallet growing past a listed offer has no event.** `MarketBuyerWaiters` wakes a buyer only when an
-   offer is listed or made cheaper (`recordChanged`); a bot whose budget grows past an offer it already saw waits
-   out the failed visit's retry stamp (limits.md "Buyer retry", 15 min). A budget event re-checking the owner's
-   heap nodes against the item's best offer would replace the window.
-23. **The forming verdict hears a member's wallet and time on the spot by its income error.**
-   `PartyGoalPolicy.verdictInputs` re-judges a roster when a member's adena or `onSpotShare` moves beyond its
-   `incomeError` (at least 3 %), not over an interval its answer stands on (as the earning hold's money weights):
-   the comparison is not one line in them (funding delays clipped at zero, the minimum of funding and direct item
-   hours, the help fee and buff price thresholds, the 10 % margins), so an interval needs the breakpoints of
-   `PartyIncomeComparison.evaluate` per member. A material roster keys its wallets exactly. The paid-buff solo
-   alternative (`PartyIncomeComparison.soloRoute`) reads the buyer's and the seller's hour at the wall clock
-   (`BuffServicePolicy.incomeForTenMinutes`, `priceFor`: `BotHuntEfficiency.hourValue`'s default `Date.now()`), not the
-   verdict's moment; the verdict key carries neither those hours nor the price's clan match and seller's max MP.
 
-23. **Clan war reviews run on a window.** `ClanWarDirector.review` visits every autonomous clan each 60 s
-   (`ClanWarConfig.reviewMs`, 4 per pulse) and reads its loss pressure from SQL each time, though most inputs have
-   events (`ClanReviewEvents`, war accept, social relation changes, losses) or a known deadline (quiet withdrawal,
-   ceasefire, loss window, intel TTL). The review is also the only sampler of enemy sightings at a spot (positions,
-   no event), so it needs a sightings sampler of its own before it can wait for its events. An unchanged review is
-   no longer written.
+23. **The forming verdict wakes on a member's wallet and time on the spot.** `PartyGoalPolicy.verdictInputs`
+   re-judges a roster when a member's adena or `onSpotShare` moves beyond its `incomeError` (at least 3 %). Under the
+   situation rule (AGENTS.md) both are read when the verdict is taken and wake nothing: a roster is judged again at a
+   member's level up, gear change, death or leaving, or a moved objective (target-architecture/situations.md "Party
+   forming"); the drift goes with the cadence pass. The paid-buff solo alternative
+   (`PartyIncomeComparison.soloRoute`) reads the buyer's and the seller's hour at the wall clock
+   (`BuffServicePolicy.incomeForTenMinutes`, `priceFor`: `BotHuntEfficiency.hourValue`'s default `Date.now()`), not the
+   verdict's moment.
 
 23. **A drop fact's band depends on the order of the wish build's items.** `WishProviders` `sourcePath` passes
    `economicLower: progression.required || !!spoiler`, where `spoiler` is read only at the first item with a spoil
    source (or the spoil-demand roots): for a spoiler the drop facts asked before it take the voluntary band, the
    ones after the wider equipment one. `KeptSourceFacts` keys each fact on the spoiler as it was read; one rule
-   (read the spoiler once per build, or band by `progression.required` alone) is the owner's choice.
+   (read the spoiler once per build, or band by `progression.required` alone) is the owner's choice. (Two items
+   carry 23: `PartyGoalPolicy` and `KeptSourceFacts` cite one each.)
+
+24. **A buyer's wallet growing past a listed offer has no event.** `MarketBuyerWaiters` wakes a buyer only when an
+   offer is listed or made cheaper (`recordChanged`); a bot whose budget grows past an offer it already saw waits
+   out the failed visit's retry stamp (limits.md "Buyer retry", 15 min). The missing situation is the wallet reaching
+   the focused goal's price (`goal_affordable`, target-architecture/situations.md), which replaces the window.
 
 25. **The demand forecasts age by the clock with no event.** `MarketTradeDemand.forecast` decays an item's trades by
    an e-fold per uptime hour between two trades, so a workshop priced on them (`ProductionSalePolicy.exit`) moves
    with no input moving, as a combat profile's effects ending do for the MP cap of a state that stores none
    (`ColdOccupationSources.craftLabour`); the planner's workshop card serves for its own window instead
-   (`WORKSHOP_SERVE_MS`, limits.md "Occupation planner"). The forecast's breakpoints (its units floor, a town
-   dropping below one unit) and the effects' ends would give the time the answer stands until.
+   (`WORKSHOP_SERVE_MS`, limits.md "Occupation planner"). Under the situation rule the workshop is taken at its
+   situations (arrived in town, recipe learned, level up, own product sold) and reads the forecasts then: the serve
+   window goes with the cadence pass, and the forecasts need no event of their own (target-architecture/situations.md).
+
+26. **A hot look reads a built sale-feasibility mask.** `HotBoardReviewService` passes the card's `feasibility`
+   (`ColdOccupationSources.feasibility`, built on the build's state) to `BoardLook.feasibilityPredicate`, which keys it
+   on the owner's lines only, not the reservations and item flags its bits read; a reservation made or ended since
+   the build answers with the old bit until the next near decision. The cold look answers on its own state
+   (`ColdOccupationSources.canSell`); on main the mask stands in for reading the reservations on every look.
+
+27. **Clan war reviews run on a window.** `ClanWarDirector.review` visits every autonomous clan each 60 s
+   (`ClanWarConfig.reviewMs`, 4 per pulse) and reads its loss pressure from SQL each time, though most inputs have
+   events (`ClanReviewEvents`, war accept, social relation changes, losses) or a known deadline (quiet withdrawal,
+   ceasefire, loss window, intel TTL). The review is also the only sampler of enemy sightings at a spot (positions,
+   no event), so it needs a sightings sampler of its own before it can wait for its events. An unchanged review is
+   no longer written.
 
 **Tests.** Gaps: nothing pins the producer side of a stock horizon (an urgent stock wish writes its `targetHours` into
 `stockTargets`' `gapHorizonHours`, `EconomyContext`); `workerEconomyDecision` scenes without `nativeRoutes` have no supplied stock, so
@@ -205,7 +208,9 @@ hot/cold transition (POP-4), start-up repairs removed after their cause is found
 ## Planned features
 
 - Cold walker visible on its road (plan local to the maintainer's sessions, not in the repo yet).
-- Recompute only the link a change touches: [../decision-links/plan.md](../decision-links/plan.md) (next release).
+- Decide at a player's situations through one mechanism (the decision cadence pass, next release):
+  [../target-architecture/plan.md](../target-architecture/plan.md) §4.2 and its design `situations.md`; the earlier
+  link design [../decision-links/plan.md](../decision-links/plan.md) is corrected by it.
 - Gear progression and the market's demand estimate from the hunt tables (current and future bots by class and level
   band: gear, hennas, consumables), see tables.md "Assessment" (TBL-3).
 
@@ -241,10 +246,11 @@ Each area file ends with its open questions; none blocks the order above.
   (`PopulationService.schedulePersonaBackfill`) and the legacy class progression migration
   (`migrateLegacyClassProgression`); with a player always online they never finish. Bring them under the governor
   (`db_maintenance`) as state retention is.
-- Gear planner recovery entries wake on level, weapon grade and party only (`GearAcquisitionPlanner.recoveryWake`): a
-  new board offer for a set-aside target or material (`market_alternative`, `craft_stalled`) wakes nothing (the planner
-  reads no board revision); `abandonAcquisition` has no game caller (tests only). A party route set aside
-  (`party_route_unavailable`) has no event for a recruit pool that could now form it: a 1 h window stands in.
+- Gear planner recovery entries wake on level, weapon grade and party (`GearAcquisitionPlanner.recoveryWake`); a new
+  board offer for a set-aside target or material (`market_alternative`, `craft_stalled`) is read at the next of them
+  (prices wake no decision, AGENTS.md). `abandonAcquisition` has no game caller (tests only). A party route set aside
+  (`party_route_unavailable`) has no event for a recruit pool that could now form it: a 1 h window stands in
+  (`PARTY_ROUTE_RETRY_MS`).
 - A completed economy intent keeps its `bot_economy_intents` row (`[S,0,X]`); the stats receipt `[S+1,1,X]` supersedes
   it by sequence or by id (`Database` `economyTupleUnsafe`). A writer that put an older receipt back (one not naming
   X; `EconomyCommit.preserveLeafSql` keeps every whole-stats writer from it today) would let the intent win again and

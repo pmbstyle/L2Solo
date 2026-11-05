@@ -57,14 +57,19 @@ deciding again, not simulating: builds 358/min (0.21 per bot per minute) at 20.5
 
 ## 4. Order of work
 
-1. **Heap/CPU release (now, `ivan/batch-5`):** finish the worker regression fixes (held-spot crowd replay, planner key + listing hold; done: price
-   interval, forming key, solo-search trim, assess once), the monster damage memo (exact, −1.0-1.3 s), final CI and
-   perf. The exact-key fixes stay useful under the new principle.
+1. **Heap/CPU release (in test, `ivan/release-heap`):** worker regression fixed with exact keys (price interval,
+   crowd replay on the pick, forming key, solo-search trim, assess once, planner digest, listing hold digest, S4
+   budget reader instead of a derived context); monster damage memo replaced by computing. The exact-key fixes stay
+   useful under the new principle; the cadence pass deletes the decision-level ones.
 2. **Decision cadence pass (next release, first; design: situations.md):** per decision (earning spot, wish/gear, source facts, workshop,
    party forming, action/showcase plan), list the situations a C4 player decides at; compare with today's trigger
    counts (counters exist: `incomeHold` event:*, `raisedLinks`, held refusals, planner asks per mode); build the one
    situation catalogue (owner, raiser, the decisions it wakes); move each decision onto it and delete its own wake
-   logic. Expected: most of the 39 % decision building and much of the 20 % planners.
+   logic. Expected: most of the 39 % decision building and much of the 20 % planners. The map rows that still state
+   today's input-keyed wakes are rewritten by the step that moves their decision: economy.md (the owner's own look,
+   the workshop, the held earning spot, the sale disposition hold, `CraftMarketReview`, ECO-15's weight intervals),
+   population.md (the action-plan ask's fact edges, the party stay review's `inputKey`), debt.md 21, 23 (forming), 24,
+   25 and the gear planner's recovery wake; limits.md "Occupation planner" and "Earning spot crowd key".
 3. **Kit and stock targets** (the first instance of 1.1, designed and decided, §5).
 4. **ECO-10:** a far bot's own spot move as a situation (every reader).
 5. **Scaling limits:** size the 2048-bot caches by population with limits.md rows; worker heap per bot down

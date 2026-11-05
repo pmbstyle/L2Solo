@@ -139,7 +139,7 @@ of the money mark beyond the focus, `relations` friend/enemy targets and bond (Q
 **Situations with no event yet (debt lines with the reason):** crowding while the bot hunts (Q3; today only the search's
 crowd replay hears it); a far bot's own pull to another spot (ECO-10); a recruit pool that could now form a set-aside
 party route (`PARTY_ROUTE_RETRY_MS`, existing debt line); main's goal leaving an item (ECO-16, `WANTED_TTL_MS`).
-Paid by this catalogue: debt 21 (beginner shots: `stock_low` per §5), debt 23 (buyer wallet: `goal_affordable`),
+Paid by this catalogue: debt 21 (beginner shots: `stock_low` per §5), debt 24 (buyer wallet: `goal_affordable`),
 debt 23 forming wallet drift, debt 25 (workshop decays: workshop not woken by time).
 
 ## 4. The one mechanism

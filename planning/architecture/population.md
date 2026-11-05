@@ -1,6 +1,6 @@
 # Population, hot/cold, cold worker
 
-Checked at 39e43408 (2026-11-04).
+Checked at d379becbd (2026-11-05).
 
 Survey of t106dev @ 9f27b7fa (2026-11-03). Line numbers drift; search by name.
 Scope: `Bot/Population`, `Bot/Travel`, `BotManager`, `BotSession`, worker protocol.
@@ -77,9 +77,10 @@ thread: our rule, so a far bot does not re-decide on every event ([bot-ai.md](bo
 | Round → state | `BotLifeState.prepareResolve` |
 | Cold → hot gate | `handoffToMain` (solo); party / PvP: their own DB `transition` (POP-4) |
 | Main → worker data | `ColdTableChannel` (tables), `snapshot_page` (bots); clan social bypasses it (POP-9) |
-| Spot route | `BotRoute` (the solo trip's kept route and spot verdicts live on the worker's kernel record) |
+| Spot route | `BotRoute` (the solo trip's kept route and spot verdicts live on the worker's kernel record); a competition avoid (`ColdCompetitionRetreat`) only marks the spot excluded, raises the unit's occupation and makes it due: the worker's next step routes it off the spot, main searches none |
 | When a far step asks the action plan after its round | `ColdEconomyPlan.edgesSince` over the facts of the bot's last action ask (`askAction`: bag amounts, money reached, shopping town, level, death, the craft MP band, own lines' fills): the step's own ask before the round, else the kernel record's `actionBaseline`, set when main commits the step that asked (`onCommitAck`, a lifecycle command's ack), so a dropped step asks again; a new worker compares against the step's start. Not in it, heard at the next edge or decision: the clock the plan reads directly, others' quotes, a mana bot's MP, an own line sold out. The hunt window's end reads `edges` between its rounds |
 | A planner answer (workshop, route rows, action plan) kept for a bot | `ColdOccupationPlanner`, one job per bot per mode, held on the value of what the mode reads (`ColdSimulationWorker.plannerInputKey`, the inputs beside the state, then `plannerValueKey`, a digest per state object of the state values it reads, compared only when the first matches: the route key for rows; the top-level fields but the commit stamps, max MP, the MP band and the named stats fields its modules read (`WORKSHOP_STATS`) for the workshop; the state's values but its stamps, the step clock and economy for the action plans; the asked state object and the inputs asked beside it (warehouse and clan supply versions, escrow, recipes, whole copies, pending pages) for near, refresh and meeting, which read worker inputs beside the state) and its read board tokens; a new state that reads the same keeps it, in flight too (its publication names the new state); a workshop card serves 30 game min (`WORKSHOP_SERVE_MS`, limits.md) |
+| When a background party's stay is reviewed (worker) | `PartySessionReview`: the first resolve records the review's evidence on the party row; a review runs when `inputKey` moves (roster and levels, ground, objective, acquisition goal, clan help roster, each member's plan target and clan objective, the relation flags, re-read only when the members' memory, war or social revisions move) or at a clock's known end (`due`: a concern's grace, the least patience after three fights with no win or none, recent progress ending, a pause's end, an XP-excluded member's patience, clan help's end); no interval |
 | Versions of a spot's inputs for held results (readers compare, nothing is dispatched) | crowd: `SpotOccupancyIndex.spotVersion` (moves when a bot joins or leaves the spot; this thread's: `SpotProfiles.spotVersion`); a holder's exclusions: `SpotRiskPolicy.exclusionVersion` (revision = the excluded set, untilStep = its first mark's end) |
 | Travel route and fare | `Travel/TravelRoutes`, `TripPayment` |
 | Cold trip time | `ColdTrip` |
@@ -88,6 +89,12 @@ thread: our rule, so a far bot does not re-decide on every event ([bot-ai.md](bo
 | A wait for an event | no step until a writer changes the row: `lifecycleKind` `event_driven` (meeting, craft shop, held clan wait: the change that ends it steps it at once, `ColdSimulationKernel.upsert`), or the wait's known end as its due (raid supply, a raid roster's native activation, a parked supply errand); the wait is lived, not hunted (`stats.eventWait` set by `prepareResolve` from `result.eventWait`, read by `ColdSoloWindow.livedClock`, solo and party) |
 | Boot recovery of a stale hot row | `BotLifeState.staleHotRowFromRecord` (the record wins, PER-7) |
 | Transition cost (cold ↔ hot time per bot) | `PopulationMetrics.recordActivation`/`recordCooldown` (`transitions` in the summary) |
+
+The rows above that wake a held decision on its inputs (the action-plan ask's fact edges, the party stay review's
+`inputKey`) describe today's code under the rule AGENTS.md replaced on 2026-11-05: a decision wakes only at its
+situations, through one mechanism. The decision cadence pass moves them onto it
+([../target-architecture/plan.md](../target-architecture/plan.md) §4.2, `situations.md`); the planner answer's keys
+stay as the cache of a pure calculation.
 
 ## Debt
 
@@ -158,10 +165,10 @@ thread: our rule, so a far bot does not re-decide on every event ([bot-ai.md](bo
   becoming possible. A missed one leaves a bot hot or cold until the next scan, and the scan is also the activation
   pace (6 per 10 s). Measured 2026-11-04 hot run (2 players, ~120 hot): 0.003 % of main, so kept until it shows.
 
-- **POP-24 step polls standing in for events** (limits.md "Wait polls"). Missing events: a board fill for a shopping
+- **POP-25 step polls standing in for events** (limits.md "Wait polls"). Missing events: a board fill for a shopping
   bot (buyer wakes cover hunting/party_wait only), so the raid supply purchase and the town command retry; the
-  planner's sale or spot choice for survival unload and a refused ground (their inputs crowd/risk have no versions,
-  decision-links plan step 3); main's refusal of a posted occupation plan (the review completion could wake it; one
+  planner's sale or spot choice for survival unload and a refused ground (under the situation rule they wait for a
+  situation of the bot, not for crowd or risk versions: target-architecture/situations.md); main's refusal of a posted occupation plan (the review completion could wake it; one
   step either way, latency only); a member's arrival or join moving its leader's due (party assembling), whose
   timeout counts poll attempts and must become time-based first. A restart releases no orphaned cold supply errand
   (its hot session is gone; the row waits for its downtime-shifted deadline).

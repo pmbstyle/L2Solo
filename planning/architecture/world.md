@@ -1,6 +1,6 @@
 # World, movement, runtime loop
 
-Checked at 39e43408 (2026-11-04).
+Checked at d379becbd (2026-11-05).
 
 Survey of t106dev @ 9f27b7fa (2026-11-03). Line numbers drift; search by name.
 Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `DataCache`, `WorldObserver`, `Server`,
@@ -48,7 +48,7 @@ Scope: `World`, `Geodata`, `Network`, `Automation`, `Timer`, `EventLoopTurn`, `D
 - **Spots** `Bot/AI/SpotService`: `ensureIndexed` builds spots from `SpawnNpcs.catalogueSpawns(World)`; **without World
   (no `World.npc.definitions`) it returns `[]`** — in the worker that is an empty list, not an error.
 - **Visibility:** packet side effects, not a known-list object. `Session.dataSendToMe` hooks (`CharacterVisibility`,
-  `NpcVisibility`, `GroundItemVisibility`, clan war); area refresh `UpdateEnvironment` on ≥ 1000 moved. No DeleteObject
+  `NpcVisibility`, `GroundItemVisibility`, clan war); area refresh `UpdateEnvironment` on ≥ 1000 moved (NpcInfo only to a real client: a bot session skips it). No DeleteObject
   when someone walks out of range.
 - **Spawns:** `SpawnNpcs`, `RemoveNpc`, `NpcDecay`, `DayNightSpawnManager`, `RaidBossMinionManager`, `RaidBossState`.
   An NPC's model inherits its template (`SpawnNpcs.npcModel`: the row flattened once per frozen datapack row, 2.7k

@@ -1,8 +1,8 @@
 # Bot tables (precomputed)
 
-Checked at 39e43408 (2026-11-04).
+Checked at d379becbd (2026-11-05).
 
-Survey of `ivan/next-release` @ be97733e; committed tables of d45cfa5a3 (f62f1683, Tables run 41751582154). Line numbers drift; search by
+Survey of `ivan/next-release` @ be97733e; committed tables of d379becbd (built at 1247f9f2c, fingerprinted). Line numbers drift; search by
 name. Scope: `data/Bots/*.json`, `data/Bots/hunt/*.json`, `scripts/generate-spot-table.js`,
 `scripts/generate-spot-reward-catalog.js`, `scripts/hunt-tables/*`, `scripts/fight-table/*`,
 `scripts/hunt-cycle-check.js`, `.github/workflows/tables.yml`, reader `Bot/AI/SpotValueTable`.
@@ -78,14 +78,12 @@ its header; `npm run check` (`scripts/check-tables.js`) recomputes it for `data/
 removed or changed since; it also fails when the list names a path that no longer exists. The server's first read
 of the spot table, on the main thread only, logs one `SpotTable` line: matches, or a warning with the changed files
 (the table stays in use; not fatal). A table without a fingerprint is "unknown": the check warns and passes, the
-server logs one warning. **The committed tables (f62f1683) carry none yet** and predate inputs this release
-changed (cold skill records, skill data flags, readiness on the live pull, rest end, C4 drops in `data/Npcs`, the NPC
-price table): stale, but the check stays a warning until the next rebuild writes a fingerprint; from then on any change to a listed file makes `npm run check` warn on a working copy and fail on
-CI (PR checks) or with `--strict`, until the tables are rebuilt: a release's commits stay green, its PR cannot pass
-with stale tables.
+server logs one warning. The committed tables (d379becbd) carry one (390 files): any change to a listed file makes
+`npm run check` warn on a working copy and fail on CI (PR checks) or with `--strict`, until the tables are rebuilt: a
+release's commits stay green, its PR cannot pass with stale tables.
 
-**Readers (the decisions it serves).** All through `SpotValueTable` (`value`, `best`, `rankedIncome`,
-`rankedSpotIds`, `cycle`, `production`, `huntShare`, `kitSurface`):
+**Readers (the decisions it serves).** All through `SpotValueTable` (`value`, `kills`, `best`, `rankedIncome`,
+`rankedSpotIds`, `cutStands`, `keepAbove`, `cycle`, `production`, `huntShare`, `kitSurface`):
 - Spot choice: `SpotEconomics.create` → `LevelingRoutes.scoreSpot` (worker leaf `BotRoute.choose`; hot
   `SpotService.findBestSpot`, AI-2; room filter in `SpotProfiles`). The row is cut by the live hunters on the spot
   (`huntShare` of the spawns' production) and scaled by the bot's own hunt samples, which win where they exist.
@@ -94,14 +92,15 @@ with stale tables.
 - Consumables: `ShotStock.usePolicy` and `ShotStock.blessedPays` (do shots / Blessed Spiritshots pay), potion use per hour
   (`foundation`), rest bottles `RestPotion.stockUse` over `SpotValueTable.cycle`, bag hours from `stacks` (town visit).
 - Death price: deaths per kill into `EconomicValuation.deathHours`.
-- Market and gear: `FirstPrice` (first board price from the hour it takes to farm an item), `EquipmentIncomeRoute`.
+- Market and gear: `FirstPrice` (first board price from the hour it takes to farm an item; reads only the kill rate,
+  `kills`, no pricing of the kill), `EquipmentIncomeRoute` (the band's cut: `cutStands`, `keepAbove`).
 - Parties: `PartyIncomeComparison`, `CraftMaterialParty` (forecast known).
 - Money is not from the table: adena and loot of a kill come live from the NPC reward groups at the bot's level and
   the server's rates (`SpotRewardExpectation.value`, over the row's `mix` and the live spot's species of the period).
 
 **Cost.** Loaded lazily on each thread at its first lookup (not at boot): read 45 ms + `JSON.parse` 260 ms and ~100 MB
 of transient heap on this laptop (measured 2026-11-03); on main, once per process and only for a table with a
-fingerprint, one read and sha1 of its ~410 input files (~19 MB, most of it `data/Npcs`; not measured, est. well under the
+fingerprint, one read and sha1 of its ~390 input files (~19 MB, most of it `data/Npcs`; not measured, est. well under the
 parse), then `packRows` packs rows into typed arrays outside the JS heap:
 ~36 MB per thread (numbers 17.9 MB Float64, 3 of their 23 columns NaN placeholders; gates 6.2, gate shares 6.2, mix
 6.0). Two copies: main and the cold worker each read the file; the table does not cross `ColdTableChannel` (only the

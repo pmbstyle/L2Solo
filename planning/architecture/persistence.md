@@ -1,6 +1,6 @@
 # Persistence and long-lived systems
 
-Checked at 39e43408 (2026-11-04).
+Checked at d379becbd (2026-11-05).
 
 Survey of t106dev @ 9f27b7fa (2026-11-03). Line numbers drift; search by name.
 Scope: `src/Database*`, `src/History*`, journals, `Persistence/`, `database/sql`, saved games, Clan, ClanHall, Social,
@@ -8,7 +8,7 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
 
 ## Mechanisms
 
-- **World DB** `src/Database.js` (11.4k lines, ~195 methods): one `node:sqlite` connection, WAL, every call through one
+- **World DB** `src/Database.js` (12.0k lines, ~195 methods): one `node:sqlite` connection, WAL, every call through one
   promise queue (`enqueue`, `run`, `performTransaction`); its drain gives the event loop a turn after 12 ms of jobs,
   never inside one, so order and atomicity hold. Also holds game rules (clan join, AFK board, quest steps,
   NPC baskets, cold commits) — PER-10.
@@ -45,7 +45,8 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
   update's DB paths and marks its migration phase in the update journal (`beginUpdateMigrations`). The perf window
   runs load a save into their own folder (`scripts/perf/window.js`), the save is never touched.
 - **Workers:** none write the world DB. Cold bot worker sends proposals → `commitAndReleaseColdSimulationLeases`,
-  `handoffColdSimulationToMain`. Clan planning worker gets snapshots.
+  `handoffColdSimulationToMain`. Clan planning worker gets snapshots (a job's craft options and warehouse rows cross
+  once, with its first plan; the board is kept once, in its `BoardIndex`).
 - **Systems:** quests `Quest/QuestService` + 133 scripts → `QuestStep` → `applyQuestStep`; class change
   `ClassTransfer`, `SecondProfession` → `completeSecondProfession`, trees `ClassProgression`; warehouses
   `Warehouse/*`; clans `Clan/*` (69 files); `ClanHall/*`; `Social/*`; `Progression/*`; `Knowledge/*` (runtime);

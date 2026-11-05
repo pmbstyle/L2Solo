@@ -1,6 +1,6 @@
 # Findings of the category passes
 
-Checked at 544a99e8 (2026-11-04).
+Checked at d379becbd (2026-11-05).
 
 Open findings of the category passes (README "Category passes"), one row each, grouped by category. A pass writes its
 new rows here; a fixed finding's row is deleted in the commit that fixes it. Ids are the ones the passes gave and
@@ -205,10 +205,9 @@ Impact is at 1700 / 10k bots.
 | C6 | `MoveTo` bot branch | every visible hot bot move: all-session filter per move; non-companion routes run **sync** A* (2000 nodes) on main, up to twice | Med / Med-High | presence sessions; visible routes to the path pool (WOR-2) |
 | C7 | `World.npc.spawns` reassigned by `filter` (SpoilSweep, NpcDied, NpcDecay, C4SkillEffects, PetMount, PetTravel) | every sweep / summon death × ~22k: a new array breaks `RaidEntityIndex` source → full rebuild on the next add or drop | Low-Med / Med | change in place; never reassign `spawns` |
 | C8 | NPC grid 6000-unit cells (`fetchNpcsInRadius`) | aggro sweep 1/s per session incl. bots; BotStatus 3 s; hunting scans; ~25 callers: radius 300-2500 queries scan 18k×18k (100-749 NPCs), 9 key strings per call | Low-Med / Med | 2000-unit cells, radius-sized rings |
-| C9 | linear `World.user.sessions` finds: `ClanService.onlineSessionByActorId` (roster display, assignments), NpcDied per kill, Attack clan buff/NPC AoE, EffectRestrictions fear, PartyAwareness | O(H) per commit / kill | Low / Med | `World.registeredActorById`, `ActorQueries.near/humans` |
-| C9 | linear `World.user.sessions` finds: `ClanService.onlineSessionByActorId` per commit, NpcDied per kill, Attack clan buff/NPC AoE, EffectRestrictions fear | O(H) per commit / kill | Low / Med | `World.registeredActorById`, `ActorQueries.near/humans` |
+| C9 | linear `World.user.sessions` finds: `ClanService.onlineSessionByActorId` (roster display, assignments), NpcDied per kill, Attack clan buff/NPC AoE, EffectRestrictions fear | O(H) per roster read / kill | Low / Med | `World.registeredActorById`, `ActorQueries.near/humans` |
 | C10 | `HuntingState.claimedTargetIds` | every hot target scan × all sessions: O(H²) across hunters | Low-Med / Med | one claimed set per dispatcher turn (the function accepts `claimedIds`) |
-| C11 | worker `flush` → `proposalSizes` → `JSON.stringify`; postMessage clone; main stringifies again (C1) | each state serialized ~3× on two threads; worker throughput is the binding limit | Low-Med / Med | estimate size from known parts; send stats/mind/inventory strings once |
+| C11 | worker `flush` → `proposalSizes` (`ColdSimulationProtocol.byteLength`: a walk, no string); postMessage clone; main stringifies again (C1) | each state walked for its size, cloned and stringified on two threads; worker throughput is the binding limit | Low-Med / Med | send stats/mind/inventory strings once |
 | C12 | worker `EconomyContext` LRU 2048 (limits.md) | above 2048 bots each step becomes a full build (140-670 ms longest turns measured) | Low / **High** | size the LRU from the population or share by cohort; watch the 512 MB heap |
 | C13 | packets for `BotSession` recipients dropped (statusUpdate per hit/regen, `userInfo` per EXP gain, `ConsoleText.transmit`) | buffer allocation for a no-op send | Low-Med / Med | guard with `session.botSession` or a lazy builder |
 | C14 | per-actor timers: NPC combat `setInterval(100)`, `replenishVitals` `setInterval(3000)`, EffectTicker per effect, MoveTo chains | thousands of callbacks/closures per second | Low / Low-Med | one shared combat ticker, one regen ticker |

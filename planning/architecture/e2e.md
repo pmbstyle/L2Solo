@@ -1,6 +1,6 @@
 # End-to-end scripts
 
-Checked at 39e43408 (2026-11-04).
+Checked at d379becbd (2026-11-05).
 
 Situations played on the real server by a scripted player (`src/Perf/PlayerScript.js`, `src/Perf/PlayerClient.js`):
 the player acts only through client packets (`session.dataReceive`, the real request handlers) and a step checks

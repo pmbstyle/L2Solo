@@ -1,6 +1,6 @@
 # Architecture map
 
-Checked at 39e43408 (2026-11-04).
+Checked at d379becbd (2026-11-05).
 
 What exists, who owns each rule, which path is canonical. First survey: t106dev (now `ivan/next-release`) @ 9f27b7fa,
 2026-11-03, six read-only passes. Line numbers drift; search by name. Read the file of the area you touch before
@@ -31,7 +31,8 @@ recorder, `[Perf] live`; `Threads`, `CpuProfile`, `HeapProfile`, `ChunkWorker`),
 `scripts/perf/{window,report,compare}.js` on a launcher save, players `HotCrowd` (hot scenario), scripted client
 `PlayerClient` + `PlayerScript`; numbers come from `PopulationMetrics`/`logSummary` and
 `ColdSimulationCoordinator.failureSnapshot`; the recorder adds only main's GC pauses by kind (cumulative, summed by
-`WorkerHeapTelemetry`'s GC observer for its handle; report takes window deltas).
+`WorkerHeapTelemetry`'s GC observer for its handle; report takes window deltas); report and compare leave a starved
+CPU chunk out and count it (limits.md "Recorder thresholds").
 
 **How the map is kept.** Open work and current state only: a paid debt item is deleted, an area line is rewritten to
 the new state; history is git (`git log -S <id>`). A change that settles an owner, removes a path, pays a debt item or

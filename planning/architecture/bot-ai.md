@@ -1,6 +1,6 @@
 # Bot decision-making (hot)
 
-Checked at 39e43408 (2026-11-04).
+Checked at d379becbd (2026-11-05).
 
 Survey of t106dev @ 9f27b7fa (2026-11-03). Line numbers drift (~); search by name.
 Scope: `Bot/AI`, `Bot/Goals`, `Bot/BotAI.js`, chat → action. Cold stepping: [population.md](population.md).
@@ -23,7 +23,7 @@ Scope: `Bot/AI`, `Bot/Goals`, `Bot/BotAI.js`, chat → action. Cold stepping: [p
 | Player chat → action | LLM on: `BotDialogueArbiter` → `BotBrain` → `BotAgentTools`. LLM off (default): regex `BotManager.applyPlayerSpeechRules` | `BotManager.handlePlayerSpeak` |
 | Ambient chat | Bot scenes and chatter, under `BotChatterBudget` | `BotManager.checkAndStartConversation` (`BotAmbientDirector`) |
 
-Rule stated in code (`BotAI.js` ~497, enforced by `ALLOWED_EVENTS` in `BotBrain.js` ~21): autonomous state changes belong to the
+Rule stated in code (`BotAI.js` ~527, enforced by `ALLOWED_EVENTS` in `BotBrain.js` ~22): autonomous state changes belong to the
 deterministic brain; the LLM acts only on explicit player communication.
 
 ## Canonical owners
@@ -31,7 +31,7 @@ deterministic brain; the LLM acts only on explicit player communication.
 | Rule | Owner |
 |---|---|
 | Activity choice, hot and cold | Worker economy build (`WishNetwork` leaf, `ColdEconomyDecision`); hot reads `DecisionEvents.held` — "the body's target search cannot invent a new job" |
-| When to re-decide | `DecisionEvents.raiseDecision` + `Reaction.js` (where a far bot stands) |
+| When to re-decide | `DecisionEvents.raiseDecision` + `Reaction.js` (where a far bot stands). AGENTS.md (2026-11-05): a decision wakes only at a player's situations, named and raised in one place; today's sections, input versions and per-decision holds are moved onto one catalogue by the cadence pass (`Bot/Situations.js` (proposed), [../target-architecture/situations.md](../target-architecture/situations.md)) |
 | Solo hunting spot | Worker leaf `spotId`: `Population/BotRoute.choose`/`leafChoice` over `LevelingRoutes.scoreSpot`/`bestSpot` with `SpotEconomics` income (decided, AI-2); values from the spot table, [tables.md](tables.md). A cold market return reads it (`GoalExecutor` `finishVisit`: the card's hunting leaf, else the spot it hunted before the trip, else the gear plan's viable source, none excluded by its marks; main searches only when none is left), the worker re-routes after arrival |
 | Party target | `Population/PartyHuntingTarget` |
 | Rest thresholds; when a rest ends (`restOver`, hot `RestingState` and cold `BackgroundResolver.resolveRest` / `soloRestMs`): solo at the rested line `THRESHOLDS.rested` 0.95 HP (MP too for mana sitters), moved ±0.03 by the persona's caution (`restedLine`; the tables' reference bot has none: 0.95); a party member at the locked 0.95; a rest the next fight sent an already rested bot to ends on a full bar, HP and MP (hot `session.restWhole`, cold a full-bar deadline), so it does not stand, get refused and sit again | `AI/RestPolicy` |
@@ -76,7 +76,7 @@ deterministic brain; the LLM acts only on explicit player communication.
   dead/resting/following likely unreachable; `MerchantState` empty.
 - **AI-9 two ambient engines.** `BotAmbientDirector` (default, `ambientScenesEnabled`) and legacy `BotConversation` path;
   `checkAndStartConversation` asks `BotConversation.canStart` even when the director runs.
-- **AI-13 `World.fetchUser` as control flow.** `HuntingState` (~1082) and `FollowingState` (~1981) ask
+- **AI-13 `World.fetchUser` as control flow.** `HuntingState` (~1072) and `FollowingState` (~1981) ask
   `fetchUser` first and read its rejection as "not a player", then `fetchNpc`: a session scan, an `Error` and two
   promises per tick with an NPC target (perf, not a failure; the sync `World.registeredActorById` answers it).
   `SpotService.ensureIndexed` returns `[]` without World definitions (a startup window), not counted.
