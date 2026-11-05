@@ -71,11 +71,13 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
     // applied raise does not drop the step a later raise of the bag finds.
     const mind = { decisionSeq: 3, activityLeaf: 77 };
     assert.equal(Events.takePostedRaise(mind, { seq: 2, bits: 1, impossible: true, impossibleSeq: 1 }, 1), 2);
-    assert.deepEqual([mind.decisionSeq, mind.activityLeaf], [4, 77], 'raise 2 is taken, raise 1\'s mark is not');
+    assert.deepEqual([mind.wishDirty, mind.activityLeaf], [1, 77], 'raise 2 is taken, raise 1\'s mark is not');
+    mind.wishDirty = 0;
     assert.equal(Events.takePostedRaise(mind, { seq: 2, bits: 1, impossible: true, impossibleSeq: 2 }, 2), 2);
-    assert.equal(mind.decisionSeq, 4, 'an applied raise is not taken again');
+    assert.equal(mind.wishDirty, 0, 'an applied raise is not taken again');
     assert.equal(Events.takePostedRaise(mind, { seq: 3, bits: 1, impossible: true, impossibleSeq: 3 }, 2), 3);
-    assert.deepEqual([mind.decisionSeq, mind.activityLeaf], [5, 0], 'an unapplied impossible raise drops the step');
+    assert.deepEqual([mind.wishDirty, mind.activityLeaf], [1, 0], 'an unapplied impossible raise drops the step');
+    assert.equal(mind.decisionSeq, 3, 'a raise is no decision: its sequence stays');
 
     // A decision for a bot that cooled before it came is dropped, and counted.
     const dropped = coordinator.nearDecisions.dropped;
@@ -86,6 +88,7 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
 
     // The body cools with a raise unanswered: its cold row takes it.
     const pending = { ...session.nearRaise }, seq = session.coldLifeState.stats.decisionSeq;
+    session.coldLifeState.stats.wishDirty = 0;
     Object.assign(actor, { fetchHp: () => 100, fetchMaxHp: () => 100, fetchMp: () => 50, fetchMaxMp: () => 50,
         fetchName: () => 'NearOrder', fetchExp: () => 0, fetchSp: () => 0 });
     // The row is read here, not saved (this test has no database).
@@ -93,11 +96,11 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
     // The party and PvP cooldowns build their cold rows here too.
     const party = Life.partySessionSnapshot(session, { ...session.coldLifeState, party: { partyId: 'p', role: 'dps', leaderId: id } },
         'cold', 'party_cooldown');
-    assert.equal(party.stats.decisionSeq, seq + 1, 'a party cooling\'s cold row takes the raise');
+    assert.equal(party.stats.wishDirty & pending.bits, pending.bits, 'a party cooling\'s cold row takes the raise');
+    assert.equal(party.stats.decisionSeq, seq, 'which is no decision');
     await Life.writeColdRow(session, 'cooldown');
     assert.equal(session.coldLifeState.phase, 'cold');
-    assert.equal(session.coldLifeState.stats.decisionSeq, seq + 1, 'the cold row is raised once');
-    assert.equal(session.coldLifeState.stats.wishDirty & pending.bits, pending.bits);
+    assert.equal(session.coldLifeState.stats.wishDirty & pending.bits, pending.bits, 'the cold row takes the raise');
     assert.equal(session.coldLifeState.stats.activityLeaf, 0, 'its unanswered impossible mark drops the step');
     console.log('PASS near decision order: newest post wins, its mind reaches the body, a raise waits for its answer');
 })().catch(error => { console.error(error); process.exitCode = 1; });

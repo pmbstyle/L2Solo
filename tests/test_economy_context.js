@@ -455,7 +455,7 @@ async function run() {
             assert(held.plan.hunt && typeof held.plan.kit === 'object' && held.plan.kit, 'fixture: a held hunt and kit');
             const stale = { wallet: 7, cashBounds: [-3, 11], budgetBounds: [-5, 13], moneyError: 0.5 };
             const raised = (from, bit) => ({ ...native, stats: { ...native.stats, ...from.statsPacket,
-                decisionSeq: from.statsPacket.decisionSeq + 1, wishDirty: Sections.sectionBit(bit),
+                wishDirty: Sections.sectionBit(bit),
                 wishSections: { ...from.statsPacket.wishSections, ...stale } } });
             let before = counts();
             const sources = Economy.forState(raised(held, 'sources'), { timestamp: T });
@@ -990,13 +990,11 @@ async function run() {
             `a liquidation of a zero-usefulness item is watched on the buy side: ${JSON.stringify(junk.statsPacket.wishSections.marketWatch)}`);
         Economy.forget(990026);
         Economy.forget(native.characterId);
-        // One raise per step: the round's and the soft point's sections in one
-        // bump, ORed into the bits raised before.
+        // One raise per step: the round's and the soft point's sections ORed
+        // into the bits raised before; a raise is no decision, its sequence stays.
         const before = { stats: { decisionSeq: 3 } }, after = { stats: { decisionSeq: 3, wishDirty: Sections.sectionBit('supply') } };
-        Events.raiseSections(before, after, [], []);
-        assert.equal(after.stats.decisionSeq, 3, 'no section, no bump');
         Events.raiseSections(before, after, ['money'], ['money', 'sources']);
-        assert.equal(after.stats.decisionSeq, 4, 'one bump for both lists');
+        assert.equal(after.stats.decisionSeq, 3, 'no bump');
         assert.equal(after.stats.wishDirty, Sections.sectionMask(['supply', 'money', 'sources']), 'the raised bits join the earlier ones');
     }
     console.log('PASS soft point: money / observation / watched market / one raise');
@@ -1441,14 +1439,15 @@ async function run() {
     assert.equal(interrupted.vitals.mp, 50, 'current combat resources remain authoritative');
     const actualDeath = await Life.prepareResolve(resolveInput, { ...resolveResult,
         patch: { activity: 'dead' } }, resolveOptions);
-    assert.equal(actualDeath.stats.decisionSeq, 10, 'actual death creates one meaningful decision');
+    assert(Number(actualDeath.stats.wishDirty), 'actual death raises one meaningful decision');
+    assert.equal(actualDeath.stats.decisionSeq, 9, 'a raise is no decision: its sequence waits for the build');
     assert.equal(actualDeath.stats.activityLeaf, resolveInput.stats.activityLeaf, 'death keeps the held step for the next build to reconsider');
     const levelExpGain = Math.max(1, Data.experience[base.level] - resolveInput.exp + 1);
     // A far bot hears its new level at the rest (on the hunt it waits).
     const levelGain = await Life.prepareResolve(resolveInput, { ...resolveResult, patch: { activity: 'resting' },
         materialize: { ...resolveResult.materialize, exp: levelExpGain } }, resolveOptions);
     assert(levelGain.level > resolveInput.level, 'the fixture really earns a new level');
-    assert.equal(levelGain.stats.decisionSeq, 10, 'actual level gain updates dependent calculations once');
+    assert(Number(levelGain.stats.wishDirty), 'actual level gain updates dependent calculations once');
     assert.equal(Database.isReady(), false);
     assert.deepEqual(fs.readdirSync(dir), ['config.ini']);
     console.log('PASS actual needs hookup / hard survival floor / no SQL or saves');

@@ -245,10 +245,10 @@ function factNames(previousFact, current, funding = false, planned = false) {
 function detect(before, after, { escrow = 0, leaf = null, unhuntable = false } = {}) {
     const Sections = readers();
     // Main may replay a validated worker packet that already describes this
-    // same round. Compare its actual baselines, not sequence alone; a packet
-    // preceding a new death/level/resource event still raises that event.
-    const represented = Number(after.stats?.decisionSeq || 0) > Number(before.stats?.decisionSeq || 0)
-        ? after.stats?.wishSections : null;
+    // same round: a newer build's baseline (its own time) is the one compared;
+    // a packet preceding a new death/level/resource event still raises that event.
+    const builtAt = state => Number(state.stats?.wishSections?.at) || 0;
+    const represented = builtAt(after) > builtAt(before) ? after.stats.wishSections : null;
     const previous = represented || before.stats?.wishSections || {};
     let original;
     // A fact the baseline kept as null (no recipe book read) is kept: only a

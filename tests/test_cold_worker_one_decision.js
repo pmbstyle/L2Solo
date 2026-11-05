@@ -318,7 +318,7 @@ parentPort.on('message', message => {
         assert.equal(step.wishDirty, 0, 'on the hunt the round\'s supply event raises nothing');
         assert.equal(step.seq[1], step.seq[0], 'and the decision sequence stands');
         assert.equal(step.rest[0], 0, 'nor does the round that ends at the rest');
-        assert(step.town[0] !== 0 && step.town[1] > step.seq[1], 'the arrival in town raises it and moves the sequence');
+        assert(step.town[0] !== 0, 'the arrival in town raises it');
         assert.equal(step.baseline[1], step.baseline[0], 'the projected state keeps the baseline of the step decision');
         assert.equal(step.card.updatedAt, step.card.projectedAt, 'main gets the step card stamped to the projected state');
         assert.deepEqual(step.card.echo, step.card.projectedEcho, 'main gets the step card with the projected decision echo');

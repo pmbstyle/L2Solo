@@ -321,11 +321,10 @@ function heldBuildVerdict(state, proof, deps = {}, options = {}) {
     const movedTo = movedHold(state);
     if (movedTo && moved(Situations.incomeLink(options.leaf), 'income_moved', movedTo.afterGoal) && !collect) return out;
     const echo = Sections.decisionRefusal(state, ...proof.decision);
-    // Collecting past raised bits: every raise (DecisionEvents markSections,
-    // raiseSections) bumps decisionSeq with its bits, so a moved sequence is
-    // that raise, already named by its bits; read as sources it would rebuild
-    // the source walk on every event. The leaf and the focus are still
-    // compared: a moved one lights sources, as the echo does.
+    // Collecting past raised bits: the raise is named by its bits; a moved
+    // sequence (a build that moved the focus or dropped the step) read as
+    // sources would rebuild the source walk on every event. The leaf and the
+    // focus are still compared: a moved one lights sources, as the echo does.
     if (echo && collect && dirty) {
         const leafOrFocus = Sections.decisionRefusal(state, Number(state.stats?.decisionSeq || 0), proof.decision[1], proof.decision[2]);
         if (leafOrFocus) refuse(leafOrFocus, ['sources']);
@@ -2390,7 +2389,7 @@ function forGroup(group, members, deps = {}) {
     // own decision, so with the echo equal keys are equal member plans (perf
     // C1: a member's later view is a new object over the same plan). A party
     // keeps its group answer until a member's facts, decision sequence, leaf
-    // or focus move (a watched market crossing moves the sequence).
+    // or focus move.
     const key = [wallet, ...contexts.map(({ inputKey, statsPacket: packet }) =>
         `${inputKey}:${packet?.decisionSeq}:${packet?.activityLeaf}:${packet?.wishFocus?.[0]}`)].join('|');
     const held = proposal ? null : groups.get(actorKey);

@@ -112,7 +112,8 @@ async function runWorker(state, predicate, followUp = null) {
         post({ ...state, characterId: 765414, updatedAt: now + 1 });
         post(raised);
         const answer = (await decidedAt(until, 4)).payload.near, one = answer.statsPacket;
-        assert.equal(one.decisionSeq, own + 1, 'a raise main posted is taken once, on the worker\'s mind');
+        assert.equal(answer.raiseSeq, 1, 'a raise main posted is taken, on the worker\'s mind');
+        assert.equal(one.decisionSeq, own, 'a raise is no decision: the mind\'s sequence stays');
         assert(answer.shots && Number.isFinite(answer.shots.ownedUsePerHour), 'the decision carries its build\'s auto-shot verdict');
         // A writer's copy of the cached row (no post number) is older than the
         // record's post: the record stands and no decision answers it.
@@ -131,8 +132,7 @@ async function runWorker(state, predicate, followUp = null) {
         // The pending bag is cumulative: a later raise still carries the
         // impossible mark of raise 1 (its step drop: test_near_decision_order).
         post({ ...raised, nearSeq: 6, updatedAt: now + 4, raise: { seq: 2, bits: 1, impossible: true, impossibleSeq: 1 } });
-        const three = (await decidedAt(until, 6)).payload.near.statsPacket;
-        assert.equal(three.decisionSeq, two.decisionSeq + 1, 'the new raise is taken');
+        assert.equal((await decidedAt(until, 6)).payload.near.raiseSeq, 2, 'the new raise is taken');
     });
 
     const instances = Array.from({ length: 2075 }, (_, index) => ({ id: 900000 + index,

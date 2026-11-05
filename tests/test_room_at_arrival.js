@@ -92,7 +92,6 @@ module.exports.probe = async ({ kind, id, spotId, reason, remove, party }) => {
     const next = { ...projected, stats: { ...projected.stats, stepCount: Risk.stepCount(projected) + 1 } };
     return { activity: projected.activity, spotId: projected.spotId, before: Risk.stepCount(traveling),
         marks: projected.stats.capacityBackoffs || [], raised,
-        seq: [Number(traveling.stats.decisionSeq || 0), Number(projected.stats.decisionSeq || 0)],
         excludedNow: [...Risk.excludedSpotIdsForStates([projected])],
         excludedAfter: [...Risk.excludedSpotIdsForStates([next])] };
 };`;
@@ -175,7 +174,6 @@ function bot(characterId, extra = {}) {
         assert.equal(full.marks[0].untilStep, full.before + 1 + 1, 'the mark is counted from the step before its +1');
         assert.deepEqual(full.raised, ['occupation', 'sources'],
             'the full spot raises occupation and sources in the step\'s one bump');
-        assert(full.seq[1] > full.seq[0], 'the raise moves the decision sequence');
         assert(full.excludedNow.includes(room.id), 'the next step\'s spot search skips the full spot');
         assert(!full.excludedAfter.includes(room.id), 'the mark lapses after that step');
 

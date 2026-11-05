@@ -106,18 +106,20 @@ function sellTripDue(session, bot, now = Date.now()) {
     const life = session.coldLifeState || null;
     const level = Number(bot.fetchLevel?.() || 0);
     const partyId = session.hotBackgroundPartyId || null;
-    const decisionSeq = Number(DecisionEvents.statsFor(session).decisionSeq || 0);
+    // The held decision the need reads (its step): its sequence and its leaf.
+    const stats = DecisionEvents.statsFor(session);
+    const decisionSeq = Number(stats.decisionSeq || 0), activityLeaf = Number(stats.activityLeaf || 0);
     const last = session.sellTripCheck;
     if (last && last.items === items && last.count === items.length && last.life === life
-        && last.revision === Number(bot.backpack.inventoryRevision || 0)
-        && last.level === level && last.partyId === partyId && last.decisionSeq === decisionSeq) return last.need;
+        && last.revision === Number(bot.backpack.inventoryRevision || 0) && last.level === level
+        && last.partyId === partyId && last.decisionSeq === decisionSeq && last.activityLeaf === activityLeaf) return last.need;
     const state = MarketListingPolicy.actorState(session);
     if (partyId) state.partyId = partyId;
     const forced = ItemDisposition.inventoryCleanupNeed(state, { now });
     const activity = DecisionEvents.held(session)?.network.activity;
     const need = forced || (activity?.activity === 'selling' && !ItemDisposition.saleRetryHolds(state)
         ? { reason: 'wish_funding', itemIds: activity.items } : null);
-    session.sellTripCheck = { items, count: items.length, life, level, partyId, decisionSeq,
+    session.sellTripCheck = { items, count: items.length, life, level, partyId, decisionSeq, activityLeaf,
         revision: Number(bot.backpack.inventoryRevision || 0), need };
     return need;
 }

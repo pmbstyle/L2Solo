@@ -20,13 +20,13 @@ function statsFor(session) {
 function decisionStatsFor(session) {
     return { ...session?.heldEconomy?.statsPacket, ...session?.decisionStats, ...session?.coldLifeState?.stats };
 }
-// One event on a bot's stats: a new sequence invalidates the held decision,
-// the bits name the sections it touched. The held activity stays and
+// One event on a bot's stats: the bits name the sections it touched and
+// invalidate the held decision; decisionSeq is the decision's own (its build
+// moves it), so a raise rolls no tendency again. The held activity stays and
 // WishNetwork rerolls it only when gone, outscored or off a moved focus. An
 // execution that proved the held step impossible drops it: the economy inputs
 // do not record that failure, so the step would be chosen again.
 function applyRaise(stats, bits, impossible = false) {
-    stats.decisionSeq = Math.max(0, Math.trunc(Number(stats.decisionSeq) || 0)) + 1;
     stats.wishDirty = (Number(stats.wishDirty) || 0) | bits;
     if (impossible) stats.activityLeaf = 0;
     return stats;
@@ -173,14 +173,12 @@ function checkWallet(session, actor) {
 }
 // One raise per step: the sections a step's checks raised (the round's hard
 // events, Situations.detect, and on the background thread the soft
-// point, softEvents) in one decisionSeq bump, their bits ORed into the bits
-// already raised. Nothing when no list names a section.
+// point, softEvents), their bits ORed into the bits already raised.
 function raiseSections(before, after, ...lists) {
     let bits = 0;
     for (const list of lists) for (const section of list) bits |= Sections.sectionBit(section);
     if (!bits) return 0;
     const stats = after.stats ||= {};
-    stats.decisionSeq = Math.max(Number(before.stats?.decisionSeq) || 0, Number(stats.decisionSeq) || 0) + 1;
     stats.wishDirty = (Number(stats.wishDirty) || 0) | bits;
     return bits;
 }
