@@ -63,42 +63,52 @@ const top = (map, count, total) => [...map].sort((a, b) => b[1] - a[1]).slice(0,
 // One thread over the window: chunks that started in it, their kept profiles added up (each
 // without the samples it shares with the chunk before), the code that held its long turns.
 function threadSummary(data, label, start, end) {
-    const chunks = data.timeline.filter(line => line.type === 'cpu' && line.thread === label)
+    const window = data.timeline.filter(line => line.type === 'cpu' && line.thread === label)
         .filter(line => Date.parse(line.t) >= start && Date.parse(line.t) + line.ms <= end + 10000)
         .sort((a, b) => Date.parse(a.t) - Date.parse(b.t));
-    const ms = chunks.reduce((sum, line) => sum + line.ms, 0);
-    const busy = chunks.reduce((sum, line) => sum + line.busyMs, 0), gc = chunks.reduce((sum, line) => sum + line.gcMs, 0);
-    const self = new Map(), files = new Map(), owners = new Map();
+    const self = new Map(), files = new Map(), owners = new Map(), starved = new Set();
     let lastEnd = 0, profiled = 0, instance = null;
-    for (const line of chunks) {
+    for (const line of window) {
         if (line.instance !== instance) lastEnd = 0;
         instance = line.instance;
+        if (line.starved) starved.add(line);
         const file = line.profile && path.join(data.bootDir, line.profile);
         // A chunk without its file still ends where the next one's overlap begins.
         if (!file || !fs.existsSync(file)) { lastEnd = line.endTime || 0; continue; }
         const { profile } = CpuProfile.parse(fs.readFileSync(file, 'utf8'));
         const a = CpuProfile.analyze(profile, { top: Infinity, since: lastEnd });
         lastEnd = profile.endTime || line.endTime || 0;
+        // A run recorded before the recorder marked them: its starved chunks were kept as spikes.
+        if (a.starved) starved.add(line);
+        if (starved.has(line)) continue;
         profiled += a.busyMs;
         add(self, a.self);
         add(files, a.files);
         add(owners, a.owners);
     }
+    // A starved chunk (CpuProfile) says nothing of the thread: left out, and counted.
+    const chunks = window.filter(line => !starved.has(line));
+    const ms = chunks.reduce((sum, line) => sum + line.ms, 0);
+    const busy = chunks.reduce((sum, line) => sum + line.busyMs, 0), gc = chunks.reduce((sum, line) => sum + line.gcMs, 0);
     // By part of the server, each sample charged to its owner (native time to the project code that
     // called it: SQLite counts as database, not as native).
     const parts = new Map();
     for (const [fn, ms] of owners) parts.set(subsystemOf(fn), (parts.get(subsystemOf(fn)) || 0) + ms);
     const held = new Map();
-    const spikes = data.spikes.filter(row => row.thread === label && Date.parse(row.chunk) >= start && Date.parse(row.chunk) <= end);
+    const starvedAt = new Set([...starved].map(line => line.t));
+    const spikes = data.spikes.filter(row => row.thread === label && Date.parse(row.chunk) >= start && Date.parse(row.chunk) <= end
+        && !starvedAt.has(row.chunk));
     for (const row of spikes) add(held, row.code);
     return {
         minutes: round(ms / 60000, 1),
-        busyPct: ms ? round(100 * busy / ms, 1) : 0,
-        gcPct: ms ? round(100 * gc / ms, 1) : 0,
-        longTurnsPerMin: ms ? round(chunks.reduce((sum, line) => sum + line.longTurns, 0) / (ms / 60000), 1) : 0,
-        longestMs: round(Math.max(0, ...chunks.map(line => line.longestMs))),
-        chunkLongestP95Ms: round(quantiles(chunks.map(line => line.longestMs))?.p95Ms || 0),
+        // No usable chunk (every one starved): no numbers, so compare shows none instead of a 0.
+        busyPct: ms ? round(100 * busy / ms, 1) : null,
+        gcPct: ms ? round(100 * gc / ms, 1) : null,
+        longTurnsPerMin: ms ? round(chunks.reduce((sum, line) => sum + line.longTurns, 0) / (ms / 60000), 1) : null,
+        longestMs: chunks.length ? round(Math.max(0, ...chunks.map(line => line.longestMs))) : null,
+        chunkLongestP95Ms: chunks.length ? round(quantiles(chunks.map(line => line.longestMs))?.p95Ms || 0) : null,
         instances: new Set(chunks.map(line => line.instance)).size,
+        starvedChunks: starved.size,
         longTurnCode: top(held, 10, 0).map(({ fn, ms: total }) => ({ fn, ms: total })),
         cpuSelf: top(self, 60, profiled),
         cpuFiles: top(files, 10, profiled),
@@ -228,11 +238,26 @@ function contextSummary(summaries, timeline, start, end) {
             swallowedSites: failures.at(-1)?.swallowed || null,
             safetyRepairs: vitals.at(-1)?.safetyRepairs || null, pathQueueMax: max(values(line => line.vitals?.pathWorkers?.queue)),
             restarts },
-        memory: { mainHeapAfterGcMb: range(values(line => line.vitals?.mainHeap?.afterGc)),
+        memory: { mainHeapAfterGcMb: range(values(line => line.vitals?.mainHeap?.afterGc)), mainGc: gcPauses(summaries, before),
             geodataMb: range(values(line => Math.round((line.vitals?.geodata?.loadedBytes || 0) / MB) || NaN)),
             freeMemMinMb: min(values(line => line.machine?.freeMemMb)),
             majorPageFaults: grown(line => line.machine?.majorPageFaults) }
     };
+}
+
+// Main's GC pauses by kind (cumulative on each summary line): count and ms from the last line before the
+// window (else its first) to its last, per minute of that span, and the longest single pause since the
+// recorder started; null for runs recorded before the recorder counted them.
+function gcPauses(summaries, before) {
+    const gcAt = (line) => line?.main?.gc || null;
+    const last = summaries.findLast(gcAt), base = gcAt(before) ? before : summaries.find(gcAt);
+    const minutes = last ? (Date.parse(last.t) - Date.parse(base.t)) / 60000 : 0;
+    if (!(minutes > 0)) return null;
+    return Object.fromEntries(Object.entries(last.main.gc).map(([kind, after]) => {
+        const from = base.main.gc[kind] || {};
+        return [kind, { perMin: round((after.count - (from.count || 0)) / minutes, 1),
+            msPerMin: round((after.ms - (from.ms || 0)) / minutes, 1), maxMsSinceStart: after.maxMs }];
+    }));
 }
 
 function swallowedTotal(sites) {
@@ -315,11 +340,16 @@ function print(s) {
     } else if (s.run.scenario === 'hot') console.log('\ntransitions: none recorded (run with --diagnostics)');
     if (s.run.scenario === 'hot' && !s.player) console.log('\nplayer: none in the window: the hot scenario did not start (server.log, "hot scenario")');
     // A short window (a script that ends before a CPU chunk does) has no chunk of its own to show.
-    const shown = Object.entries(s.threads).filter(([, t]) => t.minutes > 0);
+    const shown = Object.entries(s.threads).filter(([, t]) => t.minutes > 0 || t.starvedChunks > 0);
     if (!shown.length && Object.keys(s.threads).length) console.log('\ncpu: no chunk ended inside the window (it was shorter than [Perf] cpuChunkSeconds)');
     for (const [label, t] of shown) {
+        if (!t.minutes) {
+            console.log(`\n${label}: no usable cpu chunk, ${t.starvedChunks} starved ones left out (the profiler sampled too rarely)`);
+            continue;
+        }
         console.log(`\n${label}: busy ${t.busyPct} %, gc ${t.gcPct} %, long turns ${t.longTurnsPerMin}/min,`
-            + ` longest ${t.longestMs} ms (p95 of chunk longest ${t.chunkLongestP95Ms} ms)${t.instances > 1 ? `, ${t.instances} instances` : ''}`);
+            + ` longest ${t.longestMs} ms (p95 of chunk longest ${t.chunkLongestP95Ms} ms)${t.instances > 1 ? `, ${t.instances} instances` : ''}`
+            + `${t.starvedChunks ? `; ${t.starvedChunks} starved chunks left out (the profiler sampled too rarely)` : ''}`);
         if (t.longTurnCode.length) console.log('  long turns held by:');
         for (const row of t.longTurnCode.slice(0, 6)) console.log(`  ${String(row.ms).padStart(8)} ms  ${row.fn}`);
         console.log(`  by part: ${t.cpuParts.map(row => `${row.part} ${row.pct} %`).join(', ')}`);
@@ -333,6 +363,8 @@ function print(s) {
         console.log(`\ncontext: hot ${c.load.hotAvg ?? '-'} / cold ${c.load.coldAvg ?? '-'} bots avg, players max ${c.load.playersMax ?? '-'},`
             + ` sustained lag max ${c.load.lagSustainedMaxMs ?? '-'} ms; main heap after GC ${span(c.memory.mainHeapAfterGcMb)} MB,`
             + ` geodata ${span(c.memory.geodataMb)} MB, free memory min ${c.memory.freeMemMinMb ?? '-'} MB, major page faults ${c.memory.majorPageFaults}`);
+        if (c.memory.mainGc) console.log(`main GC pauses per minute: ${Object.entries(c.memory.mainGc).map(([kind, p]) =>
+            `${kind} ${p.perMin} (${p.msPerMin} ms, longest since start ${p.maxMsSinceStart} ms)`).join(', ')}`);
         const d = c.database;
         console.log(`database: queue max ${d.pendingMax ?? '-'}${d.maxPending != null ? ` (peak ${d.maxPending})` : ''}, WAL ${span(d.walMb)} MB,`
             + ` world ${span(d.worldMb)} MB, history WAL ${span(d.historyWalMb)} MB, checkpoints ${d.checkpoints}`);

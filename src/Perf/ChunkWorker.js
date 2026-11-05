@@ -23,7 +23,8 @@ parentPort.on('message', ({ id, text, since, longTurnMs, keepProfileMs, forced, 
     }
     try {
         const analysis = CpuProfile.analyze(parsed.profile, { longTurnMs, since });
-        const longest = analysis.longest?.ms || 0;
+        // A starved chunk's longest run is the chunk itself: not a spike worth its file.
+        const longest = analysis.starved ? 0 : analysis.longest?.ms || 0;
         const file = forced || longest >= keepProfileMs ? `${prefix}-${Math.round(longest)}ms.cpuprofile` : null;
         if (file) fs.writeFileSync(file, parsed.text);
         parentPort.postMessage({ id, analysis, endTime: parsed.profile.endTime || 0, file });

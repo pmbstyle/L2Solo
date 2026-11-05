@@ -14,7 +14,8 @@ const HeapProfile = require('./HeapProfile');
 // planning/architecture/README.md, Measurement).
 // Without live it registers nothing and starts no timer. With it, per boot folder:
 // - timeline-<day>.jsonl: a "summary" line per population summary (logSummary, every 30 s) and a
-//   "cpu" line per profiled thread per chunk (busy and GC time, longest busy run, long turns);
+//   "cpu" line per profiled thread per chunk (busy and GC time, longest busy run, long turns); the
+//   summary line carries main's GC pauses by kind (count, ms, longest), cumulative from the recorder's start;
 // - spikes-<day>.jsonl: a chunk whose longest busy run reached longTurnMs, with the code that held it;
 // - cpu/*.cpuprofile: the raw chunk when its longest run reached keepProfileMs, or on request
 //   (scripts/perf.js capture cpu), for Chrome DevTools;
@@ -91,8 +92,9 @@ class LiveRecorder {
             this.heaped = new Map();
             this.profiles = [];
             this.eluMarks = new Map();
-            // Main's heap after major GC (WorkerHeapTelemetry), as the cold worker already has it.
-            this.heapWindow = invoke('GameServer/Bot/Population/WorkerHeapTelemetry').observe();
+            // Main's heap after major GC (WorkerHeapTelemetry), as the cold worker already has it, and
+            // main's GC pauses by kind.
+            this.heapWindow = invoke('GameServer/Bot/Population/WorkerHeapTelemetry').observe({ pauses: true });
             this.handlers = new Map();
             this.writes = Promise.resolve();
             this.ticking = false;
@@ -297,12 +299,16 @@ class LiveRecorder {
             gcMs: a.gcMs, longestMs: a.longest?.ms || 0, longTurns: a.longTurns, runs: a.runs, profile: kept,
             // The profile clock at the chunk's end: the report leaves the next chunk's overlap out
             // even when this chunk's file was not kept.
-            endTime: reply.endTime || 0 });
-        if (a.longTurns > 0 || forced) {
+            endTime: reply.endTime || 0, ...(a.starved ? { starved: true, samples: a.samples } : {}) });
+        if (a.starved && !state.starvedWarned) {
+            state.starvedWarned = true;
+            this.warn(`cpu chunk of ${thread.label}`, new Error(`profiler starved: ${a.samples} samples in ${Math.round(a.durationMs)} ms (left out of the report)`));
+        }
+        if (!a.starved && a.longTurns > 0 || forced) {
             this.appendTo(`spikes-${dayOf(new Date(startedAt))}.jsonl`, { t: new Date(startedAt + (a.longest?.atMs || 0)).toISOString(), chunk: at,
                 thread: thread.label, ms: a.longest?.ms || 0, longTurns: a.longTurns, long: a.long.slice(0, 5),
                 code: a.longest?.code || [], self: a.longest?.self || [], gcMs: a.gcMs, busyMs: a.busyMs,
-                profile: kept, forced: !!forced });
+                profile: kept, forced: !!forced, ...(a.starved ? { starved: true } : {}) });
         }
         if (!file) return;
         this.keepProfile({ file, day: dayOf(new Date(startedAt)), ms: a.longest?.ms || 0, forced: !!forced });
@@ -420,7 +426,8 @@ class LiveRecorder {
         delete population.coldQueue;
         const record = { type: 'summary', t: new Date().toISOString(), reason,
             main: { memory: process.memoryUsage(),
-                processCpuMs: { user: Math.round(cpu.user / 1000), system: Math.round(cpu.system / 1000) } },
+                processCpuMs: { user: Math.round(cpu.user / 1000), system: Math.round(cpu.system / 1000) },
+                gc: this.heapWindow.pauses() },
             coldQueue: summary?.coldQueue || null,
             coordinator: coordinatorSnapshot ? coordinatorSnapshot() : null,
             vitals: this.vitals(vitals),
