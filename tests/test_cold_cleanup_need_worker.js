@@ -71,8 +71,8 @@ async function step(states, { project = state => state } = {}) {
     assert(traveling, 'the step reaches main');
     assert.strictEqual(traveling.cleanupNeed, undefined, 'a traveling bot keeps its trip');
 
-    // A half-full bag sends the bot to sell, unless the market paused its
-    // selling (marketSellRetryAfter): then it hunts on.
+    // A half-full bag sends the bot to sell, unless its last visit could not
+    // place these goods and nothing new came (stats.marketSellSeen): then it hunts on.
     const halfFull = Object.fromEntries(Array.from({ length: 40 }, (_, index) => {
         const selfId = 1864 + index;
         return [selfId, { selfId, name: `Material ${selfId}`, kind: 'Other.Material', stackable: true, amount: 1 }];
@@ -80,7 +80,7 @@ async function step(states, { project = state => state } = {}) {
     const selling = (await step([bot(505, { inventory: halfFull })])).get(505);
     assert.strictEqual(selling.cleanupNeed?.reason, 'inventory_half_full');
     const paused = (await step([bot(506, { inventory: halfFull,
-        stats: { classId: 0, marketSellRetryAfter: 3000 + 60 * 60 * 1000 } })])).get(506);
+        stats: { classId: 0, marketSellSeen: { items: Object.keys(halfFull).map(Number), buyers: null } } })])).get(506);
     assert(paused, 'the step reaches main');
     assert.strictEqual(paused.cleanupNeed, undefined, 'a sell pause holds the half-full trip');
 

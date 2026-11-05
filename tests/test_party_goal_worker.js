@@ -135,6 +135,11 @@ function post(type, payload, id) { worker.postMessage(Protocol.envelope(type, ep
     assert.equal(income.payload.joint.lastIncomeReviewAt, timestamp);
     assert.equal(income.payload.joint.incomeReviews.length, members.length);
     assert(Protocol.validateEnvelope(income, 'worker').ok, 'native worker income packet is admitted on main');
+    assert(Number.isSafeInteger(income.payload.joint.incomeReviewKey), 'the review carries the hash of its inputs');
+    const unreviewed = { ...income.payload.joint };
+    delete unreviewed.lastIncomeReviewAt; delete unreviewed.incomeReviews;
+    assert.equal(Protocol.validateEnvelope({ ...income, payload: { ...income.payload, joint: unreviewed } }, 'worker').ok, false,
+        'a review key without its review is refused');
     assert(income.payload.joint.incomeReviews.every(row => row.partySource === 'table_party'),
         'the worker uses its planning catalogue for native party forecasts');
     const changed = structuredClone(members); changed[0].updatedAt++; changed[0].stats.partyRequest = { spotId: 'fresh-request' };

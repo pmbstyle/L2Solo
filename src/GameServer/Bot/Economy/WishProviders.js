@@ -660,7 +660,8 @@ function buildProjection(state, ctx, deps) {
     };
     const production = new Map(), seenProduction = new Set();
     const investment = state.stats?.shotRecipeDemand;
-    const investmentId = Number(investment?.at) + 30 * 60 * 1000 > timestamp ? Number(investment.itemId) : 0;
+    // A recipe investment lives until its clear event (ColdShotEconomyService: learned or dropped).
+    const investmentId = Number(investment?.itemId) || 0;
     const productionBatches = recipe => {
         const setup = investmentId === Number(recipe.recipeItemId) ? investment
             : [state.stats?.shotCraft?.preparing, state.stats?.wealthCraft].find(row => row

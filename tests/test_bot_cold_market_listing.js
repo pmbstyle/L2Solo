@@ -176,11 +176,8 @@ async function run() {
         'young generated bots enter the same sale evaluation');
     const preTradeListing = await ListingService.open({ ...preTradeState, inventory: { 57: state.inventory[57] } }, { now: 1000 });
     assert.strictEqual(preTradeListing.reason, 'nothing_to_sell', 'a young bot with no goods opens no store');
-    assert.strictEqual(
-        preTradeListing.state.stats.marketSellRetryAfter,
-        1000 + ListingService.SELL_RETRY_DELAY_MS,
-        'a market visit with nothing sellable must not immediately repeat'
-    );
+    assert.deepStrictEqual(preTradeListing.state.stats.marketSellSeen?.items, [],
+        'a market visit with nothing sellable must not immediately repeat: it waits for goods');
 
     const preTradeCleanup = {
         ...preTradeState,
@@ -272,7 +269,7 @@ async function run() {
         stats: { equipmentPlan: { status: 'active', strategy: 'market', target: { selfId: marketItem.selfId, name: marketItem.template.name } } }
     };
     const listingOptions = { now: 1000, durationMs: 60000, random: () => 0.1, states: [marketBuyer] };
-    const cooldownState = { ...state, stats: { ...state.stats, marketSellRetryAfter: 500000 } };
+    const cooldownState = { ...state, stats: { ...state.stats, marketSellSeen: ItemDisposition.saleSeen(state) } };
     const cooldown = await ListingService.open(cooldownState, listingOptions);
     assert.strictEqual(cooldown.listed, false, 'an already-shopping bot must obey its retry pause at the store entry point');
     assert.strictEqual(cooldown.reason, 'sell_retry_cooldown');
@@ -280,7 +277,8 @@ async function run() {
         ...listingOptions, forcedCleanup: { reason: 'inventory_capacity' }
     });
     assert.strictEqual(cleanupDuringCooldown.listed, false, 'forced cleanup must not reopen a speculative WTS');
-    assert.strictEqual(cleanupDuringCooldown.state.stats.marketSellRetryAfter, 500000, 'cleanup must preserve the trading pause');
+    assert.deepStrictEqual(cleanupDuringCooldown.state.stats.marketSellSeen, cooldownState.stats.marketSellSeen,
+        'cleanup must preserve the trading pause');
     const towns = invoke('GameServer/World/TownRespawn').towns;
     const island = Object.values(towns).find(town => town.name === 'Talking Island');
     const islandLoc = { locX: island.locX, locY: island.locY, locZ: island.locZ };
@@ -303,11 +301,9 @@ async function run() {
     const staticPrice = invoke('GameServer/Bot/Economy/StaticBuyerService').candidatesFor(buyerRoutedState, 'Talking Island')[0].npcPrice;
     assert.deepStrictEqual(buyerRouted.state.stats.lastNpcLiquidation.sold, [[1864, 10, staticPrice]]);
     assert.strictEqual(buyerRouted.state.stats.lastNpcLiquidation.payout, 10 * staticPrice);
-    assert.strictEqual(
-        buyerRouted.state.stats.marketSellRetryAfter,
-        1000 + ListingService.SELL_RETRY_DELAY_MS,
-        'a completed buyer sale without a private listing must defer the next market trip'
-    );
+    assert.deepStrictEqual(buyerRouted.state.stats.marketSellSeen?.items,
+        ItemDisposition.saleSeen(buyerRouted.state).items,
+        'a completed buyer sale without a private listing must defer the next market trip until new goods');
     assert.strictEqual(GoalExecutor.beginMarketTravel({
         ...buyerRouted.state,
         activity: 'hunting'
@@ -338,8 +334,7 @@ async function run() {
     const refused = await ListingService.open(protectedSeller, { now: 1000, durationMs: 60000 });
     assert.strictEqual(refused.listed, false);
     assert.strictEqual(refused.reason, 'economy_material_protected', 'the protected input is a refusal with its reason');
-    assert.strictEqual(refused.state.stats.marketSellRetryAfter, 1000 + ListingService.SELL_RETRY_DELAY_MS,
-        'the refused sale waits for the next visit');
+    assert(refused.state.stats.marketSellSeen?.items.includes(1864), 'the refused sale waits for the next visit');
     assert.strictEqual((await Database.fetchAfkTradeShops(80)).length, 0, 'no record opens');
     assert.strictEqual(native.amount(await originals.fetchItems(80), 1864), 10, 'the Stem stay in the bag');
 

@@ -4,7 +4,6 @@ const { createWorld, Database } = require('./helpers/c4QuestHarness');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Population = invoke('GameServer/Bot/Population/PopulationService');
 const Market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
-const Listing = invoke('GameServer/Bot/Economy/ColdMarketListingService');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Executor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const id = 730092;
@@ -36,7 +35,7 @@ const id = 730092;
             vitals: { hp: 187, maxHp: 187, mp: 74, maxMp: 74 },
             inventory: Life.inventorySummaryFromItems(rows),
             stats: { classId: 50, generatedCold: true, forcedMarketCleanup: cleanup,
-                shopTown: { town: 'Giran', at: 1 }, marketSellRetryAfter: 1,
+                shopTown: { town: 'Giran', at: 1 },
                 marketReturn: { loc: { locX: 41691, locY: 247407, locZ: -6456 },
                     regionName: 'Elven Ruins', spotId: '6_41' } }
         }, 'cleanup_fixture');
@@ -48,12 +47,10 @@ const id = 730092;
             return { state: current, changed: false };
         };
         const intent = Population.marketListingIntent(state, goal);
-        const before = Date.now();
         const result = await Population.openMarketListing(intent, goal);
         assert.equal(remoteCalls, 0, 'forced physical cleanup cannot be replaced by the existing remote shop');
         assert.equal(result.state.stats.forcedMarketCleanup, null);
-        assert(result.state.stats.marketSellRetryAfter >= before + Listing.SELL_RETRY_DELAY_MS,
-            'the completed unload defers another half-full trip');
+        assert(Array.isArray(result.state.stats.marketSellSeen?.items), 'the completed unload defers another half-full trip');
         assert.equal(await world.amount(id, 17), 0, 'the native NPC writer removes the unused arrows');
         assert.equal(await world.amount(id, 1463), 116, 'the Orc keeps every personal D shot during cleanup');
         assert.equal(Executor.beginMarketTravel({ ...result.state, activity: 'hunting',

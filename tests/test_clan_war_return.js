@@ -53,7 +53,7 @@ async function run() {
     const op = { id: 'legacy-return', clanId: 10, enemyClanId: 20, status: 'returning', outcome: 'spot_cleared',
         targetSpotId: target.id, targetLoc: target.center, homeSpotId: home.id, homeLoc: staleHome, expiresAt: at - 1 };
     const prepared = Parties.prepareCommit({ partyId, leaderId: 1, memberIds: ids, spotId: target.id, status: 'active',
-        startedAt: at - 1000000, nextResolveAt: at, stats: { warOperation: op, sessionExpiresAt: at - 1 } });
+        startedAt: at - 1000000, nextResolveAt: at, stats: { warOperation: op, sessionReview: { at: at - 300000, nextAt: at - 1 } } });
     const assigned = current().map(s => Life.preparePartyAssignment(s, partyId, s.characterId === 3 ? 'healer' : 'dps', 1, at));
     const committed = await DB.commitBackgroundPartyMembership({ party: prepared.row, members: assigned });
     assert(committed.ok, committed.reason); Life.acceptPartyAssignments(assigned, committed.lifeRows); Parties.acceptRow(committed.partyRow);

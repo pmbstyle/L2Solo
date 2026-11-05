@@ -167,8 +167,9 @@ const STATIC_BOUGHT = [1864, 1865, 1866, 1867, 1868, 1869, 1870, 1871];
             'the static-bought materials left the bag');
         assert((bagAfter[57] || 0) > (bagBefore[57] || 0), 'the static sale paid adena');
         const savedSeller = await Life.findByCharacterId(sellerId);
-        assert(Number(saleOutcome.state.stats.marketSellRetryAfter || savedSeller?.stats?.marketSellRetryAfter || 0) > Date.now(),
-            'the sale trip wrote its 30-min retry, so the next trip waits for it');
+        const seen = saleOutcome.state.stats.marketSellSeen ?? savedSeller?.stats?.marketSellSeen ?? null;
+        assert.deepEqual(seen?.items || [], invoke('GameServer/Bot/Economy/ItemDisposition').saleSeen(saleOutcome.state)?.items || [],
+            'the sale trip wrote its retry on what it could not place, so the next trip waits for new goods or a buyer');
         assert.equal(opens.length, 1);
         assert.equal(opens[0].listed, true, `open listed the rest: ${opens[0].reason}`);
         const saleShop = Afk.findOwnerProjection(sellerId)?.shop;

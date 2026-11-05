@@ -1,5 +1,12 @@
 const { SELL, BUY, offerFields } = require('../../AfkTrade/BoardIndex');
+const Diagnostics = require('./EconomyDiagnostics');
 
+// A want the bot's equipment plan backs (stats.marketWanted.plan), its shot
+// stack (stats.shotDemand) and its shot recipe (stats.shotRecipeDemand) live
+// until their clear events: the item arrives by any path or the plan drops it
+// (BotLifeState.settleMarketWanted), the stock is reached (EconomyContext.shotDemand),
+// the recipe is learned or no longer pays (ColdShotEconomyService). A want only
+// the wish card backs has no drop event yet: it lasts WANTED_TTL_MS (limits.md).
 const WANTED_TTL_MS = 30 * 60 * 1000;
 
 function timestampForWanted(wanted = {}) {
@@ -14,13 +21,13 @@ function demandSignal(state, selfId, timestamp) {
     const recipeWanted = state.stats?.shotRecipeDemand;
     const plan = state.stats?.equipmentPlan;
     const wantedAt = timestampForWanted(wanted);
-    const recentWanted = Number(wanted?.itemId || 0) === Number(selfId)
-        && wantedAt > 0
-        && wantedAt + WANTED_TTL_MS > timestamp;
-    const recentShot = Number(shotWanted?.itemId || 0) === Number(selfId)
-        && Number(shotWanted?.at || 0) + WANTED_TTL_MS > timestamp;
-    const recentRecipe = Number(recipeWanted?.itemId || 0) === Number(selfId)
-        && Number(recipeWanted?.at || 0) + WANTED_TTL_MS > timestamp;
+    const wants = Number(wanted?.itemId || 0) === Number(selfId) && wantedAt > 0;
+    const recentWanted = wants && (wanted.plan === true || wantedAt + WANTED_TTL_MS > timestamp);
+    // Counted per read of an expired wish-only want (developer diagnostics).
+    if (wants && !recentWanted && Diagnostics.active()) Diagnostics.count('market_want', 'expired_read', 'wish_only');
+    // A hot bot's shots are its live body's; the worker writes the want again when it is cold.
+    const recentShot = Number(shotWanted?.itemId || 0) === Number(selfId) && state.phase !== 'hot';
+    const recentRecipe = Number(recipeWanted?.itemId || 0) === Number(selfId);
     const activeTarget = plan?.status === 'active'
         && Number(plan.target?.selfId || 0) === Number(selfId);
     const material = ['active', 'component_ready', 'ready_to_craft'].includes(plan?.status)
@@ -38,8 +45,8 @@ function demandSignal(state, selfId, timestamp) {
         selfId: Number(selfId), enchant: 0,
         needId: economicWanted?.needId || `own:${state.characterId}:${recentShot ? 'charge'
             : recentRecipe ? `recipe:${selfId}` : material ? `material:${selfId}` : `item:${selfId}`}`,
-        availability: { from: timestamp, until: recentShot ? Number(shotWanted.at) + WANTED_TTL_MS
-            : recentRecipe ? Number(recipeWanted.at) + WANTED_TTL_MS : recentWanted ? wantedAt + WANTED_TTL_MS : timestamp },
+        availability: { from: timestamp, until: recentWanted && !recentShot && !recentRecipe && wanted.plan !== true
+            ? wantedAt + WANTED_TTL_MS : timestamp },
         name: state.name || null,
         town: state.currentRegion || null,
         amount: Math.max(1, Number(economicWanted?.amount || (recentWanted ? wanted?.amount : material?.missing) || 1)),

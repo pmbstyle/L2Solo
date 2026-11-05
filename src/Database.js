@@ -6948,9 +6948,8 @@ const Database = {
             delete partyStats.playerTakeover;
             partyStats.partyBreakReason = 'player_party_released';
             // Time spent under a player leader is not autonomous party-session
-            // age. Start a fresh review window when the bots resume control.
+            // age. The bots' next resolve records a fresh review baseline.
             partyStats.formedAt = timestamp;
-            partyStats.sessionExpiresAt = null;
             partyStats.sessionReview = null;
             partyStats.lastProgressAt = timestamp;
             partyStats.partySpotRisk = null;
@@ -7766,7 +7765,7 @@ const Database = {
         const market = record.items.some(row => row[2] === 1);
         return enqueue(() => {
             const row = one(`UPDATE bot_life_state SET statsJson=json_set(COALESCE(statsJson,'{}'),
-                '$.lastWarehouseWithdrawal',json(?)${market ? ", '$.marketSellRetryAfter', NULL" : ''}),
+                '$.lastWarehouseWithdrawal',json(?)${market ? ", '$.marketSellSeen', NULL" : ''}),
                 nextResolveAt=CASE WHEN activity='hunting' THEN ? ELSE nextResolveAt END, ${MOVE_FAR_REVISION} WHERE characterId=?
                 RETURNING characterId,nextResolveAt,simulationRevision,updatedAt`, [raw, record.at, Number(characterId)]);
             return row ? { ...row, withdrawal: record, market } : null;

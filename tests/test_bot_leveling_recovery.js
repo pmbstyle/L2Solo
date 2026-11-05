@@ -54,9 +54,14 @@ const saved = { ...legacy, stats: { ...legacy.stats, equipmentPlan: savedPlan } 
 const afterCooldown = now + 2 * 3600000;
 assert(Planner.replanContextFor(saved, savedPlan, afterCooldown).levelingRecovery,
     'a restart and expired timer must not resume acquisition before lost EXP is recovered');
-assert(Planner.replanContextFor({ ...saved, exp: 4217089 }, savedPlan, now + 1).levelingRecovery,
-    'instant restoration must not bypass the minimum route cooldown');
-assert.strictEqual(Planner.replanContextFor({ ...saved, exp: 4217089 }, savedPlan, afterCooldown).levelingRecovery, null);
+const backedOff = { ...saved, exp: 4217089, stats: { ...saved.stats,
+    spotBackoffs: [{ spotId: 'ghosts', untilStep: 60, reason: 'death_pressure' }] } };
+assert(Planner.replanContextFor(backedOff, savedPlan, afterCooldown).levelingRecovery,
+    'instant restoration must not bypass the route spot\'s backoff, however long ago it began');
+assert.strictEqual(Planner.replanContextFor({ ...backedOff, stats: { ...backedOff.stats, stepCount: 60 } }, savedPlan, now + 1)
+    .levelingRecovery, null, 'the backoff\'s end and the regained EXP end the recovery, with no clock');
+assert.strictEqual(Planner.replanContextFor({ ...saved, exp: 4217089 }, savedPlan, now + 1).levelingRecovery, null,
+    'regained EXP away from a marked spot ends the recovery at once');
 const clanRecovery = { ...saved, stats: { ...saved.stats,
     clanPartyObjective: { status: 'open', objectiveKey: 'old-clan-goal', priority: 'required' } } };
 assert.strictEqual(PartyRequests.partyRequestForPlan(clanRecovery, savedPlan, now), null);

@@ -228,8 +228,10 @@ function recipeDisposition(state, item, knownRecipeIds = []) {
     return { action: 'learn', reason: 'recipe_book', recipe: info.recipe };
 }
 
-function inventorySlotCount(state = {}) {
+// skip: item ids not counted (the goods the last sale visit could not place).
+function inventorySlotCount(state = {}, skip = null) {
     return Object.values(state.inventory || {}).reduce((total, item) => {
+        if (skip?.has(Number(item?.selfId))) return total;
         const amount = Math.max(0, Number(item?.amount || 0));
         if (amount <= 0) return total;
         if (Array.isArray(item?.instances)) return total + item.instances.length;
@@ -257,14 +259,63 @@ function skillBookSlotCount(state = {}, candidates) {
     return liquidationSlotCount(state, (item) => isSkillBookItem(item) && isNpcOnlyItem(item, undefined, state), candidates);
 }
 
-function soloSaleSlotLimit(state = {}, timestamp = Date.now()) {
-    return !(state.party?.partyId || state.partyId)
-        && !(Number(state.stats?.marketSellRetryAfter || 0) > timestamp)
-        ? HALF_FULL_CLEANUP_SLOTS : null;
+// The board the sale retry reads: main's own by default, the worker's mirror
+// once it passes it in (ColdSimulationWorker). The cold worker has no World.
+let boardSource = () => require('node:worker_threads').isMainThread
+    ? invoke('GameServer/AfkTrade/AfkTradeService').boardIndex() : null;
+function useBoard(source) { boardSource = source; }
+
+// The board's foreign buyers of these items, per item [best bid, units bid]
+// (both threads read the same lines): a new or better bid raises one, a filled
+// or withdrawn one only lowers it. A bid at or below the NPC buyback is no buyer.
+function buyersOf(board, ids, characterId) {
+    return ids.map(id => {
+        let best = 0, units = 0;
+        const buyback = NpcSellRules.npcBuyPrice(Number(templateFor(id)?.template?.price || 0));
+        for (const line of board.list(id, 3) || []) {
+            if (Number(line.ownerId) === Number(characterId) || !(Number(line.price) > buyback)) continue;
+            best = Math.max(best, Number(line.price) || 0); units += Number(line.count) || 0;
+        }
+        return [best, units];
+    });
 }
 
-function inventoryCleanupNeed(state = {}, options = {}) {
-    const timestamp = Number(options.now) || Date.now();
+// What a sale visit could not place (stats.marketSellSeen, written at its end
+// and at a hot sell trip's start): the kinds of sale candidates it left in the
+// bag (none, when it placed everything) and the board's buyers of them. The sale retry
+// holds while the bag offers no kind it did not try and no new or better buyer
+// of those came: a new fact, not a clock, sends the bot to sell again (maintainer,
+// 2026-11-05). Before the worker's board is ready only the kinds are compared.
+// The kinds are read with the whole kit kept (its potions, its Scroll of
+// Escape; shots are the bot's own), not the kit targets, which read this retry:
+// restocking the kit in town is no new goods to sell.
+function retryKinds(state) {
+    const keptAmounts = { ...invoke('GameServer/Bot/AI/HealingPotionStock').keptAmounts(state, { targetAmount: Infinity }),
+        736: Number(state.inventory?.[736]?.amount || 0) };
+    return [...new Set(saleCandidates(state, { unlimited: true, keptAmounts })
+        .map(item => Number(item.selfId)))].sort((a, b) => a - b);
+}
+function saleSeen(state) {
+    const items = retryKinds(state);
+    const board = boardSource();
+    return { items, buyers: board ? buyersOf(board, items, state.characterId) : null };
+}
+
+function saleRetryHolds(state) {
+    const seen = state?.stats?.marketSellSeen;
+    if (!Array.isArray(seen?.items)) return false;
+    const tried = new Set(seen.items);
+    if (retryKinds(state).some(id => !tried.has(id))) return false;
+    const board = Array.isArray(seen.buyers) ? boardSource() : null;
+    return !board || buyersOf(board, seen.items, state.characterId)
+        .every(([best, units], at) => best <= Number(seen.buyers[at]?.[0] || 0) && units <= Number(seen.buyers[at]?.[1] || 0));
+}
+
+function soloSaleSlotLimit(state = {}, retry) {
+    return !(state.party?.partyId || state.partyId) && !(retry ?? saleRetryHolds(state)) ? HALF_FULL_CLEANUP_SLOTS : null;
+}
+
+function inventoryCleanupNeed(state = {}) {
     const slots = inventorySlotCount(state);
     // One sale set serves every count below; it depends only on the state.
     const candidates = saleCandidates(state, { unlimited: true });
@@ -287,13 +338,19 @@ function inventoryCleanupNeed(state = {}, options = {}) {
     // Solo bots only: a party member sells from the field (AFK listing) and leaves its
     // party for the market only with a full bag (PartyMarketBreak); and only with
     // something to sell, else the trip would repeat every retry period.
-    const soloLimit = soloSaleSlotLimit(state, timestamp);
-    const halfFull = soloLimit !== null && slots >= soloLimit && candidates.length > 0;
-    // A normal market retry cooldown prevents pointless town loops. Residual
-    // NPC-only books/recipes become deterministic cleanup work once a
-    // character has enough to clean up. A genuinely full inventory remains
-    // actionable regardless of level.
-    if (Number(state.stats?.marketSellRetryAfter || 0) > timestamp
+    const solo = !(state.party?.partyId || state.partyId);
+    const retry = solo && saleRetryHolds(state);
+    const soloLimit = soloSaleSlotLimit(state, retry);
+    // Past a sale visit only the goods it did not try fill the half: the ones
+    // it could not place do not send the bot back with each new kind of loot.
+    const tried = Array.isArray(state.stats?.marketSellSeen?.items) ? new Set(state.stats.marketSellSeen.items) : null;
+    const halfFull = soloLimit !== null && candidates.length > 0
+        && (tried ? inventorySlotCount(state, tried) : slots) >= soloLimit;
+    // The sale retry (nothing new since the last visit) prevents pointless
+    // town loops. Residual NPC-only books/recipes become deterministic cleanup
+    // work once a character has enough to clean up. A genuinely full
+    // inventory remains actionable regardless of level.
+    if (retry
         && !overCapacity
         && !accumulatedNpcOnly) return null;
     if (!overCapacity && !accumulatedNpcOnly && !accumulatedSurplus && !halfFull) return null;
@@ -928,6 +985,9 @@ module.exports = {
     inventoryCleanupNeed,
     inventorySlotCount,
     soloSaleSlotLimit,
+    saleSeen,
+    saleRetryHolds,
+    useBoard,
     npcOnlySlotCount,
     skillBookSlotCount,
     isWarehouseCandidate,

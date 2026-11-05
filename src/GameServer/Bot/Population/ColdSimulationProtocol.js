@@ -198,8 +198,10 @@ function validFormingVerdict(joint, sources) {
         && accepted.every(id => Number.isSafeInteger(id) && ids.includes(id));
 }
 
+// incomeReviewKey: the hash of the review's inputs (PartyGoalPolicy.incomeReviewKey), with a review only.
 function validPartyIncomeReviews(joint, sources) {
-    if (joint.lastIncomeReviewAt === undefined && joint.incomeReviews === undefined) return true;
+    if (joint.lastIncomeReviewAt === undefined && joint.incomeReviews === undefined) return joint.incomeReviewKey === undefined;
+    if (joint.incomeReviewKey !== undefined && !(Number.isSafeInteger(joint.incomeReviewKey) && joint.incomeReviewKey >= 0)) return false;
     if (!Number.isSafeInteger(joint.lastIncomeReviewAt) || joint.lastIncomeReviewAt <= 0
         || !Array.isArray(joint.incomeReviews) || joint.incomeReviews.length !== sources.length) return false;
     const nullableNumber = value => value === null || typeof value === 'number' && Number.isFinite(value);
@@ -327,7 +329,7 @@ function validateEnvelope(message, direction, options = {}) {
                 || (Array.isArray(payload.joint.formingAccepted) ? !validFormingVerdict(payload.joint, payload.sources)
                     : !Array.isArray(payload.joint.memberGoals) || payload.joint.memberGoals.length !== payload.sources.length
                     || Object.keys(payload.joint).some(key => !['objective', 'memberGoals', 'wishFocus', 'dormantWishes',
-                        'lastIncomeReviewAt', 'incomeReviews', 'raidAssessment'].includes(key))
+                        'lastIncomeReviewAt', 'incomeReviewKey', 'incomeReviews', 'raidAssessment'].includes(key))
                     || payload.joint.raidAssessment !== undefined && !validRaidAssessment(payload.joint, payload.sources))
                 || !validPartyIncomeReviews(payload.joint, payload.sources)
             : typeof payload.reason !== 'string')) return { ok: false, reason: 'invalid_party_goal_result' };

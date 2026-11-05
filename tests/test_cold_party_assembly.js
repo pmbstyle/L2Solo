@@ -12,7 +12,7 @@ const spot = { id: '24_20:antharas_lair', name: 'Assembly test', center: point,
     mob: { hp: 1, damage: 1 }, rewards: { exp: 100, sp: 10, adenaMin: 1, adenaMax: 1 } };
 const party = { partyId: 'assembly-party', leaderId: 1, memberIds: [1, 2], status: 'active',
     spotId: spot.id, nextResolveAt: at, cohesion: 1,
-    stats: { fightsResolved: 10, sessionExpiresAt: at + 3600000 } };
+    stats: { fightsResolved: 10 } };
 const members = [1, 2].map(characterId => ({ characterId, name: `Hunter${characterId}`, level: 40, exp: 1000,
     phase: 'cold', activity: 'grouped', spotId: spot.id, loc: { ...point },
     party: { partyId: party.partyId, leaderId: 1, role: 'dps' },
@@ -143,7 +143,7 @@ async function main() {
         await until(m => m.type === 'ready' && m.payload.phase === 'running');
         const now = Date.now();
         const workerParty = { ...party, nextResolveAt: now - 1,
-            stats: { sessionExpiresAt: now + 3600000 } };
+            stats: {} };
         const workerMembers = members.map((s, index) => ({ ...s,
             loc: { ...point, locZ: index ? 160 : point.locZ },
             timing: { lastResolvedAt: now - 45000, nextResolveAt: now - 1 } }));

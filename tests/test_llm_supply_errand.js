@@ -93,6 +93,9 @@ async function main() {
         const unaccepted = { ...overdue, stats: { supplyErrand: { expiresAt: 1 } } };
         assert.strictEqual(Resolver.resolveSolo({ state: unaccepted, timestamp: 100000 }).patch.stats.supplyErrand, null,
             'ordinary unaccepted companion requests retain their existing expiry');
+        const away = { ...overdue, stats: { supplyErrand: { expiresAt: 700000 } } };
+        assert.strictEqual(Resolver.resolveSolo({ state: away, timestamp: 100000 }).nextResolveAt, 700000,
+            'a parked companion row waits for its return (written hot) or its deadline, not a 30 s step');
         const Meetings = invoke('GameServer/AfkTrade/TradeMeetingService');
         const acceptedErrand = { itemId: 1463, amount: 200, totalCost: 3400, meetingToken: 'original-supply-token' };
         let outcome = { pending: true, outcome: 'accepted', meetingId: 99 };

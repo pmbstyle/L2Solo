@@ -351,9 +351,15 @@ const BackgroundPartyResolver = {
         if (party.stats?.objective?.opportunisticRaid) {
             // Travel/rest are simulated; this roster opens its encounter only
             // as native actors, including actual adds, healing and shot use.
+            // Main's raid director activates it (the members turn hot) or
+            // dissolves it (the members are released, each with its own due),
+            // at the latest when the expedition expires: the wait's end.
+            const expiresAt = Number(party.stats.objective.expiresAt);
+            const nextResolveAt = expiresAt > timestamp ? expiresAt : timestamp + 10000;
             return { memberResults: members.map(state => ({ state, result: { patch: {}, events: [],
-                materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 10000 } })),
-                atomic: true, events: [], partyPatch: {}, nextResolveAt: timestamp + 10000,
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt,
+                eventWait: 'raid_wait_native_activation' } })),
+                atomic: true, events: [], partyPatch: {}, nextResolveAt,
                 debug: { reason: 'raid_wait_native_activation', fights: 0, wins: 0 } };
         }
         if (raid && !raidCombatActive) {

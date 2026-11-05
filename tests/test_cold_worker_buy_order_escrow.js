@@ -141,7 +141,7 @@ const fundedIds = packet => Array.from({ length: Math.floor((packet.length - 4) 
         const parties = [];
         const partyRows = (partyId, leaderId, wallet) => {
             const party = { partyId, leaderId, memberIds: [leaderId, leaderId + 1], status: 'active', spotId: spot.id,
-                nextResolveAt: now - 1, cohesion: 1, stats: { fightsResolved: 10, sessionExpiresAt: now + 3600000 } };
+                nextResolveAt: now - 1, cohesion: 1, stats: { fightsResolved: 10 } };
             const member = (characterId, adena, body) => ({ ...base(characterId, adena), activity: 'grouped',
                 spotId: spot.id, timing, party: { partyId, leaderId, role: 'dps' },
                 inventory: {

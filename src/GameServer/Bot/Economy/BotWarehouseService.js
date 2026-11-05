@@ -673,7 +673,7 @@ async function releaseRequests(state, warehouseItems, requested, options = {}) {
         ...releasedState,
         stats: {
             ...(releasedState.stats || {}),
-            marketSellRetryAfter: releasedForMarket ? null : releasedState.stats?.marketSellRetryAfter,
+            marketSellSeen: releasedForMarket ? null : releasedState.stats?.marketSellSeen,
             lastWarehouseWithdrawal: withdrawalRecord(released, timestamp)
         },
         timing: {

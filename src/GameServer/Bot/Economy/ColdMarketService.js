@@ -32,6 +32,10 @@ function purchaseObservation(state, selfId, requested, budget, phase, reason, ex
         errandAt: Number(state.stats?.marketErrand?.at), ...extra });
 }
 
+// After a visit that found no affordable offer, the bot does not travel to buy
+// that item again for this long: a new affordable offer wakes it at once
+// (MarketBuyerWaiters, which lifts the stamp); its wallet growing past an
+// offer it saw has no event yet (limits.md "Buyer retry").
 const RETRY_DELAY_MS = 15 * 60 * 1000;
 // A bound on an errand the bot has not carried out (no route, a party that
 // keeps it): after it the job that sent it plans again.
@@ -63,7 +67,11 @@ function retryAfterFailedPurchase(state, goal, reason) {
                 ...(state.stats?.marketWanted || {}),
                 itemId: goal.target.itemId,
                 itemName: goal.target.itemName,
-                lastMissingAt: timestamp
+                lastMissingAt: timestamp,
+                // What the bag holds once the want is met: its arrival clears it (BotLifeState.settleMarketWanted).
+                held: Number(state.inventory?.[goal.target.itemId]?.amount || 0) + Math.max(1, Number(goal.target.amount) || 1),
+                // Backed by the equipment plan: it lives until the plan drops it (MarketDemandIndex).
+                plan: invoke('GameServer/Bot/Population/BotLifeState').planWants(state.stats?.equipmentPlan, goal.target.itemId)
             },
             marketLead: null
         }

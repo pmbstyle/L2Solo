@@ -21,9 +21,15 @@ const ColdEconomyPlan = require('./ColdEconomyPlan');
 function ownClock(state) {
     return Math.max(Number(state.timing?.lastResolvedAt) || 0, Number(state.stats?.huntedThrough) || 0);
 }
-// The hunt time a step at timestamp lives: since the bot's own clock.
+// The clock a step at timestamp lives from. A bot that held for an event
+// (stats.eventWait, BotLifeState.prepareResolve) steps at that event or at the
+// wait's known end: the time before it was lived waiting, not hunting.
+function livedClock(state, timestamp) {
+    return state.stats?.eventWait ? timestamp : ownClock(state);
+}
+// The hunt time a step at timestamp lives: since its lived clock.
 function stepElapsedMs(state, timestamp) {
-    const since = ownClock(state);
+    const since = livedClock(state, timestamp);
     return since ? Math.max(1000, timestamp - since) : 60000;
 }
 
@@ -85,4 +91,4 @@ function sumDebug(total, debug = {}) {
     return sum;
 }
 
-module.exports = { ownClock, stepElapsedMs, opens, huntingRound, endOf, sumDebug };
+module.exports = { ownClock, livedClock, stepElapsedMs, opens, huntingRound, endOf, sumDebug };

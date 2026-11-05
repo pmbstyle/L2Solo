@@ -8,7 +8,8 @@ const Floor = invoke('GameServer/Bot/Population/SurvivalFloor');
 const now = 1791825000000;
 const bag = (slots, race = 4, expansion = 0) => ({ characterId: 990010, level: 55,
     phase: 'cold', activity: 'hunting', vitals: { hp: 100, mp: 100 },
-    stats: { race, classId: race === 4 ? 55 : 2, marketSellRetryAfter: now + 3600000,
+    // The sale retry: the last visit could not place these scrolls, and nothing new came since.
+    stats: { race, classId: race === 4 ? 55 : 2, marketSellSeen: { items: [951], buyers: null },
         coldCombat: { classId: race === 4 ? 55 : 2, skillSource: 'native',
             skills: expansion ? [{ selfId: 1372, level: expansion }] : [] } },
     inventory: { 951: { selfId: 951, amount: slots, kind: 'Other.Scroll', stackable: false,
@@ -22,6 +23,14 @@ assert.equal(Floor.forState(bag(86), now), null, 'the native survival floor agre
 assert.equal(Disposition.inventoryCleanupNeed(bag(101), { now })?.limit, 100,
     'actual dwarf overflow bypasses the cooldown');
 assert.equal(Floor.forState(bag(100), now)?.reason, 'no_slot', 'a genuinely full dwarf bag still unloads');
+assert.equal(Disposition.inventoryCleanupNeed(bag(45, 0), { now }), null, 'a half-full bag waits through the sale retry');
+const newGoods = bag(30, 0);
+newGoods.inventory[1864] = { selfId: 1864, amount: 5, kind: 'Other.Material' };
+assert.equal(Disposition.inventoryCleanupNeed(newGoods, { now }), null,
+    'a new kind ends the retry, but the unsold scrolls do not count towards the half-full bag');
+for (let id = 1865; id < 1904; id++) newGoods.inventory[id] = { selfId: id, amount: 1, kind: 'Other.Material' };
+assert.equal(Disposition.inventoryCleanupNeed(newGoods, { now })?.reason, 'inventory_half_full',
+    'forty slots of goods the last visit did not try send the bot to sell');
 assert.equal(Disposition.inventoryCleanupNeed(bag(81, 0), { now })?.limit, 80,
     'ordinary characters retain the native 80-slot limit');
 assert.equal(Disposition.inventoryCleanupNeed(bag(101, 4, 1), { now }), null,
@@ -40,13 +49,13 @@ actor.skillset.fetchSkill = () => null;
 assert.equal(Floor.bagMarks(actor).full, 1, 'removing the expansion makes the hot bag full');
 // E308: a hot solo hunter keeps the cold rule. Weight penalty 1 waits through the
 // sale retry kept in its session life state; penalty 2 and a full bag stay the floor.
-const heavy = (load) => ({ ...actor, isDead: () => false, fetchHp: () => 100, fetchMp: () => 100,
+const heavy = (load) => ({ ...actor, fetchId: () => 990010, isDead: () => false, fetchHp: () => 100, fetchMp: () => 100,
     fetchMaxLoad: () => 1000, skillset: { fetchSkills: () => [], fetchSkill: () => null },
     backpack: { fetchItems: () => [], fetchTotalLoad: () => load } });
-const retrying = { stats: { marketSellRetryAfter: now + 60000 } };
-const retryOver = { stats: { marketSellRetryAfter: now - 1 } };
+const retrying = { stats: { marketSellSeen: { items: [951], buyers: null } } };
+const retryOver = { stats: { marketSellSeen: null } };
 assert.equal(Floor.forActor(heavy(550), null, now)?.weightPenalty, 1, 'a hot bag at 55 % load is weight penalty 1');
 assert.equal(Floor.forActor(heavy(550), retrying, now), null, 'hot penalty 1 waits during the sale retry');
-assert.equal(Floor.forActor(heavy(550), retryOver, now)?.reason, 'overweight', 'hot penalty 1 unloads after the retry');
+assert.equal(Floor.forActor(heavy(550), retryOver, now)?.reason, 'overweight', 'hot penalty 1 unloads without a retry');
 assert.equal(Floor.forActor(heavy(700), retrying, now)?.weightPenalty, 2, 'hot penalty 2 stays the floor during the retry');
 console.log('test_bot_inventory_capacity_cleanup: ok');

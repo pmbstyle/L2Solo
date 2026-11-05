@@ -40,15 +40,36 @@ try {
     assert.equal(inspected, Material.MAX_SOURCE_CHECKS);
     assert.equal(routeChecks, Material.MAX_CAMPS);
     assert.equal(plan.next, null, 'the request never turns an unsafe source into an executable solo route');
-    const retained = { ...state, stats: { ...state.stats, partyRequest: request } };
+    assert.equal(request.materialKey, null, 'a camp chosen before the last page of sources is held by no key');
+    const first = { ...state, stats: { ...state.stats, partyRequest: request } };
+    const settled = Material.request(first, plan, { spots, economy, timestamp: timestamp + 1 });
+    assert.equal(inspected, entries.length, 'the next review reads the last page');
+    assert(Number.isSafeInteger(settled.materialKey), 'a choice over every source is held by its inputs');
+    const retained = { ...state, stats: { ...state.stats, partyRequest: settled } };
+    const [settledInspected, settledRoutes] = [inspected, routeChecks];
     const costs = [];
     for (let i = 0; i < 1000; i++) {
         const at = performance.now();
         assert.equal(Material.request(retained, plan, { spots, economy, timestamp: timestamp + i }).spotId, request.spotId);
         costs.push(performance.now() - at);
     }
-    assert.equal(inspected, Material.MAX_SOURCE_CHECKS, 'warm reviews do not traverse source rows');
-    assert.equal(routeChecks, Material.MAX_CAMPS, 'warm reviews perform no exact route/combat check');
+    assert.equal(inspected, settledInspected, 'warm reviews do not traverse source rows');
+    assert.equal(routeChecks, settledRoutes, 'warm reviews perform no exact route/combat check');
+    assert.equal(Material.request(retained, plan, { spots, economy, timestamp: timestamp + 24 * 3600000 }).spotId, settled.spotId);
+    assert.equal(routeChecks, settledRoutes, 'the held camp has no review time');
+    for (const [input, moved] of Object.entries({
+        level: { ...retained, level: 66 },
+        spoiler: { ...retained, stats: { ...retained.stats, coldCombat: { skills: [{ selfId: 254, level: 1 }], skillSource: 'saved' } } },
+        kit: { ...retained, stats: { ...retained.stats, wishSections: { build: 12345 } } },
+        route: { ...retained, activity: 'grouped' },
+        attempts: { ...retained, stats: { ...retained.stats, partyRequest: { ...settled, attempts: 1 } } } })) {
+        const before = routeChecks;
+        Material.request(moved, plan, { spots, economy, timestamp: timestamp + 2 });
+        assert(routeChecks > before, `a moved ${input} reviews the held camp at once`);
+    }
+    const moreSpots = [...spots, { id: 'camp:new', raidBoss: false }], beforeSpots = routeChecks;
+    Material.request(retained, plan, { spots: moreSpots, economy, timestamp: timestamp + 2 });
+    assert(routeChecks > beforeSpots, 'a new spot list reviews the held camp at once');
     costs.sort((a, b) => a - b);
     console.log(`MATERIAL_REQUEST_WARM_P95_MS ${costs[950].toFixed(4)}`);
     const shopping = { ...economy, network: { ...economy.network,
@@ -73,19 +94,32 @@ try {
     index = new Map([[4097, entries.map((entry, i) => i < Material.MAX_SOURCE_CHECKS
         ? { ...entry, npcLevel: 1 } : entry)]]);
     // memo: the bot's record in the background thread, which keeps the negative.
-    const memo = {}, inspectedBefore = inspected, routesBefore = routeChecks;
+    const memo = {}, inspectedBefore = inspected;
     assert.equal(Material.request(state, plan, { spots, economy, memo, timestamp }), null);
-    assert.equal(Material.request(state, plan, { spots, economy: { ...economy }, memo, timestamp: timestamp + 1 }), null);
-    assert.equal(inspected, inspectedBefore);
-    assert.equal(routeChecks, routesBefore, 'a cached negative repeats no safety checks, whatever economy object is passed');
-    // A raised section (the decision sequence moved) re-checks before the review time.
-    const raised = { ...state, stats: { ...state.stats, decisionSeq: Number(state.stats?.decisionSeq || 0) + 1 } };
-    assert(Material.request(raised, plan, { spots, economy, memo, timestamp: timestamp + 2 }),
-        'a moved decision re-checks the camps');
+    assert.equal(memo.materialMemo, undefined, 'a negative read before the last page of sources is not kept');
+    assert(Material.request(state, plan, { spots, economy: { ...economy }, memo, timestamp: timestamp + 1 }),
+        'the next review reads on, with no review time to wait for');
     assert.equal(inspected - inspectedBefore, entries.length - Material.MAX_SOURCE_CHECKS,
         'a later review reaches valid sources after the rejected first bounded page');
-    assert(Material.request(state, plan, { spots, economy, memo, timestamp: timestamp + Material.REVIEW_MS }),
-        'the negative ends at its review time');
+    // A negative over every source holds until one of its inputs moves.
+    const fullIndex = index;
+    index = new Map([[4097, entries.slice(0, 8).map(entry => ({ ...entry, npcLevel: 1 }))]]);
+    assert.equal(Material.request(state, plan, { spots, economy, memo, timestamp }), null);
+    const kept = memo.materialMemo;
+    assert(kept, 'a negative over every source is kept');
+    assert.equal(Material.request(state, plan, { spots, economy: { ...economy }, memo, timestamp: timestamp + 24 * 3600000 }), null);
+    assert.equal(memo.materialMemo, kept, 'a kept negative repeats no safety checks and has no review time');
+    for (const [input, moved, list] of [
+        ['decision', { ...state, stats: { ...state.stats, decisionSeq: Number(state.stats?.decisionSeq || 0) + 1 } }, spots],
+        ['spoiler', { ...state, stats: { ...state.stats, coldCombat: { skills: [{ selfId: 254, level: 1 }], skillSource: 'saved' } } }, spots],
+        ['kit', { ...state, stats: { ...state.stats, wishSections: { build: 12345 } } }, spots],
+        ['route', { ...state, activity: 'grouped' }, spots],
+        ['spot list', state, [...spots]]]) {
+        memo.materialMemo = kept;
+        assert.equal(Material.request(moved, plan, { spots: list, economy, memo, timestamp: timestamp + 2 }), null);
+        assert.notEqual(memo.materialMemo, kept, `a moved ${input} re-checks the camps`);
+    }
+    index = fullIndex;
     const equippedB = {};
     const role = Planner.roleFor(state);
     for (const entry of invoke('GameServer/Bot/AI/BotGear').planFor({ classId: state.classId, level: 40 }).items) {
@@ -197,7 +231,7 @@ try {
     assert.deepEqual(visited, ['camp:0', 'camp:1', 'camp:2', 'camp:3', 'camp:0'],
         'successive failed assemblies visit every retained camp before repeating');
     const waiting = { ...retryState, stats: { ...retryState.stats, partyRequest: { ...retryState.stats.partyRequest,
-        deferReason: null, materialReviewedAt: 0, deferredUntil: retryAt + 60000 } } };
+        deferReason: null, materialKey: null, deferredUntil: retryAt + 60000 } } };
     const deferred = Request.partyRequestForPlan(waiting, plan, retryAt, { spots, economy });
     assert.equal(deferred.status, 'deferred', 'a rotated camp cannot bypass an expired-request cooldown');
     assert.equal(deferred.deferredUntil, retryAt + 60000);
@@ -265,6 +299,17 @@ try {
     const joint = await Calculation.calculate(party, members, async () => { prepared++; throw Error('wish rebuild'); }, timestamp);
     assert.equal(prepared, 0, 'the native party-goal calculation builds no personal or group wish graph');
     assert.equal(joint.memberGoals.length, 3);
+    // The income review runs when its inputs move (PartyGoalPolicy.incomeReviewKey), never on the clock.
+    assert(Number.isSafeInteger(joint.incomeReviewKey) && joint.incomeReviews.length === 3,
+        'a material party with no reviewed inputs reviews at once');
+    const reviewedParty = { ...party, stats: { ...party.stats, lastIncomeReviewAt: timestamp,
+        incomeReviewKey: joint.incomeReviewKey, incomeReviews: joint.incomeReviews } };
+    assert.equal(Material.joint(reviewedParty, members, { timestamp: timestamp + 24 * 3600000, spots }).incomeReviews, undefined,
+        'unchanged inputs are not reviewed again, however long');
+    const collected = { ...reviewedParty, stats: { ...reviewedParty.stats, agreement: { ...contract,
+        materialNeeds: contract.materialNeeds.map((row, at) => at ? row : { ...row, collected: 1 }) } } };
+    assert.equal(Material.joint(collected, members, { timestamp: timestamp + 1, spots }).incomeReviews?.length, 3,
+        'a collected material reviews at once');
 
     const samePartB = { ...coreB, inventory: { 4097: { selfId: 4097, amount: 11 } },
         stats: { ...coreB.stats, equipmentPlan: plan, partyRequest: { ...request } } };

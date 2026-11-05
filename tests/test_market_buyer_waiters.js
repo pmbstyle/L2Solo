@@ -19,7 +19,7 @@ async function main() {
     const waiters = new MarketBuyerWaiters({
         stateFor: id => { reads++; return kernel.states.get(id)?.state; },
         demandsFor: state => [[state.stats.wanted, { ready: true, budget: state.adena }]],
-        wake: (id, timestamp) => kernel.wakeBuyer(id, timestamp)
+        wake: (id, timestamp, offer) => kernel.wakeBuyer(id, timestamp, offer)
     });
     kernel.buyerEvents = waiters;
     const state = (id, item = 99, overrides = {}) => ({ characterId: id, phase: 'cold', activity: 'hunting', level: 1,
@@ -48,7 +48,9 @@ async function main() {
         kernel.tick();
         await kernel.resolveChain;
         assert.equal(requests.length, 5);
-        assert(requests.every(request => request.marketWakeup === true && request.kind === 'lifecycle'));
+        assert(requests.every(request => request.kind === 'lifecycle'));
+        assert(requests.every(request => JSON.stringify(request.marketWakeup) === JSON.stringify([{ itemId: 99, price: 100 }])),
+            'the command names the offer that woke the buyer');
         assert.equal(Protocol.validateEnvelope(Protocol.envelope('command_request', 'buyer-events', { requests }), 'worker',
             { workerEpoch: 'buyer-events' }).ok, true, 'wakeups follow the actual command wire contract');
         assert(requests.every(request => request.state.timing.nextResolveAt === now + 3600000),

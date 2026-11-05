@@ -217,7 +217,9 @@ function partyRequestForPlan(state, plan, timestamp = Date.now(), options = {}) 
         ...objective,
         status: 'open',
         requestedAt: sameRequest && previous.status === 'open' ? previousRequestedAt : timestamp,
-        reviewAt: timestamp + Math.max(30000, Number(Config.partyWaitReplanMs) || 5 * 60 * 1000),
+        // The plan selection's input key (GearPlanSelection `planKey`): the
+        // waiting plan is kept until it moves.
+        planKey: options.planKey ?? null,
         attempts: previousAttempts,
         lastMatchedAt: sameRequest ? previous.lastMatchedAt || null : null
     };

@@ -41,7 +41,8 @@ function beginMarketTravel(state, goal, timestamp = Date.now(), { economy = null
     if (!buyingGear && !buyingMaterial && !buyingErrand && !sellingInventory && !improving) return null;
     if (!improving && invoke('GameServer/Bot/Economy/BotAfkMarketService').canTradeRemotely(state, goal)) return null;
     if ((buyingGear || buyingMaterial) && Number(state.stats?.marketRetryAfter || 0) > timestamp) return null;
-    if (sellingInventory && !forcedInventoryCleanup && Number(state.stats?.marketSellRetryAfter || 0) > timestamp) return null;
+    if (sellingInventory && !forcedInventoryCleanup
+        && invoke('GameServer/Bot/Economy/ItemDisposition').saleRetryHolds(state)) return null;
 
     if (buyingGear || buyingMaterial || buyingErrand) {
         const selfId = Number(goal.target?.itemId);

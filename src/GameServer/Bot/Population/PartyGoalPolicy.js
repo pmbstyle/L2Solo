@@ -4,6 +4,9 @@ const TendencyRoll = require('../AI/TendencyRoll');
 const PartyIncomeComparison = require('./PartyIncomeComparison');
 const CraftMaterialParty = require('./CraftMaterialParty');
 const ColdEconomyDecision = require('./ColdEconomyDecision');
+const Packet = require('../Economy/StatsPacket');
+const Rewards = require('../Economy/SpotRewardExpectation');
+const { fnv1a32 } = require('../Fnv1a');
 
 const positive = value => Math.max(0, Number(value) || 0);
 
@@ -43,6 +46,39 @@ function pending(party, members) {
     return { objective: party.stats?.objective, memberGoals: members.map(declaration) };
 }
 
+// The inputs of a party's income review (PartyIncomeComparison.prepare and
+// compare), each moved by an event, hashed: the roster and the objective with
+// its help deal and material needs (party writes), and per member its level,
+// class, learned Spoil level, kit (the decision's kit fact), observed income
+// (the decision's observation baseline: the observation event renews it when
+// the income the member measures drifts beyond its own error, at its rest),
+// solo income (its packet's hour: its held earning spot's, or its workshop's,
+// renewed when that is searched again) and goal (its wish focus with the cash
+// it names, its party request and plan step), and the spot the forecast reads
+// (PartyIncomeComparison.prepare's: the objective's, else the party's, else
+// the first member's). The review runs when this moves, never on the clock.
+// Not in it: the party's cohesion, which drifts every fight and scales only
+// the table forecast, which departs nobody
+// (PopulationService departs on an own_party review); the wallet, heard in
+// town by the member's own decision; the solo route of a member whose
+// decision holds no earning spot (PartyIncomeComparison.soloRoute's own memo).
+function incomeReviewKey(party, members, objective) {
+    const goal = row => row ? [row.spotId ?? null, row.npcId ?? null, row.itemId ?? null, row.strategy ?? row.kind ?? null,
+        row.amount ?? null] : null;
+    const help = party.stats?.agreement?.help || objective?.helpDeal;
+    return fnv1a32(JSON.stringify([members.map(member => Number(member.characterId)).sort((a, b) => a - b),
+        objective?.spotId || party.spotId || members[0]?.spotId || null, goal(objective), help ? [help.status ?? null, help.fee ?? null, help.remaining ?? null, help.payerId ?? null,
+            help.helperIds ?? null] : null,
+        (party.stats?.agreement?.materialNeeds || []).map(row => [row.characterId, row.collected ?? null, row.quota ?? null]),
+        members.map(member => {
+            const stats = member.stats || {};
+            return [Number(member.characterId), Number(member.level || 0), stats.classId ?? member.classId ?? null,
+                Rewards.spoilSkillLevel(member), stats.wishSections?.build ?? null, stats.wishSections?.sample ?? null,
+                Number(Packet.hourAdena(stats.money)) || 0, stats.wishFocus?.[0] ?? null, stats.wishFocus?.[2] ?? null,
+                goal(stats.partyRequest), goal(stats.equipmentPlan?.next)];
+        })]));
+}
+
 function joint(party, members, { context = null, memberContexts, spots, timestamp = context?.timestamp || Date.now() } = {}) {
     if (CraftMaterialParty.isObjective(party.stats?.objective)) return CraftMaterialParty.joint(party, members, { timestamp, spots });
     const goals = members.map(declaration);
@@ -57,13 +93,13 @@ function joint(party, members, { context = null, memberContexts, spots, timestam
     const objective = previous?.clanGoalKey || previous?.sourceKind === 'raid' || previous?.helpDeal
         ? previous : selected ? { ...previous, ...selected, status: 'open', priority: previous?.priority || 'preferred',
             objectiveKey: ['joint', selected.spotId, selected.npcId || 0].join(':') } : previous;
-    let review = {};
+    let review = {}, key = null;
     if (!previous?.clanGoalKey && previous?.sourceKind !== 'raid' && !previous?.helpDeal
-        && timestamp - Number(party.stats?.lastIncomeReviewAt || party.startedAt || timestamp) >= PartyIncomeComparison.REVIEW_MS
         && members.every(member => invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(member))
-        && members.some(member => member.spotId)) {
+        && members.some(member => member.spotId)
+        && (key = incomeReviewKey(party, members, previous)) !== party.stats?.incomeReviewKey) {
         const prepared = PartyIncomeComparison.prepare(members, { party, objective: previous, timestamp, memberContexts, spots });
-        review = { lastIncomeReviewAt: timestamp, incomeReviews: members.map(member => ({ characterId: Number(member.characterId),
+        review = { lastIncomeReviewAt: timestamp, incomeReviewKey: key, incomeReviews: members.map(member => ({ characterId: Number(member.characterId),
             ...PartyIncomeComparison.compare(member, members.filter(peer => peer !== member), { prepared, party, objective: previous }) })) };
     }
     return { objective, memberGoals: goals, ...(context?.statsPacket || {}), ...review };
@@ -275,5 +311,5 @@ function itemNeed(state, item, projected) {
     return positive(economy.itemUsefulness(Number(item.selfId)));
 }
 
-module.exports = { declaration, pending, joint, participation, groupContext, decide, verdictFree, formingMembers, formingVerdict,
+module.exports = { declaration, pending, joint, incomeReviewKey, participation, groupContext, decide, verdictFree, formingMembers, formingVerdict,
     formingHold, FORMING_HOLD_LIMIT, recruitment, itemNeed };

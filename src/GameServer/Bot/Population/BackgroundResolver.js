@@ -2585,9 +2585,17 @@ const BackgroundResolver = {
             if (travelResult) return travelResult;
         }
 
-        if (require('./RaidSupplyPolicy').held(state, timestamp) && state.activity !== 'dead' && Number(state.vitals?.hp) > 0) {
-            return { patch: { activity: ['shopping', 'merchant'].includes(state.activity) ? 'shopping' : 'party_wait' }, events: [],
-                materialize: { exp: 0, sp: 0, adena: 0, items: [] }, nextResolveAt: timestamp + 30000,
+        const raidSupply = require('./RaidSupplyPolicy').held(state, timestamp);
+        if (raidSupply && state.activity !== 'dead' && Number(state.vitals?.hp) > 0) {
+            // In town the command retries its purchase (kept, limits.md "Wait
+            // polls"). Parked, the bot waits for main's preparation: its party,
+            // its cancel or an errand trip each write the row with their own
+            // due; the hold ends by itself when the reservation expires.
+            const shopping = ['shopping', 'merchant'].includes(state.activity);
+            return { patch: { activity: shopping ? 'shopping' : 'party_wait' }, events: [],
+                materialize: { exp: 0, sp: 0, adena: 0, items: [] },
+                nextResolveAt: shopping ? timestamp + 30000 : Number(raidSupply.expiresAt),
+                ...(shopping ? {} : { eventWait: 'raid_supply_preparing' }),
                 debug: { reason: 'raid_supply_preparing', fights: 0, wins: 0 } };
         }
 
@@ -2595,7 +2603,8 @@ const BackgroundResolver = {
             const expiresAt = Number(state.stats.supplyErrand.expiresAt || 0);
             // A native accepted obligation has no lateness deadline. Its
             // terminal event releases this workflow; downtime cannot abandon it.
-            if (!(state.stats.supplyErrand.meetingToken && state.stats.tradeMeeting) && expiresAt > 0 && timestamp >= expiresAt) {
+            const deadline = !(state.stats.supplyErrand.meetingToken && state.stats.tradeMeeting) && expiresAt > 0;
+            if (deadline && timestamp >= expiresAt) {
                 return {
                     patch: {
                         activity: 'hunting',
@@ -2615,11 +2624,14 @@ const BackgroundResolver = {
                     debug: { activity: 'supply_errand_expired' }
                 };
             }
+            // The parked companion shops hot; its return writes the row hot
+            // (BotTownTravel.returnSupplyHot) and a meeting writes its own
+            // state. The row's own end is the errand's deadline above.
             return {
                 patch: { activity: 'shopping', stats: { ...(state.stats || {}) } },
                 events: [],
                 materialize: { exp: 0, sp: 0, adena: 0, items: [] },
-                nextResolveAt: timestamp + 30000,
+                nextResolveAt: deadline ? expiresAt : timestamp + 30000,
                 debug: { activity: 'supply_errand' }
             };
         }

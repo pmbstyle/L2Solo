@@ -13,7 +13,8 @@ const Policy = require('../src/GameServer/Bot/Population/OpportunisticRaidPolicy
 const Supply = require('../src/GameServer/Bot/Population/RaidSupplyPolicy');
 const Funding = require('../src/GameServer/Bot/Economy/PurchaseFunding');
 const { RaidSupplyPreparation } = require('../src/GameServer/Bot/Population/RaidSupplyPreparation');
-const { lifecycleKind } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
+const { lifecycleKind, ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
+const { stepElapsedMs } = require('../src/GameServer/Bot/Population/ColdSoloWindow');
 const Catalog = invoke('GameServer/RaidBoss/RaidBossSourceCatalog');
 const at = Date.now();
 function member(id, classId, level, weapon, healer = false) {
@@ -65,6 +66,26 @@ async function run() {
     assert.equal(lifecycleKind(parked),'resolver');
     const hold=invoke('GameServer/Bot/Population/BackgroundResolver').resolveSolo({state:parked,spot,timestamp:at});
     assert.equal(hold.debug.fights,0);assert.equal(hold.materialize.exp,0);
+    // Parked, the bot waits for main's preparation, not a 30 s step: its own end is
+    // the reservation's expiry; a write of main (its party, cancel, errand trip) wakes it.
+    assert.equal(hold.nextResolveAt,plan.expiresAt,'a parked reservation holds to its expiry');
+    const inTown=invoke('GameServer/Bot/Population/BackgroundResolver').resolveSolo({state:{...parked,activity:'shopping'},spot,timestamp:at});
+    assert.equal(inTown.nextResolveAt,at+30000,'in town the purchase command keeps its retry');
+    const waiting={...await Life.prepareResolve({...parked,timing:{lastResolvedAt:at-60000}},hold,
+        {timestamp:at,persist:false,projectClassProgression:true}),simulation:{revision:1}};
+    const kernel=new ColdSimulationKernel({now:()=>at+60000,resolveSolo:()=>null});
+    kernel.upsert({state:waiting});
+    assert.deepEqual(kernel.dueCandidates(at+60000,4),[],'no step while the reservation waits');
+    const cancelled={...waiting,activity:'hunting',stats:{...waiting.stats,raidSupplyPreparation:null},
+        timing:{...waiting.timing,nextResolveAt:at+61000},simulation:{revision:2}};
+    kernel.upsert({state:cancelled});
+    assert.deepEqual(kernel.dueCandidates(at+61000,4).map(c=>c.characterId),[4],'main\'s cancel wakes it on its due');
+    assert.equal(stepElapsedMs(cancelled,at+61000),1000,'the minute it waited is not hunted');
+    const expired=new ColdSimulationKernel({now:()=>plan.expiresAt,resolveSolo:()=>null});
+    expired.upsert({state:waiting});
+    assert.deepEqual(expired.dueCandidates(plan.expiresAt,4).map(c=>c.characterId),[4],'a missed write still ends at the expiry');
+    const resumed=invoke('GameServer/Bot/Population/BackgroundResolver').resolveSolo({state:waiting,spot,timestamp:plan.expiresAt});
+    assert.notEqual(resumed.debug.reason,'raid_supply_preparing','an expired reservation releases the bot');
     await prep.maintain(at); assert.equal(purchases,1);assert.equal(formed,0);
     await prep.maintain(at+1000);assert.equal(formed,0,'cannot form during purchase travel');
     prep.stop(); prep = new RaidSupplyPreparation(dependencies);await prep.start();

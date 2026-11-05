@@ -14,6 +14,8 @@ const TradeDemand = require('./MarketTradeDemand');
 const ArrowStock = require('../../Inventory/ArrowStock');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const DataCache = invoke('GameServer/DataCache');
+const Diagnostics = require('./EconomyDiagnostics');
+const { textDigest } = require('../Fnv1a');
 
 
 function isGear(item = {}) {
@@ -131,14 +133,64 @@ function saleLot(item, offset, count) {
     return lot;
 }
 
+// The facts an item's sale roll stands on (maintainer, 2026-11-05): the bag's
+// units of the item and its price revision (the board's lines of it, a content
+// digest both threads compute alike, and its deal count). No new fact, no new
+// roll: an unchanged bag and market give the same answer, a bot does not
+// change its mind with nothing new (a realism trade for a stable board).
+function rollFacts(state, ctx, selfId) {
+    const id = Number(selfId);
+    return [Number(state.inventory?.[id]?.amount || 0), ctx.board?.itemFingerprint?.(id) ?? '',
+        invoke('GameServer/Bot/Economy/MarketCounters').itemDeals(id).deals];
+}
+
+// A held disposition stands on exactly what MarketPricing.disposition reads:
+// the lot and its options, the item's roll facts, its counter's deals and flow
+// (belief index, demand history), the trader (persona traits over the hour,
+// money price and gap horizon), the money price itself (not monotone in it:
+// it prices risk, residual and wait), the item's worth and own stock, its
+// knowledge state, and the route table (EconomicTrip.key, at the hour); the
+// NPC shop rows are the worker's catalogue, fixed per worker start. Time
+// alone moves nothing: a demand forecast or first price that decays with the
+// clock refreshes at the item's next fact. An item a foreign conditional bid
+// answers is not held: that bid's admission reads its buyer's state.
+// base: the digest of the inputs every item of one sale shares (evaluate's
+// holdBase), ~20 characters in front of the item's own ~100.
+function holdKey(base, item, ctx, opts) {
+    const id = Number(item.selfId), Counters = invoke('GameServer/Bot/Economy/MarketCounters');
+    const counter = Counters.counterOf(id), stock = ctx.ownStock?.groups?.get(`${id}:${Number(item.enchant || 0)}`);
+    return base + JSON.stringify([id, Number(item.enchant || 0), Number(item.count), opts.town ?? null, opts.room,
+        opts.stockQuote, Number(opts.standingPrice || 0), opts.selectedAnswerRecord, opts.rollKey.slice(3),
+        Counters.revisionOf(counter), Counters.meetingRevisionOf(counter), Number(ctx.marketTrades?.[counter] || 0),
+        ctx.economy?.worth?.(id) ?? null, ctx.ownStock?.known ?? null,
+        stock ? [stock.units, stock.listedUnits, stock.prices?.size || 0] : null]);
+}
+
+function foreignConditionalBid(ctx, selfId) {
+    return (ctx.board?.list(selfId, BoardRules.BUY) || []).some(line => line.custodyPolicy === 1
+        && Number(line.ownerId) !== Number(ctx.characterId));
+}
+
+// What evaluate and its callers read of a disposition: the action, gain and
+// answer, the ask's price, stock quote and NPC flag, the buy-back; the rest
+// (the ask's values, the market's rivals, the belief) is not held.
+function heldDisposition(chosen) {
+    const ask = chosen.priced?.ask;
+    return { action: chosen.action, gain: chosen.gain, answer: chosen.answer || null,
+        priced: chosen.priced ? { ask: ask && { price: ask.price, stockQuote: ask.stockQuote, npc: ask.npc },
+            market: { buyback: chosen.priced.market.buyback } } : null };
+}
+
 // The bot's sale at a market visit or a review (group E): the author's hard
 // rules first; every other item goes by one expected-value decision (the
 // board at its best ask, the NPC buy-back now, a buy ad answered in its town,
 // or keeping it), one roll. Public interest and recent purchases rank the
 // bounded slots, including held listings, before the unknown waiting stock.
 // A line the bot already has keeps its price
-// (its own look reprices it or takes it back, MarketPricing.look). options: now
-// (the decision point), slots (board slots), kept (item/enchant -> price),
+// (its own look reprices it or takes it back, MarketPricing.look). options: now,
+// decisionPoint (a roll of its own, e.g. one meeting; else the item's facts,
+// rollFacts), saleHold (a Map the caller keeps per bot: held dispositions, see
+// holdKey), slots (board slots), kept (item/enchant -> price),
 // keptCounts (item/enchant -> actual listed units), stored (warehouse units),
 // plus traderContext's. Without an escrow projection only conditional lines
 // retain bag stock; a backed shop has already removed its own units.
@@ -148,11 +200,30 @@ function saleLot(item, offset, count) {
 // it is in the ad's town, the side that acts travels).
 function evaluate(state, options = {}) {
     const ctx = traderContext(state, options);
+    const hold = options.saleHold instanceof Map ? options.saleHold : null;
+    const holdBase = hold ? textDigest(JSON.stringify([ctx.moneyPrice, ctx.hour, ctx.trader, ctx.knowledgeEnabled,
+        invoke('GameServer/Bot/Economy/EconomicTrip').key(state)])) : null;
+    const heldKeys = hold ? new Set() : null;
+    const disposition = (item, opts) => {
+        // An enchanted lot's belief reads its replacement and scroll prices (beliefFor): not held.
+        if (!hold || Number(item.enchant || 0) > 0) return MarketPricing.disposition(item, ctx, opts);
+        if (foreignConditionalBid(ctx, item.selfId)) {
+            if (Diagnostics.active()) Diagnostics.count('sale_hold', 'built', 'conditional_bid');
+            return MarketPricing.disposition(item, ctx, opts);
+        }
+        const key = holdKey(holdBase, item, ctx, opts);
+        heldKeys.add(key);
+        let chosen = hold.get(key);
+        if (Diagnostics.active()) Diagnostics.count('sale_hold', chosen ? 'kept' : 'built', chosen ? 'same_inputs' : 'inputs_moved');
+        if (!chosen) hold.set(key, chosen = heldDisposition(MarketPricing.disposition(item, ctx, opts)));
+        return chosen;
+    };
+    const rollKey = item => ['dispose', ctx.characterId, item.selfId,
+        ...(options.decisionPoint != null ? [options.decisionPoint] : rollFacts(state, ctx, item.selfId))];
     const craftReservations = ctx.economy?.craftReservations
         || ItemDisposition.selectedCraftAmounts(state, ctx.economy?.network);
     const candidates = ItemDisposition.saleCandidates(state, { ...options, unlimited: true,
         reserved: { ...options.reserved, ...craftReservations } });
-    const decisionPoint = options.decisionPoint ?? (Number(options.now) || ctx.timestamp);
     const owned = (ctx.board?.ownerLines?.(Number(state.characterId)) || [])
         .filter(line => line.storeType === BoardRules.SELL);
     const kept = options.kept || new Map(owned
@@ -164,11 +235,11 @@ function evaluate(state, options = {}) {
     const dispose = (item, canList) => {
         const marketOnly = ItemDisposition.isGradeCrystal(item);
         const town = MarketTownPolicy.targetTownForItems(state, [item], options);
-        const chosen = MarketPricing.disposition(item, ctx, {
+        const chosen = disposition(item, {
             town, room: canList && (options.stockQuotes === true || marketOnly) ? 1
                 : liquidate ? 0 : roomFor(item, options.stored),
             stockQuote: canList && (options.stockQuotes === true || marketOnly),
-            rollKey: ['dispose', ctx.characterId, item.selfId, decisionPoint],
+            rollKey: rollKey(item),
             selectedAnswerRecord: Number(options.selectedAnswer?.selfId) === Number(item.selfId)
                 && Number(options.selectedAnswer?.enchant || 0) === Number(item.enchant || 0)
                 ? Number(options.selectedAnswer.recordId) : 0
@@ -211,10 +282,10 @@ function evaluate(state, options = {}) {
             // actually chooses the opposite bid. Backed custody stays native.
             if (options.conditionalKept?.has(keptKey) && ctx.board?.first(item.selfId, 3,
                 { excludeOwner: ctx.characterId, enchant: item.enchant || 0 })) {
-                const chosen = MarketPricing.disposition(item, ctx, {
+                const chosen = disposition(item, {
                     town: state.currentRegion, room: roomFor(item, options.stored), stockQuote: true,
                     standingPrice: kept.get(keptKey) ?? kept.get(Number(item.selfId)),
-                    rollKey: ['dispose', ctx.characterId, item.selfId, decisionPoint], selectedAnswerRecord
+                    rollKey: rollKey(item), selectedAnswerRecord
                 });
                 if (chosen.action === 'ad') {
                     decisions.push({ action: 'ad', reason: 'expected_value', item, priced: chosen.priced,
@@ -236,6 +307,8 @@ function evaluate(state, options = {}) {
         decision.item = { ...decision.item, price, marketReason: decision.reason,
             pricing: MarketPricing.lineState(decision.item.selfId, ctx, { price, storeType: BoardRules.SELL, enchant: decision.item.enchant || 0 }) };
     }
+    // The hold keeps only this sale's items: a sold, moved or repriced one leaves it.
+    if (hold) for (const key of hold.keys()) if (!heldKeys.has(key)) hold.delete(key);
     const slots = Math.max(0, Math.floor(Number(options.slots ?? BOARD_SLOTS)));
     const chosen = new Set(prioritizeListings(decisions.filter(row => row.action === 'list').map(row => row.item), ctx).slice(0, slots));
     for (const decision of decisions) {

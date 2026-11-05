@@ -94,6 +94,30 @@ try {
         assert.equal(review.incomeReviews?.length, 2,
             'ordinary party income review also runs for members of a clan with a warehouse');
     }
+    // The review runs when its inputs move (PartyGoalPolicy.incomeReviewKey), never on the clock.
+    const reviewed = Goals.joint({ startedAt: at, spotId: 'peer', memberIds: [state.characterId, peer.characterId], stats: {} },
+        [state, peer], { timestamp: at, spots });
+    assert(Number.isSafeInteger(reviewed.incomeReviewKey) && reviewed.incomeReviews.length === 2,
+        'a party with no reviewed inputs reviews at once, without waiting for the clock');
+    const held = { startedAt: at, spotId: 'peer', stats: { lastIncomeReviewAt: at, incomeReviewKey: reviewed.incomeReviewKey,
+        incomeReviews: reviewed.incomeReviews } };
+    const later = Goals.joint(held, [state, peer], { timestamp: at + 24 * 3600000, spots });
+    assert.equal(later.incomeReviews, undefined, 'unchanged inputs are not reviewed again, however long');
+    assert.equal(later.lastIncomeReviewAt, undefined);
+    const moved = { level: { ...peer, level: 21 }, kit: { ...peer, stats: { ...peer.stats, wishSections: { build: 7 } } },
+        observed: { ...peer, stats: { ...peer.stats, wishSections: { sample: 's1:AAAA' } } },
+        solo: { ...peer, stats: { ...peer.stats, money: [1500, .001, 0, 5000] } },
+        goal: { ...peer, stats: { ...peer.stats, wishFocus: ['power:2:7', 0, 9000] } } };
+    for (const [input, changed] of Object.entries(moved)) {
+        const review = Goals.joint(held, [state, changed], { timestamp: at + 1, spots });
+        assert.equal(review.incomeReviews?.length, 2, `a moved ${input} reviews at once`);
+        assert.notEqual(review.incomeReviewKey, reviewed.incomeReviewKey);
+    }
+    assert.equal(Goals.joint({ ...held, spotId: 'lower' }, [state, peer], { timestamp: at + 1, spots }).incomeReviews?.length, 2,
+        'a party moved to another ground (the spot its forecast reads) reviews at once');
+    const third = { ...peer, characterId: 990132 };
+    assert.equal(Goals.joint(held, [state, peer, third], { timestamp: at + 1, spots }).incomeReviews?.length, 3,
+        'a roster change reviews at once');
     assert.equal(builds, 0);
     const provider = { ...peer, level: 20, adena: 100000, spotId: 'lower',
         stats: { classId: 15, role: 'healer' } };

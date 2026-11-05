@@ -96,8 +96,9 @@ function isSoloHunter(session) {
 
 // When a solo hunter carries its bag to town: the cold rule
 // (ItemDisposition.inventoryCleanupNeed) on the live bag. The verdict is kept
-// until the bag, the life state, the level or the party changes, or the sell
-// pause ends, so a tick with nothing new costs a few comparisons.
+// until the bag, the life state, the level or the party changes, so a tick
+// with nothing new costs a few comparisons (a buyer of the goods the sale
+// retry holds is read at the next bag change).
 function sellTripDue(session, bot, now = Date.now()) {
     if (!isSoloHunter(session) || session.pendingTownTrip) return null;
     const items = bot.backpack?.fetchItems?.();
@@ -109,28 +110,30 @@ function sellTripDue(session, bot, now = Date.now()) {
     const last = session.sellTripCheck;
     if (last && last.items === items && last.count === items.length && last.life === life
         && last.revision === Number(bot.backpack.inventoryRevision || 0)
-        && last.level === level && last.partyId === partyId && last.decisionSeq === decisionSeq
-        && !(last.pauseEndsAt && now >= last.pauseEndsAt)) return last.need;
+        && last.level === level && last.partyId === partyId && last.decisionSeq === decisionSeq) return last.need;
     const state = MarketListingPolicy.actorState(session);
     if (partyId) state.partyId = partyId;
     const forced = ItemDisposition.inventoryCleanupNeed(state, { now });
     const activity = DecisionEvents.held(session)?.network.activity;
-    const pause = Number(state.stats?.marketSellRetryAfter || 0);
-    const need = forced || (activity?.activity === 'selling' && pause <= now
+    const need = forced || (activity?.activity === 'selling' && !ItemDisposition.saleRetryHolds(state)
         ? { reason: 'wish_funding', itemIds: activity.items } : null);
     session.sellTripCheck = { items, count: items.length, life, level, partyId, decisionSeq,
-        revision: Number(bot.backpack.inventoryRevision || 0),
-        pauseEndsAt: pause > now ? pause : 0, need };
+        revision: Number(bot.backpack.inventoryRevision || 0), need };
     return need;
 }
 
-// A sell trip starts the cold sell pause, as the cold visit does, so a bag the
-// town visit could not empty does not send the bot back on its next loot.
-function pauseSelling(session, now = Date.now()) {
+// A sell trip starts the sale retry, as the cold visit's end does, and the
+// visit's end (the departure to a spot) writes it again on what the bot could
+// not place (ItemDisposition.saleSeen): a bag the town could not empty does not
+// send the bot back on its next loot, only on goods or a buyer it has not tried.
+function pauseSelling(session, departing = false) {
     const life = session.coldLifeState;
-    if (!life) return;
-    const delay = invoke('GameServer/Bot/Economy/ColdMarketListingService').SELL_RETRY_DELAY_MS;
-    session.coldLifeState = { ...life, stats: { ...(life.stats || {}), marketSellRetryAfter: now + delay } };
+    // A departure after a buff, clan hall or buy-only visit tried no sale.
+    if (departing && !session.saleTrip) return;
+    session.saleTrip = !departing;
+    if (!life || !session.actor?.backpack?.fetchItems) return;
+    const seen = ItemDisposition.saleSeen(MarketListingPolicy.actorState(session));
+    session.coldLifeState = { ...life, stats: { ...(life.stats || {}), marketSellSeen: seen } };
     refreshPartyMemberships([session], invoke);
 }
 
@@ -578,6 +581,7 @@ function beginSpotRelocation(session, bot, spot, BotAI, deferredOccupation = nul
 
     const finishedTownErrands = session.pendingFarmDepartureAnnouncement === true;
     delete session.pendingFarmDepartureAnnouncement;
+    if (finishedTownErrands && isSoloHunter(session)) pauseSelling(session, true);
     const destinationName = invoke('GameServer/Bot/AI/BotChatLocation').describe({ spot });
     TownChatter.say(session, BotAI, finishedTownErrands ? 'town-to-farm' : 'farm-relocation', finishedTownErrands
             ? Speech.lines('town.town-to-farm', { place: destinationName })
@@ -717,8 +721,7 @@ module.exports = {
             // the sale retry, so a bag that sold nothing heavy hunts on at penalty 1.
             // A trip deferred by a fight comes back every tick: the retry it
             // already started stays, the trip itself waits in pendingTownTrip.
-            const retry = Number(session.coldLifeState?.stats?.marketSellRetryAfter || 0);
-            if (!(retry > Date.now())) pauseSelling(session);
+            if (!ItemDisposition.saleRetryHolds(MarketListingPolicy.actorState(session))) pauseSelling(session);
             const trip = startShopping(session, bot, BotAI, `Inventory ${floor.reason}. Heading to town.`);
             if (trip !== 'deferred') return;
         }

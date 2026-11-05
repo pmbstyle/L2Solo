@@ -1,7 +1,5 @@
 const AssemblyRecovery = require('./PartyAssemblyRecovery');
 const RaidSoloBoundary = require('./RaidSoloBoundary');
-const DEFAULT_SESSION_MAX_MS = 20 * 60 * 1000;
-const DEFAULT_SESSION_JITTER_MS = 5 * 60 * 1000;
 
 function raidStarted(party) {
     const objective = party?.stats?.objective;
@@ -12,42 +10,29 @@ function raidStarted(party) {
             || party?.stats?.raidEncounter?.status === 'active');
 }
 
-function rotationExpiry(partyId, startedAt, options = {}) {
-    const config = options || {};
-    const hasMaxAge = Object.prototype.hasOwnProperty.call(config, 'partySessionMaxMs');
-    const hasJitter = Object.prototype.hasOwnProperty.call(config, 'partySessionJitterMs');
-    const maxAge = hasMaxAge
-        ? Math.max(0, Number(config.partySessionMaxMs) || 0)
-        : DEFAULT_SESSION_MAX_MS;
-    const jitter = Math.min(
-        maxAge,
-        hasJitter
-            ? Math.max(0, Number(config.partySessionJitterMs) || 0)
-            : DEFAULT_SESSION_JITTER_MS
-    );
-    if (!maxAge || !startedAt) return 0;
-
-    let hash = 0;
-    for (const char of String(partyId || '')) hash = ((hash * 31) + char.charCodeAt(0)) | 0;
-    const span = jitter * 2 + 1;
-    const offset = jitter ? Math.abs(hash) % span - jitter : 0;
-    return Number(startedAt) + maxAge + offset;
-}
-
-function sessionExpired(party, timestamp = Date.now(), options = {}) {
+// members: the party's current states (the review's input key reads them);
+// options: the review's (PartySessionReview: relationFlags). A party with
+// no review yet records its evidence on its next resolve (baseline).
+function sessionExpired(party, timestamp = Date.now(), options = {}, members = null) {
     if (party.stats?.warOperation) return false;
     if (AssemblyRecovery.expired(party) && !party?.stats?.travel
         && Number(party?.stats?.restUntil || 0) <= timestamp
         && !require('./PartyMarketBreak').pending(party, timestamp).length) return true;
     if (raidStarted(party)) return false;
-    const reviewAt = Number(party?.stats?.sessionReview?.nextAt || 0);
-    if (reviewAt > 0) return timestamp >= reviewAt;
-    const sessionExpiresAt = Number(party?.stats?.sessionExpiresAt || 0);
-    if (sessionExpiresAt > 0) return timestamp >= sessionExpiresAt;
+    if (!party?.stats?.sessionReview) return false;
+    return require('./PartySessionReview').due(party, members, timestamp, options);
+}
 
-    const startedAt = Number(party?.stats?.formedAt || party?.startedAt || 0);
-    const expiresAt = rotationExpiry(party?.partyId, startedAt, options);
-    return expiresAt > 0 && Number(timestamp) >= expiresAt;
+// A new party's first review record, carried by its first resolve's party row
+// (no review step, no departure): the evidence and clocks from which later
+// reviews count, its inputs' key. A departure or a recovered assembly the
+// evidence already shows is due at the next step, as a review.
+function baseline(party, members, timestamp, options = {}) {
+    const Review = require('./PartySessionReview');
+    const result = Review.assess(party, members, timestamp, options);
+    const now = result.decisions.some(decision => decision.leave) || result.assemblyRecovered || result.objectiveDone;
+    return { ...result.review, decisions: [], key: Review.inputKey(party, members, options, timestamp),
+        nextAt: now ? timestamp : result.review.nextAt };
 }
 
 function releaseMember(state, timestamp = Date.now(), reason = 'party_session_rotation', objective = null) {
@@ -121,13 +106,16 @@ function review(party, members, timestamp, options = {}) {
             ...(result.objectiveDone ? { objective: null } : {}),
             sessionReview: result.review,
             ...(dissolved ? { partyBreakReason: 'party_review_min_size' } : {}) } };
+    // The inputs this review stands on: the roster that stays, as it stays.
+    if (!dissolved) nextParty.stats.sessionReview = { ...result.review, key: require('./PartySessionReview')
+        .inputKey(nextParty, states.filter(s => !leaving.has(s.characterId)), options, timestamp) };
     return { party: nextParty, states, leaving, decisions: result.decisions };
 }
 
 module.exports = {
-    rotationExpiry,
     raidStarted,
     sessionExpired,
+    baseline,
     review,
     releaseMember
 };

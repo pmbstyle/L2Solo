@@ -122,8 +122,9 @@ async function run() {
 
         saved = await seed(945013, 2500);
         await DB.setItem(saved.characterId, { selfId: 1341, amount: 5000 });
-        saved = await Life.upsertState({ ...saved, inventory: Life.inventorySummaryFromItems(await DB.fetchItems(saved.characterId)),
-            stats: { ...saved.stats, marketSellRetryAfter: Date.now() + 1800000 } }, 'arrow_limit_surplus');
+        const surplus = { ...saved, inventory: Life.inventorySummaryFromItems(await DB.fetchItems(saved.characterId)) };
+        saved = await Life.upsertState({ ...surplus, stats: { ...saved.stats,
+            marketSellSeen: invoke('GameServer/Bot/Economy/ItemDisposition').saleSeen(surplus) } }, 'arrow_limit_surplus');
         const sale = await Listing.open(saved, { town: 'Giran' });
         assert.equal(sale.reason, 'sell_retry_cleanup');
         assert.equal(await amount(saved.characterId, 1342), 2000);
