@@ -238,11 +238,26 @@ function contextSummary(summaries, timeline, start, end) {
             swallowedSites: failures.at(-1)?.swallowed || null,
             safetyRepairs: vitals.at(-1)?.safetyRepairs || null, pathQueueMax: max(values(line => line.vitals?.pathWorkers?.queue)),
             restarts },
-        memory: { mainHeapAfterGcMb: range(values(line => line.vitals?.mainHeap?.afterGc)),
+        memory: { mainHeapAfterGcMb: range(values(line => line.vitals?.mainHeap?.afterGc)), mainGc: gcPauses(summaries, before),
             geodataMb: range(values(line => Math.round((line.vitals?.geodata?.loadedBytes || 0) / MB) || NaN)),
             freeMemMinMb: min(values(line => line.machine?.freeMemMb)),
             majorPageFaults: grown(line => line.machine?.majorPageFaults) }
     };
+}
+
+// Main's GC pauses by kind (cumulative on each summary line): count and ms from the last line before the
+// window (else its first) to its last, per minute of that span, and the longest single pause since the
+// recorder started; null for runs recorded before the recorder counted them.
+function gcPauses(summaries, before) {
+    const gcAt = (line) => line?.main?.gc || null;
+    const last = summaries.findLast(gcAt), base = gcAt(before) ? before : summaries.find(gcAt);
+    const minutes = last ? (Date.parse(last.t) - Date.parse(base.t)) / 60000 : 0;
+    if (!(minutes > 0)) return null;
+    return Object.fromEntries(Object.entries(last.main.gc).map(([kind, after]) => {
+        const from = base.main.gc[kind] || {};
+        return [kind, { perMin: round((after.count - (from.count || 0)) / minutes, 1),
+            msPerMin: round((after.ms - (from.ms || 0)) / minutes, 1), maxMsSinceStart: after.maxMs }];
+    }));
 }
 
 function swallowedTotal(sites) {
@@ -348,6 +363,8 @@ function print(s) {
         console.log(`\ncontext: hot ${c.load.hotAvg ?? '-'} / cold ${c.load.coldAvg ?? '-'} bots avg, players max ${c.load.playersMax ?? '-'},`
             + ` sustained lag max ${c.load.lagSustainedMaxMs ?? '-'} ms; main heap after GC ${span(c.memory.mainHeapAfterGcMb)} MB,`
             + ` geodata ${span(c.memory.geodataMb)} MB, free memory min ${c.memory.freeMemMinMb ?? '-'} MB, major page faults ${c.memory.majorPageFaults}`);
+        if (c.memory.mainGc) console.log(`main GC pauses per minute: ${Object.entries(c.memory.mainGc).map(([kind, p]) =>
+            `${kind} ${p.perMin} (${p.msPerMin} ms, longest since start ${p.maxMsSinceStart} ms)`).join(', ')}`);
         const d = c.database;
         console.log(`database: queue max ${d.pendingMax ?? '-'}${d.maxPending != null ? ` (peak ${d.maxPending})` : ''}, WAL ${span(d.walMb)} MB,`
             + ` world ${span(d.worldMb)} MB, history WAL ${span(d.historyWalMb)} MB, checkpoints ${d.checkpoints}`);

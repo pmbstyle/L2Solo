@@ -30,7 +30,8 @@ Measurement (CPU, lag, memory, e2e) has no map file: `scripts/perf.js`, `src/Per
 recorder, `[Perf] live`; `Threads`, `CpuProfile`, `HeapProfile`, `ChunkWorker`), window runs
 `scripts/perf/{window,report,compare}.js` on a launcher save, players `HotCrowd` (hot scenario), scripted client
 `PlayerClient` + `PlayerScript`; numbers come from `PopulationMetrics`/`logSummary` and
-`ColdSimulationCoordinator.failureSnapshot`, the recorder adds no counter.
+`ColdSimulationCoordinator.failureSnapshot`; the recorder adds only main's GC pauses by kind (cumulative, summed by
+`WorkerHeapTelemetry`'s GC observer for its handle; report takes window deltas).
 
 **How the map is kept.** Open work and current state only: a paid debt item is deleted, an area line is rewritten to
 the new state; history is git (`git log -S <id>`). A change that settles an owner, removes a path, pays a debt item or

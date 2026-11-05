@@ -38,6 +38,24 @@ try {
     compare(a, shortB);
     console.log = () => {};
     assert.ok(lines.some(line => line.includes('10 -> <=5') && line.includes('walk')), lines.join('\n'));
+    // Main's GC pauses: every kind either run counted (none of a kind in a run that counted is 0), a
+    // change inside the band marked noise.
+    const withGc = (gc) => ({ ...summary(20, 400, []), context: { memory: { mainGc: gc } } });
+    const gc = compare(folder(withGc({ minor: { perMin: 100, msPerMin: 150, maxMsSinceStart: 4 }, major: { perMin: 1, msPerMin: 40, maxMsSinceStart: 40 } })),
+        folder(withGc({ minor: { perMin: 110, msPerMin: 300, maxMsSinceStart: 5 }, major: { perMin: 1, msPerMin: 40, maxMsSinceStart: 60 },
+            incremental: { perMin: 2, msPerMin: 1, maxMsSinceStart: 1 } })));
+    const gcRow = (label) => gc.table.find(([name]) => name === label);
+    assert.deepEqual(gcRow('main gc scavenge/min'), ['main gc scavenge/min', 100, 110]);
+    assert.deepEqual(gcRow('main gc scavenge ms/min'), ['main gc scavenge ms/min', 150, 300]);
+    assert.deepEqual(gcRow('main gc mark-compact longest since start ms'), ['main gc mark-compact longest since start ms', 40, 60]);
+    assert.deepEqual(gcRow('main gc incremental marking/min'), ['main gc incremental marking/min', 0, 2]);
+    assert.equal(gcRow('main gc scavenge longest since start ms'), undefined, 'the longest only for mark-compacts');
+    const gcLines = [];
+    console.log = (line) => gcLines.push(String(line));
+    compare(folder(withGc({ minor: { perMin: 100, msPerMin: 150 } })), folder(withGc({ minor: { perMin: 110, msPerMin: 300 } })));
+    console.log = () => {};
+    assert.ok(gcLines.some(line => /^main gc scavenge\/min .*noise$/.test(line)), gcLines.join('\n'));
+    assert.ok(gcLines.some(line => /^main gc scavenge ms\/min /.test(line) && !line.endsWith('noise')), gcLines.join('\n'));
     const other = compare(a, folder(summary(20, 400, [], 's2')));
     assert.deepEqual(other.differs.map(([what]) => what), ['save'], 'another save is not comparable');
 } finally {

@@ -110,11 +110,6 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    offer is listed or made cheaper (`recordChanged`); a bot whose budget grows past an offer it already saw waits
    out the failed visit's retry stamp (limits.md "Buyer retry", 15 min). A budget event re-checking the owner's
    heap nodes against the item's best offer would replace the window.
-24. **A craft material party request is reviewed every 5 min.** `CraftMaterialParty.request` (`REVIEW_MS`, ~104,
-   ~113) keeps the request and its worker memo for 5 min of game time instead of keying them on what the review reads
-   (the material's remaining amount, the camps' forecasts, the source route reader); a time window stands in for
-   those events.
-
 23. **The forming verdict hears a member's wallet and time on the spot by its income error.**
    `PartyGoalPolicy.verdictInputs` re-judges a roster when a member's adena or `onSpotShare` moves beyond its
    `incomeError` (at least 3 %), not over an interval its answer stands on (as the earning hold's money weights):
@@ -245,3 +240,8 @@ Each area file ends with its open questions; none blocks the order above.
   a retry of X run twice. Nothing checks this beyond that rule.
 - `DatabaseStatements.prepare` treats SQL over 16 KB like DDL: not cached and it also clears the connection's whole
   statement cache, so every such call re-prepares all the hot statements after it; only the uncached part is meant.
+- `LiveRecorder.start()`'s catch does not close `this.heapWindow`: a start that fails after `observe()` leaves its
+  handle open, so the isolate's GC observer (and its pause counting) never stops.
+- `CraftMaterialParty.REVIEW_MS` and `PartyIncomeComparison.REVIEW_MS` (5 min) are read by no game code since the
+  material camp and the party income review key on their inputs: only tests use them as time offsets
+  (`test_craft_material_party`, `test_party_income_comparison`). Dead exports.

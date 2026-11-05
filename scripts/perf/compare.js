@@ -19,8 +19,11 @@ const round = (value, digits = 1) => Math.round(value * 10 ** digits) / 10 ** di
 // 2026-11-03) moved cores and busy shares 3-4 %, long turns a minute 10-16 %, heap at the end
 // 9-16 %, the sampled growth up to 50 % and the single longest turn 30-90 %. A change inside these
 // (with some margin) is marked "noise": it needs more runs, or a longer window, to mean anything.
-const NOISE = [[/% cpu/, 0.15], [/WAL|db queue|commit queue|page faults/, 0.3], [/cores|busy %/, 0.06], [/activation|cooldown/, 0.3], [/packets|KB/, 0.2], [/gc %/, 0.3], [/long turns\/min/, 0.2], [/heap end|rss/, 0.2],
+// Main's GC pauses a minute are not measured run to run yet: they take the gc % band.
+const NOISE = [[/% cpu/, 0.15], [/WAL|db queue|commit queue|page faults/, 0.3], [/cores|busy %/, 0.06], [/activation|cooldown/, 0.3], [/packets|KB/, 0.2], [/gc %/, 0.3], [/^main gc .*\/min$/, 0.3], [/long turns\/min/, 0.2], [/heap end|rss/, 0.2],
     [/sampled growth/, 0.6], [/longest|player .* max/, 1], [/player /, 0.3]];
+
+const GC_NAMES = { minor: 'scavenge', major: 'mark-compact', incremental: 'incremental marking', weak: 'weak callbacks' };
 
 function delta(label, a, b) {
     if (!Number.isFinite(a) || !Number.isFinite(b)) return '';
@@ -72,6 +75,15 @@ function rows(a, b) {
             ['swallowed failures', ca.failures?.swallowed, cb.failures?.swallowed],
             ['main heap after GC end MB', ca.memory?.mainHeapAfterGcMb?.end, cb.memory?.mainHeapAfterGcMb?.end],
             ['major page faults', ca.memory?.majorPageFaults, cb.memory?.majorPageFaults]);
+        // Main's GC pauses, every kind either run saw (a run that counted pauses and has none of a kind
+        // shows 0); the longest only for mark-compacts, the pause that holds a turn (a scavenge is a few ms).
+        const ga = ca.memory?.mainGc, gb = cb.memory?.mainGc;
+        for (const kind of new Set([...Object.keys(ga || {}), ...Object.keys(gb || {})])) {
+            const none = { perMin: 0, msPerMin: 0, maxMsSinceStart: 0 }, name = GC_NAMES[kind] || kind;
+            const x = ga && (ga[kind] || none), y = gb && (gb[kind] || none);
+            out.push([`main gc ${name}/min`, x?.perMin, y?.perMin], [`main gc ${name} ms/min`, x?.msPerMin, y?.msPerMin]);
+            if (kind === 'major') out.push([`main gc ${name} longest since start ms`, x?.maxMsSinceStart, y?.maxMsSinceStart]);
+        }
     }
     out.push(['main heap end MB', a.memory.mainHeapUsedMb?.end, b.memory.mainHeapUsedMb?.end],
         ['rss max MB', a.memory.rssMb?.max, b.memory.rssMb?.max]);
