@@ -49,7 +49,11 @@ async function nativeChecks() {
     seed.exec("INSERT INTO accounts(username,password) VALUES('bot_pop_background','fixture')");
     const insert = seed.prepare(`INSERT INTO characters(id,username,name,classId,race,level,maxHp,maxMp,sex,face,hair,hairColor,locX,locY,locZ)
         VALUES(?,'bot_pop_background',?,?,0,50,500,300,0,0,0,0,0,0,0)`);
-    for (let at = 0; at < 20; at++) insert.run(base + at, `Background${at}`, roles[at] ?? 3);
+    const life = seed.prepare("INSERT INTO bot_life_state(characterId,accountName,characterName,level,statsJson) VALUES(?,'bot_pop_background',?,50,'{}')");
+    for (let at = 0; at < 20; at++) {
+        insert.run(base + at, `Background${at}`, roles[at] ?? 3);
+        life.run(base + at, `Background${at}`);
+    }
     seed.close();
     Database.init();
     const reload = ClanService.reload;

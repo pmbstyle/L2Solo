@@ -140,6 +140,24 @@ try {
     assert.equal(onlyExport.selectedSourcesForItem(1864, A), null);
     assert.equal(onlyExport.relations('item', 1864).recipes.origin, null);
 
+    // Every clan worker plan message restores its spots into a new list: the
+    // same catalogue rows keep their index, and a clan's raid decoration only
+    // adds its boss rewards on top of the catalogue's (ClanSpotCatalog).
+    const camp = { id: 'camp', npcEntries: [{ selfId: raw[0].npcId, count: 2 }] };
+    const lair = { id: 'raid:10372', raidBoss: true, raidBossTemplateId: 10372, npcEntries: [{ selfId: 10372, count: 1 }] };
+    const campIndex = c.sourceIndexFor([camp]);
+    assert.equal(c.sourceIndexFor([camp]), campIndex, 'the same rows in a new list keep their index');
+    const decorated = { ...lair, raidRosterSize: 9, raidEstimate: { killMs: 1 } };
+    const withRaid = c.sourceIndexFor([camp, decorated]);
+    assert.deepEqual(withRaid.get(raidItem).filter(row => row.spot.raidBoss).map(row => row.spot), [decorated],
+        'a raid decoration is the source row of its boss rewards');
+    assert.deepEqual(withRaid.get(1864), campIndex.get(1864), 'the catalogue rows keep their sources under a raid overlay');
+    assert.equal(c.sourceIndexFor([camp, decorated]), withRaid, 'the same overlay in a new list keeps its index');
+    assert.equal(c.sourceIndexFor([camp]), campIndex, 'an overlay does not replace the catalogue index');
+    const redecorated = { ...lair, raidRosterSize: 9, raidEstimate: { killMs: 2 } };
+    assert.deepEqual(c.sourceIndexFor([camp, redecorated]).get(raidItem).filter(row => row.spot.raidBoss).map(row => row.spot),
+        [redecorated], 'a new decoration is a new source row');
+
     // Source labels and data readers must agree when a caller fills its array
     // in place. Check visible new sources/metadata, not just cache internals.
     const growingSpots = A.slice();

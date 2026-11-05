@@ -246,9 +246,21 @@ function economicPlan(planner, job, member, spots, warehouseRows, options) {
         : planner(member, spots, warehouseRows, base);
 }
 
+// A raid a full nine can take: its source row with the roster size and the
+// estimate. The worker returns only the decoration (raidDecoration); main
+// puts it back on its own source row (decoratedRaid).
+function decoratedRaid(spot, { raidRosterSize, raidEstimate }) {
+    return { ...spot, raidRosterSize, raidEstimate };
+}
+function raidDecoration({ id, raidRosterSize, raidEstimate }) {
+    return { id, raidRosterSize, raidEstimate };
+}
+
 // Called in the existing planning worker. RaidPolicy owns every composition,
 // gear and power decision; the second assessment enforces physical free slots.
-function prepare(clan, spots, prospects = [], previousGoal = null, readinessCache = new Map()) {
+// actualCache: the own roster's assessment per spot id, for one clan, spot list
+// and previous goal (the planning job's; prospects do not change it).
+function prepare(clan, spots, prospects = [], previousGoal = null, readinessCache = new Map(), actualCache = null) {
     if (clan.members.length > 40) return { raids: [], teams: {}, requests: [], retainedProspects: [] };
     const ownIds = new Set(clan.members.map(id));
     const free = Math.max(0, Rules.memberLimit(clan.level) - Number(clan.physicalMemberCount ?? clan.members.length));
@@ -262,9 +274,13 @@ function prepare(clan, spots, prospects = [], previousGoal = null, readinessCach
     for (const spot of spots) {
         if (!spot.raidBoss || spot.raidWorldAvailable === false) continue;
         const options = { desiredMembers: 9, readinessCache, preferredMemberIds: [...ownIds] };
-        const actual = Raid.assessment(availableClan, spot, previousGoal, options);
+        let actual = actualCache?.get(spot.id);
+        if (!actual) {
+            actual = Raid.assessment(availableClan, spot, previousGoal, options);
+            actualCache?.set(spot.id, actual);
+        }
         if (actual.ready && actual.eligible.length === 9) {
-            raids.push({ ...spot, raidRosterSize: 9, raidEstimate: actual.raidEstimate });
+            raids.push(decoratedRaid(spot, { raidRosterSize: 9, raidEstimate: actual.raidEstimate }));
             teams[spot.id] = { source: { id: spot.id, npcId: Number(spot.raidBossTemplateId), avgLevel: Number(spot.avgLevel),
                 raidInstanceId: spot.raidInstanceId || null, fingerprint: sourceFingerprint(spot) }, memberIds: actual.eligible.map(id),
                 rows: actual.eligible.map(proofRow), prospectiveIds: [], ownFingerprint: ownFingerprint(clan), actualReady: true,
@@ -279,7 +295,7 @@ function prepare(clan, spots, prospects = [], previousGoal = null, readinessCach
         const prospectiveIds = future.eligible.filter(member => !ownIds.has(id(member))).map(id);
         if (future.eligible.length > bestSize) { retained = prospectiveIds; bestSize = future.eligible.length; }
         if (future.ready && future.eligible.length === 9) {
-            raids.push({ ...spot, raidRosterSize: 9, raidEstimate: future.raidEstimate });
+            raids.push(decoratedRaid(spot, { raidRosterSize: 9, raidEstimate: future.raidEstimate }));
             teams[spot.id] = { source: { id: spot.id, npcId: Number(spot.raidBossTemplateId), avgLevel: Number(spot.avgLevel),
                 raidInstanceId: spot.raidInstanceId || null, fingerprint: sourceFingerprint(spot) },
                 memberIds: future.eligible.map(id), rows: future.eligible.map(proofRow), prospectiveIds,
@@ -364,5 +380,5 @@ function intakeContext(candidate, clan) {
 }
 
 module.exports = { memberFingerprint, ownFingerprint, ownJoinFingerprint, ownerSection, sourceFingerprint, goalFingerprint, scanKey, scanSources, scanKeyForSources, hash, neededKinds, proofRow, activeDemand,
-    prepare, buildDemand, fullRoster, intakeContext, recipeIds, economicRequirements, economicRequest, discoveryOptions,
+    prepare, decoratedRaid, raidDecoration, buildDemand, fullRoster, intakeContext, recipeIds, economicRequirements, economicRequest, discoveryOptions,
     conditionalOptions, economicTeam, economicCapable, economicSourceCurrent, economicPlan, ownedSpoilCapability, retainedEconomicProspects };

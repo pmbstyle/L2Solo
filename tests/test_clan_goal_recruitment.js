@@ -126,6 +126,20 @@ async function pureAndWorker(clan, prospects) {
             assert.deepEqual(actual, { ...prepared,
                 economicProspects: Demand.retainedEconomicProspects(prospects, [], prepared.retainedProspects) },
             'new actual RPC uses identical learned capabilities, native estimate and full shared proof');
+            // The next page of the same job: the clan, spots and sent
+            // prospects are not cloned again, and the answer is the same as
+            // one planned from scratch with the grown pool.
+            const pages = [], send = worker.send;
+            worker.send = (type, payload) => { pages.push(require('node:v8').serialize(payload).length); return send.call(worker, type, payload); };
+            try {
+                const grown = [...prospects, member(base + 300, 9)];
+                const next = await worker.prepareRaids({ jobKey, deadlineAt: Date.now() + 30000, clan, spots: [spot], prospects: grown }, Data, [spot]);
+                const fresh = Demand.prepare(clan, [spot], grown);
+                assert.deepEqual(next, { ...fresh, economicProspects: Demand.retainedEconomicProspects(grown, [], fresh.retainedProspects) },
+                    'a later page plans as if the whole pool were sent');
+                const first = require('node:v8').serialize({ clan, prospects: grown }).length;
+                assert(pages[0] < first / 3, `a later page sends only its new prospect (${pages[0]} of ${first} bytes)`);
+            } finally { worker.send = send; }
             if (process.argv.includes('--lifecycle-failure')) assert.fail('intentional caught fixture lifecycle failure');
         });
         assert.equal(worker.activeJob, null);

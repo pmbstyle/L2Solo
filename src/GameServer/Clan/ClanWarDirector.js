@@ -1,4 +1,5 @@
 'use strict';
+const { isDeepStrictEqual } = require('node:util');
 const Config = require('./ClanWarConfig');
 const Policy = require('./ClanWarPolicy');
 const Rules = require('./ClanWarRules');
@@ -177,6 +178,12 @@ class ClanWarDirector {
                     withdrawnAt: Math.max(at, Number(result.row?.updatedAt || 0)), incomingRevision: incoming?.revision || 0 };
                 plan.defeats = 0; plan.lossResponse = null;
             }
+        }
+        // A review that changed nothing but its next time is not written: the
+        // time is held in memory (after a restart the plan is reviewed at once).
+        if (previous.revision && isDeepStrictEqual({ ...plan, nextReviewAt: 0 }, { ...previous, nextReviewAt: 0 })) {
+            this.plans.set(clan.id, plan);
+            return;
         }
         await this.save(clan.id, plan);
     }
