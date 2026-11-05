@@ -59,6 +59,18 @@ for (const [visitEvery, hours] of [[[22, 4], 4], [[10, 0], noHistoryT], [[22, 30
     const own = Economy.basics({ ...warrior, stats: { ...warrior.stats, visitEvery } }, deps).stock('shots');
     assert.equal(own.targetHours, hours); assert.equal(own.target, Math.max(Math.ceil(use), Math.ceil(use * hours)));
 }
+{
+    // A bot reaching town with a bag full of loot buys its kit for the outing after the sale: the bag hours read
+    // the bag the sale leaves, against the 40-slot sale threshold the next loot ends that outing at (before, the
+    // loot carried in left no room and the kit covered half an hour).
+    const loot = { ...warrior, inventory: { ...warrior.inventory, 1: { selfId: 1, amount: 45, stackable: false } } };
+    const afterSale = Math.max(0, 40 - Floor.stateInventory(warrior, Data.items).slots - plannedKitSlots);
+    const saleT = !withShots.stacks ? 24 : Math.max(.5, Math.min(24, afterSale / withShots.stacks));
+    const own = Economy.basics(loot, deps).stock('shots');
+    assert.equal(own.targetHours, Math.min(2, saleT));
+    assert(own.targetHours > .5, 'the loot carried into town does not shorten the next outing to half an hour');
+    assert.equal(own.target, Math.max(Math.ceil(use), Math.ceil(use * own.targetHours)));
+}
 const cached = Economy.forState(warrior, deps);
 const changed = Economy.forState({ ...warrior, stats: { ...warrior.stats, visitEvery: [22, 4] } }, deps);
 assert.notEqual(changed, cached, 'a visit interval change invalidates the derived stock');

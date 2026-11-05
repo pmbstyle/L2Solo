@@ -1111,18 +1111,24 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
         // the exact physical free-slot formula; zero-use stock reserves none.
         const plannedSlots = Number(shotUse > 0 && !positive(state.inventory?.[shotItemId]?.amount) && !beginnerCurrent)
             + Number(potionUse + potionRest.use > 0 && !positive(state.inventory?.[potionItemId]?.amount));
-        let slotLimit = Floor.inventoryLimit(race);
-        const saleLimit = Disposition.soloSaleSlotLimit(state);
-        if (saleLimit !== null) {
-            // Stock cannot be its own reason for an earlier town visit. Keep
-            // the entire usable kit while checking known free saleable loot.
-            const keptAmounts = { [shotItemId]: positive(state.inventory?.[shotItemId]?.amount),
-                ...HealingPotionStock.keptAmounts(state, { targetAmount: Infinity }),
-                736: positive(state.inventory?.[736]?.amount) };
-            if (Disposition.saleCandidates(state, { keptAmounts, preparedReservations: deps.saleReservations,
-                presenceOnly: true })) slotLimit = Math.min(slotLimit, saleLimit);
+        // The kit is bought for the outing after the visit's sale: its bag is
+        // the one the sale leaves (the loot carried in is no part of it), so a
+        // bot arriving with a full bag of loot does not plan a half-hour outing.
+        // A solo seller's next outing ends at the half-full sale while it holds
+        // loot to sell; stock cannot be its own reason for an earlier visit, so
+        // the whole usable kit is kept while reading the loot.
+        let slotLimit = Floor.inventoryLimit(race), sold = 0;
+        const keptAmounts = { [shotItemId]: positive(state.inventory?.[shotItemId]?.amount),
+            ...HealingPotionStock.keptAmounts(state, { targetAmount: Infinity }),
+            736: positive(state.inventory?.[736]?.amount) };
+        // The cheap presence check first; the whole sale list (its slots) only for a bag that holds loot.
+        const sale = { keptAmounts, preparedReservations: deps.saleReservations };
+        if (Disposition.saleCandidates(state, { ...sale, presenceOnly: true })) {
+            const saleLimit = Disposition.soloSaleSlotLimit(state);
+            if (saleLimit !== null) slotLimit = Math.min(slotLimit, saleLimit);
+            sold = Disposition.saleSlots(state, Disposition.saleCandidates(state, { ...sale, unlimited: true }));
         }
-        const free = Math.max(0, slotLimit - Floor.stateInventory(state, Data.items).slots - plannedSlots);
+        const free = Math.max(0, slotLimit - (Floor.stateInventory(state, Data.items).slots - sold) - plannedSlots);
         bagHours = free === 0 ? 0 : spotTable.stacks > 0 ? free / spotTable.stacks : 24;
     }
     const Visits = invoke('GameServer/Bot/Economy/TownVisitInterval');

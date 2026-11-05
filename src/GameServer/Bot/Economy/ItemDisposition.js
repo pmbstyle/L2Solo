@@ -251,6 +251,22 @@ function liquidationSlotCount(state, predicate, candidates = saleCandidates(stat
     }, 0);
 }
 
+// The bag slots a sale of these candidates empties (the kit's bag hours,
+// EconomyContext.foundation): a stack only when it is sold whole, a piece of
+// gear one slot each, never a kind the last sale visit could not place
+// (stats.marketSellSeen: the next sale leaves it in the bag).
+function saleSlots(state, candidates) {
+    const tried = new Set(state.stats?.marketSellSeen?.items || []), sold = new Map();
+    for (const item of candidates) if (!tried.has(Number(item.selfId)))
+        sold.set(Number(item.selfId), (sold.get(Number(item.selfId)) || 0) + Number(item.count || 0));
+    let slots = 0;
+    for (const [selfId, count] of sold) {
+        const row = state.inventory?.[selfId], stackable = row?.stackable ?? templateFor(selfId)?.etc?.stackable;
+        slots += Array.isArray(row?.instances) || stackable === false ? count : count >= Number(row?.amount || 0) ? 1 : 0;
+    }
+    return slots;
+}
+
 function npcOnlySlotCount(state = {}, candidates) {
     return liquidationSlotCount(state, item => isNpcOnlyItem(item, undefined, state), candidates);
 }
@@ -985,6 +1001,7 @@ module.exports = {
     inventoryCleanupNeed,
     inventorySlotCount,
     soloSaleSlotLimit,
+    saleSlots,
     saleSeen,
     saleRetryHolds,
     useBoard,
