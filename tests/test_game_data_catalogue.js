@@ -115,17 +115,20 @@ try {
     growing.push(groups[0]);
     assert.notEqual(revisionOf(growing), beforeGrowth);
 
-    const drops = [{ id: 1 }], spoils = [], exportedSpawns = [{ id: 'E' }];
-    const data = { itemById: new Map([[1864, { sources: { drops, spoils } }]]),
-        mobById: new Map([[1, { spawnIds: ['E'] }]]), spawnById: new Map([['E', exportedSpawns[0]]]),
-        spawns: exportedSpawns, manifest: { generatedAt: 'fixture-export' } };
+    const exportedSpawns = [{ id: 'E' }];
+    const exportedSpawn = id => id === 'E' ? exportedSpawns[0] : null;
+    const data = { itemSources: { mobIds: (id, kind) => id === 1864 && kind === 'drops' ? [1] : [] },
+        records: { item: id => id === 1864 ? { id: 1864 } : null, npc: id => id === 1 ? { spawnIds: ['E'] } : null,
+            spawn: exportedSpawn, spawns: ids => (ids || []).map(exportedSpawn).filter(Boolean), allSpawns: () => exportedSpawns },
+        manifest: { generatedAt: 'fixture-export' } };
     const e = createExportedCatalogue(data, { nativeCatalogue: c });
     assert.equal(e.capabilities({ spots: A }).selectedSources, true);
     assert.equal(e.sourceIndexFor(A), plannerMap, 'injected export returns the existing native Map');
     const relation = e.relations('item', 1864, { spots: A });
     assert.equal(relation.sources.origin, 'exported');
     assert.equal(relation.sources.revision, 'fixture-export');
-    assert.equal(relation.sources.drops, drops);
+    assert.deepEqual(relation.sources.drops, [{ mobId: 1 }]);
+    assert.deepEqual(relation.sources.spoils, []);
     assert.equal(relation.recipes.origin, 'native');
     assert.equal(typeof relation.recipes.revision, 'number');
     assert.equal(relation.selectedSources.origin, 'native');

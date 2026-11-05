@@ -44,6 +44,19 @@ const NPC_PATH_REQUEST_TIMEOUT_MS = 10000;
 
 
 class Npc extends NpcModel {
+    // An NPC's combat and movement parts are built on first use: most of the
+    // world's NPCs never move, fight, cast or get hit while no player is near.
+    // Each getter returns the part the constructor built before (an NPC's own,
+    // the same object on every read); a setter replaces it (tests, pets).
+    // Reads that only look (hate, skill reuse, a walk to resume, timers to
+    // clear) build nothing: an unbuilt part is empty. `state` stays eager:
+    // every NPC scan near a hot actor reads it, players share its field.
+    #automation;
+    #attack;
+    #timer;
+    #skillReuseUntil;
+    #aggroList;
+
     static hateStats() {
         return { ...hateStats };
     }
@@ -56,12 +69,6 @@ class Npc extends NpcModel {
         // and dungeon floors). SpawnNpcs resolves terrain only for random
         // territory positions before constructing the NPC.
 
-        // Local
-        this.automation = new Automation();
-        this.automation.setRevHp(this.fetchRevHp());
-        this.automation.setRevMp(this.fetchRevMp());
-        this.attack = new Attack();
-
         this.setId(id);
         this.fillupVitals();
 
@@ -72,31 +79,84 @@ class Npc extends NpcModel {
             this.showLevelTitle();
         }
 
-        // TODO: Move this into actual GameServer timer
-        this.timer = {
-            combat: undefined,
-            combatStart: undefined,
-            hit: undefined,
-            hitEnd: undefined
-        };
-        this.skillReuseUntil = new Map();
         this.lastDebuffAt = 0;
-        this.aggroList = new Map();
         this.combatTarget = undefined;
     }
 
+    // The template's regeneration: no model write after construction changes
+    // revHp/revMp (a pet's stats set its automation's own after writing them).
+    get automation() {
+        if (this.#automation === undefined) {
+            this.#automation = new Automation();
+            this.#automation.setRevHp(this.fetchRevHp());
+            this.#automation.setRevMp(this.fetchRevMp());
+        }
+        return this.#automation;
+    }
+
+    set automation(value) {
+        this.#automation = value;
+    }
+
+    // The automation of an NPC that ever had one, never built by this read.
+    builtAutomation() {
+        return this.#automation;
+    }
+
+    get attack() {
+        if (this.#attack === undefined) this.#attack = new Attack();
+        return this.#attack;
+    }
+
+    set attack(value) {
+        this.#attack = value;
+    }
+
+    // TODO: Move this into actual GameServer timer
+    get timer() {
+        if (this.#timer === undefined) {
+            this.#timer = { combat: undefined, combatStart: undefined, hit: undefined, hitEnd: undefined };
+        }
+        return this.#timer;
+    }
+
+    set timer(value) {
+        this.#timer = value;
+    }
+
+    get skillReuseUntil() {
+        if (this.#skillReuseUntil === undefined) this.#skillReuseUntil = new Map();
+        return this.#skillReuseUntil;
+    }
+
+    set skillReuseUntil(value) {
+        this.#skillReuseUntil = value;
+    }
+
+    get aggroList() {
+        if (this.#aggroList === undefined) this.#aggroList = new Map();
+        return this.#aggroList;
+    }
+
+    set aggroList(value) {
+        this.#aggroList = value;
+    }
+
     destructor(session) {
-        clearInterval(this.timer.babyHeal);
-        clearInterval(this.timer.followOwner);
-        this.timer.followOwner = undefined;
-        clearTimeout(this.timer.summonResume);
-        this.timer.summonResume = undefined;
-        clearInterval(this.timer.summonLifetime);
-        this.timer.summonLifetime = undefined;
-        clearInterval(this.timer.petFeed);
-        this.timer.petFeed = undefined;
-        this.automation.stopReplenish();
-        this.attack.clearTimers?.();
+        const timer = this.#timer;
+        if (timer) {
+            clearInterval(timer.babyHeal);
+            clearInterval(timer.followOwner);
+            timer.followOwner = undefined;
+            clearTimeout(timer.summonResume);
+            timer.summonResume = undefined;
+            clearInterval(timer.summonLifetime);
+            timer.summonLifetime = undefined;
+            clearInterval(timer.petFeed);
+            timer.petFeed = undefined;
+        }
+        this.#automation?.stopReplenish();
+        this.#attack?.clearTimers?.();
         // Despawn without death (quest NPC, minion, day/night, unsummon) must
         // not leave effect timers that later refresh a removed NPC.
         EffectTicker.clearAll(this);
@@ -188,10 +248,12 @@ class Npc extends NpcModel {
     }
 
     fetchMostHated() {
-        for (const [actorId, entry] of this.aggroList.entries()) {
-            if (!this.isValidAggroTarget(entry?.actor)) this.aggroList.delete(actorId);
+        const aggroList = this.#aggroList;
+        if (!aggroList) return null;
+        for (const [actorId, entry] of aggroList.entries()) {
+            if (!this.isValidAggroTarget(entry?.actor)) aggroList.delete(actorId);
         }
-        return NpcHate.mostHated(this.aggroList.values())?.actor || null;
+        return NpcHate.mostHated(aggroList.values())?.actor || null;
     }
 
     fetchCombatTarget() {
@@ -229,7 +291,7 @@ class Npc extends NpcModel {
 
     getHating(actor) {
         const actorId = Number(actor?.fetchId?.());
-        return this.aggroList.get(actorId)?.hate || 0;
+        return this.#aggroList?.get(actorId)?.hate || 0;
     }
 
     reduceAggro(session, actor, amount) {
@@ -274,7 +336,7 @@ class Npc extends NpcModel {
     }
 
     clearAggroList() {
-        this.aggroList.clear();
+        this.#aggroList?.clear();
         this.combatTarget = undefined;
         invoke('GameServer/Bot/AI/BotMobCompetition').reset(this);
     }
@@ -746,7 +808,7 @@ class Npc extends NpcModel {
     }
 
     canUseSkill(skill, now = Date.now()) {
-        return (this.skillReuseUntil.get(skill.fetchSelfId()) || 0) <= now;
+        return (this.#skillReuseUntil?.get(skill.fetchSelfId()) || 0) <= now;
     }
 
     markSkillReuse(skill, now = Date.now()) {
@@ -789,14 +851,17 @@ class Npc extends NpcModel {
     abortCombatState(session, { preserveAggro = false } = {}) {
         delete this.confusionTarget;
         const wasMoving = this.state.inMotion();
-        clearTimeout(this.timer.combatStart);
-        this.timer.combatStart = undefined;
-        clearInterval(this.timer.combat);
-        this.timer.combat = undefined;
-        clearTimeout(this.timer.hit);
-        this.timer.hit = undefined;
-        clearTimeout(this.timer.hitEnd);
-        this.timer.hitEnd = undefined;
+        const timer = this.#timer;
+        if (timer) {
+            clearTimeout(timer.combatStart);
+            timer.combatStart = undefined;
+            clearInterval(timer.combat);
+            timer.combat = undefined;
+            clearTimeout(timer.hit);
+            timer.hit = undefined;
+            clearTimeout(timer.hitEnd);
+            timer.hitEnd = undefined;
+        }
         PathfindingWorkerPool.cancel(`npc:${this.fetchId()}`);
 
         const previousTargetId = Number(this.fetchDestId?.() || 0);

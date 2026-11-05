@@ -770,6 +770,17 @@ function production(spotId, role, level, shots = true) {
     return Number.isNaN(held) ? null : held;
 }
 
+// value()'s kills per hour without pricing them: no reward rows and no memo
+// row held, for a reader of the kill rate alone (FirstPrice's hunt over every
+// spot of an item, main too: its value() rows held ~18-25 MB of main's heap).
+// Null where value() is null.
+function kills(spotId, role, level, shots = true) {
+    const t = load();
+    refreshCatalog(ProgressionRates.profile());
+    const s = spotSlot(t, spotId), r = roleSlot(t, role);
+    return s === undefined || r === undefined ? null : combat(t, s, r, level, shots)?.kills ?? null;
+}
+
 // The share of its row's kills one of `hunters` bots on a spot keeps: the
 // mobs per hour the spawns it may fight give back (production, value()'s)
 // over the hunters, over its kills (an hour's), at most 1; 1 without
@@ -1029,4 +1040,4 @@ function useFile(next = DEFAULT_FILE) {
     clearIncomeBases();
 }
 
-module.exports = { value, cycle, production, huntShare, geodataProfile, kitSurface, roleClass, lineClass, roleFor, roleSpoilLevel, spotLevel, referenceLevel, roles, revision, best, rankedIncome, rankedSpotIds, useFile, useSpots, expGapFactor, cacheStats, DEFAULT_FILE };
+module.exports = { value, kills, cycle, production, huntShare, geodataProfile, kitSurface, roleClass, lineClass, roleFor, roleSpoilLevel, spotLevel, referenceLevel, roles, revision, best, rankedIncome, rankedSpotIds, useFile, useSpots, expGapFactor, cacheStats, DEFAULT_FILE };

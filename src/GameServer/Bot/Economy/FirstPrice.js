@@ -60,9 +60,9 @@ function hunt(spotId, roles) {
     let count = 0;
     for (const role of roles) {
         const level = SpotValueTable.referenceLevel(spotId, role, true);
-        const hour = level === null ? null : SpotValueTable.value(spotId, role, level, true);
-        if (!hour) continue;
-        kills += hour.kills;
+        const perHour = level === null ? null : SpotValueTable.kills(spotId, role, level, true);
+        if (!perHour) continue;
+        kills += perHour;
         levels += level;
         count += 1;
     }
@@ -222,23 +222,44 @@ function firstPrice(itemId, { spots = [], timestamp = Date.now() } = {}) {
 }
 
 // The first price for the market's readers (PriceBelief) and of a recipe's
-// materials, kept an hour of this thread's clock: it moves only with the
-// static base hunting income. A price whose recipe chain was cut at MAX_CRAFT_DEPTH
-// (deep inside another item's materials) is used there but not kept: the
-// item's own price, asked at the top, prices its whole chain.
-const CACHE_MS = 60 * 60 * 1000;
+// materials, kept until one of its inputs is loaded again. Its inputs are game
+// data, each read here by its revision: the acquisition catalogue (Sources),
+// the spot table with its spot catalogue and rates (SpotValueTable.revision),
+// the spot list's source index, the NPC price table (npcPriceRows, the same
+// rows the workers get) and the rate profile. The hour it prices is the base
+// hunting income (huntIncome with no samples: a function of those tables
+// alone, not of the clock). A price whose recipe chain was cut at
+// MAX_CRAFT_DEPTH deep inside another item's materials is kept apart by its
+// depth: the item's own price, asked at the top, prices its whole chain.
 const cache = new Map();
+const cutCache = new Map();
+let held = { sources: null, table: null, index: null, npcRows: null, rates: null };
+function dropMovedInputs(spots) {
+    const sources = Sources.revision(), table = SpotValueTable.revision();
+    const index = GearAcquisitionPlanner.sourceIndexFor(spots);
+    const npcRows = invoke('GameServer/Bot/Economy/BotMarketPricing').npcPriceRows(), rates = ProgressionRates.profile();
+    if (held.sources === sources && held.table === table && held.index === index && held.npcRows === npcRows
+        && held.rates === rates) return;
+    held = { sources, table, index, npcRows, rates };
+    cache.clear();
+    cutCache.clear();
+}
 function cachedFirstPrice(itemId, options = {}, depth = 0) {
     const id = Number(itemId);
+    const spots = options.spots || [];
+    if (depth === 0) dropMovedInputs(spots);
     // priceOf admits the source; an item without one is kept as a null price.
-    const kept = cache.get(id);
-    const clock = Date.now();
-    if (kept && clock - kept.at < CACHE_MS) return kept.value;
-    const own = { spots: options.spots || [], timestamp: Number(options.timestamp || clock), cut: false };
+    const kept = cache.get(id) || (depth > 0 ? cutCache.get(id * 8 + depth) : undefined);
+    if (kept) {
+        if (kept.cut) options.cut = true;
+        return kept.value;
+    }
+    const own = { spots, timestamp: Number(options.timestamp || Date.now()), cut: false };
     const value = priceOf(id, own, depth)?.price ?? null;
     if (own.cut) options.cut = true;
-    else cache.set(id, { at: clock, value });
+    if (own.cut && depth > 0) cutCache.set(id * 8 + depth, { value, cut: true });
+    else cache.set(id, { value, cut: own.cut });
     return value;
 }
 
-module.exports = { firstPrice, cachedFirstPrice, resetCache() { cache.clear(); } };
+module.exports = { firstPrice, cachedFirstPrice, resetCache() { cache.clear(); cutCache.clear(); } };
