@@ -1329,7 +1329,7 @@ function linkCount(link, outcome) {
     else { row[what]++; if (why === 'mask-only') row.maskOnly++; else if (why === 'key-only') row.keyOnly++; }
 }
 function linkStats() {
-    const out = { search: IncomeRoute.searchTotals() };
+    const out = {};
     for (const [link, row] of Object.entries(linkTotals)) out[link] = { ...row };
     return out;
 }

@@ -2897,7 +2897,8 @@ class ColdSimulationKernel {
             sourceShotFlips: invoke('GameServer/Bot/AI/GearAcquisitionPlanner').sourceShotFlipCount(), // lazy: the kernel's boot order
             quietGearBuilds: invoke('GameServer/Bot/Economy/EconomyContext').quietGearBuildCount(), // lazy: the kernel's boot order
             buildDoors: invoke('GameServer/Bot/Economy/EconomyContext').buildDoors(), // lazy: the kernel's boot order
-            situations: invoke('GameServer/Bot/Situations').counts(), // lazy: the kernel's boot order
+            // lazy: the kernel's boot order. search: the earning spot's searches and their ms (diagnostics off too).
+            situations: { ...invoke('GameServer/Bot/Situations').counts(), search: invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').searchTotals() },
             maxInFlight: this.maxInFlight,
             maxAtomicPartySize: this.maxAtomicPartySize,
             paused: this.paused,

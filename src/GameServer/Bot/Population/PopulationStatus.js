@@ -196,9 +196,10 @@ const PopulationStatus = {
     },
 
     // situations=raised:<name@place>:<n>,...;woke:<decision><name>:<n>,...;decided:<decision>:<taken>/<served>,
-    // <decision>:unwoken:<caller>:<n>,...[;over:<n>]: the worker's situation counts since it started
+    // <decision>:unwoken:<caller>:<n>,...[;search:<n>/<ms>ms][;over:<n>]: the worker's situation counts since it started
     // (Situations.counts), diagnostics off too, most first. unwoken: a decision taken with no woken bit, by its
-    // caller (the build runs on its sections until situations step 4); over: keys past the maps' cap. main: main's
+    // caller (the build runs on its sections until situations step 4); search: the earning spot's searches and their
+    // time (EquipmentIncomeRoute.searchTotals); over: keys past the maps' cap. main: main's
     // own counts (its raises on far rows, BotLifeState.raiseOnRow), summed in.
     situationsText(worker, main) {
         if (!worker) return '';
@@ -213,19 +214,19 @@ const PopulationStatus = {
         const unwoken = Object.entries(c.unwoken || {}).sort((a, b) => b[1] - a[1])
             .map(([key, n]) => `${key.slice(0, key.indexOf(':'))}:unwoken:${key.slice(key.indexOf(':') + 1)}:${n}`);
         return ` situations=raised:${top(c.raised)};woke:${top(c.woke)};decided:${[...decided, ...unwoken].join(',')}`
+            + (worker.search ? `;search:${worker.search.count}/${Math.round(worker.search.ms)}ms` : '')
             + (c.overflow ? `;over:${c.overflow}` : '');
     },
 
-    // links=<link>:<rebuilt>/<kept>[,mask<n>,key<n>],new<n>;...;search=<n>/<ms>ms: the decision links since the
+    // links=<link>:<rebuilt>/<kept>[,mask<n>,key<n>],new<n>;...: the decision links since the
     // worker started (EconomyContext buildShadow, workshopShadow; developerDiagnostics only): rebuilt/kept as the
     // link's key decides (a link still on masks: as it would decide); mask (those only): today's mask rebuilt what the
     // key keeps; key: the key would rebuild what the mask keeps (a possibly stale answer); new: answers with nothing
-    // to compare; search: the earning spot searches and their time.
+    // to compare.
     linksText(links) {
         if (!links) return '';
-        const rows = Object.entries(links).filter(([link]) => link !== 'search').map(([link, r]) =>
+        const rows = Object.entries(links).map(([link, r]) =>
             `${link}:${r.rebuilt}/${r.kept}${r.maskOnly === undefined ? '' : `,mask${r.maskOnly},key${r.keyOnly}`},new${r.unjudged}`);
-        if (links.search) rows.push(`search=${links.search.searches}/${Math.round(links.search.ms)}ms`);
         return ` links=${rows.join(';')}`;
     },
 
