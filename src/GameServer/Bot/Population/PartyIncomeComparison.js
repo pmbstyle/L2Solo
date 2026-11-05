@@ -293,7 +293,7 @@ function compare(state, peers, options = {}) {
         : options.party?.stats?.agreement;
     const aim = goalOf(state, members, options.objective, agreement), { materialGoal, goal } = aim;
     const cash = materialParty ? materialGoal?.materialCash ?? null : positive(focus?.[2]) || null;
-    const spendable = Math.max(0, positive(state.adena) - positive(Packet.survivalReserve(state.stats?.money)));
+    const spendable = Math.max(0, positive(state.adena) - positive(Packet.refillReserve(state.stats?.money)));
     const help = options.party?.stats?.agreement?.help || options.objective?.helpDeal;
     const payer = Number(help?.payerId) === Number(state.characterId);
     const fee = help?.status === 'funded' ? 0 : payer ? positive(help?.fee) : 0;

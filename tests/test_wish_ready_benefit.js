@@ -39,7 +39,7 @@ near(row(labour, 'mid').readyHours, 3, 'labour hours with no shortfall');
 near(row(labour, 'mid').valueHours, 0.3 * 37, 'labour delays the benefit');
 const trip = build('trip', [gear('mid', 0.3, 1e6, { quoted: true, town: 'Giran', tripHours: 0.5, tripFees: 0 })]);
 near(row(trip, 'mid').readyHours, 0.5, 'trip hours');
-const reserve = build('reserve', [gear('mid', 0.3, 1e6)], { survivalReserve: 1.5e6 });
+const reserve = build('reserve', [gear('mid', 0.3, 1e6)], { refillReserve: 1.5e6 });
 near(row(reserve, 'mid').readyHours, 1, 'spendable cash excludes the survival reserve');
 done('path hours, trips and reserve in the ready delay');
 

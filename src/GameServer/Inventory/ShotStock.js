@@ -539,7 +539,7 @@ function restockPlan(value, options = {}) {
     // the wish's rank at the bot's own estimate (EconomyContext.visitStock).
     const { row: stock, estimate } = Economy.visitStock(context, options.kit, 'shots');
     const targetAmount = Math.max(0, Number(options.targetAmount ?? stock.target) || 0);
-    const reserve = context.survivalReserve;
+    const reserve = context.refillReserve;
     const unitPrice = Number(options.unitPrice ?? invoke('GameServer/Bot/Economy/StaticMerchantPricing')
         .botPurchasePrice(plan.selfId));
     const npcPrice = Number.isFinite(unitPrice) && unitPrice > 0 ? unitPrice : 0;

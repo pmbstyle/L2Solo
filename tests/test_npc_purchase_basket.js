@@ -278,7 +278,7 @@ async function run() {
     const potionPlan = (value, context) => Potions.restockPlan(value, { unitPrice: potionPrice, ...withContext(context) });
     const scrollPlan = (value, context) => Scrolls.restockPlan(value, { unitPrice: scrollPrice, ...withContext(context) });
     const kept = Economy.keptKit(state), built = Economy.basics(state);
-    assert.equal(kept.survivalReserve, built.survivalReserve, 'the same survival reserve');
+    assert.equal(kept.refillReserve, built.refillReserve, 'the same survival reserve');
     for (const id of [potionId, shotId, 736]) assert.equal(kept.kitCost(id), built.kitCost(id), `the same kit cost of ${id}`);
     assert.deepEqual(shotPlan(state), shotPlan(state, built), 'the same shot restock');
     assert.deepEqual(potionPlan(state), potionPlan(state, built), 'the same potion restock');

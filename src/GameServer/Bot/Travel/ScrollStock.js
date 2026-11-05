@@ -36,7 +36,7 @@ function restockPlan(value, options = {}) {
     const adena = Math.max(0, Number(options.adena ?? value?.adena
         ?? value?.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() ?? 0));
     const unitPrice = Math.max(0, Number(options.unitPrice) || 0);
-    const reserve = Math.max(0, Number(options.reserve ?? context.survivalReserve) || 0);
+    const reserve = Math.max(0, Number(options.reserve ?? context.refillReserve) || 0);
     const desired = Math.max(0, stock.target - currentAmount);
     const wish = context.network?.queue?.find(row => Number(row.object?.itemId) === Number(SCROLL.selfId));
     const fundedState = context.statsPacket ? { ...state, stats: { ...state.stats, money: context.statsPacket.money } } : state;

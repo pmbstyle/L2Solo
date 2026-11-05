@@ -268,7 +268,7 @@ new Function('require', 'invoke', 'module', 'exports', fs.readFileSync(path.join
         : name.endsWith('Fnv1a') ? { fnv1a32: () => 1 }
         : name.endsWith('ColdEconomyDecision') ? ColdDecision : (() => { throw Error(name); })(),
     name => name.endsWith('SurvivalFloor') ? { forState: () => null }
-        : name.endsWith('EconomyContext') ? { survivalReserve: () => 0 }
+        : name.endsWith('EconomyContext') ? { refillReserve: () => 0 }
         : name.endsWith('PurchaseFunding') ? { rootRatio: () => 0, leafRatio: () => 0 }
         : name.endsWith('DataCache') ? { items: [] }
         : name.endsWith('WishNetwork') ? invoke('GameServer/Bot/Economy/WishNetwork') : (() => { throw Error(name); })(),

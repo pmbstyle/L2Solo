@@ -162,21 +162,21 @@ async function run() {
             'a poor quiet build drops nothing the bot follows');
         Economy.forget(rich.characterId);
     }
-    const reserve = warriorContext.survivalReserve, warriorStock = warriorContext.stock('shots');
+    const reserve = warriorContext.refillReserve, warriorStock = warriorContext.stock('shots');
     assert(reserve >= warriorStock.usePerHour * warriorStock.survivalPrice,
         'the protected wallet covers one hunting hour at the merchant’s price');
     assert(reserve < warrior.adena, 'this native fixture still has money beyond its mandatory kit');
     assert.equal(reserve, warriorContext.kitCost(warriorStock.itemId)
         + warriorContext.kitCost(warriorContext.stock('potions').itemId) + warriorContext.kitCost(736));
     const escapeBag = amount => ({ ...warrior, inventory: { ...warrior.inventory, 736: { selfId: 736, amount } } });
-    assert.equal(Economy.basics(escapeBag(1), kitDeps).survivalReserve, reserve - warriorContext.kitCost(736));
-    assert.equal(Economy.basics(escapeBag(2), kitDeps).survivalReserve, Economy.basics(escapeBag(1), kitDeps).survivalReserve);
+    assert.equal(Economy.basics(escapeBag(1), kitDeps).refillReserve, reserve - warriorContext.kitCost(736));
+    assert.equal(Economy.basics(escapeBag(2), kitDeps).refillReserve, Economy.basics(escapeBag(1), kitDeps).refillReserve);
     // One hour of the table's shot use (T43).
     assert(warriorContext.purchaseBudget(warriorStock.itemId) >= Math.floor(warriorStock.usePerHour) * warriorStock.unitPrice);
     assert(warriorContext.purchaseBudget(warriorStock.itemId) <= warrior.adena);
     assert(warriorContext.purchaseBudget(1) <= warrior.adena - reserve);
     assert(Packet.hasMoney(warriorContext.statsPacket.money) && Packet.fundedRows(warriorContext.statsPacket.money) <= Packet.MONEY_ROWS);
-    assert(warriorContext.statsPacket.money.every(Number.isFinite) && Packet.survivalReserve(warriorContext.statsPacket.money) > 0);
+    assert(warriorContext.statsPacket.money.every(Number.isFinite) && Packet.refillReserve(warriorContext.statsPacket.money) > 0);
     const Profit = invoke('GameServer/Bot/Economy/CraftProfitPolicy');
     for (const wallet of [0, 20000, 200000, 1000000, 50000000]) {
         const state = { ...warrior, adena: wallet };
@@ -201,7 +201,7 @@ async function run() {
         [warriorStock.itemId]: { selfId: warriorStock.itemId, amount: Math.ceil(warriorStock.usePerHour) },
         [warriorPotions.itemId]: { selfId: warriorPotions.itemId, amount: warriorPotions.survivalTarget } } };
     assert.equal(Economy.basics(stocked, kitDeps).kitCost(warriorStock.itemId), 0);
-    assert.equal(Economy.basics(stocked, kitDeps).survivalReserve, warriorContext.kitCost(736),
+    assert.equal(Economy.basics(stocked, kitDeps).refillReserve, warriorContext.kitCost(736),
         'own one-hour shot stock releases its wallet reserve and retains the escape scroll');
     const criminal = Economy.basics({ ...warrior, stats: { ...warrior.stats, karma: 100 } }, kitDeps);
     assert.equal(criminal.kitCost(736), 0);
@@ -599,7 +599,7 @@ async function run() {
                 published, published.activity, { timestamp: T });
             assert.equal(card?.card.activity?.activity, 'selling', 'fixture: the card holds the selling leaf');
             const economyOf = economy => ({ shots: economy.stock('shots'), potions: economy.stock('potions'),
-                scrolls: economy.stock('scrolls'), hourAdena: economy.hourAdena, reserve: economy.survivalReserve,
+                scrolls: economy.stock('scrolls'), hourAdena: economy.hourAdena, reserve: economy.refillReserve,
                 rates: economy.rates, hunt: economy.hunt, deathHours: economy.deathHours, riskWeight: economy.riskWeight,
                 route: economy.preparedIncomeRoute && { ...economy.preparedIncomeRoute, state: null } });
             let searched = 0;
@@ -1050,11 +1050,11 @@ async function run() {
         const rated = { ...base, stats: { ...base.stats, kitRates: context.statsPacket.kitRates } };
         assert.equal(Shot.keptAmounts(rated)[stock.itemId], stock.target);
         assert.equal(invoke('GameServer/Bot/Economy/PurchaseFunding').operatingReserve({ level: 78, adena: 1e9 }),
-            Economy.basics({ level: 78, adena: 1e9 }).survivalReserve, 'a bot without a packet reserves its kit, not a share of its wallet');
+            Economy.basics({ level: 78, adena: 1e9 }).refillReserve, 'a bot without a packet reserves its kit, not a share of its wallet');
         const plan = Shot.restockPlan({ ...rated, adena: 1e8 }, { unitPrice: 10 });
         assert.equal(plan.targetAmount, stock.target);
         assert(plan.amount >= stock.survivalMissing && plan.amount <= stock.target, 'the floor permits survival and only worthwhile extra stock');
-        assert.equal(plan.reserve, context.survivalReserve);
+        assert.equal(plan.reserve, context.refillReserve);
         const potion = context.stock('potions');
         assert(invoke('GameServer/Bot/AI/HealingPotionStock').targetAmountFor(rated) >= potion.target,
             'the sale keeps at least the build\'s potion target (the wallet bounds a purchase, not what is kept)');
@@ -1196,7 +1196,7 @@ async function run() {
                 trip_rows: [bot, { trip: Trip.preparedReader(Trip.towns.map(() => [true, 0.5, 100]), { hourAdena: 100 }) }],
                 death_hours: [bot, {}, { deathHours: built.deathHours * 2 + 1 }],
                 consumable_price: [bot, {}, { price: id => 3 * built.price(id) + 1 }],
-                money_weight: [{ ...bot, stats: { ...bot.stats, money: Packet.money({ hourAdena: 5000, moneyPrice: 3, survivalReserve: 0, firstUnfundedPrice: 0 }) } }],
+                money_weight: [{ ...bot, stats: { ...bot.stats, money: Packet.money({ hourAdena: 5000, moneyPrice: 3, refillReserve: 0, firstUnfundedPrice: 0 }) } }],
                 samples: [{ ...bot, stats: { ...bot.stats, huntEfficiency: Hunt.record(bot, { spotId: far.id, timestamp: T, cycleMs: 30000, adena: 900, costs: 50, exp: 300, kills: 10 }) } }],
                 risk: [{ ...bot, stats: { ...bot.stats, frustration: 1 } }],
                 spot_risk: [{ ...bot, stats: { ...bot.stats, spotRisk: { spotId: near.id, windowFights: 10, windowDeaths: 5 } } }],

@@ -180,7 +180,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
     const readyTrip = Array.isArray(readyRows) && readyRows.length === EconomicTrip.towns.length
         ? EconomicTrip.preparedReader(readyRows, { hourAdena: Number(Packet.hourAdena(packet)) }) : null;
     const context = { timestamp, state, insideContext: true, hourAdena: Number(Packet.hourAdena(packet)), moneyPrice: Number(Packet.moneyPrice(packet)),
-        survivalReserve: Number(Packet.survivalReserve(packet)), ...craftLabour(state, timestamp),
+        refillReserve: Number(Packet.refillReserve(packet)), ...craftLabour(state, timestamp),
         independentPrice: id => ownStock.get(Number(id))?.unitValue ?? NaN, worth: id => ownStock.get(Number(id))?.unitValue ?? NaN };
     const ensureTrip = function* (town) {
         const index = townOrdinal.get(town);

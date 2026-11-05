@@ -6,7 +6,7 @@
 // through here: their slots and sentinels live only in this file.
 //
 // stats.money, the money packet (PurchaseFunding.packetFor writes it):
-//   [hourAdena, moneyPrice (hours per Adena), survivalReserve, firstUnfundedPrice (the gap's cash, 0 without one),
+//   [hourAdena, moneyPrice (hours per Adena), refillReserve, firstUnfundedPrice (the gap's cash, 0 without one),
 //    then one (ratio, cumulative, itemId) row per funded queue wish, at most MONEY_ROWS; with more funded
 //    wishes the last row merges the tail and carries itemId 0 (FX-E3)].
 // stats.kitRates, the build's kit rates (EconomyContext.kitRates writes it; EconomyContext.kitReader
@@ -24,8 +24,8 @@
 const HOUR = 0, PRICE = 1, RESERVE = 2, GAP = 3, QUEUE = 4, ROW = 3;
 // The funded rows the money packet keeps (its byte bound).
 const MONEY_ROWS = 8;
-function money({ hourAdena, moneyPrice, survivalReserve, firstUnfundedPrice }) {
-    return [hourAdena, moneyPrice, survivalReserve, firstUnfundedPrice];
+function money({ hourAdena, moneyPrice, refillReserve, firstUnfundedPrice }) {
+    return [hourAdena, moneyPrice, refillReserve, firstUnfundedPrice];
 }
 // Appends a funded wish's row; a packet already holding `rows` rows has its
 // last one replaced (the merged tail).
@@ -39,7 +39,7 @@ const hasMoney = packet => Array.isArray(packet) && packet.length >= QUEUE;
 const slot = (packet, at) => Array.isArray(packet) ? packet[at] : undefined;
 const hourAdena = packet => slot(packet, HOUR);
 const moneyPrice = packet => slot(packet, PRICE);
-const survivalReserve = packet => slot(packet, RESERVE);
+const refillReserve = packet => slot(packet, RESERVE);
 const firstUnfundedPrice = packet => slot(packet, GAP);
 // The packet's complete funded rows, in queue order.
 const fundedRows = packet => Array.isArray(packet) ? Math.max(0, Math.floor((packet.length - QUEUE) / ROW)) : 0;
@@ -94,6 +94,6 @@ const dangerPrice = ({ deathHours, riskWeight }) => [deathHours, riskWeight];
 const deathHours = row => slot(row, 0);
 const riskWeight = row => slot(row, 1);
 
-module.exports = { MONEY_ROWS, money, addFunded, hasMoney, hourAdena, moneyPrice, survivalReserve, firstUnfundedPrice,
+module.exports = { MONEY_ROWS, money, addFunded, hasMoney, hourAdena, moneyPrice, refillReserve, firstUnfundedPrice,
     fundedRows, fundedRatio, fundedCumulative, fundedItem, setFundedCumulative,
     kitRates, roundRates, roundRate: significant, ratesOf, lineOf, outingHours, gapHorizonHours, dangerPrice, deathHours, riskWeight };

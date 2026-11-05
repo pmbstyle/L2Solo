@@ -33,17 +33,17 @@ const Needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
 const Floor = invoke('GameServer/Bot/Population/SurvivalFloor');
 const originalFloor = Floor.forState;
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
-const originalReserve = Economy.survivalReserve;
+const originalReserve = Economy.refillReserve;
 try {
     Floor.forState = () => null;
-    Economy.survivalReserve = () => 0;
+    Economy.refillReserve = () => 0;
     const leaf = { activity: 'shopping', itemId: 1835, amount: 10, valueHours: 1,
         price: 100, town: 'Giran', heldAtDecision: 0 };
     const remaining = Needs.evaluate({ characterId: 9911, inventory: { 1835: { amount: 2 } } },
         { errand: null, economy: { inputHash: 1, network: { activity: leaf } }, board: { heads: () => [] }, npcOffersFor: () => [] });
     assert.equal(remaining[0].target.amount, 8);
     assert.equal(remaining[0].plan.valueHours, 0.8, 'already acquired units cannot subsidise another trip for the remainder');
-} finally { Floor.forState = originalFloor; Economy.survivalReserve = originalReserve; }
+} finally { Floor.forState = originalFloor; Economy.refillReserve = originalReserve; }
 
 const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
 const Remote = invoke('GameServer/Bot/Economy/BotAfkMarketService');

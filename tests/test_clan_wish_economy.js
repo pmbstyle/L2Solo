@@ -33,7 +33,7 @@ async function seedBot(id, clanId, adena = 10000) {
     // This clan fixture has no personal discretionary wishes. Publish that
     // existing money-queue state explicitly; native payments require its
     // authoritative packet even when a treasury supplies most of the price.
-    const reserve = invoke('GameServer/Bot/Economy/EconomyContext').survivalReserve({
+    const reserve = invoke('GameServer/Bot/Economy/EconomyContext').refillReserve({
         characterId: id, level: 40, adena, inventory, stats: { classId: 1, clanId } });
     const money = invoke('GameServer/Bot/Economy/PurchaseFunding').packetFor({ queue: [], moneyPrice: 0, gap: null }, 0, reserve);
     await Database.execute([`INSERT INTO bot_life_state(characterId,accountName,characterName,level,exp,sp,hp,maxHp,mp,maxMp,adena,phase,activity,currentRegion,

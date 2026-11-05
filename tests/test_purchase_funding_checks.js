@@ -79,10 +79,10 @@ assert.deepEqual(protectedPaid, [1000, .001, 10, 77, .2, 80, 999, .1, 80, 2509, 
 
 // The saved and messaged stats packet arrays keep their slots (StatsPacket owns them).
 const Packet = require('../src/GameServer/Bot/Economy/StatsPacket');
-const written = Packet.money({ hourAdena: 1000, moneyPrice: .001, survivalReserve: 10, firstUnfundedPrice: 77 });
+const written = Packet.money({ hourAdena: 1000, moneyPrice: .001, refillReserve: 10, firstUnfundedPrice: 77 });
 Packet.addFunded(written, .2, 80, 999, 2); Packet.addFunded(written, .1, 180, 2509, 2); Packet.addFunded(written, .05, 280, 0, 2);
 assert.deepEqual(written, [1000, .001, 10, 77, .2, 80, 999, .05, 280, 0], 'a full packet merges the tail into its last row');
-assert.deepEqual([Packet.hourAdena(protectedPacket), Packet.moneyPrice(protectedPacket), Packet.survivalReserve(protectedPacket),
+assert.deepEqual([Packet.hourAdena(protectedPacket), Packet.moneyPrice(protectedPacket), Packet.refillReserve(protectedPacket),
     Packet.firstUnfundedPrice(protectedPacket), Packet.fundedRows(protectedPacket)], [1000, .001, 10, 77, 3]);
 assert.deepEqual([Packet.fundedRatio(protectedPacket, 1), Packet.fundedCumulative(protectedPacket, 1), Packet.fundedItem(protectedPacket, 1)], [.1, 180, 2509]);
 assert.equal(Packet.hasMoney([77000, 1e-5, 1000]), false);

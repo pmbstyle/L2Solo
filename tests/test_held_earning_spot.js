@@ -86,7 +86,7 @@ function onWorker() {
     {
         const turned = sampled(held, 'poor');
         const priced = { ...turned, stats: { ...turned.stats, money: Packet.money({ hourAdena: 99999, moneyPrice: 0.9,
-            survivalReserve: 0, firstUnfundedPrice: 0 }) } };
+            refillReserve: 0, firstUnfundedPrice: 0 }) } };
         invoke('GameServer/Bot/AI/SpotValueTable').useSpots([]);
         for (const minute of [1, 30, 300]) {
             const read = count(() => Economy.forState(priced, deps(minute)));

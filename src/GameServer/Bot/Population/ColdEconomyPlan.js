@@ -278,7 +278,7 @@ function* prepareNative(state, economy, options) {
             activityLeaf: economy.network?.activityLeaf ?? state.stats?.activityLeaf,
             wishKey: goal?.plan?.wishKey,
             wallet: state.adena, escrow: options.buyOrderEscrow,
-            budget: money, available: money, reserve: Packet.survivalReserve(state.stats?.money) };
+            budget: money, available: money, reserve: Packet.refillReserve(state.stats?.money) };
         Trace.detail({ ...trace, reason: plan.travel ? 'travel_planned' : 'plan_prepared', town: goal?.plan?.marketTown });
         for (const row of plan.buyAds || []) Trace.detail({ ...trace, phase: 'buy_request', reason: 'bid_planned',
             item: row[0], planned: row[1], unitPrice: row[2], source: 'board_bid' });

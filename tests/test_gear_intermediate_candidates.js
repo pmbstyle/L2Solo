@@ -74,7 +74,7 @@ for (const classId of [9, 12, 5, 2, 55]) for (const level of [25, 45, 55]) {
     const ng = [...view.values()].flat().filter(row => [7, 14].includes(Number(row.etc.slot)) && row.etc.rank === 'none')
         .sort((a, b) => Planner.itemScore(a, nativeRole, classId) - Planner.itemScore(b, nativeRole, classId))[0];
     if (ng) actor.inventory[ng.selfId] = { selfId: ng.selfId, amount: 1, equipped: true, equippedCount: 1, slot: ng.etc.slot };
-    const priceView = { survivalReserve: 1000, price: id => Number(Data.items.find(row => row.selfId === id)?.template.price || 0) };
+    const priceView = { refillReserve: 1000, price: id => Number(Data.items.find(row => row.selfId === id)?.template.price || 0) };
     const picks = [...Providers.gearCandidates(actor, priceView).values()].flat();
     assert(picks.length <= 14 * Providers.GEAR_FINALISTS_PER_SLOT);
     assert(picks.every(row => Planner.considerable(row, actor)));
@@ -147,7 +147,7 @@ console.log('PASS shared provider/network -> exact native planner: useful interm
     let scoreCalls = 0;
     Planner.itemScore = (...args) => { scoreCalls++; return score(...args); };
     try {
-        const live = { survivalReserve: 1000, price: id => Number(Data.items.find(row => row.selfId === id)?.template.price || 0) };
+        const live = { refillReserve: 1000, price: id => Number(Data.items.find(row => row.selfId === id)?.template.price || 0) };
         const originalPicks = Providers.gearCandidates(state, live);
         const firstCalls = scoreCalls; scoreCalls = 0;
         const copiedPicks = Providers.gearCandidates(structuredClone(state), live);

@@ -153,7 +153,7 @@ put(21, 202, 4, 1);
 function prepare({ wallet = 1000, reserve = 0, deps = {} } = {}) {
     const projection = provider.build(state, context, { board, knownRecipes: [301], ...deps });
     const result = new network.WishNetwork().build({ actorKey: 'producer:1', inputKey: 'producer',
-        ...projection, characterId: 1, wallet, survivalReserve: reserve, hourAdena: 100, persona, remembered: false,
+        ...projection, characterId: 1, wallet, refillReserve: reserve, hourAdena: 100, persona, remembered: false,
         stockFor: id => ({ owned: Math.max(0, Number(state.inventory[id]?.amount || 0) - Number(state.inventory[id]?.protectedAmount || 0)),
             incoming: Number(state.acceptedIncoming?.[id] || 0) }) });
     return { projection, result, watch: intent.project(state, result, projection, () => 1) };

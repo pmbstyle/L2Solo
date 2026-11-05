@@ -113,7 +113,7 @@ assert.equal(poorContext.kitCost(stock.itemId), 0);
 assert(!poorContext.projection.nodes.some(row => row.key === 'stock:shots'));
 // The kit at its NPC list price (survivalPrice), the price the reserve holds it at; no Scroll of Escape (B2).
 const noShotReserve = poorContext.stock('potions').survivalMissing * poorContext.stock('potions').survivalPrice;
-assert.equal(poorContext.survivalReserve, noShotReserve);
+assert.equal(poorContext.refillReserve, noShotReserve);
 
 {
     // E198: below the one-hour survival line with nothing wanted above it,
@@ -136,9 +136,9 @@ assert.equal(poorContext.survivalReserve, noShotReserve);
     const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
     const supported = { ...wish, supported: true, resolved: true };
     const lower = { key: 'lower', valueHours: supported.ratio * 1000 / 2, price: 1000, supported: true };
-    const network = moneyQueue([supported, lower], context.survivalReserve + 1000, context.survivalReserve);
+    const network = moneyQueue([supported, lower], context.refillReserve + 1000, context.refillReserve);
     assert.deepEqual(network.queue.map(row => row.funded), [true, true], 'the survival reserve already holds this money');
-    const packet = Funding.packetFor(network, context.hourAdena, context.survivalReserve);
+    const packet = Funding.packetFor(network, context.hourAdena, context.refillReserve);
     assert.deepEqual([packet[5], packet[8]], [0, 1000]);
     assert.equal(Funding.spendable({ ...short, adena: context.kitCost(own.itemId), stats: { ...short.stats, money: packet } }, 0,
         { r: supported.ratio, survivalCost: context.kitCost(own.itemId) }), context.kitCost(own.itemId),

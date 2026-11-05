@@ -258,7 +258,7 @@ function verdictInputs(member, context, drift) {
     parts.push(route ? [route.spot.id, stats.earning.at, trip(route.spot)].join(':') : stats.earning ? `none:${stats.earning.at}` : 'unheld',
         context.grounds.spots.map(trip).join(':'), PartyIncomeComparison.soloGoalHours(member, aim, context.spots, timestamp),
         goalReads(stats.partyRequest), JSON.stringify(aim.materialGoal ?? null), PartyIncomeComparison.focusedItem(member), stats.wishFocus?.[2],
-        require('../Economy/StatsPacket').survivalReserve(stats.money),
+        require('../Economy/StatsPacket').refillReserve(stats.money),
         workshop?.known, workshop?.incomePerHour, workshop?.cycleHours,
         invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(member)?.selfId,
         samples.map(row => `${row.partyRoster}@${row.at}:${row.samples}`).join(';'));

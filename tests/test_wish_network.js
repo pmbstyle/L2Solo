@@ -14,7 +14,7 @@ assert.equal(moneyQueue(queue.queue, 1000, 50).moneyPrice, 0, 'rich actors need 
 
 const network = new WishNetwork();
 const input = {
-    actorKey: 'character:1', inputKey: 'level30:bag1:board1', wallet: 250, survivalReserve: 50,
+    actorKey: 'character:1', inputKey: 'level30:bag1:board1', wallet: 250, refillReserve: 50,
     hourAdena: 100, playedHours: 10, persona: { traits: { commitment: 0.5 } },
     previous: { focus: ['sword', 5, 100], dormant: [] }, roots: ['sword', 'status', 'care', 'scores'],
     nodes: [

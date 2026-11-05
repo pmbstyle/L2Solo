@@ -14,7 +14,7 @@ function budget(state = {}, escrow = 0) {
 let EconomyContext, WishNetwork;
 function operatingReserve(state = {}) {
     // lazy: cycle EconomyContext requires PurchaseFunding at load.
-    return (EconomyContext ||= require('./EconomyContext')).survivalReserve(state);
+    return (EconomyContext ||= require('./EconomyContext')).refillReserve(state);
 }
 function shortfall(state = {}, price = 0, reserve = 0, escrow = 0) {
     return Math.max(0, nonnegative(price) + nonnegative(reserve) - budget(state, escrow));
@@ -27,13 +27,13 @@ function moneyReached(state, escrow = 0) {
     if (!Packet.hasMoney(packet) || !(Number(Packet.firstUnfundedPrice(packet)) > 0)) return false;
     let fundedPrice = 0;
     for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) fundedPrice = Math.max(fundedPrice, Number(Packet.fundedCumulative(packet, row)) || 0);
-    return budget(state, escrow) - nonnegative(Packet.survivalReserve(packet)) >= fundedPrice + Number(Packet.firstUnfundedPrice(packet));
+    return budget(state, escrow) - nonnegative(Packet.refillReserve(packet)) >= fundedPrice + Number(Packet.firstUnfundedPrice(packet));
 }
 function budgetFor(packet, wallet, escrow, r, capture = null) {
     let prior = 0;
     for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) if (Packet.fundedRatio(packet, row) > r) prior = Packet.fundedCumulative(packet, row);
     if (capture) capture.priorityReserve = nonnegative(prior);
-    return Math.max(0, nonnegative(wallet) + nonnegative(escrow) - nonnegative(Packet.survivalReserve(packet)) - prior);
+    return Math.max(0, nonnegative(wallet) + nonnegative(escrow) - nonnegative(Packet.refillReserve(packet)) - prior);
 }
 // A paid funded contribution no longer needs cash protection. Keep the same
 // bounded packet and priority rule; crafting inputs can name their admitted
@@ -113,7 +113,7 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
         if (Diagnostics.active()) moneyPacketMissing++;
         reason = 'money_packet_missing';
         queueBudget = Math.max(0, wallet - operatingReserve(state));
-    } else if (options.upperBound) { reason = 'upper_bound'; queueBudget = Math.max(0, wallet - Packet.survivalReserve(packet)); }
+    } else if (options.upperBound) { reason = 'upper_bound'; queueBudget = Math.max(0, wallet - Packet.refillReserve(packet)); }
     else if (options.free === true) {
         // Already credited treasury money belongs to this physical wallet.
         // Exclude it from personal free cash before adding its actual remainder.
@@ -152,7 +152,7 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
     if (Diagnostics.active()) Diagnostics.count('funding', available > 0 ? 'allowed' : 'refused', reason);
     if (selected) Trace.detail({ owner: Number(state.characterId), phase: 'funding', caller: options.caller || 'spendable', reason,
         item: Number(options.itemId), wallet: nonnegative(state.adena ?? state.inventory?.[57]?.amount),
-        escrow: nonnegative(escrow), available, budget: available, reserve: Number(Packet.survivalReserve(packet)),
+        escrow: nonnegative(escrow), available, budget: available, reserve: Number(Packet.refillReserve(packet)),
         priorityReserve: capture.priorityReserve, moneyPrice: Number(Packet.moneyPrice(packet)), valueHours: Number(options.valueHours),
         decisionSeq: Number(state.stats?.decisionSeq), activityLeaf: Number(state.stats?.activityLeaf),
         revision: Number(state.simulation?.revision), wishKey: state.stats?.wishFocus?.[0] });
@@ -247,7 +247,7 @@ function packetRowWishes(funded) {
 function packetFor(network, hour, reserve) {
     // lazy: cycle WishNetwork requires PurchaseFunding at load.
     const { fundable, cashCharge } = WishNetwork ||= require('./WishNetwork');
-    const packet = Packet.money({ hourAdena: Math.round(hour), moneyPrice: significant(network.moneyPrice), survivalReserve: Math.round(reserve),
+    const packet = Packet.money({ hourAdena: Math.round(hour), moneyPrice: significant(network.moneyPrice), refillReserve: Math.round(reserve),
         firstUnfundedPrice: Math.round(network.gap ? cashCharge(network.gap) : 0) });
     let cumulative = 0, count = 0;
     for (const wish of network.queue) {

@@ -181,8 +181,8 @@ function purchaseFor(buyer) {
     assert(economy.network.queue.some((wish) => wish.key === goal.plan.wishKey && wish.funded),
         'a native shopping leaf comes from the funded queue');
     const reserve = kitReserve(buyer, economy);
-    close(economy.survivalReserve, reserve, 'one-hour survival reserve');
-    assert.strictEqual(Packet.survivalReserve(economy.statsPacket.money), Math.round(reserve), 'native saved reserve rounding');
+    close(economy.refillReserve, reserve, 'one-hour survival reserve');
+    assert.strictEqual(Packet.refillReserve(economy.statsPacket.money), Math.round(reserve), 'native saved reserve rounding');
     const funded = { ...buyer, stats: { ...buyer.stats, ...economy.statsPacket } };
     const allowed = itemBudget(funded, id);
     assert.strictEqual(Funding.spendable(funded, 0, { itemId: id }), allowed);

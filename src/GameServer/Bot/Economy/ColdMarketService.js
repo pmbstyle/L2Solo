@@ -27,7 +27,7 @@ function purchaseObservation(state, selfId, requested, budget, phase, reason, ex
     if (!Trace.detailed(state?.characterId)) return;
     Trace.detail({ owner: Number(state.characterId), phase, reason, item: Number(selfId), requested: Number(requested),
         wallet: Number(state.adena ?? state.inventory?.[57]?.amount), budget, available: budget,
-        reserve: Number(Packet.survivalReserve(state.stats?.money)), owned: Number(state.inventory?.[selfId]?.amount || 0),
+        reserve: Number(Packet.refillReserve(state.stats?.money)), owned: Number(state.inventory?.[selfId]?.amount || 0),
         decisionSeq: Number(state.stats?.decisionSeq), activityLeaf: Number(state.stats?.activityLeaf),
         revision: Number(state.simulation?.revision), wishKey: state.stats?.wishFocus?.[0], town: state.currentRegion,
         errandAt: Number(state.stats?.marketErrand?.at), ...extra });

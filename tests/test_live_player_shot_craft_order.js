@@ -28,9 +28,9 @@ function refillContext(state) {
     const network = new WishNetwork().build({ ...context.projection, roots: ['stock:shots'],
         actorKey: 'native-shot-refill', inputKey: 'native-shot-refill', remembered: false,
         stockFor: context.stockFor, wallet: state.adena, hourAdena: context.hourAdena,
-        survivalReserve: context.survivalReserve, persona: context.persona });
+        refillReserve: context.refillReserve, persona: context.persona });
     return { ...context, network, statsPacket: { ...context.statsPacket,
-        money: Funding.packetFor(network, context.hourAdena, context.survivalReserve) } };
+        money: Funding.packetFor(network, context.hourAdena, context.refillReserve) } };
 }
 // The decision a near body holds: the worker's build with the fields it
 // attaches (DecisionEvents.nearFields), as DecisionEvents.receive keeps it.

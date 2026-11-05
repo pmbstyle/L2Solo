@@ -40,7 +40,7 @@ function project(state, { itemFor = id => ({ selfId: id, name: `Item ${id}` }), 
             ...wish(row[0], itemFor, state.inventory, wishName), reason: short(row[1]), estimatedPrice: finite(row[3]),
             atPlayedHours: finite(row[4]) })),
         money: Packet.hasMoney(money) ? { wallet: finite(state.adena),
-            adenaPerHour: finite(Packet.hourAdena(money)), hoursPerAdena: finite(Packet.moneyPrice(money)), survivalReserve: finite(Packet.survivalReserve(money)),
+            adenaPerHour: finite(Packet.hourAdena(money)), hoursPerAdena: finite(Packet.moneyPrice(money)), refillReserve: finite(Packet.refillReserve(money)),
             firstUnfundedPrice: finite(Packet.firstUnfundedPrice(money)), funded } : null,
         selectedAction: activity ? {
             root: wish(activity.rootKey, itemFor, state.inventory, wishName), inputKey: short(activity.nodeKey),

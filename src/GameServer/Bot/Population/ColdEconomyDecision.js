@@ -485,7 +485,7 @@ function view(state, decision, deps = {}, preparedBase = null) {
     // The kit: the build's own when it prepared these basics, else its published rates over the bag (EconomyContext.keptKit).
     let kit = preparedBase;
     const kitOf = () => kit ||= invoke('GameServer/Bot/Economy/EconomyContext').keptKit(state, baseDeps);
-    const own = { state, hourAdena, moneyPrice, survivalReserve: valid ? Number(Packet.survivalReserve(packet)) : base.survivalReserve,
+    const own = { state, hourAdena, moneyPrice, refillReserve: valid ? Number(Packet.refillReserve(packet)) : base.refillReserve,
         board, network: { activity }, activity, wish,
         craftReservations: Object.fromEntries(activity?.craftReservations || []),
         watchList: (decision?.watch || []).map(row => ({ itemId: row[0], amount: row[1], worth: row[2], kind: kindFor(row[3]) })),

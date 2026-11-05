@@ -31,7 +31,7 @@ function reserveInputs(state) {
     // hourly use is bought as whole units (24512a44): the survival stock is ceil(use per hour), so
     // both purchase tranches stay executable. The Scroll of Escape is no part of it (B2).
     const expected = stocks.reduce((sum, row) => sum + Math.max(0, Math.ceil(row.perHour) - row.held) * row.unitPrice, 0);
-    assert.strictEqual(base.survivalReserve, expected, 'native E1 reserve is the explicit hourly kit');
+    assert.strictEqual(base.refillReserve, expected, 'native E1 reserve is the explicit hourly kit');
     assert.strictEqual(Gear.operationalAdenaReserve(state), expected, 'gear reads the same E1 reserve');
     console.log(JSON.stringify({ reserveInputs: { level: state.level, wallet: Funding.budget(state), stocks }, expected }));
     return { expected, stocks };
@@ -73,9 +73,9 @@ const nativeReserve = reserveCapture.captured.reserveInputs;
 assert(nativeReserve && nativeReserve.stocks.length === 2);
 const workerReserve = nativeReserve.stocks.reduce((sum, row) =>
     sum + Math.max(0, Math.ceil(row.perHour) - row.held) * row.unitPrice, 0);
-assert.strictEqual(Packet.survivalReserve(reserveCapture.state.stats.money), Math.round(workerReserve), 'the genuine packet stores E1 derived from its native worker inputs');
+assert.strictEqual(Packet.refillReserve(reserveCapture.state.stats.money), Math.round(workerReserve), 'the genuine packet stores E1 derived from its native worker inputs');
 console.log(JSON.stringify({ mainReserve: emptyKit.expected, nativeReserveInputs: nativeReserve, expectedWorkerReserve: workerReserve }));
-assert.strictEqual(Gear.operationalAdenaReserve(reserveCapture.state), Packet.survivalReserve(reserveCapture.captured.statsPacket.money),
+assert.strictEqual(Gear.operationalAdenaReserve(reserveCapture.state), Packet.refillReserve(reserveCapture.captured.statsPacket.money),
     'a reader uses the genuine saved worker reserve');
 const material = Data.items.find(row => Number(row.selfId) === 1864);
 assert(material, 'the declared sale stock has an authored C4 item');

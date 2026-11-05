@@ -183,7 +183,7 @@ async function run() {
         const { plan } = review();
         const steps = [plan.network.activity, ...plan.network.agenda];
         const cost = steps.reduce((sum, step) => sum + step.price, 0);
-        const reserve = Packet.survivalReserve(plan.statsPacket.money);
+        const reserve = Packet.refillReserve(plan.statsPacket.money);
         const tight = review({ adena: reserve + cost + 1 });
         const first = tight.plan.network.activity;
         assert(tight.plan.network.agenda.length > 0, 'fixture: the steps are funded');

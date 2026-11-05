@@ -108,7 +108,7 @@ function build(clan, { warehouse = [], memberContexts = [], equipment = [], hall
     const inputKey = JSON.stringify([wallet, reserve, level, persona, eligible, strategy?.objective, strategy?.target,
         memberContexts.map(context => context.inputKey), clan.state?.goal?.economy?.focus]);
     const network = engine.build({ actorKey: `clan:${clan.id}`, inputKey, nodes: eligible, roots: eligible.map(node => node.key),
-        wallet, survivalReserve: reserve, persona, hourAdena: income,
+        wallet, refillReserve: reserve, persona, hourAdena: income,
         playedHours: mean(members.map(member => member.stats?.playedHours)),
         previous: clan.state?.goal?.economy || { focus: clan.state?.wishFocus, dormant: clan.state?.dormantWishes },
         moneyPaths: income > 0 ? [{ kind: 'dues', activity: 'clan_dues', incomePerHour: income }] : [] });

@@ -88,7 +88,7 @@ function evaluate(state = {}, options = {}) {
                 // Its funded root's place in the money queue (the card's r, or
                 // the full network's root) funds it: PurchaseFunding.goalTerms.
                 ...(ratio > 0 ? { valueRate: ratio } : {}),
-                purpose: wish?.object?.kind, reserve: Economy.survivalReserve(state) } }];
+                purpose: wish?.object?.kind, reserve: Economy.refillReserve(state) } }];
     }
     if (leaf.activity === 'selling') return [{ ...common, type: 'sell_inventory',
         target: { itemIds: leaf.items || [], itemCount: leaf.items?.length || 0 },

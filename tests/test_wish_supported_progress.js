@@ -52,7 +52,7 @@ for (const result of run('future-has-executable-alternative', [alternative, read
     assert.equal(result.gap?.key, 'future', 'a supported saving goal still holds the money');
     assert(result.activity);
 }
-for (const result of run('survival-reserve-preserved', [ready], { wallet: 20, survivalReserve: 20 })) {
+for (const result of run('survival-reserve-preserved', [ready], { wallet: 20, refillReserve: 20 })) {
     assert.equal(result.activity, null); assert.equal(result.available, 0); assert.equal(result.queue[0].funded, false);
 }
 for (const result of run('both-funded', [node('future', 100, 10, { executable: true, availableUnits: 1 }), ready], { wallet: 100 })) {

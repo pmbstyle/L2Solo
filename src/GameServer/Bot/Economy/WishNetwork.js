@@ -352,8 +352,8 @@ function choose(rows, weight, roll) {
     return rows[rows.length - 1];
 }
 
-function moneyQueue(wishes, wallet, survivalReserve = 0, floor = 0) {
-    let available = Math.max(0, nonnegative(wallet) - nonnegative(survivalReserve));
+function moneyQueue(wishes, wallet, refillReserve = 0, floor = 0) {
+    let available = Math.max(0, nonnegative(wallet) - nonnegative(refillReserve));
     const queue = wishes.filter(wish => wish.valueHours > 0 && wish.price > 0)
         .map(wish => {
             const valueHours = wish.progressionPriority > 0 ? Math.max(wish.valueHours, wish.price * floor) : wish.valueHours;
@@ -444,7 +444,7 @@ function sameResult(before, after) {
 function buildScratch(subtrees = false) {
     return { unitEfforts: new Map(), trips: new Map(), tripRows: [], subtrees: subtrees ? new Map() : null };
 }
-function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, wallet = 0, survivalReserve = 0,
+function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, wallet = 0, refillReserve = 0,
     diagnostic = false, detail = false, trace = null, captureReadyCraft = false, scratch = buildScratch() }) {
     const byKey = new Map();
     for (const node of nodes) {
@@ -753,9 +753,9 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
         // an unsupported purchase keeps the trial's queue place and WTB row
         // without cash, never a costlier step now.
         const completionHours = facts => facts.hours + (adenaToHours > 0
-            ? Math.max(0, facts.price - Math.max(0, wallet - survivalReserve)) * adenaToHours : facts.price > wallet ? Infinity : 0);
+            ? Math.max(0, facts.price - Math.max(0, wallet - refillReserve)) * adenaToHours : facts.price > wallet ? Infinity : 0);
         const order = ({ path, facts }) => path.acquisitionOrder === 1 && path.kind === 'buy'
-            && facts.price > Math.max(0, wallet - survivalReserve) ? 3 : nonnegative(path.acquisitionOrder);
+            && facts.price > Math.max(0, wallet - refillReserve) ? 3 : nonnegative(path.acquisitionOrder);
         const acquisitionOrder = (a, b) => a.facts.supported && a.facts.resolved && b.facts.supported && b.facts.resolved
             ? order(a) - order(b) : 0;
         choices.sort((one, other) => {
@@ -805,7 +805,7 @@ function createSolver({ nodes, hourAdena = 0, riskWeight = 1, stockFor = null, w
     // MVP-4: one horizon H per root; a benefit per hour starts when the
     // path is ready (funding delay at net income, then the path's hours).
     // An unknown delay keeps the interest unresolved: no money, no gap.
-    const spendable = Math.max(0, nonnegative(wallet) - nonnegative(survivalReserve));
+    const spendable = Math.max(0, nonnegative(wallet) - nonnegative(refillReserve));
     const value = (wish, node, plan) => {
         const base = nonnegative(node.valueHours) * (1 - Math.min(1, nonnegative(node.progress)));
         wish.resolved = plan?.resolved !== false;
@@ -923,7 +923,7 @@ class WishNetwork {
     // `remembered: false` builds without touching the per-actor cache (a
     // caller that holds the result itself, or a one-off proposal). The worker
     // never retains (RETAIN_ACTORS).
-    build({ actorKey, inputKey, characterId, decisionSeq = 0, activityLeaf = 0, nodes, roots, wallet = 0, survivalReserve = 0,
+    build({ actorKey, inputKey, characterId, decisionSeq = 0, activityLeaf = 0, nodes, roots, wallet = 0, refillReserve = 0,
         playedHours = 0, persona = {}, previous = {}, hourAdena = 0, riskWeight = 1, moneyPaths = [], remembered = true,
         caller = 'wish_network', trigger = 'request', stockFor = null, completionKey = null, reconsider = true,
         reconsiderReasons = null, onReadyCraftProof = null }) {
@@ -956,7 +956,7 @@ class WishNetwork {
         // when a member's facts, market reads, decision sequence, leaf or focus move.
         const roll = kind => individual ? Tendency.roll(characterId, decisionSeq, kind)
             : Tendency.roll(actorKey, inputKey, kind);
-        const solver = createSolver({ nodes, hourAdena, riskWeight, stockFor, wallet, survivalReserve, diagnostic, detail, trace, captureReadyCraft });
+        const solver = createSolver({ nodes, hourAdena, riskWeight, stockFor, wallet, refillReserve, diagnostic, detail, trace, captureReadyCraft });
         const { byKey, plans, finiteProduction, tripValue, tripEffort } = solver;
         const kept = wish => wish.valueHours > 0 && wish.plan
             && (!finiteProduction(wish.key) || wish.valueHours > wish.effort);
@@ -989,7 +989,7 @@ class WishNetwork {
         wishes = wishes.filter(kept);
         const gearPriority = Math.max(0, ...wishes.filter(wish => wish.object?.slot).map(wish => wish.progressionPriority));
         if (gearPriority) {
-            const budget = Math.max(0, wallet - survivalReserve);
+            const budget = Math.max(0, wallet - refillReserve);
             const readyGear = wishes.some(wish => wish.object?.slot && wish.progressionPriority === gearPriority
                 && fundable(wish) && Math.max(cashCharge(wish), nonnegative(byKey.get(wish.key).price)) <= budget);
             // A finite profitable craft can pay for the kit. Once a kit piece
@@ -1048,7 +1048,7 @@ class WishNetwork {
         }
         const weighted = wishes.map(wish => ({ ...wish,
             valueHours: wish.valueHours * (wish === focused || wish.key.startsWith('stock:') ? 1 : 1 - loyalty) }));
-        const { queue, moneyPrice, available, gap } = moneyQueue(weighted, wallet, survivalReserve, hourAdena > 0 ? 1 / hourAdena : 0);
+        const { queue, moneyPrice, available, gap } = moneyQueue(weighted, wallet, refillReserve, hourAdena > 0 ? 1 / hourAdena : 0);
         const fundingReason = wish => wish.funded ? 'funded' : wish === gap ? 'first_funding_gap'
             : wish.supported === false ? 'unsupported_path' : wish.resolved === false ? 'unresolved_path'
                 : wish.ratio < (hourAdena > 0 ? 1 / hourAdena : 0) ? 'below_money_floor' : 'priority_held';
@@ -1060,7 +1060,7 @@ class WishNetwork {
             wishKey: wish.key, item: wish.object?.itemId, requested: wish.object?.amount,
             quote: wish.price, valueHours: wish.valueHours, moneyPrice,
             budget: wish.funded ? wish.price : undefined, planned: wish.funded ? wish.object?.amount : undefined,
-            reserve: survivalReserve, available, source: wish.plan?.sourceType || wish.plan?.kind,
+            reserve: refillReserve, available, source: wish.plan?.sourceType || wish.plan?.kind,
             recipeId: wish.plan?.recipeId });
         const demands = new Map(), leaves = new Map();
         const active = { leaves, demands, stages: false };
@@ -1223,7 +1223,7 @@ class WishNetwork {
             wishKey: activity?.rootKey, source: activity?.sourceType || activity?.kind || activity?.activity,
             item: activity?.itemId, planned: activity?.amount, quote: activity?.price,
             npcId: activity?.npcId, town: activity?.town, recipeId: activity?.recipeId,
-            valueHours: activity?.valueHours, available, reserve: survivalReserve });
+            valueHours: activity?.valueHours, available, reserve: refillReserve });
         if (retain) {
             if (diagnostic && !this.cache.has(actorKey) && this.cache.size >= ACTOR_LIMIT)
                 Diagnostics.count('network', 'eviction', 'capacity');

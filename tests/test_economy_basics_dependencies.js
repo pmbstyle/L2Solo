@@ -26,7 +26,7 @@ try {
             routeRows: Array.from({ length: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.length },
                 () => ({ known: true, durationMs: 0, fee: 0 })) });
         for (const kind of ['shots', 'potions', 'scrolls']) assert.deepEqual(basic.stock(kind), full.stock(kind));
-        for (const field of ['survivalReserve', 'deathHours', 'lostGearHours', 'karmaHours', 'riskWeight', 'bestSpotId'])
+        for (const field of ['refillReserve', 'deathHours', 'lostGearHours', 'karmaHours', 'riskWeight', 'bestSpotId'])
             assert.deepEqual(basic[field], full[field], 'native foundation agrees with the full wish review: ' + field);
         assert.deepEqual(state, before, 'both readers leave physical inputs untouched');
         Economy.reset(); Profile.forgetBuild(state.characterId);

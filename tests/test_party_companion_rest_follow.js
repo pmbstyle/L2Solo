@@ -140,21 +140,21 @@ function authoredKitInputs(actor, session) {
     const listPrice = id => { const list = invoke('GameServer/Bot/Economy/StaticMerchantPricing').botNpcListPrice(id);
         return Number.isFinite(list) && list > 0 ? list : price(id); };
     // No Scroll of Escape in it (situations.md B2).
-    const survivalReserve = Math.max(0, Math.ceil(shotUse) - shotHeld) * listPrice(plan.selfId)
+    const refillReserve = Math.max(0, Math.ceil(shotUse) - shotHeld) * listPrice(plan.selfId)
         + Math.max(0, Math.ceil(potionUse) - potionHeld) * listPrice(potionId);
     const potionUnitPrice = invoke('GameServer/Bot/Economy/StaticMerchantPricing').cheapestPurchase(potionId);
     const potionReserve = Math.max(0, Math.ceil(potionUse) - potionHeld) * potionUnitPrice;
     return { state, tableRole, spotId, huntSource: hunt.source, hourAdena, tableRow, withoutExp: without?.exp || 0,
         weaponId: actor.backpack.fetchEquippedWeapon().fetchSelfId(), perAction: plan.perAction,
         shotId: plan.selfId, shotUse, shotPrice, shotHeld, benefit, potionId, potionUse, potionPrice, potionHeld,
-        potionUnitPrice, potionReserve, escapePrice, escapeHeld, escapeCost, survivalReserve };
+        potionUnitPrice, potionReserve, escapePrice, escapeHeld, escapeCost, refillReserve };
 }
 function fundAuthoredKit(actor, session, extraCost, label) {
     const inputs = authoredKitInputs(actor, session);
-    const amount = Math.ceil(inputs.survivalReserve + inputs.potionReserve + extraCost(inputs));
+    const amount = Math.ceil(inputs.refillReserve + inputs.potionReserve + extraCost(inputs));
     actor.backpack.fetchItemFromSelfId(57).setAmount(amount);
     // The native reserve is an oracle only after the independent input is set.
-    assert.strictEqual(invoke('GameServer/Bot/Economy/PurchaseFunding').operatingReserve(inputs.state), inputs.survivalReserve);
+    assert.strictEqual(invoke('GameServer/Bot/Economy/PurchaseFunding').operatingReserve(inputs.state), inputs.refillReserve);
     const { state, ...values } = inputs;
     console.log('AUTHORED_FUNDED_INPUTS', JSON.stringify({ label, characterId: actor.fetchId(), level: actor.fetchLevel(),
         ...values, fundedAdena: amount }));
@@ -167,7 +167,7 @@ function fundAuthoredKit(actor, session, extraCost, label) {
 function workerMoneyPacket(session, inputs) {
     const previous = session.coldLifeState || {};
     session.coldLifeState = { ...previous, stats: { ...previous.stats, money: [Math.round(inputs.hourAdena),
-        1 / Math.max(1, inputs.hourAdena), Math.round(inputs.survivalReserve), 0] } };
+        1 / Math.max(1, inputs.hourAdena), Math.round(inputs.refillReserve), 0] } };
 }
 
 function publishNativeEquipmentShop(actor, town) {

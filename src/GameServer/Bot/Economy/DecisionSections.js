@@ -248,7 +248,7 @@ function kit(state) {
 function fundingMark(state, escrow = 0) {
     const packet = state.stats?.money;
     if (!Array.isArray(packet)) return 0;
-    const wallet = PurchaseFunding.budget(state, escrow) - positive(Packet.survivalReserve(packet));
+    const wallet = PurchaseFunding.budget(state, escrow) - positive(Packet.refillReserve(packet));
     const funded = [];
     for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) funded.push(wallet >= positive(Packet.fundedCumulative(packet, row)));
     // Items or adena on their way from the board are a board-side money fact.

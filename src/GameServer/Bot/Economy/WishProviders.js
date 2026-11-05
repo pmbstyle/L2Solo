@@ -61,7 +61,7 @@ function gearCandidates(state, ctx = null, wornFor = wornReader(state), acquisit
     const maxRank = GEAR_RANKS.indexOf(ctx && progression?.rank === 3
         ? Planner.gradeForLevel(state.level) : Progression.acquisitionRankFor(state, progression || undefined));
     const result = new Map();
-    const budget = Math.max(0, Number(ctx?.wallet ?? Funding.budget(state)) - Number(ctx?.survivalReserve || 0));
+    const budget = Math.max(0, Number(ctx?.wallet ?? Funding.budget(state)) - Number(ctx?.refillReserve || 0));
     const [target, held] = followedGear(state);
     const slotKits = new Map(kits);
     for (const [first, second] of [[1, 2], [4, 5]]) if (slotKits.has(first) && !slotKits.has(second)) slotKits.set(second, slotKits.get(first));
@@ -85,7 +85,7 @@ function gearCandidates(state, ctx = null, wornFor = wornReader(state), acquisit
             if (acquisitionAllowed && !acquisitionAllowed(item.selfId)) continue;
             const price = Number(ctx.price(item.selfId));
             if (!(price > 0) || Number(current?.selfId) === Number(item.selfId)) continue;
-            budgetBoundary?.(price + Number(ctx.survivalReserve || 0), price, item.selfId);
+            budgetBoundary?.(price + Number(ctx.refillReserve || 0), price, item.selfId);
             const score = kit.scoreAt(at);
             const row = { item, price, score, ratio: Math.max(0, score - before) / price };
             if (Number(item.selfId) === target || Number(item.selfId) === held) retained = row;
@@ -950,7 +950,7 @@ function buildProjection(state, ctx, deps) {
             const offer = observedPurchase(id);
             if (!offer || !(offer.availableUnits >= 1)) return false;
             // The wallet threshold this answer turns on, as every cash comparison of the build.
-            const cost = offer.price + offer.tripFees, threshold = cost + positive(ctx.survivalReserve);
+            const cost = offer.price + offer.tripFees, threshold = cost + positive(ctx.refillReserve);
             ctx.walletBoundary?.(threshold);
             gearCapture?.cash(cost, threshold, cashHolds(cost));
             return cashHolds(cost);
@@ -970,8 +970,8 @@ function buildProjection(state, ctx, deps) {
                 && Progression.gapFor(slot, progression)?.priority === 3,
             progressionPriority: Progression.priority(item, slot, progression) };
     };
-    const budgetNow = () => Math.max(0, Number(ctx.wallet ?? Funding.budget(state)) - Number(ctx.survivalReserve || 0));
-    const cashHolds = cost => cost <= Math.max(0, state.adena - ctx.survivalReserve);
+    const budgetNow = () => Math.max(0, Number(ctx.wallet ?? Funding.budget(state)) - Number(ctx.refillReserve || 0));
+    const cashHolds = cost => cost <= Math.max(0, state.adena - ctx.refillReserve);
     const Kept = Object.hasOwn(deps, 'keptGear') ? need('./KeptGearCandidates') : null;
     // What the weighing reads of a bot (or of the preparation it plans for):
     // its level, class and role, combat view (its kit profile's key) with the
@@ -995,7 +995,7 @@ function buildProjection(state, ctx, deps) {
         return [['sources', Sources.revision()], ['owner', Number(state.characterId)], ['kit', kitOf(state)],
             ['progression', progression], ['preparation', preparation ? kitOf(preparation) : 0], ['crystalShop', !!crystalPurchaseFor], ['held', ctx.heldGear ? [...ctx.heldGear].sort((a, b) => a - b) : null], ['luxury', !!luxury],
             ['threat', ctx.gearThreatMask ?? 3], ['caster', !!magic], ['horizon', [horizon, futureHorizon]], ['death', ctx.deathHours],
-            ['hour', [ctx.hunt.perHour, ctx.hourAdena]], ['reserve', ctx.survivalReserve], ['trips', ctx.trip?.rows || null],
+            ['hour', [ctx.hunt.perHour, ctx.hourAdena]], ['reserve', ctx.refillReserve], ['trips', ctx.trip?.rows || null],
             ['shots', need('./ProductionPolicy').shotsDisabled()],
             ['persona', [ctx.persona.understanding, trait(ctx.persona, 'assertiveness'), trait(ctx.persona, 'caution')]]];
     };
@@ -1034,7 +1034,7 @@ function buildProjection(state, ctx, deps) {
     const replayGear = (record, raws) => {
         for (const item of Kept.items(record)) {
             if (item.priced) ctx.price(item.id); else ctx.nodeInputs.read(item.id);
-            if (item.compared) ctx.budgetBoundary?.(item.price + Number(ctx.survivalReserve || 0));
+            if (item.compared) ctx.budgetBoundary?.(item.price + Number(ctx.refillReserve || 0));
         }
         for (const { id, offer } of Kept.offers(record)) if (!purchases.has(id)) purchases.set(id, offer);
         Kept.bag(record).forEach((answer, at) => quantityInputs?.present(answer.id, raws[at]));
@@ -1100,7 +1100,7 @@ function buildProjection(state, ctx, deps) {
     blocks?.lap('benefits');
     const admission = { candidates: 0, evaluations: 0, maxScratch: 0, rounds: 0, pending: [], admitted: [] };
     const solverOptions = { hourAdena: ctx.hourAdena, riskWeight: ctx.riskWeight, stockFor: ctx.stockFor || null,
-        wallet: ctx.wallet ?? positive(state.adena), survivalReserve: ctx.survivalReserve, scratch: Network.buildScratch(true) };
+        wallet: ctx.wallet ?? positive(state.adena), refillReserve: ctx.refillReserve, scratch: Network.buildScratch(true) };
     // A rare piece's status value is part of its gear root from the start,
     // so admission scores the value the network later reads.
     const rare = candidates.find(row => row.item && (ctx.board?.list(row.item.selfId, SELL)?.length || 0) <= 1);
@@ -1142,7 +1142,7 @@ function buildProjection(state, ctx, deps) {
         const command = acquisition?.execution || acquisition;
         return !!command?.executable && !command.awaitingIncoming && !command.requirements?.length
             && Number(command.availableUnits ?? Infinity) >= 1
-            && Number(command.price || 0) <= Math.max(0, positive(solverOptions.wallet) - positive(solverOptions.survivalReserve));
+            && Number(command.price || 0) <= Math.max(0, positive(solverOptions.wallet) - positive(solverOptions.refillReserve));
     };
     const evaluate = (row, used) => {
         admission.evaluations++; row.evaluations = (row.evaluations || 0) + 1;
