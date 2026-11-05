@@ -838,11 +838,16 @@ function resolved(state, deps, production = true) {
 function personaOf(state, deps) {
     return deps.persona || invoke('GameServer/Bot/AI/BotPersona').of(state) || { traits: {}, understanding: 0.3 };
 }
-function pricing(state, persona, board, timestamp, deps, read = () => {}, prices = new Map()) {
+// peekBoard: the board the price beliefs read without watching it; peek(id)
+// is the price price(id) answers, read into nothing (a kept gear list checks
+// its prices with it: WishProviders). A belief peeked first serves the price
+// read after it: price(id) reads id itself, so the watched board's read of
+// the belief adds nothing.
+function pricing(state, persona, board, timestamp, deps, read = () => {}, prices = new Map(), peekBoard = board) {
     const knowledgeEnabled = deps.knowledgeEnabled ?? Knowledge.knowledgeEnabled();
     const priceCtx = { characterId: state.characterId, understanding: persona.understanding ?? 0.3,
         marketTrades: state.marketTrades, knowledgeEnabled, board, timestamp };
-    const beliefs = new Map();
+    const beliefs = new Map(), peeked = new Map();
     const beliefFor = id => {
         if (!beliefs.has(Number(id))) beliefs.set(Number(id), PriceBelief.prior(id, priceCtx) || null);
         return beliefs.get(Number(id));
@@ -850,10 +855,17 @@ function pricing(state, persona, board, timestamp, deps, read = () => {}, prices
     return { knowledgeEnabled, prices, beliefs, beliefFor, price: id => {
         read(id);
         if (!prices.has(Number(id))) {
+            if (peeked.has(Number(id)) && !beliefs.has(Number(id))) beliefs.set(Number(id), peeked.get(Number(id)));
             const belief = beliefFor(id);
             prices.set(Number(id), belief ? Math.exp(belief.mu) : 0);
         }
         return prices.get(Number(id));
+    }, peek: id => {
+        id = Number(id);
+        if (prices.has(id)) return prices.get(id);
+        if (!beliefs.has(id) && !peeked.has(id)) peeked.set(id, PriceBelief.prior(id, { ...priceCtx, board: peekBoard }) || null);
+        const belief = beliefs.has(id) ? beliefs.get(id) : peeked.get(id);
+        return belief ? Math.exp(belief.mu) : 0;
     } };
 }
 // Price future carried scroll uses only if a review needs extra stock.
@@ -1697,8 +1709,8 @@ function buildForState(state, deps) {
     const board = watchedBoard(sourceBoard, watch);
     // A price is remembered, so every price read counts, also a late one
     // through context.price: its item joins the review's inputs.
-    const { price, prices, beliefs, beliefFor, knowledgeEnabled } = pricing(state, persona, board, timestamp, deps, read,
-        keptBase ? new Map(keptBase.prices) : new Map());
+    const { price, peek, prices, beliefs, beliefFor, knowledgeEnabled } = pricing(state, persona, board, timestamp, deps, read,
+        keptBase ? new Map(keptBase.prices) : new Map(), sourceBoard);
     // The income route record of this build (its own search or the basics'
     // one): its solo matchup profiles serve the providers' source route reader.
     let incomeRecord = null;
@@ -1719,8 +1731,14 @@ function buildForState(state, deps) {
     // These facts still belong to the reused foundation: its items stay read.
     if (keptBase) for (const id of held.readIds) read(id);
     const quantityInputs = createQuantityInputs();
-    const context = { inputKey: key, actorKey, state, timestamp, gearThreatMask: gearThreat.mask, heldGear, persona, board, hunt: base.hunt, price, buyback,
-        quantityInputs,
+    // A price read inside a node scope is noted as priced there too: a kept
+    // gear list replays it as a price read (the price memo is part of the plan).
+    const pricedRead = id => {
+        for (const local of nodeScopes) local.priced.add(Number(id));
+        return price(id);
+    };
+    const context = { inputKey: key, actorKey, state, timestamp, gearThreatMask: gearThreat.mask, heldGear, persona, board, hunt: base.hunt,
+        price: pricedRead, peekPrice: peek, buyback, quantityInputs,
         ...(keptBase ? { horizonHours: keptBase.horizonHours } : {}),
         riskWeight: base.riskWeight, bestSpotId: base.bestSpotId, deathHours: base.deathHours, lostGearHours: base.lostGearHours,
         karmaHours: base.karmaHours, expectedDeathHours: base.expectedDeathHours, stock: base.stock,
@@ -1729,8 +1747,8 @@ function buildForState(state, deps) {
         budgetBoundary: budget.watch,
         // What a node read, so that a later candidate of this build reusing
         // the node reads it again: a rejected candidate's reads are not kept.
-        nodeInputs: { begin: () => { const local = { items: new Set(), bag: new Set() }; nodeScopes.push(local); return local; },
-            end: () => nodeScopes.pop(),
+        nodeInputs: { begin: () => { const local = { items: new Set(), bag: new Set(), priced: new Set() }; nodeScopes.push(local); return local; },
+            end: () => nodeScopes.pop(), read,
             bag: id => { if (!(Number(id) > 0)) return;
                 for (const local of nodeScopes) local.bag.add(Number(id)); },
             wholeBag: () => { if (!nodeScopes.length) return;
@@ -1792,8 +1810,10 @@ function buildForState(state, deps) {
         Diagnostics.count('context', 'caller', deps.caller || 'economy_context');
         Diagnostics.count('context', 'foundation', keptBase ? 'kept' : 'built');
     }
-    // The held build's source facts (KeptSourceFacts): each judged by its own inputs.
+    // The held build's source facts (KeptSourceFacts) and gear candidates
+    // (KeptGearCandidates): each judged by its own inputs.
     const projection = Providers.build(state, context, { ...deps, sourceGround: keptGround, keptFacts: held?.keptFacts || null,
+        keptGear: held?.keptGear || null,
         nodes: [...(deps.nodes || []), ...extra], soloProfiles: incomeRecord?.route?.matchupProfiles });
     context.projection = projection;
     if (productive) projection.moneyPaths.push({ activity: 'crafting', kind: 'production', recipeId: workshop.recipeId,
@@ -1913,12 +1933,13 @@ function buildForState(state, deps) {
     }
     const repick = plan.network.activity && eventVerdict.dropped?.get(stepPlace(plan.network.activity));
     if (repick) countDoor(`agenda_repick|${repick}`);
-    // The ground verdict and the kept source facts belong only to the held
-    // build entry (bounded by RETAIN_LIMIT, each ground by 2 bits per planning
-    // spot, the facts by KeptSourceFacts.LIMIT). A planning view or a group
-    // closure must never retain a second copy.
-    const retainedGround = projection.sourceGround, retainedFacts = projection.keptFacts;
-    projection.sourceGround = null; projection.keptFacts = null;
+    // The ground verdict, the kept source facts and gear candidates belong
+    // only to the held build entry (bounded by RETAIN_LIMIT, each ground by 2
+    // bits per planning spot, the facts by KeptSourceFacts.LIMIT, the gear by
+    // KeptGearCandidates). A planning view or a group closure must never
+    // retain a second copy.
+    const retainedGround = projection.sourceGround, retainedFacts = projection.keptFacts, retainedGear = projection.keptGear;
+    projection.sourceGround = null; projection.keptFacts = null; projection.keptGear = null;
     if (keeps) {
         if (diagnostic && !cache.has(actorKey) && cache.size >= RETAIN_LIMIT) Diagnostics.count('context', 'eviction', 'capacity');
         // The main thread keeps the graph nodes as before (its group solve
@@ -1939,7 +1960,7 @@ function buildForState(state, deps) {
             // A quiet build sees only the followed gear: a list it shortened is no review.
             gearFollowed: heldGear ? held.gearFollowed : rootItems(context.projection), goalRevision: deps.goalRevision,
             activity: state.activity,
-            sourceGround: retainedGround, keptFacts: retainedFacts, mp: Number(state.vitals?.mp),
+            sourceGround: retainedGround, keptFacts: retainedFacts, keptGear: retainedGear, mp: Number(state.vitals?.mp),
             projection: (isMainThread || Sections.partyIdOf(state)) ? projection : null }, RETAIN_LIMIT);
     }
     // A party's question built the nodes of a plan that stands: the plan keeps them, as

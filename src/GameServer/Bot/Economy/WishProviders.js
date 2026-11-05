@@ -45,11 +45,17 @@ function followedGear(state) {
     const focus = state.stats?.wishFocus?.[0];
     return [Number(state.stats?.equipmentPlan?.target?.selfId || 0), String(focus).startsWith('power:') ? Network.rootItem(focus) : 0];
 }
-function gearCandidates(state, ctx = null, wornFor = wornReader(state), acquisitionAllowed = null, progression = null, exchanges = null) {
+// The class a bot's gear is weighed for (its stats' class, else its root
+// one): the one reading of the kit, the weighing and a kept list's digest.
+const classOf = state => Number(state.stats?.classId || state.classId || 0);
+// budgetBoundary: hears each price compared with the purchase budget as
+// (threshold with the reserve, price, item id); the context's by default.
+function gearCandidates(state, ctx = null, wornFor = wornReader(state), acquisitionAllowed = null, progression = null, exchanges = null,
+    budgetBoundary = ctx?.budgetBoundary) {
     const Data = invoke('GameServer/DataCache');
     const revision = Sources.revision();
     const role = Planner.roleFor(state);
-    const classId = Number(state.stats?.classId || state.classId || 0);
+    const classId = classOf(state);
     const kits = invoke('GameServer/Bot/AI/BotGear').wishKitsFor(Data.items, revision, classId, role, Planner, Sources);
     const maxRank = GEAR_RANKS.indexOf(ctx && progression?.rank === 3
         ? Planner.gradeForLevel(state.level) : Progression.acquisitionRankFor(state, progression || undefined));
@@ -78,7 +84,7 @@ function gearCandidates(state, ctx = null, wornFor = wornReader(state), acquisit
             if (acquisitionAllowed && !acquisitionAllowed(item.selfId)) continue;
             const price = Number(ctx.price(item.selfId));
             if (!(price > 0) || Number(current?.selfId) === Number(item.selfId)) continue;
-            ctx.budgetBoundary?.(price + Number(ctx.survivalReserve || 0));
+            budgetBoundary?.(price + Number(ctx.survivalReserve || 0), price, item.selfId);
             const score = kit.scoreAt(at);
             const row = { item, price, score, ratio: Math.max(0, score - before) / price };
             if (Number(item.selfId) === target || Number(item.selfId) === held) retained = row;
@@ -174,7 +180,7 @@ function gearGain(state, item, timestamp = Date.now(), threatMask = 3) {
 function gearGainReader(state, timestamp, options = {}, caster = require('./BotImprovementPolicy').isCaster(state), threatMask = 3) {
     threatMask = threatMask === 1 ? 1 : 3;
     let candidates, ownWeapon;
-    const role = Planner.roleFor(state), classId = Number(state.stats?.classId || state.classId || 0);
+    const role = Planner.roleFor(state), classId = classOf(state);
     const selectedWeapon = item => {
         if (!Planner.equipmentCandidate(item, state, role)) return false;
         if (ownWeapon === undefined) {
@@ -268,12 +274,16 @@ function buildProjection(state, ctx, deps) {
     // closure counts in the block that calls it. Null while diagnostics are off.
     const blocks = Diagnostics.laps('provider:');
     const nativeQuantities = quantityReaders(state), quantityInputs = ctx.quantityInputs;
+    // The gear candidates being weighed for keeping (KeptGearCandidates), null
+    // outside that: their bag answers and offers are noted as they are read.
+    let gearCapture = null;
     const physical = id => {
         const value = nativeQuantities.physical(id);
         quantityInputs?.physical(id, value); return value;
     };
     const present = id => {
         const value = nativeQuantities.physical(id);
+        gearCapture?.bag(id, value > 0);
         quantityInputs?.present(id, value); return value > 0;
     };
     const free = id => {
@@ -404,12 +414,22 @@ function buildProjection(state, ctx, deps) {
     const crystalPurchaseFor = luxury || crystalSupply || clanSupply
         ? need('./WishPurchaseEvidence').reader(state, ctx, deps, { npcOnly: true, town: 'Giran' }) : null;
     const purchases = new Map();
+    // What an offer reads beside the trip: the arrow room, the NPC and fixed
+    // offers (catalogue arrays, the same while the catalogue is) and the
+    // item's lines; only a first ask reads the lines (whether the memo held
+    // it is noted too).
+    const offerBoard = ctx.board || deps.board;
+    const offerRefs = id => ({ npc: need('./ProductionPolicy').allowsNpcShot(id) ? deps.npcOffersFor?.(id) || null : null,
+        fixed: need('./ProductionPolicy').allowsFixedShot(id) ? need('./FixedShotOffers').offers(id) : null });
+    const arrowRoom = id => need('../../Inventory/ArrowStock').admitted(state, id, Infinity);
     const observedPurchase = id => {
-        if (!purchases.has(id)) {
+        const asked = purchases.has(id);
+        if (!asked) {
             const item = crystalPurchaseFor && need('../../Item/ItemTemplateIndex').find(invoke('GameServer/DataCache').items, Number(id));
             const retail = crystalPurchaseFor && need('./BotCrystallization').reward(item) ? crystalPurchaseFor(id) : null;
             purchases.set(id, retail || purchaseFor(id));
         }
+        gearCapture?.offer({ id, room: arrowRoom(id), asked, ...offerRefs(id), offer: purchases.get(id) });
         return purchases.get(id);
     };
     let cCrystalChoices;
@@ -918,7 +938,7 @@ function buildProjection(state, ctx, deps) {
         for (const material of materials) values.set(material.selfId,
             positive(values.get(material.selfId)) + improvement.valueHours / Math.max(1, material.amount));
     }
-    const candidates = [];
+    let candidates = [];
     const planningState = preparation || state;
     const acquisitionRank = Progression.acquisitionRankFor(planningState, preparation ? undefined : progression);
     const wornFor = wornReader(planningState), gainFor = gearGainReader(state, timestamp, {}, magic, ctx.gearThreatMask ?? 3);
@@ -929,34 +949,148 @@ function buildProjection(state, ctx, deps) {
             const offer = observedPurchase(id);
             if (!offer || !(offer.availableUnits >= 1)) return false;
             // The wallet threshold this answer turns on, as every cash comparison of the build.
-            ctx.walletBoundary?.(offer.price + offer.tripFees + positive(ctx.survivalReserve));
-            return offer.price + offer.tripFees <= Math.max(0, state.adena - ctx.survivalReserve);
+            const cost = offer.price + offer.tripFees, threshold = cost + positive(ctx.survivalReserve);
+            ctx.walletBoundary?.(threshold);
+            gearCapture?.cash(cost, threshold, cashHolds(cost));
+            return cashHolds(cost);
         }
         return Sources.hasNonRaidSource(id) || present(id) || !!observedPurchase(id);
     };
-    for (const [slot, items] of gearCandidates(planningState, ctx, wornFor, acquisitionAllowed, progression, luxury)) for (const item of items) {
-        if (!Planner.considerable(item, planningState, Planner.roleFor(planningState),
-            Progression.marketOnly?.(state, item, progression) && acquisitionAllowed(item.selfId) ? Planner.gradeForLevel(state.level) : acquisitionRank)) continue;
-        const current = replacementWorn(wornFor, slot);
-        if (Number(current?.selfId) === Number(item.selfId)) continue;
+    // The gear candidates the held build weighed are served while what they
+    // read is the same (KeptGearCandidates, decision links S4). The wallet
+    // enters only through its comparisons: each is noted with its answer.
+    // A candidate as the network reads it: its value and gain, and what follows
+    // from its item and slot (the preparation's C piece starts later).
+    const candidateFor = (item, slot, value, gain) => {
         const early = !!preparation && item.etc?.rank === 'c';
-        const gain = early ? (futureGain ||= gearGainReader(preparation, timestamp,
-            { preparation: true }, magic, ctx.gearThreatMask ?? 3))(item, slot) : gainFor(item, slot);
-        const benefitHorizon = early ? futureHorizon : horizon;
-        const currentPrice = current ? price(current.selfId) : 0;
-        const market = invoke('GameServer/Bot/Economy/MarketCounters');
-        const future = resale(price(item.selfId), { trend: market.moveOf(market.counterOf(item.selfId)),
-            hours: benefitHorizon, understanding: ctx.persona.understanding, assertiveness: trait(ctx.persona, 'assertiveness'),
-            caution: trait(ctx.persona, 'caution'), nextBuyerUse: price(item.selfId) * Math.min(1, gain.attack + gain.defence),
-            npcFloor: ctx.buyback(item.selfId) });
-        const value = Math.max(Progression.priority(item, slot, progression) ? 1 : 0, (gain.attack + gain.defence * ctx.deathHours) * benefitHorizon
-            + (ctx.hunt.perHour > 0 ? (future - currentPrice) / ctx.hunt.perHour : 0));
-        if (!(value > 0) || !(price(item.selfId) > 0)) continue;
-        candidates.push({ item, slot, value, gain, notBeforeHours: early ? horizon : 0,
+        return { item, slot, value, gain, notBeforeHours: early ? horizon : 0,
             horizonHours: early ? horizon + futureHorizon : horizon,
             firstWeaponGrade: Equipment.isWeaponSlot(slot) && Progression.gapFor(slot, progression)?.rank === 1
                 && Progression.gapFor(slot, progression)?.priority === 3,
-            progressionPriority: Progression.priority(item, slot, progression) });
+            progressionPriority: Progression.priority(item, slot, progression) };
+    };
+    const budgetNow = () => Math.max(0, Number(ctx.wallet ?? Funding.budget(state)) - Number(ctx.survivalReserve || 0));
+    const cashHolds = cost => cost <= Math.max(0, state.adena - ctx.survivalReserve);
+    const Kept = Object.hasOwn(deps, 'keptGear') ? need('./KeptGearCandidates') : null;
+    // What the weighing reads of a bot (or of the preparation it plans for):
+    // its level, class and role, combat view (its kit profile's key) with the
+    // hot capture's equipment, its worn rows and its weapon rows (the weapon
+    // a gain compares with), the gear it follows. Other bag gear is read
+    // through present() (the bag answers).
+    const kitOf = kit => {
+        const Index = need('../../Item/ItemTemplateIndex'), items = invoke('GameServer/DataCache').items;
+        const rows = kit.inventory && typeof kit.inventory === 'object' ? {} : null;
+        for (const [key, row] of Object.entries(rows ? kit.inventory : {})) {
+            const weapon = Equipment.isWeaponSlot(row?.slot) || !(Number(row?.slot) > 0) && Equipment.isWeaponSlot(Index.find(items, row?.selfId)?.etc?.slot);
+            if (row?.equipped || row?.equippedCount > 0 || row?.equippedSlots?.length || Number(row?.amount) > 0 && weapon) rows[key] = row;
+        }
+        return [Number(kit.level), classOf(kit), Planner.roleFor(kit), Profile.combatView(kit),
+            kit.stats?.coldCombat?.equipment ?? null, rows, followedGear(kit)];
+    };
+    // What the weighing reads beside its items, offers, bag answers, wallet
+    // comparisons and trends; null (nothing kept) when a reader is not named.
+    const gearFields = () => {
+        if (deps.tripCost || ctx.trip && !Array.isArray(ctx.trip.rows) || !ctx.nodeInputs?.read || !ctx.peekPrice) return null;
+        return [['sources', Sources.revision()], ['owner', Number(state.characterId)], ['kit', kitOf(state)],
+            ['progression', progression], ['preparation', preparation ? kitOf(preparation) : 0], ['crystalShop', !!crystalPurchaseFor], ['held', ctx.heldGear ? [...ctx.heldGear].sort((a, b) => a - b) : null], ['luxury', !!luxury],
+            ['threat', ctx.gearThreatMask ?? 3], ['caster', !!magic], ['horizon', [horizon, futureHorizon]], ['death', ctx.deathHours],
+            ['hour', [ctx.hunt.perHour, ctx.hourAdena]], ['reserve', ctx.survivalReserve], ['trips', ctx.trip?.rows || null],
+            ['shots', need('./ProductionPolicy').shotsDisabled()],
+            ['persona', [ctx.persona.understanding, trait(ctx.persona, 'assertiveness'), trait(ctx.persona, 'caution')]]];
+    };
+    const keptGear = Kept?.session(deps.keptGear, gearFields, !!ctx.heldGear) || null;
+    // Whether the held list would be weighed again the same: why ('' it
+    // would) and the bag answers its replay writes. Reads nothing into the build.
+    const gearHolds = record => {
+        const no = why => ({ why, raws: null });
+        if (!Kept.boardHolds(record, offerBoard)) return no('board');
+        const budget = budgetNow();
+        for (const item of Kept.items(record)) {
+            if (item.priced && !Object.is(ctx.peekPrice(item.id), item.price)) return no('price');
+            if (item.compared && (item.price <= budget) !== item.within) return no('budget');
+        }
+        const asked = new Set();
+        for (const offer of Kept.offers(record)) {
+            const now = offerRefs(offer.id);
+            if (arrowRoom(offer.id) !== offer.room || now.npc !== offer.npc || now.fixed !== offer.fixed
+                || !Kept.linesHold(offerBoard, offer)) return no('offer');
+            if ((purchases.has(offer.id) || asked.has(offer.id)) !== offer.asked) return no('order');
+            asked.add(offer.id);
+        }
+        if (Kept.cash(record).some(row => cashHolds(row.cost) !== row.holds)) return no('cash');
+        const market = invoke('GameServer/Bot/Economy/MarketCounters');
+        if (Kept.moves(record).some(row => !Object.is(market.moveOf(market.counterOf(row.id)), row.trend))) return no('trend');
+        const raws = [];
+        for (const answer of Kept.bag(record)) {
+            const raw = nativeQuantities.physical(answer.id);
+            if ((raw > 0) !== answer.held) return no('bag');
+            raws.push(raw);
+        }
+        return { why: '', raws };
+    };
+    // A held list served: its reads (prices through the price reader), bag
+    // answers and wallet thresholds into the build, as the weighing did them.
+    const replayGear = (record, raws) => {
+        for (const item of Kept.items(record)) {
+            if (item.priced) ctx.price(item.id); else ctx.nodeInputs.read(item.id);
+            if (item.compared) ctx.budgetBoundary?.(item.price + Number(ctx.survivalReserve || 0));
+        }
+        for (const { id, offer } of Kept.offers(record)) if (!purchases.has(id)) purchases.set(id, offer);
+        Kept.bag(record).forEach((answer, at) => quantityInputs?.present(answer.id, raws[at]));
+        for (const row of Kept.cash(record)) ctx.walletBoundary?.(row.threshold);
+        const Index = need('../../Item/ItemTemplateIndex'), items = invoke('GameServer/DataCache').items;
+        return Kept.candidates(record).map(({ id, slot, value, gain }) => candidateFor(Index.find(items, id), slot, value, gain));
+    };
+    const priorGear = keptGear?.held() || null;
+    const gearHeld = priorGear && gearHolds(priorGear);
+    const gearVerify = gearHeld && keptGear.judged(gearHeld.why);
+    let gearRecord = null;
+    if (gearHeld && !gearHeld.why && !gearVerify) { candidates = replayGear(priorGear, gearHeld.raws); gearRecord = keptGear.keep(priorGear); }
+    else {
+        // The weighing reads through a node scope (its items and prices).
+        const local = keptGear && ctx.nodeInputs?.begin();
+        if (local) gearCapture = Kept.capture(offerBoard);
+        // A captured weighing also notes each budget answer. A reader, not a
+        // context derived from ctx: making each build's context a prototype
+        // (new hidden classes per build) slowed the worker's unrelated
+        // searches, a craft build by ~30-40 %.
+        const budgetBoundary = !gearCapture ? ctx.budgetBoundary : (threshold, value, id) => {
+            ctx.budgetBoundary?.(threshold);
+            gearCapture.budget(id, value <= budgetNow());
+        };
+        let weighed = false;
+        try {
+            for (const [slot, items] of gearCandidates(planningState, ctx, wornFor, acquisitionAllowed, progression, luxury, budgetBoundary)) for (const item of items) {
+                if (!Planner.considerable(item, planningState, Planner.roleFor(planningState),
+                    Progression.marketOnly?.(state, item, progression) && acquisitionAllowed(item.selfId) ? Planner.gradeForLevel(state.level) : acquisitionRank)) continue;
+                const current = replacementWorn(wornFor, slot);
+                if (Number(current?.selfId) === Number(item.selfId)) continue;
+                const early = !!preparation && item.etc?.rank === 'c';
+                const gain = early ? (futureGain ||= gearGainReader(preparation, timestamp,
+                    { preparation: true }, magic, ctx.gearThreatMask ?? 3))(item, slot) : gainFor(item, slot);
+                const benefitHorizon = early ? futureHorizon : horizon;
+                const currentPrice = current ? price(current.selfId) : 0;
+                const market = invoke('GameServer/Bot/Economy/MarketCounters'), trend = market.moveOf(market.counterOf(item.selfId));
+                gearCapture?.move(item.selfId, trend);
+                const future = resale(price(item.selfId), { trend,
+                    hours: benefitHorizon, understanding: ctx.persona.understanding, assertiveness: trait(ctx.persona, 'assertiveness'),
+                    caution: trait(ctx.persona, 'caution'), nextBuyerUse: price(item.selfId) * Math.min(1, gain.attack + gain.defence),
+                    npcFloor: ctx.buyback(item.selfId) });
+                const value = Math.max(Progression.priority(item, slot, progression) ? 1 : 0, (gain.attack + gain.defence * ctx.deathHours) * benefitHorizon
+                    + (ctx.hunt.perHour > 0 ? (future - currentPrice) / ctx.hunt.perHour : 0));
+                if (!(value > 0) || !(price(item.selfId) > 0)) continue;
+                candidates.push(candidateFor(item, slot, value, gain));
+            }
+            weighed = true;
+        } finally {
+            if (local) ctx.nodeInputs.end();
+            const capture = gearCapture;
+            gearCapture = null;
+            if (capture && weighed) {
+                for (const id of local.items) capture.item(id, local.priced.has(id) ? ctx.peekPrice(id) : null);
+                gearRecord = keptGear.keep(capture.done(candidates), gearVerify ? priorGear : null);
+            }
+        }
     }
     // MVP-6: every nominated candidate is valued by the same path solver
     // the network uses, over its own scratch arena of item descriptors. A
@@ -1302,7 +1436,7 @@ function buildProjection(state, ctx, deps) {
     if (nodeCapped) nodeCapBuilds++;
     blocks?.lap('tail'); blocks?.done();
     return { nodes: keptNodes, roots: cut.roots, values, moneyPaths, horizon, admission, sourceGround,
-        keptFacts: keptFacts?.finish() || null };
+        keptFacts: keptFacts?.finish() || null, keptGear: gearRecord };
 }
 // Only public recipe rows and a prepared route can prove a usable service.
 // This bounded indexed read is shared by visible and distant bots. No private

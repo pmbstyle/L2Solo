@@ -45,10 +45,35 @@ const NO_TOWN = 255;
 const HEAD = 3, ANSWER = 6;
 const crowdAt = (data, at) => at + HEAD + (data[at + 2] >= 0 ? ANSWER : 0);
 const endAt = (data, at) => crowdAt(data, at) + data[at + 1];
-const digestOf = texts => createHash('sha256').update(texts.join('\n')).digest('base64').slice(0, 22);
+// The digest of a build's named inputs ([name, value] rows, each value as
+// `text` writes it; null: a value it cannot write): { digest, and with
+// diagnostics on the names and a hash per row (firstMoved names the first
+// that moved) }. Shared by the kept pieces of a wish build (KeptGearCandidates).
+function inputDigest(list, diagnostic, text = JSON.stringify) {
+    const values = list.map(([, value]) => text(value));
+    if (values.includes(null)) return null;
+    const texts = list.map(([name], at) => `${name}=${values[at]}`);
+    return { digest: createHash('sha256').update(texts.join('\n')).digest('base64').slice(0, 22),
+        ...(diagnostic ? { names: list.map(row => row[0]), hashes: Uint32Array.from(texts, row => fnv1a32(row)) } : {}) };
+}
+// The first input two digests differ in, 'inputs' when either named none.
+function firstMoved(prior, global) {
+    const at = !prior.names || !global.names ? -1
+        : global.names.findIndex((name, i) => prior.names[i] !== name || prior.hashes[i] !== global.hashes[i]);
+    return at >= 0 ? global.names[at] : 'inputs';
+}
+const verifyTurns = new Map();
+// Whether this kept answer of `kind` ('fact', 'gear') is the one in
+// VERIFY_EVERY of its kind also built fresh (diagnostics only): each kind
+// counts its own, so a build's mix of kinds cannot align one kind's turns.
+function verifyDue(kind) {
+    if (!Diagnostics.active()) return false;
+    const turn = (verifyTurns.get(kind) || 0) + 1;
+    verifyTurns.set(kind, turn);
+    return turn % VERIFY_EVERY === 0;
+}
 // One fact's own key: the item, spoil only, the spoiler as the build had read it.
 const factKey = (key, spoilerSeen) => (typeof key === 'number' ? key * 2 : Number(String(key).slice(6)) * 2 + 1) * 4 + spoilerSeen;
-let verifyTurn = 0;
 
 // A fact's answer as sourcePath reads it, from its packed row.
 function answerAt(data, at, spots) {
@@ -103,16 +128,12 @@ function session(prior, { spots, index, cells, fields }) {
         if (moved !== null) return moved;
         const list = fields();
         if (!list) return (moved = 'unkeyed');
-        const texts = list.map(([name, value]) => `${name}=${JSON.stringify(value)}`);
-        global = { digest: digestOf(texts), ...(diagnostic ? { names: list.map(row => row[0]),
-            hashes: Uint32Array.from(texts, text => fnv1a32(text)) } : {}) };
+        global = inputDigest(list, diagnostic);
         if (!prior?.digest) return (moved = 'absent');
         if (prior.spots !== spots || prior.index !== index) return (moved = 'moved:spots');
         if (prior.cells !== cells) return (moved = 'moved:ground');
         if (prior.digest === global.digest) return (moved = '');
-        const at = !prior.names || !global.names ? -1
-            : global.names.findIndex((name, i) => prior.names[i] !== name || prior.hashes[i] !== global.hashes[i]);
-        return (moved = `moved:${at >= 0 ? global.names[at] : 'inputs'}`);
+        return (moved = `moved:${firstMoved(prior, global)}`);
     };
     const priorAt = item => {
         const data = prior?.data;
@@ -142,7 +163,7 @@ function session(prior, { spots, index, cells, fields }) {
             if (huntersAt(ordinal) !== data[i] - ordinal * 65536) { count('fact', 'moved:crowd'); return null; }
         }
         count('fact', 'kept');
-        const verify = diagnostic && ++verifyTurn % VERIFY_EVERY === 0;
+        const verify = verifyDue('fact');
         if (!verify) add(Array.prototype.slice.call(data, at, end));
         return { best: answerAt(data, at, spots), verify };
     }
@@ -178,4 +199,4 @@ function session(prior, { spots, index, cells, fields }) {
     return { take, built, finish };
 }
 
-module.exports = { session, LIMIT, RECORD_SLOTS };
+module.exports = { session, inputDigest, firstMoved, verifyDue, LIMIT, RECORD_SLOTS };

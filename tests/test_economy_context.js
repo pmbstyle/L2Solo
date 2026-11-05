@@ -1260,6 +1260,110 @@ async function run() {
         console.log('PASS kept source facts: same inputs served, each moved input walked, same decision and proof');
     }
 
+    // The gear candidates a review weighed are kept with the held build
+    // (KeptGearCandidates) and served while everything they read is the same:
+    // weighed again on each input that moved, never on anything else, and the
+    // build decides, reads and proves as the same build with nothing kept.
+    {
+        const Kept = invoke('GameServer/Bot/Economy/KeptGearCandidates');
+        const Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
+        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+        const Recipes = invoke('GameServer/Items/C4RecipeItems');
+        // Weighing asks of each candidate whether the bot may take it up at
+        // its acquisition rank: whether the list was weighed.
+        const considerable = Planner.considerable;
+        let weighed = 0;
+        Planner.considerable = function (...args) { if (args.length === 4) weighed++; return considerable.apply(this, args); };
+        // An artisan at 45 after its earring and ring (crafted from Silver Mold, Gemstone C, ...).
+        const crafter = equippedFixture(990041, 56, 45, 1000000), gearBoard = new BoardIndex();
+        const T = Date.now(), frameRecipe = Recipes.resolveVariantsByProductId(1892)[0].recipeId;
+        const earringCounter = invoke('GameServer/Bot/Economy/MarketCounters').counterOf(852);
+        // [name, change, whether the list is weighed again]
+        const steps = [
+            ['same', {}, false],
+            ['wallet', { adena: 1 }, false],
+            // Lines and the bag of items no candidate is.
+            ['material line', { line: [1886, 900] }, false],
+            // The bot's own line on a candidate moves its lines, not its price.
+            ['own line', { line: [852, 900], owner: crafter.characterId }, false],
+            ['own line back', {}, false],
+            ['material bag', { bag: 2131 }, false],
+            ['workshop', { workshop: true }, false],
+            ['recipes', { recipes: [frameRecipe] }, false],
+            // A candidate's price, and a wallet across a candidate's price.
+            ['gear price', { line: [852, 4000] }, true],
+            // The held plan's price of it stands (the kept foundation's prices).
+            ['gear price back', {}, false],
+            // Trades on a candidate's counter move its price (the bot's error), not its lines.
+            ['gear trades', { trades: 40 }, true],
+            ['gear trades back', {}, true],
+            ['poor', { adena: -998000 }, true],
+            ['poor back', {}, true],
+            ['level', { level: 46 }, true]
+        ];
+        // The bot through every step, each a build after a money event; keep
+        // false: the same steps with nothing kept.
+        const walk = (keep, bot = crafter, path = steps) => {
+            Economy.forget(bot.characterId);
+            const session = Kept.session;
+            if (!keep) Kept.session = () => null;
+            const out = [];
+            try {
+                for (const [at, [name, change]] of [['first', {}], ...path].entries()) {
+                    for (const id of [...gearBoard.records.keys()]) gearBoard.remove(id);
+                    if (change.line) gearBoard.put({ id: 9100, ownerId: change.owner || 77, storeType: 1, custodyPolicy: 1, revision: 1, town: 'Giran',
+                        lines: [{ lineId: 1, selfId: change.line[0], count: 3, price: change.line[1] }] });
+                    const state = { ...bot, adena: bot.adena + at * 1000 + (change.adena || 0), level: change.level || bot.level,
+                        marketTrades: change.trades ? { [earringCounter]: change.trades } : undefined,
+                        inventory: change.bag ? { ...bot.inventory, [change.bag]: { selfId: change.bag, amount: 1 } } : bot.inventory,
+                        stats: { ...bot.stats, wishDirty: at ? Sections.sectionBit('money') : 0 } };
+                    const workshops = recipeId => change.workshop && recipeId === frameRecipe ? [{ characterId: 77, recipeId, price: 500,
+                        townName: 'Giran', loc: { locX: 81000, locY: 148000, locZ: -3500 }, capacityBatches: 5 }] : [];
+                    const ids = [];
+                    weighed = 0;
+                    const next = Economy.forState(state, { timestamp: T, spots, caller: 'step', fullReview: true, board: gearBoard, workshops,
+                        knowledgeEnabled: true, ...(change.recipes ? { knownRecipes: change.recipes } : {}), onSourceRead: id => ids.push(id) });
+                    out.push({ name, weighed, decision: JSON.stringify({ nodes: next.projection.nodes, roots: next.projection.roots,
+                        admission: next.projection.admission, queue: next.network.queue.map(wish => [wish.key, wish.funded, wish.price, wish.valueHours]),
+                        focus: next.network.focus, activity: next.network.activity, packet: next.statsPacket, watch: next.watchList,
+                        proof: { ...next.eventProof(), quantities: [...next.eventProof().quantities] }, ids },
+                    (key, value) => typeof value === 'number' && !Number.isFinite(value) ? String(value) : value) });
+                }
+            } finally { Kept.session = session; Economy.forget(bot.characterId); }
+            return out;
+        };
+        const check = (bot, path) => {
+            const kept = walk(true, bot, path), fresh = walk(false, bot, path);
+            assert(fresh.every(step => step.weighed > 0), 'fixture: with nothing kept every build weighs its gear candidates');
+            for (const [at, [name, , again]] of path.entries())
+                assert.equal(kept[at + 1].weighed > 0, again, `${name}: gear candidates ${again ? 'weighed again' : 'kept'}`);
+            for (const [at, step] of kept.entries()) assert.equal(step.decision, fresh[at].decision, `${step.name}: the same decision, reads and event proof`);
+        };
+        try {
+            check(crafter, steps);
+            // A bot at 30 weighs its C pieces for the kit it prepares (level 40):
+            // its wallet keeps them, a C piece in its bag (worn in the
+            // preparation) weighs them again.
+            // Its D kit worn (paired jewellery on both sides), so no gap is required.
+            const preparing = { ...equippedFixture(990042, 1, 30, 300000), inventory: {} };
+            for (const entry of invoke('GameServer/Bot/AI/BotGear').planFor({ classId: 1, level: 20 }).items) {
+                const row = preparing.inventory[entry.selfId] ||= { selfId: Number(entry.selfId), amount: 0, equipped: true, equippedCount: 0,
+                    equippedSlots: [], slot: Number(entry.slot), enchant: 0 };
+                row.amount++; row.equippedCount++; row.equippedSlots.push(Number(entry.slot));
+            }
+            const Progression = invoke('GameServer/Bot/AI/PersonalGearProgression');
+            assert(Progression.preparation(preparing), 'fixture: the bot prepares its C kit');
+            const future = Progression.preparation(preparing);
+            const piece = [...ProvidersForKit.gearCandidates(future).values()].flat().find(item => item.etc?.rank === 'c'
+                && !preparing.inventory[item.selfId] && Progression.preparation({ ...preparing,
+                    inventory: { ...preparing.inventory, [item.selfId]: { selfId: Number(item.selfId), amount: 1 } } })?.inventory[item.selfId]?.equippedCount > 0);
+            assert(piece, 'fixture: a C piece the preparation would wear');
+            check(preparing, [['same', {}, false], ['wallet', { adena: 1 }, false], ['C piece in bag', { bag: Number(piece.selfId) }, true],
+                ['C piece back', {}, true]]);
+        } finally { Planner.considerable = considerable; }
+        console.log('PASS kept gear candidates: same inputs served, each moved input weighed again, same decision, reads and proof');
+    }
+
     const Catalog = invoke('GameServer/Skills/SkillBookCatalog');
     const Providers = invoke('GameServer/Bot/Economy/WishProviders');
     const ownedIngredient = { key: 'item:990002', price: 2,
