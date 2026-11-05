@@ -294,6 +294,18 @@ async function run() {
     assert.deepEqual(facts(), committed(1));
     checks.push('long drain and awaited chain yield to timers, keep order, truncate still waits');
 
+    // A single job past the 12 ms slice cannot yield inside itself: it is
+    // counted under its operation with its time; a short job is not.
+    connection.function('spin_ms', (ms) => { const end = Date.now() + ms; while (Date.now() < end) { /* busy */ } return ms; });
+    const overBefore = Database.stats().overBudgetJobs['test:checkpoint-barrier-long-job']?.count || 0;
+    await Database.execute(['SELECT spin_ms(?) AS ms', [25]], 'test:checkpoint-barrier-long-job');
+    await Database.execute(['SELECT spin_ms(?) AS ms', [0]], 'test:checkpoint-barrier-short-job');
+    const over = Database.stats().overBudgetJobs;
+    assert.equal(over['test:checkpoint-barrier-long-job'].count, overBefore + 1);
+    assert(over['test:checkpoint-barrier-long-job'].maxMs >= 25, 'the job time is kept');
+    assert.equal(over['test:checkpoint-barrier-short-job'], undefined, 'a job inside the slice is not counted');
+    checks.push('a job past the drain slice is counted under its operation');
+
     const requestError = Error('fixture coordinator rejected reset');
     const failuresBeforeRequest = Database.stats().failures;
     setRequest(() => Promise.reject(requestError));

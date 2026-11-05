@@ -77,7 +77,8 @@ async function run() {
     finally { Commit.finish(9512, admission.command); }
     assert.equal(await amount(9512, 57), 5000); assert.equal(await amount(9512, 2509), 0);
     const row = (await DB.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=9512']))[0];
-    assert.equal(JSON.parse(row.statsJson).economyCommit[1], 0);
+    const [intent] = await DB.execute(['SELECT tuple FROM bot_economy_intents WHERE characterId=9512']);
+    assert.equal(JSON.parse(intent.tuple)[1], 0, 'the rolled-back purchase leaves its intent pending');
     assert.equal(JSON.parse(row.statsJson).marketErrands[0].amount, 120);
     assert.equal(JSON.parse((await DB.execute(['SELECT goalJson FROM bot_goal_state WHERE characterId=9512']))[0].goalJson).target.amount, 120);
     await DB.execute(['DROP TRIGGER fail_basket']);

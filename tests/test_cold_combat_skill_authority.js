@@ -10,6 +10,7 @@ const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Profile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Owner = invoke('GameServer/Bot/Population/ColdSimulationOwner');
 const Parties = invoke('GameServer/Bot/Population/BackgroundPartyState');
+const SavedStats = require('../src/GameServer/Bot/SavedStats');
 const Native = require('./helpers/nativeMarketFixture');
 const ids = [719980, 719981, 719982];
 const partyIds = ids.slice(0, 2);
@@ -27,9 +28,12 @@ async function resources() {
 async function verify(id, dynamic) {
     const state = Life.cachedState(id);
     const row = (await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=?', [id]]))[0];
-    const stored = JSON.parse(row.statsJson).coldCombat;
-    const expected = Profile.skillSnapshotsFromRecords(await Database.fetchSkills(id));
-    assert.deepEqual(stored.skills, [...expected].sort((a, b) => a.selfId - b.selfId));
+    const expected = [...Profile.skillSnapshotsFromRecords(await Database.fetchSkills(id))].sort((a, b) => a.selfId - b.selfId);
+    // The row saves the learned ranks of a kit made of their records; read
+    // back, the kit is those records again.
+    assert.deepEqual(JSON.parse(row.statsJson).coldCombat.skills, expected.map(skill => [skill.selfId, skill.level]));
+    const stored = SavedStats.body(row.statsJson).coldCombat;
+    assert.deepEqual(stored.skills, expected);
     assert.deepEqual(state.stats.coldCombat, stored, 'cache receives the actual persisted profile');
     assert.equal(stored.skillSource, 'database');
     assert.equal(stored.version, Profile.PROFILE_VERSION);
@@ -110,6 +114,25 @@ async function main() {
         assert(committed.ok);
         await verify(id, cleared); assert.equal(rank(Life.cachedState(id)), 10);
         console.log('PASS ordinary commit keeps ranks and genuine effect/cooldown/summon removals');
+
+        // A kit with a record that is not its rank's data, or of a rank the
+        // data does not have, stays whole in the row, and reads back as committed.
+        const odd = Life.cachedState(id);
+        const oddKit = { ...clone(odd.stats.coldCombat), skills: clone(odd.stats.coldCombat.skills) };
+        oddKit.skills.unshift({ ...oddKit.skills[0], selfId: 999999 });
+        oddKit.skills.at(-1).power += 1;
+        const [oddCommit] = await Owner.commitBatch([{ revision: odd.simulation.revision, nextState: { ...odd,
+            stats: { ...odd.stats, coldCombat: oddKit } }, options: { allowParty: true, allowLifecycle: true } }]);
+        assert(oddCommit.ok);
+        const oddRow = (await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=?', [id]]))[0];
+        assert.deepEqual(JSON.parse(oddRow.statsJson).coldCombat.skills, oddKit.skills);
+        assert.deepEqual(SavedStats.body(oddRow.statsJson).coldCombat, oddKit);
+        const [restored] = await Owner.commitBatch([{ revision: Life.cachedState(id).simulation.revision, nextState: { ...odd,
+            stats: { ...odd.stats, coldCombat: { ...oddKit, skills: odd.stats.coldCombat.skills } } },
+        options: { allowParty: true, allowLifecycle: true } }]);
+        assert(restored.ok);
+        await verify(id, cleared);
+        console.log('PASS a kit that is not its ranks\' data (or names a rank the data lacks) is saved whole and read back as committed');
 
         const current = Life.cachedState(id);
         assert(await Life.upsertState({ ...current, stats: { ...current.stats, coldCombat: { ...stale.get(id), ...dynamic } } }, 'stale_actor_profile'));

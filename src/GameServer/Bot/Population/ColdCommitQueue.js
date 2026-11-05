@@ -1,6 +1,7 @@
 const DiagnosticConfig = require('./PopulationConfig');
 const FailureLog = require('../../../FailureLog');
 const Protocol = require('./ColdSimulationProtocol');
+const InventorySummary = require('./InventorySummary');
 const { MAX_BATCH: MAX_MEMORY_EVENTS } = require('../../Social/InteractionMemoryPolicy');
 
 // Admission and batch sizing must agree on the cost of one ordinary row.
@@ -227,6 +228,9 @@ class ColdCommitQueue {
                 }
                 this.bytes -= previous.bytes;
                 queued.queuedAt = previous.queuedAt;
+                // One commit for both steps: its bag fields name what either moved.
+                const { bagChanged, changedItemIds, removedItemIds } = InventorySummary.mergeBagChange(previous, proposal);
+                Object.assign(queued, { bagChanged, changedItemIds, removedItemIds });
                 DiagnosticConfig.developerDiagnostics && (this.counters.coalesced += 1);
             }
             this.p2.set(Number(proposal.characterId), queued);

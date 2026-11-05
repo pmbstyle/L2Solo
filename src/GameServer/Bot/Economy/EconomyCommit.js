@@ -1,7 +1,8 @@
 'use strict';
 
 // One original identity for a concrete optional native step. The DB owns the
-// protected receipt; this module keeps no per-owner result cache or history.
+// protected receipt (the stats leaf) and the pending intent (its own table,
+// never in a state); this module keeps no per-owner result cache or history.
 const { randomUUID } = require('node:crypto');
 const KINDS = Object.freeze({ craft: 1, learn: 2, npcBuy: 3, afkBuy: 4, afkSell: 5 });
 const MAX_BYTES = 384;
@@ -71,8 +72,7 @@ async function admit(state, kind, original = null) {
             authority: authority(state), original,
             // Replacing a completed receipt requires the native result already
             // reconciled into the accepted current holdings, not a guessed success.
-            acknowledged: state.stats?.economyCommit,
-            reconcilePending: !original && state.stats?.economyCommit?.[1] === 0
+            acknowledged: state.stats?.economyCommit
         });
         active.set(id, admitted.command);
     } catch (error) {
@@ -87,8 +87,10 @@ async function admit(state, kind, original = null) {
 // The one SQL rule for the leaf on a bot_life_state write of a whole stats
 // JSON (`incoming`, an SQL expression): the row's leaf stays, a leaf the row
 // does not hold is dropped. json_patch with a NULL member removes the key.
-function preserveLeafSql(incoming) {
-    return `json_patch(${incoming}, json_object('economyCommit', json_extract(bot_life_state.statsJson, '$.economyCommit')))`;
+// `members`: more top-level `'key', value` pairs the caller's write patches in
+// the same pass (one parse and serialize of the stats instead of one each).
+function preserveLeafSql(incoming, members = '') {
+    return `json_patch(${incoming}, json_object('economyCommit', json_extract(bot_life_state.statsJson, '$.economyCommit')${members ? `, ${members}` : ''}))`;
 }
 function finish(characterId, command) {
     const value = active.get(Number(characterId));

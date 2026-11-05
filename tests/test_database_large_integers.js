@@ -50,6 +50,7 @@ async function run() {
             [characterId], { read: true }
         ]);
         assert.equal(updated.enchant, 1, 'large-integer RETURNING must execute its mutation exactly once');
+        assert.equal(typeof updated.amount, 'number');
         assert.equal(updated.amount, Number(9007199254740993n));
         // one().get() inside a native transaction must read the large row,
         // retain the normal domain refusal, and leave physical stock untouched.
@@ -61,6 +62,9 @@ async function run() {
             'SELECT ? AS integerValue, ? AS realValue, ? AS textValue, ? AS blobValue, NULL AS nullValue',
             [7, 1.5, 'text', Buffer.from([1, 2])]
         ]);
+        // A read row is a plain object, its columns in the SELECT's order.
+        assert.equal(Object.getPrototypeOf(row), Object.prototype);
+        assert.deepEqual(Object.keys(row), ['integerValue', 'realValue', 'textValue', 'blobValue', 'nullValue']);
         assert.equal(row.integerValue, 7);
         assert.equal(row.realValue, 1.5);
         assert.equal(row.textValue, 'text');

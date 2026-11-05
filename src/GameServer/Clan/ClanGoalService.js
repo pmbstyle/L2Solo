@@ -1,4 +1,5 @@
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
+const InventorySummary = require('../Bot/Population/InventorySummary');
 const { DiagnosticMetricMap } = require('../Bot/Population/DiagnosticMetricMap');
 const DiagnosticConfig = require('../Bot/Population/PopulationConfig');
 const Database = invoke('Database');
@@ -72,11 +73,11 @@ function memberEntry(characterId, now) {
     return entry;
 }
 
-function memberJson(characterId, field, text, now = Date.now()) {
+function memberJson(characterId, field, text, now = Date.now(), parse = raw => parseJson(raw, {})) {
     const entry = memberEntry(characterId, now);
     const cached = entry[field];
     if (cached && cached.text === text) return cached.value;
-    const value = parseJson(text, {});
+    const value = parse(text);
     entry[field] = { text, value };
     return value;
 }
@@ -171,7 +172,7 @@ async function clanProjection(clanId = null) {
             partyId: row.partyId || null,
             adena: number(row.adena),
             simulationRevision: number(row.simulationRevision),
-            inventory: memberJson(number(row.characterId), 'inventory', row.inventorySummary, now),
+            inventory: memberJson(number(row.characterId), 'inventory', row.inventorySummary, now, InventorySummary.read),
             stats: memberStats(number(row.characterId), row.statsJson, row.mindJson, now),
             persona: { primaryDrive: row.primaryDrive, archetype: row.archetype, traits: parseJson(row.traitsJson, {}) }
         };

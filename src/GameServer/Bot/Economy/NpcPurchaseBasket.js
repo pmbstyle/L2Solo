@@ -3,6 +3,7 @@
 const Commit = require('./EconomyCommit');
 const Diagnostics = require('./EconomyDiagnostics');
 const SavedStats = require('../SavedStats');
+const InventorySummary = require('../Population/InventorySummary');
 const MAX_LINES = 12;
 
 // No result history: bounded observations use the admission and returned receipt.
@@ -69,7 +70,7 @@ function acceptResult(state, result, previousGoal, observation = null) {
     } catch (error) {
         const row = result.coldLifeRow;
         if (row) current = { ...current, phase: row.phase, adena: Number(row.adena),
-            inventory: JSON.parse(row.inventorySummary || '{}'), stats: SavedStats.merge(row.statsJson, row.mindJson),
+            inventory: InventorySummary.read(row.inventorySummary), stats: SavedStats.merge(row.statsJson, row.mindJson),
             simulation: { ...current.simulation, revision: Number(row.simulationRevision) }, updatedAt: Number(row.updatedAt) };
         if (observation && Diagnostics.active()) diagnostic(current, observation.command, 'npc_delivery', 'state_deferred', resultFields(result, observation.seller));
         utils.infoWarn('BotMarket', 'committed NPC state delivery deferred: %s', error.message);

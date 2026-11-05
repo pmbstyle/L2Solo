@@ -1,6 +1,7 @@
 const Policy = require('./Policy');
 const ReviewEvents = require('../Clan/ClanReviewEvents');
 const SavedStats = require('../Bot/SavedStats');
+const InventorySummary = require('../Bot/Population/InventorySummary');
 const { integer: n, DAY, WEEK, AUCTION_DURATION } = Policy;
 const json = (raw) => {
     try {
@@ -103,7 +104,7 @@ module.exports = function ({
                 const row = stored.get(member.characterId) || {};
                 return { ...member, ...(state || row), characterId: member.characterId,
                     classId: state?.stats?.classId ?? member.classId,
-                    stats: state?.stats || SavedStats.merge(row.statsJson, row.mindJson), inventory: state?.inventory || json(row.inventorySummary),
+                    stats: state?.stats || SavedStats.merge(row.statsJson, row.mindJson), inventory: state?.inventory || InventorySummary.read(row.inventorySummary),
                     persona: state?.persona || { traits: json(member.traitsJson), primaryDrive: member.primaryDrive, archetype: member.archetype } };
             });
             const lots = all('SELECT * FROM clan_halls').map(row => ({ ...Policy.definition(row.id), ...row, functions: json(row.functionsJson) }));
