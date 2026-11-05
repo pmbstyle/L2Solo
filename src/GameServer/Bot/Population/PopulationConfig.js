@@ -61,6 +61,11 @@ const DEFAULTS = {
     // build's short-lived objects reach the old space: a major GC every 3 s
     // (gc-trace 11-01). Restart to apply.
     coldWorkerYoungMb: 192,
+    // The clan planning worker (ClanPlanningCoordinator): live heap 59-81 MB at
+    // 1,700 bots, but with no cap V8 kept 209 MB committed (memory census
+    // 11-05). Young generation at V8's 48 MB. Restart to apply.
+    clanWorkerHeapMb: 256,
+    clanWorkerYoungMb: 48,
     // Diagnostics: the cold worker writes one heap snapshot per server boot as its heap nears
     // coldWorkerHeapMb (into tmp/heap/ of the server root). Off by default; restart to apply.
     coldWorkerHeapSnapshot: false,
@@ -230,6 +235,8 @@ const ENV_KEYS = {
     coldWorkerQueueMaxBytes: 'BOT_POPULATION_COLD_WORKER_QUEUE_BYTES',
     coldWorkerHeapMb: 'BOT_POPULATION_COLD_WORKER_HEAP_MB',
     coldWorkerYoungMb: 'BOT_POPULATION_COLD_WORKER_YOUNG_MB',
+    clanWorkerHeapMb: 'BOT_POPULATION_CLAN_WORKER_HEAP_MB',
+    clanWorkerYoungMb: 'BOT_POPULATION_CLAN_WORKER_YOUNG_MB',
     coldWorkerHeapSnapshot: 'BOT_POPULATION_COLD_WORKER_HEAP_SNAPSHOT',
     playerProtectionGraceMs: 'BOT_POPULATION_PLAYER_PROTECTION_GRACE_MS',
     schedulerLagThrottleMs: 'BOT_POPULATION_SCHEDULER_LAG_THROTTLE_MS',
@@ -322,5 +329,15 @@ const PopulationConfig = applyOverrides(
 );
 PopulationConfig.maxPlayingPopulation = Math.max(0, Math.min(2000, Math.floor(Number(PopulationConfig.maxPlayingPopulation) || 0)));
 PopulationConfig.pvpAggression = require('../../Social/PvpAggression').normalize(PopulationConfig.pvpAggression);
+// A worker's V8 heap caps (new Worker resourceLimits) from its two keys
+// (coldWorkerHeapMb/coldWorkerYoungMb, clanWorkerHeapMb/clanWorkerYoungMb): a
+// value that is not a number falls back to the key's default, floors at
+// 128 MB old and V8's 48 MB young. Not enumerable: the config stays data.
+Object.defineProperty(PopulationConfig, 'workerResourceLimits', {
+    value: (heapKey, youngKey) => ({
+        maxOldGenerationSizeMb: Math.max(128, Number(PopulationConfig[heapKey]) || DEFAULTS[heapKey]),
+        maxYoungGenerationSizeMb: Math.max(48, Number(PopulationConfig[youngKey]) || DEFAULTS[youngKey])
+    })
+});
 
 module.exports = PopulationConfig;

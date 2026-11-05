@@ -396,8 +396,7 @@ class ColdSimulationCoordinator {
             workerData: { workerEpoch: this.workerEpoch, developerDiagnostics: Config.developerDiagnostics === true,
                 sharedGeodata: GeodataEngine.sharedDescriptor(), spotTable: SpotValueTable.sharedDescriptor() },
             name: 'l2node-cold-simulation',
-            resourceLimits: { maxOldGenerationSizeMb: Math.max(128, Number(Config.coldWorkerHeapMb) || 512),
-                maxYoungGenerationSizeMb: Math.max(48, Number(Config.coldWorkerYoungMb) || 192) },
+            resourceLimits: Config.workerResourceLimits('coldWorkerHeapMb', 'coldWorkerYoungMb'),
             ...heapSnapshotOptions()
         });
         this.worker = worker;

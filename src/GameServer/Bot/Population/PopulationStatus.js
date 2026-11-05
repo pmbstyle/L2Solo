@@ -141,11 +141,13 @@ const PopulationStatus = {
         // commands throw, held off until one succeeds (ColdSimulationKernel FAULT_*); 0/0/0 when healthy.
         // commandDbErrors: commands that failed on the database, not the bot (a plain retry).
         // swallowed: swallowedText; pathPool, pathCrashes: pathPoolText; packetRefused: packetRefusedText.
+        // clanRestarts: clan planning workers started after one failed (ClanPlanningCoordinator), 0 when healthy.
         return `coldDue=${queue.overdue || 0} coldDueAll=${queue.due || 0} coldDueAge=${Math.round((queue.oldestAgeMs || 0) / 1000)}s`
             + ` noCheckpoint=${worker.checkpointsRefused || 0} stepsRefused=${worker.stepsRefused || 0}`
             + ` botFaults=${failures.faultBackoff || 0}/${failures.faultQuarantined || 0}/${failures.workerFaults || 0}`
             + ` ${this.swallowedText(failures.swallowed)}`
             + ` commandDbErrors=${failures.commandDbErrors || 0} ${this.pathPoolText()} ${this.packetRefusedText()}`
+            + ` clanRestarts=${ClanPlanningCoordinator.metrics().restarts || 0}`
             + ` ${this.workerBusyText()} mainElu=${mainElu.utilization.toFixed(2)} workerHeapGc=${mb(worker.heapAfterGc)}/${mb(worker.heapAfterGcMax10)}MB`
             + ` stepLead=${worker.stepLeadMs || 0}ms pvp=${pvp.live}/${pvp.steps}/${pvp.ms}ms/${pvp.left}`
             + ` geo=${mb(geodata.loadedBytes)}MB/${geodata.loadedRegions} geoViews=${mb(geodata.attachedBytes)}+${mb(worker.geodata?.attachedBytes)}MB`

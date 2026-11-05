@@ -340,6 +340,7 @@ async function workerLifecycle() {
 parentPort.on('message', (m) => {
     if (m.payload?.crash) process.exit(1);
     if (m.payload?.hang) return;
+    if (m.payload?.heapLimit) return parentPort.postMessage({ id: m.id, result: { plan: require('node:v8').getHeapStatistics(), durationMs: 1 } });
     if (m.payload?.busyMs) {
         const end = performance.now() + m.payload.busyMs;
         while (performance.now() < end) {}
@@ -348,6 +349,10 @@ parentPort.on('message', (m) => {
 });`);
     const worker = new ClanPlanningCoordinator({ workerFile, timeoutMs: 1000, maxPending: 1, restartDelayMs: 0,
         planningContext: async () => ({ revision: 1 }) });
+    const FailureLog = invoke('FailureLog');
+    const failedWorkers = () => Object.entries(FailureLog.snapshot() || {})
+        .reduce((sum, [site, count]) => sum + (site.startsWith('clan.worker.') ? count : 0), 0);
+    const failedBefore = failedWorkers(), clanFailures = () => failedWorkers() - failedBefore;
     try {
         const timedOut = assert.rejects(worker.plan({ hang: true }, {}), /timed out/);
         await new Promise((resolve) => setImmediate(resolve));
@@ -355,8 +360,23 @@ parentPort.on('message', (m) => {
         await timedOut;
         assert.equal(worker.metrics().pending, 0);
         assert.equal(worker.metrics().timeouts, 1);
-        await assert.rejects(worker.plan({ crash: true }, {}), /exited/);
-        assert.deepEqual(await worker.plan({}, {}), { ok: true }, 'worker must restart after a crash');
+        // The worker's heap is capped (old 256 MB + young 48 MB; uncapped V8 allows GBs).
+        const heap = await worker.plan({ heapLimit: true }, {});
+        assert(heap.heap_size_limit < 400 * 1024 * 1024, `clan worker heap must be capped: ${heap.heap_size_limit} B`);
+        // Restarts (status clanRestarts=) and failures (status swallowed=,
+        // FailureLog) are counted with developer diagnostics off: the timeout
+        // above was one, the crash below is the second.
+        const Diagnostics = invoke('GameServer/Bot/Population/PopulationConfig');
+        const diagnostics = Diagnostics.developerDiagnostics;
+        Diagnostics.developerDiagnostics = false;
+        try {
+            assert.equal(worker.metrics().restarts, 1, 'a worker started after a timeout is a restart');
+            assert.equal(clanFailures(), 1, 'the timed-out worker is a counted failure');
+            await assert.rejects(worker.plan({ crash: true }, {}), /exited/);
+            assert.deepEqual(await worker.plan({}, {}), { ok: true }, 'worker must restart after a crash');
+            assert.equal(worker.metrics().restarts, 2, 'each failed worker is restarted and counted once');
+            assert.equal(clanFailures(), 2, 'each failed worker is counted once');
+        } finally { Diagnostics.developerDiagnostics = diagnostics; }
 
 
         const sent = [], originalSend = worker.send.bind(worker);
