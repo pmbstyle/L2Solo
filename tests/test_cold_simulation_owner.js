@@ -368,6 +368,21 @@ function state(characterId, revision, activity = 'hunting') {
     assert.deepStrictEqual(await commitBag(adminBag), { full: 1, stacks: 0, synced: 3, kept: 0 });
     assert.deepStrictEqual(await bagRows(), [[10, 1, 1, 7], [57, 1170, 0, 0], [1835, 450, 0, 0]]);
 
+    // A lifecycle save moves the bag revision once when it moves the bag (in
+    // its own write; the trigger adds nothing), keeps it when the bag stands,
+    // and the next commit compares every stack after a moved one.
+    const bagRevision = async () => Number((await Database.execute(['SELECT inventoryRevision FROM bot_life_state WHERE characterId = ?', [bagId]]))[0].inventoryRevision);
+    const beforeSave = await bagRevision();
+    await BotLifeState.upsertState({ ...bagState, updatedAt: bagState.updatedAt + 1 }, 'bag_probe_same');
+    assert.strictEqual(await bagRevision(), beforeSave, 'a save of the same bag keeps its revision');
+    const { 1835: sold, ...savedBag } = bagState.inventory;
+    assert(sold);
+    await BotLifeState.upsertState({ ...bagState, inventory: savedBag, updatedAt: bagState.updatedAt + 2 }, 'bag_probe_moved');
+    assert.strictEqual(await bagRevision(), beforeSave + 1, 'a save of a moved bag moves its revision once');
+    bagState = BotLifeState.cachedState(bagId);
+    assert.deepStrictEqual((await commitBag({ ...bagState.inventory, 57: { ...bagState.inventory[57], amount: 1180 } })).full, 1,
+        'a commit after another writer moved the summary compares every stack');
+
     // Developer diagnostics: an item read counts under its call-site tag.
     await Database.fetchItems(characterId, 'owner_probe');
     assert.strictEqual(invoke('GameServer/Bot/Economy/EconomyDiagnostics').metrics().counts['item_list:call:owner_probe'], 1);

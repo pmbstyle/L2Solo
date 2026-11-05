@@ -1830,7 +1830,7 @@ function applySchemaMigrations() {
     // A bot's stored bag, learned skills and henna slots each carry a
     // revision that moves with every write of that input, so a reader keys on
     // a number instead of a JSON compare or a reread. A writer that sets
-    // inventoryRevision itself (the cold commit) skips the trigger's second
+    // inventoryRevision itself (bagRevisionSet) skips the trigger's second
     // row write. A world saved before this starts at 0 (unknown: recompute).
     migrations.push([68, () => {
         const columns = new Set(connection.prepare('PRAGMA table_info(bot_life_state)').all().map((column) => column.name));
@@ -2767,11 +2767,12 @@ function writeColdInventorySnapshotUnsafe(characterId, row, changedIds, mp = nul
     // patch: merging a resumed project into the completed goal leaves stale
     // target fields and even its nested inputPreparation behind.
     const statsBase = Object.hasOwn(body, 'equipmentPlan') ? "json_remove(statsJson,'$.equipmentPlan')" : 'statsJson';
-    write(`UPDATE bot_life_state SET inventorySummary = ?, adena = ?, mp = COALESCE(?, mp),
+    const summary = InventorySummary.saved(inventory);
+    write(`UPDATE bot_life_state SET inventorySummary = ?, ${bagRevisionSet('?')}, adena = ?, mp = COALESCE(?, mp),
         statsJson = json_patch(${statsBase},json(?)),
         mindJson = CASE WHEN ? IS NULL THEN mindJson ELSE json_patch(mindJson,json(?)) END,
         simulationRevision = simulationRevision + 1, updatedAt = ? WHERE characterId = ?`,
-    [InventorySummary.saved(inventory), adena, mp, JSON.stringify(body), ...mindPatchParams(mind), now(), Number(characterId)]);
+    [summary, summary, adena, mp, JSON.stringify(body), ...mindPatchParams(mind), now(), Number(characterId)]);
     const inventoryPatch = Object.fromEntries(ids
         .map(id => [id, physical[id] || null]));
     return { ...normalizeRow(coldSimulationRow(characterId)), inventoryPatch };
@@ -2950,6 +2951,13 @@ const UPSERT_MACRO = `INSERT INTO macros (characterId, id, icon, name, descr, ac
 // or after the resolve's save that already moved the row, before its publish).
 // BotLifeState `save` takes it in its upsert.
 const MOVE_FAR_REVISION = "simulationRevision = simulationRevision + CASE WHEN phase = 'cold' THEN 1 ELSE 0 END";
+// A writer of the bag summary moves its revision in its own UPDATE (`incoming`:
+// the SQL value it writes), so bot_life_state_inventory_revision adds no
+// second write of the whole row (migration 68): the cold commit, the bag
+// snapshot after a value move, BotLifeState `save`.
+function bagRevisionSet(incoming) {
+    return `inventoryRevision = CASE WHEN inventorySummary IS ${incoming} THEN inventoryRevision ELSE inventoryRevision + 1 END`;
+}
 const SIMPLE_COLD_ACTIVITIES = new Set(['hunting', 'resting', 'traveling', 'dead']);
 const COLD_SIMULATION_PATCH_COLUMNS = new Set([
     'level', 'exp', 'sp', 'adena', 'homeRegion', 'currentRegion', 'spotId',
@@ -3418,7 +3426,7 @@ function writeColdCommitUnsafe(fields, patch) {
     const assignments = coldPatchAssignments(entries);
     const params = entries.map(([, value]) => value);
     if (patch.inventorySummary !== undefined) {
-        assignments.push('inventoryRevision = CASE WHEN inventorySummary IS ? THEN inventoryRevision ELSE inventoryRevision + 1 END');
+        assignments.push(bagRevisionSet('?'));
         params.push(patch.inventorySummary);
     }
     assignments.push('simulationRevision = ?');
@@ -4774,6 +4782,7 @@ const Database = {
     // BotLifeState.save builds its upsert with them.
     MOVE_FAR_REVISION,
     HELD_ROW_SET,
+    bagRevisionSet,
 
     ...PlayerWarehouse.create({ one, all, write, inTransaction, withCharacterFlush }),
     openClanRaidPartyAtImpact(request) {

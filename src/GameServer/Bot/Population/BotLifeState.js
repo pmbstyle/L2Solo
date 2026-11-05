@@ -990,6 +990,7 @@ function save(row, options = {}) {
             targetLevelBand = excluded.targetLevelBand,
             deathCount = excluded.deathCount,
             inventorySummary = excluded.inventorySummary,
+            ${Database.bagRevisionSet('excluded.inventorySummary')},
             -- Native takeover/release/restore owns player membership. A late
             -- actor snapshot cannot revive or remove that ownership marker:
             -- both are dropped from the proposal and patched back from the

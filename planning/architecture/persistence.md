@@ -68,7 +68,9 @@ Quest, Progression, class change, Items/Inventory/Warehouse, Knowledge, `data/` 
   `partyId`, `nextResolveAt` only when the row does not hold the value (`HELD_ROW_COLUMNS`, read in the same job);
   `drop-unused-bot-life-indexes` dropped four that nothing read (42 MB/min, 14 % of the WAL). The save patches its
   row-owned stats members (economy receipt, takeover, const session, hennas) back in one `json_patch`
-  (`EconomyCommit.preserveLeafSql` members), one pass over the stats text.
+  (`EconomyCommit.preserveLeafSql` members), one pass over the stats text. The writers of the bag summary on the hot
+  paths (the cold commit, the bag snapshot after a value move, `BotLifeState.save`) move `inventoryRevision` in
+  their own UPDATE (`bagRevisionSet`), so the migration-68 trigger does not write the row a second time.
   A save rewrites the whole row whenever its length moves (almost always), so the WAL per save is the row's size:
   the kit's skill records are saved as their ranks (`SavedSkills`: `[[selfId, level], ...]` when every record is
   its rank's data, else whole), written by `SavedStats.compact` and the kit rebuild, unpacked by
