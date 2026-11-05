@@ -75,6 +75,9 @@ function soloChoice(state, spots, timestamp) {
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext'); // lazy: EconomyContext reads this module
     const standalone = soloState(state);
     const options = { spots, timestamp, required: true, mode: 'solo', maxChecks: MAX_SOLO_CHECKS };
+    // The search key's versions on the solo copy, read once: the hold's read,
+    // the own answer's check and a new search's key all read this moment.
+    options.versions = Economy.incomeVersions(standalone, options, timestamp);
     const route = Economy.heldIncomeRoute(standalone, { ...options, party: true });
     if (route) return { route, version: `held:${Economy.holdAnswerAt(standalone)}`, own: null };
     const id = Number(state.characterId) || 0;

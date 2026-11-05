@@ -988,7 +988,9 @@ function kitReader(data, price, scrollUseHours) {
 // record travels only by deps (the cold worker passes its basics' record);
 // select returns plain data (no closure over price).
 function incomeRouteFor(state, deps, timestamp, price, keep) {
-    const required = GearProgression.assess(state).required;
+    // The gear verdict the search reads: the build's versions carry it (read
+    // on this state), else assessed once here for the search and its versions.
+    const required = deps.incomeVersions ? deps.incomeVersions.required : GearProgression.assess(state).required;
     const prepared = deps.preparedIncomeRoute;
     if (prepared && prepared.state === state && prepared.timestamp === timestamp && prepared.spots === deps.spots
         && prepared.mode === deps.mode
@@ -1009,7 +1011,7 @@ function incomeRouteFor(state, deps, timestamp, price, keep) {
     // full search's: holdRead searches a due one itself). That held route
     // carries no price reads: the foundation reads the same shot and potion
     // prices itself. versions: the build's (deps.incomeVersions), else read here.
-    const versions = deps.incomeVersions || incomeVersions(state, deps, timestamp);
+    const versions = deps.incomeVersions || incomeVersions(state, deps, timestamp, required);
     const held = deps.searchIncome ? null : holdRead(state, { ...deps, timestamp, required, price: read, versions });
     if (deps.searchIncome) countHoldEvent(deps.searchIncome);
     const found = held ? null : IncomeRoute.search(state, { ...deps, timestamp, required, price: read });
@@ -1041,11 +1043,12 @@ function newHold(found, at, versions, why, afterGoal = false) {
         versions, weights: found.weights, stands: found.stands ?? null, why, moved: null, afterGoal };
 }
 // The earning spot search's input versions on a state (its key's discrete and
-// continuous inputs). view: the build's stateView (heldReadsOf), else the part
-// of it the inputs read.
-function incomeVersions(state, deps, timestamp, view = null) {
-    return Sections.inputVersions(view || Sections.linkView(state), state, timestamp,
-        { spots: deps.spots, mode: deps.mode, link: 'incomeSearch' });
+// continuous inputs), on the part of stateView they read. required: the
+// caller's gear verdict on this state (PersonalGearProgression.assess), else
+// assessed here.
+function incomeVersions(state, deps, timestamp, required = null) {
+    return Sections.inputVersions(Sections.linkView(state), state, timestamp,
+        { spots: deps.spots, mode: deps.mode, required, link: 'incomeSearch' });
 }
 const OBSERVATION = Sections.sectionBit('observation');
 // The first input of the earning spot search's key that moved since the
@@ -1067,15 +1070,16 @@ function incomeMoved(answer, versions, mask = 0, live = null) {
 // The key of an earning-spot search made outside the hold (the party
 // comparison's own solo search, PartyIncomeComparison.soloChoice): the same
 // inputs as the held spot's (incomeVersions on the searched state, options:
-// the search's spots, mode and price) and what its answer stands on. One
+// the search's spots, mode and price; options.versions: the caller's, read
+// once on this state and moment) and what its answer stands on. One
 // rule with the hold: searchMoved names the input that moved since ('' none);
 // the observation bit, which only a build hears, the caller reads by the
 // observation event's own rule.
 function searchInputs(state, found, at, options) {
-    return { versions: incomeVersions(state, options, at), weights: found.weights, stands: found.stands ?? null };
+    return { versions: options.versions || incomeVersions(state, options, at), weights: found.weights, stands: found.stands ?? null };
 }
 function searchMoved(inputs, state, timestamp, options) {
-    return incomeMoved(inputs, incomeVersions(state, options, timestamp), 0, { state, price: options.price });
+    return incomeMoved(inputs, options.versions || incomeVersions(state, options, timestamp), 0, { state, price: options.price });
 }
 // A search of this moment read every event: the bits ask none of it again.
 const eventsFor = (answer, mask, timestamp) => answer.at === timestamp ? 0 : mask;
@@ -1183,7 +1187,7 @@ function holdCheck(state, deps, held, verdict, judged, versions) {
         return !judged;
     }
     if (rebuilt) return false;
-    holdRead(state, { ...deps, timestamp, required: GearProgression.assess(state).required, price, versions, mask });
+    holdRead(state, { ...deps, timestamp, required: versions.required, price, versions, mask });
     return !!hold.moved;
 }
 // The held route as the party comparison's solo side reads it
@@ -2538,5 +2542,5 @@ function reset() {
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
 module.exports = { quietGearBuildCount: () => quietGearBuilds, buildDoors: () => ({ ...doors, ...Agenda.counts() }), countDoor,
-    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), incomeHoldStats, linkStats, heldIncomeRoute, heldSpotMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockFor, stockReader, keptKit, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider, holdAnswerAt, searchInputs, searchMoved,
+    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), incomeHoldStats, linkStats, heldIncomeRoute, heldSpotMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockFor, stockReader, keptKit, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider, holdAnswerAt, incomeVersions, searchInputs, searchMoved,
     craftIncome };

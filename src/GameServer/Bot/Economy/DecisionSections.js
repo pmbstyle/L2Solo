@@ -220,7 +220,8 @@ const VERSIONS = Object.freeze({
     spawns: () => invoke('GameServer/Bot/AI/SpotValueTable').revision(),
     economic: r => invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').economicHunt(r.state),
     adventurer: r => invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(r.state),
-    required: r => !!invoke('GameServer/Bot/AI/PersonalGearProgression').assess(r.state).required,
+    // The caller's own assessment of this state when it holds one (one per read: incomeRouteFor), else assessed here.
+    required: r => !!(r.required ?? invoke('GameServer/Bot/AI/PersonalGearProgression').assess(r.state).required),
     weight: r => invoke('GameServer/Bot/Economy/SpotEconomics').moneyWeight(r.state),
     hour: r => Number(Packet.hourAdena(r.stats.money)) || 0, maxMp: r => Number(r.state.vitals?.maxMp) || 0,
     income: r => r.income ? hash(r.income) : null,
@@ -242,10 +243,11 @@ const VERSIONS = Object.freeze({
 // linkView (no supply); spots: the catalogue the search reads (a spot without
 // a center reads the bot's point); board: the board mirror (ownLines; null
 // without one); mode: the caller's; income: the earning spot answer the money
-// packet carries ([spot, earning], EconomyContext.incomeOutput).
-function inputVersions(view, state, timestamp, { spots = null, board = null, mode = null, income = null, link = null } = {}) {
+// packet carries ([spot, earning], EconomyContext.incomeOutput); required:
+// PersonalGearProgression.assess(state).required when the caller holds it.
+function inputVersions(view, state, timestamp, { spots = null, board = null, mode = null, income = null, required = null, link = null } = {}) {
     const memo = new Map();
-    const r = { view, state, timestamp, spots, board, mode, income, stats: state.stats || {}, kits: view.kitHashes || [],
+    const r = { view, state, timestamp, spots, board, mode, income, required, stats: state.stats || {}, kits: view.kitHashes || [],
         once: (name, read) => memo.has(name) ? memo.get(name) : memo.set(name, read()).get(name) };
     const names = !link ? Object.keys(VERSIONS) : [...new Set([link].flat().flatMap(name =>
         [...LINK_INPUTS[name].discrete, ...LINK_INPUTS[name].continuous]))];

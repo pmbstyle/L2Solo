@@ -433,9 +433,18 @@ function verify() {
         ];
         assert.deepEqual(rows.map(row => row[0]).sort(), [...Sections.LINK_INPUTS.incomeSearch.discrete].sort(), 'a row per declared input');
         let id = 990300;
+        const GearProgression = invoke('GameServer/Bot/AI/PersonalGearProgression');
         for (const [name, move, , extra] of rows) {
-            const { state } = heldBot(++id);
-            assert.equal(count(() => Economy.forState(move(state), deps(1, extra))).searches, 1, `a moved ${name} searches the held spot once`);
+            const { state } = heldBot(++id), moved = move(state);
+            assert.equal(count(() => Economy.forState(moved, deps(1, extra))).searches, 1, `a moved ${name} searches the held spot once`);
+            assert.equal(lastSearch.options.required, GearProgression.assess(moved).required, `a moved ${name}: the search weighs the bot's gear gap now`);
+        }
+        // A read with no build (basics) hears a gear gap that opened, and its search weighs it.
+        {
+            const { state } = heldBot(++id), moved = worn(state);
+            assert.notEqual(GearProgression.assess(moved).required, GearProgression.assess(state).required, 'fixture: the gear gap moved');
+            assert.equal(count(() => Economy.basics(moved, deps(1))).searches, 1, 'a read searches the held spot once');
+            assert.equal(lastSearch.options.required, GearProgression.assess(moved).required, 'and weighs the gap now');
         }
         // inputVersions on a bot out of the economic hunt (a stock focus), so the adventurer moves no goal.
         const base = stat(heldBot(++id).state, { wishFocus: ['stock:1060', 1, 1000000] }), before = versions(base);
