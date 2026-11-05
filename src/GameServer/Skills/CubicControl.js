@@ -110,7 +110,7 @@ function act(session, actor, cubic) {
             cubicMAtk: cubic.power,
             magicSkill: true
         });
-        if (outcome.damage > 0) attack.hit(session, actor, target, outcome.damage);
+        if (outcome.damage > 0) attack.hit(session, actor, target, outcome.damage, { npcAttacked: outcome.npcAttacked });
     });
 }
 

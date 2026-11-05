@@ -17,7 +17,9 @@ const selected = Utility.select(bot, target, 'archer', { pvp: true });
 assert(selected);
 // Use the native rejection gate, not a simulated selector failure.
 allowed = false;
-Attack.prototype.remoteHit.call({ blockedPvpDefense: () => false, checkParticipants: () => false }, session, target, selected.skill);
+Attack.prototype.remoteHit.call(Object.assign(new Attack(), {
+    blockedPvpDefense: () => false, checkParticipants: () => false
+}), session, target, selected.skill);
 allowed = true;
 assert(Feedback.blocked(bot, target, selected.skill), 'a native rejection backs the skill off on this target');
 const rejectedAlternatives = [];

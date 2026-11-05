@@ -5,6 +5,9 @@ require('../src/Global');
 const World = invoke('GameServer/World/World');
 const SocialAggro = invoke('GameServer/Npc/SocialAggro');
 const GeodataEngine = invoke('GameServer/Geodata/GeodataEngine');
+const SkillEffects = invoke('GameServer/Skills/C4SkillEffects');
+const Skill = invoke('GameServer/Model/Skill');
+const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 
 function state({ dead = false, combat = false } = {}) {
     return {
@@ -117,6 +120,26 @@ try {
     World.fetchNpcsInRadius = () => [blankClan, blankHelper];
     assert.deepStrictEqual(SocialAggro.notifyClan({}, blankClan, attacker()), [], 'blank clan should not make all nameless mobs social');
     assert.strictEqual(blankHelper.assists.length, 0, 'blank-clan helper should stay passive');
+
+    for (const id of [122, 115]) {
+        for (const resisted of [false, true]) {
+            const victim = npc(1020);
+            const ally = npc(1021, { locX: 100 });
+            const outsider = npc(1022, { clanName: 'Demonic', locX: 100 });
+            const caster = attacker();
+            const skill = new Skill({ selfId: id, level: 1, spell: true });
+            World.fetchNpcsInRadius = () => [victim, ally, outsider];
+            try {
+                const result = SkillEffects.execute({ actor: caster }, caster, victim, skill,
+                    { rng: () => resisted ? 1 : 0, magicSkill: true });
+                assert.strictEqual(result.effectResisted, resisted);
+                assert.strictEqual(ally.fetchDestId(), caster.fetchId(), 'a landed or resisted debuff must call nearby clan help');
+                assert.strictEqual(outsider.fetchDestId(), undefined, 'a hostile cast must retain clan assistance eligibility');
+            } finally {
+                EffectTicker.clearAll(victim);
+            }
+        }
+    }
 } finally {
     World.fetchNpcsInRadius = originalFetchNpcsInRadius;
     GeodataEngine.hasLineOfSight = originalHasLineOfSight;

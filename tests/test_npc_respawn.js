@@ -174,7 +174,10 @@ assert.strictEqual(walker.automation.scheduleMoveToCoords(walk, walker, { locX: 
 assert.deepStrictEqual([walk.sent, walker.state.fetchTowards()], [[0x01], 'wander'], 'the walk is announced');
 walk.sent.length = 0;
 walker.destructor(walk);
-assert.deepStrictEqual([walk.sent, walker.automation.moveInterpolation, walker.automation.timer.action.timer],
-    [[0x47, ...despawn.sent], null, undefined], 'a despawn stops a walking NPC and its walk timers');
+// The walker's despawn is the resting one's plus one StopMove (the order of
+// packets sent in the same turn is not observable: the NPC is deleted next).
+assert.deepStrictEqual([walk.sent.filter((op) => op === 0x47).length, walk.sent.filter((op) => op !== 0x47),
+    walker.automation.moveInterpolation, walker.automation.timer.action.timer],
+    [1, despawn.sent, null, undefined], 'a despawn stops a walking NPC and its walk timers');
 
 console.log('NPC respawn regression checks passed');

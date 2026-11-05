@@ -1,7 +1,9 @@
+// Hot skill execution for actors, NPCs, cubics and weapon effects. Skill
+// semantics come from C4SkillRules; NPC retaliation uses the shared hate owner.
 const FailureLog = require('../../FailureLog');
 const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
-const NpcHate = invoke('GameServer/Npc/NpcHate');
+const NpcAttacked = invoke('GameServer/Npc/Attacked');
 const EffectStore = invoke('GameServer/Effects/EffectStore');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 const EffectTicker = invoke('GameServer/Effects/EffectTicker');
@@ -12,6 +14,7 @@ const ChargeLifecycle = invoke('GameServer/Skills/ChargeLifecycle');
 const Formulas = invoke('GameServer/Formulas');
 const HitRules = invoke('GameServer/Combat/HitRules');
 const ServerResponse = invoke('GameServer/Network/Response');
+const ConsoleText = invoke('GameServer/ConsoleText');
 
 
 function isBotSummonActor(session, actor) {
@@ -41,6 +44,7 @@ function execute(session, actor, target, skill, context = {}) {
         spReward: 0,
         charges: null,
         aggroDamage: 0,
+        npcAttacked: false, // The subsequent HP hit reuses this cast's group notification.
         aggroPointsApplied: 0,
         aggroReduced: false,
         aggroReduction: 0,
@@ -56,7 +60,13 @@ function execute(session, actor, target, skill, context = {}) {
         combat: target?.state?.fetchCombats?.() === true };
     const finish = () => {
         if (result.heal > 0 || result.resurrected) invoke('GameServer/Social/CombatHelpMemory').record(actor, target, result, beforeHelp);
-        return finalizeSkillResult(result, session, actor, target, skill, semantic);
+        // Caster failure (158) also covers a resisted secondary effect on a
+        // damaging skill; target-side resisted magic (159) is a separate packet.
+        if (!actor.fetchKind && session?.dataSendToMe && (result.resisted || result.effectResisted)) {
+            ConsoleText.transmit(session, ConsoleText.caption.attackFailed);
+        }
+        result.aggroPointsApplied = applyAggroPoints(session, actor, target, skill, semantic);
+        return result;
     };
 
     if (context.selfEffectOnly === true && semantic.selfEffect) {
@@ -66,6 +76,12 @@ function execute(session, actor, target, skill, context = {}) {
             stats: semantic.selfEffect.stats || {}
         }, actor);
         return finish();
+    }
+
+    if (C4SkillRules.provokesNpc(semantic) && actor && target !== actor
+        && target?.fetchAttackable?.() === true && target.isDead?.() !== true
+        && target.state?.fetchDead?.() !== true) {
+        result.npcAttacked = NpcAttacked(session, actor, target);
     }
 
     if (semantic.skillType === C4SkillRules.SUMMON) {
@@ -392,19 +408,6 @@ function execute(session, actor, target, skill, context = {}) {
     }
 
     return finish();
-}
-
-function finalizeSkillResult(result, session, actor, target, skill, semantic) {
-    // Poison Blade Dance is hostile on application, even when resisted.
-    // Waiting for its first DOT tick leaves a resisted cast without retaliation.
-    if (Number(skill.fetchSelfId?.()) === 84 && actor && target !== actor
-        && target?.fetchAttackable?.() === true && target.isDead?.() !== true
-        && target.state?.fetchDead?.() !== true) {
-        if (typeof target.addDamageHate === 'function') target.addDamageHate(session, actor, 0, NpcHate.ENGAGE_HATE);
-        else target.enterCombatState?.(session, actor);
-    }
-    result.aggroPointsApplied = applyAggroPoints(session, actor, target, skill, semantic);
-    return result;
 }
 
 function applyAggroPoints(session, actor, target, skill, semantic) {

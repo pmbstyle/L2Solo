@@ -84,11 +84,10 @@ function interruptOnApply(session, actor, effect, source = session?.actor) {
     actor.state?.setHits?.(false);
     actor.state?.setCasts?.(false);
     if (impairments.disabled) {
-        actor.state?.setCombats?.(false);
-        if (typeof actor.abortCombatState === 'function') {
-            const safeSession = session?.dataSendToMeAndOthers ? session : { dataSendToMeAndOthers() {} };
-            actor.abortCombatState(safeSession, { preserveAggro: true });
-        }
+        // C4 control interrupts actions, not an NPC's attack intention or hate.
+        // Its combat loop waits on these same restrictions and resumes on release.
+        if (actor.interruptCombatActions) actor.interruptCombatActions(session);
+        else actor.state?.setCombats?.(false);
     }
     stopMovement(session, actor);
     if (impairments.afraid) {

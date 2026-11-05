@@ -1,9 +1,12 @@
+'use strict';
+
 const assert = require('assert');
 
 require('../src/Global');
 
 const AttackRequest = invoke('GameServer/Actor/Generics/AttackRequest');
 const AttackRange = invoke('GameServer/Actor/AttackRange');
+const Attack = invoke('GameServer/Actor/Attack');
 const SkillExec = invoke('GameServer/Actor/Generics/SkillExec');
 const SkillModel = invoke('GameServer/Model/Skill');
 const DataCache = invoke('GameServer/DataCache');
@@ -131,6 +134,7 @@ try {
     });
 
     const caster = {
+        attack: new Attack(),
         skillset: {
             fetchSkill: () => powerShot
         },
