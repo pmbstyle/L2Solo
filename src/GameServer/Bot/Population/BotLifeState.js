@@ -991,15 +991,18 @@ function save(row, options = {}) {
             deathCount = excluded.deathCount,
             inventorySummary = excluded.inventorySummary,
             -- Native takeover/release/restore owns player membership. A late
-            -- actor snapshot cannot revive or remove that ownership marker.
-            statsJson = json_set(json_patch(json_remove(${EconomyCommit.preserveLeafSql(
-                "json_remove(excluded.statsJson, '$.marketTrades', '$.priceBeliefs')")}, '$.playerPartyTakeover', '$.constPartySession'),
-                json_object('playerPartyTakeover', json_extract(bot_life_state.statsJson, '$.playerPartyTakeover'),
-                    'constPartySession', json_extract(bot_life_state.statsJson, '$.constPartySession'))),
-                '$.hennas', json_array(
+            -- actor snapshot cannot revive or remove that ownership marker:
+            -- both are dropped from the proposal and patched back from the
+            -- row (a NULL member removes the key), with the hennas from
+            -- their rows, in one patch (one pass over the stats text).
+            statsJson = ${EconomyCommit.preserveLeafSql(
+                "json_remove(excluded.statsJson, '$.marketTrades', '$.priceBeliefs', '$.playerPartyTakeover', '$.constPartySession')",
+                `'playerPartyTakeover', json_extract(bot_life_state.statsJson, '$.playerPartyTakeover'),
+                'constPartySession', json_extract(bot_life_state.statsJson, '$.constPartySession'),
+                'hennas', json_array(
                     (SELECT symbolId FROM character_hennas WHERE characterId = excluded.characterId AND slot = 1),
                     (SELECT symbolId FROM character_hennas WHERE characterId = excluded.characterId AND slot = 2),
-                    (SELECT symbolId FROM character_hennas WHERE characterId = excluded.characterId AND slot = 3))),
+                    (SELECT symbolId FROM character_hennas WHERE characterId = excluded.characterId AND slot = 3))`)},
             -- The mind rides under the same guard as the body: a near bot's
             -- mind on main is the worker's copy, the next save carries the
             -- same copy, and a refused save is a stale actor snapshot, so a

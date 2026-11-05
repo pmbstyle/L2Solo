@@ -87,8 +87,10 @@ async function admit(state, kind, original = null) {
 // The one SQL rule for the leaf on a bot_life_state write of a whole stats
 // JSON (`incoming`, an SQL expression): the row's leaf stays, a leaf the row
 // does not hold is dropped. json_patch with a NULL member removes the key.
-function preserveLeafSql(incoming) {
-    return `json_patch(${incoming}, json_object('economyCommit', json_extract(bot_life_state.statsJson, '$.economyCommit')))`;
+// `members`: more top-level `'key', value` pairs the caller's write patches in
+// the same pass (one parse and serialize of the stats instead of one each).
+function preserveLeafSql(incoming, members = '') {
+    return `json_patch(${incoming}, json_object('economyCommit', json_extract(bot_life_state.statsJson, '$.economyCommit')${members ? `, ${members}` : ''}))`;
 }
 function finish(characterId, command) {
     const value = active.get(Number(characterId));
