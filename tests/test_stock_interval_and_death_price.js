@@ -66,7 +66,7 @@ assert.equal(changed.stock('shots').target, Math.ceil(use * 4));
 const session = { coldLifeState: { stats: { playedHours: 10 } } };
 for (const [hour, expected] of [[10, [10, 0]], [13, [13, 3]], [18, [18, 4]], [22, [22, 4]]]) {
     session.coldLifeState.stats.playedHours = hour;
-    Events.raiseDecision(session, 'town');
+    Events.raiseDecision(session, 'arrived_town');
     assert.deepEqual(session.coldLifeState.stats.visitEvery, expected);
 }
 assert.deepEqual(Visit.arrived(session.coldLifeState.stats), [22, 4], 'repeated end of the same visit stores no zero interval');

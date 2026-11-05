@@ -46,28 +46,35 @@ const link = (sections, waits) => Object.freeze({ sections: Object.freeze(sectio
 const KIT = ['build', 'benefits', 'sources'], STOCK = ['supply', 'sources'];
 const BOUGHT = ['sources', 'money'], OBSERVED = ['occupation', 'benefits', 'sources'];
 
-// Every change a bot can hear: the sections of the decision it touches, the places
-// it waits at. What has no place in waits is heard at once everywhere.
-const LINKS = Object.freeze({
-    // Its own state (DecisionSections.factEvents).
-    build: link(KIT, WORK | VISIT),
-    recipes: link(KIT, WORK | VISIT),
-    dead: link(['combat'], 0),
+// Every situation a bot can hear: the sections of the build it touches, the places
+// it waits at (both temporary: the build runs on its sections until it moves to
+// woken decisions). What has no place in waits is heard at once everywhere.
+const SITUATIONS = Object.freeze({
+    // Its own state (detect). A level moved, or the rest of the kit (worn gear,
+    // hennas, skills, class, the craft): read apart, a level up wins a step that moved both.
+    level_up: link(KIT, WORK | VISIT),
+    gear_changed: link(KIT, WORK | VISIT),
+    recipe_learned: link(KIT, WORK | VISIT),
+    died: link(['combat'], 0),
+    // A hot body's respawn in town (BotAI): its town arrival follows as its own.
+    revived: link(['combat'], 0),
     relations: link(['relations'], WORK | VISIT),
-    party: link(['relations'], 0),
+    party_joined: link(['relations'], 0),
+    party_left: link(['relations'], 0),
     // A search found a better spot: the bot finishes where it stands, and a job that
     // is no hunt (income_later) before it hears of it.
     income_moved: link(['occupation'], WORK | VISIT),
     income_later: link(['occupation'], GATED),
-    // A spot too full to enter, and what main refused at the act: the plan cannot stand.
-    crowded: link(['occupation', 'sources'], 0),
-    rejected: link(['sources'], 0),
+    // A spot too full to enter (the room at arrival), and what main refused at the
+    // act or a body that failed its step five times: the plan cannot stand.
+    spot_crowded: link(['occupation', 'sources'], 0),
+    goal_failed: link(['sources'], 0),
     // A spot whose spawns admit none of the bot's fights alone (a kit or level it
     // lost, a stand-in ground): the bot stands with nothing to hunt, its plan cannot
     // stand. The occupation rebuild searches its spot afresh and drops the kept route.
-    unhuntable: link(['occupation', 'sources'], 0),
+    spot_empty: link(['occupation', 'sources'], 0),
     // A body's arrival in town.
-    town: link(['supply', 'money'], 0),
+    arrived_town: link(['supply', 'money'], 0),
     // Main moved the bot's goal; its native plan failed or moved; the step's own
     // review of a craft or clan market.
     goal_moved: link([], 0),
@@ -75,20 +82,25 @@ const LINKS = Object.freeze({
     craft_bid: link([], 0),
     clan_market: link([], 0),
     funding: link(['funding'], WORK | VISIT),
-    occupation: link(['occupation'], 0),
-    riskDeaths: link(['combat', 'occupation'], 0),
-    // The death recovery's level penalty moved (raised, or lifted by clean wins):
-    // the ground the bot may fight on moved, as a death moves it.
-    recovery: link(['combat', 'occupation'], 0),
+    // A move the bot did not order (a flight, a pull, a push out, a party's call).
+    moved_by_world: link(['occupation'], 0),
+    // Deaths at its spot, or the death recovery's level penalty raised (a death, the
+    // spot's pressure): the ground the bot may fight on moved.
+    spot_dangerous: link(['combat', 'occupation'], 0),
+    // The recovery's penalty lifted by clean wins.
+    recovered: link(['combat', 'occupation'], 0),
     supply: link(['supply'], FIELD | VISIT),
     bag: link(STOCK, FIELD | VISIT),
     stores: link(STOCK, WORK | VISIT),
     // Its own warehouse: what it put in and took is its doing, heard as it arrives in town.
     warehouse: link(STOCK, GATED),
-    // A condition, not a change: a need that opened (a supply gone, potions under
-    // what the survival drink keeps, the bag full, the load a level up).
-    need_supply: link(['supply'], 0),
-    need_bag: link(STOCK, 0),
+    // A condition, not a change: a need that opened. The planned shot ran out; the
+    // survival potions ran out or fell under what the survival drink keeps; the
+    // trip's scroll ran out; the bag full or the load a level up.
+    shots_out: link(['supply'], 0),
+    'stock_low:potions': link(['supply'], 0),
+    stock_low: link(['supply'], 0),
+    bag_full: link(STOCK, 0),
     // Its own doing is no event (own outputs are not inputs): its trips and where
     // they end, its craft preparation.
     own_move: link(['occupation'], GATED),
@@ -143,8 +155,8 @@ const DOORS = Object.freeze({
 });
 const rowOf = caller => DOORS[caller] || READER;
 
-const hears = (name, where) => !(LINKS[name].waits & where);
-const sections = name => LINKS[name].sections;
+const hears = (name, where) => !(SITUATIONS[name].waits & where);
+const sections = name => SITUATIONS[name].sections;
 // What a door gets when the plan does not stand: 'decide', 'request' or 'look'.
 function answer(caller, state) {
     const { link: name } = rowOf(caller);
@@ -165,7 +177,7 @@ const quiet = (state, why) => !!why && !hears('candidates', place(state)) && !go
 // The sections of the links heard here, each once.
 function heard(names, where) {
     const out = new Set();
-    for (const name of names) if (hears(name, where)) for (const section of LINKS[name].sections) out.add(section);
+    for (const name of names) if (hears(name, where)) for (const section of SITUATIONS[name].sections) out.add(section);
     return [...out];
 }
 // The same for a real raise: what each link woke and where, for the health line.
@@ -183,6 +195,95 @@ function woke(name, where) {
     return hears(name, where);
 }
 
+// The fact readers (DecisionSections: the views and facts its builds keep as their
+// baseline). lazy: cycle DecisionSections reads this catalogue at its top.
+let Readers = null;
+const readers = () => Readers ||= require('./Economy/DecisionSections');
+// The situations of a bot's own state between the facts a decision kept and the
+// facts now, in fact order: previousFact(name) reads the kept one, current the
+// facts now (DecisionSections.factsOf). funding: the money fact's hard part moved
+// (DecisionSections.moneyChanged). planned: the occupation the held decision ordered
+// (DecisionSections.occupationPlanned), its own output, no event. Both threads: the
+// step's diff (detect) and the held build's verdict (EconomyContext).
+function factNames(previousFact, current, funding = false, planned = false) {
+    const names = [];
+    const add = name => { if (!names.includes(name)) names.push(name); };
+    if (!previousFact('dead') && current.dead) add('died');
+    if (previousFact('build') !== current.build) {
+        // A baseline kept before the level was its own fact reads as gear.
+        const level = previousFact('level');
+        add(level !== undefined && level !== current.level ? 'level_up' : 'gear_changed');
+    }
+    if (previousFact('recipes') !== current.recipes) add('recipe_learned');
+    if (previousFact('relations') !== current.relations) add('relations');
+    // A new party or a new role in it reads as joining it.
+    if (previousFact('party') !== current.party) add(current.party === readers().NO_PARTY ? 'party_left' : 'party_joined');
+    if (funding) add('funding');
+    // Resting reads as hunting at its spot: a rest where the bot hunted is
+    // none, a rest at another spot is an occupation event.
+    if (!planned && previousFact('occupation') !== current.occupation) add('moved_by_world');
+    if (current.riskDeaths > previousFact('riskDeaths')) add('spot_dangerous');
+    // The recovery's level penalty, up (a death, the spot's pressure) or down
+    // (its clean wins, SpotRiskPolicy.recordRecovery). A baseline kept before
+    // the fact was recorded has none to compare.
+    const recovery = previousFact('recovery');
+    if (recovery !== undefined && recovery !== current.recovery) add(current.recovery < recovery ? 'recovered' : 'spot_dangerous');
+    // Physical exhaustion is never hidden by economic uncertainty.
+    if (previousFact('supply') !== current.supply) add('supply');
+    if (previousFact('bag') !== current.bag) add('bag');
+    if (previousFact('stores') !== current.stores) add('stores');
+    if (previousFact('warehouse') !== current.warehouse) add('warehouse');
+    return names;
+}
+// The step's fact diff, one function for both threads (a far step's projection,
+// BotLifeState.prepareResolve; a near bot's post): the situations of its own state
+// against the decision's baseline (stats.wishSections), a fact the baseline lacks
+// against the state before. round: escrow (the buy-order escrow the money fact
+// reads), leaf (the step's held leaf: the move it ordered raises nothing; none, as
+// on main: every move is an event), unhuntable (the round found its spot empty of
+// prey, BackgroundResolver, once a stay: a fact of the round, not of the states).
+function detect(before, after, { escrow = 0, leaf = null, unhuntable = false } = {}) {
+    const Sections = readers();
+    // Main may replay a validated worker packet that already describes this
+    // same round. Compare its actual baselines, not sequence alone; a packet
+    // preceding a new death/level/resource event still raises that event.
+    const represented = Number(after.stats?.decisionSeq || 0) > Number(before.stats?.decisionSeq || 0)
+        ? after.stats?.wishSections : null;
+    const previous = represented || before.stats?.wishSections || {};
+    let original;
+    // A fact the baseline kept as null (no recipe book read) is kept: only a
+    // fact the baseline lacks reads the state before.
+    const previousFact = key => Object.hasOwn(previous, key) ? previous[key] : (original ||= Sections.semanticFacts(before))[key];
+    // No memory and no recipe book here: the relations and the recipes the
+    // decision kept stand until the next verdict, which reads both; the party with them.
+    const view = Sections.stateView(after);
+    const current = { ...Sections.factsOf(view), relations: previousFact('relations'), recipes: previousFact('recipes'), party: previousFact('party') };
+    const funding = Sections.moneyChanged(after, represented || before.stats?.wishSections, escrow, false)
+        || !previous.funding && Sections.fundingMark(before) !== Sections.fundingMark(after);
+    const names = factNames(previousFact, current, funding, Sections.occupationPlanned(after, leaf));
+    if (unhuntable) names.push('spot_empty');
+    return gated(place(after, before)) ? names.concat(needsOpened(before, after, names, view)) : names;
+}
+// A need that opened in this step, one raise: one that stays open raises nothing more.
+// now: the step's view of after (stateView), its supply ids read once.
+function needsOpened(before, after, names, now) {
+    const count = (state, id) => Math.max(0, Number(state.inventory?.[id]?.amount) || 0);
+    const ranOut = id => count(before, id) > 0 && !count(after, id);
+    const [scrollId, shotId, potionId] = now.supply.map(row => row[0]);
+    const floor = readers().potionSurvivalTarget(after);
+    const opened = [];
+    if (ranOut(shotId)) opened.push('shots_out');
+    if (ranOut(potionId) || count(before, potionId) >= floor && count(after, potionId) < floor) opened.push('stock_low:potions');
+    if (ranOut(scrollId)) opened.push('stock_low');
+    if (names.includes('bag')) {
+        const was = readers().stateView(before);
+        if (now.bagFull > was.bagFull || now.weight > was.weight) opened.push('bag_full');
+    }
+    return opened;
+}
+// The sections a list of situations touches wherever the bot stands.
+const sectionsOf = names => heard(names, OPEN);
+
 module.exports = { FIELD_ACTIVITIES, place, gated, field, reactive, onVisit, agendaHears, readsFacts, hears, heard, raise, woke, raisedCounts: () => raisedCounts, sections,
     answer, keeps, incomeLink, goalMoment, quiet,
-    placeName: where => NAMES.get(where), LINKS };
+    placeName: where => NAMES.get(where), SITUATIONS, detect, factNames, sectionsOf };

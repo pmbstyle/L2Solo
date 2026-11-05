@@ -34,6 +34,7 @@ async function run() {
     const { beginHuntingTrip } = invoke('GameServer/Bot/Population/HuntingTravel');
     const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
     const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+    const Situations = invoke('GameServer/Bot/Situations');
     const Life = invoke('GameServer/Bot/Population/BotLifeState');
     Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     invoke('GameServer/Bot/Economy/PersonalWarehouseIndex').useRowSource(() => null, () => true);
@@ -64,7 +65,7 @@ async function run() {
     // 924), pulled to A (17_13) before the trip (`standing`: the published
     // state moved before it; `room`: the spots with room), the trip, its
     // arrival. verdict(state) = does the held decision hold over that state;
-    // round(before, after) = the sections a far step's round raises with the
+    // round(before, after) = the situations a far step's round raises with the
     // step's leaf (BotLifeState.prepareResolve's check).
     const spotAt = (state, id) => {
         const spot = spots.find(row => String(row.id) === String(id));
@@ -84,7 +85,8 @@ async function run() {
         const proof = held.eventProof();
         const verdict = state => Economy.eventProofHolds(state, proof, { timestamp: T },
             { baseline: packet.wishSections, leaf, timestamp: T });
-        const round = (before, after) => Sections.events(before, after, 0, leaf);
+        const round = (before, after) => Situations.detect(before, after, { leaf })
+            .filter(name => Situations.hears(name, Situations.place(after, before)));
         assert.equal(verdict(published), true, 'fixture: the published decision holds');
         const routed = standing(published, X);
         const route = BotRoute.trip({}, routed, leaf, { spots, timestamp: T, hasRoom: room(X) });
@@ -141,7 +143,7 @@ async function run() {
         const moved = spotAt(arrived, other.id);
         assert.equal(verdict(moved), true, 'a far spot change without a trip keeps the decision');
         assert.deepEqual(round(arrived, moved), [], 'and raises nothing in the round');
-        assert.deepEqual(round({ ...arrived, phase: 'hot' }, { ...moved, phase: 'hot' }), ['occupation'],
+        assert.deepEqual(round({ ...arrived, phase: 'hot' }, { ...moved, phase: 'hot' }), ['moved_by_world'],
             'near a player a spot change without a trip is an occupation event');
         // A round there (the far step's projection), then back on the
         // stand-in ground without the detour (a party arrival, a fallback
@@ -150,7 +152,7 @@ async function run() {
             { timestamp: T + 1000, persist: false, projectClassProgression: true, moneyEscrowFor: () => 0 });
         assert(there, 'fixture: the round projects');
         const back = { ...spotAt(there, route.spotId), activity: 'hunting' };
-        assert(!round(there, back).includes('occupation'), 'a far return to the stand-in ground raises nothing');
+        assert(!round(there, back).includes('moved_by_world'), 'a far return to the stand-in ground raises nothing');
     }
     console.log('PASS exp hunting detour keeps / a far material hunt, a move off the stand-in and a return to it raise nothing');
 

@@ -68,7 +68,7 @@ function groundLook(session, spot) {
     }
     session.groundReadying = null;
     stats.emptyGround = String(spot.id);
-    DecisionEvents.raiseDecision(session, 'unhuntable');
+    DecisionEvents.raiseDecision(session, 'spot_empty');
     return 'raised';
 }
 // What gets the body ready (groundLook): 'summon', 'rest', 'wait' (a summon or

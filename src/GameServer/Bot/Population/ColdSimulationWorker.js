@@ -952,7 +952,7 @@ const softInputFor = (characterId, timestamp) => ({ board: boardReady(), buyOrde
     memory: () => kernel.interactionMemory.relationRows(Number(characterId)) });
 // A near bot's post (BotLifeState.notifyNearFacts) against the row before
 // it, on the posted row before it is stored: the raise main named (once per
-// raise), the hard facts (DecisionSections.events) and the soft point, in the
+// raise), the hard facts (Situations.detect) and the soft point, in the
 // far step's one bump. The decision is then taken on this row (mode near).
 // applied: the last raise the record applied.
 function nearEvents(id, previous, entry, applied) {
@@ -961,7 +961,7 @@ function nearEvents(id, previous, entry, applied) {
     // record's stand, so a late post cannot roll back a raise.
     for (const key of SavedStats.MIND_KEYS) stats[key] = previous.stats?.[key];
     entry.raiseSeq = DecisionEvents.takePostedRaise(stats, row.raise, applied);
-    const hard = DecisionSections.events(previous, row, escrowFor(id));
+    const hard = Situations.raise(Situations.detect(previous, row, { escrow: escrowFor(id) }), Situations.place(row, previous));
     const soft = DecisionSections.softEvents(row, stats.wishSections, softInputFor(id, Date.now()));
     DecisionEvents.raiseSections(previous, row, hard, soft);
 }
@@ -1245,7 +1245,7 @@ function roundProjection(state, timestamp, writtenAt, plan) {
     return { persist: false, timestamp, writtenAt, projectClassProgression: true,
         moneyEscrowFor: () => escrowFor(state.characterId),
         // The step's held leaf: the round's check reads its own trip and
-        // arrival as no event (DecisionSections.events).
+        // arrival as no event (Situations.detect).
         leaf: plan?.economy?.network?.activity ?? null };
 }
 // The economy edges of a held decision over a stretch of rounds.
@@ -1366,7 +1366,7 @@ function pruneLookSeen(ownerId) {
 // there is indexed at its destination but does not stand there yet. Read once
 // when a trip ends; no place is held for a bot on its way. A raid boss spot or
 // a spot the catalog does not know has room.
-const ROOM_SECTIONS = Situations.sections('crowded');
+const ROOM_SECTIONS = Situations.sections('spot_crowded');
 function roomAtArrival(spotId, arriving, overflow = 0) {
     const room = SpotProfiles.spotRoom(planningSpots, spotId);
     if (room === Infinity) return true;

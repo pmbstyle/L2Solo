@@ -536,7 +536,7 @@ function relationTargetIds(state, memory = null) {
 }
 // The one fact function, for near and far bots alike: what about the bot's
 // world changed is the fact that differs from the copy kept with the
-// decision (factEvents). The raw values are read from a state (stateView):
+// decision (Situations.detect, factNames). The raw values are read from a state (stateView):
 // the saved one of a far bot, the posted row of a near one. view: the kit
 // fields (kitView), recipes (the sorted
 // known recipe ids, null: none read), party (null: none; its partyId and
@@ -548,13 +548,17 @@ function relationTargetIds(state, memory = null) {
 // stock item), stores (four identities), bagFull, weight (level 0-4).
 // memory: the bot's interaction memory rows, null when the caller read none.
 function factsOf(view, memory = null) {
-    return { build: kitFact(view), recipes: view.recipes ? hash(view.recipes) : null,
+    return { build: kitFact(view), level: view.kitHashes?.[2] ?? null, recipes: view.recipes ? hash(view.recipes) : null,
         relations: hash([view.clanId, ...(view.relationTargets || relationTargetIds(view, memory))]),
         party: hash([view.party?.partyId, view.party?.role]),
         occupation: hash([view.spotId, view.activity === 'resting' ? 'hunting' : view.activity]),
         dead: view.dead, riskDeaths: view.riskDeaths, recovery: view.recovery, supply: hash(view.supply), stores: hash(view.stores), warehouse: view.warehouse,
         bag: hash([view.bagFull, view.weight]) };
 }
+// The party fact of a bot in none (factsOf).
+const NO_PARTY = hash([null, null]);
+// What the survival drink keeps of the planned potion (its stock target).
+const potionSurvivalTarget = state => Number(Packet.potionSurvivalTarget(state.stats?.stockTargets)) || 0;
 // The stock items whose presence is the supply fact: the trip's Scroll of
 // Escape (736), the planned shot, the planned healing potion.
 function stockIds(shotPlan, potion) {
@@ -625,47 +629,6 @@ function isEmptyWishPlan(plan) {
         && plan.next == null && plan.reason === 'wish_focus'
         && Object.keys(plan).every(key => ['status', 'strategy', 'next', 'reason'].includes(key));
 }
-// unhuntable: the round found the bot's spot empty of prey (BackgroundResolver,
-// the first such round of a stay), a fact of the round, not of the two states.
-function events(before, after, escrow = 0, leaf = null, unhuntable = false) {
-    // Main may replay a validated worker packet that already describes this
-    // same round. Compare its actual baselines, not sequence alone; a packet
-    // preceding a new death/level/resource event still raises that event.
-    const represented = Number(after.stats?.decisionSeq || 0) > Number(before.stats?.decisionSeq || 0)
-        ? after.stats?.wishSections : null;
-    const previous = represented || before.stats?.wishSections || {};
-    let original;
-    // A fact the baseline kept as null (no recipe book read) is kept: only a
-    // fact the baseline lacks reads the state before.
-    const previousFact = key => Object.hasOwn(previous, key) ? previous[key] : (original ||= semanticFacts(before))[key];
-    // No memory and no recipe book here: the relations and the recipes the
-    // decision kept stand until the next verdict, which reads both; the party with them.
-    const view = stateView(after);
-    const current = { ...factsOf(view), relations: previousFact('relations'), recipes: previousFact('recipes'), party: previousFact('party') };
-    // leaf: the step's held leaf (the worker's round check): the move it
-    // ordered is no event (occupationPlanned). None (main, a step without a
-    // plan): every move is an event.
-    const links = [];
-    factEvents(previousFact, current, moneyChanged(after, represented || before.stats?.wishSections, escrow, false)
-        || !previous.funding && fundingMark(before) !== fundingMark(after), links, occupationPlanned(after, leaf));
-    if (unhuntable) links.push('unhuntable');
-    const where = Situations.place(after, before);
-    return Situations.raise(Situations.gated(where) ? [...links, ...needsOpened(before, after, links, view)] : links, where);
-}
-// A need that opened in this step, one raise: one that stays open raises nothing more.
-// now: the step's view of after (stateView), its supply ids read once.
-function needsOpened(before, after, facts, now) {
-    const count = (state, id) => positive(state.inventory?.[id]?.amount);
-    const potionId = now.supply[2][0], floor = Number(Packet.potionSurvivalTarget(after.stats?.stockTargets)) || 0;
-    const ranOut = now.supply.some(([id]) => count(before, id) > 0 && !count(after, id))
-        || count(before, potionId) >= floor && count(after, potionId) < floor;
-    const opened = ranOut ? ['need_supply'] : [];
-    if (facts.includes('bag')) {
-        const was = stateView(before);
-        if (now.bagFull > was.bagFull || now.weight > was.weight) opened.push('need_bag');
-    }
-    return opened;
-}
 // The one reading of an occupation against the held leaf (Recompute: own
 // outputs are not inputs): the trip the leaf ordered under way (to its
 // hunting spot arriving to hunt, or to its town), or the arrival where it
@@ -680,7 +643,7 @@ function needsOpened(before, after, facts, now) {
 // pushed-out spot, a party's call), so a pull to another spot or a flight's
 // arrival raises nothing there. Near a player only the leaf's own trip and
 // arrival are; death, recall, a pull, a flight or a yield stay events. Read by
-// the held build's verdict and by the far step's round check (factEvents'
+// the held build's verdict and by the far step's round check (Situations.factNames'
 // planned); its field-trip clause is EconomyContext.fieldActivity's.
 function occupationPlanned(state, leaf) {
     const where = Situations.place(state);
@@ -715,36 +678,6 @@ function standsIn(state, leaf) {
     const pair = state.stats?.standIn;
     return pair?.ground != null && String(pair.ground) === String(state.spotId) && ownSpot(pair.leaf, leaf);
 }
-// One semantic comparison for state publication and the diagnostic event gate.
-// A reader supplies the baseline facts; money keeps its own soft verdict.
-// facts (diagnostics, optional): an array that receives the name of every
-// raised fact, in this order. planned: the occupation the held decision
-// ordered (occupationPlanned, the verdict's), its own output, no event.
-function factEvents(previousFact, current, funding = false, facts = null, planned = false) {
-    const sections = new Set();
-    const raise = fact => { facts?.push(fact); for (const name of Situations.sections(fact)) sections.add(name); };
-    if (!previousFact('dead') && current.dead) raise('dead');
-    if (previousFact('build') !== current.build) raise('build');
-    if (previousFact('recipes') !== current.recipes) raise('recipes');
-    if (previousFact('relations') !== current.relations) raise('relations');
-    if (previousFact('party') !== current.party) raise('party');
-    if (funding) raise('funding');
-    // Resting reads as hunting at its spot: a rest where the bot hunted is
-    // none, a rest at another spot is an occupation event.
-    if (!planned && previousFact('occupation') !== current.occupation) raise('occupation');
-    if (current.riskDeaths > previousFact('riskDeaths')) raise('riskDeaths');
-    // The recovery's level penalty, up (a death, the spot's pressure) or down
-    // (its clean wins, SpotRiskPolicy.recordRecovery). A baseline kept before
-    // the fact was recorded has none to compare.
-    const recovery = previousFact('recovery');
-    if (recovery !== undefined && recovery !== current.recovery) raise('recovery');
-    // Physical exhaustion is never hidden by economic uncertainty.
-    if (previousFact('supply') !== current.supply) raise('supply');
-    if (previousFact('bag') !== current.bag) raise('bag');
-    if (previousFact('stores') !== current.stores) raise('stores');
-    if (previousFact('warehouse') !== current.warehouse) raise('warehouse');
-    return [...sections];
-}
 // The kit fact each economy build records in its baseline moved between two
 // states of one bot: a party member's kit event. A party member's step raises
 // no hard event (they run in hunting rounds only); its own post-round build
@@ -754,4 +687,4 @@ function kitMoved(before, after) {
     return (before?.stats?.wishSections?.build ?? null) !== (after?.stats?.wishSections?.build ?? null);
 }
 module.exports = { FIELD_ACTIVITIES, partyIdOf, moneyReached, goalReached, SECTIONS, COMPUTED, LINK_INPUTS, inputVersions, linkView, routeVersions, movedInput, shotInputs, stateView, sectionBit, sectionMask, sectionNames, kit, kitMoved, moneyChanged, moneyBound, observationChanged, incomeError,
-    MARKET_WATCH, softEvents, marketCrossed, carrySectionBaseline, baselineIdentity, sample, sampleRows, packSample, observationBaselineValid, bounds, snapshot, semanticFacts, factsOf, relationTargetIds, events, factEvents, occupationPlanned, hash, isEmptyWishPlan, decisionRefusal };
+    MARKET_WATCH, softEvents, marketCrossed, carrySectionBaseline, baselineIdentity, sample, sampleRows, packSample, observationBaselineValid, bounds, snapshot, semanticFacts, factsOf, relationTargetIds, NO_PARTY, potionSurvivalTarget, fundingMark, occupationPlanned, hash, isEmptyWishPlan, decisionRefusal };

@@ -61,7 +61,7 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
     // A later raise joins the pending bag; the answer to the impossible raise
     // alone lifts its mark (a new rejection raises again) and keeps the bag.
     const impossibleSeq = session.raiseSeq;
-    Events.raiseDecision(session, 'town');
+    Events.raiseDecision(session, 'arrived_town');
     await coordinator.onMessage(decided('partial', 6, 10, impossibleSeq));
     assert.equal(session.nearRaise?.seq, impossibleSeq + 1, 'the later raise still waits');
     assert.equal(session.nearRaise.impossible, false, 'the answered impossible mark is lifted');

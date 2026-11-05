@@ -334,8 +334,8 @@ function heldBuildVerdict(state, proof, deps = {}, options = {}) {
     if (!Warehouse.contentIdentity(state) || !ClanSupply.contentIdentity(state)) return refuse('unready');
     const current = fieldActivity(state, options.activity, options.leaf);
     // An occupation move the held leaf ordered (its trip, its arrival) is its own output.
-    const movedFacts = [], changed = Sections.factEvents(name => baseline[name], options.facts || requestFacts(current, deps), false, movedFacts,
-        Sections.occupationPlanned(state, options.leaf));
+    const movedFacts = Situations.factNames(name => baseline[name], options.facts || requestFacts(current, deps), false,
+        Sections.occupationPlanned(state, options.leaf)), changed = Situations.sectionsOf(movedFacts);
     // What the bot does not hear where it stands stays against the baseline, the mark
     // of its moment: no refusal, and a build another refusal asks reads it too.
     const urgent = Situations.heard(movedFacts, where);

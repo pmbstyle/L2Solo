@@ -383,7 +383,7 @@ async function releaseUnsafeHunt(partyId) {
             s.currentTargetId = undefined;
             s.actor.unselect?.();
             s.lastDecision = { action: 'leave_unsafe_party', reason, at: timestamp };
-            require('../AI/DecisionEvents').raiseDecision(s, 'relations');
+            require('../AI/DecisionEvents').raiseDecision(s, 'party_left');
         }
         require('../../World/PartyMembershipPublication')(sessions, invoke);
         invoke('GameServer/Bot/Population/PopulationMetrics').recordPartyDissolution();

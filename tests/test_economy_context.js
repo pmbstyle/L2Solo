@@ -386,7 +386,9 @@ async function run() {
         const Shots = invoke('GameServer/Inventory/ShotStock'), shot = Shots.planForState(published).selfId;
         const carrying = amount => ({ ...published, inventory: { ...published.inventory, [shot]: { selfId: shot, amount } } });
         const atBaseline = state => ({ ...state, stats: { ...state.stats, wishSections: { ...state.stats.wishSections, ...Gate.semanticFacts(carrying(50)) } } });
-        const raisedBy = (before, after) => Gate.events(atBaseline(before), atBaseline(after), 0, held.network.activity);
+        // The sections a far step raises: the situations its diff names, heard where it stands.
+        const sectionsRaised = (before, after, leaf) => Situations.raise(Situations.detect(before, after, { leaf }), Situations.place(after, before));
+        const raisedBy = (before, after) => sectionsRaised(atBaseline(before), atBaseline(after), held.network.activity);
         assert(raisedBy(carrying(50), carrying(0)).includes('supply'), 'the last shot gone is a need');
         assert.deepEqual([...raisedBy(carrying(0), carrying(0))], [], 'it raises once');
         // Potions under what the survival drink keeps: a need far from a player.
@@ -394,16 +396,16 @@ async function run() {
         const drinks = amount => ({ ...published, stats: { ...published.stats, stockTargets: Packet.stockTargets({ potionId: 0, potionTarget: 0, shotId: 0, shotTarget: 0, shotCurrentAtBuild: 0, potionSurvivalTarget: 10 }) },
             inventory: { ...published.inventory, [potion]: { selfId: potion, amount } } });
         const atDrinks = state => ({ ...state, stats: { ...state.stats, wishSections: { ...state.stats.wishSections, ...Gate.semanticFacts(drinks(12)) } } });
-        const onHuntLeaf = (before, after) => Gate.events(atDrinks(before), atDrinks(after), 0, { activity: 'hunting', spotId: published.spotId });
+        const onHuntLeaf = (before, after) => sectionsRaised(atDrinks(before), atDrinks(after), { activity: 'hunting', spotId: published.spotId });
         assert(onHuntLeaf(drinks(12), drinks(8)).includes('supply'), 'a need opens');
         const higher = { ...published, level: published.level + 1 };
-        assert.deepEqual(Situations.heard(['build'], Situations.place(higher)), [], 'a new level waits on the hunt');
-        assert(Situations.heard(['build'], Situations.place({ ...higher, activity: 'resting' })).includes('build'), 'and is read at the rest');
+        assert.deepEqual(Situations.heard(['level_up'], Situations.place(higher)), [], 'a new level waits on the hunt');
+        assert(Situations.heard(['level_up'], Situations.place({ ...higher, activity: 'resting' })).includes('build'), 'and is read at the rest');
         // A visit to town: one look on arrival, then its own buying raises nothing.
         const visit = { ...published, activity: 'shopping' };
         const asked = { ...visit, stats: { ...visit.stats, clanMaterialDemand: { 1865: 5 } } };
         const onVisit = state => ({ ...state, stats: { ...state.stats, wishSections: { ...state.stats.wishSections, ...Gate.semanticFacts(visit) } } });
-        const visitRaises = (before, after) => Gate.events(onVisit(before), onVisit(after), 0, held.network.activity);
+        const visitRaises = (before, after) => sectionsRaised(onVisit(before), onVisit(after), held.network.activity);
         assert.deepEqual(visitRaises(visit, asked), [], 'its list stands while the rest moves');
         assert(visitRaises({ ...visit, activity: 'traveling' }, asked).includes('sources'), 'arriving reads what waited');
         // Who sells what is read at the market: the field learns of a gone offer on arrival.
@@ -809,7 +811,7 @@ async function run() {
             // (A clan this fixture has no supply rows for refuses as unready, a
             // refusal naming no section, which asks.)
             for (const [what, move] of [['a party role change', state => raised({ ...state, party: { partyId: 0, role: 'solo' } }, 'relations')],
-                ['a death', state => raised(state, 'dead')],
+                ['a death', state => raised(state, 'died')],
                 ['a friend change', state => raised(stat(state, { relations: [{ targetId: 990999, affinity: 1 }] }), 'relations')]]) {
                 ({ published } = fresh());
                 assert.equal(stepOf(move(published)).kept, workshop, `${what} keeps the workshop`);

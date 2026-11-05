@@ -387,7 +387,7 @@ async function craftAtWorkshop(session, bot, target) {
             session.shoppingServicePhase = undefined;
             session.shoppingDoneAnnounced = false;
             EconomyContext.forget(bot.fetchId());
-            raiseDecision(session, 'town');
+            raiseDecision(session, 'arrived_town');
             return;
         }
         const options = { batches: Math.min(batches, Math.max(1, Number(station.capacityBatches || batches)),
@@ -420,12 +420,12 @@ async function craftAtWorkshop(session, bot, target) {
         session.shoppingTarget = undefined;
         session.shoppingServicePhase = undefined;
         session.shoppingDoneAnnounced = false;
-        raiseDecision(session, 'town');
+        raiseDecision(session, 'arrived_town');
     } catch (error) {
         if (!session.workshopOriginal) {
             session.shoppingTarget = undefined;
             session.shoppingServicePhase = undefined;
-            raiseDecision(session, 'town', { impossible: true });
+            raiseDecision(session, 'arrived_town', { impossible: true });
         }
         utils.infoWarn('Workshop', '%s: %s', bot.fetchName(), error.message);
     } finally { session.workshopCrafting = false; }
@@ -525,7 +525,7 @@ module.exports = {
                 session.shoppingTarget = townMerchantTarget(closestTown, bot);
                 if (!session.shoppingTarget) {
                     session.plan = 'hunting';
-                    raiseDecision(session, 'town', { impossible: true });
+                    raiseDecision(session, 'arrived_town', { impossible: true });
                     session.shoppingDoneAnnounced = false;
                     session.preShopLocation = undefined;
                     clearShoppingServiceState(session);
@@ -636,7 +636,7 @@ module.exports = {
                 TownTransitPolicy.defer(session, bot, 'shopping_route_unreachable');
                 session.plan = returningToCompanion ? 'following' : 'hunting';
                 // ARCH-NOTE: an unreachable shopping route also ends this town visit.
-                if (session.plan === 'hunting') raiseDecision(session, 'town', { impossible: true });
+                if (session.plan === 'hunting') raiseDecision(session, 'arrived_town', { impossible: true });
                 session.shoppingDoneAnnounced = false;
                 session.shoppingTarget = undefined;
                 session.companionShopping = undefined;
@@ -666,7 +666,7 @@ module.exports = {
         if (session.shoppingServicePhase === 'improvement') {
             Improvements.reviewHot(session).then(result => {
                 if (result) { session.shoppingTarget = undefined; session.shoppingServicePhase = undefined;
-                    session.shoppingDoneAnnounced = false; session.plan = 'hunting'; raiseDecision(session, 'town'); }
+                    session.shoppingDoneAnnounced = false; session.plan = 'hunting'; raiseDecision(session, 'arrived_town'); }
             }).catch(error => utils.infoWarn('Improvement', '%s', error));
             return;
         }
@@ -754,7 +754,7 @@ module.exports = {
             TownChatter.say(session, BotAI, 'return-to-party', Speech.lines('town.return-to-party'), { priority: 'coordination' });
             bot.moveTo({ from: { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() },
                 to: { locX: leader.actor.fetchLocX(), locY: leader.actor.fetchLocY(), locZ: leader.actor.fetchLocZ() } });
-        } else if (!following) raiseDecision(session, 'town');
+        } else if (!following) raiseDecision(session, 'arrived_town');
     },
 
     async sellAndRestock(session, bot, Generics, BotAI) {
@@ -1124,7 +1124,7 @@ module.exports = {
             session.shoppingRestock = undefined;
             if (restockFailure) {
                 session.shoppingRestockFailures = Number(session.shoppingRestockFailures || 0) + 1;
-                raiseDecision(session, 'town');
+                raiseDecision(session, 'arrived_town');
                 if (session.shoppingRestockFailures < MAX_RESTOCK_ATTEMPTS) {
                     session.shoppingRestockRetryAt = Date.now() + RESTOCK_RETRY_MS;
                     session.lastDecision = { action: 'shopping_retry', reason: restockFailure, at: Date.now() };
@@ -1141,7 +1141,7 @@ module.exports = {
                 : (returningToCompanion ? 'following' : 'hunting');
             // ARCH-NOTE: shopping may finish with a buff stop; that continuation
             // belongs to this town event and returning from the buff raises nothing.
-            if (!returningToCompanion) raiseDecision(session, 'town');
+            if (!returningToCompanion) raiseDecision(session, 'arrived_town');
             BotEventJournal.record({
                 botId: bot.fetchId(),
                 eventType: restockFailure ? 'shopping_deferred' : 'shopping_completed',
@@ -1224,7 +1224,7 @@ module.exports = {
                 ? 'following'
                 : 'hunting';
             // ARCH-NOTE: hidden supply errands already advance in their cold round.
-            if (session.plan === 'hunting' && !wasSupplyErrand) raiseDecision(session, 'town');
+            if (session.plan === 'hunting' && !wasSupplyErrand) raiseDecision(session, 'arrived_town');
             session.shoppingDoneAnnounced = false;
             session.shoppingTarget = undefined;
             session.companionShopping = undefined;

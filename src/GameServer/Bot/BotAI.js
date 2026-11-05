@@ -131,7 +131,7 @@ function stateFaulted(session, bot, plan, error, now = Date.now()) {
     FaultHold.fault(entry, now);
     if (entry.count !== FaultHold.QUARANTINE_AFTER) return;
     FailureLog.note('ai.state_left', error);
-    raiseDecision(session, 'sources', { impossible: true });
+    raiseDecision(session, 'goal_failed', { impossible: true });
     const own = ownPlan(session, bot);
     if (own === plan) return;
     bot.automation?.abortAll?.(bot);

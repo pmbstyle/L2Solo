@@ -7,20 +7,13 @@ const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Decisions = invoke('GameServer/Bot/Population/ColdEconomyDecision');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const WishProviders = invoke('GameServer/Bot/Economy/WishProviders');
-// The reasons code raises by name (raiseDecision). A near bot's moved fact
-// raises on the background thread, which compares its posted row with the
-// one before (ColdSimulationWorker's state writer).
-const reasons = new Set(['town', 'revived', 'money', 'build', 'sources', 'supply', 'occupation', 'relations', 'combat', 'benefits',
-    'unhuntable']);
-// Every reason marks a section, so the next build reconsiders the held focus and activity.
-const bit = Sections.sectionBit;
-// A section name (raiseSections) marks its own bit.
-const sectionBits = { ...Object.fromEntries(Sections.SECTIONS.map(name => [name, bit(name)])), funding: bit('money') };
-// A named reason marks the sections of its link in the one table (Situations.LINKS).
+// The situations a body raises by name (raiseDecision): its arrival in town, its
+// respawn, a step proved impossible, leaving a party, a spot empty of prey, its
+// wallet. A near bot's moved fact raises on the background thread, which compares
+// its posted row with the one before (ColdSimulationWorker's state writer).
+const reasons = new Set(['arrived_town', 'revived', 'goal_failed', 'party_left', 'spot_empty', 'money']);
+// Every situation marks the sections of its row in the one table (Situations.SITUATIONS).
 const factBits = fact => Sections.sectionMask(Situations.sections(fact));
-const reasonBits = { ...sectionBits, money: factBits('funding'), build: factBits('build'),
-    revived: factBits('dead'), relations: factBits('relations'), town: factBits('town'), sources: factBits('rejected'),
-    unhuntable: factBits('unhuntable') };
 function statsFor(session) {
     return session.coldLifeState ? (session.coldLifeState.stats ||= {}) : (session.decisionStats ||= {});
 }
@@ -54,8 +47,8 @@ function raiseDecision(session, reason, { impossible = false } = {}) {
     const stats = statsFor(session);
     // Visit ends share the arrival clock until a single native arrival event
     // exists. A fact of the body, kept on its stats: never part of a raise.
-    if (reason === 'town') stats.visitEvery = TownVisitInterval.arrived(stats);
-    const bits = reasonBits[reason] || 0;
+    if (reason === 'arrived_town') stats.visitEvery = TownVisitInterval.arrived(stats);
+    const bits = factBits(reason);
     // lazy: cycle BotLifeState requires this module at its top.
     const Life = isMainThread && session.actor ? invoke('GameServer/Bot/Population/BotLifeState') : null;
     if (Life?.cachedState(session.actor.fetchId?.())?.phase === 'hot') {
@@ -84,7 +77,7 @@ function rejectedState(current, accepted = current, why = 'other') {
         if (!baseline || baseline !== Sections.baselineIdentity(current.stats.wishSections)) return current;
     }
     const next = { ...current, stats: { ...current.stats } };
-    applyRaise(next.stats, factBits('rejected'), true);
+    applyRaise(next.stats, factBits('goal_failed'), true);
     rejections[why] = (rejections[why] || 0) + 1;
     return next;
 }
@@ -114,7 +107,7 @@ function rejectSession(session, accepted) {
     if (!Number.isSafeInteger(characterId) || characterId <= 0 || session.nearRaise?.impossible) return false;
     const current = { characterId, stats: decisionStatsFor(session) };
     if (rejectedState(current, accepted) === current) return false;
-    raiseDecision(session, 'sources', { impossible: true });
+    raiseDecision(session, 'goal_failed', { impossible: true });
     return true;
 }
 // What a near decision carries beside its card (payload.near), taken in the
@@ -168,7 +161,7 @@ function held(session) {
 // point's money reading, DecisionSections.moneyChanged): a crossing raises
 // money once; nothing while that raise waits or before a baseline exists.
 function checkWallet(session, actor) {
-    if (Number(session.nearRaise?.bits) & reasonBits.money) return false;
+    if (Number(session.nearRaise?.bits) & factBits('money')) return false;
     const stats = statsFor(session);
     if (!stats.wishSections) return false;
     const wallet = actor.backpack?.fetchTotalAdena?.() ?? actor.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() ?? 0;
@@ -179,12 +172,12 @@ function checkWallet(session, actor) {
     return true;
 }
 // One raise per step: the sections a step's checks raised (the round's hard
-// events, DecisionSections.events, and on the background thread the soft
+// events, Situations.detect, and on the background thread the soft
 // point, softEvents) in one decisionSeq bump, their bits ORed into the bits
 // already raised. Nothing when no list names a section.
 function raiseSections(before, after, ...lists) {
     let bits = 0;
-    for (const list of lists) for (const section of list) bits |= sectionBits[section] || 0;
+    for (const list of lists) for (const section of list) bits |= Sections.sectionBit(section);
     if (!bits) return 0;
     const stats = after.stats ||= {};
     stats.decisionSeq = Math.max(Number(before.stats?.decisionSeq) || 0, Number(stats.decisionSeq) || 0) + 1;

@@ -14,6 +14,7 @@ require('./helpers/databaseIsolation');
 require('../src/Global');
 const Data = invoke('GameServer/DataCache'); Data.init();
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+const Situations = invoke('GameServer/Bot/Situations');
 const Card = invoke('GameServer/Bot/Population/ColdEconomyDecision');
 const Generation = require('../src/GameServer/Bot/Population/RecomputeGeneration');
 const Gear = invoke('GameServer/Bot/AI/BotGear');
@@ -548,15 +549,14 @@ function verify() {
     // unhuntable on the same spot and kit), though another spot turned better.
     // The observation bit alone asks one search.
     {
-        const Situations = invoke('GameServer/Bot/Situations');
         const stat = (state, more) => ({ ...state, stats: { ...state.stats, ...more } });
         const raised = (state, link) => stat(state, { wishDirty: Sections.sectionMask(Situations.sections(link)) });
         const cases = [
             ['a clan change', state => raised({ ...state, clanId: 77 }, 'relations')],
-            ['a learned recipe', state => raised(stat(state, { recipes: [5] }), 'recipes')],
+            ['a learned recipe', state => raised(stat(state, { recipes: [5] }), 'recipe_learned')],
             ['a friend change', state => raised(stat(state, { relations: [{ targetId: 990999, affinity: 1 }] }), 'relations')],
             ['the income_moved echo', state => raised(state, 'income_moved')],
-            ['unhuntable on the same spot', state => raised(state, 'unhuntable')]
+            ['unhuntable on the same spot', state => raised(state, 'spot_empty')]
         ];
         let id = 990340;
         for (const [what, move] of cases) {
@@ -806,10 +806,10 @@ function verify() {
         assert.equal(count(() => Economy.forState(state, on(1))).searches, 0, 'fixture: the hold stands');
         const lifted = recovering(state, Risk.recordRecovery(state, { wins: 12, exp: Number(state.exp) || 0 }));
         assert.equal(lifted.stats.huntingRecovery.levelPenalty, 0, 'fixture: twelve clean wins lift it');
-        const raised = Sections.events(state, lifted);
+        const raised = Situations.raise(Situations.detect(state, lifted), Situations.place(lifted, state));
         assert(raised.includes('occupation'), 'the step that lifts it raises the bot\'s ground');
         const far = state => ({ ...state, phase: 'cold' });
-        assert(Sections.events(far(state), far(lifted)).includes('occupation'), 'also far at work');
+        assert(Situations.raise(Situations.detect(far(state), far(lifted)), Situations.place(far(lifted), far(state))).includes('occupation'), 'also far at work');
         const heard = { ...lifted, stats: { ...lifted.stats, wishDirty: Sections.sectionMask(raised) } };
         const read = count(() => Economy.forState(heard, on(2)));
         assert.equal(read.searches, 1, 'the lifted penalty searches once');
