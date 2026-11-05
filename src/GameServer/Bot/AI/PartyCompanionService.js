@@ -6,6 +6,7 @@ const PartyCombatState = invoke('GameServer/Bot/AI/PartyCombatState');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const BotEventJournal = invoke('GameServer/Bot/AI/BotEventJournal');
 const Karma = invoke('GameServer/Karma');
+const GroundItems = require('../../World/GroundItems');
 
 const DEFAULT_PARTY_DISTRIBUTION = 1;
 const DEFAULT_PARTY_SETTINGS = {
@@ -330,13 +331,14 @@ function groundLootPickers(leaderSession) {
     return [...(autonomousLootBot(leaderSession) ? [leaderSession] : []), ...membersForLeader(leaderSession)];
 }
 
-function partyGroundLootLeaderId(item) {
-    return Number(item?.model?.partyLootLeaderId ?? item?.partyLootLeaderId ?? 0);
-}
-
 function isOwnedPartyGroundLoot(leaderSession, item) {
     const leaderId = Number(leaderSession?.actor?.fetchId?.() || 0);
-    return leaderId > 0 && partyGroundLootLeaderId(item) === leaderId;
+    return leaderId > 0 && GroundItems.leaderOf(item) === leaderId;
+}
+
+// The drops on the ground made for this leader's party (GroundItems).
+function ownedGroundLoot(leaderSession) {
+    return GroundItems.ownedBy(world().items, Number(leaderSession?.actor?.fetchId?.() || 0));
 }
 
 function isInsidePartyGroundLootLeash(leaderSession, item) {
@@ -389,11 +391,10 @@ function availableGroundLoot(leaderSession) {
         .filter(isAliveOnline);
     const queuedIds = queuedGroundLootIds(leaderSession);
     let bags;
-    return (world().items?.spawns || [])
+    return [...ownedGroundLoot(leaderSession)]
         .filter((item) => item?.fetchId && item?.fetchLocX && item?.fetchLocY)
         .filter((item) => !queuedIds.has(Number(item.fetchId())))
         .filter((item) => item.partyLootRefusedBags === undefined || item.partyLootRefusedBags !== (bags ??= lootBagsKey(leaderSession)))
-        .filter((item) => isOwnedPartyGroundLoot(leaderSession, item))
         .filter((item) => isInsidePartyGroundLootLeash(leaderSession, item))
         .filter((item) => members.some((memberSession) => distance2d(memberSession.actor, item) <= PARTY_GROUND_LOOT_LEASH_RADIUS))
         .sort((a, b) => Number(a.fetchId()) - Number(b.fetchId()));
@@ -418,6 +419,10 @@ function hasCampThreat(leaderSession) {
 function reconcileGroundLoot(looterSession) {
     const leaderSession = partyLeaderSession(looterSession);
     if (!leaderSession || settingsForLeader(leaderSession).lootPickupEnabled === false) return 0;
+    // Nothing of the party's on the ground and no pickup queued: no work, and
+    // no combat or threat question to ask (most hot hunters, most ticks).
+    if (ownedGroundLoot(leaderSession).size === 0
+        && !groundLootPickers(leaderSession).some(member => member.partyGroundPickupQueue?.length)) return 0;
 
     const now = Date.now();
     if (now - Number(leaderSession.lastGroundLootScanAt || 0) < GROUND_LOOT_SCAN_INTERVAL_MS) return 0;
@@ -438,9 +443,11 @@ function reconcileGroundLoot(looterSession) {
         }
     }
     const items = availableGroundLoot(leaderSession);
-    // This shared timestamp protects the hot party from every companion
-    // walking the entire world-item list on every AI tick. Fresh NPC drops do
-    // not wait for this scan: NpcRewards queues them directly at spawn.
+    // While the party has drops nobody could take (combat, out of the leash,
+    // no room), they are retried at most every GROUND_LOOT_SCAN_INTERVAL_MS
+    // for the whole party: what frees them (combat end, a picker walking
+    // back) has no one event. Fresh NPC drops do not wait for this scan:
+    // NpcRewards queues them directly at spawn; a finished pickup reconciles.
     leaderSession.lastGroundLootScanAt = now;
     if (items.length === 0) return 0;
 

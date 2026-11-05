@@ -574,6 +574,60 @@ async function run() {
         }
         console.log('PASS card verdict handed to the build of its step');
     }
+    // A far bot's card with a selling leaf holds: its check reads the sale list
+    // over the basics, and the card's view gets the same economy as basics
+    // built anew on that state (one held-spot read for both); a moved bag gives
+    // the bag's answer; after the hold's window the check's search renews the
+    // hold and the view reads its answer as basics built after it do.
+    {
+        const Card = invoke('GameServer/Bot/Population/ColdEconomyDecision');
+        const Trip = invoke('GameServer/Bot/Economy/EconomicTrip');
+        const T = Date.now(), native = { ...base, characterId: 990030, adena: 1000000,
+            inventory: { ...base.inventory, 1864: { selfId: 1864, amount: 40, stackable: true } } };
+        try {
+            const held = Economy.forState(native, { timestamp: T });
+            const published = { ...native, stats: { ...native.stats, ...held.statsPacket } };
+            const plan = held.plan;
+            plan.network.activity = { activity: 'selling', kind: 'liquidate', funding: true, town: 'Giran', items: [1864] };
+            plan.eventProof = Economy.captureEventProof(published, {}, { plan });
+            const card = Card.advisory({ ...held, network: plan.network, eventProof: () => plan.eventProof },
+                published, published.activity, { timestamp: T });
+            assert.equal(card?.card.activity?.activity, 'selling', 'fixture: the card holds the selling leaf');
+            const economyOf = economy => ({ shots: economy.stock('shots'), potions: economy.stock('potions'),
+                scrolls: economy.stock('scrolls'), hourAdena: economy.hourAdena, reserve: economy.survivalReserve,
+                kit: economy.kit, hunt: economy.hunt, deathHours: economy.deathHours, riskWeight: economy.riskWeight,
+                route: economy.preparedIncomeRoute && { ...economy.preparedIncomeRoute, state: null } });
+            const refresh = (state, timestamp) => {
+                const deps = { timestamp, routeRows: Trip.prepared(state), keepIncomeRoute: true };
+                const before = Economy.incomeHoldStats(), why = [];
+                const prepared = {};
+                const refreshed = Card.refreshAdvisory(state, card, deps, { prepared, why });
+                assert(refreshed, `fixture: the selling card holds (${why[0]})`);
+                assert.equal(refreshed.economy.stock('shots').target, prepared.basics.stock('shots').target, 'fixture: the view reads the basics handed on');
+                const after = Economy.incomeHoldStats();
+                const reads = Object.fromEntries(Object.keys(after).map(key => [key, after[key] - before[key]]).filter(([, n]) => n));
+                return { economy: economyOf(prepared.basics), reads, fresh: economyOf(Economy.basics(state, deps)) };
+            };
+            // The first refresh's check searches (the hold's goal turned since the build).
+            const held1 = refresh(published, T).reads;
+            assert(held1.goal === 1 && held1.renewed === 1, 'fixture: the first check renews the hold');
+            const reads = counted => Object.entries(counted).filter(([key]) => ['kept', 'unrouted'].includes(key))
+                .reduce((sum, [, n]) => sum + n, 0);
+            const same = refresh(published, T);
+            assert.equal(reads(same.reads), 1, 'the check and the view read the held spot once');
+            assert.equal(Object.keys(same.reads).length, 1, 'with no search');
+            assert.deepEqual(same.economy, same.fresh, 'the view\'s economy is the basics\' on that state');
+            const moved = refresh({ ...published, inventory: { ...published.inventory, 1060: { selfId: 1060, amount: 7, stackable: true } } }, T);
+            assert.deepEqual(moved.economy, moved.fresh, 'a moved bag gives the bag\'s answer');
+            const later = refresh(published, T + 31 * invoke('GameServer/World/GameTime').GAME_MINUTE_MS);
+            assert.equal(later.reads.renewed, 1, 'fixture: the window\'s end searches in the check');
+            assert.equal(reads(later.reads), 1, 'the view reads the renewed hold anew');
+            assert.deepEqual(later.economy, later.fresh, 'the view\'s economy is the renewed hold\'s');
+        } finally {
+            Economy.forget(native.characterId);
+        }
+        console.log('PASS selling card view shares its check\'s basics');
+    }
     // The crafter's workshop is kept with its held build: on the same route,
     // known, with a finite income and no workshop section moved (the
     // foundation's or money); otherwise it is asked again. The step judges

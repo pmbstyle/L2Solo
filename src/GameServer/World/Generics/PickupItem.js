@@ -3,6 +3,7 @@ const ConsoleText    = invoke('GameServer/ConsoleText');
 const PartyCompanionService = invoke('GameServer/Bot/AI/PartyCompanionService');
 const PickupCapacity = require('../../Inventory/PickupCapacity');
 const GroundItemVisibility = require('../GroundItemVisibility');
+const GroundItems = require('../GroundItems');
 
 // A drop refused for room stays on the ground; the party's loot scan leaves
 // it alone until a bag changes (PartyCompanionService.lootBagsKey).
@@ -60,7 +61,7 @@ function pickupItem(session, actor, item) {
     // reach this method on adjacent timers. Removing the canonical spawn first
     // makes the claim atomic in the world event loop: only one caller may award
     // the item, distribute Adena, delete the object, or emit pickup text.
-    const [claimedItem] = this.items.spawns.splice(spawnIndex, 1);
+    const claimedItem = GroundItems.take(this.items, spawnIndex);
 
     let scheduled = 0;
     try {

@@ -64,6 +64,7 @@ try {
         assert.equal(Policy.evaluate(bot, World, 22000).tier, 'visible');
         player.actor.setLocX(6400);
         assert.equal(Policy.evaluate(bot, World, 23000).reason, 'outer_preload');
+        assert.equal(Policy.evaluate(bot, World, 23000).playerVisible, false, 'no player sees the bot past the client view');
         far.actor.setDestId(bot.actor.fetchId());
         assert.equal(Policy.evaluate(bot, World, 24000).reason, 'player_selected');
         assert.deepEqual(World.actorPresenceSessions('onlineHuman', bot.actor.fetchId()), [far]);
@@ -74,6 +75,7 @@ try {
         assert.equal(Policy.evaluate(bot, World, 40000).reason, 'no_real_players');
         player.actor.setIsOnline(true); player.actor.setLocX(6000);
         assert.equal(Policy.evaluate(bot, World, 41000).tier, 'visible');
+        assert.equal(Policy.evaluate(bot, World, 41000).playerVisible, true, 'the client view is inclusive');
         assert.equal(World.nearestRealPlayer({ locX: 0, locY: 0 }).session, player);
     });
 

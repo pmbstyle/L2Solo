@@ -46,10 +46,9 @@ function isolateOrdinaryAI() {
     };
     for (const [name, keys] of Object.entries(noops)) for (const key of keys) stub(invoke(name), key, () => undefined);
     const lod = invoke('GameServer/Bot/AI/HotActorLodPolicy');
-    stub(lod, 'evaluate', () => ({ tier: 'full' }));
+    stub(lod, 'evaluate', () => ({ tier: 'full', playerVisible: false }));
     stub(lod, 'shouldRefreshStatus', () => false);
     stub(lod, 'budgetExceeded', () => false);
-    stub(AI, 'visibleRealPlayers', () => []);
     stub(Math, 'random', () => 0.5);
     stub(invoke('GameServer/Bot/AI/States/ShoppingState'), 'tick', session => shoppingTicks.push(session.actor.fetchId()));
 }

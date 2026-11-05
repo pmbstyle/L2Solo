@@ -1,5 +1,6 @@
 const assert = require('assert');
 require('../src/Global');
+const GroundItems = require('../src/GameServer/World/GroundItems');
 
 const World = invoke('GameServer/World/World');
 const Data = invoke('GameServer/DataCache');
@@ -45,7 +46,7 @@ function bot(id, x) {
         replace(Rates, 'selectDropItem', () => ({ selfId: 57 }));
         replace(Rates, 'rollDropAmount', () => 11);
         replace(Math, 'random', () => 0);
-        replace(World, 'items', { spawns: [] });
+        replace(World, 'items', { spawns: [], byLeader: new Map() });
         replace(World, 'npc', { spawns: [] });
         replace(World, 'fetchNpcsInRadius', () => []);
         const purchases = [];
@@ -55,7 +56,7 @@ function bot(id, x) {
             const item = { model: coords, fetchId: () => id, fetchSelfId: () => selfId,
                 fetchAmount: () => amount, fetchLocX: () => coords.locX,
                 fetchLocY: () => coords.locY, fetchLocZ: () => coords.locZ };
-            World.items.spawns.push(item);
+            GroundItems.put(World.items, item);
             cb(item);
         });
         replace(World, 'fetchItem', async id => World.items.spawns.find(i => i.fetchId() === id));

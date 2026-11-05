@@ -292,8 +292,8 @@ const SpotProfiles = {
                 spots: profiles, timestamp, mode, list,
                 required: invoke('GameServer/Bot/AI/PersonalGearProgression').assess(state).required });
             // The route reads its own risk marks, not the caller's exclusions
-            // (a market return's full saved spot, ROUTE-ROOM-4): an excluded
-            // pick counts as absent, as on the list walk.
+            // (options.excludedSpotIds): an excluded pick counts as absent, as
+            // on the list walk.
             if (incomeRoute && !excludedSpotIds.has(String(incomeRoute.spot.id)) && !full(incomeRoute.spot)) {
                 return incomeRoute.spot;
             }
