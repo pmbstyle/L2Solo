@@ -301,6 +301,8 @@ module.exports = {
             delete session.explicitRestOrder;
             bot.state.setSeated(false);
             session.dataSendToOthers(ServerResponse.sitAndStand(bot), bot);
+            // The rest's end is the body's stop: what waited for it wakes (Situations).
+            invoke('GameServer/Bot/AI/DecisionEvents').stop(session);
             if (session.followPlayerSession && session.partyCompanion === true) {
                 session.plan = 'following';
                 BotAI.say(session, "Fully rested! Ready to follow you again.");

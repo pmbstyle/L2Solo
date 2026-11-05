@@ -833,6 +833,8 @@ class ColdSimulationCoordinator {
                 const decision = this.economyDecisions.accept(id, payload.economyDecision);
                 DecisionEvents.receive(session, decision, payload.near);
                 if (decision?.feasibility) HotBoardReview.preparedOwner(id);
+                // The body acts on its new decision at its next turn, not at its next tick.
+                invoke('GameServer/Bot/BotAI').wakeup(session);
             } else if (payload.phase === 'economy_workshop_stale' && !this.stopping) {
                 this.economyDecisions.staleWorkshop(Number(payload.characterId),
                     { updatedAt: Number(payload.updatedAt), echo: payload.echo });

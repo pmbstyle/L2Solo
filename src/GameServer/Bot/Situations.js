@@ -13,9 +13,12 @@ const FIELD_ACTIVITIES = new Set(['hunting', 'resting', 'traveling']);
 // far bot the step it arrives in town. A far bot: WORK on a hunt, the road or in a
 // party's fight, REST, VISIT a town visit past its first look, STAND anywhere else (a
 // stall, a craft, a meeting).
-const OPEN = 0, WORK = 1, REST = 2, VISIT = 4, STAND = 8;
+// BODY: a body near a player in the field (bodyPlace): it hears its build's
+// sections at once as OPEN (no row waits on it), its decisions as a far bot at
+// work; its stop is its rest's end (DecisionEvents.stop).
+const OPEN = 0, WORK = 1, REST = 2, VISIT = 4, STAND = 8, BODY = 16;
 const FIELD = WORK | REST, GATED = FIELD | VISIT | STAND;
-const NAMES = new Map([[OPEN, 'open'], [WORK, 'work'], [REST, 'rest'], [VISIT, 'visit'], [STAND, 'stand']]);
+const NAMES = new Map([[OPEN, 'open'], [WORK, 'work'], [REST, 'rest'], [VISIT, 'visit'], [STAND, 'stand'], [BODY, 'body']]);
 
 // before: the state a step left, read for the one moment that is a change of place:
 // arriving in town, where what waited in the field is heard, once.
@@ -27,6 +30,9 @@ function place(state, before = null) {
     if (state.activity === 'shopping') return before && FIELD_ACTIVITIES.has(before.activity) ? OPEN : VISIT;
     return STAND;
 }
+// Where a body near a player hears its decisions: in the field (a hunt, a rest, the
+// road, a party's fight) as at work, elsewhere (a town, a stall) everything.
+const bodyPlace = state => FIELD_ACTIVITIES.has(state?.activity) || state?.activity === 'grouped' ? BODY : OPEN;
 // A place under the rule (far, not arriving), and one in the field.
 const gated = where => !!(where & GATED);
 const field = where => !!(where & FIELD);
@@ -207,9 +213,10 @@ const BUILD = BITS.build, SHIFT = { [STOP]: 0, [TOWN]: 8 };
 // The decisions each situation wakes.
 const WAKES = Object.freeze(Object.fromEntries(Object.keys(SITUATIONS).map(name => [name,
     Object.entries(DECISIONS).reduce((bits, [decision, names]) => names.includes(name) ? bits | BITS[decision] : bits, 0)])));
-// The planes a place hears: work only what is heard anywhere; a rest its stop; the
-// town, a stall, a meeting, the arrival in town and a body near a player all of them.
-const planesAt = where => where === WORK ? 0 : where === REST ? STOP : STOP | TOWN;
+// The planes a place hears: work (and a body in the field) only what is heard
+// anywhere; a rest its stop; the town, a stall, a meeting, the arrival in town and
+// a body near a player elsewhere all of them.
+const planesAt = where => where === WORK || where === BODY ? 0 : where === REST ? STOP : STOP | TOWN;
 // A row saved before the store kept no bits: every decision reads woken, once.
 const wokenBits = stats => stats?.woken === undefined ? ALL : Number(stats.woken) || 0;
 // The build's sections of a situation (the temporary half of its row). lazy: the
@@ -353,7 +360,10 @@ function factNames(previousFact, current, funding = false, planned = false) {
 // reads), leaf (the step's held leaf: the move it ordered raises nothing; none, as
 // on main: every move is an event), unhuntable (the round found its spot empty of
 // prey, BackgroundResolver, once a stay: a fact of the round, not of the states).
-function detect(before, after, { escrow = 0, leaf = null, unhuntable = false } = {}) {
+// facts, funding: a body's previous post kept as its facts and its funding mark
+// (DecisionEvents.detectNear) in place of the state before; out: receives this
+// post's { facts, funding } for the next.
+function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, facts = null, funding: fundingBefore, out = null } = {}) {
     const Sections = readers();
     // Main may replay a validated worker packet that already describes this
     // same round: a newer build's baseline (its own time) is the one compared;
@@ -364,13 +374,15 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false } =
     let original;
     // A fact the baseline kept as null (no recipe book read) is kept: only a
     // fact the baseline lacks reads the state before.
-    const previousFact = key => Object.hasOwn(previous, key) ? previous[key] : (original ||= Sections.semanticFacts(before))[key];
+    const previousFact = key => Object.hasOwn(previous, key) ? previous[key] : (original ||= facts || Sections.semanticFacts(before))[key];
     // No memory and no recipe book here: the relations and the recipes the
     // decision kept stand until the next verdict, which reads both; the party with them.
     const view = Sections.stateView(after);
     const current = { ...Sections.factsOf(view), relations: previousFact('relations'), recipes: previousFact('recipes'), party: previousFact('party') };
+    const fundingAfter = out || !previous.funding ? Sections.fundingMark(after) : null;
     const funding = Sections.moneyChanged(after, represented || before.stats?.wishSections, escrow, false)
-        || !previous.funding && Sections.fundingMark(before) !== Sections.fundingMark(after);
+        || !previous.funding && (fundingBefore ?? Sections.fundingMark(before)) !== fundingAfter;
+    if (out) { out.facts = current; out.funding = fundingAfter; }
     const names = factNames(previousFact, current, funding, Sections.occupationPlanned(after, leaf));
     if (unhuntable) names.push('spot_empty');
     return gated(place(after, before)) ? names.concat(needsOpened(before, after, names, view)) : names;
@@ -395,7 +407,7 @@ function needsOpened(before, after, names, now) {
 // The sections a list of situations touches wherever the bot stands.
 const sectionsOf = names => heard(names, OPEN);
 
-module.exports = { FIELD_ACTIVITIES, place, gated, field, reactive, onVisit, agendaHears, readsFacts, hears, heard, woke, sections,
+module.exports = { FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, agendaHears, readsFacts, hears, heard, woke, sections,
     DECISIONS, ALL, raise, delta, counted, stop, woken, anyWoken, decided, counts, COUNT_KEYS,
     answer, keeps, incomeLink, goalMoment, quiet,
     placeName: where => NAMES.get(where), SITUATIONS, detect, factNames, sectionsOf };

@@ -133,15 +133,19 @@ function notifyNearFacts(session, reason) {
             // travel spot; loc stays physical.
             row.spotId = session.currentSpot?.id ?? row.spotId;
             row.updatedAt = now();
-            // Not saved: the number of this post and the raise it carries.
+            // Not saved: the number of this post and the raise it carries,
+            // with the situations of the body's own facts (A1: detected here).
             session.nearSeq = Number(session.nearSeq || 0) + 1;
             row.nearSeq = session.nearSeq;
+            // lazy: worker the native market owner is main-thread only.
+            DecisionEvents.detectNear(session, row, invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(row.characterId));
             if (session.nearRaise) row.raise = { ...session.nearRaise, names: session.nearRaise.names.map(pair => [...pair]) };
             // lazy: cycle the coordinator requires this module at its top.
             invoke('GameServer/Bot/Population/ColdSimulationCoordinator').markDirty(row,
-                { reason, critical: isCriticalSnapshotReason(reason, row) || !!row.raise, near: true });
+                { reason, critical: isCriticalSnapshotReason(reason, row) || row.raise?.named === true, near: true });
         } catch (error) {
-            utils.infoWarn('BotLife', 'near fact %s post failed: %s', reason, error.message);
+            // The post and the facts detected on it (DecisionEvents.detectNear): counted by site.
+            FailureLog.note('botlife.near_post', error);
         }
     });
     handle.unref?.();
@@ -1505,7 +1509,11 @@ function mergeSessionIntoLifeState(session, state, phase, reason = '', options =
     };
     // The cold row of every cooling writer (writeColdRow, partySessionSnapshot
     // for the party and PvP cooldowns) takes the near raise still unanswered.
-    if (phase === 'cold') DecisionEvents.applyPendingRaise(session, merged.stats);
+    // Its detect baseline ends with the body.
+    if (phase === 'cold') {
+        DecisionEvents.applyPendingRaise(session, merged.stats, Situations.place(merged));
+        session.nearFacts = null;
+    }
     return merged;
 }
 
@@ -2246,7 +2254,8 @@ const BotLifeState = {
                 inventory: InventorySummary.read(row.inventorySummary)
             };
             // Built without mergeSessionIntoLifeState: the near raise joins here.
-            DecisionEvents.applyPendingRaise(session, nextState.stats);
+            DecisionEvents.applyPendingRaise(session, nextState.stats, Situations.place(nextState));
+            session.nearFacts = null;
             return this.upsertState(nextState, reason, { releaseHot: true });
         }
 

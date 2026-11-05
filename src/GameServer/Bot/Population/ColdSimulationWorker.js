@@ -951,19 +951,18 @@ const escrowFor = characterId => escrowByOwner.get(Number(characterId)) || 0;
 const softInputFor = (characterId, timestamp) => ({ board: boardReady(), buyOrderEscrow: escrowFor(characterId), timestamp,
     memory: () => kernel.interactionMemory.relationRows(Number(characterId)) });
 // A near bot's post (BotLifeState.notifyNearFacts) against the row before
-// it, on the posted row before it is stored: the raise main named (once per
-// raise), the hard facts (Situations.detect) and the soft point, in the
-// far step's one bump. The decision is then taken on this row (mode near).
+// it, on the posted row before it is stored: the raises main named and
+// detected (once per raise) and the soft point. The decision is then taken on this row (mode near).
 // applied: the last raise the record applied.
 function nearEvents(id, previous, entry, applied) {
     const row = entry.state, stats = row.stats ||= {};
     // The worker owns the near mind: a post's mind keys are discarded and the
     // record's stand, so a late post cannot roll back a raise.
     for (const key of SavedStats.MIND_KEYS) stats[key] = previous.stats?.[key];
-    entry.raiseSeq = DecisionEvents.takePostedRaise(stats, row.raise, applied);
+    // Main detected the body's own facts (A1) and named them in the bag.
+    entry.raiseSeq = DecisionEvents.takePostedRaise(stats, row.raise, applied, Situations.bodyPlace(row));
     const where = Situations.place(row, previous);
-    for (const name of [...Situations.detect(previous, row, { escrow: escrowFor(id) }),
-        ...DecisionSections.softEvents(row, stats.wishSections, softInputFor(id, Date.now()))]) Situations.raise(stats, name, null, where);
+    for (const name of DecisionSections.softEvents(row, stats.wishSections, softInputFor(id, Date.now()))) Situations.raise(stats, name, null, where);
 }
 // A bot's goal revision (GoalState.revision on main, 0 = no goal) from the
 // 'goals' table; undefined while the table loads (the decision skips the compare).

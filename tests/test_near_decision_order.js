@@ -16,6 +16,7 @@ const Decisions = invoke('GameServer/Bot/Population/ColdEconomyDecision');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Events = invoke('GameServer/Bot/AI/DecisionEvents');
 const Situations = invoke('GameServer/Bot/Situations');
+const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
 const World = invoke('GameServer/World/World');
 
 const id = 7141;
@@ -82,6 +83,39 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
     assert.equal(mind.decisionSeq, 3, 'a raise is no decision: its sequence stays');
     assert.equal(Situations.raise({ activityLeaf: 9 }, 'arrived_town', { impossible: true }).activityLeaf, 0,
         'a town visit that proved its step impossible drops it, as a failed goal does');
+
+    // A body's own facts are detected on main (A1) and ride its bag; a level up on
+    // the hunt is heard where a far bot hears it: at its rest's end (situations Q7).
+    {
+        const body = { nearRaise: null, raiseSeq: 0 };
+        const handed = { ...state, stats: { ...state.stats, wishSections: { ...Sections.semanticFacts(state), funding: Sections.fundingMark(state) } } };
+        Events.detectNear(body, handed);
+        assert.equal(body.nearRaise, null, 'the handed row raises nothing');
+        Events.detectNear(body, { ...handed, level: 31 });
+        assert.deepEqual(body.nearRaise.names, [['level_up', null]], 'a new level joins the bag');
+        const seq = body.nearRaise.seq;
+        Events.detectNear(body, { ...handed, level: 31 });
+        assert.equal(body.nearRaise.seq, seq, 'the same level while it waits is no new raise');
+        const hunting = Situations.bodyPlace({ activity: 'hunting' }), mind = { woken: 0 };
+        Events.takePostedRaise(mind, body.nearRaise, 0, hunting);
+        assert(Situations.woken(mind, 'build') && !Situations.woken(mind, 'earning_spot'), 'on the hunt the level waits for the stop');
+        Events.takePostedRaise(mind, { ...body.nearRaise, seq: seq + 1, stop: true }, seq, hunting);
+        assert(Situations.woken(mind, 'earning_spot'), 'the rest\'s end hears it');
+        // The decision it then receives is its new baseline: the same level raises nothing again.
+        body.nearRaise = null;
+        const decided = { ...handed, level: 31 };
+        decided.stats = { ...handed.stats, wishSections: { ...Sections.semanticFacts(decided), funding: Sections.fundingMark(decided) } };
+        Events.detectNear(body, decided);
+        assert.equal(body.nearRaise, null, 'a received decision advances the baseline');
+        // New gear waits for the town; the body's arrival in town is its stop there.
+        const town = { woken: 0 };
+        Events.takePostedRaise(town, { seq: 1, names: [['gear_changed', null]] }, 0, hunting);
+        assert(!Situations.woken(town, 'earning_spot'), 'new gear on the hunt waits');
+        Events.takePostedRaise(town, { seq: 2, names: [['gear_changed', null]], stop: 'rest' }, 1, hunting);
+        assert(!Situations.woken(town, 'earning_spot'), 'a rest is no town');
+        Events.takePostedRaise(town, { seq: 3, names: [['arrived_town', null]], stop: 'town' }, 2, Situations.bodyPlace({ activity: 'shopping' }));
+        assert(Situations.woken(town, 'earning_spot'), 'the arrival in town hears it');
+    }
 
     // A decision for a bot that cooled before it came is dropped, and counted.
     const dropped = coordinator.nearDecisions.dropped;
