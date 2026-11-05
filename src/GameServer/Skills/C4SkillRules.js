@@ -1324,6 +1324,14 @@ function resolve(skill = {}) {
 // bot's whole skill list per decision; they share these results read-only.
 const RESOLVED_LIMIT = 20000;
 const resolved = new Map();
+// The same memo found without building its text key, which cost the worker
+// ~2 % of its time: selfId -> level -> entries { name, power, buff, spell,
+// distance, semantic }, each holding the key map's value for its key. Equal
+// values give the same key text, so a hit returns what the key map would.
+// Emptied with the key map, and alone at RESOLVED_LIMIT entries (a carrier
+// whose fields differ by type only, 5 and '5', adds an entry per type).
+const resolvedByField = new Map();
+let resolvedFields = 0;
 
 // The heals a spiritshot strengthens (x1.3, blessed x1.5), in hot and cold combat.
 const SHOT_BOOSTED_HEALS = new Set([HEAL, HEAL_HOT, HEAL_CLEANSE]);
@@ -1339,11 +1347,36 @@ function hitsArea(semantic = {}) {
 }
 
 function resolveCached(skill = {}) {
-    const key = `${skill.selfId}|${skill.level}|${skill.name}|${skill.power}|${skill.buff}|${skill.spell === true}|${skill.distance}`;
+    const { selfId, level, name, power, buff, distance } = skill, spell = skill.spell === true;
+    const entries = resolvedByField.get(selfId)?.get(level);
+    if (entries) {
+        for (const entry of entries) {
+            if (entry.name === name && entry.power === power && entry.buff === buff && entry.spell === spell
+                && entry.distance === distance) return entry.semantic;
+        }
+    }
+    const semantic = resolveKeyed(skill, `${selfId}|${level}|${name}|${power}|${buff}|${spell}|${distance}`);
+    if (resolvedFields >= RESOLVED_LIMIT) {
+        resolvedByField.clear();
+        resolvedFields = 0;
+        require('../Bot/Economy/EconomyDiagnostics').count('skill_rules', 'field_index', 'clear');
+    }
+    let levels = resolvedByField.get(selfId);
+    if (!levels) resolvedByField.set(selfId, levels = new Map());
+    let list = levels.get(level);
+    if (!list) levels.set(level, list = []);
+    list.push({ name, power, buff, spell, distance, semantic });
+    resolvedFields += 1;
+    return semantic;
+}
+
+function resolveKeyed(skill, key) {
     let semantic = resolved.get(key);
     if (!semantic) {
         if (resolved.size >= RESOLVED_LIMIT) {
             resolved.clear();
+            resolvedByField.clear();
+            resolvedFields = 0;
             // L126: SkillModels share these objects; a clear ends the sharing
             // for models built later, so the live check counts clears.
             require('../Bot/Economy/EconomyDiagnostics').count('skill_rules', 'cache', 'clear');

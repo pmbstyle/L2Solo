@@ -6,7 +6,9 @@ const providers = new WeakMap();
 // Who stands on each spot and who is heading there, kept up to date at every
 // state write. Read only at a spot: the room check at arrival, the kill share,
 // the buff offer, and the status line's per-spot count. No place is held for a
-// bot ahead of its arrival.
+// bot ahead of its arrival. Each spot has a crowd revision (spotVersion): a
+// reader that holds a result over a spot's hunters keeps it while the
+// revision it read stands.
 
 function stateKey(state = {}) {
     return String(state.characterId || state.name || state.stats?.generatedIndex || '');
@@ -40,6 +42,27 @@ class SpotOccupancyIndex {
         Object.defineProperty(this, 'locationIndex', { value: index, enumerable: true });
         this.places = new Map();
         this.physical = new Map();
+        // spotId -> the change number of the last change of its bots (one
+        // counter for the index, so a revision never comes back).
+        this.revisions = new Map();
+        this.changes = 0;
+    }
+
+    // A spot's bots changed (one joined or left; a bot staying on its spot
+    // moves nothing).
+    bump(spotId) {
+        if (spotId) this.revisions.set(spotId, ++this.changes);
+    }
+
+    // The crowd revision of a spot: it moves when a bot is indexed on the
+    // spot or leaves it, so every count over the spot's set (huntersOn, the
+    // room filter) reads the same while it stands. Its room is catalog data
+    // (SpotProfiles.spotRoom), versioned by the catalog. Not versioned: a
+    // traveller's arrival on the spot it is indexed at (physicalCount's
+    // standingOnly), read once at the arrival and never held. 0: no bot has
+    // been indexed there.
+    spotVersion(spotId) {
+        return this.revisions.get(spotId) || 0;
     }
 
     update(state, options = {}) {
@@ -72,18 +95,20 @@ class SpotOccupancyIndex {
         const state = record.source;
         const key = stateKey(state);
         const spotId = occupiedSpotId(state);
-        this.removePlace(key);
+        const before = this.removePlace(key, false);
         this.places.set(key, { record, spotId,
             get state() { return record.source; } });
         addMember(this.physical, spotId, key);
+        if (before?.spotId !== spotId) { this.bump(before?.spotId); this.bump(spotId); }
         return true;
     }
 
-    removePlace(key) {
+    removePlace(key, moved = true) {
         const place = this.places.get(key);
         if (!place) return;
         removeMember(this.physical, place.spotId, key);
         this.places.delete(key);
+        if (moved) this.bump(place.spotId);
         return place;
     }
 
@@ -142,6 +167,7 @@ class SpotOccupancyIndex {
     size() { return { owners: this.places.size, physical: this.physical.size }; }
 
     clear() {
+        for (const spotId of this.physical.keys()) this.bump(spotId);
         this.places.clear();
         this.physical.clear();
         const { index, ownsSources } = providers.get(this);

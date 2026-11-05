@@ -17,7 +17,34 @@ const { coldRestRegenPerTick, restMpPerTick } = require('./ColdRest');
 const adapters = new WeakMap();
 const skillModels = new Map();
 const activeServitor = Object.freeze({ isDead: () => false });
+// The content key (JSON) cost the worker ~1.4 % of its time, and a kit's
+// records are the same objects fight after fight (the kit store keeps the
+// saved list). recordModels: record -> its model last time; modelFields:
+// model -> the own keys and primitive values of the record it was built from
+// (none with a nested value). A plain record that still has exactly those
+// keys, in that order, and values stringifies to that model's key, so it
+// takes the model without the key; any change goes through the key again.
+const recordModels = new WeakMap(), modelFields = new WeakMap();
+function sameFields(record, fields) {
+    if (Object.getPrototypeOf(record) !== Object.prototype) return false;
+    let index = 0;
+    for (const key in record) {
+        if (key !== fields.keys[index] || record[key] !== fields.values[index]) return false;
+        index++;
+    }
+    return index === fields.keys.length;
+}
+function primitive(value) {
+    return value === null || (typeof value !== 'object' && typeof value !== 'function');
+}
 function skillModel(record) {
+    const held = recordModels.get(record), fields = held && modelFields.get(held);
+    if (fields && sameFields(record, fields)) return held;
+    const skill = contentModel(record);
+    if (typeof record === 'object' && record !== null && modelFields.has(skill)) recordModels.set(record, skill);
+    return skill;
+}
+function contentModel(record) {
     const key=JSON.stringify(record);
     if (skillModels.has(key)) return skillModels.get(key);
     const source=ItemTemplateIndex.findStrictRequired(DataCache.skills ?? [], record.selfId);
@@ -31,6 +58,8 @@ function skillModel(record) {
     skill.coldRecord={...record,mp:skill.fetchConsumedMp(),hp:skill.fetchConsumedHp(),
         power:skill.fetchPower(),hitTime:skill.fetchHitTime(),reuse:skill.fetchReuseTime(),spell:skill.fetchSpell()};
     skillModels.set(key,skill);
+    const keys=Object.keys(record), values=keys.map(name=>record[name]);
+    if (values.every(primitive)) modelFields.set(skill,{keys,values});
     return skill;
 }
 function adapter(profile) {

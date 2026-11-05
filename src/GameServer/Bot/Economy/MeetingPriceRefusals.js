@@ -75,7 +75,8 @@ function sourceCheck(board, evidence, { meetingRevisionOf, workshopDigest }) {
 }
 
 function stableRoute(state) {
-    return JSON.stringify([state?.phase, invoke('GameServer/Bot/Economy/EconomicTrip').key(state), state?.stats?.tradeMeeting || null]);
+    // The buyer's whole route frame (its activity, point, scroll count), not only what its route rows read.
+    return JSON.stringify([state?.phase, JSON.stringify(invoke('GameServer/Bot/Economy/EconomicTrip').frame(state)), state?.stats?.tradeMeeting || null]);
 }
 function remember(state, board, request, purchase, sourcesCurrent, { minimumFree, fundingDominance = false } = {}) {
     if (!state || !board || !purchase || typeof sourcesCurrent !== 'function') return;

@@ -69,12 +69,17 @@ function eligible(state, { ownLines = [], now = Date.now() } = {}) {
     return true;
 }
 function freeAmount(state, item, reserved = {}) {
+    return freeUnits(state, item, reserved, item.equippedCount, item.starterMobLootAmount);
+}
+// freeAmount with the worn copies and the protected starter loot given beside
+// the row (the sale's own reading of them), not copied onto it.
+function freeUnits(state, item, reserved, equippedCount, starterMobLootAmount) {
     if (item.protected || item.acceptedCustomer || item.assignedClan || item.available === false) return 0;
     const count = value => Math.max(0, Number(value) || 0);
     return Math.max(0, Math.floor(Number(item.amount ?? item.count ?? 0))
-        - Math.max(count(item.equippedCount || (item.equipped ? item.amount ?? 1 : 0)),
+        - Math.max(count(equippedCount || (item.equipped ? item.amount ?? 1 : 0)),
             count(reserved[item.selfId]), count(state.stats?.clanMaterialDemand?.[item.selfId]),
-            count(item.protectedAmount), count(item.starterMobLootAmount), count(item.reservedAmount)));
+            count(item.protectedAmount), count(starterMobLootAmount), count(item.reservedAmount)));
 }
 // A craft refused at the act is not picked again until the bot reads the market
 // anew: its next town look ends the mark, no clock. A visit counts its look as it
@@ -286,4 +291,4 @@ function recipePaths(state, recipe, { known = false, route = null, acquisition =
 }
 module.exports = { staticExits, exitsFor, eligible, chooseOpportunity, chooseOccupation,
     createOccupation, stepOccupation, resultOccupation, createAction, stepAction: stepOccupation,
-    resultAction, recipePaths, freeAmount, refused, refusedMark, stepStands };
+    resultAction, recipePaths, freeAmount, freeUnits, refused, refusedMark, stepStands };

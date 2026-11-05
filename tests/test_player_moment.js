@@ -72,7 +72,6 @@ assert.equal(Sections.occupationPlanned(trip({ reason: 'market_sale_inventory', 
 assert.equal(Sections.occupationPlanned(trip({ reason: 'level_replan', spotId: 'x' }), null), true, 'and its own route with no leaf');
 assert.equal(Sections.occupationPlanned(trip({ reason: 'unsafe_ground_evacuation' }), leaf), false, 'a flight stays an event');
 assert.equal(Sections.occupationPlanned(trip({ reason: 'death_pressure_replan', cause: 'death_pressure' }), leaf), false, 'and a death pressure');
-assert.equal(Sections.occupationPlanned(trip({ reason: 'competition_avoid', cause: 'competition_avoid' }), leaf), false, 'and a pushed-out spot');
 assert.equal(Sections.occupationPlanned(trip({ reason: 'party_spot_replan' }, { partyId: 'p' }), leaf), false, 'a party\'s call stays an event');
 assert.equal(Sections.occupationPlanned(cold('hunting', { spotId: 'x' }), { activity: 'shopping' }), true, 'reaching its ground is no second event');
 assert.equal(Sections.occupationPlanned(cold('grouped', { spotId: 'x', partyId: 'p' }), { activity: 'shopping' }), true, 'nor a party\'s fight');

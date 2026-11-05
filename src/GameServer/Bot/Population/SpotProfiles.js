@@ -146,6 +146,13 @@ function spotHunters(spot, state = null) {
     return huntersOn(threadOccupancy(), spot?.id, state);
 }
 
+// A spot's crowd revision in this thread's occupancy
+// (SpotOccupancyIndex.spotVersion): a result held over the spot's hunters
+// (spotHunters, roomFor) stands while it reads the same.
+function spotVersion(spotId) {
+    return threadOccupancy()?.spotVersion(spotId) ?? 0;
+}
+
 // A spot has room for this bot in this thread's occupancy (roomFilterFor's
 // rule for one bot, with no set per search); its own spot always has.
 function roomFor(spot, state) {
@@ -276,10 +283,9 @@ const SpotProfiles = {
         // fallback; a refused candidate counts as absent. A bot's own spot is
         // never full to it; the room is checked again at arrival. The worker
         // passes its own index's filter (options.hasRoom); a search on main
-        // (market return, competition retreat, a command's trip, a party's
-        // formation) reads main's world index (ROUTE-ROOM-4). A party search
-        // counts the whole party (options.capacityStates), its own members
-        // excluded.
+        // (market return, a command's trip, a party's formation) reads main's
+        // world index (ROUTE-ROOM-4). A party search counts the whole party
+        // (options.capacityStates), its own members excluded.
         const hasRoom = options.hasRoom ?? defaultRoomFilter(state, profiles, options.capacityStates);
         const full = (spot) => {
             if (!hasRoom || (currentSpot && spot.id === currentSpot.id)
@@ -446,6 +452,7 @@ const SpotProfiles = {
 };
 
 SpotProfiles.spotHunters = spotHunters;
+SpotProfiles.spotVersion = spotVersion;
 SpotProfiles.roomFor = roomFor;
 SpotProfiles.useOccupancy = useOccupancy;
 SpotProfiles.spotsNearLevel = spotsNearLevel;

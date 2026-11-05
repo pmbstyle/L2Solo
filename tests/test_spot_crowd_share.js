@@ -72,10 +72,30 @@ try {
     assert.equal(Occupancy.huntersOn(index, spotId, on(3, 'elsewhere')), 3, 'a bot weighing a move: the two there and itself');
     assert.equal(Occupancy.huntersOn(index, spotId), 2, 'the fight: the bots there');
     assert.equal(Occupancy.huntersOn(index, 'empty'), 1, 'an empty spot: one hunter');
+    // The crowd revision (spotVersion): a held reader of the spot's hunters
+    // re-reads when a bot joins or leaves it, not when a bot stays.
+    const version = index.spotVersion(spotId), elsewhere = index.spotVersion('elsewhere');
+    assert(version > 0 && index.spotVersion('empty') === 0, 'a spot with bots has a revision, an untouched one 0');
+    index.update({ ...on(1, spotId), vitals: { hp: 10 } });
+    assert.equal(index.spotVersion(spotId), version, 'a bot that stays on the spot moves no revision');
+    index.update(on(3, spotId));
+    const joined = index.spotVersion(spotId);
+    assert(joined !== version && index.spotVersion('elsewhere') !== elsewhere, 'a move changes both spots\' revisions');
+    index.update({ characterId: 2, activity: 'shopping', spotId });
+    assert.notEqual(index.spotVersion(spotId), joined, 'a bot that leaves for town moves it');
+    const left = index.spotVersion(spotId);
+    index.remove(Occupancy.stateKey(on(3, spotId)));
+    assert.notEqual(index.spotVersion(spotId), left, 'a bot removed from the index moves it');
+    const removed = index.spotVersion(spotId);
+    index.update(on(3, spotId));
+    assert(index.spotVersion(spotId) > removed, 'a revision never comes back to an earlier count\'s');
+    index.update(on(3, 'elsewhere'));
+    index.update(on(2, spotId));
     // A caller that passes no count (EquipmentIncomeRoute, PartyIncomeComparison)
     // reads the thread's occupancy: a cold worker's kernel index once registered.
     index.update(on(4, spotId)); index.update(on(5, spotId));
     SpotProfiles.useOccupancy(() => index);
+    assert.equal(SpotProfiles.spotVersion(spotId), index.spotVersion(spotId), 'the thread reader reads the registered index');
     const fromThread = Economics.create(state)(spot, true);
     assert(Math.abs(fromThread.kills - Math.min(alone.kills, production / 5)) < 1e-6 * alone.kills,
         `the thread's four others share it with a caller that passes no count: ${fromThread.kills}`);

@@ -649,6 +649,11 @@ async function run() {
         for (const name of ['benefits', 'sources'])
             assert.equal(Economy.heldWorkshopOf(heldOf(workshop), Sections.sectionBit(name), state), workshop, `a moved ${name} section keeps it`);
         assert.equal(Economy.heldWorkshopOf(heldOf(workshop, 'elsewhere'), 0, state), null, 'another route asks again');
+        // A rest or a used scroll (one left) reads the same route rows.
+        assert.equal(Economy.heldWorkshopOf(heldOf(workshop), 0, { ...state, activity: 'resting' }), workshop, 'a rest keeps it');
+        const scrolls = amount => ({ ...state, inventory: { ...state.inventory, 736: { selfId: 736, amount } } });
+        assert.equal(Economy.heldWorkshopOf(heldOf(workshop, Trip.key(scrolls(5))), 0, scrolls(4)), workshop, 'a scroll used while one is left keeps it');
+        assert.equal(Economy.heldWorkshopOf(heldOf(workshop, Trip.key(scrolls(1))), 0, scrolls(0)), null, 'the last scroll used asks again');
         assert.equal(Economy.heldWorkshopOf(heldOf({ ...workshop, known: false }), 0, state), null, 'an unknown workshop asks again');
         assert.equal(Economy.heldWorkshopOf(heldOf({ ...workshop, incomePerHour: NaN }), 0, state), null, 'no income asks again');
         assert.equal(Economy.heldWorkshopOf(null, 0, state), null, 'no held build asks');
@@ -668,6 +673,7 @@ async function run() {
         const routeRows = Trip.prepared(state);
         const built = Economy.forState(state, { routeRows, workshop });
         assert.equal(built.plan.workshop, workshop, 'fixture: the build holds its workshop');
+        assert.strictEqual(Economy.preparedRouteRows({ ...state, activity: 'resting' }), routeRows, 'a rest reads the held build\'s route rows');
         const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(workshop.recipeId);
         const watched = built.statsPacket.wishSections.marketWatch || [];
         const watches = (id, storeType) => watched.some(row => row[0] === id && row[1] === storeType);

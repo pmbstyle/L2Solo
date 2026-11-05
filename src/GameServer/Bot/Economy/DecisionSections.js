@@ -517,7 +517,7 @@ function occupationPlanned(state, leaf) {
 }
 // A trip the bot took itself, out or back, and the ground it reached (the trip's
 // start was its event); a flight, a pushed-out spot or a party's call is the world's.
-const FORCED_TRIPS = new Set(['unsafe_ground_evacuation', 'death_pressure_replan', 'party_spot_replan', 'competition_avoid']);
+const FORCED_TRIPS = new Set(['unsafe_ground_evacuation', 'death_pressure_replan', 'party_spot_replan']);
 function ownMove(state, where) {
     if (state.activity !== 'traveling') return Reaction.field(where);
     const travel = state.stats?.travel;

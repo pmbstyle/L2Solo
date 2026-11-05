@@ -44,7 +44,7 @@ function collect(state, options = {}) {
     let preparedState = null, prepared = null;
     const economics = () => {
         if (preparedState !== current) {
-            prepared = require('node:worker_threads').isMainThread ? Economy.basics(current) : Economy.forState(current);
+            prepared = require('node:worker_threads').isMainThread ? Economy.keptKit(current) : Economy.forState(current);
             preparedState = current;
         }
         return prepared;
@@ -93,12 +93,12 @@ function collect(state, options = {}) {
         line.fundingParts.push({ amount: count, funding, order: order++ });
         if (attribution.errand) line.errands.push({ errand: attribution.errand, units: count, spent: count * price });
         if (attribution.goal) line.goal = { ...attribution.goal, units: count };
-        current.adena = Math.max(0, Number(current.adena || 0) - count * price);
-        current.inventory[selfId] = { ...current.inventory[selfId], selfId: Number(selfId),
-            amount: Number(current.inventory[selfId]?.amount || 0) + count };
-        current.inventory[57] = { ...current.inventory[57], selfId: 57, amount: current.adena };
-        current.stats = { ...current.stats, money: Funding.packetAfterPurchase(current.stats?.money, count * price, funding) };
-        preparedState = null; prepared = null;
+        // The virtual purchase is a new state and bag (readers key on their identity).
+        const adena = Math.max(0, Number(current.adena || 0) - count * price), inventory = { ...current.inventory };
+        inventory[selfId] = { ...inventory[selfId], selfId: Number(selfId), amount: Number(inventory[selfId]?.amount || 0) + count };
+        inventory[57] = { ...inventory[57], selfId: 57, amount: adena };
+        current = { ...current, adena, inventory,
+            stats: { ...current.stats, money: Funding.packetAfterPurchase(current.stats?.money, count * price, funding) } };
     };
     // Preserve the existing survival ordering: potions, escape scroll, work,
     // then shots. Each next shortage and allowance sees the virtual purchase.

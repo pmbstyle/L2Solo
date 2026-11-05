@@ -12,7 +12,6 @@ const FailureLog = invoke('FailureLog');
 const Database = invoke('Database');
 const Metrics = invoke('GameServer/Bot/Population/PopulationMetrics');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
-const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const DataCache = invoke('GameServer/DataCache');
 const NpcShopBuyLists = invoke('GameServer/World/Generics/NpcShopBuyLists');
@@ -52,7 +51,6 @@ const DecisionEvents = require('../AI/DecisionEvents');
 const RecomputeGeneration = require('./RecomputeGeneration');
 
 const ClanRaidRoster = require('../../Clan/ClanRaidRoster');
-const BotRoute = require('./BotRoute');
 const GeodataEngine = require('../../Geodata/GeodataEngine');
 // Private main-thread provenance survives the queue's shallow clone but is
 // excluded from JSON/wire sizing and cannot be supplied by a Worker message.
@@ -189,12 +187,6 @@ class ColdSimulationCoordinator {
             participantAllowed: id => !this.fencedBots.has(Number(id)),
             releaseForecasts: events => this.post('competition_release', { events: events.map(e => ({ at: e.at, action: e.action,
                 actor: { id: e.actor.id, partyId: e.actor.partyId || null }, peer: { id: e.peer.id, partyId: e.peer.partyId || null } })) }),
-            retreatRoute: (members, party, event, timestamp) => {
-                const leader = members.find(s => s.characterId === party?.leaderId) || members[0];
-                const spots = SpotProfiles.ensure() || [];
-                const route = BotRoute.route(leader, SpotIndex.spotById(spots, event.spotId), party, members, { spots, timestamp });
-                return route ? { ...route, cause: 'competition_avoid', reason: party ? 'party_spot_replan' : 'competition_avoid' } : null;
-            },
             formParty: (members, event, options) => this.population?.formCompetitionParty?.(members, event, options),
             onState: id => {
                 const state = LifeState.cachedState(id);

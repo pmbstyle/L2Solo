@@ -41,7 +41,7 @@ const MOB_IMPAIRMENTS = { hard_control: 'disabled', sleep: 'disabled', root: 'ro
 // heldUntil: the time a bot's stun on this monster ends; dots: the bot's
 // damage over time on it (landOnMob); dotBy: the caster of its last tick.
 function coldMobFight(mob, saved = null) {
-    const skills = coldMobSkills(mob);
+    const { skills, aiType } = mobChoice(mob);
     return { skills, mp: saved ? Number(saved.mp ?? mob.maxMp) || 0 : Number(mob.maxMp) || 0, mpAt: 0,
         maxMp: Number(mob.maxMp) || 0, revMp: Number(mob.revMp) || 0,
         heldUntil: Number(saved?.heldFor) || 0, dots: (saved?.dots || []).map((dot) => ({ ...dot })),
@@ -49,16 +49,15 @@ function coldMobFight(mob, saved = null) {
         lastDebuffAt: Number.isFinite(saved?.debuffAgo) ? -saved.debuffAgo : -Infinity,
         held: { disabled: { ...(saved?.held?.disabled || {}) }, rooted: { ...(saved?.held?.rooted || {}) },
             silenced: { ...(saved?.held?.silenced || {}) } },
-        aiType: skills.length ? NpcCombatChoice.aiTypeFor(mob.aiType, skills, mob.atkRadius) : 'fighter' };
+        aiType };
 }
-// A fresh fight read only for its skills and AI type (actionMix, meleeOnly),
-// once per monster view: the gate weighs a view many times. A self buff
-// (buffColdMob) changes neither.
-const freshFights = new WeakMap();
-function freshFight(mob) {
-    let fight = freshFights.get(mob);
-    if (!fight) freshFights.set(mob, fight = coldMobFight(mob));
-    return fight;
+// What a fresh fight chooses from (actionMix, meleeOnly): the skills of the
+// monster's id and its AI type (NpcCombatChoice.aiTypeFor: its own, else by
+// those skills and its reach). Built per read, not kept per monster view: a
+// gate's view is mostly a new pull object, and the skill list is kept by id.
+function mobChoice(mob) {
+    const skills = coldMobSkills(mob);
+    return { skills, aiType: skills.length ? NpcCombatChoice.aiTypeFor(mob.aiType, skills, mob.atkRadius) : 'fighter' };
 }
 // The monster's MP regained up to fight time, as the hot Npc's regen ticks
 // (Automation: its revMp each Formulas.REGEN_TICK_MS, spread over the time).
@@ -206,7 +205,7 @@ function spellLands(mob, skill, profile) {
 // are left out (a control's damage is none, its hold on the fighter is not
 // in the mean): the mean errs high. A skill the fighter's numbers cannot
 // meet (no M.Def for a spell) is left out too.
-function actionMix(mob, target, at = 0, fight = freshFight(mob)) {
+function actionMix(mob, target, at = 0, fight = mobChoice(mob)) {
     const profile = target.profile;
     const attacker = Profile.attackerView(mob);
     const defender = Profile.defenderView(profile, at, target);
@@ -244,6 +243,9 @@ function actionMix(mob, target, at = 0, fight = freshFight(mob)) {
 // The monster's expected damage per second on a profile (actionMix), its
 // holder kept per profile so the hits' stat sources are built once
 // (ColdCombatProfile.hitSources): the gate weighs a profile against many mobs.
+// The answer is not kept: a search's mob views are new objects, a key of the
+// ~25 numbers the mix reads cost more to build than the mix, and only a fifth
+// of the asks met a kept answer.
 const holders = new WeakMap();
 function incomingPerSecond(mob, profile, at = 0) {
     let holder = holders.get(profile);
@@ -255,7 +257,7 @@ function incomingPerSecond(mob, profile, at = 0) {
 // spell (its AI type by NpcCombatChoice.aiTypeFor reads both).
 function meleeOnly(mob) {
     if (!(Number(mob?.atkRadius) < 200)) return false;
-    return freshFight(mob).aiType === 'fighter';
+    return mobChoice(mob).aiType === 'fighter';
 }
 
 // How far the monster still strikes a target that runs from it: its weapon's

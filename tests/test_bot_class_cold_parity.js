@@ -71,4 +71,21 @@ for (const { classId } of templates) {
         summonCases++;
     }
 }
+// The cold choice prices each skill record as it is now: the same kit priced
+// again is priced the same, and a record changed in place (a rank learnt) is
+// priced at its new rank, as a fresh copy of that rank is.
+{
+    const [strikeOne] = Profiles.skillSnapshotsFromRecords([{ selfId: 1177, level: 1 }]);
+    const [strikeFive] = Profiles.skillSnapshotsFromRecords([{ selfId: 1177, level: 5 }]);
+    const mystic = skills => Profiles.profileFor({ classId: 10, level: 19,
+        stats: { classId: 10, coldCombat: { skillSource: 'database', skills } } });
+    const learnt = { ...strikeOne }, kit = [learnt];
+    const low = Cold.soloAttackScores(mystic(kit));
+    assert(Number.isFinite(low[1177]), 'a mystic prices Wind Strike');
+    assert.deepStrictEqual(Cold.soloAttackScores(mystic(kit)), low, 'the same kit is priced the same again');
+    Object.assign(learnt, strikeFive);
+    const high = Cold.soloAttackScores(mystic(kit));
+    assert.deepStrictEqual(high, Cold.soloAttackScores(mystic([{ ...strikeFive }])), 'a rank learnt in place prices as a fresh record');
+    assert.notStrictEqual(high[1177], low[1177], 'Wind Strike 5 is priced apart from Wind Strike 1');
+}
 console.log(`Class parity passed: ${cases} hot/cold decisions and charge plans; ${gearCases} gear boundary cases across 89 classes; ${summonCases} active-servitor cases`);

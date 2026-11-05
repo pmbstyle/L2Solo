@@ -265,6 +265,7 @@ const tests = [
     'tests/test_cold_commit_admission.js',
     'tests/test_cold_message_pages.js',
     'tests/test_cold_message_bytes.js',
+    'tests/test_cold_skill_dto_interning.js',
     'tests/test_life_state_cache.js',
     'tests/test_cold_hydrate_downtime_shift.js',
     'tests/test_boot_life_row_order.js',

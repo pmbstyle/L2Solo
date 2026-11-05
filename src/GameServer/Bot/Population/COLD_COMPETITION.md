@@ -138,16 +138,18 @@ deducts the idle interval once from subsequent farming time and clears the wait.
 Party selection excludes pending waits. CAS validation rejects duplicate delivery
 even after restart, and a stale participant aborts both writes.
 
-An avoid decision uses the ordinary suitable-spot selector and capacity check,
-excluding the current spot for ten steps of each holder (a member's far steps,
-the party's rounds). A successful action starts normal
-travel, with its existing arrival time and zero farming rewards during transit.
-All departing party members and the party's destination/schedule commit together;
-the other unit keeps hunting. A missing destination returns `no_retreat_route`,
-not a successful departure. The bounded `coldCompetition.avoid` entry survives
-restart and later encounters, expires without escalating PvE death backoff, and
-does not create resentment. `coldCompetitionActions.avoids` counts committed
-departures; recent results include the destination and affected members.
+An avoid decision excludes the current spot for ten steps of each holder (a
+member's far steps, the party's rounds), raises the occupation of the actor's
+unit and makes it due now; main searches no spot. The worker's next step (a
+solo member's trip start, the party's run) routes the unit off the excluded spot
+with the ordinary suitable-spot selector and capacity check, and starts normal
+travel with its arrival time and zero farming rewards during transit; with no
+other suitable spot the unit stays. All party members and the party's schedule
+commit together; the other unit keeps hunting. The bounded
+`coldCompetition.avoid` entry survives restart and later encounters, expires
+without escalating PvE death backoff, and does not create resentment.
+`coldCompetitionActions.avoids` counts committed avoids; recent results include
+the affected members.
 
 Party yields and all avoids validate the complete rosters (at most 18 hunters),
 physical presence, targets, memory versions and hot-handoff fences. The checks

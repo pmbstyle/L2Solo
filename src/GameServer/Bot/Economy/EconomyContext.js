@@ -856,11 +856,14 @@ function pricing(state, persona, board, timestamp, deps, read = () => {}, prices
 // Below karma that closes towns the saving reads only the origin and the static
 // town and gatekeeper tables, so a hunt spot's answer is kept on its catalogue
 // object: the two route solves run once per spot, not in every build.
+// solve false (the published plan row, stockTargets): undefined where the
+// answer would need the route solves of an origin off the catalogue.
 const spotScrollHours = new WeakMap();
-function scrollHoursFor(state, spots, bestSpotId) {
+function scrollHoursFor(state, spots, bestSpotId, solve = true) {
     if (invoke('GameServer/Karma').closesTowns(state.stats?.karma)) return 0;
     const spot = SpotIndex.spotById(spots, bestSpotId);
-    if (!spot?.center) return scrollSavingHours(state, state.stats?.marketReturn?.loc || (state.activity === 'hunting' ? state.loc : null));
+    if (!spot?.center) return solve ? scrollSavingHours(state, state.stats?.marketReturn?.loc
+        || (state.activity === 'hunting' ? state.loc : null)) : undefined;
     if (spotScrollHours.has(spot)) return spotScrollHours.get(spot);
     const hours = scrollSavingHours(state, spot.center);
     spotScrollHours.set(spot, hours);
@@ -902,26 +905,32 @@ function kitReader(data, price, scrollUseHours) {
         const shots = kind === 'shots';
         const row = shots ? data.shots : data.potions;
         const { itemId, use, current } = row;
-        // Potions: beside the survival use, the bottles that save rest
-        // (RestPotion.stockUse), an outing's and at most what restCap allows.
-        const allUse = use + positive(row.restUse);
-        const wantedTarget = Math.max(Math.ceil(use), Math.ceil(use * data.targetHours),
-            Math.min(Math.ceil(allUse * data.targetHours), positive(row.restCap)));
-        // Useful owned stock need not justify expensive replacement stock.
-        const target = row.canRestock ? wantedTarget : Math.min(current, wantedTarget);
-        // Forecast consumption may be fractional; both purchase tranches use
-        // the same whole-unit survival stock so their sum remains executable.
-        const survivalTarget = row.canRestock ? Math.ceil(use) : Math.min(current, Math.ceil(use));
+        // A published plan's row (keptKit) carries its targets and no use:
+        // its stock has no use or benefit fields (a purchase reads none).
+        const planned = row.target !== undefined;
+        let target = row.target, survivalTarget = row.survivalTarget, own = null;
+        if (!planned) {
+            // Potions: beside the survival use, the bottles that save rest
+            // (RestPotion.stockUse), an outing's and at most what restCap allows.
+            const allUse = use + positive(row.restUse);
+            const wantedTarget = Math.max(Math.ceil(use), Math.ceil(use * data.targetHours),
+                Math.min(Math.ceil(allUse * data.targetHours), positive(row.restCap)));
+            // Useful owned stock need not justify expensive replacement stock.
+            target = row.canRestock ? wantedTarget : Math.min(current, wantedTarget);
+            // Forecast consumption may be fractional; both purchase tranches use
+            // the same whole-unit survival stock so their sum remains executable.
+            survivalTarget = row.canRestock ? Math.ceil(use) : Math.min(current, Math.ceil(use));
+            own = { usePerHour: use, ...(shots ? { ownedUsePerHour: row.ownedUsePerHour, beginnerUsePerHour: row.beginnerUsePerHour,
+                paidUsePerHour: row.paidUsePerHour } : {}), hours: use > 0 ? current / use : Infinity, targetHours: data.targetHours,
+                benefitPerUnit: allUse > 0 ? (row.benefit + positive(row.restHours)) / allUse : 0 };
+        }
         const survivalMissing = Math.max(0, survivalTarget - current);
         const missing = Math.max(0, target - Math.max(current, survivalTarget));
-        const benefitPerUnit = allUse > 0 ? (row.benefit + positive(row.restHours)) / allUse : 0;
-        const benefitHours = missing * benefitPerUnit;
-        return { itemId: Number(itemId), usePerHour: use, ...(shots ? { ownedUsePerHour: row.ownedUsePerHour, beginnerCurrent: row.beginnerCurrent,
-                beginnerUsePerHour: row.beginnerUsePerHour, paidUsePerHour: row.paidUsePerHour } : {}),
-            current, hours: use > 0 ? current / use : Infinity,
-            targetHours: data.targetHours, target, survivalTarget, missing, survivalMissing, unitPrice: price(itemId),
-            survivalPrice: survivalPrice(itemId, price), benefitPerUnit, benefitHours,
-            needed: use > 0 && current < survivalTarget };
+        // needed: a zero use has a zero survival target.
+        return { itemId: Number(itemId), ...(shots ? { beginnerCurrent: row.beginnerCurrent } : {}), current,
+            target, survivalTarget, missing, survivalMissing, unitPrice: price(itemId),
+            survivalPrice: survivalPrice(itemId, price), needed: current < survivalTarget,
+            ...own, ...(own ? { benefitHours: missing * own.benefitPerUnit } : {}) };
     };
     const kit = [stock('shots'), stock('potions')];
     const escapeCost = data.closed ? 0 : survivalPrice(736, price) * Math.max(0, 1 - data.scrolls);
@@ -936,7 +945,9 @@ function kitReader(data, price, scrollUseHours) {
         return kit.filter(row => row.itemId === Number(id)).reduce((sum, row) => sum
             + row.survivalMissing * (quoted ? unitPrice : row.survivalPrice), 0);
     };
-    return { stock, kitCost, kit, escapeCost };
+    // The survival reserve: the escape scroll and the kit's missing survival units at their list price.
+    const reserve = escapeCost + kit.reduce((sum, row) => sum + row.survivalMissing * row.survivalPrice, 0);
+    return { stock, kitCost, reserve };
 }
 // The bot's hour, death and karma prices and its stock of shots and potions:
 // the part of a review that needs no wish network. forState builds on it and
@@ -1048,11 +1059,7 @@ function holdRead(state, options) {
     if (!hold) { holdStats[party ? 'partyMissed' : 'none'] += 1; return null; }
     const timestamp = Number(options.timestamp) || Date.now();
     const answer = hold.moved || hold;
-    if (!holdDue(answer, state, timestamp, options.goalRevision)) {
-        if (party && !answer.route) { holdStats.partyMissed += 1; return null; }
-        holdStats[party ? 'partyKept' : hold.moved ? 'moved' : answer.route ? 'kept' : 'unrouted'] += 1;
-        return { route: answer.route, searched: !!hold.moved, hold: answer };
-    }
+    if (!holdDue(answer, state, timestamp, options.goalRevision)) return heldAnswer(hold, party);
     if (party) { holdStats.partyMissed += 1; return null; }
     const afterGoal = timestamp - answer.at < HOLD_MS;
     if (afterGoal) holdStats.goal += 1;
@@ -1067,14 +1074,31 @@ function holdRead(state, options) {
     holdStats.moved += 1;
     return { route: found, searched: true, hold: next };
 }
+// A read of the hold's answer inside its window: no search.
+function heldAnswer(hold, party) {
+    const answer = hold.moved || hold;
+    if (party && !answer.route) { holdStats.partyMissed += 1; return null; }
+    holdStats[party ? 'partyKept' : hold.moved ? 'moved' : answer.route ? 'kept' : 'unrouted'] += 1;
+    return { route: answer.route, searched: !!hold.moved, hold: answer };
+}
 // A build's read of the hold (heldVerdictFor): holdRead reached only through
 // basics would leave every bot off the card path (and a build that serves the
 // held plan) without its window or its goal change. Runs after the verdict: a
-// foundation it rebuilds searches anyway. True when the search moved the hold.
-function holdCheck(state, deps, held, verdict) {
+// foundation it rebuilds searches anyway. True when the verdict must be judged
+// again: the search moved the hold, or it stood moved and the verdict is the
+// step's (handed: judged maybe before the move). A hold an earlier search
+// moved, its answer inside its own window, reads that answer and no search
+// (holdRead, when it reads this hold), so it needs no prices; a verdict judged
+// here already saw it.
+function holdCheck(state, deps, held, verdict, judged) {
     const hold = held?.plan.hold, timestamp = Number(deps.timestamp || Date.now());
     if (!hold || verdictMask(state, deps.eventVerdict, verdict) & Sections.COMPUTED.foundation
         || !holdDue(hold, state, timestamp, deps.goalRevision)) return false;
+    if (hold.moved && !holdDue(hold.moved, state, timestamp, deps.goalRevision)
+        && cache.get(`character:${Number(state.characterId) || 0}`)?.plan?.hold === hold) {
+        heldAnswer(hold, deps.party === true);
+        return !judged;
+    }
     const { price } = pricing(state, personaOf(state, deps), deps.board, timestamp, deps);
     holdRead(state, { ...deps, timestamp, required: GearProgression.assess(state).required, price });
     return !!hold.moved;
@@ -1195,16 +1219,18 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
             beginnerCurrent, beginnerUsePerHour: shotPolicy.beginnerUsePerHour, paidUsePerHour: shotPolicy.paidUsePerHour },
         potions: { itemId: potionItemId, use: potionUse, current: positive(state.inventory?.[potionItemId]?.amount),
             canRestock: true, benefit: positive(bestTable?.deaths) * deathHours, restUse: potionRest.use, restHours: potionRest.hours } };
-    const { stock, kitCost, kit, escapeCost } = kitReader(kitData, price,
+    const { stock, kitCost, reserve } = kitReader(kitData, price,
         () => kitData.scrollHours ??= scrollHoursFor(state, deps.spots, bestSpotId));
-    const reserve = escapeCost + kit.reduce((sum, row) => sum + row.survivalMissing * row.survivalPrice, 0);
+    // The plan row's scroll hours (stockTargets [9]): the build's own answer,
+    // else the catalogue spot's cached one, never a route solve of its own.
+    const scrollHours = () => kitData.scrollHours ??= scrollHoursFor(state, deps.spots, bestSpotId, false);
     // The rest bottles the wallet pays now: a stock it cannot pay would stand
     // first in the money queue, its gap (WishNetwork.moneyQueue), and hold back
     // every wish below it. The rule pays them back within the outing.
     if (potionRest.use > 0) kitData.potions.restCap = kitData.potions.current
         + Math.floor(Math.max(0, Funding.budget(state) - reserve) / Math.max(1, price(potionItemId)));
     return { tableRole, hunt, hourAdena, survivalReserve: reserve, kitCost, kit: kitData,
-        lostGearHours, bestSpotId, deathHours, bestTable, stock,
+        lostGearHours, bestSpotId, deathHours, bestTable, stock, scrollHours,
         hold: income.hold,
         riskWeight: Valuation.riskWeight(state, persona),
         expectedDeathHours: positive(bestTable?.deaths) * deathHours,
@@ -1213,8 +1239,9 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
 function foundationFromPlan(state, plan, deps, price) {
     const { stock, kitCost } = kitReader(plan.kit, price,
         () => plan.kit.scrollHours ??= scrollHoursFor(state, deps.spots, plan.bestSpotId));
+    const scrollHours = () => plan.kit.scrollHours ??= scrollHoursFor(state, deps.spots, plan.bestSpotId, false);
     return { hunt: plan.hunt, hourAdena: plan.hourAdena, survivalReserve: plan.survivalReserve,
-        kit: plan.kit, stock, kitCost, lostGearHours: plan.lostGearHours, bestSpotId: plan.bestSpotId,
+        kit: plan.kit, stock, kitCost, scrollHours, lostGearHours: plan.lostGearHours, bestSpotId: plan.bestSpotId,
         hold: plan.hold,
         deathHours: plan.deathHours, riskWeight: plan.riskWeight,
         expectedDeathHours: plan.expectedDeathHours, karmaHours: plan.karmaHours };
@@ -1296,7 +1323,7 @@ function heldVerdictFor(state, deps, look = false) {
     const judge = () => heldBuildVerdict(state, held?.plan.eventProof, deps,
         { ...heldOptionsOf(held), facts: reads.facts, collect: true });
     let verdict = handed || judge();
-    if (holdCheck(state, deps, held, verdict)) { verdict = judge(); handed = null; }
+    if (holdCheck(state, deps, held, verdict, !handed)) { verdict = judge(); handed = null; }
     return { held, reads, verdict, handed };
 }
 // The sections a build rebuilds (forState's mask): the raised bits, the
@@ -1939,23 +1966,24 @@ function view(state, plan, deps, built = {}) {
     }
     return context;
 }
-// The plan's own potion and shot targets, published with its money packet
-// (L72): the sale list keeps what the plan decided under spot occupancy
-// instead of a second earning-spot search. A changed potion or shot item
-// (level, weapon) has no published target yet and reads the foundation; so
-// do shots risen since the build: without restock their target is capped by
-// the stock owned then (the sale list keeps at most what is owned, so a
-// fall needs no fresh read).
 // What a fight's danger moment weighs (DangerRule), for the cold fight, which
 // reads the bot's packet: a read of the view's basics would build them.
 function dangerPrice(base) {
     return [base.deathHours, base.riskWeight];
 }
+// stats.stockTargets, the plan's kit targets published with its money packet
+// (L72), read on main by keptKit / keptTargets:
+// [potionId, potionTarget, shotId, shotTarget, shotCurrentAtBuild, potionSurvivalTarget, gapHorizonHours,
+//  shotCanRestock (1/0), shotSurvivalTarget, scrollHoursPerUnit].
+// [5]: also the bottles the survival drink keeps from the rest drink (RestPotion).
+// [6]: how long the plan's urgent want may wait for a price, main's trader reads it.
+// [9]: the hours a Scroll of Escape saves (scrollHoursFor), three significant
+// digits; -1 when the build did not price it and its origin is off the
+// catalogue (no route solve for the row: main then reads the basics, below).
 function stockTargets(base, gapHorizonHours = 0) {
-    const potions = base.stock('potions'), shots = base.stock('shots');
-    // [5]: the bottles the survival drink keeps from the rest drink (RestPotion).
-    // [6]: how long the plan's urgent want may wait for a price, main's trader reads it.
-    return [potions.itemId, potions.target, shots.itemId, shots.target, shots.current, potions.survivalTarget, gapHorizonHours];
+    const potions = base.stock('potions'), shots = base.stock('shots'), hours = base.scrollHours();
+    return [potions.itemId, potions.target, shots.itemId, shots.target, shots.current, potions.survivalTarget, gapHorizonHours,
+        base.kit.shots.canRestock ? 1 : 0, shots.survivalTarget, Number.isFinite(hours) ? Number(positive(hours).toPrecision(3)) : -1];
 }
 // The bot's missing shot stack as crafters see it (stats.shotDemand, read by
 // MarketDemandIndex and CraftWorkshopService): null when the stock rule wants
@@ -1981,12 +2009,51 @@ function shotDemand(economy, state, timestamp, previous = null) {
     if (previous && previous.itemId === stock.itemId && previous.amount === missing && previous.maxSpend === maxSpend) return previous;
     return { itemId: stock.itemId, amount: missing, maxSpend, at: timestamp };
 }
-function keptTargets(state = {}, deps = {}) {
+// The plan's kit on main: one rule for what a bot keeps from a sale and what
+// it buys (our model choice, not C4): the worker's published targets
+// (stats.stockTargets) over the live bag, so a town errand's restock and the
+// sale list read the plan the worker decided under spot occupancy instead of
+// a second earning-spot search per read (IncomeRoute.select in the basics).
+// The basics answer instead when the row is missing or names another potion or
+// shot (level, weapon: no published target yet), and when shots that cannot
+// restock rose above the stock owned at the build (their target was capped by
+// it), and for a purchase when a scroll is missing and the row has no scroll
+// hours ([9] -1). A row from before the restock slots ([7]-[9]) serves the sale
+// only. The reasons are counted for diagnostics only (kit:basics:<reason>).
+const keptMiss = reason => { if (Diagnostics.active()) Diagnostics.count('kit', 'basics', reason); return null; };
+function publishedKit(state, purchase) {
     const row = state.stats?.stockTargets, ShotStock = invoke('GameServer/Inventory/ShotStock'), plan = ShotStock.planForState(state);
+    if (!Array.isArray(row) || row.length < 5) return keptMiss('none');
+    if (row[0] !== HealingPotionStock.purchasePotionFor(state).selfId || row[2] !== plan.selfId) return keptMiss('item');
+    const full = row.length >= 10 && [1, 3, 5, 8, 9].every(at => Number.isFinite(row[at]));
+    if (purchase && !full) return keptMiss('old');
+    const scrolls = positive(state.inventory?.[736]?.amount);
+    if (purchase && row[9] < 0 && scrolls < invoke('GameServer/Bot/Travel/ScrollStock').TARGET_AMOUNT) return keptMiss('scroll_unpriced');
     const beginnerCurrent = ShotStock.beginnerAmount(state, plan);
-    if (Array.isArray(row) && row.length >= 5 && row[0] === HealingPotionStock.purchasePotionFor(state).selfId
-        && row[2] === plan.selfId && positive(state.inventory?.[plan.selfId]?.amount) + beginnerCurrent <= row[4])
-        return { potions: row[1], shots: { itemId: row[2], target: row[3], beginnerCurrent } };
+    const shots = positive(state.inventory?.[plan.selfId]?.amount) + beginnerCurrent, canRestock = full && row[7] === 1;
+    if (!canRestock && shots > row[4]) return keptMiss('shots_rose');
+    if (Diagnostics.active()) Diagnostics.count('kit', 'published', purchase ? 'purchase' : 'sale');
+    return { scrolls, closed: invoke('GameServer/Karma').closesTowns(state.stats?.karma),
+        scrollHours: full ? positive(row[9]) : 0,
+        shots: { itemId: row[2], current: shots, beginnerCurrent, target: canRestock ? row[3] : Math.min(shots, row[3]),
+            survivalTarget: canRestock ? row[8] : Math.min(shots, positive(row[8])) },
+        potions: { itemId: row[0], current: positive(state.inventory?.[row[0]]?.amount), target: row[1], survivalTarget: positive(row[5]) } };
+}
+// The kit a purchase on main reads (ShotStock, HealingPotionStock and
+// ScrollStock restocks, NpcRestockPlan, ColdMarketService funding): stock,
+// kitCost, survivalReserve and price, as the basics give them.
+function keptKit(state = {}, deps = {}) {
+    const data = publishedKit(state, true);
+    if (!data) return basics(state, deps);
+    let read = null;
+    const price = id => (read ||= personal(state, deps).price)(id);
+    const { stock, kitCost, reserve } = kitReader(data, price, () => data.scrollHours);
+    return { stock, kitCost, survivalReserve: reserve, price };
+}
+// The sale's kept stock (ItemDisposition.saleCandidates): targets only, no price read.
+function keptTargets(state = {}, deps = {}) {
+    const data = publishedKit(state, false);
+    if (data) return { potions: data.potions.target, shots: data.shots };
     const base = basics(state, deps);
     return { potions: base.stock('potions').target, shots: base.stock('shots') };
 }
@@ -2192,5 +2259,5 @@ function reset() {
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
 module.exports = { quietGearBuildCount: () => quietGearBuilds, buildDoors: () => ({ ...doors, ...Agenda.counts() }), countDoor,
-    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), incomeHoldStats, holdEndsAt, heldIncomeRoute, incomeMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockFor, stockReader, keptTargets, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
+    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), incomeHoldStats, holdEndsAt, heldIncomeRoute, incomeMoved, FIELD_ACTIVITIES, captureEventProof, heldBuildVerdict, eventProofHolds, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockFor, stockReader, keptKit, keptTargets, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, survivalReserve, forgetContext, forget, reset, configure, registerProvider,
     craftIncome };

@@ -607,6 +607,41 @@ assert.strictEqual(ItemDisposition.npcLiquidationCandidates(spareBook).find(item
 assert.strictEqual(ItemDisposition.isSkillBookItem({ selfId: 999999, name: 'Spellbook: Missing Kind' }), true);
 assert.strictEqual(ItemDisposition.isSkillBookItem({ selfId: 999999, name: 'Amulet: Missing Kind' }), true);
 
+// One bag's sale list serves its readers that ask with the same inputs (the
+// cleanup need, a listing, the board's sale count): the answer a fresh read
+// gives, each reader its own rows, and a fresh answer when the bag, a reserve
+// or a price moves on the same bag.
+{
+    const books = state.inventory[spellbook.selfId];
+    const seller = { ...state, characterId: 7010, stats: { shotCraft: { productId: 1463, unitPrice: 20 } }, inventory: {
+        1864: { selfId: 1864, name: 'Stem', amount: 30, stackable: true },
+        1463: { selfId: 1463, name: 'Soulshot: D-grade', amount: 900, stackable: true },
+        [spellbook.selfId]: { ...books, amount: 3, instances: books.instances.slice(0, 3) } } };
+    // The caller's kept stock (as the listing and the sale count pass it): no forecast read.
+    const all = (extra = {}) => ({ unlimited: true, now, keptAmounts: { 1463: 100 }, ...extra });
+    const fresh = (value, options) => ItemDisposition.saleCandidates(structuredClone(value), options);
+    const read = (value, options = all()) => ItemDisposition.saleCandidates(value, options);
+    const row = (rows, id) => rows.find(item => item.selfId === id);
+    const first = read(seller), second = read(seller);
+    assert(row(first, 1864) && row(first, 1463) && row(first, spellbook.selfId), 'fixture: three stacks to sell');
+    for (const rows of [first, second]) rows.forEach(item => { item.count = 0; });
+    assert.deepStrictEqual(read(seller), fresh(seller, all()), 'a later reader gets the fresh answer, not an earlier reader\'s rows');
+    assert.strictEqual(row(read({ ...seller, stats: { shotCraft: { productId: 1463, unitPrice: 35 } } }), 1463).price, 35,
+        'a moved price on the same bag is read');
+    assert.deepStrictEqual(ItemDisposition.inventoryCleanupNeed(seller, { now }),
+        ItemDisposition.inventoryCleanupNeed(structuredClone(seller), { now }), 'the cleanup need over the shared list is the fresh one');
+    assert.deepStrictEqual(read(seller, all({ reserved: { 1864: 10 } })), fresh(seller, all({ reserved: { 1864: 10 } })));
+    assert.strictEqual(row(read(seller, all({ reserved: { 1864: 10 } })), 1864).count, 20, 'a reserve on the same bag is read');
+    const moved = { ...seller, inventory: { ...seller.inventory, 1864: { ...seller.inventory[1864], amount: 31 } } };
+    assert.strictEqual(row(read(moved), 1864).count, 31, 'a moved bag is read');
+    assert.strictEqual(row(read(seller), 1463).count, 800, 'fixture: the kept shots stay');
+    assert.strictEqual(row(read(seller), 1864).count, 30, 'the first bag keeps its answer');
+    assert.strictEqual(ItemDisposition.saleCandidates(seller, { presenceOnly: true, keptAmounts: {} }), true);
+    assert.deepStrictEqual(read(seller, all({ unlimited: false, limit: 1 })), fresh(seller, all({ unlimited: false, limit: 1 })),
+        'a capped list is its own');
+    assert.strictEqual(read(seller, all({ unlimited: false, limit: 1 })).length, 1);
+}
+
 }
 runInventoryCleanup().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
     await invoke('Database').close();
