@@ -36,6 +36,9 @@ async function run() {
         ].map((entry) => [String(entry.selfId), entry]))
     };
 
+    // Main reads the kit rates the bot's build publishes (stats.kitRates).
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    state.stats.kitRates = Economy.kitRates(Economy.basics(state));
     const target = HealingPotionStock.targetAmountFor(state);
     const potionStock = invoke('GameServer/Bot/Economy/EconomyContext').basics(state).stock('potions');
     // ARCH-NOTE: bag space only bounds an outing (1a1a2adc); with no town visit

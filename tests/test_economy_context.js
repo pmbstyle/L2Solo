@@ -393,7 +393,8 @@ async function run() {
         assert.deepEqual([...raisedBy(carrying(0), carrying(0))], [], 'it raises once');
         // Potions under what the survival drink keeps: a need far from a player.
         const potion = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(published).selfId;
-        const drinks = amount => ({ ...published, stats: { ...published.stats, stockTargets: Packet.stockTargets({ potionId: 0, potionTarget: 0, shotId: 0, shotTarget: 0, shotCurrentAtBuild: 0, potionSurvivalTarget: 10 }) },
+        const drinks = amount => ({ ...published, stats: { ...published.stats, kitRates: Packet.kitRates({ shotId: 0, shotUse: 0, shotBenefit: 0,
+            shotsCanRestock: false, potionId: 0, potionUse: 10, potionRestUse: 0, potionBenefit: 0, scrollHours: 0, outingHours: 1, gapHorizonHours: 0 }) },
             inventory: { ...published.inventory, [potion]: { selfId: potion, amount } } });
         const atDrinks = state => ({ ...state, stats: { ...state.stats, wishSections: { ...state.stats.wishSections, ...Gate.semanticFacts(drinks(12)) } } });
         const onHuntLeaf = (before, after) => sectionsRaised(atDrinks(before), atDrinks(after), { activity: 'hunting', spotId: published.spotId });
@@ -452,7 +453,7 @@ async function run() {
             const counts = () => invoke('GameServer/Bot/Economy/EconomyDiagnostics').metrics().counts || {};
             const delta = (before, key) => (counts()[key] || 0) - (before[key] || 0);
             const held = Economy.forState(native, { timestamp: T });
-            assert(held.plan.hunt && typeof held.plan.kit === 'object' && held.plan.kit, 'fixture: a held hunt and kit');
+            assert(held.plan.hunt && typeof held.plan.rates === 'object' && held.plan.rates, 'fixture: a held hunt and kit rates');
             const stale = { wallet: 7, cashBounds: [-3, 11], budgetBounds: [-5, 13], moneyError: 0.5 };
             const raised = (from, bit) => ({ ...native, stats: { ...native.stats, ...from.statsPacket,
                 wishDirty: Sections.sectionBit(bit),
@@ -461,7 +462,7 @@ async function run() {
             const sources = Economy.forState(raised(held, 'sources'), { timestamp: T });
             assert.notEqual(sources.plan, held.plan, 'a raised source section rebuilds');
             assert.equal(sources.plan.hunt, held.plan.hunt, 'a source raise keeps the foundation hunt');
-            assert.equal(sources.plan.kit, held.plan.kit, 'a source raise keeps the foundation kit');
+            assert.equal(sources.plan.rates, held.plan.rates, 'a source raise keeps the foundation kit rates');
             assert.equal(delta(before, 'source_route:ground:reuse'), 1, 'a source raise keeps the ground verdict');
             assert.equal(delta(before, 'context:foundation:kept'), 1, 'the kept foundation is counted');
             assert.notDeepEqual(sources.statsPacket.wishSections.cashBounds, stale.cashBounds,
@@ -599,7 +600,7 @@ async function run() {
             assert.equal(card?.card.activity?.activity, 'selling', 'fixture: the card holds the selling leaf');
             const economyOf = economy => ({ shots: economy.stock('shots'), potions: economy.stock('potions'),
                 scrolls: economy.stock('scrolls'), hourAdena: economy.hourAdena, reserve: economy.survivalReserve,
-                kit: economy.kit, hunt: economy.hunt, deathHours: economy.deathHours, riskWeight: economy.riskWeight,
+                rates: economy.rates, hunt: economy.hunt, deathHours: economy.deathHours, riskWeight: economy.riskWeight,
                 route: economy.preparedIncomeRoute && { ...economy.preparedIncomeRoute, state: null } });
             let searched = 0;
             Route.search = (...args) => { searched += 1; return nativeSearch(...args); };
@@ -1045,14 +1046,17 @@ async function run() {
         const stock = context.stock('shots');
         assert(stock.usePerHour > 0 && stock.target === Math.ceil(stock.usePerHour * stock.targetHours));
         const Shot = invoke('GameServer/Inventory/ShotStock');
-        assert.equal(Shot.keptAmounts(base)[stock.itemId], stock.target);
+        // Main reads the rates this build publishes over the same bag.
+        const rated = { ...base, stats: { ...base.stats, kitRates: context.statsPacket.kitRates } };
+        assert.equal(Shot.keptAmounts(rated)[stock.itemId], stock.target);
         assert(invoke('GameServer/Bot/Economy/PurchaseFunding').operatingReserve({ level: 78, adena: 1e9 }) > 0);
-        const plan = Shot.restockPlan({ ...base, adena: 1e8 }, { unitPrice: 10 });
+        const plan = Shot.restockPlan({ ...rated, adena: 1e8 }, { unitPrice: 10 });
         assert.equal(plan.targetAmount, stock.target);
         assert(plan.amount >= stock.survivalMissing && plan.amount <= stock.target, 'the floor permits survival and only worthwhile extra stock');
         assert.equal(plan.reserve, context.survivalReserve);
         const potion = context.stock('potions');
-        assert.equal(invoke('GameServer/Bot/AI/HealingPotionStock').targetAmountFor(base), potion.target);
+        assert(invoke('GameServer/Bot/AI/HealingPotionStock').targetAmountFor(rated) >= potion.target,
+            'the sale keeps at least the build\'s potion target (the wallet bounds a purchase, not what is kept)');
         const gap = context.network.queue.find(row => !row.funded);
         const stockWish = context.network.queue.find(row => row.key === 'stock:shots');
         if (stockWish && gap.key !== stockWish.key && context.network.queue.indexOf(gap) < context.network.queue.indexOf(stockWish)) {

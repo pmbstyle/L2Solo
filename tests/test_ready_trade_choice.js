@@ -123,14 +123,14 @@ try {
 console.log('PASS trade detour preserves and resumes the selected purchase');
 
 const Pricing = invoke('GameServer/Bot/Economy/MarketPricing');
-// The personal shot target is the plan's published one (stats.stockTargets,
+// The personal shot target is an outing of the build's published use (stats.kitRates,
 // EconomyContext.keptTargets), the same the listing keeps.
 const stockBare = { ...state, level: 30, activity: 'hunting' };
 const shotId = invoke('GameServer/Inventory/ShotStock').planForState(stockBare).selfId;
 const stockState = { ...stockBare, inventory: { [shotId]: { selfId: shotId, amount: 100, kind: 'Other.Shot' } },
-    stats: { stockTargets: Packet.stockTargets({ potionId: invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(stockBare).selfId,
-        potionTarget: 0, shotId, shotTarget: 60, shotCurrentAtBuild: 100, potionSurvivalTarget: 0, gapHorizonHours: 0, shotsCanRestock: true,
-        shotSurvivalTarget: 0, scrollHours: 0 }) } };
+    stats: { kitRates: Packet.kitRates({ shotId, shotUse: 30, shotBenefit: 0, shotsCanRestock: true, outingHours: 2, gapHorizonHours: 0,
+        potionId: invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(stockBare).selfId, potionUse: 0, potionRestUse: 0,
+        potionBenefit: 0, scrollHours: 0 }) } };
 // A review's own stock reader (here a different target) does not decide it.
 const stockEconomy = { hourAdena: 1000, moneyPrice: .001, persona: { traits: {}, understanding: .3 },
     network: {}, stock: kind => kind === 'shots' ? { itemId: shotId, target: 0 } : { itemId: 1060, target: 0 } };

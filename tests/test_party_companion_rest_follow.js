@@ -123,9 +123,11 @@ function authoredKitInputs(actor, session) {
     const rawShots = plan.perAction > 0 ? positive(tableRow.shots) : 0;
     const benefit = Math.max(0, 1 - positive(without?.exp) / Math.max(1, positive(tableRow.exp)));
     const hourAdena = Hunt.huntHour(hunt, state);
-    const shotUse = benefit < rawShots * shotPrice / hourAdena ? 0 : rawShots;
+    // Rates at the precision the kit keeps them (StatsPacket.roundRate).
+    const roundRate = invoke('GameServer/Bot/Economy/StatsPacket').roundRate;
+    const shotUse = roundRate(benefit < rawShots * shotPrice / hourAdena ? 0 : rawShots);
     const potionId = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state).selfId;
-    const potionUse = positive(tableRow.potions);
+    const potionUse = roundRate(positive(tableRow.potions));
     const potionPrice = price(potionId);
     const escapePrice = price(736);
     const shotHeld = positive(state.inventory[plan.selfId]?.amount);
@@ -2522,7 +2524,9 @@ try {
     assert.strictEqual(physicalShotQuote.price,
         Pricing.sellersOf(authoredShotInputs.shotId).find(row => row.sourceName === 'Squeesh' && row.town === 'Giran').price,
         'the scene quote must equal the independently authored static merchant price');
-    assert.strictEqual(Economy.basics(Economy.stateForActor(errandBot, errandSession)).stock('shots').usePerHour, authoredShotInputs.shotUse,
+    // At the precision the kit rates keep (StatsPacket.roundRate).
+    assert.strictEqual(Economy.basics(Economy.stateForActor(errandBot, errandSession)).stock('shots').usePerHour,
+        authoredShotInputs.shotUse,
         'the native economic output must agree with the independently funded input');
 
     const assertFundedStockKitUnchanged = recordPhysicalKit(errandBot, errandSession.accountId);

@@ -129,9 +129,8 @@ async function run() {
     assert.strictEqual(refreshed.shop.lines[0].count, 23);
     assert.strictEqual((await Database.fetchAfkTradeShops(ownerId)).length, 1);
     // Firing the personal shot moves no listing (it is never one): the review
-    // keeps the shop without judging the bag again, until the shots rise past the
-    // published kit's count (its targets then give way to the basics) or another
-    // stack moves.
+    // keeps the shop without judging the bag again, nor when the shots rise (the
+    // kit's rates do not move with the bag), until another stack moves.
     let evaluations = 0;
     const counted = ListingPolicy.evaluate;
     ListingPolicy.evaluate = (...args) => { evaluations++; return counted(...args); };
@@ -140,7 +139,7 @@ async function run() {
         const state = await LifeState.upsertState({ ...current, inventory: { ...current.inventory, ...extra,
             1: { selfId: 1, name: 'Short Sword', amount: 1, equipped: true, equippedCount: 1, equippedSlots: [7], slot: 7, kind: 'Weapon.Sword', rank: 'none' },
             1835: { selfId: 1835, name: 'Soulshot: No Grade', amount: shots, stackable: true } },
-        stats: { ...current.stats, stockTargets: [1061, 20, 1835, 1000, 500, 5, 1, 0, 100, 1] } }, 'test_shots');
+        stats: { ...current.stats, kitRates: [1835, 500, 0.001, 0, 1061, 5, 0, 0, 1, 2, 1] } }, 'test_shots');
         return BotAfkMarket.reconcile(state, sellGoal);
     };
     await armed(500);
@@ -148,9 +147,9 @@ async function run() {
     assert.strictEqual((await armed(430)).changed, false);
     assert.strictEqual(evaluations, before, 'fired shots do not judge the bag again');
     await armed(520);
-    assert.strictEqual(evaluations, before + 1, 'shots above the kit build judge it again');
+    assert.strictEqual(evaluations, before, 'shots rising past the build\'s count do not judge it again');
     await armed(520, { 1866: { selfId: 1866, name: 'Suede', amount: 3, stackable: true } });
-    assert.strictEqual(evaluations, before + 2, 'another stack judges it again');
+    assert.strictEqual(evaluations, before + 1, 'another stack judges it again');
     ListingPolicy.evaluate = counted;
     const originalFindHot = BotManager.findSessionByName;
     BotManager.findSessionByName = (name) => name === 'RemoteTrader'

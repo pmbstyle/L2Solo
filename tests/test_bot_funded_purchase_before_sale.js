@@ -24,7 +24,7 @@ const loot = Object.fromEntries([[1864, 60], [1865, 15], [1866, 26], [1868, 108]
 // them: the gear is what the wallet weighs.
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const stocked = state => ({ ...state, inventory: { ...state.inventory,
-    1061: { selfId: 1061, amount: Economy.stockFor(state, 'potions').target } } });
+    1061: { selfId: 1061, amount: Economy.basics(state).stock('potions').target } } });
 const bot = (persona, equipmentPlan, adena = 2000000) => stocked({
     // Purchases are executable only over prepared routes from where the bot
     // stands (5e91bb1c): the hunting bot is near Giran.

@@ -48,7 +48,7 @@ const pages = rows => [{ tables: [{ name: 'board', from: null, to: 0, full: true
     // hunt records it does not read keep it (HP too: no workshop rule reads it).
     const readStats = ['workshop', 'dwarvenCraftLevel', 'race', 'equipmentPlan', 'wishFocus', 'craftStationId', 'craftShop',
         'clanId', 'travel', 'marketReturn', 'karma', 'clanMaterialDemand', 'clanMarketDemand', 'marketErrand', 'marketErrands',
-        'marketSellSeen', 'wealthRefused', 'wealthCraft', 'shotCraft', 'stockTargets', 'dangerPrice', 'tradeMeeting', 'townLook',
+        'marketSellSeen', 'wealthRefused', 'wealthCraft', 'shotCraft', 'kitRates', 'dangerPrice', 'tradeMeeting', 'townLook',
         'hennas', 'generatedIndex', 'playerPartyTakeover', 'decisionSeq', 'activityLeaf', 'economyClock', 'playedHours',
         'frustration', 'lifelongKills', 'exp', 'classId', 'money'];
     const unread = { hp: { vitals: { ...crafter.vitals, mp: outsideMp, hp: 900 } },

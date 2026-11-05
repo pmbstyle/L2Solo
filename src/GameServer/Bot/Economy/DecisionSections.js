@@ -491,8 +491,8 @@ function factsOf(view, memory = null) {
 }
 // The party fact of a bot in none (factsOf).
 const NO_PARTY = hash([null, null]);
-// What the survival drink keeps of the planned potion (its stock target).
-const potionSurvivalTarget = state => Number(Packet.potionSurvivalTarget(state.stats?.stockTargets)) || 0;
+// What the survival drink keeps of the planned potion (its line: one hour of survival drinks).
+const potionSurvivalTarget = state => Number(Packet.lineOf(state.stats?.kitRates, 'potions')) || 0;
 // The stock items whose presence is the supply fact: the trip's Scroll of
 // Escape (736), the planned shot, the planned healing potion.
 function stockIds(shotPlan, potion) {

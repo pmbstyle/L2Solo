@@ -112,7 +112,7 @@ async function run() {
 
     state = await seed(9619, 50000, {}, [{ selfId: 736, name: 'Scroll of Escape', amount: 10 }]);
     // Its healing potions at the stock's own target, whatever use the table gives them: the goal alone pays.
-    const potions = invoke('GameServer/Bot/Economy/EconomyContext').stockFor(state, 'potions');
+    const potions = invoke('GameServer/Bot/Economy/EconomyContext').basics(state).stock('potions');
     await DB.setItem(9619, { selfId: potions.itemId, name: 'Lesser Healing Potion', amount: potions.target });
     state = await Life.upsertState({ ...state, inventory: Life.inventorySummaryFromItems(await DB.fetchItems(9619)) }, 'consumer_potions');
     const Goals = invoke('GameServer/Bot/Goals/GoalState');

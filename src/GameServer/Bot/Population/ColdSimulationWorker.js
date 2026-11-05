@@ -290,7 +290,7 @@ const STATE_STAMPS = Object.freeze({ updatedAt: undefined, simulation: undefined
 const WORKSHOP_STATS = Object.freeze(['workshop', 'dwarvenCraftLevel', 'classId', 'race', 'money', 'equipmentPlan',
     'wishFocus', 'craftStationId', 'craftShop', 'clanId', 'travel', 'marketReturn', 'karma', 'clanMaterialDemand',
     'clanMarketDemand', 'marketErrand', 'marketErrands', 'marketSellSeen', 'wealthRefused', 'wealthCraft', 'shotCraft',
-    'stockTargets', 'dangerPrice', 'tradeMeeting', 'townLook', 'hennas', 'generatedIndex', 'playerPartyTakeover',
+    'kitRates', 'dangerPrice', 'tradeMeeting', 'townLook', 'hennas', 'generatedIndex', 'playerPartyTakeover',
     'decisionSeq', 'activityLeaf', 'economyClock', 'playedHours', 'frustration', 'lifelongKills', 'exp', 'earning']);
 const objectSerials = new WeakMap();
 let nextObjectSerial = 0;

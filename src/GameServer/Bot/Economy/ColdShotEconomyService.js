@@ -153,7 +153,7 @@ function recheck(state, selected) {
         else if (sourceCode === -3 && !hintedTown) return null;
     }
     const personal = Number(selected.ownReserve) > 0
-        ? invoke('GameServer/Bot/Economy/EconomyContext').basics(state).stock('shots') : null;
+        ? invoke('GameServer/Bot/Economy/EconomyContext').keptKit(state).stock('shots') : null;
     const stock = personal && Number(personal.itemId) === Number(recipe.productId)
         ? { ...personal, target: Math.max(Number(personal.target || 0), Number(selected.ownReserve)) } : null;
     if (stock) ownStock.get(Number(recipe.productId)).count = Math.max(0,

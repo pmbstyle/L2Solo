@@ -2083,6 +2083,15 @@ function applySchemaMigrations() {
                 OR json_type(statsJson, '$.coldCompetition.conflictUntil') IS NOT NULL);
             UPDATE bot_background_parties SET statsJson = json_remove(statsJson, '$.coldCompetition.conflictUntil')
             WHERE json_valid(statsJson) AND json_type(statsJson, '$.coldCompetition.conflictUntil') IS NOT NULL;
+        `)],
+        // The kit's published targets (stats.stockTargets) gave way to its rates
+        // (stats.kitRates, StatsPacket): the old row is read by nothing and would
+        // stay in the bot's stats for good.
+        ['drop-kit-targets', () => connection.exec(`
+            UPDATE bot_life_state SET mindJson = json_remove(mindJson, '$.stockTargets')
+            WHERE mindJson LIKE '%stockTargets%' AND json_valid(mindJson);
+            UPDATE bot_life_state SET statsJson = json_remove(statsJson, '$.stockTargets')
+            WHERE statsJson LIKE '%stockTargets%' AND json_valid(statsJson);
         `)]
     ];
     const migrate = (apply, record) => {

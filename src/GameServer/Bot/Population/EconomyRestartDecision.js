@@ -9,8 +9,10 @@ const MAX_BYTES = 1024, MAX_PLAIN_BYTES = 16384;
 // row's decisionSeq, activityLeaf and focus); the restart prefix inside is
 // format 4. 6: the same format; the decisions it holds start on the woken
 // store (Situations) and a decisionSeq raises no longer move, so every bot
-// builds once. An older card is refused before inflate: one rebuild per bot.
-const VERSION = 6;
+// builds once. 7: the same format; the build publishes its kit rates
+// (stats.kitRates) instead of targets, so every bot builds once to rate its
+// kit. An older card is refused before inflate: one rebuild per bot.
+const VERSION = 7;
 
 function cardData(value, maxBytes) {
     if (typeof value !== 'string' || value.length > Math.ceil(maxBytes / 3) * 4

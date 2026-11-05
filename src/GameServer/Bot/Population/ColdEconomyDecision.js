@@ -476,13 +476,15 @@ function view(state, decision, deps = {}, preparedBase = null) {
     const itemUsefulness = id => personalUsefulness(known(id) || 0, state, personal().persona.understanding, enabled, id);
     const activity = decision?.activity || null;
     const wish = decision?.wish ? { object: { kind: kindFor(decision.wish[0]), amount: decision.wish[1] }, price: decision.wish[2] } : null;
-    // The hours an urgent want may wait for a better price (PriceDecision.waitRate).
-    const publishedHorizon = () => Packet.gapHorizonHours(state.stats?.stockTargets);
+    // The hours an urgent want may wait for a better price (PriceDecision.waitRate):
+    // the build's (its kit rates); a kit want before any build rated the kit waits none.
+    const publishedHorizon = () => Packet.gapHorizonHours(state.stats?.kitRates);
     const gapHorizonHours = () => !decision?.urgency ? 0 : Number.isFinite(publishedHorizon()) ? publishedHorizon()
-        : decision.urgency === URGENCY_SHOTS
-        ? basics().stock('shots').targetHours : decision.urgency === URGENCY_POTIONS
-            ? basics().stock('potions').targetHours
+        : decision.urgency === URGENCY_SHOTS || decision.urgency === URGENCY_POTIONS ? 0
             : EconomicValuation.stageHours(state, basics().hunt.expPerHour, basics().persona);
+    // The kit: the build's own when it prepared these basics, else its published rates over the bag (EconomyContext.keptKit).
+    let kit = preparedBase;
+    const kitOf = () => kit ||= invoke('GameServer/Bot/Economy/EconomyContext').keptKit(state, baseDeps);
     const own = { state, hourAdena, moneyPrice, survivalReserve: valid ? Number(Packet.survivalReserve(packet)) : base.survivalReserve,
         board, network: { activity }, activity, wish,
         craftReservations: Object.fromEntries(activity?.craftReservations || []),
@@ -490,7 +492,7 @@ function view(state, decision, deps = {}, preparedBase = null) {
         materials: decision?.materials || [], inputHash: decision?.inputHash || 0, decided: !!decision,
         workshop: decision?.workshop || unknownWorkshop(),
         itemUsefulness, worth: id => known(id) !== null && moneyPrice > 0 ? itemUsefulness(id) / moneyPrice : personal().price(id),
-        stock: kind => basics().stock(kind) };
+        stock: kind => kitOf().stock(kind), kitCost: (id, unitPrice) => kitOf().kitCost(id, unitPrice) };
     if (base) return { ...base, ...own, gapHorizonHours: gapHorizonHours() };
     // Own enumerable getters: a spread or a key walk of the view sees the
     // basics as before (and builds them); a write replaces the getter.
@@ -702,7 +704,7 @@ function refreshAdvisory(state, accepted, deps = {}, options = {}) {
     economy.wallet = PurchaseFunding.budget(state, deps.buyOrderEscrow);
     economy.statsPacket = { wishFocus: state.stats.wishFocus, dormantWishes: state.stats.dormantWishes,
         decisionSeq: state.stats.decisionSeq, activityLeaf: state.stats.activityLeaf, money: state.stats.money,
-        stockTargets: state.stats.stockTargets, dangerPrice: state.stats.dangerPrice, wishSections: accepted.baseline, wishDirty: 0,
+        kitRates: state.stats.kitRates, dangerPrice: state.stats.dangerPrice, wishSections: accepted.baseline, wishDirty: 0,
         // The card serves the build (until it moves to situations, step 4). A served
         // card never clears another decision's bit: the earning spot's is cleared
         // only by its search (EconomyContext.earningDue refuses the card first).

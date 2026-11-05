@@ -33,8 +33,12 @@ const potionId = Number(invoke('GameServer/Bot/AI/HealingPotionStock').purchaseP
 warrior.inventory[potionId] = { selfId: potionId, amount: 1 };
 const native = Economy.basics(warrior, deps), stock = native.stock('shots');
 const withShots = Table.value(native.bestSpotId, native.tableRole, warrior.level, true);
-// ARCH-NOTE: the use is the table's exact rate at the best spot (read from the table: a regenerated table moves it).
-assert(stock.usePerHour > 0); assert.equal(stock.usePerHour, withShots.shots);
+// The use is the table's rate at the best spot (read from the table: a regenerated table moves it), at the
+// precision the kit rates keep (StatsPacket.roundRates); the outing to a tenth of an hour.
+const Packet = invoke('GameServer/Bot/Economy/StatsPacket');
+const rounded = (shotUse, outingHours = 0) => Packet.roundRates({ shotUse, outingHours });
+const tenth = hours => rounded(0, hours).outingHours;
+assert(stock.usePerHour > 0); assert.equal(stock.usePerHour, rounded(withShots.shots).shotUse);
 const use = stock.usePerHour;
 const Floor = invoke('GameServer/Bot/Population/SurvivalFloor');
 // ARCH-NOTE: empty positive-use kit stacks consume their future slots while
@@ -42,8 +46,8 @@ const Floor = invoke('GameServer/Bot/Population/SurvivalFloor');
 const plannedKitSlots = Number(stock.usePerHour > 0 && !warrior.inventory[stock.itemId]?.amount)
     + Number(native.stock('potions').usePerHour > 0 && !warrior.inventory[native.stock('potions').itemId]?.amount);
 const freeSlots = Math.max(0, Floor.inventoryLimit(0) - Floor.stateInventory(warrior, Data.items).slots - plannedKitSlots);
-const bagT = withShots.stacks === null ? 24 : withShots.stacks === 0 ? 24
-    : Math.max(.5, Math.min(24, freeSlots / withShots.stacks));
+const bagT = tenth(withShots.stacks === null ? 24 : withShots.stacks === 0 ? 24
+    : Math.max(.5, Math.min(24, freeSlots / withShots.stacks)));
 const noHistoryT = Math.min(2, bagT);
 // The farm the shots give: the best spot with shots against the best without.
 const b = 1 - Table.best(native.tableRole, warrior.level, false).exp / Table.best(native.tableRole, warrior.level, true).exp;
@@ -53,7 +57,7 @@ for (const commitment of [.1, .9]) {
     const own = Economy.basics(state, deps).stock('shots');
     assert.equal(own.target, Math.ceil(use * noHistoryT)); assert.equal(own.targetHours, noHistoryT);
     assert.equal(own.benefitHours, own.missing * own.benefitPerUnit);
-    assert.equal(own.benefitPerUnit, b / own.usePerHour);
+    assert(Math.abs(own.benefitPerUnit - b / own.usePerHour) <= own.benefitPerUnit * .01, 'the farm the shots give, per shot');
 }
 for (const [visitEvery, hours] of [[[22, 4], 4], [[10, 0], noHistoryT], [[22, 30], bagT], [[22, .1], .5]]) {
     const own = Economy.basics({ ...warrior, stats: { ...warrior.stats, visitEvery } }, deps).stock('shots');
@@ -65,7 +69,7 @@ for (const [visitEvery, hours] of [[[22, 4], 4], [[10, 0], noHistoryT], [[22, 30
     // loot carried in left no room and the kit covered half an hour).
     const loot = { ...warrior, inventory: { ...warrior.inventory, 1: { selfId: 1, amount: 45, stackable: false } } };
     const afterSale = Math.max(0, 40 - Floor.stateInventory(warrior, Data.items).slots - plannedKitSlots);
-    const saleT = !withShots.stacks ? 24 : Math.max(.5, Math.min(24, afterSale / withShots.stacks));
+    const saleT = tenth(!withShots.stacks ? 24 : Math.max(.5, Math.min(24, afterSale / withShots.stacks)));
     const own = Economy.basics(loot, deps).stock('shots');
     assert.equal(own.targetHours, Math.min(2, saleT));
     assert(own.targetHours > .5, 'the loot carried into town does not shorten the next outing to half an hour');

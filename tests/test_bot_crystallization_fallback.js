@@ -36,7 +36,7 @@ async function seed(id, crafter, outdoors, inputId = 626, copies = 4) {
         vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 }, stats: { classId } };
     state.stats.coldCombat = Profile.legacySnapshot(state, await DB.fetchSkills(id));
     // Its healing potions at the stock's own target, whatever use the table gives them.
-    const potions = Economy.stockFor(state, 'potions');
+    const potions = Economy.basics(state).stock('potions');
     await DB.setItem(id, { selfId: potions.itemId, name: template(potions.itemId).template.name, amount: potions.target });
     state.inventory = Life.inventorySummaryFromItems(await DB.fetchItems(id));
     return Life.upsertState(state, 'crystal_fixture');

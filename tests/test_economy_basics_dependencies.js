@@ -37,7 +37,7 @@ try {
     // recipe/list API because this path does not build public production goals.
     const partial = { ...deps, board: { first: () => null } };
     Economy.basics(fixture, partial).stock('shots');
-    Economy.stockFor(fixture, 'potions', partial);
+    Economy.basics(fixture, partial).stock('potions');
     assert.equal(indexes, 0);
     assert.equal(invoke('Database').isReady(), false);
     console.log('PASS native basics: identical stocks/reserves/risk, zero production/book/workshop/escrow readers, complete review retains production');

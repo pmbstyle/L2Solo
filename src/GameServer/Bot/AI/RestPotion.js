@@ -9,7 +9,7 @@
 // mana, its MP, so a bottle saves nothing while the MP holds the rest; a rest a
 // pet holds ends no sooner (RestPolicy.petRested). The survival drink stays
 // (tryUseInCombat, the danger moment, the cold fight's) and keeps its bottles
-// (stockTargets' potionSurvivalTarget). Healing potions only; Quick Healing waits for near death.
+// (the potion line of the kit rates, StatsPacket.lineOf). Healing potions only; Quick Healing waits for near death.
 // It reads the hot actor's API: a hot bot, or a cold profile through
 // ColdClassPolicy.actorFor. A party's rest ends at its slowest member, so party
 // members stay out of it, as of SoloSelfHeal.
@@ -43,7 +43,7 @@ const hoursOf = seconds => seconds / HOUR_SECONDS;
 
 // The healing potions in the bag beyond those its survival drink keeps.
 function spareBottles(actor, stats, inventory) {
-    let bottles = -Math.max(0, Number(Packet.potionSurvivalTarget(stats?.stockTargets)) || 0);
+    let bottles = -Math.max(0, Number(Packet.lineOf(stats?.kitRates, 'potions')) || 0);
     for (const potion of DRINKS) bottles += HealingPotionStock.heldAmount(actor, inventory, potion.selfId);
     return bottles;
 }

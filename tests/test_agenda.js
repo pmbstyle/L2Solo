@@ -68,7 +68,7 @@ async function run() {
     // A bot with its potion stock full (the stock's own target): the shots' steps follow
     // each other, whatever potion use the table gives it.
     const stocked = (inventory = {}) => ({ inventory: { ...base.inventory,
-        [POTIONS]: { selfId: POTIONS, amount: Economy.stockFor(base, 'potions', deps()).target }, ...inventory } });
+        [POTIONS]: { selfId: POTIONS, amount: Economy.basics(base, deps()).stock('potions').target }, ...inventory } });
     const bought = (state, leaf, units = leaf.amount) => ({ ...state, adena: state.adena - units * leaf.unitPrice, inventory: { ...state.inventory,
         [leaf.itemId]: { selfId: leaf.itemId, amount: Number(state.inventory[leaf.itemId]?.amount || 0) + units } } });
 
@@ -250,7 +250,7 @@ async function run() {
         const Decision = invoke('GameServer/Bot/Population/ColdEconomyDecision');
         const { state } = review();
         const read = { ...deps(), board, decisions: { decided: () => null } };
-        const urgent = { ...state, stats: { ...state.stats, stockTargets: Packet.stockTargets({ ...Packet.kitRow(state.stats.stockTargets), gapHorizonHours: 7.5 }) } };
+        const urgent = { ...state, stats: { ...state.stats, kitRates: Packet.kitRates({ ...Packet.ratesOf(state.stats.kitRates), gapHorizonHours: 7.5 }) } };
         const wants = Decision.economyFor(urgent, { ...read, decisions: { decided: () => ({ urgency: 1 }) } });
         assert.equal(wants.gapHorizonHours, 7.5, 'how long it may wait is the plan\'s');
     }

@@ -99,9 +99,8 @@ try {
         'an absent table cannot cap learned eight hours without an earlier known return');
     rowPresent = true; stacks = 10;
     const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
-    // The sale list reads the plan's stock targets once (L72); without a
-    // published row that read prepares the economics itself, once. A forecast
-    // re-entering the sale list would read them a second time.
+    // The sale list reads the kit's targets once (the build's rates over the
+    // bag). A forecast re-entering the sale list would read them a second time.
     const beforeKept = Economy.keptTargets; let keptCalls = 0;
     Economy.keptTargets = (...args) => { keptCalls++; return beforeKept(...args); };
     try { Disposition.saleCandidates(solo, { unlimited: true }); assert.equal(keptCalls, 1,

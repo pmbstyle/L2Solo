@@ -163,7 +163,7 @@ function native() {
         // craft's inputs and a gear line cost what a town NPC asks.
         npcOffers: () => invoke('GameServer/Bot/Economy/BotMarketPricing').npcPriceRows(),
         // The shots the owner keeps out of its unlisted supply: what its sale keeps (keptTargets).
-        stockFor: (state, _kind, now) => invoke('GameServer/Bot/Economy/EconomyContext').keptTargets(state, { timestamp: now }).shots,
+        stockFor: state => invoke('GameServer/Bot/Economy/EconomyContext').keptTargets(state).shots,
         ...configured
     });
     return instance;

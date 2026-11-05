@@ -68,7 +68,7 @@ const id = 730180;
         assert(hunt.perHour > 0 && hunt.spotId, `native warehouse-owner profitable hunt: ${JSON.stringify(hunt)}`);
         state = await Life.upsertState({ ...state, spotId: hunt.spotId }, 'warehouse_native_hunt_fixture');
         const spots = [require('./fixtures/profitable_stock_state').spotFor(state.spotId)];
-        const stock = Economy.stockFor(state, 'shots', { timestamp, spots });
+        const stock = Economy.basics(state, { timestamp, spots }).stock('shots');
         if (stock.survivalMissing > 0) {
             assert(Number.isFinite(stock.survivalMissing) && Number.isInteger(stock.survivalMissing));
             assert.strictEqual(stock.itemId, invoke('GameServer/Inventory/ShotStock').planForState(state).selfId);
@@ -80,7 +80,7 @@ const id = 730180;
                 amount: stock.survivalMissing, slot: 0 });
             state = await Life.upsertState({ ...state,
                 inventory: Life.inventorySummaryFromItems(await Database.fetchItems(id)) }, 'warehouse_native_stock_fixture');
-            const freshStock = Economy.stockFor(state, 'shots', { timestamp, spots });
+            const freshStock = Economy.basics(state, { timestamp, spots }).stock('shots');
             assert.strictEqual(freshStock.survivalMissing, 0);
             assert.strictEqual(freshStock.current, current + stock.survivalMissing);
         }

@@ -26,7 +26,7 @@ const base = {
     stats: { generatedCold: true, classId: 1, role: 'dps', build: { grade: 'd', classId: 1, level: 30 }, equipment: [] }
 };
 // Its healing potions at the stock's own target, whatever use the table gives them.
-base.inventory = { 1061: { selfId: 1061, amount: invoke('GameServer/Bot/Economy/EconomyContext').stockFor(base, 'potions').target } };
+base.inventory = { 1061: { selfId: 1061, amount: invoke('GameServer/Bot/Economy/EconomyContext').basics(base).stock('potions').target } };
 const plan = GearAcquisitionPlanner.staticNpcUpgradePlan(base);
 assert.strictEqual(plan?.market?.sourceType, 'npc', 'the fixture must plan an NPC purchase');
 const state = { ...base, stats: { ...base.stats, equipmentPlan: plan } };

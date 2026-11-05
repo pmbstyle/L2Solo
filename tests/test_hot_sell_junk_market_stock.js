@@ -64,12 +64,16 @@ const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator'
 const EconomyCommit = invoke('GameServer/Bot/Economy/EconomyCommit');
 let learnedRows = null;
 
+const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+const ratesFor = (level, classId) => Economy.kitRates(Economy.basics({ level, spotId: '-10_30', stats: { classId } }));
 async function sellJunk(accountId, crafter, knownRecipeIds = []) {
     const adena = { ...item(1, 57, 0) };
     const learned = [];
     learnedRows = learned;
+    // The kit rates the bot's build publishes (stats.kitRates), read by its sale.
+    const kitRates = ratesFor(crafter?.level || 30, crafter?.classId || 0);
     const potionTarget = HealingPotionStock.targetAmountFor({ level: crafter?.level || 30,
-        spotId: '-10_30', stats: { classId: crafter?.classId || 0 } });
+        spotId: '-10_30', stats: { classId: crafter?.classId || 0, kitRates } });
     const backpack = {
         items: [item(2, D_RECIPE, 1), item(3, CRYSTAL_D, 40), item(4, ANIMAL_BONE, 5),
             item(5, HEALING_POTION, potionTarget + 20), item(6, MATERIAL_RECIPE, 1), item(7, WOODEN_ARROW, 500),
@@ -87,7 +91,7 @@ async function sellJunk(accountId, crafter, knownRecipeIds = []) {
     // Prepare the same physical seller and native route used by the hot sale.
     const session = { accountId, actor: actor(backpack, crafter), currentSpot: { id: '-10_30' },
         coldLifeState: { characterId: 77, phase: 'hot', spotId: '-10_30', activity: 'shopping',
-            currentRegion: 'Giran', loc: world.town(), stats: {} }, dataSendToMe() {} };
+            currentRegion: 'Giran', loc: world.town(), stats: { kitRates } }, dataSendToMe() {} };
     world.economyFor(MarketListingPolicy.actorState(session));
     await SellJunk(session, ['sell-junk']);
     await new Promise((resolve) => setImmediate(resolve));
@@ -129,7 +133,7 @@ async function run() {
     ServerResponse.itemsList = ServerResponse.userInfo = ServerResponse.speak = () => Buffer.alloc(0);
 
     const botSale = await sellJunk('bot_hot_hunter');
-    const keep = HealingPotionStock.targetAmountFor({ level: 30, spotId: '-10_30', stats: { classId: 0 } });
+    const keep = HealingPotionStock.targetAmountFor({ level: 30, spotId: '-10_30', stats: { classId: 0, kitRates: ratesFor(30, 0) } });
     // Sell an actual target+20 stack under the native town-visit horizon.
     assert(keep > 0 && botSale.potionTarget === keep, `the native potion stock must match the real sale: ${keep}`);
     assert.deepStrictEqual(botSale.left.filter(([selfId]) => selfId !== 57),

@@ -47,7 +47,7 @@ function factEdges(was, after, options) {
         const id = Number(row.selfId || key);
         if (id !== 57 && Number(row.amount) > 0 && !(was.amount(id) > 0)) { bits |= 1; break; }
     }
-    const stockFor = options.stockFor || EconomyContext.stockFor;
+    const stockFor = options.stockFor || ((state, kind) => EconomyContext.keptTargets(state)[kind]);
     for (const kind of ['shots', 'potions']) {
         const stock = stockFor(after, kind);
         const id = Number(stock?.itemId), keep = Number(stock?.keep ?? stock?.target);

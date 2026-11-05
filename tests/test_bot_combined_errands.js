@@ -114,7 +114,7 @@ async function run() {
         { selfId: 86, name: 'Sword of Revolution', amount: 1, equipped: true, slot: 7 }];
     // Its healing potions at the stock's own target as it arrives (EXP 0: level 1),
     // whatever use the table gives them: the errands alone decide what the visit buys.
-    const potions = invoke('GameServer/Bot/Economy/EconomyContext').stockFor({ ...await seed(buyerItems), level: 1 }, 'potions');
+    const potions = invoke('GameServer/Bot/Economy/EconomyContext').basics({ ...await seed(buyerItems), level: 1 }).stock('potions');
     let buyer = await seed([...buyerItems, { selfId: potions.itemId, name: 'Lesser Healing Potion', amount: potions.target }]);
     const now = Date.now();
     // A trip must pay for itself before travel (24512a44); a planned errand

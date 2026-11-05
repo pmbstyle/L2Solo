@@ -153,7 +153,9 @@ try {
 const ownSupply = { ...dwarf, inventory: { '129': {
     selfId: 129, amount: 1, equipped: true, slot: 7
 }, '1463': { selfId: 1463, amount: ShotStock.PURCHASE_TARGET_AMOUNT + 156, kind: 'Other.Shot' } } };
-const ownShotTarget = invoke('GameServer/Bot/Economy/EconomyContext').basics(ownSupply).stock('shots').target;
+const ownBasics = invoke('GameServer/Bot/Economy/EconomyContext').basics(ownSupply), ownShotTarget = ownBasics.stock('shots').target;
+// The sale reads the rates the bot's build publishes (stats.kitRates).
+ownSupply.stats = { ...ownSupply.stats, kitRates: invoke('GameServer/Bot/Economy/EconomyContext').kitRates(ownBasics) };
 ownSupply.inventory['1463'].amount = ownShotTarget + 156;
 assert(Shots.hasShotSurplus({ ...ownSupply, stats: { ...ownSupply.stats, shotCraft: { productId: 1463 } } }),
     'leftover crafted shots must be admitted for a listing review');

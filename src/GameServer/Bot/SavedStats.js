@@ -33,7 +33,7 @@ function compact(stats = {}) {
 // spot's held answer (EquipmentIncomeRoute.answerOf); spotMarks: the spots its situations ruled out until
 // the next held answer (SpotRiskPolicy.withSpotMark, written by Situations' raise).
 const MIND_KEYS = Object.freeze(['decisionSeq', 'activityLeaf', 'wishFocus', 'wishSections', 'wishDirty',
-    'dormantWishes', 'money', 'stockTargets', 'dangerPrice', 'wishAdvisory', 'woken', 'waiting', 'situationSeq', 'earning',
+    'dormantWishes', 'money', 'kitRates', 'dangerPrice', 'wishAdvisory', 'woken', 'waiting', 'situationSeq', 'earning',
     'spotMarks']);
 
 // A whole stats object (or a stats patch) as its two saved halves.

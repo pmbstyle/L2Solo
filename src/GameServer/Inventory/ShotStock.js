@@ -256,10 +256,10 @@ function isPersonalShot(state, selfId) {
         && !invoke('GameServer/Bot/Economy/CraftEligibility').isServiceCrafter(state);
 }
 
-function keptAmounts(state, basics = null, row = null) {
-    // The stock rule needs no wish network (L25); row: a shots stock row
-    // already read (itemId, target, beginnerCurrent).
-    const stock = row || (basics || invoke('GameServer/Bot/Economy/EconomyContext').basics(state)).stock('shots');
+function keptAmounts(state, kit = null, row = null) {
+    // The kit rates over the bag (EconomyContext.keptTargets: no wish network);
+    // kit: a review's kit reader; row: a shots stock row already read (itemId, target, beginnerCurrent).
+    const stock = row || (kit ? kit.stock('shots') : invoke('GameServer/Bot/Economy/EconomyContext').keptTargets(state).shots);
     const kept = { [stock.itemId]: Math.max(0, stock.target - (stock.beginnerCurrent || 0)) };
     const plan = planForState(state);
     if (isPersonalShot(state, plan.selfId)) {

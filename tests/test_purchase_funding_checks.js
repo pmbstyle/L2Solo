@@ -87,18 +87,24 @@ assert.deepEqual([Packet.hourAdena(protectedPacket), Packet.moneyPrice(protected
 assert.deepEqual([Packet.fundedRatio(protectedPacket, 1), Packet.fundedCumulative(protectedPacket, 1), Packet.fundedItem(protectedPacket, 1)], [.1, 180, 2509]);
 assert.equal(Packet.hasMoney([77000, 1e-5, 1000]), false);
 assert.equal(Packet.hourAdena(undefined), undefined);
-const kit = { potionId: 1061, potionTarget: 40, shotId: 1835, shotTarget: 3000, shotCurrentAtBuild: 500, potionSurvivalTarget: 10,
-    gapHorizonHours: 2.5, shotsCanRestock: true, shotSurvivalTarget: 600, scrollHours: null };
-assert.deepEqual(Packet.stockTargets(kit), [1061, 40, 1835, 3000, 500, 10, 2.5, 1, 600, -1]);
-assert.deepEqual(Packet.stockTargets({ ...kit, shotsCanRestock: false, scrollHours: 0.25 }).slice(7), [0, 600, 0.25]);
-assert.deepEqual(Packet.kitRow(Packet.stockTargets(kit)), { ...kit, complete: true });
-assert.deepEqual(Packet.kitRow([1061, 40, 1835, 3000, 500, 10, 2.5]), { potionId: 1061, potionTarget: 40, shotId: 1835, shotTarget: 3000,
-    shotCurrentAtBuild: 500, potionSurvivalTarget: 10, gapHorizonHours: 2.5, shotsCanRestock: false, shotSurvivalTarget: undefined,
-    scrollHours: null, complete: false }, 'a row from before the restock slots reads its targets only');
-assert.equal(Packet.kitRow([1061, 40, 1835, 3000, 500]).potionSurvivalTarget, undefined);
-assert.equal(Packet.kitRow([1061, 40, 1835, 3000]), null);
-assert.deepEqual([Packet.potionSurvivalTarget([1061, 40, 1835, 3000, 500, 10, 2.5]), Packet.gapHorizonHours([1061, 40, 1835, 3000, 500, 10, 2.5]),
-    Packet.potionSurvivalTarget(undefined)], [10, 2.5, undefined]);
+const rates = { shotId: 1835, shotUse: 1200, shotBenefit: 0.0002, shotsPay: true, shotsCanRestock: true, potionId: 1061, potionUse: 9.2,
+    potionRestUse: 3, potionBenefit: 0.01, scrollHours: null, outingHours: 2, gapHorizonHours: 2.5 };
+assert.deepEqual(Packet.kitRates(rates), [1835, 1200, 0.0002, 2, 1061, 9.2, 3, 0.01, -1, 2, 2.5]);
+assert.deepEqual(Packet.kitRates({ ...rates, shotsCanRestock: false, scrollHours: 0.25 }).slice(3, 9), [1, 1061, 9.2, 3, 0.01, 0.25],
+    'shots it holds pay, a restock does not');
+assert.equal(Packet.kitRates({ ...rates, shotsPay: false, shotsCanRestock: false })[3], 0);
+assert.deepEqual(Packet.ratesOf(Packet.kitRates(rates)), rates);
+// The precision decisions read: three significant digits, the outing to a tenth of an hour, so a
+// loot pickup that moves the free slots by a fraction does not move the row.
+assert.deepEqual(Packet.kitRates({ ...rates, shotUse: 1200.456, potionBenefit: 0.0123456, outingHours: 2.04, gapHorizonHours: 2.4567 }),
+    [1835, 1200, 0.0002, 2, 1061, 9.2, 3, 0.0123, -1, 2, 2.46]);
+assert.equal(Packet.ratesOf([1061, 40, 1835, 3000, 500, 10, 2.5, 1, 600, -1]), null, 'a saved targets row reads as no rates');
+assert.equal(Packet.ratesOf(undefined), null);
+// The line: one hour of use, whole units (the survival drinks for potions).
+assert.deepEqual([Packet.lineOf(Packet.kitRates(rates), 'shots'), Packet.lineOf(Packet.kitRates(rates), 'potions'),
+    Packet.outingHours(Packet.kitRates(rates)), Packet.gapHorizonHours(Packet.kitRates(rates)), Packet.lineOf(undefined, 'potions')],
+[1200, 10, 2, 2.5, undefined]);
+assert.equal(Packet.lineOf(Packet.kitRates({ ...rates, shotsPay: false, shotsCanRestock: false }), 'shots'), 0, 'shots that do not pay have no line');
 assert.deepEqual(Packet.dangerPrice({ deathHours: 0.4, riskWeight: 1.5 }), [0.4, 1.5]);
 assert.deepEqual([Packet.deathHours([0.4, 1.5]), Packet.riskWeight([0.4, 1.5]), Packet.deathHours(undefined)], [0.4, 1.5, undefined]);
 

@@ -34,7 +34,8 @@ function bot(classId, { hp = 1, mp = 1, bottles = 10, hour = 600000, keep = 0 } 
     state.characterId = 7000 + classId;
     state.vitals = { hp: profile.maxHp * hp, maxHp: profile.maxHp, mp: profile.maxMp * mp, maxMp: profile.maxMp };
     state.inventory[POTION] = { selfId: POTION, amount: bottles };
-    state.stats = { ...state.stats, ...(hour > 0 ? { money: [hour, 1 / hour, 0, 0], stockTargets: Packet.stockTargets({ potionId: POTION, potionTarget: 0, shotId: 0, shotTarget: 0, shotCurrentAtBuild: 0, potionSurvivalTarget: keep }) } : {}) };
+    state.stats = { ...state.stats, ...(hour > 0 ? { money: [hour, 1 / hour, 0, 0], kitRates: Packet.kitRates({ shotId: 0, shotUse: 0, shotBenefit: 0, shotsCanRestock: false, potionId: POTION,
+        potionUse: keep, potionRestUse: 0, potionBenefit: 0, scrollHours: 0, outingHours: 1, gapHorizonHours: 0 }) } : {}) };
     return { state, profile };
 }
 
