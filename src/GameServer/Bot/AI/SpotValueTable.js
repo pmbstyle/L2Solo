@@ -11,8 +11,9 @@ const TableFingerprint = require('./TableFingerprint');
 // The world spot table (market-sim step 3.3(c), N44): what an hour of solo
 // hunting on a spot gives a bot of a role and level, with shots or without.
 // scripts/generate-spot-table.js measures it offline with the author's cold
-// combat and writes data/Bots/spot-table.json; each thread (main and the cold
-// worker) loads that file once on first use. A lookup is O(1).
+// combat and writes data/Bots/spot-table.json; main loads that file once on
+// first use and the cold and clan workers attach its rows (sharedDescriptor).
+// A lookup is O(1).
 //
 // Per spot, role and shots the file keeps one row measured at a reference
 // level; per role and spot level band a curve says how each value changes
@@ -114,8 +115,8 @@ function checkCatalog(spots) {
 }
 
 // The table against the files it was simulated by (TableFingerprint):
-// one line at the first read of a table, on the main thread only (the worker
-// reads the same file on the same code). A stale table stays in use: bots
+// one line at the first read of a table, on the main thread only (the
+// workers read main's table). A stale table stays in use: bots
 // choose by the fight it measured until it is rebuilt; `npm run check` fails.
 // Costs one read and sha1 of its ~20 MB of inputs, once per process.
 let fingerprintChecked = null, currentInputs = null, unknownLogged = false;
@@ -301,6 +302,9 @@ function shotKey(shots) {
 // gap (null for a table before the column); mix: [selfId, share, ...] from
 // mixStart[index] to mixStart[index + 1]. A row is a view of its numbers
 // (tableRow): row[field] reads as before; rowMix and gateAt read its index.
+// All columns are views of one SharedArrayBuffer (~34 MB), written once here
+// before any worker sees it: the cold and clan workers attach it (attachShared)
+// instead of holding their own ~33 MB copy.
 function packRows(raw) {
     const fields = raw.rowFields.length, gaps = raw.gaps.length;
     const mixField = raw.rowFields.indexOf('mix'), gateField = raw.rowFields.indexOf('gate');
@@ -312,12 +316,12 @@ function packRows(raw) {
         count += 1;
         if (mixField >= 0 && Array.isArray(row[mixField])) mixLength += row[mixField].length;
     }
-    const cells = new Int32Array(raw.rows.length * width).fill(-1);
-    const numbers = new Float64Array(count * fields).fill(NaN);
-    const gates = gateField >= 0 ? new Float64Array(count * gaps) : null;
-    const gateShares = gateShareField >= 0 ? new Float64Array(count * gaps) : null;
-    const hasGate = new Uint8Array(count);
-    const mix = new Float64Array(mixLength), mixStart = new Int32Array(count + 1);
+    const layout = { width, fields, gaps, count, spots: raw.rows.length, mixLength,
+        gates: gateField >= 0, gateShares: gateShareField >= 0 };
+    const rows = rowViews(new SharedArrayBuffer(rowBytes(layout)), layout);
+    const { cells, numbers, gates, gateShares, hasGate, mix, mixStart } = rows;
+    cells.fill(-1);
+    numbers.fill(NaN);
     let index = 0, at = 0;
     raw.rows.forEach((spotCells, spot) => (spotCells || []).forEach((row, cell) => {
         if (!row) return;
@@ -338,7 +342,35 @@ function packRows(raw) {
         index += 1;
     }));
     mixStart[count] = at;
-    return { width, fields, gaps, cells, numbers, gates, gateShares, hasGate, mix, mixStart };
+    return rows;
+}
+
+// The columns' order in the buffer: doubles first (8-byte aligned), then the
+// int32 indexes, then the gate flags. numbers at offset 0 (rowIndex).
+function rowColumns(layout) {
+    const { width, fields, gaps, count, spots, mixLength } = layout;
+    return [['numbers', Float64Array, count * fields],
+        ['gates', Float64Array, layout.gates ? count * gaps : -1],
+        ['gateShares', Float64Array, layout.gateShares ? count * gaps : -1],
+        ['mix', Float64Array, mixLength],
+        ['cells', Int32Array, spots * width],
+        ['mixStart', Int32Array, count + 1],
+        ['hasGate', Uint8Array, count]];
+}
+function rowBytes(layout) {
+    let bytes = 0;
+    for (const [, Type, length] of rowColumns(layout)) if (length >= 0) bytes += length * Type.BYTES_PER_ELEMENT;
+    return bytes;
+}
+function rowViews(buffer, layout) {
+    const rows = { width: layout.width, fields: layout.fields, gaps: layout.gaps, layout, buffer };
+    let offset = 0;
+    for (const [name, Type, length] of rowColumns(layout)) {
+        if (length < 0) { rows[name] = null; continue; }
+        rows[name] = new Type(buffer, offset, length);
+        offset += length * Type.BYTES_PER_ELEMENT;
+    }
+    return rows;
 }
 
 // The row of a spot's cell (spot index s, cell r * shots + shots slot), or null.
@@ -347,24 +379,15 @@ function tableRow(t, s, cell) {
     return index >= 0 ? rows.numbers.subarray(index * rows.fields, (index + 1) * rows.fields) : null;
 }
 function rowIndex(t, row) {
-    return row.byteOffset / Float64Array.BYTES_PER_ELEMENT / t.rows.fields;
+    return (row.byteOffset - t.rows.numbers.byteOffset) / Float64Array.BYTES_PER_ELEMENT / t.rows.fields;
 }
 
-function load() {
-    if (table) return table;
-    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-    checkFingerprint(raw.header);
-    const field = (fields, name) => {
-        const index = fields.indexOf(name);
-        if (index < 0) throw new Error(`spot table: missing field ${name}`);
-        return index;
-    };
-    const roleIndex = new Map(raw.roles.map((role, index) => [role, index]));
-    // A table by class lines answers a role name by its alias line.
-    for (const [alias, line] of Object.entries(raw.header.inputs?.roleLines || {})) {
-        if (roleIndex.has(line)) roleIndex.set(alias, roleIndex.get(line));
-    }
-    const spotIndex = new Map(raw.spots.map((spot, index) => [String(spot[0]), index]));
+// The table as it crosses to a worker (workerData.spotTable): the packed rows'
+// buffer and layout plus the small parts (~0.7 MB as JSON: header, spots,
+// curves by band, kit surface) a structured clone copies. Built once per file
+// on the thread that parses it; a worker that attached one never reads the file.
+let shared = null;
+function describe(raw) {
     // A role without any measured curve keeps its rows' values at every gap.
     const neutral = Object.fromEntries(raw.curveFields.map((name) => [name, raw.gaps.map(() => (name === 'deaths' ? 0 : 1))]));
     const maxBand = Math.max(0, ...raw.spots.map((spot) => Math.floor(spot[1] / raw.header.inputs.bandLevels)));
@@ -384,38 +407,85 @@ function load() {
         }
         return out;
     });
+    const rows = packRows(raw);
+    return { version: 1, header: raw.header, roles: raw.roles, spots: raw.spots, shots: raw.shots,
+        rowFields: raw.rowFields, gaps: raw.gaps, kitSurface: raw.kitSurface || null, maxBand, curves,
+        rows: { buffer: rows.buffer, layout: rows.layout } };
+}
+
+function validDescriptor(d) {
+    return d?.version === 1 && d.rows?.buffer instanceof SharedArrayBuffer && d.rows.layout
+        && d.rows.buffer.byteLength === rowBytes(d.rows.layout) && Array.isArray(d.roles) && Array.isArray(d.spots)
+        && Array.isArray(d.rowFields) && Array.isArray(d.gaps) && Array.isArray(d.curves) && d.header?.inputs;
+}
+
+function load() {
+    if (table) return table;
+    if (!shared) {
+        const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+        checkFingerprint(raw.header);
+        shared = describe(raw);
+    }
+    const d = shared;
+    const field = (fields, name) => {
+        const index = fields.indexOf(name);
+        if (index < 0) throw new Error(`spot table: missing field ${name}`);
+        return index;
+    };
+    const roleIndex = new Map(d.roles.map((role, index) => [role, index]));
+    // A table by class lines answers a role name by its alias line.
+    for (const [alias, line] of Object.entries(d.header.inputs?.roleLines || {})) {
+        if (roleIndex.has(line)) roleIndex.set(alias, roleIndex.get(line));
+    }
+    const spotIndex = new Map(d.spots.map((spot, index) => [String(spot[0]), index]));
+    const rowFields = d.rowFields;
     table = {
-        header: raw.header,
-        roles: raw.roles,
+        header: d.header,
+        roles: d.roles,
         roleIndex,
         spotIndex,
-        spots: raw.spots,
-        rows: packRows(raw),
-        curves,
-        kitSurface: raw.kitSurface || null,
-        maxBand,
-        gaps: raw.gaps,
-        shotsIndex: new Map(raw.shots.map((shots, index) => [shotKey(shots), index])),
-        bandLevels: raw.header.inputs.bandLevels,
-        maxLevel: raw.header.inputs.maxLevel,
+        spots: d.spots,
+        rows: rowViews(d.rows.buffer, d.rows.layout),
+        curves: d.curves,
+        kitSurface: d.kitSurface,
+        maxBand: d.maxBand,
+        gaps: d.gaps,
+        shotsIndex: new Map(d.shots.map((shots, index) => [shotKey(shots), index])),
+        bandLevels: d.header.inputs.bandLevels,
+        maxLevel: d.header.inputs.maxLevel,
         f: {
-            minGap: field(raw.rowFields, 'minGap'), refGap: field(raw.rowFields, 'refGap'), kph: field(raw.rowFields, 'kph'),
-            busy: field(raw.rowFields, 'busy'), deaths: field(raw.rowFields, 'deaths'), exp: field(raw.rowFields, 'exp'),
-            sp: field(raw.rowFields, 'sp'), adena: field(raw.rowFields, 'adena'), loot: field(raw.rowFields, 'loot'),
-            shots: field(raw.rowFields, 'shots'), potions: field(raw.rowFields, 'potions'),
-            stacks: raw.rowFields.indexOf('stacks'),
+            minGap: field(rowFields, 'minGap'), refGap: field(rowFields, 'refGap'), kph: field(rowFields, 'kph'),
+            busy: field(rowFields, 'busy'), deaths: field(rowFields, 'deaths'), exp: field(rowFields, 'exp'),
+            sp: field(rowFields, 'sp'), adena: field(rowFields, 'adena'), loot: field(rowFields, 'loot'),
+            shots: field(rowFields, 'shots'), potions: field(rowFields, 'potions'),
+            stacks: rowFields.indexOf('stacks'),
             // The hunt cycle columns (cycle); a table before them has none.
-            fight: raw.rowFields.indexOf('fight'), rest: raw.rowFields.indexOf('rest'), taken: raw.rowFields.indexOf('taken'),
-            spellTaken: raw.rowFields.indexOf('spellTaken'),
+            fight: rowFields.indexOf('fight'), rest: rowFields.indexOf('rest'), taken: rowFields.indexOf('taken'),
+            spellTaken: rowFields.indexOf('spellTaken'),
             // Per-mob rows (pull, cap, mix); a table before them counts fights.
-            pull: raw.rowFields.indexOf('pull'), cap: raw.rowFields.indexOf('cap'), mix: raw.rowFields.indexOf('mix'),
+            pull: rowFields.indexOf('pull'), cap: rowFields.indexOf('cap'), mix: rowFields.indexOf('mix'),
             // The gate per curve gap (cap and admitted mix); a table before it reads the reference's.
             // gateShare: per gap, the admitted part of the masked species' production; a table before it 1.
-            gate: raw.rowFields.indexOf('gate'), gateShare: raw.rowFields.indexOf('gateShare'),
-            hpLost: raw.rowFields.indexOf('hpLost'), mpLost: raw.rowFields.indexOf('mpLost')
+            gate: rowFields.indexOf('gate'), gateShare: rowFields.indexOf('gateShare'),
+            hpLost: rowFields.indexOf('hpLost'), mpLost: rowFields.indexOf('mpLost')
         }
     };
     return table;
+}
+
+// The table for a worker (main: ColdSimulationCoordinator, ClanPlanningCoordinator).
+function sharedDescriptor() {
+    load();
+    return shared;
+}
+
+// A worker takes main's table (workerData.spotTable) at boot, before its first read.
+function attachShared(descriptor) {
+    if (!validDescriptor(descriptor)) throw new Error('Invalid shared spot table descriptor');
+    if (shared?.rows.buffer === descriptor.rows.buffer) return;
+    shared = descriptor;
+    table = null;
+    dropRows();
 }
 
 // A curve's value at any gap: linear between the measured gaps, flat beyond.
@@ -1191,10 +1261,11 @@ function revision() {
 function useFile(next = DEFAULT_FILE) {
     file = next;
     table = null;
+    shared = null;
     tableRevision++;
     bestRows.clear();
     clearValueMemo();
     clearIncomeBases();
 }
 
-module.exports = { value, kills, cycle, production, huntShare, geodataProfile, kitSurface, roleClass, lineClass, roleFor, roleSpoilLevel, spotLevel, referenceLevel, roles, revision, best, rankedIncome, rankedSpotIds, cutStands, keepAbove, useFile, useSpots, expGapFactor, cacheStats, DEFAULT_FILE };
+module.exports = { value, kills, cycle, production, huntShare, geodataProfile, kitSurface, roleClass, lineClass, roleFor, roleSpoilLevel, spotLevel, referenceLevel, roles, revision, best, rankedIncome, rankedSpotIds, cutStands, keepAbove, useFile, useSpots, expGapFactor, cacheStats, sharedDescriptor, attachShared, DEFAULT_FILE };

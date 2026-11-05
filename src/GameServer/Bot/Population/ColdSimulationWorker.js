@@ -137,6 +137,8 @@ const { MarketBuyerWaiters } = require('../Economy/MarketBuyerWaiters');
 const SpotIndex = require('../AI/SpotIndex');
 const SpotService = require('../AI/SpotService');
 const SpotValueTable = require('../AI/SpotValueTable');
+// Main's spot table rows (one SharedArrayBuffer per process).
+if (workerData?.spotTable) SpotValueTable.attachShared(workerData.spotTable);
 const ColdCombatProfile = require('./ColdCombatProfile');
 const EconomyContext = invoke('GameServer/Bot/Economy/EconomyContext');
 const CraftEligibility = require('../Economy/CraftEligibility');

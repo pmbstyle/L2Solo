@@ -17,6 +17,8 @@ const catalogs = { items: [], npcs: [], npcRewards: [], npcSpawns: [], newbieIte
 // once per epoch; full native planning previously failed at missing craftLevelFor
 // and then FirstPrice's eager BackgroundResolver/ChargeLifecycle import.
 Object.assign(invoke('GameServer/DataCache'), catalogs);
+// Main's spot table rows (one SharedArrayBuffer per process).
+if (workerData?.spotTable) invoke('GameServer/Bot/AI/SpotValueTable').attachShared(workerData.spotTable);
 let context = {};
 let planner;
 // The admitted planning job (ClanPlanningCoordinator.withJob): its readiness

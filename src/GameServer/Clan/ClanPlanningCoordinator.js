@@ -5,6 +5,7 @@ const TableChannel = require('../Bot/Population/ColdTableChannel');
 const { SpotCatalogWriter } = require('./ClanSpotCatalog');
 const BotGear = invoke('GameServer/Bot/AI/BotGear');
 const DataCache = invoke('GameServer/DataCache');
+const SpotValueTable = invoke('GameServer/Bot/AI/SpotValueTable');
 const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const BotMarketPricing = invoke('GameServer/Bot/Economy/BotMarketPricing');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
@@ -119,7 +120,8 @@ class ClanPlanningCoordinator {
         if (this.initializing) return this.initializing;
         if (this.worker) return;
         if (Date.now() < this.retryAt) throw new Error('clan planning worker recovering');
-        const worker = new Worker(this.workerFile, { workerData: { developerDiagnostics: DiagnosticConfig.developerDiagnostics === true } });
+        const worker = new Worker(this.workerFile, { workerData: { developerDiagnostics: DiagnosticConfig.developerDiagnostics === true,
+            spotTable: SpotValueTable.sharedDescriptor() } });
         this.worker = worker;
         const epoch = ++this.epoch;
         // A restarted worker has not reported yet (WorkerHeapTelemetry.heapRecord).

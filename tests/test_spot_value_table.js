@@ -494,4 +494,38 @@ useRate('x1');
         near(cycle.cap, production, 'its cap is the production');
     } finally { Table.useSpots([]); }
 }
-console.log('Spot value table lookups, curves, caps, rates and the committed table passed');
+(async () => {
+    // A worker reads main's table (the cold and clan workers): the same
+    // answers with no file of its own to read.
+    const os = require('os');
+    const { Worker } = require('worker_threads');
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'spot-table-')), 'shared.json');
+    fs.copyFileSync(Table.DEFAULT_FILE, file);
+    Table.useFile(file);
+    const spotIds = Table.rankedSpotIds('dps', 24, { shots: 0, potions: 0 }).slice(0, 3).concat(['-15_42', '11_6']);
+    const roles = Table.roles();
+    const ask = (T) => spotIds.flatMap(spotId => roles.slice(0, 6).flatMap(role => [8, 24, 50].map(level => ({
+        spotId, role, level, value: T.value(spotId, role, level, true), cycle: T.cycle(spotId, role, level, true),
+        production: T.production(spotId, role, level, true) }))));
+    const expected = JSON.parse(JSON.stringify(ask(Table)));
+    const spotTable = Table.sharedDescriptor();
+    fs.rmSync(path.dirname(file), { recursive: true, force: true });
+    const code = `
+        const { parentPort, workerData } = require('worker_threads');
+        require(${JSON.stringify(path.join(__dirname, '../src/Global'))});
+        invoke('GameServer/DataCache').init({ validate: false });
+        const Table = invoke('GameServer/Bot/AI/SpotValueTable');
+        Table.useFile(workerData.file);
+        Table.attachShared(workerData.spotTable);
+        const spotIds = workerData.spotIds, roles = Table.roles();
+        parentPort.postMessage(JSON.stringify((${ask.toString()})(Table)));`;
+    const answers = await new Promise((resolve, reject) => {
+        const worker = new Worker(code, { eval: true, workerData: { spotTable, file, spotIds } });
+        worker.once('message', resolve);
+        worker.once('error', reject);
+    });
+    assert(expected.some(row => row.value) && expected.some(row => row.cycle?.cap > 0), 'the sample reads rows and their gates');
+    assert.deepStrictEqual(JSON.parse(answers), expected, 'the worker answers as main from the shared rows');
+    Table.useFile();
+})().then(() => console.log('Spot value table lookups, curves, caps, rates and the committed table passed'),
+    (error) => { console.error(error); process.exit(1); });
