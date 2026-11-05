@@ -159,6 +159,54 @@ function verify() {
         assert.equal(Economy.heldSpotMoved(turned), false, 'its search does not move the hold');
     }
 
+    // A held forming verdict reads the solo side's answer, not the search that
+    // gave it: the owner's hold renewed to the same spot by an input the verdict
+    // does not read keeps it, judged once and the same as a fresh judgement;
+    // the hold moved to another spot judges it again.
+    {
+        const Goals = invoke('GameServer/Bot/Population/PartyGoalPolicy');
+        const { built, state: owner } = settled(990261);
+        // Both short of their focus' cash: the party's hour buys it sooner.
+        const state = { ...owner, adena: 0 };
+        const peer = { ...fighter(990262, { complete: true }), adena: 0, spotId: 'rich', loc: spots[1].center };
+        const requested = { spotId: 'rich' };
+        const nativePrepare = Party.prepare;
+        let judged = 0;
+        // A party forecast that beats the solo hour, so the verdict accepts.
+        Party.prepare = (members, options) => {
+            judged += 1;
+            const prepared = nativePrepare(members, options);
+            for (const member of members) prepared.rows.set(member.characterId,
+                { income: 1e9, kills: 100, spotId: 'rich', source: 'table_party', travelHours: 0 });
+            return prepared;
+        };
+        try {
+            const ask = (members, minute) => Goals.formingVerdict(members, requested, { spots, timestamp: time(minute) });
+            const fresh = (members, minute) => Goals.formingMembers(members, requested, { spots, timestamp: time(minute) })
+                .map(member => Number(member.characterId));
+            const first = ask([state, peer], 1);
+            assert.deepEqual(first.formingAccepted, [990261, 990262], 'fixture: the roster forms');
+            const once = judged;
+            // A capacity mark on the other spot: an input of the owner's search, not of the verdict.
+            const mark = bot => ({ ...bot, stats: { ...bot.stats, capacityBackoffs: [{ spotId: 'poor', untilStep: 5 }] } });
+            const marked = mark(state);
+            const renewed = count(() => Economy.forState(mark(owner), deps(2)));
+            assert.equal(renewed.searches, 1, 'fixture: the owner searches once');
+            assert.equal(renewed.result.plan, built.plan, 'fixture: the same spot renews the hold in place');
+            const held = ask([marked, peer], 3);
+            assert.equal(judged, once, 'the renewed hold keeps the verdict');
+            assert.deepEqual(held, first);
+            assert.deepEqual(held.formingAccepted, fresh([marked, peer], 3), 'the held verdict is a fresh judgement');
+            // Its own samples turned to the other spot (the mark off): the hold moves there.
+            const turned = sampled(state, 'poor');
+            assert.equal(Economy.forState(observing(sampled(owner, 'poor')), deps(4)).hunt.spotId, 'poor',
+                'fixture: the owner\'s hold moved');
+            const moved = ask([turned, peer], 5);
+            assert(judged > once, 'the solo side\'s new answer judges the verdict again');
+            assert.deepEqual(moved.formingAccepted, fresh([turned, peer], 5));
+        } finally { Party.prepare = nativePrepare; }
+    }
+
     // A goal change searches only when it opens or closes the
     // search: the focus turned into or out of gear and resale (the economic
     // hunt). A focus moved on the same side, by the bot's own build or an outside

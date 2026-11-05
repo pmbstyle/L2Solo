@@ -115,7 +115,10 @@ Add a line when you find a tail you do not fix. Delete it when it is paid (the a
    `incomeError` (at least 3 %), not over an interval its answer stands on (as the earning hold's money weights):
    the comparison is not one line in them (funding delays clipped at zero, the minimum of funding and direct item
    hours, the help fee and buff price thresholds, the 10 % margins), so an interval needs the breakpoints of
-   `PartyIncomeComparison.evaluate` per member. A material roster keys its wallets exactly.
+   `PartyIncomeComparison.evaluate` per member. A material roster keys its wallets exactly. The paid-buff solo
+   alternative (`PartyIncomeComparison.soloRoute`) reads the buyer's and the seller's hour at the wall clock
+   (`BuffServicePolicy.incomeForTenMinutes`, `priceFor`: `BotHuntEfficiency.hourValue`'s default `Date.now()`), not the
+   verdict's moment; the verdict key carries neither those hours nor the price's clan match and seller's max MP.
 
 23. **Clan war reviews run on a window.** `ClanWarDirector.review` visits every autonomous clan each 60 s
    (`ClanWarConfig.reviewMs`, 4 per pulse) and reads its loss pressure from SQL each time, though most inputs have
