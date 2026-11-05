@@ -137,6 +137,26 @@ assert.strictEqual(Pull.packFactor(3, 1), 3);
     assert(Mob.incomingPerSecond(blunt, held, 0) > Mob.incomingPerSecond(blunt, held, 2000), 'the weakness ends with its effect');
     assert.strictEqual(Mob.incomingPerSecond(blunt, held, 2000), fresh(blunt, weak, 2000));
     assert.strictEqual(Mob.incomingPerSecond(blunt, held, 2000), answers[3], 'after it: the unweakened answer');
+    // Every monster of the data, alone, in pulls and repacked as the gate meets it,
+    // on fighters with a shield, a weakness, little defence: the gate's answer is
+    // the mix of a whole fresh fight (coldMobFight), bit for bit.
+    const shielded = { ...fighter, pDef: 700, evasion: 30, equipment: { weaponKind: 'Weapon.Sword', pAtkRnd: 10, shieldPDef: 150, shieldRate: 20 } };
+    const fighters = [even, weak, shielded, { ...fighter, level: 20, pDef: 90, mDef: 0, evasion: 60 }];
+    let compared = 0;
+    for (const npc of DataCache.npcs) {
+        if (npc.template?.kind !== 'Monster') continue;
+        const stats = Cold.npcCombatStats(npc);
+        if (!(stats?.pAtk > 0)) continue;
+        assert.strictEqual(Mob.meleeOnly(stats), Number(stats.atkRadius) < 200 && Mob.coldMobFight(stats).aiType === 'fighter');
+        for (const view of [stats, Pull.pullView(stats, 3), Pull.repack(Pull.pullView(stats, 3), 0.5)]) {
+            for (const profile of fighters) {
+                assert.strictEqual(Mob.incomingPerSecond(view, { ...profile }),
+                    Mob.actionMix(view, { profile: { ...profile } }, 0, Mob.coldMobFight(view)).perSecond, `${npc.selfId}: the fresh fight's mix`);
+                compared += 1;
+            }
+        }
+    }
+    assert(compared > 10000, `the data's monsters compared (${compared})`);
 }
 
 console.log('Solo gate fight model passed');
