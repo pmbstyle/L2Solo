@@ -15,8 +15,8 @@ const Providers = require('./WishProviders');
 const Floor = require('../Population/SurvivalFloor');
 const InventoryLimits = require('../../Inventory/InventoryLimits');
 const Diagnostics = require('./EconomyDiagnostics');
-const Reaction = require('./Reaction');
-const { FIELD_ACTIVITIES } = Reaction;
+const Situations = require('../Situations');
+const { FIELD_ACTIVITIES } = Situations;
 const partyIdOf = state => String(state.party?.partyId || state.partyId || '');
 const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
 const DataCache = invoke('GameServer/DataCache');
@@ -62,7 +62,7 @@ function observationBaselineValid(baseline, rows) {
 }
 // The decision sections in the order of their wishDirty bit (1 << at): one
 // table for the raise (DecisionEvents) and the names its readers count.
-// observation: the bot's own hunt samples moved past its error (Reaction's
+// observation: the bot's own hunt samples moved past its error (Situations'
 // observation link, beside its sections): an event bit read by the links that
 // read the sample values (the earning spot search), no piece of its own.
 const SECTIONS = Object.freeze(['build', 'combat', 'supply', 'benefits', 'sources', 'occupation', 'money', 'relations', 'observation']);
@@ -108,7 +108,7 @@ const COMPUTED = Object.freeze({
     // level and kit matchup; its other reads are checked beside it.
     sourceGround: sectionMask(['build']),
     // What makes a build weigh every gear candidate whatever the moment: the
-    // bot's kit, what gear gives it, a death (Reaction.quiet).
+    // bot's kit, what gear gives it, a death (Situations.quiet).
     gearReview: sectionMask(['build', 'benefits', 'combat'])
 });
 // The decision links: the inputs
@@ -357,7 +357,7 @@ function goalReached(state, baseline, escrow = 0) {
 }
 // The wallet reached what the bot watches where it stands.
 function moneyReached(state, baseline, escrow = 0) {
-    return Reaction.hears('money', Reaction.place(state)) ? moneyBound(state, baseline, escrow) : goalReached(state, baseline, escrow);
+    return Situations.hears('money', Situations.place(state)) ? moneyBound(state, baseline, escrow) : goalReached(state, baseline, escrow);
 }
 function meaningfulMoney(state, baseline = state.stats?.wishSections, escrow = 0) {
     return moneyChanged(state, baseline, escrow, true);
@@ -495,16 +495,16 @@ function softEvents(state, baseline, input, before = null) {
     // the raises by source (the observation share per far step is read live).
     const diagnostic = Diagnostics.active();
     if (diagnostic) Diagnostics.count('soft', 'step', 'far');
-    const where = Reaction.place(state, before);
+    const where = Situations.place(state, before);
     const add = source => {
-        const names = Reaction.raise([source], where);
+        const names = Situations.raise([source], where);
         sections = sections === NONE ? [...names] : [...new Set([...sections, ...names])];
         if (diagnostic) Diagnostics.count('soft', 'raise', source);
     };
-    if (Reaction.hears('money', where) && meaningfulMoney(state, baseline, input.buyOrderEscrow)) add('money');
+    if (Situations.hears('money', where) && meaningfulMoney(state, baseline, input.buyOrderEscrow)) add('money');
     else if (goalReached(state, baseline, input.buyOrderEscrow)) add('goal');
     const bondNow = () => Providers.relationBond(state, { memory: input.memory?.() ?? null });
-    if (Reaction.hears('observation', where) && observationChanged(state, baseline, input.timestamp, undefined, bondNow)) add('observation');
+    if (Situations.hears('observation', where) && observationChanged(state, baseline, input.timestamp, undefined, bondNow)) add('observation');
     if (input.board && marketCrossed(input.board, baseline.marketWatch, Number(state.characterId))) add('market');
     return sections;
 }
@@ -592,12 +592,12 @@ function stateView(state, recipes = null) {
 }
 // What the bot's clan asks of it and holds for it: the clan's material demand, the clan
 // supply, whether the clan has a warehouse, the clan goal's crystals. The personal
-// warehouse is its own fact: the bot's own doing, read in town (Reaction, warehouse).
+// warehouse is its own fact: the bot's own doing, read in town (Situations, warehouse).
 // owner: { characterId, clanId, stats } (a state is one); into: the array written (the
 // near reader's, updated in place).
 function storesOf(owner, into = new Array(3)) {
     // A far member hears what its clan asks for, not how much is left.
-    const demand = owner.stats?.clanMaterialDemand ?? null, request = Reaction.reactive(owner);
+    const demand = owner.stats?.clanMaterialDemand ?? null, request = Situations.reactive(owner);
     into[0] = request && demand ? Object.keys(demand) : demand;
     into[1] = request ? ClanSupply.requestIdentity(owner) : ClanSupply.contentIdentity(owner); into[2] = ClanSupply.hasWarehouse(owner);
     const crystals = owner.stats?.equipmentPlan?.clanGoal?.clanId && require('./ClanCrystalSupply').identity(owner);
@@ -649,8 +649,8 @@ function events(before, after, escrow = 0, leaf = null, unhuntable = false) {
     factEvents(previousFact, current, moneyChanged(after, represented || before.stats?.wishSections, escrow, false)
         || !previous.funding && fundingMark(before) !== fundingMark(after), links, occupationPlanned(after, leaf));
     if (unhuntable) links.push('unhuntable');
-    const where = Reaction.place(after, before);
-    return Reaction.raise(Reaction.gated(where) ? [...links, ...needsOpened(before, after, links, view)] : links, where);
+    const where = Situations.place(after, before);
+    return Situations.raise(Situations.gated(where) ? [...links, ...needsOpened(before, after, links, view)] : links, where);
 }
 // A need that opened in this step, one raise: one that stays open raises nothing more.
 // now: the step's view of after (stateView), its supply ids read once.
@@ -675,7 +675,7 @@ function needsOpened(before, after, facts, now) {
 // (travel.leafSpotId), the arrival keeps the pair leaf spot + ground reached
 // (stats.standIn, BackgroundResolver.resolveTravel), the leaf's own arrival
 // while the bot stands on that ground.
-// A far bot (Reaction, own_move) owns more: hunting or resting on any ground,
+// A far bot (Situations, own_move) owns more: hunting or resting on any ground,
 // and any trip but a forced one (FORCED_TRIPS: a flight, a death pressure, a
 // pushed-out spot, a party's call), so a pull to another spot or a flight's
 // arrival raises nothing there. Near a player only the leaf's own trip and
@@ -683,8 +683,8 @@ function needsOpened(before, after, facts, now) {
 // the held build's verdict and by the far step's round check (factEvents'
 // planned); its field-trip clause is EconomyContext.fieldActivity's.
 function occupationPlanned(state, leaf) {
-    const where = Reaction.place(state);
-    if (ownMove(state, where) && !Reaction.hears('own_move', where)) return true;
+    const where = Situations.place(state);
+    if (ownMove(state, where) && !Situations.hears('own_move', where)) return true;
     if (!leaf?.activity) return false;
     const hunt = leaf.activity === 'hunting';
     if (state.activity === 'traveling') {
@@ -703,7 +703,7 @@ function occupationPlanned(state, leaf) {
 // start was its event); a flight, a pushed-out spot or a party's call is the world's.
 const FORCED_TRIPS = new Set(['unsafe_ground_evacuation', 'death_pressure_replan', 'party_spot_replan']);
 function ownMove(state, where) {
-    if (state.activity !== 'traveling') return Reaction.field(where);
+    if (state.activity !== 'traveling') return Situations.field(where);
     const travel = state.stats?.travel;
     return !!travel && !travel.cause && !FORCED_TRIPS.has(travel.reason);
 }
@@ -722,7 +722,7 @@ function standsIn(state, leaf) {
 // ordered (occupationPlanned, the verdict's), its own output, no event.
 function factEvents(previousFact, current, funding = false, facts = null, planned = false) {
     const sections = new Set();
-    const raise = fact => { facts?.push(fact); for (const name of Reaction.sections(fact)) sections.add(name); };
+    const raise = fact => { facts?.push(fact); for (const name of Situations.sections(fact)) sections.add(name); };
     if (!previousFact('dead') && current.dead) raise('dead');
     if (previousFact('build') !== current.build) raise('build');
     if (previousFact('recipes') !== current.recipes) raise('recipes');

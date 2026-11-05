@@ -16,7 +16,7 @@ const Packet = require('../Economy/StatsPacket');
 const RestartDecision = require('./EconomyRestartDecision');
 const CraftInputReservations = require('../Economy/CraftInputReservations');
 const Sections = require('../Economy/DecisionSections');
-const Reaction = require('../Economy/Reaction');
+const Situations = require('../Situations');
 const PurchaseFunding = require('../Economy/PurchaseFunding');
 const EconomicValuation = require('../Economy/EconomicValuation');
 const kinds = [undefined, 'improvement', 'book', 'resale', 'shots', 'potions'];
@@ -659,10 +659,10 @@ function refusal(state, accepted, deps = {}, options = {}) {
     // restart) differs too: one rebuild. The held earning spot does not
     // compare the revision, no input of its search (DecisionSections LINK_INPUTS incomeSearch).
     if (Number.isFinite(deps.goalRevision) && deps.goalRevision !== accepted.goalRevision
-        && Reaction.hears('goal_moved', Reaction.place(state))) return 'goal';
+        && Situations.hears('goal_moved', Situations.place(state))) return 'goal';
     // A far bot's card lives on, so nothing else heals a lost held build: every
     // read of the earning spot would search in full.
-    if (Reaction.reactive(state) && !Economy.heldBuild(state, deps)) return 'no_held';
+    if (Situations.reactive(state) && !Economy.heldBuild(state, deps)) return 'no_held';
     // options.collect: a build of the same step on this state follows a
     // refusal; the verdict collects and hands itself to it (forState).
     const why = [], verdict = {};

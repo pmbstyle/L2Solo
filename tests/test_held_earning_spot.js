@@ -47,7 +47,7 @@ function sampled(state, better) {
     return next;
 }
 // complete: a working kit; else one earring short, so a search runs whatever the goal.
-// Near a player, where every read hears a change at once (far: Reaction, below).
+// Near a player, where every read hears a change at once (far: Situations, below).
 function fighter(characterId, { complete = false } = {}) {
     const inventory = {};
     for (const entry of Gear.planFor({ classId: 0, level: 10 }).items) {
@@ -548,9 +548,9 @@ function verify() {
     // unhuntable on the same spot and kit), though another spot turned better.
     // The observation bit alone asks one search.
     {
-        const Reaction = invoke('GameServer/Bot/Economy/Reaction');
+        const Situations = invoke('GameServer/Bot/Situations');
         const stat = (state, more) => ({ ...state, stats: { ...state.stats, ...more } });
-        const raised = (state, link) => stat(state, { wishDirty: Sections.sectionMask(Reaction.sections(link)) });
+        const raised = (state, link) => stat(state, { wishDirty: Sections.sectionMask(Situations.sections(link)) });
         const cases = [
             ['a clan change', state => raised({ ...state, clanId: 77 }, 'relations')],
             ['a learned recipe', state => raised(stat(state, { recipes: [5] }), 'recipes')],

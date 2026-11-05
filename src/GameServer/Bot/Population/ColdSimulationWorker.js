@@ -107,7 +107,7 @@ const DecisionEvents = require('../AI/DecisionEvents');
 const SavedStats = require('../SavedStats');
 const { stateKey } = require('./SpotOccupancyIndex');
 const DecisionSections = invoke('GameServer/Bot/Economy/DecisionSections');
-const Reaction = invoke('GameServer/Bot/Economy/Reaction');
+const Situations = invoke('GameServer/Bot/Situations');
 const PartyWaitFallback = invoke('GameServer/Bot/Population/PartyWaitFallback');
 const Protocol = require('./ColdSimulationProtocol');
 const ColdEconomyDecision = require('./ColdEconomyDecision');
@@ -1366,7 +1366,7 @@ function pruneLookSeen(ownerId) {
 // there is indexed at its destination but does not stand there yet. Read once
 // when a trip ends; no place is held for a bot on its way. A raid boss spot or
 // a spot the catalog does not know has room.
-const ROOM_SECTIONS = Reaction.sections('crowded');
+const ROOM_SECTIONS = Situations.sections('crowded');
 function roomAtArrival(spotId, arriving, overflow = 0) {
     const room = SpotProfiles.spotRoom(planningSpots, spotId);
     if (room === Infinity) return true;
@@ -1850,12 +1850,12 @@ function startKernel(config = {}) {
                 // The soft point's market watch (heard at work), against the board mirror.
                 market: after => {
                     const board = boardReady();
-                    return !!board && Reaction.hears('market', Reaction.place(after))
+                    return !!board && Situations.hears('market', Situations.place(after))
                         && DecisionSections.marketCrossed(board, after.stats?.wishSections?.marketWatch, Number(after.characterId));
                 },
                 feasible: after => {
                     const leaf = plan.economy.network?.activity, failed = EconomyContext.leafCheck(after, leaf, {}, { heldUnits: heldAtStep(plan) });
-                    return !failed || !Reaction.hears(failed.link, Reaction.place(after));
+                    return !failed || !Situations.hears(failed.link, Situations.place(after));
                 },
                 // The native facts planLifecycle reads, on the round's end.
                 planHolds: (after, at) => {
@@ -1939,9 +1939,9 @@ function startKernel(config = {}) {
             // A refused card's verdict serves the build below, which reads
             // this state, or a copy of it with a wish-focus plan deferred.
             const prepared = {};
-            const where = Reaction.place(state);
+            const where = Situations.place(state);
             // A native plan that failed or moved is a real review: every gear candidate.
-            deps.fullReview = (previousPlan !== originalPlan || !nativeHolds || solo && !planHolds()) && Reaction.hears('native', where);
+            deps.fullReview = (previousPlan !== originalPlan || !nativeHolds || solo && !planHolds()) && Situations.hears('native', where);
             // Diagnostics only: why the card did not serve the step, its own
             // refusal (advisory:refused:<reason>) or a skip around it
             // (advisory:skip:<why>; wish_focus: a refused card of a deferred
@@ -1961,14 +1961,14 @@ function startKernel(config = {}) {
             // A compact advisory contains no quantitative project needs.
             // The bounded clan-market review needs the full current graph.
             const marketReview = refreshed && (craftBidReview ? 'craft_bid' : clanMarketReviewDue(state) ? 'clan_market' : '');
-            if (marketReview && Reaction.woke(marketReview, where)) { refreshed = null; advisory?.('skip', 'market_review'); }
+            if (marketReview && Situations.woke(marketReview, where)) { refreshed = null; advisory?.('skip', 'market_review'); }
             if (refreshed) {
                 refreshed = await refreshCraftPacket(state, timestamp, refreshed);
                 if (!refreshed) advisory?.('skip', 'craft_packet');
             }
             // Compact advice has no full money queue for clan acquisition.
             // A null intention takes its ordinary native selection there.
-            if (refreshed?.economy.network.activity === null && GearAcquisitionPlanner.isClanOwnedPlan(previousPlan) && Reaction.woke('clan_market', where)) {
+            if (refreshed?.economy.network.activity === null && GearAcquisitionPlanner.isClanOwnedPlan(previousPlan) && Situations.woke('clan_market', where)) {
                 refreshed = null; advisory?.('skip', 'clan_market');
             }
             const nullReuse = refreshed?.economy.network.activity === null;

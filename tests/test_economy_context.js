@@ -377,7 +377,7 @@ async function run() {
         // A free stack's band: far from a player, a rise waits for the bot's moment, a fall stays hard.
         const stack = amount => ({ ...published, inventory: { ...published.inventory, 1865: { selfId: 1865, amount } } });
         const banded = { ...proof, bands: [...proof.bands, [1865, 5, 10, 7]] };
-        const Gate = invoke('GameServer/Bot/Economy/DecisionSections'), Reaction = invoke('GameServer/Bot/Economy/Reaction');
+        const Gate = invoke('GameServer/Bot/Economy/DecisionSections'), Situations = invoke('GameServer/Bot/Situations');
         assert.equal(refusal(stack(20), banded), '', 'at work the loot waits');
         assert.equal(refusal(stack(2), banded), '', 'and so does a stock falling inside the need');
         assert.equal(refusal({ ...stack(20), activity: 'resting' }, banded), '', 'at rest too');
@@ -397,8 +397,8 @@ async function run() {
         const onHuntLeaf = (before, after) => Gate.events(atDrinks(before), atDrinks(after), 0, { activity: 'hunting', spotId: published.spotId });
         assert(onHuntLeaf(drinks(12), drinks(8)).includes('supply'), 'a need opens');
         const higher = { ...published, level: published.level + 1 };
-        assert.deepEqual(Reaction.heard(['build'], Reaction.place(higher)), [], 'a new level waits on the hunt');
-        assert(Reaction.heard(['build'], Reaction.place({ ...higher, activity: 'resting' })).includes('build'), 'and is read at the rest');
+        assert.deepEqual(Situations.heard(['build'], Situations.place(higher)), [], 'a new level waits on the hunt');
+        assert(Situations.heard(['build'], Situations.place({ ...higher, activity: 'resting' })).includes('build'), 'and is read at the rest');
         // A visit to town: one look on arrival, then its own buying raises nothing.
         const visit = { ...published, activity: 'shopping' };
         const asked = { ...visit, stats: { ...visit.stats, clanMaterialDemand: { 1865: 5 } } };
@@ -804,8 +804,8 @@ async function run() {
             assert.equal(stepOf(capped).kept, answered, 'the next step keeps the answer it asked, no ask');
             assert.equal(stepOf(capped).kept, answered, 'and the one after');
             assert.equal(stepOf({ ...capped, vitals: { ...capped.vitals, maxMp: capped.vitals.maxMp + 1 } }).kept, null, 'a further move asks again');
-            const Reaction = invoke('GameServer/Bot/Economy/Reaction');
-            const raised = (state, link) => stat(state, { wishDirty: Sections.sectionMask(Reaction.sections(link)) });
+            const Situations = invoke('GameServer/Bot/Situations');
+            const raised = (state, link) => stat(state, { wishDirty: Sections.sectionMask(Situations.sections(link)) });
             // (A clan this fixture has no supply rows for refuses as unready, a
             // refusal naming no section, which asks.)
             for (const [what, move] of [['a party role change', state => raised({ ...state, party: { partyId: 0, role: 'solo' } }, 'relations')],

@@ -4,7 +4,7 @@
 // takes and the steps after it. A step that ends moves the held plan to the next with
 // no weighing; proof, money queue, bids and focus move as one. Only an agenda that has
 // no step left, or a native plan that failed, is a build.
-const Reaction = require('./Reaction');
+const Situations = require('../Situations');
 const Funding = require('./PurchaseFunding');
 const Network = require('./WishNetwork');
 
@@ -87,7 +87,7 @@ function moved(held, state, leaf, { queue, filled, rest }, ask) {
 // check, the best offer, a step's progress, the bag's count of an item, the identity.
 // Answers the held entry on its next step, or null: the agenda ended, a build decides.
 function advance(held, state, why, deps, ask) {
-    if (!Reaction.agendaHears(state, why) || deps.fullReview || !held?.plan.network.activity) return null;
+    if (!Situations.agendaHears(state, why) || deps.fullReview || !held?.plan.network.activity) return null;
     const { network } = held.plan, done = network.activity, agenda = network.agenda;
     if (!agenda) return null;
     // The step's progress, read once (its own check's count): what it brought in leaves the

@@ -15,7 +15,7 @@ const Consumption = require('../Economy/ConsumptionDiagnostics');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
 const DecisionEvents = require('../AI/DecisionEvents');
 const DecisionSections = require('../Economy/DecisionSections');
-const Reaction = require('../Economy/Reaction');
+const Situations = require('../Situations');
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
 const CraftShopService = invoke('GameServer/Bot/Economy/CraftShopService');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
@@ -2928,7 +2928,7 @@ const BotLifeState = {
         const standIn = nextState.stats.standIn;
         if (standIn && String(standIn.ground) !== String(nextState.spotId)) nextState.stats.standIn = null;
         let hard = [];
-        if (Reaction.readsFacts(state, nextState)) {
+        if (Situations.readsFacts(state, nextState)) {
             // A round records its rewards/resources/sample immediately. It
             // renews the decision only for a meaningful dependent event; a
             // retry derives that one event from the same accepted input.

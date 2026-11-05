@@ -1,28 +1,28 @@
-// What a far bot hears where it stands (Reaction): a change waits for its player's moment.
+// What a far bot hears where it stands (Situations): a change waits for its player's moment.
 'use strict';
 const assert = require('node:assert/strict');
 require('./helpers/databaseIsolation');
 require('../src/Global');
-const Reaction = invoke('GameServer/Bot/Economy/Reaction');
+const Situations = invoke('GameServer/Bot/Situations');
 
 const hunter = { characterId: 7, activity: 'hunting', spotId: 's', stats: {} };
 const leaf = { activity: 'hunting', spotId: 's' };
 
-const at = activity => Reaction.place({ phase: 'cold', activity, stats: {} });
-assert.equal(Reaction.hears('stores', at('resting')), true, 'a rest reads the clan\'s demand');
-assert.equal(Reaction.hears('warehouse', at('resting')), false, 'its own deposit and take raise nothing on a rest');
-assert.equal(Reaction.hears('warehouse', at('shopping')), false, 'nor on a town visit');
-assert.equal(Reaction.hears('warehouse', Reaction.place({ phase: 'cold', activity: 'shopping', stats: {} }, { activity: 'traveling' })), true, 'it is read as the bot arrives in town');
+const at = activity => Situations.place({ phase: 'cold', activity, stats: {} });
+assert.equal(Situations.hears('stores', at('resting')), true, 'a rest reads the clan\'s demand');
+assert.equal(Situations.hears('warehouse', at('resting')), false, 'its own deposit and take raise nothing on a rest');
+assert.equal(Situations.hears('warehouse', at('shopping')), false, 'nor on a town visit');
+assert.equal(Situations.hears('warehouse', Situations.place({ phase: 'cold', activity: 'shopping', stats: {} }, { activity: 'traveling' })), true, 'it is read as the bot arrives in town');
 // A bot at work weighs only the gear it follows; a real review weighs every candidate.
 const far = { ...hunter, phase: 'cold' };
-assert.equal(Reaction.quiet(far, 'wish_dirty'), true, 'a soft event on the spot');
-assert.equal(Reaction.quiet({ ...far, activity: 'traveling' }, 'refresh'), true, 'and on the road');
-assert.equal(Reaction.quiet({ ...far, activity: 'resting' }, 'wish_dirty'), true, 'a rest reads no gear');
-assert.equal(Reaction.quiet({ ...far, activity: 'shopping' }, 'wish_dirty'), false, 'so is the town');
-assert.equal(Reaction.quiet({ ...far, activity: 'grouped', partyId: 3 }, 'wish_dirty'), true, 'a party fight is work too');
-assert.equal(Reaction.quiet(far, 'check:short'), false, 'a failed goal chooses again');
-assert.equal(Reaction.quiet(far, 'goal'), false, 'a goal main moved too');
-assert.equal(Reaction.quiet(far, undefined), false, 'no card stood: no held build to follow');
+assert.equal(Situations.quiet(far, 'wish_dirty'), true, 'a soft event on the spot');
+assert.equal(Situations.quiet({ ...far, activity: 'traveling' }, 'refresh'), true, 'and on the road');
+assert.equal(Situations.quiet({ ...far, activity: 'resting' }, 'wish_dirty'), true, 'a rest reads no gear');
+assert.equal(Situations.quiet({ ...far, activity: 'shopping' }, 'wish_dirty'), false, 'so is the town');
+assert.equal(Situations.quiet({ ...far, activity: 'grouped', partyId: 3 }, 'wish_dirty'), true, 'a party fight is work too');
+assert.equal(Situations.quiet(far, 'check:short'), false, 'a failed goal chooses again');
+assert.equal(Situations.quiet(far, 'goal'), false, 'a goal main moved too');
+assert.equal(Situations.quiet(far, undefined), false, 'no card stood: no held build to follow');
 // Away on a solo hunt only the next wish within reach raises money; in reach of town the drift does too.
 const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
 const moneyBaseline = { wallet: 1000, moneyError: 100, cashBounds: [0, 5000], goalBudget: 5000, funding: 0 };
@@ -35,8 +35,8 @@ assert.deepEqual(Sections.softEvents(hunting(1000), { ...moneyBaseline, share: 0
     'nor does the income reach it on the hunt');
 // The one table: what a bot hears where it stands.
 const cold = (activity, extra = {}) => ({ ...hunter, phase: 'cold', activity, ...extra });
-const waitsFor = (state, ...links) => links.every(link => !Reaction.hears(link, Reaction.place(state)));
-const hearsAll = (state, ...links) => links.every(link => Reaction.hears(link, Reaction.place(state)));
+const waitsFor = (state, ...links) => links.every(link => !Situations.hears(link, Situations.place(state)));
+const hearsAll = (state, ...links) => links.every(link => Situations.hears(link, Situations.place(state)));
 assert(waitsFor(cold('hunting'), 'funding', 'money', 'supply', 'bag', 'quantity', 'stores', 'relations', 'observation'), 'at work the links wait');
 assert(waitsFor(cold('hunting'), 'build') && hearsAll(cold('resting'), 'build'), 'a new level waits for the rest');
 assert(hearsAll(cold('hunting'), 'dead', 'riskDeaths', 'occupation', 'need_supply', 'need_bag', 'goal', 'market'), 'its fight, its place and a condition do not');
@@ -45,12 +45,12 @@ assert(waitsFor(cold('shopping'), 'funding', 'money', 'supply', 'bag', 'quantity
 assert(hearsAll(cold('shopping'), 'filled', 'short', 'offer_gone'), 'its list\'s end does not wait');
 assert(hearsAll(cold('resting'), 'income_moved') && waitsFor(cold('resting'), 'income_later'), 'a better spot reaches a rest on a hunt, not one on another job');
 assert(waitsFor(cold('resting'), 'offer_gone') && waitsFor(cold('traveling'), 'offer_gone'), 'who sells what is read at the market');
-assert.equal(Reaction.place({ ...cold('shopping') }, cold('traveling')), 0, 'arriving hears all that waited');
+assert.equal(Situations.place({ ...cold('shopping') }, cold('traveling')), 0, 'arriving hears all that waited');
 assert(hearsAll(cold('crafting'), 'funding', 'money', 'supply', 'quantity'), 'a craft has no check for its end');
 assert(waitsFor(cold('resting'), 'money', 'short') && hearsAll(cold('resting'), 'funding', 'relations', 'stores', 'build'), 'a rest is no review of the purse');
-assert(Reaction.readsFacts(cold('traveling'), cold('shopping')), 'the step that arrives in town reads its facts');
-assert(!Reaction.readsFacts(cold('shopping'), cold('shopping')) && !Reaction.readsFacts(cold('traveling'), cold('traveling')), 'and only that step');
-assert(Reaction.readsFacts(cold('grouped', { partyId: 'p' }), cold('grouped', { partyId: 'p' })), 'a party reads its round');
+assert(Situations.readsFacts(cold('traveling'), cold('shopping')), 'the step that arrives in town reads its facts');
+assert(!Situations.readsFacts(cold('shopping'), cold('shopping')) && !Situations.readsFacts(cold('traveling'), cold('traveling')), 'and only that step');
+assert(Situations.readsFacts(cold('grouped', { partyId: 'p' }), cold('grouped', { partyId: 'p' })), 'a party reads its round');
 assert.deepEqual(Sections.softEvents(cold('shopping', { adena: 1500 }), moneyBaseline, { buyOrderEscrow: 0, timestamp: 1 }, cold('traveling')), ['money'], 'town reads the purse on arrival');
 assert.deepEqual(Sections.softEvents(cold('shopping', { adena: 1500 }), moneyBaseline, { buyOrderEscrow: 0, timestamp: 1 }), [], 'and not again on the visit');
 assert(hearsAll(cold('merchant'), 'funding', 'money'), 'a stall hears its money');
@@ -63,7 +63,7 @@ assert(hearsAll({ ...hunter, phase: 'hot' }, 'funding', 'quantity', 'own_move'),
 assert(hearsAll(cold('hunting'), 'threat', 'excluded', 'material_done', 'filled', 'sale', 'craft', 'target'), 'a failed check goes at once');
 assert(waitsFor(cold('hunting'), 'short', 'money') && waitsFor(cold('crafting'), 'short') && hearsAll(cold('shopping'), 'short'), 'short of a price it earns on: the shop reads its purse');
 assert(waitsFor(cold('hunting'), 'income_moved') && hearsAll(cold('resting'), 'income_moved'), 'a better spot waits for the rest');
-assert.equal(Reaction.placeName(Reaction.place(cold('traveling'))), 'work', 'a hunt or the road is work');
+assert.equal(Situations.placeName(Situations.place(cold('traveling'))), 'work', 'a hunt or the road is work');
 // Own trips: the bot's way out and back is no event far from a player; the world's push is.
 const trip = (travel, extra = {}) => cold('traveling', { stats: { travel }, ...extra });
 const back = { reason: 'return_after_market', spotId: 'other', townName: 'Giran', arrivalActivity: 'hunting' };

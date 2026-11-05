@@ -12,7 +12,7 @@ const ItemIndex = require('../../Item/ItemTemplateIndex');
 const Valuation = require('./EconomicValuation');
 const Providers = require('./WishProviders');
 const Sections = require('./DecisionSections');
-const Reaction = require('./Reaction');
+const Situations = require('../Situations');
 const Funding = require('./PurchaseFunding');
 const Packet = require('./StatsPacket');
 const SpotRiskPolicy = require('../Population/SpotRiskPolicy');
@@ -208,7 +208,7 @@ const ownQuantityRow = (row, rootKey, own) => row[0] === 'stock' || row[0] === '
 // The first input a completed build lacks for an event proof, '' if none.
 function eventProofMissing(state, deps, plan) {
     if (!plan || plan.pending) return 'pending';
-    if (!plan.quantityInputs && Reaction.hears('quantity', Reaction.place(state))) return 'quantity_inputs';
+    if (!plan.quantityInputs && Situations.hears('quantity', Situations.place(state))) return 'quantity_inputs';
     if (!plan.liquidationInputs) return 'liquidation_inputs';
     if (extensions.size) return 'extensions';
     if (deps.nodes?.length) return 'nodes';
@@ -308,10 +308,10 @@ function heldBuildVerdict(state, proof, deps = {}, options = {}) {
     // sections before the echo.
     const dirty = Number(state.stats?.wishDirty) || 0;
     if (dirty && refuse('wish_dirty', dirty) && !collect) return out;
-    const where = Reaction.place(state);
+    const where = Situations.place(state);
     const moved = (link, reason = link, quiet = false) => {
-        const names = Reaction.sections(link);
-        if (Reaction.hears(link, where)) return refuse(reason, names, quiet);
+        const names = Situations.sections(link);
+        if (Situations.hears(link, where)) return refuse(reason, names, quiet);
         out.waited |= Sections.sectionMask(names);
         return null;
     };
@@ -319,7 +319,7 @@ function heldBuildVerdict(state, proof, deps = {}, options = {}) {
     // A search a goal change asked follows the weighing that chose the goal:
     // its rebuild re-weighs nothing, or the focus it may flip asks the next one.
     const movedTo = movedHold(state);
-    if (movedTo && moved(Reaction.incomeLink(options.leaf), 'income_moved', movedTo.afterGoal) && !collect) return out;
+    if (movedTo && moved(Situations.incomeLink(options.leaf), 'income_moved', movedTo.afterGoal) && !collect) return out;
     const echo = Sections.decisionRefusal(state, ...proof.decision);
     // Collecting past raised bits: every raise (DecisionEvents markSections,
     // raiseSections) bumps decisionSeq with its bits, so a moved sequence is
@@ -338,7 +338,7 @@ function heldBuildVerdict(state, proof, deps = {}, options = {}) {
         Sections.occupationPlanned(state, options.leaf));
     // What the bot does not hear where it stands stays against the baseline, the mark
     // of its moment: no refusal, and a build another refusal asks reads it too.
-    const urgent = Reaction.heard(movedFacts, where);
+    const urgent = Situations.heard(movedFacts, where);
     out.waited |= Sections.sectionMask(changed) & ~Sections.sectionMask(urgent);
     if (urgent.length && refuse('sections', urgent) && !collect) return out;
     // The gear-threat mask the decision weighed: only its flip between
@@ -390,7 +390,7 @@ function heldBuildVerdict(state, proof, deps = {}, options = {}) {
     // A bag count the bot does not hear is not even read: it joins a build another
     // refusal asks. Where it hears it, the leaf is working on the bag: a trip buys
     // what is missing, a crystallization ends on the count.
-    const away = !Reaction.hears('quantity', where);
+    const away = !Situations.hears('quantity', where);
     const bagHolds = () => quantityInputsHold(proof.quantities, { ...Providers.quantityReaders(state), stockFor }, stockAmount, ownRow, movedRows)
         || (movedRows.length ? !moved('quantity') || collect : !refuse('unproved'));
     const noRows = proof.quantities.byteLength <= Network.NO_QUANTITIES.byteLength;
@@ -640,7 +640,7 @@ function choiceBagValueHolds(state, bands, baseline, hourAdena, value = choiceBa
 // build's entry; a card carries it on its leaf); current = a lazy basics
 // reader; prepared = { liquidation } candidates already read by the verdict.
 // Execution still prepares its batch and checks via the command/CAS.
-const failure = (name, link = name) => Object.freeze({ reason: `check:${name}`, link, sections: Reaction.sections(link) });
+const failure = (name, link = name) => Object.freeze({ reason: `check:${name}`, link, sections: Situations.sections(link) });
 const EXCLUDED = failure('excluded'), MATERIAL_DONE = failure('material_done'), OFFER = failure('offer'), SALE = failure('sale');
 const FILLED = failure('filled'), SHORT = failure('short'), CRAFT = failure('craft'), TARGET = failure('target');
 const IMPROVEMENT = failure('improvement'), UNSUPPORTED = failure('unsupported');
@@ -675,7 +675,7 @@ const LEAF_CHECKS = Object.freeze({
         const remaining = ColdEconomyDecision.remainingToOrder(held, state);
         if (!(remaining > 0)) return FILLED;
         // A bot holds its own offer: a better one elsewhere or a lower price breaks nothing.
-        const holds = Reaction.reactive(state);
+        const holds = Situations.reactive(state);
         const offer = townOffer(state, leaf, deps, trade.trip, holds);
         if (!offer) return OFFER_NONE;
         if (!holds && (offer.sourceType !== leaf.sourceType || offer.town !== leaf.town)) return OFFER_TOWN;
@@ -1438,7 +1438,7 @@ function heldReadsOf(state, deps, held) {
 // own verdict also hands its reads, made on the same state and deps. Read
 // by the build (forState) and, before it, by the worker step's workshop
 // (heldWorkshop).
-// look: a door the held plan answers (Reaction.answer) and no deal: a held entry
+// look: a door the held plan answers (Situations.answer) and no deal: a held entry
 // that serves it is read with no verdict (LOOKED).
 const LOOKED = Object.freeze({ valid: false });
 function heldVerdictFor(state, deps, look = false) {
@@ -1627,7 +1627,7 @@ function buildForState(state, deps) {
     const actorKey = actorKeyOf(state, deps);
     // lazy: worker the board's owner lives on main; the worker passes its board.
     const sourceBoard = deps.board || (isMainThread ? invoke('GameServer/AfkTrade/AfkTradeService').boardIndex() : null);
-    const answer = Reaction.answer(deps.caller, state), keeps = Reaction.keeps(deps.caller);
+    const answer = Situations.answer(deps.caller, state), keeps = Situations.keeps(deps.caller);
     const { held, reads, verdict: eventVerdict, handed } = heldVerdictFor(state, deps, answer === 'look' && !deps.deal);
     const { gearThreat, current, facts, key } = reads;
     // Read once: the hand-off ends here, served or not.
@@ -1683,7 +1683,7 @@ function buildForState(state, deps) {
     const keptGround = !(mask & Sections.COMPUTED.sourceGround) ? held?.sourceGround || null : null;
     // A quiet build weighs only the gear the bot follows (decision 11-02): a
     // failed or moved goal is a real review, whatever raised this build.
-    const heldGear = !deps.fullReview && Reaction.quiet(state, eventVerdict.reason) && held?.gearFollowed && !eventVerdict.goalFailed
+    const heldGear = !deps.fullReview && Situations.quiet(state, eventVerdict.reason) && held?.gearFollowed && !eventVerdict.goalFailed
         && deps.goalRevision === held.goalRevision
         && !(mask & Sections.COMPUTED.gearReview) ? followedGear(state, held) : null;
     if (heldGear) quietGearBuilds++;
@@ -2524,7 +2524,7 @@ function heldWorkshop(state, deps, eventVerdict) {
     const held = cache.get(actorKeyOf(state, deps));
     if (!held?.plan.eventProof) return null;
     const own = resolved(state, { ...deps, eventVerdict });
-    const look = Reaction.answer(deps.caller, state) === 'look';
+    const look = Situations.answer(deps.caller, state) === 'look';
     const { reads, verdict } = heldVerdictFor(state, own, look);
     deps.routeRows = own.routeRows;
     // A look's held entry stands with no verdict to hand on: a build after it judges its own.

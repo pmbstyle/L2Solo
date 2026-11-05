@@ -120,7 +120,7 @@ function tripPays(context, plan, route, { valueHours, r, required, wanted } = {}
 // A town visit pays its one trip: the plan's steps there, their value against
 // their cost, the road's hours and fees; a required step there carries the road
 // (roadCarried), the others ride along. Asked by the build of the step it chooses
-// and by the agenda of the step it moves to (Reaction, one look a visit).
+// and by the agenda of the step it moves to (Situations, one look a visit).
 function visitPays(context, steps, route) {
     if (!route?.known) return false;
     let cost = 0, valueHours = 0, carried = false;

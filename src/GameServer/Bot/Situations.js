@@ -1,6 +1,7 @@
 'use strict';
 
-// How a bot reacts (design rules, Recompute; user 11-02). A bot holds its plan. A
+// The situations a bot hears and where it hears them: one catalogue for both threads
+// (main's raises, the worker's steps). How a bot reacts (design rules, Recompute; user 11-02). A bot holds its plan. A
 // change only stands against the decision's baseline, the mark; where the bot stands
 // decides whether it hears the change now. One question, one table: hears(link, place).
 // The step's facts, the soft point, the held plan's verdict and the doors to a build

@@ -1,7 +1,7 @@
 'use strict';
 const { isMainThread } = require('node:worker_threads');
 const Sections = require('../Economy/DecisionSections');
-const Reaction = require('../Economy/Reaction');
+const Situations = require('../Situations');
 const TownVisitInterval = require('../Economy/TownVisitInterval');
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const Decisions = invoke('GameServer/Bot/Population/ColdEconomyDecision');
@@ -16,8 +16,8 @@ const reasons = new Set(['town', 'revived', 'money', 'build', 'sources', 'supply
 const bit = Sections.sectionBit;
 // A section name (raiseSections) marks its own bit.
 const sectionBits = { ...Object.fromEntries(Sections.SECTIONS.map(name => [name, bit(name)])), funding: bit('money') };
-// A named reason marks the sections of its link in the one table (Reaction.LINKS).
-const factBits = fact => Sections.sectionMask(Reaction.sections(fact));
+// A named reason marks the sections of its link in the one table (Situations.LINKS).
+const factBits = fact => Sections.sectionMask(Situations.sections(fact));
 const reasonBits = { ...sectionBits, money: factBits('funding'), build: factBits('build'),
     revived: factBits('dead'), relations: factBits('relations'), town: factBits('town'), sources: factBits('rejected'),
     unhuntable: factBits('unhuntable') };
@@ -41,7 +41,7 @@ function applyRaise(stats, bits, impossible = false) {
 // A far bot's own preparation stands in its state for its next review.
 function applyOwnRaise(state) {
     const stats = { ...(state.stats || {}) };
-    return Reaction.hears('own_preparation', Reaction.place(state)) ? applyRaise(stats, factBits('own_preparation')) : stats;
+    return Situations.hears('own_preparation', Situations.place(state)) ? applyRaise(stats, factBits('own_preparation')) : stats;
 }
 // A near bot (a body on main) takes its decisions on the background thread:
 // the raise waits on the session (nearRaise, ORed while pending) and rides its
