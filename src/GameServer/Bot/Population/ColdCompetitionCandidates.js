@@ -47,7 +47,6 @@ class ColdCompetitionCandidates {
         this.nextSequence = 0; this.nextInput = 0; this.nextFrame = 0; this.activeHunters = 0;
         this.frame = null; this.stopped = false;
         monitor.onCooldown = (...args) => this.cooldown(...args);
-        monitor.revenge.onCooldown = monitor.onCooldown;
     }
     queueSpot(id) {
         if (!this.stopped && id != null) {
@@ -182,7 +181,7 @@ class ColdCompetitionCandidates {
     armEligibility(record, packet) {
         const meta = record[metaKey], state = packet.state, party = this.leaderParty(meta.id);
         const at = this.deadlines.now();
-        const times = [state.stats?.revengeUntil, state.stats?.coldCompetition?.conflictUntil,
+        const times = [state.stats?.coldCompetition?.conflictUntil,
             state.stats?.pvpEncounter?.expiresAt, party?.stats?.coldCompetition?.conflictUntil]
             .map(Number).filter(value => Number.isFinite(value) && value > at && Number.isSafeInteger(Math.ceil(value)));
         if (!times.length) return;
@@ -205,7 +204,7 @@ class ColdCompetitionCandidates {
         entry.token = this.deadlines.armDecisionDeadline(entry.key, until, until, stamp => {
             if (this.stopped || policies.get(key) !== entry || entry.until !== stamp) return;
             policies.delete(key);
-            const map = kind === 'pair' ? this.monitor.pairs : kind === 'unit' ? this.monitor.bots : this.monitor.revenge.cooldowns;
+            const map = kind === 'pair' ? this.monitor.pairs : this.monitor.bots;
             if (map.get(key) !== stamp) return;
             map.delete(key);
             for (const unit of units) this.queueUnit(unit);
@@ -309,16 +308,10 @@ class ColdCompetitionCandidates {
             spot.pairOffset = report.overflow ? spot.pairOffset : report.nextPairOffset;
             if (report.overflow || spot.pairOffset) this.pendingSpots.set(key, ++this.nextInput);
         }
-        const selected = actors.map(({ key }) => this.packets(key)).filter(Boolean);
-        const revengeEvents = this.monitor.revenge.sampleActors(selected, id => this.packets(id), this.memory, at,
-            this.monitor.personaFor, null, offer);
         this.monitor.lastAt = at;
-        this.monitor.report.recent = [...this.monitor.report.recent, ...revengeEvents].slice(-12);
-        if (this.monitor.revenge.report.overflow) for (const { key } of actors) this.queueActor(key);
         Object.assign(this.monitor.report, { at, activeHunters: this.activeHunters, events,
             lastScanEvents: events.length, consumedSpotKeys: spots.length, consumedActorKeys: actors.length,
-            pendingSpotKeys: this.pendingSpots.size, pendingActorKeys: this.pendingActors.size,
-            revenge: { ...this.monitor.revenge.report }, deliveryMode: 'addressed' });
+            pendingSpotKeys: this.pendingSpots.size, pendingActorKeys: this.pendingActors.size, deliveryMode: 'addressed' });
         if (!events.length) return null;
         this.nextFrame = frameId;
         this.frame = freeze({ frameId, at, events });

@@ -11,7 +11,8 @@ invoke('GameServer/DataCache').init();
 // U26 (user, 2026-10-05): can-I-win is a chance with one roll per decision. A fixed
 // middle roll (0.49) makes each such decision the author's threshold (willing iff
 // chance >= 0.5, i.e. ratio >= threshold); the chance itself is tested in test_visible_strength.
-require('../src/GameServer/Bot/AI/TendencyRoll').roll = () => 0.49;
+const Tendency = require('../src/GameServer/Bot/AI/TendencyRoll');
+Tendency.roll = () => 0.49;
 const Memory = invoke('GameServer/Bot/AI/BotEnemyMemory');
 const SocialMemory = invoke('GameServer/Social/InteractionMemoryRuntime');
 const SocialPolicy = require('../src/GameServer/Social/InteractionMemoryPolicy');
@@ -66,9 +67,10 @@ try {
     for (let i = 0; i < 500; i++) Memory.record(bot, foe, false, now + i);
     assert.strictEqual(Memory.entries(bot.session)[0].attacks, 1, 'a burst of damage counts as one incident');
     assert.strictEqual(writes.length, 1, 'damage bursts must not cause one write per hit');
-    assert.strictEqual(Revenge.tryStart(bot.session, now, () => 0), false, 'attacks alone never authorize revenge');
+    // A player meets the bot (B8: its client first receives the bot): only a grievance in the shared memory counts.
+    assert.strictEqual(Revenge.playerSeen(bot, foe, now), null, 'attacks alone never authorize revenge');
     Memory.record(bot, foe, true, now);
-    assert.strictEqual(Revenge.tryStart(bot.session, now, () => 0), false, 'one kill is not repeated killing');
+    assert.strictEqual(Revenge.playerSeen(bot, foe, now), null, 'one kill is not repeated killing');
     Memory.record(bot, foe, true, now + 1);
     const lesser = Array.from({ length: 4 }, () => character());
     lesser.forEach((enemy, i) => Memory.record(bot, enemy, false, now + i + 2));
@@ -97,6 +99,8 @@ try {
     assert.deepStrictEqual(Threats.members(bot.session), [bot.session, helper.session],
         'the original registered helper joins the earned-grievance encounter');
     const ai = { executePvPCombat(session, actor, target) { events.push(['attack', actor.id, target.id]); } };
+    // The meeting (enemy_met) decided with its roll under the chance: the bot starts it.
+    assert.strictEqual(Revenge.meet(bot.session, foe, { reason: 'revenge', roll: 0, key: 'met:foe', rng: () => 0 }, now), 'started');
     assert(Defense.tick(bot.session, bot, {}, ai, { now, rng: () => 0 }));
     assert.deepStrictEqual(events.filter(e => ['chat', 'attack'].includes(e[0])).map(e => e[0]), ['chat', 'attack'],
         'a revenge line must precede the first attack');
@@ -136,20 +140,22 @@ try {
     assert(events.some(e => e[0] === 'attack' && e[1] === ally.id && e[2] === neutral.id));
 
     Defense.clear(bot.session);
-    bot.session.nextRevengeAt = bot.session.nextRevengeScanAt = 0;
+    const met = key => Revenge.meet(bot.session, foe, { reason: 'revenge', roll: 0, key, rng: () => 0 }, now);
     bot.fakeDeath = true;
-    assert(!Revenge.tryStart(bot.session, now, () => 0), 'incapacitated bots must not announce or initiate revenge');
+    assert.notStrictEqual(met('dead'), 'started', 'incapacitated bots must not announce or initiate revenge');
     bot.fakeDeath = false;
     // U26: levels are hidden; a visibly higher weapon grade is what a player sees.
     bot.rank = 'none'; foe.rank = 'c'; bot.backpack.visibleLook = foe.backpack.visibleLook = null;
-    assert(!Revenge.tryStart(bot.session, now, () => 0), 'revenge must use the same visible-strength risk evaluation');
-    bot.rank = 'c'; foe.rank = 'none'; bot.backpack.visibleLook = foe.backpack.visibleLook = null; bot.session.nextRevengeScanAt = 0;
+    assert.strictEqual(met('weaker'), 'outmatched', 'revenge must use the same visible-strength risk evaluation');
+    bot.rank = 'c'; foe.rank = 'none'; bot.backpack.visibleLook = foe.backpack.visibleLook = null;
+    // The meeting's own roll: a PvP-averse personality's chance stays under any roll.
     bot.session.persona.traits = { caution: 0.9, assertiveness: 0.1, empathy: 0.9 };
-    assert(!Revenge.tryStart(bot.session, now, () => 0), 'a PvP-averse personality must refuse revenge');
+    Tendency.roll = () => 0;
+    assert.strictEqual(Revenge.playerSeen(bot, foe, now), null, 'a PvP-averse personality must refuse revenge');
+    Tendency.roll = () => 0.49;
     bot.session.persona.traits = { caution: 0.3, assertiveness: 0.8, empathy: 0.4 };
-    bot.session.nextRevengeScanAt = 0;
     Budget.canSend = () => false;
-    assert(!Revenge.tryStart(bot.session, now, () => 0), 'revenge waits when its required announcement cannot be sent');
+    assert.strictEqual(met('silent'), 'pending', 'revenge waits when its required announcement cannot be sent');
     assert(!bot.session.pvpRevenge);
     assert(bot.session.pendingPvpProvocation, 'an accepted intent waits for its announcement');
     shared = { ...shared, revision: shared.revision + 1, relations: shared.relations.map(row => ({ ...row,
@@ -158,6 +164,49 @@ try {
     Budget.canSend = () => true;
     assert(!Revenge.flushPending(bot.session, now), 'reconciliation before the first strike cancels a queued provocation');
     assert(!bot.session.pendingPvpProvocation && !bot.session.pvpRevenge);
+
+    // Two bodies near a player met on a spot (the worker's spot_command, enemy_met): the holder
+    // reaches its meeting through the World's records and provokes its peer.
+    {
+        const holder = character(), peer = character(true, 10);
+        holder.rank = 'c'; // U26: it sees itself the stronger, so it may fight
+        World.insertUser(holder.session); World.insertUser(peer.session);
+        let grudge = SocialPolicy.empty(holder.id);
+        for (const [i, type] of ['attacked', 'killed', 'killed'].entries()) grudge = SocialPolicy.apply(grudge,
+            { key: `spot-command:${i}`, sourceId: holder.id, targetId: peer.id, type, at: now }, now).snapshot;
+        SocialMemory.accept(grudge);
+        const before = events.length;
+        const outcome = Revenge.fromSpot({ kind: 'enemy_met', key: `enemy_met:spot:${holder.id}:${peer.id}:1`, at: now,
+            reason: 'revenge', actorId: holder.id, peerId: peer.id, roll: 0, chance: 0.3 }, now);
+        assert(['started', 'pending', 'refused'].includes(outcome), `the command reaches the meeting: ${outcome}`);
+        assert(events.slice(before).some(e => e[0] === 'chat' && e[1] === holder.id), 'the holder provokes its peer');
+        assert.strictEqual(Revenge.fromSpot({ kind: 'enemy_met', key: 'gone', at: now, reason: 'revenge', actorId: holder.id,
+            peerId: 987654321, roll: 0, chance: 0.3 }, now), 'no_body', 'a peer no longer near: counted, nothing else');
+        Defense.clear(holder.session); delete holder.session.pendingPvpProvocation;
+    }
+    // A player's client receiving the bot again on the same stay (a teleport, a view re-entry)
+    // rolls nothing new and does nothing; a new stay may meet the player again.
+    {
+        const seer = character(), player = character(false, 10);
+        seer.rank = 'c';
+        World.insertUser(seer.session); World.insertUser(player.session);
+        let grudge = SocialPolicy.empty(seer.id);
+        for (const [i, type] of ['attacked', 'killed', 'killed'].entries()) grudge = SocialPolicy.apply(grudge,
+            { key: `player-seen:${i}`, sourceId: seer.id, targetId: player.id, type, at: now }, now).snapshot;
+        SocialMemory.accept(grudge);
+        Tendency.roll = () => 0;
+        try {
+            seer.session.nearSpot = { seq: 1, spotId: 'stay-1' };
+            assert.notStrictEqual(Revenge.playerSeen(seer, player, now), null, 'the first sight on a stay is a meeting');
+            Defense.clear(seer.session); delete seer.session.pendingPvpProvocation;
+            const before = events.length;
+            assert.strictEqual(Revenge.playerSeen(seer, player, now), null, 'a re-entry on the same stay judges nothing');
+            assert(!events.slice(before).some(e => e[0] === 'chat' && e[1] === seer.id), 'and provokes nothing');
+            seer.session.nearSpot = { seq: 2, spotId: 'stay-2' };
+            assert.notStrictEqual(Revenge.playerSeen(seer, player, now), null, 'a new stay may meet the player again');
+            Defense.clear(seer.session); delete seer.session.pendingPvpProvocation;
+        } finally { Tendency.roll = () => 0.49; }
+    }
 
     const botKiller = character();
     Memory.record(restored, botKiller, true, now);

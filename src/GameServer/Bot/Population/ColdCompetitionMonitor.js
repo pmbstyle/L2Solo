@@ -18,7 +18,6 @@ function hunterSpot(state, spotOf) {
     return spot && state.spotId === spot.id ? spot : null;
 }
 const TendencyRoll = require('../AI/TendencyRoll');
-const { ColdRevengeMonitor } = require('./ColdRevengeMonitor');
 // Over room per target species: the spot aggregate's rule (B9), read here until this scan goes (step 2 S5).
 const { targetPressure } = require('./SpotContest');
 class ColdCompetitionMonitor {
@@ -41,7 +40,6 @@ class ColdCompetitionMonitor {
         this.cursor = 0;
         this.pairs = new Map();
         this.bots = new Map();
-        this.revenge = new ColdRevengeMonitor({ onCooldown, leaderParty });
         this.report = { mode: 'observe', scans: 0, evaluated: 0, outcomes: {}, pvpIntents: 0, recent: [],
             skipped: { cooldown: 0, conflictCooldown: 0, encounterRate: 0, memory: 0, incompleteParty: 0 } };
     }
@@ -60,12 +58,6 @@ class ColdCompetitionMonitor {
             if (party) parties.set(party.partyId, party);
         }
         this.evaluate(entries, memory, timestamp, { elapsed, parties, states, cursor: this.cursor });
-        if (elapsed > 0) {
-            const revenge = this.revenge.sample(entries, memory, timestamp, this.personaFor);
-            this.report.events.push(...revenge);
-            this.report.recent = [...this.report.recent, ...revenge].slice(-12);
-            this.report.revenge = { ...this.revenge.report };
-        }
     }
 
     // Explicit-array compatibility stays above. Worker supplies only affected
@@ -259,7 +251,6 @@ class ColdCompetitionMonitor {
     release(events) {
         for (const event of events) {
             const a = unitKeyOf(event.actor?.partyId, event.actor?.id), b = unitKeyOf(event.peer?.partyId, event.peer?.id);
-            if (event.action === 'revenge') { this.revenge.release([a, b], Number(event.at)); continue; }
             const pairKey = [a, b].sort().join('|');
             if (this.pairs.get(pairKey) === Number(event.at) + PAIR_COOLDOWN_MS) this.pairs.delete(pairKey);
             for (const key of [a, b]) if (this.bots.get(key) === Number(event.at) + BOT_COOLDOWN_MS) this.bots.delete(key);

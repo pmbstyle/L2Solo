@@ -70,7 +70,7 @@ async function run() {
             assert.strictEqual(episode.outcome, 'avoid');
             assert.strictEqual(episode.endedAt, undefined);
             assert.strictEqual(episode.role, undefined);
-            assert.strictEqual(episode.conflictUntil, oldEpisode.conflictUntil);
+            assert.strictEqual(episode.conflictUntil, undefined, 'no conflict window carries into a new episode');
         }
         assert.deepStrictEqual(result.affectedIds, actorIds);
         assert.strictEqual(result.memoryEvents, 0);
@@ -94,7 +94,7 @@ async function run() {
             const party = Party.find(`p${a}`);
             assert.strictEqual(party.stats.coldCompetition.outcome, 'avoid');
             assert.strictEqual(party.stats.coldCompetition.endedAt, undefined);
-            assert.strictEqual(party.stats.coldCompetition.conflictUntil, oldEpisode.conflictUntil);
+            assert.strictEqual(party.stats.coldCompetition.conflictUntil, undefined);
             assert(party.spotId === 'test' && !party.stats.travel, 'the party\'s next run routes it');
             assert.strictEqual(party.nextResolveAt, at, 'the party runs now');
             assert(PartyRisk.excludedSpotIds(party).has('test'), 'the party avoids the spot');
@@ -117,7 +117,7 @@ async function run() {
         for (const id of [...actorIds, ...peerIds]) {
             assert.strictEqual(state(id).stats.coldCompetition.outcome, 'yield');
             assert.strictEqual(state(id).stats.coldCompetition.endedAt, undefined);
-            assert.strictEqual(state(id).stats.coldCompetition.conflictUntil, oldEpisode.conflictUntil);
+            assert.strictEqual(state(id).stats.coldCompetition.conflictUntil, undefined);
         }
         assert.deepStrictEqual(result.affectedIds, actorIds);
         assert(actorIds.every(id => state(id).timing.nextResolveAt === prior + WAIT_MS));

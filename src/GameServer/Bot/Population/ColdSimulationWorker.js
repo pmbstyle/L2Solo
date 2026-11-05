@@ -123,6 +123,7 @@ const { fnv1a32, textDigest } = require('../Fnv1a');
 const WealthCraftPolicy = require('../Economy/WealthCraftPolicy');
 const RequiredPartyFormation = require('./RequiredPartyFormation');
 const SpotContest = require('./SpotContest');
+const EnemyMet = require('./EnemyMet');
 const PartyHuntingTarget = require('./PartyHuntingTarget');
 const ColdCompetitionEpisode = require('./ColdCompetitionEpisode');
 const ColdCompetitionRetreat = require('./ColdCompetitionRetreat');
@@ -989,6 +990,8 @@ function nearArrival(id, previous, row) {
     const to = post.spotId ?? null;
     if (to == null) { Situations.note('spot:left@hot'); return; }
     Situations.note('spot:arrival@hot');
+    // Its enemies standing there (enemy_met; its step: the stay, the post's number, as main's B8).
+    arrivalEnemies({ arriving: [row], spotId: to, step: Number(post.seq), at: Number(row.updatedAt) || Date.now(), proposalOf: () => null });
     if (row.party?.partyId || row.partyId) { Situations.note('spot:contest:hot_party'); return; }
     const verdict = arrivalContest({ spotId: to, members: [row], principal: row, step: Number(row.nearSeq) || 0,
         at: Number(row.updatedAt) || Date.now() });
@@ -1486,41 +1489,78 @@ function arrivalContest({ spotId, members, principal, party = null, step, at, ev
     competition?.holdPairs(arriving.key, verdict.met, at);
     return verdict;
 }
-// An arriving unit's outcomes that touch a standing unit (offer_party, contest, a
-// PvP intent): held until main acknowledges the arriving step's commit (its proposal,
-// proposalId), then sent in the competition frame (ColdCompetitionCandidates.queueEvent),
-// whose actions fence both sides on their revisions (ColdCompetitionActions). One per
-// arriving principal. Only that step's accepted commit sends it, with the committed
-// revisions (the bot's, its party row's: table changes reach the worker before the
-// ack); any other ack, a refused one, the bot leaving the far simulation, the worker's
-// stop or an age past the event's freshness from the arrival (SpotContest.EVENT_TTL_MS)
-// drops it, counted (spot:contest:stale / unsent), never re-fenced.
+// An arrival's outcomes that touch a standing unit (a contest's offer_party, contest or
+// PvP intent; a cold enemy_met): held until main acknowledges the arriving step's commit
+// (its proposal, proposalId), then sent in the competition frame
+// (ColdCompetitionCandidates.queueEvent), whose actions fence both sides on their
+// revisions (ColdCompetitionActions, ColdPartyConflict). Keyed per arriving bot. Only
+// that step's accepted commit sends them, with the arriving side's committed revisions
+// (the bot's, its party row's: table changes reach the worker before the ack); any other
+// ack, a refused one, the bot leaving the far simulation, the worker's stop or an age past
+// the event's freshness from the arrival (SpotContest.EVENT_TTL_MS) drops them, counted
+// (spot:contest:stale / unsent), never re-fenced.
 const contestOutbox = new Map();
 function dropContest(id, why) {
-    if (contestOutbox.delete(Number(id))) Situations.note(`spot:contest:${why}`);
+    const entry = contestOutbox.get(Number(id));
+    if (!entry) return;
+    contestOutbox.delete(Number(id));
+    for (let i = 0; i < entry.events.length; i++) Situations.note(`spot:contest:${why}`);
+}
+function outboxAdd(id, proposalId, event) {
+    if (!proposalId) { Situations.note('spot:contest:unsent'); return; }
+    const entry = contestOutbox.get(Number(id));
+    if (entry?.proposalId === proposalId) entry.events.push(event);
+    else { if (entry) dropContest(id, 'stale'); contestOutbox.set(Number(id), { proposalId, events: [event] }); }
 }
 function contestAcked(results, now = Date.now()) {
     for (const result of results || []) {
         const id = Number(result?.characterId), entry = contestOutbox.get(id);
         if (!entry) continue;
+        if (!result.ok) { dropContest(id, 'unsent'); continue; }
+        const committed = kernel.states.get(id)?.state;
+        if (result.proposalId !== entry.proposalId || committed?.phase !== 'cold') { dropContest(id, 'stale'); continue; }
+        if (!competitionCandidates) { dropContest(id, 'unsent'); continue; }
         contestOutbox.delete(id);
-        const committed = result.ok ? kernel.states.get(id)?.state : null;
-        if (!result.ok) { Situations.note('spot:contest:unsent'); continue; }
-        if (result.proposalId !== entry.proposalId || committed?.phase !== 'cold' || now - entry.event.at > SpotContest.EVENT_TTL_MS) {
-            Situations.note('spot:contest:stale'); continue;
+        const party = partyIdOf(committed) ? kernel.partyOf(id) : null;
+        const fenced = side => Number(side.id) !== id ? side : { ...side, revision: Number(committed.simulation?.revision || 0),
+            memoryRevision: kernel.interactionMemory.revision(id),
+            ...(party && String(party.partyId) === String(side.partyId) ? { partyRevision: party.revision } : {}) };
+        for (const event of entry.events) {
+            if (now - event.at > SpotContest.EVENT_TTL_MS) { Situations.note('spot:contest:stale'); continue; }
+            competitionCandidates.queueEvent({ ...event, actor: fenced(event.actor), peer: fenced(event.peer) });
         }
-        if (!competitionCandidates) { Situations.note('spot:contest:unsent'); continue; }
-        const party = entry.event.actor.partyId ? kernel.partyOf(id) : null;
-        competitionCandidates.queueEvent({ ...entry.event, actor: { ...entry.event.actor,
-            revision: Number(committed.simulation?.revision || 0), memoryRevision: kernel.interactionMemory.revision(id),
-            ...(party && String(party.partyId) === String(entry.event.actor.partyId) ? { partyRevision: party.revision } : {}) } });
         wakeLoopIfSooner();
     }
 }
+const partyIdOf = state => state?.party?.partyId || state?.partyId || null;
 // The outbox's own end: entries past the freshness from their arrival (a step whose
 // ack never came) go, counted. Each heartbeat.
 function sweepContestOutbox(now = Date.now()) {
-    for (const [id, entry] of contestOutbox) if (now - entry.event.at > SpotContest.EVENT_TTL_MS) dropContest(id, 'stale');
+    for (const [id, entry] of contestOutbox) if (entry.events.every(event => now - event.at > SpotContest.EVENT_TTL_MS)) dropContest(id, 'stale');
+}
+// enemy_met at an arrival (EnemyMet, situations.md A2/B10/B11): the arriving bots against
+// the bots standing on the spot (the occupancy index, those on their way left out), both
+// ways. A meeting of far bots goes to the outbox of its arriving one (proposalOf(id): the
+// arriving step's proposal); one of two bodies near a player goes to main at once (a
+// spot_command, BotRevenge.fromSpot); a mixed pair is counted and traced only.
+function arrivalEnemies({ arriving, spotId, step, at, proposalOf }) {
+    const keys = new Set(arriving.map(stateKey)), standing = [];
+    for (const [key, state] of kernel.occupancy.members(spotId, 'physical')) {
+        if (!keys.has(key) && state?.activity !== 'traveling') standing.push(state);
+    }
+    if (!standing.length) return;
+    standing.sort((a, b) => Number(a.characterId) - Number(b.characterId));
+    const found = EnemyMet.meet({ arriving, standing, spotId, at, step, memory: kernel.interactionMemory,
+        personaFor: state => BotPersona.of(state) });
+    if (!found) return;
+    if (found.kind === 'hot') {
+        send('spot_command', { commands: [EnemyMet.hotCommand({ meeting: found.meeting, spotId, at, step })] });
+        return;
+    }
+    const event = EnemyMet.coldEvent({ meeting: found.meeting, spotId, at, step, partyOf: id => kernel.partyOf(id),
+        memoryRevision: id => kernel.interactionMemory.revision(id) });
+    const arrived = keys.has(stateKey(found.meeting.holder)) ? found.meeting.holder : found.meeting.peer;
+    outboxAdd(arrived.characterId, proposalOf(Number(arrived.characterId)), event);
 }
 // The arriving unit's own outcome on its states (its step's patch): avoid raises
 // contest_lost with the spot as its mark (it wakes the earning spot at once); yield
@@ -1537,8 +1577,7 @@ function contestOutcome(verdict, stats, principal, at, proposalId = null) {
             action: 'yield', peerId: verdict.peer.id, wait: { start: at, until: at + SpotContest.WAIT_MS } });
         return stats;
     }
-    if (proposalId) contestOutbox.set(Number(principal.characterId), { event: verdict.event, proposalId });
-    else Situations.note('spot:contest:unsent');
+    outboxAdd(principal.characterId, proposalId, verdict.event);
     return stats;
 }
 
@@ -1551,6 +1590,8 @@ function soloArrival(state, result, timestamp) {
     if (!travel?.spotId || travel.reason === 'party_spot_replan' || result?.patch?.activity !== 'hunting'
         || String(result.patch.spotId) !== String(travel.spotId)) return null;
     const arrived = { ...state, ...result.patch, stats: { ...state.stats, ...result.patch.stats } };
+    arrivalEnemies({ arriving: [arrived], spotId: travel.spotId, step: SpotRiskPolicy.stepCount(state), at: timestamp,
+        proposalOf: id => kernel.proposalIdOf(id) });
     const verdict = arrivalContest({ spotId: travel.spotId, members: [arrived], principal: arrived,
         step: SpotRiskPolicy.stepCount(state), at: timestamp, evacuating: travel.reason === 'unsafe_ground_evacuation' });
     if (!verdict || verdict.action === 'coexist') return null;
@@ -1569,9 +1610,12 @@ function soloArrival(state, result, timestamp) {
 // objective and a fallback spot. avoid: the party's competition avoid of the spot
 // (ColdCompetitionRetreat.partyAvoid, read by its next spot search) and contest_lost on
 // the leader; yield: the party waits; one touching a standing unit: the outbox, keyed
-// on the leader. Returns { party, members } changed, or null.
-function partyArrival({ party, members, spotId, timestamp = Date.now(), proposalId = null }) {
+// on the leader. proposalOf(id): a member's proposal in this round. Returns { party,
+// members } changed, or null.
+function partyArrival({ party, members, spotId, timestamp = Date.now(), proposalOf = () => null }) {
     if (!spotId || !(party?.memberIds || []).length || !members.length) return null;
+    // Its members meet their enemies standing there (enemy_met), wherever the party goes.
+    arrivalEnemies({ arriving: members, spotId, step: PartySpotRiskPolicy.rounds(party), at: timestamp, proposalOf });
     if (String(spotId) === String(party.stats?.objective?.spotId ?? '')) {
         Situations.note('spot:arrival:objective');
         return null;
@@ -1590,7 +1634,7 @@ function partyArrival({ party, members, spotId, timestamp = Date.now(), proposal
         const stats = contestOutcome(verdict, { ...(party.stats || {}) }, leader, timestamp);
         return { party: { ...party, stats }, members };
     }
-    contestOutcome(verdict, null, leader, timestamp, proposalId);
+    contestOutcome(verdict, null, leader, timestamp, proposalOf(leaderId));
     return null;
 }
 
@@ -2383,8 +2427,7 @@ function startKernel(config = {}) {
                         recent: [], frame: { ...frame, events: [] }, at: frame.at, outcomes,
                         scans: large, evaluated: large, pvpIntents: large, activeHunters: large, lastSampleMs: large,
                         deliverySendFailures: large, lastScanEvents: 160, consumedSpotKeys: 32, consumedActorKeys: 128,
-                        pendingSpotKeys: large, pendingActorKeys: large, deliveryMode: 'addressed',
-                        revenge: { evaluated: large, intents: large, at: frame.at, active: 128, sampledActors: 128, overflow: false } },
+                        pendingSpotKeys: large, pendingActorKeys: large, deliveryMode: 'addressed' },
                     tables: tables.summary(), heapUsed: large, rss: large, v8Heap: { used: large, total: large, external: large, limit: large, afterGc: large, afterGcMax: large, late: large },
                     eventLoopUtilization: 1, eluActiveMs: large, eluIdleMs: large, eventLoopLagP95Ms: large,
                     eventLoopLagMaxMs: large

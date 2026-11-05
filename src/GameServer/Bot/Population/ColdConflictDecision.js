@@ -57,7 +57,7 @@ function refresh(event, { life, parties, memory, personaFor }, timestamp) {
             towardPeer: ab, towardActor: ba, rng: () => rolls[index++], key: event.key, willing: event.willing });
         if (decision.action !== 'contest') return { reason: 'decision_changed', decision: decision.action, recomputed: true };
     }
-    // Revenge has its own saved roll and is re-evaluated by ColdPartyConflict.
+    // A meeting (revenge, a clan war) has its own saved roll and is re-evaluated by ColdPartyConflict.
     return { event: { ...event, ...decision, actor: a.participant, peer: b.participant }, refreshed: true, recomputed: event.action === 'contest' };
 }
 

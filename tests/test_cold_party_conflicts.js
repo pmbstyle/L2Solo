@@ -67,8 +67,9 @@ async function run() {
     assert.strictEqual(state(1).stats.coldCompetition.endedAt, undefined);
     assert.strictEqual(state(1).stats.coldCompetition.avoid.spotId, 'elsewhere');
     assert.strictEqual(first.matchup, 'party_vs_solo');
-    assert.strictEqual(Party.find('party-1').stats.coldCompetition.conflictUntil, at + 180000);
-    assert.strictEqual(state(4).stats.coldCompetition.conflictUntil, at + 180000);
+    // No conflict window after it: the pair meets again only at a later arrival (enemy_met).
+    assert.strictEqual(Party.find('party-1').stats.coldCompetition.conflictUntil, undefined);
+    assert.strictEqual(state(4).stats.coldCompetition.conflictUntil, undefined);
     assert.deepStrictEqual(first.affectedIds, [4]);
     assert.strictEqual(first.outcome, 'displaced', 'a party of three pushes a solo off the spot');
     assert.strictEqual(first.memoryEvents, 3, 'a nearby recovering teammate can support the dispute without invalidating the roster');
@@ -136,10 +137,6 @@ async function run() {
     assert.strictEqual(Party.find('party-27').nextResolveAt, at + 45000);
     assert(!state(29).stats.coldCompetition.wait);
     assert.strictEqual(Memory.snapshot(29).relations.length, 0);
-    const rotated = event(27, 30);
-    rotated.at = at + 120001;
-    assert.strictEqual((await Conflict.apply({ ...base, now: () => rotated.at, event: rotated })).reason, 'conflict_cooldown',
-        'changing the instigator cannot evade the durable group cooldown');
 
     await createParty([31, 32]);
     const bystander = await apply(31, 33, { rng: () => 0.95 });
@@ -287,7 +284,7 @@ async function run() {
     const persisted = await Database.execute(['SELECT statsJson,nextResolveAt FROM bot_background_parties WHERE partyId=?', ['party-6']]);
     assert.strictEqual(persisted[0].nextResolveAt, pausedParty.nextResolveAt);
     assert.strictEqual(JSON.parse(persisted[0].statsJson).coldCompetition.wait.until, at + WAIT_MS);
-    assert.strictEqual(JSON.parse(persisted[0].statsJson).coldCompetition.conflictUntil, at + 600000);
+    assert.strictEqual(JSON.parse(persisted[0].statsJson).coldCompetition.conflictUntil, undefined, 'no conflict window persists');
     assert.strictEqual((await Repository.load(18)).relations.length, 9);
     console.log('Cold party conflicts: all matchups, 9v9 bounds, individual roles, shared time, CAS rollback and reopen passed');
 }

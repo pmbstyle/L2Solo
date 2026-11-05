@@ -62,7 +62,7 @@ async function run() {
     assert.strictEqual(freshYield.outcome, 'yield');
     assert.strictEqual(freshYield.role, undefined);
     assert.strictEqual(freshYield.endedAt, undefined);
-    assert.strictEqual(freshYield.conflictUntil, oldEpisode.conflictUntil, 'peaceful decisions preserve the combat cooldown');
+    assert.strictEqual(freshYield.conflictUntil, undefined, 'no conflict window carries into a new episode (a pair meets again at an arrival)');
     assert.deepStrictEqual(freshYield.avoid, oldEpisode.avoid);
     assert.strictEqual(Life.cachedState(1).timing.nextResolveAt, before.timing.nextResolveAt + WAIT_MS);
     assert.strictEqual((await actions.apply(yieldEvent)).ok, false, 'duplicate delivery cannot apply another pause');

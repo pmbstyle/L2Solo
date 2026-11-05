@@ -14,6 +14,8 @@ const MAX_APPLIED = 4, MAX_ATTEMPTS = 8, BUDGET_MS = 75;
 const MAX_LEAVES = 2, MAX_LEAVE_ATTEMPTS = 4;
 const leaving = e => e.action === 'avoid' || e.action === 'yield';
 const count = (map, key) => { if (!DiagnosticConfig.developerDiagnostics) return; map[key] = (map[key] || 0) + 1; };
+// A meeting of grievance peers (enemy_met, the war director): no spot pressure is its cause.
+const MEETINGS = new Set(['revenge', 'clan_war']);
 const priority = e => e.action === 'revenge' || e.pvpIntent ? 3 : e.action === 'offer_party' ? 2 : e.action === 'contest' ? 1 : 0;
 
 function eligible(state, event, participant, now) {
@@ -51,7 +53,8 @@ class ColdCompetitionActions {
         this.lastScanAt = options.framed ? Math.max(this.lastScanAt, forecast.at) : forecast.at;
         const candidates = (forecast.events || forecast.recent || []).filter(e => e.at === forecast.at
             && (e.action === 'avoid' || e.action === 'yield' || (e.action === 'contest' && this.conflictsEnabled())
-                || (e.action === 'revenge' && this.conflictsEnabled() && this.pvpEnabled()) || (e.action === 'offer_party' && e.accepted)))
+                || (e.action === 'revenge' && this.conflictsEnabled() && this.pvpEnabled())
+                || (e.action === 'clan_war' && this.pvpEnabled()) || (e.action === 'offer_party' && e.accepted)))
             .sort((a, b) => priority(b) - priority(a));
         this.running = (async () => {
             const started = this.budgetNow();
@@ -119,8 +122,8 @@ class ColdCompetitionActions {
     async apply(event) {
         const now = this.now();
         if (!event.key || event.at > now || now - event.at > TTL_MS || event.actor.id === event.peer.id
-            || (event.action !== 'revenge' && !(event.pressure > 1))) return { ok: false, reason: 'invalid_or_expired' };
-        if (event.action === 'contest' || event.action === 'revenge') {
+            || (!MEETINGS.has(event.action) && !(event.pressure > 1))) return { ok: false, reason: 'invalid_or_expired' };
+        if (event.action === 'contest' || MEETINGS.has(event.action)) {
             const current = require('./ColdConflictDecision').refresh(event, this, now);
             // A participant written since the worker's scan: main decided again.
             if (current.recomputed) DiagnosticConfig.developerDiagnostics && (this.report.decisionRecomputes++);
@@ -135,15 +138,15 @@ class ColdCompetitionActions {
         }
         if (event.action === 'clan_war') {
             if (!this.pvpEnabled()) return { ok: false, reason: 'forecast_only' };
-            return require('./ColdPartyConflict').apply({ ...this, event, waitMs: 1000, cooldownMs: 15000, disputeCooldownMs: 15000 });
+            return require('./ColdPartyConflict').apply({ ...this, event, waitMs: 1000 });
         }
         if (event.action === 'revenge') {
             if (!this.conflictsEnabled() || !this.pvpEnabled()) return { ok: false, reason: 'forecast_only' };
-            return require('./ColdPartyConflict').apply({ ...this, event, waitMs: WAIT_MS, cooldownMs: CONFLICT_COOLDOWN_MS, disputeCooldownMs: DISPUTE_COOLDOWN_MS });
+            return require('./ColdPartyConflict').apply({ ...this, event, waitMs: WAIT_MS });
         }
         if (event.action === 'contest' && (participants.some(p => p.partyId) || event.pvpIntent === true && this.pvpEnabled())) {
             if (!this.conflictsEnabled()) return { ok: false, reason: 'forecast_only' };
-            return require('./ColdPartyConflict').apply({ ...this, event, waitMs: WAIT_MS, cooldownMs: CONFLICT_COOLDOWN_MS, disputeCooldownMs: DISPUTE_COOLDOWN_MS });
+            return require('./ColdPartyConflict').apply({ ...this, event, waitMs: WAIT_MS });
         }
         const states = participants.map(p => this.life.cachedState(p.id));
         if (!states.every((s, i) => eligible(s, event, participants[i], now))) return { ok: false, reason: 'state_changed_or_busy' };

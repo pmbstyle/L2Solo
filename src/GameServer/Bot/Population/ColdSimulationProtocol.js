@@ -45,8 +45,20 @@ const WORKER_TYPES = new Set([
     'fence_ack',
     'drained',
     'table_resync',
+    // The spot aggregate's commands to bodies near a player (EnemyMet.hotCommand):
+    // { commands: [{ kind: 'enemy_met', key, at, reason, actorId, peerId, roll, chance }] }.
+    'spot_command',
     'fault'
 ]);
+// One spot command (spot_command; validSpotCommand). At most SPOT_COMMANDS a message.
+const SPOT_COMMANDS = 16;
+const unit = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+function validSpotCommand(row) {
+    return !!row && typeof row === 'object' && row.kind === 'enemy_met' && typeof row.key === 'string' && row.key.length > 0
+        && row.key.length <= 240 && Number.isSafeInteger(row.at) && row.at > 0 && ['revenge', 'clan_war'].includes(row.reason)
+        && Number.isSafeInteger(row.actorId) && row.actorId > 0 && Number.isSafeInteger(row.peerId) && row.peerId > 0
+        && row.actorId !== row.peerId && unit(row.roll) && unit(row.chance);
+}
 
 // The message and page limits are UTF-8 bytes of the value's JSON. They are
 // counted here without building the text: stringifying a ~19 KB bot state
@@ -333,6 +345,10 @@ function validateEnvelope(message, direction, options = {}) {
                     || payload.joint.raidAssessment !== undefined && !validRaidAssessment(payload.joint, payload.sources))
                 || !validPartyIncomeReviews(payload.joint, payload.sources)
             : typeof payload.reason !== 'string')) return { ok: false, reason: 'invalid_party_goal_result' };
+    }
+    if (message.type === 'spot_command' && (!Array.isArray(message.payload.commands) || !message.payload.commands.length
+        || message.payload.commands.length > SPOT_COMMANDS || !message.payload.commands.every(validSpotCommand))) {
+        return { ok: false, reason: 'invalid_spot_command' };
     }
     const meeting = ['command_request', 'command_ack'].includes(message.type)
         && (message.payload.requests || message.payload.results || []).some(row => row?.kind === 'meeting');

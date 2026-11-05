@@ -86,7 +86,7 @@ module.exports.probe = async ({ kind, id, spotId, reason, remove, party, outcome
     }
     if (kind === 'party') {
         const members = party.memberIds.map(member => kernel.states.get(member).state);
-        const out = kernel.partyArrival({ party, members, spotId, timestamp: Date.now(), proposalId: 'party-step' });
+        const out = kernel.partyArrival({ party, members, spotId, timestamp: Date.now(), proposalOf: () => 'party-step' });
         const outbox = contestOutbox.has(party.leaderId);
         contestOutbox.delete(party.leaderId);
         if (!out) return { out: null, seen, outbox };
@@ -110,7 +110,7 @@ module.exports.probe = async ({ kind, id, spotId, reason, remove, party, outcome
     const contested = soloArrival(traveling, result, now);
     kernel.inFlight.delete(id);
     const stats = (contested || result).patch.stats;
-    const outbox = contestOutbox.get(id)?.event.action || null;
+    const outbox = contestOutbox.get(id)?.events[0].action || null;
     const proposalId = contestOutbox.get(id)?.proposalId || null;
     return { arrived: result.patch.activity === 'hunting' && result.patch.spotId === spotId, changed: !!contested,
         marks: marksOf({ ...traveling.stats, ...stats }), woken: Catalogue.woken({ ...traveling.stats, ...stats }, 'earning_spot'),

@@ -781,7 +781,6 @@ function recordFromSession(session, phase, reason = '') {
             flagUntil: actor.fetchPvpFlag?.() === 1 ? Number(session.pvpFlagUntil || 0) : 0 },
         pvpEnemies: BotEnemyMemory.snapshot(session),
         pvpIncidents: invoke('GameServer/Social/PvpResponsibility').snapshot(actor, timestamp),
-        revengeUntil: Math.max(Number(session.nextRevengeAt || 0), Number(cache.get(characterId)?.stats?.revengeUntil || 0)),
         clanGearExchangeRevision: Number(cache.get(characterId)?.stats?.clanGearExchangeRevision || 0),
         clanLevelSpVersion: Number(cache.get(characterId)?.stats?.clanLevelSpVersion || 0),
         clanInventoryRevision: Number(cache.get(characterId)?.stats?.clanInventoryRevision || 0),

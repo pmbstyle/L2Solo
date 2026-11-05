@@ -150,7 +150,7 @@ for (const hp of [100, 20]) {
     enemy.flag = 0;
     bot.moveTo = () => ({ usable: true });
     own.pendingPvpProvocation = { target: enemy, expiresAt: now + 10000 };
-    assert.strictEqual(invoke('GameServer/Bot/AI/BotRevenge').tryStart(own, now, () => 0), false,
+    assert.strictEqual(invoke('GameServer/Bot/AI/BotRevenge').flushPending(own, now), false,
         'karma washing takes priority over starting revenge');
     assert.strictEqual(own.pendingPvpProvocation, undefined);
     assert.strictEqual(Threats.canDefendWhileChaotic(own, enemy, now), false);

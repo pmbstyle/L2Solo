@@ -5,7 +5,6 @@
 const Config = require('../Bot/Population/PopulationConfig');
 const { scaleChance, karmaCost } = require('./PvpAggression');
 const Visible = require('./VisibleStrength');
-const RETRY_MS = 10 * 60000;
 const NOTICE_RADIUS = 900;
 // A mutual clan war is a grievance of its own (C4: its kills cost no karma): the
 // hostility it stands for when no personal one is stronger (ours).
@@ -45,4 +44,4 @@ function evaluate(relation, persona = {}, standing = {}) {
     return { chance, reason: chance > 0 ? grievance ? 'personal_grievance' : 'clan_war' : 'restraint',
         hostility: feeling?.hostility ?? 0, fear: feeling?.fear ?? 0 };
 }
-module.exports = { evaluate, startsNoFight, RETRY_MS, NOTICE_RADIUS };
+module.exports = { evaluate, startsNoFight, NOTICE_RADIUS };

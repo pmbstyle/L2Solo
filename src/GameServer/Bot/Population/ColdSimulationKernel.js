@@ -1977,7 +1977,7 @@ class ColdSimulationKernel {
                 // own arrivals do not.
                 const contested = this.partyArrival?.({ party: arrivedParty, members: arrivedMembers,
                     spotId: partyTravel.spotId, timestamp: startedAt,
-                    proposalId: stepProposalId(Number(run.party.leaderId), run.startedAt) });
+                    proposalOf: id => stepProposalId(Number(id), run.startedAt) });
                 if (contested) {
                     arrivedMembers.splice(0, arrivedMembers.length, ...contested.members);
                     arrivedParty = contested.party;

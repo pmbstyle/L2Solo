@@ -166,8 +166,24 @@ async function run() {
     const pressure = await DB.fetchClanWarPressure(20, at - 60000, at + 1);
     assert.equal(pressure[0].losses, 2, 'only the accepted cold battle reports its committed party casualties');
     assert.equal(pressure[0].victims, 2, 'preview resolutions and the refused stale impact report no deaths');
+    // A cold clan-war meeting (enemy_met at an arrival, B11) reaches main's actions as the worker
+    // builds it (no spot pressure) and is fought after the standing enemy committed a step
+    // in between (main refreshes its revision; the meeting's own roll stands).
+    {
+        const { ColdCompetitionActions } = require('../src/GameServer/Bot/Population/ColdCompetitionActions');
+        const EnemyMet = require('../src/GameServer/Bot/Population/EnemyMet');
+        at = Date.now();
+        const meetingEvent = EnemyMet.coldEvent({ meeting: { holder: state(4), peer: state(18), reason: 'clan_war', roll: 0, chance: 0.5 },
+            spotId: 'test', at, step: 1, partyOf: () => null, memoryRevision: id => Memory.revision(id) });
+        const standing = state(18);
+        const stepped = await Owner.commitBatch([{ revision: Number(standing.simulation.revision), nextState: { ...standing,
+            stats: { ...standing.stats, stepCount: Number(standing.stats.stepCount || 0) + 1 } }, options: {} }], { timestamp: at });
+        assert(stepped[0]?.ok && state(18).simulation.revision !== meetingEvent.peer.revision, 'fixture: the standing enemy stepped');
+        const met = await new ColdCompetitionActions({ ...base, conflictsEnabled: () => true }).apply(meetingEvent);
+        assert(met.ok && met.pvp, `a cold clan-war meeting is fought: ${JSON.stringify({ ok: met.ok, reason: met.reason, detail: met.detail })}`);
+    }
     const counts = await DB.execute(['SELECT SUM(pk) AS pk,SUM(karma) AS karma,SUM(pvp) AS pvp FROM characters']);
-    assert.equal(counts[0].pk, 0); assert.equal(counts[0].karma, 0); assert.equal(counts[0].pvp, 2);
+    assert.equal(counts[0].pk, 0); assert.equal(counts[0].karma, 0); assert(counts[0].pvp >= 2);
     const savedSocial = JSON.parse((await DB.execute(['SELECT snapshotJson FROM clan_social_memory WHERE clanId=20']))[0]?.snapshotJson || '{"relations":[]}');
     assert(!savedSocial.relations.some(r => r.discipline?.stage && r.discipline.stage !== 'clear'), 'lawful war cannot punish the defender clan members');
     const savedOwn = JSON.parse((await DB.execute(['SELECT snapshotJson FROM clan_social_memory WHERE clanId=10']))[0].snapshotJson);

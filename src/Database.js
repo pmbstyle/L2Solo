@@ -2073,6 +2073,16 @@ function applySchemaMigrations() {
                 OR json_type(statsJson, '$.coldCompetition.avoid') IS NOT NULL);
             UPDATE bot_background_parties SET statsJson = json_remove(statsJson, '$.partySpotRisk.capacityBackoffs')
             WHERE json_valid(statsJson) AND json_type(statsJson, '$.partySpotRisk.capacityBackoffs') IS NOT NULL;
+        `)],
+        // enemy_met (a meeting at an arrival) replaced the revenge and conflict windows:
+        // a bot's revengeUntil and a bot's or a party's coldCompetition.conflictUntil have
+        // no reader left. A new name: worlds that ran the one above keep it.
+        ['drop-revenge-and-conflict-windows', () => connection.exec(`
+            UPDATE bot_life_state SET statsJson = json_remove(statsJson, '$.revengeUntil', '$.coldCompetition.conflictUntil')
+            WHERE json_valid(statsJson) AND (json_type(statsJson, '$.revengeUntil') IS NOT NULL
+                OR json_type(statsJson, '$.coldCompetition.conflictUntil') IS NOT NULL);
+            UPDATE bot_background_parties SET statsJson = json_remove(statsJson, '$.coldCompetition.conflictUntil')
+            WHERE json_valid(statsJson) AND json_type(statsJson, '$.coldCompetition.conflictUntil') IS NOT NULL;
         `)]
     ];
     const migrate = (apply, record) => {
