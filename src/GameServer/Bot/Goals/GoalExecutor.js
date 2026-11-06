@@ -22,8 +22,10 @@ function marketTown(name = 'Giran') {
 }
 
 // A bot with karma travels only to Floran: ColdTrip.townPlan refuses the
-// other towns. economy: the caller's economy of this same state, if it has one.
-function beginMarketTravel(state, goal, timestamp = Date.now(), { economy = null } = {}) {
+// other towns. The plan's step or errand travels as its decision weighed it
+// (EconomicValuation.visitPays, ColdMarketService.acquire; situations step 4
+// C9): who sells what is read at the market, on arrival (decision 11-02).
+function beginMarketTravel(state, goal, timestamp = Date.now()) {
     if (!state || !goal || ['traveling', 'shopping', 'merchant', 'crafting'].includes(state.activity)) return null;
     const ticket = state.stats?.partyMarketReturn;
     if (Number(ticket?.until) > 0 && Number(ticket.until) <= timestamp)
@@ -43,27 +45,6 @@ function beginMarketTravel(state, goal, timestamp = Date.now(), { economy = null
     if ((buyingGear || buyingMaterial) && Number(state.stats?.marketRetryAfter || 0) > timestamp) return null;
     if (sellingInventory && !forcedInventoryCleanup
         && invoke('GameServer/Bot/Economy/ItemDisposition').saleRetryHolds(state)) return null;
-
-    if (buyingGear || buyingMaterial || buyingErrand) {
-        const selfId = Number(goal.target?.itemId);
-        const errand = buyingErrand ? CombinedErrands.pending(state, timestamp)
-            .find(row => Number(row.selfId) === selfId && row.town === goal.plan.marketTown) : null;
-        const request = { ...(errand || {}), selfId, amount: Number(goal.target?.amount || 1),
-            town: goal.plan.marketTown, purpose: errand?.purpose || goal.plan?.purpose };
-        for (const field of ['valueHours', 'survivalCost']) {
-            if (goal.plan?.[field] !== undefined) request[field] = goal.plan[field];
-        }
-        if (goal.plan?.valueRate !== undefined) request.r = goal.plan.valueRate;
-        // The plan's own shopping step: the build asked its visit (EconomicValuation.visitPays)
-        // and who sells what is read at the market, on arrival (decision 11-02).
-        const planned = !errand && goal.plan?.economyActivity === 'shopping';
-        // lazy: cycle ColdMarketService reads this module at its load
-        if (!planned && !invoke('GameServer/Bot/Economy/ColdMarketService').canTravelForPurchase(state, request,
-            economy ? { timestamp, economy } : { timestamp })) {
-            DecisionEvents.refused(`trip:${request.purpose || goal.type}`);
-            return null;
-        }
-    }
 
     // A sale goes where its goal says (the town the shop opens in), else to
     // the sale town; a new decision of the shop town travels with the bot.

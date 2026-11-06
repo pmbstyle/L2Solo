@@ -18,7 +18,6 @@ const ColdEconomyDecision = require('../Population/ColdEconomyDecision');
 const EconomicTrip = require('./EconomicTrip');
 const EconomicValuation = require('./EconomicValuation');
 const PriceDecision = require('./PriceDecision');
-const ProductionPolicy = require('./ProductionPolicy');
 const Trace = require('../DecisionTrace');
 
 function purchaseObservation(state, selfId, requested, budget, phase, reason, extra) {
@@ -334,11 +333,7 @@ function planPurchase(state, selfId, amount, options = {}) {
         // personal wish certificate for a bilateral conditional advertisement.
         // Use backed shops and NPC stock; do not keep restaging an ineligible meeting.
         if (options.purpose === 'raid_supply' && (line?.conditional || line?.custodyPolicy === 1)) return false;
-        const allowed = personalOfferAllowed(line, state);
-        if (line?.conditional || line?.custodyPolicy === 1) {
-            options.onAdmissionRead?.(Number(line.ownerId ?? line.sourceId), allowed, line);
-        }
-        return allowed;
+        return personalOfferAllowed(line, state);
     };
     const acceptFill = (line, count) => {
         const refused = priceRefused(state, line, count, board);
@@ -435,53 +430,6 @@ function worthwhileTravel(state, plan, options = {}) {
     } };
     return EconomicValuation.tripPays(valuation, plan, route, options);
 }
-const deniedTrips = new WeakMap();
-const ADMISSION_OWNER_LIMIT = 8;
-function canTravelForPurchase(state, request, options = {}) {
-    if (request?.purpose === 'raid_supply' && require('../Population/RaidSupplyPolicy').held(state)?.id === request.raidPreparationId) return true;
-    if (request?.purpose === 'clan') return true;
-    const id = Number(request?.selfId), amount = Number(request?.amount);
-    if (!(id > 0) || !(amount > 0)) return false;
-    const economy = options.economy || ColdEconomyDecision.economyFor(state);
-    const board = invoke('GameServer/AfkTrade/AfkTradeService').boardIndex();
-    // One refusal lives only with its held prepared plan (perf C1: each view
-    // of one plan shares it). Public quote
-    // versions omit membership, so retain at most eight observed owner/allowed
-    // pairs and recheck them through the same indexed admission on a hit.
-    // A built context names its inputs (inputKey), a near body's held view
-    // its card's (inputHash).
-    let key = null;
-    if (options.economy && (economy.inputKey || economy.inputHash) && board?.itemRevision && !options.cost) {
-        const rates = invoke('GameServer/ProgressionRates').profile();
-        const token = JSON.stringify([request, Number(state.adena), state.stats?.money,
-            // The whole route frame, not the route key: the funding reads the scroll count.
-            JSON.stringify(EconomicTrip.frame(state)), board.itemRevision(id), rates.multiplier, rates.adena,
-            ProductionPolicy.shotsDisabled()]);
-        if (token.length <= 2048) key = token;
-        const previous = key && deniedTrips.get(economy.plan || economy);
-        if (previous?.key === key && previous.owners.every(([offer, allowed]) =>
-            personalOfferAllowed(offer, state) === allowed)) return false;
-    }
-    const owners = [];
-    let overflow = false;
-    const onAdmissionRead = key ? (ownerId, allowed, line) => {
-        if (overflow) return;
-        const offer = { custodyPolicy: 1, ownerId, town: line?.town, storeType: line?.storeType, sourceType: line?.sourceType };
-        const held = owners.find(pair => pair[0].ownerId === ownerId && pair[0].town === offer.town
-            && pair[0].storeType === offer.storeType && pair[0].sourceType === offer.sourceType);
-        if (held) { held[1] = allowed; return; }
-        if (owners.length === ADMISSION_OWNER_LIMIT) { overflow = true; return; }
-        owners.push([offer, allowed]);
-    } : undefined;
-    const plan = planPurchase(state, id, amount, { ...request, ...options, onAdmissionRead,
-        cost: options.cost || (typeof economy.trip === 'function' ? economy.trip : null),
-        ...(request.town ? { towns: [request.town] } : {}), currentFunding: true });
-    const allowed = worthwhileTravel(state, plan, { ...request, ...options, economy });
-    if (key && !allowed && !overflow) deniedTrips.set(economy.plan || economy, { key, owners });
-    else deniedTrips.delete(economy.plan || economy);
-    return allowed;
-}
-
 // The visit ended: completed, its arrival counted once on the visit clock
 // (a visit already ended counts no second arrival).
 function endVisit(current) {
@@ -1037,7 +985,6 @@ const ColdMarketService = {
     buyOffer,
     tripFrom,
     planPurchase,
-    canTravelForPurchase,
     buyHere,
     acquire,
     acquireMaterials,

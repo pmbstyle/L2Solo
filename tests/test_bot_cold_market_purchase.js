@@ -42,7 +42,6 @@ function purchaseOnCard(state, goal) {
 DataCache.init();
 
 const originals = {
-    canTravelForPurchase: ColdMarketService.canTravelForPurchase,
     reconcileBotClanMembership: Database.reconcileBotClanMembership,
     execute: Database.execute,
     fetchItems: Database.fetchItems,
@@ -366,9 +365,7 @@ async function run() {
     // ARCH-NOTE: preserve this legacy journey's original bot77 account marker.
     // The new bot_77 receipt identity additionally admits remote-trade planning,
     // which is a different route consumer; these are raw gatekeeper assertions.
-    // This section verifies route payment after a declared approved departure;
-    // actual quantity/utility admission is tested in test_purchase_trip_admission.
-    ColdMarketService.canTravelForPurchase = () => true;
+    // This section verifies route payment after a declared approved departure.
     const legacyJourneyState = { ...state, accountName: 'bot77' };
     const fundedInGiran = { ...legacyJourneyState, adena: 100000, loc: { locX: 83396, locY: 147904, locZ: -3404 },
         inventory: { ...state.inventory, 57: { selfId: 57, name: 'Adena', amount: 100000 } } };
@@ -398,7 +395,6 @@ async function run() {
     assert(unknownTown.state.stats.marketRetryAfter > Date.now(),
         'an unavailable destination must back off instead of immediately repeating');
 
-    ColdMarketService.canTravelForPurchase = originals.canTravelForPurchase;
     let blockedReserveCalls = 0;
     MarketOpportunity.bestOffer = () => ({ selfId: 626, price: 24090, sourceType: 'npc' });
     MarketOpportunity.reserve = () => {
@@ -738,50 +734,10 @@ async function run() {
             kind: 'sell_ad', town: npcTown.town, revision: 1, lines: [{ lineId: 9900030, selfId: 1785, count: 1, price: 1 }] });
         const npcPlan = ColdMarketService.planPurchase(state, 1785, 1, { towns: [npcTown.town], cost: () => 0 });
         assert.strictEqual(npcPlan.npc, 1, 'a legal NPC remains available when the cheaper personal source is in a party');
-        const nativeList = selectedBoard.list.bind(selectedBoard);
-        let indexedReads = 0;
-        selectedBoard.list = (...args) => { indexedReads++; return nativeList(...args); };
-        const admissionEconomy = { inputKey: 'held-context', moneyPrice: .0001,
-            trip: () => 0 };
-        admissionEconomy.trip.details = () => ({ known: true, hours: 0, fees: 0 });
-        const fundedBuyer = { ...state, adena: 100000, stats: { ...state.stats, money: [1000, .0001, 0, 0] } };
-        const admissionRequest = { selfId: 1864, amount: 1, town: 'Dion', npc: false, r: .1 };
-        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
-            { economy: admissionEconomy }), false);
-        const refusedReads = indexedReads;
-        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
-            { economy: admissionEconomy }), false);
-        assert.strictEqual(indexedReads, refusedReads, 'an unchanged observed membership retains the cheap negative-cache hit');
         supplier = { characterId: 990101 };
         assert.strictEqual(ColdMarketService.planPurchase(state, 1864, 1,
             { npc: false, cost: () => 0 }).lines[0].line.recordId, 990001,
         'the same public quote becomes legal immediately after the supplier leaves the party');
-        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
-            { economy: admissionEconomy }), true, 'a held context cannot retain a refusal after source-owner membership changes');
-        supplier = { characterId: 990101, phase: 'cold', activity: 'hunting', adena: 1000000,
-            loc: { locX: -44600, locY: -112400, locZ: -240 }, stats: { money: [1000, .001, 0, 500] } };
-        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
-            { economy: admissionEconomy }), false, 'the owner cannot spend protected money on the route');
-        const fareRefusedReads = indexedReads;
-        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
-            { economy: admissionEconomy }), false);
-        assert.strictEqual(indexedReads, fareRefusedReads, 'unchanged fare refusal is cached');
-        supplier = { ...supplier, stats: { money: [1000, .001, 0, 0] } };
-        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, admissionRequest,
-            { economy: admissionEconomy }), true, 'the held refusal expires when the same seller can afford its route');
-        const missingRequest = { selfId: 9999999, amount: 1, town: 'Dion', npc: false, r: .1 };
-        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, missingRequest, { economy: admissionEconomy }), false);
-        const missingReads = indexedReads;
-        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, missingRequest, { economy: admissionEconomy }), false);
-        assert.strictEqual(indexedReads, missingReads, 'a refusal with no conditional owners retains its original cache');
-        for (let at = 0; at < 9; at++) selectedBoard.put({ id: 991100 + at, ownerId: 991100 + at,
-            storeType: Afk.SELL, custodyPolicy: 1, kind: 'sell_ad', town: 'Dion', revision: 1,
-            lines: [{ lineId: 9911000 + at, selfId: 1865, count: 1, price: 1 }] });
-        const overflowRequest = { selfId: 1865, amount: 10, town: 'Dion', npc: false, r: .1 };
-        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, overflowRequest, { economy: admissionEconomy }), false);
-        const overflowReads = indexedReads;
-        assert.strictEqual(ColdMarketService.canTravelForPurchase(fundedBuyer, overflowRequest, { economy: admissionEconomy }), false);
-        assert(indexedReads > overflowReads, 'more than eight distinct source owners cannot leave an incomplete refusal cache');
     } finally {
         Afk.boardIndex = nativeBoardIndex;
         Admission.configureTradeAdmission(id => BotLifeState.cachedState(Number(id)),
@@ -794,7 +750,6 @@ run().catch((err) => {
     console.error(err);
     process.exitCode = 1;
 }).finally(async () => {
-    ColdMarketService.canTravelForPurchase = originals.canTravelForPurchase;
     Database.reconcileBotClanMembership = originals.reconcileBotClanMembership;
     Database.reconcileBotClanGoals = originalReconcileClanGoals;
     Database.execute = originals.execute;

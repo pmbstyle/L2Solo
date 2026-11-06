@@ -160,51 +160,33 @@ try {
     assert.strictEqual(red.session.spotRelocation?.method, 'walk', 'a bot with karma walks even to a far spot');
     assert.strictEqual(red.bot.moves, 1, 'a bot with karma starts walking at once');
 
-    const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
     const Events = require('../src/GameServer/Bot/AI/DecisionEvents');
     const TownTravel = invoke('GameServer/Bot/AI/BotTownTravel');
-    const savedPurchase = { check: Market.canTravelForPurchase, state: Economy.stateForActor,
-        held: Events.held, travel: TownTravel.request };
+    const savedPurchase = { state: Economy.stateForActor, held: Events.held, travel: TownTravel.request };
     const purchaseState = { characterId: 2002505, activity: 'hunting' };
-    const purchaseEconomy = { network: { activity: { activity: 'shopping', itemId: 1835,
+    const purchaseEconomy = { network: { decisionSeq: 1, activityLeaf: 7, activity: { activity: 'shopping', itemId: 1835,
         amount: 8, town: 'Giran', valueHours: 0.002, rootKey: 'stock:shots' } } };
-    let purchaseChecks = 0, purchaseTrips = 0, allowed = false;
-    let expectedRequest = { selfId: 1835, amount: 8, town: 'Giran' };
+    let purchaseTrips = 0;
     try {
         Events.held = () => purchaseEconomy;
         Economy.stateForActor = () => purchaseState;
-        Market.canTravelForPurchase = (state, request, options) => {
-            purchaseChecks++;
-            assert.strictEqual(state, purchaseState);
-            assert.strictEqual(options.economy, purchaseEconomy, 'the hot guard reuses its existing decision');
-            // The guard is asked about this item, count and town; the rest of the request is its own.
-            for (const [key, value] of Object.entries(expectedRequest)) assert.strictEqual(request[key], value, key);
-            return allowed;
-        };
         TownTravel.request = () => { purchaseTrips++; return 'escape'; };
-        const denied = fixture();
-        denied.session.spotRelocation = undefined;
-        denied.session.townRoutePlan = null;
-        denied.bot.automation = { abortAll() {} };
-        tick(denied);
-        assert.strictEqual(purchaseChecks, 1);
-        assert.strictEqual(purchaseTrips, 0, 'a tiny unprofitable purchase cannot initiate a visible town trip');
-        assert.strictEqual(denied.session.lastDecision.action, 'continue_occupation', 'a refused purchase waits for the planner instead of inventing a hunt');
-        assert.strictEqual(denied.session.spotRelocation, undefined);
-        assert.strictEqual(denied.bot.moves, 0);
-        allowed = true;
+        // The held shopping leaf is its build's decision (its visit weighed there): its trip
+        // starts once per decision, no tick weighs it again (situations step 4 C9).
         const accepted = fixture();
-        // A failed gear errand waits for the worker's answer (DecisionEvents.failureWaits).
-        const gearFailure = () => ({ seq: 1, names: [{ name: 'goal_failed', payload: { kind: 'gear_errand', key: 1 }, seq: 1 }],
-            impossible: true, impossibleSeq: 1 });
-        accepted.session.nearRaise = gearFailure();
         accepted.session.spotRelocation = undefined;
         accepted.session.townRoutePlan = null;
         accepted.bot.automation = { abortAll() {} };
         tick(accepted);
-        assert.strictEqual(purchaseChecks, 2);
-        assert.strictEqual(purchaseTrips, 1, 'the same shared guard admits a worthwhile visible trip');
+        assert.strictEqual(purchaseTrips, 1, 'the held leaf starts its trip');
+        accepted.session.plan = 'hunting';
+        accepted.session.spotRelocation = undefined;
+        tick(accepted);
+        assert.strictEqual(purchaseTrips, 1, 'the same decision does not start it again');
+        purchaseEconomy.network.decisionSeq = 2;
+        tick(accepted);
+        assert.strictEqual(purchaseTrips, 2, 'a new decision of the leaf does');
         // The bag's town trip a build decided (stats.cleanupDue, situations step 4 C4) starts
         // while the live bag needs it; an emptied bag ends the hold with no trip, so no
         // second trip starts before the next answer lands.
@@ -240,31 +222,25 @@ try {
                 assert(Situations.woken(refused.session.decisionStats, 'build'), 'its failure wakes the build');
             } finally { TownTravel.request = request; Events.held = () => purchaseEconomy; }
         }
+        // A failed gear errand waits for the worker's answer (DecisionEvents.failureWaits).
+        const gearFailure = () => ({ seq: 1, names: [{ name: 'goal_failed', payload: { kind: 'gear_errand', key: 1 }, seq: 1 }],
+            impossible: true, impossibleSeq: 1 });
         const unreachable = fixture();
         unreachable.session.spotRelocation = undefined;
         unreachable.session.nearRaise = gearFailure();
         unreachable.session.roleDecision = { reason: 'shopping_route_unreachable' };
         tick(unreachable);
-        assert.strictEqual(purchaseTrips, 1, 'a failed physical route is deferred even for stock instead of restarting each tick');
+        assert.strictEqual(purchaseTrips, 2, 'a failed physical route is deferred even for stock instead of restarting each tick');
         assert.strictEqual(unreachable.session.plan, 'hunting');
         assert.strictEqual(unreachable.session.spotRelocation, undefined);
-        const checked = purchaseChecks;
         purchaseState.inventory = { 1835: { amount: 20 } };
         purchaseEconomy.network.activity.heldAtDecision = 12;
+        purchaseEconomy.network.decisionSeq = 3;
         const completed = fixture();
         completed.session.spotRelocation = undefined;
         tick(completed);
-        assert.strictEqual(purchaseChecks, checked, 'a completed purchase waits for its next decision instead of ordering the same quantity again');
-        assert.strictEqual(purchaseTrips, 1);
+        assert.strictEqual(purchaseTrips, 2, 'a completed purchase waits for its next decision instead of ordering the same quantity again');
         purchaseState.inventory = {};
-        delete purchaseEconomy.network.activity.heldAtDecision;
-        purchaseEconomy.network.activity.rootKey = 'power:148:7';
-        purchaseEconomy.network.activity.r = 0.001;
-        expectedRequest = { ...expectedRequest, r: 0.001 };
-        const materialBuy = fixture();
-        materialBuy.session.spotRelocation = undefined;
-        tick(materialBuy);
-        assert.strictEqual(purchaseTrips, 2, 'a material purchase retains the accepted root funding ratio');
         const crafting = fixture();
         Events.held = () => ({ network: { activity: { activity: 'crafting', kind: 'craft', rootKey: 'stock:shots' } } });
         tick(crafting);
@@ -287,7 +263,6 @@ try {
             assert.strictEqual(gearCraft.session.shoppingServicePhase, 'workshop');
         } finally { Shopping.workshopTarget = oldTarget; }
     } finally {
-        Market.canTravelForPurchase = savedPurchase.check;
         Economy.stateForActor = savedPurchase.state;
         Events.held = savedPurchase.held;
         TownTravel.request = savedPurchase.travel;

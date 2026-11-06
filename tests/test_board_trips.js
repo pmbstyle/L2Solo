@@ -194,17 +194,8 @@ Config.staticShotsDisabled = false;
     assert(goal, 'the errand is a goal');
     assert.strictEqual(goal.plan.marketTown, 'Dion');
     assert.strictEqual(goal.target.itemId, 1463);
-    // The errand's town and arrival are the subject here. Whether the trip
-    // pays for itself (24512a44) has its own fixture
-    // (test_acquisition_trip_value.js); this hunter has no weapon to value shots.
-    const canTravel = ColdMarketService.canTravelForPurchase;
-    ColdMarketService.canTravelForPurchase = () => true;
-    let travel;
-    try {
-        travel = GoalExecutor.beginMarketTravel(state, { ...goal, status: 'active' }, 1000);
-    } finally {
-        ColdMarketService.canTravelForPurchase = canTravel;
-    }
+    // The errand's town and arrival are the subject here (its road was weighed when it was taken).
+    const travel = GoalExecutor.beginMarketTravel(state, { ...goal, status: 'active' }, 1000);
     assert.strictEqual(travel.stats.travel.townName, 'Dion');
     assert.strictEqual(travel.stats.travel.arrivalActivity, 'shopping');
     assert.deepStrictEqual(ColdMarketService.errandGoal(errand).plan.marketTown, 'Dion');

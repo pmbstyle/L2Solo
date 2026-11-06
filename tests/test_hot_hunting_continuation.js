@@ -304,7 +304,7 @@ test('a deferred purchase recovers from an empty field without losing its wish o
     f.session.currentSpot = alternative;
     const restoreAt = restores.length;
     try {
-        stub(invoke('GameServer/Bot/Economy/ColdMarketService'), 'canTravelForPurchase', () => false);
+        stub(invoke('GameServer/Bot/AI/BotTownTravel'), 'request', () => 'deferred'); // its trip deferred (a fight, its road)
         // Its ground admits none of its fights (the hunt's own look, groundLook).
         stub(invoke('GameServer/Bot/AI/BotTargetMatchup'), 'admitsNone', () => true);
         available = [];
@@ -334,7 +334,7 @@ test('a deferred errand whose held answer is its own empty ground raises once an
     f.session.currentSpot = alternative;
     const restoreAt = restores.length;
     try {
-        stub(invoke('GameServer/Bot/Economy/ColdMarketService'), 'canTravelForPurchase', () => false);
+        stub(invoke('GameServer/Bot/AI/BotTownTravel'), 'request', () => 'deferred'); // its trip deferred (a fight, its road)
         stub(invoke('GameServer/Bot/AI/BotTargetMatchup'), 'admitsNone', () => true);
         f.session.huntingTargetScan = { eligibleAttackableNpcs: 0 };
         for (let n = 0; n < 2; n++) {
@@ -383,7 +383,7 @@ test('a deferred errand leaves only ground that admits none of its fights, as a 
     f.session.currentSpot = alternative;
     const restoreAt = restores.length;
     try {
-        stub(invoke('GameServer/Bot/Economy/ColdMarketService'), 'canTravelForPurchase', () => false);
+        stub(invoke('GameServer/Bot/AI/BotTownTravel'), 'request', () => 'deferred'); // its trip deferred (a fight, its road)
         stub(invoke('GameServer/Geodata/GeodataEngine'), 'hasLineOfSight', () => false);
         Object.assign(f.session.coldLifeState.stats, holds(primary));
         available = [npcNear(alternative.center)];
@@ -399,7 +399,7 @@ test('a deferred purchase still hunts a safe local mob without taking a recovery
     const f = fixture(primary.center, { activity: 'shopping', itemId: 1459, amount: 24, town: 'Aden' });
     const restoreAt = restores.length;
     try {
-        stub(invoke('GameServer/Bot/Economy/ColdMarketService'), 'canTravelForPurchase', () => false);
+        stub(invoke('GameServer/Bot/AI/BotTownTravel'), 'request', () => 'deferred'); // its trip deferred (a fight, its road)
         available = [npcNear(primary.center)];
         f.tick();
         assert.deepEqual(f.session.attacks, [990101]);
@@ -413,7 +413,7 @@ test('deferred scroll restocking can hunt a safe local mob below the ordinary le
         itemId: 736, amount: 1, town: 'Aden' });
     const restoreAt = restores.length;
     try {
-        stub(invoke('GameServer/Bot/Economy/ColdMarketService'), 'canTravelForPurchase', () => false);
+        stub(invoke('GameServer/Bot/AI/BotTownTravel'), 'request', () => 'deferred'); // its trip deferred (a fight, its road)
         available = [{ ...npcNear(primary.center), fetchLevel: () => f.bot.fetchLevel() - 16 }];
         f.tick();
         assert.deepEqual(f.session.attacks, [990101], 'a proven-safe local fight beats another empty wander');

@@ -8,8 +8,7 @@ const Resolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const Goals = invoke('GameServer/Bot/Goals/GoalExecutor');
 const Crafting = invoke('GameServer/Bot/Economy/ColdCraftingService');
 const { lifecycleKind } = invoke('GameServer/Bot/Population/ColdSimulationKernel');
-const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
-const originals = [Spots.arrivalPointForState, Spots.findCurrentSpot, Routes.bestSpot, utils.isInPeaceZone, Market.canTravelForPurchase];
+const originals = [Spots.arrivalPointForState, Spots.findCurrentSpot, Routes.bestSpot, utils.isInPeaceZone];
 const field = { npcEntries: [{ selfId: 251, level: 28 }, { selfId: 204, level: 23 }, { selfId: 68, level: 26 }], id: 'field', name: 'Field', minLevel: 20, maxLevel: 27, center: { locX: 12000, locY: 0, locZ: 0 } };
 const town = { ...field, id: 'town', center: { locX: 0, locY: 0, locZ: 0 } };
 const state = { characterId: 1, name: 'Chaotic', phase: 'cold', level: 27, activity: 'traveling',
@@ -26,9 +25,6 @@ try {
     Spots.findCurrentSpot = loc => loc.locX === 12000 ? field : null;
     Routes.bestSpot = spots => spots.length ? { spot: spots[0] } : null;
     utils.isInPeaceZone = x => x === 0;
-    // Karma is the subject here. Whether a shopping trip pays for itself has
-    // its own fixture (test_acquisition_trip_value.js) and needs NPC offers.
-    Market.canTravelForPurchase = () => true;
     const planned = wash(state, [town, field], 1000);
     const route = planned.plannedState.stats.travel;
     assert.strictEqual(route.spotId, 'field', 'town must be excluded from washing destinations');
@@ -121,6 +117,6 @@ try {
     assert.strictEqual(dead.plannedState.stats.travel, null);
     assert.strictEqual(wash(state, []).plannedState.activity, 'resting', 'missing hunting ground must never fall back to town');
 } finally {
-    [Spots.arrivalPointForState, Spots.findCurrentSpot, Routes.bestSpot, utils.isInPeaceZone, Market.canTravelForPurchase] = originals;
+    [Spots.arrivalPointForState, Spots.findCurrentSpot, Routes.bestSpot, utils.isInPeaceZone] = originals;
 }
 console.log('Cold karma town exclusion and washing route checks passed');

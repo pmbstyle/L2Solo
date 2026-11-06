@@ -15,9 +15,6 @@ const GoalExecutor = invoke('GameServer/Bot/Goals/GoalExecutor');
 const BackgroundResolver = invoke('GameServer/Bot/Population/BackgroundResolver');
 const SpotService = invoke('GameServer/Bot/AI/SpotService');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
-// Travel timing and routes are the subject here. Whether a shopping trip pays
-// for itself (24512a44) has its own fixture (test_acquisition_trip_value.js).
-invoke('GameServer/Bot/Economy/ColdMarketService').canTravelForPurchase = () => true;
 
 const state = {
     characterId: 7,

@@ -783,17 +783,18 @@ module.exports = {
                     .catch(error => utils.infoWarn('BotImprovement', '%s', error.message));
             }
             if (economy.network.activity?.activity === 'shopping') {
+                // The held shopping leaf is its build's decision (the visit weighed when it
+                // chose it: EconomicValuation.visitPays): its trip starts once per decision, no
+                // tick weighs it again; who sells what is read at the market, whose arrival
+                // wakes the build (arrived_town). A trip a fight defers is asked again.
                 const leaf = economy.network.activity;
                 const state = invoke('GameServer/Bot/Economy/EconomyContext').stateForActor(bot, session);
                 const amount = invoke('GameServer/Bot/Population/ColdEconomyDecision').remainingToOrder(leaf, state);
-                if (amount > 0 && invoke('GameServer/Bot/Economy/ColdMarketService').canTravelForPurchase(state,
-                    { selfId: Number(leaf.itemId || leaf.object?.itemId || leaf.object),
-                        amount, town: leaf.town, valueHours: leaf.valueHours, required: leaf.required === true,
-                        // The root's whole need still to buy: a part fill weighs its road as the visit does.
-                        wanted: amount + Math.max(0, Number(leaf.wanted || 0) - Number(leaf.amount || 0)),
-                        ...(!/^stock:/.test(String(leaf.rootKey)) && leaf.r > 0 ? { r: leaf.r } : {}) }, { economy })) {
+                // The card's decision (Agenda: its sequence and leaf); a served card keeps it.
+                const decision = `${economy.network.decisionSeq ?? ''}:${economy.network.activityLeaf ?? ''}`;
+                if (amount > 0 && session.shopTripDecision !== decision) {
                     const trip = startShopping(session, bot, BotAI, 'Heading to town for my next planned purchase.', leaf.town);
-                    if (trip !== 'deferred' && trip !== false) return;
+                    if (trip !== 'deferred' && trip !== false) { session.shopTripDecision = decision; return; }
                 }
             }
         }
