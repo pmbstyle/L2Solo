@@ -35,7 +35,9 @@ function seekObjective(state, previous, { spots, timestamp, search = null }) {
     // lazy: cycle SpotProfiles' chain loads this planner
     const searched = held ? null : invoke('GameServer/Bot/Population/SpotProfiles').findForState({ ...state, spotId: null,
         stats: Object.fromEntries(Object.entries(state.stats || {}).filter(([key]) => key !== 'equipmentPlan')) },
-    { profiles: spots, mode: 'party', timestamp, ...(search?.spotHunters ? { spotHunters: search.spotHunters } : {}) });
+    { profiles: spots, mode: 'party', timestamp, ...(search?.spotHunters ? { spotHunters: search.spotHunters } : {}),
+        // A party search on main reads main's index (temporary until step 8); none on the worker.
+        hasRoom: invoke('GameServer/Bot/Population/SpotProfiles').defaultRoomFilter(state, spots) });
     const spotId = held || searched?.id || null;
     if (!spotId) return null;
     return { status: 'open', priority: 'preferred', objectiveKey: `spot:${spotId}`, reason: NO_SOLO_GROUND,

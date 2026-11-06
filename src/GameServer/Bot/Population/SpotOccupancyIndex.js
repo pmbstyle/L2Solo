@@ -4,11 +4,13 @@ const CharacterLocationIndex = require('../../World/CharacterLocationIndex');
 const providers = new WeakMap();
 
 // Who stands on each spot and who is heading there, kept up to date at every
-// state write. Read only at a spot: the room check at arrival, the kill share,
-// the buff offer, and the status line's per-spot count. No place is held for a
-// bot ahead of its arrival. Each spot has a crowd revision (spotVersion): a
-// reader that holds a result over a spot's hunters keeps it while the
-// revision it read stands.
+// state write. Two copies: the worker's (its kernel's) is the spot aggregate's
+// source, read at an arrival (SpotContest's standing units, EnemyMet's standing
+// bots), by the searches' room filter and the kill share; main's is a status
+// mirror (the status line's per-spot count, a hot body's kill share, a party
+// search's room until step 8). No place is held for a bot ahead of its arrival.
+// Each spot has a crowd revision (spotVersion): a reader that holds a result over
+// a spot's hunters keeps it while the revision it read stands.
 
 function stateKey(state = {}) {
     return String(state.characterId || state.name || state.stats?.generatedIndex || '');

@@ -4243,8 +4243,11 @@ const BotLifeState = {
         return cache.recent(cache.size);
     },
 
-    // Spot occupancy kept up to date at every state write (the hot body's kill
-    // share, SpotProfiles.spotHunters; the status line's per-spot count).
+    // Main's spot occupancy, a mirror of where the bots stand, kept up to date at
+    // every state write: the status line's per-spot count, the hot body's kill
+    // share (SpotProfiles.spotHunters, its tactics) and a party search's room on
+    // main (SpotProfiles.defaultRoomFilter, temporary until step 8). No decision
+    // reads it: the spot aggregate is the worker's (SpotContest, EnemyMet).
     occupancyIndex() {
         return cache.occupancy;
     },

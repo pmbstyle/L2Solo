@@ -185,10 +185,11 @@ function roomFilterFor(index, spots, members) {
     return (spotId) => index.physicalCount(spotId, { excludeKeys: own }) + members.length <= spotRoom(spots, spotId);
 }
 
-// The room filter a search takes when its caller passes none: a search on
-// main reads main's world index (ROUTE-ROOM-4) for the routed bots (members:
-// the search's capacityStates, else the bot alone); the worker always passes
-// its own (null here).
+// The room filter of a party search on main (PartyWaitFallback, a party's
+// formation, a party request's seeking spot): main's world index for the routed
+// bots (members: the party, else the bot alone); null on the worker. Temporary
+// until the party aggregate (step 8) decides a party's spot on the worker; no
+// other search on main reads main's index (a status mirror there).
 function defaultRoomFilter(state, spots, members = null) {
     return isMainThread
         ? roomFilterFor(BotLifeState.occupancyIndex(), spots, members?.length ? members : [state]) : null;
@@ -286,12 +287,11 @@ const SpotProfiles = {
         // than the current one (ROUTE-ROOM, ROUTE-ROOM-2): the income route's
         // spot, the planned source, the list walk and the near-level
         // fallback; a refused candidate counts as absent. A bot's own spot is
-        // never full to it; the room is checked again at arrival. The worker
-        // passes its own index's filter (options.hasRoom); a search on main
-        // (market return, a command's trip, a party's formation) reads main's
-        // world index (ROUTE-ROOM-4). A party search counts the whole party
-        // (options.capacityStates), its own members excluded.
-        const hasRoom = options.hasRoom ?? defaultRoomFilter(state, profiles, options.capacityStates);
+        // never full to it; the arrival meets the spot (SpotContest). The
+        // caller passes it: the worker its own index's filter, a party caller
+        // on main main's (defaultRoomFilter, temporary until step 8); none:
+        // no room filter.
+        const hasRoom = options.hasRoom ?? null;
         const full = (spot) => {
             if (!hasRoom || (currentSpot && spot.id === currentSpot.id)
                 || hasRoom(spot.id)) return false;

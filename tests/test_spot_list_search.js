@@ -211,23 +211,23 @@ Spots.cache = originalCache;
         assert.equal(Spots.findForState(bot, search(listed, ['a'], id => id === 'c'))?.id, 'c',
             'every listed spot full: the near-level fallback skips the full ones too');
 
-        // ROUTE-ROOM-4: a solo search on main reads main's world index (the
-        // rows main accepted); spot 'a' holds as many bots as its room.
+        // Main's world index is a status mirror: a solo search on main reads no room from it
+        // (the worker meets the spot at the arrival, SpotContest); spot 'a' holds its room.
         for (let i = 0; i < Routes.roomForSpot(listed[0]); i++) {
             LifeState.acceptLifecycleRow({ characterId: 990900 + i, accountName: `bot_${990900 + i}`,
                 characterName: `Crowd${i}`, level: 25, phase: 'cold', activity: 'hunting', spotId: 'a',
                 statsJson: '{}', inventorySummary: '{}' });
         }
-        assert.notEqual(Spots.findForState(bot, search(listed, ['a']))?.id, 'a',
-            'a full listed spot is skipped by a solo search on main');
+        assert.equal(Spots.findForState(bot, search(listed, ['a']))?.id, 'a',
+            'a solo search on main does not read main\'s index');
         assert.equal(Spots.findForState({ ...bot, spotId: 'a' }, search(listed, ['a']))?.id, 'a',
             'the bot\'s own spot is never full to it');
         assert.equal(Spots.findForState(bot, search(listed, ['a'], () => true))?.id, 'a',
             'a filter the caller passes is read instead of main\'s index');
 
-        // A party search on main (formation, retreat) counts the whole party
-        // (capacityStates) against main's index; its own members standing
-        // there are not counted against it. Spot 'c' holds 9: 7 stand there.
+        // A party search on main (formation, retreat; temporary until step 8) passes
+        // main's index for the whole party (SpotProfiles.defaultRoomFilter); its own members
+        // standing there are not counted against it. Spot 'c' holds 9: 7 stand there.
         const room = Routes.roomForSpot(listed[2]);
         const crowd = Array.from({ length: room - 2 }, (_, i) => 990960 + i);
         for (const characterId of crowd) {
@@ -237,7 +237,7 @@ Spots.cache = originalCache;
         }
         const member = characterId => ({ ...bot, characterId });
         const partySearch = members => Spots.findForState(members[0],
-            { ...search(listed, ['c']), mode: 'party', capacityStates: members })?.id;
+            { ...search(listed, ['c']), mode: 'party', hasRoom: Spots.defaultRoomFilter(members[0], listed, members) })?.id;
         assert.notEqual(partySearch([member(990980), member(990981), member(990982)]), 'c',
             'a party of 3 is refused at a spot with 2 free places');
         assert.equal(partySearch([member(990980), member(990981)]), 'c', 'a party of 2 fits the 2 free places');
