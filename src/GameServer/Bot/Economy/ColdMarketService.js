@@ -721,6 +721,18 @@ async function endErrand(characterId, errand, spent, saved, { replan = false, ex
     return saved ? invoke('GameServer/Clan/ClanPurchaseCredit').returnUnspent(characterId, errand, spent) : null;
 }
 
+// A wealth craft's errand (an input, or the recipe it learns) that ended without its
+// fill: the craft is refused until the bot reads the market anew (WealthCraftDecision's
+// refusal mark, the craft's own outcome), so its next step does not send the bot for the
+// same purchase again. null: no wealth craft of the bot's sent this errand.
+function wealthMiss(state, errand) {
+    const job = state.stats?.wealthCraft;
+    if (job?.outcome !== 'buying' || !['wealth_craft', 'recipe'].includes(errand.purpose)) return null;
+    const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(Number(job.recipeId));
+    if (!recipe || errand.purpose === 'recipe' && Number(recipe.recipeItemId) !== Number(errand.selfId)) return null;
+    return require('./WealthCraftDecision').refusedMark(state, job.recipeId);
+}
+
 // On arrival: the errand of the town the bot stands in, bought there (the
 // plan made again for this town, as the board stands now); what it bought
 // stays as stats.lastErrand for the job that sent it (a clan's order).
@@ -778,7 +790,8 @@ async function buyErrand(state, options = {}) {
             clanPart: Math.max(0, Number(errand.tag?.clanPart || 0) - Number(bought.spent || 0)) } } : {}) };
     const replan = rest > 0 && (!!bought.priceRefused && !bought.npcDeferred || !plan && refusedAtPlanning);
     const remaining = rest > 0 && plan && !replan ? CombinedErrands.enqueue(after, remainder) : after;
-    const cleared = { ...remaining, stats: { ...remaining.stats,
+    const refused = rest > 0 && (!plan || replan) ? wealthMiss(remaining, errand) : null;
+    const cleared = { ...remaining, stats: { ...remaining.stats, ...(refused ? { wealthRefused: refused } : {}),
         lastErrand: { purpose: errand.purpose, selfId: errand.selfId, units: bought.units, tag: errand.tag || null, at: Date.now() } } };
     const saved = await LifeState.upsertState(cleared, bought.units > 0 ? 'market_errand_bought' : 'market_errand_no_offer');
     const currentGoal = goalForErrand(bought.state, { ...errand, amount: rest })?.expectedGoal || acceptedGoal;

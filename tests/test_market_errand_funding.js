@@ -219,6 +219,17 @@ async function noSpend(state, itemId, message) {
         assert.equal(await stock(complete.characterId, 1864), 5);
         assert.equal(Errands.pending(completeResult.state).length, 0);
 
+        // A production input no seller in the town still has: the errand ends without its
+        // fill and the craft is refused until the next market look (its own outcome), so its
+        // next step does not send the bot for the same input again.
+        const unsold = await arrive(await stateFor(OLD, { wealthCraft: { recipeId: 28, batches: 1, outcome: 'buying' },
+            marketErrand: { selfId: 1868, amount: 5, town: 'Giran', money: WALLET,
+                purpose: 'wealth_craft', tag: [-5], r: RATE, at: Date.now() } }));
+        const unsoldResult = await Market.tryPurchase(unsold, { type: 'market_errand' });
+        assert.equal(unsoldResult.units, 0);
+        assert.deepEqual(unsoldResult.state.stats.wealthRefused?.recipes, [28], 'the unfilled errand refuses its craft');
+        assert(invoke('GameServer/Bot/Economy/WealthCraftDecision').refused(unsoldResult.state, 28));
+
         await Database.setItem(seller.characterId, { selfId: 736, name: 'Scroll of Escape', amount: 1, slot: 0 });
         await sellShop(seller.characterId, 'One genuine escape scroll',
             { selfId: 736, name: 'Scroll of Escape', count: 1, price: 10, enchant: 0, stackable: true });
