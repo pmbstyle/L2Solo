@@ -88,7 +88,7 @@ async function run() {
     const arrived = await posted(() => SpotService.assignSpot(session, { id: 'near-fact-other', name: 'Other spot',
         center: { locX: -71000, locY: 258000, locZ: -3104 }, npcNames: [] }));
     assert.strictEqual(arrived?.spotId, 'near-fact-other', 'its arrival on another spot posts the new spot');
-    assert(!(session.nearRaise?.names || []).some(([name]) => name === 'moved_by_world'),
+    assert(!(session.nearRaise?.names || []).some(entry => entry.name === 'moved_by_world'),
         'a body\'s own spot change raises no moved_by_world');
 
     // A player's bag change sends nothing.

@@ -432,7 +432,7 @@ test('a player\'s spot command is the body\'s held answer at once, raised for th
         Events.raiseDecision(f.session, 'player_command', { payload: { spotId: alternative.id, at: 1 } });
         assert.equal(f.session.coldLifeState.stats.earning.spotId, alternative.id, 'the commanded spot is held');
         assert.equal(f.session.coldLifeState.stats.earning.earning, 1000, 'with the bot\'s hour kept');
-        assert.deepEqual(f.session.nearRaise.names.map(([name]) => name), ['player_command'], 'it rides the body\'s bag');
+        assert.deepEqual(f.session.nearRaise.names.map(entry => entry.name), ['player_command'], 'it rides the body\'s bag');
         assert.equal(Decision.suggest(f.session.botStatus, f.session).reason, 'awaiting_command_answer',
             'the card naming the old spot does not pull it back while the answer is pending');
         assert.equal(searchCalls.length, 0, 'no search');
@@ -483,7 +483,7 @@ test('an unreachable mark, a pending command, survival and explicit non-hunting 
     const restoreAt = restores.length;
     try {
         stub(invoke('GameServer/Bot/Population/BotLifeState'), 'cachedState', () => ({ phase: 'hot' }));
-        f.session.nearRaise = { seq: 1, commandSeq: 1, names: [['player_command', { spotId: alternative.id }]] };
+        f.session.nearRaise = { seq: 1, commandSeq: 1, names: [{ name: 'player_command', payload: { spotId: alternative.id }, seq: 1 }] };
         assert.equal(Decision.suggest(f.session.botStatus, f.session).reason, 'awaiting_command_answer',
             'a player\'s command waits for its answer, not the spot its card still names');
     } finally { while (restores.length > restoreAt) restores.pop()(); }

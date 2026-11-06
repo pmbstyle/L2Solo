@@ -108,7 +108,7 @@ async function runWorker(state, predicate, followUp = null) {
         && message.payload.phase === 'economy_decided', async ({ result: first, until, received, post }) => {
         const own = first.payload.near.statsPacket.decisionSeq;
         const raised = { ...state, characterId: 765413, nearSeq: 4, updatedAt: now + 1,
-            raise: { seq: 1, names: [['goal_failed', null]], impossible: true, impossibleSeq: 1 } };
+            raise: { seq: 1, names: [{ name: 'goal_failed', payload: null, seq: 1 }], impossible: true, impossibleSeq: 1 } };
         post({ ...state, characterId: 765414, updatedAt: now + 1 });
         post(raised);
         const answer = (await decidedAt(until, 4)).payload.near, one = answer.statsPacket;
@@ -131,7 +131,7 @@ async function runWorker(state, predicate, followUp = null) {
         assert.equal(two.decisionSeq, one.decisionSeq, 'a later post naming the same raise neither raises again nor rolls the mind back');
         // The pending bag is cumulative: a later raise still carries the
         // impossible mark of raise 1 (its step drop: test_near_decision_order).
-        post({ ...raised, nearSeq: 6, updatedAt: now + 4, raise: { seq: 2, names: [['goal_failed', null]], impossible: true, impossibleSeq: 1 } });
+        post({ ...raised, nearSeq: 6, updatedAt: now + 4, raise: { seq: 2, names: [{ name: 'goal_failed', payload: null, seq: 1 }], impossible: true, impossibleSeq: 1 } });
         assert.equal((await decidedAt(until, 6)).payload.near.raiseSeq, 2, 'the new raise is taken');
     });
 

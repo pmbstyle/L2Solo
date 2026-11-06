@@ -52,11 +52,9 @@ function applyOwnRaise(state) {
 // A near bot (a body on main) takes its decisions on the background thread:
 // the raise waits on the session (nearRaise, ORed while pending) and rides its
 // next post (BotLifeState.notifyNearFacts); the decision that consumed it
-// clears it (receive). The bag: { seq, names: [[situation, payload|null], ...],
-// (positional pairs written and read only here: postedBag copies it for the post,
-// takePostedRaise reads it on the worker; temporary until step 4 moves the build
-// onto woken decisions, when the bag carries named raises like raiseFar's),
-// impossible, impossibleSeq }; impossibleSeq is the raise that proved the held
+// clears it (receive). The bag: { seq, names: [{ name, payload|null, seq }, ...]
+// (each entry the raise seq it joined at: an answer applied the entries up to its
+// seq, receive), impossible, impossibleSeq }; impossibleSeq is the raise that proved the held
 // step impossible: the worker drops the step only for that raise, never again
 // for a later raise of the same pending bag. A far bot's row takes it through
 // the one SQL writer of its bits (BotLifeState.raiseOnRow), never through a
@@ -71,7 +69,7 @@ function raiseDecision(session, reason, { impossible = false, payload: fact = nu
     // lazy: cycle BotLifeState requires this module at its top.
     const Life = isMainThread && session.actor ? invoke('GameServer/Bot/Population/BotLifeState') : null;
     if (Life?.cachedState(session.actor.fetchId?.())?.phase === 'hot') {
-        const raise = nearBag(session, [[reason, fact]], true);
+        const raise = nearBag(session, [{ name: reason, payload: fact }], true);
         if (impossible) { raise.impossible = true; raise.impossibleSeq = raise.seq; raise.impossibleName = reason; }
         // A body's arrival in town is its stop there too: what waited for the town wakes.
         if (reason === 'arrived_town') raise.stop = 'town';
@@ -96,26 +94,26 @@ function raiseDecision(session, reason, { impossible = false, payload: fact = nu
 // (FACTS) moves to the end with its payload, so the background thread writes it
 // after what came before, as the body did (its own copy: Situations.applyFacts);
 // past NEAR_NAMES it is counted and dropped.
+// names: [{ name, payload }].
 function nearBag(session, names, force = false) {
     const raise = session.nearRaise ||= { seq: 0, names: [], impossible: false };
     let joined = force, command = false;
     const added = [];
-    for (const [name, payload] of names) {
+    for (const { name, payload = null } of names) {
         const fact = FACTS.has(name), key = fact && name !== 'player_command' ? String(payload?.spotId) : null;
-        const at = raise.names.findIndex(([held, carried]) => held === name && (!fact || name === 'player_command'
-            || String(carried?.spotId) === key));
+        const at = raise.names.findIndex(held => held.name === name && (!fact || name === 'player_command'
+            || String(held.payload?.spotId) === key));
         if (at >= 0 && !fact) continue;
         if (at >= 0) raise.names.splice(at, 1);
         else if (raise.names.length >= NEAR_NAMES) { nearOverflow++; continue; }
-        const entry = [name, payload ?? null];
+        const entry = { name, payload: payload ?? null, seq: 0 };
         raise.names.push(entry); added.push(entry);
         withFacts(session, name, payload ?? null);
         joined = true;
         command ||= name === 'player_command';
     }
     if (joined) raise.seq = session.raiseSeq = Number(session.raiseSeq || 0) + 1;
-    // Each entry's raise seq (its third slot): an answer applied the entries up to its seq (receive).
-    for (const entry of added) entry[2] = raise.seq;
+    for (const entry of added) entry.seq = raise.seq;
     // The command's raise and the post that carries it: the body's next post (notifyNearFacts
     // numbers it nearSeq + 1); its answer is the one for this seq (settle).
     if (command) { raise.commandSeq = raise.seq; raise.commandPost = Number(session.nearSeq || 0) + 1; }
@@ -123,7 +121,7 @@ function nearBag(session, names, force = false) {
     return raise;
 }
 // The body's bag as its post carries it (BotLifeState.notifyNearFacts): a copy.
-const postedBag = session => ({ ...session.nearRaise, names: session.nearRaise.names.map(pair => [...pair]) });
+const postedBag = session => ({ ...session.nearRaise, names: session.nearRaise.names.map(entry => ({ ...entry })) });
 // A body's own facts on its post (BotLifeState.notifyNearFacts, main, A1): the
 // situations of the posted row against its decision's baseline (the row's
 // wishSections: the last decision received), a fact the baseline lacks against
@@ -139,7 +137,7 @@ function detectNear(session, row, escrow = 0) {
     const armed = afford ? `${afford.kind}:${afford.at}` : null;
     if (kind && session.nearAffordRaised !== armed) { names.push(`goal_affordable:${kind}`); session.nearAffordRaised = armed; }
     session.nearFacts = next;
-    if (names.length) nearBag(session, names.map(name => [name, null]));
+    if (names.length) nearBag(session, names.map(name => ({ name, payload: null })));
 }
 // A body's rest ends (RestingState): its stop, carried by its bag to the worker,
 // where what waited for a stop wakes (Situations.stop); a far bot's is its step's.
@@ -153,10 +151,14 @@ function stop(session) {
 // A posted bag's raises on the background thread's mind (stats), heard where the
 // body stands (Situations.bodyPlace); its stop (rest: the STOP plane; town: both);
 // its impossible mark drops the held step (with the situation that set it,
-// impossibleName) only while the raise that set it is unanswered.
+// impossibleName) only while the raise that set it is unanswered. applied: the raise
+// seq already applied: an entry that joined at or before it is not raised again (the
+// bag is cumulative: its marks and wakes landed once).
 // subject: the bot (the decision trace).
-function raiseBag(stats, raise, impossible, where, subject) {
-    for (const [name, payload] of Array.isArray(raise?.names) ? raise.names : []) Situations.raise(stats, name, payload, where, subject);
+function raiseBag(stats, raise, impossible, where, subject, applied = 0) {
+    for (const { name, payload, seq } of Array.isArray(raise?.names) ? raise.names : []) {
+        if (Number(seq || 0) > applied) Situations.raise(stats, name, payload ?? null, where, subject);
+    }
     if (impossible) Situations.raise(stats, raise.impossibleName || 'goal_failed', { impossible: true }, where, subject);
     if (raise?.stop) Situations.stop(stats, raise.stop === 'town' ? Situations.OPEN : Situations.REST, subject);
 }
@@ -220,7 +222,7 @@ function rejectOnRow(current, accepted, why) {
 // Returns the raise seq now applied. where: the body's place (Situations.bodyPlace).
 function takePostedRaise(stats, raise, applied, where, subject = 0) {
     if (raise && Number(raise.seq) > applied) raiseBag(stats, raise,
-        raise.impossible === true && Number(raise.impossibleSeq || 0) > applied, where, subject);
+        raise.impossible === true && Number(raise.impossibleSeq || 0) > applied, where, subject, applied);
     return Math.max(applied, Number(raise?.seq || 0));
 }
 // A near bot's pending raise on the cold row its body cools to
@@ -274,7 +276,7 @@ function receive(session, card, near) {
     // take back a command or a mark main holds while it waits): its facts again.
     // Only the entries this answer did not apply (raised after its seq).
     const answered = Number(near.raiseSeq || 0);
-    for (const [name, payload, seq] of session.nearRaise?.names || []) {
+    for (const { name, payload, seq } of session.nearRaise?.names || []) {
         if (FACTS.has(name) && Number(seq || 0) > answered) withFacts(session, name, payload);
     }
     if (near.shots) ShotStock.enableAutoShot(actor, { stock: near.shots });
@@ -297,7 +299,7 @@ function settle(session, near) {
     dropCommand(raise);
 }
 const dropCommand = raise => {
-    raise.names = raise.names.filter(([name]) => name !== 'player_command');
+    raise.names = raise.names.filter(entry => entry.name !== 'player_command');
     raise.commandSeq = 0; raise.commandPost = null;
 };
 // The decision a near body holds: the last one received, else (before the
@@ -350,7 +352,7 @@ function commandPending(session) {
 // point's money reading, DecisionSections.moneyChanged): a crossing raises
 // money once; nothing while that raise waits or before a baseline exists.
 function checkWallet(session, actor) {
-    if (session.nearRaise?.names?.some(([name]) => name === 'money')) return false;
+    if (session.nearRaise?.names?.some(entry => entry.name === 'money')) return false;
     const stats = statsFor(session);
     if (!stats.wishSections) return false;
     const wallet = actor.backpack?.fetchTotalAdena?.() ?? actor.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() ?? 0;

@@ -69,10 +69,23 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
     assert.equal(session.nearRaise.impossible, false, 'the answered impossible mark is lifted');
     assert.equal(Events.rejectSession(session, accepted(10)), true, 'a new rejection raises again');
 
+    // The bag is cumulative: a later post applies only the entries newer than the raise
+    // the worker applied (a mark and a wake land once).
+    {
+        const mind = { woken: 0, wishSections: {}, equipmentPlan: {}, earning: { spotId: 'held' } };
+        const marked = { name: 'spot_unreachable', payload: { spotId: 'far', reason: 'route_unavailable' }, seq: 1 };
+        Events.takePostedRaise(mind, { seq: 1, names: [marked] }, 0, Situations.bodyPlace({ activity: 'hunting' }));
+        const seqAfterFirst = mind.situationSeq;
+        mind.woken = 0; mind.spotMarks = null;
+        Events.takePostedRaise(mind, { seq: 2, names: [marked, { name: 'died', payload: null, seq: 2 }] }, 1,
+            Situations.bodyPlace({ activity: 'hunting' }));
+        assert.equal(mind.spotMarks, null, 'the applied entry\'s mark is not raised again');
+        assert.equal(mind.situationSeq, seqAfterFirst + 1, 'only the new entry is raised');
+    }
     // The worker takes a posted bag once per raise; the impossible mark of an
     // applied raise does not drop the step a later raise of the bag finds.
     const mind = { decisionSeq: 3, activityLeaf: 77, woken: 0 };
-    const bag = (seq, impossibleSeq) => ({ seq, names: [['arrived_town', null]], impossible: true, impossibleSeq });
+    const bag = (seq, impossibleSeq) => ({ seq, names: [{ name: 'arrived_town', payload: null, seq }], impossible: true, impossibleSeq });
     assert.equal(Events.takePostedRaise(mind, bag(2, 1), 1), 2);
     assert.deepEqual([mind.situationSeq, mind.activityLeaf], [1, 77], 'raise 2 is taken, raise 1\'s mark is not');
     assert(Situations.woken(mind, 'build'), 'the town wakes the build');
@@ -92,7 +105,7 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
         Events.detectNear(body, handed);
         assert.equal(body.nearRaise, null, 'the handed row raises nothing');
         Events.detectNear(body, { ...handed, level: 31 });
-        assert.deepEqual(body.nearRaise.names.map(([name, payload]) => [name, payload]), [['level_up', null]], 'a new level joins the bag');
+        assert.deepEqual(body.nearRaise.names.map(({ name, payload }) => [name, payload]), [['level_up', null]], 'a new level joins the bag');
         const seq = body.nearRaise.seq;
         Events.detectNear(body, { ...handed, level: 31 });
         assert.equal(body.nearRaise.seq, seq, 'the same level while it waits is no new raise');
@@ -109,11 +122,11 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
         assert.equal(body.nearRaise, null, 'a received decision advances the baseline');
         // New gear waits for the town; the body's arrival in town is its stop there.
         const town = { woken: 0, earning: { spotId: 'held' } };
-        Events.takePostedRaise(town, { seq: 1, names: [['gear_changed', null]] }, 0, hunting);
+        Events.takePostedRaise(town, { seq: 1, names: [{ name: 'gear_changed', payload: null, seq: 1 }] }, 0, hunting);
         assert(!Situations.woken(town, 'earning_spot'), 'new gear on the hunt waits');
-        Events.takePostedRaise(town, { seq: 2, names: [['gear_changed', null]], stop: 'rest' }, 1, hunting);
+        Events.takePostedRaise(town, { seq: 2, names: [{ name: 'gear_changed', payload: null, seq: 1 }], stop: 'rest' }, 1, hunting);
         assert(!Situations.woken(town, 'earning_spot'), 'a rest is no town');
-        Events.takePostedRaise(town, { seq: 3, names: [['arrived_town', null]], stop: 'town' }, 2, Situations.bodyPlace({ activity: 'shopping' }));
+        Events.takePostedRaise(town, { seq: 3, names: [{ name: 'arrived_town', payload: null, seq: 3 }], stop: 'town' }, 2, Situations.bodyPlace({ activity: 'shopping' }));
         assert(Situations.woken(town, 'earning_spot'), 'the arrival in town hears it');
     }
 
