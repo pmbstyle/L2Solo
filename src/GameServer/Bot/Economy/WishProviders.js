@@ -387,6 +387,9 @@ function buildProjection(state, ctx, deps) {
     // trip map per build, shared by every farm and craft fact; they die at return.
     let combat = null, spoiler;
     const profile = () => combat ??= Profile.profileFor(state, timestamp);
+    // Whether the bot spoils, read once per build at its first use: every drop fact
+    // reads the same answer, whatever order the items are asked in (debt 23).
+    const spoilerOf = () => spoiler ??= invoke('GameServer/Bot/Population/ColdKillRewards').spoilerFor(state, { skills: Profile.skillsFor(state) }) || false;
     const Occupation = invoke('GameServer/Bot/Population/ColdOccupationSources');
     let labour = null;
     const craftLabour = () => labour ??= Occupation.craftLabour(state, timestamp, profile);
@@ -405,7 +408,7 @@ function buildProjection(state, ctx, deps) {
         spots: deps.spots, index: sourceIndex, cells: sourceGround.cells, fields: () => {
             const routes = !factTrip ? 'none' : Array.isArray(factTrip.rows) ? factTrip.rows : null;
             if (routes === null || !routeAllowed.inputs) return null;
-            const spoils = !!invoke('GameServer/Bot/Population/ColdKillRewards').spoilerFor(state, { skills: Profile.skillsFor(state) });
+            const spoils = spoilerOf();
             return [['required', !!progression.required], ['hourAdena', ctx.hourAdena], ['spoils', spoils], ['routes', routes],
                 ...Planner.sourceFactInputs(state), ...routeAllowed.inputs(), ...ctx.spotValue.inputs()];
         } }) : null;
@@ -456,8 +459,8 @@ function buildProjection(state, ctx, deps) {
         const started = diagnostic ? performance.now() : 0;
         if (keptFacts) crowdReads = { seen: new Set(), pairs: [] };
         const steps = Planner.sourceFacts(state, id, 1, { spots: deps.spots, spotValue,
-            trips: sourceTrips, trip: factTrip || { details: () => ({ known: false }) }, spoiler, timestamp,
-            economicLower: progression.required || !!spoiler, readyOnly: true, counts: reasons, routeAllowed,
+            trips: sourceTrips, trip: factTrip || { details: () => ({ known: false }) }, spoiler: spoilerOf(), timestamp,
+            economicLower: progression.required || spoilerOf(), readyOnly: true, counts: reasons, routeAllowed,
             bestForWish: { spoilOnly, progressionRequired: progression.required, hourAdena: ctx.hourAdena } });
         let step;
         do step = steps.next(); while (!step.done);
@@ -483,11 +486,8 @@ function buildProjection(state, ctx, deps) {
         if (!farmFacts.has(factsKey)) {
             const input = ctx.nodeInputs?.begin();
             try {
-                if (spoiler === undefined && sourceIndex.get(Number(id)).some(entry => entry.kind === 'spoil'))
-                    spoiler = invoke('GameServer/Bot/Population/ColdKillRewards').spoilerFor(state, { skills: Profile.skillsFor(state) }) || false;
-                // The spoiler as this fact reads it: the band widens for a spoiler
-                // once the build has read one (economicLower).
-                const spoilerSeen = spoiler === undefined ? 0 : spoiler ? 2 : 1;
+                // The spoiler as every fact reads it: the band widens for a spoiler (economicLower).
+                const spoilerSeen = spoilerOf() ? 2 : 1;
                 // A kept fact read no item: its scope keeps none (the replay is empty).
                 const kept = keptFacts?.take(factsKey, spoilerSeen, at => huntersOn(deps.spots[at])) || null;
                 farmFacts.set(factsKey, kept && !kept.verify ? { best: kept.best, inputs: input && NO_INPUTS }
@@ -884,9 +884,7 @@ function buildProjection(state, ctx, deps) {
     // A spoiler can earn the kit by supplying finite public demand for
     // recipes, parts and resources. No buyer means no speculative spoil goal.
     if (sourceIndex && ctx.board?.itemIds && Progression.personal(state)) {
-        if (spoiler === undefined) spoiler = invoke('GameServer/Bot/Population/ColdKillRewards').spoilerFor(state,
-            { skills: Profile.skillsFor(state) }) || false;
-        if (spoiler && ctx.hourAdena > 0) {
+        if (spoilerOf() && ctx.hourAdena > 0) {
             const demand = [];
             for (const id of ctx.board.itemIds(3)) {
                 if (!sourceIndex.get(Number(id))?.some(entry => entry.kind === 'spoil')) continue;
