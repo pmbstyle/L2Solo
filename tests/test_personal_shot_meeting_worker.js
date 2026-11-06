@@ -42,14 +42,18 @@ module.exports.personalShotProbe = async id => {
         catch (error) { rejected.push(error.message); }
     }
     // Keeping an old weapon grade must not block legitimate surplus sales.
-    delete state.inventory[167];
-    state.inventory[228] = { selfId: 228, amount: 1, equipped: true, slot: 7 };
+    // A weapon change is a new bag and state (states are replaced, not edited).
+    const inventory = { ...state.inventory };
+    delete inventory[167];
+    inventory[228] = { selfId: 228, amount: 1, equipped: true, slot: 7 };
+    const regraded = kernel.states.get(id).state = { ...state, inventory };
+    occupationPlanner.cancel(id);
     const oldGradeSale = await kernel.prepareMeeting(id, request(1463, 710082));
     // A seller with a funded goal cannot pay a gatekeeper fare from money
     // protected for that goal. Native acceptance applies that rule even when
     // the seller's physical wallet is ample.
     const entry = kernel.states.get(id);
-    entry.state = { ...state, stats: { ...state.stats, money: [1000, .001, 0, 500] } };
+    entry.state = { ...regraded, stats: { ...regraded.stats, money: [1000, .001, 0, 500] } };
     occupationPlanner.cancel(id);
     const distant = request(1869, 710080);
     distant.town = 'Orc Village'; distant.point = { locX: -44600, locY: -112400, locZ: -240 };

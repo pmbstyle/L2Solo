@@ -31,5 +31,37 @@ try {
     assert.equal(Shots.planForState(sorcerer(50), { blessed: false }).selfId, 2509, 'the table rows of spiritshot');
     assert.equal(Shots.planForState({ level: 50, stats: { classId: 2 }, inventory: {} }, { blessed: true }), null,
         'no blessed row for a soulshot class');
+    // The plan follows each of its inputs: the blessed stock drunk in place (a
+    // fight's own bag), a new bag with another weapon, the class on the same bag.
+    const Data = invoke('GameServer/DataCache');
+    const count = (selfId, kind) => Number(Data.items.find(item => Number(item?.selfId) === selfId)?.etc?.[kind] || 0);
+    const worn = selfId => ({ selfId, amount: 1, equipped: true, slot: 7 });
+    const bag = { 83: worn(83), 3948: { selfId: 3948, amount: 5 }, 2510: { selfId: 2510, amount: 5 } };
+    const fighter = sorcerer(51, bag), shot = () => Shots.planForState(fighter);
+    assert.deepEqual([shot().selfId, shot().perAction], [3948, count(83, 'spiritshot')], 'D weapon, blessed held');
+    bag[3948].amount = 0;
+    assert.equal(shot().selfId, 2510, 'blessed drunk in the same bag: its spiritshot');
+    bag[2510].amount = 0;
+    assert.equal(shot().selfId, 2510, 'neither held at 51: the blessed farm does not pay');
+    fighter.level = 50;
+    assert.equal(shot().selfId, 3948, 'at 50 it pays');
+    fighter.inventory = { 72: worn(72) };
+    assert.deepEqual([shot().selfId, shot().rank, shot().perAction], [3949, 'c', count(72, 'spiritshot')], 'a new bag with a C weapon');
+    fighter.stats = { classId: 2 };
+    assert.deepEqual([shot().selfId, shot().kind, shot().perAction], [1464, 'soulshot', count(72, 'soulshot')], 'a fighter class on the same bag');
+    fighter.inventory = {};
+    assert.deepEqual([shot().selfId, shot().perAction], [1835, 0], 'no weapon: no-grade, nothing per charge');
+    // A worn row edited in place breaks the bag rule: developer diagnostics see it.
+    const Config = invoke('GameServer/Bot/Population/PopulationConfig'), Failures = require('../src/FailureLog');
+    const diagnostics = Config.developerDiagnostics, stale = () => Failures.snapshot()?.['kit_cache.stale'] || 0;
+    const edited = { 72: worn(72) }, breaching = { level: 50, stats: { classId: 2 }, inventory: edited };
+    assert.equal(Shots.planForState(breaching).selfId, 1464, 'fixture: C soulshots');
+    try {
+        Config.developerDiagnostics = true;
+        const before = stale();
+        edited[72] = { ...edited[72], equipped: false }; edited[83] = worn(83);
+        assert.equal(Shots.planForState(breaching).selfId, 1463, 'the fresh answer under diagnostics');
+        assert.equal(stale(), before + 1, 'the breach is counted');
+    } finally { Config.developerDiagnostics = diagnostics; }
 } finally { Table.best = best; }
 console.log('PASS table roles of summoners and chanters, blessed spiritshot choice');

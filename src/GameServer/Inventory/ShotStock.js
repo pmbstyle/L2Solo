@@ -73,9 +73,17 @@ function itemRank(selfId) {
     return normalizeRank(templateFor(selfId)?.etc?.rank);
 }
 
+// Whether a class fires spiritshots, by class id: inferRole of a bare class id
+// reads only the static class tables, so one answer per class id.
+const spiritClasses = new Map();
 function classWantsSpiritshots(classId) {
-    const role = BotRoles.inferRole(Number(classId || 0));
-    return BotWeaponCompatibility.isCasterRole(role, classId);
+    const id = Number(classId || 0);
+    let wants = spiritClasses.get(id);
+    if (wants === undefined) {
+        wants = BotWeaponCompatibility.isCasterRole(BotRoles.inferRole(id), id);
+        spiritClasses.set(id, wants);
+    }
+    return wants;
 }
 
 function actorClassId(actor) {
@@ -117,14 +125,56 @@ function equippedWeapon(items) {
 // false the class's own kind; unset, a spiritshot class takes the blessed
 // one when it holds it, or holds no spiritshot and it pays (blessedPays).
 function planForState(state, options = {}) {
-    const weapon = equippedWeapon(state?.inventory);
+    const weapon = stateWeapon(state?.inventory);
     const classId = Number(state?.stats?.classId || state?.classId || 0), rank = weapon ? itemRank(weapon.selfId) : 'none';
     const spirit = classWantsSpiritshots(classId);
     if (options.blessed === true && !spirit) return null;
     const blessed = spirit && (options.blessed ?? choosesBlessed(() => state, rank, selfId => heldAmount(state, selfId)));
-    const plan = blessed ? planForKind('blessedSpiritshot', rank) : planFor({ classId, rank });
-    const count = weapon ? templateFor(weapon.selfId)?.etc?.[plan.kind === 'soulshot' ? 'soulshot' : 'spiritshot'] : 0;
-    return { ...plan, perAction: Math.max(0, Number(count) || 0) };
+    return weaponPlan(blessed ? 'blessedSpiritshot' : spirit ? 'spiritshot' : 'soulshot', weapon);
+}
+
+// The equipped weapon of a cold inventory, per inventory object: it reads only
+// the rows' selfId, slot and equipped marks. Rule: a worn row is never edited
+// in place; a gear change writes a new bag (cold updates replace the inventory
+// object, as VisibleStrength.stateLook and ItemDisposition's sale walks rely
+// on); the one bag edited in place, a fight's own copy
+// (BackgroundResolver.spendColdShot), changes only shot amounts. A breach is
+// seen under developer diagnostics: each hit is checked against a fresh walk,
+// a mismatch counted (FailureLog kit_cache.stale) and answered fresh.
+const stateWeapons = new WeakMap();
+let diagnosticConfig = null;
+function stateWeapon(inventory) {
+    if (!inventory || typeof inventory !== 'object') return null;
+    let weapon = stateWeapons.get(inventory);
+    if (weapon !== undefined && (diagnosticConfig ||= invoke('GameServer/Bot/Population/PopulationConfig')).developerDiagnostics) {
+        const fresh = equippedWeapon(inventory);
+        if (fresh?.selfId !== weapon?.selfId) {
+            FailureLog.note('kit_cache.stale', new Error(`ShotStock weapon ${weapon?.selfId} held, ${fresh?.selfId} worn`));
+            weapon = undefined;
+        }
+    }
+    if (weapon === undefined) stateWeapons.set(inventory, weapon = equippedWeapon(inventory));
+    return weapon;
+}
+
+// A plan of a shot kind for a weapon (none: no weapon), with the weapon's
+// shots per charge: keyed by exactly (kind, weapon selfId) over the item
+// templates (DataCache.items: a reload or a page grown into it clears it).
+// Bounded by the weapon templates x 3 kinds. Shared and frozen: callers only
+// read it.
+let weaponPlans = new Map(), weaponPlansOf = null, weaponPlansLength = 0;
+function weaponPlan(kind, weapon) {
+    if (weaponPlansOf !== DataCache.items || weaponPlansLength !== DataCache.items?.length) {
+        weaponPlans = new Map(); weaponPlansOf = DataCache.items; weaponPlansLength = DataCache.items?.length;
+    }
+    const selfId = weapon ? Number(weapon.selfId) : 0, key = `${kind}|${selfId}`;
+    let plan = weaponPlans.get(key);
+    if (!plan) {
+        const count = selfId ? templateFor(selfId)?.etc?.[kind === 'soulshot' ? 'soulshot' : 'spiritshot'] : 0;
+        plan = Object.freeze({ ...planForKind(kind, selfId ? itemRank(selfId) : 'none'), perAction: Math.max(0, Number(count) || 0) });
+        weaponPlans.set(key, plan);
+    }
+    return plan;
 }
 
 function heldAmount(state, selfId) {
