@@ -27,11 +27,13 @@ function bagFact(state, kitHashes = null) {
 // a retry held there would hold the trip with nothing to wake the build again); at a
 // cleanup count (1) the author's thresholds with the sale retry read now
 // (inventoryCleanupNeed), whose hold ends when the fact rises to its floor (bag_full).
+// At 0 (no floor, no cleanup count) nothing: the sale walk runs only for a counted bag.
 // Held in stats.cleanupDue until its trip starts (the far kernel's step with
 // main's cleanup goal, a body's HuntingState) or the bag fact falls to 0.
 function cleanupDecision(state, now) {
     if (state.party?.partyId || state.partyId) return null;
-    return floorNeed(SurvivalFloor.bagFloor(state)) || countNeed(state, now);
+    const fact = bagFact(state);
+    return fact === 2 ? floorNeed(SurvivalFloor.bagFloor(state)) : fact === 1 ? countNeed(state, now) : null;
 }
 const CLEANUP_BUSY_FLAGS = ['marketReturn'];
 const CLEANUP_BUSY_ACTIVITIES = ['traveling', 'shopping', 'merchant', 'crafting', 'dead', 'pk_hunting'];
