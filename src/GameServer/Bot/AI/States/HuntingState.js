@@ -719,7 +719,9 @@ module.exports = {
             return;
         }
         if (floor?.action === 'unload' && isSoloHunter(session)) {
-            // Like the loot sell trip below and the cold sale visit: the trip starts
+            // Temporary until step 4: a body's full bag is a situation now (bag_full,
+            // raised from its post); the build takes the unload on it then and this
+            // every-tick check goes. Like the loot sell trip below and the cold sale visit: the trip starts
             // the sale retry, so a bag that sold nothing heavy hunts on at penalty 1.
             // A trip deferred by a fight comes back every tick: the retry it
             // already started stays, the trip itself waits in pendingTownTrip.

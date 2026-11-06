@@ -403,6 +403,11 @@ async function run() {
         const atDrinks = state => ({ ...state, stats: { ...state.stats, wishSections: { ...state.stats.wishSections, ...Gate.semanticFacts(drinks(12)) } } });
         const onHuntLeaf = (before, after) => sectionsRaised(atDrinks(before), atDrinks(after), { activity: 'hunting', spotId: published.spotId });
         assert(onHuntLeaf(drinks(12), drinks(8)).includes('supply'), 'a need opens');
+        // A body near a player hears its full bag from its post (its previous post's facts), as a far step does.
+        const body = { ...published, phase: 'hot', activity: 'hunting' };
+        const full = { ...body, inventory: { ...body.inventory, 1: { selfId: 1, amount: 200, stackable: false } } };
+        assert(Situations.detect({}, full, { facts: Gate.semanticFacts(body), body: true }).includes('bag_full'), 'a body hears its full bag');
+        assert(!Situations.detect({}, full, { facts: Gate.semanticFacts(full), body: true }).includes('bag_full'), 'once');
         const higher = { ...published, level: published.level + 1 };
         assert.deepEqual(Situations.heard(['level_up'], Situations.place(higher)), [], 'a new level waits on the hunt');
         assert(Situations.heard(['level_up'], Situations.place({ ...higher, activity: 'resting' })).includes('build'), 'and is read at the rest');

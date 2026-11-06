@@ -508,7 +508,7 @@ function factsOf(view, memory = null) {
         occupation: hash([view.spotId, view.activity === 'resting' ? 'hunting' : view.activity]),
         dead: view.dead, riskDeaths: view.riskDeaths, recovery: view.recovery, karma: view.karma,
         supply: hash(view.supply), lines: linesOf(view.supply), stores: hash(view.stores), warehouse: view.warehouse,
-        bag: hash([view.bagFull, view.weight]) };
+        bag: hash([view.bagFull, view.weight]), bagFull: view.bagFull, weight: view.weight };
 }
 // The party fact of a bot in none (factsOf).
 const NO_PARTY = hash([null, null]);

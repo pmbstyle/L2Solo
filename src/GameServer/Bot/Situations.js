@@ -509,15 +509,17 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, fa
     if (out) { out.facts = current; out.funding = fundingAfter; }
     const names = factNames(previousFact, current, funding, body || Sections.occupationPlanned(after, leaf));
     if (unhuntable) names.push('spot_empty');
-    return gated(place(after, before)) ? names.concat(needsOpened(before, after, names, view)) : names;
+    // A body near a player hears its full bag too (its post's previous facts: bagFull, weight).
+    return body || gated(place(after, before)) ? names.concat(needsOpened(before, names, view, facts)) : names;
 }
 // A need that opened in this step, one raise: one that stays open raises nothing more.
-// now: the step's view of after (stateView). The supply lines are facts (factNames).
-function needsOpened(before, after, names, now) {
+// now: the step's view of after (stateView); was: a body's previous post's facts, else
+// the state before's view. The supply lines are facts (factNames).
+function needsOpened(before, names, now, was = null) {
     const opened = [];
     if (names.includes('bag')) {
-        const was = readers().stateView(before);
-        if (now.bagFull > was.bagFull || now.weight > was.weight) opened.push('bag_full');
+        was ||= readers().stateView(before);
+        if (now.bagFull > (Number(was.bagFull) || 0) || now.weight > (Number(was.weight) || 0)) opened.push('bag_full');
     }
     return opened;
 }
