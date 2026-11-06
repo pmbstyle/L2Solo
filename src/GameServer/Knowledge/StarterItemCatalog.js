@@ -20,10 +20,19 @@ function ids(source, equippedOnly = false, classId) {
 // The imported PK template requires every class row to carry its items array.
 function importIds(source) { return new Set(source.flatMap(row => row.items.map(numericId))); }
 
-function snapshotIds(source, observer) {
+// A snapshot's ids, shared by its readers: a Set that refuses changes.
+class ReadOnlyIds extends Set {
+    constructor(values) { super(values); this.sealed = true; }
+    add(value) { if (this.sealed) throw new TypeError('starter ids are read-only'); return super.add(value); }
+    delete() { throw new TypeError('starter ids are read-only'); }
+    clear() { throw new TypeError('starter ids are read-only'); }
+}
+// equippedOnly: as ids(); one observer reads one form. The ids are shared and
+// read-only (ReadOnlyIds).
+function snapshotIds(source, observer, equippedOnly = false) {
     let view = observations.get(observer);
     if (!view) {
-        view = { source: null, ids: new Set() };
+        view = { source: null, ids: new ReadOnlyIds() };
         observations.set(observer, view);
     }
     if (view.source !== source) {
@@ -31,7 +40,7 @@ function snapshotIds(source, observer) {
         // reader retained prior IDs after a failed transition and did not retry
         // that same source; the first failed source retains its initial empty set.
         view.source = source;
-        view.ids = ids(source);
+        view.ids = new ReadOnlyIds(ids(source, equippedOnly));
     }
     return view.ids;
 }

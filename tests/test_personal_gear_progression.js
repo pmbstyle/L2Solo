@@ -39,6 +39,22 @@ function verify() {
     const first = bot(0, 1, starter);
     assert(Progression.assess(first).required, 'starter clothes are never a completed working kit');
     assert(Progression.assess(first).gaps.get(7), 'starter weapon still needs replacement');
+    // The starter ids follow a reloaded newbie table; a caller's own plan copy
+    // edited does not reach the assessment's shared plan.
+    const weaponRow = Data.newbieItems.find(row => row.classId === 0).items
+        .find(row => row.equipped && Data.items.find(item => item.selfId === row.selfId).etc.slot === 7);
+    const table = Data.newbieItems, gapsBefore = [...Progression.assess(first).gaps];
+    assert(Progression.assess(first).starters.has(Number(weaponRow.selfId)), 'fixture: the starter weapon is a starter');
+    try {
+        Data.newbieItems = table.map(row => ({ ...row, items: (row.items || []).map(item =>
+            Number(item.selfId) === Number(weaponRow.selfId) ? { ...item, equipped: false } : item) }));
+        assert.equal(Progression.assess(first).starters.has(Number(weaponRow.selfId)), false, 'a reloaded table is read');
+    } finally { Data.newbieItems = table; }
+    assert(Progression.assess(first).starters.has(Number(weaponRow.selfId)), 'and the old one again');
+    assert.throws(() => Progression.assess(first).starters.add(1), TypeError, 'the shared starter ids are read-only');
+    const own = Gear.planFor({ classId: 0, level: 10 });
+    own.items.length = 0;
+    assert.deepEqual([...Progression.assess(first).gaps], gapsBefore, 'a caller\'s plan copy is its own');
     for (const classId of [0, 10, 18, 25, 38, 49, 50, 53, 54, 56]) {
         const state = bot(classId, 10, inventoryFor(Gear.planFor({ classId, level: 10 }).items));
         assert.equal(Progression.assess(state).required, false, `working NG kit closes class ${classId}`);
