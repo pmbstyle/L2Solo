@@ -3,9 +3,9 @@ const SavedStats = require('../SavedStats');
 // Only activity state is rewound. Inventory, experience, skills, vitals and
 // native economy revisions earned with the player always keep their new values.
 const FIELDS = ['travel', 'pvpEncounter', 'coldCompetition', 'partyRequest',
-    'backgroundPartyId', 'leaderId', 'marketStore', 'supplyErrand', 'mammonReturn', 'restUntil', 'mammonRetryAt'];
+    'backgroundPartyId', 'leaderId', 'marketStore', 'supplyErrand', 'mammonReturn', 'restUntil'];
 const CLOCKS = new Set(['at', 'startedAt', 'startAt', 'endAt', 'arrivalAt', 'until',
-    'expiresAt', 'nextResolveAt', 'lastProgressAt', 'formedAt', 'restUntil', 'mammonRetryAt']);
+    'expiresAt', 'nextResolveAt', 'lastProgressAt', 'formedAt', 'restUntil']);
 function shift(value, elapsed) {
     if (Array.isArray(value)) return value.map(item => shift(item, elapsed));
     if (!value || typeof value !== 'object') return value;

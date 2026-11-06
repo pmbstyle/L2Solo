@@ -45,8 +45,7 @@ function digest(state) {
         travel: stats.travel || null,
         marketReturn: stats.marketReturn ?? null,
         craftReturn: stats.craftReturn ?? null,
-        mammonReturn: stats.mammonReturn ?? null,
-        mammonRetryAt: stats.mammonRetryAt ?? null
+        mammonReturn: stats.mammonReturn ?? null
     };
 }
 

@@ -347,7 +347,7 @@ function partyTransitionProposals(run, memberStates, party, timestamp, enqueuedA
 
 // Resolved on first use, like the other lazy dependencies of the worker:
 // require() inside lifecycleKind ran per inventory item on every row.
-let ClanPartyDuty, BotCrystallization, ClanCrystalSupply;
+let ClanPartyDuty, BotCrystallization, ClanCrystalSupply, Situations;
 
 // A near bot's record (hot, nearSeq: its body's last post) against a hot row
 // without a newer post number: a writer's copy of the cached row
@@ -410,8 +410,11 @@ function lifecycleKind(state = {}, facts = NO_FACTS) {
     // craftReturn is a saved destination, not an outstanding crafting action.
     // Actual crafting is routed by activity, shop/station and plan readiness.
     if (BotErrands.busyWith(state, BotErrands.COLD_CLAIM)) return 'command';
-    if (stats.mammonReturn || (Number(stats.mammonRetryAt || 0) <= Date.now()
-        && C4Unseal.sealedHeld(state.inventory))) return 'command';
+    // A sealed item goes to Mammon on a taken build (F6: a side errand runs only when the
+    // build was taken, PopulationService.resolveColdServiceBranch): a woken build's step
+    // is main's; a failed visit waits for the build's next waking situation.
+    if (stats.mammonReturn || (Situations ||= require('../Situations')).woken(stats, 'build')
+        && C4Unseal.sealedHeld(state.inventory)) return 'command';
     if (String(plan.strategy || '') === 'craft') {
         if (state.activity !== 'hunting' || ['component_ready', 'ready_to_craft'].includes(String(plan.status || ''))) return 'command';
     }

@@ -2984,7 +2984,7 @@ const PopulationService = {
             || (state.activity === 'resting' && Number(state.stats?.restUntil || 0) > 0)) {
             return this.resolveColdTransition(state, workerRequest, options, precomputedResult, cleanupAfterFight, elapsedMs, startedAt);
         }
-        const serviceResult = this.resolveColdServiceBranch(state, startedAt);
+        const serviceResult = this.resolveColdServiceBranch(state, startedAt, workerRequest?.precomputedPlan?.buildTaken === true);
         if (serviceResult !== COLD_RESOLVE_NEXT) return serviceResult;
         const staleShopping = BackgroundResolver.staleShopping(state);
         const passiveActivity = ['traveling', 'shopping', 'merchant', 'crafting', 'dead'].includes(state?.activity) && !staleShopping;
@@ -3020,7 +3020,7 @@ const PopulationService = {
         // The spot is the worker's route (BotRoute.choose: a party waiter's safe
         // fallback too, PartyWaitFallback): main chooses none (situations.md §8).
         const routedState = plannedState;
-        const travellingState = ColdCraftingService.beginTravel(routedState) || routedState;
+        const travellingState = ColdCraftingService.beginTravel(routedState, Date.now(), { decided: workerPlan?.buildTaken === true }) || routedState;
         const travel = travellingState.stats?.travel;
         const travelEvents = travellingState !== plannedState && travel?.stationId
             ? [CraftTelemetry.stationTravelEvent(plannedState, travel)]
@@ -3159,14 +3159,15 @@ const PopulationService = {
         });
     },
 
-    resolveColdServiceBranch(state, startedAt) {
+    // buildTaken: the worker's step took the build (F6: the Mammon trip is a side errand).
+    resolveColdServiceBranch(state, startedAt, buildTaken = false) {
         const MammonUnseal = invoke('GameServer/Bot/AI/BotMammonUnseal');
         if (state.activity === 'crafting' && state.stats?.mammonReturn) {
             return MammonUnseal.finish(state,startedAt)
                 .then(next => LifeState.upsertState(next,'mammon_unseal_complete'))
                 .then(saved => ({ok:!!saved,state:saved || state}));
         }
-        const mammonTravel = MammonUnseal.beginTravel(state,startedAt);
+        const mammonTravel = buildTaken && MammonUnseal.beginTravel(state,startedAt);
         if (mammonTravel) {
             return LifeState.upsertState(mammonTravel,'mammon_unseal_travel')
                 .then(saved => ({ok:!!saved,state:saved || state}));
@@ -3363,7 +3364,9 @@ const PopulationService = {
                     .then(() => finalState);
             })
             .then(async (finalState) => {
-                const trip = !LifeState.hotRow(finalState.characterId) && BotWarehouse.beginCraftReturn(finalState);
+                // A side errand on a taken build only (F6, temporary until step 6).
+                const trip = workerPlan?.buildTaken === true && !LifeState.hotRow(finalState.characterId)
+                    && BotWarehouse.beginCraftReturn(finalState, Date.now(), { decided: true });
                 if (trip) finalState = await LifeState.upsertState(trip, 'craft_warehouse_return') || finalState;
                 // A bot that went hot meanwhile speaks through its own AI.
                 if (finalState.phase !== 'hot') GlobalChat.maybeAnnounce(finalState, result.events);

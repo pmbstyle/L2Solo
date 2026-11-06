@@ -2113,6 +2113,11 @@ function startKernel(config = {}) {
                     ? { actionBaseline: asked?.baseline || refreshed.actionBaseline } : {}),
                 statsPacket,
                 economy,
+                // The step took the build (F6): main runs the side errands (a Mammon visit,
+                // the warehouse craft return, a moved clan crafter asked again) only then; a
+                // failed one waits for the build's next waking situation. Temporary until
+                // step 6: real leaves of the town plan.
+                ...(!nullReuse ? { buildTaken: true } : {}),
                 activityPick: economy.network.activity ? { activity: economy.network.activity.activity,
                     spotId: economy.network.activity.spotId, npcId: economy.network.activity.npcId } : null,
                 economyDecision: heldDecision || ColdEconomyDecision.capture({ ...economy, workshop: deps.workshop }, routedState),

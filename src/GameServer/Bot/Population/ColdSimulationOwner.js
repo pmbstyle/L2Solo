@@ -3,7 +3,6 @@ const FailureLog = require('../../../FailureLog');
 
 const Database = invoke('Database');
 const InventorySummary = invoke('GameServer/Bot/Population/InventorySummary');
-const C4Unseal = invoke('GameServer/Items/C4Unseal');
 const BotErrands = require('./BotErrands');
 const SavedStats = require('../SavedStats');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
@@ -31,8 +30,8 @@ function eligibility(state = {}, options = {}) {
     }
     if (options.hasWarehouseWorkflow === true) return { ok: false, reason: 'warehouse_state' };
     const stats = state.stats || {};
-    if (stats.mammonReturn || (Number(stats.mammonRetryAt || 0) <= Date.now()
-        && C4Unseal.sealedHeld(state.inventory))) return { ok:false, reason:'craft_state' };
+    // A Mammon visit under way is main's (its trip starts on a taken build: kernel lifecycleKind).
+    if (stats.mammonReturn) return { ok:false, reason:'craft_state' };
     const busy = BotErrands.busyWith(state, BotErrands.COLD_CLAIM);
     if (busy) return { ok: false, reason: BotErrands.CLAIM_REASONS[busy] };
     if (stats.backgroundPartyId && options.allowParty !== true) return { ok: false, reason: 'background_party' };

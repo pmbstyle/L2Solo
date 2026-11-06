@@ -44,8 +44,7 @@
       "spotId": "pin_spot"
     },
     "craftReturn": null,
-    "mammonReturn": null,
-    "mammonRetryAt": null
+    "mammonReturn": null
   },
   "market_buy": {
     "activity": "traveling",
@@ -92,8 +91,7 @@
       "spotId": "pin_spot"
     },
     "craftReturn": null,
-    "mammonReturn": null,
-    "mammonRetryAt": null
+    "mammonReturn": null
   },
   "market_return": {
     "activity": "traveling",
@@ -153,8 +151,7 @@
       "spotId": "19_-19"
     },
     "craftReturn": null,
-    "mammonReturn": null,
-    "mammonRetryAt": null
+    "mammonReturn": null
   },
   "craft_dual": {
     "activity": "traveling",
@@ -202,8 +199,7 @@
       "spotId": "pin_spot",
       "regionName": "Dion fields"
     },
-    "mammonReturn": null,
-    "mammonRetryAt": null
+    "mammonReturn": null
   },
   "craft_dual_return": {
     "activity": "traveling",
@@ -254,8 +250,7 @@
     },
     "marketReturn": null,
     "craftReturn": null,
-    "mammonReturn": null,
-    "mammonRetryAt": null
+    "mammonReturn": null
   },
   "craft_component_return": {
     "activity": "traveling",
@@ -306,8 +301,7 @@
     },
     "marketReturn": null,
     "craftReturn": null,
-    "mammonReturn": null,
-    "mammonRetryAt": null
+    "mammonReturn": null
   },
   "craft_equipment_return": {
     "activity": "traveling",
@@ -358,8 +352,7 @@
     },
     "marketReturn": null,
     "craftReturn": null,
-    "mammonReturn": null,
-    "mammonRetryAt": null
+    "mammonReturn": null
   },
   "mammon": {
     "activity": "traveling",
@@ -407,8 +400,7 @@
       },
       "spotId": "pin_spot",
       "regionName": "Dion fields"
-    },
-    "mammonRetryAt": null
+    }
   },
   "mammon_return": {
     "activity": "traveling",
@@ -459,8 +451,7 @@
     },
     "marketReturn": null,
     "craftReturn": null,
-    "mammonReturn": null,
-    "mammonRetryAt": 1300000
+    "mammonReturn": null
   },
   "hunting_solo": {
     "activity": "traveling",
@@ -509,8 +500,7 @@
     },
     "marketReturn": null,
     "craftReturn": null,
-    "mammonReturn": null,
-    "mammonRetryAt": null
+    "mammonReturn": null
   },
   "hunting_party": {
     "activity": "traveling",
@@ -545,8 +535,7 @@
     },
     "marketReturn": null,
     "craftReturn": null,
-    "mammonReturn": null,
-    "mammonRetryAt": null
+    "mammonReturn": null
   },
   "karma_washing": {
     "activity": "traveling",
@@ -595,7 +584,6 @@
     },
     "marketReturn": null,
     "craftReturn": null,
-    "mammonReturn": null,
-    "mammonRetryAt": null
+    "mammonReturn": null
   }
 }

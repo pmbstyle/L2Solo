@@ -105,8 +105,12 @@ async function run() {
     for (const [karma, blocked] of [[undefined, false], [null, false], [0, false], [-5, false], ['0', false], [NaN, false], [1, true], ['7', true], [45, true]]) {
         assert.strictEqual(!!Bot.beginTravel({...cold,stats:{...cold.stats,karma}},1000), !blocked, `Mammon trip with karma ${karma}`);
     }
+    // The trip is a side errand of a taken build (F6): a woken build's step is main's, a
+    // held one's hunt goes on; a visit under way stays main's.
     assert.strictEqual(invoke('GameServer/Bot/Population/ColdSimulationKernel').lifecycleKind(cold), 'command');
-    assert.strictEqual(invoke('GameServer/Bot/Population/ColdSimulationOwner').eligibility(cold).ok, false);
+    assert.strictEqual(invoke('GameServer/Bot/Population/ColdSimulationKernel').lifecycleKind({...cold,stats:{...cold.stats,woken:0,wishSections:{}}}),
+        'resolver', 'a held build waits for its next situation');
+    assert.strictEqual(invoke('GameServer/Bot/Population/ColdSimulationOwner').eligibility({...cold,stats:{...cold.stats,mammonReturn:{}}}).ok, false);
     // The plain answer is kept per bag object: a new bag is read again, so a
     // sealed item added or removed shows on the next read.
     const Kernel = invoke('GameServer/Bot/Population/ColdSimulationKernel');

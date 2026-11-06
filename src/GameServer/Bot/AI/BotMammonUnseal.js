@@ -71,7 +71,7 @@ function beginTravel(state, timestamp = Date.now(), { fromCraft = false } = {}) 
     if (state.phase !== 'cold' || state.activity !== 'hunting'
         || state.party?.partyId || state.partyId || Karma.closesTowns(state.stats?.karma)
         || BotErrands.busyWith(state, busyFlags)
-        || Number(state.stats?.mammonRetryAt||0)>timestamp || !candidate(state)) return null;
+        || !candidate(state)) return null;
     const nearestTown = TownRespawn.getClosestTown(state.loc?.locX,state.loc?.locY,state.loc?.locZ);
     return invoke('GameServer/Bot/Population/ColdTrip').toTown(state, {to:{...Mammon.loc},
         townName:'Giran',regionName:'Giran',viaTown:nearestTown?.name || null,
@@ -86,7 +86,6 @@ async function finish(state,timestamp=Date.now()) {
     const target = state.stats.mammonReturn;
     const near = Math.hypot(state.loc.locX-Mammon.loc.locX,state.loc.locY-Mammon.loc.locY)<=200
         && Math.abs(state.loc.locZ-Mammon.loc.locZ)<=200;
-    let count = 0;
     const converted = new Map();
     if (near) {
         for (const item of await Database.fetchItems(state.characterId, 'mammon_unseal')) {
@@ -95,7 +94,6 @@ async function finish(state,timestamp=Date.now()) {
             if (item.equipped) await Database.updateItemEquipState(state.characterId,item.id,false,item.slot);
             await Database.unsealInventoryItem(state.characterId,item.id,recipe.productId);
             converted.set(item.selfId,(converted.get(item.selfId)||0)+1);
-            count++;
         }
     }
     // Retain unrelated virtual loot; replace only the converted source counts.
@@ -111,6 +109,6 @@ async function finish(state,timestamp=Date.now()) {
         townName:returnTown?.name || target.regionName || 'Hunting Ground',regionName:target.regionName,
         viaTown:returnTown?.name || null,spotId:target.spotId,
         arrivalActivity:'hunting',arrivalEvent:'returned_to_spot',reason:'mammon_unseal_return'},
-        timestamp, {extraStats:{mammonReturn:null,mammonRetryAt:count?0:timestamp+300000}});
+        timestamp, {extraStats:{mammonReturn:null}});
 }
 module.exports = {recipeFor,candidate,plan,execute,beginTravel,finish};

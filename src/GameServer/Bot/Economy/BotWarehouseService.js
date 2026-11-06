@@ -9,7 +9,6 @@ const MarketOpportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const depositQueues = new Map();
 const craftStageChecks = new Map();
 const CRAFT_STAGE_CACHE_MS = 30000;
-const CRAFT_VISIT_RETRY_MS = 5 * 60 * 1000;
 const CRAFT_STAGE_CACHE_LIMIT = 1024;
 const { MAX_GEAR_COPIES_PER_TYPE } = require('./WarehouseRules');
 const Situations = require('../Situations');
@@ -434,7 +433,9 @@ function returnStage(state, stock, identity, bagIdentity, timestamp) {
 // A kit parked during a different objective can require a warehouse visit
 // after it becomes the active objective again. Only that recorded deposit
 // can trigger a trip, once per warehouse contents, after the current fight.
-function beginCraftReturn(state, timestamp = Date.now(), { allowParty = false } = {}) {
+// decided: the step took the build (F6), whose waking situation asks a failed
+// visit again; a party member's break goes once per contents and bag.
+function beginCraftReturn(state, timestamp = Date.now(), { allowParty = false, decided = false } = {}) {
     const plan = ItemDisposition.equipmentInputPlan(state);
     if (state?.phase !== 'cold' || state.activity !== 'hunting' || !allowParty && (state.party?.partyId || state.partyId)
         || state.stats?.marketReturn || state.stats?.tradeMeeting || plan?.clanGoal
@@ -444,8 +445,8 @@ function beginCraftReturn(state, timestamp = Date.now(), { allowParty = false } 
     if (!Index.ready() || !Index.hasItems(state)) return null;
     const identity = Index.contentIdentity(state), previous = state.stats?.craftWarehouseVisit;
     const bagIdentity = craftBagIdentity(state);
-    if (!identity || Number(previous?.target) === Number(plan.target.selfId) && previous?.identity === identity
-        && previous?.bagIdentity === bagIdentity && timestamp - Number(previous.at || 0) < CRAFT_VISIT_RETRY_MS) return null;
+    if (!identity || !decided && Number(previous?.target) === Number(plan.target.selfId) && previous?.identity === identity
+        && previous?.bagIdentity === bagIdentity) return null;
     let warehouse;
     const stock = () => warehouse ||= Object.values(Index.inventory(state));
     const policy = require('./CraftWarehousePolicy'), stage = returnStage(state, stock, identity, bagIdentity, timestamp);

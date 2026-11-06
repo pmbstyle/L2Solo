@@ -13,7 +13,6 @@ const Profit = require('./CraftProfitPolicy');
 const Production = require('./ProductionPolicy');
 const Workshops = require('./CraftWorkshopService');
 
-const CLAN_CRAFTER_RETRY_MS = 5 * 60 * 1000;
 
 const isStationService = state => CraftShopService.isStationService(state);
 
@@ -115,7 +114,8 @@ function readyRecipeFor(state, recipe, visited = new Set()) {
     return null;
 }
 
-function beginTravel(state, timestamp = Date.now()) {
+// decided: the step took the build (F6), which asks a moved clan crafter again.
+function beginTravel(state, timestamp = Date.now(), { decided = false } = {}) {
     if (Karma.closesTowns(state?.stats?.karma)) return null;
     const plan = state?.stats?.equipmentPlan;
     if (!state || state.activity === 'traveling' || !['active', 'component_ready', 'ready_to_craft'].includes(plan?.status) || plan.strategy !== 'craft') return null;
@@ -125,9 +125,10 @@ function beginTravel(state, timestamp = Date.now()) {
     const station = stationForRecipe(recipe?.recipeId, state);
     if (!recipe || !station) return null;
     if (station.clan && Number(station.characterId) !== Number(state.characterId)) {
-        const retry = state.stats?.clanCraftRetry;
-        if (Number(retry?.characterId) === Number(station.characterId)
-            && Number(retry?.recipeId) === Number(recipe.recipeId) && Number(retry?.until) > timestamp) return null;
+        // A crafter that moved away is not chased: asked again at the build's next waking situation.
+        const retry = !decided && state.stats?.clanCraftRetry;
+        if (retry && Number(retry.characterId) === Number(station.characterId)
+            && Number(retry.recipeId) === Number(recipe.recipeId)) return null;
         const crafter = LifeState.cachedState(station.characterId);
         if (!crafter || crafter.phase !== 'cold' || crafter.partyId || crafter.party?.partyId
             || crafter.stats?.tradeMeeting || ['dead', 'respawning', 'traveling', 'fighting'].includes(crafter.activity)) return null;
@@ -327,11 +328,10 @@ async function craft(state, random = Math.random) {
         if (Math.hypot(Number(state.loc?.locX) - Number(crafterState.loc?.locX),
             Number(state.loc?.locY) - Number(crafterState.loc?.locY)) > 1200) {
             // Do not chase an actor whose location changes during the trip.
-            // Preserve the project and let normal activity resume before a
-            // bounded retry, rather than generating another immediate trip.
+            // Preserve the project and let normal activity resume until the
+            // build's next waking situation asks again (beginTravel decided).
             return { state: { ...state, stats: { ...state.stats, clanCraftRetry: {
-                characterId: Number(crafter.id), recipeId: Number(recipe.recipeId),
-                until: Date.now() + CLAN_CRAFTER_RETRY_MS } } },
+                characterId: Number(crafter.id), recipeId: Number(recipe.recipeId) } } },
             crafted: false, reason: 'clan_crafter_moved' };
         }
         const known = await Database.fetchCharacterRecipes(crafter.id);

@@ -381,6 +381,7 @@ try {
     }
     const visited = { ...state, stats: { ...state.stats, craftWarehouseVisit: trip.stats.craftWarehouseVisit } };
     assert.equal(Warehouse.beginCraftReturn(visited, 1800000000001), null, 'an unchanged failed visit cannot spin');
+    assert(Warehouse.beginCraftReturn(visited, 1800000000001, { decided: true }), 'the build\'s next waking situation asks it again');
     const changedBag = { ...visited, inventory: { ...visited.inventory, 1864: item(1864, 3) } };
     assert(Warehouse.beginCraftReturn(changedBag, 1800000000002), 'new loot can wake the same warehouse stock');
     const atStation = { ...state, inventory: { ...state.inventory, 1864: item(1864, 6), 1869: item(1869, 9) } };
