@@ -1315,7 +1315,7 @@ const NO_INVENTORY = Object.freeze({ text: 'no-inventory', worn: false, hash: fn
 function wornEntry(inventory) {
     if (!inventory || typeof inventory !== 'object') return NO_INVENTORY;
     const held = wornParts.get(inventory);
-    const known = {}, current = held?.items === DataCache.items && held.length === DataCache.items?.length
+    const known = {}, current = held !== undefined && held.items === DataCache.items && held.length === DataCache.items?.length
         && !(PopulationConfig.developerDiagnostics && staleHit('worn', held.text, wornPart(inventory, known)));
     if (current) return held;
     const text = wornPart(inventory, known);
