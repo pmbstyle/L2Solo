@@ -33,6 +33,9 @@ const chunk = (at, busy, idle) => ({ nodes, samples: [...Array(busy).fill(3), ..
 write('cpu/a.cpuprofile', chunk(0, 40, 60));
 // The next chunk starts 10 ms before the last one ended: its first 10 samples (busy) were counted.
 write('cpu/b.cpuprofile', chunk(90000, 30, 70));
+// A worker minute across the profile clock's wrap (2^32 us), recorded before the wrap was read: its
+// line says 0 ms long and not starved, with one 60 s fake turn; its profile has 3 samples.
+write('cpu/w.cpuprofile', { nodes, samples: [3, 3, 3], timeDeltas: [1000, 20e6, 20e6], startTime: 2 ** 32 - 30e6, endTime: 30e6 });
 jsonl('timeline-20261103.jsonl', [
     { type: 'cpu', t: iso(start - 60000), thread: 'main', instance: 0, ms: 60000, busyMs: 60000, gcMs: 0, longestMs: 999, longTurns: 9 },
     { type: 'cpu', t: iso(start + 1000), thread: 'main', instance: 0, ms: 60000, busyMs: 12000, gcMs: 600, longestMs: 80,
@@ -42,6 +45,11 @@ jsonl('timeline-20261103.jsonl', [
     // A chunk the profiler starved (CpuProfile): one 60 s "run" that says nothing of the thread.
     { type: 'cpu', t: iso(start + 62000), thread: 'main', instance: 0, ms: 60000, busyMs: 60000, gcMs: 0, longestMs: 60000,
         longTurns: 1, starved: true, samples: 110 },
+    // A worker chunk with 6 s of stretches the profiler left without samples: in neither busy nor idle.
+    { type: 'cpu', t: iso(start + 1000), thread: 'worker', instance: 0, ms: 60000, busyMs: 27000, gcMs: 0, longestMs: 300,
+        longTurns: 3, unsampledMs: 6000 },
+    { type: 'cpu', t: iso(start + 61000), thread: 'worker', instance: 0, ms: 0, busyMs: 59844, gcMs: 0, longestMs: 59844,
+        longTurns: 1, profile: 'cpu/w.cpuprofile', endTime: 30e6 },
     // The hot scenario's player: 20 probes, one waited 200 ms for the loop.
     { type: 'player', t: iso(start + 30000), scheduleMs: [...Array(19).fill(2), 200], handlerMs: Array(20).fill(1), errors: 0, hot: 30,
         players: 2, packets: 1200, bytes: 2 * 30 * 1024 * 10, seconds: 30, moves: 2 },
@@ -78,7 +86,8 @@ jsonl('timeline-20261103.jsonl', [
 ]);
 jsonl('spikes-20261103.jsonl', [
     { chunk: iso(start + 61000), thread: 'main', ms: 120, code: [{ fn: 'heavy src/GameServer/World/World.js:10', ms: 120 }] },
-    { chunk: iso(start - 60000), thread: 'main', ms: 999, code: [{ fn: 'before src/x.js:1', ms: 999 }] }
+    { chunk: iso(start - 60000), thread: 'main', ms: 999, code: [{ fn: 'before src/x.js:1', ms: 999 }] },
+    { chunk: iso(start + 61000), thread: 'worker', ms: 59844, code: [{ fn: 'planLifecycle src/x.js:1', ms: 59844 }] }
 ]);
 const heapProfile = (mb) => ({ head: { callFrame: { functionName: '(root)', url: '' }, selfSize: 0,
     children: [{ callFrame: { functionName: 'keep', url, lineNumber: 4 }, selfSize: mb * MB, children: [] }] } });
@@ -100,6 +109,11 @@ try {
     assert.equal(main.longestMs, 120);
     assert.equal(main.starvedChunks, 1, 'a starved chunk is left out of busy, long turns and longest, and counted');
     assert.deepEqual(main.longTurnCode, [{ fn: 'heavy src/GameServer/World/World.js:10', ms: 120 }], 'spikes of the window only');
+    const worker = s.threads.worker;
+    assert.equal(worker.starvedChunks, 1, 'the wrapped minute is read again from its profile: starved, left out and counted');
+    assert.deepEqual([worker.longestMs, worker.longTurnCode], [300, []], 'its fake 60 s turn is not reported');
+    assert.deepEqual([worker.minutes, worker.busyPct, worker.unsampledSec], [0.9, 50, 6],
+        'busy share of the sampled 54 s; the stretches without samples counted');
     assert.deepEqual(main.cpuSelf[0], { fn: 'heavy src/GameServer/World/World.js:10', ms: 60, pct: 100 },
         '40 + 30 busy samples less the 10 the second chunk shares with the first');
     assert.deepEqual(main.cpuFiles[0].fn, 'src/GameServer/World/World.js');

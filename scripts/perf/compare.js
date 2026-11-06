@@ -42,7 +42,8 @@ function rows(a, b) {
         out.push([`${label} busy %`, x.busyPct, y.busyPct], [`${label} gc %`, x.gcPct, y.gcPct],
             [`${label} long turns/min`, x.longTurnsPerMin, y.longTurnsPerMin], [`${label} longest ms`, x.longestMs, y.longestMs],
             [`${label} p95 chunk longest ms`, x.chunkLongestP95Ms, y.chunkLongestP95Ms],
-            [`${label} starved chunks (left out)`, x.starvedChunks ?? 0, y.starvedChunks ?? 0]);
+            [`${label} starved chunks (left out)`, x.starvedChunks ?? 0, y.starvedChunks ?? 0],
+            [`${label} s without samples (left out)`, x.unsampledSec ?? 0, y.unsampledSec ?? 0]);
         for (const part of new Set([...(x.cpuParts || []), ...(y.cpuParts || [])].map(row => row.part))) {
             const share = (t) => t.cpuParts?.find(row => row.part === part)?.pct ?? 0;
             out.push([`${label} ${part} % cpu`, share(x), share(y)]);

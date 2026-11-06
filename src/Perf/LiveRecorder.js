@@ -298,10 +298,13 @@ class LiveRecorder {
             gcMs: a.gcMs, longestMs: a.longest?.ms || 0, longTurns: a.longTurns, runs: a.runs, profile: kept,
             // The profile clock at the chunk's end: the report leaves the next chunk's overlap out
             // even when this chunk's file was not kept.
-            endTime: reply.endTime || 0, ...(a.starved ? { starved: true, samples: a.samples } : {}) });
+            endTime: reply.endTime || 0, ...(a.starved ? { starved: true, samples: a.samples } : {}),
+            // Stretches the profiler left without samples (CpuProfile): in ms but in neither busy nor idle.
+            ...(a.unsampledMs ? { unsampledMs: a.unsampledMs } : {}) });
         if (a.starved && !state.starvedWarned) {
             state.starvedWarned = true;
-            this.warn(`cpu chunk of ${thread.label}`, new Error(`profiler starved: ${a.samples} samples in ${Math.round(a.durationMs)} ms (left out of the report)`));
+            this.warn(`cpu chunk of ${thread.label}`, new Error(`profiler starved: ${a.samples} samples in ${Math.round(a.durationMs)} ms,`
+                + ` ${Math.round(a.unsampledMs)} ms of it without samples (left out of the report)`));
         }
         if (!a.starved && a.longTurns > 0 || forced) {
             this.appendTo(`spikes-${dayOf(new Date(startedAt))}.jsonl`, { t: new Date(startedAt + (a.longest?.atMs || 0)).toISOString(), chunk: at,
