@@ -82,21 +82,11 @@ function record(state, { spotId, cycleMs, exp = 0, adena = 0, loot = 0, costs = 
     // Rows saved before income was recorded start their income from this sample.
     const mix = (field,value) => old && Number.isFinite(old[field]) ? Number(old[field])*0.75+value*0.25 : value;
     adena = Math.max(0,Number(adena)||0); loot = Math.max(0,Number(loot)||0); costs = Math.max(0,Number(costs)||0);
-    // The row's own noise: the mean relative deviation of a round's rates
-    // (exp and net income per ms of its cycle) from the row's. A reading
-    // inside it is the cycle's randomness, not an observation
-    // (DecisionSections.observationChanged); zero for a first sample.
-    const deviation = (now, before) => Number.isFinite(before) && before !== 0 ? Math.abs(now - before) / Math.abs(before) : 0;
-    const oldCycle = Number(old?.cycleMs);
-    const noise = old && oldCycle > 0 ? Math.max(deviation(exp / cycleMs, Number(old.exp) / oldCycle),
-        deviation((adena + loot - costs) / cycleMs,
-            (Math.max(0,Number(old.adena)||0) + Math.max(0,Number(old.loot)||0) - Math.max(0,Number(old.costs)||0)) / oldCycle)) : 0;
     const next = { spotId,signature:key,at:timestamp,samples:Math.min(32,(old?.samples||0)+1),
         exp:mix('exp',exp),cycleMs:mix('cycleMs',cycleMs),
         adena:mix('adena',adena),loot:mix('loot',loot),
         costs:mix('costs',costs),
         kills:mix('kills',Math.max(0,Number(kills)||0)),
-        noise:mix('noise',noise),
         partyRoster, source:'cold_round' };
     const rows = [next,...kept.filter(row=>row.spotId!==spotId || row.signature!==key)].slice(0,MAX_SPOTS);
 

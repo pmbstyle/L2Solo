@@ -66,20 +66,9 @@ const owned = Crystals.choices(held, () => null, station)[0];
 assert.equal(owned.selfId, 166, 'physical spares work without a market quote');
 assert.equal(owned.batchLimit, 2);
 {
-    const Network = invoke('GameServer/Bot/Economy/WishNetwork');
-    const Providers = invoke('GameServer/Bot/Economy/WishProviders');
-    const quantities = Network.createQuantityInputs();
-    const captured = Crystals.choices(held, () => null, station, 0, 'd', quantities);
-    assert.deepEqual(captured, Crystals.choices(held, () => null, station),
-        'native quantity capture preserves every ranked crystallization choice');
-    const proof = quantities.finish();
-    assert(proof, 'actual held native inputs fit the bounded owner proof');
-    assert(Network.quantityInputsHold(proof, Providers.quantityReaders(held)));
     const consumed = { ...held, inventory: { ...held.inventory, 166: { ...held.inventory[166], amount: 1 } } };
     assert.equal(Crystals.choices(consumed, () => null, station)[0].batchLimit, 1,
         'native current free stock reduces the executable crystal batch');
-    assert.equal(Network.quantityInputsHold(proof, Providers.quantityReaders(consumed)), false,
-        'physical crystal inputs stay exact even while bag IDs, presence and gear capability are unchanged');
 }
 assert.deepEqual(state, before, 'source selection never mutates the live kit');
 

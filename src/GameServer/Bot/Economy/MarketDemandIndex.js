@@ -36,7 +36,7 @@ function demandSignal(state, selfId, timestamp) {
 
     if (!recentWanted && !recentShot && !recentRecipe && !activeTarget && !material) return null;
     const ready = recentWanted || recentShot || recentRecipe
-        || (activeTarget && plan.strategy === 'market') || Boolean(material?.marketFallback);
+        || (activeTarget && plan.strategy === 'market');
     const economicWanted = recentShot ? shotWanted : recentRecipe ? recipeWanted : null;
     return {
         characterId: Number(state.characterId),

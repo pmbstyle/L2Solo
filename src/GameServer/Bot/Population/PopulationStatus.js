@@ -153,7 +153,7 @@ const PopulationStatus = {
             + ` geo=${mb(geodata.loadedBytes)}MB/${geodata.loadedRegions} geoViews=${mb(geodata.attachedBytes)}+${mb(worker.geodata?.attachedBytes)}MB`
             + ` geoRaw=${geodata.rawRegions || 0} geoIndexOnly=${geodata.indexOnlyRegions || 0}`
             + ` geoHeightReads=${geodata.heightFileReads || 0}+${worker.geodata?.heightFileReads || 0} ${this.npcHateText()}`
-            + this.linksText(worker.links) + (worker.proofOverflows === undefined ? '' : ` proofOver=${worker.proofOverflows} nodeCap=${worker.nodeCapBuilds} asksDeep=${worker.asksPastDepth} shotFlips=${worker.sourceShotFlips} quietGear=${worker.quietGearBuilds}`) + this.doorsText(worker.buildDoors) + this.situationsText(worker.situations, Situations.counts()) + this.soloWindowText(worker.soloWindow);
+            + this.linksText(worker.links) + (worker.nodeCapBuilds === undefined ? '' : ` nodeCap=${worker.nodeCapBuilds} asksDeep=${worker.asksPastDepth} shotFlips=${worker.sourceShotFlips} quietGear=${worker.quietGearBuilds}`) + this.doorsText(worker.buildDoors) + this.situationsText(worker.situations, Situations.counts()) + this.soloWindowText(worker.soloWindow);
     },
 
     // swallowed=<failures>/<sites>: failures main and the cold worker survived since start (FailureLog:
@@ -197,8 +197,9 @@ const PopulationStatus = {
 
     // situations=raised:<name@place>:<n>,...;woke:<decision><name>:<n>,...;decided:<decision>:<taken>/<served>,
     // <decision>:unwoken:<caller>:<n>,...[;search:<n>/<ms>ms][;over:<n>]: the worker's situation counts since it started
-    // (Situations.counts), diagnostics off too, most first. unwoken: a decision taken with no woken bit, by its
-    // caller (the build runs on its sections until situations step 4); search: the earning spot's searches and their
+    // (Situations.counts), diagnostics off too, most first. decided build: taken (a situation woke it, the step
+    // built) / served (the held card served the step). unwoken: a decision taken with no woken bit, by its
+    // caller (0 for a solo step since situations step 4: the one gate); search: the earning spot's searches and their
     // time (EquipmentIncomeRoute.searchTotals); over: keys past the maps' cap. main: main's
     // own counts (its raises on far rows, BotLifeState.raiseOnRow), summed in.
     situationsText(worker, main) {

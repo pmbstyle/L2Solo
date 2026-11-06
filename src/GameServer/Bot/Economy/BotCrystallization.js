@@ -46,7 +46,7 @@ function freeReader(state) {
 function free(state, id) {
     return freeReader(state)(id);
 }
-function choices(state, purchase, trip, incomePerHour = 0, rank = 'd', quantityInputs = null) {
+function choices(state, purchase, trip, incomePerHour = 0, rank = 'd') {
     const self = canSelf(state, rank);
     if (!self && !trip?.known) return [];
     const operation = self ? { known: true, hours: 0, fees: 0 } : trip;
@@ -58,12 +58,6 @@ function choices(state, purchase, trip, incomePerHour = 0, rank = 'd', quantityI
     for (const row of Object.values(state.inventory || {})) { const template = Index.find(Data.items, row.selfId); if (template?.etc?.rank === rank && reward(template)) seen.add(Number(row.selfId)); }
     for (const id of seen) {
         const held = state.inventory?.[id], own = readFree(id);
-        // Missing bag identities are fenced by the caller's structural event.
-        // These are the exact native questions for its existing physical rows.
-        if (held) {
-            quantityInputs?.present(id, Number(held.amount) || 0);
-            quantityInputs?.crystalFree(id, own);
-        }
         // A bought copy of worn/useful gear could be reconciled into the kit.
         // Prefer a different type or an already free physical spare.
         if (Number(held?.amount) > 0 && !own) continue;
@@ -141,9 +135,7 @@ function preparation(state) {
 }
 // Scheduler admission reads only the selected bounded inputs. The worker
 // still chooses the operation and the native transaction validates ownership.
-// quantityInputs (optional) records the bag reads a crystal preparation's
-// answer rests on, for a caller whose decision is held on them.
-function ready(state, quantityInputs = null) {
+function ready(state) {
     // Ordinary scheduler rows need no game catalogue or reservation services.
     const saved = state?.stats?.equipmentPlan;
     if (!saved?.crystalPreparation && saved?.strategy !== 'luxury_exchange'
@@ -151,9 +143,8 @@ function ready(state, quantityInputs = null) {
     const plan = invoke('GameServer/Bot/Economy/ItemDisposition').equipmentInputPlan(state);
     if (plan?.crystalPreparation && plan.status === 'active') {
         const prep = plan.crystalPreparation, reader = freeReader(state);
-        const readFree = id => { const amount = reader(id); quantityInputs?.crystalFree(id, amount); return amount; };
+        const readFree = reader;
         const held = Number(state.inventory?.[1459]?.amount);
-        quantityInputs?.physical(1459, Math.max(0, held || 0));
         return (prep.materials || []).some(row => reward(Index.find(invoke('GameServer/DataCache').items, row.selfId))
             && readFree(row.selfId) > 0) || prep.exchange?.materials?.length > 0 && prep.exchange.materials.every(row => readFree(row.selfId) >= row.amount)
             || held >= Number(plan.materials?.find(row => Number(row.selfId) === 1459)?.amount);
@@ -167,24 +158,20 @@ function ready(state, quantityInputs = null) {
     return inputs.length > 0 && inputs.length <= BATCH_LIMIT && inputs.every(row => Number(row.amount) > 0
         && amount(row.selfId) >= Number(row.amount));
 }
-function completionKey(state, quantityInputs = null) {
+function completionKey(state) {
     // Each build asks; a saved plan with neither a crystal preparation nor a
     // luxury exchange has no completion (ready's guard, same reading).
     const saved = state?.stats?.equipmentPlan;
     if (!saved?.crystalPreparation && saved?.strategy !== 'luxury_exchange'
         && saved?.exchange?.kind !== 'luxury_exchange') return null;
     const plan = invoke('GameServer/Bot/Economy/ItemDisposition').equipmentInputPlan(state);
-    if (plan?.crystalPreparation && plan.status === 'active' && ready(state, quantityInputs)
+    if (plan?.crystalPreparation && plan.status === 'active' && ready(state)
         && !invoke('GameServer/Bot/AI/GearAcquisitionPlanner').equipmentTargetFulfilled(state, plan))
         return `power:${plan.target.selfId}:${Number(plan.target.slot)}`;
     if (plan?.strategy !== 'luxury_exchange' || plan.status !== 'active' || !plan.target?.slot) return null;
     const Luxury = require('./BotLuxuryExchange'), exchange = Luxury.resolve(plan.exchange);
     if (!exchange || Number(plan.target.selfId) !== exchange.itemId || !Luxury.eligible(state, exchange)) return null;
-    const freeOf = id => {
-        const amount = invoke('GameServer/Bot/Economy/WealthCraftDecision').freeAmount(state, state.inventory?.[id] || {});
-        quantityInputs?.free(id, amount);
-        return amount;
-    };
+    const freeOf = id => invoke('GameServer/Bot/Economy/WealthCraftDecision').freeAmount(state, state.inventory?.[id] || {});
     const crystalsReady = exchange.materials.every(row => freeOf(row.selfId) >= row.amount);
     const receivedInputs = (plan.materials || []).some(row => reward(Index.find(invoke('GameServer/DataCache').items, row.selfId))
         && freeOf(row.selfId) > 0);

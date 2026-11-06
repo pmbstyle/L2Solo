@@ -21,8 +21,7 @@ const Network = require('./WishNetwork');
 const Agenda = require('./Agenda');
 const PurchaseEvidence = require('./WishPurchaseEvidence');
 const OccupationSources = invoke('GameServer/Bot/Population/ColdOccupationSources');
-const { WishNetwork, remember, admitRoots, remainingQuantity, moneyQueue, cashCharge,
-    createQuantityInputs } = Network;
+const { WishNetwork, remember, admitRoots, remainingQuantity, moneyQueue, cashCharge } = Network;
 const { isMainThread } = require('node:worker_threads');
 const { createHash } = require('node:crypto');
 const RecomputeGeneration = require('../Population/RecomputeGeneration');
@@ -332,7 +331,7 @@ const LEAF_CHECKS = Object.freeze({
         // An enchant or a special ability names its object: it is still in the
         // bag under its item at the enchant level the decision read. Other
         // objects in the bag are no input; an exchange or a crystallization
-        // names none (its inputs are bag rows, held by the quantity proof).
+        // names none (its inputs are bag rows).
         if (improvement.objectId == null) return '';
         const row = state.inventory?.[improvement.itemId];
         const object = row?.instances?.find(item => Number(item.id) === Number(improvement.objectId));
@@ -1156,7 +1155,6 @@ function buildForState(state, deps) {
     const earningDecided = !keptBase && incomeRecord?.searched === true;
     // These facts still belong to the reused foundation: its items stay read.
     if (keptBase) for (const id of held.readIds) read(id);
-    const quantityInputs = createQuantityInputs();
     // A price read inside a node scope is noted as priced there too: a kept
     // gear list replays it as a price read (the price memo is part of the plan).
     const pricedRead = id => {
@@ -1164,7 +1162,7 @@ function buildForState(state, deps) {
         return price(id);
     };
     const context = { inputKey: key, actorKey, state, timestamp, gearThreatMask: gearThreat.mask, heldGear, persona, board, hunt: base.hunt,
-        price: pricedRead, peekPrice: peek, buyback, quantityInputs,
+        price: pricedRead, peekPrice: peek, buyback,
         ...(keptBase ? { horizonHours: keptBase.horizonHours } : {}),
         riskWeight: base.riskWeight, bestSpotId: base.bestSpotId, deathHours: base.deathHours, lostGearHours: base.lostGearHours,
         karmaHours: base.karmaHours, expectedDeathHours: base.expectedDeathHours, stock: base.stock,
@@ -1228,8 +1226,8 @@ function buildForState(state, deps) {
     // build; the projection is read lazily once it exists (stock roots).
     context.wallet = Funding.budget(state, deps.buyOrderEscrow);
     const nativeStock = stockReader(state, rootKey => context.projection?.nodes.find(node => node.key === rootKey)?.object?.itemId, sourceBoard);
-    context.stockFor = (id, rootKey) => quantityInputs.stock(id, rootKey, nativeStock(id, rootKey), nativeStock.scope(rootKey, id));
-    context.completionKey = Crystallization.completionKey(state, quantityInputs);
+    context.stockFor = (id, rootKey) => nativeStock(id, rootKey);
+    context.completionKey = Crystallization.completionKey(state);
     const extra = [...extensions.values()].flatMap(provider => provider(state, context) || []);
     if (diagnostic) {
         Diagnostics.count('context', 'caller', deps.caller || 'economy_context');
@@ -1475,9 +1473,6 @@ function planOf(context, base, { key, tripHour, projection = null, knowledgeEnab
         network: compactNetwork(context.network), moneyPrice: context.moneyPrice, gapHorizonHours: context.gapHorizonHours,
         watchList: context.watchList, intentPending: context.intentPending, statsPacket: context.statsPacket,
         wallet: context.wallet, horizonHours: context.horizonHours, values: projection?.values, stockRoots, knowledgeEnabled,
-        quantityInputs: projection ? context.quantityInputs?.finish(context.network?.activity?.rootKey ?? null,
-            ColdEconomyDecision.ownItem(context.network?.activity)) : null,
-        liquidationInputs: context.liquidationInputs,
         prices: planPrices(prices, base.rates, context), gearPlanMemo: undefined };
 }
 // What a review's stock reader, usefulness, worth and purchase budget read:
@@ -1523,17 +1518,6 @@ function stockReader(state, rootItem, board = null) {
         // execution. Never count a finished item or a conditional ad twice.
         + (/^power:\d+:\d+$/.test(rootKey) && Number(rootKey.split(':')[1]) !== Number(id)
             ? positive(escrow.get(Number(id))) : 0) });
-    // The root whose answer on this item stands for this root's, so a proof
-    // keeps one row. A root with stock of its own stands for itself, as does
-    // every root on a stored item (a craft plan can make any of them the bank
-    // root, with no event, while the build's proof holds) or on an item in the
-    // bot's own backed sell lines (a gear root counts that escrow, others not).
-    let stored;
-    read.scope = (rootKey, id) => {
-        stored ??= Warehouse.ready() && Warehouse.hasItems(state) ? Warehouse.inventory(state) : {};
-        return rootKey === supply?.key || rootKey.startsWith('stock:') || stored[id] || escrow.has(Number(id)) ? rootKey
-            : rootKey.startsWith('resale:') ? 'resale:' : '';
-    };
     return read;
 }
 function valueReaders(state, network, values, persona, knowledgeEnabled, kitCost, money) {

@@ -317,7 +317,7 @@ try {
 
     const materialBuyer = withIncome({ characterId: 2004011, level: 50, adena: 10000000,
         inventory: {}, stats: { equipmentPlan: { status: 'active', strategy: 'craft',
-            recipeId: 1, marketFallback: false, clanGoal: { clanId: 1 }, materials: [
+            recipeId: 1, clanGoal: { clanId: 1 }, materials: [
                 { selfId: 2068, amount: 3, missing: 3, farmEffort: 1000 }
             ], next: { itemId: 2068 } } } }, 12500);
     const authored = Recipes.resolveByRecipeId(materialBuyer.stats.equipmentPlan.recipeId);

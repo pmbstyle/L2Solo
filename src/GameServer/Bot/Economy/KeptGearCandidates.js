@@ -25,9 +25,9 @@
 // - the wallet only through its comparisons: each price compared with the
 //   purchase budget and each cost with the adena, and the answer;
 // - each weighed item's market trend.
-// A kept list replays its reads (prices through the price reader), its bag
-// answers into the quantity proof and its thresholds into the decision's
-// wallet bounds, so the build reads, proves and decides as a fresh one.
+// A kept list replays its reads (prices through the price reader), so the
+// build reads and decides as a fresh one; its bag and cash answers are what
+// it is checked on.
 // A list of more than RECORD_SLOTS numbers is not kept.
 // Counted with diagnostics on: projection:gear:<kept | absent | unkeyed |
 // moved:<input> | <read that moved>>, projection:gear_unkept:<size | shape>,
