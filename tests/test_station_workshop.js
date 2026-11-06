@@ -47,13 +47,28 @@ const Workshop = invoke('GameServer/Bot/Economy/CraftWorkshopService');
             { craftStationId: station.id, generatedIndex: 10000 });
         const profile = Shops.profileFor(owner);
         await Shops.ensureRecipes(owner.characterId, profile);
-        owner = await Workshop.review(Life.cachedState(owner.characterId));
+        owner = await Workshop.publishListing(Life.cachedState(owner.characterId));
         assert.deepEqual(owner.stats.workshop.entries.map(row => [row.recipeId, row.price]),
             profile.entries.map(row => [row.recipeId, row.price]), 'the station publishes its own list at the station fee');
         const fee = profile.entries.find(row => row.recipeId === 198).price;
         assert.equal(fee, Shops.productPrice(recipe));
+        // A crafter's listing (the workshop decision's offer): its book's recipes at the
+        // market pricing's fee, the product price as the prior, moved by a cheaper rival and
+        // by its own fills; the same inputs keep the record it holds; the listing moves no
+        // gear fact (its fees and fills wake no build).
+        const smith = { characterId: 999001, name: 'Smith', level: 70, stats: { classId: 57 }, currentRegion: 'Giran', loc: { ...station.loc } };
+        const listed = Shops.listing(smith, [198]);
+        assert.deepEqual(listed.entries.map(row => [row.recipeId, row.price]), [[198, fee]], 'no rival: the product price');
+        const listedHeld = { ...smith, stats: { ...smith.stats, workshop: listed } };
+        assert.strictEqual(Shops.listing(listedHeld, [198]), listed, 'the same inputs keep the listing it holds');
+        assert(Shops.listing(listedHeld, [198], () => [Math.round(fee / 2)]).entries[0].price < fee, 'a cheaper rival lowers the fee');
+        const filled = { ...listedHeld, stats: { ...listedHeld.stats, workshop: { ...listed,
+            entries: [{ ...listed.entries[0], fills: 4, earned: 8 * fee }] } } };
+        assert(Shops.listing(filled, [198]).entries[0].price > fee, 'its fills paid above the fee raise it');
+        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+        assert.equal(Sections.kit(filled), Sections.kit(smith), 'the listing moves no gear fact');
         const revision = owner.simulation?.revision;
-        assert.strictEqual(await Workshop.review(owner), owner, 'an unchanged station list writes no row');
+        assert.strictEqual(await Workshop.publishListing(owner), owner, 'an unchanged station list writes no row');
         assert.equal(Life.cachedState(owner.characterId).simulation?.revision, revision);
 
         const inputs = new Map();
@@ -90,7 +105,7 @@ const Workshop = invoke('GameServer/Bot/Economy/CraftWorkshopService');
         assert.equal(JSON.parse(life.statsJson).workshop.entries.find(row => row.recipeId === 198).fills, 1);
         assert.equal(held(ownerItems, recipe.productId), 0, 'the station holds no goods');
         const after = Life.cachedState(owner.characterId);
-        assert.strictEqual(await Workshop.review(after), after, 'fills and earnings do not republish the station');
+        assert.strictEqual(await Workshop.publishListing(after), after, 'fills and earnings do not republish the station');
         // Early preparation has the same native paid executor and accounting.
         // Expertise still controls wearing the result, independently of craft.
         const dKit = invoke('GameServer/Bot/AI/BotGear').planFor({ classId: 10, level: 20 }).items;

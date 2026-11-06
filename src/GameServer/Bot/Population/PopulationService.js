@@ -3336,8 +3336,7 @@ const PopulationService = {
         const tripEdge = CombinedErrands.edge(state, updatedState, result);
         const preparation = updatedState.stats?.partyMarketReturn?.warOperationId
             ? Promise.resolve({ state: updatedState })
-            : invoke('GameServer/Bot/Economy/CraftWorkshopService').review(updatedState)
-            .then(workshopState => ColdShotEconomyService.review(workshopState, Date.now(), { edge: tripEdge }))
+            : ColdShotEconomyService.review(updatedState, Date.now(), { edge: tripEdge })
             .then((shotEconomy) => ColdWealthCraftService.tryCraft(shotEconomy.state || updatedState))
             .then(async (wealthCraft) => {
                 const current = wealthCraft.state || updatedState;

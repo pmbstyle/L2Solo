@@ -68,14 +68,10 @@ function post(type, payload, id) { worker.postMessage(Protocol.envelope(type, ep
     post('init', { config: { pvpAggression: 0 } }, 'init');
     await wait(message => message.type === 'ready' && message.payload.phase === 'running');
     post('pause', {}, 'pause');
-    // An older 'recipes' row the query's own knowledge must replace.
-    post('table_page', { tables: [{ name: 'recipes', from: null, to: 0, full: true, removed: [], last: true,
-        rows: members.map(state => [state.characterId, { characterId: state.characterId, recipeBook: null, knownShotRecipes: [999] }]) }] });
     post('snapshot_page', { rows: members.map(state => ({ state })),
         initial: true, done: true, ack: true }, 'snapshot');
     await wait(message => message.msgId === 'snapshot');
-    const request = { party, members, escrows: [0, 0], recipeKnowledge: members.map(() => ({ recipeBook: null, knownShotRecipes: [] })),
-        timestamp, replyBy: Date.now() + 5000 };
+    const request = { party, members, escrows: [0, 0], timestamp, replyBy: Date.now() + 5000 };
     post('party_goal_request', request, 'goals');
     const response = await wait(message => message.type === 'party_goal_result' && message.msgId === 'goals');
     assert.equal(response.payload.ok, true, response.payload.reason);
@@ -112,9 +108,8 @@ function post(type, payload, id) { worker.postMessage(Protocol.envelope(type, ep
     assert.equal(admission.incomeReviews.length, 2);
     worker.postMessage({ queryProbe: 'canonical' });
     const prepared = await wait(message => message.probe === 'canonical');
-    assert.equal(prepared.slots.filter(row => row.mode !== 'wish').length, 2);
-    assert(prepared.slots.filter(row => row.mode !== 'wish').every(row => row.knownShotRecipes.length === 0),
-        'current query knowledge replaces the worker\'s recipes row');
+    assert.equal(prepared.slots.filter(row => row.mode !== 'wish').length, 0,
+        'a party goal asks no workshop: each member\'s held answer is read');
     // A crafter at its station that requires the party joins without weighing income.
     const required = { status: 'open', priority: 'required', spotId: 'execution-ground', requestedAt: timestamp };
     const stationed = (member, at) => ({ ...member, updatedAt: timestamp + at,

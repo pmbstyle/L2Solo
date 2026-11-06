@@ -183,8 +183,39 @@ module.exports.kitProbe = async (id) => {
         const levelUp = await step(quiet.state, gain, timestamp + 2000);
         const rested = await step({ ...levelUp.state, activity: 'resting' }, 0, timestamp + 3000);
         return { quiet: quiet.kitMoved, inFight: levelUp.kitMoved, levelUp: rested.kitMoved, levels: [quiet.state.level, levelUp.state.level],
-            workshop: rested.economy?.workshop || null, workshopAsks };
+            workshop: rested.build?.workshop || null, workshopAsks };
     } finally { occupationPlanner.request = request; }
+};
+// A crafter's workshop decision: taken (one planner ask) with no held answer and at a
+// level up, held across a step that moves only its wallet (no ask). An unknown answer
+// (no board yet) is not held: the next step asks again.
+module.exports.workshopProbe = async (id) => {
+    const saved = kernel.states.get(id), request = occupationPlanner.request, service = CraftEligibility.isServiceCrafter;
+    const answer = { known: true, recipeId: 2, productId: 3, incomePerHour: 1000, cycleHours: 1 };
+    const unknown = { known: false, recipeId: 0, productId: 0, incomePerHour: NaN, cycleHours: NaN, reason: 'no_board' };
+    let asks = 0;
+    occupationPlanner.request = function (key, input, ...rest) {
+        if (input?.mode === 'occupation') { asks++; return Promise.resolve(asks === 1 ? unknown : answer); }
+        return request.call(this, key, input, ...rest);
+    };
+    CraftEligibility.isServiceCrafter = () => true;
+    try {
+        const at = Date.now(), counts = [];
+        const step = async (state, t) => {
+            const before = asks;
+            kernel.states.set(id, { ...saved, wishAdvisory: null, state });
+            const plan = await kernel.planLifecycle({ state, timestamp: t });
+            counts.push(asks - before);
+            return { ...plan.plannedState, stats: { ...plan.plannedState.stats, ...plan.statsPacket } };
+        };
+        let state = await step({ ...saved.state, stats: { ...saved.state.stats, craftIncome: undefined } }, at);
+        const unknownHeld = state.stats.craftIncome ?? null;
+        state = await step({ ...state, adena: Number(state.adena) + 1000 }, at + 500);
+        const held = state.stats.craftIncome;
+        state = await step({ ...state, adena: Number(state.adena) + 5000 }, at + 1000);
+        await step({ ...state, stats: Situations.raise({ ...state.stats }, 'level_up', null, Situations.OPEN, id) }, at + 2000);
+        return { counts, held, unknownHeld };
+    } finally { occupationPlanner.request = request; CraftEligibility.isServiceCrafter = service; kernel.states.set(id, saved); }
 };
 module.exports.occupationProbe = async (id) => {
     const saved = kernel.states.get(id), state = saved.state;
@@ -207,7 +238,7 @@ const loaded = new Module(workerData.workerPath, module);
 loaded.filename = workerData.workerPath; loaded.paths = Module._nodeModulePaths(path.dirname(workerData.workerPath));
 loaded._compile(fs.readFileSync(workerData.workerPath, 'utf8') + workerData.observer, workerData.workerPath);
 parentPort.on('message', message => {
-    const probe = ['stepProbe', 'goalProbe', 'craftStepProbe', 'kitProbe', 'occupationProbe', 'pageProbe'].find(name => message[name]);
+    const probe = ['stepProbe', 'goalProbe', 'craftStepProbe', 'kitProbe', 'workshopProbe', 'occupationProbe', 'pageProbe'].find(name => message[name]);
     if (!probe) return;
     loaded.exports[probe](message[probe]).then(value => parentPort.postMessage({ probeId: message.msgId, value }))
         .catch(error => parentPort.postMessage({ probeId: message.msgId, error: error.stack }));
@@ -330,9 +361,16 @@ parentPort.on('message', message => {
         assert.equal(kit.quiet, false, 'a quiet party member step moves no kit');
         assert.equal(kit.inFight, false, 'a level gained in a party fight waits for the party\'s rest');
         assert.equal(kit.levelUp, true, 'and is a kit event for the party step there');
-        assert.deepEqual(kit.workshop, { known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0, feasibility: null },
+        assert.deepEqual(kit.workshop, { known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0 },
             'a member that is no crafter builds with no workshop');
         assert.equal(kit.workshopAsks, 0, 'and asks the occupation planner for none');
+        worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'workshop'), workshopProbe: id });
+        const workshopResponse = await wait(message => message.probeId === 'workshop');
+        if (workshopResponse.error) throw Error(workshopResponse.error);
+        assert.equal(workshopResponse.value.unknownHeld, null, 'an unknown planner answer is not held');
+        assert.deepEqual(workshopResponse.value.counts, [1, 1, 0, 1],
+            'a crafter asks its workshop with none held (again after an unknown answer) and at a level up, never for a moved wallet');
+        assert.deepEqual(workshopResponse.value.held, [2, 3, 1000, 1], 'its answer is held for the build');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'page'), pageProbe: id });
         const pageResponse = await wait(message => message.probeId === 'page'); if (pageResponse.error) throw Error(pageResponse.error);
         assert.deepEqual(pageResponse.value, { own: false, main: true, none: false },

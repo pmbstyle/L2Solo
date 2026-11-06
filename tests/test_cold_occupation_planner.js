@@ -4,7 +4,6 @@ const assert = require('node:assert/strict');
 require('../src/Global');
 require('../src/GameServer/Bot/Population/PopulationConfig').developerDiagnostics = true;
 const { ColdOccupationPlanner } = require('../src/GameServer/Bot/Population/ColdOccupationPlanner');
-const { compact, capture, ColdEconomyDecisions, stateEcho } = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
 
 const posted = [], tokens = new Map(), callbacks = [], working = [];
 const planner = new ColdOccupationPlanner({ schedule: callback => callbacks.push(callback), now: () => 0,
@@ -105,18 +104,6 @@ while (owned.ready.size || owned.waiting.size) owned.portion();
 assert(!owned.entry(2) && owned.stats.staleOwners === 1, 'a job whose owner moved on is retired');
 owned.stop();
 
-// A finished answer serves an ask of its key until its window (servesUntil,
-// from the ask that built it): a later ask of the same key builds again.
-let windowBuilds = 0;
-const windowed = new ColdOccupationPlanner({ schedule: () => {}, now: () => 0, sourceToken: () => 0,
-    inputKey: input => input.value, servesUntil: input => input.timestamp + 100,
-    capture: (id, input) => input, create: () => ({ build: ++windowBuilds }), step: () => true, result: work => ({ known: true, build: work.build }) });
-const windowAsk = timestamp => { windowed.request(1, { value: 1, timestamp }, { awaitResult: false });
-    while (windowed.ready.size || windowed.waiting.size) windowed.portion(); return windowed.entry(1).value.build; };
-assert.deepEqual([windowAsk(0), windowAsk(50), windowAsk(99)], [1, 1, 1], 'inside the window the answer serves');
-assert.deepEqual([windowAsk(100), windowAsk(150)], [2, 2], 'past it the same key builds once and serves again');
-windowed.stop();
-
 // Query snapshots are temporary owners, unlike the kernel's native state.
 // Cleanup must remove both completed and pending inputs without touching a
 // replacement installed for the same actor while the query was awaiting work.
@@ -213,22 +200,4 @@ shared.set(21, 1); sharing.sourceChanged(21);
 assert.deepEqual(sharedDirty(), [true, true, true, false], 'a move invalidates every reader of that mode only');
 sharing.stop();
 
-const state = { characterId: 7, updatedAt: 1000, level: 30, activity: 'hunting',
-    adena: 100, vitals: { mp: 50 }, inventory: {}, stats: { classId: 1 } };
-for (const workshop of [{ known: false }, { known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0 },
-    { known: true, recipeId: 25, productId: 1864, incomePerHour: 150.125, cycleHours: .25 }]) {
-    const decision = compact(structuredClone(capture({ workshop }, state)));
-    if (workshop.known === false) assert(Number.isNaN(decision.workshop.incomePerHour));
-    else { assert.equal(decision.workshop.incomePerHour, workshop.incomePerHour); assert.equal(decision.workshop.cycleHours, workshop.cycleHours); }
-    const decisions = new ColdEconomyDecisions(); decisions.accept(7, decision);
-    assert.equal(decisions.workshopFor(state).known, workshop.known);
-    // The card belongs to its decision: a later publication, a woken build
-    // (a situation raised for it) or another decision drops it.
-    assert.equal(decisions.workshopFor({ ...state, updatedAt: state.updatedAt + 1 }).known, false, 'a later publication invalidates captured occupation');
-    assert.equal(decisions.workshopFor({ ...state, adena: 0, stats: { ...state.stats, woken: 2 } }).known, false,
-        'a woken build invalidates captured occupation');
-    assert.equal(decisions.workshopFor({ ...state, stats: { ...state.stats, decisionSeq: 1 } }).known, false, 'another decision invalidates captured occupation');
-    decisions.staleWorkshop(7, { echo: stateEcho(state), updatedAt: state.updatedAt });
-    assert.equal(decisions.workshopFor(state).known, false, 'used-source retirement preserves explicit unknown');
-}
-console.log('PASS pinned FIFO contexts, exact resumable progress, used-source restarts, 32-unit portions and binary workshop NaN');
+console.log('PASS pinned FIFO contexts, exact resumable progress, used-source restarts and 32-unit portions');

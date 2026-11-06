@@ -419,7 +419,6 @@ function resolved(state, deps, production = true) {
             deps.producerRevision = source?.revision;
             if (source?.scope != null) deps.onSourceScope?.(source.scope);
         }
-        if (isMainThread && !Object.hasOwn(deps, 'workshop')) deps.workshop = craftIncome(state);
         if (isMainThread && !Object.hasOwn(deps, 'workshops')) {
             const Workshops = invoke('GameServer/Bot/Economy/CraftWorkshopService');
             deps.workshops = Workshops.publicForRecipe;
@@ -866,22 +865,13 @@ const actorKeyOf = (state, deps) => deps.actorKey || `character:${Number(state.c
 // What a build reads beside the held entry: the gear threat, the facts, read once
 // (the held leaf's own trip is read as the field activity it ordered,
 // fieldActivity), and the build's input name.
-// view: the facts' stateView (requestFacts' reads), kept for the link shadow;
-// versions: the key inputs of the workshop (Sections.LINK_INPUTS,
-// workshopKeyHolds), its income the earning spot's held answer.
-// The workshop's income input (LINK_INPUTS workshop income): the earning spot's
-// held answer, its spot and hour, as the build that decided it published it
-// (not the packet's hour: that counts the workshop's own income).
-const earningInput = state => state.stats?.earning ? [state.stats.earning.spotId, state.stats.earning.earning] : null;
+// view: the facts' stateView (requestFacts' reads).
 function heldReadsOf(state, deps, held) {
     const gearThreat = GearThreat.prepare(state, deps, held?.gearThreat);
     const current = fieldActivity(state, held?.activity, held?.plan.network?.activity);
     const view = Sections.stateView(current, Providers.recipeIds(current, deps));
     const facts = Sections.factsOf(view, deps.memory ?? null);
-    const versions = Sections.inputVersions(view, state, Number(deps.timestamp || Date.now()), {
-        board: typeof deps.board?.ownerLines === 'function' ? deps.board : null, income: earningInput(state),
-        link: 'workshop' });
-    return { gearThreat, current, facts, view, versions, key: inputName(facts, gearThreat.mask) };
+    return { gearThreat, current, facts, view, key: inputName(facts, gearThreat.mask) };
 }
 // The held entry and what a build reads beside it, over resolved deps, which it
 // completes with the route rows and the gear-threat mask the build reads.
@@ -976,10 +966,7 @@ const stepPlace = leaf => `${leaf.activity}|${leaf.kind}|${leaf.itemId}|${leaf.t
 // developerDiagnostics only; no decision reads them. Per bot, on its held
 // entry (held.links, carried to the entry that replaces it, gone with the
 // entry: evicted, forgotten or reset): what each link's answer was built on.
-// link:<link>:<outcome>. The links on their keys: workshop at the step's look
-// rebuilt:<input> asked by the input that moved (workshopMoved, 'unknown': a
-// held answer with no income), kept:quiet kept. routeRows is a shadow, the
-// key's decision first: rebuilt:<input> both rebuild (the first input that
+// link:<link>:<outcome>. routeRows is a shadow, the key's decision first: rebuilt:<input> both rebuild (the first input that
 // moved); kept:quiet both keep; kept:mask-only the route key rebuilds what
 // the key on its fields would keep; rebuilt:key-only:<input> the reverse, once
 // per held answer; first: nothing to compare (its key is its inputs:
@@ -1015,15 +1002,6 @@ function buildShadow(seen, held, routeKey, versions) {
     if (!seen.routeRows) linkCount('routeRows', 'first');
     else linkCount('routeRows', linkJudged(!!held && held.plan.routeKey !== routeKey, Sections.movedInput('routeRows', seen.routeRows, versions)));
     seen.routeRows = linkOwn('routeRows', versions);
-}
-// The workshop at the step's look (heldWorkshop): kept on its key, or asked by
-// the input that moved (workshopMoved; unknown: a held answer with no income
-// is asked whatever moved).
-function workshopCount(held, versions, kept) {
-    const keyed = heldWorkshopKeyed(held);
-    if (kept) linkCount('workshop', 'kept:quiet');
-    else if (!usableWorkshop(keyed.workshop)) linkCount('workshop', 'rebuilt:unknown');
-    else linkCount('workshop', `rebuilt:${workshopMoved(keyed.key, versions)}`);
 }
 function buildForState(state, deps) {
     const diagnostic = Diagnostics.active();
@@ -1063,12 +1041,6 @@ function buildForState(state, deps) {
         if (keeps) {
             entry.gearThreat = gearThreat;
             entry.stateRef = new WeakRef(state);
-            // The step asked the planner while the held plan stands: its answer and
-            // the key it was asked on stay with the entry (heldWorkshopOf), so the
-            // next step asks only when an input moves again.
-            const asked = Object.hasOwn(deps, 'workshop') ? deps.workshop : null;
-            if (usableWorkshop(asked) && asked !== entry.plan.workshop && asked !== entry.askedWorkshop?.workshop)
-                entry.askedWorkshop = { workshop: asked, key: workshopKeyOf(reads.versions) };
             remember(cache, actorKey, entry, RETAIN_LIMIT);
         }
         // A late price read of a held plan is reported as in its build.
@@ -1183,14 +1155,10 @@ function buildForState(state, deps) {
                 for (const id of input.bag) context.nodeInputs.bag(id); } },
         readScope: { open: () => (scope = new Set()), close: () => { scope = null; },
             keep: kept => { for (const id of kept) read(id); } } };
-    // A worker build given no workshop keeps the held build's (keptWorkshop).
-    const workshop = Object.hasOwn(deps, 'workshop') ? deps.workshop : isMainThread
-        ? craftIncome(state, { hourAdena: base.hourAdena, worth: price, timestamp }) : keptWorkshop(held, reads.versions, state);
-    context.workshop = workshop || { recipeId: 0, productId: 0, incomePerHour: NaN, cycleHours: NaN };
-    // The workshop's key (workshopKeyHolds): a kept answer keeps the key it was
-    // asked on, a new one takes this build's reads (the state it was asked on).
-    context.workshopKey = !workshop ? null : workshop === held?.plan.workshop ? held.plan.workshopKey
-        : workshop === held?.askedWorkshop?.workshop ? held.askedWorkshop.key : workshopKeyOf(reads.versions);
+    // The workshop decision's held answer (craftIncome); a caller with its own (a
+    // meeting's preparation) passes it.
+    const workshop = Object.hasOwn(deps, 'workshop') ? deps.workshop : craftIncome(state);
+    context.workshop = workshop || ColdEconomyDecision.unknownWorkshop();
     const productive = workshop?.known !== false && workshop?.incomePerHour > 0 && Number.isFinite(workshop.incomePerHour)
         && workshop.cycleHours > 0 && Number.isFinite(workshop.cycleHours);
     if (productive) { watch(workshop.productId); context.hourAdena = Math.max(context.hourAdena, workshop.incomePerHour); }
@@ -1469,7 +1437,6 @@ function planOf(context, base, { key, tripHour, projection = null, knowledgeEnab
         deathHours: context.deathHours,
         lostGearHours: context.lostGearHours, karmaHours: context.karmaHours, expectedDeathHours: context.expectedDeathHours,
         refillReserve: context.refillReserve, rates: base.rates, hourAdena: context.hourAdena, workshop: context.workshop,
-        workshopKey: context.workshopKey,
         routeKey: context.routeKey, routeRows: context.routeRows, tripHour,
         network: compactNetwork(context.network), moneyPrice: context.moneyPrice, gapHorizonHours: context.gapHorizonHours,
         watchList: context.watchList, intentPending: context.intentPending, statsPacket: context.statsPacket,
@@ -1715,16 +1682,10 @@ function saleKitPublished(state = {}) {
 function refillReserve(state = {}) {
     return Array.isArray(state.stats?.money) ? positive(Packet.refillReserve(state.stats.money)) : basics(state).refillReserve;
 }
-function craftIncome(state) {
-    // The guarded worker publication is the only production income reader on
-    // main. A missing result leaves the independently supported hunt baseline.
-    if (isMainThread) {
-        const coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
-        return coordinator.economyDecisions?.workshopFor?.(state)
-            || { recipeId: 0, productId: 0, incomePerHour: NaN, cycleHours: NaN };
-    }
-    return { recipeId: 0, productId: 0, incomePerHour: NaN, cycleHours: NaN };
-}
+// The workshop decision's held answer, the one reader of a bot's craft income (the
+// build's hour, a party's income), both threads: none held reads as unknown, the
+// hunt baseline alone.
+const craftIncome = state => ColdEconomyDecision.craftIncomeOf(state?.stats);
 function forGroup(group, members, deps = {}) {
     const diagnostic = Diagnostics.active();
     if (diagnostic) Diagnostics.count('context_group', 'request');
@@ -1826,61 +1787,6 @@ function forGroup(group, members, deps = {}) {
     }
     return context;
 }
-// The workshop's key: the versions of its inputs (Sections.LINK_INPUTS workshop).
-function workshopKeyOf(versions) {
-    const key = {};
-    for (const name of Sections.LINK_INPUTS.workshop.discrete) key[name] = versions[name];
-    return key;
-}
-// The first input of the workshop's key that moved since its answer was asked,
-// '' when none: the planner would answer the same (temporary until step 5: woken(workshop)).
-function workshopMoved(key, versions) {
-    if (!key) return 'unkeyed';
-    return Sections.movedInput('workshop', key, versions);
-}
-const workshopKeyHolds = (key, versions) => !workshopMoved(key, versions);
-const usableWorkshop = workshop => !!workshop && workshop.known !== false && Number.isFinite(workshop.incomePerHour);
-// The held entry's workshop and its key: the planner's answer a step asked
-// while the held plan stood (held.askedWorkshop), else the one the plan was
-// built with.
-const heldWorkshopKeyed = held => held?.askedWorkshop || (held ? { workshop: held.plan.workshop, key: held.plan.workshopKey } : null);
-// The held workshop while its key holds (workshopKeyHolds over the build's
-// versions, heldReadsOf), known and with a finite income; else null: the caller asks again.
-function heldWorkshopOf(held, versions) {
-    const keyed = heldWorkshopKeyed(held);
-    return usableWorkshop(keyed?.workshop) && workshopKeyHolds(keyed.key, versions) ? keyed.workshop : null;
-}
-// A crafter's build that keeps no known workshop. Counts crafters only: a
-// bot without workshop entries has no workshop to know.
-function countUnknownWorkshop(state) {
-    if (Diagnostics.active() && state.stats?.workshop?.entries?.length) Diagnostics.count('occupation', 'workshop', 'unknown');
-}
-// A worker build given no workshop (forState: a reader that builds without
-// the step's workshop, e.g. a stock check): the held one, else an unknown
-// one, which the step's next build does not keep (heldWorkshop: it asks).
-function keptWorkshop(held, versions, state) {
-    const workshop = heldWorkshopOf(held, versions);
-    if (workshop) return workshop;
-    countUnknownWorkshop(state);
-    return ColdEconomyDecision.unknownWorkshop();
-}
-// The worker's decision point (planLifecycle), before its woken build on the same
-// state: the held workshop while its key holds (heldWorkshopOf), or null: ask the
-// occupation planner. The route rows it read are written back on the step's deps,
-// which the build spreads. No held plan: null.
-function heldWorkshop(state, deps) {
-    const held = cache.get(actorKeyOf(state, deps));
-    if (!held?.plan.eventProof) return null;
-    const own = resolved(state, { ...deps });
-    const { reads } = heldReadsFor(state, own);
-    deps.routeRows = own.routeRows;
-    const kept = heldWorkshopOf(held, reads.versions);
-    if (Diagnostics.active()) {
-        workshopCount(held, reads.versions, kept);
-        if (kept) Diagnostics.count('workshop', 'kept', 'lifecycle');
-    }
-    return kept;
-}
 function preparedRouteRows(state) {
     const plan = cache.get(`character:${Number(state.characterId)}`)?.plan;
     return plan?.routeKey === Trip.key(state) ? plan.routeRows : null;
@@ -1918,5 +1824,5 @@ function reset() {
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
 module.exports = { quietGearBuildCount: () => quietGearBuilds, buildDoors: () => ({ ...doors, ...Agenda.counts() }), countDoor,
-    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), earningDue, linkStats, FIELD_ACTIVITIES, captureEventProof, proofIdentity, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockReader, kitReader, kitBag, kitRates, keptKit, visitStock, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, heldWorkshop, heldWorkshopOf, keptWorkshop, RETAIN_LIMIT, leafCheck, leafOutcome, refillReserve, forgetContext, forget, reset, configure, registerProvider,
+    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), earningDue, linkStats, FIELD_ACTIVITIES, captureEventProof, proofIdentity, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockReader, kitReader, kitBag, kitRates, keptKit, visitStock, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, RETAIN_LIMIT, leafCheck, leafOutcome, refillReserve, forgetContext, forget, reset, configure, registerProvider,
     craftIncome };

@@ -220,7 +220,7 @@ const PopulationStatus = {
     },
 
     // links=<link>:<rebuilt>/<kept>[,mask<n>,key<n>],new<n>;...: the decision links since the
-    // worker started (EconomyContext buildShadow, workshopShadow; developerDiagnostics only): rebuilt/kept as the
+    // worker started (EconomyContext buildShadow; developerDiagnostics only): rebuilt/kept as the
     // link's key decides (a link still on masks: as it would decide); mask (those only): today's mask rebuilt what the
     // key keeps; key: the key would rebuild what the mask keeps (a possibly stale answer); new: answers with nothing
     // to compare.

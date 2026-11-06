@@ -20,37 +20,13 @@ const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const positive = n => Math.max(0, Number(n) || 0);
 const hash = value => fnv1a32(JSON.stringify(value));
-// The decision links: the inputs
-// each link reads, by inputVersions name. The workshop decides on them
-// (EconomyContext.workshopKeyHolds); the
-// route rows are measured only (EconomyContext's link shadow, developerDiagnostics).
-// discrete: a version compared exactly; continuous: a value compared inside
-// the answer's own range, else beyond the bot's own error (movedInput);
-// events: what the link reads with no version, standing on an event bit or on
-// nothing (a window).
+// The decision links: the inputs each link reads. The route rows are measured only
+// (EconomyContext's link shadow, developerDiagnostics). discrete: a version compared
+// exactly; continuous: a value compared inside the answer's own range, else beyond the
+// bot's own error (movedInput); events: what the link reads with no version.
 const linkOf = (discrete, continuous, events) => Object.freeze({ discrete: Object.freeze(discrete),
     continuous: Object.freeze(continuous), events: Object.freeze(events) });
 const LINK_INPUTS = Object.freeze({
-    // The crafter's workshop: the occupation planner's answer
-    // (ColdOccupationSources.prepare over the planner capture,
-    // ColdSimulationWorker occupationPlanner.capture), kept by
-    // EconomyContext.heldWorkshopOf.
-    workshop: linkOf([
-        'kit.class', 'kit.level', // mpPerHour (seated recovery by class and level); recipe eligibility
-        'craft', // prepare: CraftShopService.craftLevelFor; capture: stats.workshop.entries (knownRecipes); the station
-        'crafter', // the worker asks a service crafter only (noCrafterWorkshop)
-        'recipes', // capture: RecipeBookCodec.unpack(recipeBook)
-        'maxMp', // craftLabour: state.vitals.maxMp (a cold command's MP cap)
-        'route', // prepare: EconomicTrip.key against the captured routeKey / routeRows (the karma flip among them)
-        'income', // prepare: Packet.hourAdena, the earning the held earning spot's answer published (its spot and hour)
-        'ownLines', // a crafter: its own sell lines (WealthCraftDecision output stock and prices, the shot exits'
-        // posted count); any other bot: whether one stands (noCrafterWorkshop asks the planner's feasibility)
-        'supply' // a shot crafter: the bag's shot and potion presence (its product's own stock)
-    ], [], [
-        'money', // the money bit: the wallet (the planner's funding), the packet's money price and survival reserve, the market watch
-        'bag', // prepare: every inventory row's free amount (WealthCraftDecision.freeAmount): heard in town (the money bit)
-        'reservations' // prepare: reservations(state): no event (the next ask)
-    ]),
     // The town route table (EconomicTrip.prepare, keyed by EconomicTrip.key =
     // routeInputs): one input per routeInputs field.
     routeRows: linkOf([
@@ -72,45 +48,6 @@ function shotInputs(state, timestamp) {
     return [Number(ShotStock.planForState(state)?.selfId) || 0, state.inventory
         ? invoke('GameServer/Bot/AI/BotTargetMatchup').shotKind(CombatProfile.shotSupply(state, timestamp)) : 0];
 }
-// lazy: ShotCraftPolicy loads the craft decision, which reads this module's readers.
-let shotRecipes = null;
-const shotRecipe = id => (shotRecipes ||= new Set(invoke('GameServer/Bot/Economy/ShotCraftPolicy').SHOT_RECIPE_IDS)).has(Number(id));
-// One reader per link input over one call's reads (r: the view, the state,
-// the options; what several inputs share is read once, r.once).
-const VERSIONS = Object.freeze({
-    'kit.class': r => hash([r.kits[0], r.kits[1]]), 'kit.level': r => r.kits[2],
-    craft: r => hash([r.view.craftLevel, r.view.craftStationId ?? null, r.view.workshop?.entries ?? null]),
-    crafter: r => r.once('crafter', () => require('./CraftEligibility').isServiceCrafter(r.state)),
-    recipes: r => r.view.recipes ? hash(r.view.recipes) : null,
-    maxMp: r => Number(r.state.vitals?.maxMp) || 0,
-    income: r => r.income ? hash(r.income) : null,
-    ownLines: r => {
-        if (!r.board) return null;
-        const lines = r.board.ownerLines(Number(r.state.characterId));
-        if (!VERSIONS.crafter(r)) return Number(lines.length > 0);
-        return hash(lines.filter(line => Number(line.storeType ?? 1) === 1 && line.custodyPolicy !== 1)
-            .map(line => [Number(line.selfId), Number(line.count), Number(line.price)]).sort((a, b) => a[0] - b[0] || a[2] - b[2] || a[1] - b[1]));
-    },
-    supply: r => r.view.recipes?.some(shotRecipe) ? hash(r.view.supply ?? null) : null,
-    ...Object.fromEntries(['route', 'route.activity', 'route.region', 'route.loc', 'route.scroll', 'route.karma', 'route.return',
-        'route.travel'].map(name => [name, r => r.once('route', () => routeVersions(r.state))[name]]))
-});
-// Every link input's version on a state, by LINK_INPUTS name (link: only the
-// discrete and continuous ones of that link, or of each of a list): a digest
-// of the input's value (no counter, no state identity), continuous ones the
-// value itself. view: the state's stateView (the held verdict's reads);
-// board: the board mirror (ownLines; null without one); income: the earning
-// spot's held answer ([spot, earning], EconomyContext.earningInput).
-function inputVersions(view, state, timestamp, { board = null, income = null, link = null } = {}) {
-    const memo = new Map();
-    const r = { view, state, timestamp, board, income, stats: state.stats || {}, kits: view.kitHashes || [],
-        once: (name, read) => memo.has(name) ? memo.get(name) : memo.set(name, read()).get(name) };
-    const names = !link ? Object.keys(VERSIONS) : [...new Set([link].flat().flatMap(name =>
-        [...LINK_INPUTS[name].discrete, ...LINK_INPUTS[name].continuous]))];
-    const out = {};
-    for (const name of names) out[name] = VERSIONS[name](r);
-    return out;
-}
 // The route table's inputs (EconomicTrip.routeInputs): the whole key (route)
 // and one version per field (LINK_INPUTS routeRows).
 function routeVersions(state) {
@@ -119,7 +56,7 @@ function routeVersions(state) {
         'route.scroll': route.inventory[736].amount, 'route.karma': route.stats.karma,
         'route.return': hash(route.stats.marketReturn), 'route.travel': hash(route.stats.travel) };
 }
-// The first input of a link that moved between two inputVersions, '' when
+// The first input of a link that moved between two of its versions (routeVersions), '' when
 // none: a discrete one by its version, a continuous one outside the answer's
 // own range where it carries one (bounds: name -> [low, high], as the held
 // earning spot's weights), else beyond the relative error (the bot's own, as
@@ -137,19 +74,20 @@ function movedInput(link, before, now, error = 0, bounds = null) {
 // The kit fact of a view: class, level, worn gear, hennas, skills, the hot
 // capture (view.kitHashes: ColdCombatProfile.kitEvents, a hash of each of combatView's parts,
 // hashed once per view), the craft
-// (level, station, workshop), the soul crystal quest and the karma flip that
-// closes the towns. Effects and night are no economy input, so a buff or the
-// day/night flip moves no fact; the clan is a relations fact; the recipe book
-// is its own fact. Its parts do not read the clock.
+// (level, station), the soul crystal quest and the karma flip that closes the
+// towns. Effects and night are no economy input, so a buff or the day/night
+// flip moves no fact; the clan is a relations fact; the recipe book is its own
+// fact; the workshop's listing is the workshop decision's own answer (its fees
+// and fills move no gear). Its parts do not read the clock.
 function kitFact(view) {
-    return hash([view.kitHashes, view.craftLevel, view.craftStationId, view.workshop,
+    return hash([view.kitHashes, view.craftLevel, view.craftStationId,
         view.soulCrystalQuest, view.closesTowns]);
 }
 // The kit part of the far reader (stateView), without the bag scan.
 function kitView(state) {
     const stats = state.stats || {};
     return { kitHashes: CombatProfile.kitEvents(state), craftLevel: Number(state.craftLevel ?? stats.dwarvenCraftLevel) || 0,
-        craftStationId: stats.craftStationId ?? null, workshop: stats.workshop,
+        craftStationId: stats.craftStationId ?? null,
         soulCrystalQuest: !!stats.soulCrystalQuest, closesTowns: Karma.closesTowns(stats.karma) };
 }
 function kit(state) {
@@ -424,5 +362,5 @@ function standsIn(state, leaf) {
 function kitMoved(before, after) {
     return (before?.stats?.wishSections?.build ?? null) !== (after?.stats?.wishSections?.build ?? null);
 }
-module.exports = { FIELD_ACTIVITIES, partyIdOf, goalReached, moneyCrossings, unspent, LINK_INPUTS, inputVersions, routeVersions, movedInput, shotInputs, stateView, kit, kitMoved, incomeError,
+module.exports = { FIELD_ACTIVITIES, partyIdOf, goalReached, moneyCrossings, unspent, LINK_INPUTS, routeVersions, movedInput, shotInputs, stateView, kit, kitMoved, incomeError,
     baselineIdentity, snapshot, semanticFacts, factsOf, relationTargetIds, NO_PARTY, LINE_BELOW, LINE_OUT, lineAt, supplyOf, linesOf, occupationPlanned, hash, isEmptyWishPlan, decisionRefusal };

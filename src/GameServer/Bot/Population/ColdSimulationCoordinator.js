@@ -81,11 +81,6 @@ function snapshotRefreshMs() {
     return Math.max(2000, Number(Config.coldWorkerSnapshotRefreshMs) || 10000);
 }
 
-function recipeKnowledgeFor(state) {
-    return CraftShopService.isServiceCrafter(state)
-        ? CraftWorkshopService.knowledgeFor(state.characterId) : {};
-}
-
 const yieldToLoop = require('../../EventLoopTurn');
 
 // The worker's npc_offers catalogue: the town offers the gear planner buys from
@@ -809,9 +804,6 @@ class ColdSimulationCoordinator {
                 if (decision?.feasibility) HotBoardReview.preparedOwner(id);
                 // The body acts on its new decision at its next turn, not at its next tick.
                 invoke('GameServer/Bot/BotAI').wakeup(session);
-            } else if (payload.phase === 'economy_workshop_stale' && !this.stopping) {
-                this.economyDecisions.staleWorkshop(Number(payload.characterId),
-                    { updatedAt: Number(payload.updatedAt), echo: payload.echo });
             }
             break;
         case 'proposal_batch':
@@ -958,7 +950,6 @@ class ColdSimulationCoordinator {
         const expected = Calculation.sources(members);
         const escrowFor = member => AfkMarket.buyOrderEscrow(member.characterId);
         const escrows = members.map(escrowFor);
-        const recipeKnowledge = members.map(recipeKnowledgeFor);
         const msgId = randomUUID();
         let timer, waitStarted;
         this.partyGoalRequests++;
@@ -966,12 +957,12 @@ class ColdSimulationCoordinator {
             const result = await new Promise((resolve, reject) => {
                 this.waiters.set(msgId, { resolve, reject, expectedType: 'party_goal_result' });
                 timer = setTimeout(() => reject(new Error('party_goal_timeout')), Math.max(1, replyBy - Date.now()));
-                const payload = { party, members, escrows, recipeKnowledge, timestamp, replyBy };
+                const payload = { party, members, escrows, timestamp, replyBy };
                 const bytes = Protocol.byteLength(Protocol.envelope('party_goal_request', epoch, payload, msgId));
                 const pages = bytes <= Protocol.MAX_MESSAGE_BYTES ? [{ payload, bytes }]
                     : members.map((member, pageIndex) => {
                         const page = { ...(pageIndex === 0 ? { party } : { partyId: party.partyId }),
-                            members: [member], escrows: [escrows[pageIndex]], recipeKnowledge: [recipeKnowledge[pageIndex]], timestamp, replyBy,
+                            members: [member], escrows: [escrows[pageIndex]], timestamp, replyBy,
                             pageIndex, pageCount: members.length };
                         return { payload: page, bytes: Protocol.byteLength(Protocol.envelope('party_goal_request', epoch, page, msgId)) };
                     });
@@ -985,8 +976,7 @@ class ColdSimulationCoordinator {
                 return { ok: false, reason: 'party_goal_stale_worker' };
             if (!result.ok) return result;
             if (JSON.stringify(result.sources) !== JSON.stringify(expected)
-                || JSON.stringify(members.map(escrowFor)) !== JSON.stringify(escrows)
-                || JSON.stringify(members.map(recipeKnowledgeFor)) !== JSON.stringify(recipeKnowledge))
+                || JSON.stringify(members.map(escrowFor)) !== JSON.stringify(escrows))
                 return { ok: false, reason: 'party_goal_source_changed' };
             return result;
         } catch (error) {

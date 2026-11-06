@@ -147,9 +147,11 @@ function craftLabour(state, timestamp = Date.now(), profile = null) {
 }
 
 // A bot with no plan hunts on and shops nothing: each reason says so once per
-// thread, with the first bot it met, for the live log.
+// thread, with the first bot it met, for the live log; told (prepare's onNoPlan): the
+// asker that counts its own unknown answer by the reason.
 const noPlanSeen = new Set();
-function noPlan(reason, state) {
+function noPlan(reason, state, told = null) {
+    told?.(reason);
     if (!noPlanSeen.has(reason)) {
         noPlanSeen.add(reason);
         utils.infoWarn('ColdWork', 'no occupation plan: %s (first bot %d)', reason, Number(state.characterId));
@@ -158,17 +160,17 @@ function noPlan(reason, state) {
 }
 
 function* prepare(state, { board, timestamp, read = () => {}, readScope = () => {}, stock = null, economy = null,
-    routeRows = null, routeKey = null, targetRecipe = null } = {}) {
+    routeRows = null, routeKey = null, targetRecipe = null, onNoPlan = null } = {}) {
     const packet = state.stats?.money;
-    if (!board) return noPlan('no_board', state);
-    if (!Packet.hasMoney(packet)) return noPlan('no_money_packet', state);
-    if (!(Packet.hourAdena(packet) > 0)) return noPlan('no_hour_value', state);
-    if (!(Packet.moneyPrice(packet) > 0)) return noPlan('no_money_price', state);
+    if (!board) return noPlan('no_board', state, onNoPlan);
+    if (!Packet.hasMoney(packet)) return noPlan('no_money_packet', state, onNoPlan);
+    if (!(Packet.hourAdena(packet) > 0)) return noPlan('no_hour_value', state, onNoPlan);
+    if (!(Packet.moneyPrice(packet) > 0)) return noPlan('no_money_price', state, onNoPlan);
     const admission = targetRecipe ? null : recipeIndex(board);
     const craftLevel = invoke('GameServer/Bot/Economy/CraftShopService').craftLevelFor(state);
     if (admission) readScope(admission.scopeFor(craftLevel));
     const reserved = yield* reservations(state);
-    if (!reserved) return noPlan('unknown_reservations', state);
+    if (!reserved) return noPlan('unknown_reservations', state, onNoPlan);
     const preparedFeasibility = targetRecipe ? null : yield* feasibility(state, { board, read }, reserved);
     const targetItems = targetRecipe ? new Set([Number(targetRecipe.productId), Number(targetRecipe.recipeItemId),
         ...(targetRecipe.materials || []).map(row => Number(row.selfId))]) : null;

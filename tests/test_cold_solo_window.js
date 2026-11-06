@@ -37,7 +37,7 @@ async function hunter(overrides = {}) {
         stats: { ...state.stats, classProgressionClassId: state.stats.classId, classProgressionLevel: 18, deaths: 0 },
         simulation: { revision: 1 }, updatedAt: T - 60000 }, quiet, { timestamp: T - 60000, persist: false, projectClassProgression: true });
     return { ...worn, timing: { lastResolvedAt: T - 60000, nextResolveAt: T },
-        stats: { ...worn.stats, stepCount: 0, woken: 0, equipmentPlan: null, earning: { spotId: spot.id }, wishSections: { ...Sections.semanticFacts(worn), funding: 0 } }, ...overrides };
+        stats: { ...worn.stats, stepCount: 0, woken: 0, equipmentPlan: null, earning: { spotId: spot.id }, craftIncome: [0, 0, 0, 0], wishSections: { ...Sections.semanticFacts(worn), funding: 0 } }, ...overrides };
 }
 
 // The step's decision: hold the hunt, as a held card does. `plan` overrides it.

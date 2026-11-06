@@ -3065,9 +3065,12 @@ const BotLifeState = {
             const economyDeps = typeof options.economyDepsFor === 'function'
                 ? await options.economyDepsFor(nextState) : options.economyDeps || {};
             const calculationDeps = { ...economyDeps, timestamp };
+            // economyFor: { economy, stats }: its economy and the mind keys of a decision it took
+            // before it on its own copy of the projection (the workshop), written under the
+            // economy's packet.
             const advised = typeof options.economyFor === 'function' ? await options.economyFor(nextState, calculationDeps) : null;
-            const economy = advised || invoke('GameServer/Bot/Economy/EconomyContext').forState(nextState, calculationDeps);
-            Object.assign(nextState.stats, economy.statsPacket);
+            const economy = advised?.economy || invoke('GameServer/Bot/Economy/EconomyContext').forState(nextState, calculationDeps);
+            Object.assign(nextState.stats, advised?.stats, economy.statsPacket);
             if (typeof options.onEconomy === 'function') options.onEconomy(economy, nextState);
         } else if (options.statsPacket && !beforeResolvePacket) Object.assign(nextState.stats, options.statsPacket);
         const knownProfileLevel = Number(nextState.stats?.classProgressionLevel || 0);

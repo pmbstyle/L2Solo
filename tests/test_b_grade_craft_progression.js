@@ -166,7 +166,7 @@ async function verifyNativeCrafts() {
                     { 57: { selfId: 57, amount: 1000 } }, station.loc, { craftStationId: station.id });
             owners.set(station.id, owner.characterId);
             await Shops.ensureRecipes(owner.characterId, Shops.profileFor(owner));
-            owner = await Workshops.review(Life.cachedState(owner.characterId));
+            owner = await Workshops.publishListing(Life.cachedState(owner.characterId));
             const provider = { ...plan.craftProviders[recipeId], characterId: owner.characterId };
             let buyer = await seed(`bot_b_craft_${recipeId}`, `Buyer${recipeId}`, state.classId, 55,
                 { ...state.inventory, 57: { selfId: 57, amount: state.adena } }, station.loc,

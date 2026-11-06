@@ -13,8 +13,9 @@ const MAX_BYTES = 1024, MAX_PLAIN_BYTES = 16384;
 // (stats.kitRates) instead of targets, so every bot builds once to rate its
 // kit. 8: the card's proof is its identity only (EconomyContext proof v3, the
 // build on situations), its saved prefix the generation alone. An older card
-// is refused before inflate: one rebuild per bot.
-const VERSION = 8;
+// is refused before inflate: one rebuild per bot. 9: the card carries no
+// workshop (the workshop decision holds it in the mind, craftIncome).
+const VERSION = 9;
 
 function cardData(value, maxBytes) {
     if (typeof value !== 'string' || value.length > Math.ceil(maxBytes / 3) * 4

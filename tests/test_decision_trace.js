@@ -19,13 +19,13 @@ try {
     assert.equal(offWriter.write(new Proxy([], { get() { throw Error('off payload'); } })), 0); offWriter.cleanup(); offWriter.rotate();
     assert(!fs.existsSync(path.join(directory, 'off')));
 
-    // On: a far bot's level up at work waits for its stop (the earning spot, the build and the gear plan hear it);
+    // On: a far bot's level up at work waits for its stop (the earning spot, the build, the gear plan and the workshop hear it);
     // the stop wakes them; the earning spot is taken.
     Config.decisionTrace = true;
     const sent = [];
     DecisionTrace.connect(batch => { sent.push(...batch.records); });
     // A bot holding its answers (with none a decision reads woken).
-    const stats = { woken: 0, earning: { spotId: '9_24' }, wishSections: {}, equipmentPlan: null };
+    const stats = { woken: 0, earning: { spotId: '9_24' }, wishSections: {}, equipmentPlan: null, craftIncome: [0, 0, 0, 0] };
     Situations.raise(stats, 'level_up', null, Situations.place({ phase: 'cold', activity: 'hunting' }), 501);
     Situations.stop(stats, Situations.REST, 501);
     Situations.decided(stats, 'earning_spot', { caller: 'step', subject: 501, answer: '11_6', was: '9_24' });
@@ -33,8 +33,8 @@ try {
     DecisionTrace.ack(1, sent.length);
     const rows = sent.map(row => JSON.parse(row));
     assert.deepEqual(rows.map(row => [row.bot, row.kind]), [[501, 'raise'], [501, 'stop'], [501, 'decided'], [502, 'decided']]);
-    assert.equal(rows[0].name, 'level_up'); assert.equal(rows[0].waits, 'earning_spot,build,gear_plan'); assert.equal(rows[0].woke, '');
-    assert.equal(rows[1].woke, 'earning_spot,build,gear_plan');
+    assert.equal(rows[0].name, 'level_up'); assert.equal(rows[0].waits, 'earning_spot,build,gear_plan,workshop'); assert.equal(rows[0].woke, '');
+    assert.equal(rows[1].woke, 'earning_spot,build,gear_plan,workshop');
     assert.equal(rows[2].answer, '11_6'); assert.equal(rows[2].was, '9_24'); assert.equal(rows[2].how, 'taken');
     assert.equal(rows[3].how, 'unwoken', 'a decision taken with no situation is named so');
     const summary = Trace.summary(rows);

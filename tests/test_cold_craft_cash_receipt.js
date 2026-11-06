@@ -203,7 +203,7 @@ async function verifyAuthoredPhysicalCraft() {
         const workshopOwner = await seed('bot_native_gear_workshop', 'NativeGearWorkshop',
             57, 70, [item(57, 1000000)], { role: 'crafter' });
         await Database.setCharacterRecipe(workshopOwner.characterId, recipe.recipeId, recipe.type);
-        const publishedWorkshop = await Workshop.review(workshopOwner);
+        const publishedWorkshop = await Workshop.publishListing(workshopOwner);
         assert(publishedWorkshop.stats.workshop.entries.some(row => row.recipeId === recipe.recipeId),
             'the physical learned recipe produces a native public workshop offer');
         let workshopCustomer = await seed('bot_native_gear_workshop_customer', 'NativeGearWorkshopBuyer',

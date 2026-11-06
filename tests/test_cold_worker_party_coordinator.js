@@ -182,32 +182,6 @@ let coordinator = null;
     assert.deepStrictEqual(goalResult.sources,
         require('../src/GameServer/Bot/Population/PartyGoalCalculation').sources(goalMembers));
     assert.equal(coordinator.partyGoalRequests, 0, 'native response releases the admission slot');
-    const CraftShop = invoke('GameServer/Bot/Economy/CraftShopService');
-    const Workshop = require('../src/GameServer/Bot/Economy/CraftWorkshopService');
-    const Codec = require('../src/GameServer/Bot/Economy/RecipeBookCodec');
-    const originalService = CraftShop.isServiceCrafter;
-    const originalPost = coordinator.post;
-    let sentKnowledge;
-    CraftShop.isServiceCrafter = () => true;
-    // Main's recipe cache holds each member's book (none learned yet).
-    await Promise.all(goalMembers.map(member => Workshop.knownFor(member.characterId)));
-    coordinator.post = function(type, payload, ...args) {
-        const sent = originalPost.call(this, type, payload, ...args);
-        if (type === 'party_goal_request') {
-            sentKnowledge = payload.recipeKnowledge;
-            // A learning while the reply is awaited drops main's cached book.
-            Workshop.recipesChanged(goalMembers[0].characterId);
-        }
-        return sent;
-    };
-    try {
-        const changedKnowledge = await coordinator.requestPartyGoals(goalParty, goalMembers);
-        assert.equal(sentKnowledge[0].recipeBook, Codec.pack([]), 'query carries current main recipe authority');
-        assert.equal(changedKnowledge.reason, 'party_goal_source_changed', 'knowledge learned while awaiting reply rejects stale goals');
-        assert.equal(coordinator.partyGoalRequests, 0);
-    } finally {
-        CraftShop.isServiceCrafter = originalService; coordinator.post = originalPost;
-    }
     const largeMembers = await LifeState.statesForParty('worker-party');
     assert(require('../src/GameServer/Bot/Population/ColdSimulationProtocol').byteLength({ members: largeMembers }) > 256 * 1024,
         'fixture requires multiple complete-input pages');

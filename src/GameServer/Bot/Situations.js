@@ -165,6 +165,11 @@ function woke(name, where) {
 // gear the bot follows. One question, which gear to work toward: it hears the bot's
 // own changes only, not a town arrival or a failed step; a failed gear errand reaches
 // it as its mark alone (GearMarks), which the build reads too.
+// workshop: what a crafter offers and produces (its own production's best recipe and
+// income, stats.craftIncome), taken at the start of a town visit (arrived_town, one per
+// visit), at a recipe learned and at a level (the recipes its craft reaches), held
+// between: worn gear, prices, the board and its own fills wake it not. The build reads
+// the held answer. A bot that is no service crafter takes it as none, with no planner job.
 const DECISIONS = Object.freeze({
     earning_spot: Object.freeze(['level_up', 'gear_changed', 'died', 'recovered', 'spot_disappoints', 'contest_lost', 'spot_empty',
         'spot_dangerous', 'spot_unreachable', 'moved_by_world', 'party_left', 'shots_out', 'stock_low:potions', 'goal_affordable:potions',
@@ -173,7 +178,8 @@ const DECISIONS = Object.freeze({
         'goal_affordable:potions', 'goal_affordable:focus', 'out_of_money', 'goal_done:goal', 'goal_failed',
         'goal_done:visit', 'goal_failed:visit', 'stock_low:shots', 'stock_low:potions', 'bag_full', 'source_stalled', 'clan_call',
         'clan_changed', 'spot_empty', 'goal_moved', 'player_command', 'craft_bid', 'clan_market']),
-    gear_plan: Object.freeze(['level_up', 'gear_changed', 'died', 'party_left', 'source_stalled'])
+    gear_plan: Object.freeze(['level_up', 'gear_changed', 'died', 'party_left', 'source_stalled']),
+    workshop: Object.freeze(['arrived_town', 'recipe_learned', 'level_up'])
 });
 const BITS = Object.freeze(Object.fromEntries(Object.keys(DECISIONS).map((name, at) => [name, 1 << at])));
 const ALL = Object.values(BITS).reduce((all, bit) => all | bit, 0), PLANE = 0xff;
@@ -187,7 +193,7 @@ const WAKES = Object.freeze(Object.fromEntries(Object.keys(SITUATIONS).map(name 
 const planesAt = where => where === WORK || where === BODY ? 0 : where === REST ? STOP : STOP | TOWN;
 // A decision's held answer in the mind (situations.md §10): with none the decision
 // reads woken (no stored raise), until it decides and holds one.
-const HELD = Object.freeze({ earning_spot: 'earning', build: 'wishSections', gear_plan: 'equipmentPlan' });
+const HELD = Object.freeze({ earning_spot: 'earning', build: 'wishSections', gear_plan: 'equipmentPlan', workshop: 'craftIncome' });
 const unheld = stats => Object.entries(HELD).reduce((bits, [decision, key]) => stats?.[key] === undefined ? bits | BITS[decision] : bits, 0);
 // A row saved before the store kept no bits: every decision reads woken, once.
 const wokenBits = stats => (stats?.woken === undefined ? ALL : Number(stats.woken) || 0) | unheld(stats);

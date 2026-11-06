@@ -181,6 +181,21 @@ function beliefFor(selfId, ctx, enchant = 0) {
     return { ...belief, mu:(Math.log(cost) * belief.K + quotes.reduce((n,row) => n + Math.log(row.price),0))
         / (belief.K + quotes.length), K:belief.K + quotes.length };
 }
+// A crafter's fee for a recipe it offers (its workshop listing, CraftShopService.listing):
+// its belief of the service's worth, the product's price as the prior
+// (CraftShopService.productPrice), learnt from every rival's listed fee (as a player
+// browsing the workshops sees them all) and its own fills (its earnings per fill, weighted by the
+// fills). Priced when the workshop decides: temporary until its own lines' look reprices
+// a fee on a rival's line.
+function serviceFee(recipe, previous, rivalFees = []) {
+    const first = invoke('GameServer/Bot/Economy/CraftShopService').productPrice(recipe);
+    const belief = { mu: Math.log(Math.max(1, first)), K: PriceBelief.S0 };
+    const observations = rivalFees.filter(price => price > 0).map(price => [Math.log(price), 1]);
+    const paid = Number(previous?.earned || 0), filled = Number(previous?.fills || 0);
+    if (paid > 0 && filled > 0) observations.push([Math.log(paid / filled), filled]);
+    PriceBelief.learn(belief, observations);
+    return Math.max(1, Math.round(Math.exp(belief.mu)));
+}
 // A fresh ask for this choice; nothing is read from saved item memory.
 function priceForSale(selfId, ctx, { town = null, units = 1, enchant = 0, current = 0, rollKey }) {
     const belief = beliefFor(selfId, ctx, enchant);
@@ -416,4 +431,4 @@ function lookOwn(state, lines, ctx, lookSeen) {
     return BoardLook.review(state, lines, ctx, lookSeen);
 }
 
-module.exports = { beliefFor, traderContext, priceForSale, lineState, bestAnswer, disposition, bid, look, lookOwn };
+module.exports = { beliefFor, traderContext, priceForSale, serviceFee, lineState, bestAnswer, disposition, bid, look, lookOwn };

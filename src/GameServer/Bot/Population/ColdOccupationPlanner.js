@@ -1,6 +1,7 @@
 'use strict';
 const DiagnosticConfig = require('./PopulationConfig');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
+const FailureLog = require('../../../FailureLog');
 
 const { performance } = require('node:perf_hooks');
 const { unknownWorkshop } = require('./ColdEconomyDecision');
@@ -25,18 +26,14 @@ const keyOf = (id, mode) => `${mode || 'occupation'}:${Number(id)}`;
 // mode (entry.mode) reads it (the worker: a meeting job reads the item's
 // category, every other mode the item); one token per mode serves every owner
 // of the item at once (sourceChanged).
-// servesUntil(input): the clock (input.timestamp) from which a finished
-// answer no longer serves an ask of the same key: a window for an input the
-// answer reads that has no event (the worker states which); none by default.
 class ColdOccupationPlanner {
     constructor({ capture, create, step, result, ownCurrent = () => true, inputKey = input => input, valueKey = () => '',
-        servesUntil = () => Infinity, sourceToken, sourceScope = () => null, sourceScopeToken = () => 0,
+        sourceToken, sourceScope = () => null, sourceScopeToken = () => 0,
         onSlots = () => {}, onWorking = () => {}, publish = () => {}, onPublishError = () => {}, now = () => performance.now(),
         schedule = callback => setImmediate(callback) } = {}) {
-        Object.assign(this, { capture, create, step, result, ownCurrent, inputKey, valueKey, servesUntil, sourceToken, sourceScope, sourceScopeToken, onSlots, onWorking, publish, onPublishError, now, schedule });
+        Object.assign(this, { capture, create, step, result, ownCurrent, inputKey, valueKey, sourceToken, sourceScope, sourceScopeToken, onSlots, onWorking, publish, onPublishError, now, schedule });
         this.slots = new Map(); this.cards = new Map(); this.waiting = new Map(); this.ready = new Set(); this.dependencies = new Map();
         this.workingContexts = 0;
-        this.errorsSeen = new Set();
         this.scopes = new Map();
         this.scopeDependencies = new Map();
         // Meeting readers share one representative item per category: their
@@ -63,19 +60,18 @@ class ColdOccupationPlanner {
 
     request(id, input, { awaitResult = true } = {}) {
         id = Number(id);
-        if (!id || this.stopped) return Promise.resolve(unknownWorkshop());
+        if (!id || this.stopped) return Promise.resolve(unknownWorkshop('stopped'));
         const mode = input?.mode || 'occupation', key = keyOf(id, mode);
         const existing = this.waiting.get(key) || this.slots.get(key) || this.cards.get(key);
         const fingerprint = this.inputKey(input);
-        if (existing && existing.fingerprint === fingerprint && !existing.dirty
-            && !(existing.done && Number(input?.timestamp) >= existing.until) && this.valuesOf(existing) === this.valueKey(input)) {
+        if (existing && existing.fingerprint === fingerprint && !existing.dirty && this.valuesOf(existing) === this.valueKey(input)) {
             if (existing.done) { existing.input = input; DiagnosticConfig.developerDiagnostics && (this.stats.unchanged++); return Promise.resolve(existing.value); }
             return awaitResult ? existing.promise : null;
         }
         if (existing) this.cancel(id, mode);
         let resolve;
         const promise = new Promise(done => { resolve = done; });
-        const entry = { key, id, mode, input, fingerprint, until: this.servesUntil(input), resolve, promise,
+        const entry = { key, id, mode, input, fingerprint, resolve, promise,
             cursor: new Float64Array(16), dirty: false, done: false, values: null };
         this.waiting.set(key, entry);
         this.kick();
@@ -244,17 +240,15 @@ class ColdOccupationPlanner {
         entry.validation = null;
     }
 
-    // A failed build ends as an empty result: each distinct failure is logged
-    // once, as an error the deploy read counts. A meeting's refusal is its answer.
-    reportError(entry) {
-        if (entry.mode === 'meeting' || this.errorsSeen.has(entry.error) || this.errorsSeen.size >= 32) return;
-        this.errorsSeen.add(entry.error);
-        console.error(`ColdOccupationPlanner :: Error: ${entry.error}`);
+    // A failed build ends as an empty result (an unknown answer): counted per mode, the
+    // first logged with its stack (FailureLog). A meeting's refusal is its answer.
+    reportError(entry, error) {
+        if (entry.mode !== 'meeting') FailureLog.note(`occupation.${entry.mode}_failed`, error);
     }
 
     finish(entry, value) {
         if (entry.done || this.slots.get(entry.key) !== entry) return;
-        entry.done = true; entry.value = value ?? (entry.mode === 'action' ? null : unknownWorkshop());
+        entry.done = true; entry.value = value ?? (entry.mode === 'action' ? null : unknownWorkshop('none'));
         // The card keeps the answer, its key and its read tokens: no scratch
         // graph, no cursor. It leaves the working pool.
         entry.work = null; entry.captured = null; entry.validation = null; entry.cursor = null;
@@ -311,10 +305,10 @@ class ColdOccupationPlanner {
                 if (units && clock - started >= SLICE_MS) break;
                 const unitStarted = clock;
                 try { this.unit(entry); }
-                catch (error) { entry.error = String(error?.message || error); this.reportError(entry); this.finish(entry, entry.mode === 'meeting'
+                catch (error) { entry.error = String(error?.message || error); this.reportError(entry, error); this.finish(entry, entry.mode === 'meeting'
                     ? { refused: true, reason: entry.error, ...(error.priceEvidence ? { priceEvidence: error.priceEvidence } : {}),
                         ...(error.priceFallback ? { priceFallback: error.priceFallback } : {}) }
-                    : unknownWorkshop()); }
+                    : unknownWorkshop('failed')); }
                 clock = this.now();
                 const duration = clock - unitStarted;
                 DiagnosticConfig.developerDiagnostics && (this.stats.maxUnitMs = Math.max(this.stats.maxUnitMs, duration));
@@ -352,7 +346,7 @@ class ColdOccupationPlanner {
         const entry = this.waiting.get(key) || this.slots.get(key) || this.cards.get(key);
         if (!entry) return;
         this.waiting.delete(key);
-        entry.resolve?.(unknownWorkshop()); entry.resolve = null;
+        entry.resolve?.(unknownWorkshop('cancelled')); entry.resolve = null;
         this.release(id, mode);
     }
     stop() {

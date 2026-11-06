@@ -121,8 +121,7 @@ assert.equal(Look.feasibilityPredicate(allocated, lines, mask)(lines[0]), false,
     'a deep captured ingredient reservation protects the listed stock on a natural look');
 const Publication = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
 const publication = Publication.compact(structuredClone(Publication.capture({ workshop: { known: false, feasibility: mask } }, allocated)));
-assert.deepEqual(publication.feasibility, mask);
-assert.equal(publication.workshop.known, false, 'missing recipe evidence cannot erase independently known protection');
+assert.deepEqual(publication.feasibility, mask, 'missing recipe evidence cannot erase independently known protection');
 assert.equal(Look.feasibilityPredicate(allocated, [{ ...lines[0], revision: 3 }], mask)(lines[0]), undefined,
     'a changed physical line does not reuse an accepted old protection mask');
 // A cold look answers on the state it looks at: a reservation that ends or
@@ -149,10 +148,8 @@ const decoded = Shots.unpackStep(step);
 assert.deepEqual(decoded.craft.exit, [null, 1000001, null, 9999]);
 assert.deepEqual(decoded.craft.gear, [247, 0, null, 1000002, null, 9999]);
 assert.equal(decoded.craft.ownReserve, 3000);
-const packedDecision = Publication.compact(structuredClone(Publication.capture({ shot: step,
-    workshop: { known: true, recipeId: 25, productId: 1864, incomePerHour: 0.1, cycleHours: 0.01 } }, owner)));
+const packedDecision = Publication.compact(structuredClone(Publication.capture({ shot: step }, owner)));
 assert.deepEqual(packedDecision.shot, step);
-assert.equal(packedDecision.workshop.cycleHours, 0.01);
 assert.equal(Plan.MAX_PLAN_PAYLOAD_BYTES + Publication.COMMAND_HEADER_BYTES + 32 + 8, Plan.MAX_BYTES);
 { // A batch that fit alone can overflow beside the rest: it waits whole, no error.
     const room = { sell: [], withdraw: [], travel: null, buyAds: ['x'.repeat(Plan.MAX_PLAN_PAYLOAD_BYTES)], buyKit: [], buyCaps: [] };

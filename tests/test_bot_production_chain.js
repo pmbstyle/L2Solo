@@ -82,7 +82,7 @@ async function run() {
     await Database.setCharacterRecipe(crafter.characterId, 20, 'dwarven');
     await Database.setSkill({ selfId: 172, name: 'Create Item', passive: false, level: 8 }, crafter.characterId);
     await Database.setSkill({ selfId: 248, name: 'Crystallize', passive: false, level: 1 }, crafter.characterId);
-    crafter = await Workshop.review(crafter);
+    crafter = await Workshop.publishListing(crafter);
     assert(Workshop.boardRecords().some(row => row.ownerId === crafter.characterId && row.entries.some(entry => entry.recipeId === 1)));
     assert.equal(Workshop.lookup(crafter.characterId, 1, { characterId: 800001, stats: {} }).entryPrice,
         invoke('GameServer/Bot/Economy/CraftShopService').productPrice(recipe));
