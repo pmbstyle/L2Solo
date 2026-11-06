@@ -325,7 +325,7 @@ console.log('PASS selected purchase is payable by the money packet rows (FX-E3 r
     const shopping = { characterId: 7, phase: 'cold', activity: 'shopping', stats: {} };
     assert.equal(cheapKit.activity?.itemId, 105, 'fixture: the piece is the step');
     const sellerAt = unitPrice => Agenda.advance({ plan: { network: cheapKit, eventProof: {}, statsPacket: {} } }, shopping, 'check:offer_none', {}, {
-        refused: () => null, progress: () => 0, held: () => 0, identity: () => 'step', visitPays: (leaf, rest) =>
+        refused: () => null, progress: () => 0, held: () => 0, identity: () => 'step', unspent: baseline => baseline, visitPays: (leaf, rest) =>
             Valuation.visitPays({ moneyPrice: cheapKit.moneyPrice }, [leaf, ...rest], { known: true, hours: 0, fees: 0 }),
         bestOffer: () => ({ town: 'Giran', unitPrice, availableUnits: 1, sourceType: 'npc', tripFees: 0 }) });
     assert.equal(sellerAt(100)?.plan.network.activity.unitPrice, 100, 'a seller at the funded price takes the piece');

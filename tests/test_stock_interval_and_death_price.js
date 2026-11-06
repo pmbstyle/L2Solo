@@ -79,10 +79,14 @@ for (const [visitEvery, hours] of [[[22, 4], 4], [[10, 0], noHistoryT], [[22, 30
     assert(own.targetHours > .5, 'the loot carried into town does not shorten the next outing to half an hour');
     assert.equal(own.target, Math.max(Math.ceil(use), Math.ceil(use * own.targetHours)));
 }
+// The visit interval moves when the bot arrives in town; it wakes nothing: a reader is
+// served the held answer, and the build the arrival wakes reads the new interval.
 const cached = Economy.forState(warrior, deps);
-const changed = Economy.forState({ ...warrior, stats: { ...warrior.stats, visitEvery: [22, 4] } }, deps);
-assert.notEqual(changed, cached, 'a visit interval change invalidates the derived stock');
-assert.equal(changed.stock('shots').target, Math.ceil(use * 4));
+const interval = { ...warrior, stats: { ...warrior.stats, visitEvery: [22, 4] } };
+assert.equal(Economy.forState(interval, deps).stock('shots').target, cached.stock('shots').target,
+    'a moved visit interval wakes no build');
+const changed = Economy.forState({ ...interval, activity: 'shopping' }, { ...deps, decide: true });
+assert.equal(changed.stock('shots').target, Math.ceil(use * 4), 'the build at the town arrival reads the visit interval');
 const session = { coldLifeState: { stats: { playedHours: 10 } } };
 for (const [hour, expected] of [[10, [10, 0]], [13, [13, 3]], [18, [18, 4]], [22, [22, 4]]]) {
     session.coldLifeState.stats.playedHours = hour;

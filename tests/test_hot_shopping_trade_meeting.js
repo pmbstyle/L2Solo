@@ -14,12 +14,13 @@ const Training = invoke('GameServer/Bot/BotSkillTraining');
 Data.init();
 const restores = [];
 const stub = (object, key, value) => { const old = object[key]; object[key] = value; restores.push(() => { object[key] = old; }); };
-const npcTalkFile = require.resolve('../src/GameServer/World/Generics/NpcTalkResponse');
-require(npcTalkFile);
-const npcTalk = require.cache[npcTalkFile];
-const npcResponse = npcTalk.exports;
+// The visit's NPC sale of its leftovers (the general sell-junk), counted.
+const sellJunkFile = require.resolve('../src/GameServer/World/Generics/NpcBypasses/SellJunk');
+require(sellJunkFile);
+const sellJunk = require.cache[sellJunkFile];
+const sellJunkHandler = sellJunk.exports;
 let npcSales = 0;
-npcTalk.exports = () => { npcSales++; };
+sellJunk.exports = () => { npcSales++; };
 let serial = 0, requests = 0, restocks = 0, upgrades = 0, settlements = 0, terminal = 'completed';
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const bot = { fetchId: () => 920051, fetchName: () => 'PendingShopper', fetchClassId: () => 0,
@@ -171,7 +172,7 @@ const deadline = setTimeout(() => { throw Error('pending shopping continuation t
         console.log('PASS hot shopping: pending buy/sell, native completion/cancellation, discarded preparation, single trade and actor/AI interruption');
     } finally {
         clearTimeout(deadline);
-        Meetings.reset(); npcTalk.exports = npcResponse;
+        Meetings.reset(); sellJunk.exports = sellJunkHandler;
         for (const restore of restores.reverse()) restore();
     }
 })().catch(error => { console.error(error); process.exitCode = 1; });

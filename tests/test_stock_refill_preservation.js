@@ -83,7 +83,10 @@ async function run() {
         const EconomicTrip = require('../src/GameServer/Bot/Economy/EconomicTrip');
         const steps = EconomicTrip.prepare(empty); let prepared;
         do prepared = steps.next(); while (!prepared.done);
-        Economy.forState(Economy.stateForActor(actor), { routeRows: prepared.value });
+        // The bot holds its build's answer as a near bot does: main reads the kit rates it
+        // published (a bot no build rated buys no kit).
+        const built = Economy.forState(Economy.stateForActor(actor), { routeRows: prepared.value });
+        session.coldLifeState = { ...session.coldLifeState, stats: { ...session.coldLifeState.stats, ...built.statsPacket } };
         const purchase = await Shot.purchaseActorRestock(actor, { town: 'Giran', potionUnitPrice: 0 });
         assert.equal(purchase.ok, true);
         assert.equal(purchase.delta, before.target, 'the paid physical purchase reaches the native target from an absent stack');
