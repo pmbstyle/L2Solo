@@ -6,7 +6,7 @@ const Approach = invoke('GameServer/Bot/AI/TownNpcApproach');
 const pendingCold = new Map(), pendingHot = new WeakMap();
 let improvementDeferred = 0;
 const INPUT_REJECTIONS = new Set(['improvement_source_changed', 'improvement_missing_materials', 'improvement_missing_template',
-    'invalid_bot_enchant', 'invalid_bot_henna', 'invalid_bot_crystal_quest', 'soul_crystal_resonance']);
+    'invalid_bot_enchant', 'invalid_bot_henna', 'invalid_bot_crystal_quest', 'invalid_bot_luxury_exchange', 'soul_crystal_resonance']);
 const rejectedInput = error => INPUT_REJECTIONS.has(error?.message);
 function chosen(state, context) {
     const leaf = context.network.activity;

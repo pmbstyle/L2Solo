@@ -4,11 +4,13 @@ const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 
+require('./helpers/databaseIsolation');
+const isolated = require('./helpers/isolatedSocialDatabase')('clan-action-queue');
 require('../src/Global');
 invoke('GameServer/DataCache').init();
 
 const rootDir = path.resolve(__dirname, '..');
-const databasePath = path.join(rootDir, 'tmp', 'test-clan-action-queue.sqlite');
+const databasePath = isolated.world;
 const Database = invoke('Database');
 const ClanActionService = invoke('GameServer/Clan/ClanActionService');
 const ClanGoalPolicy = invoke('GameServer/Clan/ClanGoalPolicy');
@@ -118,7 +120,7 @@ async function main() {
     seedDatabase();
     options.default.Database.path = path.relative(rootDir, databasePath);
     options.default.Database.historyPath = `${databasePath}.history`;
-    Database.init();
+    await Database.init();
     try {
         const created = await Database.createAutonomousClan({
             name: 'ActionQueueClan',
@@ -296,6 +298,9 @@ async function main() {
 
         let claimCalls = 0;
         let maxRunning = 0;
+        // This scenario follows plan -> contribution. Auxiliary turns are
+        // exercised separately by the native fairness/continuation fixture.
+        await Database.execute(["DELETE FROM clan_actions WHERE status='pending' AND actionType IN ('supplies','member_titles')", []]);
         Database.claimClanAction = async (options) => {
             const before = await Database.fetchClanActionQueueStats();
             assert.strictEqual(before.running, 0, 'the previous action must settle before another claim');
@@ -434,6 +439,9 @@ async function main() {
             result: { reason: 'test_setup' },
             reasonCode: 'test_setup'
         });
+        // Start each action-outcome scenario with only its intended work;
+        // priority within a type no longer skips other types' fair turns.
+        await Database.execute(["DELETE FROM clan_actions WHERE status='pending'", []]);
         const marketAction = await Database.enqueueClanAction({
             clanId: replanCreated.clanId,
             actionKey: `test:${replanCreated.clanId}:market-no-offer`,
@@ -464,6 +472,7 @@ async function main() {
         const replannedActions = await Database.fetchClanActions({ clanId: replanCreated.clanId, limit: 8 });
         assert(replannedActions.some((action) => action.actionType === 'party' && action.status === 'pending'));
 
+        await Database.execute(["DELETE FROM clan_actions WHERE status='pending'", []]);
         const transientPartyAction = await Database.enqueueClanAction({
             clanId: replanCreated.clanId,
             actionKey: `test:${replanCreated.clanId}:party-not-ready`,
@@ -499,6 +508,7 @@ async function main() {
         );
         assert(ClanActionService.metrics().stages['execute:party'].count >= 1,
             'party execution latency must remain separately observable');
+        await Database.execute(["DELETE FROM clan_actions WHERE status='pending'", []]);
         const retryPlan = await Database.enqueueClanAction({
             clanId: replanCreated.clanId,
             actionKey: `clan:${replanCreated.clanId}:worker-retry-test`,
@@ -517,9 +527,17 @@ async function main() {
         assert.strictEqual(deferredWorkerPlan.status, 'pending');
         assert(ClanActionService.metrics().deferred >= 1, 'operational worker deferrals must be observable');
         assert(ClanActionService.metrics().stages.defer.count >= 1, 'defer settlement latency must be observable');
+        await Database.enqueueClanAction({ clanId: created.clanId, actionKey: 'test:fresh-plan-after-deferral',
+            actionType: 'goal_plan', priority: 2000, availableAt: Date.now() - 1 });
+        const resumedPlan = await Database.claimClanAction({ at: deferredWorkerPlan.action.availableAt });
+        assert.strictEqual(resumedPlan.action.id, claimedWorkerPlan.id,
+            'the service marks executed deferrals as continuations, ahead of fresh same-type work');
+        await Database.releaseClanAction({ actionId: resumedPlan.action.id,
+            expectedAttempt: resumedPlan.action.attempt, expectedLeaseUntil: resumedPlan.action.leaseUntil });
 
         // A follow-up failure after the settle must not report the settled
         // action as failed.
+        await Database.execute(["DELETE FROM clan_actions WHERE status='pending'", []]);
         const followUpAction = await Database.enqueueClanAction({
             clanId: replanCreated.clanId,
             actionKey: `test:${replanCreated.clanId}:follow-up-failure`,
@@ -591,6 +609,7 @@ async function main() {
         console.log('Clan action queue checks passed');
     } finally {
         await Database.close();
+        fs.rmSync(isolated.directory, { recursive: true, force: true });
     }
 }
 

@@ -594,7 +594,8 @@ async function resolveAction(action, options = {}) {
                 actionId: action.id,
                 availableAt: Date.now() + retryDelay,
                 expectedAttempt: action.attempt,
-                expectedLeaseUntil: action.leaseUntil
+                expectedLeaseUntil: action.leaseUntil,
+                continuation: true
             }).finally(() => {
                 DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'defer', Date.now() - deferStartedAt);
             });
@@ -787,7 +788,8 @@ const ClanActionService = {
                     const released = await Database.releaseClanAction({
                         actionId: action.id,
                         expectedAttempt: action.attempt,
-                        expectedLeaseUntil: action.leaseUntil
+                        expectedLeaseUntil: action.leaseUntil,
+                        unstarted: true
                     }).finally(() => {
                         DiagnosticConfig.developerDiagnostics && StageMetrics.record(metrics.stages, 'release', Date.now() - releaseStartedAt);
                     });
