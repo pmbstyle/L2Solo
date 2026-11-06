@@ -195,7 +195,8 @@ try {
         assert.strictEqual(denied.bot.moves, 0);
         allowed = true;
         const accepted = fixture();
-        accepted.session.companionEquipmentRetryAt = Date.now() + 300000;
+        // A failed gear errand waits for the worker's answer (DecisionEvents.failureWaits).
+        accepted.session.nearRaise = { seq: 1, names: [], impossible: true, impossibleSeq: 1 };
         accepted.session.spotRelocation = undefined;
         accepted.session.townRoutePlan = null;
         accepted.bot.automation = { abortAll() {} };
@@ -204,7 +205,7 @@ try {
         assert.strictEqual(purchaseTrips, 1, 'the same shared guard admits a worthwhile visible trip');
         const unreachable = fixture();
         unreachable.session.spotRelocation = undefined;
-        unreachable.session.companionEquipmentRetryAt = Date.now() + 300000;
+        unreachable.session.nearRaise = { seq: 1, names: [], impossible: true, impossibleSeq: 1 };
         unreachable.session.roleDecision = { reason: 'shopping_route_unreachable' };
         tick(unreachable);
         assert.strictEqual(purchaseTrips, 1, 'a failed physical route is deferred even for stock instead of restarting each tick');

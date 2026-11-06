@@ -3449,7 +3449,8 @@ const PopulationService = {
                     exchangeWaits.set(id, exchangeKey);
                     return LifeState.upsertState({ ...restockedState, timing: { ...restockedState.timing,
                         nextResolveAt: Date.now() + 1000 } }, 'equipment_exchange_continue').then(saved => {
-                        if (saved) ColdSimulationCoordinator.requestEconomyRefresh(saved.characterId);
+                        // The paid piece waits for its exchange: the purchase's goal is done.
+                        if (saved) DecisionEvents.raiseOn(saved.characterId, 'goal_done:goal');
                         return saved || restockedState;
                     });
                 }

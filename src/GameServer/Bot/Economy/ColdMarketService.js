@@ -832,8 +832,8 @@ async function buyErrand(state, options = {}) {
     const currentGoal = goalForErrand(bought.state, { ...errand, amount: rest })?.expectedGoal || acceptedGoal;
     const returned = rest === 0 || !plan || replan
         ? await endErrand(state.characterId, errand, bought.spent, saved, { replan, expectedGoal: currentGoal }) : null;
-    if (replan)
-        invoke('GameServer/Bot/Population/ColdSimulationCoordinator').requestEconomyRefresh(state.characterId);
+    // A refused purchase with no plan left: the held step failed where it acts.
+    if (replan) invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(state.characterId, 'goal_failed', { impossible: true });
     return { state: returned?.state || saved || cleared, purchased: bought.units > 0, units: bought.units,
         reason: bought.units > 0 ? 'market_errand_bought' : 'market_errand_no_offer' };
 }
@@ -891,9 +891,9 @@ const ColdMarketService = {
         // at most what is still missing. A miss is not planned again on main:
         // the worker decides anew and the bot waits for it.
         const arrival = arrivalStep(state, goal);
-        // Review the current native snapshot after any return handling.
+        // A missed step failed where it acts (after any return handling): the bot decides anew.
         const refreshAfter = written => written.then(result => {
-            invoke('GameServer/Bot/Population/ColdSimulationCoordinator').requestEconomyRefresh(state.characterId);
+            invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(state.characterId, 'goal_failed', { impossible: true });
             return result;
         });
         const missed = reason => refreshAfter(retryAfterFailedPurchase(state, goal, reason));

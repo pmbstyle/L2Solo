@@ -631,23 +631,6 @@ class ColdSimulationCoordinator {
         }
     }
 
-    requestEconomyRefresh(characterId) {
-        const id = Number(characterId), state = LifeState.cachedState(id);
-        if (!state || this.stopping || !this.ready) return false;
-        const owned = this.commandInflight.get(id);
-        if (owned) {
-            if (!owned.meetingToken && !owned.economyRefreshPending) {
-                owned.economyRefreshPending = true;
-                this.commandTail.then(() => {
-                    if (this.commandInflight.get(id) !== owned) this.requestEconomyRefresh(id);
-                }).catch(error => this.recordError(error));
-            }
-            return true;
-        }
-        this.postCollections('snapshot_page', { rows: [{ state }] });
-        return !!this.post('snapshot_page', { rows: [], economyOwnerId: id, reconcile: true });
-    }
-
     requestEconomyLook(characterId) {
         const id = Number(characterId);
         if (this.stopping || !Number.isSafeInteger(id) || id <= 0
@@ -804,7 +787,9 @@ class ColdSimulationCoordinator {
                     try {
                         const result = await AfkMarket.executePlan(state, payload.economyPlan, { beforeWrite, preparedState: state })
                             .catch(error => { this.recordError(error); return null; });
-                        if (result?.buyPending) this.requestEconomyRefresh(id);
+                        // Units reached the bag since the decision: its goal is done; a stale
+                        // plan cannot run: its step failed.
+                        if (result?.buyPending) DecisionEvents.raiseOn(id, result.stale ? 'goal_failed' : 'goal_done:goal');
                     } finally { this.economyDecisions.release(id); }
                 }
             } else if (payload.phase === 'economy_decided' && !this.stopping) {
@@ -1798,9 +1783,10 @@ class ColdSimulationCoordinator {
         });
         // Main replaced the worker's resolved state with a paid forced cleanup
         // trip: the plan was prepared before that fare and activity change, so
-        // no review runs it (reviewSteps) and the worker plans afresh.
+        // no review runs it (reviewSteps): the full bag decides afresh
+        // (temporary until step 4 C4, where bag_full owns the unload).
         if (sourceCurrent() && entry.proposal.inventoryCleanupForced && entry.proposal.economyPlan)
-            this.requestEconomyRefresh(id);
+            DecisionEvents.raiseOn(id, 'bag_full');
         await step('announce', () => GlobalChat.maybeAnnounce(state, entry.proposal.result?.events || []));
         // onResults starts it after the flush. A member's own review command (its
         // training, buff, plan) runs meanwhile: a party write holds on the revision
@@ -2025,12 +2011,13 @@ class ColdSimulationCoordinator {
             requests.forEach(({ request }, index) => request.kind === 'review' && this.countReview(request, results[index]));
             this.postCollections('command_ack', { results }, message.msgId);
             // A refused review ran no plan and its ack made the worker forget it
-            // as sent (ColdSimulationKernel.forgetSentPlan): it plans afresh, as
-            // after a forced cleanup. A hot or fenced bot plans on its own side.
+            // as sent (ColdSimulationKernel.forgetSentPlan): the visit's step
+            // failed, its leaf dropped (impossible), so the next decision does not
+            // send the same plan again. A hot or fenced bot plans on its own side.
             requests.forEach(({ request }, index) => {
                 const id = Number(request.characterId);
                 if (request.kind === 'review' && request.economyPlan && !results[index]?.ok
-                    && LifeState.cachedState(id)?.phase === 'cold' && !this.fencedBots.has(id)) this.requestEconomyRefresh(id);
+                    && LifeState.cachedState(id)?.phase === 'cold' && !this.fencedBots.has(id)) DecisionEvents.raiseOn(id, 'goal_failed:visit', { impossible: true });
             });
         }).catch((error) => { if (sourceCurrent()) this.recordError(error); });
     }
@@ -2129,7 +2116,7 @@ class ColdSimulationCoordinator {
                     .executePlan(state, request.economyPlan,
                         { beforeWrite, preparedState, step: work => this.step('economyPlan', id, work) }));
                 state = LifeState.cachedState(id) || applied?.state || state;
-                if (applied?.buyPending) this.requestEconomyRefresh(id);
+                if (applied?.buyPending) DecisionEvents.raiseOn(id, applied.stale ? 'goal_failed' : 'goal_done:goal');
             } finally {
                 this.economyDecisions.release(id);
             }

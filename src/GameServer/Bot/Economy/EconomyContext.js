@@ -1428,7 +1428,6 @@ function buildForState(state, deps) {
         const late = id => deps.onSourceRead?.(Number(id));
         return view(state, entry.plan, deps, { board: sourceBoard, read: late, projection: entry.projection });
     }
-    if (answer === 'request') { passed(deps, 2); return null; }
     // The mask: the sections that moved since the held build (the raised
     // bits, the prepared card's verdict, this verdict's refusals). A computed
     // piece (Sections.COMPUTED) is rebuilt when one of its sections is in it,

@@ -1,5 +1,5 @@
 const refreshPartyMemberships = require('../../../World/PartyMembershipPublication');
-const { raiseDecision, held } = require('../DecisionEvents');
+const { raiseDecision, held, failureWaits } = require('../DecisionEvents');
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const ServerResponse = invoke('GameServer/Network/Response');
@@ -29,7 +29,6 @@ const World = invoke('GameServer/World/World');
 const TownTransitPolicy = invoke('GameServer/Bot/AI/TownTransitPolicy');
 const InventoryCleanup = require('../CompanionInventoryCleanup');
 
-const COMPANION_EQUIPMENT_FAILURE_RETRY_MS = 5 * 60 * 1000;
 const RESTOCK_RETRY_MS = 5000;
 const MAX_RESTOCK_ATTEMPTS = 3;
 
@@ -203,9 +202,12 @@ function alternateTownNpcErrand(session, bot, town) {
     };
 }
 
+// A gear errand that failed where the body acts: its step failed (goal_failed, the
+// held step dropped); the body tries no gear errand again until the worker answers
+// that raise (DecisionEvents.failureWaits).
 function deferEquipmentRetry(session) {
     if (!['npc_equipment_purchase', 'market_purchase', 'dual_component_withdrawal', 'dual_sword_combine', 'mammon_unseal'].includes(session.companionShopping?.kind)) return;
-    session.companionEquipmentRetryAt = Date.now() + COMPANION_EQUIPMENT_FAILURE_RETRY_MS;
+    raiseDecision(session, 'goal_failed', { impossible: true });
 }
 
 // A refused gear purchase names its cause: the bot only says it could not buy.
@@ -317,7 +319,7 @@ async function waitForShoppingMeeting(session, bot, pending, visit) {
 function prepareEquipmentMarketStop(session, bot, town, BotAI, economy) {
     const plan = session.coldLifeState?.stats?.equipmentPlan;
     if (session.companionShopping || session.shoppingTarget || session.shoppingEquipmentPlanChecked) return false;
-    if (!town?.name || Number(session.companionEquipmentRetryAt || 0) > Date.now()) return false;
+    if (!town?.name || failureWaits(session)) return false;
     const unseal = invoke('GameServer/Bot/AI/BotMammonUnseal').plan(session,bot,town,{
         ...session.coldLifeState,stats:{...session.coldLifeState?.stats,classId:bot.fetchClassId()}
     });
@@ -832,7 +834,6 @@ module.exports = {
                 if (session.actor !== bot || session.companionShopping !== companionErrand || session.plan !== 'shopping') return;
                 if (result.reason === 'components_withdrawn' && continueEquipmentShopping(session,bot,BotAI,companionErrand)) return;
                 if (!result.completed) deferEquipmentRetry(session);
-                else session.companionEquipmentRetryAt = undefined;
             } catch (error) {
                 deferEquipmentRetry(session);
                 session.lastTradeSummary = `equipment errand failed: ${error.message}`;
@@ -937,7 +938,6 @@ module.exports = {
                 }
                 await withdrawBuyOrderFor(bot, companionErrand.itemId);
                 BotEquipmentUpgrade.applyBestUpgrades(session, { force: true });
-                session.companionEquipmentRetryAt = undefined;
                 clearCompletedMarketPlan(session, bot, {
                     selfId: companionErrand.itemId,
                     price: boughtSummary.totalAdena / boughtSummary.qty,
@@ -982,7 +982,6 @@ module.exports = {
                 const bought = { qty: line.amount, name: offer.itemName, totalAdena: line.amount * line.unitPrice };
                 await withdrawBuyOrderFor(bot, companionErrand.itemId);
                 BotEquipmentUpgrade.applyBestUpgrades(session, { force: true });
-                session.companionEquipmentRetryAt = undefined;
                 clearCompletedMarketPlan(session, bot, {
                     selfId: companionErrand.itemId,
                     price: bought.totalAdena / bought.qty,

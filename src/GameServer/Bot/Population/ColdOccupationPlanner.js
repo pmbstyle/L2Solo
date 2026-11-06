@@ -7,7 +7,7 @@ const { unknownWorkshop } = require('./ColdEconomyDecision');
 const MAX_CONTEXTS = 64, MAX_OWNERS = 8, OWNER_UNITS = 4, MAX_UNITS = 32, SLICE_MS = 4;
 // One job per bot per mode (input.mode, 'occupation' when none): an ask of
 // one mode never replaces another mode's answer.
-const MODES = Object.freeze(['occupation', 'near', 'refresh', 'action', 'showcase', 'craft_market', 'meeting', 'wish']);
+const MODES = Object.freeze(['occupation', 'near', 'page', 'action', 'showcase', 'craft_market', 'meeting', 'wish']);
 const keyOf = (id, mode) => `${mode || 'occupation'}:${Number(id)}`;
 
 // Incomplete contexts stay in the working pool (slots, MAX_CONTEXTS) through
@@ -198,9 +198,6 @@ class ColdOccupationPlanner {
         this.kick();
     }
     markReset(entry) {
-        // A source table was replaced, no board move: a build kept on the input
-        // may have read it empty (ColdSimulationWorker, refresh).
-        entry.input.builtRefresh = null;
         entry.dirty = true; if (entry.cursor) entry.cursor[14] = 2;
         DiagnosticConfig.developerDiagnostics && (this.stats.invalidations++);
         if (entry.done) this.publish(entry.id, entry.input, unknownWorkshop(), { stale: true });

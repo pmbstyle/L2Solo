@@ -20,10 +20,13 @@ const dependencies = {
         subscribeChanges: () => () => {}, subscribeMarketReviewChanges: () => () => {},
         upsertState: async next => (current = next)
     },
-    // The held card (economyDecisions.decided); a refresh records the state
-    // the worker would be posted.
-    'GameServer/Bot/Population/ColdSimulationCoordinator': { economyDecisions: { decided: () => decision },
-        requestEconomyRefresh: id => { refreshes.push(id); refreshedOn.push(current); } },
+    // The held card (economyDecisions.decided).
+    'GameServer/Bot/Population/ColdSimulationCoordinator': { economyDecisions: { decided: () => decision } },
+    // A miss raises the failed step on the row (the worker decides anew): the
+    // raise records the state it lands on.
+    'GameServer/Bot/AI/DecisionEvents': { raiseOn: (id, name, payload) => {
+        assert.equal(name, 'goal_failed'); assert.equal(payload?.impossible, true);
+        refreshes.push(id); refreshedOn.push(current); return Promise.resolve(current); } },
     'GameServer/Bot/Economy/MarketOpportunity': { botCanBuy: () => true, fixedStoreOffers: () => [], npcOffersAll: () => [],
         bestOffer: (_id, options) => { offered.push(options); return offer && options.accept(offer) ? offer : null; } },
     'GameServer/Bot/Economy/MarketTelemetry': { offerChanged: () => {}, noOffer: () => {}, purchaseFailed: () => {} },
@@ -66,7 +69,7 @@ const gear = (adena, plan = {}) => ({ type: 'upgrade_gear', status: 'active',
     assert(above.state.stats.marketRetryAfter > Date.now(), 'the bot waits instead of replanning on main');
     // The worker is posted the written return, not the state before it: a
     // card decided on the old state would never match the bot again.
-    assert.equal(refreshedOn[0], above.state, 'refresh after the return is written');
+    assert.equal(refreshedOn[0], above.state, 'the failure is raised after the return is written');
     assert.equal(refreshedOn[0].activity, 'hunting');
 
     // A goal without the plan's unit price is not the card's step: nothing to buy.
@@ -114,7 +117,7 @@ const gear = (adena, plan = {}) => ({ type: 'upgrade_gear', status: 'active',
         assert.equal(gone.purchased, false);
         assert.equal(gone.reason, 'arrival_step_gone');
         assert.deepEqual(refreshes, [7], 'the worker decides anew');
-        assert.equal(refreshedOn[0], gone.state, 'refresh after the return is written');
+        assert.equal(refreshedOn[0], gone.state, 'the failure is raised after the return is written');
         const gearGone = await Market.tryPurchase(bot(), gear(75));
         assert.deepEqual(offered, [], 'no gear lookup without the card ordering it');
         assert.equal(gearGone.reason, 'arrival_step_gone');

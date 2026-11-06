@@ -69,6 +69,24 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
     assert.equal(session.nearRaise.impossible, false, 'the answered impossible mark is lifted');
     assert.equal(Events.rejectSession(session, accepted(10)), true, 'a new rejection raises again');
 
+    // An executor's raise from inside the bot's own command lands after that command
+    // ends (its revision-checked writes first), never mid-command.
+    {
+        const Main = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+        let finish;
+        const command = new Promise(resolve => { finish = resolve; });
+        Main.commandInflight.set(77001, command);
+        const calls = [], raiseFar = Events.raiseFar;
+        Events.raiseFar = async (...args) => { calls.push(args); return null; };
+        try {
+            const raised = Events.raiseOn(77001, 'goal_failed', { impossible: true });
+            await Promise.resolve(); await Promise.resolve();
+            assert.equal(calls.length, 0, 'no raise while the command runs');
+            finish(); Main.commandInflight.delete(77001);
+            await raised;
+            assert.deepEqual(calls.map(([id, raises]) => [id, raises[0].name]), [[77001, 'goal_failed']], 'raised once it ended');
+        } finally { Events.raiseFar = raiseFar; Main.commandInflight.delete(77001); }
+    }
     // The bag is cumulative: a later post applies only the entries newer than the raise
     // the worker applied (a mark and a wake land once).
     {

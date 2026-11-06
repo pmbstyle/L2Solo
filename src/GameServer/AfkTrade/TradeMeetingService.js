@@ -112,6 +112,7 @@ let pages = 0, transportPages = 0, transportBytes = 0, draining = false, unsubsc
 const coordinator = () => invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
 const db = () => invoke('Database');
 const life = () => invoke('GameServer/Bot/Population/BotLifeState');
+const events = () => invoke('GameServer/Bot/AI/DecisionEvents');
 const world = () => invoke('GameServer/World/World');
 const afk = () => invoke('GameServer/AfkTrade/AfkTradeService');
 const sessionFor = id => world().registeredActorById(Number(id))?.session || null;
@@ -429,7 +430,8 @@ async function prepareTrade(characterId, store, itemId, amount, options = {}) {
         else if (error.message === 'trade_meeting_purchase_price_changed'
             && life().cachedState(buyer)?.phase === 'cold') {
             rememberPriceRefusal(buyer, request, error.priceEvidence);
-            coordinator()?.requestEconomyRefresh?.(buyer);
+            // The step's offer failed at the meeting: the buyer decides anew.
+            events().raiseOn(buyer, 'goal_failed', { impossible: true });
         }
         throw error;
     });
@@ -476,7 +478,7 @@ async function purchaseNeedChanged(ownerId, errand, goal) {
                 .returnUnspent(ownerId, errand, 0);
         });
     } catch (error) { utils.infoWarn('AfkTrade', 'refused purchase of %d refresh: %s', ownerId, error.message); }
-    coordinator()?.requestEconomyRefresh?.(ownerId);
+    events().raiseOn(ownerId, 'goal_failed', { impossible: true });
 }
 
 async function buyAdNeedChanged(record, line) {
@@ -499,14 +501,19 @@ async function buyAdNeedChanged(record, line) {
         utils.infoWarn('AfkTrade', 'refused buy quote %d refresh: %s', record.id, error.message);
     }
     const phase = life().cachedState(record.ownerId)?.phase;
-    let asked = true;
-    if (phase === 'cold') asked = coordinator()?.requestEconomyRefresh?.(record.ownerId) === true;
+    // A raise or request that did not land (no far row and no body; the worker not ready
+    // yet) is asked again on the next refusal of this quote.
+    const forget = () => { if (refusedAds.get(key) === record.revision) refusedAds.delete(key); };
+    // The need behind the ad failed: its owner decides anew, its step dropped as other
+    // executors' refusals (a far row's raise, after any command of the owner's in flight;
+    // not awaited: this refusal may run inside it). null: not on a far row, its body took
+    // it when the owner is near now, else it was lost.
+    if (phase === 'cold') events().raiseOn(record.ownerId, 'goal_failed', { impossible: true })
+        .then(raised => { if (!raised && life().cachedState(record.ownerId)?.phase !== 'hot') forget(); });
     else if (phase === 'hot') {
-        asked = coordinator()?.requestEconomyLook?.(record.ownerId) === true;
+        if (coordinator()?.requestEconomyLook?.(record.ownerId) !== true) forget();
         invoke('GameServer/Bot/Economy/HotBoardReviewService').ownerChanged(record.ownerId, 'line');
     }
-    // A request the worker dropped (not ready yet) is asked again on the next refusal.
-    if (!asked) refusedAds.delete(key);
 }
 async function cancel(characterId) {
     const rows = db().fetchTradeMeetingsForOwner ? await db().fetchTradeMeetingsForOwner(Number(characterId))

@@ -185,8 +185,8 @@ function companionTownErrand(session, bot, player, BotAI) {
         };
     }
 
-    const equipmentRetryReady = timestamp >= Number(session.companionEquipmentRetryAt || 0);
-    if (equipmentRetryReady
+    // A failed gear errand waits for the worker's answer to it (DecisionEvents.failureWaits).
+    if (!invoke('GameServer/Bot/AI/DecisionEvents').failureWaits(session)
         && timestamp - Number(session.lastCompanionEquipmentCheckAt || 0) >= COMPANION_EQUIPMENT_CHECK_COOLDOWN_MS) {
         session.lastCompanionEquipmentCheckAt = timestamp;
         const purchase = CompanionEquipmentShopping.planErrand(session, bot, town);

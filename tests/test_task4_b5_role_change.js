@@ -8,6 +8,7 @@
 const assert = require('node:assert/strict');
 const { createWorld, Database } = require('./helpers/c4QuestHarness');
 const Life = invoke('GameServer/Bot/Population/BotLifeState');
+const Events = invoke('GameServer/Bot/AI/DecisionEvents');
 const Goals = invoke('GameServer/Bot/Goals/GoalState');
 const Wealth = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
 const ShotPolicy = invoke('GameServer/Bot/Economy/ShotCraftPolicy');
@@ -40,7 +41,8 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
         const coordinator = new ColdSimulationCoordinator();
         Object.assign(coordinator, { worker: { postMessage() {} }, workerEpoch: epoch, ready: true });
         const refreshes = [];
-        coordinator.requestEconomyRefresh = id => { refreshes.push(id); return true; };
+        // What the coordinator raises on the row after a plan: a stale craft cannot run, its step failed.
+        stub(Events, 'raiseOn', async (id, name) => { refreshes.push(id); assert.equal(name, 'goal_failed'); return null; });
         stub(ShotPolicy, 'unpackStep', () => ({ wealth: { recipeId: RECIPE, batches: 1 } }));
         let rechecks = 0, skill = [], executes = 0, writes = 0, race = null;
         const realRecheck = Wealth.recheck, realUpsert = Life.upsertState, realAdmit = Database.withMutationAdmission;
@@ -88,7 +90,7 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
         assert.deepEqual(skill, [true]);
         assert.equal(executes, beforeExecutes, 'nothing is crafted');
         assert.equal(writes, 0, 'no state write');
-        assert.deepEqual(refreshes.slice(beforeRefresh), [owner], 'one refresh asks the worker for a new card');
+        assert.deepEqual(refreshes.slice(beforeRefresh), [owner], 'one raise asks the worker for a new card');
         kept();
 
         // 2. A card on the lowered role for the same recipe stops at the craft-skill check.
@@ -98,7 +100,7 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
         assert.equal(executes, beforeExecutes, 'a recipe above the craft level is not crafted');
         assert.equal(writes, 1, 'the one write raises the refused source, no craft write');
         assert(Life.cachedState(owner).stats.wishDirty & Sections.sectionMask(['sources']), 'the refused recipe raises sources');
-        assert.equal(refreshes.length, beforeRefresh + 1, 'a refused recipe is no stale card: no extra refresh');
+        assert.equal(refreshes.length, beforeRefresh + 1, 'a refused recipe is no stale card: no extra raise');
         kept();
         console.log('PASS Task 4 B5 role change: stale role step writes nothing and refreshes once, lowered skill crafts nothing, goal kept');
     } finally { for (const fn of restore.reverse()) fn(); await world.close(); }

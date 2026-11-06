@@ -361,6 +361,9 @@ function nearHeld(record, row) {
     return row.phase === 'hot' && record.phase === 'hot' && Number(row.nearSeq || 0) < Number(record.nearSeq || 0);
 }
 
+// The decision bits a raise set since the bot's last state (its woken bits as
+// raised, Situations: a step answers them).
+const newlyWoken = (before, after) => !!(Number(after?.stats?.woken || 0) & ~Number(before?.stats?.woken || 0));
 function lifecycleKind(state = {}, facts = NO_FACTS) {
     if (state.phase !== 'cold' || state.activity === 'pk_hunting') return 'inactive';
     const leads = facts.leaderParty(state.characterId, state) !== null;
@@ -719,6 +722,8 @@ class ColdSimulationKernel {
         // A pending market wake per bot: the offers that woke it, item id ->
         // the cheapest new price (MarketBuyerWaiters), handed to its command.
         this.buyerWakeups = new Map();
+        // Bots with no step coming whose row a raise woke: one command step answers it.
+        this.raiseWakeups = new Set();
         // Own line observations: <=8 numeric {deals, at} rows per stepping bot.
         // A step ended without a commit, hot handoff/remove and shutdown discard
         // them; never saved.
@@ -1048,12 +1053,19 @@ class ColdSimulationKernel {
         if (current?.state.stats?.eventWait && lifecycleKind(current.state, this) === 'event_driven') {
             nextDue = Math.min(nextDue ?? this.dueAt(state), this.now());
         }
+        // A bot with no step coming (event_driven: a craft shop) whose row a raise woke
+        // (main's raiseOnRow: a buy ad's need gone, a purchase landed) takes one command
+        // step now: its step's gate answers the raise. A meeting answers at its end.
+        const raised = !!current && !state.stats?.tradeMeeting && newlyWoken(current.state, state)
+            && lifecycleKind(state, this) === 'event_driven';
+        if (raised) this.raiseWakeups.add(characterId);
         this.states.set(characterId, { route: null, ...current, state, version }, ownOutput);
         this.occupancy.update(state);
         DiagnosticConfig.developerDiagnostics && (this.stats.snapshots += 1);
         this.refreshCommandSource(characterId);
         this.buyerStateChanged(characterId);
         this.ensureScheduled(characterId, nextDue, nextKind);
+        if (raised && !this.busy(characterId)) this.requeue(characterId, this.now());
         this.refreshPartyMeetingLeader(characterId, current);
         return true;
     }
@@ -1087,7 +1099,7 @@ class ColdSimulationKernel {
         if (current?.state) this.occupancy.remove(stateKey(current.state));
         this.states.delete(id);
         this.buyerEvents?.remove(id);
-        this.buyerWakeups.delete(id);
+        this.buyerWakeups.delete(id); this.raiseWakeups.delete(id);
         this.lookSeen.delete(id);
         this.versions.set(id, Number(this.versions.get(id) || 0) + 1);
         this.heap.remove(this.scheduleTokens.get(id)?.heapEntry);
@@ -1273,7 +1285,7 @@ class ColdSimulationKernel {
                 this.requeueAtDue(id);
                 continue;
             }
-            const kind = this.buyerWakeups.has(id) && eligibleBuyer(current.state)
+            const kind = this.buyerWakeups.has(id) && eligibleBuyer(current.state) || this.raiseWakeups.has(id)
                 ? 'command' : lifecycleKind(current.state, this);
             if (kind === 'resolver') {
                 // The step starts from the kernel's own copy at once.
@@ -1493,6 +1505,7 @@ class ColdSimulationKernel {
         }
         const attempt = { startedAt: this.now(), commandId: `${kind}:${id}:${this.nextCommandRequest++}`,
             kind, checkpoint, version: current.version, sent: false };
+        this.raiseWakeups.delete(id);
         const wake = kind === 'lifecycle' ? this.buyerWakeups.get(id) : null;
         if (wake) {
             this.buyerWakeups.delete(id);
@@ -1544,7 +1557,7 @@ class ColdSimulationKernel {
     // market wake would hold the bot on commands; its resolver steps still run.
     refuseCheckpoint(id, state) {
         this.checkpointsRefused += 1;
-        this.buyerWakeups.delete(id);
+        this.buyerWakeups.delete(id); this.raiseWakeups.delete(id);
         if (this.checkpointErrors.has(id) || this.checkpointErrors.size >= 32) return;
         this.checkpointErrors.add(id);
         console.error(`ColdSimulationKernel :: Error: command checkpoint refused bot ${id} ${state.activity}: ${JSON.stringify(state.timing)} updatedAt ${state.updatedAt}`);

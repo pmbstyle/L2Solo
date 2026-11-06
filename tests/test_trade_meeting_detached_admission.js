@@ -6,6 +6,8 @@ const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Meetings = invoke('GameServer/AfkTrade/TradeMeetingService');
 const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+// A refused or missed purchase raises its failure on the row (DecisionEvents.raiseOn).
+const Events = invoke('GameServer/Bot/AI/DecisionEvents');
 const Intent = invoke('GameServer/Bot/Economy/TradeIntent');
 
 const ids = [744301, 744302];
@@ -15,7 +17,7 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
 (async () => {
     const world = await createWorld(ids.map(id => ({ id, level: 30 })), 'meeting-detached-admission');
     const original = { prepare: Coordinator.requestMeetingPreparation, current: Coordinator.meetingPreparationCurrent,
-        refresh: Coordinator.requestEconomyRefresh,
+        refresh: Events.raiseOn,
         cancel: Coordinator.cancelMeetingPreparation, warn: utils.infoWarn };
     try {
         await Database.createAccount('bot_detached_admission', 'test');
@@ -96,7 +98,7 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
         const Choice = invoke('GameServer/Bot/Economy/ReadyTradeChoice');
         assert(Choice.resolve(sellChoice, Afk.boardIndex(), ids[0]), 'the buyer can initially choose the seller ad');
         let sellRefresh = null;
-        Coordinator.requestEconomyRefresh = id => { sellRefresh = id; return true; };
+        Events.raiseOn = id => { sellRefresh = id; return true; };
         Coordinator.requestMeetingPreparation = async (id, request) => {
             if (id === ids[0]) {
                 const current = Life.cachedState(id), error = Error('trade_meeting_purchase_price_changed');
@@ -137,7 +139,7 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
         assert(invoke('GameServer/Bot/Economy/ReadyTradeChoice').resolve(prepared, Afk.boardIndex(), ids[1]),
             'the seller has an executable pre-refusal plan');
         let refreshed = null;
-        Coordinator.requestEconomyRefresh = id => { refreshed = id; return true; };
+        Events.raiseOn = id => { refreshed = id; return true; };
         Coordinator.requestMeetingPreparation = async (id, request) => {
             if (id === ids[0]) {
                 const current = Life.cachedState(id), error = Error('trade_meeting_purchase_price_changed');
@@ -181,7 +183,7 @@ const tick = () => new Promise(resolve => setTimeout(resolve, 10));
         Coordinator.requestMeetingPreparation = original.prepare;
         Coordinator.meetingPreparationCurrent = original.current;
         Coordinator.cancelMeetingPreparation = original.cancel;
-        Coordinator.requestEconomyRefresh = original.refresh;
+        Events.raiseOn = original.refresh;
         utils.infoWarn = original.warn;
         await world.close();
     }

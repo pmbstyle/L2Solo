@@ -12,9 +12,11 @@ const Risk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 // The situations a body raises by name (raiseDecision): its arrival in town, its
 // respawn, a step proved impossible, leaving a party, a spot empty of prey or
 // unsafe ground for it, a spot it could not reach, a player's command naming a
-// spot, its wallet. Its own facts it detects on its post (detectNear).
+// spot, its wallet; and what main's executors raise on a far row that went near
+// meanwhile (raiseFar): a goal done, a visit's step failed, a full bag. Its own
+// facts it detects on its post (detectNear).
 const reasons = new Set(['arrived_town', 'revived', 'goal_failed', 'party_left', 'spot_empty', 'spot_dangerous',
-    'spot_unreachable', 'player_command', 'money']);
+    'spot_unreachable', 'player_command', 'money', 'goal_done:goal', 'goal_failed:visit', 'bag_full']);
 // The situations whose payload is a fact (Situations.raisedFacts): a later one of the
 // same name and payload moves to the bag's end, a later command replaces the earlier.
 const FACTS = new Set(['spot_unreachable', 'spot_dangerous', 'player_command']);
@@ -162,6 +164,10 @@ function raiseBag(stats, raise, impossible, where, subject, applied = 0) {
     if (impossible) Situations.raise(stats, raise.impossibleName || 'goal_failed', { impossible: true }, where, subject);
     if (raise?.stop) Situations.stop(stats, raise.stop === 'town' ? Situations.OPEN : Situations.REST, subject);
 }
+// A body's failed step waits for the worker's answer to it: its goal_failed raise
+// (impossible) is still in its bag. Where the body acts, it tries the failed errand
+// again only after that answer (ShoppingState, HuntingState, FollowingState).
+const failureWaits = session => session?.nearRaise?.impossible === true;
 // A real command rejection belongs to the accepted decision that attempted
 // it: late failures never invalidate a newer decision or raise an event twice.
 const rejections = {};
@@ -200,6 +206,21 @@ async function raiseFar(characterId, raises, reason) {
         }
     } else FailureLog.note('situations.raise_lost', new Error(`${raises.map(raise => raise.name).join('+')} on ${characterId}: no far row, no body`));
     return null;
+}
+// An executor's outcome on main (a purchase landed, a visit's step refused, a
+// refused purchase): one situation raised where the bot is (raiseFar); a failure is
+// counted (FailureLog situations.raise_on). Raised from inside the bot's own command
+// (a town command, a review), it lands after that command ends (its revision-checked
+// writes first; counted raise:after_command), never mid-command. payload: as raiseFar's.
+// Resolves the raised row's state (null when it did not land on a far row).
+function raiseOn(characterId, name, payload = null, reason = `situation_${name}`) {
+    const run = () => module.exports.raiseFar(characterId, [{ name, payload }], reason)
+        .catch(error => { FailureLog.note('situations.raise_on', error); return null; });
+    // lazy: cycle the coordinator requires this module at its top.
+    const owned = isMainThread ? invoke('GameServer/Bot/Population/ColdSimulationCoordinator').commandInflight?.get?.(Number(characterId)) : null;
+    if (!owned) return run();
+    Situations.note('raise:after_command');
+    return Promise.resolve(owned).catch(() => null).then(run);
 }
 // The mind keys a row raise writes (BotLifeState.raiseOnRow).
 const RAISED_KEYS = Object.freeze(['woken', 'waiting', 'wishDirty', 'situationSeq', 'activityLeaf', 'earning', 'spotMarks']);
@@ -362,5 +383,5 @@ function checkWallet(session, actor) {
     raiseDecision(session, 'money');
     return true;
 }
-module.exports = { rejections: () => rejections, refused, statsFor, replaceStats, decisionStatsFor, applyOwnRaise, raiseDecision, detectNear, stop, takePostedRaise, applyPendingRaise, postedBag, nearFields, receive, settle, held, heldSpotId, heldSpotOf, needSpot, spotHeld, commandPending, checkWallet, rejects, rejectOnRow, withRaise, rejectSession,
+module.exports = { rejections: () => rejections, refused, statsFor, replaceStats, decisionStatsFor, applyOwnRaise, raiseDecision, raiseFar, raiseOn, failureWaits, detectNear, stop, takePostedRaise, applyPendingRaise, postedBag, nearFields, receive, settle, held, heldSpotId, heldSpotOf, needSpot, spotHeld, commandPending, checkWallet, rejects, rejectOnRow, withRaise, rejectSession,
     NEAR_NAMES, nearOverflow: () => nearOverflow };

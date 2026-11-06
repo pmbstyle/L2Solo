@@ -5,6 +5,7 @@ const Life = invoke('GameServer/Bot/Population/BotLifeState');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Market = invoke('GameServer/Bot/Economy/BotAfkMarketService');
 const Population = invoke('GameServer/Bot/Population/PopulationService');
+const Events = invoke('GameServer/Bot/AI/DecisionEvents');
 const { ColdSimulationCoordinator } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
 const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 const StateWire = require('../src/GameServer/Bot/Population/ColdStateWire');
@@ -105,20 +106,21 @@ function stub(object, key, value) { const previous = object[key]; restores.push(
         const sentHash = fnv1a32(JSON.stringify(proposal.economyPlan));
         Object.assign(kernel.states.get(id), { economyPending: 1, economyPlanHash: sentHash });
         coordinator.ready = true;
-        const beforeRefused = messages.length;
+        const beforeRefused = messages.length, raised = [];
+        stub(Events, 'raiseOn', async (who, name, payload) => { raised.push([who, name, messages.length, payload]); return null; });
         const refused = await review(moved.review);
         assert.equal(refused.ok, false);
         assert.equal(refused.reason, 'stale_command');
         assert.equal(onBoard(), true, 'a refused review withdraws nothing');
-        // The refused plan is no longer the one sent: the worker's refresh that
-        // reproduces it sends it again (ColdSimulationWorker publish), and main
-        // asks for that refresh after the ack that made the worker forget it.
+        // The refused plan is no longer the one sent: the visit's step failed,
+        // raised on the row after the ack that made the worker forget it.
         assert.equal(kernel.states.get(id).economyPlanHash, null, 'the refused review forgets the plan as sent');
-        assert.equal(kernel.states.get(id).economyPending, 1, 'the next state still asks for a refresh');
-        const after = messages.slice(beforeRefused).map(message => message.type === 'snapshot_page'
-            ? (message.payload.economyOwnerId === id && message.payload.reconcile === true ? 'refresh' : 'page') : message.type);
-        assert(after.indexOf('refresh') > after.indexOf('command_ack') && after.indexOf('command_ack') >= 0,
-            'main asks for the refresh after the refused ack');
+        assert.equal(kernel.states.get(id).economyPending, 1, 'the next state still pages the plan');
+        const ack = messages.slice(beforeRefused).findIndex(message => message.type === 'command_ack');
+        assert(ack >= 0, 'the refused review is acked');
+        assert.deepEqual(raised.map(([who, name]) => [who, name]), [[id, 'goal_failed:visit']], 'the visit\'s step failed');
+        assert(raised[0][2] > beforeRefused + ack, 'raised after the refused ack');
+        assert.equal(raised[0][3]?.impossible, true, 'its leaf dropped: the next decision does not resend the plan');
         coordinator.ready = false;
         // The next step proposes the same plan again and its review runs it.
         const applied = await commit();

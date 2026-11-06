@@ -41,7 +41,7 @@ function stage() {
 function visit(selling = false) {
     session.actor = bot; session.plan = 'shopping'; session.shopTimer = ++serial;
     session.shoppingDoneAnnounced = true; session.lastTradeSummary = null;
-    session.shoppingRestock = undefined; session.companionEquipmentRetryAt = undefined;
+    session.shoppingRestock = undefined; session.nearRaise = null;
     const target = { recordId: 123, name: selling ? 'Buyer' : 'Seller', town: 'Giran', ...point };
     session.shoppingTarget = target;
     session.companionShopping = selling ? undefined : { kind: 'market_purchase', itemId: 1,

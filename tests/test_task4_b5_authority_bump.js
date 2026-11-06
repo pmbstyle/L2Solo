@@ -41,7 +41,7 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
         const coordinator = new ColdSimulationCoordinator();
         Object.assign(coordinator, { worker: { postMessage() {} }, workerEpoch: epoch, ready: true });
         const refreshes = [];
-        coordinator.requestEconomyRefresh = id => { refreshes.push(id); return true; };
+        stub(invoke('GameServer/Bot/AI/DecisionEvents'), 'raiseOn', async id => { refreshes.push(id); return null; });
         let serial = 0;
         // The worker's card for the state it saw: authority, updatedAt and echo.
         const card = state => Protocol.envelope('ready', epoch, { phase: 'economy_plan_ready', characterId: owner,
@@ -60,7 +60,7 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
         assert.equal(Life.cachedState(owner).updatedAt, updatedAt, 'only the authority differs from the card');
         await coordinator.onMessage(oldCard, coordinator.worker, epoch);
         assert.equal(bought, 0, 'a card from an older revision pays nothing');
-        assert.deepEqual(refreshes, [], 'no refresh: the commit that moved the revision carries the next card');
+        assert.deepEqual(refreshes, [], 'no raise: the commit that moved the revision carries the next card');
         kept();
 
         // 2. The revision moves while the payment is being prepared (after the
@@ -70,7 +70,7 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
         await coordinator.onMessage(card(Life.cachedState(owner)), coordinator.worker, epoch);
         assert.equal(Life.cachedState(owner).simulation.revision, revision + 2, 'the revision moved mid-payment');
         assert.equal(bought, 0, 'a revision move before the payment pays nothing');
-        assert.deepEqual(refreshes, [], 'a deferred trade asks no refresh (only buyPending does)');
+        assert.deepEqual(refreshes, [], 'a deferred trade raises nothing (only buyPending does)');
         kept();
         restore.pop()();
 

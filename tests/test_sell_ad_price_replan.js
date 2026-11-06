@@ -8,6 +8,8 @@ const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Market = invoke('GameServer/Bot/Economy/ColdMarketService');
 const Opportunity = invoke('GameServer/Bot/Economy/MarketOpportunity');
 const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+// A refused or missed purchase raises its failure on the row (DecisionEvents.raiseOn).
+const Events = invoke('GameServer/Bot/AI/DecisionEvents');
 const Refusals = require('../src/GameServer/Bot/Economy/MeetingPriceRefusals');
 const Errands = require('../src/GameServer/Bot/Population/CombinedErrandPolicy');
 const ids = [744601, 744602, 744603, 744604, 744605, 744606, 744607],
@@ -18,7 +20,7 @@ const dion = { locX: 17000, locY: 145000, locZ: -3000 };
 (async () => {
     const world = await createWorld(ids.map(id => ({ id, level: 50 })), 'sell-price-replan');
     const previous = { bestOffer: Opportunity.bestOffer, decided: Coordinator.economyDecisions.decided,
-        refresh: Coordinator.requestEconomyRefresh, offerOf: Afk.offerOf };
+        refresh: Events.raiseOn, offerOf: Afk.offerOf };
     try {
         await Database.createAccount('bot_price_replan', 'fixture');
         await Database.execute(['UPDATE characters SET username=? WHERE id IN (?,?,?,?,?,?,?)', ['bot_price_replan', ...ids]]);
@@ -54,7 +56,7 @@ const dion = { locX: 17000, locY: 145000, locZ: -3000 };
         Opportunity.bestOffer = () => offer;
         Coordinator.economyDecisions.decided = () => null;
         const refreshed = [];
-        Coordinator.requestEconomyRefresh = id => { refreshed.push(id); return true; };
+        Events.raiseOn = id => { refreshed.push(id); return true; };
         remember(buyerState);
         const gear = await Market.tryPurchase(buyerState, goal);
         assert.equal(gear.purchased, false);
@@ -149,7 +151,7 @@ const dion = { locX: 17000, locY: 145000, locZ: -3000 };
         console.log('PASS rejected seller ad preserves an equipment goal and releases the obsolete market errand');
     } finally {
         Opportunity.bestOffer = previous.bestOffer; Coordinator.economyDecisions.decided = previous.decided;
-        Coordinator.requestEconomyRefresh = previous.refresh; Afk.offerOf = previous.offerOf;
+        Events.raiseOn = previous.refresh; Afk.offerOf = previous.offerOf;
         Refusals.clear(); Afk._resetForTests(); await world.close();
     }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

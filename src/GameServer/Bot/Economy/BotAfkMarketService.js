@@ -863,7 +863,8 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         }
         return { state: await ColdShotEconomyService.execute(state, shot) };
     }) : null;
-    if (crafted?.stale) return { state, buyPending: true };
+    // A craft whose preparation went stale cannot run (stale: the coordinator raises its failure).
+    if (crafted?.stale) return { state, buyPending: true, stale: true };
     if (TradeMeetingService.hasPreparation(ownerId)) return { state, pending: true };
     if (plan.withdraw?.length) await run(async () => {
         const own = new Map(AfkTrade.boardIndex().ownerLines(ownerId).map(line => [line.lineId, line]));
@@ -945,7 +946,7 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
     // changed its inputs. Publishing its old certificate at the new revision
     // would manufacture fresh authority from stale need. Keep it pending.
     const filledAd = () => (plan.buyAds || []).slice(0, MAX_LINES + BoardRules.BOT_RECORDS.buy_ad).some(row => filledSince(row[0]));
-    if (Object.hasOwn(plan, 'buyAds') && (!stillPrepared() || filledAd())) return { state, buyPending: true };
+    if (Object.hasOwn(plan, 'buyAds') && (!stillPrepared() || filledAd())) return { state, buyPending: true, stale: !filledAd() };
     const published = Object.hasOwn(plan, 'buyAds') ? await run(async () => {
         if (!stillPrepared()) throw Error('economy_plan_need_changed');
         if (filledAd()) return { state, buyPending: true };

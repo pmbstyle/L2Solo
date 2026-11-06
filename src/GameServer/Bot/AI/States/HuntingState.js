@@ -151,11 +151,11 @@ function startShopping(session, bot, BotAI, reason, townName = null) {
         return false;
     }
 
-    // A failed physical town route has its own existing retry window. It
-    // defers every errand on that route, including stock; an equipment
-    // quote's retry alone must not block consumables. Hunt locally meanwhile.
-    if (session.roleDecision?.reason === 'shopping_route_unreachable'
-        && Number(session.companionEquipmentRetryAt || 0) > Date.now()) return 'deferred';
+    // A failed physical town route defers every errand on that route,
+    // including stock, until the worker answers the failure it raised
+    // (DecisionEvents.failureWaits); an equipment failure alone must not block
+    // consumables. Hunt locally meanwhile.
+    if (session.roleDecision?.reason === 'shopping_route_unreachable' && DecisionEvents.failureWaits(session)) return 'deferred';
 
     const destination = townName ? Object.values(invoke('GameServer/World/TownRespawn').towns)
         .find(town => town.name === townName) : null;
@@ -753,7 +753,7 @@ module.exports = {
             }
         }
 
-        if (isSoloHunter(session) && (Number(session.companionEquipmentRetryAt || 0) <= Date.now()
+        if (isSoloHunter(session) && (!DecisionEvents.failureWaits(session)
             || /^stock:/.test(String(DecisionEvents.held(session)?.network.activity?.rootKey)))) {
             const economy = DecisionEvents.held(session);
             const wealthCraft = require('../../Economy/HotWealthCraftService');

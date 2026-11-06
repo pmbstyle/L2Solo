@@ -7,12 +7,14 @@ const Goals = invoke('GameServer/Bot/Goals/GoalState');
 const Afk = invoke('GameServer/AfkTrade/AfkTradeService');
 const Meetings = invoke('GameServer/AfkTrade/TradeMeetingService');
 const Coordinator = invoke('GameServer/Bot/Population/ColdSimulationCoordinator');
+// A refused or missed purchase raises its failure on the row (DecisionEvents.raiseOn).
+const Events = invoke('GameServer/Bot/AI/DecisionEvents');
 const Errands = require('../src/GameServer/Bot/Population/CombinedErrandPolicy');
 const buyer = 744011, seller = 744012, itemId = 2145;
 const pause = () => new Promise(resolve => setTimeout(resolve, 20));
 (async () => {
     const world = await createWorld([{ id: buyer, classId: 57, level: 55 }, { id: seller, classId: 0, level: 55 }], 'refused-purchase-errand');
-    const prepare = Coordinator.requestMeetingPreparation, refresh = Coordinator.requestEconomyRefresh;
+    const prepare = Coordinator.requestMeetingPreparation, refresh = Events.raiseOn;
     try {
         await Database.createAccount('bot_refused_errand', 'fixture');
         await Database.execute(['UPDATE characters SET username=? WHERE id IN (?,?)', ['bot_refused_errand', buyer, seller]]);
@@ -32,7 +34,7 @@ const pause = () => new Promise(resolve => setTimeout(resolve, 20));
         const ad = Afk.ownerRecords(seller).find(row => row.kind === 'sell_ad');
         let rejects = [], refreshes = 0;
         Coordinator.requestMeetingPreparation = () => new Promise((_resolve, reject) => rejects.push(reject));
-        Coordinator.requestEconomyRefresh = id => { assert.equal(id, buyer); refreshes++; };
+        Events.raiseOn = id => { assert.equal(id, buyer); refreshes++; };
         const install = async (amount, at) => {
             const errand = { selfId: itemId, amount, town: 'Giran', money: 1000000, maxPrice: 3500, purpose: 'recipe', at };
             await Life.upsertState(Errands.withPending(Life.cachedState(buyer), [errand]), 'fixture_errand');
@@ -64,7 +66,7 @@ const pause = () => new Promise(resolve => setTimeout(resolve, 20));
         assert.equal(Errands.pending(Life.cachedState(buyer)).length, 0, 'the payer refusal has its own native admission after the initiating command ends');
         console.log('PASS refused purchase clears only its accepted errand/goal, preserves replacements and physical assets');
     } finally {
-        Coordinator.requestMeetingPreparation = prepare; Coordinator.requestEconomyRefresh = refresh;
+        Coordinator.requestMeetingPreparation = prepare; Events.raiseOn = refresh;
         await world.close();
     }
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

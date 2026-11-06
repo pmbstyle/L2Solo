@@ -81,6 +81,12 @@ const SITUATIONS = Object.freeze({
     // What main refused at the act or a body that failed its step five times: the plan
     // cannot stand.
     goal_failed: link(['sources'], 0),
+    // What an executor proved of the held plan where it acts: its goal reached (a
+    // purchase landed, a paid piece waits for its exchange), a town visit's step
+    // refused (a review main could not run). Sections until the build moves to
+    // situations (step 4 C6).
+    'goal_done:goal': link(BOUGHT, 0),
+    'goal_failed:visit': link(['sources'], 0),
     // A spot whose spawns admit none of the bot's fights alone (a kit or level it
     // lost, a stand-in ground): the bot stands with nothing to hunt, its plan cannot
     // stand. The occupation rebuild searches its spot afresh and drops the kept route.
@@ -159,30 +165,29 @@ const SITUATIONS = Object.freeze({
     target: link(['relations'], 0),
     improvement: link(['sources'], 0),
     unsupported: link(['sources'], 0),
-    // The doors to a build. candidates: a build weighs every gear candidate. request:
-    // main's ask makes the bot decide. look: another's question does.
+    // The doors to a build. candidates: a build weighs every gear candidate. look:
+    // another's question does.
     candidates: link([], FIELD),
-    request: link([], FIELD),
     look: link([], GATED)
 });
 // Who asks for a bot's plan, and does the answer become its plan. Only a bot's own
-// moment decides (no link). Main's request decides where the bot hears it; elsewhere
-// its next step decides and answers. Another's question is a look: elsewhere the plan
-// it holds answers. A reader with no row looks.
+// moment decides (no link). Another's question is a look: elsewhere the plan it
+// holds answers. A reader with no row looks.
 const door = (heard, keeps) => Object.freeze({ link: heard, keeps });
 const READER = door('look', true);
 const DOORS = Object.freeze({
     step: door(null, true), member: door(null, true), economy_near: door(null, true),
     // A deal is a look with its goods counted: the plan answers while their count stands.
     meeting_prepare: door('look', false),
-    economy_refresh: door('request', false),
+    // The next page of a far bot's deferred plan: its held plan read, never kept.
+    economy_page: door('look', false),
     workerPartyGoal: door('look', false), item_need: door('look', false)
 });
 const rowOf = caller => DOORS[caller] || READER;
 
 const hears = (name, where) => !(SITUATIONS[name].waits & where);
 const sections = name => SITUATIONS[name].sections;
-// What a door gets when the plan does not stand: 'decide', 'request' or 'look'.
+// What a door gets when the plan does not stand: 'decide' or 'look'.
 function answer(caller, state) {
     const { link: name } = rowOf(caller);
     return !name || hears(name, place(state)) ? 'decide' : name;

@@ -107,7 +107,9 @@ async function run() {
     assert((await Database.fetchItems(missing.id)).some(i=>i.selfId===73),'failed transaction keeps source sword');
     assert.strictEqual(missing.bot.backpack.fetchTotalWeaponKind(),'Weapon.Sword');
     await State.sellAndRestock(missing.session,missing.bot,{},ai);
-    assert(missing.session.companionEquipmentRetryAt > Date.now(),'failed combination backs off instead of repeating each visit tick');
+    // The failed step is raised (goal_failed, the held step dropped): no gear errand until the worker answers it.
+    const Events=invoke('GameServer/Bot/AI/DecisionEvents');
+    assert(Events.failureWaits(missing.session)||Number(Events.statsFor(missing.session).activityLeaf)===0,'failed combination raises its failed step instead of repeating each visit tick');
 
     const interrupted = await actorCase({stored:false});
     interrupted.session.companionShopping={kind:'dual_sword_combine',recipeId:902576,target:{actorId:100,npcSelfId:7846}};

@@ -140,40 +140,20 @@ module.exports.craftStepProbe = async (id) => {
         return { callers, edges: Number(projection.economyEdges || 0), carried: !!projection.actionBaseline };
     } finally { askAction = ask; refreshCraftPacket = refresh; }
 };
-// A refresh of a dirty bot waits for its step, whose build it would repeat, and
-// runs on that step's output.
-module.exports.refreshProbe = async id => {
-    const asked = () => !!occupationPlanner.entry(id, 'refresh');
-    const record = (stats, economyPending) => { const entry = kernel.states.get(id);
-        return { ...entry, economyPending, state: { ...entry.state, phase: 'cold', stats: { ...entry.state.stats, ...stats } } }; };
-    const run = (pending, ask) => {
+// A deferred plan's next page: main's write while pages wait asks it, once per
+// state; the bot's own commit and a sent plan with nothing deferred ask none.
+module.exports.pageProbe = async id => {
+    const asked = () => !!occupationPlanner.entry(id, 'page');
+    const record = economyPending => { const entry = kernel.states.get(id);
+        return { ...entry, economyPending, state: { ...entry.state, phase: 'cold' } }; };
+    const run = (pending, own) => {
         occupationPlanner.cancel(id);
-        kernel.states.set(id, record({ wishDirty: 1 }, pending));
-        ask?.();
-        const waited = !asked();
-        kernel.states.set(id, record({ wishDirty: 0 }, pending), 'commit');
-        return { waited, ran: asked() };
-    };
-    // A plan that does not stand: the request leaves it to the step, which answers.
-    const left = async () => {
-        occupationPlanner.cancel(id);
-        const worker = record({ wishDirty: 0 }, 0);
-        kernel.states.set(id, { ...worker, state: { ...worker.state, activity: 'hunting', party: null, partyId: null } });
-        EconomyContext.forget(id);
-        const door = () => (EconomyContext.buildDoors().economy_refresh || [0, 0, 0]).slice();
-        const before = door();
-        occupationOwnerChanged(id, true);
-        for (let tries = 0; tries < 500 && !kernel.states.get(id).refreshWaits; tries++) await new Promise(done => setTimeout(done, 10));
-        const waited = kernel.states.get(id).refreshWaits === true && !asked();
-        const after = door();
-        const own = kernel.states.get(id);
-        kernel.states.set(id, { ...own, state: { ...own.state } }, 'commit');
+        kernel.states.set(id, record(pending), own);
         const ran = asked();
         occupationPlanner.cancel(id);
-        return { waited, ran, built: after[0] - before[0], left: after[2] - before[2] };
+        return ran;
     };
-    // Main's reconcile asks with no pending count.
-    return { pending: run(1), reconcile: run(0, () => occupationOwnerChanged(id, true)), left: await left() };
+    return { own: run(1, 'commit'), main: run(1), none: run(0) };
 };
 // A party member's step (no decision before its round): a level gained in
 // its round moves its kit, which its party step reads to open a re-plan (at
@@ -222,7 +202,7 @@ const loaded = new Module(workerData.workerPath, module);
 loaded.filename = workerData.workerPath; loaded.paths = Module._nodeModulePaths(path.dirname(workerData.workerPath));
 loaded._compile(fs.readFileSync(workerData.workerPath, 'utf8') + workerData.observer, workerData.workerPath);
 parentPort.on('message', message => {
-    const probe = ['stepProbe', 'goalProbe', 'craftStepProbe', 'kitProbe', 'occupationProbe', 'refreshProbe'].find(name => message[name]);
+    const probe = ['stepProbe', 'goalProbe', 'craftStepProbe', 'kitProbe', 'occupationProbe', 'pageProbe'].find(name => message[name]);
     if (!probe) return;
     loaded.exports[probe](message[probe]).then(value => parentPort.postMessage({ probeId: message.msgId, value }))
         .catch(error => parentPort.postMessage({ probeId: message.msgId, error: error.stack }));
@@ -346,11 +326,10 @@ parentPort.on('message', message => {
         assert.deepEqual(kit.workshop, { known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0, feasibility: null },
             'a member that is no crafter builds with no workshop');
         assert.equal(kit.workshopAsks, 0, 'and asks the occupation planner for none');
-        worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'refresh'), refreshProbe: id });
-        const refreshResponse = await wait(message => message.probeId === 'refresh'); if (refreshResponse.error) throw Error(refreshResponse.error);
-        const moved = { waited: true, ran: true };
-        assert.deepEqual(refreshResponse.value, { pending: moved, reconcile: moved, left: { ...moved, built: 0, left: 1 } },
-            'a dirty bot refreshes after its step, not beside it, and no ask is lost');
+        worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'page'), pageProbe: id });
+        const pageResponse = await wait(message => message.probeId === 'page'); if (pageResponse.error) throw Error(pageResponse.error);
+        assert.deepEqual(pageResponse.value, { own: false, main: true, none: false },
+            'main\'s write pages a deferred plan; the own commit and a plan with nothing deferred do not');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'occupation'), occupationProbe: id });
         const occupationResponse = await wait(message => message.probeId === 'occupation');
         if (occupationResponse.error) throw Error(occupationResponse.error);

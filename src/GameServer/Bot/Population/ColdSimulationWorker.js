@@ -131,7 +131,7 @@ const EquipmentIncomeRoute = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const { SpotContestOutbox } = require('./SpotContestOutbox');
 const FailureLog = require('../../../FailureLog');
-const { ColdSimulationKernel, lifecycleKind } = require('./ColdSimulationKernel');
+const { ColdSimulationKernel } = require('./ColdSimulationKernel');
 const PartyGoalCalculation = require('./PartyGoalCalculation');
 const { beginHuntingTrip } = require('./HuntingTravel');
 const PveEncounter = require('./ColdPveEncounter');
@@ -278,14 +278,14 @@ const WORKSHOP_SERVE_MS = 30 * invoke('GameServer/World/GameTime').GAME_MINUTE_M
 //   costs): the plan reads its kit, bag, goals and combat state. Computed only
 //   for an ask on the step's own clock and economy (a second ask of the step,
 //   a job in flight across main's resend).
-// - near, refresh, meeting: the asked state object (they build the economy,
+// - near, page, meeting: the asked state object (they build the economy,
 //   which reads the bot's memory rows, crowd and goals beside the state: a new
 //   state object stands for their moves) and the inputs asked beside it: the
 //   warehouse and clan supply versions, the escrow, the recipe book and known
 //   shot recipes, whether the board and market copies are whole, the pending
 //   page count and a meeting's token. A short string, no state read.
 const CLOCK_MODES = new Set(['action', 'showcase', 'craft_market']);
-const IDENTITY_MODES = new Set(['near', 'refresh', 'meeting']);
+const IDENTITY_MODES = new Set(['near', 'page', 'meeting']);
 const STATE_STAMPS = Object.freeze({ updatedAt: undefined, simulation: undefined, timing: undefined });
 const WORKSHOP_STATS = Object.freeze(['workshop', 'dwarvenCraftLevel', 'classId', 'race', 'money', 'equipmentPlan',
     'wishFocus', 'craftStationId', 'craftShop', 'clanId', 'travel', 'marketReturn', 'karma', 'clanMaterialDemand',
@@ -570,22 +570,15 @@ const occupationPlanner = new ColdOccupationPlanner({
             return request;
         }
 
-        // A refresh (a far bot's economy plan) and a near bot's decision
-        // (mode near) build the economy on the same inputs.
-        if (input.mode === 'refresh' || input.mode === 'near') {
+        // A far bot's deferred plan page (mode page: its held plan read, a look) and a
+        // near bot's decision (mode near) read the economy on the same inputs.
+        if (input.mode === 'page' || input.mode === 'near') {
             const routeRows = input.routeRows = input.routeRows || (yield* EconomicTrip.prepare(input.state));
-            // A board move restarts a refresh of the same state: its plan reads the board
-            // again, its build stands, a bot in the field does not weigh for a price.
-            input.economy = input.source.builtRefresh || EconomyContext.forState(input.state, {
+            input.economy = EconomyContext.forState(input.state, {
                 board: input.board, routeRows, workshops: workshopsFor,
                 timestamp: input.timestamp, onSourceRead: input.read, onSourceScope: input.readScope, knownRecipes: input.knownRecipes, npcOffersFor: OccupationSources.npcOffersFor,
                 buyOrderEscrow: input.buyOrderEscrow, workshop: noWorkshop(),
                 caller: `economy_${input.mode}`, trigger: 'native_own_action' });
-            // The plan does not stand and the bot is at work: its step decides and answers.
-            if (!input.economy) { input.source.leftToStep = true; return noWorkshop(); }
-            if (input.mode === 'refresh' && !input.source.builtRefresh) {
-                if (DecisionSections.FIELD_ACTIVITIES.has(input.state.activity)) input.source.builtRefresh = input.economy;
-            }
             // The shared money packet is derived from this same graph. Use it
             // in preparation only; the native writer owns physical funding.
             input.state = { ...input.state, stats: { ...input.state.stats, ...input.economy.statsPacket } };
@@ -604,7 +597,7 @@ const occupationPlanner = new ColdOccupationPlanner({
             }
         }
         const prepared = yield* OccupationSources.prepare(input.state, input);
-        if (!prepared && input.mode === 'refresh') {
+        if (!prepared && input.mode === 'page') {
             const economyPlan = yield* invoke('GameServer/Bot/Population/ColdEconomyPlan').prepare(input.state, input.economy, {
                 now: input.timestamp, board: input.board, persona: BotPersona.of(input.state), tripCost: input.economy.trip,
                 preparedCraft: null, npcOffersFor: OccupationSources.npcOffersFor, saleHold: saleHold(input.state.characterId),
@@ -613,7 +606,7 @@ const occupationPlanner = new ColdOccupationPlanner({
         }
         if (!prepared) return input.mode === 'action' ? null : ColdEconomyDecision.unknownWorkshop();
         const Wealth = invoke('GameServer/Bot/Economy/WealthCraftDecision');
-        const action = input.mode === 'action' || input.mode === 'refresh';
+        const action = input.mode === 'action' || input.mode === 'page';
         const options = { ...prepared.options, knownShotRecipes: input.knownShotRecipes, stock: input.stock,
             buyOrderEscrow: input.buyOrderEscrow, now: input.timestamp };
         if (!action) {
@@ -664,7 +657,7 @@ const occupationPlanner = new ColdOccupationPlanner({
             findSpot: id => SpotIndex.spotById(planningSpots, id),
             buyOrderEscrow: input.buyOrderEscrow, knownShotRecipes: input.knownShotRecipes
         }) : null;
-        return { selected, economyPlan, ...(input.mode === 'refresh' ? { economyDecision:
+        return { selected, economyPlan, ...(input.mode === 'page' ? { economyDecision:
             ColdEconomyDecision.capture({ ...input.economy, shot: economyPlan?.shot || null }, input.state) } : {}) };
     })()),
     // An edge (one polygon side, teleport point or material node) costs less
@@ -683,22 +676,17 @@ const occupationPlanner = new ColdOccupationPlanner({
         if (input.mode === 'meeting') {
             occupationPlanner.release(id, 'meeting'); return;
         }
-        if (input.mode === 'refresh') {
-            input.builtRefresh = null;
+        if (input.mode === 'page') {
             const entry = kernel?.states.get(id);
-            if (input.leftToStep) {
-                if (entry?.state === input.sourceState) entry.refreshWaits = true;
-                occupationPlanner.release(id, 'refresh'); return;
-            }
-            // The plan was already sent; a source change does not re-request
-            // a refresh for the same native state (the next state does).
+            // The plan was already sent; a source change does not page again
+            // for the same native state (the next state does).
             if (meta.stale && entry?.state === input.sourceState && entry.economyPending) {
-                occupationPlanner.release(id, 'refresh'); return;
+                occupationPlanner.release(id, 'page'); return;
             }
             if (!shuttingDown && entry?.state === input.sourceState && !meta.stale && workshop?.economyPlan) {
                 const hash = economyPlanHash(workshop.economyPlan);
-                // A paging refresh that repeats the plan already sent (by the
-                // commit or the last refresh) has nothing more to page.
+                // A page that repeats the plan already sent (by the commit or
+                // the last page) has nothing more to page.
                 if (input.pending && hash === entry.economyPlanHash) { entry.economyPending = 0; input.economy = null; return; }
                 entry.economyPlanHash = hash;
                 entry.economyPending = workshop.economyPlan.d || 0;
@@ -876,7 +864,7 @@ function cancelRoute(characterId) {
     routeRequests.delete(id);
     occupationPlanner.cancel(id, 'wish');
 }
-const refreshedStates = new WeakSet();
+const pagedStates = new WeakSet();
 function assetsKey(state) {
     return `${PersonalWarehouseIndex.version(state)}:${ClanSupplyPolicy.version(state)}`;
 }
@@ -890,32 +878,25 @@ function recipeKnowledgeOf(state) {
 }
 // The spot a bot stands at, in this worker's spot catalog.
 const standingSpot = state => SpotService.standingSpot(state, planningSpots);
-// A far bot's economy refresh, or a near bot's decision on its post (mode
-// near): the raise it consumed (raiseSeq) and the route rows of its last
-// decision while its route key holds.
-function occupationOwnerChanged(id, refresh = false, afterStep = false) {
+// A far bot's next page of a deferred plan (mode page: main moved its row while a
+// sent plan waits with pages deferred, entry.economyPending; temporary until step 6,
+// when the town plan pages itself), or a near bot's decision on its post (mode
+// near): the raise it consumed (raiseSeq) and the route rows of its last decision
+// while its route key holds.
+function occupationOwnerChanged(id, page = false) {
     const entry = kernel?.states.get(Number(id));
-    if (!entry || entry.state.phase !== 'hot' && !refresh) return;
-    // A dirty bot's next step builds this same decision: the refresh runs after
-    // it, on that step's held build, not as a second build beside it. A bot with
-    // no step coming (a shop, a meeting) answers here.
-    if (refresh && !afterStep && entry.state.phase === 'cold'
-        && Number(entry.state.stats?.wishDirty) && lifecycleKind(entry.state) !== 'event_driven') {
-        entry.refreshWaits = true;
-        return;
-    }
-    if (refresh) entry.refreshWaits = false;
-    // One economy refresh per native state object.
-    if (refresh && refreshedStates.has(entry.state)) return;
-    if (refresh) {
-        refreshedStates.add(entry.state); economyDiagnostics.count('occupation', 'refresh', 'main_state');
+    if (!entry || entry.state.phase !== 'hot' && !page) return;
+    // One page per native state object.
+    if (page && pagedStates.has(entry.state)) return;
+    if (page) {
+        pagedStates.add(entry.state); economyDiagnostics.count('occupation', 'page', 'main_state');
     }
     const routeKey = EconomicTrip.key(entry.state);
     occupationPlanner.request(id, { state: entry.state, sourceState: entry.state, assetsKey: assetsKey(entry.state),
-        timestamp: Date.now(), mode: refresh ? 'refresh' : 'near', pending: entry.economyPending || 0,
+        timestamp: Date.now(), mode: page ? 'page' : 'near', pending: entry.economyPending || 0,
         buyOrderEscrow: escrowFor(id),
         ...recipeKnowledgeOf(entry.state),
-        routeKey, ...(refresh ? {} : { raiseSeq: Number(entry.raiseSeq || 0),
+        routeKey, ...(page ? {} : { raiseSeq: Number(entry.raiseSeq || 0),
             routeRows: entry.nearRoute?.key === routeKey ? entry.nearRoute.rows : null }),
         sourceReady: tables.ready('board') && tables.ready('market') }, { awaitResult: false });
 }
@@ -1589,7 +1570,7 @@ const partyGoalPages = new Map();
 const partyGoalSeen = new Map();
 function partyMembersAvailable(members) {
     return members.every(member => kernel.commandStartedAt.get(member.characterId)?.kind !== 'meeting'
-        && !['meeting', 'refresh', 'action'].some(mode => {
+        && !['meeting', 'page', 'action'].some(mode => {
             const held = occupationPlanner.entry(member.characterId, mode);
             return held && !held.done;
         }));
@@ -2253,7 +2234,7 @@ function startKernel(config = {}) {
             // Each planner job of the bot (one per mode) whose inputs read the
             // same on the new state goes on, finished or in flight (main
             // echoing the bot's own commit, a catalog page resending the row);
-            // any other is dropped: a near, refresh or meeting job (keyed on
+            // any other is dropped: a near, page or meeting job (keyed on
             // the state object), a finished one keyed on the step clock.
             const routeKey = EconomicTrip.key(entry.state);
             for (const held of occupationPlanner.entriesOf(id)) {
@@ -2269,14 +2250,11 @@ function startKernel(config = {}) {
                 } else if (held.mode === 'wish') cancelRoute(id);
                 else occupationPlanner.cancel(id, held.mode);
             }
-            // Own outputs are not inputs: no economy refresh for the own
-            // commit or review; economyPending stays for main's next refresh.
-            if (ownOutput && entry.economyPending) economyDiagnostics.count('occupation', 'refresh',
+            // Own outputs are not inputs: no page for the own commit or
+            // review; economyPending stays for main's next write.
+            if (ownOutput && entry.economyPending) economyDiagnostics.count('occupation', 'page',
                 ownOutput === 'review' ? 'own_review_skipped' : 'own_commit_skipped');
-            // A refresh that waited runs whatever the pending count: main's
-            // reconcile asks with none.
-            const waits = entry.refreshWaits === true;
-            occupationOwnerChanged(id, waits || !ownOutput && Boolean(entry.economyPending), waits && !!ownOutput);
+            occupationOwnerChanged(id, !ownOutput && Boolean(entry.economyPending));
         }
         return result;
     };
@@ -2465,7 +2443,7 @@ async function handle(message) {
         if (!kernel) throw new Error('kernel_not_initialized');
         if (payload.economyOwnerId !== undefined) {
             if (Number.isSafeInteger(payload.economyOwnerId) && payload.economyOwnerId > 0
-                && Array.isArray(payload.rows) && !payload.rows.length) occupationOwnerChanged(payload.economyOwnerId, payload.reconcile === true);
+                && Array.isArray(payload.rows) && !payload.rows.length) occupationOwnerChanged(payload.economyOwnerId);
             break;
         }
         kernel.upsertMany(payload.rows || []);

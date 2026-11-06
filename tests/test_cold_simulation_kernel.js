@@ -1686,6 +1686,27 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
     assert(emptyKernel.scheduleTokens.get(250).dueAt >= emptyNow + 1000,
         'a refused commit with no new row waits a second, not the row\'s past due');
 
+    // A bot with no step coming (a craft shop: event_driven) whose row a raise woke
+    // (main's raiseOnRow: its buy ad's need withdrawn) takes one command step, which
+    // decides on the raise; a write that wakes nothing steps it not.
+    {
+        let shopNow = now;
+        const shopKernel = recordingKernel({ now: () => shopNow, resolveSolo: resolver });
+        const shop = revision => ({ characterId: 2002000, name: 'Shop', level: 40, phase: 'cold', activity: 'crafting',
+            stats: { craftShop: { recipeId: 1 }, woken: 0 }, inventory: {}, simulation: { revision }, updatedAt: shopNow,
+            timing: { activityStartedAt: shopNow, nextResolveAt: shopNow + 3600000, lastResolvedAt: shopNow } });
+        shopKernel.upsert({ state: shop(3) });
+        shopKernel.tick();
+        assert.strictEqual(sentCommands.get(shopKernel).has(2002000), false, 'fixture: a craft shop takes no step');
+        shopKernel.upsert({ state: { ...shop(4), updatedAt: shopNow + 1 } });
+        shopKernel.tick();
+        assert.strictEqual(sentCommands.get(shopKernel).has(2002000), false, 'a write that wakes nothing steps it not');
+        shopKernel.upsert({ state: { ...shop(5), stats: { ...shop(5).stats, woken: 2, situationSeq: 1 } } });
+        shopKernel.tick();
+        await new Promise(resolve => setTimeout(resolve, 20));
+        assert.strictEqual(sentCommands.get(shopKernel).has(2002000), true, 'a raise that woke its build steps it at once');
+    }
+
     console.log('Cold worker protocol, deterministic kernel, scheduling, and fence checks passed');
 })().catch((error) => {
     console.error(error);
