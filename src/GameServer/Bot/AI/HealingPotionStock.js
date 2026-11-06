@@ -50,11 +50,21 @@ function targetAmountFor(value) {
     return Economy.keptTargets(state).potions.target;
 }
 
+// The potion a level band buys, as last quoted, by selfId: its details are static,
+// its price is read per call (botBuyPrice: the NPC price table, the server rate),
+// so the key is exactly (band's selfId, price) and a moved price rebuilds it.
+// Shared and frozen: callers only read it.
+const purchaseQuotes = new Map();
 function purchasePotionFor(value) {
     const level = Number(value?.fetchLevel?.() ?? value?.level ?? 1) || 1;
     const choice = PURCHASE_BY_LEVEL.find((entry) => level <= entry.maxLevel) || PURCHASE_BY_LEVEL[0];
     // The NPC's price at the current rate (x10: 660 for a 330 Healing Potion).
-    return { ...detailsFor(choice.selfId), price: StaticMerchantPricing.botBuyPrice(choice.selfId) };
+    const price = StaticMerchantPricing.botBuyPrice(choice.selfId);
+    const held = purchaseQuotes.get(choice.selfId);
+    if (held?.price === price) return held;
+    const quote = Object.freeze({ ...detailsFor(choice.selfId), price });
+    purchaseQuotes.set(choice.selfId, quote);
+    return quote;
 }
 
 // The shared operating reserve, read from a cold state or a hot actor.

@@ -6,6 +6,8 @@ const BotEconomyPricing = invoke('GameServer/Bot/Economy/BotEconomyPricing');
 const { npcPriceOf } = invoke('GameServer/Bot/Economy/BotMarketPricing');
 const NpcSellRules = invoke('GameServer/Items/NpcSellRules');
 const OfferQuery = require('./OfferQuery');
+// Loaded once: a require() per cheapestPurchase resolved the path on disk each call (~55% of it).
+const production = require('./ProductionPolicy');
 const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
 
 const BUYBACK_RATIO = 0.9;
@@ -63,7 +65,6 @@ function refreshFixedOffers() {
 function cheapestPurchase(selfId, { forBot = false } = {}) {
     refreshFixedOffers();
     const id = Number(selfId);
-    const production = require('./ProductionPolicy');
     const minimum = !forBot || production.allowsFixedShot(id) ? fixedMinimums.get(id) ?? Infinity : Infinity;
     return forBot && !production.allowsNpcShot(id) ? minimum : Math.min(minimum, npcPriceOf(id));
 }
