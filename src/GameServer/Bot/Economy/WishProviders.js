@@ -1342,7 +1342,7 @@ function buildProjection(state, ctx, deps) {
     // none of it back); its leaf is the NPC town's shopping step, its gear plan the
     // bridge (GearPlanSelection). Its key is the gear root's (power:<item>:<slot>), so
     // every gear reader serves it; the wallet's threshold for it is the build's
-    // goal_affordable:survival (DecisionSections.affordAtOf, ctx.weaponBridge). A dual
+    // goal_affordable:focus (DecisionSections.affordAtOf, ctx.weaponBridge). A dual
     // sword combination's bridge stays the planner's. Cost: only an unarmed bot's build
     // reads the NPC weapons of its slot (one offer read each).
     ctx.weaponBridge = null;

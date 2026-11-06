@@ -169,15 +169,15 @@ function selectionPlansFromHuntingSpot() {
     assert.strictEqual(armedWith.plan.strategy, 'market');
     assert(armedWith.plan.weaponBridge, 'the gear plan is the weapon bridge');
     assert.strictEqual(armedWith.economy.network.activity.rootKey, `power:${armedWith.plan.target.selfId}:${armedWith.plan.target.slot}`);
-    // A broke unarmed bot hunts for it: the wallet's threshold is the bridge's price (goal_affordable:survival).
+    // A broke unarmed bot hunts for it: the wallet's threshold is the bridge's price (goal_affordable:focus).
     const broke = unarmed(100);
     const afford = broke.economy.statsPacket.wishSections.affordAt;
-    assert.strictEqual(afford?.kind, 'survival', 'a broke bot waits for its weapon bridge first');
+    assert.strictEqual(afford?.kind, 'focus', 'a broke bot waits for its weapon bridge first');
     assert(afford.at > 100);
     const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
     assert.strictEqual(Sections.goalReached({ ...broke.state, adena: afford.at - 1 }, broke.economy.statsPacket.wishSections), null);
     assert.strictEqual(Sections.goalReached({ ...broke.state, adena: afford.at, inventory: { 57: { selfId: 57, amount: afford.at } } },
-        broke.economy.statsPacket.wishSections), 'survival', 'its price in the wallet raises goal_affordable:survival');
+        broke.economy.statsPacket.wishSections), 'focus', 'its price in the wallet raises goal_affordable:focus');
     const kit = require('./fixtures/profitable_stock_state').kitFor(0, original.level);
     const wanderer = { ...original, exp: Number(DataCache.experience[13]), currentRegion: 'Dwarven Village',
         loc: { ...original.loc, locZ: 0 }, stats: { ...original.stats }, inventory: structuredClone(kit.inventory) };

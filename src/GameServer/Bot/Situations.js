@@ -137,11 +137,11 @@ const SITUATIONS = Object.freeze({
     'stock_low:potions': link(0),
     bag_full: link(0),
     // The wallet reached the build's threshold (baseline.affordAt): a broke bot's survival
-    // potions, an unarmed bot's weapon bridge, its focus. Its own failed buy's retry
-    // stamp goes with it (stats.marketRetryAfter: it may buy again, raisedFacts).
+    // potions, else an unarmed bot's weapon bridge or its focus (both wake the build only:
+    // one name). Its own failed buy's retry stamp goes with it (stats.marketRetryAfter:
+    // it may buy again, raisedFacts).
     'goal_affordable:potions': link(0),
-    'goal_affordable:focus': link(0),
-    'goal_affordable:survival': link(0)
+    'goal_affordable:focus': link(0)
 });
 const hears = (name, where) => !(SITUATIONS[name].waits & where);
 // One reason with no decision of its own (a step's market review): is it heard here, counted as a raise.
@@ -170,7 +170,7 @@ const DECISIONS = Object.freeze({
         'spot_dangerous', 'spot_unreachable', 'moved_by_world', 'party_left', 'shots_out', 'stock_low:potions', 'goal_affordable:potions',
         'karma_changed']),
     build: Object.freeze(['arrived_town', 'level_up', 'gear_changed', 'recipe_learned', 'died', 'revived', 'party_left',
-        'goal_affordable:potions', 'goal_affordable:focus', 'goal_affordable:survival', 'out_of_money', 'goal_done:goal', 'goal_failed',
+        'goal_affordable:potions', 'goal_affordable:focus', 'out_of_money', 'goal_done:goal', 'goal_failed',
         'goal_done:visit', 'goal_failed:visit', 'stock_low:shots', 'stock_low:potions', 'bag_full', 'source_stalled', 'clan_call',
         'clan_changed', 'spot_empty', 'goal_moved', 'player_command', 'craft_bid', 'clan_market']),
     gear_plan: Object.freeze(['level_up', 'gear_changed', 'died', 'party_left', 'source_stalled'])

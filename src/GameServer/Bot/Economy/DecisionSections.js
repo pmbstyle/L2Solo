@@ -175,7 +175,9 @@ function moneyCrossings(wallet, baseline) {
     const names = [];
     if (!baseline || !Number.isFinite(wallet)) return names;
     const afford = baseline.affordAt;
-    if (afford?.at > 0 && wallet >= afford.at) names.push(`goal_affordable:${afford.kind}`);
+    // Potions wake the earning spot too; any other threshold is the build's alone (a
+    // row saved with an older kind reads as focus).
+    if (afford?.at > 0 && wallet >= afford.at) names.push(afford.kind === 'potions' ? 'goal_affordable:potions' : 'goal_affordable:focus');
     if (baseline.fundedAt > 0 && wallet < baseline.fundedAt) names.push('out_of_money');
     return names;
 }
@@ -193,8 +195,9 @@ function unspent(baseline, wallet) {
 // What the wallet waits to reach, the first of (situations.md §14, B7, B4): a broke
 // bot's survival potions (the money for their missing line, the search's broke
 // rule: it re-opens buying them and the spots that need them), an unarmed bot's
-// weapon bridge (its price from the whole wallet, WishProviders' survival wish:
-// survival), its focus (the goal's cumulative cost). Re-armed by each build.
+// weapon bridge (its price from the whole wallet, WishProviders' survival wish), its
+// focus (the goal's cumulative cost); the bridge and the focus wake the same decision,
+// so both are kind focus. Re-armed by each build.
 function affordAtOf(context, wallet) {
     const potions = context.stock?.('potions');
     if (potions && potions.current < potions.line) {
@@ -203,7 +206,7 @@ function affordAtOf(context, wallet) {
         if (at > wallet) return { at, kind: 'potions' };
     }
     const bridge = context.weaponBridge;
-    if (bridge?.price > wallet) return { at: bridge.price, kind: 'survival' };
+    if (bridge?.price > wallet) return { at: bridge.price, kind: 'focus' };
     return context.goalBudget > wallet ? { at: context.goalBudget, kind: 'focus' } : null;
 }
 function baselineIdentity(baseline) {
