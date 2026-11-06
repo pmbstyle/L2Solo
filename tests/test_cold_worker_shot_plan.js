@@ -52,8 +52,10 @@ module.exports.shotProbe = async () => {
     const regen = invoke('GameServer/Bot/Population/BackgroundResolver').coldRestRegenPerTick(result.state);
     const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(20);
     const candidate = require('../Economy/ShotCraftPolicy').craftCandidate(result.state, recipe, { ...market, offersFor: (...args) => index.offersFor(...args), context: { ...economy, mpPerHour: regen.mp * 1200 } });
-    const crafted = { ...state, stats: { ...state.stats, shotCraft: { recipeId: 20 } },
-        inventory: { ...state.inventory, 1463: { selfId: 1463, amount: 1000000 } } };
+    // The crafter's own stock over the kit its first build rated (a loaded row holds no
+    // rates until its build runs: the whole bag is then its own keep).
+    const crafted = { ...result.state, stats: { ...result.state.stats, shotCraft: { recipeId: 20 } },
+        inventory: { ...result.state.inventory, 1463: { selfId: 1463, amount: 1000000 } } };
     kernel.upsert({ state: crafted });
     const before = index.marketSnapshot(timestamp, crafted).unlistedSupply.get(1463);
     const proposed = { ...crafted, inventory: { ...crafted.inventory, 1463: { selfId: 1463, amount: 1000100 } } };
