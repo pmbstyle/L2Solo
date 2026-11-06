@@ -162,7 +162,9 @@ function woke(name, where) {
 // step's market reviews (craft_bid, clan_market) and goal_moved (until AI-5).
 // gear_plan (F1): the gear plan's full review, every gear candidate weighed and the
 // native plan judged afresh (GearPlanSelection); a build it does not wake keeps the
-// gear the bot follows.
+// gear the bot follows. One question, which gear to work toward: it hears the bot's
+// own changes only, not a town arrival or a failed step; a failed gear errand reaches
+// it as its mark alone (GearMarks), which the build reads too.
 const DECISIONS = Object.freeze({
     earning_spot: Object.freeze(['level_up', 'gear_changed', 'died', 'recovered', 'spot_disappoints', 'contest_lost', 'spot_empty',
         'spot_dangerous', 'spot_unreachable', 'moved_by_world', 'party_left', 'shots_out', 'stock_low:potions', 'goal_affordable:potions',
@@ -171,7 +173,7 @@ const DECISIONS = Object.freeze({
         'goal_affordable:potions', 'goal_affordable:focus', 'goal_affordable:survival', 'out_of_money', 'goal_done:goal', 'goal_failed',
         'goal_done:visit', 'goal_failed:visit', 'stock_low:shots', 'stock_low:potions', 'bag_full', 'source_stalled', 'clan_call',
         'clan_changed', 'spot_empty', 'goal_moved', 'player_command', 'craft_bid', 'clan_market']),
-    gear_plan: Object.freeze(['level_up', 'gear_changed', 'died', 'party_left', 'goal_failed', 'source_stalled', 'arrived_town'])
+    gear_plan: Object.freeze(['level_up', 'gear_changed', 'died', 'party_left', 'source_stalled'])
 });
 const BITS = Object.freeze(Object.fromEntries(Object.keys(DECISIONS).map((name, at) => [name, 1 << at])));
 const ALL = Object.values(BITS).reduce((all, bit) => all | bit, 0), PLANE = 0xff;

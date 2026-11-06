@@ -1619,7 +1619,7 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
                 : null,
         failure,
         recoveryTargets,
-        // The gear errands it failed where it acts (GearMarks) wait for its next review.
+        // The gear errands it failed where it acts (GearMarks): this review plans without them.
         excludedTargetIds: [...recoveryTargets.map((entry) => Number(entry.targetId)), ...GearMarks.keys(state.stats)],
         excludedMaterialIds: [...recoveryTargets.map((entry) => Number(entry.itemId || 0)).filter(Boolean), ...GearMarks.keys(state.stats)],
         forceMarketTargetId: Number(failure?.targetId || currentMarketRecovery?.targetId || 0) || null

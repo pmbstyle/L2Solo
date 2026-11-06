@@ -15,7 +15,7 @@
 //   kit of the preparation it plans for, as the weighing reads them, its
 //   progression, the gear a quiet build holds, the hours its value is weighed
 //   over, death hours, money hour, trip rows, reserve, persona, the crystal
-//   shop), one digest per build (KeptSourceFacts.inputDigest);
+//   shop, the failed gear errands' marks), one digest per build (KeptSourceFacts.inputDigest);
 // - per item priced: its price (the weighing reads the board only through
 //   prices and offers), and whether and how it was compared with the budget;
 // - per bag answer (an item held or not) and per offer asked (the arrow room,

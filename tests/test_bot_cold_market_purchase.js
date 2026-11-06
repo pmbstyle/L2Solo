@@ -427,10 +427,12 @@ async function run() {
     assert.strictEqual(incompatibleShield.reason, 'incompatible_loadout');
     assert.strictEqual(incompatibleShield.purchased, false);
     assert.strictEqual(blockedReserveCalls, 0, 'an incompatible purchase must be rejected before reserving market stock');
-    assert.strictEqual(incompatibleShield.state.stats.equipmentPlan, undefined,
-        'rejecting an incompatible shield must discard the stale acquisition plan');
-    assert.strictEqual(incompatibleShield.state.stats.partyRequest, undefined,
-        'rejecting an incompatible shield must clear its obsolete party request');
+    // The gear plan stays; the refused item is its mark (GearMarks), which its next review plans without.
+    assert.strictEqual(incompatibleShield.state.stats.equipmentPlan?.target?.selfId, 626,
+        'a refused shield leaves the gear plan to its own review');
+    await new Promise(resolve => setImmediate(resolve));
+    assert(invoke('GameServer/Bot/AI/GearMarks').marked(BotLifeState.cachedState(86)?.stats, 626),
+        'the refused shield is marked: the build does not send the bot for it again');
     MarketOpportunity.bestOffer = originals.bestOffer;
     MarketOpportunity.reserve = originals.reserve;
 

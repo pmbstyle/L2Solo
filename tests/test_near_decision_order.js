@@ -85,7 +85,7 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
         characterId: id, economyDecision: Decisions.capture({ network: { activity: { activity: 'hunting', spotId: 'partial' },
             decisionSeq: 12, activityLeaf: 0 } }, state),
         near: { statsPacket: { decisionSeq: 12, activityLeaf: 0, money: [1000, .001, 0, 0], gearMarks }, nearSeq, raiseSeq } });
-    await coordinator.onMessage(answerWith(8, errandSeq, [{ key: 5, fresh: false }]));
+    await coordinator.onMessage(answerWith(8, errandSeq, [{ key: 5 }]));
     assert.deepEqual(marks(), [5, 6], 'the worker\'s marks, and the unanswered errand\'s');
     await coordinator.onMessage(answerWith(9, session.raiseSeq, null));
     assert.deepEqual(marks(), [], 'a review that dropped them drops them on the body');

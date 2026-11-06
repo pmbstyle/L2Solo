@@ -5,12 +5,16 @@ const Query = require('./OfferQuery');
 const Production = require('./ProductionPolicy');
 const FixedShots = require('./FixedShotOffers');
 const ArrowStock = require('../../Inventory/ArrowStock');
+const GearMarks = require('../AI/GearMarks');
 const unlimited = offer => offer.sourceType === 'npc' || offer.sourceType === 'configured_store';
 function reader(state, ctx, deps, { npcOnly = false, town = null } = {}) {
     // Preparation belongs to the existing worker. A reader cannot synchronously
     // expand geometry or treat an unprepared trip as free.
     const cost = deps.tripCost || ctx.trip;
     return id => {
+        // A gear errand the bot failed to buy (GearMarks) is no purchase until its gear plan
+        // reviews again: no power root or material leaf takes the same buy again.
+        if (GearMarks.marked(state.stats, id)) return null;
         // Every wish purchase is sized here: a leaf buys at most these units (Agenda.nextSeller).
         const capacity = ArrowStock.admitted(state, id, Infinity);
         if (!(capacity > 0)) return null;

@@ -133,15 +133,17 @@ async function runWorker(state, predicate, followUp = null) {
         // impossible mark of raise 1 (its step drop: test_near_decision_order).
         post({ ...raised, nearSeq: 6, updatedAt: now + 4, raise: { seq: 2, names: [{ name: 'goal_failed', payload: null, seq: 1 }], impossible: true, impossibleSeq: 1 } });
         assert.equal((await decidedAt(until, 6)).payload.near.raiseSeq, 2, 'the new raise is taken');
-        // A failed gear errand marks its key in the near mind; the decision it wakes is the gear
-        // plan's review (the fresh mark kept, stale now) and its answer carries the marks to the
-        // body; the next review drops it (GearMarks: one rule near and far).
-        post({ ...raised, nearSeq: 7, updatedAt: now + 5,
+        // A failed gear errand marks its key in the near mind; it wakes the build, not the gear
+        // plan, and the answer carries the mark to the body; the gear plan's next review, woken by
+        // the bot's own situation, drops it (GearMarks: one rule near and far).
+        // The body holds a gear plan answer (none): with no answer held the gear plan reads woken.
+        const planned = { ...raised, stats: { ...raised.stats, equipmentPlan: null } };
+        post({ ...planned, nearSeq: 7, updatedAt: now + 5,
             raise: { seq: 3, names: [{ name: 'goal_failed', payload: { kind: 'gear_errand', key: 5 }, seq: 3 }] } });
-        assert.deepEqual((await decidedAt(until, 7)).payload.near.statsPacket.gearMarks, [{ key: 5, fresh: false }],
-            'the review the failure woke keeps its mark, and the body hears it');
-        post({ ...raised, nearSeq: 8, updatedAt: now + 6, raise: { seq: 4, names: [{ name: 'arrived_town', payload: null, seq: 4 }] } });
-        assert.equal((await decidedAt(until, 8)).payload.near.statsPacket.gearMarks, null, 'the next review drops it');
+        assert.deepEqual((await decidedAt(until, 7)).payload.near.statsPacket.gearMarks, [{ key: 5 }],
+            'the failure keeps its mark through the build it wakes, and the body hears it');
+        post({ ...planned, nearSeq: 8, updatedAt: now + 6, raise: { seq: 4, names: [{ name: 'party_left', payload: null, seq: 4 }] } });
+        assert.equal((await decidedAt(until, 8)).payload.near.statsPacket.gearMarks, null, 'the gear plan\'s review drops it');
     });
 
     const instances = Array.from({ length: 2075 }, (_, index) => ({ id: 900000 + index,

@@ -967,6 +967,7 @@ function buildProjection(state, ctx, deps) {
         if (deps.tripCost || ctx.trip && !Array.isArray(ctx.trip.rows) || !ctx.nodeInputs?.read || !ctx.peekPrice) return null;
         return [['sources', Sources.revision()], ['owner', Number(state.characterId)], ['kit', kitOf(state)],
             ['progression', progression], ['preparation', preparation ? kitOf(preparation) : 0], ['crystalShop', !!crystalPurchaseFor], ['held', ctx.heldGear ? [...ctx.heldGear].sort((a, b) => a - b) : null], ['luxury', !!luxury],
+            ['marks', need('../AI/GearMarks').keys(state.stats)],
             ['threat', ctx.gearThreatMask ?? 3], ['caster', !!magic], ['horizon', [horizon, futureHorizon]], ['death', ctx.deathHours],
             ['hour', [ctx.hunt.perHour, ctx.hourAdena]], ['reserve', ctx.refillReserve], ['trips', ctx.trip?.rows || null],
             ['shots', need('./ProductionPolicy').shotsDisabled()],
