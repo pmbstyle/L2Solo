@@ -28,12 +28,26 @@ function resolve(proposal) {
     return recipe && recipe.npcId === Number(proposal.npcId)
         && recipe.recipeIndex === Number(proposal.recipeIndex) ? recipe : null;
 }
+function dualComponent(state, item, role, Planner) {
+    if (item.template?.kind !== 'Weapon.Sword') return false;
+    const Data = invoke('GameServer/DataCache');
+    // A source blade need not fit the paperdoll: its native combination must
+    // produce a usable dual within this bot's current acquisition ceiling.
+    return invoke('GameServer/Items/C4DualSwordCombinations').loadRecipes().some(combination => {
+        if (!combination.materials.some(row => row.selfId === item.selfId)) return false;
+        const product = Index.find(Data.items, combination.productId);
+        return product && Planner.suitable(product, state, role, product.etc.rank)
+            && Planner.acquisitionTargetAllowed(state, { target: { selfId: product.selfId } });
+    });
+}
 function eligible(state, recipe, forCrystals = false) {
     const Progression = invoke('GameServer/Bot/AI/PersonalGearProgression');
     if (!recipe || !Progression.allowsCGradeAcquisition(state) || Number(state.level) < 20
         || Number(state.level) < 40 && Progression.assess(state).required) return false;
     const Data = invoke('GameServer/DataCache'), Planner = invoke('GameServer/Bot/AI/GearAcquisitionPlanner');
     const item = Index.find(Data.items, recipe.itemId);
-    return !!item && (forCrystals && Number(state.level) >= 40 || Planner.suitable(item, state, Planner.roleFor(state), 'c'));
+    const role = Planner.roleFor(state);
+    return !!item && (forCrystals && Number(state.level) >= 40 || Planner.suitable(item, state, role, 'c')
+        || dualComponent(state, item, role, Planner));
 }
 module.exports = { recipes, resolve, eligible, NPC_IDS, CRYSTAL_D };
