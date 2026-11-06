@@ -1459,14 +1459,7 @@ class ColdSimulationCoordinator {
     releaseFence(characterId, state = LifeState.cachedState(Number(characterId))) {
         if (state) return this.notifyState(state);
         this.fencedBots.delete(Number(characterId));
-        this.releaseBot(characterId);
         return { ok: false, reason: 'missing_state' };
-    }
-
-    // A bot whose worker life ended (its row gone): the worker drops what its fence
-    // kept (the held build, persona, kit profiles). No worker: nothing is held.
-    releaseBot(characterId) {
-        if (this.worker && this.ready) this.post('release', { characterId: Number(characterId) });
     }
 
     async acceptColdState(state, timeoutMs = 500) {

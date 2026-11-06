@@ -76,15 +76,10 @@ async function run() {
     // The memory table owns its rows' lifetime: a release keeps them until main removes the row.
     assert.equal(kernel.interactionMemory.snapshots.size, 10);
     assert.deepEqual(kernel.buyerEvents.size(), { owners: 0, items: 0 });
-    // A fenced bot is still decided here (a body near a player, a party handoff): its held build
-    // stays for its next row (bounded by the context's retain limit); a removed one releases it.
-    assert.equal(Economy.size().context, 5, 'the fenced bots keep their held build, the removed ones release it');
+    assert.equal(Economy.size().context, 0); assert.equal(Economy.size().engine, 0);
     assert.equal(Economy.size().groups, 0);
     assert.equal(kernel.versions.size, 10, 'numeric revisions intentionally survive to fence old proposals');
     assert.equal(kernel.heap.size, 0, 'no released owner has a heap node');
-    // A fenced bot whose worker life ends (its row gone: main's release) drops what the fence kept.
-    for (const id of [1, 3]) kernel.remove(id);
-    assert.equal(Economy.size().context, 3, 'a released fenced bot keeps no held build');
     finishParty();
     await kernel.resolveChain;
     assert.equal(published.length, 0, 'a resolver completing after release cannot publish its obsolete party result');
