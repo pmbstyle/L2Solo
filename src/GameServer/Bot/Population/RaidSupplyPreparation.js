@@ -68,7 +68,7 @@ class RaidSupplyPreparation {
                 || !Policy.composition(current).ready
                 || !current.every((s, i) => current.slice(i + 1).every(peer => Policy.compatible(s, peer, this.memory.assess.bind(this.memory), now)))
                 || current.some(s => objective.assessment.kits?.find(([id]) => id === s.characterId)?.[1]
-                    !== Combat.kitHash(Combat.combatView(s)).join(':'))
+                    !== Combat.kitEvents(s).join(':'))
                 || current.some(s => quotes.has(s.characterId) && Supply.cash(s) < quotes.get(s.characterId).cashNeeded)) return null;
             // Partial reservations recover by releasing the incomplete plan.
             this.plans.set(id, plan);

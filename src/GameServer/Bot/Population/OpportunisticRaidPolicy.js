@@ -510,7 +510,7 @@ function assessment(members, spot, { timestamp = Date.now(), maxFightSeconds = 7
         fail('raid_consumables_funds');
     return result({ seconds, grossDps, regen, shotPlans, healing, healingRequired, defense,
         ...(supplies ? { supplies } : {}),
-        ...(!reasons.length ? { kits: members.map(s => [id(s), Combat.kitHash(Combat.combatView(s)).join(':')]) } : {}) });
+        ...(!reasons.length ? { kits: members.map(s => [id(s), Combat.kitEvents(s).join(':')]) } : {}) });
 }
 
 // Re-read after the worker fences, before publishing any native actors. A new
@@ -519,7 +519,7 @@ function pullAdmission(members, objective) {
     if (!composition(members).ready || members.some(criminal)) return 'raid_composition_or_pk';
     if (members.some(s => !levelAllowed(s, objective.sourceLevel))) return 'raid_level';
     if (members.some(s => objective.assessment?.kits?.find(([key]) => key === id(s))?.[1]
-        !== Combat.kitHash(Combat.combatView(s)).join(':'))) return 'raid_equipment_changed';
+        !== Combat.kitEvents(s).join(':'))) return 'raid_equipment_changed';
     for (const s of members.filter(s => role(s) !== 'healer')) {
         const expected = objective.assessment?.shotPlans?.find(p => p.id === id(s));
         const plan = Shots.planForState(s);

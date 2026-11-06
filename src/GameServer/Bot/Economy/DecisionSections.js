@@ -225,7 +225,7 @@ function sectionNames(bits) {
     return names;
 }
 // The kit fact of a view: class, level, worn gear, hennas, skills, the hot
-// capture (view.kitHashes: ColdCombatProfile.kitHash of combatView's parts,
+// capture (view.kitHashes: ColdCombatProfile.kitEvents, a hash of each of combatView's parts,
 // hashed once per view), the craft
 // (level, station, workshop), the soul crystal quest and the karma flip that
 // closes the towns. Effects and night are no economy input, so a buff or the
@@ -238,7 +238,7 @@ function kitFact(view) {
 // The kit part of the far reader (stateView), without the bag scan.
 function kitView(state) {
     const stats = state.stats || {};
-    return { kitHashes: CombatProfile.kitHash(CombatProfile.combatView(state)), craftLevel: Number(state.craftLevel ?? stats.dwarvenCraftLevel) || 0,
+    return { kitHashes: CombatProfile.kitEvents(state), craftLevel: Number(state.craftLevel ?? stats.dwarvenCraftLevel) || 0,
         craftStationId: stats.craftStationId ?? null, workshop: stats.workshop,
         soulCrystalQuest: !!stats.soulCrystalQuest, closesTowns: Karma.closesTowns(stats.karma) };
 }

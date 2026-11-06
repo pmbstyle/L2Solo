@@ -444,7 +444,7 @@ function readyProfiles(profiles, state, timestamp) {
 // What a solo bot's matchup verdicts read of it, as one string: a verdict
 // kept over a spot stands while this reads the same. The solo array
 // (stateProfiles at a timestamp, heldSolo's inputs) is the kit (the stored
-// profile, one object while ColdCombatProfile.kitHash's parts hold: class,
+// profile, one object while ColdCombatProfile.kitEvents' parts hold: class,
 // level, gear, hennas, skills, capture), survivalKnown, the shot and the
 // servitor: of the shot the verdicts read the kind (actionShot), of the
 // servitor its profile at this moment (HP, MP, cooldowns, a summon's
@@ -457,7 +457,7 @@ function soloVerdictKey(state, timestamp, ready = false) {
         || !state.inventory) return null;
     if (state.vitals?.hp === 0 || state.activity === 'dead') return 'dead';
     const Cold = coldCombatProfile();
-    const kitHashes = Cold.kitHash(Cold.combatView(state));
+    const kitHashes = Cold.kitEvents(state);
     const kit = Cold.profileFor(state, timestamp, { kitHashes });
     let servitor;
     if (ready) {

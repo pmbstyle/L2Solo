@@ -865,7 +865,8 @@ async function run() {
     } finally { ScopedProviders.build = build; }
     console.log('PASS candidate read scopes');
     // The build's memos (inventory row keys, the kit fact) end with it: a row
-    // changed after the build reads fresh.
+    // changed after the build (a new bag: states are replaced, not edited in
+    // place) reads fresh.
     // A nested build of another bot leaves the outer build's keys exact.
     {
         const T = Date.now(), deps = { timestamp: T }, Sections = invoke('GameServer/Bot/Economy/DecisionSections');
@@ -887,10 +888,10 @@ async function run() {
         } finally { ScopedProviders.build = build; }
         assert(outer, 'the build reached its providers');
         assert.equal(nested, kitBefore, 'a nested build of another bot leaves the outer build\'s keys');
-        state.inventory[worn].enchant = 3;
-        const fresh = structuredClone(state);
-        assert.equal(Sections.kit(state), Sections.kit(fresh), 'the kit reads the changed row');
-        assert.notEqual(Sections.kit(state), kitBefore);
+        const changed = { ...state, inventory: { ...state.inventory, [worn]: { ...state.inventory[worn], enchant: 3 } } };
+        const fresh = structuredClone(changed);
+        assert.equal(Sections.kit(changed), Sections.kit(fresh), 'the kit reads the changed row');
+        assert.notEqual(Sections.kit(changed), kitBefore);
         Economy.forget(state.characterId);
     }
     console.log('PASS build memos end with the build / nested build');

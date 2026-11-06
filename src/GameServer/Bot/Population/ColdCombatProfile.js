@@ -26,6 +26,7 @@ const SkillModel = invoke('GameServer/Model/Skill');
 const NpcSkills = invoke('GameServer/Npc/NpcSkills');
 const RAID_MINIONS = require('../../../../data/Npcs/Minions/c4_raid_bosses.json');
 const PopulationConfig = invoke('GameServer/Bot/Population/PopulationConfig');
+const FailureLog = require('../../../FailureLog');
 const Diagnostics = require('../Economy/EconomyDiagnostics');
 const HennaRules = invoke('GameServer/Henna/HennaRules');
 const C4WeaponSA = invoke('GameServer/Items/C4WeaponSA');
@@ -1300,10 +1301,53 @@ function wornPart(inventory, known = {}) {
     }
     return rows.sort().join(',');
 }
+// The worn part per inventory object, with its hash: it reads only the equipped
+// rows (selfId, amount, slots, instances, enchant) and the item templates
+// (DataCache.items and its length, checked on a hit: a reload or a page grown
+// into it). Rule: a worn row is never edited in place; a gear change writes a
+// new bag (cold updates replace the inventory object, as VisibleStrength.
+// stateLook relies on); the one bag edited in place, a fight's own copy,
+// changes only shot amounts (BackgroundResolver.spendColdShot). A breach is
+// seen under developer diagnostics: each hit is checked against a fresh
+// build, a mismatch counted (FailureLog kit_cache.stale) and answered fresh.
+const wornParts = new WeakMap();
+const NO_INVENTORY = Object.freeze({ text: 'no-inventory', worn: false, hash: fnv1a32('no-inventory') });
+function wornEntry(inventory) {
+    if (!inventory || typeof inventory !== 'object') return NO_INVENTORY;
+    const held = wornParts.get(inventory);
+    const known = {}, current = held?.items === DataCache.items && held.length === DataCache.items?.length
+        && !(PopulationConfig.developerDiagnostics && staleHit('worn', held.text, wornPart(inventory, known)));
+    if (current) return held;
+    const text = wornPart(inventory, known);
+    const entry = { items: DataCache.items, length: DataCache.items?.length, text, worn: known.worn === true, hash: fnv1a32(text) };
+    wornParts.set(inventory, entry);
+    return entry;
+}
+// A held kit part that no longer matches its fresh build (developer diagnostics).
+function staleHit(part, held, fresh) {
+    if (held === fresh) return false;
+    FailureLog.note('kit_cache.stale', new Error(`ColdCombatProfile ${part} part held ${held}, built ${fresh}`));
+    return true;
+}
 // The skills of a capture (stats.coldCombat).
 function skillsPart(saved) {
     const source = ['database', 'hot'].includes(saved.skillSource) ? 'learned' : saved.skillSource;
     return Array.isArray(saved.skills) ? `${source}:${saved.skills.map(skill => `${skill.selfId}:${skill.level}`).sort().join(',')}` : '';
+}
+// The skills part per skills array, with its hash: it reads the array's rows
+// (selfId, level) and the capture's skillSource, checked on a hit. Rule: a
+// capture writes a new array, none edits one in place (checked as wornEntry).
+const skillsParts = new WeakMap();
+const NO_SKILLS = Object.freeze({ text: '', hash: fnv1a32('') });
+function skillsEntry(saved) {
+    if (!Array.isArray(saved.skills)) return NO_SKILLS;
+    const held = skillsParts.get(saved.skills);
+    if (held && held.source === saved.skillSource
+        && !(PopulationConfig.developerDiagnostics && staleHit('skills', held.text, skillsPart(saved)))) return held;
+    const text = skillsPart(saved);
+    const entry = { source: saved.skillSource, text, hash: fnv1a32(text) };
+    skillsParts.set(saved.skills, entry);
+    return entry;
 }
 // The capture's numbers (stats.coldCombat); setEffects: its armour set
 // effects when the state has no inventory to derive them (savedSetEffects).
@@ -1312,30 +1356,35 @@ function capturePart(saved, setEffects = [], worn = false) {
     // those slots. The hot capture's redundant aggregate is not another kit.
     return JSON.stringify([saved.base || null, saved.henna || null, worn ? null : saved.equipment || null, ...setEffects]);
 }
-// The slow build inputs, no clock: class (saved, current), level, worn gear,
-// hennas, skills, the hot capture. A new array per call.
-function combatView(state) {
+// The slow build inputs, no clock, by name: class (saved, current), level,
+// worn gear, hennas, skills, the hot capture; worn and skills are their held
+// entries (text and hash).
+function kitParts(state) {
     const saved = state.stats?.coldCombat || {};
     const currentClassId = number(state.stats?.classId, number(state.classId));
     // Main publishes the current class in stats; worker hydration may also
     // carry its alias at the root. Both forms have the same native build.
-    const known = {}, worn = wornPart(state.inventory, known);
-    const hennas = [0, 1, 2].map(slot => number(state.stats?.hennas?.[slot]));
-    return [number(saved.classId, currentClassId), currentClassId, state.level, worn,
-        hennas.join(','), skillsPart(saved), capturePart(saved, savedSetEffects(state), known.worn)];
+    const worn = wornEntry(state.inventory);
+    return { savedClassId: number(saved.classId, currentClassId), currentClassId, level: state.level, worn,
+        hennas: `${number(state.stats?.hennas?.[0])},${number(state.stats?.hennas?.[1])},${number(state.stats?.hennas?.[2])}`,
+        skills: skillsEntry(saved), capture: capturePart(saved, savedSetEffects(state), worn.worn) };
+}
+// The kit parts' texts in their order, a new array per call. kitEvents hashes
+// the same parts in the same order.
+function combatView(state) {
+    const kit = kitParts(state);
+    return [kit.savedClassId, kit.currentClassId, kit.level, kit.worn.text, kit.hennas, kit.skills.text, kit.capture];
 }
 function buildHash(text) {
     return fnv1a32(text) * 2 ** 21 + (fnv1a32(text, 0x9e3779b9) & 0x1fffff);
 }
-// One small hash per kit part (combatView's), no clock, in a new array: the
-// kit fact (DecisionSections.factsOf) and the kit profile store's hash.
-function kitHash(parts) {
-    const hashes = new Array(parts.length);
-    for (let index = 0; index < parts.length; index++) hashes[index] = fnv1a32(String(parts[index]));
-    return hashes;
-}
+// One small hash per kit part, in combatView's order, no clock, in a new
+// array: the kit fact (DecisionSections.factsOf) and the kit profile store's
+// hash. Worn and skills give their held hashes.
 function kitEvents(state = {}) {
-    return kitHash(combatView(state));
+    const kit = kitParts(state), hash = part => fnv1a32(String(part));
+    return [hash(kit.savedClassId), hash(kit.currentClassId), hash(kit.level), kit.worn.hash, hash(kit.hennas),
+        kit.skills.hash, hash(kit.capture)];
 }
 // The stat sources of a fighter (whose profile is the one read) at a hit's
 // time, held on the fighter for its fight (fightSources);
@@ -1505,7 +1554,7 @@ function kitStoreSize() { return kitProfiles.size; }
 
 module.exports = {
     PROFILE_VERSION, classIdOf, capture, legacySnapshot, treeSnapshot, profileFor, buildCount, buildMs, withBuildSite,
-    fightProfile, heldFightProfile, currentCp, seedSnapshot, oldSeedRepair, candidateProfiles, fightSources, combatView, kitHash, skillsFor, forgetBuild, kitStoreSize,
+    fightProfile, heldFightProfile, currentCp, seedSnapshot, oldSeedRepair, candidateProfiles, fightSources, combatView, kitEvents, skillsFor, forgetBuild, kitStoreSize,
     isAttackSkill, offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect, normalAttackMs,
     spotSpawns, npcForSpot, killDraw, killChances, npcCombatStats, npcVulnerability, npcTraitResist, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
     statMultiplier: multiplier, statAdd: add, hitStatAdd, statSources,
