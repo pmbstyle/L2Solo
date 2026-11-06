@@ -31,6 +31,7 @@ const Statements = require('./DatabaseStatements');
 const MarketTradeOverview = require('./MarketTradeOverview');
 const EconomyJournal = require('./EconomyJournal');
 const ClanReviewInputs = require('./GameServer/Clan/ClanReviewEvents');
+const ClanActionScheduler = require('./GameServer/Clan/ClanActionScheduler');
 const PvpJournal = require('./PvpJournal');
 const CheckpointCoordinator = require('./DatabaseCheckpointCoordinator');
 const HistoryStore = require('./HistoryStore');
@@ -2409,6 +2410,15 @@ function resolveClanActionUnsafe(action, status, result, reasonCode) {
         status,
         action: resolved
     };
+}
+
+function clanActionScheduleUnsafe() {
+    return jsonObject(one('SELECT value FROM world_meta WHERE key = ?', [ClanActionScheduler.key])?.value);
+}
+
+function saveClanActionScheduleUnsafe(state) {
+    write(`INSERT INTO world_meta(key, value) VALUES(?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [ClanActionScheduler.key, JSON.stringify(state)]);
 }
 
 // A new pending clan action. Its actionKey stays unique across live and
@@ -9801,13 +9811,12 @@ const Database = {
             const leaseUntil = timestamp + Math.max(1000, Math.floor(Number(leaseMs) || 120000));
             const recovery = write(`UPDATE clan_actions SET status = 'pending', leaseUntil = NULL, updatedAt = ?
                 WHERE status = 'running' AND leaseUntil IS NOT NULL AND leaseUntil <= ?`, [timestamp, timestamp]);
-            // One priority point per ready minute prevents fresh planning work
-            // from indefinitely starving supplies and progression actions.
-            const pending = one(`SELECT * FROM clan_actions
-                WHERE status = 'pending' AND availableAt <= ?
-                ORDER BY priority + CAST(MAX(0, ? - availableAt) / 60000 AS INTEGER) DESC,
-                    availableAt ASC, id ASC LIMIT 1`, [timestamp, timestamp]);
-            if (!pending) {
+            // Read only the active queue's scheduling columns, never payloads
+            // or terminal history. The cursor commits with the exact lease,
+            // surviving restarts and rolling back with a failed admission.
+            const selection = ClanActionScheduler.select(all(`SELECT id, actionType, status, priority, availableAt
+                FROM clan_actions WHERE status IN ('pending', 'running')`), clanActionScheduleUnsafe(), timestamp);
+            if (selection.actionId === null) {
                 return {
                     action: null,
                     recovered: Number(recovery.affectedRows || 0)
@@ -9815,16 +9824,18 @@ const Database = {
             }
             const updated = write(`UPDATE clan_actions
                 SET status = 'running', attempt = attempt + 1, leaseUntil = ?, updatedAt = ?
-                WHERE id = ? AND status = 'pending'`, [leaseUntil, timestamp, Number(pending.id)]);
+                WHERE id = ? AND status = 'pending'`, [leaseUntil, timestamp, selection.actionId]);
+            const action = Number(updated.affectedRows || 0) === 1
+                ? one('SELECT * FROM clan_actions WHERE id = ?', [selection.actionId]) : null;
+            if (action) saveClanActionScheduleUnsafe(ClanActionScheduler.recordClaim(selection, action));
             return {
-                action: Number(updated.affectedRows || 0) === 1
-                    ? one('SELECT * FROM clan_actions WHERE id = ?', [Number(pending.id)])
-                    : null,
+                action,
                 recovered: Number(recovery.affectedRows || 0)
             };
         }, 'clan-action:claim-one');
     },
-    releaseClanAction({ actionId, availableAt = null, expectedAttempt = null, expectedLeaseUntil = null } = {}) {
+    releaseClanAction({ actionId, availableAt = null, expectedAttempt = null, expectedLeaseUntil = null,
+        continuation = false, unstarted = false } = {}) {
         const id = Number(actionId);
         if (!id) return Promise.resolve({ ok: false, code: 'invalid_clan_action' });
         return inTransaction(() => {
@@ -9852,6 +9863,12 @@ const Database = {
                 dueAt, timestamp, id, expectedAttemptValue, expectedLeaseValue
             ]);
             if (Number(updated.affectedRows || 0) !== 1) return { ok: false, code: 'ownership_conflict', actionId: id };
+            if (unstarted === true) {
+                const schedule = clanActionScheduleUnsafe();
+                const refunded = ClanActionScheduler.refundClaim(schedule, action);
+                if (refunded !== schedule) saveClanActionScheduleUnsafe(refunded);
+            } else if (continuation === true) saveClanActionScheduleUnsafe(
+                ClanActionScheduler.continueAction(clanActionScheduleUnsafe(), id));
             return {
                 ok: true,
                 actionId: id,
