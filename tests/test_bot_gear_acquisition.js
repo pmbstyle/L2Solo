@@ -1084,7 +1084,7 @@ const nativeMaterialState = { ...structuredClone(mage), characterId: 71002, aden
     phase: 'cold', activity: 'hunting', updatedAt: 1000,
     vitals: { hp: 1000, maxHp: 1000, mp: 1000, maxMp: 1000 },
     stats: { ...mage.stats, exp: DataCache.experience[39] + 1, equipmentPlan: {
-        status: 'active', strategy: 'craft', marketFallback: true,
+        status: 'active', strategy: 'craft',
         recipeId: target.recipe.recipeId, next: { itemId: 1869 },
         materials: [{ selfId: 1869, missing: 4 }]
     } } };

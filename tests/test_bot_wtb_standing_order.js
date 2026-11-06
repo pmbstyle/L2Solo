@@ -89,7 +89,7 @@ try {
     // A legacy craft material plan cannot manufacture the current leaf;
     // its original retry window remains an independent negative.
     const crafting = (stats = {}) => ({ ...resting(999), stats: { generatedCold: true, classId: 0, ...stats,
-        equipmentPlan: { status: 'active', strategy: 'craft', recipeId: 1, marketFallback: true,
+        equipmentPlan: { status: 'active', strategy: 'craft', recipeId: 1,
             target: { selfId: 999, slot: 11 }, next: { itemId: PIECE_BONE_GAITERS, amount: 2 },
             materials: [{ selfId: PIECE_BONE_GAITERS, amount: 2, missing: 2 }] } } });
     state = (await nativeChoice.capture(crafting(), {}, 'original_craft_plan')).state;

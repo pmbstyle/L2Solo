@@ -51,23 +51,36 @@ async function run() {
     assert.strictEqual(Planner.abandonAcquisition(clanState, 75, now), clanState,
         'an individual purchase timeout must not cancel a clan-owned objective');
 
+    // A craft route stalls after STALL_KILLS kills that collect nothing, whatever the time.
+    const killed = (value, kills) => ({ ...value, stats: { ...value.stats, fightsWon: kills } });
     const stamped = Planner.finalizePlan(state, null, plan, {}, now);
-    const stalled = Planner.replanContextFor(state, stamped, now + 5 * 3600000);
+    assert.deepStrictEqual(stamped.stall, { kills: Planner.STALL_KILLS, kind: 'craft' });
+    assert.strictEqual(Planner.replanContextFor(killed(state, Planner.STALL_KILLS - 1), stamped, now + 50 * 3600000).failure, null,
+        'fewer kills than the stall: no failure, however long');
+    const stalled = Planner.replanContextFor(killed(state, Planner.STALL_KILLS), stamped, now + 1);
     assert.strictEqual(stalled.failure.reason, 'craft_stalled');
     assert(stalled.excludedMaterialIds.includes(75));
-    const progressState = { ...state, inventory: { 75: { selfId: 75, amount: 1 } } };
-    assert.strictEqual(Planner.replanContextFor(progressState, stamped, now + 5 * 3600000).failure, null,
-        'actually acquiring a component must prevent a no-progress timeout');
+    // The far step that crosses the stall raises source_stalled once (the build judges it).
+    const Situations = invoke('GameServer/Bot/Situations');
+    const planned = value => ({ ...value, activity: 'hunting', stats: { ...value.stats, equipmentPlan: stamped } });
+    const step = (from, to) => Situations.detect(planned(killed(state, from)), planned(killed(state, to)));
+    assert(step(Planner.STALL_KILLS - 5, Planner.STALL_KILLS).includes('source_stalled'), 'the crossing raises source_stalled');
+    assert(!step(Planner.STALL_KILLS, Planner.STALL_KILLS + 5).includes('source_stalled'), 'past the crossing nothing more');
+    assert(!step(0, 5).includes('source_stalled'), 'before it nothing');
+    const progressState = killed({ ...state, inventory: { 75: { selfId: 75, amount: 1 } } }, Planner.STALL_KILLS);
+    assert.strictEqual(Planner.replanContextFor(progressState, stamped, now + 1).failure, null,
+        'actually acquiring a component must prevent a no-progress stall');
     const refreshed = Planner.finalizePlan(progressState, stamped, plan, {}, now + 5 * 3600000);
     assert.strictEqual(refreshed.acquisitionProgress.at, now + 5 * 3600000);
+    assert.strictEqual(refreshed.stall.kills, 2 * Planner.STALL_KILLS, 'progress moves the stall on by its kills');
     const cappedBaseline = Planner.finalizePlan(progressState, null, plan, {}, now);
-    const excessState = { ...state, inventory: { 75: { selfId: 75, amount: 2 } } };
-    assert.strictEqual(Planner.replanContextFor(excessState, cappedBaseline, now + 5 * 3600000).failure?.reason,
+    const excessState = killed({ ...state, inventory: { 75: { selfId: 75, amount: 2 } } }, 2 * Planner.STALL_KILLS);
+    assert.strictEqual(Planner.replanContextFor(excessState, cappedBaseline, now + 1).failure?.reason,
         'craft_stalled', 'extra copies beyond recipe needs must not hide a missing component');
     const acquiredPlan = { ...plan, next: { itemId: 75, amount: 1, requiredTotal: 1 } };
     assert.strictEqual(Planner.bestSourceForPlan(progressState, acquiredPlan, []), null,
         'an acquired ingredient must stop retaining its old farming route');
-    const legacy = Planner.replanContextFor(state, plan, now + 5 * 3600000);
+    const legacy = Planner.replanContextFor(killed(state, 10 * Planner.STALL_KILLS), plan, now + 5 * 3600000);
     assert.strictEqual(legacy.failure, null, 'legacy craft plans need a progress baseline first');
 
     // A ready intermediate recipe is cheaper than farming its rare full drop.
@@ -83,7 +96,7 @@ async function run() {
     assert.strictEqual(missingRoutes, null, 'a recipe with unavailable pieces is not an available route');
     const needs = invoke('GameServer/Bot/Goals/NeedsEvaluator');
     const nestedState = { ...state, activity: 'hunting', inventory: { 1869: { selfId: 1869, amount: 2 } },
-        stats: { ...state.stats, equipmentPlan: { ...plan, marketFallback: true,
+        stats: { ...state.stats, equipmentPlan: { ...plan,
             next: { itemId: 1869, amount: 3, requiredTotal: 3 } } } };
     // The common economy now owns the missing quantity. The goal adapter
     // forwards its selected shopping leaf and resolves the displayed name.

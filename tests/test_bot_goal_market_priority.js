@@ -83,7 +83,6 @@ async function run() {
         stats: {
             marketRetryAfter: now + 1,
             equipmentPlan: {
-                marketFallback: true,
                 next: { itemId: 1880 },
                 materials: [{ selfId: 1880, missing: 20 }]
             }

@@ -358,9 +358,7 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], timestamp = Da
         && (previousPlan.materials || []).some(row => Number(state.inventory?.[row.selfId]?.amount || 0) > 0);
     const acquisitionPlan = retainedInputs ? deferredWishPlan(previousPlan, replanContext, state, timestamp) : withRetainedCraftPreparation(state, previousPlan, withMarketCraftPreparation(state, previousPlan, withBridgeInputPreparation(state, previousPlan, {
         ...finalizedPlan,
-        ...(finalizedPlan.target?.selfId === wishTargetId ? { target: { ...finalizedPlan.target, slot: Number(chosen.object.slot) } } : {}),
-        marketFallback: finalizedPlan.status === 'active' && finalizedPlan.strategy === 'craft'
-            && Number(finalizedPlan.acquisitionProgress?.at || finalizedPlan.startedAt || timestamp) + 20 * 60 * 1000 <= timestamp
+        ...(finalizedPlan.target?.selfId === wishTargetId ? { target: { ...finalizedPlan.target, slot: Number(chosen.object.slot) } } : {})
     }, timestamp), timestamp), timestamp);
     const result = { acquisitionPlan: { ...acquisitionPlan },
         replanContext, reusablePartyRequest, excludedSpotIds, planKey };

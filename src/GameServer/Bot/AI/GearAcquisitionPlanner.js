@@ -1483,10 +1483,21 @@ function partyRouteFailure(state = {}, plan = {}, timestamp = Date.now()) {
     };
 }
 
-// Keep the failure on the acquisition plan so it survives travel, idle ticks
-// and restarts, including ticks where there is no alternative equipment.
-function acquisitionCooldown(state) {
-    return (120 + Math.abs(Number(state.characterId || 0)) % 121) * 60000;
+// A craft route stalls when its kit collects nothing for STALL_KILLS kills (ours:
+// about 2-4 h of a far hunter's fights, limits.md "Craft route stall"). The plan
+// stamps where it stalls (finalizePlan, equipmentPlan.stall: { kills, kind }, the
+// far kill count stats.fightsWon); Situations.detect raises source_stalled once as
+// the count crosses it, and the build judges the stall (craftPlanFailure). Kept on
+// the plan so it survives travel, idle steps and restarts. No clock.
+const STALL_KILLS = 300;
+const killsOf = state => Math.max(0, Number(state?.stats?.fightsWon) || 0);
+function stallFor(state, kind) {
+    return { kills: killsOf(state) + STALL_KILLS, kind };
+}
+// The far kill count crossed the plan's stall between two states (detect).
+function stallCrossed(before, after) {
+    const stall = after?.stats?.equipmentPlan?.stall;
+    return Number(stall?.kills) > 0 && !!before?.stats && killsOf(before) < stall.kills && killsOf(after) >= stall.kills;
 }
 
 function abandonAcquisition(state, itemId, timestamp = Date.now(), reason = 'market_unfilled') {
@@ -1527,10 +1538,10 @@ function craftProgress(state, plan) {
     )));
 }
 
-function craftPlanFailure(state, plan, timestamp) {
+function craftPlanFailure(state, plan) {
     if (plan?.status !== 'active' || plan.strategy !== 'craft' || isClanOwnedPlan(plan)) return null;
     const progress = plan.acquisitionProgress;
-    if (!progress || timestamp - Number(progress.at) < acquisitionCooldown(state)) return null;
+    if (!progress || !(killsOf(state) >= Number(plan.stall?.kills ?? Infinity))) return null;
     const amounts = craftProgress(state, plan);
     if (Object.entries(amounts).some(([id, amount]) => amount > Number(progress.amounts?.[id] || 0))) return null;
     return { targetId: Number(plan.target?.selfId), itemId: Number(plan.next?.itemId),
@@ -1569,7 +1580,7 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
         && entry.reason === 'combat_unviable' && Number(entry.targetId) === Number(previousPlan?.target?.selfId));
     const failure = (!recordedFailure && directPlanFailure(state, previousPlan, timestamp))
             || partyRouteFailure(state, previousPlan, timestamp)
-            || craftPlanFailure(state, previousPlan, timestamp);
+            || craftPlanFailure(state, previousPlan);
     if (failure) {
         const recovery = {
             targetId: failure.targetId,
@@ -1677,7 +1688,8 @@ function finalizePlan(state = {}, previousPlan = null, rawPlan = {}, context = {
     return {
         ...rawPlan,
         grade: rawPlan.grade || gradeForLevel(state.level),
-        ...(amounts ? { acquisitionProgress: progressed ? { at: timestamp, amounts } : previousProgress } : {}),
+        ...(amounts ? { acquisitionProgress: progressed ? { at: timestamp, amounts } : previousProgress,
+            stall: progressed || !previousPlan?.stall ? stallFor(state, 'craft') : previousPlan.stall } : {}),
         // Clan-owned gear objectives must survive the normal solo replan. The
         // route/item may be refreshed, but ownership of the beneficiary goal
         // remains durable until the target is equipped.
@@ -3285,6 +3297,8 @@ function withReadiness(fn) {
     return readinessScoped(fn)();
 }
 module.exports.withReadiness = withReadiness;
+module.exports.STALL_KILLS = STALL_KILLS;
+module.exports.stallCrossed = stallCrossed;
 module.exports.acquisitionTargetAllowed = acquisitionTargetAllowed;
 module.exports.sourceCacheSize = sourceCacheSize;
 module.exports.sourceYieldReaderFor = sourceYieldReaderFor;

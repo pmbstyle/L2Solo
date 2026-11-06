@@ -81,6 +81,9 @@ const SITUATIONS = Object.freeze({
     // What main refused at the act or a body that failed its step five times: the plan
     // cannot stand.
     goal_failed: link(['sources'], 0),
+    // The gear plan's craft route collected nothing for its stall's kills (the far
+    // kill count crossed equipmentPlan.stall, GearAcquisitionPlanner.stallCrossed).
+    source_stalled: link(['sources'], 0),
     // What an executor proved of the held plan where it acts: its goal reached (a
     // purchase landed, a paid piece waits for its exchange), a town visit's step
     // refused (a review main could not run). Sections until the build moves to
@@ -479,6 +482,7 @@ function factNames(previousFact, current, funding = false, planned = false) {
     if (previousFact('warehouse') !== current.warehouse) add('warehouse');
     return names;
 }
+let Planner = null;
 // The step's fact diff, one function for both threads (a far step's projection,
 // BotLifeState.prepareResolve; a near bot's post): the situations of its own state
 // against the decision's baseline (stats.wishSections), a fact the baseline lacks
@@ -514,6 +518,8 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, fa
     if (out) { out.facts = current; out.funding = fundingAfter; }
     const names = factNames(previousFact, current, funding, body || Sections.occupationPlanned(after, leaf));
     if (unhuntable) names.push('spot_empty');
+    // lazy: the planner loads spot modules that read this catalogue.
+    if ((Planner ||= invoke('GameServer/Bot/AI/GearAcquisitionPlanner')).stallCrossed(before, after)) names.push('source_stalled');
     // A body near a player hears its full bag too (its post's previous facts: bagFull, weight).
     return body || gated(place(after, before)) ? names.concat(needsOpened(before, names, view, facts)) : names;
 }
