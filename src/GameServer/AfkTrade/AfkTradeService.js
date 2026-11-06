@@ -702,10 +702,16 @@ async function publishBot(ownerId, config) {
 }
 
 // The owner's own move took from or gave back to its bag: the actor and the
-// bot's cold state follow (the author's sync after a publish).
+// bot's cold state follow (the author's sync after a publish). Returns ownRow's.
 function syncOwnerAfterMove(ownerId, result) {
     syncOnlineInventory(ownerId, result.ownerInventory);
-    acceptFenced(result, ownerId);
+    return ownRow(result, ownerId, acceptFenced(result, ownerId));
+}
+// The bot's row this move wrote, as accepted: null when it wrote none or a newer
+// row stands already (a caller's economy plan hands on only its own write).
+function ownRow(result, ownerId, accepted) {
+    const row = result.coldLifeRows?.[Number(ownerId)];
+    return row && accepted && Number(accepted.simulation?.revision) === Number(row.simulationRevision) ? accepted : null;
 }
 
 // A bot's records of one kind become `configs` in one move (its buy ads
@@ -739,8 +745,8 @@ async function openBotRecords(ownerId, kind, configs) {
     const characterId = Number(ownerId);
     const result = await Database.openBoardRecords(characterId, kind, configs);
     result.opened.forEach(refreshRecord);
-    syncOwnerAfterMove(characterId, result);
-    return result;
+    const written = syncOwnerAfterMove(characterId, result);
+    return written ? { ...result, state: written } : result;
 }
 
 // The owner withdraws one of its records; what it holds comes back.
@@ -794,22 +800,23 @@ async function repriceBotLines(ownerId, reprices = [], { withdrawals = [], updat
         skipped: reprices.length + withdrawals.length + updates.length };
     const result = await Database.repriceBoardLines(ownerId, owned,
         { withdrawals: leaving, updates: observations, coldAuthority, hotAuthority, canCommitReview });
-    syncAfterReprice(ownerId, result);
+    const written = syncAfterReprice(ownerId, result);
     result.shops.forEach(refreshRecord);
     return { changed: result.changed, updated: result.updated,
         skipped: reprices.length - owned.length + withdrawals.length - leaving.length
-            + updates.length - observations.length + result.skipped.length };
+            + updates.length - observations.length + result.skipped.length, ...(written ? { state: written } : {}) };
 }
 
 // A reprice that moved an item or Adena: the actor and the bot's cold state
 // follow its bag (the author's sync after a publish). A price-only change
-// moved nothing: no inventory to read, no state to save.
+// moved nothing: no inventory to read, no state to save. Returns ownRow's.
 function syncAfterReprice(ownerId, result) {
-    if (!result.ownerInventory) return;
+    if (!result.ownerInventory) return null;
     syncOnlineInventory(ownerId, result.ownerInventory);
     const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
-    acceptFenced(result, ownerId);
+    const written = ownRow(result, ownerId, acceptFenced(result, ownerId));
     invoke('GameServer/Bot/Economy/BotAfkMarketService').rememberInventory(ownerId, LifeState.snapshot(ownerId));
+    return written;
 }
 
 // A failed publish or relocation leaves the owner's shop as it was: its place

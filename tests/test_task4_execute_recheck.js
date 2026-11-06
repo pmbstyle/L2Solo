@@ -90,6 +90,25 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
         assert.equal(shots, 0, 'a stale shot step is not executed');
         await Market.executePlan(fresh, { shot: [1] });
         assert.equal(shots, 1, 'a held shot step is executed');
+        // The plan's own craft writes the row: its later bids stand on it (no stale plan, no
+        // failed goal for the worker); a write by anyone else before the plan still stales them.
+        restore.pop()();
+        stub(ShotEconomy, 'execute', async () => { shots++; return Life.upsertState({ ...Life.cachedState(owner) }, 'probe_craft'); });
+        const beforeCraft = Life.cachedState(owner);
+        const crafted = await Market.executePlan(beforeCraft, { shot: [1], buyAds: [] });
+        assert.equal(shots, 2, 'the craft step ran');
+        assert.notEqual(Life.cachedState(owner).simulation.revision, beforeCraft.simulation.revision, 'fixture: the craft wrote the row');
+        assert.notEqual(crafted.buyPending, true, 'its own write does not stale the plan\'s bids');
+        // A write by another that lands after the step's own (while the step still runs) stales them.
+        restore.pop()();
+        stub(ShotEconomy, 'execute', async () => { shots++; const own = await Life.upsertState({ ...Life.cachedState(owner) }, 'probe_craft');
+            await Life.upsertState({ ...Life.cachedState(owner) }, 'probe_outside'); return own; });
+        assert.equal((await Market.executePlan(Life.cachedState(owner), { shot: [1], buyAds: [] })).stale, true,
+            'a write by another after the craft\'s own stales the plan\'s bids');
+        const moved = Life.cachedState(owner);
+        await Life.upsertState({ ...moved }, 'probe_outside');
+        assert.equal((await Market.executePlan(Life.cachedState(owner), { buyAds: [] }, { preparedState: moved })).stale, true,
+            'a write by another before the plan stales its bids');
 
         // 7. A meeting settles: its goods reach the bag and every settlement
         //    writer replies with the projected SQL row in the same transaction

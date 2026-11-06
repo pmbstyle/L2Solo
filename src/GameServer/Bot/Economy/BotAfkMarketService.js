@@ -760,7 +760,7 @@ async function listSellAds(ownerId, state, listings, shop, inventory, options = 
     if (!configs.length) return { listed: 0 };
     try {
         const result = await AfkTrade.openBotRecords(ownerId, 'sell_ad', configs);
-        return { listed: result.opened.length };
+        return { listed: result.opened.length, ...(result.state ? { state: result.state } : {}) };
     } catch (error) {
         const reason = listingRefusal(error);
         if (reason) return { listed: 0, reason };
@@ -774,11 +774,27 @@ async function listSellAds(ownerId, state, listings, shop, inventory, options = 
 async function executePlan(state, plan, { step = work => work(), beforeWrite = () => {}, preparedState = state, reviewGoal = true } = {}) {
     if (state.stats?.tradeMeeting || invoke('GameServer/AfkTrade/TradeMeetingService').hasPreparation(state.characterId)) return { state, pending: true };
     const ownerId = Number(state.characterId);
-    const authority = EconomyCommit.authority(preparedState);
-    const stillPrepared = () => EconomyCommit.sameAuthority(EconomyCommit.authority(LifeState.cachedState(ownerId) || state), authority);
+    let authority = EconomyCommit.authority(preparedState);
+    const current = () => EconomyCommit.authority(LifeState.cachedState(ownerId) || state);
+    const stillPrepared = () => EconomyCommit.sameAuthority(current(), authority);
+    // The plan's own steps write the row (a craft, a withdrawal, a listing): what they
+    // moved is its own output, not a change of the need its later steps were prepared on.
+    // A step that began on the prepared row hands on the row its own write returned (its
+    // result's state: same phase and hot time, a newer revision), and only while that row
+    // is still the current one. A write by anyone else (or a phase change) before the step
+    // or after its write leaves the plan stale; a step that returns no row hands on nothing.
     const run = async (work) => {
-        const result = await step(() => Database.withMutationAdmission(beforeWrite, work));
+        let own = null;
+        const result = await step(() => Database.withMutationAdmission(beforeWrite, async () => {
+            const began = stillPrepared() ? authority : null;
+            const value = await work();
+            const wrote = began && value?.state?.simulation ? EconomyCommit.authority(value.state) : null;
+            if (wrote && wrote.phase === began.phase && wrote.hotAt === began.hotAt && wrote.revision > began.revision
+                && EconomyCommit.sameAuthority(current(), wrote)) own = wrote;
+            return value;
+        }));
         state = LifeState.cachedState(ownerId) || result?.state || state;
+        if (own) authority = own;
         return result;
     };
     // No native writer reads accepted incoming. Units that reached the bag or
