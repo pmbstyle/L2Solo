@@ -132,7 +132,9 @@ const postedBag = session => ({ ...session.nearRaise, names: session.nearRaise.n
 // dropped as the body cools. The worker hears them with the bag.
 function detectNear(session, row, escrow = 0) {
     const previous = session.nearFacts, next = {};
-    const names = Situations.detect(previous ? {} : row, row, { escrow, facts: previous?.facts, funding: previous?.funding, out: next, body: true });
+    // lazy: cycle BotLifeState requires this module at its top.
+    const recipes = invoke('GameServer/Bot/Population/BotLifeState').recipeReader(row);
+    const names = Situations.detect(previous ? {} : row, row, { escrow, recipes, facts: previous?.facts, funding: previous?.funding, out: next, body: true });
     // The wallet reaching the build's threshold (stats.affordAt on the posted row): once
     // per threshold, re-armed by the next build's (a far bot's is its step's soft point).
     const afford = row.stats?.wishSections?.affordAt, kind = afford ? Sections.goalReached(row, row.stats.wishSections, escrow) : null;

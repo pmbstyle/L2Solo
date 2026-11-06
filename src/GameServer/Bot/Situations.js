@@ -446,7 +446,9 @@ function factNames(previousFact, current, funding = false, planned = false) {
         const level = previousFact('level');
         add(level !== undefined && level !== current.level ? 'level_up' : 'gear_changed');
     }
-    if (previousFact('recipes') !== current.recipes) add('recipe_learned');
+    // A baseline that read no recipe book (null) has none to compare.
+    const recipes = previousFact('recipes');
+    if (recipes != null && recipes !== current.recipes) add('recipe_learned');
     if (previousFact('relations') !== current.relations) add('relations');
     // A new party or a new role in it reads as joining it.
     if (previousFact('party') !== current.party) add(current.party === readers().NO_PARTY ? 'party_left' : 'party_joined');
@@ -497,7 +499,11 @@ let Planner = null;
 // whose moves are its own (main executes its held decisions): a spot it reaches or
 // leaves is an arrival for the spot aggregate (the background thread's hot arrival
 // hook, the near_spot / near_left posts), not moved_by_world.
-function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, facts = null, funding: fundingBefore, out = null, body = false } = {}) {
+// recipes: a reader of the recipe ids the bot's next build reads (WishProviders.recipeIds
+// over the book its decision reads: the worker's step reads the state's, main the
+// workshop's book), so a recipe learned raises recipe_learned once the decision can
+// read it; none: the recipes the decision kept stand.
+function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, recipes = null, facts = null, funding: fundingBefore, out = null, body = false } = {}) {
     const Sections = readers();
     // Main may replay a validated worker packet that already describes this
     // same round: a newer build's baseline (its own time) is the one compared;
@@ -509,10 +515,11 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, fa
     // A fact the baseline kept as null (no recipe book read) is kept: only a
     // fact the baseline lacks reads the state before.
     const previousFact = key => Object.hasOwn(previous, key) ? previous[key] : (original ||= facts || Sections.semanticFacts(before))[key];
-    // No memory and no recipe book here: the relations and the recipes the
-    // decision kept stand until the next verdict, which reads both; the party with them.
+    // No memory here: the relations the decision kept stand until its next build, which
+    // reads them; the party with them. The recipes as the next build reads them.
     const view = Sections.stateView(after);
-    const current = { ...Sections.factsOf(view), relations: previousFact('relations'), recipes: previousFact('recipes'), party: previousFact('party') };
+    const current = { ...Sections.factsOf(view), relations: previousFact('relations'),
+        recipes: recipes ? Sections.hash(recipes(after)) : previousFact('recipes'), party: previousFact('party') };
     const fundingAfter = out || !previous.funding ? Sections.fundingMark(after) : null;
     const funding = Sections.moneyChanged(after, represented || before.stats?.wishSections, escrow, false)
         || !previous.funding && (fundingBefore ?? Sections.fundingMark(before)) !== fundingAfter;
