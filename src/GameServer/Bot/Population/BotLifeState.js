@@ -1171,7 +1171,7 @@ function recipeReader(state) {
 function raiseOnRow(characterId, raises, reason = 'situation') {
     const id = Number(characterId), cached = cache.get(id), where = Situations.place(cached || { phase: 'cold' });
     const bits = { woken: 0, waiting: 0, leaf: false, cleared: 0, waitCleared: 0 }, each = [];
-    const facts = { earning: cached?.stats?.earning, spotMarks: cached?.stats?.spotMarks }, written = {};
+    const facts = { earning: cached?.stats?.earning, spotMarks: cached?.stats?.spotMarks, gearMarks: cached?.stats?.gearMarks }, written = {};
     // The woken bits as each raise meets them (the cached row's, then this batch's), for the decisions taken.
     let seen = Number(cached?.stats?.woken ?? Situations.ALL);
     for (const { name, payload = null } of raises) {
@@ -1184,7 +1184,7 @@ function raiseOnRow(characterId, raises, reason = 'situation') {
         bits.woken = (bits.woken | one.woken) & ~one.taken; bits.cleared = (bits.cleared | one.taken) & ~one.woken;
         bits.waiting = (bits.waiting | one.waiting) & ~taken; bits.waitCleared = (bits.waitCleared | taken) & ~one.waiting;
         bits.leaf ||= one.leaf;
-        for (const key of ['earning', 'spotMarks']) {
+        for (const key of ['earning', 'spotMarks', 'gearMarks']) {
             if (one.facts[key] !== undefined) facts[key] = written[key] = one.facts[key];
         }
         each.push({ name, payload, one, seen, before });

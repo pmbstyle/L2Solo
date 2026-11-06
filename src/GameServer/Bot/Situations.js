@@ -289,7 +289,13 @@ function delta(name, payload = null, where = OPEN, stats = null) {
 // lazy: cycles both owners load spot modules that read this catalogue.
 let IncomeRoute = null, Risk = null;
 const MARKS = new Set(['spot_unreachable', 'spot_dangerous', 'contest_lost']);
+const GearMarks = require('./AI/GearMarks');
 function raisedFacts(stats, name, payload, dropped = null) {
+    // A gear errand failed where the body acts: its key marked for the gear plan (GearMarks).
+    if (name === 'goal_failed' && payload?.kind === 'gear_errand') {
+        const gearMarks = GearMarks.withMark(stats, payload.key, dropped);
+        return gearMarks ? { gearMarks } : {};
+    }
     if (payload?.spotId == null) return {};
     if (name === 'player_command') return { earning: (IncomeRoute ||=
         invoke('GameServer/Bot/Economy/EquipmentIncomeRoute')).commanded(stats?.earning, payload.spotId, payload.at) };
@@ -303,7 +309,8 @@ const planes = bits => bits | bits << 8;
 function writeFacts(stats, facts) {
     if (facts.earning) stats.earning = facts.earning;
     if (facts.spotMarks) stats.spotMarks = facts.spotMarks;
-    return !!facts.earning || !!facts.spotMarks;
+    if (facts.gearMarks) stats.gearMarks = facts.gearMarks;
+    return !!facts.earning || !!facts.spotMarks || !!facts.gearMarks;
 }
 // A unit (a body, a far bot's kernel record: memory) that needs a spot while its held
 // earning answer names none it may take (none found, marked, full): an existing answer

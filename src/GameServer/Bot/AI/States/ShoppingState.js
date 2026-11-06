@@ -203,11 +203,13 @@ function alternateTownNpcErrand(session, bot, town) {
 }
 
 // A gear errand that failed where the body acts: its step failed (goal_failed, the
-// held step dropped); the body tries no gear errand again until the worker answers
-// that raise (DecisionEvents.failureWaits).
+// held step dropped) and the errand's key is marked (GearMarks: no gear plan or errand
+// takes it again until the bot's next own situation that wakes its gear plan); the
+// body tries no gear errand until the worker answers (DecisionEvents.failureWaits).
 function deferEquipmentRetry(session) {
     if (!['npc_equipment_purchase', 'market_purchase', 'dual_component_withdrawal', 'dual_sword_combine', 'mammon_unseal'].includes(session.companionShopping?.kind)) return;
-    raiseDecision(session, 'goal_failed', { impossible: true });
+    raiseDecision(session, 'goal_failed', { impossible: true,
+        payload: { kind: 'gear_errand', key: require('../GearMarks').errandKey(session.companionShopping) } });
 }
 
 // A refused gear purchase names its cause: the bot only says it could not buy.

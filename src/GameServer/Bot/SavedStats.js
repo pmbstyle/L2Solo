@@ -35,7 +35,7 @@ function compact(stats = {}) {
 // town trip a build decided, held until it starts (PartyMarketBreak.cleanupDecision).
 const MIND_KEYS = Object.freeze(['decisionSeq', 'activityLeaf', 'wishFocus', 'wishSections',
     'dormantWishes', 'money', 'kitRates', 'dangerPrice', 'wishAdvisory', 'woken', 'waiting', 'situationSeq', 'earning',
-    'spotMarks', 'cleanupDue']);
+    'spotMarks', 'gearMarks', 'cleanupDue']);
 
 // A whole stats object (or a stats patch) as its two saved halves.
 // Keys no owner keeps any more, dropped as an old row saves again: wishDirty (the build's

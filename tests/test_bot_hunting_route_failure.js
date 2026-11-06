@@ -196,7 +196,9 @@ try {
         allowed = true;
         const accepted = fixture();
         // A failed gear errand waits for the worker's answer (DecisionEvents.failureWaits).
-        accepted.session.nearRaise = { seq: 1, names: [], impossible: true, impossibleSeq: 1 };
+        const gearFailure = () => ({ seq: 1, names: [{ name: 'goal_failed', payload: { kind: 'gear_errand', key: 1 }, seq: 1 }],
+            impossible: true, impossibleSeq: 1 });
+        accepted.session.nearRaise = gearFailure();
         accepted.session.spotRelocation = undefined;
         accepted.session.townRoutePlan = null;
         accepted.bot.automation = { abortAll() {} };
@@ -240,7 +242,7 @@ try {
         }
         const unreachable = fixture();
         unreachable.session.spotRelocation = undefined;
-        unreachable.session.nearRaise = { seq: 1, names: [], impossible: true, impossibleSeq: 1 };
+        unreachable.session.nearRaise = gearFailure();
         unreachable.session.roleDecision = { reason: 'shopping_route_unreachable' };
         tick(unreachable);
         assert.strictEqual(purchaseTrips, 1, 'a failed physical route is deferred even for stock instead of restarting each tick');

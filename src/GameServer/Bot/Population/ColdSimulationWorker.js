@@ -108,6 +108,7 @@ const SavedStats = require('../SavedStats');
 const { stateKey } = require('./SpotOccupancyIndex');
 const DecisionSections = invoke('GameServer/Bot/Economy/DecisionSections');
 const Situations = invoke('GameServer/Bot/Situations');
+const GearMarks = require('../AI/GearMarks');
 const PartyWaitFallback = invoke('GameServer/Bot/Population/PartyWaitFallback');
 const Protocol = require('./ColdSimulationProtocol');
 const ColdEconomyDecision = require('./ColdEconomyDecision');
@@ -574,16 +575,24 @@ const occupationPlanner = new ColdOccupationPlanner({
         // near bot's decision (mode near) read the economy on the same inputs.
         if (input.mode === 'page' || input.mode === 'near') {
             const routeRows = input.routeRows = input.routeRows || (yield* EconomicTrip.prepare(input.state));
+            // A near body's post decides only when a situation woke its build or
+            // earning spot (the one gate, situations step 4 C6); else its held
+            // decision answers the post. A page reads. A decision its gear plan woke
+            // too is the gear plan's full review, as a far step's (gearPlanTaken).
+            const stats = input.state.stats || {};
+            const decide = input.mode === 'near' && (Situations.woken(stats, 'build') || Situations.woken(stats, 'earning_spot'));
+            const gearReview = decide && Situations.woken(stats, 'gear_plan');
             input.economy = EconomyContext.forState(input.state, {
                 board: input.board, routeRows, workshops: workshopsFor,
                 timestamp: input.timestamp, onSourceRead: input.read, onSourceScope: input.readScope, knownRecipes: input.knownRecipes, npcOffersFor: OccupationSources.npcOffersFor,
-                buyOrderEscrow: input.buyOrderEscrow, workshop: noWorkshop(),
-                // A near body's post decides only when a situation woke its build or
-                // earning spot (the one gate, situations step 4 C6); else its held
-                // decision answers the post. A page reads.
-                decide: input.mode === 'near' && (Situations.woken(input.state.stats, 'build')
-                    || Situations.woken(input.state.stats, 'earning_spot')),
+                buyOrderEscrow: input.buyOrderEscrow, workshop: noWorkshop(), decide, fullReview: gearReview,
                 caller: `economy_${input.mode}`, trigger: 'native_own_action' });
+            // The near answer's mind beside the build's packet: the gear plan's review
+            // when taken, and the failed errands' marks either way (the body's errand
+            // planner reads them: CompanionEquipmentShopping.planErrand).
+            if (input.mode === 'near') input.nearMind = gearReview
+                ? gearPlanTaken(stats, input.economy.statsPacket, stats.equipmentPlan, input.state.characterId, 'economy_near')
+                : { gearMarks: stats.gearMarks ?? null };
             // The shared money packet is derived from this same graph. Use it
             // in preparation only; the native writer owns physical funding.
             input.state = { ...input.state, stats: { ...input.state.stats, ...input.economy.statsPacket } };
@@ -746,8 +755,17 @@ function occupationWork(input, iterator) {
 }
 function* nearDecision(input, iterator) {
     const workshop = yield* iterator;
+    const fields = DecisionEvents.nearFields(input.economy, input.state);
     return { workshop, decision: ColdEconomyDecision.capture({ ...input.economy, workshop }, input.state),
-        ...DecisionEvents.nearFields(input.economy, input.state), routeRows: input.routeRows };
+        ...fields, statsPacket: { ...fields.statsPacket, ...input.nearMind }, routeRows: input.routeRows };
+}
+// The gear plan's full review taken (gear_plan, F1), one rule for a far step and a near
+// decision: its bit cleared over the build's packet, and the marks of the errands the bot
+// failed before the situation that woke it dropped (GearMarks.afterReview: planned again).
+// The mind keys it writes.
+function gearPlanTaken(stats, packet, plan, subject, caller) {
+    return { woken: Situations.decided({ ...stats, ...packet, equipmentPlan: plan }, 'gear_plan', { caller, subject }),
+        gearMarks: GearMarks.afterReview(stats) };
 }
 // options: { economy, stock, routeRows, routeKey } a step already holds, and
 // a party goal query's own (main's) buyOrderEscrow and recipeKnowledge;
@@ -2069,10 +2087,12 @@ function startKernel(config = {}) {
                         hasRoom: SpotProfiles.roomFilterFor(kernel.occupancy, planningSpots, [state]) })
                 : null;
             const fallbackSpot = partyFallback?.spot || null;
-            const statsPacket = stepStatsPacket(state, economy, timestamp);
-            // The gear plan's full review taken with the build (gear_plan, F1).
-            if (deps.fullReview && !nullReuse) statsPacket.woken = Situations.decided({ ...state.stats, ...statsPacket, equipmentPlan: acquisitionPlan },
-                'gear_plan', { caller: 'step', subject: state.characterId });
+            // A new packet, never the build's own (stepStatsPacket may return economy.statsPacket,
+            // which the card shares). The gear plan's full review taken with the build (gear_plan,
+            // F1): the errands it failed before the situation that woke it are planned again (GearMarks).
+            let statsPacket = stepStatsPacket(state, economy, timestamp);
+            if (deps.fullReview && !nullReuse) statsPacket = { ...statsPacket,
+                ...gearPlanTaken(state.stats, statsPacket, acquisitionPlan, state.characterId, 'step') };
             const plannedStats = { ...(state.stats || {}), ...statsPacket, equipmentPlan: acquisitionPlan };
             if (partyRequest) plannedStats.partyRequest = partyRequest;
             else delete plannedStats.partyRequest;

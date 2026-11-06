@@ -68,6 +68,36 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
     assert.equal(session.nearRaise?.seq, impossibleSeq + 1, 'the later raise still waits');
     assert.equal(session.nearRaise.impossible, false, 'the answered impossible mark is lifted');
     assert.equal(Events.rejectSession(session, accepted(10)), true, 'a new rejection raises again');
+    // A failed gear errand is its own entry beside a pending goal_failed (its mark is its own
+    // raise's), and its wait ends with the answer that applied it while a later raise still waits.
+    Events.raiseDecision(session, 'goal_failed', { payload: { kind: 'gear_errand', key: 5 } });
+    assert(Events.failureWaits(session), 'the failed gear errand joins the bag and waits for its answer');
+    const errandSeq = session.raiseSeq;
+    Events.raiseDecision(session, 'spot_empty');
+    await coordinator.onMessage(decided('partial', 7, 11, errandSeq));
+    assert(!Events.failureWaits(session), 'the answer that applied it ends the wait');
+    assert.deepEqual(session.nearRaise?.names.map(entry => entry.name), ['spot_empty'], 'the later raise still waits');
+    // The answer carries the worker's gear marks (aged by its gear review): they are the body's,
+    // and an errand failed after the raise it applied keeps its mark until its own answer.
+    const marks = () => (Events.statsFor(session).gearMarks || []).map(mark => mark.key);
+    Events.raiseDecision(session, 'goal_failed', { payload: { kind: 'gear_errand', key: 6 } });
+    const answerWith = (nearSeq, raiseSeq, gearMarks) => Protocol.envelope('ready', 'near-order', { phase: 'economy_decided',
+        characterId: id, economyDecision: Decisions.capture({ network: { activity: { activity: 'hunting', spotId: 'partial' },
+            decisionSeq: 12, activityLeaf: 0 } }, state),
+        near: { statsPacket: { decisionSeq: 12, activityLeaf: 0, money: [1000, .001, 0, 0], gearMarks }, nearSeq, raiseSeq } });
+    await coordinator.onMessage(answerWith(8, errandSeq, [{ key: 5, fresh: false }]));
+    assert.deepEqual(marks(), [5, 6], 'the worker\'s marks, and the unanswered errand\'s');
+    await coordinator.onMessage(answerWith(9, session.raiseSeq, null));
+    assert.deepEqual(marks(), [], 'a review that dropped them drops them on the body');
+    Events.raiseDecision(session, 'spot_empty');
+    // A body that posts nothing (an arena copy) gets no answer: no wait is set, and its mark,
+    // written on its stats, holds the failed errand there.
+    {
+        const silent = { accountId: 'bot_near_order', arenaEphemeral: true, actor, coldLifeState: state };
+        Events.raiseDecision(silent, 'goal_failed', { impossible: true, payload: { kind: 'gear_errand', key: 7 } });
+        assert(!Events.failureWaits(silent), 'no wait for an answer that will not come');
+        assert(invoke('GameServer/Bot/AI/GearMarks').marked(Events.statsFor(silent), 7), 'its mark holds the errand');
+    }
 
     // An executor's raise from inside the bot's own command lands after that command
     // ends (its revision-checked writes first), never mid-command.
@@ -152,7 +182,7 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
     // A decision for a bot that cooled before it came is dropped, and counted.
     const dropped = coordinator.nearDecisions.dropped;
     World.registeredActorById = () => null;
-    await coordinator.onMessage(decided('cooled', 7, 11));
+    await coordinator.onMessage(decided('cooled', 8, 12));
     assert.equal(coordinator.nearDecisions.dropped, dropped + 1);
     assert.equal(spot(), 'partial');
 

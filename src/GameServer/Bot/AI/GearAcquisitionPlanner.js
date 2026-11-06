@@ -1487,6 +1487,7 @@ function partyRouteFailure(state = {}, plan = {}, timestamp = Date.now()) {
 // finalizePlan, judged by craftPlanFailure; kept on the plan so it survives travel,
 // idle steps and restarts.
 const { killsOf, stallFor } = require('./GearStall');
+const GearMarks = require('./GearMarks');
 
 function abandonAcquisition(state, itemId, timestamp = Date.now(), reason = 'market_unfilled') {
     const plan = state.stats?.equipmentPlan;
@@ -1618,8 +1619,9 @@ function replanContextFor(state = {}, previousPlan = null, timestamp = Date.now(
                 : null,
         failure,
         recoveryTargets,
-        excludedTargetIds: recoveryTargets.map((entry) => Number(entry.targetId)),
-        excludedMaterialIds: recoveryTargets.map((entry) => Number(entry.itemId || 0)).filter(Boolean),
+        // The gear errands it failed where it acts (GearMarks) wait for its next review.
+        excludedTargetIds: [...recoveryTargets.map((entry) => Number(entry.targetId)), ...GearMarks.keys(state.stats)],
+        excludedMaterialIds: [...recoveryTargets.map((entry) => Number(entry.itemId || 0)).filter(Boolean), ...GearMarks.keys(state.stats)],
         forceMarketTargetId: Number(failure?.targetId || currentMarketRecovery?.targetId || 0) || null
     };
 }

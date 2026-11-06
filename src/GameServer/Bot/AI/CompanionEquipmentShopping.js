@@ -149,7 +149,14 @@ function merchantTarget(offer, town) {
     return MarketOpportunity.offerTarget(offer, town.name);
 }
 
+// An errand the bot failed is planned no more until its gear plan's next review
+// (GearMarks): none rather than the same errand again.
 function planErrand(session, bot, town, purchaseCount = 0, excludedSlots = [], economy = null) {
+    const errand = errandFor(session, bot, town, purchaseCount, excludedSlots, economy);
+    const Marks = require('./GearMarks');
+    return errand && !errand.pending && Marks.marked(session.coldLifeState?.stats || session.decisionStats, Marks.errandKey(errand)) ? null : errand;
+}
+function errandFor(session, bot, town, purchaseCount = 0, excludedSlots = [], economy = null) {
     if (!town?.name || purchaseCount >= MAX_PURCHASES_PER_VISIT) return null;
     const state = currentState(session, bot, town, economy);
     const unseal = invoke('GameServer/Bot/AI/BotMammonUnseal').plan(session,bot,town,state);
