@@ -4,6 +4,10 @@ const TableChannel = require('../Population/ColdTableChannel').shared;
 
 const TABLE = 'bot_goal_state';
 const cache = new Map();
+// An errand the bot's own decision left (NeedsEvaluator market_errand: CombinedErrands'
+// purpose); a clan's and a raid preparation's come from outside it.
+const OUTSIDE_ERRANDS = new Set(['clan', 'raid_supply']);
+const ownErrand = goal => goal.type === 'market_errand' && !OUTSIDE_ERRANDS.has(goal.plan?.purpose);
 // Snapshot -> content revision. Snapshots are replaced, never mutated, so a
 // revision is computed once per snapshot, on its first ask.
 const revisions = new WeakMap();
@@ -135,9 +139,13 @@ const GoalState = {
         if (revision === undefined) {
             const goal = snapshot.current;
             // A goal copied from the bot's own leaf is its own output (Recompute):
-            // no revision; another goal names what it is after, a bought unit or
-            // a review of the same one does not.
-            revision = goal.plan?.economyActivity !== undefined ? 0
+            // no revision; nor is the errand that leaf left in another town (its
+            // purchase, its recipe, its wealth craft's inputs), whose start and end
+            // are the bot carrying out its own decision. A goal from outside (a clan's
+            // or a raid's errand, the vitals or bag floor) names what it is after, a
+            // bought unit or a review of the same one does not. Temporary with the
+            // goal revision itself: gone when goals are a view over the card.
+            revision = goal.plan?.economyActivity !== undefined || ownErrand(goal) ? 0
                 : fnv1a32(JSON.stringify([goal.type, goal.status, goal.target?.itemId, goal.plan?.marketTown, goal.plan?.purpose])) || 1;
             revisions.set(snapshot, revision);
         }

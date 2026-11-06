@@ -28,5 +28,17 @@ assert.equal(revision(goal({}, { kind: 'craft' })), errand, 'nor does a step of 
 assert.notEqual(revision(goal({}, {}, { itemId: 1865 })), errand, 'another item does');
 assert.notEqual(revision(goal({}, { marketTown: 'Dion' })), errand, 'another town does');
 assert.notEqual(revision(goal({ status: 'abandoned' })), errand, 'a dropped errand does');
+// A market errand its own leaf left in another town starts and ends as the bot carries out its decision;
+// a clan's or a raid's errand comes from outside.
+const marketErrand = (purpose, status = 'active') => goal({ type: 'market_errand', status },
+    { kind: 'market_buy', expectedBenefit: 'market_errand', purpose });
+for (const purpose of ['recipe', 'wealth_craft', 'craft_input', 'shots'])
+    for (const status of ['active', 'completed', 'abandoned'])
+        assert.equal(revision(marketErrand(purpose, status)), 0, `the own ${purpose} errand, ${status}, moves no goal`);
+for (const purpose of ['clan', 'raid_supply']) {
+    const outside = revision(marketErrand(purpose));
+    assert(outside > 0, `a ${purpose} errand is a goal from outside`);
+    assert.notEqual(revision(marketErrand(purpose, 'completed')), outside, `its end moves it`);
+}
 console.log('goal revision ok');
 process.exit(0);
