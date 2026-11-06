@@ -86,24 +86,28 @@ async function run() {
         assert.equal(next.network.queue.some(wish => wish.key === first.rootKey), false, 'what was bought left the money queue');
     }
     { // A step's count is taken at the build: what arrived on the way is its progress.
-        const kept = { selfId: SHOTS, amount: 2 };
-        let found = null;
+        // Shots and potions are weighed alike with the gear (A5): the first kit kind among the later steps,
+        // every step before it bought.
+        let found = null, ITEM = 0, shots = null, first = null;
         for (let tries = 0; tries < 40 && !found; tries++) {
-            const row = review({ inventory: { ...base.inventory, [SHOTS]: kept } });
-            if (row.plan.network.agenda?.[0]?.itemId === SHOTS) found = row;
+            const row = review({ inventory: { ...base.inventory, [SHOTS]: { selfId: SHOTS, amount: 2 }, [POTIONS]: { selfId: POTIONS, amount: 2 } } });
+            const steps = [row.plan.network.activity, ...(row.plan.network.agenda || [])];
+            const at = steps.findIndex((step, index) => index > 0 && [SHOTS, POTIONS].includes(step?.itemId));
+            if (at > 0) {
+                found = row; shots = steps[at]; ITEM = shots.itemId;
+                first = steps.slice(0, at).reduce((state, step) => bought(state, step), row.state);
+            }
         }
-        assert(found, 'fixture: shots are the later step of some review');
-        const { plan, state } = found, shots = plan.network.agenda[0];
+        assert(found, 'fixture: a kit kind is a later step of some review');
         assert.equal(shots.heldAtDecision, 2, 'the step keeps the bag it was counted on');
-        const first = bought(state, plan.network.activity);
         const part = Math.floor(shots.amount / 2);
-        const next = Economy.forState({ ...first, inventory: { ...first.inventory, [SHOTS]: { selfId: SHOTS, amount: 2 + part } } }, deps());
-        assert.equal(next.network.activity.itemId, SHOTS);
+        const next = Economy.forState({ ...first, inventory: { ...first.inventory, [ITEM]: { selfId: ITEM, amount: 2 + part } } }, deps());
+        assert.equal(next.network.activity.itemId, ITEM);
         const Decision = invoke('GameServer/Bot/Population/ColdEconomyDecision');
-        assert.equal(Decision.remainingToOrder(next.network.activity, { ...first, inventory: { ...first.inventory, [SHOTS]: { selfId: SHOTS, amount: 2 + part } } }), shots.amount - part,
+        assert.equal(Decision.remainingToOrder(next.network.activity, { ...first, inventory: { ...first.inventory, [ITEM]: { selfId: ITEM, amount: 2 + part } } }), shots.amount - part,
             'what reached the bag since the review is not bought again');
-        const whole = Economy.forState({ ...first, inventory: { ...first.inventory, [SHOTS]: { selfId: SHOTS, amount: 2 + shots.amount } } }, deps());
-        assert.notEqual(whole.network.activity?.itemId, SHOTS, 'a step that arrived drops');
+        const whole = Economy.forState({ ...first, inventory: { ...first.inventory, [ITEM]: { selfId: ITEM, amount: 2 + shots.amount } } }, deps());
+        assert.notEqual(whole.network.activity?.itemId, ITEM, 'a step that arrived drops');
     }
     { // A seller that fell short: the next seller of the town, up to the value per unit.
         const bid = { status: 'deferred', reason: 'wish_focus', target: { selfId: 1 } };
@@ -209,24 +213,17 @@ async function run() {
         const built = Economy.forState(bought(state, plan.network.activity), { ...deps(), fullReview: true });
         assert.equal(built.statsPacket.wishSections === plan.statsPacket.wishSections, false, 'the agenda waits');
     }
-    { // A later tier waits for the one before it, in one review: gear follows the stock.
+    { // Shots and potions below their line are weighed with the gear they serve (A5): one tier,
+        // one queue, by value; the agenda works through both in one review.
         const { plan, state } = review();
-        const steps = plan.network.agenda, gear = steps.findIndex(step => step.rootKey.startsWith('power:'));
-        assert(gear > 0, 'fixture: the review decided gear after the stock');
-        assert.equal(plan.network.queue.some(wish => wish.key === steps[gear].rootKey), false, 'its tier waits in the decision');
+        const tier = key => plan.network.queue.find(wish => wish.key.startsWith(key))?.progressionPriority;
+        assert(tier('stock:') > 0 && tier('stock:') === tier('power:'), 'fixture: stock and gear in one tier');
         let current = state, step = plan;
-        for (let at = 0; at <= gear; at++) {
-            const after = bought(current, step.network.activity);
-            step = Economy.forState(after, deps());
-            current = { ...after, stats: { ...after.stats, ...step.statsPacket } };
-        }
-        assert.equal(step.network.activity.itemId, steps[gear].itemId, 'the bot works down to it');
-        assert.equal(step.network.queue.some(wish => wish.key === steps[gear].rootKey), true, 'its wish joined the queue');
-        assert.equal(step.statsPacket.wishSections, plan.statsPacket.wishSections, 'one review');
         while (step.network.agenda?.length) {
             const after = bought(current, step.network.activity);
             step = Economy.forState(after, deps());
             current = { ...after, stats: { ...after.stats, ...step.statsPacket } };
+            assert.equal(step.statsPacket.wishSections, plan.statsPacket.wishSections, 'one review');
         }
         const end = Economy.forState(bought(current, step.network.activity), deps());
         assert.notEqual(end.statsPacket.wishSections, plan.statsPacket.wishSections, 'the end of the agenda is a review');

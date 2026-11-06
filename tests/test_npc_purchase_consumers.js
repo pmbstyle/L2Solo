@@ -195,15 +195,16 @@ async function run() {
         stats: { ...state.stats, money: [1, 1, 3000000, 0] } };
     // Main reads the kit rates the bot's build publishes (stats.kitRates).
     state.stats.kitRates = Economy.kitRates(Economy.basics(state));
+    // The tranche the reserve holds is one outing's refill (plan §5).
     const survival = Economy.basics(state).stock('shots');
-    const survivalUnits = Math.ceil(survival.usePerHour);
+    const survivalUnits = survival.refill;
     const shotQuote = Npc.quoteFor(survival.itemId, 'Dion');
-    assert(survivalUnits > 0 && shotQuote, 'actual funded hourly NG shot kit');
+    assert(survivalUnits > 0 && shotQuote, 'actual funded NG shot refill');
     const duplicateKit = Npc.collect(state, { town: 'Dion', potions: false, scrolls: false, shots: false,
         extras: [{ selfId: survival.itemId, amount: survivalUnits, offer: shotQuote },
             { selfId: survival.itemId, amount: survivalUnits, offer: shotQuote }] });
     const kitLine = duplicateKit[0].lines.find(line => line.selfId === survival.itemId);
-    assert.equal(kitLine.amount, survivalUnits, 'a filled hourly kit cannot spend protected cash for a second kit');
+    assert.equal(kitLine.amount, survivalUnits, 'a filled refill cannot spend protected cash for a second one');
     assert.equal(kitLine.fundingParts.length, 1, 'the repeated survival allowance is recomputed after virtual payment');
 
     // Explicit selected native recipe/batches, without inventing a profitable

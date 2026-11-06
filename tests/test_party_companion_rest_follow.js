@@ -139,9 +139,11 @@ function authoredKitInputs(actor, session) {
     // the NPC's list price (the bot's estimate where no NPC sells it).
     const listPrice = id => { const list = invoke('GameServer/Bot/Economy/StaticMerchantPricing').botNpcListPrice(id);
         return Number.isFinite(list) && list > 0 ? list : price(id); };
-    // No Scroll of Escape in it (situations.md B2).
-    const refillReserve = Math.max(0, Math.ceil(shotUse) - shotHeld) * listPrice(plan.selfId)
-        + Math.max(0, Math.ceil(potionUse) - potionHeld) * listPrice(potionId);
+    // The reserve holds one outing's refill of each kind used (plan §5: whole units, never
+    // under one hour of use), whatever the bag holds; no Scroll of Escape in it (B2).
+    const outingHours = invoke('GameServer/Bot/Economy/EconomyContext').basics(state).stock('potions').targetHours;
+    const refillOf = use => use > 0 ? Math.max(Math.ceil(use), Math.ceil(use * outingHours)) : 0;
+    const refillReserve = refillOf(shotUse) * listPrice(plan.selfId) + refillOf(potionUse) * listPrice(potionId);
     const potionUnitPrice = invoke('GameServer/Bot/Economy/StaticMerchantPricing').cheapestPurchase(potionId);
     const potionReserve = Math.max(0, Math.ceil(potionUse) - potionHeld) * potionUnitPrice;
     return { state, tableRole, spotId, huntSource: hunt.source, hourAdena, tableRow, withoutExp: without?.exp || 0,

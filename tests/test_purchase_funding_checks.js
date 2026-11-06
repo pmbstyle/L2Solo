@@ -105,6 +105,17 @@ assert.deepEqual([Packet.lineOf(Packet.kitRates(rates), 'shots'), Packet.lineOf(
     Packet.outingHours(Packet.kitRates(rates)), Packet.gapHorizonHours(Packet.kitRates(rates)), Packet.lineOf(undefined, 'potions')],
 [1200, 10, 2, 2.5, undefined]);
 assert.equal(Packet.lineOf(Packet.kitRates({ ...rates, shotsPay: false, shotsCanRestock: false }), 'shots'), 0, 'shots that do not pay have no line');
+// A finite-value purchase at a funded row's rank reads the money above the rows ranked before it
+// (as the build funded it: its own row is no money held from it); any other rank, the money above every row.
+{
+    const ranked = Packet.money({ hourAdena: 1000, moneyPrice: .001, refillReserve: 0, firstUnfundedPrice: 0 });
+    Packet.addFunded(ranked, .01, 300, 11); Packet.addFunded(ranked, .005, 800, 12);
+    const purse = { characterId: 1, adena: 1000, inventory: { 57: { selfId: 57, amount: 1000 } }, stats: { money: ranked } };
+    assert.equal(Funding.spendable(purse, 0, { valueHours: 1000, r: .005 }), 700, 'its own row is not held from it');
+    assert.equal(Funding.spendable(purse, 0, { valueHours: 1000, r: .007 }), 200, 'an unfunded rank keeps every row held');
+    assert.equal(Funding.spendable(purse, 0, { valueHours: 1000, r: Infinity }), 200, 'so does an unbounded one');
+    assert.equal(Funding.spendable(purse, 0, { valueHours: 1000 }), 200, 'and none');
+}
 assert.deepEqual(Packet.dangerPrice({ deathHours: 0.4, riskWeight: 1.5 }), [0.4, 1.5]);
 assert.deepEqual([Packet.deathHours([0.4, 1.5]), Packet.riskWeight([0.4, 1.5]), Packet.deathHours(undefined)], [0.4, 1.5, undefined]);
 

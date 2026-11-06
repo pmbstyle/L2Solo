@@ -96,5 +96,7 @@ result = continuation();
 assert.equal(result.activity.kind, 'luxury_exchange', 'native crystallization finishes its funded C exchange before another crystal purchase');
 assert.equal(result.activity.itemId, 608);
 assert.equal(continuation(false).activity.kind, 'buy', 'a continuation cannot manufacture missing physical crystals');
-assert.equal(continuation(true, true).activity.itemId, 1464, 'urgent survival stock keeps its higher priority');
+// Below its line the kit is weighed with the gear it serves, in one tier (situations.md A5): no tier of its own.
+assert.equal(continuation(true, true).queue.find(wish => wish.key === 'stock:shots')?.progressionPriority, 2,
+    'urgent stock joins the gear\'s tier');
 console.log('PASS crystallization continuation / physical readiness / urgent stock');

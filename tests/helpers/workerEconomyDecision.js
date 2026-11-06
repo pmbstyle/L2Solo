@@ -137,7 +137,7 @@ module.exports.nativeEconomyDecision = async (id, timestamp, nativeRoutes = fals
     const reserveInputs = {
         stocks: ['shots', 'potions'].map(kind => {
             const stock = economy.stock(kind);
-            return { selfId: stock.itemId, perHour: stock.usePerHour,
+            return { selfId: stock.itemId, perHour: stock.usePerHour, refill: stock.refill,
                 held: Number(state.inventory?.[stock.itemId]?.amount || 0), unitPrice: stock.survivalPrice };
         })
     };

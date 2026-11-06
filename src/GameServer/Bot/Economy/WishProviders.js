@@ -1302,13 +1302,16 @@ function buildProjection(state, ctx, deps) {
             valueHours: powerWeight, price: 0, paths: [{ kind: 'experience', activity: 'hunting',
                 spotId: ctx.hunt.progressSpotId || ctx.bestSpotId, costHours: 1, riskHours: ctx.expectedDeathHours }] });
     }
-    for (const kind of ['shots', 'potions', 'scrolls']) {
+    // The kit in the field (plan §5, A5): a kind's root only below its line (one
+    // hour of use), for one outing's refill; above it the money reserve holds that
+    // refill and the town visit buys it. Shots and potions are ordinary
+    // consumables: weighed by their value with the gear they serve (WishNetwork),
+    // their road taken only where its goods carry it (roadCarried). The Scroll of
+    // Escape has no line (B2): a visit's side purchase.
+    for (const kind of ['shots', 'potions']) {
         const stock = ctx.stock(kind);
-        // A necessary refill covers the planned outing in the same purchase.
-        // Only the survival shortfall outranks unfinished equipment; once that
-        // floor is filled, optional stock cannot keep the kit on hold.
-        const amount = Number(stock?.survivalMissing || 0)
-            + (progression.required && kind !== 'shots' ? 0 : Number(stock?.missing || 0));
+        if (stock?.benefitPerUnit > 0) values.set(stock.itemId, stock.benefitPerUnit);
+        const amount = stock?.needed ? Number(stock.survivalMissing || 0) + Number(stock.missing || 0) : 0;
         if (Trace.detailed(state.characterId)) Trace.detail({ owner: state.characterId,
             caller: deps.caller || 'wish_provider', trigger: 'projection_build',
             phase: 'wish_need', reason: !(amount > 0) ? 'target_satisfied' : !(stock.unitPrice > 0)
@@ -1323,20 +1326,16 @@ function buildProjection(state, ctx, deps) {
         const heldStock = nativeQuantities.physical(stock.itemId);
         quantityInputs?.stockPhysical(`stock:${kind}`, stock.itemId, heldStock);
         root({ key: `stock:${kind}`, need: 'power', object: { itemId: stock.itemId, amount, kind },
-            // A scroll saves time, not a life: it never outranks the kit, the
-            // visit's restock brings it along (user 11-01, T177). Temporary until
-            // step 3 C5: survival stock still outranks unfinished equipment (a
-            // stock root of tier 0 leaves the queue while gear is required).
-            progressionPriority: progression.required && kind !== 'scrolls' && stock.survivalMissing > 0 ? 4 : 0,
             valueHours: amount * stock.benefitPerUnit * powerWeight, price: amount * stock.unitPrice,
-            // The survival tranche is the kit's cost (kitCost), already held
-            // by the survival reserve; the money queue charges only the rest.
-            reserved: Math.min(amount * stock.unitPrice, Math.max(0, Number(ctx.kitCost?.(stock.itemId)) || 0)),
+            // The refill the reserve holds (kitCost) is no charge of the money
+            // queue: it charges only the rest. The reserve holds only money the
+            // bot has: an empty wallet holds no refill.
+            reserved: Math.min(amount * stock.unitPrice, Math.max(0, Number(ctx.kitCost?.(stock.itemId)) || 0),
+                positive(ctx.wallet ?? Funding.budget(state))),
             // gross = held units + amount, so allocation leaves `amount`.
             paths: [{ requirements: [{ key, amount }],
                 grossRequirements: [{ key, amount: amount
                     + heldStock }] }] });
-        values.set(stock.itemId, stock.benefitPerUnit);
     }
     // Concrete remembered people, not persona-labelled lifelong goals.
     const { friend, enemy } = relationTargets(state, deps);

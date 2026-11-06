@@ -29,6 +29,13 @@ function moneyReached(state, escrow = 0) {
     for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) fundedPrice = Math.max(fundedPrice, Number(Packet.fundedCumulative(packet, row)) || 0);
     return budget(state, escrow) - nonnegative(Packet.refillReserve(packet)) >= fundedPrice + Number(Packet.firstUnfundedPrice(packet));
 }
+// The rank r when it is one of the packet's funded rows (its ratio as the packet keeps it), else null.
+function fundedRank(packet, r) {
+    if (!(Number(r) > 0) || !Number.isFinite(Number(r))) return null;
+    const rank = significant(Number(r));
+    for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) if (Packet.fundedRatio(packet, row) === rank) return rank;
+    return null;
+}
 function budgetFor(packet, wallet, escrow, r, capture = null) {
     let prior = 0;
     for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) if (Packet.fundedRatio(packet, row) > r) prior = Packet.fundedCumulative(packet, row);
@@ -131,10 +138,14 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
         const quoted = options.quoteScale > 0 ? r * options.quoteScale : r;
         if (quoted >= Packet.moneyPrice(packet)) { reason = 'funded_ratio'; queueBudget = budgetFor(packet, wallet, 0, r, capture); }
     }
-    // Native utility terms take precedence over a free/clan allowance too.
+    // Native utility terms take precedence over a free/clan allowance too. A purchase
+    // whose rank is a funded row of the packet (the build funded it there) reads the
+    // money above the rows ranked before it; any other (none, Infinity, unfunded)
+    // the money above every funded row.
     if (Packet.hasMoney(packet) && !options.upperBound && options.valueHours !== undefined) {
         reason = 'finite_value';
-        queueBudget = Math.min(worth(packet, options.valueHours), budgetFor(packet, wallet, 0, Packet.moneyPrice(packet), capture));
+        queueBudget = Math.min(worth(packet, options.valueHours),
+            budgetFor(packet, wallet, 0, fundedRank(packet, options.r) ?? Packet.moneyPrice(packet), capture));
     }
     // A side purchase (T177) carries its own value per Adena and takes only the
     // money no queue row holds.

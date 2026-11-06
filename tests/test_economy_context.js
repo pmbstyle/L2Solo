@@ -131,7 +131,7 @@ async function run() {
         return state;
     }
     // T43 table: shots no longer pay for a D-grade Warrior (L20-40, low loot); a C-grade Gladiator at 46 buys them.
-    const warrior = equippedFixture(1300, 2, 46, 20000);
+    const warrior = equippedFixture(1300, 2, 46, 100000);
     warrior.stats.persona = { ...warrior.stats.persona, understanding: .5 };
     const kitDeps = { knowledgeEnabled: true };
     const warriorContext = Economy.forState(warrior, kitDeps);
@@ -194,15 +194,14 @@ async function run() {
     assert(Math.abs(gladiator.hourAdena - Hunt.netIncome(Table.value(gladiatorHunt.spotId, 'dps', 50, true),
         Hunt.consumablePrices(gladiator.state))) < 1);
     assert.equal(gladiator.moneyPrice, 1 / gladiator.hourAdena);
-    // Its survival potions are held too: the best spot since T123's held-share
-    // ranking drinks ~1 potion an hour, so only the escape scroll stays reserved.
+    // The reserve is the next outing's refill whatever the bag holds (plan §5): a bag with
+    // its refill owes the counter nothing, yet gear never takes the refill's money.
     const warriorPotions = warriorContext.stock('potions');
     const stocked = { ...warrior, inventory: { ...warrior.inventory,
-        [warriorStock.itemId]: { selfId: warriorStock.itemId, amount: Math.ceil(warriorStock.usePerHour) },
-        [warriorPotions.itemId]: { selfId: warriorPotions.itemId, amount: warriorPotions.survivalTarget } } };
+        [warriorStock.itemId]: { selfId: warriorStock.itemId, amount: warriorStock.refill },
+        [warriorPotions.itemId]: { selfId: warriorPotions.itemId, amount: warriorPotions.refill } } };
     assert.equal(Economy.basics(stocked, kitDeps).kitCost(warriorStock.itemId), 0);
-    assert.equal(Economy.basics(stocked, kitDeps).refillReserve, warriorContext.kitCost(736),
-        'own one-hour shot stock releases its wallet reserve and retains the escape scroll');
+    assert.equal(Economy.basics(stocked, kitDeps).refillReserve, reserve, 'the refill stays reserved');
     const criminal = Economy.basics({ ...warrior, stats: { ...warrior.stats, karma: 100 } }, kitDeps);
     assert.equal(criminal.kitCost(736), 0);
     const without = Table.value(warriorContext.bestSpotId, 'dps', warrior.level, false);

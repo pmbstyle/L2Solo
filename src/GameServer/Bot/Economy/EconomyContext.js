@@ -937,8 +937,13 @@ function kitReader(rates, bag, wallet, price, scrollHours = () => positive(rates
     };
     const kit = [base('shots'), base('potions')];
     // The survival reserve: the kit's missing survival units at their list price.
-    const reserve = kit.reduce((sum, row) => sum + row.survivalMissing * row.survivalPrice, 0);
     const hours = held ? 0 : positive(rates.outingHours);
+    // The outing refill: the units one outing uses of a kind worth restocking,
+    // never under its line (the bot's usual purchase). The reserve holds it at
+    // the NPC list price whatever the bag holds now, so gear never takes the next
+    // kit's money (plan §5); a town counter spends of it what the bag misses.
+    const refill = row => row.canRestock ? Math.max(row.line, Math.ceil(row.use * hours)) : 0;
+    const reserve = kit.reduce((sum, row) => sum + refill(row) * row.survivalPrice, 0);
     const stock = kind => {
         if (kind === 'scrolls') {
             const current = bag.scrolls, unitPrice = price(736);
@@ -958,7 +963,7 @@ function kitReader(rates, bag, wallet, price, scrollHours = () => positive(rates
         const target = held ? current : row.canRestock ? wanted : Math.min(current, wanted);
         const missing = Math.max(0, target - Math.max(current, row.survivalTarget));
         // needed: a zero use has a zero survival target.
-        return { itemId, ...(row.shots ? { beginnerCurrent: bag.beginner } : {}), current, line,
+        return { itemId, ...(row.shots ? { beginnerCurrent: bag.beginner } : {}), current, line, refill: refill(row),
             target, survivalTarget: row.survivalTarget, missing, survivalMissing: row.survivalMissing, unitPrice: price(itemId),
             survivalPrice: row.survivalPrice, needed: current < row.survivalTarget,
             usePerHour: use, ...(row.shots && rates?.policy ? rates.policy : {}), hours: use > 0 ? current / use : Infinity,
@@ -971,7 +976,7 @@ function kitReader(rates, bag, wallet, price, scrollHours = () => positive(rates
     const kitCost = (id, unitPrice = null) => {
         const quoted = Number.isFinite(unitPrice) && unitPrice > 0;
         return kit.filter(row => row.itemId === Number(id)).reduce((sum, row) => sum
-            + row.survivalMissing * (quoted ? unitPrice : row.survivalPrice), 0);
+            + Math.max(0, refill(row) - row.current) * (quoted ? unitPrice : row.survivalPrice), 0);
     };
     return { stock, kitCost, reserve };
 }
@@ -1158,8 +1163,9 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
     const { stock, kitCost, reserve } = kitReader(rates, bag, Funding.budget(state), price,
         () => rates.scrollHours ??= scrollHoursFor(state, deps.spots, bestSpotId));
     // The published scroll hours (StatsPacket.kitRates): the build's own answer,
-    // else the catalogue spot's cached one, never a route solve of its own.
-    const scrollHours = () => rates.scrollHours ??= scrollHoursFor(state, deps.spots, bestSpotId, false);
+    // else the catalogue spot's cached one; a bot with no scroll solves its
+    // route (main prices the scroll a visit may buy from them, B2).
+    const scrollHours = () => rates.scrollHours ??= scrollHoursFor(state, deps.spots, bestSpotId, bag.scrolls < 1);
     return { tableRole, hunt, hourAdena, refillReserve: reserve, kitCost, rates,
         lostGearHours, bestSpotId, deathHours, bestTable, stock, scrollHours,
         earning: income.earning,

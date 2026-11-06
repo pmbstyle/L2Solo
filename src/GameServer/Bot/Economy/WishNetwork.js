@@ -995,6 +995,9 @@ class WishNetwork {
             // A finite profitable craft can pay for the kit. Once a kit piece
             // is affordable, spend on it before starting another earning trial.
             for (const wish of wishes) if (wish.progressionFunding && !readyGear) wish.progressionPriority = gearPriority;
+            // A kit kind below its line is weighed with the gear it serves, by its
+            // value, never above it (situations.md A5); roadless below reads its road.
+            for (const wish of wishes) if (wish.key.startsWith('stock:')) wish.progressionPriority = gearPriority;
             wishes = wishes.filter(wish => wish.progressionPriority >= gearPriority);
         }
         // Stock nobody can supply keeps its queue place and its bid. No visit closes it,
