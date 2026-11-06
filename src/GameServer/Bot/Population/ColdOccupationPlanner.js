@@ -21,6 +21,10 @@ const keyOf = (id, mode) => `${mode || 'occupation'}:${Number(id)}`;
 // valueKey(input): the values it reads of its state, compared only when the
 // inputKey matches (the worker digests a state once). A new ask with both the
 // same and no moved source gets the answer or joins the work.
+// sourceToken(id, mode): the revision of a read source item as a job of that
+// mode (entry.mode) reads it (the worker: a meeting job reads the item's
+// category, every other mode the item); one token per mode serves every owner
+// of the item at once (sourceChanged).
 // servesUntil(input): the clock (input.timestamp) from which a finished
 // answer no longer serves an ask of the same key: a window for an input the
 // answer reads that has no event (the worker states which); none by default.
@@ -120,7 +124,7 @@ class ColdOccupationPlanner {
     read(entry, id) {
         id = Number(id);
         if (!(id > 0) || entry.reads.has(id)) return;
-        entry.reads.set(id, this.sourceToken(id, entry.input));
+        entry.reads.set(id, this.sourceToken(id, entry.mode));
         let owners = this.dependencies.get(id);
         if (!owners) this.dependencies.set(id, owners = new Set());
         owners.add(entry.key);
@@ -148,10 +152,14 @@ class ColdOccupationPlanner {
     // Producer dispatch names an item; it never walks all owners or a board.
     sourceChanged(id) {
         id = Number(id);
+        // This call's tokens by mode, sourceToken's only input besides the id.
+        let tokens = null;
         for (const owner of this.dependencies.get(id) || []) {
             const entry = this.held(owner);
             if (!entry) continue;
-            const token = this.sourceToken(id, entry.input);
+            tokens ||= new Map();
+            let token = tokens.get(entry.mode);
+            if (token === undefined) tokens.set(entry.mode, token = this.sourceToken(id, entry.mode));
             if (entry.reads.get(id) === token) continue;
             // Coalesce by the exact used item revision. Updating this token is
             // safe only together with dirty: the obsolete work is never applied.
@@ -208,7 +216,7 @@ class ColdOccupationPlanner {
             let changed = entry.admissionScope != null && entry.admissionToken !== this.sourceScopeToken(entry.admissionScope);
             if (!changed) {
                 for (const [id, token] of entry.reads) {
-                    if (this.sourceToken(id, entry.input) !== token) { changed = true; break; }
+                    if (this.sourceToken(id, entry.mode) !== token) { changed = true; break; }
                 }
             }
             if (changed) { this.markReset(entry); moved++; } else kept++;
@@ -273,7 +281,7 @@ class ColdOccupationPlanner {
             if (!next.done) {
                 const [id, token, scope] = next.value;
                 entry.cursor[3]++;
-                if ((scope ? this.sourceScopeToken(id) : this.sourceToken(id, entry.input)) !== token) {
+                if ((scope ? this.sourceScopeToken(id) : this.sourceToken(id, entry.mode)) !== token) {
                     entry.dirty = true; entry.cursor[14] = 1; DiagnosticConfig.developerDiagnostics && (this.stats.invalidations++);
                 }
                 return;

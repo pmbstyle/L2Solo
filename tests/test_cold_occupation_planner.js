@@ -182,7 +182,7 @@ const itemTokens = new Map([[11, 0], [12, 0]]), groupTokens = new Map([['c1', 0]
 let tokenReads = 0;
 const grouped = new ColdOccupationPlanner({ schedule: () => {}, now: () => 0,
     sourceScope: id => id === 11 || id === 12 ? 'c1' : null,
-    sourceToken: (id, input) => { tokenReads++; return input.mode === 'meeting' ? groupTokens.get('c1') : itemTokens.get(id); },
+    sourceToken: (id, mode) => { tokenReads++; return mode === 'meeting' ? groupTokens.get('c1') : itemTokens.get(id); },
     capture: (id, input, read) => { for (const item of input.items) read(item); return input; },
     create: () => ({ units: 0 }), step: cursor => ++cursor.units === 100, result: () => ({ known: true }) });
 grouped.request(1, { mode: 'occupation', items: [12] }, { awaitResult: false });
@@ -195,6 +195,24 @@ assert.equal(grouped.entry(1, 'occupation').dirty, false, 'a board change on ite
 assert.equal(grouped.entry(2, 'meeting').dirty, true, 'the category (meeting) reader is invalidated');
 assert.equal(tokenReads, 2, 'only the representative owners are rechecked');
 grouped.stop(); assert.equal(grouped.representatives.size, 0);
+
+// Owners of one item in the same mode share one token per change: each is
+// kept when it did not move and invalidated by a move, a meeting reader of
+// the category only by its own token.
+const shared = new Map([[21, 0]]);
+const sharing = new ColdOccupationPlanner({ schedule: () => {}, now: () => 0,
+    sourceToken: (id, mode) => mode === 'meeting' ? -1 : shared.get(id),
+    capture: (id, input, read) => { for (const item of input.items) read(item); return input; },
+    create: () => ({ units: 0 }), step: cursor => ++cursor.units === 100, result: () => ({ known: true }) });
+for (const id of [1, 2, 3]) sharing.request(id, { mode: 'occupation', items: [21] }, { awaitResult: false });
+sharing.request(4, { mode: 'meeting', items: [21] }, { awaitResult: false });
+sharing.portion();
+const sharedDirty = () => [1, 2, 3].map(id => sharing.entry(id, 'occupation').dirty).concat(sharing.entry(4, 'meeting').dirty);
+sharing.sourceChanged(21);
+assert.deepEqual(sharedDirty(), [false, false, false, false], 'no move: every owner kept');
+shared.set(21, 1); sharing.sourceChanged(21);
+assert.deepEqual(sharedDirty(), [true, true, true, false], 'a move invalidates every reader of that mode only');
+sharing.stop();
 
 const state = { characterId: 7, updatedAt: 1000, level: 30, activity: 'hunting',
     adena: 100, vitals: { mp: 50 }, inventory: {}, stats: { classId: 1 } };

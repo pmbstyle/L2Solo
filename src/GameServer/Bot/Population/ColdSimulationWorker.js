@@ -335,7 +335,7 @@ const occupationPlanner = new ColdOccupationPlanner({
         reason: 'occupation_publication_failed', characterId, mode: input.mode,
         stack: String(error?.stack || error).slice(0, 4096)
     }),
-    sourceToken: (id, input) => input?.mode === 'meeting'
+    sourceToken: (id, mode) => mode === 'meeting'
         ? `${boardIndex.groupFingerprint(MarketCounters.counterOf(id))}|${MarketCounters.meetingRevisionOf(MarketCounters.counterOf(id))}|${digestToken(workshopScopeDigests.get(MarketCounters.counterOf(id)))}`
         : `${boardIndex.itemRevision(id)}:${tables.rows('market').get(`i:${id}`)?.[1] || 0}:${tables.rows('market').get(`h:${id}`)?.[1] || 0}:${MarketCounters.revisionOf(MarketCounters.counterOf(id))}:${workshopRevisions.get(id) || 0}`,
     sourceScope: id => MarketCounters.counterOf(id),
@@ -537,7 +537,7 @@ const occupationPlanner = new ColdOccupationPlanner({
                     // refusal to another seller.
                     if (slot.dirty
                         || slot.admissionScope != null && occupationPlanner.sourceScopeToken(slot.admissionScope) !== slot.admissionToken
-                        || [...slot.reads].some(([id, token]) => occupationPlanner.sourceToken(id, slot.input) !== token)) throw error;
+                        || [...slot.reads].some(([id, token]) => occupationPlanner.sourceToken(id, slot.mode) !== token)) throw error;
                     const scopes = [...new Set([...slot.reads.keys()].map(id => MarketCounters.counterOf(id)))];
                     const tokens = scopes.map(scope => [scope, boardIndex.groupFingerprint(scope),
                         MarketCounters.meetingRevisionOf(scope), digestToken(workshopScopeDigests.get(scope))]);
