@@ -699,11 +699,17 @@ function restockAfterWeaponChange(actor, slots = [], logTag = 'BotGear') {
         .catch((error) => utils.infoWarn(logTag, 'failed to refresh shots for %s: %s', actor.fetchName?.(), error.message));
 }
 
-// Whether the decision the body holds wants a shot restock the money queue
-// funds (DecisionEvents.nearFields, taken in the background thread).
+// Whether a body's shots (the paid shot and the beginner grant) stand below
+// their line, one hour of use, and its kit would buy some at its money: the
+// kit rule over the decision it holds (EconomyContext.keptKit: the target above
+// the bag) and at least one unit within the shots' allowance. A companion's
+// errand for them (FollowingState) goes only for a purchase it can make.
 function needsActorRestock(actor) {
-    // lazy: cycle DecisionEvents requires this module at its top.
-    return invoke('GameServer/Bot/AI/DecisionEvents').held(actor.session)?.shotRestock === true;
+    // lazy: cycle EconomyContext requires this module at its top.
+    const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
+    const state = Economy.stateForActor(actor), kit = Economy.keptKit(state), stock = kit.stock('shots');
+    if (!(stock.current < stock.line) || !(stock.target > stock.current) || !(stock.unitPrice > 0)) return false;
+    return PurchaseFunding.stockAllowance(state, null, stock.itemId, PurchaseFunding.survivalTranche(kit, stock.itemId)) >= stock.unitPrice;
 }
 
 // Where a hot bot goes for its shots in `town`: the best seller there, a

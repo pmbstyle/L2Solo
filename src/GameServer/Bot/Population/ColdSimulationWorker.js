@@ -736,7 +736,7 @@ const occupationPlanner = new ColdOccupationPlanner({
             stateDigests.delete(owner.state);
             owner.nearRoute = { key: input.routeKey, rows: workshop.routeRows };
             send('ready', { phase: 'economy_decided', characterId: id, economyDecision: workshop.decision,
-                near: { statsPacket: workshop.statsPacket, shotRestock: workshop.shotRestock, personalCraft: workshop.personalCraft,
+                near: { statsPacket: workshop.statsPacket, personalCraft: workshop.personalCraft,
                     nearSeq: Number(input.state.nearSeq || 0), raiseSeq: Number(input.raiseSeq || 0),
                     ...(workshop.shots ? { shots: workshop.shots } : {}) } });
             // Sent once: the slot keeps the workshop.
@@ -1871,9 +1871,11 @@ function startKernel(config = {}) {
                         // L116: a reuse's own basics, else built at the first
                         // gate read (edges skips resting, travelling and party
                         // bots, which read none).
-                        let stock = refreshed?.economy || prepared.basics || null;
+                        // The line is the kit rates' (EconomyContext.keptTargets): no basics built for it.
+                        const stock = refreshed?.economy || prepared.basics || null;
+                        let kept = null;
                         economyEdges = actionEdges(state, projected,
-                            kind => (stock ||= prepared.basics = EconomyContext.basics(projected, deps)).stock(kind), actionBaseline);
+                            kind => stock ? stock.stock(kind) : (kept ||= EconomyContext.keptTargets(projected))[kind], actionBaseline);
                         if (refreshed) refreshed = await refreshCraftPacket(projected, timestamp, refreshed);
                         if (refreshed?.actionBaseline) actionBaseline = refreshed.actionBaseline;
                         if (refreshed) { if (economyDiagnostics.active()) economyDiagnostics.count('advisory', 'reuse', 'result'); return refreshed.economy; }

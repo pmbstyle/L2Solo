@@ -138,7 +138,6 @@ const SITUATIONS = Object.freeze({
     market: link(BOUGHT, 0),
     // The held plan's own proof (EconomyContext.heldBuildVerdict).
     crafter_mp: link(['sources'], FIELD | VISIT),
-    bands: link(STOCK, FIELD | VISIT),
     own_loss: link(BOUGHT, WORK | VISIT),
     quantity: link(BOUGHT, FIELD | VISIT),
     liquidation: link(BOUGHT, FIELD | VISIT),

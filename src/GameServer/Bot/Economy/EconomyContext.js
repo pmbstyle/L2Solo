@@ -164,23 +164,6 @@ function requestFacts(state, deps) {
 // the gear-threat mask the decision weighs and keeps, so the rebuild after a
 // threat refusal never reuses the weighing made under the other mask.
 const inputName = (facts, threat) => String(Sections.hash({ ...facts, occupation: null, threat }));
-// The held leaf's own purchase item stays exact: its order counts only the
-// rise since the decision (remainingToOrder), so use inside a band would buy short.
-function bandsHold(state, bands = [], leaf = null) {
-    if (!Array.isArray(bands) || bands.length > 128) return false;
-    const bought = leaf?.activity === 'shopping' ? Number(leaf.itemId) || 0 : 0;
-    for (const band of bands) {
-        if (!Array.isArray(band) || band.length !== 4) return false;
-        const [id, low, high, original] = band;
-        if (!Number.isSafeInteger(id) || id <= 0 || !Number.isFinite(low) || low < 0
-            || high !== null && (!Number.isFinite(high) || high < low)
-            || !Number.isFinite(original) || original < low || high !== null && original > high) return false;
-        const amount = Number(state.inventory?.[id]?.amount);
-        if (bought && Number(id) === bought ? amount !== original
-            : !(amount >= low) || high !== null && !(amount <= high)) return false;
-    }
-    return true;
-}
 // The event part of the one verdict "the held plan is still valid" (L70),
 // read by the verdict (heldBuildVerdict), which checks a raised event
 // (wishDirty) itself before. Only hard checks: a crafter's MP and hard money
@@ -241,7 +224,7 @@ function captureEventProof(state, deps = {}, options = {}) {
         activity: activityIdentity(leaf),
         quantities: plan.quantityInputs || Network.NO_QUANTITIES, liquidation: plan.liquidationInputs,
         stockRoots: Object.freeze([...plan.stockRoots]),
-        bands: plan.quantityBands || [], hourAdena: plan.hourAdena,
+        bands: plan.lootBands || [], hourAdena: plan.hourAdena,
         // A restored prefix currently excludes process-local owner versions.
         // Unsupported owners abstain; an empty numeric revision is not proof.
         restartable: !!RecomputeGeneration.restorable() && typeof deps.memoryIdentity === 'string'
@@ -348,7 +331,6 @@ function heldBuildVerdict(state, proof, deps = {}, options = {}) {
     const why = [];
     if (!heldEventsQuiet(state, { baseline, mp: options.mp, nativeCraftContinuation: deps.nativeCraftContinuation === true }, deps, why))
         for (const name of why) if (moved(name) && !collect) return out;
-    if (!bandsHold(state, proof.bands, options.leaf) && moved('bands') && !collect) return out;
     const roots = new Map(proof.stockRoots);
     const leaf = options.leaf;
     // A held build passes its entry's fields; a card carries them on its leaf.
@@ -362,13 +344,9 @@ function heldBuildVerdict(state, proof, deps = {}, options = {}) {
     // A loss below what the decision reserved stays a quantity event.
     const reserved = leaf?.activity === 'crafting' && Array.isArray(craftReservations) ? craftReservations : null;
     const isReserved = id => reserved?.some(row => row[0] === id) === true;
-    const stockAmount = (kind, key, id, currentOwned, originalOwned) => {
-        if (kind === 'stockPhysical' && isReserved(id) && currentOwned >= originalOwned) return originalOwned;
-        if (roots.get(key) !== id) return currentOwned;
-        const band = proof.bands?.find(row => row[0] === id);
-        return band && originalOwned === band[3] && currentOwned >= band[1]
-            && (band[2] === null || currentOwned <= band[2]) ? originalOwned : currentOwned;
-    };
+    // The kit has no band above its line (plan §5): a kit count is read as it is.
+    const stockAmount = (kind, key, id, currentOwned, originalOwned) =>
+        kind === 'stockPhysical' && isReserved(id) && currentOwned >= originalOwned ? originalOwned : currentOwned;
     // Own outputs are not inputs: the leaf's own item moves with its progress.
     // It holds while the bot keeps what it held at the decision; the order's
     // completion is the activity check below, a loss is a quantity event.
@@ -577,13 +555,12 @@ function receiveEventProof(proof) {
     const quantities = value instanceof Uint8Array ? value.byteLength <= cap ? value : null : Bytes.fromBase64(value, cap);
     return quantities ? { ...proof, quantities } : null;
 }
-function quantityBands(state, context, projection) {
-    const bands = [], stock = new Map();
-    for (const kind of ['shots', 'potions', 'scrolls']) {
-        const row = context.stock(kind);
-        if (row?.itemId && row.target > 0) stock.set(Number(row.itemId), [Math.max(1, Math.ceil(row.target - positive(row.beginnerCurrent))),
-            kind === 'scrolls' ? null : row]);
-    }
+// The unused loot's error bands (proof.bands; the sale's own check and the bag
+// value read them): a free material or arrow stack moving less than the bot's
+// error (money and hours) at its buyback is noise. The kit has none: in the
+// field it reads only its line (plan §5).
+function lootBands(state, context, projection) {
+    const bands = [];
     const reserved = Disposition.reservedEquipmentAmounts(state);
     const used = new Set((projection?.nodes || []).filter(node => node.key.startsWith('item:')).map(node => Number(node.key.slice(5))));
     const error = Sections.incomeError(state, context.persona);
@@ -592,24 +569,6 @@ function quantityBands(state, context, projection) {
         if (!amount || row.equipped || row.equippedCount || row.protected || row.protectedAmount || row.reservedAmount
             || row.acceptedCustomer || row.assignedClan || row.available === false || positive(reserved[id])
             || (row.stackable ?? template?.etc?.stackable) !== true) continue;
-        if (stock.has(itemId)) {
-            const [target, used] = stock.get(itemId);
-            if (amount >= target) bands.push([itemId, target, null, amount]);
-            else if (used && used.unitPrice > 0) {
-                // Shots or potions between the survival line and the target:
-                // each unit only moves the restock wish's amount, price and
-                // value together. Consumption below the bot's own error (money
-                // and hours) is noise; the survival line (survival reserve,
-                // `needed`) and an empty stack (use rate, planned slot) stay
-                // hard, and any rise is the purchase's own event.
-                const floor = Math.max(1, Math.ceil(used.survivalTarget - positive(used.beginnerCurrent)));
-                const allowance = Math.floor(Math.min(positive(context.hourAdena) * error / used.unitPrice,
-                    used.benefitPerUnit > 0 ? error / used.benefitPerUnit : Infinity));
-                const low = Math.max(floor, amount - allowance);
-                if (amount >= floor && low < amount) bands.push([itemId, low, amount, amount]);
-            }
-            continue;
-        }
         // Only existing free stacks absent from every admitted requirement.
         // A book, recipe, target, new stack or unknown item keeps exact facts.
         const kind = String(template?.template?.kind || row.kind || '');
@@ -999,7 +958,7 @@ function kitReader(rates, bag, wallet, price, scrollHours = () => positive(rates
         const target = held ? current : row.canRestock ? wanted : Math.min(current, wanted);
         const missing = Math.max(0, target - Math.max(current, row.survivalTarget));
         // needed: a zero use has a zero survival target.
-        return { itemId, ...(row.shots ? { beginnerCurrent: bag.beginner } : {}), current,
+        return { itemId, ...(row.shots ? { beginnerCurrent: bag.beginner } : {}), current, line,
             target, survivalTarget: row.survivalTarget, missing, survivalMissing: row.survivalMissing, unitPrice: price(itemId),
             survivalPrice: row.survivalPrice, needed: current < row.survivalTarget,
             usePerHour: use, ...(row.shots && rates?.policy ? rates.policy : {}), hours: use > 0 ? current / use : Infinity,
@@ -1647,7 +1606,7 @@ function buildForState(state, deps) {
         object: workshop.productId, incomePerHour: workshop.incomePerHour,
         cycleHours: workshop.cycleHours, repeatable: true });
     const networkKey = key;
-    const choiceBands = quantityBands(state, context, projection);
+    const choiceBands = lootBands(state, context, projection);
     // Unused free loot is compared with the last decision's own value/error:
     // with no section moved the accepted bag value stays.
     const bagValue = choiceBagValue(state, choiceBands, context.buyback);
@@ -1760,7 +1719,7 @@ function buildForState(state, deps) {
         heldFocus: held?.plan.network.focus?.[0], freshFocus: network.focus?.[0],
         heldLeaf: held?.plan.network.activity?.key, freshLeaf: network.activity?.key });
     const plan = planOf(context, base, { key, tripHour, projection, knowledgeEnabled, prices });
-    plan.quantityBands = choiceBands;
+    plan.lootBands = choiceBands;
     // A step's count is taken here: what reaches the bag on the way is its progress.
     if (plan.network.agenda) plan.network.agenda = plan.network.agenda.map(step => withHeldUnits(step, ColdEconomyDecision.heldFor(state, step.itemId)));
     // Its place in the money queue, as the card stamps it: a material has no packet row of its own.

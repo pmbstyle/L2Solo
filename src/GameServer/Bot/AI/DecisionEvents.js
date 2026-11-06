@@ -238,15 +238,12 @@ function rejectSession(session, accepted) {
     return true;
 }
 // What a near decision carries beside its card (payload.near), taken in the
-// background thread from the same build: the mind keys (statsPacket), whether
-// the money queue funds a shot restock the stock needs (ShotStock
-// needsActorRestock) and the personal craft plan of the chosen leaf
-// (ShoppingState). The view over the card cannot answer these: it has no
+// background thread from the same build: the mind keys (statsPacket) and the
+// personal craft plan of the chosen leaf (ShoppingState). The view over the card cannot answer these: it has no
 // queue and no plans.
 function nearFields(economy, state) {
     const stock = economy.stock('shots');
     return { statsPacket: economy.statsPacket,
-        shotRestock: !!stock.needed && economy.purchaseBudget(stock.itemId) > 0,
         // A near body may also order consumables at a workshop (allowStock).
         personalCraft: WishProviders.personalCraftPlan(state, economy, { allowStock: true }) || null,
         // The auto-shot verdict (ShotStock.enableAutoShot's inputs): the
