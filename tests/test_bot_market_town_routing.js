@@ -41,7 +41,34 @@ const travel = GoalExecutor.beginMarketTravel(state, {
     plan: { expectedBenefit: 'market_sale_inventory' }
 }, 1000);
 
-assert.strictEqual(travel.stats.travel.townName, 'Gludio', 'D-grade sellers must use the Gludio market instead of Giran');
+// The town a seller standing in its sale town sells in: there, with no trip across the
+// town and no second arrival (ColdTrip.townPlan's here).
+const townOf = next => {
+    assert(next.activity === 'shopping' && !next.stats.travel && next.stats.townVisit?.town === next.currentRegion,
+        'a seller standing in its sale town sells there: no trip, no second arrival');
+    return next.currentRegion;
+};
+assert.strictEqual(townOf(travel), 'Gludio', 'D-grade sellers must use the Gludio market instead of Giran');
+// Outside the town the same seller travels there and shops on arrival.
+const fieldTravel = GoalExecutor.beginMarketTravel({ ...state, loc: { locX: -4736, locY: 122816, locZ: -3114 } }, {
+    type: 'sell_inventory',
+    plan: { expectedBenefit: 'market_sale_inventory' }
+}, 1000);
+assert.strictEqual(fieldTravel.activity, 'traveling', 'a seller outside its sale town travels there');
+assert.strictEqual(fieldTravel.stats.travel.townName, 'Gludio');
+assert.strictEqual(fieldTravel.stats.travel.arrivalActivity, 'shopping');
+// A bot with karma enters no town but Floran (ColdTrip.townPlan), though it stands in another: it walks there.
+const karmaTravel = GoalExecutor.beginMarketTravel({ ...state, stats: { karma: 1000 } }, {
+    type: 'sell_inventory',
+    plan: { expectedBenefit: 'market_sale_inventory' }
+}, 1000);
+assert.deepStrictEqual([karmaTravel.activity, karmaTravel.stats.travel.townName, karmaTravel.stats.travel.method],
+    ['traveling', 'Floran Village', 'walk'], 'a seller with karma standing in Gludio walks to Floran to sell');
+const gearGoal = { type: 'upgrade_gear', status: 'active', target: { itemId: dWeapon.selfId, amount: 1 },
+    plan: { expectedBenefit: 'market_search_for_gear', marketTown: 'Gludio' } };
+assert.strictEqual(GoalExecutor.beginMarketTravel(state, gearGoal, 1000).activity, 'shopping', 'a buyer standing in Gludio shops there');
+assert.strictEqual(GoalExecutor.beginMarketTravel({ ...state, stats: { karma: 1000 } }, gearGoal, 1000), null,
+    'a buyer with karma standing in Gludio does not shop there');
 assert.strictEqual(
     ListingService.targetMarketTownName(state, [{ rank: 'd' }]),
     'Gludio',
@@ -77,7 +104,7 @@ const dionTravel = GoalExecutor.beginMarketTravel(dionState, {
     type: 'sell_inventory',
     plan: { expectedBenefit: 'market_sale_inventory' }
 }, 1000);
-assert.strictEqual(dionTravel.stats.travel.townName, 'Dion', 'D-grade overflow must use the Dion market instead of overfilling Gludio');
+assert.strictEqual(townOf(dionTravel), 'Dion', 'D-grade overflow must use the Dion market instead of overfilling Gludio');
 const dionStall = ShopPlaces.take('Dion', 'test:dion');
 assert(ShopPlaces.isStallArea('Dion', dionStall), 'Dion D-grade listings must remain inside the captured trading square');
 
@@ -176,7 +203,7 @@ const orcTravel = GoalExecutor.beginMarketTravel(orcState, {
     type: 'sell_inventory',
     plan: { expectedBenefit: 'market_sale_inventory' }
 }, 1000);
-assert.strictEqual(orcTravel.stats.travel.townName, 'Orc Village', 'Orc Village sellers must travel to their local market instead of falling back to Giran');
+assert.strictEqual(townOf(orcTravel), 'Orc Village', 'Orc Village sellers must travel to their local market instead of falling back to Giran');
 const orcStall = ShopPlaces.take('Orc Village', 'test:orcStall');
 assert(ShopPlaces.isStallArea('Orc Village', orcStall), 'Orc Village no-grade listings must remain inside the captured trading square');
 
@@ -194,7 +221,7 @@ const dwarvenTravel = GoalExecutor.beginMarketTravel(dwarvenState, {
     type: 'sell_inventory',
     plan: { expectedBenefit: 'market_sale_inventory' }
 }, 1000);
-assert.strictEqual(dwarvenTravel.stats.travel.townName, 'Dwarven Village', 'Dwarven Village sellers must travel to their local market instead of falling back to Giran');
+assert.strictEqual(townOf(dwarvenTravel), 'Dwarven Village', 'Dwarven Village sellers must travel to their local market instead of falling back to Giran');
 const dwarvenStall = ShopPlaces.take('Dwarven Village', 'test:dwarvenStall');
 assert(ShopPlaces.isStallArea('Dwarven Village', dwarvenStall), 'Dwarven Village no-grade listings must remain inside the captured trading square');
 

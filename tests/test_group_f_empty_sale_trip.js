@@ -10,7 +10,8 @@ const now = 1791200000000;
 const state = {
     characterId: 910061, name: 'HalfFullTrip', classId: 0, level: 25,
     phase: 'cold', activity: 'hunting', adena: 100000,
-    loc: { locX: 83396, locY: 147904, locZ: -3400 }, currentRegion: 'Giran',
+    // In the field: a bot standing in Giran already would sell there with no trip.
+    loc: { locX: 60000, locY: 140000, locZ: -3400 }, currentRegion: 'Giran',
     inventory: { 57: { selfId: 57, amount: 100000, stackable: true },
         1864: { selfId: 1864, amount: 10, kind: 'Other.Material', stackable: true } },
     // The sale retry: the last visit could not place these stems, nothing new came since.

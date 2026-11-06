@@ -55,21 +55,25 @@ function begin(state, travel, timestamp, durationMs, extraStats = {}) {
 // gatekeeper; otherwise it reads a scroll, or walks there without one. Then
 // the gatekeeper route to the destination town. Null without a route. A bot
 // with karma enters no town but Floran, on foot (design 5.6-5.8, E48).
+// here: the bot stands in that town already (within TOWN_RADIUS of it): a
+// caller that acts in the town does so where the bot stands, with no trip.
 function townPlan(state, to) {
     const from = state.loc || {};
     const { start, destination, gate, route } = TravelRoutes.between(from, to);
+    const inStart = distance(from, start) <= TOWN_RADIUS;
+    const here = inStart && !!start && !!destination && TravelRoutes.townKey(start) === TravelRoutes.townKey(destination);
     if (Karma.closesTowns(state.stats?.karma)) {
         if (destination?.name !== Karma.TOWN_NAME) return null;
-        return { route: { fee: 0, hops: 0 }, scroll: false, method: 'walk', durationMs: runMs(from, to) };
+        return { route: { fee: 0, hops: 0 }, scroll: false, method: 'walk', durationMs: runMs(from, to), here };
     }
     if (!route) return null;
-    const inStart = distance(from, start) <= TOWN_RADIUS;
     const scroll = !inStart && TripPayment.hasColdScroll(state);
     return {
         route,
         scroll,
         method: !inStart && !scroll ? 'walk_gatekeeper' : 'soe_gatekeeper',
-        durationMs: (scroll ? TripPayment.SCROLL_CAST_MS : runMs(from, start)) + route.hops * HOP_MS + runMs(gate, to)
+        durationMs: (scroll ? TripPayment.SCROLL_CAST_MS : runMs(from, start)) + route.hops * HOP_MS + runMs(gate, to),
+        here
     };
 }
 

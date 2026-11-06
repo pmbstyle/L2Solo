@@ -53,18 +53,27 @@ function beginMarketTravel(state, goal, timestamp = Date.now()) {
     if (!town) return null;
     const from = { ...state.loc };
     const nearestTown = TownRespawn.getClosestTown(from.locX, from.locY, from.locZ);
-    const trip = (destination, shopTown = null) => ColdTrip.toTown(CombinedErrands.visit(state, destination.name, timestamp, goal.type), {
-        reason: buyingGear || buyingMaterial || buyingErrand || improving ? goal.plan.expectedBenefit : 'market_sale_inventory',
-        from,
-        to: { ...destination.center },
-        townName: destination.name,
-        viaTown: nearestTown.name,
-        arrivalActivity: 'shopping',
-        arrivalEvent: 'arrived_town'
-    }, timestamp, {
+    const visitStats = shopTown => ({
         marketReturn: { loc: from, regionName: state.currentRegion || null, spotId: state.spotId || null },
         ...(shopTown ? { shopTown } : {})
     });
+    const trip = (destination, shopTown = null) => {
+        const visit = CombinedErrands.visit(state, destination.name, timestamp, goal.type);
+        // A bot already in that town (ColdTrip.townPlan: resting there after a visit with no
+        // return) does the step there: no trip across the town, no second arrival (arrived_town).
+        if (ColdTrip.townPlan(state, destination.center)?.here) return { ...visit, activity: 'shopping', currentRegion: destination.name,
+            stats: { ...visit.stats, ...visitStats(shopTown) },
+            timing: { ...(state.timing || {}), activityStartedAt: timestamp, nextResolveAt: timestamp } };
+        return ColdTrip.toTown(visit, {
+            reason: buyingGear || buyingMaterial || buyingErrand || improving ? goal.plan.expectedBenefit : 'market_sale_inventory',
+            from,
+            to: { ...destination.center },
+            townName: destination.name,
+            viaTown: nearestTown.name,
+            arrivalActivity: 'shopping',
+            arrivalEvent: 'arrived_town'
+        }, timestamp, visitStats(shopTown));
+    };
     const travel = trip(town, sale?.shopTown);
     if (travel || !sellingInventory) return travel;
     // A bot that cannot pay the gatekeeper to its sale town sells in the town
