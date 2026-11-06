@@ -3089,8 +3089,11 @@ const BotLifeState = {
         const knownProfileLevel = Number(nextState.stats?.classProgressionLevel || 0);
         const knownProfileClassId = Number(nextState.stats?.classProgressionClassId ?? nextState.stats?.classId);
         const currentClassId = Number(nextState.stats?.classId || 0);
+        // Training is the level fact's consumer (situations.md B13: skills come with the
+        // level, ours, not C4): a level or class past what the profile trained, or a skill
+        // book the round brought into the bag (its bag moved); no per-step scan else.
         const needsClassProgression = knownProfileLevel < level || knownProfileClassId !== currentClassId
-            || invoke('GameServer/Skills/SkillBookCatalog').needsTraining(nextState);
+            || nextState.inventory !== state.inventory && invoke('GameServer/Skills/SkillBookCatalog').needsTraining(nextState);
         const characterId = nextState.characterId;
         // The cached input remains current until this resolve publishes its
         // own snapshot. Recheck that capability at assigned native writers.
