@@ -216,7 +216,9 @@ async function raiseFar(characterId, raises, reason) {
 // counted (FailureLog situations.raise_on). Raised from inside the bot's own command
 // (a town command, a review), it lands after that command ends (its revision-checked
 // writes first; counted raise:after_command), never mid-command. payload: as raiseFar's.
-// Resolves the raised row's state (null when it did not land on a far row).
+// Resolves the raised row's state (null when it did not land on a far row), which a caller
+// that writes the row next builds on; one held behind the command resolves null at once
+// (the command's own writes come first), so a caller inside it may await it.
 function raiseOn(characterId, name, payload = null, reason = `situation_${name}`) {
     const run = () => module.exports.raiseFar(characterId, [{ name, payload }], reason)
         .catch(error => { FailureLog.note('situations.raise_on', error); return null; });
@@ -224,7 +226,8 @@ function raiseOn(characterId, name, payload = null, reason = `situation_${name}`
     const owned = isMainThread ? invoke('GameServer/Bot/Population/ColdSimulationCoordinator').commandInflight?.get?.(Number(characterId)) : null;
     if (!owned) return run();
     Situations.note('raise:after_command');
-    return Promise.resolve(owned).catch(() => null).then(run);
+    Promise.resolve(owned).catch(() => null).then(run);
+    return Promise.resolve(null);
 }
 // The mind keys a row raise writes (BotLifeState.raiseOnRow).
 const RAISED_KEYS = Object.freeze(['woken', 'waiting', 'situationSeq', 'activityLeaf', 'earning', 'spotMarks', 'gearMarks']);

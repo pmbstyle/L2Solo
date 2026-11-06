@@ -102,9 +102,11 @@ function recipesChanged(id) { knownRecipes.delete(Number(id)); encodedRecipes.de
 // A bot learned a recipe (hot: BotWarehouseService.learnActorRecipes; cold: BotLifeState.
 // learnCraftableRecipes, a clan station's craft): its cached book goes and recipe_learned
 // wakes its build where the bot is (DecisionEvents.raiseOn: its far row or its body). Main only.
+// Resolves the raised far row's state (raiseOn's), which a learner that writes the row next
+// (a craft of the learned recipe) builds on.
 function recipeLearned(id) {
     recipesChanged(id);
-    invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(Number(id), 'recipe_learned');
+    return invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(Number(id), 'recipe_learned');
 }
 let inputIds = null;
 function watchedInputs() {

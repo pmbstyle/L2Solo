@@ -112,8 +112,10 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
             const raised = Events.raiseOn(77001, 'goal_failed', { impossible: true });
             await Promise.resolve(); await Promise.resolve();
             assert.equal(calls.length, 0, 'no raise while the command runs');
+            // Held behind the command, it resolves at once (a learner inside it may await it).
+            assert.equal(await raised, null);
             finish(); Main.commandInflight.delete(77001);
-            await raised;
+            await new Promise(resolve => setImmediate(resolve));
             assert.deepEqual(calls.map(([id, raises]) => [id, raises[0].name]), [[77001, 'goal_failed']], 'raised once it ended');
         } finally { Events.raiseFar = raiseFar; Main.commandInflight.delete(77001); }
     }

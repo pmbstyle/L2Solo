@@ -3936,7 +3936,10 @@ const BotLifeState = {
                 if (learned.coldLifeRow) saved = EconomyCommit.acceptRow(learned.coldLifeRow);
                 if (saved.phase !== 'cold' || this.hotRow(saved.characterId)) break;
             }
-            if (changed) invoke('GameServer/Bot/Economy/CraftWorkshopService').recipeLearned(state.characterId);
+            // The raise lands before the learner's next write (a craft of the learned recipe
+            // on the revision it moved), or after the bot's command: built on its row.
+            const raised = changed ? await invoke('GameServer/Bot/Economy/CraftWorkshopService').recipeLearned(state.characterId) : null;
+            if (raised) saved = DecisionEvents.withRaise(saved, raised);
             notifyColdSnapshot(saved, 'recipe_book_learned', { critical: true });
             return saved;
         }).catch(error => {
