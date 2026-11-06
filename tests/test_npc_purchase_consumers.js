@@ -194,7 +194,7 @@ async function run() {
     state = { ...state, level: 40, exp: Data.experience[39],
         stats: { ...state.stats, money: [1, 1, 3000000, 0] } };
     // Main reads the kit rates the bot's build publishes (stats.kitRates).
-    state.stats.kitRates = Economy.kitRates(Economy.basics(state));
+    state = require('./helpers/ratedKit')(state);
     // The tranche the reserve holds is one outing's refill (plan §5).
     const survival = Economy.basics(state).stock('shots');
     const survivalUnits = survival.refill;
@@ -329,8 +329,8 @@ async function run() {
         // Its build's kit rates (stats.kitRates), read at the visit's first restock: a Scroll of Escape
         // saving an hour's walk at its 100k Adena hour is worth carrying (B2).
         const Packet = invoke('GameServer/Bot/Economy/StatsPacket');
-        const rates = Packet.ratesOf(Economy.kitRates(Economy.basics(state)));
-        session.coldLifeState = { ...state, stats: { ...state.stats, money: [100000, .00001, 0, 0],
+        const rated = require('./helpers/ratedKit')(state), rates = Packet.ratesOf(rated.stats.kitRates);
+        session.coldLifeState = { ...rated, stats: { ...rated.stats, money: [100000, .00001, 0, 0],
             kitRates: Packet.kitRates({ ...rates, scrollHours: 1 }) } };
         try {
             global.setTimeout = (callback, delay, ...args) => {

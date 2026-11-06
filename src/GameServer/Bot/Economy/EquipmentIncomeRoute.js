@@ -52,6 +52,69 @@ function fixedRoute(spot, evaluate) {
     const row = evaluate(spot, true) || evaluate(spot, false);
     return { spot, row: row || { income: 0, expected: 0, kills: 0, exp: 0, useShots: true }, earning: Number(row?.income) || 0 };
 }
+// Survival drinks (situations.md A5): potions are no must. A spot needs them of
+// this bot when the table's reference bot drinks there (its row's potions at the
+// bot's level) and the bot's own HP margin does not carry the fight without: the
+// cycle's damage per fight × its pull × DRINK_TAIL against maxHp × (1 − the
+// potion threshold) (one Table.cycle read; the reference bot's gear is not the
+// bot's). DRINK_TAIL is ours (limits.md "Survival drinks tail"): rows are
+// simulated with drinks, so a stay without them is unproven until deaths count.
+const DRINK_TAIL = 1.5;
+function needsDrinks(state, spot, shots) {
+    const role = SpotValueTable.roleFor(state);
+    if (!(Number(SpotValueTable.value(spot.id, role, state.level, shots)?.potions) > 0)) return false;
+    const cycle = SpotValueTable.cycle(spot.id, role, state.level, shots), maxHp = Number(state.vitals?.maxHp) || 0;
+    if (!cycle || !(maxHp > 0)) return true;
+    const margin = maxHp * (1 - invoke('GameServer/Bot/AI/HealingPotionStock').useThreshold(state));
+    return Number(cycle.taken) * (Number(cycle.pull) || 1) * DRINK_TAIL >= margin;
+}
+// The spot's own kit use for the bot (situations.md §14): the table row's shots
+// (the bot's shot kind fires; none for a weapon without a charge) and survival
+// potions per hour at its level and charge policy, and whether the spot needs
+// drinks of it. Written into the earning answer when the decision is taken
+// (answerOf; spotUseOf reads it); the kit's per-bot rates are the build's
+// (StatsPacket.kitRates). Rounded as the kit rates are.
+function spotRates(state, spot, shots) {
+    const Packet = require('./StatsPacket'), plan = invoke('GameServer/Inventory/ShotStock').planForState(state);
+    const row = SpotValueTable.value(spot.id, SpotValueTable.roleFor(state), state.level, shots);
+    return { shotKind: plan.kind, shotsPerHour: Packet.roundRate(plan.perAction > 0 ? Math.max(0, Number(row?.shots) || 0) : 0),
+        potionsPerHour: Packet.roundRate(Math.max(0, Number(row?.potions) || 0)), drinks: needsDrinks(state, spot, shots) };
+}
+// The kit's per-spot use for the bot now, one rule on both threads (situations.md
+// §14): its held earning answer's when the answer carries it and the bot hunts
+// that spot solo (or stands on none: the town, the road); else the spot table's
+// at the bot's spot and level (a party member, an answer saved before it carried
+// the use, none held, another spot), the band's best row without a spot. A pure
+// table read, no search. earning: the answer to read (a build's own, else held).
+function spotUseOf(state, earning = state?.stats?.earning) {
+    const party = state?.party?.partyId || state?.partyId;
+    if (!party && earning && Number.isFinite(earning.shotsPerHour) && Number.isFinite(earning.potionsPerHour)
+        && (!state?.spotId || String(state.spotId) === String(earning.spotId))) return earning;
+    const Packet = require('./StatsPacket'), plan = invoke('GameServer/Inventory/ShotStock').planForState(state);
+    const role = SpotValueTable.roleFor(state), level = Number(state?.level) || 1;
+    const row = (state?.spotId && SpotValueTable.value(state.spotId, role, level, true)) || SpotValueTable.best(role, level, true);
+    return { shotsPerHour: Packet.roundRate(plan.perAction > 0 ? Math.max(0, Number(row?.shots) || 0) : 0),
+        potionsPerHour: Packet.roundRate(Math.max(0, Number(row?.potions) || 0)) };
+}
+// What one line of survival potions costs the bot that misses it: the units up to
+// its line at the kit's price (the NPC list price the refill reserve holds,
+// EconomyContext.survivalPrice). One rule for the search's broke bot (cannotDrink)
+// and the build's threshold (DecisionSections.affordAtOf, goal_affordable:potions).
+const drinksAt = (line, held, listPrice) => Math.max(0, Number(line) - Number(held)) * Math.max(0, Number(listPrice) || 0);
+// A bot that cannot drink: its survival potions below their line and its money
+// short of that line (drinksAt; the refill reserve holds what the counter spends
+// on it, so a wallet that holds the line can buy it). Such a bot hunts where it
+// needs no drinks.
+function cannotDrink(state, price) {
+    const Packet = require('./StatsPacket');
+    const line = Packet.lineOf(state.stats?.kitRates, spotUseOf(state), 'potions');
+    if (!(line > 0)) return false;
+    const potionId = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state).selfId;
+    const held = Number(state.inventory?.[potionId]?.amount || 0);
+    if (held >= line) return false;
+    const list = Number(invoke('GameServer/Bot/Economy/StaticMerchantPricing').botNpcListPrice(potionId));
+    return require('./PurchaseFunding').budget(state) < drinksAt(line, held, list > 0 ? list : price?.(potionId));
+}
 // The earning spot search (the decision's, EconomyContext.incomeRouteFor while it is woken; search below):
 // { route (null: none), error (the bot's own error on a row's income, SpotEconomics incomeError) }.
 function find(state, { spots = [], timestamp = Date.now(), price, required = false, mode,
@@ -62,9 +125,12 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
     // rule), whatever else it is (a crafter at its station too: karma closes its town): weaker experience-bearing
     // mobs, on foot; woken again by karma_changed. A party member's wash is its karma step's (ColdKarmaPolicy.plan).
     const Karma = invoke('GameServer/Bot/Population/ColdKarmaPolicy');
+    // A broke bot skips the spots that need survival drinks of it (A5), the karma wash's too.
+    const broke = cannotDrink(state, price);
     if (Karma.active(state)) {
         const { evaluate } = valuesFor(state, timestamp, price);
-        return { route: fixedRoute(Karma.washSpot(state, spots, timestamp), evaluate), error: evaluate.incomeError };
+        const accept = broke ? spot => !needsDrinks(state, spot, true) : null;
+        return { route: fixedRoute(Karma.washSpot(state, spots, timestamp, accept), evaluate), error: evaluate.incomeError };
     }
     if (!invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(state)) return none;
     const minGap = -15;
@@ -117,7 +183,7 @@ function find(state, { spots = [], timestamp = Date.now(), price, required = fal
                 // Amortize relocation over a half-hour earning visit. Actual
                 // town fees/time are still charged by the common wish paths.
                 return { spot, row, walkFactor, score: (row?.valueHours || 0) / walkFactor };
-            }).filter(row => row.row?.income > 0);
+            }).filter(row => row.row?.income > 0 && !(broke && needsDrinks(state, row.spot, shots)));
     };
     // Compare both charge policies and the entire earning band together.
     // Returning the first charged/near-level camp hid cheaper easier hunts.
@@ -178,20 +244,24 @@ function earnsOnRoute(state, required = false) {
 // a search chose, { spotId (null: none), shots (the charge policy of its row), income (the row's income an hour, as
 // the bot believes it), expected (the same without its belief bias: SpotEconomics expected), earning (the bot's hour:
 // its best income among the spots it may hunt), error (its own error on a row's income, SpotEconomics incomeError),
-// at }. ~60 B. found: search's { route }; error: the search's evaluate.incomeError.
-function answerOf(route, at, error = 0) {
+// at, and the spot's kit use (spotRates: shotKind, shotsPerHour, potionsPerHour, drinks; read by the kit's line and
+// amounts, StatsPacket.ratesOf/lineOf) }. ~110 B. found: search's { route }; error: the search's
+// evaluate.incomeError; state: the bot (its spot rates).
+function answerOf(route, at, error = 0, state = null) {
     return route ? { spotId: String(route.spot.id), shots: route.row.useShots !== false, income: Number(route.row.income) || 0,
-        expected: Number(route.row.expected ?? route.row.income) || 0, earning: Number(route.earning) || 0, error: Number(error) || 0, at }
-        : { spotId: null, shots: true, income: 0, expected: 0, earning: 0, error: 0, at };
+        expected: Number(route.row.expected ?? route.row.income) || 0, earning: Number(route.earning) || 0, error: Number(error) || 0, at,
+        ...(state ? spotRates(state, route.spot, route.row.useShots !== false) : { drinks: false }) }
+        : { spotId: null, shots: true, income: 0, expected: 0, earning: 0, error: 0, at, drinks: false };
 }
 // A player's command naming a spot (Situations' player_command, B6) as the held answer: that spot, with the
 // bot's hour, charge policy and error kept from the answer it replaces (held: null for none); no income expected
 // there (a stay never disappoints a command: BotHuntEfficiency.disappoints). Held until the bot's next own
 // situation re-decides the spot. command: the player decided it (isCommanded: a spot contest never makes it
 // avoid, B14).
+// It carries no kit use of its own: spotUseOf reads the spot table there (no table read here).
 function commanded(held, spotId, at = 0) {
     return { spotId: String(spotId), shots: held?.shots !== false, income: 0, expected: 0, earning: Number(held?.earning) || 0,
-        error: Number(held?.error) || 0, at: Number(at) || 0, command: true };
+        error: Number(held?.error) || 0, at: Number(at) || 0, command: true, drinks: false };
 }
 const isCommanded = held => held?.command === true;
 // The held answer's spot in a catalogue (no search; spots: the catalogue's profiles). null: no answer, none held
@@ -213,4 +283,4 @@ function heldRoute(state, { spots = [], timestamp = Date.now(), price, mode = nu
 }
 
 module.exports = { search: timed(find), searchTotals: () => ({ ...searchCounts }), economicHunt, spotList,
-    answerOf, commanded, isCommanded, heldSpot, heldRoute, earnsOnRoute };
+    answerOf, commanded, isCommanded, heldSpot, heldRoute, earnsOnRoute, needsDrinks, cannotDrink, spotRates, spotUseOf, drinksAt, DRINK_TAIL };

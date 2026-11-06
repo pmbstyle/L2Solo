@@ -44,7 +44,7 @@ assert.strictEqual(
 const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
 const reserveOf = state => Economy.basics(state).refillReserve;
 // Main reads the kit rates the bot's build publishes (stats.kitRates).
-const rated = state => ({ ...state, stats: { ...state.stats, kitRates: Economy.kitRates(Economy.basics(state)) } });
+const rated = require('./helpers/ratedKit');
 const walletFor = adena => rated({ level: 20, adena, stats: { classId: 0 }, inventory: inventory([[57, adena]]) });
 const reserve = reserveOf(walletFor(0));
 const cautiousState = walletFor(reserve);

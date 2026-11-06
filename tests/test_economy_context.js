@@ -383,7 +383,9 @@ async function run() {
         assert.equal(refusal({ ...stack(20), party: { partyId: 'bgp_x_17', role: 'dd', leaderId: 17 } }, banded) === '', false, 'joining a party is heard at once');
         // A need that opens goes at once, one raise; what merely moved stays against the baseline.
         const Shots = invoke('GameServer/Inventory/ShotStock'), shot = Shots.planForState(published).selfId;
-        const carrying = amount => ({ ...published, inventory: { ...published.inventory, [shot]: { selfId: shot, amount } } });
+        // Its earning answer carries the spot's shot use (situations.md §14), as the worker publishes it.
+        const shooting = { ...published, stats: { ...published.stats, earning: { ...published.stats.earning, shotsPerHour: 100, potionsPerHour: 0 } } };
+        const carrying = amount => ({ ...shooting, inventory: { ...shooting.inventory, [shot]: { selfId: shot, amount } } });
         const atBaseline = state => ({ ...state, stats: { ...state.stats, wishSections: { ...state.stats.wishSections, ...Gate.semanticFacts(carrying(50)) } } });
         // The sections a far step raises: the situations its diff names, heard where it stands.
         const sectionsRaised = (before, after, leaf) => Situations.heard(Situations.detect(before, after, { leaf }), Situations.place(after, before));
@@ -394,7 +396,8 @@ async function run() {
         assert.deepEqual([...sectionsRaised(read(carrying(0)), read(carrying(0)), held.network.activity)], [], 'it raises until a decision takes it');
         // Potions under what the survival drink keeps: a need far from a player.
         const potion = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(published).selfId;
-        const drinks = amount => ({ ...published, stats: { ...published.stats, kitRates: Packet.kitRates({ shotId: 0, shotUse: 0, shotBenefit: 0,
+        const drinks = amount => ({ ...published, stats: { ...published.stats, earning: { ...published.stats.earning, shotsPerHour: 0, potionsPerHour: 10 },
+            kitRates: Packet.kitRates({ shotId: 0, shotUse: 0, shotBenefit: 0,
             shotsCanRestock: false, potionId: 0, potionUse: 10, potionRestUse: 0, potionBenefit: 0, scrollHours: 0, outingHours: 1, gapHorizonHours: 0 }) },
             inventory: { ...published.inventory, [potion]: { selfId: potion, amount } } });
         const atDrinks = state => ({ ...state, stats: { ...state.stats, wishSections: { ...state.stats.wishSections, ...Gate.semanticFacts(drinks(12)) } } });
@@ -1048,7 +1051,8 @@ async function run() {
         assert(stock.usePerHour > 0 && stock.target === Math.ceil(stock.usePerHour * stock.targetHours));
         const Shot = invoke('GameServer/Inventory/ShotStock');
         // Main reads the rates this build publishes over the same bag.
-        const rated = { ...base, stats: { ...base.stats, kitRates: context.statsPacket.kitRates } };
+        const rated = { ...base, stats: { ...base.stats, kitRates: context.statsPacket.kitRates,
+            earning: { shotsPerHour: stock.usePerHour, potionsPerHour: context.stock('potions').usePerHour } } };
         assert.equal(Shot.keptAmounts(rated)[stock.itemId], stock.target);
         assert.equal(invoke('GameServer/Bot/Economy/PurchaseFunding').operatingReserve({ level: 78, adena: 1e9 }),
             Economy.basics({ level: 78, adena: 1e9 }).refillReserve, 'a bot without a packet reserves its kit, not a share of its wallet');

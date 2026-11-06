@@ -18,11 +18,12 @@ const price = ScrollStock.localNpcPrice('Dion');
 assert.ok(price > 0, 'the Dion grocer sells Scrolls of Escape');
 assert.ok(ScrollStock.localNpcPrice('Floran Village') > 0, 'so does Floran\'s');
 
-// A cold bot in Dion whose build rated its kit: the scroll's saved hours, its hour.
+// A cold bot in Dion whose build rated its kit: the scroll's saved hours, its hour; its held answer's
+// spot uses no shots or potions (EquipmentIncomeRoute.spotUseOf), so the scroll alone is in question.
 function cold(scrolls, { adena = 100000, scrollHours = .5, hour = 10000, karma = 0 } = {}) {
     return {
         characterId: 9500101, level: 30, adena, phase: 'cold', activity: 'shopping', currentRegion: 'Dion',
-        stats: { classId: 0, role: 'dps', karma,
+        stats: { classId: 0, role: 'dps', karma, earning: { shotsPerHour: 0, potionsPerHour: 0 },
             money: Packet.money({ hourAdena: hour, moneyPrice: 1 / hour, refillReserve: 0, firstUnfundedPrice: 0 }),
             kitRates: Packet.kitRates({ shotId: 0, shotUse: 0, shotBenefit: 0, shotsCanRestock: false, potionId: 0, potionUse: 0,
                 potionRestUse: 0, potionBenefit: 0, scrollHours, outingHours: 1, gapHorizonHours: 0 }) },

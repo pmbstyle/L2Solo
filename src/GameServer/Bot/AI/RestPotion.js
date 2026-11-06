@@ -41,9 +41,10 @@ function restLeft(actor) {
 
 const hoursOf = seconds => seconds / HOUR_SECONDS;
 
-// The healing potions in the bag beyond those its survival drink keeps.
-function spareBottles(actor, stats, inventory) {
-    let bottles = -Math.max(0, Number(Packet.lineOf(stats?.kitRates, 'potions')) || 0);
+// The healing potions in the bag beyond those its survival drink keeps (its potion
+// line; use: the spot's kit use by EquipmentIncomeRoute.spotUseOf's rule, the caller's).
+function spareBottles(actor, stats, inventory, use) {
+    let bottles = -Math.max(0, Number(Packet.lineOf(stats?.kitRates, use ?? stats?.earning, 'potions')) || 0);
     for (const potion of DRINKS) bottles += HealingPotionStock.heldAmount(actor, inventory, potion.selfId);
     return bottles;
 }
@@ -54,7 +55,7 @@ function spareBottles(actor, stats, inventory) {
 // unknown and it does not drink. inventory: a cold bag; unset, the hot actor's.
 // pet: reads the rest view of its pet (PetHealRule.restView), last: a hot tick
 // that drinks nothing does not pay for it.
-function betweenFights(actor, { stats = null, inventory = null, pet = null } = {}) {
+function betweenFights(actor, { stats = null, inventory = null, pet = null, use = undefined } = {}) {
     const hour = Number(Packet.hourAdena(stats?.money));
     const missing = RESTED.hp * actor.fetchMaxHp() - actor.fetchHp();
     if (!(hour > 0) || !(missing > 0)) return null;
@@ -70,15 +71,16 @@ function betweenFights(actor, { stats = null, inventory = null, pet = null } = {
             bestGain = gain;
         }
     }
-    return best && spareBottles(actor, stats, inventory) > 0 && RestPolicy.petRested(pet?.()) ? best : null;
+    return best && spareBottles(actor, stats, inventory, use) > 0 && RestPolicy.petRested(pet?.()) ? best : null;
 }
 
 // Hot: a solo bot between fights or seated. Drinks and returns true, or false.
 function tryBetweenFights(session, bot, pet = null) {
     if (bot.state?.fetchCasts?.()) return false;
     // lazy: cycle DecisionEvents > EconomyContext > this module
-    const stats = invoke('GameServer/Bot/AI/DecisionEvents').statsFor(session);
-    const potion = betweenFights(bot, { stats, pet });
+    const stats = invoke('GameServer/Bot/AI/DecisionEvents').statsFor(session), life = session.coldLifeState;
+    const use = life ? invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').spotUseOf({ ...life, stats }) : undefined;
+    const potion = betweenFights(bot, { stats, pet, use });
     if (!potion || HealingPotionStock.activePotionHot(bot)
         || !HealingPotionStock.drinkFromBag(session, bot, potion, HealingPotionStock.actorInventory(bot))) return false;
     Diagnostics.count('rest_potion', 'drink', 'hot');

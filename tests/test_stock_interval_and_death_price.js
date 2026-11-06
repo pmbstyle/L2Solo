@@ -33,12 +33,14 @@ const potionId = Number(invoke('GameServer/Bot/AI/HealingPotionStock').purchaseP
 warrior.inventory[potionId] = { selfId: potionId, amount: 1 };
 const native = Economy.basics(warrior, deps), stock = native.stock('shots');
 const withShots = Table.value(native.bestSpotId, native.tableRole, warrior.level, true);
-// The use is the table's rate at the best spot (read from the table: a regenerated table moves it), at the
+// The use of a bot with no spot and no held answer is the table's rate at the role's best spot
+// (EquipmentIncomeRoute.spotUseOf; read from the table: a regenerated table moves it), at the
 // precision the kit rates keep (StatsPacket.roundRates); the outing to a tenth of an hour.
 const Packet = invoke('GameServer/Bot/Economy/StatsPacket');
 const rounded = (shotUse, outingHours = 0) => Packet.roundRates({ shotUse, outingHours });
 const tenth = hours => rounded(0, hours).outingHours;
-assert(stock.usePerHour > 0); assert.equal(stock.usePerHour, rounded(withShots.shots).shotUse);
+const useRow = Table.best(native.tableRole, warrior.level, true);
+assert(stock.usePerHour > 0); assert.equal(stock.usePerHour, rounded(useRow.shots).shotUse);
 const use = stock.usePerHour;
 const Floor = invoke('GameServer/Bot/Population/SurvivalFloor');
 // ARCH-NOTE: empty positive-use kit stacks consume their future slots while
@@ -57,7 +59,9 @@ for (const commitment of [.1, .9]) {
     const own = Economy.basics(state, deps).stock('shots');
     assert.equal(own.target, Math.ceil(use * noHistoryT)); assert.equal(own.targetHours, noHistoryT);
     assert.equal(own.benefitHours, own.missing * own.benefitPerUnit);
-    assert(Math.abs(own.benefitPerUnit - b / own.usePerHour) <= own.benefitPerUnit * .01, 'the farm the shots give, per shot');
+    // Per shot of the hunting spot's own rate (the verdict's use), whichever spot the kit's use reads.
+    const spotUse = rounded(withShots.shots).shotUse;
+    assert(Math.abs(own.benefitPerUnit - b / spotUse) <= own.benefitPerUnit * .01, 'the farm the shots give, per shot');
 }
 for (const [visitEvery, hours] of [[[22, 4], 4], [[10, 0], noHistoryT], [[22, 30], bagT], [[22, .1], .5]]) {
     const own = Economy.basics({ ...warrior, stats: { ...warrior.stats, visitEvery } }, deps).stock('shots');

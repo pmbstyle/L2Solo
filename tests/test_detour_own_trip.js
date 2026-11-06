@@ -54,6 +54,10 @@ async function run() {
         const slots = [...inventory[row.selfId]?.equippedSlots || [], row.slot];
         inventory[row.selfId] = { ...row, amount: slots.length, equipped: true, equippedCount: slots.length, equippedSlots: slots };
     }
+    // Its survival potions over their line at every field here: the kit's line reads the table at the
+    // spot the bot stands on (EquipmentIncomeRoute.spotUseOf), and the pulls below are about the trip.
+    const potion = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor({ level: 35 }).selfId;
+    inventory[potion] = { selfId: potion, amount: 20 };
     const base = { phase: 'cold', activity: 'hunting', level: 35, adena: 50, inventory,
         loc: { locX: 80000, locY: 148000, locZ: -3500 }, currentRegion: 'Giran',
         stats: { classId: 1, exp: Data.experience[34], persona: { traits: { commitment: .5, caution: .5,

@@ -128,7 +128,7 @@ const Pricing = invoke('GameServer/Bot/Economy/MarketPricing');
 const stockBare = { ...state, level: 30, activity: 'hunting' };
 const shotId = invoke('GameServer/Inventory/ShotStock').planForState(stockBare).selfId;
 const stockState = { ...stockBare, inventory: { [shotId]: { selfId: shotId, amount: 100, kind: 'Other.Shot' } },
-    stats: { kitRates: Packet.kitRates({ shotId, shotUse: 30, shotBenefit: 0, shotsCanRestock: true, outingHours: 2, gapHorizonHours: 0,
+    stats: { earning: { shotsPerHour: 30, potionsPerHour: 0 }, kitRates: Packet.kitRates({ shotId, shotUse: 30, shotBenefit: 0, shotsCanRestock: true, outingHours: 2, gapHorizonHours: 0,
         potionId: invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(stockBare).selfId, potionUse: 0, potionRestUse: 0,
         potionBenefit: 0, scrollHours: 0 }) } };
 // A review's own stock reader (here a different target) does not decide it.

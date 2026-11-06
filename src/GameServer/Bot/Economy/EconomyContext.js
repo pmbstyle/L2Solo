@@ -1024,7 +1024,7 @@ function incomeRouteFor(state, deps, timestamp, price, keep) {
         ? IncomeRoute.heldRoute(state, { spots: deps.spots, timestamp, price: read, mode: deps.mode }) : null;
     // searched: the route is this search's; earning: the answer it holds.
     const record = { state, timestamp, spots: deps.spots, mode: deps.mode, maxChecks: deps.maxChecks, required, reads, route, earns,
-        searched: !!found, earning: found ? IncomeRoute.answerOf(found.route, timestamp, found.error) : state.stats?.earning ?? null };
+        searched: !!found, earning: found ? IncomeRoute.answerOf(found.route, timestamp, found.error, state) : state.stats?.earning ?? null };
     keep?.(record);
     return record;
 }
@@ -1151,10 +1151,14 @@ function foundation(state, deps, persona, timestamp, price, keepRoute = null) {
     // main answer them later without this build scope. policy: the auto-shot
     // verdict's use rates, read only in the build (DecisionEvents.nearFields).
     const allPotionUse = potionUse + potionRest.use;
-    // Rounded as published (StatsPacket.roundRates): the build reads what main reads.
-    const rates = { ...Packet.roundRates({ shotId: Number(shotItemId), shotUse: shotPolicy.rawUse, shotsPay: shotPolicy.usePerHour > 0,
+    // The spot's use per hour by the one rule main reads too (EquipmentIncomeRoute.spotUseOf:
+    // this build's answer on its spot, else the table at the bot's spot); the rest is the bot's
+    // own. Rounded as published (StatsPacket.roundRates): the build reads what main reads.
+    const use = IncomeRoute.spotUseOf(state, income.earning);
+    const rates = { ...Packet.roundRates({ shotId: Number(shotItemId), shotUse: use.shotsPerHour,
+        shotsPay: shotPolicy.usePerHour > 0,
         shotsCanRestock: shotPolicy.purchaseUsePerHour > 0, shotBenefit: shotPolicy.rawUse > 0 ? shotBenefit / shotPolicy.rawUse : 0,
-        potionId: Number(potionItemId), potionUse, potionRestUse: potionRest.use,
+        potionId: Number(potionItemId), potionUse: use.potionsPerHour, potionRestUse: potionRest.use,
         potionBenefit: allPotionUse > 0 ? (positive(bestTable?.deaths) * deathHours + positive(potionRest.hours)) / allPotionUse : 0,
         scrollHours: undefined, outingHours: targetHours }),
         policy: { ownedUsePerHour: shotPolicy.usePerHour, beginnerUsePerHour: shotPolicy.beginnerUsePerHour,
@@ -1535,6 +1539,8 @@ function buildForState(state, deps) {
         ...(keptBase ? { horizonHours: keptBase.horizonHours } : {}),
         riskWeight: base.riskWeight, bestSpotId: base.bestSpotId, deathHours: base.deathHours, lostGearHours: base.lostGearHours,
         karmaHours: base.karmaHours, expectedDeathHours: base.expectedDeathHours, stock: base.stock,
+        // The earning answer this build holds (its own search's or the held one): the kit's per-spot use.
+        earning: base.earning,
         refillReserve: base.refillReserve, kitCost: base.kitCost, hourAdena: base.hourAdena,
         walletBoundary: cash.watch,
         budgetBoundary: budget.watch,
@@ -2079,7 +2085,7 @@ function shotDemand(economy, state, timestamp, previous = null) {
 // kit:unrated counts each unrated bot once (not each read): how many bots read a kit before their first build.
 const unratedBots = new Set();
 function ratesOf(state, quiet) {
-    const rates = Packet.ratesOf(state.stats?.kitRates);
+    const rates = Packet.ratesOf(state.stats?.kitRates, IncomeRoute.spotUseOf(state));
     if (!rates && !quiet && Diagnostics.active() && !unratedBots.has(state.characterId)) {
         unratedBots.add(state.characterId);
         Diagnostics.count('kit', 'unrated', isMainThread ? 'main' : 'worker');

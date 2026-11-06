@@ -139,7 +139,8 @@ async function run() {
         const state = await LifeState.upsertState({ ...current, inventory: { ...current.inventory, ...extra,
             1: { selfId: 1, name: 'Short Sword', amount: 1, equipped: true, equippedCount: 1, equippedSlots: [7], slot: 7, kind: 'Weapon.Sword', rank: 'none' },
             1835: { selfId: 1835, name: 'Soulshot: No Grade', amount: shots, stackable: true } },
-        stats: { ...current.stats, kitRates: [1835, 500, 0.001, 0, 1061, 5, 0, 0, 1, 2, 1] } }, 'test_shots');
+        stats: { ...current.stats, kitRates: [1835, 0.001, 0, 1061, 0, 0, 1, 2, 1],
+            earning: { ...current.stats.earning, shotsPerHour: 500, potionsPerHour: 5 } } }, 'test_shots');
         return BotAfkMarket.reconcile(state, sellGoal);
     };
     await armed(500);

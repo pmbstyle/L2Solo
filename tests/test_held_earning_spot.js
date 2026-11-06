@@ -131,6 +131,29 @@ function onWorker() {
         assert.equal(read.searches, 1, `${name} wakes one search`);
         assert.equal(published(woken, read.result).stats.earning.spotId, 'poor', `${name}: the bot moves to the better spot`);
     }
+    // Survival drinks (situations.md A5): a spot that needs them of the bot (the table's bot drinks there and this
+    // bot's HP margin does not carry a fight) is skipped by a bot that cannot drink (its potions under their line
+    // and its money above the refill short of an hour of them); a funded bot stays and buys them.
+    {
+        const Table = invoke('GameServer/Bot/AI/SpotValueTable'), native = { value: Table.value, cycle: Table.cycle };
+        Table.value = (id, ...rest) => id === 'rich' ? { ...(native.value(id, ...rest) || {}), potions: 2 } : native.value(id, ...rest);
+        Table.cycle = (id, ...rest) => id === 'rich' ? { ...(native.cycle(id, ...rest) || {}), taken: 1000, pull: 1 } : native.cycle(id, ...rest);
+        try {
+            const rates = Packet.kitRates({ shotId: 0, shotUse: 0, shotBenefit: 0, shotsCanRestock: false, potionId: 1060,
+                potionUse: 2, potionRestUse: 0, potionBenefit: 0.1, scrollHours: 0, outingHours: 1, gapHorizonHours: 0 });
+            // It stands on its held spot: the line is its answer's use there (EquipmentIncomeRoute.spotUseOf).
+            const kit = (adena, reserve) => ({ ...raised(held, 'stock_low:potions'), adena, spotId: 'rich',
+                inventory: { ...held.inventory, 57: { selfId: 57, amount: adena } },
+                stats: { ...raised(held, 'stock_low:potions').stats, kitRates: rates, earning: { ...held.stats.earning, potionsPerHour: 2 },
+                    money: Packet.money({ hourAdena: 1000, moneyPrice: 0.001, refillReserve: reserve, firstUnfundedPrice: 0 }) } });
+            const broke = count(() => Economy.forState(kit(10, 0), deps(8)));
+            assert.equal(broke.searches, 1, 'the low potions wake the search');
+            assert.equal(published(held, broke.result).stats.earning.spotId, 'poor', 'a broke bot moves to a spot that needs no drinks');
+            const funded = count(() => Economy.forState(kit(1000000, 0), deps(9)));
+            const answer = published(held, funded.result).stats.earning;
+            assert.deepEqual([answer.spotId, answer.drinks], ['rich', true], 'a funded bot stays where it drinks, and its answer says so');
+        } finally { Table.value = native.value; Table.cycle = native.cycle; }
+    }
     // Its own stay disappoints its answer (situations.md Q2): weighed at a rest, once a stay, after enough kills.
     {
         // The bot believes the spot pays 1300 an hour (its persona's bias); unbiased it pays 1000.

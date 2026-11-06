@@ -125,9 +125,13 @@ function authoredKitInputs(actor, session) {
     const hourAdena = Hunt.huntHour(hunt, state);
     // Rates at the precision the kit keeps them (StatsPacket.roundRate).
     const roundRate = invoke('GameServer/Bot/Economy/StatsPacket').roundRate;
-    const shotUse = roundRate(benefit < rawShots * shotPrice / hourAdena ? 0 : rawShots);
+    // The use per hour is the table's at the spot the bot stands on (the band's best row without one): the
+    // fixture holds no earning answer (EquipmentIncomeRoute.spotUseOf); the shot verdict is the hunt's.
+    const useRow = (state.spotId && Table.value(state.spotId, Table.roleFor(state), state.level, true))
+        || Table.best(Table.roleFor(state), state.level, true);
+    const shotUse = roundRate(benefit < rawShots * shotPrice / hourAdena ? 0 : plan.perAction > 0 ? positive(useRow.shots) : 0);
     const potionId = invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(state).selfId;
-    const potionUse = roundRate(positive(tableRow.potions));
+    const potionUse = roundRate(positive(useRow.potions));
     const potionPrice = price(potionId);
     const escapePrice = price(736);
     const shotHeld = positive(state.inventory[plan.selfId]?.amount);
@@ -2540,6 +2544,9 @@ try {
     };
     publishSessions([errandLeaderSession, errandSession, fakeSession('bot_shot_seller', shotSeller)]);
     deliverNearDecision(errandSession);
+    // The spot's kit use lives in the bot's earning answer (situations.md §14), the one it held solo.
+    const errandStats = invoke('GameServer/Bot/AI/DecisionEvents').statsFor(errandSession);
+    errandStats.earning = { ...errandStats.earning, shotsPerHour: authoredShotInputs.shotUse, potionsPerHour: authoredShotInputs.potionUse };
     FollowingState.tick(errandSession, errandBot, {}, {
         getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
         getClosestTown: () => ({ name: 'Giran', x: 83396, y: 147904, z: -3404 }),

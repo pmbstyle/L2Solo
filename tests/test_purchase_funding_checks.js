@@ -89,22 +89,28 @@ assert.equal(Packet.hasMoney([77000, 1e-5, 1000]), false);
 assert.equal(Packet.hourAdena(undefined), undefined);
 const rates = { shotId: 1835, shotUse: 1200, shotBenefit: 0.0002, shotsPay: true, shotsCanRestock: true, potionId: 1061, potionUse: 9.2,
     potionRestUse: 3, potionBenefit: 0.01, scrollHours: null, outingHours: 2, gapHorizonHours: 2.5 };
-assert.deepEqual(Packet.kitRates(rates), [1835, 1200, 0.0002, 2, 1061, 9.2, 3, 0.01, -1, 2, 2.5]);
-assert.deepEqual(Packet.kitRates({ ...rates, shotsCanRestock: false, scrollHours: 0.25 }).slice(3, 9), [1, 1061, 9.2, 3, 0.01, 0.25],
+// The per-bot row; the spot's use per hour lives in the earning answer (situations.md §14).
+const earning = { shotsPerHour: 1200, potionsPerHour: 9.2 };
+assert.deepEqual(Packet.kitRates(rates), [1835, 0.0002, 2, 1061, 3, 0.01, -1, 2, 2.5]);
+assert.deepEqual(Packet.kitRates({ ...rates, shotsCanRestock: false, scrollHours: 0.25 }).slice(2, 7), [1, 1061, 3, 0.01, 0.25],
     'shots it holds pay, a restock does not');
-assert.equal(Packet.kitRates({ ...rates, shotsPay: false, shotsCanRestock: false })[3], 0);
-assert.deepEqual(Packet.ratesOf(Packet.kitRates(rates)), rates);
+assert.equal(Packet.kitRates({ ...rates, shotsPay: false, shotsCanRestock: false })[2], 0);
+assert.deepEqual(Packet.ratesOf(Packet.kitRates(rates), earning), rates);
+assert.deepEqual([Packet.ratesOf(Packet.kitRates(rates)).shotUse, Packet.ratesOf(Packet.kitRates(rates)).potionUse], [0, 0],
+    'no answer, no use');
 // The precision decisions read: three significant digits, the outing to a tenth of an hour, so a
 // loot pickup that moves the free slots by a fraction does not move the row.
-assert.deepEqual(Packet.kitRates({ ...rates, shotUse: 1200.456, potionBenefit: 0.0123456, outingHours: 2.04, gapHorizonHours: 2.4567 }),
-    [1835, 1200, 0.0002, 2, 1061, 9.2, 3, 0.0123, -1, 2, 2.46]);
+assert.deepEqual(Packet.kitRates({ ...rates, potionBenefit: 0.0123456, outingHours: 2.04, gapHorizonHours: 2.4567 }),
+    [1835, 0.0002, 2, 1061, 3, 0.0123, -1, 2, 2.46]);
 assert.equal(Packet.ratesOf([1061, 40, 1835, 3000, 500, 10, 2.5, 1, 600, -1]), null, 'a saved targets row reads as no rates');
+assert.equal(Packet.ratesOf([1835, 1200, 0.0002, 2, 1061, 9.2, 3, 0.01, -1, 2, 2.5]), null, 'nor a row of the spot\'s use');
 assert.equal(Packet.ratesOf(undefined), null);
-// The line: one hour of use, whole units (the survival drinks for potions).
-assert.deepEqual([Packet.lineOf(Packet.kitRates(rates), 'shots'), Packet.lineOf(Packet.kitRates(rates), 'potions'),
-    Packet.outingHours(Packet.kitRates(rates)), Packet.gapHorizonHours(Packet.kitRates(rates)), Packet.lineOf(undefined, 'potions')],
+// The line: one hour of the answer's use, whole units (the survival drinks for potions).
+assert.deepEqual([Packet.lineOf(Packet.kitRates(rates), earning, 'shots'), Packet.lineOf(Packet.kitRates(rates), earning, 'potions'),
+    Packet.outingHours(Packet.kitRates(rates)), Packet.gapHorizonHours(Packet.kitRates(rates)), Packet.lineOf(undefined, earning, 'potions')],
 [1200, 10, 2, 2.5, undefined]);
-assert.equal(Packet.lineOf(Packet.kitRates({ ...rates, shotsPay: false, shotsCanRestock: false }), 'shots'), 0, 'shots that do not pay have no line');
+assert.equal(Packet.lineOf(Packet.kitRates({ ...rates, shotsPay: false, shotsCanRestock: false }), earning, 'shots'), 0,
+    'shots that do not pay have no line');
 // A finite-value purchase at a funded row's rank reads the money above the rows ranked before it
 // (as the build funded it: its own row is no money held from it); any other rank, the money above every row.
 {

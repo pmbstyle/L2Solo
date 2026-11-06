@@ -226,16 +226,22 @@ async function run() {
     state = await seed(9543, 1000000, { classId: 1, marketReturn: { loc: { locX: 12000, locY: 90000, locZ: -3000 } } });
     state = { ...state, level: 30 };
     const packet = Economy.forState(state).statsPacket;
-    state = await Life.upsertState({ ...state, stats: { ...state.stats, ...packet } }, 'basket_fixture');
+    // Its earning answer carries the spot's kit use (situations.md §14), as the worker's decision publishes it.
+    state = await Life.upsertState(require('./helpers/ratedKit')({ ...state, stats: { ...state.stats, ...packet } }), 'basket_fixture');
     const Restock = invoke('GameServer/Bot/Economy/NpcRestockPlan');
     // A town restock buys from the build's published kit rates (stats.kitRates) over the live bag,
     // not a fresh earning-spot search's target: an outing's survival drinks, never less than one hour's.
     const Potions = invoke('GameServer/Bot/AI/HealingPotionStock'), potionId = Potions.purchasePotionFor(state).selfId;
     const potionLine = value => Restock.collect(value, { town: 'Dion', shots: false, scrolls: false })
         .flatMap(row => row.lines).find(line => line.selfId === potionId)?.amount || 0;
-    const rates = Packet.ratesOf(packet.kitRates);
+    const rates = Packet.ratesOf(state.stats.kitRates, state.stats.earning);
     assert(rates, 'the build publishes its kit rates');
-    const rated = changes => ({ ...state, stats: { ...state.stats, kitRates: Packet.kitRates({ ...rates, ...changes }) } });
+    // The per-bot rates in stats.kitRates, the spot's use in the earning answer.
+    const rated = changes => {
+        const named = { ...rates, ...changes };
+        return { ...state, stats: { ...state.stats, kitRates: Packet.kitRates(named),
+            earning: { ...state.stats.earning, shotsPerHour: named.shotUse, potionsPerHour: named.potionUse } } };
+    };
     const published = rated({ potionUse: 15, potionRestUse: 0, outingHours: 1 });
     assert.equal(potionLine(published), 15, 'the errand fills the published line (one hour of use)');
     const potionTarget = value => Potions.restockPlan(value, { unitPrice: Restock.quoteFor(potionId, 'Dion').price }).targetAmount;
@@ -244,6 +250,21 @@ async function run() {
     // The rates are read by kind: a level or weapon change since the build buys its new potion at them.
     assert.equal(potionLine(rated({ potionUse: 15, potionRestUse: 0, outingHours: 1, potionId: 0 })), 15,
         'a row of another potion buys the bot\'s potion at the row\'s rates');
+    // The spot's use by one rule on both threads (EquipmentIncomeRoute.spotUseOf): an answer saved before it
+    // carried the use, a party member (its hunt is no answer's spot) and a bot holding no answer read the spot
+    // table at their spot and level: each has a potion line on main and buys it on a town visit.
+    {
+        const Route = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
+        const { shotsPerHour, potionsPerHour, ...oldAnswer } = state.stats.earning;
+        assert(shotsPerHour >= 0 && potionsPerHour > 0, 'fixture: the answer carries the use');
+        const shapes = { old: { ...state, stats: { ...state.stats, earning: oldAnswer } },
+            party: { ...state, partyId: 'bgp_basket', stats: { ...state.stats, earning: { ...state.stats.earning, potionsPerHour: 0 } } },
+            none: { ...state, stats: { ...state.stats, earning: undefined } } };
+        for (const [name, shape] of Object.entries(shapes)) {
+            assert(Packet.lineOf(shape.stats.kitRates, Route.spotUseOf(shape), 'potions') > 0, `${name}: a potion line on main`);
+            assert(potionLine(shape) > 0, `${name}: the town visit buys it`);
+        }
+    }
     // No build has rated the kit yet: no potion is bought, no basics are built.
     const unrated = { ...state, stats: { ...state.stats, kitRates: undefined } };
     const basics = Economy.basics;

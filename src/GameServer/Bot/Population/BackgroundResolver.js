@@ -460,7 +460,7 @@ function coldHealBetweenFights(profile, vitals, cooldowns, at, summon = null, op
 // stats: the bot's; a first round without its coldCombat drinks nothing.
 // Returns { bag, drunk (by selfId) or null, count, ms, until }: ms the rest the
 // bottles run for at least, until the last one's end.
-function coldRestPotions(profile, vitals, stats, bag, at, { resting = false, pet = null, shared = null } = {}) {
+function coldRestPotions(profile, vitals, stats, bag, at, { resting = false, pet = null, shared = null, use = undefined } = {}) {
     const outcome = { bag, drunk: null, count: 0, ms: 0, until: 0 };
     const combat = stats.coldCombat;
     const waits = Math.max(0, Number(combat?.potionUntil || 0) - at);
@@ -471,7 +471,7 @@ function coldRestPotions(profile, vitals, stats, bag, at, { resting = false, pet
     for (let ms = waits; ; ms += HealingPotionStock.HOT_MS) {
         const actor = ColdClassPolicy.actorFor(profile, { hp: Math.min(vitals.maxHp, vitals.hp + hpPerMs * ms),
             mp: Math.min(vitals.maxMp, vitals.mp + mpPerMs * ms), cooldowns, time: at + ms });
-        const potion = RestPotion.betweenFights(actor, { stats, inventory: outcome.bag, pet: () => pet });
+        const potion = RestPotion.betweenFights(actor, { stats, inventory: outcome.bag, pet: () => pet, use });
         if (!potion) return outcome;
         if (outcome.bag === shared) outcome.bag = { ...shared };
         HealingPotionStock.debitColdPotion(outcome.bag, potion);
@@ -2832,8 +2832,10 @@ const BackgroundResolver = {
         // The bottles that save rest (coldRestPotions) go into the round's
         // counts; returns the ms they run for.
         const drinkToRest = (profile, resting, pet) => {
+            // The potion line by the kit's one use rule (EquipmentIncomeRoute.spotUseOf).
+            const use = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').spotUseOf({ ...state, stats: patch.stats || state.stats });
             const drank = coldRestPotions(profile, patch.vitals, patch.stats, patch.inventory || state.inventory,
-                timestamp + combatMs, { resting, pet, shared: state.inventory });
+                timestamp + combatMs, { resting, pet, shared: state.inventory, use });
             if (!drank.count) return 0;
             patch.inventory = drank.bag;
             patch.stats.coldCombat = { ...patch.stats.coldCombat, potionUntil: drank.until };

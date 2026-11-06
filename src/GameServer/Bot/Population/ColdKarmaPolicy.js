@@ -45,7 +45,8 @@ function nearOwn(state, spot) {
 // karma_changed and the earning spot's other situations), never asked per step.
 // Its own spot while near and eligible, else the best eligible field: mobs up to
 // eight levels below it, out of a peace zone, not a raid, not excluded.
-function washSpot(state, spots, timestamp = Date.now()) {
+// accept(spot): the earning decision's own filter (a broke bot skips spots that need survival drinks, A5).
+function washSpot(state, spots, timestamp = Date.now(), accept = null) {
     const clean = washingState(state, timestamp);
     const excludedSpotIds = SpotRiskPolicy.excludedSpotIdsForStates([clean], timestamp);
     // The level window is a cheap comparison; the solo matchup behind
@@ -62,7 +63,7 @@ function washSpot(state, spots, timestamp = Date.now()) {
             && Number(spot.minLevel || 1) <= Number(state.level || 1)
             && Number(spot.maxLevel || spot.minLevel || 1) >= Math.max(1, Number(state.level || 1) - 8)
             && !excludedSpotIds.has(spot.id) && !utils.isInPeaceZone(point.locX, point.locY)
-            && allowed(spot);
+            && (!accept || accept(spot)) && allowed(spot);
     };
     // Only a bot that left its own spot judges every spot for the best one.
     const own = SpotIndex.spotById(spots, state.spotId);

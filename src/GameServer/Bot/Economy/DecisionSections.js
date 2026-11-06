@@ -408,7 +408,7 @@ function snapshot(state, context, cashBounds, moneyError = -1, mode, money = nul
         ...(budgetTracked ? { budgetBounds: money.budgetBounds } : {}),
         ...(context.goalBudget > wallet ? { goalBudget: context.goalBudget } : {}),
         bagValue: positive(context.choiceBagValue),
-        ...(facts || semanticFacts(state)), ...supplyFacts(state, context.statsPacket.kitRates), threat: context.gearThreatMask,
+        ...(facts || semanticFacts(state)), ...supplyFacts(state, context.statsPacket.kitRates, context.earning), threat: context.gearThreatMask,
         frustration: frustrationOf(state), ...(bond ? { bond } : {}),
         incomeError: incomeError(state, persona), sample: packSample(sample(state, context.timestamp, mode)),
         ...(share === 1 ? {} : { share }), ...(marketWatch?.length ? { marketWatch } : {}) };
@@ -498,19 +498,22 @@ const NO_PARTY = hash([null, null]);
 // Scroll of Escape has no line (situations.md B2). A bot no build rated has none.
 const LINE_ABOVE = 0, LINE_BELOW = 1, LINE_OUT = 2;
 function supplyOf(state) {
-    const rates = state.stats?.kitRates, plan = ShotStock.planForState(state);
+    // The spot's use by the one rule (EquipmentIncomeRoute.spotUseOf: the answer's on its spot, else the table's).
+    const rates = state.stats?.kitRates, earning = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').spotUseOf(state);
+    const plan = ShotStock.planForState(state);
     const potionId = Number(HealingPotionStock.purchasePotionFor(state).selfId);
     const row = (kind, itemId, count) => {
-        const line = Packet.lineOf(rates, kind);
+        const line = Packet.lineOf(rates, earning, kind);
         return [kind, itemId, !(line > 0) ? LINE_ABOVE : count <= 0 ? LINE_OUT : count < line ? LINE_BELOW : LINE_ABOVE];
     };
     return [row('shots', Number(plan.selfId), positive(state.inventory?.[plan.selfId]?.amount) + ShotStock.beginnerAmount(state, plan)),
         row('potions', potionId, positive(state.inventory?.[potionId]?.amount))];
 }
-// The supply facts against the kit rates a build publishes (snapshot): its
-// baseline reads its own lines, so publishing them raises nothing.
-function supplyFacts(state, kitRates) {
-    const supply = supplyOf(kitRates ? { ...state, stats: { ...state.stats, kitRates } } : state);
+// The supply facts against the kit rates and earning answer a build publishes
+// (snapshot): its baseline reads its own lines, so publishing them raises nothing.
+function supplyFacts(state, kitRates, earning) {
+    const stats = { ...state.stats, ...(kitRates ? { kitRates } : {}), ...(earning !== undefined ? { earning } : {}) };
+    const supply = supplyOf({ ...state, stats });
     return { supply: hash(supply), lines: linesOf(supply) };
 }
 // The lines fact (factsOf): the shots' and the potions' place against their line, one number.
