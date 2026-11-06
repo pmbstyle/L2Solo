@@ -68,8 +68,6 @@ function member(state, characterId, participant, event, { party: group, resume =
     if (!participantAllowed(state.characterId)) return fail('member_handoff_fenced');
     if (!resume && !contestContextAllowed(state, event)) return fail('member_contest_context_changed');
     if (memory.revision(state.characterId) === undefined) return fail('member_memory_unavailable');
-    const lastAt = Number(state.stats?.coldCompetition?.at || 0);
-    if (!resume && at - lastAt < (war ? 15000 : 120000)) return fail('member_decision_cooldown', { until: lastAt + (war ? 15000 : 120000) });
     if (resume && (state.stats?.pvpEncounter?.key !== resume.key || state.stats.pvpEncounter.sequence !== resume.sequence)) return fail('member_encounter_changed');
     if (!resume && !revenge && !group) {
         if (!retreat && state.activity !== 'hunting') return fail('member_not_hunting');

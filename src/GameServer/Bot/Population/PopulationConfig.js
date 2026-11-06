@@ -131,9 +131,9 @@ const DEFAULTS = {
     // Idle formation can fill six parties per pass; live-player protection
     // still caps the same pass at one party in PopulationService.
     partyFormationBatchSize: 6,
-    // Observation itself only forecasts. Main-process actions validate and
-    // commit cooperation, resource interruptions and optional bounded PvP.
-    coldCompetitionObserveEnabled: true,
+    // The spot aggregate's outcomes (SpotContest, EnemyMet) reach main in a
+    // frame; main-process actions validate and commit cooperation, resource
+    // interruptions and optional bounded PvP.
     coldCompetitionActionsEnabled: true,
     coldCompetitionConflictsEnabled: true,
     coldCompetitionPvpEnabled: true,

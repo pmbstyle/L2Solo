@@ -7,7 +7,7 @@ const Runtime = invoke('GameServer/Social/InteractionMemoryRuntime');
 const Persona = invoke('GameServer/Bot/AI/BotPersona');
 const { decide } = require('../src/GameServer/Bot/Population/ColdCompetitionPolicy');
 const { reaction } = require('../src/GameServer/Bot/Population/ColdPartyConflict');
-const { ColdCompetitionMonitor, INTERVAL_MS } = require('../src/GameServer/Bot/Population/ColdCompetitionMonitor');
+const SpotContest = require('../src/GameServer/Bot/Population/SpotContest');
 const { seeded } = require('../src/GameServer/Bot/AI/TendencyRoll');
 const { ColdSimulationKernel } = require('../src/GameServer/Bot/Population/ColdSimulationKernel');
 const Preference = require('../src/GameServer/Bot/Population/PartyMemoryPreference');
@@ -95,25 +95,23 @@ function distribution(c, memory, reverse) {
     return { counts, decisions, disposition: towardPeer.disposition };
 }
 
-function monitorReplay(c, memory) {
-    // The parties table, read through each party's leader.
-    const led = new Map();
+// The real arrival contest (SpotContest): the victim's side arrives where the other stands,
+// one arrival a step, over room; the outcome of each.
+function contestReplay(c, memory) {
+    invoke('GameServer/DataCache').init();
     const spot = { id: c.spotId, npcEntries: [{ selfId: c.npcId, count: 1 }] };
-    const monitor = new ColdCompetitionMonitor({ capacityForSpot: () => c.states.length / 3, personaFor: Persona.generate,
-        leaderParty: id => led.get(Number(id)) || null, spotOf: () => spot });
-    const entries = c.states.map(s => {
-        const side = c.groups.findIndex(ids => ids.includes(s.characterId)), u = unit(c, side);
-        const party = u.partyId ? { partyId: u.partyId, memberIds: c.groups[side], leaderId: c.groups[side][0],
-            status: 'active', spotId: c.spotId, updatedAt: timestamp, stats: { objective: { npcId: c.npcId } } } : null;
-        if (party) led.set(Number(party.leaderId), party);
-        return { state: { ...s, phase: 'cold', activity: party ? 'grouped' : 'hunting', spotId: c.spotId,
-            vitals: { hp: 100 }, party: { partyId: party?.partyId || null } } };
-    });
+    const side = index => {
+        const ids = c.groups[index], u = unit(c, index);
+        const members = ids.map(id => ({ ...c.states.find(s => s.characterId === id), phase: 'cold', spotId: c.spotId, vitals: { hp: 100 } }));
+        return { key: u.partyId || `solo:${u.id}`, id: u.id, name: members[0].name, partyId: u.partyId, size: u.size, hunters: u.size,
+            level: u.level, members, state: members[0], npcId: c.npcId, hot: false };
+    };
+    const arriving = side(1), standing = [side(0)];
     const decisions = new Map();
-    for (let scan = 0; scan <= 1440; scan++) {
-        const at = timestamp + scan * INTERVAL_MS;
-        monitor.sample(entries, memory, at);
-        for (const e of monitor.snapshot().recent.filter(e => e.at === at)) decisions.set(e.key, { action: e.action, accepted: e.accepted });
+    for (let step = 0; step <= 1440; step++) {
+        const verdict = SpotContest.contest({ spot, npcId: c.npcId, arriving, standing, at: timestamp, step, memory,
+            personaFor: Persona.generate, capacityForSpot: () => c.states.length / 3 });
+        decisions.set(step, { action: verdict.action, accepted: verdict.event?.accepted });
     }
     return decisions;
 }
@@ -147,10 +145,9 @@ function run() {
         const a = c.states.find(s => s.characterId === c.groups[0][0]), b = c.states.find(s => s.characterId === c.groups[1][0]);
         const scores = Object.fromEntries(Object.entries(memories).map(([name, memory]) => [name, Preference.create({ memory, timestamp }).score(b, [a])]));
         assert(scores.neutral > scores.one && scores.one > scores.repeated, 'ordinary recruitment preference must read the same memory');
-        const neutralMonitor = monitorReplay(c, memories.neutral), hostileMonitor = monitorReplay(c, memories.repeated);
-        assert.deepStrictEqual([...neutralMonitor.keys()], [...hostileMonitor.keys()], 'same encounters and principals are compared');
-        const changedForecasts = [...neutralMonitor].filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(hostileMonitor.get(key))).length;
-        assert(changedForecasts > 0, 'memory must reach the real worker encounter monitor');
+        const neutralArrivals = contestReplay(c, memories.neutral), hostileArrivals = contestReplay(c, memories.repeated);
+        const changedForecasts = [...neutralArrivals].filter(([key, value]) => JSON.stringify(value) !== JSON.stringify(hostileArrivals.get(key))).length;
+        assert(changedForecasts > 0, 'memory must reach the real arrival contest');
         const firstDifference = runs.one.victimInitiates.decisions.findIndex((v, index) =>
             JSON.stringify(v) !== JSON.stringify(runs.neutral.victimInitiates.decisions[index]));
         assert(firstDifference >= 0);
@@ -186,4 +183,4 @@ const Database = invoke('Database');
 Database.execute = () => { throw new Error('reencounter test must not access SQL'); };
 const report = run();
 if (process.argv.includes('--report')) console.log(JSON.stringify(report, null, 2));
-else console.log('Cold reencounters: real episode fixtures, paired seeds, monitor decisions, party preferences, bystanders and main/worker assessment parity passed');
+else console.log('Cold reencounters: real episode fixtures, paired seeds, arrival contests, party preferences, bystanders and main/worker assessment parity passed');

@@ -211,9 +211,6 @@ async function run() {
     assert.strictEqual(blockedHunt.materialize.exp, 0);
     assert.strictEqual(Wait.consume(victim, 30000, contestNow + 30000).elapsedMs, 15000);
     assert.strictEqual((await conflicts.apply(dispute)).ok, false, 'delivery cannot repeat the loss or the memory');
-    const later = new ColdCompetitionActions({ ...conflictOptions, now: () => contestNow + 120001 });
-    const laterEvent = { ...contestEvent(13, 15), key: 'later-opponent', at: contestNow + 120001 };
-    assert.strictEqual((await later.apply(laterEvent)).reason, 'conflict_cooldown', 'durable conflict budget covers different opponents');
     const contestedRace = new ColdCompetitionActions({ ...conflictOptions, owner: { ...Owner,
         commitBatch: async (entries, options) => {
             await Database.execute(['UPDATE bot_life_state SET simulationRevision=simulationRevision+1 WHERE characterId=16', []]);
@@ -237,8 +234,8 @@ async function run() {
     assert.strictEqual(freshContest.role, undefined);
     assert.deepStrictEqual(freshContest.avoid, oldEpisode.avoid);
     assert.strictEqual(JSON.parse(reopenedVictim[0].statsJson).coldCompetition.wait.until, contested.waitUntil);
-    assert.strictEqual(JSON.parse(reopenedVictim[0].statsJson).coldCompetition.conflictUntil, contestNow + 180000,
-        'a nonviolent resource dispute has a shorter pause than an actual PvP fight');
+    assert.strictEqual(JSON.parse(reopenedVictim[0].statsJson).coldCompetition.conflictUntil, undefined,
+        'no conflict window after a dispute: the pair meets again only at an arrival');
     const queuedRows = await Database.execute(['SELECT statsJson FROM bot_life_state WHERE characterId IN (11,12)', []]);
     assert(queuedRows.every(r => JSON.parse(r.statsJson).coldCompetition.outcome === 'offer_party'));
     assert(queuedRows.every(r => JSON.parse(r.statsJson).coldCompetition.endedAt === undefined));

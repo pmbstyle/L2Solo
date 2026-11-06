@@ -5,7 +5,7 @@ const Pvp = require('./ColdPvpResolver');
 
 // A forecast lives for a few seconds. Reassess it against current participants
 // before taking leases; never turn ordinary state writes into cancelled meetings.
-// The worker decided the contest (ColdCompetitionMonitor) on the state, party and
+// The worker decided the contest (SpotContest, at the arrival) on the state, party and
 // memory revisions the event carries: while main holds the same ones, that
 // verdict stands as delivered. Only a participant written since the scan is
 // decided again here, on the original draws, so a retry cannot fish for a PvP roll.

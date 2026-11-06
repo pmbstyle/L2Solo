@@ -685,10 +685,7 @@ class ColdSimulationCoordinator {
         if (this.stopping || this.worker !== worker || this.workerEpoch !== epoch || !forecast) return;
         const releaseForecasts = events => this.releaseCompetitionForecasts(events, worker, epoch);
         const frame = forecast.frame;
-        if (frame === undefined) {
-            if (Config.coldCompetitionActionsEnabled) this.competitionActions.submit(forecast, { releaseForecasts });
-            return;
-        }
+        if (!frame) return;
         const reply = status => {
             if (this.stopping || this.worker !== worker || this.workerEpoch !== epoch) return;
             this.post('competition_release', { events: [], receipt: { frameId: frame.frameId, at: frame.at, status } });

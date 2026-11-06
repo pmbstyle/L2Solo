@@ -11,7 +11,7 @@
 // unit that holds its ground never gets avoid, read as coexist and counted spot:contest:<why>: one on
 // a player's command (B14, commanded), a safety evacuation off unsafe ground (evacuation). A standing unit near a player is not met here (its body's own tactics,
 // HotResourceCompetition): skipped, counted. Callers: the worker's solo and party arrivals and its hot
-// arrival hook (ColdSimulationWorker); ColdCompetitionMonitor reads targetPressure until its scan goes.
+// arrival hook (ColdSimulationWorker); their outcomes for other bots go through SpotContestOutbox.
 // Counts go on the situations= line (Situations.note); the contest is traced with the spot as subject.
 const { decide } = require('../../Social/ResourceCompetitionPolicy');
 const Visible = require('../../Social/VisibleStrength');
@@ -55,16 +55,15 @@ function participant(unit, relation) {
 // the hunters there with no target; at: the arrival's time; step: its step (the arriving principal's own
 // counter); memory: the interaction memory (assess); personaFor(state); ownSide(states, at): how a side knows
 // itself (ColdPvpResolver.ownSide); capacityForSpot(spot).
-// Returns { action: 'coexist' | 'yield' | 'avoid' | 'offer_party' | 'contest', pressure, met, peer?, event? }:
-// met, the keys of the standing units decided against; event, the outcome as main's competition actions take
-// it (ColdCompetitionActions), for one touching a standing unit.
+// Returns { action: 'coexist' | 'yield' | 'avoid' | 'offer_party' | 'contest', pressure, peer?, event? }: event,
+// the outcome as main's competition actions take it (ColdCompetitionActions), for one touching a standing unit.
 function contest({ spot, npcId, arriving, standing = [], untargeted = 0, at, step, memory, personaFor, ownSide = Visible.stateSide,
     capacityForSpot }) {
     const peers = standing.filter(unit => Number(unit.npcId) === Number(npcId) && unit.key !== arriving.key);
     const demand = arriving.hunters + peers.reduce((n, unit) => n + unit.hunters, 0);
     const { pressure, capacity } = targetPressure(spot, npcId, demand, untargeted, capacityForSpot);
     Situations.note('spot:arrival:checked');
-    if (!(pressure > 1)) return { action: 'coexist', pressure, met: [] };
+    if (!(pressure > 1)) return { action: 'coexist', pressure };
     Situations.note('spot:arrival:over');
     const met = [];
     for (const unit of peers) {
@@ -76,7 +75,6 @@ function contest({ spot, npcId, arriving, standing = [], untargeted = 0, at, ste
     const look = unit => ({ ...unit, size: unit.size, level: unit.level, own: ownSide(unit.members, at),
         seen: Visible.stateSide(unit.members, at), ...coldStanding(unit.state, at) });
     let yielded = null;
-    const decided = [];
     for (const [, peer] of met.slice(0, MAX_PEERS)) {
         const ab = memory.assess({ id: arriving.id }, { id: peer.id }, {}, at);
         const ba = memory.assess({ id: peer.id }, { id: arriving.id }, {}, at);
@@ -86,7 +84,6 @@ function contest({ spot, npcId, arriving, standing = [], untargeted = 0, at, ste
         // Main replays these in call order for a participant written since (ColdConflictDecision.refresh).
         const decisionRolls = Array.from({ length: ROLLS }, (_, i) => TendencyRoll.roll('spot_contest_decision', key, i));
         let index = 0;
-        decided.push(peer.key);
         const actorPersona = personaFor(arriving.state), peerPersona = personaFor(peer.state);
         let outcome = decide({ pressure, actor: look(arriving), peer: look(peer), towardPeer: ab, towardActor: ba,
             actorPersona, peerPersona, rng: () => decisionRolls[index++], key,
@@ -100,9 +97,9 @@ function contest({ spot, npcId, arriving, standing = [], untargeted = 0, at, ste
         const event = { at, key, spotId: spot.id, npcId: Number(npcId), contextVersion: 1, decisionRolls, demand, capacity, pressure,
             actor: participant(arriving, ab), peer: participant(peer, ba), relationship: [ab.disposition, ba.disposition], ...outcome };
         if (outcome.action === 'yield') { yielded ||= { action: 'yield', pressure, peer, event }; continue; }
-        return settled(spot, arriving, { action: outcome.action, pressure, peer, event, met: decided });
+        return settled(spot, arriving, { action: outcome.action, pressure, peer, event });
     }
-    return settled(spot, arriving, { ...(yielded || { action: 'coexist', pressure }), met: decided });
+    return settled(spot, arriving, yielded || { action: 'coexist', pressure });
 }
 // The contest's outcome counted and traced (subject: the spot; the arriving principal as its bot).
 function settled(spot, arriving, verdict) {

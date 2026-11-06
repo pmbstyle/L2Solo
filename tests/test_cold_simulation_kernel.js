@@ -535,9 +535,7 @@ const everStepped = (kernel, id) => startedSteps.get(kernel).some(ids => ids.inc
 
     const memberOnlyKernel = recordingKernel({ resolveSolo: resolver, emit: () => {}, now: () => now });
     memberOnlyKernel.upsert({ state: state(4, { party: { partyId: 'member-only' } }) });
-    assert.strictEqual(memberOnlyKernel.heap.values.filter(entry => entry.kind !== 'alarm').length, 0,
-        'party members must be scheduled only through their leader');
-    assert.strictEqual([...memberOnlyKernel.alarms.values()].filter(entry => entry.alarmKind === 'worker_safety').length, 0);
+    assert.strictEqual(memberOnlyKernel.heap.values.length, 0, 'party members must be scheduled only through their leader');
     assert.strictEqual(memberOnlyKernel.snapshot().due, 0,
         'party members must not inflate independent worker due-age telemetry');
 

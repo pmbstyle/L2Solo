@@ -4,10 +4,6 @@ const RelationshipContext = require('../../Social/RelationshipContext');
 const InventorySummary = require('./InventorySummary');
 // A forecast's freshness and a yield's pause: the spot contest's (SpotContest).
 const { EVENT_TTL_MS: TTL_MS, WAIT_MS } = require('./SpotContest');
-const COOLDOWN_MS = 2 * 60000;
-const CONFLICT_COOLDOWN_MS = 10 * 60000;
-// Losing a mob is a provocation, but should not exhaust the budget of a real fight.
-const DISPUTE_COOLDOWN_MS = 3 * 60000;
 const MAX_APPLIED = 4, MAX_ATTEMPTS = 8, BUDGET_MS = 75;
 // Leaving a contested spot has its own small budget next to the four fight
 // slots, so a busy scan of fights and invitations cannot starve departures.
@@ -18,7 +14,7 @@ const count = (map, key) => { if (!DiagnosticConfig.developerDiagnostics) return
 const MEETINGS = new Set(['revenge', 'clan_war']);
 const priority = e => e.action === 'revenge' || e.pvpIntent ? 3 : e.action === 'offer_party' ? 2 : e.action === 'contest' ? 1 : 0;
 
-function eligible(state, event, participant, now) {
+function eligible(state, event, participant) {
     const partyId = state?.party?.partyId || state?.partyId || null;
     const recruiting = event.action === 'offer_party' && event.accepted && participant.partyId;
     return state?.phase === 'cold' && (recruiting ? ['grouped', 'hunting'].includes(state.activity) : state.activity === 'hunting') && state.vitals?.hp > 0
@@ -27,8 +23,7 @@ function eligible(state, event, participant, now) {
         && !state.stats?.coldCompetition?.wait
         && Number(state.simulation?.revision || 0) === participant.revision
         && state.spotId === event.spotId
-        && (recruiting || require('./PartyHuntingTarget').competitionNpcId(null, state) === event.npcId)
-        && now - Number(state.stats?.coldCompetition?.at || 0) >= COOLDOWN_MS;
+        && (recruiting || require('./PartyHuntingTarget').competitionNpcId(null, state) === event.npcId);
 }
 
 // Consumes forecasts, not combat events. The two participant versions fence
@@ -149,12 +144,11 @@ class ColdCompetitionActions {
             return require('./ColdPartyConflict').apply({ ...this, event, waitMs: WAIT_MS });
         }
         const states = participants.map(p => this.life.cachedState(p.id));
-        if (!states.every((s, i) => eligible(s, event, participants[i], now))) return { ok: false, reason: 'state_changed_or_busy' };
+        if (!states.every((s, i) => eligible(s, event, participants[i]))) return { ok: false, reason: 'state_changed_or_busy' };
         const contest = event.action === 'contest';
         if (contest) {
             if (!this.conflictsEnabled()) return { ok: false, reason: 'forecast_only' };
             if (!states.every(s => this.contestContextAllowed(s, event))) return { ok: false, reason: 'contest_context_changed' };
-            if (states.some(s => Number(s.stats?.coldCompetition?.conflictUntil || 0) > now)) return { ok: false, reason: 'conflict_cooldown' };
         }
         if (!states.every((s, i) => {
             const memoryRevision = this.memory.revision(s.characterId);
@@ -162,7 +156,7 @@ class ColdCompetitionActions {
         })) return { ok: false, reason: 'memory_changed' };
         const next = states.map((s, i) => ({ ...s, stats: { ...s.stats, coldCompetition: Episode.begin(s.stats?.coldCompetition, {
             outcome: event.action, key: event.key, at: now, action: event.action, peerId: participants[1 - i].id,
-            ...(contest ? { conflictUntil: now + DISPUTE_COOLDOWN_MS, npcId: event.npcId } : {}),
+            ...(contest ? { npcId: event.npcId } : {}),
             ...((event.action === 'yield' && i === 0) || (contest && i === 1)
                 ? { wait: { start: now, until: now + WAIT_MS } } : {})
         }) } }));
@@ -233,4 +227,4 @@ class ColdCompetitionActions {
         spotActivityEvicted: this.spotActivityEvicted,
         mode: this.conflictsEnabled() ? this.pvpEnabled() ? 'resource_pvp' : 'resource_conflicts' : 'cooperation' }; }
 }
-module.exports = { ColdCompetitionActions, eligible, TTL_MS, WAIT_MS, CONFLICT_COOLDOWN_MS };
+module.exports = { ColdCompetitionActions, eligible, TTL_MS, WAIT_MS };

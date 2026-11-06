@@ -129,8 +129,8 @@ const ColdCompetitionEpisode = require('./ColdCompetitionEpisode');
 const ColdCompetitionRetreat = require('./ColdCompetitionRetreat');
 const EquipmentIncomeRoute = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute');
 const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
-const { ColdCompetitionMonitor } = require('./ColdCompetitionMonitor');
-const ColdCompetitionCandidates = require('./ColdCompetitionCandidates');
+const { SpotContestOutbox } = require('./SpotContestOutbox');
+const FailureLog = require('../../../FailureLog');
 const { ColdSimulationKernel, lifecycleKind } = require('./ColdSimulationKernel');
 const PartyGoalCalculation = require('./PartyGoalCalculation');
 const { beginHuntingTrip } = require('./HuntingTravel');
@@ -173,9 +173,8 @@ let loopArmedAt = 0;
 let flushTimer = null;
 let heartbeatTimer = null;
 let shuttingDown = false;
-let competition = null;
-let competitionCandidates = null;
-let competitionReady = false;
+// The spot aggregate's outcomes on their way to main (SpotContestOutbox), made with the kernel.
+let outbox = null;
 let safetyStateReady = false;
 let safetyStateRepairs = 0;
 let safetyOrphanRepairs = 0;
@@ -1028,19 +1027,10 @@ tables.watch('board', {
 });
 // Parties and memory are main's tables the kernel keeps
 // (ColdSimulationKernel.partyPut, InteractionMemory.accept).
-// A party's competition side is read through its leader: a row that changes
-// leaders moves both the old and the new leader's candidate.
 tables.watch('parties', {
-    reset: () => { for (const leaderId of kernel?.partyReset() || []) competitionCandidates?.partyChanged(leaderId); },
-    put: (key, row) => {
-        const previous = kernel?.partyPut(key, row);
-        competitionCandidates?.partyChanged(row.leaderId);
-        if (previous && Number(previous.leaderId) !== Number(row.leaderId)) competitionCandidates?.partyChanged(previous.leaderId);
-    },
-    remove: key => {
-        const previous = kernel?.partyRemove(key);
-        if (previous) competitionCandidates?.partyChanged(previous.leaderId);
-    }
+    reset: () => { kernel?.partyReset(); },
+    put: (key, row) => { kernel?.partyPut(key, row); },
+    remove: key => { kernel?.partyRemove(key); }
 });
 // The memory rows are kept packed by the kernel's InteractionMemory, not a
 // second plain copy in the mirror (retain: false); older revisions are refused.
@@ -1048,7 +1038,7 @@ tables.watch('parties', {
 // accepted, and a full copy (reset) re-sends them, kept views refuse equals.
 tables.watch('memory', {
     reset() {},
-    put: (key, row) => { if (kernel?.interactionMemory.accept(row)) kernel.decisionEvents?.memoryChanged(Number(key)); },
+    put: (key, row) => { kernel?.interactionMemory.accept(row); },
     remove() {}
 }, { retain: false });
 tables.watch('clan_wars', {
@@ -1484,59 +1474,12 @@ function arrivalContest({ spotId, members, principal, party = null, step, at, ev
     const verdict = SpotContest.contest({ spot, npcId, arriving, standing: standing.units, untargeted: standing.untargeted, at, step,
         memory: kernel.interactionMemory, personaFor: state => BotPersona.of(state), ownSide: ColdPvpResolver.ownSide,
         capacityForSpot: LevelingRoutes.capacityForSpot });
-    // The pairs this arrival decided hold the scan's pair cooldown (the key it reads):
-    // one decision per meeting. Temporary until step 2 S5 deletes the scan.
-    competition?.holdPairs(arriving.key, verdict.met, at);
     return verdict;
 }
-// An arrival's outcomes that touch a standing unit (a contest's offer_party, contest or
-// PvP intent; a cold enemy_met): held until main acknowledges the arriving step's commit
-// (its proposal, proposalId), then sent in the competition frame
-// (ColdCompetitionCandidates.queueEvent), whose actions fence both sides on their
-// revisions (ColdCompetitionActions, ColdPartyConflict). Keyed per arriving bot. Only
-// that step's accepted commit sends them, with the arriving side's committed revisions
-// (the bot's, its party row's: table changes reach the worker before the ack); any other
-// ack, a refused one, the bot leaving the far simulation, the worker's stop or an age past
-// the event's freshness from the arrival (SpotContest.EVENT_TTL_MS) drops them, counted
-// (spot:contest:stale / unsent), never re-fenced.
-const contestOutbox = new Map();
-function dropContest(id, why) {
-    const entry = contestOutbox.get(Number(id));
-    if (!entry) return;
-    contestOutbox.delete(Number(id));
-    for (let i = 0; i < entry.events.length; i++) Situations.note(`spot:contest:${why}`);
-}
-function outboxAdd(id, proposalId, event) {
-    if (!proposalId) { Situations.note('spot:contest:unsent'); return; }
-    const entry = contestOutbox.get(Number(id));
-    if (entry?.proposalId === proposalId) entry.events.push(event);
-    else { if (entry) dropContest(id, 'stale'); contestOutbox.set(Number(id), { proposalId, events: [event] }); }
-}
-function contestAcked(results, now = Date.now()) {
-    for (const result of results || []) {
-        const id = Number(result?.characterId), entry = contestOutbox.get(id);
-        if (!entry) continue;
-        if (!result.ok) { dropContest(id, 'unsent'); continue; }
-        const committed = kernel.states.get(id)?.state;
-        if (result.proposalId !== entry.proposalId || committed?.phase !== 'cold') { dropContest(id, 'stale'); continue; }
-        if (!competitionCandidates) { dropContest(id, 'unsent'); continue; }
-        contestOutbox.delete(id);
-        const party = partyIdOf(committed) ? kernel.partyOf(id) : null;
-        const fenced = side => Number(side.id) !== id ? side : { ...side, revision: Number(committed.simulation?.revision || 0),
-            memoryRevision: kernel.interactionMemory.revision(id),
-            ...(party && String(party.partyId) === String(side.partyId) ? { partyRevision: party.revision } : {}) };
-        for (const event of entry.events) {
-            if (now - event.at > SpotContest.EVENT_TTL_MS) { Situations.note('spot:contest:stale'); continue; }
-            competitionCandidates.queueEvent({ ...event, actor: fenced(event.actor), peer: fenced(event.peer) });
-        }
-        wakeLoopIfSooner();
-    }
-}
-const partyIdOf = state => state?.party?.partyId || state?.partyId || null;
-// The outbox's own end: entries past the freshness from their arrival (a step whose
-// ack never came) go, counted. Each heartbeat.
-function sweepContestOutbox(now = Date.now()) {
-    for (const [id, entry] of contestOutbox) if (entry.events.every(event => now - event.at > SpotContest.EVENT_TTL_MS)) dropContest(id, 'stale');
+// An arrival's outcomes that touch other bots wait for the arriving step's commit ack
+// and go to main in the competition frame (SpotContestOutbox).
+function contestAcked(results) {
+    if (outbox?.acked(results)) wakeLoopIfSooner();
 }
 // enemy_met at an arrival (EnemyMet, situations.md A2/B10/B11): the arriving bots against
 // the bots standing on the spot (the occupancy index, those on their way left out), both
@@ -1560,7 +1503,7 @@ function arrivalEnemies({ arriving, spotId, step, at, proposalOf }) {
     const event = EnemyMet.coldEvent({ meeting: found.meeting, spotId, at, step, partyOf: id => kernel.partyOf(id),
         memoryRevision: id => kernel.interactionMemory.revision(id) });
     const arrived = keys.has(stateKey(found.meeting.holder)) ? found.meeting.holder : found.meeting.peer;
-    outboxAdd(arrived.characterId, proposalOf(Number(arrived.characterId)), event);
+    outbox?.add(arrived.characterId, proposalOf(Number(arrived.characterId)), event);
 }
 // The arriving unit's own outcome on its states (its step's patch): avoid raises
 // contest_lost with the spot as its mark (it wakes the earning spot at once); yield
@@ -1577,7 +1520,7 @@ function contestOutcome(verdict, stats, principal, at, proposalId = null) {
             action: 'yield', peerId: verdict.peer.id, wait: { start: at, until: at + SpotContest.WAIT_MS } });
         return stats;
     }
-    outboxAdd(principal.characterId, proposalId, verdict.event);
+    outbox?.add(principal.characterId, proposalId, verdict.event);
     return stats;
 }
 
@@ -2294,7 +2237,7 @@ function startKernel(config = {}) {
         // A new life starts from no record (activations fence the bot first),
         // so the raises applied are this life's.
         // A bot that leaves the far simulation sends no arrival outcome after it.
-        if (entry.state.phase !== 'cold') dropContest(id, 'stale');
+        if (entry.state.phase !== 'cold') outbox?.drop(id, 'stale');
         if (previous && previous !== entry.state && entry.state.phase === 'hot') {
             nearEvents(id, previous, entry, Number(previousEntry.raiseSeq || 0));
             nearArrival(id, previous, entry.state);
@@ -2335,12 +2278,12 @@ function startKernel(config = {}) {
         }
         return result;
     };
-    kernel.states.delete = id => { occupationPlanner.cancel(id); cancelRoute(id); dropContest(id, 'stale'); return nativeDelete(id); };
+    kernel.states.delete = id => { occupationPlanner.cancel(id); cancelRoute(id); outbox?.drop(id, 'stale'); return nativeDelete(id); };
     kernel.states.clear = () => {
         for (const entry of [...occupationPlanner.slots.values(), ...occupationPlanner.cards.values(), ...occupationPlanner.waiting.values()])
             occupationPlanner.cancel(entry.id, entry.mode);
         routeRequests.clear();
-        for (const id of [...contestOutbox.keys()]) dropContest(id, 'stale');
+        for (const id of [...outbox?.pending.keys() || []]) outbox.drop(id, 'stale');
         return nativeClear();
     };
     invoke('GameServer/Bot/Population/PartyAdmission').configureTradeAdmission(id => kernel.states.get(Number(id))?.state || kernel.states.get(-Number(id))?.state,
@@ -2393,50 +2336,24 @@ function startKernel(config = {}) {
     OccupationSources.initialise();
     loopIntervalMs = Math.max(5, Number(config.loopIntervalMs) || 20);
     armLoop();
-    if (Config.coldCompetitionObserveEnabled) {
-        const allowed = new Set((DataCache.npcs || []).filter(npc => npc.template?.kind === 'Monster'
-            && !invoke('GameServer/Bot/AI/BotRaidSafety').isProtectedRaidEntity(npc)).map(npc => Number(npc.selfId)));
-        competition = new ColdCompetitionMonitor({
-            capacityForSpot: invoke('GameServer/Bot/AI/LevelingRoutes').capacityForSpot,
-            personaFor: state => BotPersona.of(state),
-            knowledgeFor: (source, persona, key) => persona ? { source, persona, key } : null,
-            isTargetAllowed: id => allowed.has(id),
-            ownSide: ColdPvpResolver.ownSide,
-            leaderParty: id => kernel.leaderParty(id),
-            spotOf: standingSpot
-        });
-        competitionCandidates = new ColdCompetitionCandidates({
-            records: id => kernel.states.locationIndex.getSource(id, 'state'),
-            packets: id => kernel.states.get(id), memory: kernel.interactionMemory,
-            monitor: competition, deadlines: kernel, leaderParty: id => kernel.leaderParty(id), spotOf: standingSpot,
-            frameSizing: frame => {
-                // ARCH-NOTE: these retained fields determine the existing byte admission.
-                // Keep identical conservative capacity on/off; Candidates.snapshot hides
-                // their optional publication. Removing this coupling needs a protocol task.
-                const report = competition.snapshot();
-                const large = Number.MAX_SAFE_INTEGER;
-                const outcomes = Object.fromEntries(Object.keys(report.outcomes).map(key => [key, large]));
-                const kernelReport = kernel.heartbeatSnapshot(true);
-                const message = Protocol.envelope('heartbeat', epoch, {
-                    ...kernelReport, safety: safetyTotals(),
-                    // Forecast cooldowns can make a decision alarm the new
-                    // head. Include both optional shapes before those effects.
-                    queueHead: { ...kernelReport.queueHead, kind: 'normal', alarmKind: 'decision',
-                        dueAt: large, overdue: false, current: false },
-                    competition: { ...report, events: [],
-                        recent: [], frame: { ...frame, events: [] }, at: frame.at, outcomes,
-                        scans: large, evaluated: large, pvpIntents: large, activeHunters: large, lastSampleMs: large,
-                        deliverySendFailures: large, lastScanEvents: 160, consumedSpotKeys: 32, consumedActorKeys: 128,
-                        pendingSpotKeys: large, pendingActorKeys: large, deliveryMode: 'addressed' },
-                    tables: tables.summary(), heapUsed: large, rss: large, v8Heap: { used: large, total: large, external: large, limit: large, afterGc: large, afterGcMax: large, late: large },
-                    eventLoopUtilization: 1, eluActiveMs: large, eluIdleMs: large, eventLoopLagP95Ms: large,
-                    eventLoopLagMaxMs: large
-                }, 'x'.repeat(160));
-                return new (invoke('GameServer/Bot/Population/ColdCompetitionFrameSizer').ColdCompetitionFrameSizer)(message, report.recent);
-            }
-        });
-        kernel.decisionEvents = competitionCandidates;
-    }
+    outbox = new SpotContestOutbox({ stateOf: id => kernel.states.get(Number(id))?.state, partyOf: id => kernel.partyOf(id),
+        memoryRevision: id => kernel.interactionMemory.revision(id),
+        // A frame's room in the heartbeat that carries it: the beat's own fields at their
+        // largest (numbers as 32 characters), the frame's events counted as they are offered.
+        frameSizing: frame => {
+            const large = Number.MAX_SAFE_INTEGER;
+            const kernelReport = kernel.heartbeatSnapshot(true);
+            const message = Protocol.envelope('heartbeat', epoch, {
+                ...kernelReport, safety: safetyTotals(),
+                queueHead: { ...kernelReport.queueHead, kind: 'normal',
+                    dueAt: large, overdue: false, current: false },
+                competition: { mode: 'addressed', at: frame.at, events: [], frame: { ...frame, events: [] } },
+                tables: tables.summary(), heapUsed: large, rss: large, v8Heap: { used: large, total: large, external: large, limit: large, afterGc: large, afterGcMax: large, late: large },
+                eventLoopUtilization: 1, eluActiveMs: large, eluIdleMs: large, eventLoopLagP95Ms: large,
+                eventLoopLagMaxMs: large
+            }, 'x'.repeat(160));
+            return new (invoke('GameServer/Bot/Population/ColdCompetitionFrameSizer').ColdCompetitionFrameSizer)(message, []);
+        } });
     flushTimer = setInterval(() => kernel.flushDue(), Math.max(50, Math.min(250, Number(config.flushTargetMs) || 2000)));
     heartbeatTimer = setInterval(() => {
         // Read and reset first: the beat's own work (the review, the send) counts in the next beat; a
@@ -2444,15 +2361,10 @@ function startKernel(config = {}) {
         const lagMaxMs = Math.max(0, eventLoopDelay.max / 1e6 - LAG_RESOLUTION_MS) || 0;
         const lagP95Ms = Config.developerDiagnostics ? Number(eventLoopDelay.percentile(95) / 1e6) || 0 : 0;
         eventLoopDelay.reset();
-        if (competitionCandidates && competitionReady && !kernel.paused && !shuttingDown) {
-            const started = Config.developerDiagnostics ? performance.now() : 0;
-            competitionCandidates.reviewBatch(Date.now());
-            if (Config.developerDiagnostics) competition.report.lastSampleMs = performance.now() - started;
-            wakeLoopIfSooner();
-        }
+        if (!kernel.paused && !shuttingDown) outbox.reviewBatch(Date.now());
         const elu = performance.eventLoopUtilization(previousElu);
         previousElu = performance.eventLoopUtilization();
-        sweepContestOutbox();
+        outbox.sweep();
         const heartbeat = {
             ...kernel.heartbeatSnapshot(),
             ...heapTelemetry.snapshot(),
@@ -2463,7 +2375,7 @@ function startKernel(config = {}) {
             eventLoopLagMaxMs: lagMaxMs,
             ...(Config.developerDiagnostics ? { occupationPlanning: occupationPlanner.snapshot() } : {}),
             safety: safetyTotals(),
-            competition: competitionCandidates?.snapshot() || null,
+            competition: outbox.snapshot(),
             ...(Config.developerDiagnostics ? {
             tables: tables.summary(),
             developerDiagnostics: economyDiagnostics.delta(),
@@ -2474,16 +2386,14 @@ function startKernel(config = {}) {
             eventLoopLagP95Ms: lagP95Ms
             } : {})
         };
+        // A beat main did not take: its frame stays the outbox's for the next beat;
+        // counted (heartbeat:send_failed), a throw also by its site and first stack.
         try {
-            if (send('heartbeat', heartbeat)) {
-                if (Config.developerDiagnostics) economyDiagnostics.deltaSent();
-            } else if (competition) {
-                if (Config.developerDiagnostics) competition.report.deliverySendFailures = (competition.report.deliverySendFailures || 0) + 1;
-            }
-        } catch {
-            // Main has not admitted this frame. Its exact origin/content stay
-            // owned here for the next existing heartbeat, including backpressure.
-            if (Config.developerDiagnostics && competition) competition.report.deliverySendFailures = (competition.report.deliverySendFailures || 0) + 1;
+            if (send('heartbeat', heartbeat)) { if (Config.developerDiagnostics) economyDiagnostics.deltaSent(); }
+            else Situations.note('heartbeat:send_failed');
+        } catch (error) {
+            Situations.note('heartbeat:send_failed');
+            FailureLog.note('worker.heartbeat_send', error);
         }
     }, Math.max(250, Number(config.heartbeatMs) || 1000));
     loopTimer.unref?.();
@@ -2543,14 +2453,10 @@ async function handle(message) {
     case 'clan_social_page':
         if (!kernel) break;
         for (const snapshot of payload.rows || []) {
-            if (kernel.interactionMemory.clanSocial.accept(snapshot)) competitionCandidates?.clanChanged(snapshot.clanId);
+            kernel.interactionMemory.clanSocial.accept(snapshot);
         }
         if (payload.memberships) {
-            const social = kernel.interactionMemory.clanSocial, previous = social.memberships;
-            const active = payload.activeClanIds ? new Set(payload.activeClanIds) : null;
-            const removed = active ? [...social.clans.keys()].filter(id => !active.has(id)) : [];
-            social.acceptMemberships(payload.memberships, payload.membershipVersion, payload.activeClanIds);
-            if (social.memberships !== previous) competitionCandidates?.membershipsChanged(previous, social.memberships, removed);
+            kernel.interactionMemory.clanSocial.acceptMemberships(payload.memberships, payload.membershipVersion, payload.activeClanIds);
         }
         break;
     case 'snapshot_page':
@@ -2569,7 +2475,6 @@ async function handle(message) {
                 ...kernel.heartbeatSnapshot()
             }, message.msgId);
         } else if (payload.done) {
-            competitionReady = true;
             send('ready', { phase: 'snapshots_loaded', ...kernel.heartbeatSnapshot() }, message.msgId);
         }
         break;
@@ -2625,8 +2530,9 @@ async function handle(message) {
         economyDiagnostics.requestFull();
         break;
     case 'competition_release':
-        if (Object.hasOwn(payload, 'receipt') && !competitionCandidates?.receipt(payload.receipt)) break;
-        competitionCandidates?.releaseForecasts(payload.events || []);
+        if (Object.hasOwn(payload, 'receipt')) outbox?.receipt(payload.receipt);
+        // Events main skipped for its action budget: not carried out, not resent (their arrival is past).
+        for (let i = 0; i < (payload.events || []).length; i++) Situations.note('spot:contest:skipped');
         break;
     case 'shutdown':
         buyerWaiters.clear();
@@ -2637,8 +2543,7 @@ async function handle(message) {
         routeRequests.clear();
         Trace.stop();
         occupationPlanner.stop();
-        competitionCandidates?.stop();
-        for (const id of [...contestOutbox.keys()]) dropContest(id, 'stale');
+        outbox?.stop();
         stopTimers();
         eventLoopDelay?.disable();
         heapTelemetry?.close();

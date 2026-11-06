@@ -50,10 +50,10 @@ module.exports.probe = async ({ kind, id, spotId, reason, remove, party, outcome
     if (kind === 'standing') return kernel.occupancy.physicalCount(spotId, { standingOnly: true });
     if (kind === 'near') return { marks: marksOf(kernel.states.get(id)?.state.stats), seen };
     if (kind === 'ack') {
-        const before = contestOutbox.has(id), counts = () => Catalogue.counts().raised;
+        const before = outbox.pending.has(id), counts = () => Catalogue.counts().raised;
         const stale = counts()['spot:contest:stale'] || 0, unsent = counts()['spot:contest:unsent'] || 0;
-        contestAcked([{ characterId: id, ok, proposalId: reason }]);
-        return { before, after: contestOutbox.has(id), stale: (counts()['spot:contest:stale'] || 0) - stale,
+        outbox.acked([{ characterId: id, ok, proposalId: reason }]);
+        return { before, after: outbox.pending.has(id), stale: (counts()['spot:contest:stale'] || 0) - stale,
             unsent: (counts()['spot:contest:unsent'] || 0) - unsent };
     }
     if (kind === 'search') {
@@ -87,9 +87,9 @@ module.exports.probe = async ({ kind, id, spotId, reason, remove, party, outcome
     if (kind === 'party') {
         const members = party.memberIds.map(member => kernel.states.get(member).state);
         const out = kernel.partyArrival({ party, members, spotId, timestamp: Date.now(), proposalOf: () => 'party-step' });
-        const outbox = contestOutbox.has(party.leaderId);
-        contestOutbox.delete(party.leaderId);
-        if (!out) return { out: null, seen, outbox };
+        const queued = outbox.pending.has(party.leaderId);
+        outbox.pending.delete(party.leaderId);
+        if (!out) return { out: null, seen, outbox: queued };
         const afterRounds = { ...out.party, stats: { ...out.party.stats, partySpotRisk: { partyId: party.partyId,
             rosterKey: PartyRisk.rosterKey(party), rounds: PartyRisk.rounds(party) + 10 } } };
         return { excluded: [...PartyRisk.excludedSpotIds(out.party)], lapsed: [...PartyRisk.excludedSpotIds(afterRounds)],
@@ -110,11 +110,11 @@ module.exports.probe = async ({ kind, id, spotId, reason, remove, party, outcome
     const contested = soloArrival(traveling, result, now);
     kernel.inFlight.delete(id);
     const stats = (contested || result).patch.stats;
-    const outbox = contestOutbox.get(id)?.events[0].action || null;
-    const proposalId = contestOutbox.get(id)?.proposalId || null;
+    const queued = outbox.pending.get(id)?.events[0].action || null;
+    const proposalId = outbox.pending.get(id)?.proposalId || null;
     return { arrived: result.patch.activity === 'hunting' && result.patch.spotId === spotId, changed: !!contested,
         marks: marksOf({ ...traveling.stats, ...stats }), woken: Catalogue.woken({ ...traveling.stats, ...stats }, 'earning_spot'),
-        wait: stats.coldCompetition?.wait || null, outbox, proposalId, seen };
+        wait: stats.coldCompetition?.wait || null, outbox: queued, proposalId, seen };
 };`;
 const wrapper = String.raw`
 const fs = require('node:fs'), path = require('node:path'), Module = require('node:module');
@@ -178,7 +178,6 @@ invoke('GameServer/DataCache').init();
         assert.equal(raised('spot:contest:commanded'), commanded + 2, 'counted per peer it would have avoided');
         assert.equal(Contest.contest(input([unit(2, 20), unit(3, 20)], unit(1, 30, { holds: 'evacuation' }))).action, 'coexist',
             'nor does a safety evacuation');
-        assert.deepEqual(lost.met, ['solo:2'], 'the units it was decided against (the scan holds them, until S5)');
         const hot = raised('spot:contest:hot_peer');
         assert.equal(Contest.contest(input([unit(2, 20, { hot: true }), unit(3, 20, { hot: true })])).action, 'coexist',
             'bodies near a player are not met');
@@ -187,6 +186,32 @@ invoke('GameServer/DataCache').init();
         Contest.contest(input([2, 3, 4, 5, 6, 7].map(id => unit(id, 20))));
         assert.equal(raised('spot:contest:capped'), capped + 1, 'more than four standing units: four are met, counted');
     } finally { Tendency.roll = roll; }
+}
+// The outbox's way to main (SpotContestOutbox): an arrival's outcome after its step's own
+// ack, fenced with the committed revision, in the next frame; an expired frame is counted.
+{
+    const { SpotContestOutbox } = require('../src/GameServer/Bot/Population/SpotContestOutbox');
+    const Situations = invoke('GameServer/Bot/Situations');
+    const raised = key => Situations.counts().raised[key] || 0;
+    const at = Date.now();
+    const outbox = new SpotContestOutbox({ stateOf: () => ({ phase: 'cold', simulation: { revision: 9 } }), partyOf: () => null,
+        memoryRevision: () => 4 });
+    const event = { key: 'spot_contest:k', at, action: 'contest', actor: { id: 1, revision: 1 }, peer: { id: 2, revision: 5 } };
+    outbox.add(1, 'p1', event);
+    assert.equal(outbox.reviewBatch(at), null, 'nothing goes before the ack');
+    const stale = raised('spot:contest:stale');
+    outbox.add(3, 'p3', { ...event, actor: { id: 3 } });
+    outbox.acked([{ characterId: 3, ok: true, proposalId: 'other' }]);
+    assert.equal(raised('spot:contest:stale'), stale + 1, 'another step\'s ack drops it, counted');
+    assert(outbox.acked([{ characterId: 1, ok: true, proposalId: 'p1' }]));
+    const frame = outbox.reviewBatch(at + 1);
+    assert.deepEqual([frame.events.length, frame.events[0].at, frame.events[0].actor.revision, frame.events[0].peer.revision],
+        [1, at + 1, 9, 5], 'the arriving side fenced at its commit, stamped at the frame');
+    assert.equal(outbox.reviewBatch(at + 2), frame, 'one frame at a time, until its receipt');
+    const expired = raised('spot:contest:expired');
+    assert(outbox.receipt({ frameId: frame.frameId, at: frame.at, status: 'expired' }));
+    assert.equal(raised('spot:contest:expired'), expired + 1, 'a lost frame is counted, not resent');
+    assert.equal(outbox.snapshot(), null);
 }
 
 (async () => {

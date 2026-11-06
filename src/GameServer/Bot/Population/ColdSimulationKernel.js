@@ -70,7 +70,6 @@ class DueHeap {
     constructor() {
         this.values = [];
         this.positions = new WeakMap();
-        this.decisionHeads = [];
         this.playerHeads = [];
         this.meetingHeads = [];
         this.leadHeads = [];
@@ -79,21 +78,18 @@ class DueHeap {
     set(index, entry) {
         this.values[index] = entry;
         this.positions.set(entry, index);
-        this.refreshDecision(index);
+        this.refreshHeads(index);
     }
 
     // A derived minimum on the SAME heap nodes; normal heads never hide a
-    // decision deadline when actor admission is full or paused, nor a round
-    // that starts its lead early (`lead`) behind an entry held to its due.
-    refreshDecision(index) {
+    // player's wait, a meeting's travel or a round that starts its lead early
+    // (`lead`) behind an entry held to its due.
+    refreshHeads(index) {
         while (index >= 0) {
-            let best = this.values[index]?.alarmKind === 'decision' ? this.values[index] : null;
             let player = this.values[index]?.playerWaiting ? this.values[index] : null;
             let meeting = this.values[index]?.meetingTravel ? this.values[index] : null;
             let lead = this.values[index]?.lead ? this.values[index] : null;
             for (const child of [index * 2 + 1, index * 2 + 2]) {
-                const candidate = child < this.values.length ? this.decisionHeads[child] : null;
-                if (candidate && (!best || this.compare(candidate, best) < 0)) best = candidate;
                 const waiting = child < this.values.length ? this.playerHeads[child] : null;
                 if (waiting && (!player || this.compare(waiting, player) < 0)) player = waiting;
                 const transit = child < this.values.length ? this.meetingHeads[child] : null;
@@ -101,7 +97,6 @@ class DueHeap {
                 const early = child < this.values.length ? this.leadHeads[child] : null;
                 if (early && (!lead || this.compare(early, lead) < 0)) lead = early;
             }
-            this.decisionHeads[index] = best;
             this.playerHeads[index] = player;
             this.meetingHeads[index] = meeting;
             this.leadHeads[index] = lead;
@@ -110,7 +105,6 @@ class DueHeap {
         }
     }
 
-    peekDecision() { return this.decisionHeads[0] || null; }
     peekPlayer() { return this.playerHeads[0] || null; }
     peekMeeting() { return this.meetingHeads[0] || null; }
     peekLead() { return this.leadHeads[0] || null; }
@@ -158,8 +152,7 @@ class DueHeap {
         if (index === undefined) return false;
         const last = this.values.pop();
         this.positions.delete(entry);
-        this.refreshDecision(this.values.length);
-        this.decisionHeads.length = this.values.length;
+        this.refreshHeads(this.values.length);
         this.playerHeads.length = this.values.length;
         this.meetingHeads.length = this.values.length;
         this.leadHeads.length = this.values.length;
@@ -714,9 +707,6 @@ class ColdSimulationKernel {
         this.heap = new DueHeap();
         this.scheduleTokens = new Map();
         this.nextScheduleToken = 1;
-        this.alarms = new Map();
-        this.decisionAlarms = new Map();
-        this.decisionEvents = null;
         this.buyerEvents = null;
         // A pending market wake per bot: the offers that woke it, item id ->
         // the cheapest new price (MarketBuyerWaiters), handed to its command.
@@ -725,7 +715,6 @@ class ColdSimulationKernel {
         // A step ended without a commit, hot handoff/remove and shutdown discard
         // them; never saved.
         this.lookSeen = new Map();
-        this.nextAlarmToken = 1;
         // Steps by bot, in start order (a Map keeps insertion order): the
         // stall check reads only the oldest entries.
         this.inFlight = new Map();
@@ -980,7 +969,6 @@ class ColdSimulationKernel {
         const characterId = Number(state?.characterId || 0);
         if (!characterId) return false;
         const ownOutput = entry.ownOutput === 'commit' || entry.ownOutput === 'review' ? entry.ownOutput : null;
-        const previousRecord = this.states.locationIndex.getSource(characterId, 'state');
         const current = this.states.get(characterId);
         if (this.tracedBots.size) this.traceWrite(characterId, current?.state, state, ownOutput);
         // Only an active bilateral preparation needs stable object identity.
@@ -1000,7 +988,6 @@ class ColdSimulationKernel {
             // Periodic catalog pages are prepared on main while the worker can
             // still resolve and receive newer commit ACKs. Preserve monotonic
             // ownership state when an older page arrives out of order.
-            this.decisionEvents?.ownerChanged(characterId, previousRecord, current);
             this.refreshCommandSource(characterId);
             this.buyerStateChanged(characterId);
             this.ensureScheduled(characterId);
@@ -1028,7 +1015,6 @@ class ColdSimulationKernel {
             // one invalid future node per bot until its next due time.
             this.states.set(characterId, { ...current, state }, ownOutput);
             this.occupancy.update(state);
-            this.decisionEvents?.ownerChanged(characterId, previousRecord, current);
             DiagnosticConfig.developerDiagnostics && (this.stats.snapshots += 1);
             this.refreshCommandSource(characterId);
             this.buyerStateChanged(characterId);
@@ -1056,7 +1042,6 @@ class ColdSimulationKernel {
         }
         this.states.set(characterId, { route: null, ...current, state, version }, ownOutput);
         this.occupancy.update(state);
-        this.decisionEvents?.ownerChanged(characterId, previousRecord, current);
         DiagnosticConfig.developerDiagnostics && (this.stats.snapshots += 1);
         this.refreshCommandSource(characterId);
         this.buyerStateChanged(characterId);
@@ -1091,13 +1076,11 @@ class ColdSimulationKernel {
         }
         this.inFlight.delete(id);
         this.dirty.delete(id);
-        const previousRecord = this.states.locationIndex.getSource(id, 'state');
         if (current?.state) this.occupancy.remove(stateKey(current.state));
         this.states.delete(id);
         this.buyerEvents?.remove(id);
         this.buyerWakeups.delete(id);
         this.lookSeen.delete(id);
-        this.decisionEvents?.ownerRemoved(id, previousRecord, current);
         this.versions.set(id, Number(this.versions.get(id) || 0) + 1);
         this.heap.remove(this.scheduleTokens.get(id)?.heapEntry);
         this.scheduleTokens.delete(id);
@@ -1142,49 +1125,12 @@ class ColdSimulationKernel {
             states: this.states.size,
             locationStates: this.states.locationIndex.sourceSize('state'),
             occupancy: this.occupancy.size().owners,
-            scheduleTokens: this.scheduleTokens.size, ownerHeapNodes: this.heap.size - this.alarms.size,
+            scheduleTokens: this.scheduleTokens.size, ownerHeapNodes: this.heap.size,
             inFlight: this.inFlight.size, dirty: this.dirty.size,
             commanding: this.commanding.size, commandStartedAt: this.commandStartedAt.size,
             partyRuns: this.partyRuns.size, partyRequirementProgress: this.partyRequirementProgress.size,
             buyerWakeups: this.buyerWakeups.size, lookSeen: this.lookSeen.size
         };
-    }
-
-    armDecisionDeadline(key, dueAt, stamp, callback) {
-        if (key == null || !Number.isSafeInteger(dueAt) || dueAt < 0 || typeof callback !== 'function') {
-            throw new RangeError('invalid_decision_deadline');
-        }
-        const previous = this.decisionAlarms.get(key);
-        if (previous?.stamp === stamp && previous.dueAt === dueAt) return previous.alarmToken;
-        if (previous) this.cancelDecisionDeadline(key, previous.alarmToken);
-        const entry = { kind: 'alarm', alarmKind: 'decision', alarmKey: {}, key, dueAt,
-            stamp, callback, characterId: 0, alarmToken: this.nextAlarmToken++ };
-        this.decisionAlarms.set(key, entry);
-        this.alarms.set(entry.alarmKey, entry);
-        this.heap.push(entry);
-        return entry.alarmToken;
-    }
-
-    cancelDecisionDeadline(key, expectedToken) {
-        const entry = this.decisionAlarms.get(key);
-        if (!entry || entry.alarmToken !== expectedToken) return false;
-        this.heap.remove(entry);
-        this.decisionAlarms.delete(key);
-        this.alarms.delete(entry.alarmKey);
-        return true;
-    }
-
-    drainDecisionDeadlines(timestamp, budget) {
-        let fired = 0;
-        while (budget.remaining > 0) {
-            const entry = this.heap.peekDecision();
-            if (!entry || entry.dueAt > timestamp) break;
-            budget.remaining--;
-            this.cancelDecisionDeadline(entry.key, entry.alarmToken);
-            entry.callback(entry.stamp);
-            fired++;
-        }
-        return fired;
     }
 
     busy(characterId) {
@@ -1271,7 +1217,7 @@ class ColdSimulationKernel {
         if (this.scheduleTokens.get(id)?.token === entry?.scheduleToken) this.scheduleTokens.delete(id);
     }
 
-    dueCandidates(timestamp = this.now(), capacity = this.maxBatch, decisionBudget = { remaining: 64 }) {
+    dueCandidates(timestamp = this.now(), capacity = this.maxBatch) {
         this.partyCapacityBlocked = false;
         this.duePicked = 0;
         const limit = Math.max(0, Math.min(this.maxBatch, Number(capacity) || 0));
@@ -1280,7 +1226,7 @@ class ColdSimulationKernel {
         let meetingSelected = false;
         // A bot's next round starts its lead before its due (startAt); no
         // entry starts earlier than that, so the scan ends past now + lead.
-        // An entry held to its due (a decision deadline, a retry, a command)
+        // An entry held to its due (a retry, a command)
         // steps aside until the scan ends, so the rounds behind it still
         // start early; each entry is looked at once per scan.
         const startBy = timestamp + this.stepLeadMs;
@@ -1296,12 +1242,6 @@ class ColdSimulationKernel {
             if (this.startAt(head) > timestamp) {
                 this.heap.remove(head);
                 held.push(head);
-                continue;
-            }
-            if (head.kind === 'alarm') {
-                if (decisionBudget.remaining <= 0) break;
-                DiagnosticConfig.developerDiagnostics && (this.duePicked += 1);
-                this.drainDecisionDeadlines(timestamp, decisionBudget);
                 continue;
             }
             if (!this.validHeapEntry(head)) {
@@ -1457,7 +1397,7 @@ class ColdSimulationKernel {
         }
         // Back on the heap unless the scan replaced or cancelled them.
         for (const entry of held) {
-            if (entry.kind === 'alarm' ? this.alarms.get(entry.alarmKey) === entry : this.validHeapEntry(entry)) this.heap.push(entry);
+            if (this.validHeapEntry(entry)) this.heap.push(entry);
         }
         return candidates;
     }
@@ -1780,8 +1720,8 @@ class ColdSimulationKernel {
     }
 
     // Diagnostics only: why a scheduler tick started no step. `no_step`: the tick
-    // still took due work (a command, a busy or requeued bot, an alarm). For a
-    // not-yet-due head, how far away the next heap entry (bot or alarm) is: how
+    // still took due work (a command, a busy or requeued bot). For a
+    // not-yet-due head, how far away the next heap entry is: how
     // often a wake at the earliest entry would fire instead of the 20 ms poll.
     countEmptyTick(timestamp) {
         if (this.duePicked > 0) return EconomyDiagnostics.count('worker_tick', 'empty', 'no_step');
@@ -1795,8 +1735,6 @@ class ColdSimulationKernel {
     tick() {
         DiagnosticConfig.developerDiagnostics && (this.stats.loopRuns += 1);
         this.stats.lastLoopAt = this.now();
-        const decisionBudget = { remaining: 64 };
-        this.drainDecisionDeadlines(this.stats.lastLoopAt, decisionBudget);
         this.recoverStalled(this.stats.lastLoopAt);
         if (this.paused || this.stopping) {
             DiagnosticConfig.developerDiagnostics && EconomyDiagnostics.count('worker_tick', 'empty', 'paused');
@@ -1812,7 +1750,7 @@ class ColdSimulationKernel {
             return;
         }
         const timestamp = this.now();
-        const candidates = this.dueCandidates(timestamp, capacity, decisionBudget);
+        const candidates = this.dueCandidates(timestamp, capacity);
         if (this.partyCapacityBlocked) this.flushDue();
         if (!candidates.length) {
             DiagnosticConfig.developerDiagnostics && this.countEmptyTick(timestamp);
@@ -2845,7 +2783,6 @@ class ColdSimulationKernel {
         this.lookSeen.clear();
         this.commanding.clear();
         this.commandStartedAt.clear();
-        for (const entry of this.alarms.values()) this.cancelDecisionDeadline(entry.key, entry.alarmToken);
         await this.resolveChain.catch(() => null);
         this.flush(null, true);
         return this.heartbeatSnapshot();
@@ -2853,10 +2790,8 @@ class ColdSimulationKernel {
 
     heartbeatSnapshot(forSizing = false) {
         const now = this.now(), head = this.heap.peek(), swallowed = isMainThread ? null : FailureLog.snapshot();
-        const scheduled = head && head.kind !== 'alarm' ? this.scheduleTokens.get(Number(head.characterId)) : null;
-        const current = !!head && (head.kind === 'alarm'
-            ? this.alarms.get(head.alarmKey) === head
-            : this.validHeapEntry(head) && scheduled?.version === head.version && scheduled.heapEntry === head);
+        const scheduled = head ? this.scheduleTokens.get(Number(head.characterId)) : null;
+        const current = !!head && this.validHeapEntry(head) && scheduled?.version === head.version && scheduled.heapEntry === head;
         const dueAt = head ? Number(head.dueAt) : null;
         const oldestDirtyAt = [...this.dirty.values()].reduce((oldest, proposal) => (
             Math.min(oldest, Number(proposal.enqueuedAt || now))
@@ -2869,8 +2804,7 @@ class ColdSimulationKernel {
             states: this.states.size,
             heap: this.heap.size,
             queueHead: {
-                kind: !head ? 'empty' : head.kind === 'alarm' ? 'alarm' : 'normal',
-                ...(head?.kind === 'alarm' ? { alarmKind: head.alarmKind } : {}),
+                kind: !head ? 'empty' : 'normal',
                 dueAt,
                 overdue: !!head && dueAt <= now,
                 ageMs: head ? Math.max(0, now - dueAt) : 0,
