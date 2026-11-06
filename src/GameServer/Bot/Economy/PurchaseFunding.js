@@ -114,7 +114,8 @@ function spendable(state = {}, escrow = 0, options = {}, captureOutput = null) {
     const wallet = Math.max(0, budget(state, escrow) - clanCredit(state, own)), packet = state.stats?.money;
     const selected = Trace.detailed(state.characterId);
     // Native callers observe this same calculation; they never calculate a second wallet.
-    const capture = Diagnostics.active() ? captureOutput || (selected ? {} : null) : null;
+    // A traced bot's record reads it with diagnostics off too (the decision trace samples bots on its own switch).
+    const capture = Diagnostics.active() || selected ? captureOutput || (selected ? {} : null) : null;
     let queueBudget = 0, reason = 'ratio_below_money_price';
     if (!Packet.hasMoney(packet)) {
         if (Diagnostics.active()) moneyPacketMissing++;
