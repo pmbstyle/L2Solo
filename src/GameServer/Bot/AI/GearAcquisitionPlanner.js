@@ -1483,22 +1483,10 @@ function partyRouteFailure(state = {}, plan = {}, timestamp = Date.now()) {
     };
 }
 
-// A craft route stalls when its kit collects nothing for STALL_KILLS kills (ours:
-// about 2-4 h of a far hunter's fights, limits.md "Craft route stall"). The plan
-// stamps where it stalls (finalizePlan, equipmentPlan.stall: { kills, kind }, the
-// far kill count stats.fightsWon); Situations.detect raises source_stalled once as
-// the count crosses it, and the build judges the stall (craftPlanFailure). Kept on
-// the plan so it survives travel, idle steps and restarts. No clock.
-const STALL_KILLS = 300;
-const killsOf = state => Math.max(0, Number(state?.stats?.fightsWon) || 0);
-function stallFor(state, kind) {
-    return { kills: killsOf(state) + STALL_KILLS, kind };
-}
-// The far kill count crossed the plan's stall between two states (detect).
-function stallCrossed(before, after) {
-    const stall = after?.stats?.equipmentPlan?.stall;
-    return Number(stall?.kills) > 0 && !!before?.stats && killsOf(before) < stall.kills && killsOf(after) >= stall.kills;
-}
+// A craft route's stall (GearStall: equipmentPlan.stall { kills, kind }), stamped by
+// finalizePlan, judged by craftPlanFailure; kept on the plan so it survives travel,
+// idle steps and restarts.
+const { killsOf, stallFor } = require('./GearStall');
 
 function abandonAcquisition(state, itemId, timestamp = Date.now(), reason = 'market_unfilled') {
     const plan = state.stats?.equipmentPlan;
@@ -3297,8 +3285,6 @@ function withReadiness(fn) {
     return readinessScoped(fn)();
 }
 module.exports.withReadiness = withReadiness;
-module.exports.STALL_KILLS = STALL_KILLS;
-module.exports.stallCrossed = stallCrossed;
 module.exports.acquisitionTargetAllowed = acquisitionTargetAllowed;
 module.exports.sourceCacheSize = sourceCacheSize;
 module.exports.sourceYieldReaderFor = sourceYieldReaderFor;

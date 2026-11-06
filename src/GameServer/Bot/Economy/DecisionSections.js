@@ -14,6 +14,7 @@ const ClanSupply = require('../../Clan/ClanSupplyPolicy');
 const Providers = require('./WishProviders');
 const Diagnostics = require('./EconomyDiagnostics');
 const Situations = require('../Situations');
+const Stall = require('../AI/GearStall');
 const { FIELD_ACTIVITIES } = Situations;
 const partyIdOf = state => String(state.party?.partyId || state.partyId || '');
 const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
@@ -444,7 +445,7 @@ function factsOf(view, memory = null) {
         occupation: hash([view.spotId, view.activity === 'resting' ? 'hunting' : view.activity]),
         dead: view.dead, riskDeaths: view.riskDeaths, recovery: view.recovery, karma: view.karma,
         supply: hash(view.supply), lines: linesOf(view.supply), stores: hash(view.stores), warehouse: view.warehouse,
-        bag: hash([view.bagNeed]), bagNeed: view.bagNeed };
+        bag: hash([view.bagNeed]), bagNeed: view.bagNeed, kills: view.kills, stall: view.stall };
 }
 // The party fact of a bot in none (factsOf).
 const NO_PARTY = hash([null, null]);
@@ -497,6 +498,8 @@ function stateView(state, recipes = null) {
     view.riskDeaths = positive(stats.spotRisk?.windowDeaths);
     view.recovery = positive(invoke('GameServer/Bot/Population/SpotRiskPolicy').recoveryFor(state)?.levelPenalty);
     view.karma = Number(Number(stats.karma) > 0);
+    // The kill count and the gear plan's stall (GearStall: source_stalled at the crossing).
+    view.kills = Stall.killsOf(state); view.stall = Stall.stallKills(state);
     view.supply = supplyOf(state);
     view.stores = storesOf(state);
     view.warehouse = Warehouse.contentIdentity(state);

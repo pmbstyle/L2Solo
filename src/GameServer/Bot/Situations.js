@@ -7,6 +7,7 @@
 // only woken and clears its bit when it is taken (decided). A new rule is a row here.
 
 const Trace = require('./DecisionTrace');
+const Stall = require('./AI/GearStall');
 const FIELD_ACTIVITIES = new Set(['hunting', 'resting', 'traveling']);
 
 // Places, as bits of a link's waits. OPEN hears everything: a body near a player, a
@@ -406,6 +407,11 @@ function factNames(previousFact, current, funding = false, planned = false) {
     // none, a rest at another spot is an occupation event.
     if (!planned && previousFact('occupation') !== current.occupation) add('moved_by_world');
     if (current.riskDeaths > previousFact('riskDeaths')) add('spot_dangerous');
+    // The gear plan's craft route collected nothing for its stall's kills (GearStall):
+    // the kill count crossed the stall since the decision. A baseline kept before the
+    // count was its fact has none to compare.
+    const kills = previousFact('kills');
+    if (kills !== undefined && Stall.crossed(kills, current.kills, current.stall)) add('source_stalled');
     // Karma that appeared or cleared (the karma wash, B6). A baseline kept before the
     // fact was recorded has none to compare.
     const karma = previousFact('karma');
@@ -434,7 +440,6 @@ function factNames(previousFact, current, funding = false, planned = false) {
     if (previousFact('warehouse') !== current.warehouse) add('warehouse');
     return names;
 }
-let Planner = null;
 // The step's fact diff, one function for both threads (a far step's projection,
 // BotLifeState.prepareResolve; a near bot's post): the situations of its own state
 // against the decision's baseline (stats.wishSections), a fact the baseline lacks
@@ -478,8 +483,6 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, re
     // A far bot's arrival in town (the step that leaves the field for a visit): its
     // shopping moment (its stop there wakes what waited for the town).
     if (!body && after.phase === 'cold' && after.activity === 'shopping' && FIELD_ACTIVITIES.has(before.activity)) names.push('arrived_town');
-    // lazy: the planner loads spot modules that read this catalogue.
-    if ((Planner ||= invoke('GameServer/Bot/AI/GearAcquisitionPlanner')).stallCrossed(before, after)) names.push('source_stalled');
     // A body near a player hears its full bag too (its post's previous facts: bagNeed).
     return body || gated(place(after, before)) ? names.concat(needsOpened(before, names, view, facts)) : names;
 }
