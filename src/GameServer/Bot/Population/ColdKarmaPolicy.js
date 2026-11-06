@@ -5,6 +5,7 @@ const SpotRiskPolicy = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
 const ColdTrip = require('./ColdTrip');
 const Situations = require('../Situations');
+const { isMainThread } = require('node:worker_threads');
 
 // Karma washing: a bot with any karma hunts it off. The same value as
 // Karma.closesTowns, asked for planning rather than for town access.
@@ -69,10 +70,23 @@ function washSpot(state, spots, timestamp = Date.now()) {
         || LevelingRoutes.bestSpot(spots.filter(eligible), clean)?.spot || null;
 }
 
+// The earning decision taken in a karma step (plan): the search's answer held on
+// stats (the planned state's copy: written), its spot marks cleared and its bit
+// cleared through Situations.decided, as the build's decided path does.
+function decideEarning(state, stats, spots, timestamp) {
+    const IncomeRoute = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute'); // lazy: cycle its search reads this module
+    const found = IncomeRoute.search(state, { spots, timestamp, required: true });
+    const earning = IncomeRoute.answerOf(found.route, timestamp, found.error);
+    stats.woken = Situations.decided(stats, 'earning_spot', { caller: 'karma_step', subject: state.characterId,
+        answer: earning.spotId ?? 'none', was: state.stats?.earning?.spotId ?? 'none' });
+    stats.earning = earning; stats.spotMarks = null;
+    return earning;
+}
+
 // A karma step (the worker's planLifecycle, main's cold entry): it executes the
-// held answer (stats.earning), no search here. While the earning spot is woken
-// (karma just appeared, or another situation) the bot rests until the answer
-// comes; with none, or one its marks exclude, it rests too. A party member
+// held answer (stats.earning). While the earning spot is woken the worker takes
+// the decision first (decideEarning); main rests until the answer comes. With no
+// spot, or one its marks exclude, it rests. A party member
 // decides no earning spot (EconomyContext.earningDue): its step takes the wash's
 // choice itself, as before situations step 1 (temporary until the party
 // aggregate, step 8; debt.md).
@@ -86,8 +100,15 @@ function plan(state, spots, timestamp = Date.now()) {
         return { targetNpcId: 0, plannedState: clean, spot: SpotIndex.spotById(spots, travel.spotId) };
     }
     const member = !!(state.party?.partyId || state.partyId);
-    const held = member ? washSpot(state, spots, timestamp) : Situations.woken(state.stats, 'earning_spot') ? null
-        : SpotIndex.spotById(spots, state.stats?.earning?.spotId);
+    let earning = state.stats?.earning;
+    if (!member && Situations.woken(state.stats, 'earning_spot')) {
+        // Woken (karma just appeared, no answer yet, another situation): a karma step is the
+        // bot's decision point (its build only runs after the round), so on the worker the
+        // earning decision is taken here by its one search (the karma wash's choice there),
+        // published on the planned state as a build publishes it; main never decides: it rests.
+        earning = isMainThread ? null : decideEarning(state, clean.stats, spots, timestamp);
+    }
+    const held = member ? washSpot(state, spots, timestamp) : SpotIndex.spotById(spots, earning?.spotId);
     const spot = held && !excludedSpotIds.has(String(held.id)) ? held : null;
     clean.stats.travel = null;
     if (state.activity === 'dead') return { targetNpcId: 0, plannedState: clean, spot };
