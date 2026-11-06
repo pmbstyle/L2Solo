@@ -50,11 +50,15 @@ module.exports.probe = async ({ kind, id, spotId, reason, remove, party, outcome
     if (kind === 'standing') return kernel.occupancy.physicalCount(spotId, { standingOnly: true });
     if (kind === 'near') return { marks: marksOf(kernel.states.get(id)?.state.stats), seen };
     if (kind === 'ack') {
+        // The commit ack as the worker hears it (contestAcked), then the next heartbeat's frame.
         const before = outbox.pending.has(id), counts = () => Catalogue.counts().raised;
-        const stale = counts()['spot:contest:stale'] || 0, unsent = counts()['spot:contest:unsent'] || 0;
-        outbox.acked([{ characterId: id, ok, proposalId: reason }]);
-        return { before, after: outbox.pending.has(id), stale: (counts()['spot:contest:stale'] || 0) - stale,
-            unsent: (counts()['spot:contest:unsent'] || 0) - unsent };
+        const drops = ['stale', 'unsent', 'arrival_refused'], was = drops.map(why => counts()['spot:contest:' + why] || 0);
+        contestAcked([{ characterId: id, ok, proposalId: reason }]);
+        const frame = outbox.reviewBatch(Date.now());
+        const sent = frame ? frame.events.map(event => event.action) : [];
+        if (frame) outbox.receipt({ frameId: frame.frameId, at: frame.at, status: 'accepted' });
+        return { before, after: outbox.pending.has(id), sent,
+            ...Object.fromEntries(drops.map((why, i) => [why, (counts()['spot:contest:' + why] || 0) - was[i]])) };
     }
     if (kind === 'search') {
         // The step's solo trip searches (routeTrip): the room its search may read.
@@ -275,11 +279,17 @@ invoke('GameServer/DataCache').init();
         const offered = await probe({ kind: 'solo', id: 104, spotId: room.id, reason: 'level_replan', outcome: 'contest' });
         assert.equal(offered.changed, false, 'an outcome touching a standing unit leaves the arriving step as it is');
         assert.equal(offered.outbox, 'contest', 'and waits for the arriving commit\'s ack');
-        assert.deepEqual(await probe({ kind: 'ack', id: 104, ok: false, reason: offered.proposalId }),
-            { before: true, after: false, stale: 0, unsent: 1 }, 'a refused commit drops it, counted');
+        assert.deepEqual(await probe({ kind: 'ack', id: 104, ok: true, reason: offered.proposalId }),
+            { before: true, after: false, sent: ['contest'], stale: 0, unsent: 0, arrival_refused: 0 },
+            'the arriving step\'s own ack sends it in the next frame');
+        const refused = await probe({ kind: 'solo', id: 104, spotId: room.id, reason: 'level_replan', outcome: 'contest' });
+        assert.deepEqual(await probe({ kind: 'ack', id: 104, ok: false, reason: refused.proposalId }),
+            { before: true, after: false, sent: [], stale: 0, unsent: 0, arrival_refused: 1 },
+            'a refused arriving commit drops it: the arrival did not happen');
         const again = await probe({ kind: 'solo', id: 104, spotId: room.id, reason: 'level_replan', outcome: 'contest' });
         assert.deepEqual(await probe({ kind: 'ack', id: 104, ok: true, reason: `${again.proposalId}:other` }),
-            { before: true, after: false, stale: 1, unsent: 0 }, 'an ack of another step drops it as stale, never re-fenced');
+            { before: true, after: false, sent: [], stale: 1, unsent: 0, arrival_refused: 0 },
+            'an ack of another step drops it as stale, never re-fenced');
         const evacuating = await probe({ kind: 'solo', id: 104, spotId: room.id, reason: 'unsafe_ground_evacuation' });
         assert.equal(evacuating.seen.holds, 'evacuation', 'a safety evacuation holds its new ground: it never avoids');
         const coexist = await probe({ kind: 'solo', id: 104, spotId: room.id, reason: 'level_replan', outcome: 'coexist' });

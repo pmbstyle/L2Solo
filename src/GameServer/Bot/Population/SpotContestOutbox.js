@@ -4,9 +4,11 @@
 // clan_war) waits for the arriving step's own commit ack (keyed per arriving bot on its proposal), is
 // fenced with that bot's committed revisions (its own, its party row's: table changes reach the worker
 // before the ack), and goes in the competition frame of the next heartbeat (main's
-// ColdCompetitionActions executes it, fencing both sides; its receipt frees the frame). Any other ack, a
-// refused one, the bot leaving the far simulation, the worker's stop or an age past the event's
-// freshness from the arrival (SpotContest.EVENT_TTL_MS) drops it, never re-fenced. Bounds (limits.md
+// ColdCompetitionActions executes it, fencing both sides; its receipt frees the frame). A refused
+// arriving commit drops it (the arrival did not happen: arrival_refused; the next step arrives
+// anew); any other ack, the bot leaving the far simulation, the worker's stop or an age past the
+// event's freshness from the arrival (SpotContest.EVENT_TTL_MS) drops it (stale), never re-fenced.
+// An outcome with no step to wait for (unsent) is a caller's bug: expected 0. Bounds (limits.md
 // "Spot contest"): QUEUE events waiting for a frame, FRAME_EVENTS a frame, the message size
 // (ColdCompetitionFrameSizer). Every drop is counted on the situations= line (spot:contest:<why>).
 const Situations = require('../Situations');
@@ -50,7 +52,7 @@ class SpotContestOutbox {
         for (const result of results || []) {
             const id = Number(result?.characterId), entry = this.pending.get(id);
             if (!entry) continue;
-            if (!result.ok) { this.drop(id, 'unsent'); continue; }
+            if (!result.ok) { this.drop(id, 'arrival_refused'); continue; }
             const committed = this.stateOf(id);
             if (result.proposalId !== entry.proposalId || committed?.phase !== 'cold') { this.drop(id, 'stale'); continue; }
             this.pending.delete(id);
