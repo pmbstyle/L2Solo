@@ -169,9 +169,9 @@ function raiseBag(stats, raise, impossible, where, subject, applied = 0) {
     if (raise?.stop) Situations.stop(stats, raise.stop === 'town' ? Situations.OPEN : Situations.REST, subject);
 }
 // A body's failed gear errand waits for the worker's answer to it: its goal_failed
-// raise of kind gear_errand is still in its bag (no other rejection blocks its errands).
-// Where the body acts, it plans a gear errand again only after that answer
-// (ShoppingState, HuntingState, FollowingState); the failed one stays marked (GearMarks).
+// raise of kind gear_errand is still in its bag. A town route that failed waits for it
+// (HuntingState: no trip on that route until the answer); the errand itself is held by
+// its mark (GearMarks), which every errand planner reads.
 const failureWaits = session => !!session?.nearRaise?.names?.some(entry => entry.name === 'goal_failed'
     && entry.payload?.kind === 'gear_errand');
 // A real command rejection belongs to the accepted decision that attempted

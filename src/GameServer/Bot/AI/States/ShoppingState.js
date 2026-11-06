@@ -1,5 +1,5 @@
 const refreshPartyMemberships = require('../../../World/PartyMembershipPublication');
-const { raiseDecision, held, failureWaits } = require('../DecisionEvents');
+const { raiseDecision, held } = require('../DecisionEvents');
 const Speech = invoke('GameServer/Bot/AI/BotSpeechTemplates');
 const SpeckMath      = invoke('GameServer/SpeckMath');
 const ServerResponse = invoke('GameServer/Network/Response');
@@ -204,8 +204,7 @@ function alternateTownNpcErrand(session, bot, town) {
 
 // A gear errand that failed where the body acts: its step failed (goal_failed, the
 // held step dropped) and the errand's key is marked (GearMarks: no gear plan or errand
-// takes it again until the bot's gear plan reviews again); the
-// body tries no gear errand until the worker answers (DecisionEvents.failureWaits).
+// takes it again until the bot's gear plan reviews again).
 function deferEquipmentRetry(session) {
     if (!['npc_equipment_purchase', 'market_purchase', 'dual_component_withdrawal', 'dual_sword_combine', 'mammon_unseal'].includes(session.companionShopping?.kind)) return;
     raiseDecision(session, 'goal_failed', { impossible: true,
@@ -321,7 +320,7 @@ async function waitForShoppingMeeting(session, bot, pending, visit) {
 function prepareEquipmentMarketStop(session, bot, town, BotAI, economy) {
     const plan = session.coldLifeState?.stats?.equipmentPlan;
     if (session.companionShopping || session.shoppingTarget || session.shoppingEquipmentPlanChecked) return false;
-    if (!town?.name || failureWaits(session)) return false;
+    if (!town?.name) return false;
     const unseal = invoke('GameServer/Bot/AI/BotMammonUnseal').plan(session,bot,town,{
         ...session.coldLifeState,stats:{...session.coldLifeState?.stats,classId:bot.fetchClassId()}
     });

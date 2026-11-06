@@ -761,8 +761,7 @@ module.exports = {
             }
         }
 
-        if (isSoloHunter(session) && (!DecisionEvents.failureWaits(session)
-            || /^stock:/.test(String(DecisionEvents.held(session)?.network.activity?.rootKey)))) {
+        if (isSoloHunter(session)) {
             const economy = DecisionEvents.held(session);
             const wealthCraft = require('../../Economy/HotWealthCraftService');
             if (wealthCraft.canStart(session, economy.network.activity)) {
