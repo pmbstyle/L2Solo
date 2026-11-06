@@ -1881,8 +1881,10 @@ function startKernel(config = {}) {
                 ...(market ? { market } : {}),
                 durable: Object.keys(durable).length ? durable : null,
                 // Worker-local (the kernel picks posted fields one by one): the
-                // party requirement plan reads this build, not a second one.
-                ...(economy ? { economy } : {}),
+                // party requirement plan reads this build, not a second one. Only a
+                // build taken on this step: a served card's view (refreshAdvisory,
+                // a lifecycle's reuse) holds the leaf alone, no wish queue or plans.
+                ...(economy && !refreshed && (!stepEconomy || lifecyclePlan.buildTaken === true) ? { build: economy } : {}),
                 buffOffer: invoke('GameServer/Bot/Economy/ColdBuffOffer').project(projected,
                     kernel.occupancy.members(projected.spotId, 'physical'), timestamp),
                 // Worker-local: the kernel keeps it for the commit ack.
