@@ -9,55 +9,17 @@ const { createHash } = require('node:crypto');
 const PurchaseFunding = require('./PurchaseFunding');
 const Packet = require('./StatsPacket');
 const Karma = require('../../Karma');
-const Warehouse = require('./PersonalWarehouseIndex');
 const ClanSupply = require('../../Clan/ClanSupplyPolicy');
 const Providers = require('./WishProviders');
-const Diagnostics = require('./EconomyDiagnostics');
 const Situations = require('../Situations');
 const Stall = require('../AI/GearStall');
 const { FIELD_ACTIVITIES } = Situations;
 const partyIdOf = state => String(state.party?.partyId || state.partyId || '');
-const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
 const CombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
-const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
 const HealingPotionStock = invoke('GameServer/Bot/AI/HealingPotionStock');
 const positive = n => Math.max(0, Number(n) || 0);
 const hash = value => fnv1a32(JSON.stringify(value));
-const SAMPLE_BYTES = 20;
-function sampleRows(value) {
-    if (typeof value === 'string') {
-        if (!value.startsWith('s1:') || value.length > 3 + Math.ceil(Hunt.MAX_SPOTS * SAMPLE_BYTES / 3) * 4) return null;
-        const encoded = value.slice(3), bytes = Buffer.from(encoded, 'base64');
-        if (!bytes.length || bytes.length % SAMPLE_BYTES || bytes.toString('base64') !== encoded) return null;
-        value = [];
-        for (let at = 0; at < bytes.length; at += SAMPLE_BYTES) {
-            value.push([bytes.readUInt32LE(at), bytes.readDoubleLE(at + 4), bytes.readDoubleLE(at + 12)]);
-        }
-    }
-    if (!Array.isArray(value) || value.length > Hunt.MAX_SPOTS) return null;
-    for (const row of value) {
-        if (!Array.isArray(row) || row.length !== 3 || !Number.isInteger(row[0]) || row[0] < 0 || row[0] > 0xffffffff
-            || !Number.isFinite(row[1]) || !Number.isFinite(row[2])) return null;
-    }
-    return value;
-}
-function packSample(rows) {
-    if (!Array.isArray(rows) || !sampleRows(rows)) return null;
-    if (!rows.length) return [];
-    const bytes = Buffer.allocUnsafe(rows.length * SAMPLE_BYTES);
-    rows.forEach((row, at) => {
-        const offset = at * SAMPLE_BYTES;
-        bytes.writeUInt32LE(row[0], offset); bytes.writeDoubleLE(row[1], offset + 4); bytes.writeDoubleLE(row[2], offset + 12);
-    });
-    return `s1:${bytes.toString('base64')}`;
-}
-function observationBaselineValid(baseline, rows) {
-    if (!baseline || typeof baseline !== 'object' || Array.isArray(baseline)) return false;
-    if (rows === undefined) rows = sampleRows(Object.hasOwn(baseline, 'sample') ? baseline.sample : []);
-    return rows !== null && (!Object.hasOwn(baseline, 'share') || Number.isFinite(baseline.share)
-        && baseline.share >= 0 && baseline.share <= 1);
-}
 // The decision links: the inputs
 // each link reads, by inputVersions name. The workshop decides on them
 // (EconomyContext.workshopKeyHolds); the
@@ -193,51 +155,33 @@ function kitView(state) {
 function kit(state) {
     return kitFact(kitView(state));
 }
-function fundingMark(state, escrow = 0) {
-    const packet = state.stats?.money;
-    if (!Array.isArray(packet)) return 0;
-    const wallet = PurchaseFunding.budget(state, escrow) - positive(Packet.refillReserve(packet));
-    const funded = [];
-    for (let row = 0, rows = Packet.fundedRows(packet); row < rows; row++) funded.push(wallet >= positive(Packet.fundedCumulative(packet, row)));
-    // Items or adena on their way from the board are a board-side money fact.
-    return hash([wallet >= 0, ...funded, PurchaseFunding.moneyReached(state, escrow), state.incomingPending === true]);
-}
-function reachesUpper(wallet, bounds) {
-    const high = bounds?.[1];
-    return high !== null && high !== undefined && wallet >= high;
-}
-// Hard (allowSoft false): the held option became unaffordable or its
-// funding/obligation mark moved. Soft: a newly payable next wish or a drift
-// beyond the bot's error (the soft point's, softEvents).
-function moneyChanged(state, baseline, escrow, allowSoft) {
-    if (!baseline) return false;
-    const physicalWallet = positive(state.adena), budgetTracked = Array.isArray(baseline.budgetBounds);
-    const decisionBudget = budgetTracked ? PurchaseFunding.budget(state, escrow) : physicalWallet;
-    // Old saved decisions recorded both kinds of edge in physical cash. Keep
-    // that conservative comparison until an actual build supplies both bounds.
-    if (physicalWallet < Number(baseline.cashBounds?.[0] ?? -1)
-        || budgetTracked && decisionBudget < Number(baseline.budgetBounds[0])
-        || baseline.funding !== fundingMark(state, budgetTracked ? escrow : 0)) return true;
-    return allowSoft && (moneyBound(state, baseline, escrow)
-        || Number(baseline.moneyError) >= 0
-            && Math.abs(decisionBudget - baseline.wallet) > baseline.moneyError);
-}
-// The wallet or the budget reached the decision's next wish (its upper bound):
-// the soft money event without the drift. A solo hunt window ends here
-// (ColdSoloWindow); the drift waits for the soft point at its end.
-function moneyBound(state, baseline, escrow = 0) {
-    if (!baseline) return false;
-    return reachesUpper(positive(state.adena), baseline.cashBounds) || Array.isArray(baseline.budgetBounds)
-        && reachesUpper(PurchaseFunding.budget(state, escrow), baseline.budgetBounds);
-}
-// At work a bot watches what its goal costs (decision 11-02), not each price its
-// last review read: the rest and the town read those. The build's threshold
-// (baseline.affordAt { at, kind }, affordAtOf): the kind it comes in reach for,
-// or null (goal_affordable:<kind>, situations.md §14). A baseline from before
-// it keeps its focus budget.
+// The build's money thresholds (situations.md §14, F3; step 4 C7): its wallet is read
+// when it decides and wakes nothing else. goal_affordable:<kind> as the budget stands at
+// or above the build's threshold (baseline.affordAt { at, kind }, affordAtOf), out_of_money
+// as it stands below the held leaf's funded row (baseline.fundedAt: the cumulative cost
+// the money queue held for its root). budget: PurchaseFunding.budget (the escrow in it).
 function goalReached(state, baseline, escrow = 0) {
     const afford = baseline?.affordAt ?? (baseline?.goalBudget > 0 ? { at: baseline.goalBudget, kind: 'focus' } : null);
     return afford?.at > 0 && PurchaseFunding.budget(state, escrow) >= afford.at ? afford.kind : null;
+}
+// The money situations of the wallet now against the decision's armed thresholds
+// (detect: a far step, a body's post). One comparison per step with the wallet as it
+// stands, so money main adds between steps (an AFK sale paid, an escrow returned, a
+// meeting settled) is heard at the next one. Each is raised once per baseline: raised
+// is the mark kept with the bot ({ at: the baseline's time, afford, out }:
+// stats.moneyRaised, a body's previous post), and the next build re-arms both (its
+// baseline's own time; a build arms affordAt only above the wallet, fundedAt only within it).
+// Returns { names, raised }: the names to raise and the mark to keep.
+function moneyCrossings(wallet, baseline, raised = null) {
+    const names = [];
+    if (!baseline || !Number.isFinite(wallet)) return { names, raised };
+    const at = Number(baseline.at) || 0, held = raised?.at === at ? raised : null;
+    const afford = baseline.affordAt;
+    const reached = afford?.at > 0 && wallet >= afford.at && !held?.afford;
+    const short = baseline.fundedAt > 0 && wallet < baseline.fundedAt && !held?.out;
+    if (reached) names.push(`goal_affordable:${afford.kind}`);
+    if (short) names.push('out_of_money');
+    return { names, raised: names.length ? { at, afford: !!held?.afford || reached, out: !!held?.out || short } : raised };
 }
 // What the wallet waits to reach, the first of (situations.md §14, B7, B4): a broke
 // bot's survival potions (the money for their missing line, the search's broke
@@ -255,13 +199,6 @@ function affordAtOf(context, wallet) {
     if (bridge?.price > wallet) return { at: bridge.price, kind: 'survival' };
     return context.goalBudget > wallet ? { at: context.goalBudget, kind: 'focus' } : null;
 }
-// The wallet reached what the bot watches where it stands.
-function moneyReached(state, baseline, escrow = 0) {
-    return Situations.hears('money', Situations.place(state)) ? moneyBound(state, baseline, escrow) : goalReached(state, baseline, escrow);
-}
-function meaningfulMoney(state, baseline = state.stats?.wishSections, escrow = 0) {
-    return moneyChanged(state, baseline, escrow, true);
-}
 function baselineIdentity(baseline) {
     const canonical = (value, depth = 0) => {
         if (depth > 8) throw new TypeError('decision_baseline_depth');
@@ -274,11 +211,6 @@ function baselineIdentity(baseline) {
     };
     try {
         if (!baseline || typeof baseline !== 'object' || Array.isArray(baseline)) return null;
-        const rows = sampleRows(Object.hasOwn(baseline, 'sample') ? baseline.sample : []);
-        if (!observationBaselineValid(baseline, rows)) return null;
-        if (Object.hasOwn(baseline, 'sample')) {
-            baseline = { ...baseline, sample: rows };
-        }
         return createHash('sha256').update(JSON.stringify(canonical(baseline))).digest('hex');
     } catch (error) { FailureLog.note('economy.codec:baseline_identity', error); return null; }
 }
@@ -287,135 +219,17 @@ function incomeError(state, persona) {
     return Learning.knowledgeEnabled() ? Learning.stageError(Learning.INCOME_ERROR_FLOOR + .25 * (1 - Number(persona?.understanding ?? .3)),
         Learning.INCOME_ERROR_FLOOR, state.stats?.lifelongKills ?? state.stats?.fightsWon ?? 0, Learning.gradeOfLevel(state.level)) : 0;
 }
-// A sample row: the spot, exp and net income per ms of its cycle.
-function sampleOf(rows) {
-    return rows.map(row => [hash(row.spotId), row.exp / row.cycleMs,
-        (positive(row.adena) + positive(row.loot) - positive(row.costs)) / row.cycleMs]);
-}
-function sample(state, timestamp = Date.now(), mode) {
-    return sampleOf(Hunt.sampledRows(state, timestamp, mode));
-}
-// noise: each current row's own noise (BotHuntEfficiency.record); a drift
-// inside the larger of the bot's error and that noise is no change. Rows
-// match by spot hash: a round moves its spot's row to the front of the list
-// (BotHuntEfficiency.record), which is no change of any value. noise is
-// indexed like current.
-function learnedChange(current, previous, error, share, previousShare, noise = []) {
-    if (current.length !== previous.length) return true;
-    const before = new Map(previous.map(row => [row[0], row]));
-    return current.some((row, at) => !before.has(row[0]) || row.slice(1).some((value, index) => {
-        const old = Number(before.get(row[0])[index + 1]) * previousShare;
-        return !Number.isFinite(old) || Math.abs(value * share - old) > Math.abs(old) * Math.max(error, noise[at] || 0);
-    }));
-}
-// The learned frustration the decision weighed its risk with (riskWeight's
-// 1 + frustration), rounded: the baseline holds a few bytes.
-const frustrationOf = state => Math.round(positive(state.stats?.frustration) * 1000) / 1000;
-// bondNow: the caller's reader of the current relation bond
-// (WishProviders.relationBond), called only once the rest held; null when the
-// caller read no memory. The bond, like frustration, drifts beyond the error.
-function bondChanged(baseline, bondNow, error) {
-    const base = baseline.bond;
-    if (!Array.isArray(base) || typeof bondNow !== 'function') return false;
-    const bond = bondNow();
-    return Array.isArray(bond) && bond.some((value, at) => Math.abs(value - Number(base[at])) > Math.abs(Number(base[at])) * error);
-}
-function observationChanged(state, baseline, timestamp, mode, bondNow = null) {
-    if (!baseline) return true;
-    const rows = Hunt.sampledRows(state, timestamp, mode), current = sampleOf(rows);
-    const previous = sampleRows(Object.hasOwn(baseline, 'sample') ? baseline.sample : []);
-    const share = Hunt.onSpotShare(state), previousShare = baseline.share ?? 1;
-    const error = positive(baseline.incomeError);
-    // Frustration drifts every round; it is an event only beyond the bot's
-    // error on its risk weight (a baseline saved before it has none).
-    const frustration = Number(baseline.frustration);
-    return !observationBaselineValid(baseline, previous) || !Number.isFinite(share)
-        || Math.abs(share - previousShare) > previousShare * error
-        || Number.isFinite(frustration) && Math.abs(frustrationOf(state) - frustration) > (1 + frustration) * error
-        || learnedChange(current, previous, error, share, previousShare, rows.map(row => positive(row.noise)))
-        || bondChanged(baseline, bondNow, error);
-}
-function bounds(wallet) {
-    const result = [-1, null];
-    return { result, watch: price => {
-        price = Number(price);
-        if (!Number.isFinite(price) || price < 0) return;
-        if (price <= wallet) result[0] = Math.max(result[0], price);
-        else result[1] = result[1] === null ? price : Math.min(result[1], price);
-    } };
-}
-// facts: the build's semanticFacts(state) when its caller already has them.
-// bond: the build's relation bond (WishProviders.relationBond), null without one.
-// threat: the gear-threat mask the build weighed (context.gearThreatMask),
-// compared hard by the held verdict. marketWatch: the build's watch rows
-// [itemId, storeType, reference price, error] (at most MARKET_WATCH), read by
-// the soft point (softEvents); recorded by every build, never carried.
-function snapshot(state, context, cashBounds, moneyError = -1, mode, money = null, facts = null, bond = null, marketWatch = null) {
-    const persona = context.persona;
-    const actual = { ...state, stats: { ...state.stats, money: context.statsPacket.money } };
-    const budgetTracked = Array.isArray(money?.budgetBounds), escrow = budgetTracked ? money.buyOrderEscrow : 0;
-    // budgetBounds tags the budget-aware schema. Its wallet/error use total
-    // purchase funds; cashBounds still records physical fees. Old wallets are cash.
-    const wallet = budgetTracked ? PurchaseFunding.budget(state, escrow) : positive(state.adena);
+// The build's baseline (stats.wishSections): its time, its money thresholds (affordAt,
+// fundedAt), its income error (the party forming's), the facts it decided on (the
+// step's diff compares against them) and its kit lines. facts: the build's
+// semanticFacts(state) when its caller already has them.
+function snapshot(state, context, money = null, facts = null) {
+    const wallet = PurchaseFunding.budget(state, money?.buyOrderEscrow || 0);
     const afford = affordAtOf(context, wallet);
-    const share = Hunt.onSpotShare(state);
-    return { at: Number(context.timestamp), wallet, cashBounds, funding: fundingMark(actual, escrow), moneyError,
-        ...(budgetTracked ? { budgetBounds: money.budgetBounds } : {}),
-        ...(afford ? { affordAt: afford } : {}),
-        ...(facts || semanticFacts(state)), ...supplyFacts(state, context.statsPacket.kitRates, context.earning), threat: context.gearThreatMask,
-        frustration: frustrationOf(state), ...(bond ? { bond } : {}),
-        incomeError: incomeError(state, persona), sample: packSample(sample(state, context.timestamp, mode)),
-        ...(share === 1 ? {} : { share }), ...(marketWatch?.length ? { marketWatch } : {}) };
-}
-// The soft point (far bots, the end of every step): the situations (money,
-// goal, observation, market) whose soft inputs crossed the bot's own error since
-// its decision, heard where it stands, empty when quiet;
-// no clock: a drift inside the error is never an event, however long.
-// baseline: the decision's (stats.wishSections). input: { board (the board
-// mirror, null: not ready, the market part waits), buyOrderEscrow, memory (a
-// reader of the bot's memory rows, called only when the bond is compared),
-// timestamp (the step's) }. before: the state the step left (arriving in town).
-function softEvents(state, baseline, input, before = null) {
-    if (!baseline) return NONE;
-    const names = [];
-    // Diagnostics only: soft:step:far counts the soft points, soft:raise:<source>
-    // the raises by source (the observation share per far step is read live).
-    const diagnostic = Diagnostics.active();
-    if (diagnostic) Diagnostics.count('soft', 'step', 'far');
-    const where = Situations.place(state, before);
-    const add = source => {
-        names.push(source);
-        if (diagnostic) Diagnostics.count('soft', 'raise', source);
-    };
-    if (Situations.hears('money', where) && meaningfulMoney(state, baseline, input.buyOrderEscrow)) add('money');
-    else {
-        const kind = goalReached(state, baseline, input.buyOrderEscrow);
-        if (kind) add(`goal_affordable:${kind}`);
-    }
-    const bondNow = () => Providers.relationBond(state, { memory: input.memory?.() ?? null });
-    if (Situations.hears('observation', where) && observationChanged(state, baseline, input.timestamp, undefined, bondNow)) add('observation');
-    if (input.board && marketCrossed(input.board, baseline.marketWatch, Number(state.characterId))) add('market');
-    return names.length ? names : NONE;
-}
-const NONE = Object.freeze([]);
-// The watch rows against the board mirror, one head read per row: a sell line
-// (SELL) below the reference by more than the error, or a buy line (BUY)
-// above it by more than the error. Rows of another shape
-// (a baseline saved by an older build) are skipped.
-const MARKET_WATCH = 20;
-function marketCrossed(board, watch, ownerId) {
-    if (!Array.isArray(watch)) return false;
-    const exclude = { excludeOwner: ownerId };
-    for (let at = 0; at < watch.length && at < MARKET_WATCH; at++) {
-        const row = watch[at];
-        if (!Array.isArray(row)) continue;
-        const [itemId, storeType, price, error] = row;
-        if (!(itemId > 0) || !(price > 0) || !(error >= 0)) continue;
-        const line = board.first(itemId, storeType, exclude);
-        if (!line) continue;
-        if (storeType === SELL ? line.price < price * (1 - error) : storeType === BUY && line.price > price * (1 + error)) return true;
-    }
-    return false;
+    return { at: Number(context.timestamp), ...(afford ? { affordAt: afford } : {}),
+        ...(context.leafBudget > 0 && context.leafBudget <= wallet ? { fundedAt: context.leafBudget } : {}),
+        ...(facts || semanticFacts(state)), ...supplyFacts(state, context.statsPacket.kitRates, context.earning),
+        incomeError: incomeError(state, context.persona) };
 }
 // Who the friend and the enemy are (WishProviders.relationTargets over the
 // bot's memory), not how much: their trust and hostility are the soft bond.
@@ -444,7 +258,7 @@ function factsOf(view, memory = null) {
         party: hash([view.party?.partyId, view.party?.role]),
         occupation: hash([view.spotId, view.activity === 'resting' ? 'hunting' : view.activity]),
         dead: view.dead, riskDeaths: view.riskDeaths, recovery: view.recovery, karma: view.karma,
-        supply: hash(view.supply), lines: linesOf(view.supply), stores: hash(view.stores), warehouse: view.warehouse,
+        lines: linesOf(view.supply), stores: hash(view.stores),
         bag: hash([view.bagNeed]), bagNeed: view.bagNeed, kills: view.kills, stall: view.stall };
 }
 // The party fact of a bot in none (factsOf).
@@ -472,7 +286,7 @@ function supplyOf(state) {
 function supplyFacts(state, kitRates, earning) {
     const stats = { ...state.stats, ...(kitRates ? { kitRates } : {}), ...(earning !== undefined ? { earning } : {}) };
     const supply = supplyOf({ ...state, stats });
-    return { supply: hash(supply), lines: linesOf(supply) };
+    return { lines: linesOf(supply) };
 }
 // The lines fact (factsOf): the shots' and the potions' place against their line, one number.
 const linesOf = supply => (supply?.[0]?.[2] || 0) * 3 + (supply?.[1]?.[2] || 0);
@@ -502,7 +316,6 @@ function stateView(state, recipes = null) {
     view.kills = Stall.killsOf(state); view.stall = Stall.stallKills(state);
     view.supply = supplyOf(state);
     view.stores = storesOf(state);
-    view.warehouse = Warehouse.contentIdentity(state);
     // What the bag holds against its floor and its cleanup counts (situations.md F2:
     // PartyMarketBreak.bagFact, no price, board or clock); its rise raises bag_full.
     view.bagNeed = (MarketBreak ||= invoke('GameServer/Bot/Population/PartyMarketBreak')).bagFact(state, view.kitHashes);
@@ -510,7 +323,7 @@ function stateView(state, recipes = null) {
 }
 // What the bot's clan asks of it and holds for it: the clan's material demand, the clan
 // supply, whether the clan has a warehouse, the clan goal's crystals. The personal
-// warehouse is its own fact: the bot's own doing, read in town (Situations, warehouse).
+// warehouse is the bot's own doing: no fact.
 // owner: { characterId, clanId, stats } (a state is one); into: the array written (the
 // near reader's, updated in place).
 function storesOf(owner, into = new Array(3)) {
@@ -552,7 +365,7 @@ function isEmptyWishPlan(plan) {
 // (travel.leafSpotId), the arrival keeps the pair leaf spot + ground reached
 // (stats.standIn, BackgroundResolver.resolveTravel), the leaf's own arrival
 // while the bot stands on that ground.
-// A far bot (Situations, own_move) owns more: hunting or resting on any ground,
+// A far bot (a gated place, Situations) owns more: hunting or resting on any ground,
 // and any trip but a forced one (FORCED_TRIPS: a flight, a death pressure, a
 // pushed-out spot, a party's call), so a pull to another spot or a flight's
 // arrival raises nothing there. Near a player only the leaf's own trip and
@@ -561,7 +374,8 @@ function isEmptyWishPlan(plan) {
 // planned); its field-trip clause is EconomyContext.fieldActivity's.
 function occupationPlanned(state, leaf) {
     const where = Situations.place(state);
-    if (ownMove(state, where) && !Situations.hears('own_move', where)) return true;
+    // Far from a player (a gated place) its own move is no event.
+    if (ownMove(state, where) && Situations.gated(where)) return true;
     if (!leaf?.activity) return false;
     const hunt = leaf.activity === 'hunting';
     if (state.activity === 'traveling') {
@@ -600,5 +414,5 @@ function standsIn(state, leaf) {
 function kitMoved(before, after) {
     return (before?.stats?.wishSections?.build ?? null) !== (after?.stats?.wishSections?.build ?? null);
 }
-module.exports = { FIELD_ACTIVITIES, partyIdOf, moneyReached, goalReached, LINK_INPUTS, inputVersions, routeVersions, movedInput, shotInputs, stateView, kit, kitMoved, moneyChanged, moneyBound, observationChanged, incomeError,
-    MARKET_WATCH, softEvents, marketCrossed, baselineIdentity, sample, sampleRows, packSample, observationBaselineValid, bounds, snapshot, semanticFacts, factsOf, relationTargetIds, NO_PARTY, LINE_BELOW, LINE_OUT, lineAt, supplyOf, linesOf, fundingMark, occupationPlanned, hash, isEmptyWishPlan, decisionRefusal };
+module.exports = { FIELD_ACTIVITIES, partyIdOf, goalReached, moneyCrossings, LINK_INPUTS, inputVersions, routeVersions, movedInput, shotInputs, stateView, kit, kitMoved, incomeError,
+    baselineIdentity, snapshot, semanticFacts, factsOf, relationTargetIds, NO_PARTY, LINE_BELOW, LINE_OUT, lineAt, supplyOf, linesOf, occupationPlanned, hash, isEmptyWishPlan, decisionRefusal };

@@ -955,15 +955,9 @@ function setRecordEscrow(key, ownerId, amount) {
     }
 }
 const escrowFor = characterId => escrowByOwner.get(Number(characterId)) || 0;
-// The soft point's inputs (DecisionSections.softEvents: a far bot's step,
-// BotLifeState.prepareResolve, and a near bot's post): the board mirror (null
-// until ready), the escrow and the bot's memory rows, read only when its bond
-// is compared.
-const softInputFor = (characterId, timestamp) => ({ board: boardReady(), buyOrderEscrow: escrowFor(characterId), timestamp,
-    memory: () => kernel.interactionMemory.relationRows(Number(characterId)) });
 // A near bot's post (BotLifeState.notifyNearFacts) against the row before
 // it, on the posted row before it is stored: the raises main named and
-// detected (once per raise) and the soft point. The decision is then taken on this row (mode near).
+// detected (once per raise). The decision is then taken on this row (mode near).
 // applied: the last raise the record applied.
 function nearEvents(id, previous, entry, applied) {
     const row = entry.state, stats = row.stats ||= {};
@@ -972,8 +966,6 @@ function nearEvents(id, previous, entry, applied) {
     for (const key of SavedStats.MIND_KEYS) stats[key] = previous.stats?.[key];
     // Main detected the body's own facts (A1) and named them in the bag.
     entry.raiseSeq = DecisionEvents.takePostedRaise(stats, row.raise, applied, Situations.bodyPlace(row), id);
-    const where = Situations.place(row, previous);
-    for (const name of DecisionSections.softEvents(row, stats.wishSections, softInputFor(id, Date.now()))) Situations.raise(stats, name, null, where, id);
 }
 // A near bot's spot post (SpotService.assignSpot's near_spot, leaveSpot's near_left; main
 // raises no moved_by_world for it, Situations.detect's body), heard once by its number
@@ -1798,13 +1790,7 @@ function startKernel(config = {}) {
             let economy = stepEconomy, seenEcho = null, refreshed = null, observedDeps = null, economyEdges = null;
             // The facts of this step's last action ask (askAction), carried to its commit.
             let actionBaseline = lifecyclePlan?.actionBaseline || null;
-            const base = {
-                ...roundProjection(state, timestamp, writtenAt, lifecyclePlan),
-                // The soft point's inputs (BotLifeState.prepareResolve, every
-                // step): the board mirror (null until ready), the escrow and
-                // the bot's memory rows, read only when its bond is compared.
-                softInputFor: (projected, at) => softInputFor(projected.characterId, at)
-            };
+            const base = roundProjection(state, timestamp, writtenAt, lifecyclePlan);
             const resolved = await LifeStateProjector.prepareResolve(state, result, raidPreparing
                 ? { ...base, statsPacket: {}, statsPacketBeforeResolve: true } : stepEconomy
                 // Merged before the event check, whose dirty bits follow it.
@@ -1905,19 +1891,12 @@ function startKernel(config = {}) {
             };
         },
         soloWindow: {
-            // One round of a window: the step's projection without its soft
-            // point and what follows it (ColdSoloWindow, the window's end has them).
+            // One round of a window: the step's projection without what follows it
+            // (ColdSoloWindow, the window's end has it).
             projectRound: (state, result, timestamp, plan, writtenAt) => LifeStateProjector.prepareResolve(state, result,
                 { ...roundProjection(state, timestamp, writtenAt, plan), statsPacket: plan.statsPacket, statsPacketBeforeResolve: true }),
             readers: plan => ({
                 edges: (before, after) => stockEdges(before, after, plan.economy),
-                moneyBound: after => DecisionSections.moneyReached(after, after.stats?.wishSections, escrowFor(after.characterId)),
-                // The soft point's market watch (heard at work), against the board mirror.
-                market: after => {
-                    const board = boardReady();
-                    return !!board && Situations.hears('market', Situations.place(after))
-                        && DecisionSections.marketCrossed(board, after.stats?.wishSections?.marketWatch, Number(after.characterId));
-                },
                 // What the held leaf's execution proved (EconomyContext.leafOutcome): the
                 // window ends, its step raises it.
                 feasible: after => !EconomyContext.leafOutcome(after, plan.economy.network?.activity, {}, heldAtStep(plan)),

@@ -103,7 +103,9 @@ const SITUATIONS = Object.freeze({
     goal_moved: link(0),
     craft_bid: link(0),
     clan_market: link(0),
-    funding: link(WORK | VISIT),
+    // The held leaf's funded row went unfunded (the wallet fell below the money the
+    // queue held for it, DecisionSections.moneyCrossings, F3).
+    out_of_money: link(0),
     // A move the bot did not order (a flight, a pull, a push out, a party's call).
     moved_by_world: link(0),
     // Deaths at its spot, or the death recovery's level penalty raised (a death, the
@@ -122,14 +124,11 @@ const SITUATIONS = Object.freeze({
     // Its own income on its spot below what its held earning answer expects, beyond its error: weighed at a rest,
     // once a stay (BotHuntEfficiency.disappoints). Wakes the earning spot only.
     spot_disappoints: link(0, STOP),
-    supply: link(FIELD | VISIT),
     bag: link(FIELD | VISIT),
     // What its clan asks of it moved (the stores fact: its material demand, the clan
     // supply, the crystals): heard at its next stop (situations.md §3 clan_call; the
     // clan raises it itself in step 9).
     clan_call: link(WORK | VISIT, STOP),
-    // Its own warehouse: what it put in and took is its doing, heard as it arrives in town.
-    warehouse: link(GATED),
     // A condition, not a change: a need that opened. The shots a fight loads or the
     // survival potions fell under their line (one hour of use, the kit rates'), the
     // shots ran out (the supply fact's flips, factNames); the bag must go to town.
@@ -137,21 +136,12 @@ const SITUATIONS = Object.freeze({
     'stock_low:shots': link(0),
     'stock_low:potions': link(0),
     bag_full: link(0),
-    // Its own doing is no event (own outputs are not inputs): its trips and where
-    // they end, its craft preparation.
-    own_move: link(GATED),
-    own_preparation: link(GATED),
-    // The soft point (DecisionSections.softEvents, until step 4 C7). Money is read in
-    // town and when the goal comes in reach; a rest is no review of the purse.
-    money: link(FIELD | VISIT),
-    // The wallet reached the build's threshold (stats.affordAt): a broke bot's survival
-    // potions, an unarmed bot's weapon bridge, its focus.
+    // The wallet reached the build's threshold (baseline.affordAt): a broke bot's survival
+    // potions, an unarmed bot's weapon bridge, its focus. Its own failed buy's retry
+    // stamp goes with it (stats.marketRetryAfter: it may buy again, raisedFacts).
     'goal_affordable:potions': link(0),
     'goal_affordable:focus': link(0),
-    'goal_affordable:survival': link(0),
-    // Its own samples moved; a watched board line crossed (until step 4 C7).
-    observation: link(WORK | VISIT),
-    market: link(0)
+    'goal_affordable:survival': link(0)
 });
 const hears = (name, where) => !(SITUATIONS[name].waits & where);
 // One reason with no decision of its own (a step's market review): is it heard here, counted as a raise.
@@ -168,7 +158,7 @@ function woke(name, where) {
 // build: the wish projection, the money queue, the leaf and the party request. Beside
 // §14's list: player_command (the commanded spot reaches the hunting leaf),
 // goal_done:visit / goal_failed:visit (the agenda over the held entry, F4: temporary
-// until step 6), funding (out_of_money from step 4 C7), revived (a respawn), the
+// until step 6), revived (a respawn), the
 // step's market reviews (craft_bid, clan_market) and goal_moved (until AI-5).
 // gear_plan (F1): the gear plan's full review, every gear candidate weighed and the
 // native plan judged afresh (GearPlanSelection); a build it does not wake keeps the
@@ -178,7 +168,7 @@ const DECISIONS = Object.freeze({
         'spot_dangerous', 'spot_unreachable', 'moved_by_world', 'party_left', 'shots_out', 'stock_low:potions', 'goal_affordable:potions',
         'karma_changed']),
     build: Object.freeze(['arrived_town', 'level_up', 'gear_changed', 'recipe_learned', 'died', 'revived', 'party_left',
-        'goal_affordable:potions', 'goal_affordable:focus', 'goal_affordable:survival', 'funding', 'goal_done:goal', 'goal_failed',
+        'goal_affordable:potions', 'goal_affordable:focus', 'goal_affordable:survival', 'out_of_money', 'goal_done:goal', 'goal_failed',
         'goal_done:visit', 'goal_failed:visit', 'stock_low:shots', 'stock_low:potions', 'bag_full', 'source_stalled', 'clan_call',
         'clan_changed', 'spot_empty', 'goal_moved', 'player_command', 'craft_bid', 'clan_market']),
     gear_plan: Object.freeze(['level_up', 'gear_changed', 'died', 'party_left', 'goal_failed', 'source_stalled', 'arrived_town'])
@@ -291,6 +281,8 @@ let IncomeRoute = null, Risk = null;
 const MARKS = new Set(['spot_unreachable', 'spot_dangerous', 'contest_lost']);
 const GearMarks = require('./AI/GearMarks');
 function raisedFacts(stats, name, payload, dropped = null) {
+    // The wallet in reach of its goal: the retry stamp of its last failed buy goes (debt 24).
+    if (name.startsWith('goal_affordable:')) return stats?.marketRetryAfter != null ? { marketRetryAfter: null } : {};
     // A gear errand failed where the body acts: its key marked for the gear plan (GearMarks).
     if (name === 'goal_failed' && payload?.kind === 'gear_errand') {
         const gearMarks = GearMarks.withMark(stats, payload.key, dropped);
@@ -310,7 +302,8 @@ function writeFacts(stats, facts) {
     if (facts.earning) stats.earning = facts.earning;
     if (facts.spotMarks) stats.spotMarks = facts.spotMarks;
     if (facts.gearMarks) stats.gearMarks = facts.gearMarks;
-    return !!facts.earning || !!facts.spotMarks || !!facts.gearMarks;
+    if (Object.hasOwn(facts, 'marketRetryAfter')) stats.marketRetryAfter = null;
+    return !!facts.earning || !!facts.spotMarks || !!facts.gearMarks || Object.hasOwn(facts, 'marketRetryAfter');
 }
 // A unit (a body, a far bot's kernel record: memory) that needs a spot while its held
 // earning answer names none it may take (none found, marked, full): an existing answer
@@ -388,11 +381,10 @@ let Readers = null;
 const readers = () => Readers ||= require('./Economy/DecisionSections');
 // The situations of a bot's own state between the facts a decision kept and the
 // facts now, in fact order: previousFact(name) reads the kept one, current the
-// facts now (DecisionSections.factsOf). funding: the money fact's hard part moved
-// (DecisionSections.moneyChanged). planned: the occupation the held decision ordered
+// facts now (DecisionSections.factsOf). planned: the occupation the held decision ordered
 // (DecisionSections.occupationPlanned), its own output, no event. Both threads: the
 // step's diff (detect) and the held build's verdict (EconomyContext).
-function factNames(previousFact, current, funding = false, planned = false) {
+function factNames(previousFact, current, planned = false) {
     const names = [];
     const add = name => { if (!names.includes(name)) names.push(name); };
     if (!previousFact('dead') && current.dead) add('died');
@@ -409,7 +401,6 @@ function factNames(previousFact, current, funding = false, planned = false) {
     if (clan !== undefined && clan !== current.clan) add('clan_changed');
     // A new party or a new role in it reads as joining it.
     if (previousFact('party') !== current.party) add(current.party === readers().NO_PARTY ? 'party_left' : 'party_joined');
-    if (funding) add('funding');
     // Resting reads as hunting at its spot: a rest where the bot hunted is
     // none, a rest at another spot is an occupation event.
     if (!planned && previousFact('occupation') !== current.occupation) add('moved_by_world');
@@ -428,8 +419,6 @@ function factNames(previousFact, current, funding = false, planned = false) {
     // the fact was recorded has none to compare.
     const recovery = previousFact('recovery');
     if (recovery !== undefined && recovery !== current.recovery) add(current.recovery < recovery ? 'recovered' : 'spot_dangerous');
-    // Physical exhaustion is never hidden by economic uncertainty.
-    if (previousFact('supply') !== current.supply) add('supply');
     // A kind that crossed below its line, or ran out, since the decision (its
     // baseline's lines, under the rates it published; heard near and far alike: a
     // hot body's post reads the same facts). It stands raised until a decision
@@ -444,7 +433,6 @@ function factNames(previousFact, current, funding = false, planned = false) {
     }
     if (previousFact('bag') !== current.bag) add('bag');
     if (previousFact('stores') !== current.stores) add('clan_call');
-    if (previousFact('warehouse') !== current.warehouse) add('warehouse');
     return names;
 }
 // The step's fact diff, one function for both threads (a far step's projection,
@@ -454,9 +442,10 @@ function factNames(previousFact, current, funding = false, planned = false) {
 // reads), leaf (the step's held leaf: the move it ordered raises nothing; none, as
 // on main: every move is an event), unhuntable (the round found its spot empty of
 // prey, BackgroundResolver, once a stay: a fact of the round, not of the states).
-// facts, funding: a body's previous post kept as its facts and its funding mark
-// (DecisionEvents.detectNear) in place of the state before; out: receives this
-// post's { facts, funding } for the next. body: the post of a body near a player,
+// facts: a body's previous post kept as its facts (DecisionEvents.detectNear) in place
+// of the state before; raised: the money mark kept with it (a far step reads the
+// state's stats.moneyRaised); out: receives this step's { facts, raised } for the next
+// (a far step keeps raised in its stats, a body with its post). body: the post of a body near a player,
 // whose moves are its own (main executes its held decisions): a spot it reaches or
 // leaves is an arrival for the spot aggregate (the background thread's hot arrival
 // hook, the near_spot / near_left posts), not moved_by_world.
@@ -464,7 +453,7 @@ function factNames(previousFact, current, funding = false, planned = false) {
 // over the book its decision reads: the worker's step reads the state's, main the
 // workshop's book), so a recipe learned raises recipe_learned once the decision can
 // read it; none: the recipes the decision kept stand.
-function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, recipes = null, facts = null, funding: fundingBefore, out = null, body = false } = {}) {
+function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, recipes = null, facts = null, raised, out = null, body = false } = {}) {
     const Sections = readers();
     // Main may replay a validated worker packet that already describes this
     // same round: a newer build's baseline (its own time) is the one compared;
@@ -481,11 +470,13 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, re
     const view = Sections.stateView(after);
     const current = { ...Sections.factsOf(view), relations: previousFact('relations'),
         recipes: recipes ? Sections.hash(recipes(after)) : previousFact('recipes'), party: previousFact('party') };
-    const fundingAfter = out || !previous.funding ? Sections.fundingMark(after) : null;
-    const funding = Sections.moneyChanged(after, represented || before.stats?.wishSections, escrow, false)
-        || !previous.funding && (fundingBefore ?? Sections.fundingMark(before)) !== fundingAfter;
-    if (out) { out.facts = current; out.funding = fundingAfter; }
-    const names = factNames(previousFact, current, funding, body || Sections.occupationPlanned(after, leaf));
+    // The wallet now against the decision's armed money thresholds (goal_affordable:<kind>,
+    // out_of_money), each raised once per baseline (moneyCrossings).
+    const money = Sections.moneyCrossings(invoke('GameServer/Bot/Economy/PurchaseFunding').budget(after, escrow),
+        represented || before.stats?.wishSections || after.stats?.wishSections, raised ?? after.stats?.moneyRaised ?? null);
+    if (out) { out.facts = current; out.raised = money.raised; }
+    const names = factNames(previousFact, current, body || Sections.occupationPlanned(after, leaf));
+    for (const name of money.names) names.push(name);
     if (unhuntable) names.push('spot_empty');
     // A far bot's arrival in town (the step that leaves the field for a visit): its
     // shopping moment (its stop there wakes what waited for the town).
@@ -504,8 +495,6 @@ function needsOpened(before, names, now, was = null) {
     }
     return opened;
 }
-// The sections a list of situations touches wherever the bot stands.
-
 module.exports = { FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, readsFacts, hears, woke,
     DECISIONS, ALL, raise, delta, planes, took, applyFacts, spotAsk, counted, note, stop, woken, anyWoken, decided, counts, COUNT_KEYS,
     placeName: where => NAMES.get(where), SITUATIONS, BITS, detect, factNames };

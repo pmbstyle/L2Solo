@@ -14,7 +14,6 @@ const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const Profit = require('./CraftProfitPolicy');
 const Workshops = require('./CraftWorkshopService');
 const PurchaseFunding = invoke('GameServer/Bot/Economy/PurchaseFunding');
-const DecisionEvents = invoke('GameServer/Bot/AI/DecisionEvents');
 const WealthCraft = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
 const Commit = require('./EconomyCommit');
 const Price = require('./PriceDecision');
@@ -195,8 +194,8 @@ async function obtainRecipe(state, selected, now) {
     if (!wanted || Number(wanted.itemId) !== itemId
         || Number(wanted.recipeId) !== Number(recipe.recipeId) || Number(wanted.batches) !== Number(route.batches)
         || maxSpend > Number(wanted.maxSpend || 0) * 1.25) {
-        const stats = DecisionEvents.applyOwnRaise(state);
-        state = await persist({ ...state, stats: { ...stats,
+        // Its own preparation: no situation of its own (own outputs are not inputs).
+        state = await persist({ ...state, stats: { ...state.stats,
             shotRecipeDemand: { itemId, recipeId: Number(recipe.recipeId), batches: Number(route.batches), amount: 1, maxSpend, at: now }
         } }, 'shot_recipe_demand') || state;
     }
@@ -363,8 +362,7 @@ async function craft(state, candidate, index, now) {
         || !held?.gearInputs || Number(held?.at) + 30 * 60 * 1000 <= now) {
         const gearInputs = Number(held?.gearTarget) === gearTarget && held?.gearInputs
             && Number(held.at) + 30 * 60 * 1000 > now ? held.gearInputs : ItemDisposition.collectedEquipmentInputs(state);
-        const stats = DecisionEvents.applyOwnRaise(state);
-        state = await persist({ ...state, stats: { ...stats, shotCraft: { ...state.stats?.shotCraft,
+        state = await persist({ ...state, stats: { ...state.stats, shotCraft: { ...state.stats?.shotCraft,
             preparing: { recipeId: Number(candidate.recipe.recipeId), productId: Number(candidate.recipe.productId),
                 batches, gearTarget, gearInputs, at: now } } } }, 'shot_craft_preparing');
     }

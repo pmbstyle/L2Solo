@@ -375,7 +375,7 @@ async function run() {
             const delta = (before, key) => (counts()[key] || 0) - (before[key] || 0);
             const held = Economy.forState(native, { timestamp: T });
             assert(held.plan.hunt && typeof held.plan.rates === 'object' && held.plan.rates, 'fixture: a held hunt and kit rates');
-            const stale = { wallet: 7, cashBounds: [-3, 11], budgetBounds: [-5, 13], moneyError: 0.5 };
+            const stale = { affordAt: { at: 11, kind: 'focus' } };
             const published = (from, extra = {}) => ({ ...native, ...extra, stats: { ...native.stats, ...from.statsPacket,
                 wishSections: { ...from.statsPacket.wishSections, ...stale } } });
             const woken = state => Economy.forState(state, { timestamp: T, caller: 'step' });
@@ -388,8 +388,8 @@ async function run() {
             assert.equal(same.plan.rates, first.plan.rates, 'and its kit rates');
             assert.equal(delta(before, 'source_route:ground:reuse'), 1, 'and the ground verdict');
             assert.equal(delta(before, 'context:foundation:kept'), 1, 'the kept foundation is counted');
-            assert.notDeepEqual(same.statsPacket.wishSections.cashBounds, stale.cashBounds,
-                'the build records its own money bounds, not the last decision\'s');
+            assert.notDeepEqual(same.statsPacket.wishSections.affordAt, stale.affordAt,
+                'the build records its own money threshold, not the last decision\'s');
             before = counts();
             const leveled = woken(published(same, { level: native.level + 1 }));
             assert.notEqual(leveled.plan.hunt, same.plan.hunt, 'a kit move rebuilds the foundation');
@@ -460,12 +460,6 @@ async function run() {
         const built = Economy.forState(state, { routeRows, workshop });
         assert.equal(built.plan.workshop, workshop, 'fixture: the build holds its workshop');
         assert.strictEqual(Economy.preparedRouteRows({ ...state, activity: 'resting' }), routeRows, 'a rest reads the held build\'s route rows');
-        const recipe = invoke('GameServer/Items/C4RecipeItems').resolveByRecipeId(workshop.recipeId);
-        const watched = built.statsPacket.wishSections.marketWatch || [];
-        const watches = (id, storeType) => watched.some(row => row[0] === id && row[1] === storeType);
-        assert(watches(recipe.productId, 3), 'the product\'s buyers are watched');
-        assert(watched.length < Sections.MARKET_WATCH, 'fixture: a short queue, every row fits under the cap');
-        assert(recipe.materials.every(row => watches(row.selfId, 1)), 'the materials\' sellers are watched');
         Economy.forget(state.characterId);
         // The step on a crafter's held build: the workshop is kept while its key holds
         // (EconomyContext.heldWorkshop, no verdict), else asked; the build that follows
@@ -655,65 +649,11 @@ async function run() {
         assert.equal(Economy.forState(absentOut, absentDeps()).plan, absentContext.plan, 'no offer change keeps the context');
         absentBoard.put({ id: 1, ownerId: 77, storeType: 1, custodyPolicy: 1, revision: 1, town: 'Giran',
             lines: [{ lineId: 2, selfId: ABSENT, count: 1, price: 100 }] });
-        assert(!(absentContext.statsPacket.wishSections.marketWatch || []).some(row => row[0] === ABSENT), 'fixture: the absent item is not watched');
         assert.equal(Economy.forState(absentOut, { ...absentDeps(), timestamp: Date.now() + 10 * 60 * 1000 }).plan, absentContext.plan,
             'a first offer for an unwatched item keeps the held decision, however long after');
     } finally { ScopedProviders.build = build; }
     console.log('PASS absent item is read, its offer no event');
-    // The soft point (ARCH-05): at the end of a step the bot compares its
-    // wallet, its income and the items it watches against its own error, at
-    // once (no delay); a watched item's clearly better line is an event, a
-    // line inside the error, its own line or another item's line is none.
     {
-        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
-        const T = Date.now(), native = { ...base, characterId: 990025 }, softBoard = new BoardIndex();
-        const held = Economy.forState(native, { board: softBoard, timestamp: T });
-        const baseline = held.statsPacket.wishSections;
-        const published = { ...native, stats: { ...native.stats, ...held.statsPacket } };
-        const watched = baseline.marketWatch?.find(row => row[1] === 1);
-        assert(watched && watched[2] > 0 && watched[3] >= 0, `a build watches its wish roots on the sell side: ${JSON.stringify(baseline.marketWatch)}`);
-        // Read at a stall, where money and observation are heard at once (on a hunt they wait).
-        const soft = (state, more = {}, board = softBoard) => Sections.softEvents({ ...state, activity: 'merchant' }, { ...baseline, ...more },
-            { board, buyOrderEscrow: 0, timestamp: T + 1000, memory: () => null });
-        assert.deepEqual(soft(published), [], 'fixture: the published decision is quiet');
-        const wallet = { moneyError: 10, cashBounds: [-1, null], budgetBounds: [-1, null] };
-        const richer = amount => ({ ...published, adena: published.adena + amount });
-        assert.deepEqual(soft(richer(5), wallet), [], 'a wallet drift inside the error is no event');
-        assert.deepEqual(soft(richer(50), wallet), ['money'], 'a wallet drift beyond the error is an event a second later');
-        assert.deepEqual(soft({ ...published, stats: { ...published.stats, frustration: 1 } }, { frustration: 0, incomeError: 0.1 }),
-            ['observation'], 'a frustration beyond the error is an observation event');
-        const [item, , reference, error] = watched, below = Math.floor(reference * (1 - error)) - 1;
-        assert(below > 0, 'fixture: a price below the watched reference');
-        let record = 1;
-        const offer = (selfId, price, storeType = 1, ownerId = 77) => softBoard.put({ id: 9000 + record, ownerId, storeType,
-            custodyPolicy: 1, revision: record++, town: 'Giran', lines: [{ lineId: 1, selfId, count: 1, price }] });
-        offer(990004, 1);
-        assert.deepEqual(soft(published), [], 'a cheap line of an unwatched item is no event');
-        offer(item, below, 1, native.characterId);
-        assert.deepEqual(soft(published), [], 'the bot\'s own line is no event');
-        offer(item, Math.ceil(reference * (1 - error)));
-        assert.deepEqual(soft(published), [], 'a line inside the error is no event');
-        offer(item, below);
-        assert.deepEqual(soft(published), ['market'], 'a watched item\'s clearly cheaper line is an event');
-        assert.deepEqual(soft(published, {}, null), [], 'without the board mirror the market waits');
-        const buyWatch = { marketWatch: [[990005, 3, 100, 0.1]] };
-        offer(990005, 105, 3);
-        assert.deepEqual(soft(published, buyWatch), [], 'a buy line inside the error is no event');
-        offer(990005, 120, 3);
-        assert.deepEqual(soft(published, buyWatch), ['market'], 'a watched sale\'s clearly higher bid is an event');
-        // The rebuild weighed the line it saw: the same board is no new event.
-        Economy.forget(native.characterId);
-        const rebuilt = Economy.forState(native, { board: softBoard, timestamp: T + 2000 }).statsPacket.wishSections;
-        assert.deepEqual(Sections.softEvents(published, rebuilt, { board: softBoard, buyOrderEscrow: 0, timestamp: T + 3000,
-            memory: () => null }).filter(name => name === 'market'), [], 'a decision that saw the cheap line does not cross on it again');
-        // A sale of an item the bot has no use for (worth 0) is watched at its price.
-        const junk = Economy.forState({ ...native, characterId: 990026, inventory: { ...native.inventory,
-            1872: { selfId: 1872, amount: 200 } } }, { board: softBoard, timestamp: T + 4000 });
-        assert.equal(junk.worth(1872), 0, 'fixture: the junk item is worth nothing to the bot');
-        assert(junk.statsPacket.wishSections.marketWatch?.some(row => row[0] === 1872 && row[1] === 3 && row[2] > 0),
-            `a liquidation of a zero-usefulness item is watched on the buy side: ${JSON.stringify(junk.statsPacket.wishSections.marketWatch)}`);
-        Economy.forget(990026);
-        Economy.forget(native.characterId);
         // A step's raises join the bits raised before; a raise is no decision, its sequence stays.
         const Situations = invoke('GameServer/Bot/Situations');
         const after = { decisionSeq: 3, woken: 0, wishSections: {}, equipmentPlan: {}, earning: {} };
@@ -723,7 +663,6 @@ async function run() {
         assert(Situations.woken(after, 'build') && Situations.woken(after, 'earning_spot') && Situations.woken(after, 'gear_plan'),
             'the raised bits join the earlier ones');
     }
-    console.log('PASS soft point: money / observation / watched market / one raise');
     const Workshop = invoke('GameServer/Bot/Economy/CraftWorkshopService');
     const shopRecipe = Object.values(invoke('GameServer/Items/C4RecipeItems').loadRecipeItems())
         .find(row => row.type === 'dwarven' && Number(row.mpCost) > 0);

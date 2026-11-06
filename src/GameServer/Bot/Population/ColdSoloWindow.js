@@ -14,10 +14,8 @@
 //
 // The window's rule, the one owner of "is a hunting round's end a decision
 // point" (design rules, Recompute: when, not what). It reads at each round what
-// a step would hear at work and the rounds raise no event for: the soft point's
-// goal and market watch. The money drift and the bot's own samples wait at
-// work (Situations), as a step's would; the build at the window's end reads
-// them, and searches the earning spot only when one of its situations woke it. The
+// a step would hear at work: what its rounds raised (Situations: the wallet's
+// crossings of its goal among them). The build at the window's end reads the rest, and searches the earning spot only when one of its situations woke it. The
 // rounds run in one burst at the step, against the world as it stands then:
 // the kernel bounds how far ahead of the step's clock they run (its look-ahead,
 // WINDOW_LEAD_MS), so the window's end comes within it.
@@ -67,11 +65,9 @@ function huntingRound(result) {
 }
 
 // What ended the window at this round, '' while it runs on. before, after: the
-// round's states, its projection done (hard events raised, soft ones not read).
-// readers, the worker's and the kernel's: edges(before, after)
-// (ColdEconomyPlan.edges), moneyBound(after) (the goal at work), market(after)
-// (the decision's market watch crossed, DecisionSections.marketCrossed),
-// feasible(after) (EconomyContext.leafOutcome: what the held leaf's execution
+// round's states, its projection done (its situations raised: the wallet's crossings
+// among them). readers, the worker's and the kernel's: edges(before, after)
+// (ColdEconomyPlan.edges), feasible(after) (EconomyContext.leafOutcome: what the held leaf's execution
 // proved, raised by the step) and kind(after) (lifecycleKind: a state that asks a command).
 function endOf(before, after, result, readers) {
     if (!huntingRound(result)) return 'round';
@@ -82,8 +78,6 @@ function endOf(before, after, result, readers) {
     if (Situations.anyWoken(after.stats)) return 'event';
     // New loot (bit 1) is no decision point: the commit's edges read it from the window's start.
     if (readers.edges(before, after) & ~1) return 'supplies';
-    if (readers.moneyBound(after)) return 'money';
-    if (readers.market(after)) return 'market';
     if (!readers.feasible(after)) return 'leaf';
     return readers.kind(after) !== 'resolver' ? 'command' : '';
 }

@@ -29,7 +29,7 @@ const RecomputeGeneration = require('../Population/RecomputeGeneration');
 const Recipes = require('../../Items/C4RecipeItems');
 const CraftInputReservations = require('./CraftInputReservations');
 const Bytes = require('./CompactBytes');
-const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
+const { SELL } = require('../../AfkTrade/BoardIndex');
 const BoardRules = require('../../AfkTrade/BoardRules');
 const Diagnostics = require('./EconomyDiagnostics');
 const PriceBelief = require('./PriceBelief');
@@ -385,38 +385,6 @@ function watchedBoard(board, watch) {
             watch(selfId); return board.demandSnapshot(selfId, ...rest);
         }, demandTowns: selfId => { watch(selfId); return board.demandTowns(selfId); } } : {})
     });
-}
-// The decision's watch list, read by the soft point (DecisionSections
-// .softEvents): the wish roots it would buy (their sell lines, storeType 1)
-// and its sale rows (their buy lines, 3), each [itemId, storeType, reference
-// price, error], at most Sections.MARKET_WATCH. buyValue/sellValue: the
-// build's price of an item on that side; errorOf: the bot's error on it.
-// The reference is the better of that price and the board head the build
-// saw (excluding the bot's own line): the head is one input of the price
-// belief, so a far cheaper ask stays below the believed price after the
-// rebuild and would cross at every step; the decision already weighed it.
-// Only a newer, clearly better line crosses. recipe: the build's productive
-// workshop recipe (a crafter's); its product's buy lines and its materials'
-// sell lines are watched too, after the wishes and sales, so a crossing
-// raises money and the kept workshop is asked again (the money bit, workshopKeyHolds).
-function marketWatchRows(queue, sales, board, ownerId, buyValue, sellValue, errorOf, recipe = null) {
-    const rows = [], exclude = { excludeOwner: ownerId };
-    const add = (id, storeType, value) => {
-        if (rows.length >= Sections.MARKET_WATCH || !(id > 0) || !(value > 0)
-            || rows.some(row => row[0] === id && row[1] === storeType)) return;
-        const head = board?.first(id, storeType, exclude)?.price;
-        const reference = !(head > 0) ? value : storeType === SELL ? Math.min(value, head) : Math.max(value, head);
-        // Rounded: the baseline is saved with the bot (a few bytes per row).
-        rows.push([id, storeType, Math.round(reference), Math.round(errorOf(id) * 1000) / 1000]);
-    };
-    for (const wish of queue) { const id = Number(wish.object?.itemId); if (id > 0) add(id, SELL, buyValue(id)); }
-    for (const [id] of sales) add(Number(id), BUY, sellValue(id));
-    // Last: the workshop's rows never push a wish or a sale out of the cap.
-    if (recipe) {
-        add(Number(recipe.productId), BUY, sellValue(Number(recipe.productId)));
-        for (const row of recipe.materials || []) add(Number(row.selfId), SELL, buyValue(Number(row.selfId)));
-    }
-    return rows;
 }
 function defaultProducerSource(state, board) {
     const index = invoke('GameServer/Bot/Population/ColdOccupationSources').recipeIndex(board);
@@ -942,12 +910,14 @@ function heldReadsFor(state, deps) {
 }
 // The computed pieces a build keeps from its held entry while the facts each reads
 // are the same (step 4 C6: fact-keyed caches, no sections): the foundation (hunt
-// income, risk, death and kit hours, kit rates: the kit, death, recovery, supply,
-// spot, party and clan, and the held earning answer it hunts: its spot and time), the source walk's ground verdict (the kit) and the quiet
+// income, risk, death and kit hours, kit rates: the kit, death, recovery, the shots'
+// and potions' place against their lines (the lines fact; which shot and potion the kit
+// names is in the kit fact), spot, party and clan, and the held earning answer it
+// hunts: its spot and time), the source walk's ground verdict (the kit) and the quiet
 // build's followed gear (the kit and a death); the route search's (the kit, party,
 // clan, spot, risk) drops the kept route when it moves.
 const PIECE_FACTS = Object.freeze({
-    foundation: ['build', 'dead', 'recovery', 'riskDeaths', 'supply', 'occupation', 'relations', 'party', 'earning'],
+    foundation: ['build', 'dead', 'recovery', 'riskDeaths', 'lines', 'occupation', 'relations', 'party', 'earning'],
     ground: ['build'], gear: ['build', 'dead'], route: ['build', 'relations', 'party', 'occupation', 'riskDeaths', 'recovery']
 });
 const pieceKeys = (facts, earning) => Object.fromEntries(Object.entries(PIECE_FACTS).map(([piece, names]) =>
@@ -1169,12 +1139,10 @@ function buildForState(state, deps) {
     };
     const watch = id => { if (building) read(id); };
     const persona = personaOf(state, deps);
-    const cash = Sections.bounds(positive(state.adena));
-    const budget = Sections.bounds(Funding.budget(state, deps.buyOrderEscrow));
     const board = watchedBoard(sourceBoard, watch);
     // A price is remembered, so every price read counts, also a late one
     // through context.price: its item joins the review's inputs.
-    const { price, peek, prices, beliefs, beliefFor, knowledgeEnabled } = pricing(state, persona, board, timestamp, deps, read,
+    const { price, peek, prices, knowledgeEnabled } = pricing(state, persona, board, timestamp, deps, read,
         keptBase ? new Map(keptBase.prices) : new Map(), sourceBoard);
     // The income route record of this build (its own search or the basics'
     // one): its solo matchup profiles serve the providers' source route reader.
@@ -1203,8 +1171,6 @@ function buildForState(state, deps) {
         // The earning answer this build holds (its own search's or the held one): the kit's per-spot use.
         earning: base.earning,
         refillReserve: base.refillReserve, kitCost: base.kitCost, hourAdena: base.hourAdena,
-        walletBoundary: cash.watch,
-        budgetBoundary: budget.watch,
         // What a node read, so that a later candidate of this build reusing
         // the node reads it again: a rejected candidate's reads are not kept.
         nodeInputs: { begin: () => { const local = { items: new Set(), bag: new Set(), priced: new Set() }; nodeScopes.push(local); return local; },
@@ -1330,33 +1296,18 @@ function buildForState(state, deps) {
         woken: Situations.decided(state.stats, earningDecided ? ['earning_spot', 'build'] : 'build', { caller: deps.caller || 'economy_context',
             subject: state.characterId, answer: !Trace.on() ? null : { earning_spot: [base.earning?.spotId ?? 'none', state.stats?.earning?.spotId ?? 'none'],
                 build: [network.activity?.key || network.focus?.[0], held?.plan.network?.activity?.key || held?.plan.network?.focus?.[0]] } }) };
+    // The money queue's cumulative costs (its money thresholds, Sections.snapshot): the
+    // focus's (goal_affordable:focus) and the held leaf's funded row's (out_of_money).
     let cumulative = base.refillReserve;
     for (const wish of network.queue) {
         cumulative += cashCharge(wish);
-        budget.watch(cumulative);
         if (wish.key === network.focus?.[0]) context.goalBudget = cumulative;
+        if (wish.key === network.activity?.rootKey && wish.funded) context.leafBudget = cumulative;
     }
-    const watchedWish = network.gap || network.queue.find(wish => wish.key === network.focus?.[0]) || network.queue[0];
-    const watchedItem = Number(watchedWish?.object?.itemId);
-    const belief = beliefs.get(watchedItem) || (keptBase && watchedItem > 0 ? beliefFor(watchedItem) : null);
-    const moneyError = belief ? knowledgeEnabled
-        ? positive(watchedWish.price) * Math.expm1(PriceBelief.sigma(belief)) : 0 : -1;
-    // The bot's error on an item's price, as moneyError reads it (0 without
-    // price knowledge or without a belief).
-    const priceError = id => {
-        const known = knowledgeEnabled && (beliefs.get(id) || beliefFor(id));
-        return known ? Math.expm1(PriceBelief.sigma(known)) : 0;
-    };
-    const watchRows = marketWatchRows(network.queue, context.liquidationInputs?.rows || [], sourceBoard,
-        // || (TradeIntent.project above keeps ??): a zero-usefulness item's
-        // worth is 0, yet its sale is watched at its price.
-        Number(state.characterId), price, id => context.worth(id) || price(id), priceError,
-        productive ? Recipes.resolveByRecipeId(workshop.recipeId) : null);
     // The build's facts for its baseline: the request's when they were read
     // over this state itself (no held leaf's field activity in between).
-    context.statsPacket.wishSections = Sections.snapshot(state, context, cash.result, moneyError, deps.mode,
-        { buyOrderEscrow: deps.buyOrderEscrow, budgetBounds: budget.result }, current === state ? facts : requestFacts(state, deps),
-        Providers.relationBond(state, deps), watchRows);
+    context.statsPacket.wishSections = Sections.snapshot(state, context, { buyOrderEscrow: deps.buyOrderEscrow },
+        current === state ? facts : requestFacts(state, deps));
     building = false;
 
     if (diagnostic) {

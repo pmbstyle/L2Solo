@@ -42,8 +42,8 @@ async function hunter(overrides = {}) {
 
 // The step's decision: hold the hunt, as a held card does. `plan` overrides it.
 // windowed: false, a kernel without the worker's window readers: a round a step.
-// market: the worker's per-round read of the market watch, quiet by default.
-function world({ windowed = true, plan = null, market = () => false, ground = spot, leaf = {}, stock = () => null, onRound = () => {} }) {
+// ends: a round that ends the window as its held leaf's check would (none by default).
+function world({ windowed = true, plan = null, ends = () => false, ground = spot, leaf = {}, stock = () => null, onRound = () => {} }) {
     const clock = { at: 0 };
     const proposals = [];
     const activity = { activity: 'hunting', spotId: spot.id, ...leaf };
@@ -60,8 +60,7 @@ function world({ windowed = true, plan = null, market = () => false, ground = sp
         soloWindow: !windowed ? null : {
             projectRound: (state, result, timestamp, lifecyclePlan, writtenAt) => { onRound(kernel); return project(state, result, timestamp, writtenAt); },
             readers: () => ({ edges: (before, after) => Plan.edges(before, after, { stockFor: (state, kind) => stock(kind) }),
-                moneyBound: after => Sections.moneyBound(after, after.stats?.wishSections), market,
-                feasible: after => !Economy.leafOutcome(after, activity, {}, 0) }) },
+                feasible: after => !ends(after) && !Economy.leafOutcome(after, activity, {}, 0) }) },
         emit: (type, payload) => { if (type === 'proposal_batch') proposals.push(...payload.proposals); return true; }
     });
     // One step at the bot's due (or `at`): its committed row, null when none left.
@@ -126,16 +125,6 @@ const roundsOf = state => state.stats.stepCount;
     }
 
     {
-        // The market watch crossed at a round (heard at work): the window ends there.
-        const { kernel, step } = world({ market: after => roundsOf(after) >= 2, ground: fieldOf(6) });
-        kernel.upsert({ state: await hunter() });
-        const { state } = await step();
-        assert.equal(state.activity, 'hunting', 'fixture: the bot hunts on');
-        assert.equal(roundsOf(state), 2, 'the round that saw it is the last');
-        assert.equal(kernel.soloWindowStats.ended.market, 1, 'counted by its reason');
-    }
-
-    {
         // A rest ends the window at the round that sat down.
         const { kernel, step } = world({});
         kernel.upsert({ state: await hunter() });
@@ -155,10 +144,11 @@ const roundsOf = state => state.stats.stepCount;
     }
 
     {
-        // The money bound: the first adena past the next wish's price ends it.
+        // The goal in reach: the first adena past the build's threshold raises
+        // goal_affordable (the round's own diff) and ends it.
         const { kernel, step } = world({});
         const bound = await hunter();
-        bound.stats.wishSections = { ...bound.stats.wishSections, cashBounds: [-1, bound.adena + 1], wallet: bound.adena, moneyError: -1 };
+        bound.stats.wishSections = { ...bound.stats.wishSections, affordAt: { at: bound.adena + 1, kind: 'focus' } };
         kernel.upsert({ state: bound });
         const { state } = await step();
         assert.equal(state.activity, 'hunting');
@@ -224,7 +214,7 @@ const roundsOf = state => state.stats.stepCount;
         // A step woken inside a window goes on from the bot's own clock, one
         // round, whoever moved lastResolvedAt: a command's or a hot session's
         // write leaves the window's end, the time is not hunted again.
-        const { kernel, step } = world({ market: after => roundsOf(after) >= 3, ground: fieldOf(6) });
+        const { kernel, step } = world({ ends: after => roundsOf(after) >= 3, ground: fieldOf(6) });
         kernel.upsert({ state: await hunter() });
         const { state: window } = await step();
         assert.equal(window.activity, 'hunting');

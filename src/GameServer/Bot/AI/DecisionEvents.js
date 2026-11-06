@@ -16,7 +16,7 @@ const Risk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 // meanwhile (raiseFar): a goal done, a visit's step failed, a full bag. Its own
 // facts it detects on its post (detectNear).
 const reasons = new Set(['arrived_town', 'revived', 'goal_failed', 'party_left', 'spot_empty', 'spot_dangerous',
-    'spot_unreachable', 'player_command', 'money', 'goal_done:goal', 'goal_failed:visit', 'bag_full']);
+    'spot_unreachable', 'player_command', 'goal_done:goal', 'goal_failed:visit', 'bag_full']);
 // The situations whose payload is a fact (Situations.raisedFacts): a later one of the
 // same name and payload moves to the bag's end, a later command replaces the earlier.
 const FACTS = new Set(['spot_unreachable', 'spot_dangerous', 'player_command']);
@@ -45,11 +45,6 @@ function withFacts(session, name, payload) {
 }
 function decisionStatsFor(session) {
     return { ...session?.heldEconomy?.statsPacket, ...session?.decisionStats, ...session?.coldLifeState?.stats };
-}
-// A far bot's own preparation stands in its state for its next review (its own
-// output: heard only where its row says).
-function applyOwnRaise(state) {
-    return Situations.raise({ ...(state.stats || {}) }, 'own_preparation', null, Situations.place(state), state.characterId);
 }
 // A near bot (a body on main) takes its decisions on the background thread:
 // the raise waits on the session (nearRaise, ORed while pending) and rides its
@@ -139,18 +134,16 @@ const postedBag = session => ({ ...session.nearRaise, names: session.nearRaise.n
 // situations of the posted row against its decision's baseline (the row's
 // wishSections: the last decision received), a fact the baseline lacks against
 // its previous post, joined to its bag. The previous post is kept as its facts
-// only (session.nearFacts: the fact digests and the funding mark, no bag copy),
+// only (session.nearFacts: the fact digests and the money mark, no bag copy),
 // dropped as the body cools. The worker hears them with the bag.
 function detectNear(session, row, escrow = 0) {
     const previous = session.nearFacts, next = {};
     // lazy: cycle BotLifeState requires this module at its top.
     const recipes = invoke('GameServer/Bot/Population/BotLifeState').recipeReader(row);
-    const names = Situations.detect(previous ? {} : row, row, { escrow, recipes, facts: previous?.facts, funding: previous?.funding, out: next, body: true });
-    // The wallet reaching the build's threshold (stats.affordAt on the posted row): once
-    // per threshold, re-armed by the next build's (a far bot's is its step's soft point).
-    const afford = row.stats?.wishSections?.affordAt, kind = afford ? Sections.goalReached(row, row.stats.wishSections, escrow) : null;
-    const armed = afford ? `${afford.kind}:${afford.at}` : null;
-    if (kind && session.nearAffordRaised !== armed) { names.push(`goal_affordable:${kind}`); session.nearAffordRaised = armed; }
+    // Its wallet against its decision's money thresholds too (goal_affordable, out_of_money):
+    // raised once per baseline (its previous post's mark, else its row's).
+    const names = Situations.detect(previous ? {} : row, row, { escrow, recipes, facts: previous?.facts, raised: previous?.raised,
+        out: next, body: true });
     session.nearFacts = next;
     if (names.length) nearBag(session, names.map(name => ({ name, payload: null })));
 }
@@ -389,19 +382,5 @@ function commandPending(session) {
     dropCommand(raise);
     return false;
 }
-// A near bot's wallet against its decision's money baseline (the far soft
-// point's money reading, DecisionSections.moneyChanged): a crossing raises
-// money once; nothing while that raise waits or before a baseline exists.
-function checkWallet(session, actor) {
-    if (session.nearRaise?.names?.some(entry => entry.name === 'money')) return false;
-    const stats = statsFor(session);
-    if (!stats.wishSections) return false;
-    const wallet = actor.backpack?.fetchTotalAdena?.() ?? actor.backpack?.fetchItemFromSelfId?.(57)?.fetchAmount?.() ?? 0;
-    // lazy: worker the native market owner is main-thread only; this module also handles cold projections.
-    const escrow = invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(actor.fetchId?.());
-    if (!Sections.moneyChanged({ adena: wallet, stats }, stats.wishSections, escrow, true)) return false;
-    raiseDecision(session, 'money');
-    return true;
-}
-module.exports = { rejections: () => rejections, refused, statsFor, replaceStats, decisionStatsFor, applyOwnRaise, raiseDecision, raiseFar, raiseOn, failureWaits, detectNear, stop, takePostedRaise, applyPendingRaise, postedBag, nearFields, receive, settle, held, heldSpotId, heldSpotOf, needSpot, spotHeld, commandPending, checkWallet, rejects, rejectOnRow, withRaise, rejectSession,
+module.exports = { rejections: () => rejections, refused, statsFor, replaceStats, decisionStatsFor, raiseDecision, raiseFar, raiseOn, failureWaits, detectNear, stop, takePostedRaise, applyPendingRaise, postedBag, nearFields, receive, settle, held, heldSpotId, heldSpotOf, needSpot, spotHeld, commandPending, rejects, rejectOnRow, withRaise, rejectSession,
     NEAR_NAMES, nearOverflow: () => nearOverflow };

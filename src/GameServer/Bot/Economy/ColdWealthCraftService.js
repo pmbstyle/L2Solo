@@ -92,10 +92,6 @@ function withOutcome(state, opportunity, outcome, extras = {}) {
         ...state,
         stats: {
             ...(state.stats || {}),
-            ...(outcome === 'buying' && (state.stats?.wealthCraft?.outcome !== 'buying'
-                || Number(state.stats.wealthCraft.recipeId) !== Number(opportunity.recipe.recipeId)
-                || Number(state.stats.wealthCraft.batches) !== Number(opportunity.batches || 1))
-                ? DecisionEvents.applyOwnRaise(state) : {}),
             ...(['sold', 'waiting_for_buyer'].includes(outcome) ? { production: {
                 ...(state.stats?.production || {}),
                 crafts: Number(state.stats?.production?.crafts || 0) + 1,

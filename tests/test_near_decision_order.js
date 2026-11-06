@@ -150,7 +150,7 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
     // the hunt is heard where a far bot hears it: at its rest's end (situations Q7).
     {
         const body = { nearRaise: null, raiseSeq: 0 };
-        const handed = { ...state, stats: { ...state.stats, wishSections: { ...Sections.semanticFacts(state), funding: Sections.fundingMark(state) } } };
+        const handed = { ...state, stats: { ...state.stats, wishSections: { ...Sections.semanticFacts(state) } } };
         Events.detectNear(body, handed);
         assert.equal(body.nearRaise, null, 'the handed row raises nothing');
         Events.detectNear(body, { ...handed, level: 31 });
@@ -166,7 +166,7 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
         // The decision it then receives is its new baseline: the same level raises nothing again.
         body.nearRaise = null;
         const decided = { ...handed, level: 31 };
-        decided.stats = { ...handed.stats, wishSections: { ...Sections.semanticFacts(decided), funding: Sections.fundingMark(decided) } };
+        decided.stats = { ...handed.stats, wishSections: { ...Sections.semanticFacts(decided) } };
         Events.detectNear(body, decided);
         assert.equal(body.nearRaise, null, 'a received decision advances the baseline');
         // New gear waits for the town; the body's arrival in town is its stop there.

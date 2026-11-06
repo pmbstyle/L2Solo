@@ -712,7 +712,6 @@ module.exports = {
         }
 
         const floor = SurvivalFloor.forActor(bot, session.coldLifeState);
-        if (isSoloHunter(session)) DecisionEvents.checkWallet(session, bot);
         if (floor?.action === 'rest') {
             TownNpcApproach.reset(session);
             bot.automation.abortAll(bot);
