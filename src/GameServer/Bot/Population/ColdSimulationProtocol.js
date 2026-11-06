@@ -23,6 +23,8 @@ const MAIN_TYPES = new Set([
     'party_goal_request',
     'fence',
     'fence_ack',
+    // { characterId }: the bot's worker life ended (no row): its kept decision goes (kernel.remove).
+    'release',
     'pause',
     'resume',
     'throttle',

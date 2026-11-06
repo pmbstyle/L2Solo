@@ -617,11 +617,12 @@ class RetainedStateMap extends Map {
         }
         return this;
     }
-    delete(id) {
+    // keepDecision: the owner still decides for the bot (a fence): its held build stays.
+    delete(id, { keepDecision = false } = {}) {
         this.#skillDtos?.remove(id);
         const current = this.get(id);
         if (!current) return false;
-        if (typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forgetContext(id, 'owner_release');
+        if (!keepDecision && typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forgetContext(id, 'owner_release');
         this.shotIndex?.remove(id);
         return this.sources.remove(id, current.state);
     }
@@ -1078,11 +1079,12 @@ class ColdSimulationKernel {
         return entries.length;
     }
 
-    remove(characterId) {
+    // keepDecision: the bot's held build and persona stay (fence).
+    remove(characterId, { keepDecision = false } = {}) {
         const id = Number(characterId);
         // Standalone kernels cannot have game economy entries before Global loads.
-        if (typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forget(id);
-        if (!isMainThread && typeof invoke === 'function') invoke('GameServer/Bot/AI/BotPersona').forget(id);
+        if (!keepDecision && typeof invoke === 'function') invoke('GameServer/Bot/Economy/EconomyContext').forget(id);
+        if (!keepDecision && !isMainThread && typeof invoke === 'function') invoke('GameServer/Bot/AI/BotPersona').forget(id);
         const current = this.states.get(id);
         const partyId = String(this.inFlight.get(id)?.partyId
             || this.partyOf(id)?.partyId || current?.state?.party?.partyId || '');
@@ -1100,7 +1102,7 @@ class ColdSimulationKernel {
         this.inFlight.delete(id);
         this.dirty.delete(id);
         if (current?.state) this.occupancy.remove(stateKey(current.state));
-        this.states.delete(id);
+        this.states.delete(id, { keepDecision });
         this.buyerEvents?.remove(id);
         this.buyerWakeups.delete(id); this.raiseWakeups.delete(id);
         this.lookSeen.delete(id);
@@ -2781,10 +2783,18 @@ class ColdSimulationKernel {
         this.schedule(id, current.version, Number(dueAt || this.now()));
     }
 
+    // A fence ends the bot's far simulation here (a body near a player, a party or
+    // PvP handoff, a raid preparation); this thread still decides for it, so its held
+    // build stays (its proof identity judges it on the next row): the body's first
+    // post serves it rather than building it again. What a fence keeps (the held build,
+    // persona, kit profiles) ends with the bot's worker life: its row coming back
+    // replaces it, a bot whose row is gone is released (main's releaseBot: remove).
+    // So fenced entries <= hot + in-handoff bots, each store capped besides
+    // (EconomyContext RETAIN_LIMIT, BotPersona's worker cache, the kit store's limit).
     fence(characterId) {
         const id = Number(characterId);
         const proposal = this.dirty.get(id) || null;
-        this.remove(id);
+        this.remove(id, { keepDecision: true });
         return { characterId: id, proposal };
     }
 
