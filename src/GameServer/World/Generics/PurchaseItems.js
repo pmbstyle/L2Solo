@@ -1,7 +1,34 @@
 const DataCache = invoke('GameServer/DataCache');
 const ServerResponse = invoke('GameServer/Network/Response');
+const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
+const Limits = require('../../Inventory/InventoryLimits');
 
 function purchaseItems(session, items, purchaseOptions = {}) {
+    const actor = session.actor;
+    const backpack = actor.backpack;
+    const stacks = new Set();
+    let slots = 0;
+    for (const item of backpack.fetchItems()) {
+        if (item.fetchStackable()) stacks.add(Number(item.fetchSelfId()));
+        slots += item.fetchStackable() ? 1 : item.fetchAmount();
+    }
+    // Validate the complete basket before charging. Splitting equipment into
+    // physical copies must never turn a client count into unbounded DB work.
+    for (const item of items) {
+        const template = ItemTemplateIndex.find(DataCache.items, item.selfId);
+        if (!template || !Number.isSafeInteger(item.amount) || item.amount < 1 || item.amount > 0x7fffffff) {
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return false;
+        }
+        if ((template.etc?.stackable ?? template.stackable) === true) {
+            slots += Number(!stacks.has(Number(item.selfId)));
+            stacks.add(Number(item.selfId));
+        } else slots += item.amount;
+        if (slots > Limits.forActor(actor)) {
+            session.dataSendToMe(ServerResponse.actionFailed());
+            return false;
+        }
+    }
     // 1. Calculate total cost
     let totalCost = 0;
     if (!purchaseOptions.free) {
@@ -18,8 +45,6 @@ function purchaseItems(session, items, purchaseOptions = {}) {
         }
     }
 
-    const actor = session.actor;
-    const backpack = actor.backpack;
     const totalAdena = backpack.fetchTotalAdena();
 
     if (totalCost > 0 && totalAdena < totalCost) {

@@ -50,7 +50,7 @@ function itemSnapshot(item, amount, sourceMobLevel = 0) {
         name: item.name || template.template?.name || `Item ${item.selfId}`,
         amount,
         kind: template.template?.kind || '',
-        stackable: template.etc?.stackable !== false,
+        stackable: template.etc?.stackable === true,
         rank: template.etc?.rank || 'none',
         sourceMobLevel: Math.max(0, Number(sourceMobLevel) || 0)
     };
@@ -127,12 +127,11 @@ function rollSpoilForFight({ spot, killerLevel, npcSelfId = 0, rng = Math.random
     const spoils = [];
     for (const group of rewardData.spoils || []) {
         if (spoils.length >= maxItems) break;
-        const groupRoll = ProgressionRates.rewardGroupRoll(group, 'spoil', {
+        const context = {
             npcLevel: defeatedNpcLevel,
             killerLevel: Number(killerLevel || 0)
-        }, rng);
-        if (!groupRoll.hit) continue;
-        for (const { item, amount } of ProgressionRates.rollSpoilGroup(group, groupRoll.amountMultiplier, rng)) {
+        };
+        for (const { item, amount } of ProgressionRates.rollSpoilGroup(group, context, rng)) {
             if (spoils.length >= maxItems) break;
             const snapshot = itemSnapshot(item, amount, defeatedNpcLevel);
             if (snapshot) spoils.push(snapshot);

@@ -87,16 +87,14 @@ function groupsFor(reward) {
         const total = kind === 'drop' ? items.reduce((sum, item) =>
             sum + Rates.dropItemSelectionWeight(group, item, rate), 0) : 100;
         const expected = { group, kind, adena: 0, items: 0 };
+        if (kind === 'spoil') {
+            expected.spoilItems = items.map(item => ({ item, price: itemPrice(item.selfId) }));
+            groups.push(expected);
+            continue;
+        }
         for (const item of items) {
-            let share, amount;
-            if (kind === 'drop') {
-                share = total > 0 ? Rates.dropItemSelectionWeight(group, item, rate) / total : 0;
-                amount = Rates.expectedDropAmount(group, item, rate);
-            } else {
-                share = Rates.spoilItemChance(item);
-                const min = Math.max(1, Math.floor(Number(item.min) || 1));
-                amount = (min + Math.max(min, Math.floor(Number(item.max) || min))) / 2;
-            }
+            const share = total > 0 ? Rates.dropItemSelectionWeight(group, item, rate) / total : 0;
+            const amount = Rates.expectedDropAmount(group, item, rate);
             if (kind === 'drop' && Number(item.selfId) === 57) expected.adena += share * amount;
             else expected.items += share * amount * itemPrice(item.selfId);
         }
@@ -115,11 +113,18 @@ function npcValue(entry, killerLevel) {
     if (held) return held;
     held = { adena: 0, drop: 0, spoil: 0 };
     for (const expected of groupsFor(entry.reward)) {
+        if (expected.kind === 'spoil') {
+            for (const { item, price } of expected.spoilItems) {
+                held.spoil += Rates.spoilItemPlan(expected.group, item,
+                    { npcLevel: entry.level, killerLevel }).expectedYield * price;
+            }
+            continue;
+        }
         const roll = Rates.rewardGroupRoll(expected.group, expected.kind,
             { npcLevel: entry.level, killerLevel }, () => 0);
         const chance = roll.chance / 100;
         held.adena += chance * expected.adena;
-        held[expected.kind] += chance * expected.items * (expected.kind === 'spoil' ? roll.amountMultiplier : 1);
+        held[expected.kind] += chance * expected.items;
     }
     if (npcValues.size >= MAX_NPC_VALUES) npcValues.delete(npcValues.keys().next().value);
     npcValues.set(key, held);

@@ -246,18 +246,19 @@ function scaledRewardGroups(groups, kind, npcLevel, progressionRates, iconFor) {
             chancePercent: round(roll.chance),
             items: (sourceGroup.items || []).map((item, itemIndex) => {
                 const rawItem = group.items[itemIndex];
+                const spoil = kind === 'spoil' ? progressionRates.spoilItemPlan(group, rawItem,
+                    { npcLevel, killerLevel: npcLevel }) : null;
                 const selectionChance = kind === 'drop'
                     ? progressionRates.dropItemSelectionChance(group, rawItem, roll.itemRate)
-                    : progressionRates.spoilItemChance(rawItem);
+                    : spoil.chance;
                 const expectedConditionalAmount = kind === 'drop'
                     ? progressionRates.expectedDropAmount(group, rawItem, roll.itemRate)
-                    : ((Number(rawItem.min || 1) + Number(rawItem.max || rawItem.min || 1)) / 2)
-                        * Number(roll.amountMultiplier || 1);
+                    : 0;
                 const amountRange = kind === 'drop'
                     ? progressionRates.dropAmountRange(group, rawItem, roll.itemRate)
                     : {
-                        min: Number(item.minAmount || 0),
-                        max: Number(item.maxAmount ?? item.minAmount ?? 0)
+                        min: spoil.minAmount,
+                        max: spoil.maxAmount
                     };
                 const icon = iconFor?.(null, item.itemId, item.sourceName, null) || null;
                 return {
@@ -265,8 +266,8 @@ function scaledRewardGroups(groups, kind, npcLevel, progressionRates, iconFor) {
                     name: String(item.sourceName || `Item ${item.itemId}`),
                     minAmount: amountRange.min,
                     maxAmount: amountRange.max,
-                    chancePercent: round(groupChance * selectionChance * 100),
-                    expectedAmountPerKill: round(groupChance * selectionChance * expectedConditionalAmount),
+                    chancePercent: round((spoil ? spoil.chance : groupChance * selectionChance) * 100),
+                    expectedAmountPerKill: round(spoil ? spoil.expectedYield : groupChance * selectionChance * expectedConditionalAmount),
                     iconUrl: icon?.url || null
                 };
             })

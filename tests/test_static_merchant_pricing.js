@@ -38,6 +38,7 @@ function inventoryItem(selfId, amount) {
         fetchSelfId: () => selfId,
         fetchId: () => selfId,
         fetchAmount: () => amount,
+        fetchStackable: () => templates.get(selfId)?.etc?.stackable === true,
         setAmount: (value) => { amount = value; },
         fetchEquipped: () => false
     };
