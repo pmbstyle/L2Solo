@@ -14,7 +14,6 @@ const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
 const LifeState = invoke('GameServer/Bot/Population/BotLifeState');
 const LifeEvents = invoke('GameServer/Bot/Population/BotLifeEvents');
 const Service = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
-const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
 const Funding = invoke('GameServer/Bot/Economy/PurchaseFunding');
 const Profit = invoke('GameServer/Bot/Economy/CraftProfitPolicy');
 const Policy = invoke('GameServer/Bot/Economy/WealthCraftPolicy');
@@ -315,7 +314,7 @@ async function run() {
     };
     const blockedBuyer = await Service.execute(state, forbiddenExit);
     assert.strictEqual(blockedBuyer.reason, 'buyer_changed', 'even a remote personal buyer is rejected before acquiring craft inputs');
-    assert.strictEqual(blockedBuyer.state.stats.wishDirty, Sections.sectionBit('sources'));
+    assert(invoke('GameServer/Bot/Situations').woken(blockedBuyer.state.stats, 'build'), 'the rejection wakes the build');
     assert.strictEqual(blockedBuyer.state.stats.activityLeaf, 0, 'native buyer rejection retires only the accepted work');
     assert.deepStrictEqual(blockedBuyer.state.inventory, state.inventory);
     assert.strictEqual(blockedBuyer.state.adena, state.adena, 'a source event cannot buy inputs or acquire knowledge');
@@ -326,7 +325,7 @@ async function run() {
     try {
         const rejected = await Service.rejectAccepted(state);
         assert.strictEqual(rejected.adena, state.adena + 3, 'a rejection preserves the newest native wallet after an await');
-        assert.strictEqual(rejected.stats.wishDirty, Sections.sectionBit('sources'));
+        assert(invoke('GameServer/Bot/Situations').woken(rejected.stats, 'build'));
         assert.strictEqual(await Service.rejectAccepted(state), rejected);
         assert.strictEqual(sourceWrites, 1, 'one accepted failure persists one source event, never a repeated invalidation loop');
     } finally { LifeState.cachedState = beforeCached; LifeState.upsertState = beforePersist; }

@@ -33,13 +33,17 @@ function compact(stats = {}) {
 // spot's held answer (EquipmentIncomeRoute.answerOf); spotMarks: the spots its situations ruled out until
 // the next held answer (SpotRiskPolicy.withSpotMark, written by Situations' raise); cleanupDue: the bag's
 // town trip a build decided, held until it starts (PartyMarketBreak.cleanupDecision).
-const MIND_KEYS = Object.freeze(['decisionSeq', 'activityLeaf', 'wishFocus', 'wishSections', 'wishDirty',
+const MIND_KEYS = Object.freeze(['decisionSeq', 'activityLeaf', 'wishFocus', 'wishSections',
     'dormantWishes', 'money', 'kitRates', 'dangerPrice', 'wishAdvisory', 'woken', 'waiting', 'situationSeq', 'earning',
     'spotMarks', 'cleanupDue']);
 
 // A whole stats object (or a stats patch) as its two saved halves.
+// Keys no owner keeps any more, dropped as an old row saves again: wishDirty (the build's
+// sections, gone with the build on situations, step 4 C6).
+const RETIRED_KEYS = Object.freeze(['wishDirty']);
 function split(stats = {}) {
     const body = compact(stats), mind = {};
+    for (const key of RETIRED_KEYS) delete body[key];
     for (const key of MIND_KEYS) {
         if (!Object.hasOwn(body, key)) continue;
         mind[key] = body[key];

@@ -2248,9 +2248,9 @@ function writeReadySourceFact(fact, kind, spotId, npcId, itemId, units, expected
 // moves (the spot's raid flag, the level fit, the kit matchup of the bot
 // alone), 2 bits per spot at its ordinal in `spots` (SpotIndex.ordinalFor):
 // 0 unknown, 1 allowed, 2 refused, filled as the walk asks. The wish build
-// keeps the record with the bot's held build (EconomyContext, dropped when a
-// step's sections hit COMPUTED.sourceGround); kept = that record, or null.
-// The reads no section of that mask names are checked by each reader against
+// keeps the record with the bot's held build (EconomyContext, dropped when its
+// kit fact moved: PIECE_FACTS.ground); kept = that record, or null.
+// The reads the kit fact does not name are checked by each reader against
 // the copies beside the bits: the list's length, the economic hunt (the
 // bot's wish focus), the matchup's highest target level (LevelingRoutes
 // safetyOptions: the recovery penalty, whose clean wins move no section, and

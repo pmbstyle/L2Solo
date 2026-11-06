@@ -37,13 +37,13 @@ async function hunter(overrides = {}) {
         stats: { ...state.stats, classProgressionClassId: state.stats.classId, classProgressionLevel: 18, deaths: 0 },
         simulation: { revision: 1 }, updatedAt: T - 60000 }, quiet, { timestamp: T - 60000, persist: false, projectClassProgression: true });
     return { ...worn, timing: { lastResolvedAt: T - 60000, nextResolveAt: T },
-        stats: { ...worn.stats, stepCount: 0, wishDirty: 0, woken: 0, earning: { spotId: spot.id }, wishSections: { ...Sections.semanticFacts(worn), funding: 0 } }, ...overrides };
+        stats: { ...worn.stats, stepCount: 0, woken: 0, equipmentPlan: null, earning: { spotId: spot.id }, wishSections: { ...Sections.semanticFacts(worn), funding: 0 } }, ...overrides };
 }
 
 // The step's decision: hold the hunt, as a held card does. `plan` overrides it.
 // windowed: false, a kernel without the worker's window readers: a round a step.
 // market: the worker's per-round read of the market watch, quiet by default.
-function world({ windowed = true, plan = null, market = () => false, planHolds = () => true, ground = spot, leaf = {}, stock = () => null, onRound = () => {} }) {
+function world({ windowed = true, plan = null, market = () => false, ground = spot, leaf = {}, stock = () => null, onRound = () => {} }) {
     const clock = { at: 0 };
     const proposals = [];
     const activity = { activity: 'hunting', spotId: spot.id, ...leaf };
@@ -61,7 +61,7 @@ function world({ windowed = true, plan = null, market = () => false, planHolds =
             projectRound: (state, result, timestamp, lifecyclePlan, writtenAt) => { onRound(kernel); return project(state, result, timestamp, writtenAt); },
             readers: () => ({ edges: (before, after) => Plan.edges(before, after, { stockFor: (state, kind) => stock(kind) }),
                 moneyBound: after => Sections.moneyBound(after, after.stats?.wishSections), market,
-                feasible: after => !Economy.leafCheck(after, activity, {}, { heldUnits: 0 }), planHolds }) },
+                feasible: after => !Economy.leafOutcome(after, activity, {}, 0) }) },
         emit: (type, payload) => { if (type === 'proposal_batch') proposals.push(...payload.proposals); return true; }
     });
     // One step at the bot's due (or `at`): its committed row, null when none left.
@@ -186,21 +186,13 @@ const roundsOf = state => state.stats.stepCount;
     }
 
     {
-        // A native fact the plan reads failed: the window ends at that round.
-        const { kernel, step } = world({ planHolds: () => false });
-        kernel.upsert({ state: await hunter() });
-        const { state } = await step();
-        assert.equal(roundsOf(state), 1);
-    }
-
-    {
         // Ground the bot's kit no longer admits (its gear or level lost, a table
         // row moved): its round stands with nothing to fight, and though far at
         // work it raises its ground at once (occupation, sources: the next step's
         // decision searches its spot afresh); the window ends at that round. A
         // decision that keeps it there (no other ground) is not asked again by
         // every empty round of the stay.
-        const occupation = Sections.sectionBit('occupation'), sources = Sections.sectionBit('sources');
+        const Situations = invoke('GameServer/Bot/Situations');
         const Targets = invoke('GameServer/Bot/AI/BotHuntingTargetPolicy');
         const strong = Data.npcs.find(entry => Number(entry.template?.level) === 45 && entry.template?.kind === 'Monster' && Targets.canHunt(entry));
         const beyond = { ...fieldOf(45), npcSelfIds: [strong.selfId], npcEntries: [{ selfId: strong.selfId, count: 30 }] };
@@ -211,12 +203,12 @@ const roundsOf = state => state.stats.stepCount;
         assert.equal(state.stats.lastReason, 'no_safe_solo_target', 'fixture: no spawn of the spot admits a fight');
         assert.equal(state.activity, 'hunting', 'the bot stands on the spot');
         assert.equal(state.stats.fightsResolved, start.stats.fightsResolved, 'no fight');
-        assert.equal(Number(state.stats.wishDirty) & (occupation | sources), occupation | sources, 'the empty spot raises its ground');
+        assert(Situations.woken(state.stats, 'earning_spot') && Situations.woken(state.stats, 'build'), 'the empty spot wakes its ground and its build');
         assert.equal(roundsOf(state), 1, 'the window ends at the first empty round');
         // The decision answered and kept it on the spot: the stay raises nothing more.
-        kernel.upsert({ state: { ...state, stats: { ...state.stats, wishDirty: 0, woken: 0 }, simulation: { revision: 50 } } });
+        kernel.upsert({ state: { ...state, stats: { ...state.stats, woken: 0 }, simulation: { revision: 50 } } });
         const { state: stays } = await step();
-        assert.equal(Number(stays.stats.wishDirty) || 0, 0, 'a later empty round of the stay raises nothing');
+        assert(!Situations.woken(stays.stats, 'build'), 'a later empty round of the stay raises nothing');
         assert.equal(stays.stats.decisionSeq, state.stats.decisionSeq);
     }
 

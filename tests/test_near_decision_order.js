@@ -102,7 +102,8 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
     }
     // The worker takes a posted bag once per raise; the impossible mark of an
     // applied raise does not drop the step a later raise of the bag finds.
-    const mind = { decisionSeq: 3, activityLeaf: 77, woken: 0 };
+    // A mind that holds its answers (an empty held one reads woken: Situations.woken).
+    const mind = { decisionSeq: 3, activityLeaf: 77, woken: 0, wishSections: {}, equipmentPlan: {}, earning: {} };
     const bag = (seq, impossibleSeq) => ({ seq, names: [{ name: 'arrived_town', payload: null, seq }], impossible: true, impossibleSeq });
     assert.equal(Events.takePostedRaise(mind, bag(2, 1), 1), 2);
     assert.deepEqual([mind.situationSeq, mind.activityLeaf], [1, 77], 'raise 2 is taken, raise 1\'s mark is not');

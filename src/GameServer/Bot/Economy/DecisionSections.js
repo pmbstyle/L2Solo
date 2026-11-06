@@ -57,50 +57,6 @@ function observationBaselineValid(baseline, rows) {
     return rows !== null && (!Object.hasOwn(baseline, 'share') || Number.isFinite(baseline.share)
         && baseline.share >= 0 && baseline.share <= 1);
 }
-// The decision sections in the order of their wishDirty bit (1 << at): one
-// table for the raise (DecisionEvents) and the names its readers count.
-const SECTIONS = Object.freeze(['build', 'combat', 'supply', 'benefits', 'sources', 'occupation', 'money', 'relations']);
-function sectionBit(name) {
-    if (name === 'funding') name = 'money';
-    const at = SECTIONS.indexOf(name);
-    if (at < 0) throw new Error(`decision section: unknown ${name}`);
-    return 1 << at;
-}
-function sectionMask(names) {
-    return names.reduce((bits, name) => bits | sectionBit(name), 0);
-}
-// The computed pieces of a decision and the sections each reads: at the
-// decision point a piece is reused while none of its sections is raised
-// (EconomyContext.forState's mask), rebuilt when one is.
-// foundation: hunt income, risk, death and kit hours, stock targets, the
-// survival reserve (kit, profile, consumables, the observation). Of money it
-// reads the wallet only for the rest bottles' cap, read anew on a kept
-// foundation (EconomyContext.foundationFromPlan).
-// Of the relations fact it reads only the party role (its spot value table
-// and hunt income); relations is in its list for it, so a party join
-// rebuilds it (a deviation from the spec's four sections).
-// The earning spot search inside it runs only when its decision is woken
-// (EconomyContext.earningDue), not on these sections.
-// sources: the source walk (worn gear and level; party, clan, role;
-// exclusions, risk, hunt rows; the plan, persona, craft station, trades;
-// the hour adena and the money mark). weighing: focus, step and money queue.
-// route: the bot's hunting spot search (BotRoute.choose), kept in the worker's
-// record: kit and level (build), party and clan (relations), the ground and
-// the exclusion and "was full" marks (occupation, sources). The matchup it
-// filters with reads the kit, so build covers it; buffs and night are read-time.
-const FOUNDATION = sectionMask(['build', 'combat', 'supply', 'occupation', 'relations']);
-const COMPUTED = Object.freeze({
-    foundation: FOUNDATION,
-    // weighing: every piece (a refusal that names no section).
-    weighing: sectionMask(SECTIONS),
-    route: sectionMask(['build', 'relations', 'occupation', 'sources']),
-    // The source walk's per-spot ground verdict (GearAcquisitionPlanner.sourceGround):
-    // level and kit matchup; its other reads are checked beside it.
-    sourceGround: sectionMask(['build']),
-    // What makes a build weigh every gear candidate whatever the moment: the
-    // bot's kit, what gear gives it, a death (Situations.quiet).
-    gearReview: sectionMask(['build', 'benefits', 'combat'])
-});
 // The decision links: the inputs
 // each link reads, by inputVersions name. The workshop decides on them
 // (EconomyContext.workshopKeyHolds); the
@@ -215,12 +171,6 @@ function movedInput(link, before, now, error = 0, bounds = null) {
     }
     return '';
 }
-// The names of the sections raised in wishDirty bits, in table order.
-function sectionNames(bits) {
-    const names = [];
-    for (let at = 0; at < SECTIONS.length; at++) if (bits & 1 << at) names.push(SECTIONS[at]);
-    return names;
-}
 // The kit fact of a view: class, level, worn gear, hennas, skills, the hot
 // capture (view.kitHashes: ColdCombatProfile.kitEvents, a hash of each of combatView's parts,
 // hashed once per view), the craft
@@ -331,20 +281,6 @@ function baselineIdentity(baseline) {
         return createHash('sha256').update(JSON.stringify(canonical(baseline))).digest('hex');
     } catch (error) { FailureLog.note('economy.codec:baseline_identity', error); return null; }
 }
-function carrySectionBaseline(previous, current, updated) {
-    if (!previous || !Number.isFinite(previous.at) || current.at < previous.at) return current;
-    const carry = (mask, fields) => {
-        if (updated & mask) return;
-        for (const name of fields) {
-            if (Object.hasOwn(previous, name)) current[name] = previous[name];
-            else delete current[name];
-        }
-    };
-    carry(sectionBit('money'), ['wallet', 'cashBounds', 'budgetBounds', 'affordAt', 'funding', 'moneyError']);
-    carry(sectionBit('occupation') | sectionBit('build'), ['sample', 'share', 'incomeError', 'frustration', 'bond']);
-    carry(sectionBit('money') | sectionBit('sources') | sectionBit('supply'), ['bagValue']);
-    return current;
-}
 function incomeError(state, persona) {
     const Learning = invoke('GameServer/Bot/AI/KnowledgeLearning');
     return Learning.knowledgeEnabled() ? Learning.stageError(Learning.INCOME_ERROR_FLOOR + .25 * (1 - Number(persona?.understanding ?? .3)),
@@ -425,7 +361,6 @@ function snapshot(state, context, cashBounds, moneyError = -1, mode, money = nul
     return { at: Number(context.timestamp), wallet, cashBounds, funding: fundingMark(actual, escrow), moneyError,
         ...(budgetTracked ? { budgetBounds: money.budgetBounds } : {}),
         ...(afford ? { affordAt: afford } : {}),
-        bagValue: positive(context.choiceBagValue),
         ...(facts || semanticFacts(state)), ...supplyFacts(state, context.statsPacket.kitRates, context.earning), threat: context.gearThreatMask,
         frustration: frustrationOf(state), ...(bond ? { bond } : {}),
         incomeError: incomeError(state, persona), sample: packSample(sample(state, context.timestamp, mode)),
@@ -504,7 +439,7 @@ function relationTargetIds(state, memory = null) {
 // memory: the bot's interaction memory rows, null when the caller read none.
 function factsOf(view, memory = null) {
     return { build: kitFact(view), level: view.kitHashes?.[2] ?? null, recipes: view.recipes ? hash(view.recipes) : null,
-        relations: hash([view.clanId, ...(view.relationTargets || relationTargetIds(view, memory))]),
+        relations: hash([view.clanId, ...(view.relationTargets || relationTargetIds(view, memory))]), clan: view.clanId,
         party: hash([view.party?.partyId, view.party?.role]),
         occupation: hash([view.spotId, view.activity === 'resting' ? 'hunting' : view.activity]),
         dead: view.dead, riskDeaths: view.riskDeaths, recovery: view.recovery, karma: view.karma,
@@ -662,5 +597,5 @@ function standsIn(state, leaf) {
 function kitMoved(before, after) {
     return (before?.stats?.wishSections?.build ?? null) !== (after?.stats?.wishSections?.build ?? null);
 }
-module.exports = { FIELD_ACTIVITIES, partyIdOf, moneyReached, goalReached, SECTIONS, COMPUTED, LINK_INPUTS, inputVersions, routeVersions, movedInput, shotInputs, stateView, sectionBit, sectionMask, sectionNames, kit, kitMoved, moneyChanged, moneyBound, observationChanged, incomeError,
-    MARKET_WATCH, softEvents, marketCrossed, carrySectionBaseline, baselineIdentity, sample, sampleRows, packSample, observationBaselineValid, bounds, snapshot, semanticFacts, factsOf, relationTargetIds, NO_PARTY, LINE_BELOW, LINE_OUT, lineAt, supplyOf, linesOf, fundingMark, occupationPlanned, hash, isEmptyWishPlan, decisionRefusal };
+module.exports = { FIELD_ACTIVITIES, partyIdOf, moneyReached, goalReached, LINK_INPUTS, inputVersions, routeVersions, movedInput, shotInputs, stateView, kit, kitMoved, moneyChanged, moneyBound, observationChanged, incomeError,
+    MARKET_WATCH, softEvents, marketCrossed, baselineIdentity, sample, sampleRows, packSample, observationBaselineValid, bounds, snapshot, semanticFacts, factsOf, relationTargetIds, NO_PARTY, LINE_BELOW, LINE_OUT, lineAt, supplyOf, linesOf, fundingMark, occupationPlanned, hash, isEmptyWishPlan, decisionRefusal };

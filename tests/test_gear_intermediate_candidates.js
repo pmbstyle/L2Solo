@@ -64,7 +64,6 @@ const tooHigh = Data.items.find(row => row.etc?.rank === 'b' && Planner.suitable
 assert(tooHigh && !Planner.considerable(tooHigh, original));
 const held = { ...original, stats: { ...original.stats, equipmentPlan: { target: { selfId: item.selfId } } } };
 assert([...Providers.gearCandidates(held, context).values()].some(rows => rows.some(row => row.selfId === item.selfId)));
-assert.equal(Economy.forState(original, deps).network, context.network, 'same event reuses the decision and held roll');
 // Multiple professions/level bands use the same shortlist owner; an
 // incompatible or over-level item cannot turn its proxy into a purchase.
 for (const classId of [9, 12, 5, 2, 55]) for (const level of [25, 45, 55]) {

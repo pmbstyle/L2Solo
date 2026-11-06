@@ -179,7 +179,7 @@ const refused = why => { rejections[why] = (rejections[why] || 0) + 1; };
 // waits, the same echo and baseline)? Counted by why when it does.
 function rejects(current, accepted = current, why = 'other') {
     const source = accepted?.stats;
-    if (!current?.stats || !source || Number(current.characterId) !== Number(accepted.characterId) || current.stats.wishDirty
+    if (!current?.stats || !source || Number(current.characterId) !== Number(accepted.characterId)
         || Sections.decisionRefusal(current, Number(source.decisionSeq || 0), Number(source.activityLeaf || 0),
             source.wishFocus?.[0] ?? null)) return false;
     if (source.wishSections) {
@@ -225,7 +225,7 @@ function raiseOn(characterId, name, payload = null, reason = `situation_${name}`
     return Promise.resolve(owned).catch(() => null).then(run);
 }
 // The mind keys a row raise writes (BotLifeState.raiseOnRow).
-const RAISED_KEYS = Object.freeze(['woken', 'waiting', 'wishDirty', 'situationSeq', 'activityLeaf', 'earning', 'spotMarks']);
+const RAISED_KEYS = Object.freeze(['woken', 'waiting', 'situationSeq', 'activityLeaf', 'earning', 'spotMarks']);
 // A state the caller writes after its raise landed (raised: the raised row's
 // state): built on the raised row's revision, carrying its raised mind.
 const withRaise = (state, raised) => ({ ...state, simulation: raised.simulation,

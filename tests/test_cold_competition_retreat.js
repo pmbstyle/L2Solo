@@ -15,7 +15,6 @@ const { PARTY_AVOID_ROUNDS } = require('../src/GameServer/Bot/Population/ColdCom
 const PartyRisk = require('../src/GameServer/Bot/Population/PartySpotRiskPolicy');
 const Risk = require('../src/GameServer/Bot/Population/SpotRiskPolicy');
 const Wait = require('../src/GameServer/Bot/Population/ColdCompetitionWait');
-const Sections = require('../src/GameServer/Bot/Economy/DecisionSections');
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'l2-retreat-'));
 options.default.Database.path = path.join(dir, 'test.sqlite');
 const at = Date.now(), state = id => Life.cachedState(id);
@@ -23,8 +22,8 @@ const range = (start, count) => Array.from({ length: count }, (_, i) => start + 
 const oldEpisode = { key: 'old-pvp', at: at - 700000, outcome: 'pvp_fighting', role: 'attack', endedAt: at - 600000, conflictUntil: at + 60000 };
 const base = { life: Life, owner: Owner, parties: Party, memory: Memory, now: () => at,
     participantAllowed: () => true, contestContextAllowed: () => true };
-// An avoid raises the unit's occupation: the worker's next step routes it.
-const raised = s => (Number(s.stats.wishDirty) & Sections.sectionBit('occupation')) !== 0;
+// An avoid raises contest_lost on the unit: its spot marked, its earning spot woken.
+const raised = s => (s.stats.spotMarks || []).length > 0;
 async function createParty(ids) {
     const p = Party.prepareCommit({ partyId: `p${ids[0]}`, leaderId: ids[0], memberIds: ids,
         spotId: 'test', status: 'active', startedAt: at, nextResolveAt: at + 45000, stats: { objective: ids[0] <= 22 ? null : { npcId: 10 }, ...(ids[0] <= 22 ? { coldCompetition: oldEpisode } : {}) } });

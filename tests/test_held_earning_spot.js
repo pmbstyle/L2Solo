@@ -97,8 +97,8 @@ function onWorker() {
             assert.equal(basics.result.hunt.spotId, 'rich', 'they read the held spot');
             assert.equal(count(() => Party.soloRoute(priced, spots, time(minute))).result.spotId, 'rich', 'so does the party comparison');
         }
-        // A supply build rebuilds the foundation on the held route, with no search.
-        const supply = { ...priced, stats: { ...priced.stats, wishDirty: invoke('GameServer/Bot/Economy/DecisionSections').sectionBit('supply') } };
+        // A build its own situation woke (the shots under their line) reads the held answer, with no search.
+        const supply = raised(priced, 'stock_low:shots');
         const rebuilt = count(() => Economy.forState(supply, deps(301)));
         assert.equal(rebuilt.searches, 0, 'a build woken by its own sections reads the held answer');
         assert.equal(rebuilt.result.hunt.spotId, 'rich');

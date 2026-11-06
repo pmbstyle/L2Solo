@@ -578,6 +578,11 @@ const occupationPlanner = new ColdOccupationPlanner({
                 board: input.board, routeRows, workshops: workshopsFor,
                 timestamp: input.timestamp, onSourceRead: input.read, onSourceScope: input.readScope, knownRecipes: input.knownRecipes, npcOffersFor: OccupationSources.npcOffersFor,
                 buyOrderEscrow: input.buyOrderEscrow, workshop: noWorkshop(),
+                // A near body's post decides only when a situation woke its build or
+                // earning spot (the one gate, situations step 4 C6); else its held
+                // decision answers the post. A page reads.
+                decide: input.mode === 'near' && (Situations.woken(input.state.stats, 'build')
+                    || Situations.woken(input.state.stats, 'earning_spot')),
                 caller: `economy_${input.mode}`, trigger: 'native_own_action' });
             // The shared money packet is derived from this same graph. Use it
             // in preparation only; the native writer owns physical funding.
@@ -1217,15 +1222,6 @@ const MarketPricing = invoke('GameServer/Bot/Economy/MarketPricing');
 // L120: the build after a basics of the same step takes its income route
 // (EconomyContext.incomeRouteFor checks the key and replays its price reads).
 // A copy, so the caller's deps (kept beside the advisory) never carry it.
-function withIncomeRoute(deps, basics) {
-    const route = basics?.preparedIncomeRoute;
-    return route ? { ...deps, preparedIncomeRoute: route } : deps;
-}
-// The prepared card's verdict (ColdEconomyDecision.refusal) joins the build's
-// mask (EconomyContext.forState, deps.eventVerdict).
-function withEventVerdict(deps, prepared) {
-    return prepared.eventVerdict ? { ...deps, eventVerdict: prepared.eventVerdict } : deps;
-}
 // The card of the step's decision after its round carries the shot of the
 // round's action plan, as the post-round build's card did (main's crafters
 // read decided().shot): a prepared craft step joins it, an action plan that
@@ -1240,10 +1236,6 @@ function stepStatsPacket(state, economy, timestamp) {
     const previous = state.stats?.shotDemand || null;
     const demand = EconomyContext.shotDemand(economy, state, timestamp, previous);
     return demand || previous ? { ...economy.statsPacket, shotDemand: demand } : economy.statsPacket;
-}
-// Two plan-like stats values hold the same data (undefined reads as null).
-function samePlanJson(a, b) {
-    return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
 // The options of a step's projection (BotLifeState.prepareResolve), a window's
 // round or the step's own.
@@ -1275,44 +1267,10 @@ function actionEdges(start, after, stockFor, asked = null) {
 function heldAtStep(plan) {
     return ColdEconomyDecision.heldAtDecisionOf(plan.economy.network?.activity, plan.plannedState);
 }
-// The native facts that hold a plan with no planner run: failure counters and
-// recovery deadlines, live even while the wish calculation holds.
-function nativeFactsHold(replan) {
-    return !replan.failure && !replan.invalidSource && !replan.levelingRecovery;
-}
-// A plan's source is judged when it or the bot's level moves: a kit moves the
-// build facts, and that build judges it (GearPlanSelection). A matchup read on
-// every step of every hunter answers what already stands.
-function planSourceHolds(state, plan, timestamp) {
-    if (plan?.status !== 'active') return true;
-    const record = kernel?.states.get(Number(state.characterId));
-    const source = `${plan.next?.spotId}:${plan.next?.npcId}:${state.level}`;
-    if (record?.planSource === source) return true;
-    // Read live (the health line): how often a source or a level moved and the matchup was read again.
-    EconomyContext.countDoor(`plan_source|${record?.planSource ? 'moved' : 'first'}`);
-    if (!GearAcquisitionPlanner.isPlanSourceViableForState(state, plan, { spots: planningSpots, timestamp })) return false;
-    if (record) record.planSource = source;
-    return true;
-}
-// The existing native plan verdict. It grants no economy command or social
-// interaction.
-function nativePlanHolds(state, previousPlan, nativeReplan, timestamp, onFinalize = null) {
-    if (!planSourceHolds(state, previousPlan, timestamp)) return false;
-    const wishFocus = previousPlan?.status === 'deferred' && previousPlan.strategy === 'none'
-        && previousPlan.next == null && previousPlan.reason === 'wish_focus';
-    const wishHolds = (wishFocus || previousPlan?.source === 'wish_network')
-        && !previousPlan.levelingRecovery
-        && nativeReplan.recoveryTargets.length === (previousPlan.recoveryTargets || []).length;
-    if (!previousPlan || DecisionSections.isEmptyWishPlan(previousPlan) || wishHolds) return true;
-    if (previousPlan.status !== 'active' || !nativeReplan.routeCurrent
-        || nativeReplan.failure || nativeReplan.invalidSource || nativeReplan.levelingRecovery) return false;
-    onFinalize?.();
-    return samePlanJson(GearAcquisitionPlanner.finalizePlan(state, previousPlan, previousPlan, nativeReplan, timestamp), previousPlan);
-}
 // L115: a publication the event proof refuses drops the advice, counted by
 // its first failing check.
 // owner: the bot's kernel record the step read; the card is a field of it.
-function rememberWishAdvisory(owner, advisory, seen = null, deps = null) {
+function rememberWishAdvisory(owner, advisory, seen = null) {
     const diagnostic = economyDiagnostics.active();
     if (!owner) {
         if (diagnostic && advisory) economyDiagnostics.count('card', 'drop', 'remember_no_record');
@@ -1325,14 +1283,11 @@ function rememberWishAdvisory(owner, advisory, seen = null, deps = null) {
     }
     if (advisory?.eventProof && seen
         && !ColdEconomyDecision.advisoryPublicationHolds(seen, advisory, current.wishAdvisory)) return;
-    // Validate this publication against the original build's proof.
-    const why = diagnostic ? [] : undefined;
-    const Economy = advisory && seen && deps ? EconomyContext : null;
-    const options = advisory && deps ? { baseline: advisory.baseline, activity: advisory.activity,
-        leaf: advisory.card?.activity, mp: advisory.mp,
-        timestamp: Number(deps.timestamp || Date.now()), why } : null;
-    if (advisory && seen && (!Economy || !(advisory.eventProof && Economy.eventProofHolds(seen, advisory.eventProof, deps, options)))) {
-        if (diagnostic) economyDiagnostics.count('card', 'drop', `remember:${deps ? why[0] || 'unknown' : 'no_deps'}`);
+    // The publication names the original build's decision (its proof's identity).
+    const why = advisory && seen ? advisory.eventProof ? EconomyContext.proofIdentity(seen, advisory.eventProof, advisory.card?.activity)
+        : 'unproved' : '';
+    if (why) {
+        if (diagnostic) economyDiagnostics.count('card', 'drop', `remember:${why}`);
         advisory = null;
     }
     owner.wishAdvisory = advisory;
@@ -1662,12 +1617,11 @@ function requestPartyGoals(payload, msgId, admitted = false) {
             // feasibility mask that answer carries is not read by the goal.
             const deps = { timestamp, spots: planningSpots, board: boardReady(), routeRows,
                 buyOrderEscrow: options.buyOrderEscrow, caller: 'workerPartyGoal' };
-            const verdict = {};
-            const workshop = EconomyContext.heldWorkshop(member, deps, verdict)
+            const workshop = EconomyContext.heldWorkshop(member, deps)
                 || (CraftEligibility.isServiceCrafter(member)
                     ? await askWorkshop(member, timestamp, deps.routeRows, 'party_goal', options) : noWorkshop());
             if (!partyMembersAvailable(members)) throw Error('party_goal_member_busy');
-            return EconomyContext.forState(member, { ...deps, workshop, eventVerdict: verdict, withNodes: true });
+            return EconomyContext.forState(member, { ...deps, workshop, withNodes: true });
         }, payload.timestamp, () => !shuttingDown && !kernel.stopping && Date.now() < payload.replyBy
             && partyMembersAvailable(members), { spots: planningSpots });
         if (!shuttingDown && !kernel.stopping && Date.now() < payload.replyBy)
@@ -1843,17 +1797,14 @@ function startKernel(config = {}) {
                         board: boardReady(), buyOrderEscrow: escrowFor(state.characterId), goalRevision: goalRevision(state.characterId), caller: 'member' }),
                     economyFor: async (projected, deps) => {
                         observedDeps = deps;
-                        const prepared = {};
-                        refreshed = !projected.party?.partyId && !projected.partyId
-                            ? ColdEconomyDecision.refreshAdvisory(projected, owner?.wishAdvisory, deps,
-                                { afterResult: true, prepared, collect: true }) : null;
-                        // Both native stock gates read one prepared foundation;
-                        // the same edges also drive the action after projection.
-                        // L116: a reuse's own basics, else built at the first
-                        // gate read (edges skips resting, travelling and party
-                        // bots, which read none).
-                        // The line is the kit rates' (EconomyContext.keptTargets): no basics built for it.
-                        const stock = refreshed?.economy || prepared.basics || null;
+                        // The step's one gate (situations step 4 C6), a party member's and
+                        // a karma step's alike: the build runs only when a situation woke it
+                        // (or the earning spot), or no card names its decision; else the card serves.
+                        const woken = Situations.woken(projected.stats, 'build') || Situations.woken(projected.stats, 'earning_spot');
+                        refreshed = !woken ? ColdEconomyDecision.refreshAdvisory(projected, owner?.wishAdvisory, deps, { afterResult: true }) : null;
+                        // The same edges also drive the action after projection. The line is
+                        // the kit rates' (EconomyContext.keptTargets): no basics built for it.
+                        const stock = refreshed?.economy || null;
                         let kept = null;
                         economyEdges = actionEdges(state, projected,
                             kind => stock ? stock.stock(kind) : (kept ||= EconomyContext.keptTargets(projected))[kind], actionBaseline);
@@ -1863,14 +1814,14 @@ function startKernel(config = {}) {
                         // The lifecycle's order: the held build's workshop while its
                         // key holds, else the planner's answer (stepWorkshop).
                         const caller = projected.party?.partyId || projected.partyId ? 'party' : 'karma';
-                        deps.workshop = EconomyContext.heldWorkshop(projected, deps, prepared.eventVerdict ||= {})
+                        deps.workshop = EconomyContext.heldWorkshop(projected, deps)
                             || await stepWorkshop(projected, timestamp, deps, caller);
-                        return EconomyContext.forState(projected, withIncomeRoute(withEventVerdict(deps, prepared), prepared.basics));
+                        return EconomyContext.forState(projected, { ...deps, decide: true });
                     },
                     onEconomy: (built, seen) => {
                         economy = built; seenEcho = ColdEconomyDecision.stateEcho(seen);
-                        // This build clears wishDirty too (a party member, a karma step).
-                        if (Number(built?.mask) & DecisionSections.COMPUTED.route) dropRoute(state.characterId, 'sections');
+                        // The build's route facts moved (a party member, a karma step).
+                        if (!refreshed && built?.routeMoved === true) dropRoute(state.characterId, 'sections');
                         const advice = refreshed?.advisory || ColdEconomyDecision.advisory(built, seen, undefined, observedDeps);
                         rememberWishAdvisory(owner, advice, refreshed ? null : seen, observedDeps);
                     }
@@ -1949,16 +1900,9 @@ function startKernel(config = {}) {
                     return !!board && Situations.hears('market', Situations.place(after))
                         && DecisionSections.marketCrossed(board, after.stats?.wishSections?.marketWatch, Number(after.characterId));
                 },
-                feasible: after => {
-                    const leaf = plan.economy.network?.activity, failed = EconomyContext.leafCheck(after, leaf, {}, { heldUnits: heldAtStep(plan) });
-                    return !failed || !Situations.hears(failed.link, Situations.place(after));
-                },
-                // The native facts planLifecycle reads, on the round's end.
-                planHolds: (after, at) => {
-                    const held = after.stats?.equipmentPlan || null;
-                    const replan = GearAcquisitionPlanner.replanContextFor(after, held, at);
-                    return nativeFactsHold(replan) && nativePlanHolds(after, held, replan, at);
-                }
+                // What the held leaf's execution proved (EconomyContext.leafOutcome): the
+                // window ends, its step raises it.
+                feasible: after => !EconomyContext.leafOutcome(after, plan.economy.network?.activity, {}, heldAtStep(plan)),
             })
         },
         // The member's own build of this step (projectResolve) while the
@@ -1981,13 +1925,12 @@ function startKernel(config = {}) {
             // previous shot demand, and its decision point is the ask after its round.
             const karmaPlan = invoke('GameServer/Bot/Population/ColdKarmaPolicy').plan(state, planningSpots, timestamp);
             if (karmaPlan) return karmaPlan;
+            // An old saved plan may hold the same craft project twice: read normalized (every
+            // plan built since is: GearPlanSelection finalizePlan), its next review saves it so.
             const originalPlan = state.stats?.equipmentPlan || null;
             const previousPlan = GearPlanSelection.uniqueCraftProjects(originalPlan);
             if (previousPlan !== originalPlan) state = { ...state, stats: { ...state.stats, equipmentPlan: previousPlan } };
             const craftBidReview = personalCraftBidReviewDue(state);
-            // Failure counters and recovery deadlines are live native facts,
-            // even when the expensive wish calculation still holds.
-            const nativeReplan = GearAcquisitionPlanner.replanContextFor(state, previousPlan, timestamp);
             const spots = planningSpots;
             // GearPlanSelection uses EconomyContext's same prepared occupation
             // reader. No synchronous recipe scan can run through it.
@@ -1999,101 +1942,81 @@ function startKernel(config = {}) {
             const wishFocus = previousPlan?.status === 'deferred' && previousPlan.strategy === 'none'
                 && previousPlan.next == null && previousPlan.reason === 'wish_focus';
             // A healer or buffer without solo ground plans its party request
-            // below (PartyRequestPlanner, decision 10-30): no card reuse.
+            // below (PartyRequestPlanner, decision 10-30), and a bot waiting on its
+            // party request, at every step: temporary until step 7 (the request's
+            // deadlines), its builds counted unwoken under 'party_request'.
             const solo = !state.party?.partyId && !state.partyId && !state.stats?.partyRequest
                 && !PartyRequestPlanner.supportWithoutGround(state, spots, routeSearch(state, timestamp));
-            const nativeHolds = nativeFactsHold(nativeReplan);
-            // An active current plan: before, finalizePlan re-finalized it on
-            // every such step. Its steps count as plan_holds finalized (paid)
-            // + skipped (saved).
-            const routeHeld = previousPlan?.status === 'active' && nativeReplan.routeCurrent && nativeHolds;
-            // Asked only by the card path of a solo bot whose native facts
-            // hold (and by the diagnostics refusal name): finalizePlan is
-            // pure, so the re-finalized plan and its JSON compare give the
-            // same answer whenever they run. The new skip is a party bot (or
-            // one with a pending party request) holding an active current
-            // plan, and a plan the clauses before it already hold. A failed
-            // route never paid: routeHeld excludes it and routeCurrent
-            // implies no leveling recovery, so the diagnostics ask for a solo
-            // bot whose native facts fail never reaches the finalize.
-            let planHoldsAnswer, finalized = false;
-            const planHolds = () => {
-                if (planHoldsAnswer !== undefined) return planHoldsAnswer;
-                // Native wish_focus retains inactive target/history fields,
-                // not a current route/quote. A wish-network route
-                // (WishProviders.personalCraftPlan) never passes finalizePlan,
-                // so it has no grade/level/rate stamps. Neither is judged by
-                // native stamps: the current advisory fence below is (its
-                // build holds the level and worn kit). A wake/expiry still
-                // goes through the native planner.
-                return (planHoldsAnswer = nativePlanHolds(state, previousPlan, nativeReplan, timestamp, () => {
-                    finalized = true;
-                    if (economyDiagnostics.active()) economyDiagnostics.count('lifecycle', 'plan_holds', 'finalized');
-                }));
-            };
-            // A proved ordinary solo round keeps its accepted native plan.
-            // Party waiting, failed targets and excluded grounds still take
-            // the existing planner; no new choice is made from a thin card.
-            // A refused card's verdict serves the build below, which reads
-            // this state, or a copy of it with a wish-focus plan deferred.
-            const prepared = {};
             const where = Situations.place(state);
-            // A native plan that failed or moved is a real review: every gear candidate.
-            deps.fullReview = (previousPlan !== originalPlan || !nativeHolds || solo && !planHolds()) && Situations.hears('native', where);
-            // Diagnostics only: why the card did not serve the step, its own
-            // refusal (advisory:refused:<reason>) or a skip around it
-            // (advisory:skip:<why>; wish_focus: a refused card of a deferred
-            // wish-focus plan, whose verdict the build on its copy cannot take).
+            const card = record?.wishAdvisory || null;
+            // The step's own situations, raised on the state it plans (worker-local; the
+            // step's commit carries them, its build clears what it decides): the held
+            // leaf's execution outcome (EconomyContext.leafOutcome: its goal done or
+            // failed, a visit's step ended), a goal main moved (the goal revision, until
+            // AI-5), a craft project's or clan market's review due.
+            const raise = (name, payload = null) => {
+                const stats = Situations.raise({ ...state.stats }, name, payload, where, state.characterId);
+                if (stats.situationSeq !== state.stats?.situationSeq) state = { ...state, stats };
+            };
+            const leaf = card?.card?.activity;
+            const outcome = card && solo ? Economy.leafOutcome(state, leaf, deps, leaf?.heldAtDecision) : '';
+            if (outcome) raise(outcome);
+            if (card && Number.isFinite(deps.goalRevision) && deps.goalRevision !== card.goalRevision
+                && Situations.hears('goal_moved', where)) raise('goal_moved');
+            const marketReview = craftBidReview ? 'craft_bid' : clanMarketReviewDue(state) ? 'clan_market' : '';
+            if (marketReview && Situations.hears(marketReview, where)) raise(marketReview);
+            // A clan-owned plan whose card names no leaf takes its native selection in a build:
+            // raised once as that comes true (record.clanIdle: the step's last reading, heard),
+            // never while it stands.
+            const clanIdle = leaf === null && GearAcquisitionPlanner.isClanOwnedPlan(previousPlan);
+            if (record && clanIdle !== !!record.clanIdle && (!clanIdle || Situations.hears('clan_market', where))) {
+                record.clanIdle = clanIdle;
+                if (clanIdle) raise('clan_market');
+            }
+            // The one gate (situations step 4 C6): the build runs only when a situation woke
+            // it or the earning spot (its search runs in the build), or the bot holds no
+            // card naming its decision; else the card serves, judging nothing more. The
+            // gear plan's full review (every candidate, the native plan afresh) only when
+            // woken (gear_plan, F1).
+            const woken = Situations.woken(state.stats, 'build') || Situations.woken(state.stats, 'earning_spot');
+            deps.fullReview = Situations.woken(state.stats, 'gear_plan');
+            // Diagnostics only: why the card did not serve the step (advisory:refused:<reason>
+            // or advisory:skip:<why>).
             const advisory = economyDiagnostics.active() ? (outcome, reason) => economyDiagnostics.count('advisory', outcome, reason) : null;
-            const why = advisory ? [] : undefined;
-            let refreshed = solo && !deps.fullReview
-                ? ColdEconomyDecision.refreshAdvisory(state, record?.wishAdvisory, deps, { prepared, collect: !wishFocus, why }) : null;
+            const why = [];
+            let refreshed = solo && !woken ? ColdEconomyDecision.refreshAdvisory(state, card, deps, { why }) : null;
             if (advisory && !refreshed) {
                 if (!solo) advisory('skip', 'party');
-                else if (deps.fullReview) advisory('skip', 'full_review');
-                else {
-                    advisory('refused', why[0] || 'unknown');
-                    if (wishFocus) advisory('skip', 'wish_focus');
-                }
+                else if (woken) advisory('skip', 'woken');
+                else advisory('refused', why[0] || 'unknown');
             }
-            // A compact advisory contains no quantitative project needs.
-            // The bounded clan-market review needs the full current graph.
-            const marketReview = refreshed && (craftBidReview ? 'craft_bid' : clanMarketReviewDue(state) ? 'clan_market' : '');
-            if (marketReview && Situations.woke(marketReview, where)) { refreshed = null; advisory?.('skip', 'market_review'); }
             if (refreshed) {
                 refreshed = await refreshCraftPacket(state, timestamp, refreshed);
                 if (!refreshed) advisory?.('skip', 'craft_packet');
             }
-            // Compact advice has no full money queue for clan acquisition.
-            // A null intention takes its ordinary native selection there.
-            if (refreshed?.economy.network.activity === null && GearAcquisitionPlanner.isClanOwnedPlan(previousPlan) && Situations.woke('clan_market', where)) {
-                refreshed = null; advisory?.('skip', 'clan_market');
-            }
             const nullReuse = refreshed?.economy.network.activity === null;
+            // Failure counters and recovery deadlines are read by the build, which a
+            // situation woke (the native plan's own facts wait for it).
+            const nativeReplan = GearAcquisitionPlanner.replanContextFor(state, previousPlan, timestamp);
             // Build the renewed proof against the native live history, so a
             // consumed wake/expiry does not invalidate it again on publication.
             const preparationState = wishFocus && !refreshed ? { ...state, stats: { ...state.stats,
                 equipmentPlan: GearPlanSelection.deferredWishPlan(previousPlan, nativeReplan, state, timestamp) } } : state;
             // Both reuses (the card's leaf, a null intention) read the card's
-            // workshop. A build keeps the held one while its verdict, judged
-            // here on the state the build reads and handed to it
-            // (EconomyContext.heldWorkshop, prepared.eventVerdict), keeps it;
-            // else it asks. The kernel replaces a state, never edits it: the
-            // copy and its verdict stay the build's across the ask.
-            if (!refreshed) deps.workshop = EconomyContext.heldWorkshop(preparationState, deps, prepared.eventVerdict ||= {})
+            // workshop. A build keeps the held one while its key holds
+            // (EconomyContext.heldWorkshop), else it asks.
+            if (!refreshed) deps.workshop = EconomyContext.heldWorkshop(preparationState, deps)
                 || await stepWorkshop(state, timestamp, deps, 'lifecycle');
-            // No later ask reaches the finalize: a solo bot under routeHeld
-            // has its native facts holding, so the card path asked above.
-            if (economyDiagnostics.active() && routeHeld && !finalized) economyDiagnostics.count('lifecycle', 'plan_holds', 'skipped');
-            // The card passed the verdict's cheap check (its spot not excluded).
+            // The card holds the plan: the route is read on the input state.
             if (refreshed && !nullReuse) {
                 if (economyDiagnostics.active()) economyDiagnostics.count('advisory', 'reuse', 'lifecycle');
                 const leaf = refreshed.economy.network.activity;
-                // The card holds the plan: the route is read on the input state.
                 const { routedState, route, lastFight } = stepTrip(state, routeTrip(state, standingSpot(state), leaf, timestamp), timestamp);
                 const asked = routedState.activity === 'hunting' && leaf.activity !== 'hunting'
                     ? await askAction(routedState, timestamp, { economy: refreshed.economy, caller: 'card' }) : null;
-                let occupation = asked?.plan || null;
+                // A town visit's showcase from the card (temporary until step 6: the town plan).
+                let occupation = routedState.activity === 'shopping'
+                    ? await occupationFor(routedState, timestamp, { economy: refreshed.economy, caller: 'card' }, 'showcase') : asked?.plan || null;
                 if (!occupation?.economyPlan && !refreshed.economyPlan)
                     occupation = await clanMarketPlan(routedState, refreshed.economy, timestamp);
                 rememberWishAdvisory(kernel.states.get(Number(state.characterId)), refreshed.advisory);
@@ -2110,8 +2033,11 @@ function startKernel(config = {}) {
                     partyRequest: null, reusablePartyRequest: false, replanFailure: null,
                     targetNpcId: Number(previousPlan?.next?.npcId || leaf.npcId || 0), plannedState: routedState, route, lastFight };
             }
+            // A build (woken, or the step's card no longer names its decision: counted
+            // unwoken under its caller).
+            const buildDeps = { ...deps, decide: true, caller: solo ? 'step' : 'party_request' };
             const preparedEconomy = nullReuse ? refreshed.economy
-                : Economy.forState(preparationState, withIncomeRoute(withEventVerdict(deps, prepared), prepared.basics));
+                : Economy.forState(preparationState, buildDeps);
             const selectedAcquisition = nullReuse ? {
                 acquisitionPlan: GearPlanSelection.deferredAcquisitionPlan(state, previousPlan, preparedEconomy, nativeReplan, timestamp),
                 replanContext: nativeReplan, reusablePartyRequest: false,
@@ -2129,11 +2055,11 @@ function startKernel(config = {}) {
             const partyRequest = PartyRequestPlanner.partyRequestForPlan(state, acquisitionPlan, timestamp,
                 { spots, economy, memo: kernel.states.get(Number(state.characterId)), search: routeSearch(state, timestamp),
                     planKey: selectedAcquisition.planKey });
-            // The step took its build result, which clears wishDirty: a moved
-            // route section, or a new plan destination the search reads (the
-            // gear branch, the party wait), drops the kept route before the
-            // trip start, so the search below runs on the planned state.
-            const routeDrop = BotRoute.dropReason(Number(economy.mask) & DecisionSections.COMPUTED.route,
+            // The build's route facts moved (EconomyContext.forState routeMoved), or a
+            // new plan destination the search reads (the gear branch, the party wait):
+            // the kept route drops before the trip start, so the search below runs
+            // on the planned state.
+            const routeDrop = BotRoute.dropReason(!nullReuse && economy.routeMoved === true,
                 { plan: previousPlan, request: state.stats?.partyRequest }, { plan: acquisitionPlan, request: partyRequest });
             if (routeDrop) dropRoute(state.characterId, routeDrop);
             const partyRouteWaiting = PartyWaitFallback.waiting(state, acquisitionPlan, partyRequest);
@@ -2144,6 +2070,9 @@ function startKernel(config = {}) {
                 : null;
             const fallbackSpot = partyFallback?.spot || null;
             const statsPacket = stepStatsPacket(state, economy, timestamp);
+            // The gear plan's full review taken with the build (gear_plan, F1).
+            if (deps.fullReview && !nullReuse) statsPacket.woken = Situations.decided({ ...state.stats, ...statsPacket, equipmentPlan: acquisitionPlan },
+                'gear_plan', { caller: 'step', subject: state.characterId });
             const plannedStats = { ...(state.stats || {}), ...statsPacket, equipmentPlan: acquisitionPlan };
             if (partyRequest) plannedStats.partyRequest = partyRequest;
             else delete plannedStats.partyRequest;

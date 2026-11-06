@@ -257,16 +257,19 @@ function refreshPreparedCraft(refreshed, shot, mp) {
 
 // What a decision depends on beyond updatedAt: its echo, [decisionSeq,
 // activityLeaf, focus]. A card belongs to the decision whose echo it carries;
-// a moved fact raises a section (wishDirty) with a new sequence, so a card
-// holds while the state raised nothing and carries the same echo (echoHolds).
+// it holds while the state's build is not woken (a situation raised for it: a
+// new decision comes) and carries the same echo (echoHolds).
 function stateEcho(state = {}) {
     const stats = state.stats || {};
     return [Number(stats.decisionSeq || 0), Number(stats.activityLeaf || 0), stats.wishFocus?.[0] ?? null];
 }
 function echoHolds(state, echo) {
-    return Array.isArray(echo) && !(Number(state?.stats?.wishDirty) || 0)
+    return Array.isArray(echo) && !buildWoken(state)
         && !Sections.decisionRefusal(state || {}, echo[0], echo[1], echo[2]);
 }
+// A raise for the build waits on the state (its woken bit as raised; a card names a
+// build that published, so a held answer the row lacks is no raise here).
+const buildWoken = state => !!((Number(state?.stats?.woken) || 0) & Situations.BITS.build);
 const sameEcho = (left, right) => Array.isArray(left) && Array.isArray(right)
     && left[0] === right[0] && left[1] === right[1] && left[2] === right[2];
 // A received or saved echo: two safe non-negative integers and a focus
@@ -624,92 +627,69 @@ function advisoryPublicationHolds(state, advice, previous = null) {
         || Number(state.updatedAt || 0) > advice.card.updatedAt
             && Number(state.stats?.wishSections?.at) > advice.baseline.at);
 }
-// The bot's own hunting/resting/travelling inside one decision is not an
-// event (L70). After a result the card is only restamped and published.
-// Before an action it is executed only through a hunter's target
-// (activityPick.npcId, ColdSimulationKernel); a resting or travelling bot's
-// step is resolveRest/resolveTravel of its own state (BackgroundResolver),
-// the same after a rebuild. A traveller without a trip record falls
-// through to a fight there, so it takes the rebuild.
-// refusal: the first failing check's name, '' when the card holds (L114
-// diagnostics read it; canReuse is its boolean).
+// The card a far bot's step serves while no situation woke its build (situations
+// step 4 C6): its proof's identity (EconomyContext.proofIdentity: the owner, the
+// recompute generation, the decision echo, the leaf) and the field guards its
+// execution needs. Nothing else is judged: what ended its leaf is raised by the
+// executor (EconomyContext.leafOutcome), a moved goal by goal_moved (the goal
+// revision, until AI-5). refusal: the first failing check's name, '' when the card
+// holds; canReuse is its boolean.
 function refusal(state, accepted, deps = {}, options = {}) {
     if (!accepted || !accepted.card) return 'no_card';
     if (accepted.characterId !== undefined && accepted.characterId !== Number(state.characterId)) return 'no_card';
     if (!accepted.baseline) return 'no_sections';
-    // A card holds only by its event proof.
+    // A card holds only by its proof.
     if (!accepted.eventProof) return 'no_card';
     // lazy: cycle EconomyContext constructs and validates these cards.
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext');
-    if (state.stats?.wishDirty) return 'wish_dirty';
-    // The earning spot is due: only a build searches it.
-    if (Economy.earningDue(state, deps)) return 'earning_spot';
-    const echo = Sections.decisionRefusal(state, accepted.decisionSeq, accepted.activityLeaf, accepted.focus);
-    if (echo) return echo;
     // A card without a leaf reuses only as a completed (null) activity its
-    // proof names; any other leaf takes the native checks and the event
-    // verdict. Commands still prepare via their native owner.
+    // proof names. Commands still prepare via their native owner.
     const leaf = accepted.card.activity;
     const completedNull = leaf === null && accepted.activityLeaf === 0 && accepted.eventProof.activity === null;
     if (!leaf && !completedNull) {
         if (Diagnostics.active()) Diagnostics.count('card', 'leaf_kind_check', 'none');
         return 'leaf_kind';
     }
+    const identity = Economy.proofIdentity(state, accepted.eventProof, leaf);
+    if (identity) return identity;
     if (state.incomingPending) return 'incoming';
-    if (!Economy.FIELD_ACTIVITIES.has(state.activity)) return `not_field:${state.activity}`;
+    // A card serves a bot in the field only (a hunt, a rest, a trip, a party member's fight;
+    // a dead, shopping or crafting bot's step is none), and a far bot's held build lost (a
+    // restart, eviction) has no answer to serve: both build.
+    if (!Economy.FIELD_ACTIVITIES.has(state.activity) && state.activity !== 'grouped') return `not_field:${state.activity}`;
+    if (Situations.reactive(state) && !Economy.heldBuild(state, deps)) return 'no_held';
     if (!options.afterResult && state.activity === 'traveling'
         && !invoke('GameServer/Bot/Population/BackgroundResolver').travelRecord(state.stats.travel)) return 'travel_record'; // lazy: as canReuse before L114 (load order unchecked)
-    // A goal change (main's goal revision moved since the build) is seen at
-    // the next decision point. No revision on the card (restored after a
-    // restart) differs too: one rebuild. The earning spot hears no goal (situations).
+    // The goal revision the card was built under (until AI-5), where the bot hears a
+    // moved goal (its step raises goal_moved there): a card restored after a restart
+    // has none and is refused once.
     if (Number.isFinite(deps.goalRevision) && deps.goalRevision !== accepted.goalRevision
         && Situations.hears('goal_moved', Situations.place(state))) return 'goal';
-    // A far bot's card lives on, so nothing else heals a lost held build.
-    if (Situations.reactive(state) && !Economy.heldBuild(state, deps)) return 'no_held';
-    // options.collect: a build of the same step on this state follows a
-    // refusal; the verdict collects and hands itself to it (forState).
-    const why = [], verdict = {};
-    const holds = Economy.eventProofHolds(state, accepted.eventProof, deps, { activity: accepted.activity, leaf,
-        baseline: accepted.baseline, mp: accepted.mp, timestamp: Number(deps.timestamp || Date.now()), why, verdict,
-        collect: options.collect === true && !!options.prepared, basics: options.basics });
-    if (options.prepared) options.prepared.eventVerdict = verdict;
-    return holds ? '' : `events:${why[0] || 'unproved'}`;
+    return '';
 }
 function canReuse(state, accepted, deps = {}, options = {}) {
     return !refusal(state, accepted, deps, options);
 }
-// options.why: an array that receives the refusal's name; options.prepared:
-// an object that receives the basics a reuse built (L120), so the caller does
-// not build them or their income route again for the same state and deps,
-// and the card's verdict; options.collect: the caller builds on this state
-// and deps when the card is refused (its verdict serves the build's).
-// The basics: a selling leaf's check in the card's verdict builds them on the
-// same state and deps right before (EconomyContext LEAF_CHECKS selling), with
-// nothing yielding or written between; that answer serves when it read the
-// held earning spot (basics never search) at the same time.
+// options.why: an array that receives the refusal's name. The served card's view
+// reads its basics only when a reader asks them (view: lazily), its kit from the
+// published rates (keptKit): a served step builds nothing.
 function refreshAdvisory(state, accepted, deps = {}, options = {}) {
-    const checked = {};
-    const refused = refusal(state, accepted, deps, { ...options, basics: checked });
+    const refused = refusal(state, accepted, deps, options);
     if (refused) { options.why?.push(refused); return null; }
-    const base = checked.base?.preparedIncomeRoute?.searched === false && checked.base.timestamp === Number(deps.timestamp || Date.now())
-        ? checked.base : invoke('GameServer/Bot/Economy/EconomyContext').basics(state, deps); // lazy: cycle EconomyContext constructs and validates these cards
-    if (options.prepared) options.prepared.basics = base;
     // This new result is fenced to the actual publication and the accepted
     // decision's echo; never relax ColdEconomyDecisions.matches or any
     // native write guard.
     const decision = compact({ data: accepted.card.data.slice(0), updatedAt: Number(state.updatedAt || 0),
         echo: [accepted.decisionSeq, accepted.activityLeaf, accepted.focus], flags: 0 });
-    const economy = view(state, decision, deps, base);
+    const economy = view(state, decision, deps);
     economy.inputKey = String(decision.inputHash);
     economy.wallet = PurchaseFunding.budget(state, deps.buyOrderEscrow);
     economy.statsPacket = { wishFocus: state.stats.wishFocus, dormantWishes: state.stats.dormantWishes,
         decisionSeq: state.stats.decisionSeq, activityLeaf: state.stats.activityLeaf, money: state.stats.money,
-        kitRates: state.stats.kitRates, dangerPrice: state.stats.dangerPrice, wishSections: accepted.baseline, wishDirty: 0,
-        // The card serves the build (until it moves to situations, step 4). A served
-        // card never clears another decision's bit: the earning spot's is cleared
-        // only by its search (EconomyContext.earningDue refuses the card first).
-        woken: Situations.decided(state.stats, 'build', { caller: deps.caller || 'card', served: true }),
+        kitRates: state.stats.kitRates, dangerPrice: state.stats.dangerPrice, wishSections: accepted.baseline,
         wishAdvisory: accepted.saved || null };
+    // A served card is counted and clears no bit: only the decision taken does.
+    Situations.decided(state.stats, 'build', { caller: deps.caller || 'card', served: true });
     Object.assign(economy.network, { focus: state.stats.wishFocus, dormant: state.stats.dormantWishes,
         decisionSeq: state.stats.decisionSeq, activityLeaf: state.stats.activityLeaf });
     Object.defineProperty(economy, 'eventProof', { value: () => accepted.eventProof });
@@ -781,7 +761,7 @@ class ColdEconomyDecisions {
             // A card made before the round its state's event dirtied (loot,
             // level) is not served: decided() misses and main reads the
             // basics view until the next decision point.
-            card.stale = bagChanged || !!state?.stats?.wishDirty;
+            card.stale = bagChanged || buildWoken(state);
             this.byId.set(id, card);
         }
         else if (this.byId.has(id)) this.byId.get(id).stale = true;

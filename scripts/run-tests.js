@@ -8,8 +8,7 @@ const notRunTests = new Map([
     ['tests/test_beginner_shot_policy.js', 'red: a cold fight fires no beginner shot (Cold.resolveSolo shotActions 0); debt 34'],
     ['tests/test_cold_armor_set_effects.js', 'new red 2026-10-14: AssertionError: strictEqual 445 !== 468'],
     ['tests/test_finite_market_income.js', 'new red 2026-10-14: AssertionError: a stored shop town is read as its town name'],
-    ['tests/test_gear_intermediate_candidates.js', 'new red 2026-10-14: AssertionError: same event reuses the decision and held roll'],
-    ['tests/test_task4_b5_hot_cold_same.js', 'new red 2026-10-14: AssertionError: cold publishes one buy ad'],
+    ['tests/test_task4_b5_hot_cold_same.js', 'red since 2026-10-14: canTradeRemotely refuses its buy goal, no ad opens; debt 34'],
     ['tests/test_task4_survival_tranche.js', 'red: the refill tranche funds no shot bid (BuyAdPolicy.bidFor null); debt 34'],
 ]);
 
@@ -1186,6 +1185,7 @@ const tests = [
     'tests/test_detour_own_trip.js',
     'tests/test_gear_threat.js',
     'tests/test_gear_plan_memo.js',
+    'tests/test_gear_intermediate_candidates.js',
     'tests/test_minimum_relations_pk.js',
     'tests/test_bot_improvements.js',
     'tests/test_database_mutation_admission.js',
@@ -1517,6 +1517,7 @@ const defaultConfigTests = new Set([
     'tests/test_static_gear_worker.js',
     'tests/test_station_workshop.js',
     'tests/test_task4_arrival_step.js',
+    'tests/test_gear_intermediate_candidates.js',
     'tests/test_task4_b5_authority_bump.js',
     'tests/test_task4_b5_craft_chain.js',
     'tests/test_task4_b5_duplicate_ack.js',

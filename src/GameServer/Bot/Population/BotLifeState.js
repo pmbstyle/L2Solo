@@ -1170,7 +1170,7 @@ function recipeReader(state) {
 // (player_command) is decided as its caller once the row raise landed (Situations.took).
 function raiseOnRow(characterId, raises, reason = 'situation') {
     const id = Number(characterId), cached = cache.get(id), where = Situations.place(cached || { phase: 'cold' });
-    const bits = { woken: 0, waiting: 0, wishDirty: 0, leaf: false, cleared: 0, waitCleared: 0 }, each = [];
+    const bits = { woken: 0, waiting: 0, leaf: false, cleared: 0, waitCleared: 0 }, each = [];
     const facts = { earning: cached?.stats?.earning, spotMarks: cached?.stats?.spotMarks }, written = {};
     // The woken bits as each raise meets them (the cached row's, then this batch's), for the decisions taken.
     let seen = Number(cached?.stats?.woken ?? Situations.ALL);
@@ -1183,7 +1183,7 @@ function raiseOnRow(characterId, raises, reason = 'situation') {
         const taken = Situations.planes(one.taken);
         bits.woken = (bits.woken | one.woken) & ~one.taken; bits.cleared = (bits.cleared | one.taken) & ~one.woken;
         bits.waiting = (bits.waiting | one.waiting) & ~taken; bits.waitCleared = (bits.waitCleared | taken) & ~one.waiting;
-        bits.wishDirty |= one.wishDirty; bits.leaf ||= one.leaf;
+        bits.leaf ||= one.leaf;
         for (const key of ['earning', 'spotMarks']) {
             if (one.facts[key] !== undefined) facts[key] = written[key] = one.facts[key];
         }
@@ -1192,18 +1192,18 @@ function raiseOnRow(characterId, raises, reason = 'situation') {
     }
     const factKeys = Object.keys(written);
     // Nothing to OR: no write, no revision move, no stale step for the worker.
-    if (!bits.woken && !bits.cleared && !bits.waiting && !bits.waitCleared && !bits.wishDirty && !bits.leaf && !factKeys.length) {
+    if (!bits.woken && !bits.cleared && !bits.waiting && !bits.waitCleared && !bits.leaf && !factKeys.length) {
         return Promise.resolve(cached?.phase === 'cold' ? cached : null);
     }
     const mind = "COALESCE(NULLIF(mindJson, ''), '{}')", at = path => `json_extract(${mind}, '$.${path}')`;
     return module.exports.serializeClanLevelUp(id, () => Database.execute([`UPDATE ${TABLE} SET
         mindJson = json_set(${mind},
             '$.woken', (COALESCE(${at('woken')}, ?) & ~?) | ?, '$.waiting', (COALESCE(${at('waiting')}, 0) & ~?) | ?,
-            '$.wishDirty', COALESCE(${at('wishDirty')}, 0) | ?, '$.situationSeq', COALESCE(${at('situationSeq')}, 0) + 1
+            '$.situationSeq', COALESCE(${at('situationSeq')}, 0) + 1
             ${bits.leaf ? ", '$.activityLeaf', 0" : ''}${factKeys.map(key => `, '$.${key}', json(?)`).join('')}),
         simulationRevision = simulationRevision + 1, updatedAt = ?
         WHERE characterId = ? AND phase = 'cold'
-        RETURNING *`, [Situations.ALL, bits.cleared, bits.woken, bits.waitCleared, bits.waiting, bits.wishDirty,
+        RETURNING *`, [Situations.ALL, bits.cleared, bits.woken, bits.waitCleared, bits.waiting,
         ...factKeys.map(key => JSON.stringify(written[key])), now(), id], { read: true }]))
         .then(([row] = []) => {
             if (!row) return null;

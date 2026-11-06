@@ -17,7 +17,6 @@ const CraftShop = invoke('GameServer/Bot/Economy/CraftShopService');
 const Recipes = invoke('GameServer/Items/C4RecipeItems');
 const Commit = require('../src/GameServer/Bot/Economy/EconomyCommit');
 const Decision = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
-const Sections = require('../src/GameServer/Bot/Economy/DecisionSections');
 const Protocol = require('../src/GameServer/Bot/Population/ColdSimulationProtocol');
 const { ColdSimulationCoordinator } = require('../src/GameServer/Bot/Population/ColdSimulationCoordinator');
 const owner = 730271, ARTISAN = 56, RECIPE = 46, epoch = 'b5-role', restore = [];
@@ -72,10 +71,10 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
         assert.equal(rechecks, 1, 'the control card reaches the craft step');
         assert.deepEqual(skill, [true], 'the unchanged role passes the craft-skill check');
         const [beforeRefresh, beforeExecutes] = [refreshes.length, executes];
-        // The control's source rejection raised a section; the worker's next
-        // decision consumes it (a card holds only while none is raised).
+        // The control's source rejection woke the build; the worker's next
+        // decision takes it (a card holds only while the build is not woken).
         const settled = Life.cachedState(owner);
-        if (settled.stats?.wishDirty) await Life.upsertState({ ...settled, stats: { ...settled.stats, wishDirty: 0 } }, 'fixture');
+        if (settled.stats?.woken) await Life.upsertState({ ...settled, stats: { ...settled.stats, woken: 0 } }, 'fixture');
         writes = 0;
 
         // 1. The level drops by a commit after the card, before the craft step.
@@ -99,7 +98,7 @@ const lifeRow = async (patch) => ({ ...(await Database.execute(['SELECT * FROM b
         assert.deepEqual(skill, [true, false], 'the lowered craft skill refuses the recipe');
         assert.equal(executes, beforeExecutes, 'a recipe above the craft level is not crafted');
         assert.equal(writes, 1, 'the one write raises the refused source, no craft write');
-        assert(Life.cachedState(owner).stats.wishDirty & Sections.sectionMask(['sources']), 'the refused recipe raises sources');
+        assert(invoke('GameServer/Bot/Situations').woken(Life.cachedState(owner).stats, 'build'), 'the refused recipe wakes the build');
         assert.equal(refreshes.length, beforeRefresh + 1, 'a refused recipe is no stale card: no extra raise');
         kept();
         console.log('PASS Task 4 B5 role change: stale role step writes nothing and refreshes once, lowered skill crafts nothing, goal kept');

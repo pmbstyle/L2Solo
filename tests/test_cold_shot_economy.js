@@ -128,7 +128,7 @@ async function images(ids) {
         assert.deepEqual(goods(await images([crafter.characterId, supplier.characterId])), goods(refusedBefore),
             'below-floor production cannot debit, crystallize or consume materials');
         const refused = await Shots.execute(crafter, { craft: { recipeId: 20, batches: 65 } }, now);
-        assert(refused.stats.wishDirty, 'what the act refuses is heard, the plan does not ask it again');
+        assert(invoke('GameServer/Bot/Situations').woken(refused.stats, 'build'), 'what the act refuses is heard, the plan does not ask it again');
         assert(invoke('GameServer/Bot/Economy/WealthCraftDecision').refused(refused, 20), 'its recipe waits for the next town look');
 
         const oldOffer = Afk.offers(45, Afk.SELL).find(row => Number(row.sourceId) === supplier.characterId);

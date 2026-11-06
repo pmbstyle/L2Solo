@@ -111,11 +111,8 @@ const cheaper = Economy.forState(published, deps);
 assert.deepEqual(cheaper.network.queue, expensive.network.queue,
     'a new quote of an unwatched input waits for the next decision');
 assert.strictEqual(cheaper.plan, expensive.plan, 'the published decision is held, not rebuilt');
-// The next decision: a raised sources section (the market's section) with a
-// new sequence, as a step's event raise publishes it, read by the bot's step.
-const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
-const nextDecision = from => ({ ...from, stats: { ...from.stats,
-    decisionSeq: Number(from.stats.decisionSeq || 0) + 1, wishDirty: Sections.sectionBit('sources') } });
+// The next decision: a situation woke the build (its gate), read by the bot's step.
+const nextDecision = from => ({ ...from, stats: { ...from.stats, decisionSeq: Number(from.stats.decisionSeq || 0) + 1 } });
 const refreshed = Economy.forState(nextDecision(published), { ...deps, caller: 'step' });
 assert(crystalPaths(refreshed).some(row => row.improvement.sourceSelfId === 166),
     'the newly listed cheap input enters at the next decision');

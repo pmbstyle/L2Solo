@@ -71,10 +71,11 @@ module.exports.stepProbe = async (id) => {
             actionBaseline: again.actionBaseline });
         kernel.onCommitAck({ results: [{ ok: true, characterId: id, proposalId, state: kernel.states.get(id).state }] });
         const committed = await arrive(timestamp + 3000);
-        const supply = invoke('GameServer/Bot/Economy/DecisionSections').sectionBit('supply');
-        const raised = next => [Number(next.state.stats.wishDirty || 0) & supply, Number(next.state.stats.decisionSeq || 0)];
+        const Situations = invoke('GameServer/Bot/Situations');
+        const built = next => Number(Situations.woken(next.state.stats, 'build'));
+        const raised = next => [built(next), Number(next.state.stats.decisionSeq || 0)];
         return { decided, afterRound, activity: state.activity,
-            wishDirty: Number(projection.state.stats.wishDirty || 0),
+            woken: built(projection),
             seq: [Number(plan.statsPacket.decisionSeq || 0), Number(projection.state.stats.decisionSeq || 0)],
             rest: raised(rest), town: raised(town),
             selectedActivity: plan.economy.network.activity?.activity,
@@ -117,7 +118,8 @@ module.exports.goalProbe = async (id) => {
         tables.apply([{ name: 'goals', from: 0, to: 1, full: false, rows: [[id, goal(2)]], removed: [], last: true }]);
         const refusal = ask();
         const moved = await step(timestamp + 3000);
-        return { same, held, refusal, moved };
+        const unwoken = Object.keys(invoke('GameServer/Bot/Situations').counts().unwoken).filter(key => key.startsWith('build:'));
+        return { same, held, refusal, moved, unwoken };
     } finally { Economy.forState = original; }
 };
 // A kept card's craft refresh (a crafter's MP out of its band) asks the action
@@ -176,16 +178,19 @@ module.exports.kitProbe = async (id) => {
         const first = await step(member, 0, timestamp);
         const quiet = await step(first.state, 0, timestamp + 1000);
         const gain = Number(Data.experience[quiet.state.level]) - Number(quiet.state.exp) + 1;
-        const levelUp = await step({ ...quiet.state, activity: 'resting' }, gain, timestamp + 2000);
-        return { quiet: quiet.kitMoved, levelUp: levelUp.kitMoved, levels: [quiet.state.level, levelUp.state.level],
-            workshop: first.economy?.workshop || null, workshopAsks };
+        // The level comes in a party fight and waits there; the party's rest hears it
+        // (its stop) and the member's build it wakes moves the kit.
+        const levelUp = await step(quiet.state, gain, timestamp + 2000);
+        const rested = await step({ ...levelUp.state, activity: 'resting' }, 0, timestamp + 3000);
+        return { quiet: quiet.kitMoved, inFight: levelUp.kitMoved, levelUp: rested.kitMoved, levels: [quiet.state.level, levelUp.state.level],
+            workshop: rested.economy?.workshop || null, workshopAsks };
     } finally { occupationPlanner.request = request; }
 };
 module.exports.occupationProbe = async (id) => {
     const saved = kernel.states.get(id), state = saved.state;
     kernel.states.set(id, { ...saved, wishAdvisory: null, route: null,
         state: { ...state, adena: 100000000, inventory: { ...state.inventory, 57: { selfId: 57, amount: 100000000 } },
-            stats: { ...state.stats, wishFocus: null, activityLeaf: 0, wishDirty: 1, equipmentPlan: null } } });
+            stats: { ...state.stats, wishFocus: null, activityLeaf: 0, equipmentPlan: null } } });
     try {
         const plan = await kernel.planLifecycle({ state: kernel.states.get(id).state, timestamp: Date.now() });
         const entry = kernel.states.get(id);
@@ -296,10 +301,10 @@ parentPort.on('message', message => {
             'a rest asks nothing, its end with nothing moved since the last action ask asks nothing, the arrival in town asks, '
             + 'again after main dropped that step, and not after main committed it');
         // A looted Scroll of Escape is no supply event: the scroll has no line (situations.md B2).
-        assert.equal(step.wishDirty, 0, 'on the hunt the round\'s loot raises nothing');
+        assert.equal(step.woken, 0, 'on the hunt the round\'s loot wakes no build');
         assert.equal(step.seq[1], step.seq[0], 'and the decision sequence stands');
         assert.equal(step.rest[0], 0, 'nor does the round that ends at the rest');
-        assert.equal(step.town[0], 0, 'nor the arrival in town: no supply line moved');
+        assert.equal(step.town[0], 1, 'the arrival in town wakes the build: its shopping moment (arrived_town)');
         assert.equal(step.baseline[1], step.baseline[0], 'the projected state keeps the baseline of the step decision');
         assert.equal(step.card.updatedAt, step.card.projectedAt, 'main gets the step card stamped to the projected state');
         assert.deepEqual(step.card.echo, step.card.projectedEcho, 'main gets the step card with the projected decision echo');
@@ -311,6 +316,7 @@ parentPort.on('message', message => {
         assert.equal(goal.held, '', 'the held decision holds on the warm state at the same goal revision');
         assert.equal(goal.refusal, 'goal', 'a moved goal revision refuses the held decision');
         assert.equal(goal.moved, 1, 'the next decision point after a goal change builds once');
+        assert.deepEqual(goal.unwoken, [], 'every build of the steps was woken by a situation (decided:build:unwoken 0)');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'craft'), craftStepProbe: id });
         const craftResponse = await wait(message => message.probeId === 'craft'); if (craftResponse.error) throw Error(craftResponse.error);
         console.log(JSON.stringify(craftResponse.value));
@@ -322,7 +328,8 @@ parentPort.on('message', message => {
         console.log(JSON.stringify(kit));
         assert.equal(kit.levels[1], kit.levels[0] + 1, 'the fixture member levels up in its round');
         assert.equal(kit.quiet, false, 'a quiet party member step moves no kit');
-        assert.equal(kit.levelUp, true, 'a level gained in a party round is a kit event for the party step');
+        assert.equal(kit.inFight, false, 'a level gained in a party fight waits for the party\'s rest');
+        assert.equal(kit.levelUp, true, 'and is a kit event for the party step there');
         assert.deepEqual(kit.workshop, { known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0, feasibility: null },
             'a member that is no crafter builds with no workshop');
         assert.equal(kit.workshopAsks, 0, 'and asks the occupation planner for none');

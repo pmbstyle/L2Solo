@@ -240,10 +240,10 @@ async function run() {
         assert.equal(captured.filter(row => row.id === 9621).length, 1,
             'selected unchanged two-batch wealth craft re-entry uses already purchased free inputs');
         DB.craftInventoryItems = async () => { throw Error('economy_material_protected'); };
-        const calm = await Life.upsertState({ ...again.state, stats: { ...again.state.stats, wishDirty: 0 } }, 'fixture_raise_read');
+        const calm = await Life.upsertState({ ...again.state, stats: { ...again.state.stats, woken: 0 } }, 'fixture_raise_read');
         const protectedInputs = await Wealth.execute(calm, opportunity);
         assert.equal(protectedInputs.reason, 'craft_rejected');
-        assert(protectedInputs.state.stats.wishDirty, 'what the commit protects is heard: the plan does not ask it again');
+        assert(invoke('GameServer/Bot/Situations').woken(protectedInputs.state.stats, 'build'), 'what the commit protects is heard: the plan does not ask it again');
         state = again.state;
     } finally { DB.craftInventoryItems = craftOwner; }
     const wealthCraft = await Wealth.execute(state, opportunity);

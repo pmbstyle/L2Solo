@@ -1,11 +1,10 @@
 'use strict';
 
-// The situations a bot hears and where it hears them: one catalogue for both threads
-// (main's raises, the worker's steps). How a bot reacts (design rules, Recompute; user 11-02). A bot holds its plan. A
-// change only stands against the decision's baseline, the mark; where the bot stands
-// decides whether it hears the change now. One question, one table: hears(link, place).
-// The step's facts, the soft point, the held plan's verdict and the doors to a build
-// all ask it; none keeps a rule of its own. A new rule is a row here.
+// The situations a bot hears and the decisions they wake: one catalogue for both
+// threads (main's raises, the worker's steps; situations.md §14). A bot holds its
+// decisions; a situation raised (raise, the one writer of the bits) wakes the ones that
+// declare it, heard where the bot stands (NOW, its next STOP, in TOWN); a decision runs
+// only woken and clears its bit when it is taken (decided). A new rule is a row here.
 
 const Trace = require('./DecisionTrace');
 const FIELD_ACTIVITIES = new Set(['hunting', 'resting', 'traveling']);
@@ -39,9 +38,8 @@ const gated = where => !!(where & GATED);
 const field = where => !!(where & FIELD);
 const reactive = state => gated(place(state));
 // On a visit past its look a bot works down what the look decided: what ended a step of
-// the agenda moves the plan to the next.
+// the agenda moves the plan to the next (goal_done:visit / goal_failed:visit).
 const onVisit = state => place(state) === VISIT;
-const agendaHears = (state, why) => onVisit(state) && why.startsWith('check:');
 // Which step reads its facts: a hunt's round, a far party's round, and the step that
 // arrives in town: its one look.
 function readsFacts(before, after) {
@@ -52,167 +50,110 @@ function readsFacts(before, after) {
 // The planes a far bot hears a situation on (a row's heard): NOW anywhere, STOP at
 // its next stop (a rest or the town), TOWN in town only (situations.md §10).
 const NOW = 0, STOP = 1, TOWN = 2;
-const link = (sections, waits, heard = NOW) => Object.freeze({ sections: Object.freeze(sections), waits, heard });
-const KIT = ['build', 'benefits', 'sources'], STOCK = ['supply', 'sources'];
-const BOUGHT = ['sources', 'money'], OBSERVED = ['occupation', 'benefits', 'sources'];
+const link = (waits, heard = NOW) => Object.freeze({ waits, heard });
 
-// Every situation a bot can hear: the sections of the build it touches, the places
-// it waits at (both temporary: the build runs on its sections until it moves to
-// woken decisions). What has no place in waits is heard at once everywhere.
+// Every situation a bot can hear: the places a far bot does not hear it at (waits:
+// read by hears(): the soft point and the plan's own moves, until step 4 C7) and the
+// plane a far bot hears it on (heard: NOW, at its next STOP, in TOWN). The decisions
+// each wakes are declared below (DECISIONS).
 const SITUATIONS = Object.freeze({
     // Its own state (detect). A level moved, or the rest of the kit (worn gear,
     // hennas, skills, class, the craft): read apart, a level up wins a step that moved both.
-    level_up: link(KIT, WORK | VISIT, STOP),
-    gear_changed: link(KIT, WORK | VISIT, TOWN),
-    recipe_learned: link(KIT, WORK | VISIT, STOP),
-    died: link(['combat'], 0),
+    level_up: link(WORK | VISIT, STOP),
+    gear_changed: link(WORK | VISIT, TOWN),
+    recipe_learned: link(WORK | VISIT, STOP),
+    died: link(0),
     // A hot body's respawn in town (BotAI): its town arrival follows as its own.
-    revived: link(['combat'], 0),
-    relations: link(['relations'], WORK | VISIT),
-    party_joined: link(['relations'], 0),
-    party_left: link(['relations'], 0),
+    revived: link(0),
+    // Its clan joined, left or changed (detect's clan fact): heard at its next stop. Its
+    // friends and enemies wake nothing (Q13): they are read when it decides.
+    clan_changed: link(WORK | VISIT, STOP),
+    party_joined: link(0),
+    party_left: link(0),
     // A contest lost at its arrival on a spot (SpotContest: it avoids the units standing
     // there; payload { spotId, reason: 'contest_lost' }: its spot mark, raisedFacts).
-    contest_lost: link(['occupation', 'sources'], 0),
+    contest_lost: link(0),
     // The spot's own (subject: the spot, traced, raised on no bot): a contest at an
     // arrival (SpotContest), a grievance pair met there (step 2 S4).
-    spot_contested: link([], 0),
-    enemy_met: link([], 0),
+    spot_contested: link(0),
+    enemy_met: link(0),
     // What main refused at the act or a body that failed its step five times: the plan
     // cannot stand.
-    goal_failed: link(['sources'], 0),
+    goal_failed: link(0),
     // The gear plan's craft route collected nothing for its stall's kills (the far
     // kill count crossed equipmentPlan.stall, GearAcquisitionPlanner.stallCrossed).
-    source_stalled: link(['sources'], 0),
+    source_stalled: link(0),
     // What an executor proved of the held plan where it acts: its goal reached (a
-    // purchase landed, a paid piece waits for its exchange), a town visit's step
-    // refused (a review main could not run). Sections until the build moves to
-    // situations (step 4 C6).
-    'goal_done:goal': link(BOUGHT, 0),
-    'goal_failed:visit': link(['sources'], 0),
+    // purchase landed, a material hunt's count, a paid piece waits for its exchange);
+    // a town visit's step done or refused (the visit's own check, a review main could
+    // not run): the agenda moves on (Agenda.advance, temporary until step 6).
+    'goal_done:goal': link(0),
+    'goal_done:visit': link(0),
+    'goal_failed:visit': link(0),
     // A spot whose spawns admit none of the bot's fights alone (a kit or level it
     // lost, a stand-in ground): the bot stands with nothing to hunt, its plan cannot
-    // stand. The occupation rebuild searches its spot afresh and drops the kept route.
-    spot_empty: link(['occupation', 'sources'], 0),
-    // A body's arrival in town.
-    arrived_town: link(['supply', 'money'], 0),
-    // Main moved the bot's goal; its native plan failed or moved; the step's own
-    // review of a craft or clan market.
-    goal_moved: link([], 0),
-    native: link([], 0),
-    craft_bid: link([], 0),
-    clan_market: link([], 0),
-    funding: link(['funding'], WORK | VISIT),
+    // stand.
+    spot_empty: link(0),
+    // A far bot's arrival in town (detect: the step that leaves the field for a town
+    // visit) or a body's (ShoppingState).
+    arrived_town: link(0),
+    // Main moved the bot's goal (its goal revision, until AI-5); the step's own review
+    // of a craft or clan market.
+    goal_moved: link(0),
+    craft_bid: link(0),
+    clan_market: link(0),
+    funding: link(WORK | VISIT),
     // A move the bot did not order (a flight, a pull, a push out, a party's call).
-    moved_by_world: link(['occupation'], 0),
+    moved_by_world: link(0),
     // Deaths at its spot, or the death recovery's level penalty raised (a death, the
     // spot's pressure): the ground the bot may fight on moved.
-    spot_dangerous: link(['combat', 'occupation'], 0),
+    spot_dangerous: link(0),
     // The recovery's penalty lifted by clean wins.
-    recovered: link(['combat', 'occupation'], 0, STOP),
+    recovered: link(0, STOP),
     // The earning spot's own inputs (situations.md B6): karma that appeared or cleared
     // (detect; the decision takes the karma wash's choice while it lasts), a spot the
     // body's relocation could not reach (payload { spotId, reason }: its spot mark)
     // and a player's command naming a spot (payload { spotId, at }: the held answer
     // itself, no search). raisedFacts writes what they carry (spot_dangerous's too).
-    karma_changed: link(['occupation'], 0),
-    spot_unreachable: link(['occupation'], 0),
-    player_command: link(['occupation'], 0),
+    karma_changed: link(0),
+    spot_unreachable: link(0),
+    player_command: link(0),
     // Its own income on its spot below what its held earning answer expects, beyond its error: weighed at a rest,
-    // once a stay (BotHuntEfficiency.disappoints). Wakes the earning spot only (no build section).
-    spot_disappoints: link([], 0, STOP),
-    supply: link(['supply'], FIELD | VISIT),
-    bag: link(STOCK, FIELD | VISIT),
-    stores: link(STOCK, WORK | VISIT),
+    // once a stay (BotHuntEfficiency.disappoints). Wakes the earning spot only.
+    spot_disappoints: link(0, STOP),
+    supply: link(FIELD | VISIT),
+    bag: link(FIELD | VISIT),
+    // What its clan asks of it moved (the stores fact: its material demand, the clan
+    // supply, the crystals): heard at its next stop (situations.md §3 clan_call; the
+    // clan raises it itself in step 9).
+    clan_call: link(WORK | VISIT, STOP),
     // Its own warehouse: what it put in and took is its doing, heard as it arrives in town.
-    warehouse: link(STOCK, GATED),
+    warehouse: link(GATED),
     // A condition, not a change: a need that opened. The shots a fight loads or the
     // survival potions fell under their line (one hour of use, the kit rates'), the
-    // shots ran out (the supply fact's flips, factNames); the bag full or the load
-    // a level up. Sections until the build moves to situations (step 4).
-    shots_out: link(['supply'], 0),
-    'stock_low:shots': link(['supply'], 0),
-    'stock_low:potions': link(['supply'], 0),
-    bag_full: link(STOCK, 0),
+    // shots ran out (the supply fact's flips, factNames); the bag must go to town.
+    shots_out: link(0),
+    'stock_low:shots': link(0),
+    'stock_low:potions': link(0),
+    bag_full: link(0),
     // Its own doing is no event (own outputs are not inputs): its trips and where
     // they end, its craft preparation.
-    own_move: link(['occupation'], GATED),
-    own_preparation: link(['sources', 'benefits', 'money'], GATED),
-    // The soft point (DecisionSections.softEvents). Money is read in town and when the
-    // goal comes in reach; a rest is no review of the purse (user 11-02).
-    money: link(['money'], FIELD | VISIT),
+    own_move: link(GATED),
+    own_preparation: link(GATED),
+    // The soft point (DecisionSections.softEvents, until step 4 C7). Money is read in
+    // town and when the goal comes in reach; a rest is no review of the purse.
+    money: link(FIELD | VISIT),
     // The wallet reached the build's threshold (stats.affordAt): a broke bot's survival
-    // potions, its focus. Sections until the build moves to situations (step 4).
-    'goal_affordable:potions': link(['money'], 0),
-    'goal_affordable:focus': link(['money'], 0),
-    'goal_affordable:survival': link(['money'], 0),
-    // Its own samples moved (the build's sections; a gear-threat flip raises none).
-    observation: link(OBSERVED, WORK | VISIT),
-    market: link(BOUGHT, 0),
-    // The held plan's own proof (EconomyContext.heldBuildVerdict).
-    crafter_mp: link(['sources'], FIELD | VISIT),
-    own_loss: link(BOUGHT, WORK | VISIT),
-    quantity: link(BOUGHT, FIELD | VISIT),
-    liquidation: link(BOUGHT, FIELD | VISIT),
-    threat: link(OBSERVED, 0),
-    // The leaf's own check (EconomyContext.LEAF_CHECKS). Who sells what is read at
-    // the market: a bot in the field learns of a gone offer as it arrives. A bot short
-    // of a price away from the shop earns on: the shop reads its purse.
-    excluded: link(['occupation', 'sources'], 0),
-    material_done: link(['sources'], 0),
-    offer: link(BOUGHT, 0),
-    offer_gone: link(BOUGHT, FIELD),
-    filled: link(BOUGHT, 0),
-    short: link(BOUGHT, FIELD | STAND),
-    sale: link(STOCK, 0),
-    craft: link(STOCK, 0),
-    target: link(['relations'], 0),
-    improvement: link(['sources'], 0),
-    unsupported: link(['sources'], 0),
-    // The doors to a build. candidates: a build weighs every gear candidate. look:
-    // another's question does.
-    candidates: link([], FIELD),
-    look: link([], GATED)
+    // potions, an unarmed bot's weapon bridge, its focus.
+    'goal_affordable:potions': link(0),
+    'goal_affordable:focus': link(0),
+    'goal_affordable:survival': link(0),
+    // Its own samples moved; a watched board line crossed (until step 4 C7).
+    observation: link(WORK | VISIT),
+    market: link(0)
 });
-// Who asks for a bot's plan, and does the answer become its plan. Only a bot's own
-// moment decides (no link). Another's question is a look: elsewhere the plan it
-// holds answers. A reader with no row looks.
-const door = (heard, keeps) => Object.freeze({ link: heard, keeps });
-const READER = door('look', true);
-const DOORS = Object.freeze({
-    step: door(null, true), member: door(null, true), economy_near: door(null, true),
-    // A deal is a look with its goods counted: the plan answers while their count stands.
-    meeting_prepare: door('look', false),
-    // The next page of a far bot's deferred plan: its held plan read, never kept.
-    economy_page: door('look', false),
-    workerPartyGoal: door('look', false), item_need: door('look', false)
-});
-const rowOf = caller => DOORS[caller] || READER;
-
 const hears = (name, where) => !(SITUATIONS[name].waits & where);
-const sections = name => SITUATIONS[name].sections;
-// What a door gets when the plan does not stand: 'decide' or 'look'.
-function answer(caller, state) {
-    const { link: name } = rowOf(caller);
-    return !name || hears(name, place(state)) ? 'decide' : name;
-}
-const keeps = caller => rowOf(caller).keeps;
-// Why a review opened, in the reviewer's words: a goal that failed, or that main moved.
-function goalMoment(why) {
-    if (/^(events:)?check:/.test(why)) return 'goal_failed';
-    return why === 'goal' ? 'goal_moved' : null;
-}
-// Decision 11-02: a bot at work or at rest weighs only the gear it follows; every
-// candidate waits for a real review. why: what refused the held plan; none: no plan
-// stood, as at a first build.
-const quiet = (state, why) => !!why && !hears('candidates', place(state)) && !goalMoment(why);
-// The sections of the links heard here, each once.
-function heard(names, where) {
-    const out = new Set();
-    for (const name of names) if (hears(name, where)) for (const section of SITUATIONS[name].sections) out.add(section);
-    return [...out];
-}
-// One reason with no decision of its own (a door's review): is it heard here, counted as a raise.
+// One reason with no decision of its own (a step's market review): is it heard here, counted as a raise.
 function woke(name, where) {
     const now = hears(name, where);
     if (now) count(raisedCounts, `${name}@${NAMES.get(where)}`);
@@ -222,17 +163,28 @@ function woke(name, where) {
 // The decisions a bot holds: one bit each in stats.woken, the same bits per plane
 // in stats.waiting (STOP plane the low byte, TOWN the next). Each declares here, once,
 // the situations that wake it; a decision joins as the step that moves it does
-// (situations.md §10). The build runs on its sections until it moves (step 4): a
-// raise heard for its sections wakes it, so its bit stands with stats.wishDirty.
+// (situations.md §10, §14).
+// build: the wish projection, the money queue, the leaf and the party request. Beside
+// §14's list: player_command (the commanded spot reaches the hunting leaf),
+// goal_done:visit / goal_failed:visit (the agenda over the held entry, F4: temporary
+// until step 6), funding (out_of_money from step 4 C7), revived (a respawn), the
+// step's market reviews (craft_bid, clan_market) and goal_moved (until AI-5).
+// gear_plan (F1): the gear plan's full review, every gear candidate weighed and the
+// native plan judged afresh (GearPlanSelection); a build it does not wake keeps the
+// gear the bot follows.
 const DECISIONS = Object.freeze({
     earning_spot: Object.freeze(['level_up', 'gear_changed', 'died', 'recovered', 'spot_disappoints', 'contest_lost', 'spot_empty',
         'spot_dangerous', 'spot_unreachable', 'moved_by_world', 'party_left', 'shots_out', 'stock_low:potions', 'goal_affordable:potions',
         'karma_changed']),
-    build: Object.freeze([])
+    build: Object.freeze(['arrived_town', 'level_up', 'gear_changed', 'recipe_learned', 'died', 'revived', 'party_left',
+        'goal_affordable:potions', 'goal_affordable:focus', 'goal_affordable:survival', 'funding', 'goal_done:goal', 'goal_failed',
+        'goal_done:visit', 'goal_failed:visit', 'stock_low:shots', 'stock_low:potions', 'bag_full', 'source_stalled', 'clan_call',
+        'clan_changed', 'spot_empty', 'goal_moved', 'player_command', 'craft_bid', 'clan_market']),
+    gear_plan: Object.freeze(['level_up', 'gear_changed', 'died', 'party_left', 'goal_failed', 'source_stalled', 'arrived_town'])
 });
 const BITS = Object.freeze(Object.fromEntries(Object.keys(DECISIONS).map((name, at) => [name, 1 << at])));
 const ALL = Object.values(BITS).reduce((all, bit) => all | bit, 0), PLANE = 0xff;
-const BUILD = BITS.build, SHIFT = { [STOP]: 0, [TOWN]: 8 };
+const SHIFT = { [STOP]: 0, [TOWN]: 8 };
 // The decisions each situation wakes.
 const WAKES = Object.freeze(Object.fromEntries(Object.keys(SITUATIONS).map(name => [name,
     Object.entries(DECISIONS).reduce((bits, [decision, names]) => names.includes(name) ? bits | BITS[decision] : bits, 0)])));
@@ -242,15 +194,10 @@ const WAKES = Object.freeze(Object.fromEntries(Object.keys(SITUATIONS).map(name 
 const planesAt = where => where === WORK || where === BODY ? 0 : where === REST ? STOP : STOP | TOWN;
 // A decision's held answer in the mind (situations.md §10): with none the decision
 // reads woken (no stored raise), until it decides and holds one.
-const HELD = Object.freeze({ earning_spot: 'earning' });
+const HELD = Object.freeze({ earning_spot: 'earning', build: 'wishSections', gear_plan: 'equipmentPlan' });
 const unheld = stats => Object.entries(HELD).reduce((bits, [decision, key]) => stats?.[key] === undefined ? bits | BITS[decision] : bits, 0);
 // A row saved before the store kept no bits: every decision reads woken, once.
 const wokenBits = stats => (stats?.woken === undefined ? ALL : Number(stats.woken) || 0) | unheld(stats);
-// The build's sections of a situation (the temporary half of its row). lazy: the
-// section table is DecisionSections', which reads this catalogue at its top.
-const masks = new Map();
-const maskOf = name => masks.get(name) ?? masks.set(name, readers().sectionMask(SITUATIONS[name].sections)).get(name);
-
 // The health line's counts (counts()), always on: what was raised where, which
 // situation woke which decision, the decisions taken or served, and those taken with
 // no bit woken by their caller. Each map holds at most COUNT_KEYS keys (limits.md);
@@ -286,9 +233,8 @@ function decisionNames(bits) {
 }
 
 // The one writer of a bot's woken decisions (both threads): a situation raised at a
-// place. Its decisions heard here wake (woken), the rest wait on its plane (waiting);
-// its build sections heard here are raised (stats.wishDirty) and wake the build. A
-// raise that adds no bit and writes no fact is no news: not counted, situationSeq
+// place. Its decisions heard here wake (woken), the rest wait on its plane (waiting).
+// A raise that adds no bit and writes no fact is no news: not counted, situationSeq
 // stays. payload (plain data): { impossible: true } (an execution that proved the held
 // step impossible: a failed goal, a town visit with nothing to do) also drops the
 // held step (stats.activityLeaf); the facts its payload carries (raisedFacts) are
@@ -298,11 +244,11 @@ function decisionNames(bits) {
 function raise(stats, name, payload = null, where = OPEN, subject = 0) {
     const bits = delta(name, payload, where, stats);
     if (bits.leaf) stats.activityLeaf = 0;
-    const was = wokenBits(stats), waited = Number(stats.waiting) || 0, dirty = Number(stats.wishDirty) || 0;
+    const was = wokenBits(stats), waited = Number(stats.waiting) || 0;
     const before = stats.earning?.spotId ?? null, wrote = writeFacts(stats, bits.facts);
-    const woken = was | bits.woken, waiting = waited | bits.waiting, wishDirty = dirty | bits.wishDirty;
-    if (!wrote && woken === was && waiting === waited && wishDirty === dirty) return stats;
-    stats.woken = woken; stats.waiting = waiting; stats.wishDirty = wishDirty;
+    const woken = was | bits.woken, waiting = waited | bits.waiting;
+    if (!wrote && woken === was && waiting === waited) return stats;
+    stats.woken = woken; stats.waiting = waiting;
     stats.situationSeq = (Number(stats.situationSeq) || 0) + 1;
     counted(name, where, was, woken, subject, waiting & ~waited, payload);
     if (bits.taken) took(stats, bits, name, subject, before);
@@ -320,18 +266,17 @@ function took(stats, bits, caller, subject = 0, was = null) {
     return stats.woken;
 }
 // What a raise ORs into a bot's bits (raise; BotLifeState.raiseOnRow's SQL on a far
-// row): { woken, waiting, wishDirty, leaf (drop the held step), taken (the decisions
+// row): { woken, waiting, leaf (drop the held step), taken (the decisions
 // its facts took: their bits cleared, woken and waiting on every plane: planes()),
 // facts (raisedFacts over stats: the facts as they stand before it) }.
 function delta(name, payload = null, where = OPEN, stats = null) {
     const row = SITUATIONS[name];
     if (!row) throw new TypeError(`situation: unknown ${name}`);
-    const sections = hears(name, where) ? maskOf(name) : 0;
     const now = !row.heard || !!(planesAt(where) & row.heard);
     // A mark past SpotRiskPolicy.MAX_SPOT_MARKS drops the oldest: counted (limits.md).
     const facts = raisedFacts(stats, name, payload, () => count(raisedCounts, 'spot_mark:dropped'));
-    return { woken: (now ? WAKES[name] : 0) | (sections ? BUILD : 0), waiting: now ? 0 : WAKES[name] << SHIFT[row.heard],
-        wishDirty: sections, leaf: payload?.impossible === true, taken: facts.earning ? BITS.earning_spot : 0, facts };
+    return { woken: now ? WAKES[name] : 0, waiting: now ? 0 : WAKES[name] << SHIFT[row.heard],
+        leaf: payload?.impossible === true, taken: facts.earning ? BITS.earning_spot : 0, facts };
 }
 // The facts a raise writes beside its bits (situations.md B6), each owned by its
 // reader: player_command's spot becomes the held earning answer (the player decided:
@@ -406,8 +351,8 @@ function stop(stats, where, subject = 0) {
 }
 const woken = (stats, decision) => !!(wokenBits(stats) & BITS[decision]);
 const anyWoken = stats => wokenBits(stats) !== 0;
-// A decision taken (or its held answer served: served) clears its bit; a taken one
-// with no bit woken is counted by its caller (the decisions not yet on situations).
+// A decision taken clears its bit; its held answer served (served) is counted and
+// clears nothing; a taken one with no bit woken is counted by its caller.
 // decisions: a name or a list. Returns the woken bits left (stats.woken). A taken
 // one is traced (subject: the bot; answer, was: its answer and the one it replaces,
 // short text, or per decision { decision: [answer, was] }).
@@ -417,6 +362,8 @@ function decided(stats, decisions, { caller = 'other', served = false, subject =
         const bit = BITS[decision], unwoken = !served && !(bits & bit);
         count(decidedCounts, decision, served ? 1 : 0);
         if (unwoken) count(unwokenCounts, `${decision}:${caller}`);
+        // A served answer clears nothing: only the decision taken does.
+        if (served) continue;
         if (!served && Trace.on()) {
             const [now, before] = answer && typeof answer === 'object' ? answer[decision] || [] : [answer, was];
             Trace.record({ kind: 'decided', bot: subject, decision, caller, how: unwoken ? 'unwoken' : 'taken',
@@ -449,7 +396,9 @@ function factNames(previousFact, current, funding = false, planned = false) {
     // A baseline that read no recipe book (null) has none to compare.
     const recipes = previousFact('recipes');
     if (recipes != null && recipes !== current.recipes) add('recipe_learned');
-    if (previousFact('relations') !== current.relations) add('relations');
+    // The clan (its id; a baseline kept before the fact was its own has none to compare).
+    const clan = previousFact('clan');
+    if (clan !== undefined && clan !== current.clan) add('clan_changed');
     // A new party or a new role in it reads as joining it.
     if (previousFact('party') !== current.party) add(current.party === readers().NO_PARTY ? 'party_left' : 'party_joined');
     if (funding) add('funding');
@@ -481,7 +430,7 @@ function factNames(previousFact, current, funding = false, planned = false) {
         if (below('potions')) add('stock_low:potions');
     }
     if (previousFact('bag') !== current.bag) add('bag');
-    if (previousFact('stores') !== current.stores) add('stores');
+    if (previousFact('stores') !== current.stores) add('clan_call');
     if (previousFact('warehouse') !== current.warehouse) add('warehouse');
     return names;
 }
@@ -526,6 +475,9 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, re
     if (out) { out.facts = current; out.funding = fundingAfter; }
     const names = factNames(previousFact, current, funding, body || Sections.occupationPlanned(after, leaf));
     if (unhuntable) names.push('spot_empty');
+    // A far bot's arrival in town (the step that leaves the field for a visit): its
+    // shopping moment (its stop there wakes what waited for the town).
+    if (!body && after.phase === 'cold' && after.activity === 'shopping' && FIELD_ACTIVITIES.has(before.activity)) names.push('arrived_town');
     // lazy: the planner loads spot modules that read this catalogue.
     if ((Planner ||= invoke('GameServer/Bot/AI/GearAcquisitionPlanner')).stallCrossed(before, after)) names.push('source_stalled');
     // A body near a player hears its full bag too (its post's previous facts: bagNeed).
@@ -543,9 +495,7 @@ function needsOpened(before, names, now, was = null) {
     return opened;
 }
 // The sections a list of situations touches wherever the bot stands.
-const sectionsOf = names => heard(names, OPEN);
 
-module.exports = { FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, agendaHears, readsFacts, hears, heard, woke, sections,
+module.exports = { FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, readsFacts, hears, woke,
     DECISIONS, ALL, raise, delta, planes, took, applyFacts, spotAsk, counted, note, stop, woken, anyWoken, decided, counts, COUNT_KEYS,
-    answer, keeps, goalMoment, quiet,
-    placeName: where => NAMES.get(where), SITUATIONS, detect, factNames, sectionsOf };
+    placeName: where => NAMES.get(where), SITUATIONS, BITS, detect, factNames };

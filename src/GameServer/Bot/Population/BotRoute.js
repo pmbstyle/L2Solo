@@ -1,10 +1,10 @@
 'use strict';
 // The bot's hunting route (docs/architecture.md §2 route): where a far bot
 // hunts and the trip there. Two parts:
-// - choose: the spot search, the bot's computed value over COMPUTED.route
-//   (build, relations, occupation, sources). trip keeps its result in the
-//   bot's kernel record; the worker's step drops it (drop, dropReason) when
-//   its mask hits those sections, it wrote other plan / request fields the
+// - choose: the spot search, the bot's computed value over its route facts
+//   (EconomyContext PIECE_FACTS.route: kit, party, clan, spot, risk). trip keeps
+//   its result in the bot's kernel record; the worker's step drops it (drop,
+//   dropReason) when its build's route facts moved, it wrote other plan / request fields the
 //   search reads, a leaf trip starts, or the trip finds the kept spot full
 //   (ROUTE-ROOM-3); it reads no leaf and no focus.
 // - record: the trip from where the bot stands now (destinations, travel
@@ -467,10 +467,10 @@ function planKey(plan, request) {
 }
 
 // Why a step drops the kept route, read at the writer of the step's plan:
-// its build moved a route section (DecisionSections.COMPUTED.route), or it
+// its build's route facts moved (EconomyContext.forState routeMoved), or it
 // wrote other plan / party request fields the search reads. '': kept.
-function dropReason(sectionsMoved, before = {}, after = {}) {
-    if (sectionsMoved) return 'sections';
+function dropReason(routeMoved, before = {}, after = {}) {
+    if (routeMoved) return 'sections';
     return planKey(before.plan, before.request) !== planKey(after.plan, after.request) ? 'plan' : '';
 }
 

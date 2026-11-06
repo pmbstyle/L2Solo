@@ -11,8 +11,10 @@ const MAX_BYTES = 1024, MAX_PLAIN_BYTES = 16384;
 // store (Situations) and a decisionSeq raises no longer move, so every bot
 // builds once. 7: the same format; the build publishes its kit rates
 // (stats.kitRates) instead of targets, so every bot builds once to rate its
-// kit. An older card is refused before inflate: one rebuild per bot.
-const VERSION = 7;
+// kit. 8: the card's proof is its identity only (EconomyContext proof v3, the
+// build on situations), its saved prefix the generation alone. An older card
+// is refused before inflate: one rebuild per bot.
+const VERSION = 8;
 
 function cardData(value, maxBytes) {
     if (typeof value !== 'string' || value.length > Math.ceil(maxBytes / 3) * 4

@@ -101,13 +101,17 @@ async function run() {
         assert(found, 'fixture: a kit kind is a later step of some review');
         assert.equal(shots.heldAtDecision, 2, 'the step keeps the bag it was counted on');
         const part = Math.floor(shots.amount / 2);
+        // The visit's bought steps end (goal_done:visit woke the build): its agenda moves to the step.
         const next = Economy.forState({ ...first, inventory: { ...first.inventory, [ITEM]: { selfId: ITEM, amount: 2 + part } } }, deps());
         assert.equal(next.network.activity.itemId, ITEM);
         const Decision = invoke('GameServer/Bot/Population/ColdEconomyDecision');
         assert.equal(Decision.remainingToOrder(next.network.activity, { ...first, inventory: { ...first.inventory, [ITEM]: { selfId: ITEM, amount: 2 + part } } }), shots.amount - part,
             'what reached the bag since the review is not bought again');
+        // The whole step in the bag: the agenda moves on, to the next seller of what it still wants.
         const whole = Economy.forState({ ...first, inventory: { ...first.inventory, [ITEM]: { selfId: ITEM, amount: 2 + shots.amount } } }, deps());
-        assert.notEqual(whole.network.activity?.itemId, ITEM, 'a step that arrived drops');
+        const rest = Number(shots.wanted || shots.amount) - shots.amount;
+        if (rest > 0) assert.deepEqual([whole.network.activity?.itemId, whole.network.activity?.amount], [ITEM, rest], 'its rest from the next seller');
+        else assert.notEqual(whole.network.activity?.itemId, ITEM, 'a step that arrived drops');
     }
     { // A seller that fell short: the next seller of the town, up to the value per unit.
         const bid = { status: 'deferred', reason: 'wish_focus', target: { selfId: 1 } };
@@ -192,7 +196,7 @@ async function run() {
         const first = tight.plan.network.activity;
         assert(tight.plan.network.agenda.length > 0, 'fixture: the steps are funded');
         const noRow = tight.state.stats.money.map((value, at) => at >= 6 && (at - 6) % 3 === 0 ? 0 : value);
-        const material = Economy.forState({ ...tight.state, stats: { ...tight.state.stats, money: noRow } }, deps());
+        const material = Economy.forState({ ...tight.state, stats: { ...tight.state.stats, money: noRow } }, { ...deps(), decide: false });
         assert.equal(material.plan, tight.plan.plan, 'a step with no packet row of its own reads its root\'s place');
         const spent = bought(tight.state, first);
         spent.stats = { ...spent.stats, money: Funding.packetAfterPurchase(spent.stats.money, first.amount * first.unitPrice, { itemId: first.itemId }) };
@@ -232,16 +236,11 @@ async function run() {
         const poor = review({ adena: 2000 });
         assert.deepEqual(poor.plan.network.later || [], [], 'a gap holds what is left for it');
     }
-    { // Another's deal is a look: whatever else moved, the plan answers while its goods stand.
+    { // Another's deal is a look: whatever moved, the plan answers (its goods are counted at the act).
         const { plan, state } = shotsFirst();
-        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
         const door = { ...deps(), caller: 'meeting_prepare', deal: new Set([SHOTS]) };
-        const moved = { ...state, stats: { ...state.stats, wishDirty: Sections.sectionMask(['money']) } };
-        assert.equal(Economy.forState(moved, door).plan, plan.plan, 'a raised section is no build for a deal');
-        const counted = { ...moved, inventory: { ...moved.inventory, [SHOTS]: { selfId: SHOTS, amount: 7 } } };
-        const fresh = Economy.forState(counted, door);
-        assert.notEqual(fresh.plan, plan.plan, 'its goods moved: a fresh count');
-        assert.equal(Economy.forState(moved, door).plan, plan.plan, 'a deal\'s answer never becomes the plan');
+        const moved = { ...state, adena: state.adena + 1, inventory: { ...state.inventory, [SHOTS]: { selfId: SHOTS, amount: 7 } } };
+        assert.equal(Economy.forState(moved, door).plan, plan.plan, 'a deal reads the held plan');
     }
     { // How long a plan may wait is the plan's: main reads it from the packet.
         const Decision = invoke('GameServer/Bot/Population/ColdEconomyDecision');

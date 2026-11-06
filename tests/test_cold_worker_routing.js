@@ -132,7 +132,6 @@ try {
     // moves none of its inputs walks to the kept spot even when a new search
     // would choose another; a route section, a plan / request field the
     // search reads, or a leaf trip makes the next trip start search again.
-    const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
     const otherSpot = { ...targetSpot, id: 'other-field', name: 'Other fields' };
     const keptSpots = [currentSpot, targetSpot, otherSpot];
     const keptHunter = { ...leafHunter, characterId: 10 };
@@ -141,8 +140,9 @@ try {
     const record = { route: null };
     const tripTo = (leaf = null) => BotRoute.trip(record, keptHunter, leaf,
         { spots: keptSpots, currentSpot, timestamp: leafAt })?.spotId;
-    const stepDrops = (mask, before, after) => {
-        const why = BotRoute.dropReason(mask & Sections.COMPUTED.route, before, after);
+    // routeMoved: the build's route facts moved (EconomyContext.forState routeMoved).
+    const stepDrops = (routeMoved, before, after) => {
+        const why = BotRoute.dropReason(routeMoved, before, after);
         if (why) BotRoute.drop(record, why);
         return why;
     };
@@ -153,10 +153,10 @@ try {
     const flipSearch = () => { searched = searched === targetSpot ? otherSpot : targetSpot; };
     assert.strictEqual(tripTo(), targetSpot.id, 'the first trip start searches');
     flipSearch();
-    assert.strictEqual(stepDrops(Sections.sectionMask(['money', 'supply']), quiet, quiet), '');
+    assert.strictEqual(stepDrops(false, quiet, quiet), '');
     assert.strictEqual(tripTo(), targetSpot.id, 'a step that moves no route input keeps its route');
-    assert.strictEqual(stepDrops(Sections.sectionMask(['occupation']), quiet, quiet), 'sections');
-    assert.strictEqual(tripTo(), otherSpot.id, 'a moved route section searches again');
+    assert.strictEqual(stepDrops(true, quiet, quiet), 'sections');
+    assert.strictEqual(tripTo(), otherSpot.id, 'moved route facts search again');
     flipSearch();
     assert.strictEqual(stepDrops(0, quiet, { ...quiet, plan: { ...waitPlan, next: { spotId: 'new-source', npcId: 7 } } }), 'plan');
     assert.strictEqual(tripTo(), targetSpot.id, 'a new plan destination searches again');

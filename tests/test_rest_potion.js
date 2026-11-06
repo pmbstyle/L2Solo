@@ -164,7 +164,6 @@ try {
     // A build that keeps its foundation (a money build: the wallet is no
     // foundation section) bounds the stock by the wallet it has now.
     {
-        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
         // A held build proves itself only under a published code identity.
         const Generation = require('../src/GameServer/Bot/Population/RecomputeGeneration'), generation = Generation.metadata();
         Generation.configure({ code: '1'.repeat(40), config: '2'.repeat(64) });
@@ -173,7 +172,8 @@ try {
         Economy.forget(native.characterId);
         const built = Economy.forState(native, { timestamp: T });
         const poorer = hunter(price * 3);
-        const dirty = { ...poorer, stats: { ...poorer.stats, ...built.statsPacket, wishDirty: Sections.sectionBit('money') } };
+        // A build woken while the bot is poorer (goal_affordable, its step's gate) reads that wallet.
+        const dirty = { ...poorer, stats: { ...poorer.stats, ...built.statsPacket } };
         const kept = Economy.forState(dirty, { timestamp: T, caller: 'step' }).stock('potions');
         const fresh = Economy.basics(dirty, { timestamp: T }).stock('potions');
         assert.equal(kept.target, fresh.target, `a money build reads the wallet it has (${kept.target}, ${fresh.target} fresh)`);

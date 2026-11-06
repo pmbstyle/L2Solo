@@ -68,7 +68,8 @@ async function run() {
     // One bot, idle on the field X its held decision hunts (-5_16, monster
     // 924), pulled to A (17_13) before the trip (`standing`: the published
     // state moved before it; `room`: the spots with room), the trip, its
-    // arrival. verdict(state) = does the held decision hold over that state;
+    // arrival. verdict(state) = does the held decision hold over that state (its
+    // proof names it and its leaf's execution raised nothing, EconomyContext.leafOutcome);
     // round(before, after) = the situations a far step's round raises with the
     // step's leaf (BotLifeState.prepareResolve's check).
     const spotAt = (state, id) => {
@@ -87,8 +88,7 @@ async function run() {
         assert(leaf?.activity === 'hunting' && String(X) === '-5_16', 'fixture: a hunting decision at the field it stands on');
         const packet = held.statsPacket, published = { ...native, stats: { ...native.stats, ...packet } };
         const proof = held.eventProof();
-        const verdict = state => Economy.eventProofHolds(state, proof, { timestamp: T },
-            { baseline: packet.wishSections, leaf, timestamp: T });
+        const verdict = state => !Economy.proofIdentity(state, proof, leaf) && !Economy.leafOutcome(state, leaf, { timestamp: T });
         const round = (before, after) => Situations.detect(before, after, { leaf })
             .filter(name => Situations.hears(name, Situations.place(after, before)));
         assert.equal(verdict(published), true, 'fixture: the published decision holds');
@@ -166,12 +166,13 @@ async function run() {
         const { X, routed, route, traveling, arrived, verdict, round } = detour(990104, { room: () => () => true,
             standing: (state, X) => { const at = pulled(state); return { ...at, stats: { ...at.stats, spotBackoffs: [backoff(X)] } }; } });
         assert(String(route.spotId) !== String(X), 'fixture: X avoided, the route leads elsewhere');
-        assert.equal(verdict(arrived), false, 'the arrival away from an avoided X refuses the decision');
-        // Its round raises nothing far from a player: the verdict is what refuses.
+        // The avoided spot is the spot's situation, raised where it was avoided (contest_lost,
+        // spot_dangerous): the hunt's own step raises no outcome for it.
+        assert.equal(verdict(arrived), true, 'the arrival away from an avoided X raises no hunt outcome');
         assert.deepEqual(round(routed, traveling), [], 'the far trip away from an avoided X raises nothing in the round');
         assert.deepEqual(round(arrived, arrived), [], 'nor a far round away from it');
     }
-    console.log('PASS an arrival away from an avoided spot refuses the decision');
+    console.log('PASS an arrival away from an avoided spot raises no hunt outcome');
 
     {
         // A bot that died on spot Z (its death mark, held with the decision)
@@ -180,11 +181,11 @@ async function run() {
         const Z = spots.find(spot => spot.raidBoss !== true && spot.center
             && spot.npcEntries?.some(entry => entry.selfId === 1011));
         assert(Z, 'fixture: a ground to flee from');
-        const { X, route, traveling, arrived, verdict } = detour(990102, { stats: { spotBackoffs: [backoff(Z.id)] },
+        const { X, routed, route, traveling, arrived, verdict, round } = detour(990102, { stats: { spotBackoffs: [backoff(Z.id)] },
             standing: state => ({ ...spotAt(state, Z.id), activity: 'hunting' }) });
         assert(String(route.spotId) !== String(X), 'fixture: X full, the route leads elsewhere');
         assert.equal(route.reason, 'death_pressure_replan', 'fixture: a flight');
-        assert.equal(verdict(traveling), false, 'a flight refuses the decision');
+        assert(round(routed, traveling).includes('moved_by_world'), 'a flight is an event: the world moved the bot');
         assert.equal(verdict(arrived), true, 'a far flight\'s arrival is its own ground: the decision stands');
     }
     console.log('PASS a death-pressure flight is an event');

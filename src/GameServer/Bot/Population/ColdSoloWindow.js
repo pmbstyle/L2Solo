@@ -71,9 +71,8 @@ function huntingRound(result) {
 // readers, the worker's and the kernel's: edges(before, after)
 // (ColdEconomyPlan.edges), moneyBound(after) (the goal at work), market(after)
 // (the decision's market watch crossed, DecisionSections.marketCrossed),
-// feasible(after) (EconomyContext.leafCheck, the held leaf's execution check),
-// planHolds(after, at) (the native facts its planLifecycle reads) and
-// kind(after) (lifecycleKind: a state that asks a command).
+// feasible(after) (EconomyContext.leafOutcome: what the held leaf's execution
+// proved, raised by the step) and kind(after) (lifecycleKind: a state that asks a command).
 function endOf(before, after, result, readers) {
     if (!huntingRound(result)) return 'round';
     // The round's own end: a rest, a death, a flight.
@@ -86,8 +85,7 @@ function endOf(before, after, result, readers) {
     if (readers.moneyBound(after)) return 'money';
     if (readers.market(after)) return 'market';
     if (!readers.feasible(after)) return 'leaf';
-    if (readers.kind(after) !== 'resolver') return 'command';
-    return readers.planHolds(after, Number(after.timing?.nextResolveAt) || 0) ? '' : 'plan';
+    return readers.kind(after) !== 'resolver' ? 'command' : '';
 }
 
 // A window's debug for main: the rounds' numbers summed over the last round's fields.
