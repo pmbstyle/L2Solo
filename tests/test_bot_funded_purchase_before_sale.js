@@ -81,6 +81,23 @@ assert(Packet.firstUnfundedPrice(poorChoice.state.stats.money) > 0, 'a real unfu
 assert.strictEqual(Funding.spendable(poorChoice.state, 0, { itemId: NECKLACE }), 0,
     'the old jewellery plan alone cannot authorize its debit');
 
+// While the sale retry holds, a sale leaf names no kind the last sale visit could not place
+// (stats.marketSellSeen): it would only send the bot back to leave it in the bag again. A kind
+// it did not try (or a new buyer) ends the retry: every kind is for sale again.
+{
+    const Providers = invoke('GameServer/Bot/Economy/WishProviders');
+    const Disposition = invoke('GameServer/Bot/Economy/ItemDisposition');
+    const seller = bot(wealth, npcJewellery, 50000);
+    const kinds = state => Providers.liquidationCandidates(state, Economy.basics(state)).map(row => Number(row.selfId));
+    const seen = Disposition.saleSeen(seller).items;
+    assert(kinds(seller).some(id => seen.includes(id)), 'the loot is for sale');
+    const after = { ...seller, stats: { ...seller.stats, marketSellSeen: { items: seen, buyers: null } } };
+    assert(Disposition.saleRetryHolds(after), 'fixture: nothing new since the visit');
+    assert.deepStrictEqual(kinds(after), kinds(seller).filter(id => !seen.includes(id)), 'the kinds the last visit kept are no sale');
+    const newKind = { ...seller, stats: { ...seller.stats, marketSellSeen: { items: seen.slice(1), buyers: null } } };
+    assert.deepStrictEqual(kinds(newKind), kinds(seller), 'a kind the visit did not try sends every kind to sale again');
+}
+
 const botOffer = { ...npcJewellery, partyNeedReason: 'market_fallback', market: { ...npcJewellery.market, sourceType: 'afk_bot_store' } };
 const ordinary = { ...bot({ primaryDrive: 'progress', traits: {} }, botOffer), level: 40,
     stats: { ...bot(null, botOffer).stats, build: { grade: 'c', classId: 1, level: 40 } } };
