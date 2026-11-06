@@ -82,7 +82,27 @@ function packet(name) {
             assert.deepStrictEqual(events, ['skill', 'item', 'shots', 'shortcut', 'success', 'hall'],
                 'success and the character hall follow the starter writes');
         }
-
+        {
+            // One starter rule for a player's and a bot's creation: the template's
+            // slot, worn as the table marks it, a shield beside a worn two-handed
+            // weapon kept in the bag; the rows are copies, the table keeps its marks.
+            const written = [];
+            DataCache.items = [{ selfId: 9001, etc: { slot: 14 }, template: { kind: 'Weapon.Bow' } },
+                { selfId: 9002, etc: { slot: 8 }, template: { kind: 'Armor.Shield' } }];
+            DataCache.newbieItems = [{ classId: 0, items: [{ selfId: 57, amount: 1 }, { selfId: 1835, amount: 9, equipped: false },
+                { selfId: 9001, amount: 1, equipped: true }, { selfId: 9002, amount: 1, equipped: true }] }];
+            const before = structuredClone(DataCache.newbieItems);
+            const { session } = fixture(null);
+            Database.setItem = (id, item) => { written.push(item); return Promise.resolve(); };
+            createNewChar(session, packet('Starter'));
+            await settle();
+            await invoke('GameServer/Bot/BotManager').awardBaseGear(6, 0);
+            assert.deepStrictEqual(DataCache.newbieItems, before, 'the newbie table is not edited by a creation');
+            const rows = [[57, 0, false], [1835, 0, false], [9001, 14, true], [9002, 8, false]];
+            assert.deepStrictEqual(written.map(item => [item.selfId, item.slot, item.equipped]), [...rows, ...rows],
+                'a player and a bot start with the same worn rows');
+            DataCache.items = [];
+        }
         // A failed starter write is a failed creation, not a success followed
         // by an unobserved rejection.
         for (const failing of ['skill', 'item', 'shortcut']) {

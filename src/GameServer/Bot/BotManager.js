@@ -1,7 +1,6 @@
 const FailureLog = require('../../FailureLog');
 const StarterItemCatalog = invoke('GameServer/Knowledge/StarterItemCatalog');
 const refreshPartyMemberships = require('../World/PartyMembershipPublication');
-const ItemTemplateIndex = require('../Item/ItemTemplateIndex');
 const Database    = invoke('Database');
 const Shared      = invoke('GameServer/Network/Shared');
 const DataCache   = invoke('GameServer/DataCache');
@@ -693,18 +692,8 @@ const BotManager = {
     },
 
     awardBaseGear(id, classId) {
-        const items = StarterItemCatalog.firstClassRow(DataCache.newbieItems, classId)?.items ?? [];
-        const hasTwoHandedWeapon = items.some((item) => {
-            const template = ItemTemplateIndex.findStrict(DataCache.items, item.selfId);
-            return Number(template?.etc?.slot || 0) === 14 &&
-                String(template?.template?.kind || '').startsWith('Weapon.');
-        });
-        return Promise.all(items.map((item) => {
-            item.slot = ItemTemplateIndex.findStrict(DataCache.items, item.selfId)?.etc?.slot ?? 0;
-            // Equip weapons/armors automatically for bots
-            item.equipped = !(hasTwoHandedWeapon && Number(item.slot) === 8);
-            return Database.setItem(id, item);
-        }));
+        return Promise.all(StarterItemCatalog.starterRows(DataCache.newbieItems, classId, DataCache.items)
+            .map(row => Database.setItem(id, row)));
     },
 
     awardBaseSkills(id, classId, level = 1) {
