@@ -75,33 +75,39 @@ class DueHeap {
         this.leadHeads = [];
     }
 
-    set(index, entry) {
+    // Places an entry without refreshing the heads: a sift moves entries
+    // along one root path and refreshes that path once, from its deepest
+    // changed node (refreshHeads), instead of once per level.
+    place(index, entry) {
         this.values[index] = entry;
         this.positions.set(entry, index);
-        this.refreshHeads(index);
     }
 
     // A derived minimum on the SAME heap nodes; normal heads never hide a
     // player's wait, a meeting's travel or a round that starts its lead early
-    // (`lead`) behind an entry held to its due.
+    // (`lead`) behind an entry held to its due. A node's heads read only its
+    // own entry and its two children's heads, so refreshing from the deepest
+    // changed node to the root rebuilds every head a sift changed.
     refreshHeads(index) {
+        const values = this.values, length = values.length;
         while (index >= 0) {
-            let player = this.values[index]?.playerWaiting ? this.values[index] : null;
-            let meeting = this.values[index]?.meetingTravel ? this.values[index] : null;
-            let lead = this.values[index]?.lead ? this.values[index] : null;
-            for (const child of [index * 2 + 1, index * 2 + 2]) {
-                const waiting = child < this.values.length ? this.playerHeads[child] : null;
+            const own = values[index];
+            let player = own?.playerWaiting ? own : null;
+            let meeting = own?.meetingTravel ? own : null;
+            let lead = own?.lead ? own : null;
+            for (let child = index * 2 + 1; child <= index * 2 + 2 && child < length; child++) {
+                const waiting = this.playerHeads[child];
                 if (waiting && (!player || this.compare(waiting, player) < 0)) player = waiting;
-                const transit = child < this.values.length ? this.meetingHeads[child] : null;
+                const transit = this.meetingHeads[child];
                 if (transit && (!meeting || this.compare(transit, meeting) < 0)) meeting = transit;
-                const early = child < this.values.length ? this.leadHeads[child] : null;
+                const early = this.leadHeads[child];
                 if (early && (!lead || this.compare(early, lead) < 0)) lead = early;
             }
             this.playerHeads[index] = player;
             this.meetingHeads[index] = meeting;
             this.leadHeads[index] = lead;
             if (!index) break;
-            index = Math.floor((index - 1) / 2);
+            index = (index - 1) >> 1;
         }
     }
 
@@ -110,14 +116,15 @@ class DueHeap {
     peekLead() { return this.leadHeads[0] || null; }
 
     up(index) {
-        const entry = this.values[index];
+        const entry = this.values[index], start = index;
         while (index > 0) {
             const parent = Math.floor((index - 1) / 2);
             if (this.compare(this.values[parent], entry) <= 0) break;
-            this.set(index, this.values[parent]);
+            this.place(index, this.values[parent]);
             index = parent;
         }
-        this.set(index, entry);
+        this.place(index, entry);
+        this.refreshHeads(start);
     }
 
     down(index) {
@@ -129,10 +136,11 @@ class DueHeap {
             let next = left;
             if (right < this.values.length && this.compare(this.values[right], this.values[left]) < 0) next = right;
             if (this.compare(entry, this.values[next]) <= 0) break;
-            this.set(index, this.values[next]);
+            this.place(index, this.values[next]);
             index = next;
         }
-        this.set(index, entry);
+        this.place(index, entry);
+        this.refreshHeads(index);
     }
 
     push(entry) {
@@ -157,7 +165,7 @@ class DueHeap {
         this.meetingHeads.length = this.values.length;
         this.leadHeads.length = this.values.length;
         if (index < this.values.length) {
-            this.set(index, last);
+            this.place(index, last);
             const parent = Math.floor((index - 1) / 2);
             if (index > 0 && this.compare(last, this.values[parent]) < 0) this.up(index);
             else this.down(index);

@@ -47,6 +47,30 @@ for (let id = 1; id <= 120; id++) {
 for (const entry of rows.filter(row => row.characterId % 3 === 0)) heap.remove(entry);
 assert.equal(heap.peekMeeting(), rows.filter(row => row.meetingTravel && row.characterId % 3 !== 0)
     .sort((a, b) => heap.compare(a, b))[0], 'indexed removal preserves the derived paid-arrival minimum');
+// Every head after each push and removal equals a brute-force minimum over the live entries (the
+// heads are refreshed once per sift along its path, not per moved level).
+const mixed = new DueHeap(), live = new Set();
+const brute = flag => [...live].filter(row => row[flag]).sort((a, b) => mixed.compare(a, b))[0] || null;
+const checkHeads = label => {
+    assert.equal(mixed.peek(), [...live].sort((a, b) => mixed.compare(a, b))[0] || null, `${label}: due head`);
+    assert.equal(mixed.peekPlayer(), brute('playerWaiting'), `${label}: player head`);
+    assert.equal(mixed.peekMeeting(), brute('meetingTravel'), `${label}: meeting head`);
+    assert.equal(mixed.peekLead(), brute('lead'), `${label}: lead head`);
+};
+let seed = 7;
+const roll = n => (seed = (Math.imul(seed, 1103515245) + 12345) >>> 0) % n;
+for (let round = 0; round < 600; round++) {
+    if (live.size && roll(3) === 0) {
+        const entry = [...live][roll(live.size)];
+        live.delete(entry); mixed.remove(entry);
+    } else {
+        const entry = { characterId: round + 1, dueAt: roll(500), playerWaiting: roll(9) === 0,
+            meetingTravel: roll(7) === 0, lead: roll(5) === 0 };
+        live.add(entry); mixed.push(entry);
+    }
+    checkHeads(`round ${round}`);
+}
+while (live.size) { const first = mixed.pop(); live.delete(first); checkHeads(`pop ${first.characterId}`); }
 assert.equal(priorityForResult(travelling, { patch: { activity: 'shopping' }, events: [] }), 'P1',
     'completed paid arrival is published promptly without waiting for a background batch');
 assert.equal(priorityForResult(travelling, { patch: { activity: 'dead' }, events: [] }), 'P0',
