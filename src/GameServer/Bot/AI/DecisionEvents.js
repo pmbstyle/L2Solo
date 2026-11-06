@@ -138,10 +138,8 @@ const postedBag = session => ({ ...session.nearRaise, names: session.nearRaise.n
 // dropped as the body cools. The worker hears them with the bag.
 function detectNear(session, row, escrow = 0) {
     const previous = session.nearFacts, next = {};
-    // lazy: cycle BotLifeState requires this module at its top.
-    const recipes = invoke('GameServer/Bot/Population/BotLifeState').recipeReader(row);
     // Its wallet against its decision's money thresholds too (goal_affordable, out_of_money).
-    const names = Situations.detect(previous ? {} : row, row, { escrow, recipes, facts: previous?.facts, out: next, body: true });
+    const names = Situations.detect(previous ? {} : row, row, { escrow, facts: previous?.facts, out: next, body: true });
     session.nearFacts = next;
     if (names.length) nearBag(session, names.map(name => ({ name, payload: null })));
 }

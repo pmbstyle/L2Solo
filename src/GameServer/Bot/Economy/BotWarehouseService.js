@@ -120,7 +120,7 @@ async function learnActorRecipes(actor, state = null, session = null, { recipeId
             const remaining = Number(source.fetchAmount?.() || item.amount) - 1;
             if (remaining > 0) source.setAmount?.(remaining);
             else backpack.items = backpack.fetchItems().filter(entry => entry !== source);
-            invoke('GameServer/Bot/Economy/CraftWorkshopService').recipesChanged(actor.fetchId());
+            invoke('GameServer/Bot/Economy/CraftWorkshopService').recipeLearned(actor.fetchId());
             learned.push({ selfId: item.selfId, recipeId: info.recipe.recipeId, name: item.name });
         }
     }

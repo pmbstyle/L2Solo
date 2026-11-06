@@ -84,13 +84,5 @@ const pages = rows => [{ tables: [{ name: 'board', from: null, to: 0, full: true
     assert.deepEqual(reuse.echoedWorkshop, reuse.flown);
     assert.equal(reuse.walkedBuilt, 1, 'the route rows are built anew when the bot\'s point moves');
     assert.equal(reuse.walkedRows.length, reuse.rows.length);
-    // A recipe the bot learned is a situation of its step (recipe_learned, it wakes the
-    // build): the step's diff reads the book its next build reads; the same book raises nothing.
-    const Situations = invoke('GameServer/Bot/Situations'), Sections = invoke('GameServer/Bot/Economy/DecisionSections');
-    const Life = invoke('GameServer/Bot/Population/BotLifeState');
-    const learnt = { ...state, activity: 'hunting', stats: { ...state.stats, wishSections: { at: 1, recipes: Sections.hash([]) } } };
-    const learned = { ...learnt, stats: { ...learnt.stats, workshop: { entries: [{ recipeId: recipe.recipeId }] } } };
-    assert(Situations.detect(learnt, learned, { recipes: Life.recipeReader(learned) }).includes('recipe_learned'), 'a learned recipe raises');
-    assert(!Situations.detect(learnt, learnt, { recipes: Life.recipeReader(learnt) }).includes('recipe_learned'), 'the same book raises nothing');
     console.log('PASS actual worker unknown recipe admission, empty book, selected source, uncapped knowledge and planner answers per mode');
 })().catch(error => { console.error(error.stack); process.exitCode = 1; });

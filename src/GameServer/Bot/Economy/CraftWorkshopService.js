@@ -99,6 +99,13 @@ const crafters = new Map();
 const knownRecipes = new Map();
 const encodedRecipes = new Map();
 function recipesChanged(id) { knownRecipes.delete(Number(id)); encodedRecipes.delete(Number(id)); }
+// A bot learned a recipe (hot: BotWarehouseService.learnActorRecipes; cold: BotLifeState.
+// learnCraftableRecipes, a clan station's craft): its cached book goes and recipe_learned
+// wakes its build where the bot is (DecisionEvents.raiseOn: its far row or its body). Main only.
+function recipeLearned(id) {
+    recipesChanged(id);
+    invoke('GameServer/Bot/AI/DecisionEvents').raiseOn(Number(id), 'recipe_learned');
+}
 let inputIds = null;
 function watchedInputs() {
     if (!inputIds) {
@@ -468,4 +475,4 @@ function boardRecords() {
             entries: state.stats.workshop.entries, revision: state.simulation?.revision || 0 }];
     });
 }
-module.exports = { init, register, registerPlayer, remove, recipesChanged, knownFor, cachedRecipes, bookFor, knowledgeFor, review, find, publicForRecipe, publicRecipeRows, publicRows, publicRecipeDigest, publicScopeDigest, itemFingerprint: publicRecipeDigest, quote, discount, boardRecords, lookup, craft, inputSources, inputStateFor, crafterCandidates };
+module.exports = { init, register, registerPlayer, remove, recipesChanged, recipeLearned, knownFor, cachedRecipes, bookFor, knowledgeFor, review, find, publicForRecipe, publicRecipeRows, publicRows, publicRecipeDigest, publicScopeDigest, itemFingerprint: publicRecipeDigest, quote, discount, boardRecords, lookup, craft, inputSources, inputStateFor, crafterCandidates };

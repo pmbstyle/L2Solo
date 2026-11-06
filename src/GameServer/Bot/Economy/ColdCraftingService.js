@@ -426,7 +426,7 @@ async function craft(state, random = Math.random) {
     if (cashReceipt != null && (!Number.isSafeInteger(committedAdena) || committedAdena < 0)) {
         throw new TypeError('Invalid customer craft cash receipt');
     }
-    if (station.clan && learning) invoke('GameServer/Bot/Economy/CraftWorkshopService').recipesChanged(crafter.id);
+    if (station.clan && learning) Workshops.recipeLearned(crafter.id);
     if (station.workshop) {
         LifeState.acceptLifecycleRow(result.crafterState);
         const committed = LifeState.acceptLifecycleRow(result.customerState);
