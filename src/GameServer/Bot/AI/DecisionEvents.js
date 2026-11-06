@@ -133,6 +133,11 @@ const postedBag = session => ({ ...session.nearRaise, names: session.nearRaise.n
 function detectNear(session, row, escrow = 0) {
     const previous = session.nearFacts, next = {};
     const names = Situations.detect(previous ? {} : row, row, { escrow, facts: previous?.facts, funding: previous?.funding, out: next, body: true });
+    // The wallet reaching the build's threshold (stats.affordAt on the posted row): once
+    // per threshold, re-armed by the next build's (a far bot's is its step's soft point).
+    const afford = row.stats?.wishSections?.affordAt, kind = afford ? Sections.goalReached(row, row.stats.wishSections, escrow) : null;
+    const armed = afford ? `${afford.kind}:${afford.at}` : null;
+    if (kind && session.nearAffordRaised !== armed) { names.push(`goal_affordable:${kind}`); session.nearAffordRaised = armed; }
     session.nearFacts = next;
     if (names.length) nearBag(session, names.map(name => [name, null]));
 }

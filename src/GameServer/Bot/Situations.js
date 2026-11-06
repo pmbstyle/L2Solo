@@ -132,7 +132,10 @@ const SITUATIONS = Object.freeze({
     // The soft point (DecisionSections.softEvents). Money is read in town and when the
     // goal comes in reach; a rest is no review of the purse (user 11-02).
     money: link(['money'], FIELD | VISIT),
-    goal: link(['money'], 0),
+    // The wallet reached the build's threshold (stats.affordAt): a broke bot's survival
+    // potions, its focus. Sections until the build moves to situations (step 4).
+    'goal_affordable:potions': link(['money'], 0),
+    'goal_affordable:focus': link(['money'], 0),
     // Its own samples moved (the build's sections; a gear-threat flip raises none).
     observation: link(OBSERVED, WORK | VISIT),
     market: link(BOUGHT, 0),
@@ -214,7 +217,8 @@ function woke(name, where) {
 // raise heard for its sections wakes it, so its bit stands with stats.wishDirty.
 const DECISIONS = Object.freeze({
     earning_spot: Object.freeze(['level_up', 'gear_changed', 'died', 'recovered', 'spot_disappoints', 'contest_lost', 'spot_empty',
-        'spot_dangerous', 'spot_unreachable', 'moved_by_world', 'party_left', 'shots_out', 'stock_low:potions', 'karma_changed']),
+        'spot_dangerous', 'spot_unreachable', 'moved_by_world', 'party_left', 'shots_out', 'stock_low:potions', 'goal_affordable:potions',
+        'karma_changed']),
     build: Object.freeze([])
 });
 const BITS = Object.freeze(Object.fromEntries(Object.keys(DECISIONS).map((name, at) => [name, 1 << at])));

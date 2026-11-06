@@ -25,11 +25,18 @@ assert.equal(Situations.quiet(far, 'goal'), false, 'a goal main moved too');
 assert.equal(Situations.quiet(far, undefined), false, 'no card stood: no held build to follow');
 // Away on a solo hunt only the next wish within reach raises money; in reach of town the drift does too.
 const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
-const moneyBaseline = { wallet: 1000, moneyError: 100, cashBounds: [0, 5000], goalBudget: 5000, funding: 0 };
+const moneyBaseline = { wallet: 1000, moneyError: 100, cashBounds: [0, 5000], affordAt: { at: 5000, kind: 'focus' }, funding: 0 };
 const hunting = adena => ({ characterId: 7, phase: 'cold', activity: 'hunting', adena, stats: {} });
 const soft = state => Sections.softEvents(state, moneyBaseline, { buyOrderEscrow: 0, timestamp: 1 });
 assert(!soft(hunting(1500)).includes('money'), 'a drift away on the hunt is no event');
-assert(soft(hunting(6000)).includes('goal'), 'its goal in reach is');
+assert(soft(hunting(6000)).includes('goal_affordable:focus'), 'its goal in reach is');
+// A broke bot's survival potions come first: their threshold names its kind (situations.md B7).
+assert.deepEqual([...Sections.softEvents(hunting(6000), { ...moneyBaseline, affordAt: { at: 3000, kind: 'potions' } },
+    { buyOrderEscrow: 0, timestamp: 1 })], ['goal_affordable:potions'], 'the potions it can afford again');
+assert(Situations.DECISIONS.earning_spot.includes('goal_affordable:potions'), 'they wake the earning spot');
+// A baseline from before the threshold keeps its focus budget.
+assert(Sections.softEvents(hunting(6000), { ...moneyBaseline, affordAt: undefined, goalBudget: 5000 },
+    { buyOrderEscrow: 0, timestamp: 1 }).includes('goal_affordable:focus'));
 assert(!soft({ ...hunting(1500), partyId: 'bgp_1' }).includes('money'), 'a party member holds its plan too');
 assert.deepEqual(Sections.softEvents(hunting(1000), { ...moneyBaseline, share: 0.5, incomeError: 0 }, { buyOrderEscrow: 0, timestamp: 1 }), [],
     'nor does the income reach it on the hunt');
@@ -39,7 +46,7 @@ const waitsFor = (state, ...links) => links.every(link => !Situations.hears(link
 const hearsAll = (state, ...links) => links.every(link => Situations.hears(link, Situations.place(state)));
 assert(waitsFor(cold('hunting'), 'funding', 'money', 'supply', 'bag', 'quantity', 'stores', 'relations', 'observation'), 'at work the links wait');
 assert(waitsFor(cold('hunting'), 'level_up', 'gear_changed') && hearsAll(cold('resting'), 'level_up', 'gear_changed'), 'a new level waits for the rest');
-assert(hearsAll(cold('hunting'), 'died', 'spot_dangerous', 'recovered', 'moved_by_world', 'shots_out', 'stock_low:shots', 'stock_low:potions', 'bag_full', 'goal', 'market'), 'its fight, its place and a condition do not');
+assert(hearsAll(cold('hunting'), 'died', 'spot_dangerous', 'recovered', 'moved_by_world', 'shots_out', 'stock_low:shots', 'stock_low:potions', 'bag_full', 'goal_affordable:focus', 'market'), 'its fight, its place and a condition do not');
 assert(waitsFor(cold('resting'), 'supply', 'bag', 'quantity') && hearsAll(cold('resting'), 'funding', 'relations', 'stores'), 'a rest reads the money, the people and the clan');
 assert(waitsFor(cold('shopping'), 'funding', 'money', 'supply', 'bag', 'quantity', 'stores', 'level_up', 'gear_changed', 'recipe_learned', 'relations'), 'a visit works down its list');
 assert(hearsAll(cold('shopping'), 'filled', 'short', 'offer_gone'), 'its list\'s end does not wait');
@@ -77,12 +84,12 @@ assert.equal(Sections.occupationPlanned(cold('shopping'), leaf), false, 'and tow
 assert.equal(Sections.occupationPlanned({ ...trip(back), phase: 'hot' }, leaf), false, 'nor a near bot');
 // At work money speaks when it reaches the goal, not at each price the last review read.
 const purse = adena => cold('hunting', { adena, stats: {} });
-const wallet = { wallet: 50, moneyError: -1, cashBounds: [0, 100], budgetBounds: [0, 100], goalBudget: 500 };
+const wallet = { wallet: 50, moneyError: -1, cashBounds: [0, 100], budgetBounds: [0, 100], affordAt: { at: 500, kind: 'focus' } };
 const moneyHeard = state => Sections.softEvents(state, wallet, { board: null });
 assert.deepEqual([...moneyHeard(purse(150))], [], 'a next price is no event at work');
-assert.deepEqual([...moneyHeard(purse(500))], ['goal'], 'the goal within reach is');
+assert.deepEqual([...moneyHeard(purse(500))], ['goal_affordable:focus'], 'the goal within reach is');
 assert.deepEqual([...moneyHeard({ ...purse(150), activity: 'resting' })], [], 'nor at a rest');
-assert.deepEqual([...moneyHeard({ ...purse(500), activity: 'resting' })], ['goal'], 'there the goal speaks too');
+assert.deepEqual([...moneyHeard({ ...purse(500), activity: 'resting' })], ['goal_affordable:focus'], 'there the goal speaks too');
 // The bot's own craft preparation asks no review far from a player; it stands in its state.
 const Events = invoke('GameServer/Bot/AI/DecisionEvents');
 const preparing = cold('crafting', { stats: { decisionSeq: 3 } }), bits = Sections.sectionMask(['sources', 'benefits', 'money']);

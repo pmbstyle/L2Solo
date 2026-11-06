@@ -283,9 +283,26 @@ function moneyBound(state, baseline, escrow = 0) {
         && reachesUpper(PurchaseFunding.budget(state, escrow), baseline.budgetBounds);
 }
 // At work a bot watches what its goal costs (decision 11-02), not each price its
-// last review read: the rest and the town read those.
+// last review read: the rest and the town read those. The build's threshold
+// (baseline.affordAt { at, kind }, affordAtOf): the kind it comes in reach for,
+// or null (goal_affordable:<kind>, situations.md §14). A baseline from before
+// it keeps its focus budget.
 function goalReached(state, baseline, escrow = 0) {
-    return baseline?.goalBudget > 0 && PurchaseFunding.budget(state, escrow) >= baseline.goalBudget;
+    const afford = baseline?.affordAt ?? (baseline?.goalBudget > 0 ? { at: baseline.goalBudget, kind: 'focus' } : null);
+    return afford?.at > 0 && PurchaseFunding.budget(state, escrow) >= afford.at ? afford.kind : null;
+}
+// What the wallet waits to reach, the first of (situations.md §14, B7): a broke
+// bot's survival potions (the money for their missing line, the search's broke
+// rule: it re-opens buying them and the spots that need them), its focus (the goal's cumulative
+// cost). The weapon bridge joins in step 4 (B4). Re-armed by each build.
+function affordAtOf(context, wallet) {
+    const potions = context.stock?.('potions');
+    if (potions && potions.current < potions.line) {
+        // The search's broke rule's own threshold (EquipmentIncomeRoute.drinksAt, cannotDrink).
+        const at = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').drinksAt(potions.line, potions.current, potions.survivalPrice);
+        if (at > wallet) return { at, kind: 'potions' };
+    }
+    return context.goalBudget > wallet ? { at: context.goalBudget, kind: 'focus' } : null;
 }
 // The wallet reached what the bot watches where it stands.
 function moneyReached(state, baseline, escrow = 0) {
@@ -323,7 +340,7 @@ function carrySectionBaseline(previous, current, updated) {
             else delete current[name];
         }
     };
-    carry(sectionBit('money'), ['wallet', 'cashBounds', 'budgetBounds', 'goalBudget', 'funding', 'moneyError']);
+    carry(sectionBit('money'), ['wallet', 'cashBounds', 'budgetBounds', 'affordAt', 'funding', 'moneyError']);
     carry(sectionBit('occupation') | sectionBit('build'), ['sample', 'share', 'incomeError', 'frustration', 'bond']);
     carry(sectionBit('money') | sectionBit('sources') | sectionBit('supply'), ['bagValue']);
     return current;
@@ -403,10 +420,11 @@ function snapshot(state, context, cashBounds, moneyError = -1, mode, money = nul
     // budgetBounds tags the budget-aware schema. Its wallet/error use total
     // purchase funds; cashBounds still records physical fees. Old wallets are cash.
     const wallet = budgetTracked ? PurchaseFunding.budget(state, escrow) : positive(state.adena);
+    const afford = affordAtOf(context, wallet);
     const share = Hunt.onSpotShare(state);
     return { at: Number(context.timestamp), wallet, cashBounds, funding: fundingMark(actual, escrow), moneyError,
         ...(budgetTracked ? { budgetBounds: money.budgetBounds } : {}),
-        ...(context.goalBudget > wallet ? { goalBudget: context.goalBudget } : {}),
+        ...(afford ? { affordAt: afford } : {}),
         bagValue: positive(context.choiceBagValue),
         ...(facts || semanticFacts(state)), ...supplyFacts(state, context.statsPacket.kitRates, context.earning), threat: context.gearThreatMask,
         frustration: frustrationOf(state), ...(bond ? { bond } : {}),
@@ -434,7 +452,10 @@ function softEvents(state, baseline, input, before = null) {
         if (diagnostic) Diagnostics.count('soft', 'raise', source);
     };
     if (Situations.hears('money', where) && meaningfulMoney(state, baseline, input.buyOrderEscrow)) add('money');
-    else if (goalReached(state, baseline, input.buyOrderEscrow)) add('goal');
+    else {
+        const kind = goalReached(state, baseline, input.buyOrderEscrow);
+        if (kind) add(`goal_affordable:${kind}`);
+    }
     const bondNow = () => Providers.relationBond(state, { memory: input.memory?.() ?? null });
     if (Situations.hears('observation', where) && observationChanged(state, baseline, input.timestamp, undefined, bondNow)) add('observation');
     if (input.board && marketCrossed(input.board, baseline.marketWatch, Number(state.characterId))) add('market');
