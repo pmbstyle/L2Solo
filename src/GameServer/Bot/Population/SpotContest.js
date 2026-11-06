@@ -74,6 +74,9 @@ function contest({ spot, npcId, arriving, standing = [], untargeted = 0, at, ste
     if (met.length > MAX_PEERS) Situations.note('spot:contest:capped');
     const look = unit => ({ ...unit, size: unit.size, level: unit.level, own: ownSide(unit.members, at),
         seen: Visible.stateSide(unit.members, at), ...coldStanding(unit.state, at) });
+    // The arriving unit's look reads only it and `at`, the same for every peer: taken once, at the
+    // first peer that reaches decide (decide only reads it).
+    let arrivingLook = null;
     let yielded = null;
     for (const [, peer] of met.slice(0, MAX_PEERS)) {
         const ab = memory.assess({ id: arriving.id }, { id: peer.id }, {}, at);
@@ -85,7 +88,7 @@ function contest({ spot, npcId, arriving, standing = [], untargeted = 0, at, ste
         const decisionRolls = Array.from({ length: ROLLS }, (_, i) => TendencyRoll.roll('spot_contest_decision', key, i));
         let index = 0;
         const actorPersona = personaFor(arriving.state), peerPersona = personaFor(peer.state);
-        let outcome = decide({ pressure, actor: look(arriving), peer: look(peer), towardPeer: ab, towardActor: ba,
+        let outcome = decide({ pressure, actor: arrivingLook ||= look(arriving), peer: look(peer), towardPeer: ab, towardActor: ba,
             actorPersona, peerPersona, rng: () => decisionRolls[index++], key,
             actorKnowledge: actorPersona ? { source: arriving.state, persona: actorPersona, key: `${key}:0` } : null,
             peerKnowledge: peerPersona ? { source: peer.state, persona: peerPersona, key: `${key}:1` } : null });
