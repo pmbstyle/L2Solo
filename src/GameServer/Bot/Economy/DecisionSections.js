@@ -167,21 +167,28 @@ function goalReached(state, baseline, escrow = 0) {
 // The money situations of the wallet now against the decision's armed thresholds
 // (detect: a far step, a body's post). One comparison per step with the wallet as it
 // stands, so money main adds between steps (an AFK sale paid, an escrow returned, a
-// meeting settled) is heard at the next one. Each is raised once per baseline: raised
-// is the mark kept with the bot ({ at: the baseline's time, afford, out }:
-// stats.moneyRaised, a body's previous post), and the next build re-arms both (its
-// baseline's own time; a build arms affordAt only above the wallet, fundedAt only within it).
-// Returns { names, raised }: the names to raise and the mark to keep.
-function moneyCrossings(wallet, baseline, raised = null) {
+// meeting settled) is heard at the next one. Raised while the wallet stands past a
+// threshold: a raise on the woken build is no news, and the build it wakes re-arms both
+// (a build arms affordAt only above the wallet, fundedAt only within it; the agenda's
+// move drops the ones passed: unspent). Returns the names to raise.
+function moneyCrossings(wallet, baseline) {
     const names = [];
-    if (!baseline || !Number.isFinite(wallet)) return { names, raised };
-    const at = Number(baseline.at) || 0, held = raised?.at === at ? raised : null;
+    if (!baseline || !Number.isFinite(wallet)) return names;
     const afford = baseline.affordAt;
-    const reached = afford?.at > 0 && wallet >= afford.at && !held?.afford;
-    const short = baseline.fundedAt > 0 && wallet < baseline.fundedAt && !held?.out;
-    if (reached) names.push(`goal_affordable:${afford.kind}`);
-    if (short) names.push('out_of_money');
-    return { names, raised: names.length ? { at, afford: !!held?.afford || reached, out: !!held?.out || short } : raised };
+    if (afford?.at > 0 && wallet >= afford.at) names.push(`goal_affordable:${afford.kind}`);
+    if (baseline.fundedAt > 0 && wallet < baseline.fundedAt) names.push('out_of_money');
+    return names;
+}
+// A held baseline taken again without a build (the agenda's move on a town visit,
+// EconomyContext.advanced): the thresholds the wallet passed are spent (their raise woke
+// that move), the rest stand until a build re-arms them.
+function unspent(baseline, wallet) {
+    const reached = baseline?.affordAt?.at > 0 && wallet >= baseline.affordAt.at, short = baseline?.fundedAt > 0 && wallet < baseline.fundedAt;
+    if (!reached && !short) return baseline;
+    const kept = { ...baseline };
+    if (reached) delete kept.affordAt;
+    if (short) delete kept.fundedAt;
+    return kept;
 }
 // What the wallet waits to reach, the first of (situations.md §14, B7, B4): a broke
 // bot's survival potions (the money for their missing line, the search's broke
@@ -414,5 +421,5 @@ function standsIn(state, leaf) {
 function kitMoved(before, after) {
     return (before?.stats?.wishSections?.build ?? null) !== (after?.stats?.wishSections?.build ?? null);
 }
-module.exports = { FIELD_ACTIVITIES, partyIdOf, goalReached, moneyCrossings, LINK_INPUTS, inputVersions, routeVersions, movedInput, shotInputs, stateView, kit, kitMoved, incomeError,
+module.exports = { FIELD_ACTIVITIES, partyIdOf, goalReached, moneyCrossings, unspent, LINK_INPUTS, inputVersions, routeVersions, movedInput, shotInputs, stateView, kit, kitMoved, incomeError,
     baselineIdentity, snapshot, semanticFacts, factsOf, relationTargetIds, NO_PARTY, LINE_BELOW, LINE_OUT, lineAt, supplyOf, linesOf, occupationPlanned, hash, isEmptyWishPlan, decisionRefusal };

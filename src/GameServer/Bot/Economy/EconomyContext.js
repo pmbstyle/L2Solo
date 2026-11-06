@@ -966,7 +966,8 @@ function advanced(held, why, state, deps, dropped) {
         visitPays: (leaf, rest) => Valuation.visitPays({ moneyPrice: held.plan.network.moneyPrice, riskWeight: held.plan.riskWeight },
             [leaf, ...rest.filter(step => step.town === leaf.town)], tripOf(state, own).details?.(leaf.town)),
         dropped: (leaf, cause) => dropped.set(stepPlace(leaf), cause),
-        identity: activityIdentity });
+        identity: activityIdentity,
+        unspent: baseline => Sections.unspent(baseline, Funding.budget(state, deps.buyOrderEscrow)) });
 }
 // A step by what it does and where, for the health line's repick row: a build after a
 // dropped step that takes it again names two answers to one question that disagree.

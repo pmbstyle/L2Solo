@@ -27,16 +27,15 @@ assert(Situations.woken(raiseAt('level_up', 'resting'), 'gear_plan') && !Situati
     'the gear plan wakes on the kit, not the purse');
 // The wallet against the decision's thresholds (F3, B7): its goal in reach as the budget stands
 // at or past it, out of money as it falls below the held leaf's funded row; a drift is nothing.
-// Each once per baseline (the mark), the next build re-arms it.
+// The build it wakes re-arms them; the agenda's move over the held baseline spends the passed ones.
 const baseline = { at: 100, affordAt: { at: 5000, kind: 'focus' }, fundedAt: 800 };
-const crossed = (now, given = baseline, raised = null) => Sections.moneyCrossings(now, given, raised);
-assert.deepEqual(crossed(1500).names, [], 'a drift is no event');
-const reached = crossed(6000);
-assert.deepEqual(reached.names, ['goal_affordable:focus'], 'its goal in reach is');
-assert.deepEqual(crossed(7000, baseline, reached.raised).names, [], 'once per baseline');
-assert.deepEqual(crossed(7000, { ...baseline, at: 200 }, reached.raised).names, ['goal_affordable:focus'], 'the next build re-arms it');
-assert.deepEqual(crossed(700, baseline, reached.raised).names, ['out_of_money'], 'the held leaf unfunded is');
-assert.deepEqual(crossed(6000, { at: 100, affordAt: { at: 3000, kind: 'potions' } }).names, ['goal_affordable:potions'],
+const crossed = (now, given = baseline) => Sections.moneyCrossings(now, given);
+assert.deepEqual(crossed(1500), [], 'a drift is no event');
+assert.deepEqual(crossed(6000), ['goal_affordable:focus'], 'its goal in reach is');
+assert.deepEqual(crossed(700), ['out_of_money'], 'the held leaf unfunded is');
+assert.deepEqual(crossed(7000, Sections.unspent(baseline, 6000)), [], 'a threshold the agenda\'s move passed is spent');
+assert.deepEqual(crossed(700, Sections.unspent(baseline, 6000)), ['out_of_money'], 'the other one stands');
+assert.deepEqual(crossed(6000, { at: 100, affordAt: { at: 3000, kind: 'potions' } }), ['goal_affordable:potions'],
     'a broke bot\'s survival potions name their kind');
 assert(Situations.DECISIONS.earning_spot.includes('goal_affordable:potions'), 'they wake the earning spot');
 // A far step's money comes from its own diff (detect): no per-step soft point. Money main added
@@ -44,10 +43,6 @@ assert(Situations.DECISIONS.earning_spot.includes('goal_affordable:potions'), 't
 const purse = (adena, stats = {}) => ({ ...hunter, phase: 'cold', adena, stats: { wishSections: baseline, ...stats } });
 assert(Situations.detect(purse(1000), purse(6000)).includes('goal_affordable:focus'), 'a far step hears its goal in reach');
 assert(Situations.detect(purse(6000), purse(6000)).includes('goal_affordable:focus'), 'and money main added between steps');
-const seen = {};
-Situations.detect(purse(6000), purse(6000), { out: seen });
-assert(!Situations.detect(purse(6000), purse(6100, { moneyRaised: seen.raised })).some(name => name.startsWith('goal_affordable')),
-    'raised once: the mark holds it');
 assert(!Situations.detect(purse(1000), purse(1500)).some(name => name.startsWith('goal_affordable')), 'and nothing on a drift');
 // Its goal in reach clears its failed buy's retry stamp (debt 24).
 assert.equal(Situations.raise({ woken: 0, marketRetryAfter: 99 }, 'goal_affordable:focus').marketRetryAfter, null, 'it may buy again');

@@ -445,9 +445,8 @@ function factNames(previousFact, current, planned = false) {
 // on main: every move is an event), unhuntable (the round found its spot empty of
 // prey, BackgroundResolver, once a stay: a fact of the round, not of the states).
 // facts: a body's previous post kept as its facts (DecisionEvents.detectNear) in place
-// of the state before; raised: the money mark kept with it (a far step reads the
-// state's stats.moneyRaised); out: receives this step's { facts, raised } for the next
-// (a far step keeps raised in its stats, a body with its post). body: the post of a body near a player,
+// of the state before; out: receives this step's { facts } (a body keeps them for its
+// next post). body: the post of a body near a player,
 // whose moves are its own (main executes its held decisions): a spot it reaches or
 // leaves is an arrival for the spot aggregate (the background thread's hot arrival
 // hook, the near_spot / near_left posts), not moved_by_world.
@@ -455,7 +454,7 @@ function factNames(previousFact, current, planned = false) {
 // over the book its decision reads: the worker's step reads the state's, main the
 // workshop's book), so a recipe learned raises recipe_learned once the decision can
 // read it; none: the recipes the decision kept stand.
-function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, recipes = null, facts = null, raised, out = null, body = false } = {}) {
+function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, recipes = null, facts = null, out = null, body = false } = {}) {
     const Sections = readers();
     // Main may replay a validated worker packet that already describes this
     // same round: a newer build's baseline (its own time) is the one compared;
@@ -473,12 +472,12 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, re
     const current = { ...Sections.factsOf(view), relations: previousFact('relations'),
         recipes: recipes ? Sections.hash(recipes(after)) : previousFact('recipes'), party: previousFact('party') };
     // The wallet now against the decision's armed money thresholds (goal_affordable:<kind>,
-    // out_of_money), each raised once per baseline (moneyCrossings).
+    // out_of_money), while the wallet stands past them (moneyCrossings).
     const money = Sections.moneyCrossings(invoke('GameServer/Bot/Economy/PurchaseFunding').budget(after, escrow),
-        represented || before.stats?.wishSections || after.stats?.wishSections, raised ?? after.stats?.moneyRaised ?? null);
-    if (out) { out.facts = current; out.raised = money.raised; }
+        represented || before.stats?.wishSections || after.stats?.wishSections);
+    if (out) out.facts = current;
     const names = factNames(previousFact, current, body || Sections.occupationPlanned(after, leaf));
-    for (const name of money.names) names.push(name);
+    for (const name of money) names.push(name);
     if (unhuntable) names.push('spot_empty');
     // A far bot's arrival in town (the step that leaves the field for a visit): its
     // shopping moment (its stop there wakes what waited for the town).

@@ -134,16 +134,14 @@ const postedBag = session => ({ ...session.nearRaise, names: session.nearRaise.n
 // situations of the posted row against its decision's baseline (the row's
 // wishSections: the last decision received), a fact the baseline lacks against
 // its previous post, joined to its bag. The previous post is kept as its facts
-// only (session.nearFacts: the fact digests and the money mark, no bag copy),
+// only (session.nearFacts: the fact digests, no bag copy),
 // dropped as the body cools. The worker hears them with the bag.
 function detectNear(session, row, escrow = 0) {
     const previous = session.nearFacts, next = {};
     // lazy: cycle BotLifeState requires this module at its top.
     const recipes = invoke('GameServer/Bot/Population/BotLifeState').recipeReader(row);
-    // Its wallet against its decision's money thresholds too (goal_affordable, out_of_money):
-    // raised once per baseline (its previous post's mark, else its row's).
-    const names = Situations.detect(previous ? {} : row, row, { escrow, recipes, facts: previous?.facts, raised: previous?.raised,
-        out: next, body: true });
+    // Its wallet against its decision's money thresholds too (goal_affordable, out_of_money).
+    const names = Situations.detect(previous ? {} : row, row, { escrow, recipes, facts: previous?.facts, out: next, body: true });
     session.nearFacts = next;
     if (names.length) nearBag(session, names.map(name => ({ name, payload: null })));
 }

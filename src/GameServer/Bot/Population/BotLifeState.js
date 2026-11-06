@@ -3051,11 +3051,9 @@ const BotLifeState = {
             // The round found its spot empty of prey (BackgroundResolver, once a stay).
             // The recipe ids its next build reads: the state's book on the background
             // thread (its step builds on the state), the workshop's on main.
-            // The money mark (Situations.detect: a threshold raised once per baseline) stays with the bot.
             const seen = {};
             hard = Situations.detect(state, nextState, { escrow, leaf: options.leaf ?? null, recipes: recipeReader(nextState),
                 unhuntable: result.debug?.unhuntable === true, out: seen });
-            if (seen.raised !== (nextState.stats.moneyRaised ?? null)) nextState.stats.moneyRaised = seen.raised;
             // A decided town trip for the bag (stats.cleanupDue) ends with the bag's need (its fact at 0).
             if (nextState.stats.cleanupDue && !seen.facts.bagNeed) nextState.stats.cleanupDue = null;
         }
