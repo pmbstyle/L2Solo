@@ -1668,7 +1668,11 @@ function buildForState(state, deps) {
     // and the earning spot when it searched (its held answer published, the spot marks it read cleared: they hold
     // only until the earning decision is taken, SpotRiskPolicy.spotMarks; a mark raised meanwhile is a body's
     // pending raise, applied again over this answer: DecisionEvents.receive, the worker's next bag).
+    // The bag's town trip too (situations step 4 C4, the build bag_full wakes): its need, or
+    // none (PartyMarketBreak.cleanupDecision), held in stats.cleanupDue until the trip starts.
+    // Temporary until step 6: the town plan's sell stop (an unload root).
     const decided = { ...(earningDecided ? { earning: base.earning, spotMarks: null } : {}),
+        cleanupDue: invoke('GameServer/Bot/Population/PartyMarketBreak').cleanupDecision(state, Number(context.timestamp) || Date.now()),
         woken: Situations.decided(state.stats, earningDecided ? ['earning_spot', 'build'] : 'build', { caller: deps.caller || 'economy_context',
             subject: state.characterId, answer: !Trace.on() ? null : { earning_spot: [base.earning?.spotId ?? 'none', state.stats?.earning?.spotId ?? 'none'],
                 build: [network.activity?.key || network.focus?.[0], held?.plan.network?.activity?.key || held?.plan.network?.focus?.[0]] } }) };

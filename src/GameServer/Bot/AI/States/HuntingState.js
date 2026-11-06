@@ -42,6 +42,7 @@ const LevelingRoutes = invoke('GameServer/Bot/AI/LevelingRoutes');
 const HuntingVisibility = invoke('GameServer/Bot/AI/BotHuntingVisibility');
 const ItemDisposition = invoke('GameServer/Bot/Economy/ItemDisposition');
 const SurvivalFloor = invoke('GameServer/Bot/Population/SurvivalFloor');
+const PartyMarketBreak = invoke('GameServer/Bot/Population/PartyMarketBreak');
 const DecisionEvents = require('../DecisionEvents');
 const MarketListingPolicy = invoke('GameServer/Bot/Economy/MarketListingPolicy');
 const ShoppingState = invoke('GameServer/Bot/AI/States/ShoppingState');
@@ -718,16 +719,24 @@ module.exports = {
             session.plan = 'resting';
             return;
         }
-        if (floor?.action === 'unload' && isSoloHunter(session)) {
-            // Temporary until step 4: a body's full bag is a situation now (bag_full,
-            // raised from its post); the build takes the unload on it then and this
-            // every-tick check goes. Like the loot sell trip below and the cold sale visit: the trip starts
-            // the sale retry, so a bag that sold nothing heavy hunts on at penalty 1.
-            // A trip deferred by a fight comes back every tick: the retry it
-            // already started stays, the trip itself waits in pendingTownTrip.
-            if (!ItemDisposition.saleRetryHolds(MarketListingPolicy.actorState(session))) pauseSelling(session);
-            const trip = startShopping(session, bot, BotAI, `Inventory ${floor.reason}. Heading to town.`);
-            if (trip !== 'deferred') return;
+        // The bag's town trip a build decided (stats.cleanupDue, EconomyContext: one rule with
+        // the far bot's), held until it starts (a trip deferred by a fight waits in
+        // pendingTownTrip) or the live bag no longer needs it (its fact, PartyMarketBreak.bagFact).
+        // Like the loot sell trip below and the cold sale visit: the trip starts the sale
+        // retry, so a bag that sold nothing heavy hunts on at penalty 1.
+        const cleanupDue = isSoloHunter(session) ? DecisionEvents.statsFor(session).cleanupDue : null;
+        if (cleanupDue) {
+            const bag = MarketListingPolicy.actorState(session);
+            const needed = PartyMarketBreak.bagFact(bag) > 0;
+            if (needed && !ItemDisposition.saleRetryHolds(bag)) pauseSelling(session);
+            const trip = needed ? startShopping(session, bot, BotAI, `Inventory ${cleanupDue.reason}. Heading to town.`) : null;
+            const started = trip === 'walk' || trip === 'escape', refused = needed && !started && trip !== 'deferred';
+            if (!needed || started || refused || trip === 'deferred' && session.pendingTownTrip)
+                DecisionEvents.replaceStats(session, { ...DecisionEvents.statsFor(session), cleanupDue: null });
+            // A trip the executor refuses is the build's failed step (goal_failed, as other
+            // executors' refusals): its next decision answers it; the tick hunts on.
+            if (refused) DecisionEvents.raiseDecision(session, 'goal_failed', { impossible: true });
+            if (started) return;
         }
 
         if (leaveShop(session, bot)) return;

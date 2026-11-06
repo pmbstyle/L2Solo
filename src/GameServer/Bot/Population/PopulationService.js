@@ -626,6 +626,8 @@ function inventoryCleanupTravelState(state, timestamp = Date.now(), simulation =
         ...travelState,
         stats: {
             ...(travelState.stats || {}),
+            // The trip a build decided (stats.cleanupDue) starts here: its hold ends.
+            cleanupDue: null,
             forcedMarketCleanup: {
                 ...cleanup,
                 startedAt: timestamp

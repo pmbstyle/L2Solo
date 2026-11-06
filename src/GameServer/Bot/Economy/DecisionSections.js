@@ -12,14 +12,11 @@ const Karma = require('../../Karma');
 const Warehouse = require('./PersonalWarehouseIndex');
 const ClanSupply = require('../../Clan/ClanSupplyPolicy');
 const Providers = require('./WishProviders');
-const Floor = require('../Population/SurvivalFloor');
-const InventoryLimits = require('../../Inventory/InventoryLimits');
 const Diagnostics = require('./EconomyDiagnostics');
 const Situations = require('../Situations');
 const { FIELD_ACTIVITIES } = Situations;
 const partyIdOf = state => String(state.party?.partyId || state.partyId || '');
 const { SELL, BUY } = require('../../AfkTrade/BoardIndex');
-const DataCache = invoke('GameServer/DataCache');
 const CombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
 const Hunt = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 const ShotStock = invoke('GameServer/Inventory/ShotStock');
@@ -502,7 +499,8 @@ function relationTargetIds(state, memory = null) {
 // fallback rows without memory), dead, riskDeaths, recovery (the death
 // recovery's level penalty, SpotRiskPolicy.recoveryFor), karma (1 while it has any:
 // the karma wash, ColdKarmaPolicy.active), supply ([id, present] per
-// stock item), stores (four identities), bagFull, weight (level 0-4).
+// stock item), stores (four identities), bagNeed (the bag fact: 2 at its floor, 1 at a
+// cleanup count, PartyMarketBreak.bagFact).
 // memory: the bot's interaction memory rows, null when the caller read none.
 function factsOf(view, memory = null) {
     return { build: kitFact(view), level: view.kitHashes?.[2] ?? null, recipes: view.recipes ? hash(view.recipes) : null,
@@ -511,7 +509,7 @@ function factsOf(view, memory = null) {
         occupation: hash([view.spotId, view.activity === 'resting' ? 'hunting' : view.activity]),
         dead: view.dead, riskDeaths: view.riskDeaths, recovery: view.recovery, karma: view.karma,
         supply: hash(view.supply), lines: linesOf(view.supply), stores: hash(view.stores), warehouse: view.warehouse,
-        bag: hash([view.bagFull, view.weight]), bagFull: view.bagFull, weight: view.weight };
+        bag: hash([view.bagNeed]), bagNeed: view.bagNeed };
 }
 // The party fact of a bot in none (factsOf).
 const NO_PARTY = hash([null, null]);
@@ -544,14 +542,15 @@ function supplyFacts(state, kitRates, earning) {
 const linesOf = supply => (supply?.[0]?.[2] || 0) * 3 + (supply?.[1]?.[2] || 0);
 // One kind's place in a lines fact (Situations.factNames).
 const lineAt = (lines, kind) => kind === 'shots' ? Math.floor(lines / 3) : lines % 3;
+// lazy: the market break reads the disposition rules, which read this module.
+let MarketBreak = null;
 // The far reader: the raw values of a saved state. recipes: the known recipe
 // ids the build reads (WishProviders.recipeIds), null when the caller holds
-// no recipe book. One bag scan gives the bag full and the load.
+// no recipe book.
 function stateView(state, recipes = null) {
     const stats = state.stats || {};
     const view = kitView(state);
     const partyId = partyIdOf(state);
-    const bag = Floor.stateInventory(state, DataCache.items);
     view.recipes = recipes;
     view.party = partyId ? state.party : null;
     view.clanId = Number(state.clanId ?? stats.clanId ?? 0);
@@ -566,11 +565,9 @@ function stateView(state, recipes = null) {
     view.supply = supplyOf(state);
     view.stores = storesOf(state);
     view.warehouse = Warehouse.contentIdentity(state);
-    // The bag full: its slot limit (the full-bag sale itself is SurvivalFloor's).
-    view.bagFull = Number(bag.slots >= InventoryLimits.forState(state));
-    // The kit profile store reads the kit by the hashes this view already holds.
-    view.weight = Floor.weightPenalty(bag.load,
-        CombatProfile.profileFor(state, Date.now(), { kitHashes: view.kitHashes }).maxLoad);
+    // What the bag holds against its floor and its cleanup counts (situations.md F2:
+    // PartyMarketBreak.bagFact, no price, board or clock); its rise raises bag_full.
+    view.bagNeed = (MarketBreak ||= invoke('GameServer/Bot/Population/PartyMarketBreak')).bagFact(state, view.kitHashes);
     return view;
 }
 // What the bot's clan asks of it and holds for it: the clan's material demand, the clan

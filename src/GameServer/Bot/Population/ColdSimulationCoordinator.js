@@ -1595,8 +1595,9 @@ class ColdSimulationCoordinator {
         // The worker recorded this hunt's income: the main thread's level-band
         // table (the hour value of bots without a sample) learns it here.
         HuntEfficiency.observe(resolvedState);
-        // The worker decided the forced cleanup on this solo step (cleanupNeed);
-        // main only starts the trip.
+        // A build decided the cleanup trip and the step found the bot free to start it
+        // (cleanupNeed: the held stats.cleanupDue); main only starts the trip, which ends
+        // the hold (temporary until step 6: the town plan's sell stop, an unload root of the build).
         const cleanupState = proposal.cleanupNeed ? this.population?.prepareInventoryCleanupProposal?.(
             resolvedState, timestamp, stepState.simulation, stepState, proposal.cleanupNeed) : null;
         if (cleanupState) {
@@ -1781,12 +1782,6 @@ class ColdSimulationCoordinator {
             Metrics.recordCombat(entry.proposal.result?.debug);
             Metrics.recordResolveDuration(Math.max(0, Date.now() - Number(entry.proposal.enqueuedAt || Date.now())));
         });
-        // Main replaced the worker's resolved state with a paid forced cleanup
-        // trip: the plan was prepared before that fare and activity change, so
-        // no review runs it (reviewSteps): the full bag decides afresh
-        // (temporary until step 4 C4, where bag_full owns the unload).
-        if (sourceCurrent() && entry.proposal.inventoryCleanupForced && entry.proposal.economyPlan)
-            DecisionEvents.raiseOn(id, 'bag_full');
         await step('announce', () => GlobalChat.maybeAnnounce(state, entry.proposal.result?.events || []));
         // onResults starts it after the flush. A member's own review command (its
         // training, buff, plan) runs meanwhile: a party write holds on the revision
@@ -1918,8 +1913,8 @@ class ColdSimulationCoordinator {
     }
 
     // The steps of the review command the worker sends on this ok ack, decided
-    // here where the facts are: the plan unless main forced a cleanup trip over
-    // it, the buff offer, training when the committed state needs it (a level,
+    // here where the facts are: the plan unless main started a cleanup trip over
+    // it (temporary until step 6, with inventoryCleanupForced), the buff offer, training when the committed state needs it (a level,
     // a class or a skill book in the bag). None: no review.
     reviewSteps(proposal, state) {
         const review = [];

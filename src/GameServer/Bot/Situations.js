@@ -521,7 +521,7 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, fa
     if (unhuntable) names.push('spot_empty');
     // lazy: the planner loads spot modules that read this catalogue.
     if ((Planner ||= invoke('GameServer/Bot/AI/GearAcquisitionPlanner')).stallCrossed(before, after)) names.push('source_stalled');
-    // A body near a player hears its full bag too (its post's previous facts: bagFull, weight).
+    // A body near a player hears its full bag too (its post's previous facts: bagNeed).
     return body || gated(place(after, before)) ? names.concat(needsOpened(before, names, view, facts)) : names;
 }
 // A need that opened in this step, one raise: one that stays open raises nothing more.
@@ -531,7 +531,7 @@ function needsOpened(before, names, now, was = null) {
     const opened = [];
     if (names.includes('bag')) {
         was ||= readers().stateView(before);
-        if (now.bagFull > (Number(was.bagFull) || 0) || now.weight > (Number(was.weight) || 0)) opened.push('bag_full');
+        if (now.bagNeed > (Number(was.bagNeed) || 0)) opened.push('bag_full');
     }
     return opened;
 }

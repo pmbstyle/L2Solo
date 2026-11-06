@@ -271,6 +271,8 @@ function rejectSession(session, accepted) {
 // queue and no plans.
 function nearFields(economy, state) {
     const stock = economy.stock('shots');
+    // The bag's town trip rides the mind keys (statsPacket.cleanupDue, the build's own
+    // decision as a far bot's: HuntingState carries it to town).
     return { statsPacket: economy.statsPacket,
         // A near body may also order consumables at a workshop (allowStock).
         personalCraft: WishProviders.personalCraftPlan(state, economy, { allowStock: true }) || null,

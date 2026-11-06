@@ -61,7 +61,7 @@ function stub(object, key, value) { const original = object[key]; restores.push(
         assert.equal((acks[0].review || []).includes('plan'), false,
             'a superseded worker bid is not reviewed after the paid cleanup commit: it waits for new preparation');
         assert.equal(warnings.some(line => line.includes('economy_plan_bid_unfunded')), false);
-        assert.deepEqual(refreshes, [[id, 'bag_full']], 'the final native state raises its full bag once: the worker decides afresh');
+        assert.deepEqual(refreshes, [], 'the trip is the build\'s own decision: main raises nothing over it');
         const after = Afk.ownerRecords(id).find(row => row.kind === 'buy_ad');
         assert.equal(after.id, standing.id); assert.equal(after.lines[0].count, 2,
             'deferring the stale batch preserves the original unaccepted ad');

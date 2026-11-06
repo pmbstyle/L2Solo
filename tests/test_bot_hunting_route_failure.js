@@ -203,6 +203,41 @@ try {
         tick(accepted);
         assert.strictEqual(purchaseChecks, 2);
         assert.strictEqual(purchaseTrips, 1, 'the same shared guard admits a worthwhile visible trip');
+        // The bag's town trip a build decided (stats.cleanupDue, situations step 4 C4) starts
+        // while the live bag needs it; an emptied bag ends the hold with no trip, so no
+        // second trip starts before the next answer lands.
+        {
+            const trips = [], request = TownTravel.request;
+            TownTravel.request = (_session, _bot, _ai, reason) => { trips.push(reason); return 'escape'; };
+            Events.held = () => ({ network: { activity: { activity: 'hunting', spotId: spot.id } }, stock: () => ({ itemId: 0 }) });
+            const book = invoke('GameServer/DataCache').items.find(item => item.template.kind === 'Other.Spellbook');
+            const bagged = items => {
+                const f = fixture();
+                f.session.spotRelocation = undefined;
+                f.bot.automation = { abortAll() {} };
+                f.bot.backpack = { fetchItems: () => items };
+                f.session.decisionStats = { cleanupDue: { reason: 'no_slot' } };
+                return f;
+            };
+            try {
+                const emptied = bagged([]);
+                tick(emptied);
+                assert.deepStrictEqual(trips, [], 'an emptied bag takes no trip');
+                assert.strictEqual(emptied.session.decisionStats.cleanupDue, null, 'and its hold ends');
+                const full = bagged(Array.from({ length: 81 }, (_, i) => ({ selfId: book.selfId, amount: 1, id: 9800000 + i })));
+                tick(full);
+                assert.deepStrictEqual(trips, ['Inventory no_slot. Heading to town.'], 'a full bag carries the decided trip to town');
+                assert.strictEqual(full.session.decisionStats.cleanupDue, null, 'which ends the hold');
+                // A trip the executor refuses raises its failure for the build (no hold left to retry each tick).
+                TownTravel.request = () => false;
+                const refused = bagged(Array.from({ length: 81 }, (_, i) => ({ selfId: book.selfId, amount: 1, id: 9810000 + i })));
+                refused.session.decisionStats = { ...refused.session.decisionStats, woken: 0, situationSeq: 0,
+                    wishSections: {}, equipmentPlan: {}, earning: {} };
+                Hunting.tick(refused.session, refused.bot, {}, { ...ai, getClosestTown: () => ({ name: 'Giran' }) });
+                assert.strictEqual(refused.session.decisionStats.cleanupDue, null, 'a refused trip ends the hold');
+                assert(Situations.woken(refused.session.decisionStats, 'build'), 'its failure wakes the build');
+            } finally { TownTravel.request = request; Events.held = () => purchaseEconomy; }
+        }
         const unreachable = fixture();
         unreachable.session.spotRelocation = undefined;
         unreachable.session.nearRaise = { seq: 1, names: [], impossible: true, impossibleSeq: 1 };

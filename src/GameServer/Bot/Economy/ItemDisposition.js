@@ -331,6 +331,33 @@ function soloSaleSlotLimit(state = {}, retry) {
     return !(state.party?.partyId || state.partyId) && !(retry ?? saleRetryHolds(state)) ? HALF_FULL_CLEANUP_SLOTS : null;
 }
 
+// The cleanup counts of the bag fact (PartyMarketBreak.bagFact): inventoryCleanupNeed's
+// thresholds over what the bag holds, read from the item templates alone: a solo bot's
+// half bag, a skill book, the NPC-only slots, the low-grade gear slots. No sale walk
+// (reservations), no sale retry (the board), no clock: the build that bag_full wakes
+// reads the whole rule (inventoryCleanupNeed). Worn pieces and quest items count nothing.
+function cleanupCounted(state = {}) {
+    let slots = 0, npcOnly = 0, books = 0, surplus = 0;
+    for (const item of Object.values(state.inventory || {})) {
+        const amount = Math.max(0, Number(item?.amount || 0));
+        if (amount <= 0) continue;
+        const held = Array.isArray(item.instances) ? item.instances.length : item.stackable === false ? amount : 1;
+        slots += held;
+        const template = templateFor(item.selfId);
+        const loose = held - Math.min(held, Number(item.equippedCount || (item.equipped ? 1 : 0)));
+        if (!loose || isQuestItem(item, template)) continue;
+        if (isNpcOnlyItem(item, template, state)) {
+            npcOnly += loose;
+            if (isSkillBookItem(item, template)) books += loose;
+        }
+        const kind = kindFor(item, template);
+        if ((kind.startsWith('Weapon.') || kind.startsWith('Armor.')) && gradeIndex(template?.etc?.rank) < gradeIndex('c')
+            && basePrice(item, template) <= 50000) surplus += loose;
+    }
+    return !(state.party?.partyId || state.partyId) && slots >= HALF_FULL_CLEANUP_SLOTS || books > 0
+        || npcOnly >= NPC_ONLY_CLEANUP_MIN_SLOTS || slots >= NPC_SURPLUS_GEAR_MIN_SLOTS && surplus >= NPC_SURPLUS_GEAR_MIN_SLOTS;
+}
+
 function inventoryCleanupNeed(state = {}) {
     const slots = inventorySlotCount(state);
     // One sale set serves every count below; it depends only on the state.
@@ -998,7 +1025,7 @@ module.exports = {
     isShotRecipeItem,
     isSkillBookItem,
     isStarterEquipment,
-    inventoryCleanupNeed,
+    cleanupCounted, inventoryCleanupNeed,
     inventorySlotCount,
     soloSaleSlotLimit,
     saleSlots,

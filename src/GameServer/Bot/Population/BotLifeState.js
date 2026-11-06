@@ -3038,8 +3038,11 @@ const BotLifeState = {
             // and arrival raise nothing; none (main, a step without a plan):
             // every move is an event.
             // The round found its spot empty of prey (BackgroundResolver, once a stay).
+            const seen = {};
             hard = Situations.detect(state, nextState, { escrow, leaf: options.leaf ?? null,
-                unhuntable: result.debug?.unhuntable === true });
+                unhuntable: result.debug?.unhuntable === true, out: seen });
+            // A decided town trip for the bag (stats.cleanupDue) ends with the bag's need (its fact at 0).
+            if (nextState.stats.cleanupDue && !seen.facts.bagNeed) nextState.stats.cleanupDue = null;
         }
         // The bot's step counter, the clock of its spot marks (SpotRiskPolicy):
         // +1 once per resolved step, whichever thread resolves it (hot actor
