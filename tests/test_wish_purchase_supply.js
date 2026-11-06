@@ -26,7 +26,7 @@ const adapters = {
     'GameServer/Bot/AI/KnowledgeLearning': { stages: () => [{ grade: 'c', maxLevel: 51 }], gradeOfLevel: () => 'c' },
     'GameServer/Bot/AI/BotGear': { wishKitsFor: require('../src/GameServer/Bot/AI/BotGear').wishKitsFor },
     'GameServer/Bot/AI/GearGradeRule': require('../src/GameServer/Bot/AI/GearGradeRule'),
-    'GameServer/Bot/AI/GearAcquisitionPlanner': { sourceGround: () => null, sourceRouteReader: () => () => true, roleFor: () => 'melee', gradeForLevel: () => 'c',
+    'GameServer/Bot/AI/GearAcquisitionPlanner': { combatReadiness: () => ({ hasWeapon: true }), sourceGround: () => null, sourceRouteReader: () => () => true, roleFor: () => 'melee', gradeForLevel: () => 'c',
         suitable: () => true, considerable: () => true, itemScore: () => 1, withReadiness: fn => fn(),
         equipmentCandidate: () => true, equipmentItemBetter: (item, current) => !current },
     'GameServer/Bot/Population/ColdCombatProfile': { skillsFor: () => [], candidateProfiles: () => ({

@@ -291,10 +291,11 @@ function goalReached(state, baseline, escrow = 0) {
     const afford = baseline?.affordAt ?? (baseline?.goalBudget > 0 ? { at: baseline.goalBudget, kind: 'focus' } : null);
     return afford?.at > 0 && PurchaseFunding.budget(state, escrow) >= afford.at ? afford.kind : null;
 }
-// What the wallet waits to reach, the first of (situations.md §14, B7): a broke
+// What the wallet waits to reach, the first of (situations.md §14, B7, B4): a broke
 // bot's survival potions (the money for their missing line, the search's broke
-// rule: it re-opens buying them and the spots that need them), its focus (the goal's cumulative
-// cost). The weapon bridge joins in step 4 (B4). Re-armed by each build.
+// rule: it re-opens buying them and the spots that need them), an unarmed bot's
+// weapon bridge (its price from the whole wallet, WishProviders' survival wish:
+// survival), its focus (the goal's cumulative cost). Re-armed by each build.
 function affordAtOf(context, wallet) {
     const potions = context.stock?.('potions');
     if (potions && potions.current < potions.line) {
@@ -302,6 +303,8 @@ function affordAtOf(context, wallet) {
         const at = invoke('GameServer/Bot/Economy/EquipmentIncomeRoute').drinksAt(potions.line, potions.current, potions.survivalPrice);
         if (at > wallet) return { at, kind: 'potions' };
     }
+    const bridge = context.weaponBridge;
+    if (bridge?.price > wallet) return { at: bridge.price, kind: 'survival' };
     return context.goalBudget > wallet ? { at: context.goalBudget, kind: 'focus' } : null;
 }
 // The wallet reached what the bot watches where it stands.

@@ -1366,6 +1366,34 @@ function buildProjection(state, ctx, deps) {
             valueHours: ctx.hunt.perHour > 0 ? row.profit / ctx.hunt.perHour : 0, price: row.ask.price,
             paths: [{ requirements: [{ key, amount: 1 }] }] });
     }
+    // The weapon bridge (situations.md B4): an unarmed bot's NPC weapon the planner's
+    // bridge rule picks (GearAcquisitionPlanner.npcWeaponBridgePlan: the cheapest one the
+    // whole wallet pays, else the cheapest to save for) is a survival wish, ranked above
+    // every other (priority 4) and paid from the whole wallet (the refill reserve holds
+    // none of it back); its leaf is the NPC town's shopping step, its gear plan the
+    // bridge (GearPlanSelection). Its key is the gear root's (power:<item>:<slot>), so
+    // every gear reader serves it; the wallet's threshold for it is the build's
+    // goal_affordable:survival (DecisionSections.affordAtOf, ctx.weaponBridge). A dual
+    // sword combination's bridge stays the planner's. Cost: only an unarmed bot's build
+    // reads the NPC weapons of its slot (one offer read each).
+    ctx.weaponBridge = null;
+    if (!Planner.combatReadiness(state).hasWeapon) {
+        const bridge = Planner.npcWeaponBridgePlan(state, { buyOrderEscrow: deps.buyOrderEscrow, findNpcOffer: target => {
+            const offer = observedPurchase(Number(target.selfId));
+            return offer?.sourceType === 'npc' ? offer : null;
+        } });
+        const id = Number(bridge?.target?.selfId), slot = Number(bridge?.target?.slot);
+        const key = bridge && !bridge.combine && id > 0 && slot > 0 ? itemNode(id) : null;
+        if (key) {
+            // The NPC's price the bridge rule weighed (its funding), else the build's price.
+            const cost = Number(bridge.market?.price) > 0 ? Number(bridge.market.price) : price(id);
+            ctx.weaponBridge = { key: `power:${id}:${slot}`, itemId: id, price: cost };
+            root({ key: ctx.weaponBridge.key, need: 'power', object: { itemId: id, slot }, price: cost,
+                valueHours: Math.max(1, horizon), progressionPriority: 4, horizonHours: Infinity,
+                reserved: Math.min(cost, positive(ctx.refillReserve)),
+                paths: [{ requirements: [{ key, amount: 1 }] }] });
+        }
+    }
     // Admitted gear enters the real graph after the other providers, so
     // their 36-node build cap is not spent on gear; the final rank cut
     // below compares every root.

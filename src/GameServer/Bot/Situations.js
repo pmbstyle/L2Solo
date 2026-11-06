@@ -145,6 +145,7 @@ const SITUATIONS = Object.freeze({
     // potions, its focus. Sections until the build moves to situations (step 4).
     'goal_affordable:potions': link(['money'], 0),
     'goal_affordable:focus': link(['money'], 0),
+    'goal_affordable:survival': link(['money'], 0),
     // Its own samples moved (the build's sections; a gear-threat flip raises none).
     observation: link(OBSERVED, WORK | VISIT),
     market: link(BOUGHT, 0),
