@@ -2,7 +2,7 @@
 
 const crypto = require('node:crypto');
 const yaml = require('js-yaml');
-const { assetUrl, launcherRelease, newerVersion } = require('./releases.cjs');
+const { assetUrl, launcherRelease, newerVersion, ReleaseNotFoundError } = require('./releases.cjs');
 
 function validateFeed(text, manifest, target) {
     const asset = manifest.assets.find(asset => asset.name === manifest.feeds[target]);
@@ -48,7 +48,15 @@ class LauncherUpdates {
             this.latest = await launcherRelease(this.fetcher, await this.catalog.releases(force), '0.0.0', this.channel);
             this.publish({ status: newerVersion(this.latest.version, this.currentVersion) ? 'available' : 'current',
                 availableVersion: this.latest.version, notes: this.latest.notes, url: this.latest.url });
-        } catch (error) { this.publish({ status: 'error', error: error.message }); throw error; }
+        } catch (error) {
+            if (error instanceof ReleaseNotFoundError) {
+                this.latest = null;
+                this.publish({ status: 'current', availableVersion: null, notes: null, url: null, error: null });
+                return;
+            }
+            this.publish({ status: 'error', error: error.message });
+            throw error;
+        }
     }
     async download() {
         if (!this.supported) throw new Error('Download this launcher update from GitHub and install it using your platform installer.');

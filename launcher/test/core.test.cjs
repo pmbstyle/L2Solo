@@ -363,19 +363,23 @@ test('controller downloads and installs a release end to end with progress and r
     const progress = [];
     app.on('state', state => progress.push(state.progress.percent));
     await app.choose(root);
+    app.state.updateCheckStatus = 'error';
+    app.state.updateCheckError = 'Previous update check failed';
     await app.install();
     assert.equal(app.state.version, 'v0.1.0');
     assert.equal(app.state.geodata.valid, true);
     assert.equal(app.state.progress.percent, 100);
     assert.ok(progress.some(value => value > 0 && value < 100));
     assert.equal(app.state.latest.updateAvailable, false);
+    assert.equal(app.state.updateCheckStatus, 'checked');
+    assert.equal(app.state.updateCheckError, null);
     await put(root, 'src/NodeL2.js', 'corrupted');
     await app.install();
     assert.equal(await fs.promises.readFile(path.join(root, 'src/NodeL2.js'), 'utf8'), '// server entry');
 });
 
 test('release discovery handles unpublished tags and untrusted asset URLs', async () => {
-    await assert.rejects(latestRelease(async () => new Response('', { status: 404 })), /No stable release/);
+    await assert.rejects(latestRelease(async () => new Response('', { status: 404 })), /Update information could not be found/);
     await assert.rejects(latestRelease(async () => Response.json([{ tag_name: 'v0.1.0', assets: [
         { name: 'l2solo-release.json', browser_download_url: 'https://attacker.example/manifest' }
     ] }])), /does not contain launcher/);

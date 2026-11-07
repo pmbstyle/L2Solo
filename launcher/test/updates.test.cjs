@@ -14,7 +14,7 @@ const { Controller } = require('../main/controller.cjs');
 const { RuntimeManager, prepareRuntime, targetFor } = require('../main/runtime.cjs');
 const { ReleaseCatalog } = require('../main/release-catalog.cjs');
 const { LauncherUpdates, validateFeed } = require('../main/launcher-updates.cjs');
-const { requiredServerFiles, assetUrl, listReleases, selectRelease, latestRelease, launcherRelease, validateManifest, validateLauncherManifest, channelOf, newerVersion } = require('../main/releases.cjs');
+const { requiredServerFiles, assetUrl, listReleases, selectRelease, latestRelease, launcherRelease, validateManifest, validateLauncherManifest, channelOf, newerVersion, ReleaseNotFoundError } = require('../main/releases.cjs');
 const { applyRelease, markerPath, journalPath, recover } = require('../main/installer.cjs');
 const { writeJson, readJson, sha256, canonicalPath } = require('../main/files.cjs');
 const { collect, verifyTarget, feeds, feedsForChannel } = require('../scripts/launcher-assets.cjs');
@@ -143,6 +143,68 @@ test('stable and preview discovery stay separate and preview build numbers compa
     assert.equal(newerVersion('0.2.0', '0.2.0-preview.999'), true);
     assert.equal(newerVersion('0.2.0-preview.10', '0.2.0'), false);
     assert.equal(newerVersion('0.3.0-preview.1', '0.2.0'), true);
+});
+
+test('successful checks without channel releases clear stale updates and report no updates', async () => {
+    for (const channel of ['stable', 'preview']) {
+        const opposite = channel === 'stable' ? '-preview.1' : '';
+        const releases = ['server', 'launcher'].map(component => ({ tag_name: `${component}-v1.0.0${opposite}`, prerelease: Boolean(opposite) }));
+        const catalog = { releases: async () => releases };
+        const controller = new Controller({ userData: directory('no-releases'), nodePath: process.execPath, catalog, channel });
+        controller.latest = { tag: 'server-v0.1.0' };
+        controller.state.latest = { tag: 'server-v0.1.0', updateAvailable: true };
+        controller.state.updateCheckError = 'Previous check failed';
+        const result = await controller.checkUpdates();
+        assert.equal(result.updateCheckStatus, 'checked');
+        assert.equal(result.updateCheckError, null);
+        assert.equal(result.latest, null);
+        assert.equal(controller.latest, null);
+        assert.equal(result.error, null);
+        await assert.rejects(controller.findRelease(), ReleaseNotFoundError);
+
+        const service = new LauncherUpdates({ controller, catalog, channel, currentVersion: '0.2.0', packaged: false });
+        service.latest = { tag: 'launcher-v0.3.0' };
+        Object.assign(service.state, { status: 'error', availableVersion: '0.3.0', notes: 'Old notes', url: 'https://l2solo.com', error: 'Previous check failed' });
+        await service.check();
+        assert.equal(service.state.status, 'current');
+        for (const field of ['availableVersion', 'notes', 'url', 'error']) assert.equal(service.state[field], null, field);
+        assert.equal(service.latest, null);
+        assert.throws(() => service.installerUrl(), /Check for launcher updates first/);
+    }
+});
+
+test('failed update requests remain errors rather than reporting current versions', async () => {
+    const failures = [
+        { fetcher: async () => { throw new Error('Network unavailable'); }, message: /Network unavailable/ },
+        ...[404, 429, 503].map(status => ({ fetcher: async () => new Response('', { status }),
+            message: status === 404 ? /Update information could not be found/ : status === 429 ? /request limit/ : /HTTP 503/ }))
+    ];
+    for (const { fetcher, message } of failures) {
+        const controller = new Controller({ userData: directory('failed-update'), nodePath: process.execPath, fetcher });
+        const service = new LauncherUpdates({ controller, catalog: controller.catalog, currentVersion: '0.2.0', packaged: false, fetcher });
+        await assert.rejects(controller.checkUpdates(), message);
+        assert.equal(controller.state.updateCheckStatus, 'error');
+        assert.match(controller.state.updateCheckError, message);
+        await assert.rejects(service.check(), message);
+        assert.equal(service.state.status, 'error');
+        assert.match(service.state.error, message);
+        controller.catalog.releases = async () => [];
+        await controller.checkUpdates();
+        await service.check();
+        assert.equal(controller.state.updateCheckError, null);
+        assert.equal(service.state.error, null);
+    }
+});
+
+test('missing release assets remain check failures', async () => {
+    const releases = ['server', 'launcher'].map(component => ({ tag_name: `${component}-v1.0.0`, assets: [] }));
+    const catalog = { releases: async () => releases };
+    const controller = new Controller({ userData: directory('incomplete-releases'), nodePath: process.execPath, catalog });
+    const service = new LauncherUpdates({ controller, catalog, currentVersion: '0.2.0', packaged: false });
+    await assert.rejects(controller.checkUpdates(), /does not contain launcher installation files/);
+    await assert.rejects(service.check(), /launcher release is incomplete/);
+    assert.equal(controller.state.updateCheckStatus, 'error');
+    assert.equal(service.state.status, 'error');
 });
 
 function previewPackages(sequence = 10, sourceCommit = 'a'.repeat(40)) {
@@ -326,7 +388,8 @@ test('release publisher exposes a complete draft only after every asset is uploa
     const create = calls.find(args => args[1] === 'create');
     assert.ok(create.includes('--notes-file'));
     assert.ok(!create.includes('--generate-notes'));
-    assert.match(fs.readFileSync(create[create.indexOf('--notes-file') + 1], 'utf8'), /Manage your local L2Solo server/);
+    const notes = fs.readFileSync(path.join(__dirname, '../../release-notes/launcher.md'), 'utf8').trim();
+    assert.equal(fs.readFileSync(create[create.indexOf('--notes-file') + 1], 'utf8'), `${notes}\n`);
     assert.equal(calls.at(-1)[1], 'edit');
     await assert.rejects(publishRelease({ tag: 'launcher-v0.2.0', directory: item.root,
         ghClient: () => JSON.stringify({ isDraft: false }), fetcher: async () => { throw new Error('Must not fetch a published version'); } }), /already published/);
