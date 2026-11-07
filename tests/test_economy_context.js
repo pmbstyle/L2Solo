@@ -354,6 +354,10 @@ async function run() {
             'decision_seq', 'a card of another decision is refused');
         // The field guards: a field card serves no dead bot, nor a far bot whose held build is lost.
         assert.equal(Card.refusal({ ...published, activity: 'dead' }, card, deps()), 'not_field:dead', 'a dead bot builds');
+        // A visit serves only the leaf that ordered it (its own town step: test_detour_own_trip); any
+        // other (a hunting leaf's, a bag cleanup's, a stale one) builds in town at each step.
+        assert.equal(Card.refusal({ ...published, activity: 'shopping', currentRegion: 'Giran' }, card, deps()), 'not_field:shopping',
+            'a visit its leaf did not order builds');
         Economy.forget(native.characterId);
         assert.equal(Card.refusal(published, card, deps()), 'no_held', 'a lost held build builds');
     }
@@ -474,6 +478,26 @@ async function run() {
         assert.equal(Economy.leafOutcome({ ...base, phase: 'cold', activity: 'hunting', inventory: {} }, material), '', 'a held hunt raises nothing');
         assert.equal(Economy.leafOutcome({ ...base, phase: 'cold', activity: 'hunting' }, { activity: 'shopping', itemId: 1 }), '',
             'a shop is checked where it happens, in town');
+        // A sale is spent by the visit that ended after the build took it, the bot back toward its
+        // ground: done when its items left the bag, refused when they stayed. Held past the visit, a
+        // sale taken in town sent the bot back to town with its next loot.
+        const sale = { activity: 'selling', town: 'Giran', items: [1864] };
+        const back = (look, inventory = {}, activity = 'hunting', travel = null, seen = undefined) => ({ ...base, phase: 'cold', activity,
+            inventory, stats: { ...base.stats, travel, wishSections: { at: 1000 }, townLook: { at: look, n: 1 },
+                ...(seen ? { marketSellSeen: seen } : {}) } });
+        assert.equal(Economy.leafOutcome(back(500), sale), '', 'a sale taken after the last visit waits for its own');
+        assert.equal(Economy.leafOutcome(back(2000), sale), 'goal_done:goal', 'the visit that ended after it spent the sale');
+        assert.equal(Economy.leafOutcome(back(2000, {}, 'traveling', { arrivalActivity: 'hunting' }), sale), 'goal_done:goal',
+            'on the way back to its ground too');
+        // Refused: the kinds left are on the visit's sale retry, which keeps them out of the next build's
+        // sale until a new kind or a better buyer comes, so the refusal sends the bot back for nothing.
+        const unsold = { 1864: { selfId: 1864, amount: 3 } };
+        assert.equal(Economy.leafOutcome(back(2000, unsold, 'hunting', null, { items: [1864], buyers: null }), sale), 'goal_failed',
+            'a visit that could not place its items refused it');
+        assert.equal(Economy.leafOutcome(back(2000, unsold), sale), '',
+            'a visit that never offered them (its sale did not run) leaves the step to its own trip');
+        assert.equal(Economy.leafOutcome(back(2000, {}, 'traveling', { arrivalActivity: 'shopping' }), sale), '',
+            'a trip on to a town (a craft warehouse return) is not the way back');
         assert.equal(check(marked(12), hunt), '', 'the mark is forgotten after its steps');
         const craft = check(base, { activity: 'crafting', recipeId: 999999 });
         assert.equal(craft.reason, 'check:craft', 'an unknown recipe refuses the craft');

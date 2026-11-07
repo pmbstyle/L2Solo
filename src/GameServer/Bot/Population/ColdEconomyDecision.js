@@ -639,10 +639,14 @@ function refusal(state, accepted, deps = {}, options = {}) {
     const identity = Economy.proofIdentity(state, accepted.eventProof, leaf);
     if (identity) return identity;
     if (state.incomingPending) return 'incoming';
-    // A card serves a bot in the field only (a hunt, a rest, a trip, a party member's fight;
-    // a dead, shopping or crafting bot's step is none), and a far bot's held build lost (a
-    // restart, eviction) has no answer to serve: both build.
-    if (!Economy.FIELD_ACTIVITIES.has(state.activity) && state.activity !== 'grouped') return `not_field:${state.activity}`;
+    // A card serves a bot in the field (a hunt, a rest, a trip, a party member's fight) and
+    // on the town visit its leaf ordered (Sections.leafVisit), which carries out the step it
+    // came for (its end raised where it is checked, leafOutcome). Any other visit (a bag
+    // cleanup, a forced or stale one, an arrival its leaf did not order), a dead, merchant or
+    // crafting bot's step is none, and a far bot's held build lost (a restart, eviction)
+    // has no answer to serve: both build.
+    if (!Economy.FIELD_ACTIVITIES.has(state.activity) && state.activity !== 'grouped'
+        && !(state.activity === 'shopping' && Sections.leafVisit(state, leaf))) return `not_field:${state.activity}`;
     if (Situations.reactive(state) && !Economy.heldBuild(state, deps)) return 'no_held';
     if (!options.afterResult && state.activity === 'traveling'
         && !invoke('GameServer/Bot/Population/BackgroundResolver').travelRecord(state.stats.travel)) return 'travel_record'; // lazy: as canReuse before L114 (load order unchecked)
@@ -706,6 +710,14 @@ function sameEconomicOutput(before, after) {
 // on between posts.
 function current(state, entry) {
     return !!entry && !entry.stale && (state?.phase === 'hot' || entry.updatedAt === Number(state?.updatedAt || 0) && echoHolds(state, entry.echo));
+}
+// The held leaf a step's plan carries out, read by the step's projection (BotLifeState.prepareResolve
+// → Situations.detect: its own trip and arrival raise nothing): the worker's economy where the
+// worker projects the step, the plan's card where main applies it (a worker command's
+// precomputedPlan). One reader for both threads; none (a step without a plan): every move is an event.
+function stepLeaf(plan) {
+    if (plan?.economy) return plan.economy.network?.activity ?? null;
+    return plan?.economyDecision ? compact(plan.economyDecision).activity : null;
 }
 class ColdEconomyDecisions {
     constructor() {
@@ -806,5 +818,5 @@ class ColdEconomyDecisions {
     }
 }
 
-module.exports = { personalUsefulness, preparedCardWorth, usefulnessVersion, capture, heldFor, heldAtDecisionOf, progressSince, remainingToOrder, materialHunt, ownItem, stateEcho, echoHolds, CompactActivity, ColdEconomyDecisions, economyFor, view, nearView, advisory, restoreAdvisory, advisoryPublicationHolds, sameEconomicOutput, current, canReuse, refusal, refreshAdvisory, refreshPreparedCraft, cardWithShot, kindCode, kindFor, compact, workshopValues,
+module.exports = { stepLeaf, personalUsefulness, preparedCardWorth, usefulnessVersion, capture, heldFor, heldAtDecisionOf, progressSince, remainingToOrder, materialHunt, ownItem, stateEcho, echoHolds, CompactActivity, ColdEconomyDecisions, economyFor, view, nearView, advisory, restoreAdvisory, advisoryPublicationHolds, sameEconomicOutput, current, canReuse, refusal, refreshAdvisory, refreshPreparedCraft, cardWithShot, kindCode, kindFor, compact, workshopValues,
     unknownWorkshop, noWorkshop, craftIncomeOf, MAX_BYTES, MAX_SHOT_BYTES, COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES };

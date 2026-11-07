@@ -3033,12 +3033,13 @@ const BotLifeState = {
                 // lazy: worker the native market owner is main-thread only; workers receive their mirrored escrow.
                 escrow = invoke('GameServer/Bot/Economy/BotAfkMarketService').buyOrderEscrow(state.characterId);
             }
-            // options.leaf: the step's held leaf (the worker's), whose own trip
-            // and arrival raise nothing; none (main, a step without a plan):
-            // every move is an event.
+            // options.stepPlan: the step's plan, whose held leaf's own trip and arrival
+            // raise nothing (ColdEconomyDecision.stepLeaf, the worker's and main's alike).
             // The round found its spot empty of prey (BackgroundResolver, once a stay).
             const seen = {};
-            hard = Situations.detect(state, nextState, { escrow, leaf: options.leaf ?? null,
+            // lazy: ColdEconomyDecision loads the economy modules that require this one.
+            const leaf = options.stepPlan ? invoke('GameServer/Bot/Population/ColdEconomyDecision').stepLeaf(options.stepPlan) : null;
+            hard = Situations.detect(state, nextState, { escrow, leaf,
                 unhuntable: result.debug?.unhuntable === true, out: seen });
             // A decided town trip for the bag (stats.cleanupDue) ends with the bag's need (its fact at 0).
             if (nextState.stats.cleanupDue && !seen.facts.bagNeed) nextState.stats.cleanupDue = null;
@@ -3218,7 +3219,7 @@ const BotLifeState = {
     applyResolve(state, result, options = {}) {
         return this.serializeClanLevelUp(state.characterId, () => {
             checkWorkerCommandAdmission(state, options);
-            const preparedOptions = { persist: true };
+            const preparedOptions = { persist: true, stepPlan: options.stepPlan ?? null };
             if (Object.prototype.hasOwnProperty.call(options, 'workerAdmission')) {
                 preparedOptions.workerAdmission = options.workerAdmission;
             }

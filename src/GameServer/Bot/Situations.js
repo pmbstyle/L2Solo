@@ -96,8 +96,11 @@ const SITUATIONS = Object.freeze({
     // stand.
     spot_empty: link(0),
     // A far bot's arrival in town (detect: the step that leaves the field for a town
-    // visit) or a body's (ShoppingState).
+    // visit) or a body's (ShoppingState); a far bot's on the trip its held leaf ordered
+    // to the town it names (:own), which the build does not hear: the visit carries out
+    // the step it came for.
     arrived_town: link(0),
+    'arrived_town:own': link(0),
     // Main moved the bot's goal (its goal revision, until AI-5); the step's own review
     // of a craft or clan market.
     goal_moved: link(0),
@@ -166,8 +169,8 @@ function woke(name, where) {
 // own changes only, not a town arrival or a failed step; a failed gear errand reaches
 // it as its mark alone (GearMarks), which the build reads too.
 // workshop: what a crafter offers and produces (its own production's best recipe and
-// income, stats.craftIncome), taken at the start of a town visit (arrived_town, one per
-// visit), at a recipe learned and at a level (the recipes its craft reaches), held
+// income, stats.craftIncome), taken at the start of a town visit (arrived_town, either
+// kind, one per visit), at a recipe learned and at a level (the recipes its craft reaches), held
 // between: worn gear, prices, the board and its own fills wake it not. The build reads
 // the held answer. A bot that is no service crafter takes it as none, with no planner job.
 const DECISIONS = Object.freeze({
@@ -179,7 +182,7 @@ const DECISIONS = Object.freeze({
         'goal_done:visit', 'goal_failed:visit', 'stock_low:shots', 'stock_low:potions', 'bag_full', 'source_stalled', 'clan_call',
         'clan_changed', 'spot_empty', 'goal_moved', 'player_command', 'craft_bid', 'clan_market']),
     gear_plan: Object.freeze(['level_up', 'gear_changed', 'died', 'party_left', 'source_stalled']),
-    workshop: Object.freeze(['arrived_town', 'recipe_learned', 'level_up'])
+    workshop: Object.freeze(['arrived_town', 'arrived_town:own', 'recipe_learned', 'level_up'])
 });
 const BITS = Object.freeze(Object.fromEntries(Object.keys(DECISIONS).map((name, at) => [name, 1 << at])));
 const ALL = Object.values(BITS).reduce((all, bit) => all | bit, 0), PLANE = 0xff;
@@ -478,8 +481,11 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, fa
     for (const name of money) names.push(name);
     if (unhuntable) names.push('spot_empty');
     // A far bot's arrival in town (the step that leaves the field for a visit): its
-    // shopping moment (its stop there wakes what waited for the town).
-    if (!body && after.phase === 'cold' && after.activity === 'shopping' && FIELD_ACTIVITIES.has(before.activity)) names.push('arrived_town');
+    // shopping moment (its stop there wakes what waited for the town). On the trip the
+    // held leaf ordered (Sections.leafVisit) the build is not woken: a build in town,
+    // where a sale costs no trip, dropped the step the trip came for.
+    if (!body && after.phase === 'cold' && after.activity === 'shopping' && FIELD_ACTIVITIES.has(before.activity))
+        names.push(Sections.leafVisit(before, leaf) ? 'arrived_town:own' : 'arrived_town');
     // A body near a player hears its full bag too (its post's previous facts: bagNeed).
     return body || gated(place(after, before)) ? names.concat(needsOpened(before, names, view, facts)) : names;
 }

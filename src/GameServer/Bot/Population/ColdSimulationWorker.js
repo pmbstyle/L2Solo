@@ -1255,9 +1255,9 @@ function stepStatsPacket(state, economy, timestamp) {
 function roundProjection(state, timestamp, writtenAt, plan) {
     return { persist: false, timestamp, writtenAt, projectClassProgression: true,
         moneyEscrowFor: () => escrowFor(state.characterId),
-        // The step's held leaf: the round's check reads its own trip and
-        // arrival as no event (Situations.detect).
-        leaf: plan?.economy?.network?.activity ?? null };
+        // The step's plan: the round's check reads its held leaf's own trip and
+        // arrival as no event (ColdEconomyDecision.stepLeaf, Situations.detect).
+        stepPlan: plan ?? null };
 }
 // The economy edges of a held decision over a stretch of rounds.
 function stockEdges(before, after, economy) {
@@ -2011,7 +2011,9 @@ function startKernel(config = {}) {
                 rememberWishAdvisory(kernel.states.get(Number(state.characterId)), refreshed.advisory);
                 // economy: worker-local, the step's one decision; the
                 // projection after the round reads it (never posted).
-                return { statsPacket: stepStatsPacket(state, refreshed.economy, timestamp), economy: refreshed.economy,
+                // The workshop taken on this step rides the step's packet, as in a build: a
+                // step main executes (a town visit) reads the packet, not this state.
+                return { statsPacket: { ...stepStatsPacket(state, refreshed.economy, timestamp), ...workshopKeys }, economy: refreshed.economy,
                     // The facts of the step's last action ask: the card's own or its craft refresh's.
                     ...(asked?.baseline || refreshed.actionBaseline
                         ? { actionBaseline: asked?.baseline || refreshed.actionBaseline } : {}),

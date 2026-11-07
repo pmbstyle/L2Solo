@@ -352,16 +352,37 @@ function leafCheck(state, leaf, deps, input) {
 // stands. On a town visit every check: the step done (goal_done:visit) or refused
 // (goal_failed:visit), the agenda moves on. In the field only the leaves the step
 // itself carries out (a material hunt's count reached; an improvement whose product
-// came; a craft, a fight, a care): goal_done:goal / goal_failed; a shop or a sale is
-// checked where it happens, in town. A hunt's spot ruled out is no outcome of the
-// hunt: the spot's situations raised it (spot_dangerous, contest_lost,
-// spot_unreachable) and wake the earning spot and the build. Cost: one check of
-// the held leaf per far step, no build.
+// came; a craft, a fight, a care): goal_done:goal / goal_failed; a shop is checked
+// where it happens, in town, a sale at the end of its visit (saleSpent). A hunt's
+// spot ruled out is no outcome of the hunt: the spot's situations raised it
+// (spot_dangerous, contest_lost, spot_unreachable) and wake the earning spot and the
+// build. Cost: one check of the held leaf per far step, no build.
 const DONE = new Set(['check:filled', 'check:material_done']);
 const FIELD_CHECKED = new Set(['hunting', 'improving', 'crafting', 'pvp', 'helping']);
+// A sale step is spent once a visit ended after the build took it (the sale's own visit,
+// or the visit it was taken on: GoalExecutor.finishMarketVisit stamps townLook.at) and
+// the bot heads back to its ground (not on a trip to a town, as a craft warehouse
+// return): done when its items left the bag; refused when the kinds that stayed are on
+// the sale retry the visit's sale wrote (stats.marketSellSeen: what it could not place),
+// which keeps them out of the next build's sale until a new kind or a new or better buyer
+// comes (ItemDisposition.saleRetryHolds, WishProviders.liquidationCandidates): no trip
+// back for them. Kinds the visit never offered (its sale did not run) keep the step held:
+// its own trip carries it out. Held past the visit, a sale taken in town, where it costs
+// no trip, sent the bot back with its next loot. Temporary until the town plan holds the
+// visit's sale.
+function saleSpent(state, leaf) {
+    const toGround = state.activity === 'hunting' || state.activity === 'resting'
+        || state.activity === 'traveling' && state.stats?.travel?.arrivalActivity === 'hunting';
+    if (!toGround || !(Number(state.stats?.townLook?.at) > Number(state.stats?.wishSections?.at || 0))) return '';
+    const stayed = (leaf.items || []).filter(id => positive(state.inventory?.[id]?.amount) > 0);
+    if (!stayed.length) return 'goal_done:goal';
+    const tried = state.stats?.marketSellSeen?.items;
+    return Array.isArray(tried) && stayed.every(id => tried.includes(Number(id))) ? 'goal_failed' : '';
+}
 function leafOutcome(state, leaf, deps = {}, heldUnits = leaf?.heldAtDecision) {
     if (!leaf?.activity) return '';
     const visit = Situations.onVisit(state);
+    if (!visit && leaf.activity === 'selling') return saleSpent(state, leaf);
     if (!visit && !FIELD_CHECKED.has(leaf.activity)) return '';
     const input = { heldUnits, current: null, prepared: {} };
     const failed = leaf.activity === 'hunting' ? materialDone(state, leaf, input) : leafCheck(state, leaf, deps, input);

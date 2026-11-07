@@ -191,6 +191,62 @@ async function run() {
     console.log('PASS a death-pressure flight is an event');
 
     {
+        // A far bot arrives in town. On the trip its held leaf ordered to the town the leaf names (a
+        // purchase, a sale) the build is not woken: the visit carries out the step it came for, which a
+        // build in town, where a sale costs no trip, dropped. Any other arrival wakes it; the workshop
+        // hears both. The trips are those the code makes: a market trip (GoalExecutor, arriving as
+        // arrived_town), a bag cleanup's (the same trip with its cleanup), the craft warehouse return.
+        const visitStats = { ...base.stats, marketReturn: { loc: { locX: 0, locY: 0, locZ: 0 }, spotId: 'x' },
+            townVisit: { town: 'Giran', reason: 'upgrade_gear' } };
+        const shop = { ...base, characterId: 990105, activity: 'shopping', currentRegion: 'Giran', stats: visitStats };
+        const market = townName => ({ townName, arrivalActivity: 'shopping', arrivalEvent: 'arrived_town', reason: 'market_search_for_gear' });
+        const trip = (travel, stats = {}) => ({ ...shop, activity: 'traveling', stats: { ...visitStats, ...stats, travel } });
+        const woken = (before, leaf) => {
+            const stats = { woken: 0, waiting: 0, earning: null, wishSections: {}, equipmentPlan: null, craftIncome: null };
+            for (const name of Situations.detect(before, shop, { leaf })) Situations.raise(stats, name, null, Situations.place(shop, before));
+            return ['build', 'workshop'].filter(decision => Situations.woken(stats, decision));
+        };
+        const buy = { activity: 'shopping', town: 'Giran', itemId: 1864, amount: 5 };
+        const cleanup = { forcedMarketCleanup: { cleanupReason: 'inventory_full', startedAt: 1 } };
+        assert.deepEqual(woken(trip(market('Giran')), buy), ['workshop'], 'the purchase\'s own trip to its town wakes no build');
+        assert.deepEqual(woken(trip({ ...market('Giran'), reason: 'market_sale_inventory' }),
+            { activity: 'selling', town: 'Giran', items: [1864] }), ['workshop'], 'nor a sale\'s');
+        assert.deepEqual(woken(trip(market('Dion')), buy), ['build', 'workshop'], 'a trip to another town than the step names wakes it');
+        assert.deepEqual(woken(trip(market('Giran')), { activity: 'hunting', spotId: 'x' }), ['build', 'workshop'],
+            'an arrival a hunting leaf did not order wakes it');
+        assert.deepEqual(woken(trip({ ...market('Giran'), reason: 'market_sale_inventory' }, cleanup), buy), ['build', 'workshop'],
+            'a bag cleanup to the step\'s town wakes it: the cleanup ordered that trip');
+        assert.deepEqual(woken(trip({ townName: 'Giran', regionName: 'Giran', arrivalActivity: 'shopping', reason: 'craft_warehouse' }), buy),
+            ['build', 'workshop'], 'so does the craft warehouse return');
+        assert.deepEqual(woken({ ...shop, activity: 'hunting' }, buy), ['build', 'workshop'], 'an arrival with no trip wakes it');
+        // The visit serves the held card only when its leaf ordered it, by the same rule.
+        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+        assert.equal(Sections.leafVisit(shop, buy), true, 'the visit the purchase came for carries it out');
+        assert.equal(Sections.leafVisit({ ...shop, stats: { ...visitStats, ...cleanup } }, buy), false, 'a bag cleanup\'s visit builds');
+        assert.equal(Sections.leafVisit({ ...shop, stats: { ...visitStats, marketReturn: null } }, buy), false,
+            'a stale visit (no return) builds');
+        assert.equal(Sections.leafVisit({ ...shop, currentRegion: 'Dion' }, buy), false, 'a visit in another town builds');
+        // The arrival step's projection reads the leaf from the step's plan on either thread: main
+        // applies a worker command from its plan's card, the worker from its own economy.
+        const Decision = invoke('GameServer/Bot/Population/ColdEconomyDecision');
+        const arriving = { exp: base.stats.exp, ...trip({ ...market('Giran'), from: shop.loc, to: shop.loc, startedAt: T - 2000, arrivalAt: T - 1000 },
+            { woken: 0, waiting: 0, earning: null, wishSections: { at: T - 5000 }, equipmentPlan: null, craftIncome: null }) };
+        const arrival = Resolver.resolveSolo({ state: arriving, timestamp: T });
+        assert.equal(arrival.patch.activity, 'shopping', 'fixture: the trip arrives');
+        const card = Decision.compact(Decision.capture({ riskWeight: 1, network: { activity: buy } }, arriving));
+        // Main gets the card as a worker message carries it: its fields, no class.
+        for (const [thread, stepPlan] of [['main', { economyDecision: { data: card.data, echo: card.echo } }],
+            ['worker', { economy: { network: { activity: buy } } }], ['no plan', null]]) {
+            const projected = await Life.prepareResolve(arriving, arrival, { timestamp: T, persist: false,
+                projectClassProgression: true, moneyEscrowFor: () => 0, stepPlan });
+            assert.equal(Situations.woken(projected.stats, 'build'), !stepPlan, stepPlan ? `${thread}: the leaf's own arrival wakes no build`
+                : 'a step without a plan knows no leaf: its arrival wakes the build');
+            assert(Situations.woken(projected.stats, 'workshop'), `${thread}: the workshop hears it`);
+        }
+    }
+    console.log('PASS a town arrival on the held leaf\'s own trip wakes no build');
+
+    {
         // A trip start keeps its spot verdicts on the bot's kernel record
         // (BotRoute heldVerdict) while what they read stands: the spot, the
         // bot's side (kit and level, shot kind, servitor), the recovery's

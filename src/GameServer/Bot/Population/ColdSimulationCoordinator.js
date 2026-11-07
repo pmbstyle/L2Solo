@@ -243,7 +243,7 @@ class ColdSimulationCoordinator {
             snapshotYields: 0,
             snapshotDeferrals: 0,
             afterCommitStepErrors: { partyCache: 0, raidCache: 0, raidSettlement: 0, economyDecision: 0,
-                board: 0, boardLimits: 0, equipment: 0, training: 0, improvement: 0, party: 0, metrics: 0, announce: 0,
+                board: 0, boardLimits: 0, equipment: 0, training: 0, party: 0, metrics: 0, announce: 0,
                 economyPlan: 0, clanEvents: 0, partyGoals: 0, partyPlans: 0, buff: 0 }
         };
         // Refused commits by reason and stale_command answers,
@@ -1788,23 +1788,20 @@ class ColdSimulationCoordinator {
         return state;
     }
 
-    // `trained.done` tells the review command its training step already ran.
-    async reviewCommittedEconomy(state, beforeWrite, decisionOverride, trained = {}) {
+    // The bot's class training after its commit (its held improvement is carried out in the
+    // step's own work, PopulationService.applyColdResolve). `trained.done` tells the review
+    // command its training step already ran.
+    async reviewCommittedEconomy(state, beforeWrite, trained = {}) {
         if (invoke('GameServer/AfkTrade/TradeMeetingService').hasPreparation(state.characterId)) return LifeState.cachedState(state.characterId) || state;
         // The native commit has released its lease before these actions.
         // Each action validates the current row again inside its writer.
         state = LifeState.cachedState(state.characterId) || state;
-        const decision = decisionOverride === undefined
-            ? await this.step('improvement', state.characterId, () => this.economyDecisions.decided(state)) : decisionOverride;
         const source = LifeState.cachedState(state.characterId) === state;
         const reviewed = await this.step('training', state.characterId, () => LifeState.reviewTrainingAfterCommit(state, { beforeWrite }));
         // Done only when the review saw the cached state and had nothing to train. A stale source (it returns the newer
         // state untrained), a failed step or a new row from training leaves the review command's training step to run.
         trained.done = source && reviewed === state;
-        state = reviewed || LifeState.cachedState(state.characterId) || state;
-        const improved = await this.step('improvement', state.characterId, () => invoke('GameServer/Bot/Economy/BotImprovementService')
-            .reviewCold(state, { beforeWrite, decide: () => decision }));
-        return improved?.state || LifeState.cachedState(state.characterId) || state;
+        return reviewed || LifeState.cachedState(state.characterId) || state;
     }
 
     async handleCommitResults(results = []) {
@@ -2068,16 +2065,16 @@ class ColdSimulationCoordinator {
         const result = await this.population?.executeWorkerLifecycleCommand?.(state, request, { workerAdmission });
         if (result?.ok && sourceCurrent() && !this.stopping) {
             const current = LifeState.cachedState(identity.characterId);
-            if (current) result.state = await this.step('improvement', identity.characterId, () => this.reviewCommittedEconomy(current, () => {
+            if (current) result.state = await this.step('training', identity.characterId, () => this.reviewCommittedEconomy(current, () => {
                 if (!sourceCurrent() || this.stopping) throw Error('cold_postcommit_source_retired');
             })) || current;
         }
         return result;
     }
 
-    // The far bot's own actions after its commit, in this order: improvement
-    // and the worker's economy plan (its standing bids corrected after it), the
-    // buff it bought, its class training. Admitted once on the commit's
+    // The far bot's own actions after its commit, in this order: the worker's
+    // economy plan (its standing bids corrected after it), the buff it bought,
+    // its class training. Admitted once on the commit's
     // checkpoint; each step then validates the row inside its own writer (the
     // plan's writes move the revision), so the guard is only the source.
     async executeReviewCommand(request, identity, sourceCurrent) {
@@ -2091,13 +2088,13 @@ class ColdSimulationCoordinator {
         };
         const trained = { done: false };
         if (request.economyPlan) {
-            const decision = await this.step('improvement', id, () => this.economyDecisions.decided(state));
+            const decision = this.economyDecisions.decided(state);
             // Native moves publish a new timestamp. Hold the worker's one
             // decision across this plan exactly as the town command does.
             this.economyDecisions.hold(id, decision);
             const preparedState = state;
             try {
-                state = await this.step('improvement', id, () => this.reviewCommittedEconomy(state, beforeWrite, decision || null, trained)) || state;
+                state = await this.step('training', id, () => this.reviewCommittedEconomy(state, beforeWrite, trained)) || state;
                 const applied = await this.step('economyPlan', id, () => AfkMarket
                     .executePlan(state, request.economyPlan,
                         { beforeWrite, preparedState, step: work => this.step('economyPlan', id, work) }));

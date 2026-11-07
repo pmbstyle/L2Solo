@@ -3,6 +3,11 @@ const DiagnosticConfig = require('../Population/PopulationConfig');
 const Policy = require('./BotImprovementPolicy');
 const DecisionEvents = require('../AI/DecisionEvents');
 const Approach = invoke('GameServer/Bot/AI/TownNpcApproach');
+// lazy: the town catalogue reads main's NPC data; the worker loads this module too.
+const catalog = () => invoke('GameServer/Bot/Economy/TownServiceCatalog');
+// The town NPC each improvement kind is done at (the catalogue's improvement roles).
+const ROLE_OF = Object.freeze({ sa: 'SMITH', crystal_quest: 'SOUL_CRYSTAL', henna: 'SYMBOL_MAKER' });
+const roleOf = kind => ROLE_OF[kind] ? catalog().IMPROVEMENT_ROLES[ROLE_OF[kind]] : null;
 const pendingCold = new Map(), pendingHot = new WeakMap();
 let improvementDeferred = 0;
 const INPUT_REJECTIONS = new Set(['improvement_source_changed', 'improvement_missing_materials', 'improvement_missing_template',
@@ -52,6 +57,15 @@ async function reviewCold(state, options = {}) {
     if (!improvement || improvement.kind !== 'enchant' && !selfCrystallization(improvement) && !inTown(state)) return Promise.resolve({state,changed:false});
     if (['luxury_exchange', 'crystallize'].includes(improvement.kind)
         && !selfCrystallization(improvement) && state.currentRegion !== 'Giran') return { state, changed: false };
+    // A smith's special ability, the soul crystal quest and a henna only in a town where
+    // such an NPC stands (C4 spawns, where a near body finds one: stationTarget). An enchant
+    // scroll is read from the bag anywhere (C4: no NPC). A town without one refuses the held
+    // step for good: counted, goal_failed {impossible} drops it from the next build.
+    const role = roleOf(improvement.kind);
+    if (role && !catalog().improvementTowns(role).has(String(state.currentRegion))) {
+        const raised = await DecisionEvents.rejectOnRow(state, state, 'improvement:no_station');
+        return { state: raised || state, changed: false, reason: 'no_station' };
+    }
     const original = Life.cachedState(state.characterId);
     const work = invoke('Database').applyBotImprovement(state.characterId, {
         ...improvement, lossHours: improvement.riskHours * context.riskWeight
@@ -135,9 +149,8 @@ function reviewHot(session) {
 }
 function stationMatches(npc, improvement) {
     if (['luxury_exchange', 'crystallize'].includes(improvement.kind)) return Number(npc.fetchSelfId()) === Number(improvement.npcId);
-    if (improvement.kind === 'sa') return [7300,7471,7678,7688,7846,7898,8271,8316].includes(npc.fetchSelfId());
-    if (improvement.kind === 'crystal_quest') return [7115,7194,7856].includes(npc.fetchSelfId());
-    return /symbol maker/i.test(String(npc.fetchTitle?.() || ''));
+    return catalog().improvementRoles(Number(npc.fetchSelfId()), String(npc.fetchTitle?.() || ''))
+        .includes(roleOf(improvement.kind));
 }
 function stationTarget(actor, improvement) {
     const town = invoke('GameServer/World/TownRespawn').getClosestTown(actor.fetchLocX(),actor.fetchLocY(),actor.fetchLocZ());

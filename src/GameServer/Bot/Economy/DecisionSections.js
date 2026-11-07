@@ -331,7 +331,7 @@ function occupationPlanned(state, leaf) {
         if (!travel) return false;
         return hunt && leaf.spotId != null ? (ownSpot(travel.spotId, leaf) || ownSpot(travel.leafSpotId, leaf))
             && travel.arrivalActivity === 'hunting' && travel.townName == null
-            : leaf.town != null && travel.townName != null && String(travel.townName) === String(leaf.town);
+            : leafVisit(state, leaf);
     }
     // A hunting leaf without a spot names no arrival: any spot is an event.
     if (hunt) return leaf.spotId != null && (state.activity === 'hunting' || state.activity === 'resting')
@@ -345,6 +345,25 @@ function ownMove(state, where) {
     if (state.activity !== 'traveling') return Situations.field(where);
     const travel = state.stats?.travel;
     return !!travel && !travel.cause && !FORCED_TRIPS.has(travel.reason);
+}
+// The town trip or visit the held leaf ordered: a market trip (GoalExecutor's, arriving as
+// arrived_town) to the town the leaf's step names, or the visit it opened there, that no
+// other errand owns (a bag cleanup, a party's market break) and the world did not force.
+// One rule for "did the leaf order this trip": the round's check (occupationPlanned), the
+// arrival it raises (Situations.detect: arrived_town:own) and the card a visit serves
+// (ColdEconomyDecision.refusal). A crafting station, the warehouse craft return, Mammon or a
+// meeting is no market trip.
+function leafVisit(state, leaf) {
+    if (leaf?.town == null || leaf.activity === 'hunting') return false;
+    const stats = state.stats || {};
+    if (stats.forcedMarketCleanup || stats.partyMarketReturn) return false;
+    if (state.activity === 'traveling') {
+        const travel = stats.travel;
+        return !!travel && travel.arrivalEvent === 'arrived_town' && !travel.cause && !FORCED_TRIPS.has(travel.reason)
+            && String(travel.townName) === String(leaf.town);
+    }
+    return state.activity === 'shopping' && !!stats.marketReturn && !!stats.townVisit
+        && String(state.currentRegion) === String(leaf.town);
 }
 function ownSpot(spotId, leaf) {
     return spotId != null && String(spotId) === String(leaf.spotId);
@@ -363,4 +382,4 @@ function kitMoved(before, after) {
     return (before?.stats?.wishSections?.build ?? null) !== (after?.stats?.wishSections?.build ?? null);
 }
 module.exports = { FIELD_ACTIVITIES, partyIdOf, goalReached, moneyCrossings, unspent, LINK_INPUTS, routeVersions, movedInput, shotInputs, stateView, kit, kitMoved, incomeError,
-    baselineIdentity, snapshot, semanticFacts, factsOf, relationTargetIds, NO_PARTY, LINE_BELOW, LINE_OUT, lineAt, supplyOf, linesOf, occupationPlanned, hash, isEmptyWishPlan, decisionRefusal };
+    baselineIdentity, snapshot, semanticFacts, factsOf, relationTargetIds, NO_PARTY, LINE_BELOW, LINE_OUT, lineAt, supplyOf, linesOf, occupationPlanned, leafVisit, hash, isEmptyWishPlan, decisionRefusal };
