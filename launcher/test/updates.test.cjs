@@ -367,7 +367,7 @@ test('launcher manifest and feeds reject missing platforms, foreign URLs and mis
 });
 
 test('release publisher exposes a complete draft only after every asset is uploaded and verified', async () => {
-    const item = await launcherFixture('0.2.0');
+    const item = await launcherFixture(require('../package.json').version);
     const calls = [], uploaded = [];
     let draft = false;
     const ghClient = args => {
@@ -383,7 +383,7 @@ test('release publisher exposes a complete draft only after every asset is uploa
         assert.ok(args.includes('--draft=false')); assert.ok(args.includes('--latest=false'));
         return '';
     };
-    await publishRelease({ tag: 'launcher-v0.2.0', directory: item.root, ghClient,
+    await publishRelease({ tag: item.manifest.tag, directory: item.root, ghClient,
         fetcher: async () => Response.json([{ tag_name: 'server-v9.0.0' }, { tag_name: 'launcher-v0.1.0' }]) });
     const create = calls.find(args => args[1] === 'create');
     assert.ok(create.includes('--notes-file'));
@@ -391,10 +391,10 @@ test('release publisher exposes a complete draft only after every asset is uploa
     const notes = fs.readFileSync(path.join(__dirname, '../../release-notes/launcher.md'), 'utf8').trim();
     assert.equal(fs.readFileSync(create[create.indexOf('--notes-file') + 1], 'utf8'), `${notes}\n`);
     assert.equal(calls.at(-1)[1], 'edit');
-    await assert.rejects(publishRelease({ tag: 'launcher-v0.2.0', directory: item.root,
+    await assert.rejects(publishRelease({ tag: item.manifest.tag, directory: item.root,
         ghClient: () => JSON.stringify({ isDraft: false }), fetcher: async () => { throw new Error('Must not fetch a published version'); } }), /already published/);
     draft = true;
-    await assert.rejects(publishRelease({ tag: 'launcher-v0.2.0', directory: item.root,
+    await assert.rejects(publishRelease({ tag: item.manifest.tag, directory: item.root,
         fetcher: async () => Response.json([]), ghClient: args => {
             if (args[1] === 'edit') throw new Error('Must not publish an incomplete draft');
             return args.at(-1) === 'assets' ? JSON.stringify({ assets: [] }) : JSON.stringify({ isDraft: true });
