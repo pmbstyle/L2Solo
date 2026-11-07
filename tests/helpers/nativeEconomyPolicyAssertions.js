@@ -103,11 +103,11 @@ async function captureAndRead(state, { timestamp, context = {}, needsOptions = {
         assertFunding(accepted);
         assert.deepEqual(Needs.evaluate({ ...accepted, updatedAt: accepted.updatedAt + 1 }, options), [],
             'a later main timestamp cannot consume the previous decision');
-        // A situation that woke the build (a level) waits for its decision: the card
+        // A situation that woke the build (a new grade) waits for its decision: the card
         // holds only while its build is not woken.
         const Situations = invoke('GameServer/Bot/Situations');
         assert.deepEqual(Needs.evaluate({ ...accepted, level: accepted.level + 1, stats: Situations.raise({ ...accepted.stats, woken: 0 },
-            'level_up', null, Situations.REST) }, options), [],
+            'grade_changed', null, Situations.REST) }, options), [],
             'a woken build cannot consume the previous decision');
         console.log(JSON.stringify({ characterId: state.characterId, nativeActivity: leaf.activity,
             goalType: goal.type, money: accepted.stats.money, nativeQueue: captured.queue }));

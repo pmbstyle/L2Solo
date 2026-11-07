@@ -148,29 +148,52 @@ const spot = () => Events.held(session)?.network.activity?.spotId;
     assert.equal(Situations.raise({ activityLeaf: 9 }, 'arrived_town', { impossible: true }).activityLeaf, 0,
         'a town visit that proved its step impossible drops it, as a failed goal does');
 
-    // A body's own facts are detected on main (A1) and ride its bag; a level up on
-    // the hunt is heard where a far bot hears it: at its rest's end (situations Q7).
+    // A body's own facts are detected on main (A1) and ride its bag; a level is none,
+    // a new expertise grade on the hunt is heard where a far bot hears it: at its rest's end.
     {
         const body = { nearRaise: null, raiseSeq: 0 };
         const handed = { ...state, stats: { ...state.stats, wishSections: { ...Sections.semanticFacts(state) } } };
         Events.detectNear(body, handed);
         assert.equal(body.nearRaise, null, 'the handed row raises nothing');
         Events.detectNear(body, { ...handed, level: 31 });
-        assert.deepEqual(body.nearRaise.names.map(({ name, payload }) => [name, payload]), [['level_up', null]], 'a new level joins the bag');
+        assert.equal(body.nearRaise, null, 'a level alone raises nothing');
+        Events.detectNear(body, { ...handed, level: 40 });
+        assert.deepEqual(body.nearRaise.names.map(({ name, payload }) => [name, payload]), [['grade_changed', null]], 'a new grade joins the bag');
         const seq = body.nearRaise.seq;
-        Events.detectNear(body, { ...handed, level: 31 });
-        assert.equal(body.nearRaise.seq, seq, 'the same level while it waits is no new raise');
+        Events.detectNear(body, { ...handed, level: 41 });
+        assert.equal(body.nearRaise.seq, seq, 'the same grade while it waits is no new raise');
         const hunting = Situations.bodyPlace({ activity: 'hunting' }), mind = { woken: 0, earning: { spotId: 'held' } };
         Events.takePostedRaise(mind, body.nearRaise, 0, hunting);
-        assert(Situations.woken(mind, 'build') && !Situations.woken(mind, 'earning_spot'), 'on the hunt the level waits for the stop');
+        assert(Situations.woken(mind, 'build') && !Situations.woken(mind, 'earning_spot'), 'on the hunt the grade waits for the stop');
         Events.takePostedRaise(mind, { ...body.nearRaise, seq: seq + 1, stop: true }, seq, hunting);
         assert(Situations.woken(mind, 'earning_spot'), 'the rest\'s end hears it');
-        // The decision it then receives is its new baseline: the same level raises nothing again.
+        // The decision it then receives is its new baseline: the same grade raises nothing again.
         body.nearRaise = null;
-        const decided = { ...handed, level: 31 };
+        const decided = { ...handed, level: 41 };
         decided.stats = { ...handed.stats, wishSections: { ...Sections.semanticFacts(decided) } };
         Events.detectNear(body, decided);
         assert.equal(body.nearRaise, null, 'a received decision advances the baseline');
+        // New gear is the gear a fight turns on: a ring is none, a weapon is.
+        const worn = (selfId, slot) => ({ [selfId]: { selfId, amount: 1, equipped: true, slot, enchant: 0 } });
+        Events.detectNear(body, { ...decided, inventory: worn(875, 4) });
+        assert.equal(body.nearRaise, null, 'a ring is no new gear');
+        Events.detectNear(body, { ...decided, inventory: worn(124, 7) });
+        assert.deepEqual(body.nearRaise.names.map(({ name }) => name), ['gear_changed'], 'a weapon is');
+        body.nearRaise = null;
+        // The held spot outleveled: its monsters fell past the C4 deep-blue gap below the bot.
+        const low = '-10_11', lowLevel = invoke('GameServer/Bot/AI/SpotValueTable').spotLevel(low);
+        const holding = { ...state, level: lowLevel + 9, stats: { ...state.stats, earning: { spotId: low } } };
+        holding.stats.wishSections = { ...Sections.semanticFacts(holding) };
+        const outgrown = { nearRaise: null, raiseSeq: 0 };
+        Events.detectNear(outgrown, holding);
+        assert.equal(outgrown.nearRaise, null, 'a spot at the gap still holds');
+        Events.detectNear(outgrown, { ...holding, level: lowLevel + 10 });
+        assert(outgrown.nearRaise.names.some(({ name }) => name === 'spot_outleveled'), 'one level past it is outleveled');
+        // A baseline kept before the fact was its own reads 0: a bot already past its spot hears it once.
+        const older = { ...holding.stats.wishSections }, before = { nearRaise: null, raiseSeq: 0 };
+        delete older.outleveled;
+        Events.detectNear(before, { ...holding, level: lowLevel + 10, stats: { ...holding.stats, wishSections: older } });
+        assert(before.nearRaise?.names.some(({ name }) => name === 'spot_outleveled'), 'an old baseline: outleveled once');
         // New gear waits for the town; the body's arrival in town is its stop there.
         const town = { woken: 0, earning: { spotId: 'held' } };
         Events.takePostedRaise(town, { seq: 1, names: [{ name: 'gear_changed', payload: null, seq: 1 }] }, 0, hunting);

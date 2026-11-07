@@ -219,6 +219,12 @@ async function run() {
         assert.deepEqual(woken(trip({ townName: 'Giran', regionName: 'Giran', arrivalActivity: 'shopping', reason: 'craft_warehouse' }), buy),
             ['build', 'workshop'], 'so does the craft warehouse return');
         assert.deepEqual(woken({ ...shop, activity: 'hunting' }, buy), ['build', 'workshop'], 'an arrival with no trip wakes it');
+        // Its own town trip under a hunting leaf (a bag or a supply trip) is no move of the world; a
+        // party's market break is.
+        const hunt = { activity: 'hunting', spotId: 'x' }, called = { ...visitStats, partyMarketReturn: { partyId: 'p' } };
+        const names = (before, stats) => Situations.detect(before, { ...shop, stats }, { leaf: hunt });
+        assert(!names(trip(market('Giran')), visitStats).includes('moved_by_world'), 'its own trip\'s town visit is its own');
+        assert(names(trip(market('Giran'), called), called).includes('moved_by_world'), 'a visit its party called is not');
         // The visit serves the held card only when its leaf ordered it, by the same rule.
         const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
         assert.equal(Sections.leafVisit(shop, buy), true, 'the visit the purchase came for carries it out');

@@ -108,10 +108,10 @@ function onWorker() {
     // Its situations: each heard where it stands wakes one search, which may move it.
     const turned = sampled(held, 'poor');
     {
-        const atWork = raised(turned, 'level_up');
+        const atWork = raised(turned, 'grade_changed');
         const waiting = count(() => Economy.forState(atWork, deps(2)));
-        assert.equal(waiting.searches, 0, 'a level up at work waits');
-        const rested = raised(turned, 'level_up', { stop: Situations.REST });
+        assert.equal(waiting.searches, 0, 'a new grade at work waits');
+        const rested = raised(turned, 'grade_changed', { stop: Situations.REST });
         const heard = count(() => Economy.forState(rested, deps(3)));
         assert.equal(heard.searches, 1, 'and is heard at the rest');
         assert.equal(heard.result.hunt.spotId, 'poor', 'the search finds the better spot now');
@@ -125,7 +125,7 @@ function onWorker() {
         const inTown = raised(turned, 'gear_changed', { stop: Situations.OPEN });
         assert.equal(count(() => Economy.forState(inTown, deps(6))).searches, 1, 'it is heard in town');
     }
-    for (const name of ['died', 'spot_empty', 'spot_dangerous', 'stock_low:potions', 'party_left']) {
+    for (const name of ['died', 'spot_empty', 'spot_dangerous', 'party_left']) {
         const woken = raised(turned, name);
         const read = count(() => Economy.forState(woken, deps(7)));
         assert.equal(read.searches, 1, `${name} wakes one search`);
@@ -133,7 +133,8 @@ function onWorker() {
     }
     // Survival drinks (situations.md A5): a spot that needs them of the bot (the table's bot drinks there and this
     // bot's HP margin does not carry a fight) is skipped by a bot that cannot drink (its potions under their line
-    // and its money above the refill short of an hour of them); a funded bot stays and buys them.
+    // and its money above the refill short of an hour of them); a funded bot stays and buys them. Low potions
+    // wake no search (a bot buys them): a broke bot moves on at its next death or dangerous spot.
     {
         const Table = invoke('GameServer/Bot/AI/SpotValueTable'), native = { value: Table.value, cycle: Table.cycle };
         Table.value = (id, ...rest) => id === 'rich' ? { ...(native.value(id, ...rest) || {}), potions: 2 } : native.value(id, ...rest);
@@ -142,12 +143,13 @@ function onWorker() {
             const rates = Packet.kitRates({ shotId: 0, shotUse: 0, shotBenefit: 0, shotsCanRestock: false, potionId: 1060,
                 potionUse: 2, potionRestUse: 0, potionBenefit: 0.1, scrollHours: 0, outingHours: 1, gapHorizonHours: 0 });
             // It stands on its held spot: the line is its answer's use there (EquipmentIncomeRoute.spotUseOf).
-            const kit = (adena, reserve) => ({ ...raised(held, 'stock_low:potions'), adena, spotId: 'rich',
+            const kit = (adena, reserve, name = 'died') => ({ ...raised(held, name), adena, spotId: 'rich',
                 inventory: { ...held.inventory, 57: { selfId: 57, amount: adena } },
-                stats: { ...raised(held, 'stock_low:potions').stats, kitRates: rates, earning: { ...held.stats.earning, potionsPerHour: 2 },
+                stats: { ...raised(held, name).stats, kitRates: rates, earning: { ...held.stats.earning, potionsPerHour: 2 },
                     money: Packet.money({ hourAdena: 1000, moneyPrice: 0.001, refillReserve: reserve, firstUnfundedPrice: 0 }) } });
+            assert.equal(count(() => Economy.forState(kit(10, 0, 'stock_low:potions'), deps(8))).searches, 0, 'low potions wake no search');
             const broke = count(() => Economy.forState(kit(10, 0), deps(8)));
-            assert.equal(broke.searches, 1, 'the low potions wake the search');
+            assert.equal(broke.searches, 1, 'a death wakes it');
             assert.equal(published(held, broke.result).stats.earning.spotId, 'poor', 'a broke bot moves to a spot that needs no drinks');
             const funded = count(() => Economy.forState(kit(1000000, 0), deps(9)));
             const answer = published(held, funded.result).stats.earning;
@@ -205,12 +207,12 @@ function onWorker() {
     }
     // A player's command naming a spot is the held answer itself (no search), and takes the bit its move woke.
     {
-        const waiting = raised(raised(held, 'moved_by_world'), 'level_up', { at: Situations.place(held) });
+        const waiting = raised(raised(held, 'moved_by_world'), 'grade_changed', { at: Situations.place(held) });
         const commanded = raisedWith(waiting, 'player_command', { spotId: 'poor', at: time(17) });
         assert.equal(commanded.stats.earning.spotId, 'poor', 'the command is the held answer');
         assert.equal(commanded.stats.earning.earning, held.stats.earning.earning, 'with the bot\'s hour kept');
         assert.equal(Situations.woken(commanded.stats, 'earning_spot'), false, 'it took the decision');
-        assert.equal(Number(commanded.stats.waiting) & 0x101, 0, 'a level up waiting for the stop does not wake it again');
+        assert.equal(Number(commanded.stats.waiting) & 0x101, 0, 'a new grade waiting for the stop does not wake it again');
         const read = count(() => Economy.forState(commanded, deps(17)));
         assert.equal(read.searches, 0, 'a command searches nothing');
         assert.equal(read.result.hunt.spotId, 'poor', 'the bot hunts the commanded spot');
@@ -326,7 +328,7 @@ function onWorker() {
     assert.deepEqual(unwoken(), [], 'the earning spot is never decided unwoken');
     Economy.reset();
     console.log('PASS earning spot on its situations (worker): held across prices, weight, samples and catalogue; '
-        + 'level at the rest, gear in town, death, empty, dangerous, potions, party left; unreachable marks, a command, karma; '
+        + 'grade at the rest, gear in town, death, empty, dangerous, party left, potions bought; unreachable marks, a command, karma; '
         + 'party member keeps; none held');
 }
 

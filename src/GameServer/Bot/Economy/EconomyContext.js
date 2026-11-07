@@ -966,8 +966,10 @@ function followedGear(state, held) {
 }
 // What the agenda moves to when the held leaf's step ended on a visit (Agenda.advance:
 // why, the leaf check's reason; goal_done:visit / goal_failed:visit woke the build,
-// temporary until step 6's town plan). dropped: receives the steps it dropped.
-function advanced(held, why, state, deps, dropped) {
+// temporary until the town plan holds the visit). dropped: receives the steps it dropped. facts:
+// the state's facts now, the move's baseline as a build's (Sections.snapshot): gear the
+// visit bought and wore is the build's own answer, no gear_changed later.
+function advanced(held, why, state, deps, dropped, facts) {
     const own = resolved(state, deps, false);
     return Agenda.advance(held, state, why, deps, {
         refused: leaf => leafCheck(state, leaf, deps, { heldUnits: leaf.heldAtDecision, current: null, prepared: {} }),
@@ -978,7 +980,7 @@ function advanced(held, why, state, deps, dropped) {
             [leaf, ...rest.filter(step => step.town === leaf.town)], tripOf(state, own).details?.(leaf.town)),
         dropped: (leaf, cause) => dropped.set(stepPlace(leaf), cause),
         identity: activityIdentity,
-        unspent: baseline => Sections.unspent(baseline, Funding.budget(state, deps.buyOrderEscrow)) });
+        baseline: kept => ({ ...Sections.unspent(kept, Funding.budget(state, deps.buyOrderEscrow)), ...facts }) });
 }
 // A step by what it does and where, for the health line's repick row: a build after a
 // dropped step that takes it again names two answers to one question that disagree.
@@ -1041,7 +1043,7 @@ function buildForState(state, deps) {
     const dropped = new Map();
     const visitEnd = decide && held && !deps.fullReview && Situations.onVisit(state)
         ? leafCheck(state, held.plan.network?.activity, deps, { heldUnits: held.heldUnits, current: null, prepared: {} }) : '';
-    const next = visitEnd ? advanced(held, visitEnd.reason, state, deps, dropped) : null;
+    const next = visitEnd ? advanced(held, visitEnd.reason, state, deps, dropped, current === state ? facts : requestFacts(state, deps)) : null;
     // A reader is served the held entry while its identity holds. A caller that needs
     // the member's graph nodes (a worker group solve) builds unless the held entry kept
     // them (the main thread keeps them, the worker a party member's).

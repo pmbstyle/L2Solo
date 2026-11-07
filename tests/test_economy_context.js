@@ -585,7 +585,7 @@ async function run() {
         // A step's raises join the bits raised before; a raise is no decision, its sequence stays.
         const Situations = invoke('GameServer/Bot/Situations');
         const after = { decisionSeq: 3, woken: 0, wishSections: {}, equipmentPlan: {}, earning: {} };
-        Situations.raise(after, 'level_up', null, Situations.REST);
+        Situations.raise(after, 'grade_changed', null, Situations.REST);
         Situations.raise(after, 'goal_affordable:focus');
         assert.equal(after.decisionSeq, 3, 'no bump');
         assert(Situations.woken(after, 'build') && Situations.woken(after, 'earning_spot') && Situations.woken(after, 'gear_plan'),

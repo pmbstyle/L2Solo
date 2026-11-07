@@ -81,7 +81,7 @@ try {
     status.nearby.attackableNpcs = 0;
     status.nearby.eligibleAttackableNpcs = 0;
     assert.strictEqual(Decision.suggest(status, failed.session).action, 'search_locally', 'empty surroundings keep the mark');
-    Situations.raise(failedStats, 'level_up', null, Situations.OPEN);
+    Situations.raise(failedStats, 'grade_changed', null, Situations.OPEN);
     assert.strictEqual(Decision.suggest(status, failed.session).action, 'search_locally', 'a wake does not drop the mark');
     // The earning decision taken (its answer received) clears it.
     failedStats.earning = { spotId: spot.id, shots: true, income: 1, expected: 1, earning: 1, error: 0, at: 5 };

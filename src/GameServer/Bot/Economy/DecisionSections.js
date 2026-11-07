@@ -13,6 +13,7 @@ const ClanSupply = require('../../Clan/ClanSupplyPolicy');
 const Providers = require('./WishProviders');
 const Situations = require('../Situations');
 const Stall = require('../AI/GearStall');
+const GradeRule = require('../AI/GearGradeRule');
 const { FIELD_ACTIVITIES } = Situations;
 const partyIdOf = state => String(state.party?.partyId || state.partyId || '');
 const CombatProfile = invoke('GameServer/Bot/Population/ColdCombatProfile');
@@ -86,8 +87,8 @@ function kitFact(view) {
 // The kit part of the far reader (stateView), without the bag scan.
 function kitView(state) {
     const stats = state.stats || {};
-    return { kitHashes: CombatProfile.kitEvents(state), craftLevel: Number(state.craftLevel ?? stats.dwarvenCraftLevel) || 0,
-        craftStationId: stats.craftStationId ?? null,
+    return { kitHashes: CombatProfile.kitEvents(state), gear: CombatProfile.gearOf(state),
+        craftLevel: Number(state.craftLevel ?? stats.dwarvenCraftLevel) || 0, craftStationId: stats.craftStationId ?? null,
         soulCrystalQuest: !!stats.soulCrystalQuest, closesTowns: Karma.closesTowns(stats.karma) };
 }
 function kit(state) {
@@ -189,7 +190,11 @@ function relationTargetIds(state, memory = null) {
 // world changed is the fact that differs from the copy kept with the
 // decision (Situations.detect, factNames). The raw values are read from a state (stateView):
 // the saved one of a far bot, the posted row of a near one. view: the kit
-// fields (kitView), recipes (the sorted
+// fields (kitView; build: the whole kit, the build's caches' key; gear: the gear a
+// fight turns on, ColdCombatProfile.gearOf, gear_changed), grade (the C4 expertise
+// grade its level allows, GearGradeRule: grade_changed), outleveled (1 while the held
+// earning spot lies past the deep-blue gap below it, SpotValueTable.outleveled:
+// spot_outleveled), recipes (the sorted
 // known recipe ids, null: none read), party (null: none; its partyId and
 // role are the fact, its leaderId is not), clanId,
 // relationTargets ([friend, enemy] ids; null: read here from memory), activity,
@@ -201,7 +206,7 @@ function relationTargetIds(state, memory = null) {
 // cleanup count, PartyMarketBreak.bagFact).
 // memory: the bot's interaction memory rows, null when the caller read none.
 function factsOf(view, memory = null) {
-    return { build: kitFact(view), level: view.kitHashes?.[2] ?? null, recipes: view.recipes ? hash(view.recipes) : null,
+    return { build: kitFact(view), gear: view.gear ?? 0, grade: view.grade, outleveled: view.outleveled, recipes: view.recipes ? hash(view.recipes) : null,
         relations: hash([view.clanId, ...(view.relationTargets || relationTargetIds(view, memory))]), clan: view.clanId,
         party: hash([view.party?.partyId, view.party?.role]),
         occupation: hash([view.spotId, view.activity === 'resting' ? 'hunting' : view.activity]),
@@ -229,13 +234,16 @@ function supplyOf(state) {
     return [row('shots', Number(plan.selfId), positive(state.inventory?.[plan.selfId]?.amount) + ShotStock.beginnerAmount(state, plan)),
         row('potions', potionId, positive(state.inventory?.[potionId]?.amount))];
 }
-// The supply facts against the kit rates and earning answer a build publishes
-// (snapshot): its baseline reads its own lines, so publishing them raises nothing.
+// The facts of the kit rates and earning answer a build publishes (snapshot): its
+// baseline reads its own lines and its own spot, so publishing them raises nothing.
 function supplyFacts(state, kitRates, earning) {
     const stats = { ...state.stats, ...(kitRates ? { kitRates } : {}), ...(earning !== undefined ? { earning } : {}) };
     const supply = supplyOf({ ...state, stats });
-    return { lines: linesOf(supply) };
+    return { lines: linesOf(supply), outleveled: outleveledOn(state, stats.earning) };
 }
+// lazy: the spot table's module reads the economy modules that read this one.
+let Table = null;
+const outleveledOn = (state, earning) => (Table ||= invoke('GameServer/Bot/AI/SpotValueTable')).outleveled(earning?.spotId, state.level);
 // The lines fact (factsOf): the shots' and the potions' place against their line, one number.
 const linesOf = supply => (supply?.[0]?.[2] || 0) * 3 + (supply?.[1]?.[2] || 0);
 // One kind's place in a lines fact (Situations.factNames).
@@ -260,6 +268,8 @@ function stateView(state, recipes = null) {
     view.riskDeaths = positive(stats.spotRisk?.windowDeaths);
     view.recovery = positive(invoke('GameServer/Bot/Population/SpotRiskPolicy').recoveryFor(state)?.levelPenalty);
     view.karma = Number(Number(stats.karma) > 0);
+    view.grade = GradeRule.gradeForLevel(state.level);
+    view.outleveled = outleveledOn(state, stats.earning);
     // The kill count and the gear plan's stall (GearStall: source_stalled at the crossing).
     view.kills = Stall.killsOf(state); view.stall = Stall.stallKills(state);
     view.supply = supplyOf(state);
@@ -314,9 +324,9 @@ function isEmptyWishPlan(plan) {
 // (stats.standIn, BackgroundResolver.resolveTravel), the leaf's own arrival
 // while the bot stands on that ground.
 // A far bot (a gated place, Situations) owns more: hunting or resting on any ground,
-// and any trip but a forced one (FORCED_TRIPS: a flight, a death pressure, a
-// pushed-out spot, a party's call), so a pull to another spot or a flight's
-// arrival raises nothing there. Near a player only the leaf's own trip and
+// any trip but a forced one (FORCED_TRIPS: a flight, a death pressure, a
+// pushed-out spot, a party's call) and its town visit, so a pull to another spot,
+// a flight's arrival or its own bag or supply trip's arrival raises nothing there. Near a player only the leaf's own trip and
 // arrival are; death, recall, a pull, a flight or a yield stay events. Read by
 // the held build's verdict and by the far step's round check (Situations.factNames'
 // planned); its field-trip clause is EconomyContext.fieldActivity's.
@@ -338,10 +348,12 @@ function occupationPlanned(state, leaf) {
         && (ownSpot(state.spotId, leaf) || standsIn(state, leaf));
     return state.activity === leaf.activity;
 }
-// A trip the bot took itself, out or back, and the ground it reached (the trip's
-// start was its event); a flight, a pushed-out spot or a party's call is the world's.
+// A trip the bot took itself, out or back, the ground it reached and the town visit it
+// came to (the trip's start was its event, whichever errand its held leaf names); a
+// flight, a pushed-out spot or a party's call (its market break) is the world's.
 const FORCED_TRIPS = new Set(['unsafe_ground_evacuation', 'death_pressure_replan', 'party_spot_replan']);
 function ownMove(state, where) {
+    if (state.activity === 'shopping') return !state.stats?.partyMarketReturn;
     if (state.activity !== 'traveling') return Situations.field(where);
     const travel = state.stats?.travel;
     return !!travel && !travel.cause && !FORCED_TRIPS.has(travel.reason);

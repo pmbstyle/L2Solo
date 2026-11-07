@@ -117,17 +117,14 @@ async function runWorker(state, predicate, followUp = null) {
         // impossible mark of raise 1 (its step drop: test_near_decision_order).
         post({ ...raised, nearSeq: 6, updatedAt: now + 4, raise: { seq: 2, names: [{ name: 'goal_failed', payload: null, seq: 1 }], impossible: true, impossibleSeq: 1 } });
         assert.equal((await decidedAt(until, 6)).payload.near.raiseSeq, 2, 'the new raise is taken');
-        // A failed gear errand marks its key in the near mind; it wakes the build, not the gear
-        // plan, and the answer carries the mark to the body; the gear plan's next review, woken by
-        // the bot's own situation, drops it (GearMarks: one rule near and far).
-        // The body holds a gear plan answer (none): with no answer held the gear plan reads woken.
-        const planned = { ...raised, stats: { ...raised.stats, equipmentPlan: null } };
+        // A failed gear errand marks its key in the near mind and wakes the build and the gear
+        // review (its source failed): the review plans without the item and drops the mark, and
+        // the answer carries that to the body (GearMarks: one rule near and far).
+        const planned = { ...raised, stats: { ...raised.stats, equipmentPlan: null, gearMarks: [{ key: 6 }] } };
         post({ ...planned, nearSeq: 7, updatedAt: now + 5,
             raise: { seq: 3, names: [{ name: 'goal_failed', payload: { kind: 'gear_errand', key: 5 }, seq: 3 }] } });
-        assert.deepEqual((await decidedAt(until, 7)).payload.near.statsPacket.gearMarks, [{ key: 5 }],
-            'the failure keeps its mark through the build it wakes, and the body hears it');
-        post({ ...planned, nearSeq: 8, updatedAt: now + 6, raise: { seq: 4, names: [{ name: 'party_left', payload: null, seq: 4 }] } });
-        assert.equal((await decidedAt(until, 8)).payload.near.statsPacket.gearMarks, null, 'the gear plan\'s review drops it');
+        assert.equal((await decidedAt(until, 7)).payload.near.statsPacket.gearMarks, null,
+            'the failure wakes the gear review, which drops the marks it planned without');
     });
 
     const instances = Array.from({ length: 2075 }, (_, index) => ({ id: 900000 + index,

@@ -1323,6 +1323,26 @@ function wornEntry(inventory) {
     wornParts.set(inventory, entry);
     return entry;
 }
+// The gear a fight turns on (the gear fact, DecisionSections.factsOf: gear_changed, hot
+// and cold): the worn weapon, the body armour's grade and the armour sets worn whole.
+// A ring, a shield or arrows, an enchant or a piece of the same grade is no new fight.
+// Read from the worn part's rows (selfId:slot:enchant), held on its entry: once per bag.
+const WEAPON_SLOTS = new Set([7, 14]), BODY_SLOTS = new Set([10, 15]);
+function gearOf(state) {
+    const entry = wornEntry(state?.inventory);
+    if (entry === NO_INVENTORY) return 0;
+    if (entry.gear !== undefined) return entry.gear;
+    let weapon = 0, body = 'none';
+    const ids = new Set();
+    for (const row of entry.text ? entry.text.split(',') : []) {
+        const [selfId, slot] = row.split(':').map(Number);
+        ids.add(selfId);
+        if (WEAPON_SLOTS.has(slot) && (!weapon || selfId < weapon)) weapon = selfId;
+        if (BODY_SLOTS.has(slot)) body = String(itemTemplate(selfId)?.etc?.rank || 'none').toLowerCase();
+    }
+    const sets = C4ArmorSets.activeSetsForEquippedIds(ids).map(set => set.chest).sort((a, b) => a - b);
+    return entry.gear = fnv1a32(`${weapon}|${body}|${sets.join(',')}`);
+}
 // A held kit part that no longer matches its fresh build (developer diagnostics).
 function staleHit(part, held, fresh) {
     if (held === fresh) return false;
@@ -1554,7 +1574,7 @@ function kitStoreSize() { return kitProfiles.size; }
 
 module.exports = {
     PROFILE_VERSION, classIdOf, capture, legacySnapshot, treeSnapshot, profileFor, buildCount, buildMs, withBuildSite,
-    fightProfile, heldFightProfile, currentCp, seedSnapshot, oldSeedRepair, candidateProfiles, fightSources, combatView, kitEvents, skillsFor, forgetBuild, kitStoreSize,
+    fightProfile, heldFightProfile, currentCp, seedSnapshot, oldSeedRepair, candidateProfiles, fightSources, combatView, kitEvents, gearOf, skillsFor, forgetBuild, kitStoreSize,
     isAttackSkill, offensiveSkills, summonDetails, summonSkills, corpseSummonSkills, activeMusicEffects, partyMusicSkills, partyMusicMpCost, partyMusicEffect, normalAttackMs,
     spotSpawns, npcForSpot, killDraw, killChances, npcCombatStats, npcVulnerability, npcTraitResist, skillSnapshotsFromRecords, skillRecordsFromTree, treeSkillLevel,
     statMultiplier: multiplier, statAdd: add, hitStatAdd, statSources,

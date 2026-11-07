@@ -58,13 +58,19 @@ const link = (waits, heard = NOW) => Object.freeze({ waits, heard });
 // plane a far bot hears it on (heard: NOW, at its next STOP, in TOWN). The decisions
 // each wakes are declared below (DECISIONS).
 const SITUATIONS = Object.freeze({
-    // Its own state (detect). A level moved, or the rest of the kit (worn gear,
-    // hennas, skills, class, the craft): read apart, a level up wins a step that moved both.
-    level_up: link(WORK | VISIT, STOP),
+    // Its own state (detect). A level alone is none (training reads it in its round):
+    // what a level opens is. The C4 expertise grade its level allows moved, either way
+    // (a death's lost level too: GearGradeRule); the held earning spot's monsters fell
+    // past the deep-blue gap below it (SpotValueTable.outleveled: the search's own cut).
+    // The gear a fight turns on (the worn weapon, the body armour's grade, the armour
+    // sets worn whole: not a ring, an enchant, hennas, skills, the craft or karma).
+    grade_changed: link(WORK | VISIT, STOP),
+    spot_outleveled: link(WORK | VISIT, STOP),
     gear_changed: link(WORK | VISIT, TOWN),
     recipe_learned: link(WORK | VISIT, STOP),
     died: link(0),
-    // A hot body's respawn in town (BotAI): its town arrival follows as its own.
+    // A hot body's respawn in town (BotAI): wakes nothing, its town arrival follows as
+    // its own (a death wakes the earning spot; a PvE death costs no gear).
     revived: link(0),
     // Its clan joined, left or changed (detect's clan fact): heard at its next stop. Its
     // friends and enemies wake nothing (Q13): they are read when it decides.
@@ -159,30 +165,35 @@ function woke(name, where) {
 // the situations that wake it; a decision joins as the step that moves it does
 // (situations.md §10, §14).
 // build: the wish projection, the money queue, the leaf and the party request. Beside
-// §14's list: player_command (the commanded spot reaches the hunting leaf),
-// goal_done:visit / goal_failed:visit (the agenda over the held entry, F4: temporary
-// until step 6), revived (a respawn), the
-// step's market reviews (craft_bid, clan_market) and goal_moved (until AI-5).
+// the catalogue's list: player_command (the commanded spot reaches the hunting leaf,
+// which names the spot a body walks to), goal_done:visit / goal_failed:visit (the agenda
+// over the held entry, F4: temporary until the town plan holds the visit), the step's
+// market reviews (craft_bid, clan_market) and goal_moved (until goals read the card). A death wakes it
+// through the earning spot (its search runs in the build). Low potions wake the build
+// only: a bot buys them; a broke one moves on at a death or a dangerous spot.
 // gear_plan (F1): the gear plan's full review, every gear candidate weighed and the
 // native plan judged afresh (GearPlanSelection); a build it does not wake keeps the
 // gear the bot follows. One question, which gear to work toward: it hears the bot's
-// own changes only, not a town arrival or a failed step; a failed gear errand reaches
-// it as its mark alone (GearMarks), which the build reads too.
+// own grade, gear and clan (a clan's goal plan dropped with it), and its source
+// failing: a craft route's stall (source_stalled) or a gear errand failed on its item
+// (goal_failed with its mark, GearMarks: delta), as a C4 player whose item was sold
+// looks for another; not a death (PvE costs no gear), a party left, a town arrival or
+// another failed step.
 // workshop: what a crafter offers and produces (its own production's best recipe and
 // income, stats.craftIncome), taken at the start of a town visit (arrived_town, either
-// kind, one per visit), at a recipe learned and at a level (the recipes its craft reaches), held
-// between: worn gear, prices, the board and its own fills wake it not. The build reads
+// kind, one per visit; a craft level gained in the field is read there) and at a recipe
+// learned, held between: levels, worn gear, prices, the board and its own fills wake it not. The build reads
 // the held answer. A bot that is no service crafter takes it as none, with no planner job.
 const DECISIONS = Object.freeze({
-    earning_spot: Object.freeze(['level_up', 'gear_changed', 'died', 'recovered', 'spot_disappoints', 'contest_lost', 'spot_empty',
-        'spot_dangerous', 'spot_unreachable', 'moved_by_world', 'party_left', 'shots_out', 'stock_low:potions', 'goal_affordable:potions',
+    earning_spot: Object.freeze(['grade_changed', 'spot_outleveled', 'gear_changed', 'died', 'recovered', 'spot_disappoints', 'contest_lost', 'spot_empty',
+        'spot_dangerous', 'spot_unreachable', 'moved_by_world', 'party_left', 'shots_out', 'goal_affordable:potions',
         'karma_changed']),
-    build: Object.freeze(['arrived_town', 'level_up', 'gear_changed', 'recipe_learned', 'died', 'revived', 'party_left',
+    build: Object.freeze(['arrived_town', 'grade_changed', 'gear_changed', 'recipe_learned', 'party_left',
         'goal_affordable:potions', 'goal_affordable:focus', 'out_of_money', 'goal_done:goal', 'goal_failed',
         'goal_done:visit', 'goal_failed:visit', 'stock_low:shots', 'stock_low:potions', 'bag_full', 'source_stalled', 'clan_call',
         'clan_changed', 'spot_empty', 'goal_moved', 'player_command', 'craft_bid', 'clan_market']),
-    gear_plan: Object.freeze(['level_up', 'gear_changed', 'died', 'party_left', 'source_stalled']),
-    workshop: Object.freeze(['arrived_town', 'arrived_town:own', 'recipe_learned', 'level_up'])
+    gear_plan: Object.freeze(['grade_changed', 'gear_changed', 'clan_changed', 'source_stalled']),
+    workshop: Object.freeze(['arrived_town', 'arrived_town:own', 'recipe_learned'])
 });
 const BITS = Object.freeze(Object.fromEntries(Object.keys(DECISIONS).map((name, at) => [name, 1 << at])));
 const ALL = Object.values(BITS).reduce((all, bit) => all | bit, 0), PLANE = 0xff;
@@ -194,12 +205,18 @@ const WAKES = Object.freeze(Object.fromEntries(Object.keys(SITUATIONS).map(name 
 // anywhere; a rest its stop; the town, a stall, a meeting, the arrival in town and
 // a body near a player elsewhere all of them.
 const planesAt = where => where === WORK || where === BODY ? 0 : where === REST ? STOP : STOP | TOWN;
-// A decision's held answer in the mind (situations.md §10): with none the decision
-// reads woken (no stored raise), until it decides and holds one.
-const HELD = Object.freeze({ earning_spot: 'earning', build: 'wishSections', gear_plan: 'equipmentPlan', workshop: 'craftIncome' });
+// A decision's held answer in the mind: with none the decision reads woken (no
+// stored raise), until it decides and holds one. The gear plan has no such key: a
+// bot holds no stats.equipmentPlan once its target is bought and worn or its owner
+// drops it (a class transition, a clan goal), and that is the plan carried out, not
+// a review never taken: the next build plans on, and only its situations (or a
+// row with no bits yet, a new bot) wake the full review.
+const HELD = Object.freeze({ earning_spot: 'earning', build: 'wishSections', workshop: 'craftIncome' });
 const unheld = stats => Object.entries(HELD).reduce((bits, [decision, key]) => stats?.[key] === undefined ? bits | BITS[decision] : bits, 0);
-// A row saved before the store kept no bits: every decision reads woken, once.
-const wokenBits = stats => (stats?.woken === undefined ? ALL : Number(stats.woken) || 0) | unheld(stats);
+// The bits raised and not yet decided (a row saved before the store kept no bits: every
+// decision, once); the ones a decision with no held answer adds are read, never stored.
+const storedBits = stats => stats?.woken === undefined ? ALL : Number(stats.woken) || 0;
+const wokenBits = stats => storedBits(stats) | unheld(stats);
 // The health line's counts (counts()), always on: what was raised where, which
 // situation woke which decision, the decisions taken or served, and those taken with
 // no bit woken by their caller. Each map holds at most COUNT_KEYS keys (limits.md);
@@ -246,13 +263,13 @@ function decisionNames(bits) {
 function raise(stats, name, payload = null, where = OPEN, subject = 0) {
     const bits = delta(name, payload, where, stats);
     if (bits.leaf) stats.activityLeaf = 0;
-    const was = wokenBits(stats), waited = Number(stats.waiting) || 0;
+    const stored = storedBits(stats), was = stored | unheld(stats), waited = Number(stats.waiting) || 0;
     const before = stats.earning?.spotId ?? null, wrote = writeFacts(stats, bits.facts);
-    const woken = was | bits.woken, waiting = waited | bits.waiting;
-    if (!wrote && woken === was && waiting === waited) return stats;
+    const woken = stored | bits.woken, waiting = waited | bits.waiting;
+    if (!wrote && woken === stored && waiting === waited) return stats;
     stats.woken = woken; stats.waiting = waiting;
     stats.situationSeq = (Number(stats.situationSeq) || 0) + 1;
-    counted(name, where, was, woken, subject, waiting & ~waited, payload);
+    counted(name, where, was, was | woken, subject, waiting & ~waited, payload);
     if (bits.taken) took(stats, bits, name, subject, before);
     return stats;
 }
@@ -277,7 +294,10 @@ function delta(name, payload = null, where = OPEN, stats = null) {
     const now = !row.heard || !!(planesAt(where) & row.heard);
     // A mark past SpotRiskPolicy.MAX_SPOT_MARKS drops the oldest: counted (limits.md).
     const facts = raisedFacts(stats, name, payload, () => count(raisedCounts, 'spot_mark:dropped'));
-    return { woken: now ? WAKES[name] : 0, waiting: now ? 0 : WAKES[name] << SHIFT[row.heard],
+    // A gear errand failed on its item (its mark) is its gear source failing: it wakes
+    // what a stalled source wakes too (source_stalled: the gear plan).
+    const wakes = facts.gearMarks ? WAKES[name] | WAKES.source_stalled : WAKES[name];
+    return { woken: now ? wakes : 0, waiting: now ? 0 : wakes << SHIFT[row.heard],
         leaf: payload?.impossible === true, taken: facts.earning ? BITS.earning_spot : 0, facts };
 }
 // The facts a raise writes beside its bits (situations.md B6), each owned by its
@@ -356,22 +376,23 @@ function stop(stats, where, subject = 0) {
     if (planes & TOWN) { release |= waited >> 8 & PLANE; waiting &= ~(PLANE << 8); }
     if (!release) return stats;
     const was = wokenBits(stats);
-    stats.woken = was | release; stats.waiting = waiting;
-    countWoke(was, stats.woken, `stop@${NAMES.get(where)}`);
-    if (Trace.on()) Trace.record({ kind: 'stop', bot: subject, place: NAMES.get(where), woke: decisionNames(stats.woken & ~was) });
+    stats.woken = storedBits(stats) | release; stats.waiting = waiting;
+    countWoke(was, was | release, `stop@${NAMES.get(where)}`);
+    if (Trace.on()) Trace.record({ kind: 'stop', bot: subject, place: NAMES.get(where), woke: decisionNames(release & ~was) });
     return stats;
 }
 const woken = (stats, decision) => !!(wokenBits(stats) & BITS[decision]);
 const anyWoken = stats => wokenBits(stats) !== 0;
 // A decision taken clears its bit; its held answer served (served) is counted and
 // clears nothing; a taken one with no bit woken is counted by its caller.
-// decisions: a name or a list. Returns the woken bits left (stats.woken). A taken
+// decisions: a name or a list. Returns the stored bits left (stats.woken). A taken
 // one is traced (subject: the bot; answer, was: its answer and the one it replaces,
 // short text, or per decision { decision: [answer, was] }).
 function decided(stats, decisions, { caller = 'other', served = false, subject = 0, answer = null, was = null } = {}) {
-    let bits = wokenBits(stats);
+    const read = wokenBits(stats);
+    let bits = storedBits(stats);
     for (const decision of [decisions].flat()) {
-        const bit = BITS[decision], unwoken = !served && !(bits & bit);
+        const bit = BITS[decision], unwoken = !served && !(read & bit);
         count(decidedCounts, decision, served ? 1 : 0);
         if (unwoken) count(unwokenCounts, `${decision}:${caller}`);
         // A served answer clears nothing: only the decision taken does.
@@ -399,11 +420,11 @@ function factNames(previousFact, current, planned = false) {
     const names = [];
     const add = name => { if (!names.includes(name)) names.push(name); };
     if (!previousFact('dead') && current.dead) add('died');
-    if (previousFact('build') !== current.build) {
-        // A baseline kept before the level was its own fact reads as gear.
-        const level = previousFact('level');
-        add(level !== undefined && level !== current.level ? 'level_up' : 'gear_changed');
-    }
+    if (previousFact('grade') !== current.grade) add('grade_changed');
+    // Its 0 -> 1 flip only: a build's baseline reads it against its own answer.
+    if (!previousFact('outleveled') && current.outleveled) add('spot_outleveled');
+    // The gear a fight turns on (weapon, body armour grade, whole sets: the gear fact).
+    if (previousFact('gear') !== current.gear) add('gear_changed');
     // The clan (its id; a baseline kept before the fact was its own has none to compare).
     const clan = previousFact('clan');
     if (clan !== undefined && clan !== current.clan) add('clan_changed');
@@ -466,8 +487,10 @@ function detect(before, after, { escrow = 0, leaf = null, unhuntable = false, fa
     const represented = builtAt(after) > builtAt(before) ? after.stats.wishSections : null;
     const previous = represented || before.stats?.wishSections || {};
     let original;
-    // Only a fact the baseline lacks reads the state before.
-    const previousFact = key => Object.hasOwn(previous, key) ? previous[key] : (original ||= facts || Sections.semanticFacts(before))[key];
+    // Only a fact the baseline lacks reads the state before; outleveled is read against
+    // the build's own answer only: a baseline without it reads 0 (its flip once).
+    const previousFact = key => Object.hasOwn(previous, key) ? previous[key]
+        : key === 'outleveled' ? 0 : (original ||= facts || Sections.semanticFacts(before))[key];
     // No memory here: the relations the decision kept stand until its next build, which
     // reads them; the party with them.
     const view = Sections.stateView(after);

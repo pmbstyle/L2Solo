@@ -748,6 +748,19 @@ function rowCap(t, row, spot, gate) {
     return gate ? gate.cap : t.f.cap >= 0 ? row[t.f.cap] : spot[3] * spot[4];
 }
 
+// Spots down to the first deep-blue level only (below it the C4 drop falls to
+// 30% and less, ProgressionRates' deep-blue gap): a spot further
+// below the bot is no candidate (combat), and a held one is outleveled.
+const beyondDeepBlue = gap => gap > ProgressionRates.DEEP_BLUE_LEVEL_GAP;
+// Did the bot outlevel this spot (its monsters past the deep-blue gap below its
+// level, the level the table reads)? 1 or 0; 0 for no spot or one the table lacks.
+// The earning spot's fact (DecisionSections.stateView: spot_outleveled).
+function outleveled(spotId, level) {
+    if (spotId == null) return 0;
+    const t = load(), s = spotSlot(t, spotId);
+    return s !== undefined && beyondDeepBlue(Math.min(t.maxLevel, Number(level)) - t.spots[s][1]) ? 1 : 0;
+}
+
 // The table-only part of a spot's hour (no rewards): the measured row, the level curve and the kills, or
 // null when the bot finds no target it may fight alone there at this level. s, r: the spot's and role's
 // table indexes.
@@ -758,9 +771,7 @@ function combat(t, s, r, level, shots) {
     const botLevel = Math.min(t.maxLevel, Number(level));
     const gap = botLevel - spotLevel;
     if (!(gap >= row[t.f.minGap])) return null;
-    // Spots down to the first deep-blue level only (user 10-29: below it the
-    // C4 drop falls to 30% and less).
-    if (gap > ProgressionRates.DEEP_BLUE_LEVEL_GAP) return null;
+    if (beyondDeepBlue(gap)) return null;
     const gate = gateAt(t, row, gap);
     if (gate === null) return null;
     const mask = gate?.mask ?? ALL_SPECIES;
@@ -1112,4 +1123,4 @@ function useFile(next = DEFAULT_FILE) {
     clearIncomeBases();
 }
 
-module.exports = { value, kills, cycle, production, huntShare, geodataProfile, kitSurface, roleClass, lineClass, roleFor, roleSpoilLevel, spotLevel, referenceLevel, roles, revision, best, rankedIncome, rankedSpotIds, useFile, useSpots, expGapFactor, cacheStats, sharedDescriptor, attachShared, DEFAULT_FILE };
+module.exports = { value, kills, cycle, production, huntShare, geodataProfile, kitSurface, roleClass, lineClass, roleFor, roleSpoilLevel, spotLevel, outleveled, referenceLevel, roles, revision, best, rankedIncome, rankedSpotIds, useFile, useSpots, expGapFactor, cacheStats, sharedDescriptor, attachShared, DEFAULT_FILE };

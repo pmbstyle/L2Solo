@@ -157,9 +157,9 @@ module.exports.pageProbe = async id => {
     };
     return { own: run(1, 'commit'), main: run(1), none: run(0) };
 };
-// A party member's step (no decision before its round): a level gained in
-// its round moves its kit, which its party step reads to open a re-plan (at
-// the party's rest: in its fight the kit waits); a quiet step moves nothing.
+// A party member's step (no decision before its round): a new expertise grade
+// gained in its round moves its kit, which its party step reads to open a re-plan
+// (at the party's rest: in its fight the kit waits); a quiet step moves nothing.
 // A member that is no crafter builds with no workshop and asks the
 // occupation planner for none.
 module.exports.kitProbe = async (id) => {
@@ -174,20 +174,27 @@ module.exports.kitProbe = async (id) => {
     try {
         const step = (state, exp, at) => kernel.projectResolve(state, { patch: {}, debug: {}, events: [],
             materialize: { exp, sp: 0, adena: 0, items: [] }, nextResolveAt: at + 60000 }, at);
-        const member = { ...entry.state, activity: 'grouped', party: { partyId: 'kit-party', leaderId: id } };
+        // One level under C (40): the level it gains opens a grade.
+        const member = { ...entry.state, level: 39, exp: Number(Data.experience[38]), activity: 'grouped',
+            party: { partyId: 'kit-party', leaderId: id }, stats: { ...entry.state.stats, classProgressionLevel: 39 } };
         const first = await step(member, 0, timestamp);
         const quiet = await step(first.state, 0, timestamp + 1000);
         const gain = Number(Data.experience[quiet.state.level]) - Number(quiet.state.exp) + 1;
-        // The level comes in a party fight and waits there; the party's rest hears it
+        // The grade comes in a party fight and waits there; the party's rest hears it
         // (its stop) and the member's build it wakes moves the kit.
         const levelUp = await step(quiet.state, gain, timestamp + 2000);
         const rested = await step({ ...levelUp.state, activity: 'resting' }, 0, timestamp + 3000);
+        // Its earning spot woken (a death in the party's fight) is its party's to hold: no
+        // build of the member's for it, step after step, until it hunts alone.
+        const Situations = invoke('GameServer/Bot/Situations');
+        const died = { ...rested.state, stats: { ...rested.state.stats, woken: Situations.BITS.earning_spot } };
+        const after = await step(died, 0, timestamp + 4000);
         return { quiet: quiet.kitMoved, inFight: levelUp.kitMoved, levelUp: rested.kitMoved, levels: [quiet.state.level, levelUp.state.level],
-            workshop: rested.build?.workshop || null, workshopAsks };
+            workshop: rested.build?.workshop || null, workshopAsks, earningBuilds: after.build ? 1 : 0 };
     } finally { occupationPlanner.request = request; }
 };
 // A crafter's workshop decision: taken (one planner ask) with no held answer and at a
-// level up, held across a step that moves only its wallet (no ask). An unknown answer
+// recipe learned, held across a step that moves only its wallet (no ask). An unknown answer
 // (no board yet) is not held: the next step asks again.
 module.exports.workshopProbe = async (id) => {
     const saved = kernel.states.get(id), request = occupationPlanner.request, service = CraftEligibility.isServiceCrafter;
@@ -213,7 +220,7 @@ module.exports.workshopProbe = async (id) => {
         state = await step({ ...state, adena: Number(state.adena) + 1000 }, at + 500);
         const held = state.stats.craftIncome;
         state = await step({ ...state, adena: Number(state.adena) + 5000 }, at + 1000);
-        await step({ ...state, stats: Situations.raise({ ...state.stats }, 'level_up', null, Situations.OPEN, id) }, at + 2000);
+        await step({ ...state, stats: Situations.raise({ ...state.stats }, 'recipe_learned', null, Situations.OPEN, id) }, at + 2000);
         return { counts, held, unknownHeld };
     } finally { occupationPlanner.request = request; CraftEligibility.isServiceCrafter = service; kernel.states.set(id, saved); }
 };
@@ -359,17 +366,18 @@ parentPort.on('message', message => {
         console.log(JSON.stringify(kit));
         assert.equal(kit.levels[1], kit.levels[0] + 1, 'the fixture member levels up in its round');
         assert.equal(kit.quiet, false, 'a quiet party member step moves no kit');
-        assert.equal(kit.inFight, false, 'a level gained in a party fight waits for the party\'s rest');
+        assert.equal(kit.inFight, false, 'a grade gained in a party fight waits for the party\'s rest');
         assert.equal(kit.levelUp, true, 'and is a kit event for the party step there');
         assert.deepEqual(kit.workshop, { known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0 },
             'a member that is no crafter builds with no workshop');
         assert.equal(kit.workshopAsks, 0, 'and asks the occupation planner for none');
+        assert.equal(kit.earningBuilds, 0, 'a member\'s woken earning spot builds nothing: its party holds the spot');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'workshop'), workshopProbe: id });
         const workshopResponse = await wait(message => message.probeId === 'workshop');
         if (workshopResponse.error) throw Error(workshopResponse.error);
         assert.equal(workshopResponse.value.unknownHeld, null, 'an unknown planner answer is not held');
         assert.deepEqual(workshopResponse.value.counts, [1, 1, 0, 1],
-            'a crafter asks its workshop with none held (again after an unknown answer) and at a level up, never for a moved wallet');
+            'a crafter asks its workshop with none held (again after an unknown answer) and at a recipe learned, never for a moved wallet');
         assert.deepEqual(workshopResponse.value.held, [2, 3, 1000, 1], 'its answer is held for the build');
         worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, 'page'), pageProbe: id });
         const pageResponse = await wait(message => message.probeId === 'page'); if (pageResponse.error) throw Error(pageResponse.error);

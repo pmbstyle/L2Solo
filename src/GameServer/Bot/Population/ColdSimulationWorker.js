@@ -550,14 +550,14 @@ const occupationPlanner = new ColdOccupationPlanner({
         if (input.mode === 'page' || input.mode === 'near') {
             const routeRows = input.routeRows = input.routeRows || (yield* EconomicTrip.prepare(input.state));
             // A near body's post decides only when a situation woke its build or
-            // earning spot (the one gate, situations step 4 C6); else its held
-            // decision answers the post. A page reads. A decision its gear plan woke
+            // earning spot (one it decides: EconomyContext.earningDue; the one gate
+            // of every step); else its held decision answers the post. A page reads. A decision its gear plan woke
             // too is the gear plan's full review, as a far step's (gearPlanTaken).
             // Its workshop first when woken (the far step's order: workshop, then
             // build), the build reading its held answer.
             const workshop = input.mode === 'near' ? yield* nearWorkshop(input) : null;
             const stats = input.state.stats || {};
-            const decide = input.mode === 'near' && (Situations.woken(stats, 'build') || Situations.woken(stats, 'earning_spot'));
+            const decide = input.mode === 'near' && (Situations.woken(stats, 'build') || EconomyContext.earningDue(input.state));
             const gearReview = decide && Situations.woken(stats, 'gear_plan');
             input.economy = EconomyContext.forState(input.state, {
                 board: input.board, routeRows, workshops: workshopsFor,
@@ -1798,10 +1798,12 @@ function startKernel(config = {}) {
                         const workshop = await decideWorkshop(projected, timestamp, deps.routeRows,
                             projected.party?.partyId || projected.partyId ? 'party' : 'karma');
                         const planned = workshop ? { ...projected, stats: { ...projected.stats, ...workshop } } : projected;
-                        // The step's one gate (situations step 4 C6), a party member's and
+                        // The step's one gate, a party member's and
                         // a karma step's alike: the build runs only when a situation woke it
-                        // (or the earning spot), or no card names its decision; else the card serves.
-                        const woken = Situations.woken(planned.stats, 'build') || Situations.woken(planned.stats, 'earning_spot');
+                        // (or the earning spot where the build decides it: not a party
+                        // member's, which its party holds), or no card names its decision;
+                        // else the card serves.
+                        const woken = Situations.woken(planned.stats, 'build') || EconomyContext.earningDue(planned, deps);
                         refreshed = !woken ? ColdEconomyDecision.refreshAdvisory(planned, owner?.wishAdvisory, deps, { afterResult: true }) : null;
                         // The same edges also drive the action after projection. The line is
                         // the kit rates' (EconomyContext.keptTargets): no basics built for it.

@@ -32,6 +32,9 @@ async function run() {
     Config.knowledgeErrorsEnabled = false;
     const T = Date.now();
     const Trip = invoke('GameServer/Bot/Economy/EconomicTrip');
+    // A step a second later: a review stamps its baseline then (its at), a move of the
+    // agenda keeps the review's.
+    const later = () => ({ ...deps(), timestamp: T + 1000 });
     const deps = () => ({ timestamp: T, memoryIdentity: 'fixture-memory', sourceReady: true, caller: 'step', routeRows: Trip.prepared(base), routeKey: Trip.key(base) });
     const base = { characterId: 901, phase: 'cold', activity: 'shopping', level: 35, adena: 5000000,
         inventory: { 5285: { selfId: 5285, amount: 1, equipped: true, equippedCount: 1, slot: 14 } },
@@ -79,10 +82,18 @@ async function run() {
         assert(plan.network.agenda.length > 0, 'fixture: the review decided a second step');
         const second = plan.network.agenda[0];
         assert.notEqual(second.itemId, first.itemId, 'each item stands once');
-        const next = Economy.forState(bought(state, first), deps());
+        // It bought the step and wore it: a weapon in its hands for the one it had.
+        const worn = (({ 5285: had, ...rest }) => ({ ...bought(state, first), inventory: { ...rest,
+            2499: { ...had, selfId: 2499 } } }))(bought(state, first).inventory);
+        const next = Economy.forState(worn, later());
         assert.equal(next.network.activity.itemId, second.itemId, 'the bot works down its agenda');
         assert.equal(next.statsPacket.decisionSeq, plan.statsPacket.decisionSeq + 1, 'one more step of one decision');
-        assert.equal(next.statsPacket.wishSections, plan.statsPacket.wishSections, 'its baseline stands: one review');
+        assert.equal(next.statsPacket.wishSections.at, T, 'its baseline stands: one review');
+        // What the step bought is the review's own answer: the baseline holds the bot as it
+        // is now, so the field reads no change of its stock or gear later.
+        const Sections = invoke('GameServer/Bot/Economy/DecisionSections');
+        assert.equal(next.statsPacket.wishSections.gear, Sections.semanticFacts(worn).gear, 'its facts are the bot\'s now');
+        assert.notEqual(next.statsPacket.wishSections.gear, plan.statsPacket.wishSections.gear, 'fixture: the gear changed');
         assert.equal(next.network.queue.some(wish => wish.key === first.rootKey), false, 'what was bought left the money queue');
     }
     { // A step's count is taken at the build: what arrived on the way is its progress.
@@ -214,8 +225,8 @@ async function run() {
     }
     { // A native plan that failed or moved is heard at once: a real review.
         const { plan, state } = review();
-        const built = Economy.forState(bought(state, plan.network.activity), { ...deps(), fullReview: true });
-        assert.equal(built.statsPacket.wishSections === plan.statsPacket.wishSections, false, 'the agenda waits');
+        const built = Economy.forState(bought(state, plan.network.activity), { ...later(), fullReview: true });
+        assert.equal(built.statsPacket.wishSections.at, T + 1000, 'the agenda waits');
     }
     { // Shots and potions below their line are weighed with the gear they serve (A5): one tier,
         // one queue, by value; the agenda works through both in one review.
@@ -225,12 +236,12 @@ async function run() {
         let current = state, step = plan;
         while (step.network.agenda?.length) {
             const after = bought(current, step.network.activity);
-            step = Economy.forState(after, deps());
+            step = Economy.forState(after, later());
             current = { ...after, stats: { ...after.stats, ...step.statsPacket } };
-            assert.equal(step.statsPacket.wishSections, plan.statsPacket.wishSections, 'one review');
+            assert.equal(step.statsPacket.wishSections.at, T, 'one review');
         }
-        const end = Economy.forState(bought(current, step.network.activity), deps());
-        assert.notEqual(end.statsPacket.wishSections, plan.statsPacket.wishSections, 'the end of the agenda is a review');
+        const end = Economy.forState(bought(current, step.network.activity), later());
+        assert.equal(end.statsPacket.wishSections.at, T + 1000, 'the end of the agenda is a review');
     }
     { // What the first tier could not pay holds the money: nothing later spends it.
         const poor = review({ adena: 2000 });

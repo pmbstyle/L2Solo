@@ -3,14 +3,14 @@
 // dual sword combination or unseal, ShoppingState; cold: a gear buy that failed on the
 // item, ColdMarketService.tryPurchase): each raises goal_failed { kind: 'gear_errand', key },
 // its key (the item, else the product or recipe) kept in stats.gearMarks, owned here,
-// written by Situations' raise (raisedFacts). That mark is all the gear plan hears of
-// the failure (the failure wakes the build, not the gear plan). Read by the gear plan
+// written by Situations' raise (raisedFacts), which wakes the gear plan with the build
+// (its source failed, Situations.delta). Read by the gear plan
 // (GearAcquisitionPlanner.replanContextFor excludes the items), the build's purchase
 // reader (WishPurchaseEvidence: no purchase of a marked item, so no power root or
 // material leaf takes it again) and the body's errand planner
 // (CompanionEquipmentShopping.planErrand plans none of them). A mark lives until the
-// bot's next gear plan review, woken by its own situations (a level, gear, a death):
-// that review plans without it and drops it (afterReview, at decided(gear_plan)). No clock.
+// bot's next gear plan review (the one its raise woke): that review plans without it
+// and drops it (afterReview, at decided(gear_plan)). No clock.
 // [{ key }], at most MAX_MARKS (the oldest dropped, counted by the caller).
 const MAX_MARKS = 8;
 const marksOf = stats => Array.isArray(stats?.gearMarks) ? stats.gearMarks : [];

@@ -76,7 +76,7 @@ function moved(held, state, leaf, { queue, filled, rest }, ask) {
     const eventProof = Object.freeze({ ...plan.eventProof, activity: ask.identity(leaf),
         decision: Object.freeze([decisionSeq, activityLeaf, focus?.[0] ?? null]) });
     return { ...held, heldUnits: leaf.heldAtDecision, plan: { ...plan, eventProof,
-        statsPacket: { ...statsPacket, decisionSeq, activityLeaf, wishFocus: focus, wishSections: ask.unspent(statsPacket.wishSections) },
+        statsPacket: { ...statsPacket, decisionSeq, activityLeaf, wishFocus: focus, wishSections: ask.baseline(statsPacket.wishSections) },
         network: { ...network, queue, focus, activity: leaf, activityLeaf, decisionSeq, agenda: rest, filled } } };
 }
 // One entry: a held plan's step ended on a town visit (the woken build's own check of
@@ -85,7 +85,8 @@ function moved(held, state, leaf, { queue, filled, rest }, ask) {
 // ends the agenda reads it, the stages that stood on it wait with it. Both ask for the
 // next seller: here at once, elsewhere after this town's steps. ask: the leaf's own
 // check, the best offer, a step's progress, the bag's count of an item, the identity,
-// the held baseline without the money thresholds the wallet passed (it takes the build).
+// the baseline the move keeps (it takes the build: the facts now, as a build's, the
+// money thresholds the wallet passed spent).
 // Answers the held entry on its next step, or null: the agenda ended, a build decides.
 function advance(held, state, why, deps, ask) {
     if (!String(why).startsWith('check:') || deps.fullReview || !held?.plan.network.activity) return null;

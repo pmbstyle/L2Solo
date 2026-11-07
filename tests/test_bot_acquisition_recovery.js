@@ -53,14 +53,14 @@ async function run() {
         'an individual purchase timeout must not cancel a clan-owned objective');
 
     // A gear errand the bot failed where it acts (goal_failed of kind gear_errand) marks its item
-    // and wakes the build, not the gear plan; the bot's next gear plan review (its own situation)
-    // excludes it and drops the mark (GearMarks).
+    // and wakes the build and the gear plan (its source failed); that review excludes it and
+    // drops the mark (GearMarks).
     {
         const Marks = require('../src/GameServer/Bot/AI/GearMarks');
         const Situations = invoke('GameServer/Bot/Situations');
         const failed = Situations.raise({ ...state.stats, woken: 0 }, 'goal_failed', { kind: 'gear_errand', key: 2566, impossible: true });
         assert(Marks.marked(failed, 2566), 'the failure marks its item');
-        assert(Situations.woken(failed, 'build') && !Situations.woken(failed, 'gear_plan'), 'the failure wakes the build, not the gear plan');
+        assert(Situations.woken(failed, 'build') && Situations.woken(failed, 'gear_plan'), 'the failure wakes the build and the gear plan');
         assert(Planner.replanContextFor({ ...state, stats: failed }, plan, now).excludedTargetIds.includes(2566), 'the gear plan excludes it');
         assert.equal(Marks.afterReview(failed), null, 'that review drops the mark: the next one may plan it again');
     }

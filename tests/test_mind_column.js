@@ -165,7 +165,7 @@ async function bodyMoney(id) {
         assert(factMind.woken & 1, 'and it woke the earning spot');
         const Situations = invoke('GameServer/Bot/Situations');
         const takenBefore = Situations.counts().decided.earning_spot?.[0] || 0;
-        await Life.raiseOnRow(raisedId, [{ name: 'level_up' }, { name: 'moved_by_world' },
+        await Life.raiseOnRow(raisedId, [{ name: 'grade_changed' }, { name: 'moved_by_world' },
             { name: 'player_command', payload: { spotId: 'near', at: 5 } }]);
         factMind = JSON.parse((await row(raisedId)).mindJson);
         assert.equal(factMind.earning.spotId, 'near', 'a command is the held answer');
