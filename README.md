@@ -1,5 +1,5 @@
 <a href="https://l2solo.com">
-<img alt="Lineage2 Solo local server" src="https://github.com/user-attachments/assets/a75ad34c-6371-46f5-8f78-0447ccc333a3" />
+<img alt="Lineage2 Solo local server" src="https://github.com/user-attachments/assets/feaccb0c-2d3b-4c47-a3b0-79b40ca0e7a5" />
 </a>
 
 
@@ -10,7 +10,7 @@ Old-school Lineage 2 solo play, locally in a live world with over 1700 bot popul
 L2Solo is a local-first Lineage II C4 server emulator, tuned for a solo MMO experiment: one real player, a live world, and bots with AI that makes the server feel alive.
 Nothing is auto-generated. Everything in the world is the result of a player's or a bot's actions.
 
-**Project status:** PUBLIC ALPHA
+**Project status:** PUBLIC BETA
 
 🏗️ Work in progress. Playable.
 
@@ -35,6 +35,7 @@ Optional but recommended for a better experience
 
 
 ## Latest updates
+- **2026-11-07** L2Solo launcher, server and bot progression optimization, bug fixes
 - **2026-10-30** Clan wars, geodata, bug fixes
 - **2026-10-26** Server stability, better AI, spoil, hunting, bug fixes
 - **2026-10-18** A living world economy, market board, better bot progression
@@ -55,11 +56,11 @@ Optional but recommended for a better experience
 - **2026-08-31** Expand bot world simulation, arena duels, and server knowledge tools
 - **2026-08-28** Skills, bot behavior, gear planning, and seeder fixes and improvements
 - **2026-08-27** Add LLM-driven clan management
-- **2026-08-26** Observer update, better and faster, player clan crest control, player clan goal control
 
 <details>
 <summary>Earlier</summary>
-
+  
+- **2026-08-26** Observer update, better and faster, player clan crest control, player clan goal control
 - **2026-08-25** Bot clans update follow-up, bug fixes
 - **2026-08-24** Bot clans, better cold/hot performance, bug fixes, and more
 - **2026-08-20** Loot and mob skills bug fixes, bot social graph base
@@ -165,20 +166,24 @@ See the full update log on our [Discord](https://discord.gg/dXsQ8SJA7k) server.
 <img src="https://github.com/user-attachments/assets/99695c45-80e8-4300-afa6-cada58ccd3bd" />
 </p>
 
-## 🎮 Wanna play now?
+## 🎮 Download L2Solo launcher
 
-You will need:
+👉 **[Download the latest release](https://github.com/pmbstyle/L2Solo/releases/latest)**
 
-- Node.js v22.15+
-- A [Lineage II C4 client](https://drive.google.com/file/d/1u0nW3m9c6Hql8sR9POQAcvglxIno23lv/view?usp=sharing) using protocol 656
+<!-- STABLE_DOWNLOADS -->
+| Platform | Download |
+|----------|----------|
+| **Windows** | [L2Solo-Launcher-0.2.0-windows-x64-Setup.exe](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.0/L2Solo-Launcher-0.2.0-windows-x64-Setup.exe) |
+| **macOS** | [L2Solo-Launcher-0.2.0-mac-arm64.dmg](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.0/L2Solo-Launcher-0.2.0-mac-arm64.dmg) |
+| **Linux** | [L2Solo-Launcher-0.2.0-linux-x86_64.AppImage](https://github.com/pmbstyle/L2Solo/releases/download/server-v0.1.0/L2Solo-Launcher-0.2.0-linux-x86_64.AppImage) |
+<!-- STABLE_DOWNLOADS_END -->
 
-## Quick Start
+On Windows, if you see the standard warning that the app publisher is unknown, click 'More info' and 'Run anyway'.
 
-### Desktop launcher
+On Mac, after installing, run `xattr -dr com.apple.quarantine "/Applications/L2Solo Launcher.app"`
 
-The Electron launcher installs the latest tagged server release, verifies C4 geodata, edits server settings and starts/stops your world. Windows, Linux and macOS installers are built by the tagged release workflow. See [the desktop launcher guide](launcher/README.md) for development, release artifacts and the website news API contract.
 
-### From source
+### From source (remote server setup)
 
 ```bash
 git clone https://github.com/pmbstyle/L2Solo.git
@@ -187,7 +192,7 @@ npm install
 npm start
 ```
 
-This command starts the L2Solo Launcher.
+This command starts the L2Solo Launcher. You can access it on the web at `<server-ip>:8090` 
 
 Press `Start` in the launcher to run the server. 
 
@@ -205,71 +210,13 @@ or
 
 https://drive.google.com/file/d/1nIsV6wthb_hO6o1lPGGK8GVZf7GFlC0h/view?usp=sharing
 
-Use **Saved Games** while the server is stopped to save a full copy of your world database. This is only needed if you want to roll back to the saved server state. Server data itself always saves and updates in real time.
 
-## Configuration
+**Configuration**
 
 Committed defaults live in `config/default.ini`.
 
-Private local overrides go in ignored `config/local.ini`. This is where API keys and a machine-specific SQLite path belong.
+Private local overrides go to `config/local.ini`. This is where API keys and a machine-specific SQLite path belong.
 
-Example:
-
-```ini
-[OpenRouter]
-enabled = true
-apiKey = <your-OpenRouter-key-here>
-apiUrl = https://openrouter.ai/api/v1/chat/completions
-model = openai/gpt-5.6-luna
-partyRouterModel = openai/gpt-5.6-luna
-# Leave empty if the selected model does not accept temperature.
-temperature =
-completionLimitParam = max_tokens
-strictSchema = true
-providerOrder = OpenAI
-providerSort = price
-allowFallbacks = false
-requireParameters = true
-debug = false
-```
-
-OpenRouter can also read the key/model from environment variables:
-
-```bash
-OPENROUTER_API_KEY=sk-or-v1-your-key-here npm start
-```
-
-The bot simulation can also use a local or remote provider that exposes the
-OpenAI-compatible Chat Completions API. Use an `[AI]` section instead of
-`[OpenRouter]` and provide the complete endpoint URL:
-
-```ini
-[AI]
-enabled = true
-apiUrl = http://127.0.0.1:1234/v1/chat/completions
-apiKey = lm-studio
-model = <model-id-from-the-provider>
-partyRouterModel = <model-id-from-the-provider>
-# Model-specific request parameters are configured explicitly.
-# temperature = 0.35
-# completionLimitParam = max_tokens
-# strictSchema = false
-# Optional for thinking models: off (default), low, medium, or high.
-# reasoningEffort = off
-```
-
-For Ollama, use `http://127.0.0.1:11434/v1/chat/completions` and a pulled model
-tag such as `llama3.2`. The API key can be empty for local providers; a value
-like `ollama` or `lm-studio` is also accepted when the server expects an
-OpenAI-compatible client key. Thinking is disabled by default for `[AI]`,
-which keeps the bounded bot response budget available for the required JSON;
-set `reasoningEffort` to `low`, `medium`, or `high` when the selected model
-benefits from explicit reasoning.
-
-Clan chat uses the same `model` and `partyRouterModel` settings. Names, roles,
-selected clanmates, and follow-up messages are routed first; ambiguous messages
-use the routing model to choose one responder or ask for clarification. Both
-active and background clan bots can reply in the clan channel.
 
 ## In-Game Commands
 
