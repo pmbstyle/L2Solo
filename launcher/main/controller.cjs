@@ -8,7 +8,7 @@ const { networkInterfaces } = require('node:os');
 const { readJson, writeJson, acquireLock, canonicalPath } = require('./files.cjs');
 const { readConfig, settings, saveSettings } = require('./config.cjs');
 const { latestRelease, newerVersion, versionOf, channelOf, ReleaseNotFoundError } = require('./releases.cjs');
-const { markerPath, journalPath, recover, commitRelease, needsDatabaseRollback, stageRelease, installRelease } = require('./installer.cjs');
+const { markerPath, journalPath, recover, commitRelease, stageRelease, installRelease } = require('./installer.cjs');
 const { ReleaseCatalog } = require('./release-catalog.cjs');
 const { holdLock } = require('./locks.cjs');
 const { helperPath } = require('./helper-path.cjs');
@@ -33,7 +33,7 @@ function loginConnection(config, interfaces = networkInterfaces()) {
 
 class Controller extends EventEmitter {
     constructor({ userData, nodePath, fetcher = fetch, runtimeManager = null, catalog = null, startupTimeout = 600000,
-        channel = 'stable', launcherVersion = require('../package.json').version }) {
+        channel = 'stable', launcherVersion = require('../package.json').version, confirmDatabaseRestore = null }) {
         super();
         if (!['stable', 'preview'].includes(channel)) throw new Error('Unknown update channel.');
         this.channel = channel;
@@ -44,6 +44,7 @@ class Controller extends EventEmitter {
         this.runtimeManager = runtimeManager;
         this.catalog = catalog || new ReleaseCatalog({ userData, fetcher });
         this.startupTimeout = startupTimeout;
+        this.confirmDatabaseRestore = confirmDatabaseRestore;
         this.fetcher = fetcher;
         this.child = null;
         this.busy = false;
@@ -211,17 +212,31 @@ class Controller extends EventEmitter {
     }
     async guard() {
         const journal = await readJson(path.join(this.state.root, '.l2solo/transaction.json'));
-        const config = !journal?.databasePath && this.state.installed ? readConfig(this.state.root) : {};
-        const database = journal?.databaseBackup?.files?.[0]?.canonicalPath || journal?.databasePath
-            || path.resolve(this.state.root, config.Database?.path || 'tmp/nodel2.sqlite');
-        return holdLock(database, this.controlNodePath);
+        const current = this.state.installed ? this.databasePaths()[0].canonicalPath : null;
+        const recovery = this.recoveryDatabasePaths(journal)?.[0]?.canonicalPath;
+        const databases = [...new Set([current, recovery || journal?.databasePath
+            || path.join(this.state.root, 'tmp/nodel2.sqlite')].filter(Boolean))].sort();
+        const releases = [];
+        try {
+            for (const database of databases) releases.push(await holdLock(database, this.controlNodePath));
+        } catch (error) {
+            for (const release of releases.reverse()) await release();
+            throw error;
+        }
+        return async () => { for (const release of releases.reverse()) await release(); };
     }
     async recoverUpdate(keepPending = false) {
         const journal = await readJson(journalPath(this.state.root));
-        const recoveryNode = needsDatabaseRollback(journal) && this.runtimeManager
-            ? await this.runtimeManager.ensure(journal.previous?.runtime?.version) : this.nodePath;
-        return recover(this.state.root, message => this.log(message), { keepPending, restoreDatabases: journal =>
-            this.helper('update-data.cjs', ['restore', JSON.stringify({ id: journal.id, ...journal.databaseBackup })], () => {}, recoveryNode) });
+        if (!journal) return;
+        const destinations = this.recoveryDatabasePaths(journal);
+        return recover(this.state.root, message => this.log(message), { keepPending,
+            recoveryDatabasePaths: destinations, confirmDatabaseRestore: this.confirmDatabaseRestore,
+            restoreDatabases: async current => {
+                const recoveryNode = this.runtimeManager ? await this.runtimeManager.ensure(current.previous?.runtime?.version) : this.nodePath;
+                const files = current.databaseBackup.files.map((file, index) => ({ ...file,
+                    ...(destinations?.[index] || {}) }));
+                return this.helper('update-data.cjs', ['restore', JSON.stringify({ id: current.id, files })], () => {}, recoveryNode);
+            } });
     }
     async ensureGeodata() {
         this.state.geodata = null;
@@ -276,17 +291,6 @@ class Controller extends EventEmitter {
                 this.state.connection = loginConnection(readConfig(this.state.root));
                 this.state.version = target.tag;
                 this.state.updatePending = (await readJson(journalPath(this.state.root)))?.phase === 'awaiting-start';
-                if (this.state.updatePending) {
-                    const pending = await readJson(journalPath(this.state.root));
-                    const world = this.worldOptions();
-                    const history = world.historyPath ? path.resolve(this.state.root, world.historyPath)
-                        : world.databasePath.endsWith('.sqlite') ? `${world.databasePath.slice(0, -7)}.history.sqlite` : `${world.databasePath}.history.sqlite`;
-                    if (pending.databaseBackup.files[0].path !== world.databasePath || pending.databaseBackup.files[1].path !== history) {
-                        await this.recoverUpdate();
-                        await this.inspect();
-                        throw new Error('This update changes the database location. Set an explicit World database path before updating.');
-                    }
-                }
                 this.log(`Installed ${target.tag}: ${result.changedFiles} files changed.${result.backup ? ` Previous files: ${result.backup}` : ''}`);
                 await this.ensureGeodata();
                 await this.refreshWorld();
@@ -309,24 +313,18 @@ class Controller extends EventEmitter {
         const config = readConfig(this.state.root).Database || {};
         return { databasePath: path.resolve(this.state.root, config.path || 'tmp/nodel2.sqlite'), historyPath: config.historyPath || '' };
     }
-    async assertPendingWorld(journal = undefined) {
-        journal ??= await readJson(journalPath(this.state.root));
-        if (journal?.phase !== 'awaiting-start') return journal;
-        const files = journal.databaseBackup?.files;
-        if (!Array.isArray(files) || files.length !== 2) throw new Error('The pending update has no valid world snapshot.');
+    databasePaths() {
         const world = this.worldOptions();
         const paths = [world.databasePath, world.historyPath ? path.resolve(this.state.root, world.historyPath)
             : world.databasePath.endsWith('.sqlite') ? `${world.databasePath.slice(0, -7)}.history.sqlite` : `${world.databasePath}.history.sqlite`];
-        for (const [index, file] of files.entries()) {
-            if (paths[index] !== file.path || canonicalPath(paths[index]) !== (file.canonicalPath || canonicalPath(file.path))) {
-                throw new Error('Database paths changed since this update was installed. Restore the original world and history database paths before starting.');
-            }
-            const stat = fs.existsSync(paths[index]) ? fs.statSync(paths[index], { bigint: true }) : null;
-            if (file.existed !== Boolean(stat) || file.identity && (file.identity.device !== String(stat?.dev) || file.identity.inode !== String(stat?.ino))) {
-                throw new Error('The world or history database was replaced since this update was installed. Keep the pending snapshot and restore the original database files before starting.');
-            }
-        }
-        return journal;
+        const files = paths.map(file => ({ path: file, canonicalPath: canonicalPath(file) }));
+        if (files[0].canonicalPath === files[1].canonicalPath) throw new Error('World and history must use different database files.');
+        return files;
+    }
+    recoveryDatabasePaths(journal) {
+        const files = journal?.startupDatabasePaths
+            || (this.state.installed ? this.databasePaths() : journal?.databaseBackup?.files);
+        return files?.map(file => ({ path: file.path, canonicalPath: file.canonicalPath || canonicalPath(file.path) }));
     }
     async refreshWorld() {
         const root = this.state.root;
@@ -395,22 +393,23 @@ class Controller extends EventEmitter {
             this.state.connection = loginConnection(readConfig(this.state.root));
             this.state.population = null;
             await this.operation(async () => {
-                await this.assertPendingWorld();
                 const release = await this.guard();
                 try {
                     await this.recoverUpdate(true);
                     const marker = await readJson(markerPath(this.state.root));
                     if (this.runtimeManager) this.nodePath = await this.runtimeManager.ensure(marker?.runtime?.version, value => this.progress(value));
                     await this.ensureGeodata();
-                    await this.assertPendingWorld();
                 }
                 finally { await release(); }
             }, 'start');
             const unlock = await acquireLock(this.state.root, this.controlNodePath);
             try {
-                const journal = await this.assertPendingWorld();
+                const journal = await readJson(journalPath(this.state.root));
                 const trial = journal?.phase === 'awaiting-start';
-                if (trial) await writeJson(journalPath(this.state.root), { ...journal, phase: 'starting' });
+                if (trial) {
+                    if (!Array.isArray(journal.databaseBackup?.files) || journal.databaseBackup.files.length !== 2) throw new Error('The pending update has no valid world snapshot.');
+                    await writeJson(journalPath(this.state.root), { ...journal, phase: 'starting', startupDatabasePaths: this.databasePaths() });
+                }
                 let committed = !trial, commitPromise;
                 const ready = new Set();
                 const child = spawn(this.nodePath, [path.join(this.state.root, 'scripts/run-server.js')], {
@@ -474,15 +473,15 @@ class Controller extends EventEmitter {
                     this.releasePromise = (async () => {
                         await commitPromise;
                         if (trial && !committed) {
-                            const restoreWorld = needsDatabaseRollback(await readJson(journalPath(this.state.root)));
                             const release = await this.guard();
-                            try { await this.recoverUpdate(); } finally { await release(); }
+                            let recovery;
+                            try { recovery = await this.recoverUpdate(); } finally { await release(); }
                             const marker = await readJson(markerPath(this.state.root));
                             if (this.runtimeManager) this.nodePath = await this.runtimeManager.ensure(marker?.runtime?.version);
                             await this.inspect();
                             await this.refreshWorld();
-                            this.state.error = restoreWorld ? 'The new server did not finish startup. Previous server files and world data were restored.'
-                                : 'The update stopped before database migrations. Previous server files were restored; world data was left unchanged.';
+                            this.state.error = recovery?.databaseRestored ? 'The new server did not finish startup. Previous server files and world data were restored.'
+                                : 'The new server did not finish startup. Previous server files were restored; current world data was kept.';
                         }
                     })().catch(error => { this.state.error = `Update recovery needs attention: ${error.message}`; })
                         .finally(async () => { await unlock(); this.busy = false; this.publish(); });
