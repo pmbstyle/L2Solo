@@ -107,7 +107,7 @@ function render(next) {
         $('update-title').textContent = !state.installed ? `${state.latest.tag} is ready to install` : state.latest.updateAvailable ? `${state.latest.tag} is available` : 'The server is up to date.';
         $('update-description').textContent = !state.installed ? 'Choose a folder to install the server.' : state.latest.updateAvailable ? `Installed: ${state.version?.split(' ·')[0]}. Your database and settings will be preserved.` : `Installed: ${state.latest.tag}. You can verify release files at any time.`;
         if (state.latest.launcherUpdateRequired) $('update-description').textContent = 'Update the launcher above before installing this server release.';
-        if (state.updatePending) $('update-description').textContent = 'Start the server to verify this update. World and history snapshots will be restored if startup fails.';
+        if (state.updatePending) $('update-description').textContent = 'Start the server to verify this update.';
         if (state.developerMode) $('update-description').textContent = 'Update this Git checkout with your development tools, or choose a separate folder for a managed installation.';
         if (serverDownload?.status === 'downloading') $('update-description').textContent = `${serverDownload.label || 'Downloading server release'}… The running world is unaffected.`;
         if (serverDownload?.status === 'ready') $('update-description').textContent = `${serverDownload.tag} is downloaded and verified. Stop the server to install it.`;

@@ -217,6 +217,17 @@ module.exports = async function smoke({ window, controller, directory }) {
         assert.deepEqual(opened, [controller.state.latest.url]);
     } finally { shell.openExternal = openExternal; }
     await capture('updates');
+    try {
+        controller.state.updatePending = true;
+        controller.publish();
+        await wait("document.getElementById('update-description').textContent === 'Start the server to verify this update.'");
+        assert.equal(await js("document.getElementById('install-update').disabled"), true);
+        assert.equal(await js("document.getElementById('confirm-dialog').open"), false);
+        await capture('updates-pending');
+    } finally {
+        controller.state.updatePending = false;
+        controller.publish();
+    }
     controller.state.latest.notes = '<img src=x onerror="window.__notesExecuted=true">\n\n[bad](javascript:alert(1))\n\n![<svg onload=alert(1)>](https://example.invalid/image.png)';
     controller.publish();
     await wait("document.getElementById('release-notes').textContent.includes('<img')");

@@ -5,6 +5,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const { Controller } = require('./controller.cjs');
+const { confirmDatabaseRestore } = require('./database-recovery.cjs');
 const { news, safeLink } = require('./news.cjs');
 const { RuntimeManager } = require('./runtime.cjs');
 const { ReleaseCatalog, interval } = require('./release-catalog.cjs');
@@ -42,7 +43,8 @@ else {
         const runtimeManager = new RuntimeManager({ userData, bundledNode: app.isPackaged ? bundledNode : developmentNode });
         const nodePath = await runtimeManager.ensure();
         const catalog = new ReleaseCatalog({ userData });
-        controller = new Controller({ userData, nodePath, runtimeManager, catalog, channel: releaseChannel });
+        controller = new Controller({ userData, nodePath, runtimeManager, catalog, channel: releaseChannel,
+            confirmDatabaseRestore: journal => confirmDatabaseRestore(dialog, window, journal) });
         const launcherUpdates = new LauncherUpdates({ controller, catalog, currentVersion: app.getVersion(), packaged: app.isPackaged, channel: releaseChannel,
             beforeInstall: () => { quitting = true; }, installFailed: () => { quitting = false; }, createUpdater: options => {
                 if (process.platform === 'darwin') throw new Error('Update this macOS application using its DMG installer.');
