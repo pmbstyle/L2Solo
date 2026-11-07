@@ -78,7 +78,6 @@ async function runWorker(state, predicate, followUp = null) {
     // included), with the mind it moved and the row's post number beside it.
     const decision = Decisions.compact(hot.payload.economyDecision), near = hot.payload.near;
     assert(decision.clan?.huntPerHour > 0, 'a clan member near the player gets its clan valuation');
-    assert.deepEqual(near.statsPacket.craftIncome, [0, 0, 0, 0], 'a near body that is no crafter takes its workshop as none, held');
     assert.equal(near.nearSeq, state.nearSeq, 'the decision names the post it answers');
     assert.deepEqual(decision.echo, [near.statsPacket.decisionSeq, near.statsPacket.activityLeaf, near.statsPacket.wishFocus[0]],
         'the card and the moved mind are one decision');

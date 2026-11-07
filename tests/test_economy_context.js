@@ -102,13 +102,10 @@ async function run() {
                 return Number(id) === crafter.characterId ? crafter : peers.get(Number(id)); };
             Craft.opportunities = () => [{ recipe: { recipeId: 1, productId: 1463 },
                 margin: { hours: 1, profit: 100000, labour: 0 } }];
-            const deps = { memory: { revision: 1, relations: [...peers.keys()].map(targetId => ({ targetId })) },
-                workshop: { recipeId: 1, productId: 1463, incomePerHour: 100000, cycleHours: 1 } };
+            const deps = { memory: { revision: 1, relations: [...peers.keys()].map(targetId => ({ targetId })) } };
             const context = Economy.forState(crafter, deps);
             assert.equal(peerReads, 0, 'a crafting review reads zero other crafters');
             assert(!context.projection.nodes.some(node => node.key === 'status:producer'));
-            assert(context.projection.moneyPaths.some(row => row.kind === 'production' && row.incomePerHour > 0),
-                'profitable crafting remains a repeatable money path');
             peers.get(902).stats.production.revenue = 900;
             assert.equal(Economy.forState(crafter, deps).plan, context.plan, 'another producer sale cannot rebuild this bot');
             assert.equal(peerReads, 0);
@@ -210,13 +207,8 @@ async function run() {
         const crafter = { ...warrior, characterId: 1203, stats: { ...warrior.stats, workshop: { entries: [1] } } };
         Craft.opportunities = () => [{ recipe: { recipeId: 1, productId: 1463 }, margin: { hours: 0, profit: 1000, labour: 0 } }];
         assert.equal(Economy.forState(crafter).hourAdena, warriorContext.hourAdena,
-            'main cannot turn an unsupported zero-clock opportunity into occupation income');
+            'a craft opportunity is no hour income: a crafter\'s hour is its hunt\'s');
         Economy.forget(crafter.characterId);
-        Craft.opportunities = () => [{ recipe: { recipeId: 1, productId: 1463 }, margin: { hours: .5, profit: 100000, labour: 38398.5 } }];
-        const context = Economy.forState(crafter, { workshop: { recipeId: 1, productId: 1463,
-            incomePerHour: 276797, cycleHours: .5 } });
-        assert.equal(context.hourAdena, 276797);
-        assert.equal(context.projection.moneyPaths.find(row => row.kind === 'production').incomePerHour, context.hourAdena);
     } finally { Craft.opportunities = originalOpportunities; }
     console.log('PASS repeatable wallet-independent income / survival reserve / craft hour / floor');
     const context = Economy.forState(base);
@@ -348,6 +340,9 @@ async function run() {
             assert(served, `the ${name} step serves the card`);
             assert.equal(served.economy.statsPacket.woken, undefined, 'a served card clears no bit');
         }
+        // The craft step the decision prepared rides its served view: a town visit's plan carries it out.
+        const shot = { wealth: [90001, 2] };
+        assert.deepEqual(Card.refreshAdvisory(published, { ...card, card: Card.cardWithShot(card.card, shot) }, deps()).economy.shot, shot);
         const raised = Situations.raise({ ...published.stats }, 'goal_affordable:focus', null, Situations.place(published));
         assert(Situations.woken(raised, 'build'), 'its goal in reach wakes the build');
         assert.equal(Card.refusal({ ...published, stats: { ...published.stats, decisionSeq: packet.decisionSeq + 1 } }, card, deps()),
@@ -412,40 +407,17 @@ async function run() {
             Economy.forget(990027);
         }
     }
-    // The build reads the workshop decision's held answer (stats.craftIncome), never asks:
-    // a productive one lifts the bot's hour and is the plan's workshop; a moved wallet,
-    // an MP drop or a death keeps it; saved (an unknown income as null) it reads the
-    // same; none held reads as unknown, the hunt alone.
+    // A rest reads the held build's route rows.
     {
         const Trip = invoke('GameServer/Bot/Economy/EconomicTrip');
-        const Decision = invoke('GameServer/Bot/Population/ColdEconomyDecision');
-        const workshop = { known: true, recipeId: 2, productId: 3, incomePerHour: 1200000, cycleHours: 2 };
         const crafter = { ...base, characterId: 990032, craftLevel: 1, adena: 1000000 };
-        const held = state => ({ ...state, stats: { ...state.stats, craftIncome: Decision.workshopValues(workshop) } });
         const routeRows = Trip.prepared(crafter);
         try {
-            const none = Economy.forState(crafter, { routeRows, caller: 'step', decide: true });
-            assert.equal(none.plan.workshop.known, false, 'none held reads as unknown');
-            for (const [what, move] of [['as held', state => state], ['a moved wallet', state => ({ ...state, adena: 0 })],
-                ['an MP drop', state => ({ ...state, vitals: { ...state.vitals, mp: state.vitals.mp - 1 } })],
-                ['a death', state => ({ ...state, activity: 'dead' })]]) {
-                Economy.forget(crafter.characterId);
-                const built = Economy.forState(move(held(crafter)), { routeRows, caller: 'step', decide: true });
-                assert.deepEqual(built.plan.workshop, workshop, `${what}: the build reads the held workshop`);
-                assert.ok(built.plan.hourAdena >= workshop.incomePerHour, `${what}: its income is the bot's hour`);
-            }
-            const saved = JSON.parse(JSON.stringify(Decision.workshopValues({ ...workshop, known: false })));
-            assert.deepEqual(saved, [0, 0, null, null], 'an unknown answer saves its income as null');
-            assert.equal(Decision.craftIncomeOf({ craftIncome: saved }).known, false, 'and reads back unknown');
-            assert.deepEqual(Decision.craftIncomeOf({ craftIncome: JSON.parse(JSON.stringify(Decision.workshopValues(workshop))) }),
-                workshop, 'a saved answer reads as decided');
-            assert.deepEqual(Decision.craftIncomeOf({ craftIncome: [0, 0, 0, 0] }), Decision.noWorkshop(), 'none to craft reads as none');
-            Economy.forget(crafter.characterId);
             Economy.forState(crafter, { routeRows });
             assert.strictEqual(Economy.preparedRouteRows({ ...crafter, activity: 'resting' }), routeRows, 'a rest reads the held build\'s route rows');
         } finally { Economy.forget(crafter.characterId); }
     }
-    console.log('PASS the build reads the held workshop');
+    console.log('PASS a rest reads the held route rows');
     // The cheap check by kind of leaf: an enchant or special-ability decision
     // names its object: it holds while that object is in the bag at the
     // enchant level read; one without an object (an exchange) holds by its

@@ -71,31 +71,6 @@ function encodeShot(value) {
     const encoded = value ? encoder.encode(JSON.stringify(value)) : null;
     return encoded?.length > MAX_SHOT_PAYLOAD_BYTES ? encoder.encode(JSON.stringify({ unknown: true })) : encoded;
 }
-function workshopValues(value) {
-    if (!value || value.known === false) return [0, 0, NaN, NaN];
-    const recipeId = Number(value.recipeId || 0), productId = Number(value.productId || 0);
-    if (!recipeId && !productId && value.known === true) return [0, 0, 0, 0];
-    const income = Number(value.incomePerHour), cycle = Number(value.cycleHours);
-    return recipeId > 0 && productId > 0 && income > 0 && cycle > 0
-        && Number.isFinite(income) && Number.isFinite(cycle) ? [recipeId, productId, income, cycle] : [0, 0, NaN, NaN];
-}
-// An unknown workshop; reason (a planner answer only): why it is not known (the workshop
-// decision counts it and stays woken: ColdSimulationWorker workshopTaken).
-function unknownWorkshop(reason = undefined) {
-    return { known: false, recipeId: 0, productId: 0, incomePerHour: NaN, cycleHours: NaN, ...(reason ? { reason } : {}) };
-}
-// A known workshop with nothing to craft (the answer to a bot that is no service crafter).
-function noWorkshop() { return { known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0 }; }
-// The workshop decision's held answer (stats.craftIncome, a mind key: workshopValues
-// saved, an unknown income as null) as the workshop every build reads, hot and cold.
-// None held: unknown (the decision is woken).
-function craftIncomeOf(stats) {
-    const held = stats?.craftIncome;
-    if (!Array.isArray(held)) return unknownWorkshop();
-    const [recipeId, productId, income, cycle] = held.map(value => value === null ? NaN : Number(value));
-    if (!recipeId && !productId && income === 0 && cycle === 0) return noWorkshop();
-    return { known: Number.isFinite(income) && Number.isFinite(cycle), recipeId, productId, incomePerHour: income, cycleHours: cycle };
-}
 class CompactDecision {
     constructor(updatedAt, echo, riskWeight, activity, data, flags) {
         this.echo = echo; this.data = data;
@@ -382,7 +357,7 @@ function capture(economy, state, seen = state) {
         watch: (economy?.watchList || []).slice(0, 8).map(row => [Number(row.itemId), Number(row.amount), Number(row.worth), kindCode(row.kind)]),
         materials: [...missing].slice(0, 8), usefulness, inputHash: fnv1a32(economy?.inputKey || ''), clan,
         shot: economy?.shot || null,
-        feasibility: economy?.workshop?.feasibility || economy?.feasibility || null
+        feasibility: economy?.feasibility || null
     });
     if (Diagnostics.active()) Diagnostics.count('ready_card', 'build', 'decision_pack');
     if (Trace.detailed(state?.characterId)) Trace.detail({ owner: state.characterId,
@@ -479,7 +454,6 @@ function view(state, decision, deps = {}, preparedBase = null) {
         craftReservations: Object.fromEntries(activity?.craftReservations || []),
         watchList: (decision?.watch || []).map(row => ({ itemId: row[0], amount: row[1], worth: row[2], kind: kindFor(row[3]) })),
         materials: decision?.materials || [], inputHash: decision?.inputHash || 0, decided: !!decision,
-        workshop: craftIncomeOf(state?.stats),
         itemUsefulness, worth: id => known(id) !== null && moneyPrice > 0 ? itemUsefulness(id) / moneyPrice : personal().price(id),
         stock: kind => kitOf().stock(kind), kitCost: (id, unitPrice) => kitOf().kitCost(id, unitPrice) };
     if (base) return { ...base, ...own, gapHorizonHours: gapHorizonHours() };
@@ -673,6 +647,8 @@ function refreshAdvisory(state, accepted, deps = {}, options = {}) {
         echo: [accepted.decisionSeq, accepted.activityLeaf, accepted.focus], flags: 0 });
     const economy = view(state, decision, deps);
     economy.inputKey = String(decision.inputHash);
+    // The craft step the decision holds: a town visit's plan carries it out.
+    economy.shot = decision.shot;
     economy.wallet = PurchaseFunding.budget(state, deps.buyOrderEscrow);
     economy.statsPacket = { wishFocus: state.stats.wishFocus, dormantWishes: state.stats.dormantWishes,
         decisionSeq: state.stats.decisionSeq, activityLeaf: state.stats.activityLeaf, money: state.stats.money,
@@ -818,5 +794,5 @@ class ColdEconomyDecisions {
     }
 }
 
-module.exports = { stepLeaf, personalUsefulness, preparedCardWorth, usefulnessVersion, capture, heldFor, heldAtDecisionOf, progressSince, remainingToOrder, materialHunt, ownItem, stateEcho, echoHolds, CompactActivity, ColdEconomyDecisions, economyFor, view, nearView, advisory, restoreAdvisory, advisoryPublicationHolds, sameEconomicOutput, current, canReuse, refusal, refreshAdvisory, refreshPreparedCraft, cardWithShot, kindCode, kindFor, compact, workshopValues,
-    unknownWorkshop, noWorkshop, craftIncomeOf, MAX_BYTES, MAX_SHOT_BYTES, COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES };
+module.exports = { stepLeaf, personalUsefulness, preparedCardWorth, usefulnessVersion, capture, heldFor, heldAtDecisionOf, progressSince, remainingToOrder, materialHunt, ownItem, stateEcho, echoHolds, CompactActivity, ColdEconomyDecisions, economyFor, view, nearView, advisory, restoreAdvisory, advisoryPublicationHolds, sameEconomicOutput, current, canReuse, refusal, refreshAdvisory, refreshPreparedCraft, cardWithShot, kindCode, kindFor, compact,
+    MAX_BYTES, MAX_SHOT_BYTES, COMMAND_HEADER_BYTES, MAX_SHOT_PAYLOAD_BYTES };

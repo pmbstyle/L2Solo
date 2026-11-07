@@ -22,7 +22,7 @@ async function run() {
             vitals: { hp: 100, maxHp: 100, mp: 50, maxMp: 50 } }, 'finite_income_test');
         const trip = () => 0; trip.details = () => ({ known: true, hours: .25, fees: 1 });
         const deps = { board: new (invoke('GameServer/AfkTrade/BoardIndex').BoardIndex)(), spots: [],
-            workshop: null, knownRecipes: [], producerRecipes: [], tripCost: trip, knowledgeEnabled: false };
+            knownRecipes: [], producerRecipes: [], tripCost: trip, knowledgeEnabled: false };
         const context = Economy.forState(state, deps);
         const sale = context.projection.moneyPaths.find(row => row.kind === 'liquidate');
         assert(sale, 'real reachable spare materials offer a finite sale');

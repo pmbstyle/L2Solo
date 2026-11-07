@@ -40,7 +40,7 @@ function buyer(classId, productId) {
 
 function review(state) {
     return Economy.forState(state, { timestamp, board: new BoardIndex(), spots: [],
-        npcOffersFor: () => [], workshop: null, knownRecipes: [], withNodes: true,
+        npcOffersFor: () => [], knownRecipes: [], withNodes: true,
         knowledgeEnabled: false, routeRows: invoke('GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
         workshops: () => [], caller: 'meeting_prepare' });
 }

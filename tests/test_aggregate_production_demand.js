@@ -51,8 +51,6 @@ const originalBoard = Afk.boardIndex;
     assert.equal(candidate.exit.type, 'listing');
     assert.equal(candidate.exit.forecast.origin, 'public_buy_interest');
     assert.equal(candidate.exit.forecast.guaranteed, false);
-    assert.equal(candidate.repeatable, false);
-    assert(!Number.isFinite(candidate.incomePerHour), 'public interest never becomes perpetual income');
     assert(candidate.expectedSold <= candidate.exit.willingUnits);
     assert.equal(Market.itemDeals(1464).deals, 0, 'the planner invents no completed sales');
     const Pricing = require('../src/GameServer/Bot/Economy/MarketPricing');

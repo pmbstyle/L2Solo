@@ -25,7 +25,7 @@ try {
     const sent = [];
     DecisionTrace.connect(batch => { sent.push(...batch.records); });
     // A bot holding its answers (with none a decision reads woken).
-    const stats = { woken: 0, earning: { spotId: '9_24' }, wishSections: {}, equipmentPlan: null, craftIncome: [0, 0, 0, 0] };
+    const stats = { woken: 0, earning: { spotId: '9_24' }, wishSections: {}, equipmentPlan: null };
     Situations.raise(stats, 'grade_changed', null, Situations.place({ phase: 'cold', activity: 'hunting' }), 501);
     Situations.stop(stats, Situations.REST, 501);
     Situations.decided(stats, 'earning_spot', { caller: 'step', subject: 501, answer: '11_6', was: '9_24' });

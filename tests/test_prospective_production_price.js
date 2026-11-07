@@ -42,8 +42,6 @@ assert.strictEqual(evaluate({ ...trial, offer: { ...line, revision: 2 } }), null
 assert.strictEqual(evaluate({ ...trial, applicableUnits: NaN }), null, 'an unknown competitive tail stays unknown');
 assert.strictEqual(evaluate(trial, { context: { ...context, existingOutput: 4 } }), null,
     'existing output occupies the finite market before another batch');
-assert.strictEqual(Policy.chooseQuantity({ state: craftState, recipe, planFor: () => null,
-    exits: [trial], context, mode: 'occupation' }), null, 'a finite trial never supplies recurring craft income');
 assert.strictEqual(exit.trial, undefined, 'source metadata is not mutated');
 assert(Price.prospectiveExit(state, { ...exit, offer: offerFields(line) }, options).prospective,
     'main native offerFields sourceId/expectedRevision identity is supported');

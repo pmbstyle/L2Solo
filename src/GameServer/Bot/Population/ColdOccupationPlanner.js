@@ -4,12 +4,16 @@ const Diagnostics = require('../Economy/EconomyDiagnostics');
 const FailureLog = require('../../../FailureLog');
 
 const { performance } = require('node:perf_hooks');
-const { unknownWorkshop } = require('./ColdEconomyDecision');
+// The answer of a job that gave none (asked or cancelled while stopping, cancelled,
+// failed, retired for a stale owner), in every mode, action included: no reader takes
+// more from it than that it is not known. Only an action build that finished with no
+// plan answers null (finish).
+const UNANSWERED = Object.freeze({ known: false });
 const MAX_CONTEXTS = 64, MAX_OWNERS = 8, OWNER_UNITS = 4, MAX_UNITS = 32, SLICE_MS = 4;
-// One job per bot per mode (input.mode, 'occupation' when none): an ask of
-// one mode never replaces another mode's answer.
-const MODES = Object.freeze(['occupation', 'near', 'page', 'action', 'showcase', 'craft_market', 'meeting', 'wish']);
-const keyOf = (id, mode) => `${mode || 'occupation'}:${Number(id)}`;
+// One job per bot per mode (input.mode, required): an ask of one mode never
+// replaces another mode's answer.
+const MODES = Object.freeze(['near', 'page', 'action', 'showcase', 'craft_market', 'meeting', 'wish']);
+const keyOf = (id, mode) => `${mode}:${Number(id)}`;
 
 // Incomplete contexts stay in the working pool (slots, MAX_CONTEXTS) through
 // yield. A finished job leaves the pool as a card (cards): its answer, the
@@ -60,8 +64,10 @@ class ColdOccupationPlanner {
 
     request(id, input, { awaitResult = true } = {}) {
         id = Number(id);
-        if (!id || this.stopped) return Promise.resolve(unknownWorkshop('stopped'));
-        const mode = input?.mode || 'occupation', key = keyOf(id, mode);
+        const mode = input?.mode;
+        if (!MODES.includes(mode)) throw Error(`occupation_mode_unknown:${mode}`);
+        if (!id || this.stopped) return Promise.resolve(UNANSWERED);
+        const key = keyOf(id, mode);
         const existing = this.waiting.get(key) || this.slots.get(key) || this.cards.get(key);
         const fingerprint = this.inputKey(input);
         if (existing && existing.fingerprint === fingerprint && !existing.dirty && this.valuesOf(existing) === this.valueKey(input)) {
@@ -164,7 +170,7 @@ class ColdOccupationPlanner {
             if (entry.cursor) entry.cursor[14] = 1;
             DiagnosticConfig.developerDiagnostics && (this.stats.invalidations++);
             if (!entry.done) this.ready.add(owner);
-            else if (!wasDirty) this.publish(entry.id, entry.input, unknownWorkshop(), { stale: true });
+            else if (!wasDirty) this.publish(entry.id, entry.input, UNANSWERED, { stale: true });
         }
         this.kick();
     }
@@ -189,14 +195,14 @@ class ColdOccupationPlanner {
             entry.dirty = true; if (entry.cursor) entry.cursor[14] = 1;
             if (!wasDirty) DiagnosticConfig.developerDiagnostics && (this.stats.invalidations++);
             if (!entry.done) this.ready.add(owner);
-            else if (!wasDirty) this.publish(entry.id, entry.input, unknownWorkshop(), { stale: true });
+            else if (!wasDirty) this.publish(entry.id, entry.input, UNANSWERED, { stale: true });
         }
         this.kick();
     }
     markReset(entry) {
         entry.dirty = true; if (entry.cursor) entry.cursor[14] = 2;
         DiagnosticConfig.developerDiagnostics && (this.stats.invalidations++);
-        if (entry.done) this.publish(entry.id, entry.input, unknownWorkshop(), { stale: true });
+        if (entry.done) this.publish(entry.id, entry.input, UNANSWERED, { stale: true });
     }
     // After a whole source table was replaced and its full copy applied: only
     // the jobs whose read items or admission scope moved are marked, as
@@ -248,7 +254,7 @@ class ColdOccupationPlanner {
 
     finish(entry, value) {
         if (entry.done || this.slots.get(entry.key) !== entry) return;
-        entry.done = true; entry.value = value ?? (entry.mode === 'action' ? null : unknownWorkshop('none'));
+        entry.done = true; entry.value = value ?? (entry.mode === 'action' ? null : UNANSWERED);
         // The card keeps the answer, its key and its read tokens: no scratch
         // graph, no cursor. It leaves the working pool.
         entry.work = null; entry.captured = null; entry.validation = null; entry.cursor = null;
@@ -308,7 +314,7 @@ class ColdOccupationPlanner {
                 catch (error) { entry.error = String(error?.message || error); this.reportError(entry, error); this.finish(entry, entry.mode === 'meeting'
                     ? { refused: true, reason: entry.error, ...(error.priceEvidence ? { priceEvidence: error.priceEvidence } : {}),
                         ...(error.priceFallback ? { priceFallback: error.priceFallback } : {}) }
-                    : unknownWorkshop('failed')); }
+                    : UNANSWERED); }
                 clock = this.now();
                 const duration = clock - unitStarted;
                 DiagnosticConfig.developerDiagnostics && (this.stats.maxUnitMs = Math.max(this.stats.maxUnitMs, duration));
@@ -346,7 +352,7 @@ class ColdOccupationPlanner {
         const entry = this.waiting.get(key) || this.slots.get(key) || this.cards.get(key);
         if (!entry) return;
         this.waiting.delete(key);
-        entry.resolve?.(unknownWorkshop('cancelled')); entry.resolve = null;
+        entry.resolve?.(UNANSWERED); entry.resolve = null;
         this.release(id, mode);
     }
     stop() {
@@ -359,4 +365,4 @@ class ColdOccupationPlanner {
         active: this.ready.size, dependencies: this.dependencies.size, cursorBytes: (this.slots.size + this.waiting.size) * 128 }; }
 }
 
-module.exports = { ColdOccupationPlanner, MAX_CONTEXTS, MAX_OWNERS, OWNER_UNITS, MAX_UNITS, SLICE_MS, MODES };
+module.exports = { ColdOccupationPlanner, UNANSWERED, MAX_CONTEXTS, MAX_OWNERS, OWNER_UNITS, MAX_UNITS, SLICE_MS, MODES };

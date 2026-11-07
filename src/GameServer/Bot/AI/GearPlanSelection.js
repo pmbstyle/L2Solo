@@ -239,7 +239,7 @@ function selectAcquisitionPlan(state, previousPlan, { spots = [], timestamp = Da
     const wishTargetId = chosen?.object?.slot ? chosen.object.itemId : null;
     const activity = economy.network.activity;
     const activeGear = wishTargetId && activity?.rootKey === chosen.key
-        && ['hunting', 'shopping', 'crafting'].includes(activity.activity) && activity.kind !== 'production' && !activity.funding;
+        && ['hunting', 'shopping', 'crafting'].includes(activity.activity) && !activity.funding;
     if (!activeGear && !GearAcquisitionPlanner.isClanOwnedPlan(previousPlan)) {
         // Acquisition metadata remains resumable, but cannot override the
         // common engine's book, social, sale or production activity.

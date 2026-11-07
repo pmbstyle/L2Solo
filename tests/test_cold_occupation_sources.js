@@ -69,7 +69,7 @@ const elsewhere = drain(Sources.prepare(owner, { board, timestamp: 1000, read: (
 assert.equal(drain(elsewhere.options.preparePurchase(owner, 1866, 8, { npc: false })).value.town, 'Dion');
 assert.equal(drain(prepared.options.preparePurchase(owner, 1785, 1, { npc: false })).value, null);
 const npc = drain(prepared.options.preparePurchase(owner, 1785, 1, { npc: true })).value;
-assert(npc.whole && npc.npc === 1 && npc.repeatable && npc.town);
+assert(npc.whole && npc.npc === 1 && npc.town);
 // One value of an owned item (Q1): what the bot gets selling one unit now.
 // Own bids are skipped but use a quote slot; NPC buyback is the floor.
 const bids = new BoardIndex();
@@ -120,8 +120,8 @@ const lines = listed.ownerLines(owner.characterId);
 assert.equal(Look.feasibilityPredicate(allocated, lines, mask)(lines[0]), false,
     'a deep captured ingredient reservation protects the listed stock on a natural look');
 const Publication = require('../src/GameServer/Bot/Population/ColdEconomyDecision');
-const publication = Publication.compact(structuredClone(Publication.capture({ workshop: { known: false, feasibility: mask } }, allocated)));
-assert.deepEqual(publication.feasibility, mask, 'missing recipe evidence cannot erase independently known protection');
+const publication = Publication.compact(structuredClone(Publication.capture({ feasibility: mask }, allocated)));
+assert.deepEqual(publication.feasibility, mask, 'the card carries the known protection mask');
 assert.equal(Look.feasibilityPredicate(allocated, [{ ...lines[0], revision: 3 }], mask)(lines[0]), undefined,
     'a changed physical line does not reuse an accepted old protection mask');
 // A cold look answers on the state it looks at: a reservation that ends or

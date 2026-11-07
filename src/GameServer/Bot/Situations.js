@@ -179,11 +179,11 @@ function woke(name, where) {
 // (goal_failed with its mark, GearMarks: delta), as a C4 player whose item was sold
 // looks for another; not a death (PvE costs no gear), a party left, a town arrival or
 // another failed step.
-// workshop: what a crafter offers and produces (its own production's best recipe and
-// income, stats.craftIncome), taken at the start of a town visit (arrived_town, either
-// kind, one per visit; a craft level gained in the field is read there) and at a recipe
-// learned, held between: levels, worn gear, prices, the board and its own fills wake it not. The build reads
-// the held answer. A bot that is no service crafter takes it as none, with no planner job.
+// workshop: what a crafter offers (its listing on its known book, stats.workshop), taken
+// at the start of a town visit (arrived_town, either kind, one per visit; a craft level
+// gained in the field is read there) and at a recipe learned, held between: levels, worn
+// gear, prices, the board and its own fills wake it not. A bot that is no service crafter
+// takes it as none. It has no held key: only its raises wake it.
 const DECISIONS = Object.freeze({
     earning_spot: Object.freeze(['grade_changed', 'spot_outleveled', 'gear_changed', 'died', 'recovered', 'spot_disappoints', 'contest_lost', 'spot_empty',
         'spot_dangerous', 'spot_unreachable', 'moved_by_world', 'party_left', 'shots_out', 'goal_affordable:potions',
@@ -210,8 +210,9 @@ const planesAt = where => where === WORK || where === BODY ? 0 : where === REST 
 // bot holds no stats.equipmentPlan once its target is bought and worn or its owner
 // drops it (a class transition, a clan goal), and that is the plan carried out, not
 // a review never taken: the next build plans on, and only its situations (or a
-// row with no bits yet, a new bot) wake the full review.
-const HELD = Object.freeze({ earning_spot: 'earning', build: 'wishSections', workshop: 'craftIncome' });
+// row with no bits yet, a new bot) wake the full review. Nor has the workshop: a bot
+// that is no service crafter holds no listing.
+const HELD = Object.freeze({ earning_spot: 'earning', build: 'wishSections' });
 const unheld = stats => Object.entries(HELD).reduce((bits, [decision, key]) => stats?.[key] === undefined ? bits | BITS[decision] : bits, 0);
 // The bits raised and not yet decided (a row saved before the store kept no bits: every
 // decision, once); the ones a decision with no held answer adds are read, never stored.

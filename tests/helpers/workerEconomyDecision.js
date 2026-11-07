@@ -60,12 +60,10 @@ module.exports.nativeMeetingPreparation = async (id, timestamp, request) => {
     } catch (error) { error.meetingTrace = trace; throw error; }
     finally { Intent.meetingPurchase = original; occupationPlanner.step = originalStep; }
 };
-// The planner's answers per mode across main's resend of the same row, the
-// moves a test names (moves: { name: fields set on the state, in order }) and an ask of
-// another mode: builds counted by mode, answers as values, each kept or
-// rebuilt answer beside a fresh build on the same state. A move's stats are
-// merged into the state's (one field moves, the earlier moves stay).
-module.exports.nativePlannerReuse = async (id, timestamp, moves = {}) => {
+// The planner's answers per mode across main's resend of the same row and an ask of
+// another mode: builds counted by mode, answers as values, each kept answer beside the
+// first one on the same state.
+module.exports.nativePlannerReuse = async (id, timestamp) => {
     const builds = {}, create = occupationPlanner.create;
     occupationPlanner.create = captured => { builds[captured.mode] = (builds[captured.mode] || 0) + 1; return create(captured); };
     const counted = () => ({ ...builds });
@@ -73,38 +71,25 @@ module.exports.nativePlannerReuse = async (id, timestamp, moves = {}) => {
     const resend = (state, at) => set({ ...structuredClone(state), updatedAt: at, simulation: { revision: at },
         timing: { nextResolveAt: at + 60000 } });
     const plain = value => JSON.parse(JSON.stringify(value));
-    const ask = async (state, at, mode = 'occupation') => plain(await occupationFor(state, at, {}, mode));
-    const fresh = async (state, at, mode = 'occupation') => { occupationPlanner.cancel(id, mode); return ask(state, at, mode); };
+    const ask = async (state, at, mode) => plain(await occupationFor(state, at, {}, mode));
     try {
         const start = kernel.states.get(id).state;
-        const out = { workshop: await ask(start, timestamp), rows: await ask(start, timestamp, 'wish'),
+        const out = { rows: await ask(start, timestamp, 'wish'),
             action: await ask(start, timestamp, 'action'), actionAgain: await ask(start, timestamp, 'action') };
         out.first = counted();
         const resent = resend(start, timestamp + 1000);
-        out.keptWorkshop = await ask(resent, timestamp + 1000);
         out.keptRows = await ask(resent, timestamp + 1000, 'wish');
         out.keptAction = await ask(resent, timestamp, 'action');
         out.kept = counted();
-        out.freshWorkshop = await fresh(resent, timestamp + 1000);
-        out.moves = {};
-        let at = timestamp + 2000, current = resent;
-        for (const [name, patch] of Object.entries(moves)) {
-            current = set({ ...current, ...patch, ...(patch.stats ? { stats: { ...current.stats, ...patch.stats } } : {}), updatedAt: at });
-            const before = counted().occupation || 0;
-            const answer = await ask(current, at);
-            const built = (counted().occupation || 0) - before;
-            out.moves[name] = { built, answer, fresh: await fresh(current, at) };
-            at += 1000;
-        }
         // A job in flight goes on across main's resend of the same row.
-        occupationPlanner.cancel(id, 'occupation');
-        const before = counted().occupation || 0;
-        const flying = occupationFor(current, at, {}, 'occupation');
+        const at = timestamp + 2000, current = resent;
+        occupationPlanner.cancel(id, 'action');
+        const before = counted().action || 0;
+        const flying = occupationFor(current, at, {}, 'action');
         const echoed = resend(current, at + 1000);
         out.flown = plain(await flying);
-        out.flight = (counted().occupation || 0) - before;
-        out.echoedWorkshop = await ask(echoed, at + 1000);
-        out.afterEcho = (counted().occupation || 0) - before;
+        out.flight = (counted().action || 0) - before;
+        out.echoed = await ask(echoed, at, 'action');
         // The route rows move with the bot's point.
         const walked = set({ ...echoed, activity: 'hunting', loc: { locX: 82000, locY: 148000, locZ: -3400 }, updatedAt: at + 2000 });
         const wishBefore = counted().wish || 0;

@@ -48,9 +48,9 @@ assert(Situations.woken(raiseAt('grade_changed', 'resting'), 'gear_plan') && !Si
 // A decision with no answer held reads woken until it holds one; a raise for another
 // decision leaves it so, it stores no bit of it.
 {
-    const raised = Situations.raise({ woken: 0, wishSections: {}, earning: {} }, 'goal_failed', null, at('hunting'));
-    assert(Situations.woken(raised, 'workshop'), 'no workshop answer held: it reads woken');
-    assert(!Situations.woken({ ...raised, craftIncome: null }, 'workshop'), 'an answer held: the build\'s raise left it asleep');
+    const raised = Situations.raise({ woken: 0, wishSections: {} }, 'goal_failed', null, at('hunting'));
+    assert(Situations.woken(raised, 'earning_spot'), 'no earning answer held: it reads woken');
+    assert(!Situations.woken({ ...raised, earning: null }, 'earning_spot'), 'an answer held: the build\'s raise left it asleep');
 }
 // The wallet against the decision's thresholds (F3, B7): its goal in reach as the budget stands
 // at or past it, out of money as it falls below the held leaf's funded row; a drift is nothing.

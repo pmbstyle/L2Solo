@@ -179,7 +179,7 @@ function* prepareNative(state, economy, options) {
     // that craft's kit, which the craft consumes or holds (productionInputAmounts),
     // on top of the gear plan's reserve (ItemDisposition.saleReservations).
     const saleInput = Listing.ownSaleInputs(state, own, { ...options, economy,
-        productionKit: shotKit(state, options) });
+        productionKit: shotKit(state, economy, options) });
     const sale = Listing.evaluate(saleInput.state, saleInput.options);
     // A profitable surplus sale uses a meeting or a backed shop in the town
     // already reached. Leave the selected purchase/focus intact for review.
@@ -266,6 +266,10 @@ function* prepareNative(state, economy, options) {
         const shot = decideShot(state, economy, { ...options, ownLines: own });
         if (shot) plan.shot = shot;
     }
+    // A town visit's showcase carries the craft step its held decision prepared
+    // (the served card's): a crafter crafts in town from what it brought (temporary:
+    // until the town plan owns the visit's craft).
+    else if (heldCraft(economy)) plan.shot = economy.shot;
     // A complete buy batch is indivisible. Optional work is retained by the
     // existing dirty preparation owner; absent buyAds means not prepared.
     if (Buffer.byteLength(JSON.stringify({ buyAds: plan.buyAds, buyKit: plan.buyKit, buyCaps: plan.buyCaps,
@@ -342,11 +346,13 @@ function decide(state, economy, options = {}) {
     let next; do { next = iterator.next(); } while (!next.done);
     return next.value;
 }
-// The inputs of the craft decideShot publishes from the worker's selection.
-function shotKit(state, options = {}) {
-    if (options.showcaseOnly || !options.preparedCraft
-        || !invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(state)) return {};
-    const selected = options.preparedCraft;
+// The craft step a served decision holds (its card's), none when it prepared none.
+const heldCraft = economy => economy?.shot && !economy.shot.unknown ? Shots.unpackStep(economy.shot) : null;
+// The inputs of the plan's craft: the one decideShot publishes from the worker's
+// selection, or on a showcase the held decision's.
+function shotKit(state, economy, options = {}) {
+    const selected = options.showcaseOnly ? heldCraft(economy) : options.preparedCraft;
+    if (!selected || !invoke('GameServer/Bot/Economy/CraftShopService').isServiceCrafter(state)) return {};
     const action = selected.craft || selected.wealth || (selected.recipeTarget ? selected.recipeRoute : null)
         || (selected.recipeId > 0 ? selected : null);
     return action ? invoke('GameServer/Bot/Economy/ItemDisposition').recipeInputAmounts(action.recipeId, action.batches || 1) : {};

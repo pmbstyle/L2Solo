@@ -12,7 +12,7 @@ const planner = new ColdOccupationPlanner({ schedule: callback => callbacks.push
     create: captured => ({ captured, stage: 1, units: 0 }), step: cursor => ++cursor.units === 100,
     result: cursor => ({ known: true, recipeId: cursor.captured.id, productId: 100 + cursor.captured.id,
         incomePerHour: 10, cycleHours: 1 }), publish: (...args) => posted.push(args) });
-for (let id = 1; id <= 65; id++) planner.request(id, { id }, { awaitResult: false });
+for (let id = 1; id <= 65; id++) planner.request(id, { mode: 'showcase', id }, { awaitResult: false });
 for (let portion = 0; portion < 8; portion++) {
     callbacks.shift()();
     assert(planner.stats.maxPortionUnits <= 32);
@@ -21,9 +21,9 @@ for (let portion = 0; portion < 8; portion++) {
 assert.equal(planner.slots.size, 64);
 assert.equal(planner.workingContexts, 64, 'all unfinished graphs reserve the shared review allowance');
 assert.equal(planner.waiting.size, 1, 'incomplete contexts remain pinned');
-const first = planner.entry(1).work;
+const first = planner.entry(1, 'showcase').work;
 callbacks.shift()();
-assert.strictEqual(planner.entry(1).work, first, 'capacity pressure cannot evict incomplete scratch');
+assert.strictEqual(planner.entry(1, 'showcase').work, first, 'capacity pressure cannot evict incomplete scratch');
 assert(planner.stats.capacityDeferrals > 0);
 tokens.set(999, 1); planner.sourceChanged(999);
 assert.equal(planner.stats.invalidations, 0, 'an unrelated item is not a dependency');
@@ -32,9 +32,9 @@ assert.equal(planner.stats.invalidations, 1);
 tokens.set(1, 2); planner.sourceChanged(1);
 assert.equal(planner.stats.invalidations, 2, 'each distinct newer used revision restarts scratch');
 let guard = 0;
-while (planner.entry(1).work === first && guard++ < 64) callbacks.shift()();
-assert.notStrictEqual(planner.entry(1).work, first);
-assert.equal(planner.entry(1).cursor.byteLength, 128);
+while (planner.entry(1, 'showcase').work === first && guard++ < 64) callbacks.shift()();
+assert.notStrictEqual(planner.entry(1, 'showcase').work, first);
+assert.equal(planner.entry(1, 'showcase').cursor.byteLength, 128);
 while ((planner.ready.size || planner.waiting.size) && guard++ < 2000) callbacks.shift()();
 assert.equal(planner.ready.size, 0); assert.equal(planner.waiting.size, 0);
 assert.equal(posted.filter(row => row[0] === 65).length, 1, 'FIFO waiter eventually progresses');
@@ -51,7 +51,7 @@ const movedId = doneSlots[0].id;
 tokens.set(movedId, (tokens.get(movedId) || 0) + 7);
 planner.recheckSources();
 assert.equal(planner.stats.invalidations, before + 1, 'only the slot that read the moved item restarts');
-assert(planner.entry(movedId).dirty && doneSlots.slice(1).every(entry => !entry.dirty));
+assert(planner.entry(movedId, 'showcase').dirty && doneSlots.slice(1).every(entry => !entry.dirty));
 planner.stop(); assert.equal(planner.slots.size + planner.cards.size, 0); assert.equal(planner.dependencies.size, 0);
 
 // One job per bot per mode, kept as a card on its input key: an ask of
@@ -62,25 +62,26 @@ const modal = new ColdOccupationPlanner({ schedule: () => {}, now: () => 0, sour
     inputKey: input => `${input.value}`, capture: (id, input) => input, create: input => ({ input, build: ++modeBuilds }),
     step: () => true, result: work => ({ known: true, mode: work.input.mode, value: work.input.value, build: work.build }) });
 const settle = () => { while (modal.waiting.size || modal.ready.size) modal.portion(); };
-modal.request(5, { mode: 'occupation', value: 1 }, { awaitResult: false }); settle();
-const occupationAnswer = modal.entry(5, 'occupation').value;
+modal.request(5, { mode: 'showcase', value: 1 }, { awaitResult: false }); settle();
+const showcaseAnswer = modal.entry(5, 'showcase').value;
 modal.request(5, { mode: 'action', value: 1 }, { awaitResult: false }); settle();
 assert.equal(modeBuilds, 2);
-assert.strictEqual(modal.entry(5, 'occupation').value, occupationAnswer, 'an action ask keeps the occupation answer');
-modal.request(5, { mode: 'occupation', value: 1 }, { awaitResult: false }); settle();
+assert.strictEqual(modal.entry(5, 'showcase').value, showcaseAnswer, 'an action ask keeps the showcase answer');
+modal.request(5, { mode: 'showcase', value: 1 }, { awaitResult: false }); settle();
 assert.equal(modeBuilds, 2, 'the same input key gets the kept answer back');
-modal.request(5, { mode: 'occupation', value: 2 }, { awaitResult: false }); settle();
+modal.request(5, { mode: 'showcase', value: 2 }, { awaitResult: false }); settle();
 assert.equal(modeBuilds, 3, 'another input key builds');
-assert.equal(modal.entry(5, 'occupation').value.value, 2);
+assert.equal(modal.entry(5, 'showcase').value.value, 2);
 assert.equal(modal.entry(5, 'action').value.value, 1, 'and keeps the other mode\'s answer');
-for (let id = 100; id < 200; id++) modal.request(id, { value: 1 }, { awaitResult: false });
+for (let id = 100; id < 200; id++) modal.request(id, { mode: 'showcase', value: 1 }, { awaitResult: false });
 settle();
 const deferrals = modal.stats.capacityDeferrals;
-modal.request(300, { value: 1 }, { awaitResult: false }); modal.portion();
+modal.request(300, { mode: 'showcase', value: 1 }, { awaitResult: false }); modal.portion();
 assert.equal(modal.stats.capacityDeferrals, deferrals, '100 finished cards leave the working pool free');
-assert(modal.entry(300).done);
+assert(modal.entry(300, 'showcase').done);
+assert.throws(() => modal.request(301, { value: 1 }), /occupation_mode_unknown/, 'an ask without a mode fails loudly');
 modal.cancel(5);
-assert(!modal.entry(5, 'occupation') && !modal.entry(5, 'action'), 'a bot\'s cancel drops every mode');
+assert(!modal.entry(5, 'showcase') && !modal.entry(5, 'action'), 'a bot\'s cancel drops every mode');
 modal.stop();
 
 // A job in flight follows a new owner state that reads the same (rebase) and
@@ -92,16 +93,16 @@ const owned = new ColdOccupationPlanner({ schedule: () => {}, now: () => 0, sour
     ownCurrent: (id, input) => input.sourceState === owner, inputKey: input => input.value,
     capture: (id, input) => input, create: () => ({ units: 0 }), step: work => ++work.units === 3, result: () => ({ known: true }),
     publish: (id, input) => ownedPosted.push(input.state) });
-owned.request(1, { value: 1, state: 'a', sourceState: 'a' }, { awaitResult: false }); owned.portion();
-assert(!owned.entry(1).done);
-owner = 'b'; owned.rebase(owned.entry(1), { value: 1, state: 'b', sourceState: 'b' });
+owned.request(1, { mode: 'showcase', value: 1, state: 'a', sourceState: 'a' }, { awaitResult: false }); owned.portion();
+assert(!owned.entry(1, 'showcase').done);
+owner = 'b'; owned.rebase(owned.entry(1, 'showcase'), { mode: 'showcase', value: 1, state: 'b', sourceState: 'b' });
 while (owned.ready.size || owned.waiting.size) owned.portion();
-assert(owned.entry(1)?.done && owned.stats.staleOwners === 0, 'a rebased job finishes');
+assert(owned.entry(1, 'showcase')?.done && owned.stats.staleOwners === 0, 'a rebased job finishes');
 assert.deepEqual(ownedPosted, ['b'], 'and publishes on the state it follows');
-owned.request(2, { value: 1, sourceState: 'b' }, { awaitResult: false }); owned.portion();
+owned.request(2, { mode: 'showcase', value: 1, sourceState: 'b' }, { awaitResult: false }); owned.portion();
 owner = 'c';
 while (owned.ready.size || owned.waiting.size) owned.portion();
-assert(!owned.entry(2) && owned.stats.staleOwners === 1, 'a job whose owner moved on is retired');
+assert(!owned.entry(2, 'showcase') && owned.stats.staleOwners === 1, 'a job whose owner moved on is retired');
 owned.stop();
 
 // Query snapshots are temporary owners, unlike the kernel's native state.
@@ -111,19 +112,19 @@ const transient = new ColdOccupationPlanner({ schedule: () => {}, now: () => 0,
     sourceToken: () => 0, capture: (id, input, read) => { read(99); return input; },
     create: input => ({ input }), step: () => true, result: () => ({ known: true }) });
 const privateState = { inventory: [{ itemId: 1 }] }, canonicalState = { inventory: [] };
-transient.request(1, { state: privateState }, { awaitResult: false });
+transient.request(1, { mode: 'showcase', state: privateState }, { awaitResult: false });
 assert.equal(transient.cancelState(1, canonicalState), false);
 assert.equal(transient.cancelState(1, privateState), true);
 assert.equal(transient.waiting.size, 0, 'pending private input is released');
-transient.request(1, { state: privateState }, { awaitResult: false });
+transient.request(1, { mode: 'showcase', state: privateState }, { awaitResult: false });
 while (transient.waiting.size || transient.ready.size) transient.portion();
-assert.equal(transient.entry(1).input.state, privateState);
+assert.equal(transient.entry(1, 'showcase').input.state, privateState);
 assert.equal(transient.cancelState(1, privateState), true);
 assert.equal(transient.cards.size, 0, 'completed private input is released');
 assert.equal(transient.dependencies.size, 0, 'private dependency owners are released');
-transient.request(1, { state: canonicalState }, { awaitResult: false });
+transient.request(1, { mode: 'showcase', state: canonicalState }, { awaitResult: false });
 assert.equal(transient.cancelState(1, privateState), false);
-assert.equal(transient.entry(1).input.state, canonicalState, 'newer canonical input survives cleanup');
+assert.equal(transient.entry(1, 'showcase').input.state, canonicalState, 'newer canonical input survives cleanup');
 transient.stop();
 
 const scopeCallbacks = [], scopeTokens = new Map(), scopePosted = [];
@@ -133,21 +134,21 @@ const scoped = new ColdOccupationPlanner({ schedule: callback => scopeCallbacks.
     capture: (id, input, read, readScope) => { readScope(input.scope); return input; },
     create: input => ({ input, units: 0, build: ++builds }), step: cursor => ++cursor.units === 3,
     result: cursor => ({ known: true, recipeId: cursor.build }), publish: (...args) => scopePosted.push(args) });
-scoped.request(1, { scope: 'recipe-production:2' }, { awaitResult: false });
-scoped.request(2, { scope: 'recipe-production:5' }, { awaitResult: false });
+scoped.request(1, { mode: 'showcase', scope: 'recipe-production:2' }, { awaitResult: false });
+scoped.request(2, { mode: 'showcase', scope: 'recipe-production:5' }, { awaitResult: false });
 scoped.portion();
-assert.equal(scoped.entry(1).done, false, 'completion waits for cooperative scope validation');
-const oldBuild = scoped.entry(1).work.build;
+assert.equal(scoped.entry(1, 'showcase').done, false, 'completion waits for cooperative scope validation');
+const oldBuild = scoped.entry(1, 'showcase').work.build;
 scopeTokens.set('recipe-production:2', 1); scoped.scopeChanged('recipe-production:2');
 scoped.scopeChanged('recipe-production:2');
 assert.equal(scoped.stats.invalidations, 1, 'same scope event coalesces');
-assert.equal(scoped.entry(2).dirty, false, 'a different skill scope remains valid');
+assert.equal(scoped.entry(2, 'showcase').dirty, false, 'a different skill scope remains valid');
 for (let at = 0; at < 10 && scoped.ready.size; at++) scoped.portion();
-assert(scoped.entry(1).value.recipeId > oldBuild, 'pending result recomputes after admission changed');
+assert(scoped.entry(1, 'showcase').value.recipeId > oldBuild, 'pending result recomputes after admission changed');
 scopeTokens.set('recipe-production:2', 2); scoped.scopeChanged('recipe-production:2');
 scopeTokens.set('recipe-production:2', 3); scoped.scopeChanged('recipe-production:2');
 assert.equal(scopePosted.filter(row => row[3]?.stale).length, 1, 'completed owner publishes stale only once until rebuilt');
-scoped.release(1); assert.equal(scoped.scopeDependencies.has('recipe-production:2'), false);
+scoped.release(1, 'showcase'); assert.equal(scoped.scopeDependencies.has('recipe-production:2'), false);
 scoped.stop(); assert.equal(scoped.scopeDependencies.size, 0);
 
 // Revision validation catches a source update even without a delivered
@@ -157,9 +158,9 @@ const validating = new ColdOccupationPlanner({ schedule: () => {}, now: () => 0,
     sourceToken: () => 0, sourceScopeToken: () => scopeVersion,
     capture: (id, input, read, readScope) => { readScope('recipe-production:3'); return input; },
     create: () => ({ units: 0 }), step: cursor => ++cursor.units === 3, result: () => ({ known: true }) });
-validating.request(1, {}, { awaitResult: false }); validating.portion();
-scopeVersion++; validating.unit(validating.entry(1));
-assert.equal(validating.entry(1).dirty, true, 'scope token is checked before publishing');
+validating.request(1, { mode: 'showcase' }, { awaitResult: false }); validating.portion();
+scopeVersion++; validating.unit(validating.entry(1, 'showcase'));
+assert.equal(validating.entry(1, 'showcase').dirty, true, 'scope token is checked before publishing');
 validating.stop(); assert.equal(validating.scopeDependencies.size, 0);
 
 // A board row change on item A rechecks A's readers and the category's
@@ -171,13 +172,13 @@ const grouped = new ColdOccupationPlanner({ schedule: () => {}, now: () => 0,
     sourceToken: (id, mode) => { tokenReads++; return mode === 'meeting' ? groupTokens.get('c1') : itemTokens.get(id); },
     capture: (id, input, read) => { for (const item of input.items) read(item); return input; },
     create: () => ({ units: 0 }), step: cursor => ++cursor.units === 100, result: () => ({ known: true }) });
-grouped.request(1, { mode: 'occupation', items: [12] }, { awaitResult: false });
+grouped.request(1, { mode: 'showcase', items: [12] }, { awaitResult: false });
 grouped.request(2, { mode: 'meeting', items: [12, 11] }, { awaitResult: false });
 grouped.portion();
 assert.deepEqual([...grouped.entry(2, 'meeting').reads.keys()], [12], 'meeting reads collapse to one category representative');
 itemTokens.set(11, 1); groupTokens.set('c1', 1); tokenReads = 0;
 grouped.sourceChanged(11); grouped.groupChanged('c1');
-assert.equal(grouped.entry(1, 'occupation').dirty, false, 'a board change on item A keeps a reader of item B valid');
+assert.equal(grouped.entry(1, 'showcase').dirty, false, 'a board change on item A keeps a reader of item B valid');
 assert.equal(grouped.entry(2, 'meeting').dirty, true, 'the category (meeting) reader is invalidated');
 assert.equal(tokenReads, 2, 'only the representative owners are rechecked');
 grouped.stop(); assert.equal(grouped.representatives.size, 0);
@@ -190,10 +191,10 @@ const sharing = new ColdOccupationPlanner({ schedule: () => {}, now: () => 0,
     sourceToken: (id, mode) => mode === 'meeting' ? -1 : shared.get(id),
     capture: (id, input, read) => { for (const item of input.items) read(item); return input; },
     create: () => ({ units: 0 }), step: cursor => ++cursor.units === 100, result: () => ({ known: true }) });
-for (const id of [1, 2, 3]) sharing.request(id, { mode: 'occupation', items: [21] }, { awaitResult: false });
+for (const id of [1, 2, 3]) sharing.request(id, { mode: 'showcase', items: [21] }, { awaitResult: false });
 sharing.request(4, { mode: 'meeting', items: [21] }, { awaitResult: false });
 sharing.portion();
-const sharedDirty = () => [1, 2, 3].map(id => sharing.entry(id, 'occupation').dirty).concat(sharing.entry(4, 'meeting').dirty);
+const sharedDirty = () => [1, 2, 3].map(id => sharing.entry(id, 'showcase').dirty).concat(sharing.entry(4, 'meeting').dirty);
 sharing.sourceChanged(21);
 assert.deepEqual(sharedDirty(), [false, false, false, false], 'no move: every owner kept');
 shared.set(21, 1); sharing.sourceChanged(21);

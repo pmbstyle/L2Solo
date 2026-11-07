@@ -105,7 +105,7 @@ function chosenExit(exit, [recordId, lineId, price, revision]) {
 }
 // lazy: cycle ShotCraftPolicy reads this module at its load
 const townForCode = code => require('./ShotCraftPolicy').townForCode(code);
-function* decisionSearch(state, knownRecipes, context, options, mode) {
+function* decisionSearch(state, knownRecipes, context, options) {
     const budgetState = { ...state, adena: PurchaseFunding.spendable(state, 0, { upperBound: true }) };
     const trip = context.trip || Profit.tripFor(state, context);
     const evaluationContext = { ...context, trip, ...(options.preparePurchase ? {
@@ -167,7 +167,7 @@ function* decisionSearch(state, knownRecipes, context, options, mode) {
         if (!template || !recipe.materials?.length) continue;
         // Shot production has its own demand-aware executor and batch sizing.
         // Keep an explicitly selected legacy job eligible for meeting rechecks.
-        if (mode === 'action' && String(template.template?.kind || '').startsWith('Other.Shot')
+        if (String(template.template?.kind || '').startsWith('Other.Shot')
             && (!options.onlyRecipeId || !learned.has(id))) continue;
         const existingOutput = Number(ownStock.get(Number(recipe.productId))?.count || 0)
             + Number(outputStock.get(Number(recipe.productId)) || 0)
@@ -193,40 +193,30 @@ function* decisionSearch(state, knownRecipes, context, options, mode) {
             existingOutput };
         const candidate = yield* Policy.searchQuantity({ state: budgetState, recipe,
             planFor: (id, missing) => options.planPurchase?.(state, id, missing, { npc: true, cost: trip }),
-            exits, ownedFor, context: recipeContext, mode, refusal: options.refusal });
+            exits, ownedFor, context: recipeContext, refusal: options.refusal });
         if (!candidate) continue;
         const cash = candidate.basket.cashCost + candidate.basket.actualCashFees;
         const r = cash > 0 ? candidate.valueHours / cash : Infinity;
-        const score = mode === 'occupation' ? candidate.incomePerHour : candidate.valueHours;
-        if (cash <= PurchaseFunding.spendable(state, 0, { r }) && score > 0
-            && (!best || score > (mode === 'occupation' ? best.incomePerHour : best.valueHours))) best = { ...candidate, template, r, learning };
+        if (cash <= PurchaseFunding.spendable(state, 0, { r }) && candidate.valueHours > 0
+            && (!best || candidate.valueHours > best.valueHours)) best = { ...candidate, template, r, learning };
         else if (options.refusal) options.refusal.reason = 'no_cash';
         yield 'funding';
     }
     return best;
 }
 function chooseOpportunity(state, knownRecipes, context = Profit.contextFor(state), options = {}) {
-    return Policy.drain(decisionSearch(state, knownRecipes, context, options, 'action'));
-}
-function occupationResult(row) {
-    return row && row.incomePerHour > 0 && row.hours > 0 ? { known: true, recipeId: Number(row.recipe.recipeId),
-        productId: Number(row.recipe.productId), incomePerHour: row.incomePerHour, cycleHours: row.hours }
-        : { known: true, recipeId: 0, productId: 0, incomePerHour: 0, cycleHours: 0 };
+    return Policy.drain(decisionSearch(state, knownRecipes, context, options));
 }
 // One question, the build's and the act's: can this step be done. The build's own
 // search on the step's recipe, batches and exit, with the build's reads as they stand
 // now. refusal names what stopped it.
 function stepStands(state, recipe, { knownRecipes, batches, exit = null, prepared, refusal }) {
     return Policy.drain(decisionSearch(state, knownRecipes, { ...prepared.context, fixedBatches: batches },
-        { ...prepared.options, onlyRecipeId: recipe.recipeId, heldExit: exit, refusal }, 'action'));
-}
-function createOccupation(state, knownRecipes, context, options = {}) {
-    return { iterator: decisionSearch(state, knownRecipes, context, options, 'occupation'), done: false, value: null,
-        stage: 0, units: 0 };
+        { ...prepared.options, onlyRecipeId: recipe.recipeId, heldExit: exit, refusal }));
 }
 function createAction(state, knownRecipes, context, options = {}) {
-    return { iterator: decisionSearch(state, knownRecipes, context, options, 'action'), done: false,
-        value: null, stage: 0, units: 0, mode: 'action' };
+    return { iterator: decisionSearch(state, knownRecipes, context, options), done: false,
+        value: null, stage: 0, units: 0 };
 }
 const STAGES = Object.freeze(['stock', 'recipe', 'ingredient', 'owned', 'quote', 'trip', 'exit', 'without', 'success',
     'utility', 'candidate', 'funding', 'exits']);
@@ -234,24 +224,18 @@ const STAGES = Object.freeze(['stock', 'recipe', 'ingredient', 'owned', 'quote',
 // up to EDGE_STEPS of them run as one step, as the worker batches its own
 // edges; this stage table has no 'edge', so the worker could not batch them.
 const EDGE_STEPS = 64;
-function stepOccupation(cursor) {
+function stepAction(cursor) {
     if (cursor.done) return true;
     let next = cursor.iterator.next(); cursor.units++;
     for (let edges = 1; next.value === 'edge' && edges < EDGE_STEPS; edges++) { next = cursor.iterator.next(); cursor.units++; }
     cursor.stage = typeof next.value === 'object' ? Number(next.value?.stage || 0)
         : STAGES.indexOf(next.value) + 1;
-    if (next.done) { cursor.done = true; cursor.value = cursor.mode === 'action' ? next.value : occupationResult(next.value);
+    if (next.done) { cursor.done = true; cursor.value = next.value;
         if (next.value?.valueHours !== undefined) cursor.selectedValueHours = next.value.valueHours;
         cursor.iterator = null; }
     return cursor.done;
 }
-function resultOccupation(cursor) { return cursor.done ? cursor.value : { known: false, recipeId: 0, productId: 0, incomePerHour: NaN, cycleHours: NaN }; }
 function resultAction(cursor) { return cursor.done ? cursor.value : null; }
-function chooseOccupation(state, knownRecipes, context, options = {}) {
-    const cursor = createOccupation(state, knownRecipes, context, options);
-    while (!stepOccupation(cursor)) { /* worker synchronous test adapter */ }
-    return resultOccupation(cursor);
-}
 // The same finite route value also decides whether consuming/acquiring the
 // physical scroll beats sale/holding/clan alternatives. No lifetime multiplier.
 function recipePaths(state, recipe, { known = false, route = null, acquisition = null,
@@ -289,6 +273,5 @@ function recipePaths(state, recipe, { known = false, route = null, acquisition =
         || row.kind === 'sale' && row.valueHours === best.valueHours) best = row;
     return { known: Number.isFinite(moneyPrice), rows, best, recipeId: Number(recipe.recipeId) };
 }
-module.exports = { staticExits, exitsFor, eligible, chooseOpportunity, chooseOccupation,
-    createOccupation, stepOccupation, resultOccupation, createAction, stepAction: stepOccupation,
+module.exports = { staticExits, exitsFor, eligible, chooseOpportunity, createAction, stepAction,
     resultAction, recipePaths, freeAmount, freeUnits, refused, refusedMark, stepStands };

@@ -87,7 +87,7 @@ for (const id of Crystals.catalog()) if (![90, 166, 86].includes(id)) board.remo
 board.remove(86); board.remove(166);
 const deps = { board, spots: [], timestamp, npcOffersFor: () => [],
     routeRows: Array.from({ length: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.length },
-        () => [true, 0, 0]), workshop: { known: true, recipeId: 0, incomePerHour: 0 } };
+        () => [true, 0, 0]) };
 Economy.reset();
 const expensive = Economy.forState(state, deps);
 const crystalPaths = context => context.projection.nodes.find(row => row.key === 'item:1458').paths

@@ -34,7 +34,6 @@ const GearPlanSelection = invoke('GameServer/Bot/AI/GearPlanSelection');
 const DecisionEvents = require('../AI/DecisionEvents');
 const DecisionSections = require('../Economy/DecisionSections');
 const ColdCraftingService = invoke('GameServer/Bot/Economy/ColdCraftingService');
-const ColdWealthCraftService = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
 const ColdShotEconomyService = invoke('GameServer/Bot/Economy/ColdShotEconomyService');
 const CraftTelemetry = invoke('GameServer/Bot/Economy/CraftTelemetry');
 const BotPersona = invoke('GameServer/Bot/AI/BotPersona');
@@ -3350,9 +3349,8 @@ const PopulationService = {
         const preparation = updatedState.stats?.partyMarketReturn?.warOperationId
             ? Promise.resolve({ state: updatedState })
             : ColdShotEconomyService.review(updatedState, Date.now(), { edge: tripEdge })
-            .then((shotEconomy) => ColdWealthCraftService.tryCraft(shotEconomy.state || updatedState))
-            .then(async (wealthCraft) => {
-                const current = wealthCraft.state || updatedState;
+            .then(async (shotEconomy) => {
+                const current = shotEconomy.state || updatedState;
                 const inTown = invoke('GameServer/Bot/Economy/BotImprovementService').inTown(current);
                 const released = inTown ? await BotWarehouse.releaseCold(current, { inTown: true, before: state }) : { state: current };
                 const afterRelease = released.state || current;

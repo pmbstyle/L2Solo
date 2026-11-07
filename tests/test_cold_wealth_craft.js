@@ -198,15 +198,7 @@ async function run() {
     assert.strictEqual(crafted, false);
     assert.strictEqual(Market.buyOrderEscrow(state.characterId), 1,
         'a refused stale craft never releases or consumes the accepted pledge');
-    const result = await Service.tryCraft(state, 1000000);
-    const repeat = await Service.tryCraft(state, 1000001);
-    for (const current of [result, repeat]) {
-        assert.strictEqual(current.crafted, false, 'unchanged original service state cannot craft without a funded native gain');
-        assert.strictEqual(current.state.adena, originalState.adena);
-        assert.deepStrictEqual(current.state.inventory, {});
-        assert.strictEqual(current.state.vitals.mp, 100);
-    }
-    assert.strictEqual(Service.eligible(result.state), true, 'a no-craft result introduces no arbitrary eligibility timer');
+    assert.strictEqual(Service.eligible(stale.state), true, 'a no-craft result introduces no arbitrary eligibility timer');
 
     const away = { ...state, characterId: 9006, name: 'AwayCrafter', activity: 'hunting', currentRegion: 'Dion',
         loc: { locX: 17000, locY: 145000, locZ: -3000 } };
@@ -238,15 +230,6 @@ async function run() {
     assert.strictEqual(Policy.craftMargin(leather, 10000, 3000), 7000, 'original static-exit cash gain, not a native paid craft');
     assert.deepStrictEqual(Profit.materials([{ id: 12, selfId: 1867, amount: 6 }], leather), [{ id: 12, selfId: 1867, amount: 6 }]);
 
-    // Main waits for the exact guarded worker action; it does not rescan a
-    // learned recipe catalogue when no published opportunity is available.
-    let emptyReads = 0;
-    Database.fetchCharacterRecipes = async () => { emptyReads += 1; return []; };
-    const idle = { ...state, characterId: 9005, name: 'WaitingCrafter' };
-    for (const now of [1000000, 1000001, 1000000 + 5 * 60 * 1000]) {
-        assert.strictEqual((await Service.tryCraft(idle, now)).reason, 'no_profit');
-    }
-    assert.strictEqual(emptyReads, 0, 'unpublished lifecycle does not scan the learned recipe catalogue');
     assert.strictEqual(purchases.length, 0);
     assert.strictEqual(crafted, false);
     assert.strictEqual(sold, false);
@@ -341,12 +324,12 @@ async function run() {
     console.log(JSON.stringify({ scope: 'declared unit clock plus genuine native unfunded execution',
         recipeId: recipe.recipeId, productId, wallet: originalState.adena, cash: unit.basket.cashCost,
         revenue: unit.revenue, labour, net: unit.expectedProfit, breakEven, ratio, nativePacket,
-        resultReasons: [blocked.reason, result.reason, repeat.reason], remoteTripCost: trip,
-        physicalCommerceClaim: false, purchases: purchases.length, crafted, sold, emptyReads }));
+        resultReasons: [blocked.reason, stale.reason], remoteTripCost: trip,
+        physicalCommerceClaim: false, purchases: purchases.length, crafted, sold }));
     console.log('Cold wealth craft checks passed');
 }
 run().catch(error => { console.error(error.stack); process.exitCode = 1; }).finally(() => {
-    Workshop.remove(9001); Workshop.remove(9005);
+    Workshop.remove(9001);
     AfkTrade._resetForTests();
     for (const key of ['fetchCharacterRecipes', 'fetchItems', 'craftInventoryItems']) Database[key] = originals[key];
     for (const key of ['offers', 'buyFromShop', 'sellToShop']) AfkTrade[key] = originals[key];

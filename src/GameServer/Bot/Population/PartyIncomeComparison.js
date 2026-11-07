@@ -107,7 +107,7 @@ function withEffects(state, effects) {
 
 // One bounded forecast for a complete roster. Static point lookups are
 // cached by role/level/rates in SpotValueTable. No wish graph or combat roll.
-function prepare(members, { objective, party, spots, memberContexts, timestamp = Date.now() } = {}) {
+function prepare(members, { objective, party, spots, timestamp = Date.now() } = {}) {
     spots ||= invoke('GameServer/Bot/Population/SpotProfiles').ensure();
     const spotId = objective?.spotId || party?.spotId || members[0]?.spotId;
     const spot = invoke('GameServer/Bot/AI/SpotIndex').spotById(spots, spotId);
@@ -170,8 +170,7 @@ function prepare(members, { objective, party, spots, memberContexts, timestamp =
         rows.set(member.characterId, { income: income * Hunt.onSpotShare(member), kills, spotId,
             source: 'table_party', travelHours: WalkBack.tripHours(member.loc, spot, member, spots) });
     }
-    return { rows, spots, timestamp, spot, roster: key,
-        workshops: new Map((memberContexts || []).map(context => [context.state.characterId, context.workshop])) };
+    return { rows, spots, timestamp, spot, roster: key };
 }
 
 function itemHours(state, spot, kills, goal, members, agreement) {
@@ -277,15 +276,7 @@ function compare(state, peers, options = {}) {
     const prepared = options.prepared || prepare(members, options);
     const id = Number(state.characterId);
     const held = options.solo?.has(id) ? options.solo.get(id) : heldSoloRoute(state, prepared.spots, prepared.timestamp);
-    let solo = soloRoute(state, prepared.spots, prepared.timestamp, peers, held);
-    // A guarded existing production quote can beat hunting. This is a read
-    // of an already prepared native result, never a market/recipe scan here.
-    const workshop = prepared.workshops?.get(state.characterId)
-        || invoke('GameServer/Bot/Economy/EconomyContext').craftIncome(state);
-    if (workshop?.known !== false && workshop?.incomePerHour > positive(solo?.income)
-        && workshop.cycleHours > 0 && Number.isFinite(workshop.incomePerHour)) {
-        solo = { income: workshop.incomePerHour, travelHours: 0, source: 'native_craft' };
-    }
+    const solo = soloRoute(state, prepared.spots, prepared.timestamp, peers, held);
     const party = prepared.rows.get(state.characterId) || null;
     const focus = state.stats?.wishFocus;
     const materialParty = Material.isObjective(options.objective);

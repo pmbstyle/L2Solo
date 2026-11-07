@@ -266,7 +266,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
         }
         const best = OfferQuery.cheapestIn(table, amount);
         yield 'candidate';
-        return best ? { ...best, tripDetails: trip.details(best.town), repeatable: best.npc === amount, routeKey: best.town } : null;
+        return best ? { ...best, tripDetails: trip.details(best.town), routeKey: best.town } : null;
     };
     const gearRowsFor = function* (rank) {
         for (const gear of gearByRank.get(rank) || []) {
@@ -276,7 +276,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
             for (const offer of npcOffersFor(gear.selfId)) {
                 const price = Number(offer.price);
                 if (price > 0) yield { ...gear, source: 'npc', price, cash: price, count: 1,
-                    town: offer.town, ownerId: 0, repeatable: true };
+                    town: offer.town, ownerId: 0 };
                 else yield null;
             }
             let depth = 0;
@@ -285,7 +285,7 @@ function* prepare(state, { board, timestamp, read = () => {}, readScope = () => 
                 if (Number(line.ownerId) !== Number(state.characterId) && !Number(line.enchant || 0) && Number(line.price) > 0
                     && personalOfferAllowed(line, state)) {
                     yield { ...gear, source: 'afk', price: Number(line.price), cash: Number(line.price), count: Number(line.count),
-                        town: line.town, ownerId: Number(line.ownerId), offer: line, repeatable: false };
+                        town: line.town, ownerId: Number(line.ownerId), offer: line };
                 } else yield null;
             }
         }

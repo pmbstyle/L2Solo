@@ -32,13 +32,12 @@ invoke('GameServer/Bot/Economy/BotMarketPricing').useNpcOfferSnapshot(catalog);
 Economy.configure({ board: () => board, spots: () => spots, memory: () => null });
 const epoch = 'economy-plan-parity';
 const observer = String.raw`
-module.exports.decisionOracle = async (ids, workshops) => {
+module.exports.decisionOracle = async ids => {
     const Economy = invoke('GameServer/Bot/Economy/EconomyContext'), original = Economy.forState;
     const result = [];
     const planner = require('./ColdEconomyPlan'), oldEdges = planner.edges, oldDecide = planner.decide;
-    for (const [at, id] of ids.entries()) {
+    for (const id of ids) {
         const entry = kernel.states.get(id), state = entry.state, timestamp = Number(state.updatedAt || 1e12) + 1;
-        if (workshops[at]) entry.published = ColdEconomyDecision.capture({ workshop: workshops[at] }, state);
         let seen, built, addedMs = 0;
         planner.edges = (...args) => { const start = performance.now(); const value = oldEdges(...args); addedMs += performance.now() - start; return value; };
         planner.decide = (...args) => { const start = performance.now(); const value = oldDecide(...args); addedMs += performance.now() - start; return value; };
@@ -61,7 +60,7 @@ loaded.filename = workerData.workerPath; loaded.paths = Module._nodeModulePaths(
 loaded._compile(fs.readFileSync(workerData.workerPath, 'utf8') + workerData.observer, workerData.workerPath);
 parentPort.on('message', message => {
     if (!message.decisionOracle) return;
-    loaded.exports.decisionOracle(message.decisionOracle, message.workshops).then(value => parentPort.postMessage({ oracleId: message.msgId, value }))
+    loaded.exports.decisionOracle(message.decisionOracle).then(value => parentPort.postMessage({ oracleId: message.msgId, value }))
         .catch(error => parentPort.postMessage({ oracleId: message.msgId, error: error.stack }));
 });`;
 (async () => {
@@ -81,10 +80,6 @@ parentPort.on('message', message => {
         for (let at = 0; at < spots.length; at += Protocol.MAX_BATCH) send('catalog_page', { catalog: 'spots', rows: spots.slice(at, at + Protocol.MAX_BATCH) });
         send('init', { config: { loopIntervalMs: 1000 } }, 'init');
         await wait(message => message.type === 'ready' && message.payload.phase === 'running'); send('pause', {}, 'pause');
-        // Each crafter's workshop as main computes it; the oracle hands it to
-        // the worker as the decision the worker published for that state.
-        const workshops = new Map(states.map(state => [state.characterId, state.stats?.workshop?.entries?.length
-            ? Economy.craftIncome(state, { hourAdena: Economy.basics(state).hunt.perHour, worth: Economy.basics(state).price, timestamp: Number(state.updatedAt) + 1 }) : null]));
         for (let at = 0; at < states.length; at += 4) send('snapshot_page', { rows: states.slice(at, at + 4)
             .map(state => ({ state })), ack: true }, 'state-' + at);
         await wait(message => message.type === 'ready' && message.msgId === 'state-' + (Math.floor((states.length - 1) / 4) * 4));
@@ -92,13 +87,13 @@ parentPort.on('message', message => {
         for (let at = 0; at < states.length; at += 20) {
             const msgId = 'oracle-' + at;
             const ids = states.slice(at, at + 20).map(state => state.characterId);
-            worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, msgId), decisionOracle: ids, workshops: ids.map(id => workshops.get(id)) });
+            worker.postMessage({ ...Protocol.envelope('pause', epoch, {}, msgId), decisionOracle: ids });
             const response = await wait(message => message.oracleId === msgId); if (response.error) throw Error(response.error);
             for (const row of response.value) {
                 assert(row.edges & 8, 'actual worker goal-due resolve produces a plan');
                 assert(row.plan, 'native worker did not build a plan');
                 const fresh = Economy.forState(row.seen, { timestamp: row.timestamp, board, spots, memory: null,
-                    workshop: workshops.get(row.id), caller: 'plan-parity' });
+                    caller: 'plan-parity' });
                 const options = { now: row.timestamp, economy: fresh, board, persona: fresh.persona,
                     npcOffersFor: selfId => catalog.filter(item => item.selfId === Number(selfId)),
                     findSpot: id => spots.find(spot => String(spot.id) === String(id)), slots: 8, stored: new Map() };

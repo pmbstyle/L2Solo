@@ -14,7 +14,7 @@ const MAX_BYTES = 1024, MAX_PLAIN_BYTES = 16384;
 // kit. 8: the card's proof is its identity only (EconomyContext proof v3, the
 // build on situations), its saved prefix the generation alone. An older card
 // is refused before inflate: one rebuild per bot. 9: the card carries no
-// workshop (the workshop decision holds it in the mind, craftIncome).
+// workshop.
 const VERSION = 9;
 
 function cardData(value, maxBytes) {

@@ -202,7 +202,7 @@ async function run() {
         const market = townName => ({ townName, arrivalActivity: 'shopping', arrivalEvent: 'arrived_town', reason: 'market_search_for_gear' });
         const trip = (travel, stats = {}) => ({ ...shop, activity: 'traveling', stats: { ...visitStats, ...stats, travel } });
         const woken = (before, leaf) => {
-            const stats = { woken: 0, waiting: 0, earning: null, wishSections: {}, equipmentPlan: null, craftIncome: null };
+            const stats = { woken: 0, waiting: 0, earning: null, wishSections: {}, equipmentPlan: null };
             for (const name of Situations.detect(before, shop, { leaf })) Situations.raise(stats, name, null, Situations.place(shop, before));
             return ['build', 'workshop'].filter(decision => Situations.woken(stats, decision));
         };
@@ -236,7 +236,7 @@ async function run() {
         // applies a worker command from its plan's card, the worker from its own economy.
         const Decision = invoke('GameServer/Bot/Population/ColdEconomyDecision');
         const arriving = { exp: base.stats.exp, ...trip({ ...market('Giran'), from: shop.loc, to: shop.loc, startedAt: T - 2000, arrivalAt: T - 1000 },
-            { woken: 0, waiting: 0, earning: null, wishSections: { at: T - 5000 }, equipmentPlan: null, craftIncome: null }) };
+            { woken: 0, waiting: 0, earning: null, wishSections: { at: T - 5000 }, equipmentPlan: null }) };
         const arrival = Resolver.resolveSolo({ state: arriving, timestamp: T });
         assert.equal(arrival.patch.activity, 'shopping', 'fixture: the trip arrives');
         const card = Decision.compact(Decision.capture({ riskWeight: 1, network: { activity: buy } }, arriving));

@@ -92,14 +92,12 @@ async function run() {
         delete inputBuyer.inventory[626];
         Economy.reset();
         const context = Economy.forState(inputBuyer, { board, spots: [], caller: 'meeting_prepare', npcOffersFor: () => [],
-            routeRows: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
-            workshop: { known: true, recipeId: 0, incomePerHour: 0 } });
+            routeRows: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]) });
         assert.equal(context.network.activity.itemId, 626, 'sold-out crystals select a real dismantling input instead of waiting');
         assert.equal(context.network.activity.activity, 'shopping');
         const retail = Economy.forState(inputBuyer, { board: new BoardIndex(), spots: [], caller: 'meeting_prepare',
             npcOffersFor: id => id === 626 ? [{ selfId: 626, price: 1, count: 1, town: 'Giran', sourceType: 'npc' }] : [],
-            routeRows: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
-            workshop: { known: true, recipeId: 0, incomePerHour: 0 } });
+            routeRows: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]) });
         assert.equal(retail.network.activity.itemId, 626, 'an empty player market can source dismantling gear from an actual NPC quote');
         assert.equal(retail.network.activity.sourceType, 'npc');
         const scarce = new BoardIndex();
@@ -108,8 +106,7 @@ async function run() {
                 { lineId: 4, selfId: 166, count: 1, enchant: 0, price: 1 }] });
         const reliable = Economy.forState(inputBuyer, { board: scarce, spots: [], caller: 'meeting_prepare',
             npcOffersFor: id => id === 626 ? [{ selfId: 626, price: 100, count: Infinity, town: 'Giran', sourceType: 'npc' }] : [],
-            routeRows: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
-            workshop: { known: true, recipeId: 0, incomePerHour: 0 } });
+            routeRows: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]) });
         assert.equal(reliable.network.activity.sourceType, 'npc', 'a finite cheap crystal/input lot cannot displace the reliable NPC chain');
         assert.equal(reliable.network.activity.itemId, 626);
         assert.equal(reliable.network.activity.town, 'Giran', 'buying, service and exchange share one town');
@@ -123,15 +120,13 @@ async function run() {
         assert(selectedPlan?.materials.some(row => row.selfId === 626));
         const received = { ...buyer, stats: { ...buyer.stats, equipmentPlan: selectedPlan } };
         const afterReceipt = Economy.forState(received, { board, spots: [], caller: 'meeting_prepare', npcOffersFor: () => [],
-            routeRows: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
-            workshop: { known: true, recipeId: 0, incomePerHour: 0 } });
+            routeRows: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]) });
         assert.equal(afterReceipt.network.activity.kind, 'crystallize',
             'the selected exchange may consume its own reserved inputs immediately after physical delivery');
         const pausedReceipt = { ...received, stats: { ...received.stats,
             equipmentPlan: { ...selectedPlan, strategy: 'none', status: 'deferred', reason: 'wish_focus' } } };
         const resumed = Economy.forState(pausedReceipt, { board, spots: [], caller: 'meeting_prepare', npcOffersFor: () => [],
-            routeRows: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
-            workshop: { known: true, recipeId: 0, incomePerHour: 0 } });
+            routeRows: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]) });
         assert.equal(resumed.network.activity?.kind, 'crystallize',
             'a stock detour resumes the received D inputs instead of listing them and buying a different type');
         assert.equal(invoke('GameServer/Bot/Economy/ItemDisposition').saleCandidates(pausedReceipt)
@@ -139,16 +134,14 @@ async function run() {
         const selfContext = Economy.forState({ ...buyer, stats: { ...buyer.stats, coldCombat: {
             ...buyer.stats.coldCombat, skills: Profile.skillSnapshotsFromRecords([{ selfId: 248, level: 1 }]) } } },
             { board, spots: [], caller: 'meeting_prepare', npcOffersFor: () => [],
-                routeRows: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
-                workshop: { known: true, recipeId: 0, incomePerHour: 0 } });
+                routeRows: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]) });
         assert.equal(selfContext.network.activity.kind, 'crystallize');
         assert.equal(selfContext.network.activity.improvement.mode, 'self', 'the selected wish and compact command retain the own-skill method');
         assert.equal(Decision.capture(selfContext, buyer).activity.improvement.mode, 'self');
         for (const [id, ownSkill] of [[9754, true], [9755, false]]) {
             let complete = await seed(id, ownSkill, false, 274, 5);
             const review = state => Economy.forState(state, { board: new BoardIndex(), spots: [], caller: 'meeting_prepare',
-                npcOffersFor: () => [], routeRows: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]),
-                workshop: { known: true, recipeId: 0, incomePerHour: 0 } });
+                npcOffersFor: () => [], routeRows: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.map(() => [true, 0, 0]) });
             const beforeBreak = review(complete);
             assert.equal(beforeBreak.network.activity.kind, 'crystallize');
             const plan = invoke('GameServer/Bot/Economy/WishProviders').personalCraftPlan(complete, beforeBreak);
@@ -185,7 +178,7 @@ async function run() {
         const sources = invoke('GameServer/Bot/Population/ColdOccupationSources'); sources.initialise();
         const nativeReview = state => Economy.forState(state, { board: scarce, spots: [], caller: 'meeting_prepare',
             npcOffersFor: sources.npcOffersFor, tripCost: invoke('GameServer/Bot/Economy/EconomicTrip').reader(state,
-                { hourAdena: Number(Packet.hourAdena(state.stats.money)) || 0 }), workshop: null, knownRecipes: [], workshops: () => [] });
+                { hourAdena: Number(Packet.hourAdena(state.stats.money)) || 0 }), knownRecipes: [], workshops: () => [] });
         const order = nativeReview(nativeBuyer), input = order.network.activity;
         assert.equal(input.sourceType, 'npc');
         assert.equal(template(input.itemId).etc.rank, 'd');

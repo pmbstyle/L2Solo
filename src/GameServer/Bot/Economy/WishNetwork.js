@@ -889,8 +889,7 @@ class WishNetwork {
                 continue;
             }
             const income = nonnegative(path.incomePerHour);
-            if (!(income > 0) || path.available === false || path.repeatable === false
-                || path.kind === 'production' && (!(path.cycleHours > 0) || path.repeatable !== true)) continue;
+            if (!(income > 0) || path.available === false || path.repeatable === false) continue;
             const effort = Math.max(unfunded.progressionPriority && !fundable(unfunded) ? 1 / 60 : 0, shortfall / income) + nonnegative(path.costHours)
                 + nonnegative(path.riskHours) * nonnegative(riskWeight);
             leaves.set(key, { ...path, key, nodeKey: unfunded.key, funding: true,

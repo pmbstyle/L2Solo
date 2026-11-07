@@ -1,4 +1,5 @@
 const ClassProgression = invoke('GameServer/ClassProgression');
+const FailureLog = require('../../../FailureLog');
 const ItemTemplateIndex = require('../../Item/ItemTemplateIndex');
 const Packet = require('./StatsPacket');
 const AfkTrade = invoke('GameServer/AfkTrade/AfkTradeService');
@@ -872,10 +873,18 @@ async function executePlan(state, plan, { step = work => work(), beforeWrite = (
         if (shot.wealth) {
             const Wealth = invoke('GameServer/Bot/Economy/ColdWealthCraftService');
             if (!Wealth.eligible(state)) return { state };
-            const refusal = {};
-            const opportunity = Wealth.recheck(state, shot.wealth, undefined, refusal);
-            return opportunity ? Wealth.execute(state, opportunity, { stillPrepared })
-                : { state: await Wealth.rejectAccepted(state, state, refusal) };
+            // A failed craft leaves the visit's other steps to run: a fault is counted
+            // (a refusal is an outcome), the row stays as it stands.
+            try {
+                const book = await invoke('GameServer/Bot/Economy/CraftWorkshopService').knownFor(ownerId);
+                const refusal = {};
+                const opportunity = Wealth.recheck(state, shot.wealth, book, refusal);
+                return opportunity ? await Wealth.execute(state, opportunity, { stillPrepared })
+                    : { state: await Wealth.rejectAccepted(state, state, refusal) };
+            } catch (error) {
+                if (!FailureLog.refusal(error)) FailureLog.note('economy.visit_craft', error);
+                return { state: LifeState.cachedState(ownerId) || state, crafted: false, reason: 'error' };
+            }
         }
         return { state: await ColdShotEconomyService.execute(state, shot) };
     }) : null;

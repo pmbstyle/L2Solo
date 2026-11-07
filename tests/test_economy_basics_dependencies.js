@@ -22,7 +22,7 @@ try {
         const state = structuredClone(original), before = structuredClone(state);
         const basic = Economy.basics(state, deps);
         const full = Economy.forState(state, { ...deps, producerSource: null, onSourceScope: undefined,
-            workshop: { known: true, incomePerHour: 0 }, knownRecipes: [], buyOrderEscrow: 0,
+            knownRecipes: [], buyOrderEscrow: 0,
             routeRows: Array.from({ length: require('../src/GameServer/Bot/Economy/EconomicTrip').towns.length },
                 () => ({ known: true, durationMs: 0, fee: 0 })) });
         for (const kind of ['shots', 'potions', 'scrolls']) assert.deepEqual(basic.stock(kind), full.stock(kind));

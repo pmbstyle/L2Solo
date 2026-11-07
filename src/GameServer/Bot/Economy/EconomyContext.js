@@ -1178,13 +1178,6 @@ function buildForState(state, deps) {
                 for (const id of input.bag) context.nodeInputs.bag(id); } },
         readScope: { open: () => (scope = new Set()), close: () => { scope = null; },
             keep: kept => { for (const id of kept) read(id); } } };
-    // The workshop decision's held answer (craftIncome); a caller with its own (a
-    // meeting's preparation) passes it.
-    const workshop = Object.hasOwn(deps, 'workshop') ? deps.workshop : craftIncome(state);
-    context.workshop = workshop || ColdEconomyDecision.unknownWorkshop();
-    const productive = workshop?.known !== false && workshop?.incomePerHour > 0 && Number.isFinite(workshop.incomePerHour)
-        && workshop.cycleHours > 0 && Number.isFinite(workshop.cycleHours);
-    if (productive) { watch(workshop.productId); context.hourAdena = Math.max(context.hourAdena, workshop.incomePerHour); }
     context.routeKey = Trip.key(state); context.routeRows = fullRoute(deps.routeRows) ? deps.routeRows : null;
     // The link shadow's record, carried to the entry this build keeps.
     const links = diagnostic ? held?.links || {} : undefined;
@@ -1231,9 +1224,6 @@ function buildForState(state, deps) {
         keptGear: held?.keptGear || null,
         nodes: [...(deps.nodes || []), ...extra], soloProfiles: incomeRecord?.route?.matchupProfiles });
     context.projection = projection;
-    if (productive) projection.moneyPaths.push({ activity: 'crafting', kind: 'production', recipeId: workshop.recipeId,
-        object: workshop.productId, incomePerHour: workshop.incomePerHour,
-        cycleHours: workshop.cycleHours, repeatable: true });
     const networkKey = key;
     // A woken build re-weighs the held focus and step (WishNetwork reconsider): a
     // situation woke it. A reader's build keeps them, and so does a first build (no
@@ -1459,7 +1449,7 @@ function planOf(context, base, { key, tripHour, projection = null, knowledgeEnab
         riskWeight: context.riskWeight, bestSpotId: context.bestSpotId, earning: base.earning,
         deathHours: context.deathHours,
         lostGearHours: context.lostGearHours, karmaHours: context.karmaHours, expectedDeathHours: context.expectedDeathHours,
-        refillReserve: context.refillReserve, rates: base.rates, hourAdena: context.hourAdena, workshop: context.workshop,
+        refillReserve: context.refillReserve, rates: base.rates, hourAdena: context.hourAdena,
         routeKey: context.routeKey, routeRows: context.routeRows, tripHour,
         network: compactNetwork(context.network), moneyPrice: context.moneyPrice, gapHorizonHours: context.gapHorizonHours,
         watchList: context.watchList, intentPending: context.intentPending, statsPacket: context.statsPacket,
@@ -1568,7 +1558,7 @@ function view(state, plan, deps, built = {}) {
         price, buyback, riskWeight: plan.riskWeight, bestSpotId: plan.bestSpotId,
         deathHours: plan.deathHours, lostGearHours: plan.lostGearHours, karmaHours: plan.karmaHours,
         expectedDeathHours: plan.expectedDeathHours, stock, refillReserve: reserve, kitCost,
-        hourAdena: plan.hourAdena, workshop: plan.workshop, routeKey: plan.routeKey, routeRows: plan.routeRows,
+        hourAdena: plan.hourAdena, routeKey: plan.routeKey, routeRows: plan.routeRows,
         // The caller's route of this state; the plan's only from where it was built.
         trip: built.trip || deps.tripCost || Trip.preparedReader(deps.routeRows
             || (plan.routeKey === Trip.key(state) ? plan.routeRows : null) || [], { hourAdena: plan.tripHour }),
@@ -1705,10 +1695,6 @@ function saleKitPublished(state = {}) {
 function refillReserve(state = {}) {
     return Array.isArray(state.stats?.money) ? positive(Packet.refillReserve(state.stats.money)) : basics(state).refillReserve;
 }
-// The workshop decision's held answer, the one reader of a bot's craft income (the
-// build's hour, a party's income), both threads: none held reads as unknown, the
-// hunt baseline alone.
-const craftIncome = state => ColdEconomyDecision.craftIncomeOf(state?.stats);
 function forGroup(group, members, deps = {}) {
     const diagnostic = Diagnostics.active();
     if (diagnostic) Diagnostics.count('context_group', 'request');
@@ -1847,5 +1833,4 @@ function reset() {
 function size() { return { context: cache.size, engine: engine.cache.size, groups: groups.size }; }
 
 module.exports = { quietGearBuildCount: () => quietGearBuilds, buildDoors: () => ({ ...doors, ...Agenda.counts() }), countDoor,
-    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), earningDue, linkStats, FIELD_ACTIVITIES, captureEventProof, proofIdentity, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockReader, kitReader, kitBag, kitRates, keptKit, visitStock, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, RETAIN_LIMIT, leafCheck, leafOutcome, refillReserve, forgetContext, forget, reset, configure, registerProvider,
-    craftIncome };
+    heldBuild: (state, deps = {}) => cache.has(actorKeyOf(state, deps)), earningDue, linkStats, FIELD_ACTIVITIES, captureEventProof, proofIdentity, restartEventProof, receiveEventProof, restoreEventProof, wireEventProof, size, forState, forGroup, forgetGroup, basics, personal, stockReader, kitReader, kitBag, kitRates, keptKit, visitStock, keptTargets, saleKitPublished, shotDemand, stateForActor, preparedRouteRows, RETAIN_LIMIT, leafCheck, leafOutcome, refillReserve, forgetContext, forget, reset, configure, registerProvider };

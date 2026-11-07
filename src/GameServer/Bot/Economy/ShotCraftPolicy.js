@@ -388,7 +388,7 @@ function* recipeShotSearch(state, recipe, context, options = {}) {
                 // The whole gear purchase is cash up front. Crystals not used
                 // by this lot remain physical assets at the native NPC floor;
                 // public bids and hoped-for later shot sales add no value here.
-                processingHours: scored.processingHours, extraMp: scored.mp, repeatable: false,
+                processingHours: scored.processingHours, extraMp: scored.mp,
                 residualValue: Math.max(0, Number(gear.crystals) - missing) * crystalResidualPrice, gear,
                 score: scored.score, ownedInputs: gear.ownedInputs };
         };
@@ -527,7 +527,7 @@ function* shotSearch(state, knownRecipes, context, options) {
     return best ? { craft: selectionFor(best) } : null;
 }
 function createShot(state, knownRecipes, context, options = {}) {
-    const cursor = { iterator: null, done: false, value: null, stage: 0, units: 0, mode: 'action', selectedValueHours: 0 };
+    const cursor = { iterator: null, done: false, value: null, stage: 0, units: 0, selectedValueHours: 0 };
     cursor.iterator = shotSearch(state, knownRecipes, context, { ...options,
         onSelection: value => { cursor.selectedValueHours = value; } });
     return cursor;

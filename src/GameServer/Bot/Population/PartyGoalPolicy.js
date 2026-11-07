@@ -53,8 +53,8 @@ function pending(party, members) {
 // class, learned Spoil level, kit (the decision's kit fact), observed income
 // (the decision's observation baseline: the observation event renews it when
 // the income the member measures drifts beyond its own error, at its rest),
-// solo income (its packet's hour: its held earning spot's, or its workshop's,
-// renewed when that is searched again) and goal (its wish focus with the cash
+// solo income (its packet's hour: its held earning spot's, renewed when that is
+// searched again) and goal (its wish focus with the cash
 // it names, its party request and plan step), and the spot the forecast reads
 // (PartyIncomeComparison.prepare's: the objective's, else the party's, else
 // the first member's). The review runs when this moves, never on the clock.
@@ -80,7 +80,7 @@ function incomeReviewKey(party, members, objective) {
         })]));
 }
 
-function joint(party, members, { context = null, memberContexts, spots, timestamp = context?.timestamp || Date.now() } = {}) {
+function joint(party, members, { context = null, spots, timestamp = context?.timestamp || Date.now() } = {}) {
     if (CraftMaterialParty.isObjective(party.stats?.objective)) return CraftMaterialParty.joint(party, members, { timestamp, spots });
     const goals = members.map(declaration);
     // The same wish engine merges members' actual wishes. Its selected leaf
@@ -99,7 +99,7 @@ function joint(party, members, { context = null, memberContexts, spots, timestam
         && members.every(member => invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(member))
         && members.some(member => member.spotId)
         && (key = incomeReviewKey(party, members, previous)) !== party.stats?.incomeReviewKey) {
-        const prepared = PartyIncomeComparison.prepare(members, { party, objective: previous, timestamp, memberContexts, spots });
+        const prepared = PartyIncomeComparison.prepare(members, { party, objective: previous, timestamp, spots });
         review = { lastIncomeReviewAt: timestamp, incomeReviewKey: key, incomeReviews: members.map(member => ({ characterId: Number(member.characterId),
             ...PartyIncomeComparison.compare(member, members.filter(peer => peer !== member), { prepared, party, objective: previous }) })) };
     }
@@ -198,7 +198,7 @@ function formingHold(inputsOf, site) {
 // whose delivery another member times). A participant: its request's priority,
 // persona and roll seed. A comparison: its request as a goal (a material need
 // as its agreement holds it), the focused gear
-// and the cash, survival reserve, workshop quote, planned potion, its party
+// and the cash, survival reserve, planned potion, its party
 // samples at the grounds (any sub-roster), the solo side's held earning answer
 // (its spot and the decision's time: a new answer judges again, prices and the
 // crowd read anew by soloRoute wake nothing), the solo drop's hours for its goal
@@ -251,7 +251,6 @@ function verdictInputs(member, context, drift) {
     const own = context.material ? [member, ...context.members.filter(peer => peer !== member)] : context.members;
     const aim = PartyIncomeComparison.goalOf(member, own, context.requested,
         context.material ? CraftMaterialParty.agreement(own, context.requested) : null);
-    const workshop = invoke('GameServer/Bot/Economy/EconomyContext').craftIncome(member);
     // Every roster's samples at the grounds: the second pass prepares a sub-roster.
     const samples = Hunt.sampledRows(member, timestamp, 'party').filter(row => context.grounds.ids.has(String(row.spotId)));
     // No held answer (skipped this round) and an answer with no spot are two inputs: the answer's arrival judges again.
@@ -259,7 +258,6 @@ function verdictInputs(member, context, drift) {
         context.grounds.spots.map(trip).join(':'), PartyIncomeComparison.soloGoalHours(member, aim, context.spots, timestamp),
         goalReads(stats.partyRequest), JSON.stringify(aim.materialGoal ?? null), PartyIncomeComparison.focusedItem(member), stats.wishFocus?.[2],
         require('../Economy/StatsPacket').refillReserve(stats.money),
-        workshop?.known, workshop?.incomePerHour, workshop?.cycleHours,
         invoke('GameServer/Bot/AI/HealingPotionStock').purchasePotionFor(member)?.selfId,
         samples.map(row => `${row.partyRoster}@${row.at}:${row.samples}`).join(';'));
     const error = context.material ? 0

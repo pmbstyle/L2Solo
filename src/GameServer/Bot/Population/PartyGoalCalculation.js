@@ -73,7 +73,7 @@ async function calculate(party, members, prepare, timestamp, current = () => tru
     }
     const policy = require('./PartyGoalPolicy');
     const context = policy.groupContext(party, members, { timestamp, memberContexts: contexts, rememberGroup: false });
-    return policy.joint(party, members, { context, timestamp, memberContexts: contexts, spots });
+    return policy.joint(party, members, { context, timestamp, spots });
 }
 
 // The recruit check of a pending join: the members with the recruits on one
