@@ -148,8 +148,7 @@ try {
     Funding.spendable = () => 1000000;
     const funded = Request.partyRequestForPlan(retained, plan, timestamp, { spots, economy });
     const fallback = require('../src/GameServer/Bot/Population/PartyWaitFallback');
-    const cooldown = { ...funded, status: 'deferred', attempts: 3,
-        deferredUntil: timestamp + 60000, expiredAt: timestamp - 1 };
+    const cooldown = { ...funded, status: 'closed', attempts: 3, lastReason: 'party_assembly_timeout' };
     let resupplying = { ...retained, stats: { ...retained.stats, partyRequest: cooldown } };
     const checksBeforeSupplies = [inspected, routeChecks];
     for (const [offset, activity, focus] of [[100, 'hunting', 'stock:shots'], [1000, 'traveling', 'stock:scrolls'],
@@ -157,9 +156,8 @@ try {
         const stockEconomy = { ...economy, network: { ...economy.network, activity: { rootKey: focus } } };
         const parked = Request.partyRequestForPlan({ ...resupplying, activity }, plan, timestamp + offset,
             { spots, economy: stockEconomy });
-        assert.equal(parked.status, 'deferred', 'supply priority never reopens the material request');
+        assert.equal(parked.status, 'closed', 'supply priority never reopens the material request');
         assert.equal(parked.attempts, 3);
-        assert.equal(parked.deferredUntil, cooldown.deferredUntil, 'supply work does not extend or erase the pause');
         assert.equal(parked.suspendedFor, focus);
         assert.equal(fallback.waiting(resupplying, plan, parked), false, 'a parked request cannot override the supply route');
         resupplying = { ...resupplying, stats: { ...resupplying.stats, partyRequest: parked } };
@@ -170,15 +168,12 @@ try {
     assert.equal(resumed.status, 'open');
     assert.equal(resumed.attempts, 3, 'the same material operation resumes with its assembly history');
     assert.equal(resumed.suspendedFor, undefined);
-    const earlyReturn = Request.partyRequestForPlan({ ...resupplying, stats: { ...resupplying.stats,
-        partyRequest: { ...resupplying.stats.partyRequest, deferredUntil: timestamp + 120000 } } },
-    plan, timestamp + 62000, { spots, economy });
-    assert.equal(earlyReturn.status, 'deferred', 'returning to the weapon cannot bypass a still-live pause');
-    assert.equal(earlyReturn.deferredUntil, timestamp + 120000);
+    // A request its assembly closed is held until the next build, which asks again
+    // (no clock): one more attempt, the ordinary safe waiting route.
+    const { suspendedFor: _parked, ...unparked } = resupplying.stats.partyRequest;
     const assemblyReturn = Request.partyRequestForPlan({ ...resupplying, stats: { ...resupplying.stats,
-        partyRequest: { ...resupplying.stats.partyRequest, deferReason: 'party_material_route_unavailable',
-            deferredUntil: timestamp + 120000 } } }, plan, timestamp + 62000, { spots, economy });
-    assert.equal(assemblyReturn.status, 'deferred');
+        partyRequest: { ...unparked, lastReason: 'party_material_route_unavailable' } } }, plan, timestamp + 62000, { spots, economy });
+    assert.equal(assemblyReturn.status, 'open');
     assert.equal(assemblyReturn.attempts, 3);
     assert.equal(assemblyReturn.suspendedFor, undefined, 'returning from supplies restores the ordinary safe waiting route');
     const stockEconomy = { ...economy, network: { ...economy.network, activity: { rootKey: 'stock:shots' } } };
@@ -195,7 +190,7 @@ try {
     }
     const pausedOpen = Request.partyRequestForPlan({ ...retained, stats: { ...retained.stats,
         partyRequest: { ...funded, attempts: 2 } } }, plan, timestamp + 100, { spots, economy: stockEconomy });
-    assert.equal(pausedOpen.status, 'deferred');
+    assert.equal(pausedOpen.status, 'closed');
     assert.equal(pausedOpen.attempts, 2, 'supply priority is not another failed assembly');
     assert.equal(funded.helpDeal.count, 12, 'the helper contract covers the complete missing component quantity');
     assert.equal(funded.helpDeal.fee, 1200);
@@ -224,18 +219,11 @@ try {
         const failedParty = { stats: { objective: current, agreement: Agreement.propose(owner, [owner], current) } };
         const departure = Material.departureRequest(failedParty, owner);
         retryState = Lifecycle.releaseMember({ ...owner, activity: 'grouped' }, retryAt, Recovery.REASON, departure);
-        assert.equal(Request.partyRequestForPlan(retryState, plan, retryAt + 1, { spots, economy }), retryState.stats.partyRequest,
-            'failed assembly still respects the native cooldown');
-        retryAt += Math.max(Recovery.RETRY_MS, Material.REVIEW_MS) + 1;
+        assert.equal(retryState.stats.partyRequest.status, 'closed', 'a failed assembly closes the request until the next build');
+        retryAt += Material.REVIEW_MS + 1;
     }
     assert.deepEqual(visited, ['camp:0', 'camp:1', 'camp:2', 'camp:3', 'camp:0'],
         'successive failed assemblies visit every retained camp before repeating');
-    const waiting = { ...retryState, stats: { ...retryState.stats, partyRequest: { ...retryState.stats.partyRequest,
-        deferReason: null, materialKey: null, deferredUntil: retryAt + 60000 } } };
-    const deferred = Request.partyRequestForPlan(waiting, plan, retryAt, { spots, economy });
-    assert.equal(deferred.status, 'deferred', 'a rotated camp cannot bypass an expired-request cooldown');
-    assert.equal(deferred.deferredUntil, retryAt + 60000);
-    assert.equal(deferred.attempts, Material.MAX_CAMPS + 1);
     const unrelated = { ...state, stats: { ...state.stats, partyRequest: { ...retryState.stats.partyRequest,
         targetId: 5730, attempts: 3 } } };
     assert.equal(Request.partyRequestForPlan(unrelated, plan, retryAt, { spots, economy }).attempts, 0,
@@ -282,8 +270,8 @@ try {
         assert.deepEqual(Material.selectMembers(members, { timestamp }), [], 'formation refuses an incapable material contract');
     } finally { SpotProfiles.findById = findSpot; Match.stateProfiles = stateProfiles; }
     assert.equal(Material.selectMembers([coreA, coreB, { ...helper, stats: { ...helper.stats,
-        partyRequest: { status: 'deferred', deferredUntil: Date.now() + 60000 } } }]).length, 2,
-    'a helper on its native recruitment cooldown is not recruited without an explicit clock');
+        partyRequest: { status: 'closed', lastReason: 'party_assembly_timeout' } } }]).length, 2,
+    'a helper whose request is closed is not recruited until its next build asks again');
     const contract = Agreement.propose(coreA, members, request);
     assert.equal(contract.mode, 'need');
     assert.equal(contract.materialNeeds.length, 2);

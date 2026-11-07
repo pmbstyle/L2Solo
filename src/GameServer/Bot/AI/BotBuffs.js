@@ -1,12 +1,17 @@
-const ServerResponse = invoke('GameServer/Network/Response');
+// The buffs a bot is given or buys for its hunt, and the Newbie Guide's: one owner
+// for main (the casts, the hot rebuff) and the cold worker (the rebuff decision, a
+// far bot's guide visit), which loads it without the packet modules (lazy below).
 const EffectStore = invoke('GameServer/Effects/EffectStore');
-const EffectTicker = invoke('GameServer/Effects/EffectTicker');
 const BuffCatalog = invoke('GameServer/Effects/BuffCatalog');
 const C4SkillRules = invoke('GameServer/Skills/C4SkillRules');
+const Loadout = invoke('GameServer/Bot/AI/PartyBuffLoadout');
 
 const BUFF_DURATION_MS = 20 * 60 * 1000;
 const REFRESH_THRESHOLD_MS = 2 * 60 * 1000;
-const NEWBIE_GUIDE_MAX_LEVEL = 20;
+// The Newbie Guide serves characters up to this level: the NPC's own cap, what a player
+// sees (NewbieBuff), the one number for players and bots (ours until a C4 source, L2J
+// Lisvus's newbie guide script, names it).
+const NEWBIE_GUIDE_MAX_LEVEL = 25;
 const ALL_BUFFS = BuffCatalog.ALL_BUFFS;
 
 const NEWBIE_BUFF_TYPES = ['windwalk', 'shield', 'haste'];
@@ -47,6 +52,51 @@ function isNewbieEligible(actor) {
     return actor && actor.fetchLevel() <= NEWBIE_GUIDE_MAX_LEVEL && actor.fetchKarma() === 0;
 }
 
+// The starter towns' Newbie Guides (C4 spawns), and the reach a newbie walks back to
+// one: the guide's town radius.
+const GUIDES = Object.freeze([
+    { name: 'Talking Island', npcSelfId: 7598, locX: -84081, locY: 243227, locZ: -3723, head: 9000 },
+    { name: 'Elven Village', npcSelfId: 7599, locX: 45475, locY: 48359, locZ: -3060, head: 49152 },
+    { name: 'Dark Elven Village', npcSelfId: 7600, locX: 12111, locY: 16686, locZ: -4582, head: 63240 },
+    { name: 'Dwarven Village', npcSelfId: 7601, locX: 115632, locY: -177996, locZ: -905, head: 32768 },
+    { name: 'Orc Village', npcSelfId: 7602, locX: -45032, locY: -113598, locZ: -192, head: 32768 }
+].map(Object.freeze));
+const GUIDE_TOWN_RADIUS = 7500;
+const pointOf = at => ({ locX: Number(at?.fetchLocX?.() ?? at?.locX ?? 0), locY: Number(at?.fetchLocY?.() ?? at?.locY ?? 0) });
+const distance2d = (a, b) => Math.hypot(Number(a?.locX || 0) - Number(b?.locX || 0), Number(a?.locY || 0) - Number(b?.locY || 0));
+// The guide closest to a point (an actor or a plain location).
+function closestGuide(at) {
+    const point = pointOf(at);
+    return GUIDES.reduce((best, guide) => distance2d(point, guide) < distance2d(point, best) ? guide : best, GUIDES[0]);
+}
+// Whether the guide stands within its town radius of the point: the one reach rule.
+function guideInReach(at, guide = closestGuide(at)) {
+    return !!guide && distance2d(pointOf(at), guide) <= GUIDE_TOWN_RADIUS;
+}
+// Whether a level and karma may take the guide's blessing (a far state's fields).
+const newbieEligible = (level, karma) => Number(level) <= NEWBIE_GUIDE_MAX_LEVEL && !(Number(karma) > 0);
+
+// The support a bot is given or buys for a hunt and renews when it ends: a Newbie
+// Guide's, a clan hall's or a buffer's 20-minute buffs (C4 buff time 1200 s). Not a
+// song or a dance (two-minute party tactics), not a toggle, not a debuff. A party
+// buffer's casts are the same buffs: a grouped bot's rebuff answers none.
+const REBUFF_FAMILIES = new Set(['wind_walk', 'shield', 'haste', 'might', 'blessed_body', 'magic_barrier',
+    'blessed_soul', 'concentration', 'berserker_spirit', 'bless_shield', 'guidance', 'vampiric_rage', 'acumen',
+    'empower', 'focus', 'death_whisper', 'agility', 'mental_shield', 'resist_shock', 'wild_magic']);
+function rebuffable(effect) {
+    return !!effect && effect.type !== 'debuff' && effect.toggle !== true && REBUFF_FAMILIES.has(Loadout.family(effect.key));
+}
+// The buffed fact: one rebuffable effect in force at `at` (a far state's saved
+// effects, stats.coldCombat.effects, or a body's live list).
+function buffedAt(effects, at) {
+    return (effects || []).some(effect => Number(effect?.expiresAt || 0) > at && rebuffable(effect));
+}
+// The guide's blessing as saved effects (a far bot's: stats.coldCombat.effects),
+// the same buffs applyFullNewbieBlessing casts on a body.
+function newbieEffects(timestamp) {
+    return NEWBIE_BUFF_TYPES.map(type => ({ ...effectData(ALL_BUFFS[type]), expiresAt: timestamp + BUFF_DURATION_MS }));
+}
+
 function remainingMs(actor, key) {
     const effectRemaining = EffectStore.remainingMs(actor, key);
     if (effectRemaining > 0) return effectRemaining;
@@ -67,6 +117,7 @@ function needsNewbieRefresh(actor, thresholdMs = REFRESH_THRESHOLD_MS) {
 
 function refreshActorPackets(session, actor, Generics) {
     const actorGenerics = Generics || invoke(path.actor);
+    const ServerResponse = invoke('GameServer/Network/Response');
 
     actor.statusUpdateVitals(actor);
     actorGenerics.calculateStats(session, actor);
@@ -98,7 +149,7 @@ function nextSupportBuff(actor, thresholdMs = REFRESH_THRESHOLD_MS) {
 
 function broadcastSkillCast(casterSession, caster, target, buff) {
     if (!casterSession?.dataSendToMeAndOthers || !caster || !target || caster === target) return;
-    casterSession.dataSendToMeAndOthers(ServerResponse.skillStarted(caster, target.fetchId(), {
+    casterSession.dataSendToMeAndOthers(invoke('GameServer/Network/Response').skillStarted(caster, target.fetchId(), {
         fetchSelfId: () => buff.id,
         fetchCalculatedHitTime: () => 800,
         fetchReuseTime: () => 1000
@@ -117,7 +168,7 @@ function applyBuff(session, actor, buffType, Generics, source = {}) {
 
     const store = ensureStore(actor);
     store[effect.key] = effect.expiresAt;
-    EffectTicker.scheduleExpiry(session, actor, effect);
+    invoke('GameServer/Effects/EffectTicker').scheduleExpiry(session, actor, effect);
     broadcastSkillCast(source.casterSession, source.caster, actor, buff);
     refreshActorPackets(session, actor, Generics);
 
@@ -150,7 +201,7 @@ function applyFullNewbieBlessing(session, actor, Generics) {
         });
         if (!effect) return;
         store[effect.key] = effect.expiresAt;
-        EffectTicker.scheduleExpiry(session, actor, effect);
+        invoke('GameServer/Effects/EffectTicker').scheduleExpiry(session, actor, effect);
     });
 
     actor.setHp(actor.fetchMaxHp());
@@ -181,6 +232,8 @@ module.exports = {
     BUFF_DURATION_MS,
     REFRESH_THRESHOLD_MS,
     NEWBIE_GUIDE_MAX_LEVEL,
+    GUIDES,
+    GUIDE_TOWN_RADIUS,
     ALL_BUFFS,
     NEWBIE_BUFFS,
     SUPPORT_BUFFS,
@@ -189,6 +242,12 @@ module.exports = {
     applySupportBuff,
     applyFullNewbieBlessing,
     isNewbieEligible,
+    newbieEligible,
+    closestGuide,
+    guideInReach,
+    rebuffable,
+    buffedAt,
+    newbieEffects,
     missingNewbieBuffs,
     needsNewbieRefresh,
     needsBuff,

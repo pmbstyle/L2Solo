@@ -143,6 +143,17 @@ async function run() {
     PopulationService.partyFormationRunning = false;
     await PopulationService.formBackgroundParties();
     assert.strictEqual(projectionCalls, 1, 'party formation must discover the complete lightweight candidate projection once');
+    // Forming's no to a required request with too few takers closes it (its bot asks
+    // again at its next build): with no clock an open one would wait forever.
+    const closedRequests = [], deferUnformable = LifeState.deferUnformablePartyRequests;
+    LifeState.deferUnformablePartyRequests = (ids, reason) => { closedRequests.push(...ids.map(id => [id, reason])); return Promise.resolve(ids.length); };
+    LifeState.coldPartyCandidateProjections = () => Promise.resolve([{ characterId: 77, name: 'Lonely', level: 20, phase: 'cold',
+        activity: 'hunting', spotId: NATIVE_SPOT, party: {}, stats: { partyRequest: { status: 'open', priority: 'required',
+            clanOperation: 'equipment', clanId: 9, objectiveKey: 'clan:9:equipment' } } }]);
+    PopulationService.partyFormationRunning = false;
+    await PopulationService.formBackgroundParties();
+    LifeState.deferUnformablePartyRequests = deferUnformable;
+    assert.deepStrictEqual(closedRequests, [[77, 'too_few_members']]);
 
     PartyState.active = originals.active;
     PartyState.counts = originals.counts;

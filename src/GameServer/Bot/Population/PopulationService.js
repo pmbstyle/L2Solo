@@ -239,13 +239,6 @@ function partyObjectivesShareRoute(left, right) {
 }
 
 
-function expirePartyRequestForState(state, timestamp = Date.now()) {
-    const request = state?.stats?.partyRequest;
-    const expired = PartyRequestPlanner.expire(request, timestamp);
-    if (expired === request) return state;
-    return { ...state, stats: { ...(state.stats || {}), partyRequest: expired } };
-}
-
 function partyObjectiveGroupingKey(objective) {
     if (CraftMaterialParty.isObjective(objective)) return `craft-material:${objective.spotId}`;
     const clanGoalKey = String(objective?.clanGoalKey || '');
@@ -1550,9 +1543,8 @@ const PopulationService = {
         const Help = invoke('GameServer/Bot/Population/ClanPartyHelp');
         const service = new PartyAssemblyEvents({
             registry: this.backgroundJobRegistry, life: LifeState, parties: BackgroundPartyState,
-            classify: (state, timestamp) => this.partyAssemblyInput(state, timestamp),
+            classify: state => this.partyAssemblyInput(state),
             run: (candidates, timestamp, help) => this.runPartyAssemblyEvent(candidates, timestamp, help),
-            expire: id => this.refreshPartyAssemblyRequest(id),
             onRepair: () => Config.developerDiagnostics && Metrics.recordPartySafetyRepair(),
             onError: error => utils.infoWarn('BotPopulation', 'party event failed: %s', error?.message || error)
         });
@@ -1623,7 +1615,7 @@ const PopulationService = {
             this.partyRequirementRefreshDue.add(id);
     },
 
-    partyAssemblyInput(state, timestamp = Date.now()) {
+    partyAssemblyInput(state) {
         if (state?.phase !== 'cold' || state.party?.partyId || state.partyId
             || !['hunting', 'resting', 'party_wait'].includes(state.activity)) return null;
         const objective = partyObjectiveForState(state);
@@ -1631,34 +1623,14 @@ const PopulationService = {
         if (!spotId || state.stats?.equipmentPlan?.strategy === 'market'
             || invoke('GameServer/Bot/AI/BotServiceIdentity').isStaticService(state)) return null;
         const request = state.stats?.partyRequest;
-        const deferredAt = request?.status === 'deferred' ? Number(request.deferredUntil || 0) : 0;
-        const cooldownAt = Number(state.stats?.partyRequest?.deferredUntil || 0);
-        const dueAt = deferredAt > timestamp ? deferredAt : cooldownAt > timestamp ? cooldownAt
-            : request?.status === 'open' ? Number(request.requestedAt || timestamp) + PartyRequestPlanner.maxAgeMs(request.priority) : 0;
         // Ownership/HP/coordinates pulse regularly. Refresh their original
         // reference without restarting an unchanged recruitment decision.
         const supportRole = PartyComposition.supportRole(state, objective);
-        return { key: `spot:${spotId}`, dueAt,
+        return { key: `spot:${spotId}`,
             supportKey: supportRole ? `${state.level}:${supportRole}` : null,
             stamp: [state.level ?? null, state.stats?.classId ?? null, state.clanId ?? state.stats?.clanId ?? null,
                 objective?.spotId ?? null, request?.status ?? null, request?.priority ?? null,
                 state.stats?.equipmentPlan?.strategy ?? null, state.stats?.equipmentPlan?.target?.selfId ?? null] };
-    },
-
-    async refreshPartyAssemblyRequest(id, timestamp = Date.now()) {
-        const state = LifeState.cachedState(id);
-        if (!state) return null;
-        if (!this.started || this.partyFormationRunning || this.resolving
-            || state.phase !== 'cold') return { deferred: true };
-        const expired = expirePartyRequestForState(state, timestamp);
-        if (expired !== state) return LifeState.upsertState(expired, 'party_request_expired');
-        // A deferred request whose time has passed: the next ordinary cold
-        // review has the economic context and bounded source alternatives.
-        // Keep the need until that worker publishes its retry; main must not
-        // erase it or rebuild wishes (it builds no economy for a far bot).
-        if (state.stats?.partyRequest?.status === 'deferred' && Number(state.stats.partyRequest.deferredUntil || 0) <= timestamp
-            && CraftMaterialParty.requestOf(state)) return { deferred: true };
-        return state;
     },
 
     async runPartyAssemblyEvent(candidates, timestamp, help) {
@@ -1669,13 +1641,12 @@ const PopulationService = {
             return { deferred: Help.hasPending(), retryAt: Help.nextDeadline() };
         }
         if (this.partyFormationRunning || this.resolving) return { deferred: true };
-        // A member cooling down or deferred wakes its group at its own end (the
-        // record's dueAt: partyAssemblyInput, refreshPartyAssemblyRequest), so it
-        // asks no retry; a state replaced since the page was read does.
+        // A member whose request is closed (PartyRequestPlanner.closed) waits for its
+        // next build, whose request moves its record and wakes its group; it asks no
+        // retry. A state replaced since the page was read does.
         const current = candidates.filter(state => LifeState.cachedState(state.characterId) === state);
         const stale = current.length < candidates.length;
-        const eligible = current.filter(state => !invoke('GameServer/Bot/Population/PartyAssemblyRecovery').coolingDown(state, timestamp)
-            && !(state.stats?.partyRequest?.status === 'deferred' && Number(state.stats.partyRequest.deferredUntil || 0) > timestamp));
+        const eligible = current.filter(state => !PartyRequestPlanner.closed(state));
         if (!eligible.length) return { deferred: stale };
         const protectedActivity = this.playerActivityProfile(timestamp).protected;
         if (protectedActivity && timestamp < this.nextProtectedPartyFormationAt) return { deferred: true, retryAt: this.nextProtectedPartyFormationAt };
@@ -2244,7 +2215,14 @@ const PopulationService = {
                         .find((objective) => objective?.priority === 'required')
                         || objectiveOf(group[0]);
                     const partyLimits = partyLimitsForObjective(requestedObjective);
-                    if (group.length < partyLimits.minSize) return null;
+                    // Forming's no: the group's open required requests close (attempts +1) and
+                    // wait for their bots' next build, which asks again; none held open on no clock.
+                    const unformable = reason => LifeState.deferUnformablePartyRequests(group
+                        .filter((state) => state.stats?.partyRequest?.status === 'open'
+                            && state.stats?.partyRequest?.priority === 'required')
+                        .map((state) => state.characterId), reason)
+                        .catch((error) => { FailureLog.note('party.unformable_close', error); return 0; });
+                    if (group.length < partyLimits.minSize) return unformable('too_few_members');
 
                     const select = CraftMaterialParty.isObjective(requestedObjective)
                         ? CraftMaterialParty.selectMembers
@@ -2254,17 +2232,7 @@ const PopulationService = {
                         maxSize: partyLimits.maxSize,
                         levelRange: partyLimits.levelRange
                     });
-                    if (selectedMembers.length < partyLimits.minSize) {
-                        const requiredIds = group
-                            .filter((state) => state.stats?.partyRequest?.status === 'open'
-                                && state.stats?.partyRequest?.priority === 'required')
-                            .map((state) => state.characterId);
-                        return LifeState.deferUnformablePartyRequests(requiredIds, 'no_compatible_level_match')
-                            .catch((error) => {
-                                utils.infoWarn('BotPopulation', 'failed to defer unformable party requests: %s', error?.message || error);
-                                return 0;
-                            });
-                    }
+                    if (selectedMembers.length < partyLimits.minSize) return unformable('no_compatible_level_match');
                     return timedStage('candidate_hydration', () => hydratePartyCandidates(selectedMembers)).then((members) => {
                         if (members.length !== selectedMembers.length) { this.partyFormationPending = true; return null; }
                         return timedStage('party_commit', () => createAndCommitBackgroundParty(members)).then((savedParty) => {
@@ -2363,7 +2331,6 @@ const PopulationService = {
 
     partyCapacityLimit,
     partyObjectiveForState,
-    expirePartyRequestForState,
 
     async applyWorkerPartyRequirements(party, resolution) {
         if (require('./OpportunisticRaidPolicy').isObjective(party.stats?.objective)) {
@@ -2873,7 +2840,8 @@ const PopulationService = {
         }
         // The background thread's request, built with the bot's economy for
         // the plan it sent; none when the worker sent no plan for that target.
-        // Without a worker plan the saved request stands.
+        // Without a worker plan the saved request stands (a served card carries the
+        // held one: it is held until the next build).
         const partyRequest = !workerPlan ? state.stats?.partyRequest || null
             : Number(workerPlan.acquisitionPlan?.target?.selfId || 0) === Number(acquisitionPlan?.target?.selfId || 0)
                 ? workerPlan.partyRequest || null : null;
@@ -2935,11 +2903,15 @@ const PopulationService = {
             });
     },
 
-    // workerHall: the worker sent a hall visit (its placeholder result); a
+    // workerHall: the worker sent a hall or guide visit (its placeholder result); a
     // visit main does not take here falls through on that empty result.
     resolveColdEntryBranch(state, options, startedAt, workerHall = false) {
+        // The rebuff's guide answer (ColdGuideVisit), then its hall answer, a hall
+        // visit under way or a restart in the hall (ColdVisit).
+        const guide = invoke('GameServer/Bot/Population/ColdGuideVisit');
+        if (!joinedBackgroundParty(state) && guide.pending(state)) return guide.resolve(state, startedAt, options);
         const hallVisit = invoke('GameServer/ClanHall/ColdVisit');
-        const visit = !joinedBackgroundParty(state) && (hallVisit.needed(state, startedAt) || !!state.stats?.clanHallVisit);
+        const visit = !joinedBackgroundParty(state) && hallVisit.needed(state);
         if (workerHall) Config.developerDiagnostics && Diagnostics.count('hall_visit', visit ? 'visit' : 'fall_through');
         if (visit) {
             // ARCH-NOTE: Hall dispatch bypasses the ordinary resolve branch; keep Main's captured admission through its inner writer.
@@ -2980,9 +2952,8 @@ const PopulationService = {
     },
 
     resolveColdTransition(state, workerRequest, options, precomputedResult, cleanupAfterFight, elapsedMs, startedAt) {
-        const requestLifecycleState = expirePartyRequestForState(state, startedAt);
         const result = precomputedResult || BackgroundResolver.resolveSolo({
-            state: requestLifecycleState,
+            state,
             spot: null,
             elapsedMs,
             timestamp: startedAt
@@ -2991,7 +2962,7 @@ const PopulationService = {
             Config.developerDiagnostics && Metrics.recordSkippedResolve('joined_party_during_transition');
             return Promise.resolve({ ok: false, reason: 'joined_party', state });
         }
-        return LifeState.applyResolve(requestLifecycleState, result, options).then((updatedState) => {
+        return LifeState.applyResolve(state, result, options).then((updatedState) => {
             if (!updatedState) {
                 Config.developerDiagnostics && Metrics.recordSkippedResolve('transition_apply_failed');
                 return { ok: false, reason: 'apply_failed', state };

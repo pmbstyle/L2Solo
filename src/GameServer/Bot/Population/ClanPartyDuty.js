@@ -1,7 +1,8 @@
-const AssemblyRecovery = require('./PartyAssemblyRecovery');
-// A clan hunt is a shared assignment, never permission to attempt it alone.
+// A clan hunt is a shared assignment, never permission to attempt it alone. A
+// closed request (its assembly gave up: PartyRequestPlanner.closed) hunts solo
+// until its next build asks again.
 function objective(state) {
-    if (AssemblyRecovery.coolingDown(state)) return null;
+    if (invoke('GameServer/Bot/Population/PartyRequestPlanner').closed(state)) return null; // lazy: the planner's chain reads this module
     const value = state?.stats?.clanPartyObjective;
     return value?.status === 'open' && value.clanGoalKey && value.priority === 'required' ? value : null;
 }

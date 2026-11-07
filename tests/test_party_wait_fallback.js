@@ -93,16 +93,16 @@ function routeChecks() {
     const held = { spotId: levelSpot.id, shots: true, income: 1, expected: 1, earning: 1, error: 0, at: 1 };
     // (Its plan deferred, so only the waiter's rule, not an active plan's source, keeps it off the answer.)
     const waiter = routeState(19, { equipmentPlan: { ...partyPlan, status: 'deferred' },
-        partyRequest: { ...requiredRequest, status: 'deferred' }, earning: held, woken: 0 });
+        partyRequest: { ...requiredRequest, status: 'closed' }, earning: held, woken: 0 });
     assert(require('../src/GameServer/Bot/Population/PartyWaitFallback').waiting(waiter, waiter.stats.equipmentPlan,
         waiter.stats.partyRequest), 'fixture: it waits for a party');
     assert.strictEqual(BotRoute.trip({}, waiter, null, { spots: profiles, currentSpot, timestamp: Date.now() })?.spotId,
         plannedFallback.id, 'a required-party waiter walks to the safe fallback');
 
-    // A deferred request with a party-only plan still waits.
-    const deferred = { ...requiredRequest, status: 'deferred', deferredUntil: Date.now() + 60000 };
-    assert.strictEqual(route(routeState(2, { equipmentPlan: partyPlan, partyRequest: deferred })).spotId,
-        plannedFallback.id, 'a deferred waiter keeps its safe fallback');
+    // A closed request with a party-only plan still waits (held until its next build).
+    const closed = { ...requiredRequest, status: 'closed', lastReason: 'no_compatible_level_match' };
+    assert.strictEqual(route(routeState(2, { equipmentPlan: partyPlan, partyRequest: closed })).spotId,
+        plannedFallback.id, 'a closed waiter keeps its safe fallback');
 
     // The plan's fallback is not allowed for the bot: the waiter searches level
     // ground without its plan and without its saved spot.
@@ -245,14 +245,14 @@ async function commandChecks() {
 // The one rule of who waits, as each caller asks it.
 function waitingChecks() {
     const { waiting } = require('../src/GameServer/Bot/Population/PartyWaitFallback');
-    const deferred = { ...requiredRequest, status: 'deferred', priority: 'preferred' };
+    const closed = { ...requiredRequest, status: 'closed', priority: 'preferred' };
     const open = { ...requiredRequest, priority: 'preferred' };
     const cases = [
         [{}, partyPlan, requiredRequest, true],
         [{}, soloPlan, requiredRequest, true],
-        [{}, partyPlan, deferred, true],
-        [{}, { ...soloPlan, requiresParty: true }, deferred, true],
-        [{}, soloPlan, deferred, false],
+        [{}, partyPlan, closed, true],
+        [{}, { ...soloPlan, requiresParty: true }, closed, true],
+        [{}, soloPlan, closed, false],
         [{}, partyPlan, open, false],
         [{}, partyPlan, null, false],
         [{ party: { partyId: 'p' } }, partyPlan, requiredRequest, false]

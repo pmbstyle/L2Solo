@@ -517,8 +517,8 @@ try {
     }, requestPlan, 1000, { economy: { worth: () => 0 } });
     assert.strictEqual(request.status, 'open', 'the worker must create a durable party request for a required plan');
     assert.strictEqual(request.priority, 'required');
-    const config = invoke('GameServer/Bot/Population/PopulationConfig');
-    const expiredRequest = PartyRequestPlanner.partyRequestForPlan({
+    // No age closes a held request (C4 has no LFG timeout): an hour on, it stays open.
+    const heldRequest = PartyRequestPlanner.partyRequestForPlan({
         characterId: 4,
         activity: 'hunting',
         stats: {
@@ -528,9 +528,9 @@ try {
                 requestedAt: 1000
             }
         }
-    }, requestPlan, 1000 + Math.max(30000, Number(config.partyRequestMaxAgeMs) || 15 * 60 * 1000) + 1, { economy: { worth: () => 0 } });
-    assert.strictEqual(expiredRequest.status, 'deferred', 'the worker request helper must preserve deferred recovery semantics');
-    assert.strictEqual(expiredRequest.attempts, 1);
+    }, requestPlan, 1000 + 60 * 60 * 1000, { economy: { worth: () => 0 } });
+    assert.strictEqual(heldRequest.status, 'open', 'the worker request helper holds an unanswered request open');
+    assert.strictEqual(heldRequest.requestedAt, 1000);
 
     const fallbackSpot = { id: 'solo-fallback', name: 'Solo fallback' };
     GearAcquisitionPlanner.safeFallbackForPlan = () => ({ spotId: fallbackSpot.id, npcId: 321 });

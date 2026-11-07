@@ -4,7 +4,7 @@ const Effects = invoke('GameServer/Effects/EffectStore');
 // What a bot lacks and whether it needs the hall: shared with the cold worker.
 const VisitNeed = require('./VisitNeed');
 const Approach = invoke('GameServer/Bot/AI/TownNpcApproach');
-const { REFRESH_MS, skillFor, available, point, effectFor, missing, recovery } = VisitNeed;
+const { skillFor, available, point, effectFor, missing, recovery } = VisitNeed;
 const castReadyAt = new WeakMap();
 let cachedSpawns,
     managers = new Map();
@@ -87,7 +87,6 @@ function buffBot(session, actor, npc, timestamp = Date.now(), cold = false) {
     return { ok: true, count: granted.length };
 }
 module.exports = {
-    REFRESH_MS,
     skillFor,
     available,
     manager,

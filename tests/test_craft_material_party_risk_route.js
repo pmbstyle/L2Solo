@@ -139,7 +139,7 @@ async function main() {
         assert.equal(state.stats.partyRequest.itemId, needs[i].itemId);
         assert.equal(state.stats.partyRequest.amount, needs[i].quota - needs[i].collected);
         assert.equal(state.stats.partyRequest.attempts, 3);
-        assert.equal(state.stats.partyRequest.deferReason, Route.REASON);
+        assert.equal(state.stats.partyRequest.lastReason, Route.REASON);
         assert.equal(Request.partyRequestForPlan({ ...state, activity: 'traveling' }, state.stats.equipmentPlan,
             departed.party.stats.travel.arrivalAt + 1), state.stats.partyRequest, 'native replanning preserves evacuation cooldown during recovery/travel');
     });

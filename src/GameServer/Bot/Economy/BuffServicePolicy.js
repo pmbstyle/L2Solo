@@ -4,7 +4,6 @@ const Effects = invoke('GameServer/Effects/EffectStore');
 const HuntEfficiency = invoke('GameServer/Bot/AI/BotHuntEfficiency');
 
 const EXCLUDED_CLASSES = new Set([21, 34, 49, 50, 51, 52]);
-const REFRESH_MS = 2 * 60 * 1000;
 
 function serviceClass(provider) {
     const classId = Roles.roleClassId(provider);
@@ -41,6 +40,14 @@ function incomeForTenMinutes(entity) {
     return Math.round(HuntEfficiency.hourValue(lifeStateOf(entity)).perHour / 6);
 }
 
+// Whether a bot buys buffs at this price: a quarter of its wallet at most and less
+// than what ten minutes of its hunting earn (the buffs must pay; ours). One read for a
+// far buyer's decision and sale (ColdSimulationWorker, ColdBuffService) and a body's
+// purchase (BuffService). wallet: its adena.
+function affordable(price, wallet, recipient) {
+    return price <= Number(wallet || 0) * 0.25 && price <= incomeForTenMinutes(recipient) * 0.8;
+}
+
 function priceFor({ provider, recipient, skills, mp, count, town, trust = 0 }) {
     if (sameClan(provider, recipient)) return 0;
     mp = mp ?? (skills || []).reduce((sum, skill) => sum + Math.max(0, Number(skill.fetchConsumedMp?.() || 0)), 0);
@@ -61,11 +68,10 @@ function needsPaidBuff(recipient, skill) {
         && (Number(effect.id) === skillId || Loadout.normalize(effect.key) === effectKey
             || Loadout.normalize(effect.category) === effectKey));
     if (current.some(effect => Number(effect.level || 0) > level)) return false;
-    const durationMs = Number(skill.fetchBuffTime?.() ?? skill.fetchSemantic?.()?.durationMs ?? 0);
-    const refreshMs = Number.isFinite(durationMs) && durationMs > 0
-        ? Math.min(REFRESH_MS, Math.floor(durationMs * 0.25)) : REFRESH_MS;
+    // A buff in force is not bought again: the bot buys when its rebuff answers a
+    // buffer (its buffs ended, or it reached town), not ahead of the end.
     return !current.some(effect => Number(effect.level || 0) === level
-        && Effects.remainingMs(recipient, effect.key) > refreshMs);
+        && Effects.remainingMs(recipient, effect.key) > 0);
 }
 
 function hotSkills(provider, recipient) {
@@ -85,5 +91,5 @@ function hotSkills(provider, recipient) {
     return [...byFamily.values()].sort((a, b) => Number(a.fetchSelfId()) - Number(b.fetchSelfId()));
 }
 
-module.exports = { EXCLUDED_CLASSES, REFRESH_MS, serviceClass, eligibleSkill, sameClan,
-    incomeForTenMinutes, priceFor, needsPaidBuff, hotSkills };
+module.exports = { EXCLUDED_CLASSES, serviceClass, eligibleSkill, sameClan,
+    incomeForTenMinutes, affordable, priceFor, needsPaidBuff, hotSkills };

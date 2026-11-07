@@ -143,9 +143,6 @@ const DEFAULTS = {
     // Shared safety ceiling for every background party. Admission never
     // depends on social/clan origin or opens extra slots for a backlog.
     maxBackgroundParties: 72,
-    partyRequestMaxAgeMs: 15 * 60 * 1000,
-    partyPreferredMaxAgeMs: 5 * 60 * 1000,
-    partyRequestCooldownMs: 5 * 60 * 1000,
     // Dissolved party rows are operational history, not durable state. Keep
     // a short diagnostic window without allowing every rotation to grow the
     // population database forever.

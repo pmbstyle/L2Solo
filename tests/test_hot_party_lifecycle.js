@@ -407,7 +407,7 @@ async function run() {
     assert.equal(unsafeGroup[1].actor.fetchMp(), 23, 'membership publication cannot restore old cached MP');
     assert(unsafeGroup.every(s => Life.cachedState(s.actor.fetchId()).phase === 'hot'
         && !Life.cachedState(s.actor.fetchId()).party.partyId));
-    assert(unsafeGroup.every(s => Life.cachedState(s.actor.fetchId()).stats.partyRequest?.status === 'deferred'));
+    assert(unsafeGroup.every(s => Life.cachedState(s.actor.fetchId()).stats.partyRequest?.status === 'closed'));
     const releasedRows = await Database.execute(['SELECT phase,partyId,hp,mp FROM bot_life_state WHERE characterId IN (26,27) ORDER BY characterId']);
     assert(releasedRows.every(row => row.phase === 'hot' && !row.partyId));
 

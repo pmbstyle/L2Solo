@@ -42,7 +42,7 @@ function ordinaryTick() { session.plan = 'hunting'; AI.tick(session); }
             'GameServer/Bot/AI/ClanAllianceSupportAI': ['tick'],
             'GameServer/Bot/Economy/BuffServiceChat': ['onDuty'],
             'GameServer/Bot/AI/ChatArrivalState': ['tick'],
-            'GameServer/Bot/Economy/BuffService': ['maybeAutoBuy'],
+            'GameServer/Bot/Economy/BuffService': ['buyOnAnswer'],
             'GameServer/Bot/AI/BotEquipmentUpgrade': ['applyBestUpgrades'],
             'GameServer/Bot/AI/PartyCompanionService': ['reconcileGroundLoot', 'startQueuedGroundPickup'],
             'GameServer/Bot/AI/BotChatReactions': ['offerLocal'],
@@ -82,7 +82,8 @@ function ordinaryTick() { session.plan = 'hunting'; AI.tick(session); }
         for (const outcome of ['completed', 'cancelled']) {
             states.get(bot.fetchId()).stats = {};
             session.tradeMeetingPresence = undefined;
-            session.coldLifeState = { characterId: bot.fetchId(), stats: { tradeMeeting: [7, 1] } };
+            // Its rebuff answered the guide (Bot/AI/Rebuff): the hunt carries it out once the meeting ends.
+            session.coldLifeState = { characterId: bot.fetchId(), stats: { tradeMeeting: [7, 1], rebuff: { via: 'guide', at: 1 } } };
             ordinaryTick();
             assert.equal(session.plan, 'getting_buffed', `${outcome} releases the real hunting rebuff path despite an old session snapshot`);
             states.get(bot.fetchId()).stats = { tradeMeeting: [7, 1] };

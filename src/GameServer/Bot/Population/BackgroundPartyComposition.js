@@ -163,7 +163,7 @@ function selectMembers(candidates = [], options = {}) {
     const levelRange = Math.max(0, Number(options.levelRange ?? DEFAULT_LEVEL_RANGE));
     const unique = Array.from(new Map((candidates || [])
         .filter((state) => state?.characterId && !state.stats?.coldCompetition?.wait
-            && !require('./PartyAssemblyRecovery').coolingDown(state, options.timestamp))
+            && !invoke('GameServer/Bot/Population/PartyRequestPlanner').closed(state))
         .map((state) => [Number(state.characterId), state])).values());
     if (unique.length < minSize) return [];
     const memoryPreference = PartyMemoryPreference.create(options);
@@ -193,7 +193,7 @@ function selectRecruits(members = [], candidates = [], options = {}) {
     const eligible = (candidates || []).filter((state) => (
         state?.characterId &&
         !state.stats?.coldCompetition?.wait &&
-        !require('./PartyAssemblyRecovery').coolingDown(state, options.timestamp) &&
+        !invoke('GameServer/Bot/Population/PartyRequestPlanner').closed(state) &&
         !used.has(Number(state.characterId)) &&
         Math.abs(levelOf(state) - levelOf(leader)) <= levelRange
     ));

@@ -68,8 +68,7 @@ function releaseMember(state, timestamp = Date.now(), reason = 'party_session_ro
             ...(reason === 'clan_party_unsafe' ? { clanPartyObjective: null } : {}),
             partyRequest: !raidRelease && (reason === AssemblyRecovery.REASON
                 || reason === 'party_material_route_unavailable' && objective)
-                ? { ...(objective || {}), status: 'deferred', deferReason: reason,
-                    requestedAt: timestamp, deferredUntil: timestamp + AssemblyRecovery.RETRY_MS }
+                ? { ...(objective || {}), status: 'closed', lastReason: reason, requestedAt: timestamp }
                 : null
         },
         timing: releasedFromObjective && nextActivity === 'hunting'

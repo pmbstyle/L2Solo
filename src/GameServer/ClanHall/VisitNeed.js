@@ -13,7 +13,7 @@ const Effects = invoke('GameServer/Effects/EffectStore');
 const Loadout = invoke('GameServer/Bot/AI/PartyBuffLoadout');
 const BotRoles = invoke('GameServer/Bot/AI/BotRoles');
 const TownRespawn = invoke('GameServer/World/TownRespawn');
-const REFRESH_MS = 120000;
+const Rebuff = invoke('GameServer/Bot/AI/Rebuff');
 const LOCAL_RANGE = 7500;
 const skills = new Map();
 
@@ -53,9 +53,9 @@ function effectFor(skill, timestamp = Date.now()) {
         expiresAt: timestamp + Number(s.durationMs ?? skill.fetchBuffTime())
     };
 }
-// The hall support the actor lacks. `effects` = the actor's effects; the
-// default reads the live store, a cold caller passes the state's own list.
-function missing(actor, hall, timestamp = Date.now(), threshold = REFRESH_MS, effects = Effects.list(actor)) {
+// The hall support the actor lacks (none in force). `effects` = the actor's effects;
+// the default reads the live store, a cold caller passes the state's own list.
+function missing(actor, hall, timestamp = Date.now(), effects = Effects.list(actor)) {
     if (!available(hall, timestamp)) return [];
     const active = effects.filter((e) => !e.expiresAt || e.expiresAt > timestamp);
     const count = active.filter(Effects.includedInBuffCount).length;
@@ -79,7 +79,7 @@ function missing(actor, hall, timestamp = Date.now(), threshold = REFRESH_MS, ef
                 matching.some(
                     (e) =>
                         strength(e) > strength(desired) ||
-                        (strength(e) === strength(desired) && (!e.expiresAt || e.expiresAt - timestamp > threshold))
+                        (strength(e) === strength(desired) && (!e.expiresAt || e.expiresAt > timestamp))
                 )
             )
                 return false;
@@ -151,41 +151,27 @@ function actorFor(state, hall) {
 function eligible(state) {
     return state?.phase === 'cold' && VisitPolicy.mayUse(VisitPolicy.fromState(state));
 }
-// hall = the bot's owned hall row (null = none); managerPresent = its manager
-// NPC is spawned and alive: a boolean (the worker reads it from the hall row)
-// or a function asked only past the cheap gates (the main thread asks World).
-function needed(state, hall, managerPresent, timestamp = Date.now()) {
-    if (!eligible(state)) return false;
-    if (state.stats?.clanHallVisit) return true;
-    if (!hall) return false;
-    if (state.activity === 'dead' || Number(state.vitals?.hp) <= 0) return true;
-    if (
-        !['hunting', 'resting'].includes(state.activity) ||
-        Number(state.stats?.clanHallRetryAt || 0) > timestamp ||
-        state.stats?.pveEncounter
-    )
-        return false;
-    if (!available(hall, timestamp)) return false;
-    if (!(typeof managerPresent === 'function' ? managerPresent() : managerPresent)) return false;
+// Whether a far bot's step is its hall's (main's command, ColdVisit; the worker's
+// kernel reads the same): a visit under way, its rebuff answered the hall at a free
+// moment of its hunt or rest (Bot/AI/Rebuff; a town visit ends first, as a body's
+// BotVisit waits; ColdVisit carries it out or drops it, and marks it done), or a
+// restart there after death. hall = the bot's owned hall row (null = none). A
+// hall-clan bot's rest is no visit: it rests where it stands, as any bot.
+function needed(state, hall) {
+    if (state?.stats?.clanHallVisit) return true;
+    if (Rebuff.pending(state?.stats, 'hall') && (state.activity === 'hunting' || state.activity === 'resting')) return true;
+    if (!hall || !eligible(state)) return false;
+    return state.activity === 'dead' || Number(state.vitals?.hp) <= 0;
+}
+// Whether the hall serves a bot now (its rebuff's read): open, its manager present,
+// the bot may use it (VisitPolicy), is in no fight's encounter and lacks support it
+// gives. From anywhere: a C4 clan member with no buffs goes to his hall (the visit
+// teleports there and back, ColdVisit / BotVisit). managerPresent: a boolean (the
+// worker's hall row) or a function (main asks World past the cheap gates).
+function serves(state, hall, managerPresent, timestamp = Date.now()) {
+    if (!hall || state?.stats?.pveEncounter || !available(hall, timestamp) || !VisitPolicy.mayUse(VisitPolicy.fromState(state))) return false;
     const actor = actorFor(state, hall);
-    return (
-        missing(actor, hall, timestamp, REFRESH_MS, Object.values(actor.effects)).length > 0 ||
-        (local(actor, hall) && recovery(actor, hall, timestamp))
-    );
+    if (!missing(actor, hall, timestamp, Object.values(actor.effects)).length) return false;
+    return typeof managerPresent === 'function' ? managerPresent() : managerPresent === true;
 }
-// The first time after `timestamp` at which needed() can answer otherwise for
-// the same state and hall row: the retry time, the hall's service due time,
-// and each effect's expiry and refresh threshold (missing). Infinity: none.
-function validUntil(state, hall, timestamp = Date.now()) {
-    let until = Infinity;
-    const cross = (at) => { if (at > timestamp && at < until) until = at; };
-    cross(Number(state?.stats?.clanHallRetryAt || 0));
-    if (hall) cross(Number(hall.serviceDueAt || 0));
-    for (const effect of state?.stats?.coldCombat?.effects || []) {
-        if (!effect?.expiresAt) continue;
-        cross(Number(effect.expiresAt) - REFRESH_MS);
-        cross(Number(effect.expiresAt));
-    }
-    return until;
-}
-module.exports = { REFRESH_MS, skillFor, available, point, effectFor, missing, recovery, local, actorFor, eligible, needed, validUntil };
+module.exports = { skillFor, available, point, effectFor, missing, recovery, local, actorFor, eligible, needed, serves };

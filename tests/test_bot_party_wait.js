@@ -210,29 +210,31 @@ async function run() {
                 npcId: 77,
                 itemId: 88,
                 targetId: 88,
-                requestedAt: timestamp - Config.partyRequestMaxAgeMs - 1,
+                requestedAt: timestamp - 60 * 60 * 1000,
                 attempts: 2
             }
         }
     };
-    const deferred = invoke('GameServer/Bot/Population/PartyRequestPlanner').partyRequestForPlan(oldRequestState, requestPlan, timestamp, { economy: { worth: () => 0 } });
-    assert.strictEqual(deferred.status, 'deferred', 'an unmatched request must leave the open queue after its TTL');
-    assert(deferred.deferredUntil > timestamp, 'deferred request must carry a cooldown deadline');
+    // A party request is held with no clock: an hour unanswered it stays open
+    // (C4 has no LFG timeout), and its next build keeps it.
+    const Planner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
+    const held = Planner.partyRequestForPlan(oldRequestState, requestPlan, timestamp, { economy: { worth: () => 0 } });
+    assert.strictEqual(held.status, 'open', 'an unanswered request stays open: no age closes it');
+    assert.strictEqual(held.requestedAt, oldRequestState.stats.partyRequest.requestedAt, 'its ask time is kept');
+    // Forming's no closes it: forming skips it until the bot's next build asks again.
+    const closed = { ...held, status: 'closed', lastReason: 'no_compatible_level_match' };
     assert.strictEqual(
-        PopulationService.partyObjectiveForState({ stats: { partyRequest: deferred, equipmentPlan: requestPlan } }),
+        PopulationService.partyObjectiveForState({ stats: { partyRequest: closed, equipmentPlan: requestPlan } }),
         null,
-        'deferred requests must not keep a formation objective alive'
+        'a closed request keeps no formation objective alive'
     );
-    const duringCooldown = invoke('GameServer/Bot/Population/PartyRequestPlanner').partyRequestForPlan({
+    const reopened = Planner.partyRequestForPlan({
         ...oldRequestState,
-        stats: { ...oldRequestState.stats, partyRequest: deferred }
+        stats: { ...oldRequestState.stats, partyRequest: closed }
     }, requestPlan, timestamp + 1000, { economy: { worth: () => 0 } });
-    assert.strictEqual(duringCooldown.status, 'deferred', 'a request must stay deferred during its cooldown');
-    const reopened = invoke('GameServer/Bot/Population/PartyRequestPlanner').partyRequestForPlan({
-        ...oldRequestState,
-        stats: { ...oldRequestState.stats, partyRequest: deferred }
-    }, requestPlan, deferred.deferredUntil + 1, { economy: { worth: () => 0 } });
-    assert.strictEqual(reopened.status, 'open', 'a deferred request must be eligible for a fresh formation attempt');
+    assert.strictEqual(reopened.status, 'open', 'the next build asks again');
+    assert.strictEqual(reopened.attempts, 2, 'a reopened request keeps its attempts');
+    assert.strictEqual(reopened.requestedAt, timestamp + 1000, 'a reopened request asks anew');
 
     console.log('Bot party request fallback checks passed');
 }

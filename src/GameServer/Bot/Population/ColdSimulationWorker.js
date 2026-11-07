@@ -154,6 +154,9 @@ const CraftShopService = require('../Economy/CraftShopService');
 const RecipeBookCodec = require('../Economy/RecipeBookCodec');
 const EconomyCommit = require('../Economy/EconomyCommit');
 const VisitNeed = require('../../ClanHall/VisitNeed');
+const Rebuff = require('../AI/Rebuff');
+const BotBuffs = invoke('GameServer/Bot/AI/BotBuffs');
+const ColdBuffOffer = invoke('GameServer/Bot/Economy/ColdBuffOffer');
 const HallPolicy = require('../../ClanHall/Policy');
 const forbiddenLoaded = Object.keys(require.cache).filter((filename) => (
     /[\\/]src[\\/]Database\.js$/i.test(filename)
@@ -747,12 +750,33 @@ function workshopTaken(state, caller) {
         woken: Situations.decided(stats, 'workshop', { caller, subject: state.characterId,
             answer: Trace.on() ? (noBook ? 'no_book' : `${workshop?.entries?.length || 0}`) : null }) };
 }
-// A near body's workshop (mode near): taken when woken, on the post's state, which
-// then holds it for the build. { taken: the mind keys taken, or null }.
+// A near body's workshop and rebuff (mode near): each taken when woken, on the post's
+// state, which then holds them for the build. { taken: the mind keys taken, or null }.
 function nearWorkshop(input) {
-    const taken = Situations.woken(input.state.stats, 'workshop') ? workshopTaken(input.state, 'economy_near') : null;
-    if (taken) input.state = { ...input.state, stats: { ...input.state.stats, ...taken } };
-    return { taken };
+    const workshop = Situations.woken(input.state.stats, 'workshop') ? workshopTaken(input.state, 'economy_near') : null;
+    if (workshop) input.state = { ...input.state, stats: { ...input.state.stats, ...workshop } };
+    const rebuff = decideRebuff(input.state, 'economy_near', input.timestamp);
+    if (rebuff) input.state = { ...input.state, stats: { ...input.state.stats, ...rebuff } };
+    return { taken: workshop || rebuff ? { ...workshop, ...rebuff } : null };
+}
+// The rebuff decision (Bot/AI/Rebuff), one rule for a far step and a near body: taken
+// when woken (its last buff ended, a town arrival) on the state and held there
+// (stats.rebuff), its bit cleared: the mind keys it takes, or null. Its reads: the
+// party; its level and karma against a Newbie Guide in reach (BotBuffs); its clan
+// hall (VisitNeed.serves, the worker's hall row: its visit waits for a field step,
+// VisitNeed.needed / BotVisit); a buffer (a far bot's: one at its spot in the field
+// within its price read, ColdBuffOffer.providerFor; a body's: main's buffers near
+// it, read when it buys, BuffService).
+function decideRebuff(state, caller, timestamp) {
+    if (!Situations.woken(state.stats, 'rebuff')) return null;
+    const stats = state.stats || {}, grouped = !!(state.party?.partyId || state.partyId), hall = hallOf(state);
+    const answer = Rebuff.decide(grouped ? { grouped } : {
+        guide: BotBuffs.newbieEligible(state.level, stats.karma) && BotBuffs.guideInReach(state.loc),
+        hall: VisitNeed.serves(state, hall, hall?.managerPresent === true, timestamp),
+        provider: state.phase === 'hot' || !!state.spotId
+            && ColdBuffOffer.providerFor(state, kernel.occupancy.members(state.spotId, 'physical'), timestamp)
+    }, timestamp);
+    return { rebuff: answer, woken: Situations.decided(stats, 'rebuff', { caller, subject: state.characterId, answer: answer.via }) };
 }
 // The planner's work for one request. A near bot's decision (mode near) is the
 // card, the fields beside it (DecisionEvents.nearFields), the route rows of the same
@@ -836,6 +860,17 @@ function leafStart(state, timestamp, economy) {
 // keys it takes (workshopTaken), or null when it is not woken.
 function decideWorkshop(state, caller) {
     return Situations.woken(state.stats, 'workshop') ? workshopTaken(state, caller) : null;
+}
+// A far bot's rebuff answered a buffer: the sale offer of its named provider (null
+// when it sells nothing now: counted rebuff:buffer:gone), and the state holding the
+// answer done. Any other state is returned as it is, with no offer.
+function rebuffSale(state, timestamp) {
+    const answer = Rebuff.pending(state.stats, 'buffer');
+    if (!answer || state.phase !== 'cold') return { state, offer: null };
+    const provider = answer.providerId ? kernel.states.get(Number(answer.providerId))?.state : null;
+    const offer = provider ? ColdBuffOffer.offer(provider, state, timestamp) : null;
+    if (!offer) Situations.note('rebuff:buffer:gone');
+    return { state: { ...state, stats: { ...state.stats, rebuff: Rebuff.done(answer) } }, offer };
 }
 function cancelRoute(characterId) {
     const id = Number(characterId);
@@ -921,10 +956,15 @@ const escrowFor = characterId => escrowByOwner.get(Number(characterId)) || 0;
 // detected (once per raise). The decision is then taken on this row (mode near).
 // applied: the last raise the record applied.
 function nearEvents(id, previous, entry, applied) {
-    const row = entry.state, stats = row.stats ||= {};
+    const row = entry.state, stats = row.stats ||= {}, posted = stats.rebuff;
     // The worker owns the near mind: a post's mind keys are discarded and the
     // record's stand, so a late post cannot roll back a raise.
     for (const key of SavedStats.MIND_KEYS) stats[key] = previous.stats?.[key];
+    // But for the one fact a body's executor writes there: it carried out its held
+    // rebuff answer (HotTownRebuff.takeAnswer, done on main): the same answer is held
+    // done here, or the bot would carry it out again once far.
+    const held = stats.rebuff;
+    if (posted?.done && held && !held.done && posted.at === held.at && posted.via === held.via) stats.rebuff = Rebuff.done(held);
     // Main detected the body's own facts (A1) and named them in the bag.
     entry.raiseSeq = DecisionEvents.takePostedRaise(stats, row.raise, applied, Situations.bodyPlace(row), id);
 }
@@ -1070,19 +1110,11 @@ tables.watch('clan_halls', {
         if (previous && hallByOwner.get(previous.ownerId) === previous) hallByOwner.delete(previous.ownerId);
     }
 }, { retain: false });
-// One hall verdict per state object and hall row until its next time
-// crossing (VisitNeed.validUntil): lifecycleKind asks it several times per
-// step, and a new state or hall row is a new key.
-const hallVerdicts = new WeakMap();
-function hallNeeded(state, timestamp) {
-    const hall = hallByOwner.get(Number(state?.clanId ?? state?.stats?.clanId)) || null;
-    if (!hall && !state?.stats?.clanHallVisit) return false;
-    const known = hallVerdicts.get(state);
-    if (known && known.hall === hall && timestamp >= known.at && timestamp < known.until) return known.value;
-    const value = VisitNeed.needed(state, hall, hall?.managerPresent === true, timestamp);
-    hallVerdicts.set(state, { hall, at: timestamp, until: VisitNeed.validUntil(state, hall, timestamp), value });
-    return value;
-}
+// The bot's owned hall row, or null.
+const hallOf = state => hallByOwner.get(Number(state?.clanId ?? state?.stats?.clanId)) || null;
+// Whether a bot's step is its hall's (the kernel's lifecycleKind and command): the one
+// rule main reads too (VisitNeed.needed: a visit, the rebuff's hall answer, a restart).
+const hallNeeded = state => VisitNeed.needed(state, hallOf(state));
 tables.watch('personal_warehouse', {
     reset: () => {},
     put: (key, row) => { PersonalWarehouseIndex.prepareRow(row); occupationOwnerChanged(Number(key)); },
@@ -1726,8 +1758,12 @@ function startKernel(config = {}) {
                         // The workshop decision first when woken (the far step's order). The build
                         // plans on a new projection holding its keys (a state is replaced, not
                         // edited); the projector writes them under the build's packet.
-                        const workshop = decideWorkshop(projected, projected.party?.partyId || projected.partyId ? 'party' : 'karma');
-                        const planned = workshop ? { ...projected, stats: { ...projected.stats, ...workshop } } : projected;
+                        const caller = projected.party?.partyId || projected.partyId ? 'party' : 'karma';
+                        const workshop = decideWorkshop(projected, caller);
+                        const withWorkshop = workshop ? { ...projected, stats: { ...projected.stats, ...workshop } } : projected;
+                        // Then the rebuff (a party member's answers none: its buffs are its party's).
+                        const rebuff = decideRebuff(withWorkshop, caller, timestamp);
+                        const planned = rebuff ? { ...withWorkshop, stats: { ...withWorkshop.stats, ...rebuff } } : withWorkshop;
                         // The step's one gate, a party member's and
                         // a karma step's alike: the build runs only when a situation woke it
                         // (or the earning spot where the build decides it: not a party
@@ -1736,7 +1772,8 @@ function startKernel(config = {}) {
                         const woken = Situations.woken(planned.stats, 'build') || EconomyContext.earningDue(planned, deps);
                         refreshed = !woken ? ColdEconomyDecision.refreshAdvisory(planned, owner?.wishAdvisory, deps, { afterResult: true }) : null;
                         if (refreshed && economyDiagnostics.active()) economyDiagnostics.count('advisory', 'reuse', 'result');
-                        return { economy: refreshed ? refreshed.economy : EconomyContext.forState(planned, { ...deps, decide: true }), stats: workshop };
+                        return { economy: refreshed ? refreshed.economy : EconomyContext.forState(planned, { ...deps, decide: true }),
+                            stats: workshop || rebuff ? { ...workshop, ...rebuff } : workshop };
                     },
                     onEconomy: (built, seen) => {
                         economy = built; seenEcho = ColdEconomyDecision.stateEcho(seen);
@@ -1779,7 +1816,11 @@ function startKernel(config = {}) {
             // after the commit; its bit is cleared on the state committed.
             const lines = ownLines(projected, timestamp, economy, 'lifecycle', Situations.place(projected, state) === Situations.OPEN);
             const market = lines?.market || null;
-            const committed = lines ? { ...projected, stats: { ...projected.stats, woken: lines.woken } } : projected;
+            const linesTaken = lines ? { ...projected, stats: { ...projected.stats, woken: lines.woken } } : projected;
+            // The rebuff's buffer answer, carried out once: the sale its named provider
+            // offers now (main applies and prices it, ColdBuffService.applyOffer).
+            const sale = rebuffSale(linesTaken, timestamp);
+            const committed = sale.state;
             // Main reads this instead of building the network again.
             const economyDecision = economy && projected ? stepEconomy || refreshed
                 ? { ...(stepEconomy ? lifecyclePlan.economyDecision : refreshed.decision),
@@ -1798,8 +1839,7 @@ function startKernel(config = {}) {
                 // build taken on this step: a served card's view (refreshAdvisory,
                 // a lifecycle's reuse) holds the leaf alone, no wish queue or plans.
                 ...(economy && !refreshed && (!stepEconomy || lifecyclePlan.buildTaken === true) ? { build: economy } : {}),
-                buffOffer: invoke('GameServer/Bot/Economy/ColdBuffOffer').project(committed,
-                    kernel.occupancy.members(committed.spotId, 'physical'), timestamp),
+                ...(sale.offer ? { buffOffer: sale.offer } : {}),
                 ...(economyDecision ? { economyDecision } : {})
             };
         },
@@ -1849,12 +1889,12 @@ function startKernel(config = {}) {
                 buyOrderEscrow: escrowFor(state.characterId), goalRevision: goalRevision(state.characterId), routeRows };
             const wishFocus = previousPlan?.status === 'deferred' && previousPlan.strategy === 'none'
                 && previousPlan.next == null && previousPlan.reason === 'wish_focus';
-            // A healer or buffer without solo ground plans its party request
-            // below (PartyRequestPlanner, decision 10-30), and a bot waiting on its
-            // party request, at every step: temporary until step 7 (the request's
-            // deadlines), its builds counted unwoken under 'party_request'.
-            const solo = !state.party?.partyId && !state.partyId && !state.stats?.partyRequest
-                && !PartyRequestPlanner.supportWithoutGround(state, spots, routeSearch(state, timestamp));
+            // A bot outside a party serves its held card unless woken. A party request
+            // (PartyRequestPlanner) is the build's output, held with no clock until the
+            // next build: a held card carries it (its holder hunts on, as a C4 player
+            // whose LFG waits), and a healer or buffer without solo ground plans its
+            // request only in a build a situation woke.
+            const solo = !state.party?.partyId && !state.partyId;
             const where = Situations.place(state);
             const card = record?.wishAdvisory || null;
             // The step's own situations, raised on the state it plans (worker-local; the
@@ -1886,6 +1926,9 @@ function startKernel(config = {}) {
             // build), held on the state the step plans and commits.
             const workshopKeys = decideWorkshop(state, 'lifecycle');
             if (workshopKeys) state = { ...state, stats: { ...state.stats, ...workshopKeys } };
+            // The rebuff decision next, held on the state the same way.
+            const rebuffKeys = decideRebuff(state, 'lifecycle', timestamp);
+            if (rebuffKeys) state = { ...state, stats: { ...state.stats, ...rebuffKeys } };
             // The one gate (situations step 4 C6): the build runs only when a situation woke
             // it or the earning spot (its search runs in the build), or the bot holds no
             // card naming its decision; else the card serves, judging nothing more. The
@@ -1932,18 +1975,18 @@ function startKernel(config = {}) {
                 // projection after the round reads it (never posted).
                 // The workshop taken on this step rides the step's packet, as in a build: a
                 // step main executes (a town visit) reads the packet, not this state.
-                return { ...boardWakeSeq, statsPacket: { ...stepStatsPacket(state, refreshed.economy, timestamp), ...workshopKeys, ...earningKeys }, economy: refreshed.economy,
+                return { ...boardWakeSeq, statsPacket: { ...stepStatsPacket(state, refreshed.economy, timestamp), ...workshopKeys, ...rebuffKeys, ...earningKeys }, economy: refreshed.economy,
                     ...(occupation?.economyPlan ? { economyPlan: occupation.economyPlan } : {}),
                     activityPick: { activity: leaf.activity, spotId: leaf.spotId, npcId: leaf.npcId },
                     economyDecision: refreshed.decision, previousPlan, acquisitionPlan: previousPlan,
-                    partyRequest: null, reusablePartyRequest: false, replanFailure: null,
+                    partyRequest: state.stats?.partyRequest || null, reusablePartyRequest: false, replanFailure: null,
                     targetNpcId: Number(previousPlan?.next?.npcId || leaf.npcId || 0), plannedState: routedState, route, lastFight };
             }
             // A build (woken, or the step's card no longer names its decision: counted
             // unwoken under its caller). GearPlanSelection uses EconomyContext's same
             // prepared occupation reader: no synchronous recipe scan runs through it.
             if (!nullReuse && !deps.routeRows) deps.routeRows = await occupationFor(state, timestamp, { caller: 'step' }, 'wish');
-            const buildDeps = { ...deps, decide: true, caller: solo ? 'step' : 'party_request', ...(visitStop ? { visitStop } : {}) };
+            const buildDeps = { ...deps, decide: true, caller: solo ? 'step' : 'party', ...(visitStop ? { visitStop } : {}) };
             const preparedEconomy = nullReuse ? refreshed.economy
                 : Economy.forState(preparationState, buildDeps);
             const selectedAcquisition = nullReuse ? {

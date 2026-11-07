@@ -141,11 +141,6 @@ try {
             && entry.sql.includes("activity IN ('traveling', 'shopping', 'merchant', 'crafting', 'dead', 'clan_hall')"));
         assert(passivePartyRequestCleanup, 'startup must clear party requests from passive activities that cannot join formation');
         assert(passivePartyRequestCleanup.sql.includes("partyRequestStatus = 'open'"), 'passive cleanup must use the generated request projection');
-        const stalePartyRequestCleanup = statements.find((entry) => entry.sql.includes("'$.partyRequest.deferredUntil'")
-            && entry.sql.includes('partyRequestedAt <=')
-            && entry.sql.includes("'$.partyRequest.status', 'deferred'"));
-        assert(stalePartyRequestCleanup, 'startup must defer party requests that already exceeded their priority-specific TTL');
-        assert(stalePartyRequestCleanup.sql.includes('partyRequestPriority'), 'TTL cleanup must use the generated priority projection');
         const invalidPlanMigration = statements.find((entry) => entry.sql.includes("json_remove(COALESCE(statsJson, '{}'), '$.equipmentPlan'"));
         assert(invalidPlanMigration, 'startup must discard malformed persisted equipment plans that passive bots would not otherwise replan');
         assert(invalidPlanMigration.sql.includes("'$.equipmentPlan.target.selfId'"), 'the invalid-plan migration must validate the persisted target identity');
@@ -311,7 +306,7 @@ try {
                 const deferUpdate = statements.at(-1);
                 assert.strictEqual(deferred, 1, 'an unformable required group must close its active requests as a batch');
                 assert(deferUpdate.sql.includes("'$.partyRequest.lastReason'"), 'unformable party cleanup must persist its reason');
-                assert.strictEqual(deferUpdate.params[3], 'no_compatible_level_match', 'unformable party cleanup must persist the classification');
+                assert.strictEqual(deferUpdate.params[0], 'no_compatible_level_match', 'unformable party cleanup must persist the classification');
             }).then(() => BotLifeState.assignParty({
                 characterId: 43,
                 name: 'PartyWaitAssignmentProbe',

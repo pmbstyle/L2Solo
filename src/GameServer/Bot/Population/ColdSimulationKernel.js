@@ -361,6 +361,14 @@ function nearHeld(record, row) {
 // The decision bits a raise set since the bot's last state (its woken bits as
 // raised, Situations: a step answers them).
 const newlyWoken = (before, after) => !!(Number(after?.stats?.woken || 0) & ~Number(before?.stats?.woken || 0));
+// A step main carries out itself (PopulationService's entry branch): the rebuff's
+// guide answer (ColdGuideVisit) or its hall's step (VisitNeed.needed over the
+// worker's hall row: a visit under way, the rebuff's hall answer, a restart there).
+let Rebuff = null;
+function mainVisit(state, facts) {
+    return !!state.stats?.clanHallVisit || !!(Rebuff ||= require('../AI/Rebuff')).pending(state.stats, 'guide')
+        || facts.hallNeeded(state);
+}
 function lifecycleKind(state = {}, facts = NO_FACTS) {
     if (state.phase !== 'cold' || state.activity === 'pk_hunting') return 'inactive';
     const leads = facts.leaderParty(state.characterId, state) !== null;
@@ -377,7 +385,7 @@ function lifecycleKind(state = {}, facts = NO_FACTS) {
         return ['shopping', 'merchant'].includes(state.activity) ? 'command' : 'resolver';
     }
     const plan = stats.equipmentPlan || {};
-    if (stats.clanHallVisit || facts.hallNeeded(state)) return 'command';
+    if (mainVisit(state, facts)) return 'command';
     // Finite travel/rest/death transitions are completely represented by the
     // pure resolver result and the owner CAS proposal. Economy follow-up, if
     // any, is selected on the next state after the transition is durable.
@@ -912,9 +920,9 @@ class ColdSimulationKernel {
         return members;
     }
 
-    // Whether this cold bot needs its clan hall now (lifecycleKind, the command).
+    // Whether this cold bot's step is its clan hall's (lifecycleKind, the command).
     hallNeeded(state) {
-        return this.hallNeedOf(state, this.now()) === true;
+        return this.hallNeedOf(state) === true;
     }
 
     // Whether the player waits for this bot at a meeting point.
@@ -1583,7 +1591,7 @@ class ColdSimulationKernel {
         try {
             const elapsedMs = stepElapsedMs(current.state, timestamp);
             const raidPreparing = require('./RaidSupplyPolicy').held(current.state, timestamp);
-            const hallVisit = !raidPreparing && (!!current.state.stats?.clanHallVisit || this.hallNeeded(current.state));
+            const hallVisit = !raidPreparing && mainVisit(current.state, this);
             const lifecyclePlan = !hallVisit && !raidPreparing && this.planLifecycle
                 ? await this.planLifecycle({ state: current.state, timestamp })
                 : null;

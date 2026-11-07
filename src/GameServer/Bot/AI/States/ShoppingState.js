@@ -1161,7 +1161,10 @@ module.exports = {
             }
             const companionResume = session.resumeAfterShopping;
             const returningToCompanion = session.partyCompanion === true && companionResume?.followPlayerSession?.actor?.fetchIsOnline?.();
-            const townBuffVisit = HotTownRebuff.syncVisit(session, bot, BotAI);
+            // A solo bot's rebuff hears the town arrival raised here (a guide answer is
+            // carried out from the hunt, HuntingState); a player's companion renews its
+            // blessing at the guide before it returns (its own threshold, player-led).
+            const townBuffVisit = returningToCompanion ? HotTownRebuff.syncVisit(session, bot, BotAI) : null;
             const rebuffBeforeLeaving = HotTownRebuff.needsVisit(session, townBuffVisit)
                 && !!HotTownRebuff.tripGuide(session, bot, BotAI);
             session.plan = rebuffBeforeLeaving

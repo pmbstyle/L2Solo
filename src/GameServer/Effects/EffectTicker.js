@@ -110,6 +110,10 @@ function scheduleExpiry(session, target, effect) {
             refreshStats(target.session || session, target);
         }
         refreshEffects(session, target);
+        // A bot's last hunting buff ended: its rebuff decision hears it (HotTownRebuff).
+        try {
+            if (invoke('GameServer/Bot/AI/BotBuffs').rebuffable(effect)) invoke('GameServer/Bot/AI/HotTownRebuff').buffEnded(target);
+        } catch (error) { FailureLog.note('effect.buffs_expired', error); }
     }, Math.max(1, delay + 25));
     if (typeof timers[effect.key].unref === 'function') {
         timers[effect.key].unref();

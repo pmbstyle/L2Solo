@@ -39,22 +39,18 @@ assert(review.states.every(s => s.timing.nextResolveAt === timestamp + 30000));
 for (const state of review.states) {
     assert.deepStrictEqual(state.vitals, members[0].vitals);
     assert.deepStrictEqual(state.inventory, {});
-    assert(Recovery.coolingDown(state, timestamp));
-    assert.strictEqual(Requests.partyRequestForPlan(state, state.stats.equipmentPlan, timestamp, { economy: { worth: () => 0 } }).status, 'deferred');
+    // The assembly gave up: the request is closed, held until the bot's next build.
+    assert(Requests.closed(state));
+    assert.strictEqual(state.stats.partyRequest.lastReason, Recovery.REASON);
     assert.strictEqual(Requests.partyObjectiveForState(state), null);
-    for (const activity of ['traveling', 'shopping', 'resting', 'hunting']) {
-        assert.strictEqual(Requests.partyRequestForPlan({ ...state, activity },
-            { levelingRecovery: {} }, timestamp), state.stats.partyRequest,
-        'travel and recovery replanning must preserve the cooldown');
-    }
     assert.strictEqual(Duty.waiting({ ...state, stats: { ...state.stats,
         clanPartyObjective: { ...objective, clanGoalKey: 'clan-goal' } } }), false);
 }
 assert.deepStrictEqual(Composition.selectMembers(review.states, { timestamp, minSize: 2 }), []);
 assert.deepStrictEqual(Composition.selectRecruits([members[0]], [review.states[1]], { timestamp }), []);
-assert.strictEqual(Composition.selectMembers(review.states, { timestamp: timestamp + Recovery.RETRY_MS, minSize: 2 }).length, 2);
+// Its next build asks again (no clock reopens it).
 assert.strictEqual(Requests.partyRequestForPlan(review.states[0], members[0].stats.equipmentPlan,
-    timestamp + Recovery.RETRY_MS, { economy: { worth: () => 0 } }).status, 'open');
+    timestamp + 1, { economy: { worth: () => 0 } }).status, 'open');
 
 const gathered = members.map(s => ({ ...s, loc: { ...members[0].loc } }));
 const rescued = Lifecycle.review(restored, gathered, timestamp);

@@ -221,24 +221,6 @@ assert.strictEqual(BackgroundResolver.staleShopping(shopper({ supplyErrand: { it
 assert.strictEqual(BackgroundResolver.staleShopping(shopper({ marketReturn: { spotId: 'home' } })), false);
 assert.strictEqual(BackgroundResolver.staleShopping(shopper({}, 'Giran')), false);
 
-// Party request expiry on the main thread.
-const request = (priority, age, extra = {}) => ({
-    ...bot(FIGHTER, ratios(1, 1)),
-    stats: { partyRequest: { status: 'open', priority, requestedAt: now - age, attempts: 2, objectiveKey: 'k', reviewAt: 5, ...extra } }
-});
-const fresh = request('required', 15 * 60 * 1000 - 1);
-assert.strictEqual(PopulationService.expirePartyRequestForState(fresh, now), fresh);
-assert.deepStrictEqual(PopulationService.expirePartyRequestForState(request('required', 15 * 60 * 1000), now).stats.partyRequest, {
-    status: 'deferred', priority: 'required', requestedAt: now - 15 * 60 * 1000, attempts: 3, objectiveKey: 'k', reviewAt: 5,
-    deferredUntil: now + 5 * 60 * 1000, expiredAt: now
-});
-const preferredFresh = request('preferred', 5 * 60 * 1000 - 1);
-assert.strictEqual(PopulationService.expirePartyRequestForState(preferredFresh, now), preferredFresh);
-assert.strictEqual(PopulationService.expirePartyRequestForState(request('preferred', 5 * 60 * 1000), now)
-    .stats.partyRequest.status, 'deferred');
-const deferred = request('required', 99 * 60 * 1000, { status: 'deferred' });
-assert.strictEqual(PopulationService.expirePartyRequestForState(deferred, now), deferred);
-
 // Party size limits: the main thread and the worker's formation proposal.
 assert.deepStrictEqual(PopulationService.partyLimitsForObjective(null), { maxSize: 5, minSize: 2, levelRange: undefined });
 assert.deepStrictEqual(PopulationService.partyLimitsForObjective({
@@ -260,14 +242,6 @@ assert.strictEqual(RequiredPartyFormation.spotFor(bot(FIGHTER, ratios(1, 1), { s
 // The shared party request rules the main thread, the worker and the SQL
 // batch read.
 const PartyRequestPlanner = invoke('GameServer/Bot/Population/PartyRequestPlanner');
-assert.strictEqual(PartyRequestPlanner.maxAgeMs('required'), 15 * 60 * 1000);
-assert.strictEqual(PartyRequestPlanner.maxAgeMs('preferred'), 5 * 60 * 1000);
-assert.strictEqual(PartyRequestPlanner.cooldownMs(), 5 * 60 * 1000);
-const open = request('preferred', 5 * 60 * 1000).stats.partyRequest;
-assert.deepStrictEqual(PartyRequestPlanner.expire(open, now), {
-    ...open, status: 'deferred', deferredUntil: now + 5 * 60 * 1000, expiredAt: now, attempts: 3
-});
-assert.strictEqual(PartyRequestPlanner.expire(undefined, now), undefined);
 assert.deepStrictEqual(PartyRequestPlanner.limitsForObjective({ clanOperation: 'equipment', clanId: 3 },
     { minSize: 2, maxSize: 5, levelRange: 4 }), { maxSize: 5, minSize: 2, levelRange: 99 });
 assert.deepStrictEqual(PartyRequestPlanner.limitsForObjective(null, { minSize: 3, maxSize: 4, levelRange: 6 }),

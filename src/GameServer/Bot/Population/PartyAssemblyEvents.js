@@ -7,9 +7,9 @@ const SAFETY_INTERVAL_MS = 30 * 60000;
 // An input index holds original published states. Combat/coordinate updates
 // refresh the reference without restarting an unchanged assembly decision.
 class PartyAssemblyEvents {
-    constructor({ registry, life, parties, classify, run, expire, now = Date.now,
+    constructor({ registry, life, parties, classify, run, now = Date.now,
         retryMs = 30000, onRepair = () => {}, onError = () => {} }) {
-        Object.assign(this, { registry, life, parties, classify, run, expire, now,
+        Object.assign(this, { registry, life, parties, classify, run, now,
             retryMs, onRepair, onError });
         this.records = new Map();
         this.groups = new Map();
@@ -72,7 +72,6 @@ class PartyAssemblyEvents {
     observe(packet, repair = false) {
         if (!this.active) return false;
         if (packet.kind === 'reset') {
-            for (const record of this.records.values()) this.cancel(record);
             for (const group of this.groups.values()) this.cancel(group);
             this.records.clear(); this.groups.clear(); this.supports.clear(); this.dirty.clear();
             return false;
@@ -94,7 +93,6 @@ class PartyAssemblyEvents {
             const group = this.groups.get(previous.key);
             group?.members.delete(id);
             if (group) { group.revision++; this.enqueue(group); }
-            this.cancel(previous);
             this.records.delete(id);
         }
         if (!input) {
@@ -116,24 +114,6 @@ class PartyAssemblyEvents {
         if (wake) {
             group.revision++; this.enqueue(group); DiagnosticConfig.developerDiagnostics && (this.metrics.events++);
             if (repair) { DiagnosticConfig.developerDiagnostics && (this.metrics.repaired++); this.onRepair(); }
-        }
-        const dueAt = Number(input.dueAt || 0);
-        if (record.dueAt !== dueAt) {
-            this.cancel(record); record.dueAt = dueAt;
-            if (dueAt > 0) {
-                const expired = () => {
-                    if (this.records.get(id) !== record) return;
-                    Promise.resolve(this.expire?.(id)).then(result => {
-                        if (!this.active || this.records.get(id) !== record) return;
-                        if (result?.deferred) this.arm(record, this.now() + this.retryMs, expired);
-                        else { record.dueAt = 0; this.observe({ characterId: id, state: this.life.cachedState(id) }); this.enqueue(group); }
-                    }).catch(error => {
-                        this.onError(error);
-                        if (this.active && this.records.get(id) === record) this.arm(record, this.now() + this.retryMs, expired);
-                    });
-                };
-                this.arm(record, Math.max(dueAt, this.now()), expired);
-            }
         }
         if (repair && group.handled < group.revision && !this.dirty.has(group.key)
             && !this.deadlines.has(group) && !this.running) {

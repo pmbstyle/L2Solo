@@ -10,7 +10,6 @@ const GeodataEngine  = invoke('GameServer/Geodata/GeodataEngine');
 const SpotService    = invoke('GameServer/Bot/AI/SpotService');
 const Karma          = invoke('GameServer/Karma');
 const DecisionService = invoke('GameServer/Bot/AI/BotDecisionService');
-const BotBuffs       = invoke('GameServer/Bot/AI/BotBuffs');
 const PartyAwareness = invoke('GameServer/Bot/AI/PartyAwareness');
 const BotTargetScorer = invoke('GameServer/Bot/AI/BotTargetScorer');
 const TargetMatchup = invoke('GameServer/Bot/AI/BotTargetMatchup');
@@ -742,21 +741,20 @@ module.exports = {
 
         if (leaveShop(session, bot)) return;
 
-        // 1. Expire buffs check for hunting bots. A hot bot already in a
-        // starter town also refreshes once per visit before going back out.
+        // 1. Its rebuff answered the Newbie Guide (Bot/AI/Rebuff: its last buff ended, or
+        // it reached town): the trip, once, to the guide in reach; none in reach holds
+        // the answer done until its next situation.
         if (!session.followPlayerSession) {
-            const townBuffVisit = HotTownRebuff.syncVisit(session, bot, BotAI);
-            const townVisitNeedsRebuff = HotTownRebuff.needsVisit(session, townBuffVisit);
-            if ((townVisitNeedsRebuff || BotBuffs.needsNewbieRefresh(bot, 0)) && HotTownRebuff.tripGuide(session, bot, BotAI)) {
+            const guide = HotTownRebuff.takeAnswer(session, 'guide') ? HotTownRebuff.nearGuide(bot, BotAI) : null;
+            if (guide) {
+                const inTown = Math.hypot(bot.fetchLocX() - guide.locX, bot.fetchLocY() - guide.locY) <= HotTownRebuff.GUIDE_CORE_RADIUS;
                 session.preBuffLocation = { locX: bot.fetchLocX(), locY: bot.fetchLocY(), locZ: bot.fetchLocZ() };
                 session.preBuffPlan = 'hunting';
-                session.resumeAfterBuff = townVisitNeedsRebuff
-                    ? { plan: 'hunting', townVisitKey: townBuffVisit.key }
-                    : undefined;
+                session.resumeAfterBuff = { plan: 'hunting', newbieGuide: guide };
                 session.plan = 'getting_buffed';
                 session.currentTargetId = undefined;
                 bot.automation.abortAll(bot);
-                TownChatter.say(session, BotAI, 'heading-to-newbie-guide', townVisitNeedsRebuff
+                TownChatter.say(session, BotAI, 'heading-to-newbie-guide', inTown
             ? Speech.lines('town.heading-to-newbie-guide.in-town')
             : Speech.lines('town.heading-to-newbie-guide.expired'));
                 return;

@@ -158,7 +158,13 @@ const SITUATIONS = Object.freeze({
     // bid answered). Heard at its next stop: a hunting player looks at his store when he
     // sits down or reaches town.
     line_undercut: link(0, STOP),
-    'goal_done:line': link(0, STOP)
+    'goal_done:line': link(0, STOP),
+    // Its last hunting buff ended (BotBuffs.rebuffable: a guide's, a hall's or a buffer's;
+    // a far bot's buffed fact fell, or it is first read unbuffed on a solo field step,
+    // buffFact; a body's last such effect expired, EffectTicker): heard at its next stop,
+    // as a player who sees his buffs gone renews them when he sits down or reaches town.
+    // A death clears buffs and raises none (its restart's field step reads the fact anew).
+    buffs_expired: link(0, STOP)
 });
 const hears = (name, where) => !(SITUATIONS[name].waits & where);
 // One reason with no decision of its own (a step's market review): is it heard here, counted as a raise.
@@ -194,6 +200,9 @@ function woke(name, where) {
 // own_lines: the prices of its own board lines (MarketPricing.look over every own
 // priced line), taken at a town arrival (it sees the stores), a line undercut and a
 // line filled; held between: prices, deals and the clock wake it not. No held key.
+// rebuff: how the bot renews its hunting buffs now (Bot/AI/Rebuff: none, the Newbie
+// Guide, its clan hall, a buffer), taken when its last buff ended and at a town
+// arrival; held between (stats.rebuff, carried out once). No held key: none held reads none.
 const DECISIONS = Object.freeze({
     earning_spot: Object.freeze(['grade_changed', 'spot_outleveled', 'gear_changed', 'died', 'recovered', 'spot_disappoints', 'contest_lost', 'spot_empty',
         'spot_dangerous', 'spot_unreachable', 'moved_by_world', 'party_left', 'shots_out', 'goal_affordable:potions',
@@ -204,7 +213,8 @@ const DECISIONS = Object.freeze({
         'clan_changed', 'spot_empty', 'goal_moved', 'player_command', 'offer_posted']),
     gear_plan: Object.freeze(['grade_changed', 'gear_changed', 'clan_changed', 'source_stalled']),
     workshop: Object.freeze(['arrived_town', 'arrived_town:own', 'recipe_learned']),
-    own_lines: Object.freeze(['arrived_town', 'arrived_town:own', 'line_undercut', 'goal_done:line'])
+    own_lines: Object.freeze(['arrived_town', 'arrived_town:own', 'line_undercut', 'goal_done:line']),
+    rebuff: Object.freeze(['buffs_expired', 'arrived_town', 'arrived_town:own'])
 });
 const BITS = Object.freeze(Object.fromEntries(Object.keys(DECISIONS).map((name, at) => [name, 1 << at])));
 const ALL = Object.values(BITS).reduce((all, bit) => all | bit, 0), PLANE = 0xff;
@@ -473,6 +483,27 @@ function factNames(previousFact, current, planned = false) {
     if (previousFact('stores') !== current.stores) add('clan_call');
     return names;
 }
+// The buffed fact of a far bot hunting on its own (a step on either thread,
+// BotLifeState.prepareResolve): a rebuffable effect in force at the state's time
+// (BotBuffs.buffedAt). Its value is kept on the row (stats.buffed) and compared there,
+// not against the step's state before: a rest or a write between rounds would hide the
+// flip. Out of the field, dead or in a party the row holds none (null): a town visit, a
+// death and a party's buffs are no hunt's. A solo field step that finds the bot
+// unbuffed raises buffs_expired once when the row held it buffed (its last buff ended)
+// or held none (a new row, back from town, a death's restart, a party left): a hunter
+// who sees no buffs on him renews them at his next stop. next: the stats written;
+// field: the step's activity is a field one (FIELD_ACTIVITIES); returns the situation
+// name or null.
+function buffFact(next, effects, at, { field = true, dead = false, grouped = false } = {}) {
+    if (!field || dead || grouped) {
+        if (next.buffed != null) next.buffed = null;
+        return null;
+    }
+    const buffed = Number((Buffs ||= invoke('GameServer/Bot/AI/BotBuffs')).buffedAt(effects, at)), was = next.buffed;
+    if (was !== buffed) next.buffed = buffed;
+    return was !== 0 && !buffed ? 'buffs_expired' : null;
+}
+let Buffs = null;
 // The step's fact diff, one function for both threads (a far step's projection,
 // BotLifeState.prepareResolve; a near bot's post): the situations of its own state
 // against the decision's baseline (stats.wishSections), a fact the baseline lacks
@@ -532,6 +563,7 @@ function needsOpened(before, names, now, was = null) {
     }
     return opened;
 }
-module.exports = { FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, readsFacts, hears, woke,
+module.exports = {
+    buffFact, FIELD_ACTIVITIES, OPEN, REST, place, bodyPlace, gated, field, reactive, onVisit, readsFacts, hears, woke,
     DECISIONS, ALL, raise, delta, planes, took, applyFacts, spotAsk, counted, note, stop, woken, anyWoken, decided, counts, COUNT_KEYS,
     placeName: where => NAMES.get(where), SITUATIONS, BITS, detect, factNames };

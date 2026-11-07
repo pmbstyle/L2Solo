@@ -7,13 +7,13 @@ const SpotIndex = invoke('GameServer/Bot/AI/SpotIndex');
 const SpotProfiles = invoke('GameServer/Bot/Population/SpotProfiles');
 
 // It waits while its party request is required (a party-only source, or a
-// clan hunt), or was deferred while its plan still needs a party. A bot in a
+// clan hunt), or was closed while its plan still needs a party. A bot in a
 // party does not wait.
 function waiting(state, plan, partyRequest) {
     if (state?.party?.partyId) return false;
     if (partyRequest?.materialParty && partyRequest.suspendedFor) return false;
     if (partyRequest?.priority === 'required') return true;
-    return partyRequest?.status === 'deferred'
+    return partyRequest?.status === 'closed'
         && (plan?.partyNeed === 'required' || plan?.requiresParty === true);
 }
 

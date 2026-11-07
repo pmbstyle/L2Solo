@@ -1,5 +1,4 @@
 const WAIT_LIMIT_MS = 5 * 60 * 1000;
-const RETRY_MS = 5 * 60 * 1000;
 const REASON = 'party_assembly_timeout';
 const MAX_ATTEMPTS = 12;
 const PROCESS_STARTED_AT = Date.now() - Math.floor(process.uptime() * 1000);
@@ -22,11 +21,4 @@ function expired(party) {
         || Number(wait?.attempts || 0) >= 6 && Number(wait?.waitedMs || 0) >= WAIT_LIMIT_MS;
 }
 
-function coolingDown(state, timestamp = Date.now()) {
-    const request = state?.stats?.partyRequest;
-    return (request?.deferReason === REASON
-        || request?.materialParty === true && request.deferReason === 'party_material_route_unavailable')
-        && Number(request.deferredUntil || 0) > timestamp;
-}
-
-module.exports = { WAIT_LIMIT_MS, RETRY_MS, REASON, record, expired, coolingDown };
+module.exports = { WAIT_LIMIT_MS, REASON, record, expired };

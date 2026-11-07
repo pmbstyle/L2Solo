@@ -172,21 +172,20 @@ function remaining(state, goal, inventory = state.inventory) {
     return Math.min(physical, goal.quota === undefined ? Infinity : Math.max(0, goal.quota - positive(goal.collected)));
 }
 
-// Restocking changes the current occupation, not the unfinished craft. Keep
-// its one request parked even after the formation cooldown ends; only the
+// Restocking changes the current occupation, not the unfinished craft. Its one
+// request is parked (closed for the errand, PartyRequestPlanner.closed); only the
 // renewed material decision may reopen it. No source search is needed here.
-function supplyPause(state, plan, { economy, timestamp = Date.now() } = {}) {
+function supplyPause(state, plan, { economy } = {}) {
     const held = requestOf(state);
     const step = economy?.network?.activity?.rootKey || '';
-    if (!held || !['open', 'deferred'].includes(held.status) || !step.startsWith('stock:')
+    if (!held || !['open', 'closed'].includes(held.status) || !step.startsWith('stock:')
         || state.partyId || state.party?.partyId || state.activity === 'dead'
         || !plan?.recipeId || plan.clanGoal || plan.levelingRecovery
         || !['active', 'deferred', 'blocked'].includes(plan.status)
         || remaining({ ...state, stats: { ...state.stats, equipmentPlan: plan } }, held) <= 0) return null;
     const incoming = positive(economy?.stockFor?.(held.itemId, `power:${held.targetId}:${plan.target.slot}`)?.incoming);
     if (incoming >= positive(held.requiredTotal) - positive(state.inventory?.[held.itemId]?.amount)) return null;
-    return { ...held, status: 'deferred', suspendedFor: step,
-        deferredUntil: Number(held.deferredUntil || 0) || timestamp };
+    return { ...held, status: 'closed', suspendedFor: step };
 }
 
 function needs(members, objective, agreement) {
@@ -249,17 +248,16 @@ function target(party, members) {
 
 function selectMembers(candidates, { minSize = 2, maxSize = MAX_MEMBERS, levelRange = 4, timestamp = Date.now() } = {}) {
     const Composition = invoke('GameServer/Bot/Population/BackgroundPartyComposition');
-    const Recovery = require('./PartyAssemblyRecovery');
+    const closed = invoke('GameServer/Bot/Population/PartyRequestPlanner').closed; // lazy: the planner reads this module
     candidates = [...new Map(candidates.filter(state => state?.characterId && !state.stats?.coldCompetition?.wait
         && invoke('GameServer/Bot/AI/PersonalGearProgression').adventurer(state)
-        && !Recovery.coolingDown(state, timestamp)).map(state => [Number(state.characterId), state])).values()];
+        && !closed(state)).map(state => [Number(state.characterId), state])).values()];
     const cores = candidates.filter(state => requestOf(state)?.status === 'open');
     if (!cores.length) return [];
     const anchor = cores[0], spotId = requestOf(anchor).spotId;
     const core = cores.filter(state => requestOf(state).spotId === spotId
         && Math.abs(state.level - anchor.level) <= levelRange).slice(0, Math.min(MAX_CORE, maxSize));
-    const supports = candidates.filter(state => Composition.supportRole(state, requestOf(state) || state.stats?.clanPartyObjective)
-        && !(state.stats?.partyRequest?.status === 'deferred' && Number(state.stats.partyRequest.deferredUntil) > timestamp));
+    const supports = candidates.filter(state => Composition.supportRole(state, requestOf(state) || state.stats?.clanPartyObjective));
     const recruits = Composition.selectRecruits(core, supports, { maxSize: Math.min(MAX_MEMBERS, maxSize), levelRange, timestamp });
     const members = [...core, ...recruits];
     if (members.length < minSize) return [];

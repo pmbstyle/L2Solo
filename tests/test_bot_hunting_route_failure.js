@@ -268,33 +268,30 @@ try {
         TownTravel.request = savedPurchase.travel;
     }
 
-    // A solo hunter with expired newbie buffs whose guide trip was abandoned
-    // waits for the retry time instead of walking the same route next tick.
-    const Buffs = invoke('GameServer/Bot/AI/BotBuffs');
+    // A solo hunter walks to the Newbie Guide only when its rebuff answered the guide
+    // (Bot/AI/Rebuff), once per answer, to a guide within its town radius; a guide out of
+    // reach holds the answer done (no retry until the next situation).
     const guideAt = offset => ({ ...ai,
         getClosestNewbieGuide: () => ({ locX: start.locX + offset, locY: start.locY, locZ: start.locZ }) });
-    const buffTrip = (retryAt, BotAI) => {
+    const buffTrip = (answered, BotAI, after = null) => {
         const f = fixture(true);
         f.session.spotRelocation = undefined;
         f.session.townRoutePlan = null;
-        f.session.newbieGuideRetryAt = retryAt;
+        if (answered) Events.replaceStats(f.session, { ...Events.statsFor(f.session), rebuff: { via: 'guide', providerId: null, at: 1 } });
         f.bot.automation = { abortAll() {} };
         Hunting.tick(f.session, f.bot, {}, BotAI);
+        if (after) after(f);
         return f.session.plan;
     };
-    Buffs.needsNewbieRefresh = () => true;
-    try {
-        assert.strictEqual(buffTrip(Date.now() + 60000, guideAt(2000)), 'hunting',
-            'expired buffs do not restart a guide trip before its retry time');
-        assert.strictEqual(buffTrip(Date.now() - 1, guideAt(2000)), 'getting_buffed',
-            'expired buffs send the hunter to the guide once the retry time passed');
-        assert.strictEqual(buffTrip(undefined, guideAt(7600)), 'hunting',
-            'expired buffs do not send a hunter to a guide beyond its town radius');
-        assert.strictEqual(buffTrip(undefined, guideAt(7400)), 'getting_buffed',
-            'expired buffs send a hunter to a guide within its town radius');
-    } finally {
-        Buffs.needsNewbieRefresh = () => false;
-    }
+    assert.strictEqual(buffTrip(false, guideAt(2000)), 'hunting', 'no answer: no guide trip, buffs or not');
+    assert.strictEqual(buffTrip(true, guideAt(2000)), 'getting_buffed', 'the guide answer sends the hunter to the guide');
+    assert.strictEqual(buffTrip(true, guideAt(7600), f => {
+        assert.equal(Events.statsFor(f.session).rebuff.done, true, 'a guide out of reach holds the answer done');
+        f.session.plan = 'hunting';
+        Hunting.tick(f.session, f.bot, {}, guideAt(7400));
+        assert.equal(f.session.plan, 'hunting', 'a done answer starts no later trip');
+    }), 'hunting', 'no trip to a guide beyond its town radius');
+    assert.strictEqual(buffTrip(true, guideAt(7400)), 'getting_buffed', 'a guide within its town radius is in reach');
 
     console.log('Bot hunting route failure checks passed');
 } finally {

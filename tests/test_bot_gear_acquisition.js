@@ -375,7 +375,7 @@ const partyBlockedState = {
             }
         },
         partyRequest: {
-            status: 'deferred',
+            status: 'closed',
             priority: 'required',
             targetId: failedTarget.selfId,
             npcId: 450,
@@ -389,7 +389,7 @@ const partyBlockedContext = GearAcquisitionPlanner.replanContextFor(
     20 * 60 * 1000
 );
 assert.strictEqual(partyBlockedContext.failure.reason, 'party_route_unavailable',
-    'a repeatedly deferred required party route must become a planner recovery, not an endless direct-drop objective');
+    'a required party route closed by forming\'s no too often must become a planner recovery, not an endless direct-drop objective');
 const partySetAside = partyBlockedContext.recoveryTargets.find(entry => entry.reason === 'party_route_unavailable');
 assert(Array.isArray(partySetAside.wake) && partySetAside.until === 20 * 60 * 1000 + 3600000,
     'a party route set aside wakes on its inputs, and after a window for the recruit pool, which has no event');
@@ -476,7 +476,7 @@ const craftBlockedContext = GearAcquisitionPlanner.replanContextFor(
     20 * 60 * 1000
 );
 assert.strictEqual(craftBlockedContext.failure.reason, 'party_route_unavailable',
-    'a repeatedly deferred required craft route must become a planner recovery too');
+    'a required craft route closed by forming\'s no too often must become a planner recovery too');
 const craftBlockedFallback = GearAcquisitionPlanner.planFor(partyBlockedState, {
     spots: [],
     ...craftBlockedContext,

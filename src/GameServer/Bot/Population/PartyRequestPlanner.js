@@ -6,9 +6,9 @@ const Roles = invoke('GameServer/Bot/AI/BotRoles');
 // No solo ground -> a party (decision 10-30, T106): a healer or buffer
 // (BotRoles) whose solo gate admits no spot near its level
 // (BotRoute.soloGroundMissing) seeks a party instead of farming grey ground
-// alone. Read by the worker's step (no card reuse for it: its request is
-// planned) and by the request below. search: the worker's route search
-// inputs (BotRoute.soloGroundMissing: the routed spot decides).
+// alone. Read by the request below, which only a build a situation woke plans
+// (its held card carries the request between builds). search: the worker's
+// route search inputs (BotRoute.soloGroundMissing: the routed spot decides).
 const NO_SOLO_GROUND = 'no_solo_ground';
 function supportWithoutGround(state, spots, search = null) {
     return (Roles.isHealer(state) || Roles.canBuff(state))
@@ -26,12 +26,11 @@ function seeksParty(state) {
 // search finds for it (mode party: the level fit and the group's matchup,
 // not its solo gate), so it groups with the bots that hunt there
 // (objectiveKey = their spot key) and joins parties that hunt there. The
-// spot holds while the request is open or cools down; a reopened request
-// searches again. Null: no such seeker, or no spot.
+// spot holds while the request is open; a reopened request searches again.
+// Null: no such seeker, or no spot.
 function seekObjective(state, previous, { spots, timestamp, search = null }) {
     if (!supportWithoutGround(state, spots, search)) return null;
-    const held = previous?.reason === NO_SOLO_GROUND && (previous.status === 'open'
-        || previous.status === 'deferred' && Number(previous.deferredUntil || 0) > timestamp) ? previous.spotId : null;
+    const held = previous?.reason === NO_SOLO_GROUND && previous.status === 'open' ? previous.spotId : null;
     // lazy: cycle SpotProfiles' chain loads this planner
     const searched = held ? null : invoke('GameServer/Bot/Population/SpotProfiles').findForState({ ...state, spotId: null,
         stats: Object.fromEntries(Object.entries(state.stats || {}).filter(([key]) => key !== 'equipmentPlan')) },
@@ -44,31 +43,12 @@ function seekObjective(state, previous, { spots, timestamp, search = null }) {
         spotId, npcId: null, itemId: null, targetId: null };
 }
 
-// How long an open party request may wait for a group, by its priority.
-function maxAgeMs(priority) {
-    return priority === 'required'
-        ? Math.max(30000, Number(Config.partyRequestMaxAgeMs) || 15 * 60 * 1000)
-        : Math.max(30000, Number(Config.partyPreferredMaxAgeMs) || 5 * 60 * 1000);
-}
-
-// How long an expired request rests before the bot asks again.
-function cooldownMs() {
-    return Math.max(30000, Number(Config.partyRequestCooldownMs) || 5 * 60 * 1000);
-}
-
-// An open request older than its age is deferred for the cooldown and
-// counted as one more attempt; any other request is returned as it is.
-function expire(request, now = Date.now()) {
-    if (request?.status !== 'open') return request;
-    if (now - Number(request.requestedAt || now) < maxAgeMs(request.priority)) return request;
-    return {
-        ...request,
-        status: 'deferred',
-        deferredUntil: now + cooldownMs(),
-        expiredAt: now,
-        attempts: Number(request.attempts || 0) + 1
-    };
-}
+// A party request is held with no clock (C4 has no LFG timeout: a player asks
+// and hunts on): open while forming may answer it; closed (lastReason) when
+// forming found no group for it, its assembled party gave up, or a material
+// party parked it for a supply errand. A closed request is held until the bot's
+// next build, which asks again (reopens it) or drops it; forming skips it.
+const closed = state => state?.stats?.partyRequest?.status === 'closed';
 
 // Party size and level spread: a clan equipment duty sets its own within
 // fixed bounds, any other party uses the defaults (the configured sizes
@@ -150,16 +130,10 @@ function partyRequestForPlan(state, plan, timestamp = Date.now(), options = {}) 
     const previous = state?.stats?.partyRequest;
     const supplyPause = Material.supplyPause(state, plan, { ...options, timestamp });
     if (supplyPause) return supplyPause;
-    // Travel and recovery are part of returning to solo hunting. Neither may
-    // erase the recruitment cooldown before the bot gets its first fight.
-    if (invoke('GameServer/Bot/Population/PartyAssemblyRecovery').coolingDown(state, timestamp)) {
-        if (!previous.suspendedFor) return previous;
-        const { suspendedFor, ...held } = previous;
-        return held;
-    }
-    if (plan?.levelingRecovery) return null;
-    if (!partyRequestEligible(state)) return null;
-    const sharedTarget = previous?.reason === 'shared_target' && ['open', 'deferred'].includes(previous.status)
+    // A bot that cannot ask now (travel, a recovery, a party) keeps a closed request as
+    // it is, its attempts with it: the next build that can asks again.
+    if (plan?.levelingRecovery || !partyRequestEligible(state)) return previous?.status === 'closed' ? previous : null;
+    const sharedTarget = previous?.reason === 'shared_target' && ['open', 'closed'].includes(previous.status)
         && plan?.status === 'active' && previous.spotId === plan.next?.spotId
         && Number(previous.npcId) === Number(plan.next?.npcId || plan.targetNpcId)
         ? { ...previous, status: 'open' } : null;
@@ -176,49 +150,27 @@ function partyRequestForPlan(state, plan, timestamp = Date.now(), options = {}) 
             itemId: Number(objective.itemId), count: amount, fee } };
     }
     if (!objective) return null;
-    const sameRequest = ['open', 'deferred'].includes(previous?.status)
+    const sameRequest = ['open', 'closed'].includes(previous?.status)
         && previous.objectiveKey === objective.objectiveKey
         && Number(previous.itemId || 0) === Number(objective.itemId || 0)
         && Number(previous.targetId || 0) === Number(objective.targetId || 0);
-    // Camp changes restart the waiting window, but retain this material
-    // operation's failed assemblies so every bounded alternative is visited.
+    // A camp change asks anew, but keeps this material operation's failed
+    // assemblies so every bounded alternative is visited.
     const sameMaterialNeed = Material.isObjective(previous) && Material.isObjective(objective)
         && Number(previous.itemId) === Number(objective.itemId)
         && Number(previous.targetId) === Number(objective.targetId);
-    const previousRequestedAt = sameRequest ? Number(previous.requestedAt || timestamp) : timestamp;
+    const kept = sameRequest && previous.status === 'open';
+    // Its attempts are counted where a request closes (forming's no, an assembly's
+    // departure); asked again it keeps them.
     const previousAttempts = sameRequest || sameMaterialNeed ? Number(previous.attempts || 0) : 0;
 
-    if ((sameRequest || sameMaterialNeed) && previous.status === 'deferred' && Number(previous.deferredUntil || 0) > timestamp) {
-        return {
-            ...objective,
-            status: 'deferred',
-            requestedAt: previousRequestedAt,
-            deferredUntil: Number(previous.deferredUntil),
-            expiredAt: Number(previous.expiredAt || 0) || null,
-            attempts: previousAttempts,
-            lastMatchedAt: previous.lastMatchedAt || null
-        };
-    }
-
-    if (sameRequest && previous.status === 'open') {
-        const kept = {
-            ...objective,
-            status: 'open',
-            requestedAt: previousRequestedAt,
-            attempts: previousAttempts,
-            lastMatchedAt: previous.lastMatchedAt || null
-        };
-        const expired = expire(kept, timestamp);
-        if (expired !== kept) return expired;
-    }
-
-    if (objective.reason === NO_SOLO_GROUND && !(sameRequest && previous.status === 'open')) {
+    if (objective.reason === NO_SOLO_GROUND && !kept) {
         Diagnostics.count('party_seek', NO_SOLO_GROUND, 'seeking');
     }
     return {
         ...objective,
         status: 'open',
-        requestedAt: sameRequest && previous.status === 'open' ? previousRequestedAt : timestamp,
+        requestedAt: kept ? Number(previous.requestedAt || timestamp) : timestamp,
         // The plan selection's input key (GearPlanSelection `planKey`): the
         // waiting plan is kept until it moves.
         planKey: options.planKey ?? null,
@@ -228,7 +180,7 @@ function partyRequestForPlan(state, plan, timestamp = Date.now(), options = {}) 
 }
 
 function partyObjectiveForState(state) {
-    if (invoke('GameServer/Bot/Population/PartyAssemblyRecovery').coolingDown(state)) return null;
+    if (closed(state)) return null;
     if (state?.stats?.equipmentPlan?.levelingRecovery) return null;
     const request = state?.stats?.partyRequest;
     const clanObjective = clanPartyObjectiveForState(state);
@@ -249,9 +201,7 @@ module.exports = {
     NO_SOLO_GROUND,
     supportWithoutGround,
     seeksParty,
-    maxAgeMs,
-    cooldownMs,
-    expire,
+    closed,
     limitsForObjective,
     objectiveSpot,
     partyObjectiveForPlan,

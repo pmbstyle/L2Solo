@@ -9,6 +9,9 @@ const SHIFT_COOLDOWN_MS = 30 * 60 * 1000;
 const SERVICE_SQUARE_RADIUS = 900;
 const lastAt = new Map();
 
+// A hot buffer's town shift: 10 minutes on the square, then 30 off. A window, not a
+// situation (temporary: until the market redesign owns the buffer's earning as a leaf
+// of its earning spot, with its own end).
 function onDuty(session, timestamp = Date.now()) {
     const actor = session?.actor;
     if (!actor || !Policy.serviceClass(actor) || actor.isDead?.() || actor.state?.fetchCombats?.()

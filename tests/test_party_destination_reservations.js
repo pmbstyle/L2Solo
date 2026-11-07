@@ -78,24 +78,13 @@ const at = Date.now(), ids = [];
     assert.equal(reviewed.states[0].stats.partyRequest.amount, 10, 'only the uncollected quota is requested again');
     assert(!reviewed.states[2].stats.partyRequest.materialParty, 'a helper cannot inherit somebody else material goal');
     assert(reviewed.states.every(state => !state.party.partyId));
-    assert.equal(Material.requestOf(released).status, 'deferred');
+    assert.equal(Material.requestOf(released).status, 'closed');
     await DB.execute([`UPDATE bot_life_state SET partyId=NULL, activity='hunting', statsJson=?, updatedAt=? WHERE characterId=?`,
         [JSON.stringify(released.stats), released.updatedAt, released.characterId]]);
     Life.acceptLifecycleRow((await DB.execute(['SELECT * FROM bot_life_state WHERE characterId=?', [released.characterId]]))[0]);
-    const Population = invoke('GameServer/Bot/Population/PopulationService');
-    const previousStarted = Population.started, materialRequest = Material.request;
-    const retrySource = Life.cachedState(released.characterId);
-    try {
-        Population.started = true;
-        Material.request = () => { throw Error('main rebuilt a material source decision without worker context'); };
-        const retry = await Population.refreshPartyAssemblyRequest(released.characterId,
-            released.stats.partyRequest.deferredUntil + 1);
-        assert.equal(retry.deferred, true, 'expired material cooldown waits for the existing cold review');
-        assert.equal(Life.cachedState(released.characterId), retrySource, 'main preserves the worker input and failed-camp count');
-        const durable = JSON.parse((await DB.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=?',
-            [released.characterId]]))[0].statsJson).partyRequest;
-        assert.equal(durable.itemId, 4108);
-        assert.equal(durable.attempts, 1, 'the native main retry cannot clear the need before its worker retry');
-    } finally { Population.started = previousStarted; Material.request = materialRequest; }
+    const durable = JSON.parse((await DB.execute(['SELECT statsJson FROM bot_life_state WHERE characterId=?',
+        [released.characterId]]))[0].statsJson).partyRequest;
+    assert.equal(durable.itemId, 4108);
+    assert.equal(durable.attempts, 1, 'the closed request keeps the need and its failed-camp count for the next build');
     console.log('PASS old-party startup without a member copy, native gathering and personal material recovery');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => world.close());

@@ -2387,7 +2387,7 @@ try {
     assert.notStrictEqual(fieldRefreshSession.plan, 'getting_buffed', 'companion should keep following until the player reaches a Newbie Guide town');
     assert.strictEqual(fieldRefreshSession.roleDecision.reason, 'wait_for_newbie_guide_town', 'field companion should explain why it did not leave for a distant Newbie Guide');
 
-    const overleveledRefreshBot = fakeActor(2000046, { locX: 80, locY: 0, level: 21 });
+    const overleveledRefreshBot = fakeActor(2000046, { locX: 80, locY: 0, level: 26 });
     Object.keys(overleveledRefreshBot.activeBuffs).forEach((key) => { overleveledRefreshBot.activeBuffs[key] = 0; });
     const overleveledRefreshSession = fakeSession('bot_overleveled_refresh_party', overleveledRefreshBot);
     overleveledRefreshSession.followPlayerSession = fieldRefreshLeaderSession;
@@ -2398,8 +2398,8 @@ try {
         getClosestNewbieGuide: () => ({ locX: -84081, locY: 243227, locZ: -3723 }),
         say() {}, executeCombat() {}, executePvPCombat() {}
     });
-    assert.notStrictEqual(overleveledRefreshSession.roleDecision?.reason, 'wait_for_newbie_guide_town', 'companions above level 20 must not wait for Newbie Guide buffs');
-    assert.notStrictEqual(overleveledRefreshSession.plan, 'getting_buffed', 'companions above level 20 must not start a Newbie Guide trip');
+    assert.notStrictEqual(overleveledRefreshSession.roleDecision?.reason, 'wait_for_newbie_guide_town', 'companions past the guide level cap (25) must not wait for Newbie Guide buffs');
+    assert.notStrictEqual(overleveledRefreshSession.plan, 'getting_buffed', 'companions past the guide level cap (25) must not start a Newbie Guide trip');
 
     const refreshLeader = fakeActor(2000034, { locX: -84081, locY: 243227, locZ: -3723, level: 10 });
     const refreshLeaderSession = fakeSession('player_refresh_party', refreshLeader);

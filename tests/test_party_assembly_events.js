@@ -80,7 +80,7 @@ async function main() {
     const driver = new PartyAssemblyEvents({ registry: jobs, life: Life, parties: Parties,
         classify: state => Population.partyAssemblyInput(state),
         run: (rows, timestamp, help) => Population.runPartyAssemblyEvent(rows, timestamp, help),
-        expire: id => Population.refreshPartyAssemblyRequest(id), onError: error => errors.push(error) });
+        onError: error => errors.push(error) });
     disposers.push(() => driver.stop()); driver.start(); await flush();
     jobs.tick(clock.now); await flush();
     for (let turns = 0; driver.running && turns < 500; turns++) await flush();
@@ -156,14 +156,14 @@ async function main() {
         const leveled = await Life.upsertState({ ...pair[0], level: 11 }, 'refused_member_fixture');
         assert.deepEqual(await Population.formBackgroundParties([leveled, pair[1]]), []);
         assert.equal(asks, 2, 'a member that changed is asked again');
-        const cooling = await Life.upsertState({ ...pair[1], stats: { ...pair[1].stats, partyRequest: { ...refused,
-            deferReason: 'party_assembly_timeout', deferredUntil: Date.now() + 60000 } } }, 'cooling_member_fixture');
-        assert.equal((await Population.runPartyAssemblyEvent([cooling], Date.now())).deferred, false,
-            'a cooling member asks no retry: its own end wakes the group');
+        const closed = await Life.upsertState({ ...pair[1], stats: { ...pair[1].stats, partyRequest: { ...refused,
+            status: 'closed', lastReason: 'party_assembly_timeout' } } }, 'closed_member_fixture');
+        assert.equal((await Population.runPartyAssemblyEvent([closed], Date.now())).deferred, false,
+            'a closed request asks no retry: its next build wakes the group');
         Income.compare = (_state, _peers, options) => ({ ...Income.evaluate({ solo: null, party: { income: 1000 }, cash: 5000 }),
             at: options.prepared.timestamp, soloSource: null, partySource: null });
     }
-    console.log('PASS a refused roster is asked once per member change; a cooling member asks no retry');
+    console.log('PASS a refused roster is asked once per member change; a closed request asks no retry');
     Population.started = false; Population.playerActivityProfile = savedProfile;
     Coordinator.requestPartyGoals = originalPartyGoals;
     Income.compare = originalIncome;
@@ -269,7 +269,7 @@ async function main() {
         activity: 'hunting', level: 10, updatedAt: 1, loc: { locX: index, locY: 0, locZ: 0 },
         stats: { request: index < 2 ? 'pair' : `solo${index}` }, timing: {} }));
     sources.forEach(row => cache.set(row.characterId, row));
-    const pages = [], attempts = [], expired = [], repairs = [];
+    const pages = [], attempts = [], repairs = [];
     const life = { cachedState: id => cache.get(id), subscribePublications: (...args) => cache.subscribePublications(...args),
         async safetyPage({ afterId = 0, highWaterId = 200, limit }) {
             assert.equal(limit, 64); const ids = sources.map(row => row.characterId).filter(id => id > afterId && id <= highWaterId).slice(0, limit);
@@ -279,9 +279,8 @@ async function main() {
     let partyListener, defer = false;
     const service = new PartyAssemblyEvents({ registry: queue, life, parties: { subscribeChanges(fn) { partyListener = fn; return () => { partyListener = null; }; } },
         now: () => tick.now, retryMs: 100,
-        classify: state => state.party?.partyId ? null : ({ key: state.stats.request, stamp: [state.level, null, null, state.stats.request, state.stats.status || null, null, null, null], dueAt: state.deadline || 0 }),
+        classify: state => state.party?.partyId ? null : ({ key: state.stats.request, stamp: [state.level, null, null, state.stats.request, state.stats.status || null, null, null, null] }),
         run(rows, timestamp, help) { attempts.push({ rows, help }); return { deferred: defer }; },
-        expire(id) { expired.push(id); const current = cache.get(id); cache.set(id, { ...current, deadline: 0 }); },
         onRepair: () => repairs.push(1), onError: error => errors.push(error) });
     disposers.push(() => service.stop()); service.start(); await flush();
     const replayed = service.records.size; assert.equal(replayed, 200);
@@ -307,11 +306,6 @@ async function main() {
     partyListener({ partyId: 'real-membership-event', memberIds: [1], status: 'active' }, { memberIds: [], status: 'active' });
     service.wakeHelp(); queue.tick(tick.now); await flush(); assert.equal(attempts.at(-1).help, true);
     console.log('PASS bounded event/coalescing/current-ref, real retry deadline, membership/help and unchanged pulse controls');
-
-    cache.set(2, { ...cache.get(2), deadline: tick.now + 50 });
-    tick.now += 50; queue.tick(tick.now); await flush(); assert.deepEqual(expired, [2]);
-    queue.tick(tick.now); await flush(); assert.deepEqual(expired, [2]);
-    console.log('PASS request deadline fires once through shared heap');
 
     // Simulate one lost accepted publication, plus one lost queued edge.
     for (const group of service.groups.values()) group.handled = group.revision;

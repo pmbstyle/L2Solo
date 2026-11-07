@@ -1020,14 +1020,16 @@ function selectedPlanningTarget(clan, previousGoal, planning, selectedCandidate 
     };
 }
 
+// How long a clan raid's selected roster stays committed (ours; temporary: until
+// the clan planners' pass ends a raid assembly on its events, not on age).
+const RAID_ASSEMBLY_COMMIT_MS = 15 * 60 * 1000;
 function raidAssemblyCommitted(clan, goal) {
     const Roster = require('./ClanRaidRoster');
     const marker = goal?.fullRoster;
     if (ClanRaidFailurePolicy.blockedSpotIds(goal, clan.state).has(marker?.sourceId)) return false;
     if (clan.state?.mode !== 'autonomous' || goal?.status !== 'executing' || !Roster.valid(marker)
         || number(marker.clanId) !== number(clan.id) || marker.goalKey !== goal.goalKey
-        || Date.now() - number(goal.plan?.selectedAt, number(goal.createdAt))
-            > require('../Bot/Population/PartyRequestPlanner').maxAgeMs('required')) return false;
+        || Date.now() - number(goal.plan?.selectedAt, number(goal.createdAt)) > RAID_ASSEMBLY_COMMIT_MS) return false;
     const profile = invoke('GameServer/RaidBoss/RaidBossSourceCatalog').findById(marker.sourceId);
     const source = profile && RaidEncounterScope.projectSource(profile);
     if (!source || source.raidWorldAvailable === false || marker.raidInstanceId !== source.raidInstanceId
@@ -1046,7 +1048,7 @@ function raidAssemblyCommitted(clan, goal) {
     }
     if (members.some(member => {
         if (!Roster.same(member.stats?.clanPartyObjective?.fullRoster, marker)
-            || require('../Bot/Population/PartyAssemblyRecovery').coolingDown(member)) return true;
+            || require('../Bot/Population/PartyRequestPlanner').closed(member)) return true;
         const partyId = member.partyId || member.party?.partyId;
         if (!partyId) return member.stats?.partyRequest?.status !== 'open';
         const party = BackgroundPartyState.find(partyId);

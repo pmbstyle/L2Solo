@@ -12,12 +12,12 @@ const Risk = invoke('GameServer/Bot/Population/SpotRiskPolicy');
 // The situations a body raises by name (raiseDecision): its arrival in town, its
 // respawn, a step proved impossible, leaving a party, a spot empty of prey or
 // unsafe ground for it, a spot it could not reach, a player's command naming a
-// spot, its wallet; and what main's executors raise on a far row that went near
+// spot, its wallet, its last hunting buff ended (HotTownRebuff.buffEnded); and what main's executors raise on a far row that went near
 // meanwhile (raiseFar): a goal done, a visit's step failed, a full bag, an own lines'
 // look main could not apply (line_undercut: look again). Its own
 // facts it detects on its post (detectNear).
 const reasons = new Set(['arrived_town', 'revived', 'goal_failed', 'party_left', 'spot_empty', 'spot_dangerous',
-    'spot_unreachable', 'player_command', 'goal_done:goal', 'goal_failed:visit', 'bag_full', 'line_undercut']);
+    'spot_unreachable', 'player_command', 'goal_done:goal', 'goal_failed:visit', 'bag_full', 'line_undercut', 'buffs_expired']);
 // The situations whose payload is a fact (Situations.raisedFacts): a later one of the
 // same name and payload moves to the bag's end, a later command replaces the earlier.
 const FACTS = new Set(['spot_unreachable', 'spot_dangerous', 'player_command']);

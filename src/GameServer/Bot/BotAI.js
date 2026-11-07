@@ -410,25 +410,7 @@ const BotAI = {
     },
 
     getClosestNewbieGuide(locX, locY) {
-        const guides = [
-            { name: "Talking Island", npcSelfId: 7598, locX: -84081, locY: 243227, locZ: -3723, head: 9000 },
-            { name: "Elven Village", npcSelfId: 7599, locX: 45475, locY: 48359, locZ: -3060, head: 49152 },
-            { name: "Dark Elven Village", npcSelfId: 7600, locX: 12111, locY: 16686, locZ: -4582, head: 63240 },
-            { name: "Dwarven Village", npcSelfId: 7601, locX: 115632, locY: -177996, locZ: -905, head: 32768 },
-            { name: "Orc Village", npcSelfId: 7602, locX: -45032, locY: -113598, locZ: -192, head: 32768 }
-        ];
-        let closest = guides[0];
-        let minDist = Infinity;
-        guides.forEach(g => {
-            const dx = g.locX - locX;
-            const dy = g.locY - locY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < minDist) {
-                minDist = dist;
-                closest = g;
-            }
-        });
-        return closest;
+        return invoke('GameServer/Bot/AI/BotBuffs').closestGuide({ locX, locY });
     },
 
     triggerFarAwayChatEvent(session, bot) {
@@ -480,7 +462,7 @@ const BotAI = {
         const defendingPvp = !botDead && invoke('GameServer/Bot/AI/BotPvpDefense').tick(session, bot, invoke(path.actor), this);
         if (!botDead && !defendingPvp && session.buffServiceCasting) return;
         if ((botDead || defendingPvp) && session.clanHallVisit) {
-            invoke('GameServer/ClanHall/BotVisit').finish(session, bot, Date.now() + 300000);
+            invoke('GameServer/ClanHall/BotVisit').finish(session, bot);
         }
 
         // Accepted board custody owns travel and waiting before ordinary AI;
@@ -534,7 +516,8 @@ const BotAI = {
             return;
         }
 
-        if (!botDead && invoke('GameServer/Bot/Economy/BuffService').maybeAutoBuy(session, tickStartedAt)) return;
+        // Its rebuff answered a buffer: it buys once, at a free moment (BuffService).
+        if (!botDead && invoke('GameServer/Bot/Economy/BuffService').buyOnAnswer(session)) return;
 
         const isCompanion = !!session.followPlayerSession && session.partyCompanion === true;
         if (!botDead && onlinePlayerCount > 0 && !lodContext.playerVisible && !isCompanion && !session.hotBackgroundPartyId && session.plan !== 'shopping' && session.plan !== 'pk_hunting') {
@@ -627,7 +610,6 @@ const BotAI = {
                     recoveryReason: recoveryHall ? 'restart_to_clan_hall' : 'restart_to_town' });
                 raiseDecision(session, 'revived');
                 session.clanHallVisit = null;
-                session.clanHallRetryAt = 0;
                 session.deathTimerStart = undefined;
                 session.currentTargetId = undefined;
                 session.incomingThreatId = undefined;

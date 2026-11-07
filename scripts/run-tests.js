@@ -574,6 +574,7 @@ const tests = [
     'tests/test_cold_worker_party_wait.js',
     'tests/test_party_wait_fallback.js',
     'tests/test_held_earning_spot.js',
+    'tests/test_rebuff_decision.js',
     'tests/test_hunting_trip.js',
     'tests/test_world_grid.js',
     'tests/test_cold_pvp_death_experience.js',

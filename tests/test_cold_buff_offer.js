@@ -35,34 +35,46 @@ async function run() {
         const kernel = new ColdSimulationKernel({ resolveSolo: () => null });
         for (const current of [provider, first, buyer, last]) kernel.upsert({ state: current });
         Memory.assess = () => { throw Error('worker must never read main relations'); };
-        const packet = Offer.project(provider, kernel.occupancy.members('test-spot', 'physical'), timestamp);
+        // A buyer's rebuff reads its spot's buffers on the worker (no main relation):
+        // the first that sells it support within its price read; a bot in a fight buys none.
+        const Rebuff = invoke('GameServer/Bot/AI/Rebuff');
+        assert.equal(Offer.providerFor(buyer, kernel.occupancy.members('test-spot', 'physical'), timestamp), provider.characterId);
+        assert.equal(Offer.providerFor(first, kernel.occupancy.members('test-spot', 'physical'), timestamp), null);
+        const packet = Offer.offer(provider, buyer, timestamp);
         assert.ok(packet); assert.equal(packet.recipientId, buyer.characterId);
         assert.equal(packet.providerRevision, 41); assert.equal(packet.recipientRevision, 17);
         assert.ok(Buffer.byteLength(JSON.stringify(packet)) <= 512);
-        assert.equal(Offer.project({ ...provider, stats: { ...provider.stats, lastBuffService: { at: timestamp - 1 } } }, [buyer], timestamp), null);
+        // At most 16 buffers are looked at; the spot's other units cost no look.
         let inspected = 0;
-        function* far() { for (let i = 0; i < 17; i++) { inspected++; yield first; } yield buyer; }
-        assert.equal(Offer.project(provider, far(), timestamp), null);
-        assert.equal(inspected, 16, 'only the first 16 yielded recipients are examined');
+        const busy = { ...provider, characterId: 719499, stats: { ...provider.stats, pvpEncounter: {} } };
+        function* far(buffers) { for (let i = 0; i < 20; i++) yield first; for (let i = 0; i < buffers; i++) { inspected++; yield busy; } yield provider; }
+        assert.equal(Offer.providerFor(buyer, far(15), timestamp), provider.characterId, 'the 16th buffer sells');
+        inspected = 0;
+        assert.equal(Offer.providerFor(buyer, far(16), timestamp), null, 'a 17th is never reached');
+        assert.equal(inspected, 16);
         const longSpot = 'x'.repeat(600);
-        assert.equal(Offer.project({ ...provider, spotId: longSpot }, [{ ...buyer, spotId: longSpot }], timestamp), null,
+        assert.equal(Offer.offer({ ...provider, spotId: longSpot }, { ...buyer, spotId: longSpot }, timestamp), null,
             'an offer which exceeds the hard IPC bound is not emitted');
+        // The buyer's step carries the sale its held answer names, once.
         const sent = [];
         let transport;
         transport = new ColdSimulationKernel({ now: () => timestamp,
             resolveSolo: ({ state }) => ({ patch: { activity: 'hunting' }, materialize: { exp: 0, sp: 0, adena: 0, items: [] },
                 events: [], nextResolveAt: timestamp + 60000 }),
-            projectResolve: async state => ({ state, buffOffer: Offer.project(state,
-                transport.occupancy.members(state.spotId, 'physical'), timestamp) }),
+            projectResolve: async state => {
+                const answer = Rebuff.pending(state.stats, 'buffer');
+                return { state, ...(answer ? { buffOffer: Offer.offer(transport.states.get(answer.providerId).state, state, timestamp) } : {}) };
+            },
             emit: (type, payload, msgId) => { sent.push({ type, payload, msgId }); } });
-        for (const current of [provider, first, buyer, last]) transport.upsert({ state: { ...current,
-            timing: { lastResolvedAt: timestamp - 45000, nextResolveAt: current === provider ? timestamp - 1 : timestamp + 60000 } } });
+        const answered = { ...buyer, stats: { ...buyer.stats, rebuff: { via: 'buffer', providerId: provider.characterId, at: timestamp - 1 } } };
+        for (const current of [provider, first, answered, last]) transport.upsert({ state: { ...current,
+            timing: { lastResolvedAt: timestamp - 45000, nextResolveAt: current === answered ? timestamp - 1 : timestamp + 60000 } } });
         transport.tick();
-        assert.deepEqual([...transport.inFlight.keys()], [provider.characterId], 'the provider steps from the worker\'s copy');
+        assert.deepEqual([...transport.inFlight.keys()], [buyer.characterId], 'the buyer steps from the worker\'s copy');
         await transport.resolveChain;
         transport.flush(null, true);
         const projectedPacket = sent.find(row => row.type === 'proposal_batch')?.payload.proposals[0].buffOffer;
-        assert.ok(projectedPacket, 'the provider resolve carries one actual proposal offer');
+        assert.ok(projectedPacket, 'the buyer resolve carries one actual proposal offer');
         assert.equal(projectedPacket.providerRevision, 41, 'the offer names the revision the step started from');
         assert.equal(projectedPacket.recipientRevision, 17);
         assert.equal(projectedPacket.recipientId, buyer.characterId);

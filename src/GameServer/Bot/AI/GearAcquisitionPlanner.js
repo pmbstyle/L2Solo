@@ -1460,7 +1460,7 @@ function partyRouteFailure(state = {}, plan = {}, timestamp = Date.now()) {
     if (plan.partyNeed !== 'required' && plan.requiresParty !== true) return null;
 
     const request = state.stats?.partyRequest;
-    if (request?.status !== 'deferred'
+    if (request?.status !== 'closed'
         || Number(request.attempts || 0) < PARTY_ROUTE_FAILURE_ATTEMPT_LIMIT) return null;
 
     const targetId = Number(plan.target?.selfId || (plan.strategy === 'direct_drop' ? plan.next?.itemId : 0) || 0);
